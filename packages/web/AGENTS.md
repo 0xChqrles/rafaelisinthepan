@@ -408,7 +408,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   after the player has navigated away (that day's archive cell would keep painting a stale
   fill until they reopened exactly it). Every call also carries the `puzzleTag` of the
   holes it is about, which is what lets a re-published sentence restart the server's log
-  instead of inheriting it (root `AGENTS.md`). **Adopting an UNCHANGED log writes
+  instead of inheriting it (root `AGENTS.md`) — and **every ANSWER is checked back against
+  the tag that asked for it**. A flight is MUTATED in place on re-registration, so a
+  republish landing while a request is in the air would otherwise apply the retired
+  puzzle's log using the corrected puzzle's ranks and holes: the tag's purpose defeated
+  from the inside. A superseded answer writes nothing — not its log, not its cap, not its
+  failure count — and the flight has already been reset to read again. **Adopting an UNCHANGED log writes
   nothing** — the common answer is the server echoing back what we just sent, and
   rewriting the round there would re-serialize the persist blob AND apply every pending
   hole improvement on the spot, out from under `Game.submit`'s deferral of each swap to its
@@ -429,7 +434,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   where `overCap` also covers local offline play that outgrew any server's cap. It
   suppresses the POST alone (`game/scores.ts` `shouldAskPopulation`): a round the population
   already holds keeps reading its standing, since a client flag must not hide what the
-  population itself answered. **An ADOPTED solve is not a fresh solve** — `Game` claims the
+  population itself answered. `canSubmit` is read at LAUNCH time (a ref, like
+  `recordedScore`) rather than depended on: a round can be capped by a lagging flush while
+  its own score POST is still in the air, and tearing the effect down there cancelled the
+  answer to a request about to succeed — with nothing left to re-open it, since
+  `markRecorded`'s write is deliberately not a dependency either. **An ADOPTED solve is not a fresh solve** — `Game` claims the
   solved beats at submit time (`solvedByPlay`), so a second tab finishing the board under
   this one replays no celebration and fires no second `solve` event. Word mode does not
   call the engine yet, and `RoundSyncContext.mode` is TYPED `'sentence'` until #202 can

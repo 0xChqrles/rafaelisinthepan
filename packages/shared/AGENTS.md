@@ -110,10 +110,12 @@
   an impossible one is never admitted. `web/game/wordGame.ts` re-exports it as
   `CLAIM_ZONE` for its existing consumers. It also owns the #201 round bounds —
   `ROUND_GUESS_CAP` (enforced inside the append write's own condition) and
-  `ROUND_WRITE_MIN_MS` (one spelling of "~1s between writes" for BOTH the server's rate
-  condition and the web's flush pacing, since two independent ones would drift into
-  permanent 429s) — cross-package constants for the same reason. **One constant is only
-  enough because the two ends measure the same GAP:** the server compares its own receipt
+  `ROUND_WRITE_MIN_MS` (one spelling of "~1s between writes, per player per DAILY" for
+  BOTH the server's rate condition and the web's flush pacing, since two independent ones
+  would drift into permanent 429s; the root `AGENTS.md` records why the bound is per
+  daily rather than global per player) — cross-package constants for the same reason.
+  **One constant is only enough because the two ends measure the same GAP:** the server
+  compares its own receipt
   instants with a strict `<`, so the web paces from the previous write's ANSWER rather
   than from its send (`web/state/roundSync.ts` `writeDelayMs`), which puts the server's
   round trip inside the interval. Pacing from the send instant leaves zero margin and

@@ -289,21 +289,39 @@ function requestBody(f: RoundFlight, guesses?: string[]) {
   return { secret: playerSecret(), puzzle: f.puzzle, guesses };
 }
 
+// Is this answer still about the puzzle that asked for it? A flight is MUTATED in place
+// when its round re-registers, so a sentence re-published while a request is in the air
+// leaves that request describing the retired puzzle while `f` already carries the
+// corrected one's ranks and holes. Applying it would replay the old log onto the new
+// board — the very thing the tag exists to prevent, arriving through the back door.
+// Everything a superseded answer would have written is dropped; the flight has already
+// been reset to read again, and `pump` restarts it.
+function superseded(f: RoundFlight, puzzle: string): boolean {
+  return f.puzzle !== puzzle;
+}
+
 async function readRound(f: RoundFlight, key: string): Promise<void> {
+  const puzzle = f.puzzle;
   let response: Response;
   try {
     response = await postRoundBody(roundUrl(f.lang, f.date, f.mode), requestBody(f));
   } catch {
-    retryLater(f);
+    if (!superseded(f, puzzle)) retryLater(f);
     return;
   }
+  if (superseded(f, puzzle)) return;
   if (response.ok) {
+    let guesses: string[];
     try {
-      adopt(f, key, parseRound(await response.json()).guesses);
+      guesses = parseRound(await response.json()).guesses;
     } catch {
       retryLater(f);
       return;
     }
+    // Re-checked after the body: reading it is another await, and a republish landing
+    // inside it would leave this log describing the retired sentence.
+    if (superseded(f, puzzle)) return;
+    adopt(f, key, guesses);
   } else if (response.status === 404) {
     // The server holds nothing for THIS puzzle: a fresh round, or a daily re-published
     // under the same key whose old record is retired. Nothing is acked, and the first
@@ -321,6 +339,7 @@ async function readRound(f: RoundFlight, key: string): Promise<void> {
 }
 
 async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promise<void> {
+  const puzzle = f.puzzle;
   let response: Response;
   try {
     response = await postRoundBody(roundUrl(f.lang, f.date, f.mode), requestBody(f, batch));
@@ -330,23 +349,30 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
     // `list_append` it a second time and burn the cap on a duplicate the client's own
     // dedup then hides, so the recovery is a RE-READ: only the server can say what it
     // holds, and the watermark comes from that rather than from a guess.
-    resync(f);
+    if (!superseded(f, puzzle)) resync(f);
     return;
   }
 
-  // Stamp the interval from the ANSWER, whatever it says (see `writeDelayMs`).
+  // Stamp the interval from the ANSWER, whatever it says (see `writeDelayMs`) — and even
+  // when the answer is superseded, because the write still LANDED on the same stored
+  // item, so the server's next accepted write is an interval past this one either way.
   f.lastWriteSettledAt = Date.now();
 
   if (response.ok || response.status === 409 || response.status === 429) {
     // All three carry the full stored log (the route's own contract), so all three
     // reconcile the same way — which is what makes a refusal useful rather than merely
     // survivable.
+    let guesses: string[];
     try {
-      adopt(f, key, parseRound(await response.json()).guesses);
+      guesses = parseRound(await response.json()).guesses;
     } catch {
-      resync(f);
+      if (!superseded(f, puzzle)) resync(f);
       return;
     }
+    // A superseded answer describes the RETIRED puzzle: not its log, not its cap, not
+    // its failure count. The republish already reset this flight to read again.
+    if (superseded(f, puzzle)) return;
+    adopt(f, key, guesses);
     f.failures = 0;
     if (response.status === 409) {
       // The cap: the round stops counting (#201). Mark the round so the score is never
@@ -359,6 +385,7 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
     return;
   }
 
+  if (superseded(f, puzzle)) return;
   if (isVerdict(response.status)) {
     f.closed = true;
     return;

@@ -139,7 +139,9 @@ export async function handleRound(
     return refusal(
       429,
       'too_fast',
-      'Guess writes are limited to about one per second per player.',
+      // Per DAILY, not per player: `lastWriteAt` lives on the round item, which is the
+      // granularity the client paces at too (root AGENTS.md).
+      'Guess writes are limited to about one per second for this daily.',
       state,
       // Exposed to script by the CORS headers: a browser can read no response header
       // outside the safelist without it, so an unexposed Retry-After is a value only

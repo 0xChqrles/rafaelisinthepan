@@ -266,7 +266,11 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   `round_full` when any batch would overflow the cap — the truer answer, since retrying can
   never succeed — else `too_fast`. **Every refusal ANSWERS with the unchanged stored
   state** (`errorResponse`'s `extra`), which is what the client reconciles against and what
-  pays for that read. `round_full` is answered 409 and LOGGED (`[round] round_full: …` —
+  pays for that read — but only ever the state of the PUZZLE ASKED ABOUT (`stateForTag` in
+  both stores): a rate-refused RESTART answers empty rather than handing back the retired
+  sentence's log, which the client would adopt as this round's truth. The lost-restart-race
+  branch re-reads for the same reason, since what is stored by then may already be this
+  puzzle's own fresh log. `round_full` is answered 409 and LOGGED (`[round] round_full: …` —
   the puzzle-curation signal; the client stops after the first refusal, so each hit is one
   honest line), `too_fast` is 429 + `Retry-After: 1` — which `corsHeaders` must EXPOSE, or
   a browser reads null for a header only curl and `backend:dev` ever see. Local serve swaps

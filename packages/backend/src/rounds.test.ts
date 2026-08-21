@@ -242,6 +242,21 @@ describe('a re-published daily restarts the log (#201)', () => {
     const read = await handler(event({ body: { secret: SECRET, puzzle: 'deadbeef' } }));
     expect(parsed(read).guesses).toEqual(['bois']);
   });
+
+  it('never hands the retired log back on a rate-refused restart', async () => {
+    const handler = makeHandler();
+    await handler(event({ body: body({ guesses: ['ancien'] }) }));
+
+    // The corrected puzzle's first flush lands INSIDE the write interval. Every answer,
+    // refusals included, is adopted by the client as this round's truth — so a 429
+    // carrying the retired sentence's log would reintroduce exactly the guesses the tag
+    // exists to exclude.
+    const refused = await handler(
+      event({ body: { secret: SECRET, puzzle: 'deadbeef', guesses: ['bois'] } }),
+    );
+    expect(refused.statusCode).toBe(429);
+    expect(parsed(refused).guesses).toEqual([]);
+  });
 });
 
 describe('the cap (#201)', () => {
@@ -309,6 +324,24 @@ describe('the ~1s per-player write interval', () => {
     const ok = await handler(event({ body: body({ guesses: ['foret'] }) }));
     expect(ok.statusCode).toBe(200);
     expect(parsed(ok)).toMatchObject({ guesses: ['bois', 'foret'] });
+  });
+
+  it('binds one DAILY, not the player across dailies', async () => {
+    // `lastWriteAt` lives on the round item, so the bound is per (player, daily) — which
+    // is the granularity the CLIENT paces at (one flight per round key, each timing its
+    // own last answer). A global per-player throttle would make two concurrently syncing
+    // rounds — an archive day left mid-play and today's — refuse each other about half
+    // the time, which is the two ends measuring different things: exactly what one
+    // shared constant exists to prevent. See the root AGENTS.md.
+    const handler = makeHandler();
+    await handler(event({ body: body({ guesses: ['bois'] }) }));
+    const other = await handler(
+      event({
+        query: { lang: 'fr', date: PAST_DATE, mode: 'sentence' },
+        body: body({ guesses: ['foret'] }),
+      }),
+    );
+    expect(other.statusCode).toBe(200);
   });
 });
 

@@ -383,7 +383,11 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   log. **Every answer carries the full stored state** (`{guesses, createdAt}`) — the
   /friends house style, and **that includes BOTH refusals** — so a write is also a
   reconciliation: the tab computes against stale local state, the server appends to the
-  true log and answers with truth, and the tab re-renders correct. (It is also what pays
+  true log and answers with truth, and the tab re-renders correct. It is always the state
+  of the PUZZLE ASKED ABOUT: a record naming a different one answers EMPTY, never its own
+  log. The client adopts every answer as this round's truth, so a refusal carrying the
+  retired sentence's guesses would walk them straight back into the corrected puzzle —
+  the tag's whole purpose, undone through the one door left open. (It is also what pays
   for the extra consistent read a refusal costs the store: without a body, that read
   exists only to choose between two status codes, and a client refused mid-sync stays
   stale until its next accepted write.) No sockets, no SSE: an open tab reconciles on its
@@ -416,13 +420,27 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   cannot be raced — written as ROOM, `size(log) <= cap - batch`, because DynamoDB's
   condition grammar has no arithmetic and no `if_not_exists`; naming either there is a
   ValidationException on every append, which no mocked client and no memory store can
-  reproduce), and **`ROUND_WRITE_MIN_MS` = ~1s between writes per player** — one spelling
-  for both the server's rate condition and the web's flush pacing, since two independent
-  ones would drift into permanent 429s. **The web paces from the previous write's ANSWER,
-  not from its send**, which is what makes one constant sufficient: the server compares
-  its OWN receipt instants with a strict `<`, so pacing from the send instant leaves the
-  accepted gap at `interval + (latency_n − latency_{n−1})` and refuses every request that
-  travels faster than its predecessor.
+  reproduce), and **`ROUND_WRITE_MIN_MS` = ~1s between writes per player PER DAILY**
+  (corrected 2026-08-21: this said "per player", which the implementation has never been
+  — `lastWriteAt` lives on the round item, so one player writing to two dailies at the
+  same instant is accepted twice) — one spelling for both the server's rate condition and
+  the web's flush pacing, since two independent ones would drift into permanent 429s.
+  **The web paces from the previous write's ANSWER, not from its send**, which is what
+  makes one constant sufficient: the server compares its OWN receipt instants with a
+  strict `<`, so pacing from the send instant leaves the accepted gap at
+  `interval + (latency_n − latency_{n−1})` and refuses every request that travels faster
+  than its predecessor.
+  **Per DAILY is the granularity the bound should have**, which is why the wording moved
+  rather than the code. The client paces per ROUND — one flight per round key, each
+  timing its own last answer — so a global per-player throttle would make two
+  concurrently syncing rounds (an archive day left mid-play, and today's) refuse each
+  other about half the time: the two ends measuring different things, which is the exact
+  failure one shared constant exists to prevent. It would also cost a second item and a
+  transaction on the game's hottest write path, to buy a bound an attacker walks around
+  by minting another identity (this route has no Turnstile — see the open question in the
+  route's own notes). What a per-daily interval does NOT bound is one identity fanning
+  writes across many dates; that is the same unmetered-route question, not this constant's
+  job.
 - **At the cap the server refuses further appends** (409 `round_full`, logged for review
   — a real player reaching 500 means an unreachable secret, puzzle-curation signal
   available no other way), **the client keeps playing locally, and the round STOPS

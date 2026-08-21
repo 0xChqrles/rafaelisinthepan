@@ -78,7 +78,10 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
       // attribute has no size), so refuse it here. The route validates the same bound
       // before this is reached — this is what keeps the two backends answering alike.
       if (input.guesses.length > ROUND_GUESS_CAP) {
-        return { outcome: 'round_full', state: itemToState(await readItem(input, input.publicId)) ?? empty() };
+        return {
+          outcome: 'round_full',
+          state: stateForTag(await readItem(input, input.publicId), input.puzzle),
+        };
       }
 
       try {
@@ -116,16 +119,14 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
 
       // The condition named three bounds; classify against the stored item.
       const item = await readItem(input, input.publicId);
-      const stored = itemToState(item);
       const last = numberOf(item?.lastWriteAt);
       const paced = last === undefined || last < cutoff;
-      if (!stored) return { outcome: 'too_fast', state: empty() };
 
       if (puzzleOf(item) !== input.puzzle) {
-        // A RETIRED puzzle's log: the round restarted under the same key, so the batch
-        // REPLACES it rather than growing it. The interval still applies — otherwise
-        // varying the tag would be a way around the rate bound.
-        if (!paced) return { outcome: 'too_fast', state: stored };
+        // A RETIRED puzzle's log (or no record at all): the round restarted under the
+        // same key, so the batch REPLACES it rather than growing it. The interval still
+        // applies — otherwise varying the tag would be a way around the rate bound.
+        if (!paced) return { outcome: 'too_fast', state: empty() };
         try {
           const response = await client.send(
             new UpdateItemCommand({
@@ -144,11 +145,18 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
           return { outcome: 'appended', state: itemToState(response.Attributes)! };
         } catch (error) {
           if ((error as { name?: string }).name !== 'ConditionalCheckFailedException') throw error;
-          // Someone else already restarted it; the client re-reads and reconciles.
-          return { outcome: 'too_fast', state: stored };
+          // Lost the restart race — another tab replaced it first, or a write landed
+          // inside the interval. Re-read: whatever is there now may already BE this
+          // puzzle's fresh log, which is the truth to answer with.
+          return {
+            outcome: 'too_fast',
+            state: stateForTag(await readItem(input, input.publicId), input.puzzle),
+          };
         }
       }
 
+      const stored = itemToState(item);
+      if (!stored) return { outcome: 'too_fast', state: empty() };
       // A log already at (or within one batch of) the cap is the cap refusal — the truer
       // answer, since retrying can never succeed — and anything else is the interval.
       if (stored.guesses.length + input.guesses.length > ROUND_GUESS_CAP) {
@@ -161,6 +169,15 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
 
 function empty(): RoundState {
   return { guesses: [], createdAt: '' };
+}
+
+// The state a caller may be TOLD about, which is only ever the state of the puzzle it
+// asked about. A record naming a different one holds the RETIRED sentence's log, and
+// every answer — the refusals included — is adopted by the client as this round's truth:
+// handing that log back on a rate-refused restart would reintroduce exactly the guesses
+// the tag exists to exclude, through the one door left open.
+function stateForTag(item: Item, puzzle: string): RoundState {
+  return puzzleOf(item) === puzzle ? itemToState(item) ?? empty() : empty();
 }
 
 type Item = Record<string, AttributeValue> | undefined;

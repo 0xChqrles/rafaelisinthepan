@@ -29,9 +29,17 @@ import {
 } from './roundSync';
 import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
 
+// `roundUrl` is mocked with the rest (the house pattern — see useScoreHistogram.test.ts's
+// `scoresUrl`, FriendInvite.test.ts's `friendsUrl`): the real builder throws without
+// VITE_API_BASE_URL, which is a gitignored `.env.local` locally and absent in CI, so
+// leaving it real makes this suite pass on a developer's machine and fail on the required
+// check. What it builds is `api.test.ts`'s contract, not this one's. `parseRound` stays
+// REAL — the engine's handling of a malformed body is part of what is under test here.
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   postRoundBody: vi.fn(),
+  roundUrl: (lang: string, date: string, mode: string) =>
+    `https://api.test/round?lang=${lang}&date=${date}&mode=${mode}`,
 }));
 
 const post = vi.mocked(postRoundBody);
@@ -364,6 +372,45 @@ describe('engine', () => {
     // And with the log now known to be acked, nothing further is pending.
     await settle(30_000);
     expect(post).toHaveBeenCalledTimes(3);
+  });
+
+  it('discards an in-flight answer once the daily is RE-PUBLISHED under it', async () => {
+    seedRound();
+    let landOldRead: (response: Response) => void = () => {};
+    post.mockReturnValueOnce(
+      new Promise<Response>((resolve) => {
+        landOldRead = resolve;
+      }),
+    );
+    post.mockResolvedValueOnce(status(404)); // the corrected puzzle's own read
+
+    beginRoundSync(ctx());
+    await settle();
+    expect(post).toHaveBeenCalledOnce();
+
+    // The daily is re-published while that read is still in the air. A flight is MUTATED
+    // in place on re-registration, so without a check the old answer would be applied
+    // using the CORRECTED puzzle's ranks and holes.
+    const corrected: RuntimeHole[] = [
+      { pos: 1, secret: 'foret', word: 'bois', rank: 87, startRank: 87 },
+      { pos: 2, secret: 'antique', word: 'vieux', rank: 12, startRank: 12 },
+    ];
+    beginRoundSync({
+      ...ctx(),
+      freshHoles: corrected,
+      ranks: { ...SECRET_MAP, antique: { antique: { word: 'antique', rank: 0 } } },
+    });
+
+    // The old request lands, carrying the RETIRED sentence's log.
+    landOldRead(ok(['bois', 'chemin']));
+    await settle();
+
+    // None of it reached the round the player is now playing...
+    expect(round()?.tried).toEqual([]);
+    expect(round()?.holes).toEqual(freshHoles());
+    // ...and the corrected puzzle asked the server about ITSELF.
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(bodyOf(1).puzzle).toBe(puzzleTag(corrected));
   });
 
   it('closes on a 4xx VERDICT instead of spinning on it forever', async () => {

@@ -273,7 +273,7 @@ describe('dynamoRoundStore (#201)', () => {
     expect(replace.input.ConditionExpression).toContain('#last < :cutoff');
   });
 
-  it('refuses a retired-puzzle restart that arrives inside the write interval', async () => {
+  it('refuses a retired-puzzle restart inside the interval WITHOUT handing its log back', async () => {
     const send = refuseOnce(storedItem(['ancien'], NOW.getTime() - 100, 'deadbeef'));
     const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
 
@@ -285,8 +285,44 @@ describe('dynamoRoundStore (#201)', () => {
       now: NOW,
     });
     expect(refused.outcome).toBe('too_fast');
+    // The client adopts EVERY answer as this round's truth, refusals included. Answering
+    // with the retired sentence's log would walk those guesses straight back into the
+    // corrected puzzle — the one door left open in the tag's whole purpose.
+    expect(refused.state.guesses).toEqual([]);
     // Nothing was rewritten.
     expect(send.mock.calls.filter(([c]) => c instanceof UpdateItemCommand)).toHaveLength(1);
+  });
+
+  it('re-reads after LOSING a restart race, and answers with this puzzle\'s log', async () => {
+    // Another tab restarted the round first: the replace's `#p <> :puzzle` no longer
+    // holds, and what is stored now is already THIS puzzle's fresh log.
+    const retired = storedItem(['ancien'], 1, 'deadbeef');
+    const restarted = storedItem(['neuf'], NOW.getTime(), PUZZLE);
+    let updates = 0;
+    let reads = 0;
+    const send = vi.fn(async (command: unknown) => {
+      if (command instanceof UpdateItemCommand) {
+        updates += 1;
+        throw new ConditionalCheckFailedException({
+          $metadata: {},
+          message: 'The conditional request failed',
+        });
+      }
+      reads += 1;
+      return { Item: reads === 1 ? retired : restarted };
+    });
+    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+
+    const refused = await store.append({
+      ...KEY,
+      publicId: PUBLIC_ID,
+      guesses: ['bois'],
+      puzzle: PUZZLE,
+      now: NOW,
+    });
+    expect(updates).toBe(2); // the append, then the refused replace
+    expect(refused.outcome).toBe('too_fast');
+    expect(refused.state.guesses).toEqual(['neuf']);
   });
 
   it('surfaces operational failures instead of misreading them as refusals', async () => {

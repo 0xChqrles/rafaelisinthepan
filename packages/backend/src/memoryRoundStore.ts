@@ -30,6 +30,14 @@ export function memoryRoundStore(): RoundStore {
     createdAt: item.createdAt,
   });
 
+  // The state a caller may be TOLD about, which is only ever the state of the puzzle it
+  // asked about. A record naming a different one holds the RETIRED sentence's log, and
+  // every answer — the refusals included — is adopted by the client as this round's
+  // truth: handing that log back on a rate-refused restart would reintroduce exactly the
+  // guesses the tag exists to exclude. (dynamoRoundStore.ts keeps the same rule.)
+  const stateForTag = (item: RoundItem | undefined, puzzle: string): RoundState =>
+    item && item.puzzle === puzzle ? stateOf(item) : empty();
+
   return {
     async get(key, publicId, puzzle) {
       const item = rounds.get(itemKey(key, publicId));
@@ -48,14 +56,17 @@ export function memoryRoundStore(): RoundStore {
       // The route never sends an over-cap batch, but the store owns the invariant:
       // refuse rather than create (or restart) a record born past the cap.
       if (input.guesses.length > ROUND_GUESS_CAP) {
-        return { outcome: 'round_full' as const, state: existing ? stateOf(existing) : empty() };
+        return { outcome: 'round_full' as const, state: stateForTag(existing, input.puzzle) };
       }
 
       // A RETIRED puzzle's log: the round restarted under the same key, so the batch
       // REPLACES it rather than growing it. The interval still applies — otherwise
       // varying the tag would be a way around the rate bound.
       if (!existing || existing.puzzle !== input.puzzle) {
-        if (existing && !paced) return { outcome: 'too_fast' as const, state: stateOf(existing) };
+        // The refusal answers with the state of the puzzle that was ASKED about — never
+        // the retired one's log, which the client would adopt as this round's truth (the
+        // note in `stateForTag` below).
+        if (existing && !paced) return { outcome: 'too_fast' as const, state: empty() };
         const item: RoundItem = {
           guesses: [...input.guesses],
           puzzle: input.puzzle,

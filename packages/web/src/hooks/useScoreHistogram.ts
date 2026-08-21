@@ -158,12 +158,23 @@ export default function useScoreHistogram({
   // POST with a redundant GET.
   const recordedRef = useRef(recordedScore);
   recordedRef.current = recordedScore;
+  // `canSubmit` is read at launch time for that reason AND one of its own. A round can
+  // become CAPPED while its score POST is in the air — a lagging #201 flush takes the
+  // server's cap refusal after the submission already went out. As a DEPENDENCY that
+  // tears the effect down, cancelling the answer to a request that is about to succeed,
+  // and nothing re-opens it: `markRecorded` writes `recordedScore`, which is deliberately
+  // not a dependency either, so the standing stayed empty on that visit and every later
+  // one until a remount. Nothing needs the teardown — the POST has already gone, a round
+  // never becomes UN-capped, and the still-subscribed conversation lands the standing
+  // this round earned.
+  const canSubmitRef = useRef(canSubmit);
+  canSubmitRef.current = canSubmit;
   const placementKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     // Nothing to show and nothing to ask — not finished, or a #201 capped round with no
     // recorded score to read (game/scores.ts states the rule).
-    if (!shouldAskPopulation(finished, canSubmit, recordedRef.current)) {
+    if (!shouldAskPopulation(finished, canSubmitRef.current, recordedRef.current)) {
       // A republished puzzle can reset the round under the same key; drop stale results.
       placementKeyRef.current = null;
       setPlacement(null);
@@ -194,7 +205,7 @@ export default function useScoreHistogram({
     return () => {
       cancelled = true;
     };
-  }, [finished, canSubmit, markRecorded, mode, lang, dayNumber, score]);
+  }, [finished, markRecorded, mode, lang, dayNumber, score]);
 
   return placement;
 }
