@@ -8,7 +8,9 @@
 // game benefits least: what syncing buys is the live friends board, and a 60-second run is
 // over before anyone opens it.
 //   { secret, puzzle, turnstileToken } — START: stamp this round's clock from the SERVER's
-//                                        own clock, onto the same record;
+//                                        own clock, onto the same record. Its answer adds
+//                                        `resumed`: false when THIS call stamped it, true
+//                                        when it joined a clock already running;
 //   { secret, puzzle, guesses: [...] } — SUBMIT the whole log, once, at the end of the run.
 //
 // Every call answers with the FULL stored state `{ guesses, createdAt, startedAt?, now }` —
@@ -168,8 +170,25 @@ export async function handleRound(
     }
     // `running` is not a refusal: the ORIGINAL start stands and is what the answer
     // carries, so a double tap, a retry and a second device all resume the one clock.
-    const { state } = await rounds.start({ date, lang, mode, publicId, puzzle, now: instant });
-    return answer(state);
+    //
+    // But WHICH of the two happened is the caller's business, so the answer says it. A
+    // client that merely RESUMED someone else's clock cannot know what that run has
+    // claimed — Word mode stores nothing until the end — so its own clock runs short and
+    // would call a live run finished. Telling it apart from the session that actually
+    // stamped the clock is what stops a joiner from writing an empty run over a real one.
+    const { outcome, state } = await rounds.start({
+      date,
+      lang,
+      mode,
+      publicId,
+      puzzle,
+      now: instant,
+    });
+    return json(
+      200,
+      { ...roundBody(state, instant), resumed: outcome === 'running' },
+      responseHeaders,
+    );
   }
 
   const rawGuesses = body.guesses;

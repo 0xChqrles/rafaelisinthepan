@@ -262,10 +262,18 @@ export interface RoundState {
   // Word mode's SERVER-stamped clock (#202); null on a sentence round and on a word round
   // nobody has started.
   startedAt: string | null;
+  // When the word round's end-of-run log was RECORDED; null while it has not been. It is
+  // the submission's own marker because an empty stored log — a run that claimed nothing —
+  // reads exactly like an unsubmitted one.
+  submittedAt: string | null;
   // The server's own clock at the moment it answered. A client anchors a run's countdown
   // to `now - startedAt` — an ELAPSED span, which both ends agree on — rather than to the
   // instant itself, which a skewed device clock would misread.
   now: string;
+  // START only: did THIS call stamp the clock, or join one already running? A resumed
+  // clock belongs to another device (or another tab), and this one cannot know what that
+  // run has claimed — so it must never write for it.
+  resumed: boolean;
 }
 
 // Runtime shape check for the round response — the parsePuzzle contract: a wrong-shaped
@@ -281,16 +289,23 @@ function requireInstant(value: unknown, field: string): string {
 
 export function parseRound(data: unknown): RoundState {
   if (!isRecord(data)) throw new Error('malformed round: not an object');
-  const { guesses, createdAt, startedAt } = data;
+  const { guesses, createdAt, startedAt, submittedAt, resumed } = data;
   if (!Array.isArray(guesses) || !guesses.every((g) => typeof g === 'string')) {
     throw new Error('malformed round: "guesses" must be an array of strings');
   }
   if (typeof createdAt !== 'string') throw new Error('malformed round: bad "createdAt"');
+  if (resumed !== undefined && typeof resumed !== 'boolean') {
+    throw new Error('malformed round: bad "resumed"');
+  }
   return {
     guesses: guesses as string[],
     createdAt,
     startedAt: startedAt === undefined ? null : requireInstant(startedAt, 'startedAt'),
+    submittedAt: submittedAt === undefined ? null : requireInstant(submittedAt, 'submittedAt'),
     now: requireInstant(data.now, 'now'),
+    // Only a START answers it. Absent means "not a start", and the safe reading of an
+    // answer that did not say is that this client did NOT stamp the clock.
+    resumed: resumed !== false,
   };
 }
 

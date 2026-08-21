@@ -116,7 +116,9 @@ interface RoundResponse {
   guesses: string[];
   createdAt: string;
   startedAt?: string;
+  submittedAt?: string;
   now: string;
+  resumed?: boolean;
   error?: string;
 }
 
@@ -621,5 +623,49 @@ describe('word mode: the end-of-run submission (#202)', () => {
     handler.advance(wordRunFloorMs(0));
     const response = await handler(wordEvent({ guesses: ['mer'] }));
     expect(response.statusCode).toBe(404);
+  });
+});
+
+// CONTRACT (#202): the two stores answer alike, and a 0-claim run is a REAL submission.
+// The memory store is what `backend:dev` and every route test above run on, so a rule it
+// enforces differently from DynamoDB is a rule nothing here can see.
+describe('word mode: a run that claimed nothing (#202)', () => {
+  async function startedRound() {
+    const handler = makeHandler({ word: WORD_ARTIFACT });
+    await handler(wordEvent({ turnstileToken: 'ok' }));
+    handler.advance(wordRunFloorMs(0));
+    return handler;
+  }
+
+  it('records, and cannot then be overwritten by a later log', async () => {
+    const handler = await startedRound();
+    const first = await handler(wordEvent({ guesses: [] }));
+    expect(first.statusCode).toBe(200);
+
+    // An empty stored log reads exactly like an unsubmitted one by LENGTH — which is why
+    // the submission carries its own marker. Without it this second call wins.
+    const second = await handler(wordEvent({ guesses: ['mer'] }));
+    expect(second.statusCode).toBe(200);
+    expect(parsed(second).guesses).toEqual([]);
+  });
+
+  it('is visible to a mount READ as recorded', async () => {
+    const handler = await startedRound();
+    await handler(wordEvent({ guesses: [] }));
+    const read = await handler(wordEvent());
+    // The client marks the round submitted off this, so a device that adopts a finished
+    // day does not post its empty log back on every visit.
+    expect(parsed(read).submittedAt).toBeTruthy();
+  });
+
+  it('says a run was RESUMED rather than started, so a joiner cannot claim it', async () => {
+    const handler = makeHandler();
+    const first = await handler(wordEvent({ turnstileToken: 'ok' }));
+    expect(parsed(first).resumed).toBe(false);
+    handler.advance(5_000);
+    // The same player on a second device: the clock is somebody's already.
+    const joined = await handler(wordEvent({ turnstileToken: 'ok' }));
+    expect(parsed(joined).resumed).toBe(true);
+    expect(parsed(joined).startedAt).toBe(START.toISOString());
   });
 });

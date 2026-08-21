@@ -47,13 +47,26 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
     return response.Item;
   };
 
-  const names = {
-    '#g': 'guesses',
-    '#p': 'puzzle',
-    '#last': 'lastWriteAt',
-    '#created': 'createdAt',
-    '#started': 'startedAt',
-  };
+  // EVERY alias a command declares must appear in that command's own expressions, and
+  // every alias its expressions name must be declared: DynamoDB rejects either mismatch
+  // with a ValidationException ("Value provided in ExpressionAttributeNames unused in
+  // expressions") before a byte is written. So the maps are PER COMMAND, never one shared
+  // map covering the union — a shared one is only correct until a write stops using one of
+  // its entries, which is silent everywhere a mocked client is the only reader.
+  // `dynamoRoundStore.test.ts` asserts the correspondence on every command this store
+  // issues, in both directions and for values too.
+  const NAMES = {
+    guesses: '#g',
+    puzzle: '#p',
+    lastWriteAt: '#last',
+    createdAt: '#created',
+    startedAt: '#started',
+    submittedAt: '#sub',
+  } as const;
+
+  // The alias map for exactly the attributes one command touches.
+  const aliases = (...attributes: (keyof typeof NAMES)[]): Record<string, string> =>
+    Object.fromEntries(attributes.map((attribute) => [NAMES[attribute], attribute]));
 
   return {
     async get(key, publicId, puzzle) {
@@ -108,7 +121,7 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
             ConditionExpression:
               '(attribute_not_exists(#last) OR #last < :cutoff) ' +
               'AND (attribute_not_exists(#g) OR (size(#g) <= :room AND #p = :puzzle))',
-            ExpressionAttributeNames: names,
+            ExpressionAttributeNames: aliases('guesses', 'puzzle', 'lastWriteAt', 'createdAt'),
             ExpressionAttributeValues: values({
               ':empty': { L: [] },
               ':room': { N: String(ROUND_GUESS_CAP - input.guesses.length) },
@@ -141,7 +154,7 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
               // tabs racing the same restart cannot wipe each other's fresh log.
               ConditionExpression:
                 '#p <> :puzzle AND (attribute_not_exists(#last) OR #last < :cutoff)',
-              ExpressionAttributeNames: names,
+              ExpressionAttributeNames: aliases('guesses', 'puzzle', 'lastWriteAt', 'createdAt'),
               ExpressionAttributeValues: values({}),
               ReturnValues: 'ALL_NEW',
             }),
@@ -184,10 +197,19 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
           new UpdateItemCommand({
             TableName: tableName,
             Key: itemKey(input, input.publicId),
+            // A RESTART takes the retired word's whole run with it — its log AND the mark
+            // saying that log was recorded, or the fresh round would read as already
+            // submitted and never write.
             UpdateExpression:
-              'SET #started = :now, #p = :puzzle, #created = :now REMOVE #g',
+              'SET #started = :now, #p = :puzzle, #created = :now REMOVE #g, #sub',
             ConditionExpression: 'attribute_not_exists(#started) OR #p <> :puzzle',
-            ExpressionAttributeNames: names,
+            ExpressionAttributeNames: aliases(
+              'startedAt',
+              'puzzle',
+              'createdAt',
+              'guesses',
+              'submittedAt',
+            ),
             ExpressionAttributeValues: {
               ':puzzle': { S: input.puzzle },
               ':now': { S: stampedAt },
@@ -219,7 +241,10 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
     async submit(input) {
       const stored = stateForTag(await readItem(input, input.publicId), input.puzzle);
       if (!stored.startedAt) return { outcome: 'not_started', state: empty() };
-      if (stored.guesses.length > 0) return { outcome: 'already_submitted', state: stored };
+      // `submittedAt`, never the log's length: a run that claimed nothing records an EMPTY
+      // log, and reading that back as "nothing recorded" is what let a second submission
+      // overwrite it (roundStore.ts).
+      if (stored.submittedAt) return { outcome: 'already_submitted', state: stored };
       if (input.now.getTime() - Date.parse(stored.startedAt) < input.minElapsedMs) {
         return { outcome: 'too_early', state: stored };
       }
@@ -229,15 +254,16 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
           new UpdateItemCommand({
             TableName: tableName,
             Key: itemKey(input, input.publicId),
-            UpdateExpression: 'SET #g = :log',
+            UpdateExpression: 'SET #g = :log, #sub = :now',
             // Path-only condition syntax, the append's rule: the record must still be this
             // puzzle's, still started, and still unsubmitted.
             ConditionExpression:
-              '#p = :puzzle AND attribute_exists(#started) AND attribute_not_exists(#g)',
-            ExpressionAttributeNames: names,
+              '#p = :puzzle AND attribute_exists(#started) AND attribute_not_exists(#sub)',
+            ExpressionAttributeNames: aliases('guesses', 'submittedAt', 'puzzle', 'startedAt'),
             ExpressionAttributeValues: {
               ':puzzle': { S: input.puzzle },
               ':log': { L: input.guesses.map((guess) => ({ S: guess })) },
+              ':now': { S: input.now.toISOString() },
             },
             ReturnValues: 'ALL_NEW',
           }),
@@ -250,7 +276,7 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
       // submission landing first, or the daily being re-published under us — where this log
       // describes a retired word and the round has restarted without it.
       const now = stateForTag(await readItem(input, input.publicId), input.puzzle);
-      return now.guesses.length > 0
+      return now.submittedAt
         ? { outcome: 'already_submitted', state: now }
         : { outcome: 'not_started', state: now };
     },
@@ -275,6 +301,7 @@ type Item = Record<string, AttributeValue> | undefined;
 function itemToState(item: Item): RoundState | null {
   if (!item) return null;
   const startedAt = item.startedAt?.S;
+  const submittedAt = item.submittedAt?.S;
   return {
     guesses: item.guesses?.L?.map((v) => v.S ?? '') ?? [],
     // Written as a STRING (`:created`), read as one: `lastWriteAt` is the only round
@@ -285,8 +312,10 @@ function itemToState(item: Item): RoundState | null {
     createdAt: item.createdAt?.S ?? '',
     // ABSENT rather than empty when unstamped (a sentence round, an unstarted word one):
     // the word submit's "is there a run to end?" test reads exactly this, and `''` would
-    // pass a truthiness check into `Date.parse` and answer NaN.
+    // pass a truthiness check into `Date.parse` and answer NaN. `submittedAt` is the
+    // submission's own marker and follows the same rule.
     ...(startedAt === undefined ? {} : { startedAt }),
+    ...(submittedAt === undefined ? {} : { submittedAt }),
   };
 }
 

@@ -263,8 +263,16 @@ async function requestStart(ctx: WordRoundContext): Promise<boolean> {
   const startedAt = anchorFrom(state);
   if (startedAt === null) return false;
   // `running` is answered 200 too: a second tap, a retry or another device resumes the ONE
-  // clock the server already stamped, and the store's anchor is idempotent besides.
-  startedHere.add(ctx.roundKey);
+  // clock the server already stamped, and the store's anchor is idempotent besides. But
+  // only a call that actually STAMPED it makes this session the runner — the answer says
+  // which (`resumed`). Tapping PLAY while the mount read is still in flight is otherwise
+  // enough for a JOINER to claim writer authority over a run it cannot see, and then bury
+  // it under an empty log at the base deadline.
+  //
+  // The narrow cost: a start whose ANSWER was lost and is re-sent comes back `resumed`, so
+  // that session is not the runner either. It still writes any run it plays — `mayWrite`
+  // takes a non-empty log too — and only a 0-claim run is left unrecorded there.
+  if (!state.resumed) startedHere.add(ctx.roundKey);
   useGameStore.getState().anchorWordRun(ctx.roundKey, startedAt);
   adoptState(ctx, state);
   return true;
@@ -336,12 +344,13 @@ async function readRound(f: WordFlight, key: string): Promise<void> {
     const startedAt = anchorFrom(state);
     if (startedAt !== null) useGameStore.getState().anchorWordRun(key, startedAt);
     adoptState(f, state);
-    if (state.guesses.length > 0) {
+    if (state.submittedAt !== null) {
       // The server demonstrably HOLDS a run for this round, so this device owes it
       // nothing — whether the log is its own or the one another device recorded first
-      // (the submission is first-write-wins, so a second one would change nothing). Not
-      // marking it here is not a correctness bug but a wasted POST on every device that
-      // adopts a finished day, on every visit.
+      // (the submission is first-write-wins, so a second one would change nothing).
+      //
+      // Keyed on `submittedAt` and not on the log's length, or a recorded 0-claim run —
+      // an EMPTY stored log — would read as unrecorded on every visit forever.
       useGameStore.getState().markWordSubmitted(key);
     }
   } else if (response.status === 404) {

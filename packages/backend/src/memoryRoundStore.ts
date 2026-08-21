@@ -15,6 +15,9 @@ interface RoundItem {
   lastWriteAt: number;
   // Word mode's server-stamped clock (#202); absent on a sentence round.
   startedAt?: string;
+  // When the end-of-run log was RECORDED — the submission's own marker, never the log's
+  // length (roundStore.ts: a 0-claim run records an empty log).
+  submittedAt?: string;
 }
 
 // Process-local store for `pnpm backend:dev`: the same RoundStore contract as DynamoDB —
@@ -31,8 +34,10 @@ export function memoryRoundStore(): RoundStore {
     guesses: [...item.guesses],
     createdAt: item.createdAt,
     // ABSENT rather than empty when unstamped, the Dynamo store's rule: the submit's "is
-    // there a run to end?" test reads exactly this.
+    // there a run to end?" test reads exactly this, and `submittedAt` is what says the run
+    // was recorded.
     ...(item.startedAt === undefined ? {} : { startedAt: item.startedAt }),
+    ...(item.submittedAt === undefined ? {} : { submittedAt: item.submittedAt }),
   });
 
   // The state a caller may be TOLD about, which is only ever the state of the puzzle it
@@ -124,13 +129,17 @@ export function memoryRoundStore(): RoundStore {
       if (!stored || stored.startedAt === undefined) {
         return { outcome: 'not_started' as const, state: empty() };
       }
-      if (stored.guesses.length > 0) {
+      // `submittedAt`, never the log's length: a run that claimed nothing records an EMPTY
+      // log, and reading that back as "nothing recorded" would let a second submission
+      // overwrite it — first-write-wins broken for exactly the rounds with least to say.
+      if (stored.submittedAt !== undefined) {
         return { outcome: 'already_submitted' as const, state: stateOf(stored) };
       }
       if (input.now.getTime() - Date.parse(stored.startedAt) < input.minElapsedMs) {
         return { outcome: 'too_early' as const, state: stateOf(stored) };
       }
       stored.guesses = [...input.guesses];
+      stored.submittedAt = input.now.toISOString();
       return { outcome: 'submitted' as const, state: stateOf(stored) };
     },
   };

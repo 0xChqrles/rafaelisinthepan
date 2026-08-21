@@ -34,6 +34,13 @@ export interface RoundState {
   // for the one attribute a DynamoDB CONDITION compares arithmetically, and this one is
   // compared in the handler, after a read it has to do anyway.
   startedAt?: string;
+  // When the word round's end-of-run log was RECORDED (#202). It is the submission's own
+  // marker, and it has to be: a run that claimed nothing submits an EMPTY log, which is
+  // indistinguishable from an unsubmitted one by the log alone. Inferring it from
+  // `guesses.length` let a second submission overwrite a recorded empty run, made a retry
+  // of one classify as `not_started` — a client VERDICT, so the conversation closed — and
+  // left a mount read unable to see that the day was already recorded.
+  submittedAt?: string;
 }
 
 // What one append did:

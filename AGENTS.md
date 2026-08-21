@@ -585,6 +585,20 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   it costs is one honest case: a run that claimed NOTHING and whose tab died before the
   deadline records no log. There is no way to price a joiner's clock correctly, so the
   answer is that it does not write, not that its clock is right.
+  **Which is why the START answers `resumed`.** PLAY is on screen for as long as the mount
+  read is in flight, so a joiner can tap it and be handed the running clock — and treating
+  every accepted start as "this session runs it" would hand that joiner writer authority
+  over a run it cannot see. Only a call that actually STAMPED the clock makes a session the
+  runner, and the server is the only side that knows which happened. (A start whose ANSWER
+  was lost and is re-sent comes back `resumed`, so that session is not the runner either;
+  it still writes any run it plays, and only a 0-claim one is left unrecorded there.)
+- **The submission's marker is `submittedAt`, never the log's LENGTH.** A run that claimed
+  nothing records an EMPTY log, which by length alone is indistinguishable from an
+  unsubmitted round: a second submission overwrote it, a retry of it classified as
+  `not_started` — which the client treats as a verdict and closes on — and a mount read
+  could not see that the day was already recorded. Both stores key `already_submitted` on
+  the attribute, the write's own condition is `attribute_not_exists(#sub)`, a restart
+  REMOVEs it with the log, and the client marks the round submitted off it.
 - **Explicitly NOT done:** "starting an archive round replaces the active one" was
   considered as a flood defence and rejected — identities are free
   (`crypto.getRandomValues`, no registration), so one-active-round-per-player bounds

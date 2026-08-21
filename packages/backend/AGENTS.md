@@ -301,11 +301,22 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   one path here that READS A PUZZLE STORE (`getWordPuzzle`) — only the artifact can tell a
   claim from a miss, and both the claim ceiling (`wordScoreMaximum`, distinct ranks) and
   the wait check are priced from that count. The store reads once, consistently, then
-  writes under `#p = :puzzle AND attribute_exists(#started) AND attribute_not_exists(#g)`:
+  writes under `#p = :puzzle AND attribute_exists(#started) AND attribute_not_exists(#sub)`:
   the wait check is arithmetic (which DynamoDB's condition grammar has none of) and the
   caller has to be told WHICH bound refused it, but first-write-wins is still decided by
-  the write's own condition rather than by the read before it. `startedAt` is a STRING like
+  the write's own condition rather than by the read before it. `startedAt` and
+  `submittedAt` are STRINGS like
   `createdAt`, and no word path touches `lastWriteAt` (the streaming interval's attribute).
+  **Every command's `ExpressionAttributeNames` holds exactly the aliases ITS OWN
+  expressions name** — DynamoDB rejects an unused entry, and an undeclared alias, with a
+  ValidationException before anything is written, so one union map covering every attribute
+  the store knows about fails EVERY write in production while looking perfectly fine
+  against a mocked client (it shipped that way once). `dynamoRoundStore.test.ts` runs the
+  correspondence check on every command any test issues, in both directions and for values
+  too, so a new write path is covered by the tests that already exist.
+  **The START answers `resumed`** — false when THAT call stamped the clock, true when it
+  joined one already running — because the client cannot otherwise tell whether it is the
+  session running the round, and the root `AGENTS.md` records what turns on that.
   **Every answer, refusals included, carries the server's own `now`** — the client anchors
   `now − startedAt`, an elapsed span, which is what makes the visible clock immune to
   device-clock skew. `too_early`/`not_started` are 409s, an over-cap or unclaimable log is

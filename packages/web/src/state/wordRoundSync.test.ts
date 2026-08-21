@@ -71,7 +71,15 @@ const at = (ms: number) => new Date(SERVER_T0 + ms).toISOString();
 
 function answer(
   status: number,
-  body: { guesses?: string[]; startedAt?: string; nowAt?: number; error?: string },
+  body: {
+    guesses?: string[];
+    startedAt?: string;
+    submittedAt?: string;
+    nowAt?: number;
+    error?: string;
+    // Only a START says it, and only `false` means "this call stamped the clock".
+    resumed?: boolean;
+  },
 ) {
   const { nowAt = 0, ...rest } = body;
   return {
@@ -81,11 +89,16 @@ function answer(
       guesses: rest.guesses ?? [],
       createdAt: at(0),
       ...(rest.startedAt ? { startedAt: rest.startedAt } : {}),
+      ...(rest.submittedAt ? { submittedAt: rest.submittedAt } : {}),
       now: at(nowAt),
+      ...(rest.resumed === undefined ? {} : { resumed: rest.resumed }),
       ...(rest.error ? { error: rest.error, message: 'refused' } : {}),
     }),
   } as unknown as Response;
 }
+
+// A START that actually stamped the clock — what PLAY gets on a round nobody had begun.
+const stamped = (nowAt = 0) => answer(200, { startedAt: at(0), nowAt, resumed: false });
 
 function seedRound(extra: Record<string, unknown> = {}) {
   useGameStore.setState(
@@ -137,17 +150,25 @@ describe('wordTag', () => {
 });
 
 describe('anchorFrom — the run’s clock, translated', () => {
+  const state = (startedAt: string | null, nowAt: number) => ({
+    guesses: [],
+    createdAt: at(0),
+    startedAt,
+    submittedAt: null,
+    now: at(nowAt),
+    resumed: false,
+  });
+
   it('holds the ELAPSED span, so a device clock hours off still runs one minute', () => {
     // The server says 20s have passed. Whatever this device thinks the date is, the run
     // has 40 of its 60 seconds left.
-    const state = { guesses: [], createdAt: at(0), startedAt: at(0), now: at(20_000) };
-    expect(anchorFrom(state, T0)).toBe(T0 - 20_000);
+    expect(anchorFrom(state(at(0), 20_000), T0)).toBe(T0 - 20_000);
     // Skewing the device clock by an hour moves the anchor with it, never the span.
-    expect(anchorFrom(state, T0 + 3_600_000)).toBe(T0 + 3_600_000 - 20_000);
+    expect(anchorFrom(state(at(0), 20_000), T0 + 3_600_000)).toBe(T0 + 3_600_000 - 20_000);
   });
 
   it('is null when no run has been started', () => {
-    expect(anchorFrom({ guesses: [], createdAt: at(0), startedAt: null, now: at(0) }, T0)).toBeNull();
+    expect(anchorFrom(state(null, 0), T0)).toBeNull();
   });
 });
 
@@ -171,7 +192,7 @@ describe('the round START', () => {
   it('asks for a challenge and anchors the clock the SERVER stamped', async () => {
     seedRound();
     const started = startWordRound(ctx());
-    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 0 }));
+    post.mockResolvedValueOnce(stamped());
     await expect(started).resolves.toBe(true);
 
     expect(bodyOf(0)).toMatchObject({ puzzle: wordTag(WORD), turnstileToken: 'token' });
@@ -182,15 +203,37 @@ describe('the round START', () => {
 
   it('RESUMES a run already in progress — the daily is one-shot across devices', async () => {
     seedRound();
-    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 20_000 }));
+    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 20_000, resumed: true }));
     await startWordRound(ctx());
     // 20 seconds gone on the server's clock: this device joins with 40 left, not 60.
     expect(round()).toMatchObject({ startedAt: T0 - 20_000, deadline: T0 - 20_000 + runMs(0) });
   });
 
+  // PLAY is on screen for as long as the mount read is in flight, so a JOINER can tap it
+  // and be handed the clock somebody else's run is being played on. Marking every accepted
+  // START as "this session runs it" would hand that joiner writer authority, and its short
+  // clock then buries the real run under an empty log at the base deadline. Only a call
+  // that actually STAMPED the clock is the runner, and the answer says which.
+  it('resuming somebody else’s clock does NOT make this session the runner', async () => {
+    seedRound();
+    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 20_000, resumed: true }));
+    await expect(startWordRound(ctx())).resolves.toBe(true);
+    expect(startedRunHere(KEY)).toBe(false);
+
+    // Its clock dies at the base deadline while the real run is still going — and all it
+    // ever does is read.
+    vi.setSystemTime(T0 + runMs(0));
+    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 60_000 }));
+    beginWordRoundSync(ctx(), true);
+    await settle(120_000);
+    expect(post).toHaveBeenCalledTimes(2); // the start it resumed, then the read
+    expect(bodyOf(1).guesses).toBeUndefined();
+    expect(round().submitted).toBeUndefined();
+  });
+
   it('is ONE challenge and ONE write however many times PLAY is tapped', async () => {
     seedRound();
-    post.mockResolvedValue(answer(200, { startedAt: at(0) }));
+    post.mockResolvedValue(stamped());
     const both = await Promise.all([startWordRound(ctx()), startWordRound(ctx())]);
     expect(both).toEqual([true, true]);
     expect(challenge).toHaveBeenCalledTimes(1);
@@ -204,7 +247,7 @@ describe('the round START', () => {
     expect(round()).toMatchObject({ startedAt: null, deadline: null });
 
     // …and a later tap can still succeed: nothing is latched by the failure.
-    post.mockResolvedValueOnce(answer(200, { startedAt: at(0) }));
+    post.mockResolvedValueOnce(stamped());
     await expect(startWordRound(ctx())).resolves.toBe(true);
     expect(round().startedAt).toBe(T0);
   });
@@ -230,7 +273,12 @@ describe('the mount READ', () => {
   it('carries a finished day’s RECORDED run to a device that never played it', async () => {
     seedRound();
     post.mockResolvedValueOnce(
-      answer(200, { startedAt: at(0), nowAt: 300_000, guesses: ['mer', 'loin'] }),
+      answer(200, {
+        startedAt: at(0),
+        submittedAt: at(200_000),
+        nowAt: 300_000,
+        guesses: ['mer', 'loin'],
+      }),
     );
     beginWordRoundSync(ctx(), false);
     await settle();
@@ -244,6 +292,20 @@ describe('the mount READ', () => {
 
     beginWordRoundSync(ctx(), true);
     await settle(60_000);
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  // The marker is `submittedAt`, never the log's LENGTH: a run that claimed nothing is
+  // recorded as an EMPTY log, which reads exactly like an unsubmitted one. Keyed on the
+  // length, such a day would look unrecorded on every visit forever.
+  it('recognises a recorded 0-claim run, whose log is empty', async () => {
+    seedRound();
+    post.mockResolvedValueOnce(
+      answer(200, { startedAt: at(0), submittedAt: at(90_000), nowAt: 300_000 }),
+    );
+    beginWordRoundSync(ctx(), true);
+    await settle(120_000);
+    expect(round().submitted).toBe(true);
     expect(post).toHaveBeenCalledTimes(1);
   });
 
@@ -399,7 +461,7 @@ describe('the end-of-run SUBMISSION', () => {
 
   it('…but the session that STARTED the run may report an empty one', async () => {
     seedRound();
-    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 0 }));
+    post.mockResolvedValueOnce(stamped());
     await startWordRound(ctx()); // PLAY was tapped HERE
     expect(startedRunHere(KEY)).toBe(true);
 

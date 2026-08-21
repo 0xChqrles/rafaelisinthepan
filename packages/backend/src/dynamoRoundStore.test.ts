@@ -47,6 +47,41 @@ const CONDITION_FUNCTIONS = [
   'size',
 ];
 
+// DynamoDB rejects an ExpressionAttributeNames entry that no expression references ("Value
+// provided in ExpressionAttributeNames unused in expressions: keys: {#x}") and an alias no
+// entry declares, and does the same for VALUES. A mocked client validates neither, so a
+// command carrying a union map of every attribute the store knows about looks perfectly
+// fine here and fails EVERY write in production. `checkedClient` below runs this on every
+// command any test in this file issues, so a new write path is covered by existing.
+function expectAliasesMatch(command: UpdateItemCommand): void {
+  const { UpdateExpression = '', ConditionExpression = '' } = command.input;
+  const source = `${UpdateExpression} ${ConditionExpression}`;
+  const check = (pattern: RegExp, declared: object | undefined, what: string) => {
+    const used = new Set(source.match(pattern) ?? []);
+    const keys = new Set(Object.keys(declared ?? {}));
+    expect([...keys].filter((k) => !used.has(k)), `${what} declared but unused`).toEqual([]);
+    expect([...used].filter((k) => !keys.has(k)), `${what} used but undeclared`).toEqual([]);
+  };
+  check(/#[A-Za-z0-9_]+/g, command.input.ExpressionAttributeNames, 'name');
+  check(/:[A-Za-z0-9_]+/g, command.input.ExpressionAttributeValues, 'value');
+}
+
+// Every store in this suite is built over this, so no write escapes the checks above.
+function checkedClient(send: (command: unknown) => Promise<unknown>) {
+  return vi.fn(async (command: unknown) => {
+    if (command instanceof UpdateItemCommand) expectAliasesMatch(command);
+    return send(command);
+  });
+}
+
+function makeStore(send: (command: unknown) => Promise<unknown>) {
+  const checked = checkedClient(send);
+  return {
+    store: dynamoRoundStore({ send: checked } as unknown as DynamoDBClient, 'scores'),
+    send: checked,
+  };
+}
+
 function expectConditionSyntax(expression: string | undefined): void {
   expect(expression).toBeTruthy();
   const source = expression!;
@@ -101,7 +136,7 @@ describe('dynamoRoundStore (#201)', () => {
       expect(command).toBeInstanceOf(GetItemCommand);
       return { Item: storedItem(['bois', 'foret'], 1) };
     });
-    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+    const { store } = makeStore(send);
 
     await expect(store.get(KEY, PUBLIC_ID, PUZZLE)).resolves.toEqual({
       guesses: ['bois', 'foret'],
@@ -119,7 +154,7 @@ describe('dynamoRoundStore (#201)', () => {
 
   it('reports a round the server holds nothing for as null', async () => {
     const send = vi.fn(async (_command: unknown) => ({}));
-    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+    const { store } = makeStore(send);
     await expect(store.get(KEY, PUBLIC_ID, PUZZLE)).resolves.toBeNull();
   });
 
@@ -127,7 +162,7 @@ describe('dynamoRoundStore (#201)', () => {
     const send = vi.fn(async (_command: unknown) => ({
       Item: storedItem(['bois'], 1, 'deadbeef'),
     }));
-    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+    const { store } = makeStore(send);
     // The old sentence's log must never come back as this puzzle's history: the client
     // reset its local round on exactly this change, and a merge would undo that for good.
     await expect(store.get(KEY, PUBLIC_ID, PUZZLE)).resolves.toBeNull();
@@ -137,7 +172,7 @@ describe('dynamoRoundStore (#201)', () => {
     const send = vi.fn(async (command: unknown) => ({
       Attributes: firstWriteResult(command as UpdateItemCommand),
     }));
-    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+    const { store } = makeStore(send);
 
     const result = await store.append({
       ...KEY,
@@ -186,7 +221,7 @@ describe('dynamoRoundStore (#201)', () => {
     const send = vi.fn(async (command: unknown) => ({
       Attributes: firstWriteResult(command as UpdateItemCommand),
     }));
-    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+    const { store } = makeStore(send);
     await store.append({
       ...KEY,
       publicId: PUBLIC_ID,
@@ -202,7 +237,7 @@ describe('dynamoRoundStore (#201)', () => {
 
   it('refuses a batch too large for an EMPTY log without writing', async () => {
     const send = vi.fn(async (_command: unknown) => ({}));
-    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+    const { store } = makeStore(send);
     const refused = await store.append({
       ...KEY,
       publicId: PUBLIC_ID,
@@ -219,7 +254,7 @@ describe('dynamoRoundStore (#201)', () => {
   it('classifies a refused append by reading the stored log once', async () => {
     const existing = storedItem(Array.from({ length: ROUND_GUESS_CAP }, () => 'a'), 1);
     const send = refuseOnce(existing);
-    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+    const { store } = makeStore(send);
 
     const refused = await store.append({
       ...KEY,
@@ -236,7 +271,7 @@ describe('dynamoRoundStore (#201)', () => {
 
   it('answers too_fast when the stored log has room but the interval has not', async () => {
     const send = refuseOnce(storedItem(['bois'], NOW.getTime() - 100));
-    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+    const { store } = makeStore(send);
 
     const refused = await store.append({
       ...KEY,
@@ -251,7 +286,7 @@ describe('dynamoRoundStore (#201)', () => {
 
   it('REPLACES a retired puzzle\'s log instead of growing it', async () => {
     const send = refuseOnce(storedItem(['ancien'], 1, 'deadbeef'));
-    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+    const { store } = makeStore(send);
 
     const result = await store.append({
       ...KEY,
@@ -275,7 +310,7 @@ describe('dynamoRoundStore (#201)', () => {
 
   it('refuses a retired-puzzle restart inside the interval WITHOUT handing its log back', async () => {
     const send = refuseOnce(storedItem(['ancien'], NOW.getTime() - 100, 'deadbeef'));
-    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+    const { store } = makeStore(send);
 
     const refused = await store.append({
       ...KEY,
@@ -311,7 +346,7 @@ describe('dynamoRoundStore (#201)', () => {
       reads += 1;
       return { Item: reads === 1 ? retired : restarted };
     });
-    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+    const { store } = makeStore(send);
 
     const refused = await store.append({
       ...KEY,
@@ -332,7 +367,7 @@ describe('dynamoRoundStore (#201)', () => {
       }
       return {};
     });
-    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+    const { store } = makeStore(send);
     await expect(
       store.append({
         ...KEY,
@@ -353,13 +388,15 @@ describe('dynamoRoundStore — word mode (#202)', () => {
   const WORD_KEY = { date: '2026-08-21', lang: 'fr', mode: 'word' } as const;
   const START_INPUT = { ...WORD_KEY, publicId: PUBLIC_ID, puzzle: PUZZLE, now: NOW };
 
+  // A submitted round carries BOTH its log and `submittedAt`: the marker is the attribute,
+  // never the log's length, or a recorded 0-claim run reads as unsubmitted.
   function startedItem(
     startedAt: string,
     guesses?: string[],
     puzzle: string = PUZZLE,
   ): Record<string, AttributeValue> {
     return {
-      ...(guesses ? { guesses: { L: guesses.map((g) => ({ S: g })) } } : {}),
+      ...(guesses ? { guesses: { L: guesses.map((g) => ({ S: g })) }, submittedAt: { S: startedAt } } : {}),
       puzzle: { S: puzzle },
       createdAt: { S: startedAt },
       startedAt: { S: startedAt },
@@ -370,7 +407,7 @@ describe('dynamoRoundStore — word mode (#202)', () => {
     const send = vi.fn(async (_command: unknown) => ({
       Attributes: startedItem(NOW.toISOString()),
     }));
-    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+    const { store } = makeStore(send);
 
     const result = await store.start(START_INPUT);
     expect(result.outcome).toBe('started');
@@ -394,7 +431,7 @@ describe('dynamoRoundStore — word mode (#202)', () => {
   it('resumes the ORIGINAL clock when this word is already running', async () => {
     const stamped = '2026-08-21T13:59:00.000Z';
     const send = refuseOnce(startedItem(stamped));
-    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+    const { store } = makeStore(send);
 
     const result = await store.start(START_INPUT);
     // The daily is one-shot: a double tap, a retry and a second device all get the one
@@ -411,7 +448,7 @@ describe('dynamoRoundStore — word mode (#202)', () => {
       }
       return { Item: startedItem(stamped) };
     });
-    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+    const { store } = makeStore(send);
 
     const result = await store.submit({
       ...WORD_KEY,
@@ -428,7 +465,7 @@ describe('dynamoRoundStore — word mode (#202)', () => {
     expectConditionSyntax(write.input.ConditionExpression);
     // Still this word's, still started, still unsubmitted — first-write-wins is decided by
     // the STORE, not by the read that preceded it.
-    expect(write.input.ConditionExpression).toContain('attribute_not_exists(#g)');
+    expect(write.input.ConditionExpression).toContain('attribute_not_exists(#sub)');
     expect(write.input.ConditionExpression).toContain('attribute_exists(#started)');
     expect(write.input.ConditionExpression).toContain('#p = :puzzle');
   });
@@ -436,7 +473,7 @@ describe('dynamoRoundStore — word mode (#202)', () => {
   it('refuses a submission that arrives before the run can be over — and writes nothing', async () => {
     const stamped = new Date(NOW.getTime() - 10_000).toISOString();
     const send = vi.fn(async (_command: unknown) => ({ Item: startedItem(stamped) }));
-    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+    const { store } = makeStore(send);
 
     const refused = await store.submit({
       ...WORD_KEY,
@@ -453,7 +490,7 @@ describe('dynamoRoundStore — word mode (#202)', () => {
 
   it('refuses a submission for a run nobody started here', async () => {
     const send = vi.fn(async (_command: unknown) => ({}));
-    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+    const { store } = makeStore(send);
     await expect(
       store.submit({
         ...WORD_KEY,
@@ -471,7 +508,7 @@ describe('dynamoRoundStore — word mode (#202)', () => {
     const send = vi.fn(async (_command: unknown) => ({
       Item: startedItem(stamped, ['mer']),
     }));
-    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+    const { store } = makeStore(send);
 
     const again = await store.submit({
       ...WORD_KEY,
@@ -489,7 +526,7 @@ describe('dynamoRoundStore — word mode (#202)', () => {
     const send = vi.fn(async (_command: unknown) => ({
       Item: startedItem('2026-08-21T13:00:00.000Z', ['ancien'], 'deadbeef'),
     }));
-    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+    const { store } = makeStore(send);
     const refused = await store.submit({
       ...WORD_KEY,
       publicId: PUBLIC_ID,
@@ -503,5 +540,62 @@ describe('dynamoRoundStore — word mode (#202)', () => {
     expect(refused.outcome).toBe('not_started');
     expect(refused.state.guesses).toEqual([]);
     expect(refused.state.startedAt).toBeUndefined();
+  });
+});
+
+// CONTRACT (#202): the submission's marker is `submittedAt`, never the LOG'S LENGTH. A run
+// that claimed nothing records an EMPTY log, which by length alone is indistinguishable
+// from an unsubmitted round — so a second submission overwrote it, a retry of it
+// classified as `not_started` (a VERDICT the client closes on), and a mount read could not
+// tell the day was already recorded.
+describe('a recorded 0-claim run (#202)', () => {
+  const WORD_KEY = { date: '2026-08-21', lang: 'fr', mode: 'word' } as const;
+  const STAMP = '2026-08-21T13:00:00.000Z';
+  const submitInput = (guesses: string[]) => ({
+    ...WORD_KEY,
+    publicId: PUBLIC_ID,
+    puzzle: PUZZLE,
+    guesses,
+    minElapsedMs: 60_000,
+    now: NOW,
+  });
+
+  function item(extra: Record<string, AttributeValue> = {}): Record<string, AttributeValue> {
+    return {
+      puzzle: { S: PUZZLE },
+      createdAt: { S: STAMP },
+      startedAt: { S: STAMP },
+      ...extra,
+    };
+  }
+
+  it('is marked by an attribute, so the write records one', async () => {
+    const send = vi.fn(async (command: unknown) => {
+      if (command instanceof UpdateItemCommand) {
+        return { Attributes: item({ guesses: { L: [] }, submittedAt: { S: NOW.toISOString() } }) };
+      }
+      return { Item: item() };
+    });
+    const { store } = makeStore(send);
+    const first = await store.submit(submitInput([]));
+    expect(first.outcome).toBe('submitted');
+    expect(first.state.guesses).toEqual([]);
+    expect(first.state.submittedAt).toBe(NOW.toISOString());
+  });
+
+  it('cannot be overwritten by a later submission, and is not mistaken for "never started"', async () => {
+    // What stands is an EMPTY recorded run.
+    const send = vi.fn(async (_command: unknown) => ({
+      Item: item({ guesses: { L: [] }, submittedAt: { S: STAMP } }),
+    }));
+    const { store, send: checked } = makeStore(send);
+
+    const again = await store.submit(submitInput(['mer']));
+    // Answered with what was recorded — not overwritten, and NOT `not_started`, which the
+    // client treats as a verdict and closes the conversation on.
+    expect(again.outcome).toBe('already_submitted');
+    expect(again.state.guesses).toEqual([]);
+    // Refused before the store was touched at all.
+    expect(checked.mock.calls.every(([c]) => !(c instanceof UpdateItemCommand))).toBe(true);
   });
 });
