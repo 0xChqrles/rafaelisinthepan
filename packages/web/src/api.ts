@@ -233,14 +233,16 @@ export async function postScoreBody(
   return postSignedJson(url, body);
 }
 
-// The #201 round route: the server-authoritative guess log of one player's play on one
+// The round route (#201/#202): the server-authoritative state of one player's play on one
 // daily, one item per (date, lang, mode, publicId). POST-only like /friends —
-// `{secret, puzzle}` reads the stored round (404 = none yet), `{secret, puzzle, guesses}`
-// appends to it — and EVERY answer, the two refusals included, carries the full state, so
-// a write is also a reconciliation. `puzzle` is the opaque tag naming WHICH puzzle the log
-// belongs to (state/roundSync.ts `puzzleTag`), which is how a re-published daily restarts
-// the log instead of inheriting the retired sentence's. The three query parameters are in
-// the round CloudFront behavior's allowList (the root AGENTS.md three-package contract).
+// `{secret, puzzle}` reads the stored round (404 = none yet); SENTENCE mode streams into it
+// with `{secret, puzzle, guesses}`, while WORD mode writes twice, `{secret, puzzle,
+// turnstileToken}` to START its server-stamped clock and one `{secret, puzzle, guesses}`
+// carrying the whole log at the end. EVERY answer, refusals included, carries the full
+// state, so a write is also a reconciliation. `puzzle` is the opaque tag naming WHICH
+// puzzle the state belongs to (state/roundSync.ts `puzzleTag`), which is how a re-published
+// daily restarts it instead of inheriting the retired one's. The three query parameters are
+// in the round CloudFront behavior's allowList (the root AGENTS.md three-package contract).
 export function roundUrl(lang: string, date: string, mode: Mode, base: string = apiBase()): string {
   return `${requireApiBase(base)}/round?lang=${encodeURIComponent(lang)}&date=${encodeURIComponent(
     date,
@@ -249,7 +251,7 @@ export function roundUrl(lang: string, date: string, mode: Mode, base: string = 
 
 export async function postRoundBody(
   url: string,
-  body: { secret: string; puzzle: string; guesses?: string[] },
+  body: { secret: string; puzzle: string; guesses?: string[]; turnstileToken?: string },
 ): Promise<Response> {
   return postSignedJson(url, body);
 }
@@ -257,19 +259,39 @@ export async function postRoundBody(
 export interface RoundState {
   guesses: string[];
   createdAt: string;
+  // Word mode's SERVER-stamped clock (#202); null on a sentence round and on a word round
+  // nobody has started.
+  startedAt: string | null;
+  // The server's own clock at the moment it answered. A client anchors a run's countdown
+  // to `now - startedAt` — an ELAPSED span, which both ends agree on — rather than to the
+  // instant itself, which a skewed device clock would misread.
+  now: string;
 }
 
 // Runtime shape check for the round response — the parsePuzzle contract: a wrong-shaped
 // body surfaces as a sync failure (silent by design), never as garbage entering the
-// round's try log.
+// round's try log. The two instants are checked as PARSEABLE, not merely as strings:
+// they feed the deadline arithmetic, where a NaN ends a run instantly or never.
+function requireInstant(value: unknown, field: string): string {
+  if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) {
+    throw new Error(`malformed round: bad "${field}"`);
+  }
+  return value;
+}
+
 export function parseRound(data: unknown): RoundState {
   if (!isRecord(data)) throw new Error('malformed round: not an object');
-  const { guesses, createdAt } = data;
+  const { guesses, createdAt, startedAt } = data;
   if (!Array.isArray(guesses) || !guesses.every((g) => typeof g === 'string')) {
     throw new Error('malformed round: "guesses" must be an array of strings');
   }
   if (typeof createdAt !== 'string') throw new Error('malformed round: bad "createdAt"');
-  return { guesses: guesses as string[], createdAt };
+  return {
+    guesses: guesses as string[],
+    createdAt,
+    startedAt: startedAt === undefined ? null : requireInstant(startedAt, 'startedAt'),
+    now: requireInstant(data.now, 'now'),
+  };
 }
 
 // The #188 player profile: GET reads the public row by publicId (what a board renders,

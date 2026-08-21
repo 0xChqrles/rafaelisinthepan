@@ -13,11 +13,13 @@ interface RoundItem {
   puzzle: string;
   createdAt: string;
   lastWriteAt: number;
+  // Word mode's server-stamped clock (#202); absent on a sentence round.
+  startedAt?: string;
 }
 
 // Process-local store for `pnpm backend:dev`: the same RoundStore contract as DynamoDB —
 // one append-or-refuse decision per write under both bounds, plus the puzzle-identity
-// restart — with no AWS account. Restarting the local server intentionally resets this lab
+// restart, plus Word mode's two writes (#202) — with no AWS account. Restarting the local server intentionally resets this lab
 // data. The bound constants are imported from @whippin/shared rather than parameterized, so
 // this implementation cannot drift from the production condition it mirrors.
 export function memoryRoundStore(): RoundStore {
@@ -28,6 +30,9 @@ export function memoryRoundStore(): RoundStore {
   const stateOf = (item: RoundItem): RoundState => ({
     guesses: [...item.guesses],
     createdAt: item.createdAt,
+    // ABSENT rather than empty when unstamped, the Dynamo store's rule: the submit's "is
+    // there a run to end?" test reads exactly this.
+    ...(item.startedAt === undefined ? {} : { startedAt: item.startedAt }),
   });
 
   // The state a caller may be TOLD about, which is only ever the state of the puzzle it
@@ -86,6 +91,47 @@ export function memoryRoundStore(): RoundStore {
       existing.guesses.push(...input.guesses);
       existing.lastWriteAt = nowMs;
       return { outcome: 'appended' as const, state: stateOf(existing) };
+    },
+
+    // Word mode's round START (#202): stamp the server clock, once per puzzle. A record
+    // naming a RETIRED word restarts — its log goes with its old clock — and one already
+    // stamped for THIS word keeps its original start, so a double tap, a retry and a second
+    // device all resume the one run.
+    async start(input) {
+      const id = itemKey(input, input.publicId);
+      const existing = rounds.get(id);
+      if (existing && existing.puzzle === input.puzzle && existing.startedAt !== undefined) {
+        return { outcome: 'running' as const, state: stateOf(existing) };
+      }
+      const stampedAt = input.now.toISOString();
+      const item: RoundItem = {
+        guesses: [],
+        puzzle: input.puzzle,
+        createdAt: stampedAt,
+        // Word paths leave the streaming interval alone (roundStore.ts).
+        lastWriteAt: existing?.lastWriteAt ?? 0,
+        startedAt: stampedAt,
+      };
+      rounds.set(id, item);
+      return { outcome: 'started' as const, state: stateOf(item) };
+    },
+
+    // Word mode's end-of-run SUBMIT (#202): the whole log, first write wins, never before
+    // the run's own floor.
+    async submit(input) {
+      const existing = rounds.get(itemKey(input, input.publicId));
+      const stored = existing && existing.puzzle === input.puzzle ? existing : undefined;
+      if (!stored || stored.startedAt === undefined) {
+        return { outcome: 'not_started' as const, state: empty() };
+      }
+      if (stored.guesses.length > 0) {
+        return { outcome: 'already_submitted' as const, state: stateOf(stored) };
+      }
+      if (input.now.getTime() - Date.parse(stored.startedAt) < input.minElapsedMs) {
+        return { outcome: 'too_early' as const, state: stateOf(stored) };
+      }
+      stored.guesses = [...input.guesses];
+      return { outcome: 'submitted' as const, state: stateOf(stored) };
     },
   };
 }

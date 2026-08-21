@@ -81,7 +81,13 @@ function ok(guesses: string[]) {
   return {
     ok: true,
     status: 200,
-    json: async () => ({ guesses, createdAt: '2026-08-21T09:00:00.000Z' }),
+    json: async () => ({
+      guesses,
+      createdAt: '2026-08-21T09:00:00.000Z',
+      // Every answer carries the server's own clock (#202); a sentence round has no
+      // startedAt to carry with it.
+      now: '2026-08-21T09:30:00.000Z',
+    }),
   } as unknown as Response;
 }
 
@@ -95,6 +101,7 @@ function refusal(status: number, guesses: string[]) {
       message: 'refused',
       guesses,
       createdAt: '2026-08-21T09:00:00.000Z',
+      now: '2026-08-21T09:30:00.000Z',
     }),
   } as unknown as Response;
 }

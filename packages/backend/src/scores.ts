@@ -1,7 +1,13 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto';
-import { isIP } from 'node:net';
-import { VIEWER_IP_HEADER, publicIdFromSecret, type ScoreHistogram } from '@whippin/shared';
-import { LIVE_HEADERS, readJsonObject, requireDayParams, requireSecret } from './liveRoute';
+import { publicIdFromSecret, type ScoreHistogram } from '@whippin/shared';
+import {
+  clientIp,
+  LIVE_HEADERS,
+  readJsonObject,
+  requireDayParams,
+  requireSecret,
+  requireTurnstileToken,
+} from './liveRoute';
 import { sentenceScoreMaximum, wordScoreMaximum } from './scoreLimits';
 import {
   SCORE_DEDUP_TTL_SECONDS,
@@ -12,8 +18,6 @@ import {
 import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respond';
 import type { PuzzleStore } from './store';
 import type { TurnstileVerifier } from './turnstile';
-
-const TURNSTILE_TOKEN_MAX_LENGTH = 2_048;
 
 export interface ScoreHandlerDeps {
   scoreStore: ScoreStore;
@@ -30,29 +34,6 @@ export interface ScoreHandlerDeps {
   // as a replay. Local serve sets this false and gets a fresh idempotency token per
   // request instead.
   singleUseTokens?: boolean;
-}
-
-function header(event: FnUrlEvent, name: string): string | undefined {
-  const wanted = name.toLowerCase();
-  for (const [key, value] of Object.entries(event.headers ?? {})) {
-    if (key.toLowerCase() === wanted) return value;
-  }
-  return undefined;
-}
-
-// The CDN's viewer-request function stamps CloudFront's own read of the TCP peer into
-// VIEWER_IP_HEADER, overwriting whatever the viewer sent under that name. It is trusted in
-// production because the Function URL is IAM-locked to that distribution, so a viewer
-// cannot reach this origin around CloudFront and hand it a header of their own; a
-// viewer-supplied X-Forwarded-For chain is deliberately read by nothing here. Local serve
-// has no CDN and supplies requestContext.http.sourceIp instead.
-export function clientIp(event: FnUrlEvent, allowSourceIp = false): string | null {
-  const viewer = header(event, VIEWER_IP_HEADER);
-  if (viewer && isIP(viewer)) return viewer;
-
-  if (!allowSourceIp) return null;
-  const source = event.requestContext?.http?.sourceIp;
-  return source && isIP(source) ? source : null;
 }
 
 export function hashClientIp(ip: string, secret: string): string {
@@ -113,14 +94,9 @@ export async function handleScores(
     const checked = requireSecret(body, responseHeaders);
     if (!checked.ok) return checked.response;
     secret = checked.value;
-    if (
-      typeof body.turnstileToken !== 'string' ||
-      body.turnstileToken.length === 0 ||
-      body.turnstileToken.length > TURNSTILE_TOKEN_MAX_LENGTH
-    ) {
-      return errorResponse(403, 'turnstile_rejected', 'Turnstile token is missing or invalid.', responseHeaders);
-    }
-    turnstileToken = body.turnstileToken;
+    const token = requireTurnstileToken(body, responseHeaders);
+    if (!token.ok) return token.response;
+    turnstileToken = token.value;
     remoteIp = clientIp(event, deps.allowSourceIp === true);
     if (!remoteIp) {
       throw new Error('Score submission has no trusted client IP address.');

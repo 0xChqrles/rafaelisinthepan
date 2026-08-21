@@ -16,7 +16,8 @@ import { createHandler, type HandlerDeps } from './handler';
 import { memoryScoreStore } from './memoryScoreStore';
 import { WORD_SCORE_ZONE } from './scoreLimits';
 import { SCORE_SUBMISSION_LIMIT } from './scoreStore';
-import { clientIp, derivedHistogram, hashClientIp } from './scores';
+import { derivedHistogram, hashClientIp } from './scores';
+import { clientIp } from './liveRoute';
 import type { FnUrlEvent } from './respond';
 import type { PuzzleStore } from './store';
 

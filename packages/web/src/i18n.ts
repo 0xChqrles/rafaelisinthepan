@@ -23,6 +23,10 @@ const STRINGS = {
   // The #189 invite link's write, loud for the same reason: it is the one thing that
   // click existed to do, so losing it silently would leave both players none the wiser.
   failedInvite: { en: 'FAILED TO ADD FRIEND', fr: "ÉCHEC DE L'AJOUT EN AMI" },
+  // Word mode's round start (#202), loud for that same reason and one more: the SERVER
+  // stamps the clock, so a failed start is a run that has not begun. Saying nothing would
+  // leave the player tapping PLAY at a gate that never opens.
+  failedStart: { en: 'FAILED TO START', fr: 'ÉCHEC DU DÉMARRAGE' },
   // The one refusal a player can act on, so it is the one refusal that speaks (#189). Asking
   // again cannot change it — a full list is a state, not a hiccup — so this reads as a fact
   // and its button plays rather than retries. Neutral about WHOSE list: the cap binds either

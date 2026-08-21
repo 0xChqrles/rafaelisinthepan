@@ -52,7 +52,12 @@ const handler = createHandler({
   },
   profiles: memoryProfileStore(),
   friends: memoryFriendStore(),
-  rounds: memoryRoundStore(),
+  rounds: {
+    roundStore: memoryRoundStore(),
+    // Word mode's round start (#202) is gated by the same accept-all local verifier.
+    turnstile: localTurnstileVerifier,
+    allowSourceIp: true,
+  },
 });
 
 // Adapt a Node http request into the minimal Lambda Function URL event the handler reads.

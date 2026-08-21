@@ -2,6 +2,44 @@
 // A client/server drift here would either reject a real score or admit an impossible one.
 export const WORD_CLAIM_ZONE = 1_000;
 
+// ---- Word mode's ECONOMY, cross-package since #202 -------------------------------------
+//
+// The clock is the web's tuning knob (game/wordGame.ts owns the rarity ladder), but two of
+// its numbers became a client/server contract when the server started stamping the round's
+// start and refusing an end-of-run submission that arrives before the run could possibly
+// have finished. The wait check is EXACTLY the game's own floor — a run with N claims lasts
+// at least `WORD_START_SECONDS + WORD_MIN_BONUS_SECONDS * N` seconds, because Word mode has
+// no early finish and every claim buys at least the COMMON rung — so it can never block
+// honest play, and it needs no tuning of its own as the ladder moves.
+//
+// `WORD_MIN_BONUS_SECONDS` is the LADDER'S FLOOR, not a second opinion about it: the ladder
+// authors its cheapest rung from this constant and `wordGame.test.ts` pins that no rung pays
+// less. Retuning the economy therefore moves this file and deploys the backend with it —
+// exactly like WORD_CLAIM_ZONE, and for the same reason.
+export const WORD_START_SECONDS = 60;
+export const WORD_MIN_BONUS_SECONDS = 4;
+
+// How many MISSES one word round may store (#202). Claims are bounded by the field itself
+// (at most `WORD_CLAIM_ZONE` groups exist to claim); everything else a run typed is bounded
+// here, which is what keeps a stored round's item small — the two together are ~40 KB of
+// slugs. The client truncates its own log to them; the server refuses an over-cap one,
+// since a malicious client will not truncate.
+export const WORD_MISS_CAP = 500;
+
+// The wall-clock LENGTH of a word run whose claims bought `bonusSeconds`. The deadline is
+// `startedAt + wordRunMs(bonus)`, recomputed from the whole log on every write, so the clock
+// can never drift away from the guesses that bought it.
+export function wordRunMs(bonusSeconds: number): number {
+  return (WORD_START_SECONDS + bonusSeconds) * 1000;
+}
+
+// The SHORTEST a run that claimed `claims` groups can possibly have lasted — the server's
+// end-of-run wait check, derived from the run length above rather than restated, so the
+// bound cannot drift from the game it bounds.
+export function wordRunFloorMs(claims: number): number {
+  return wordRunMs(WORD_MIN_BONUS_SECONDS * claims);
+}
+
 // The guess-log sync's two bounds (#201). The server owns each round's ordered try log —
 // one item per (date, lang, mode, publicId) — and both numbers are cross-package: the cap
 // is enforced inside the append write's own condition (no batch may push the stored log

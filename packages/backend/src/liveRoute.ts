@@ -1,10 +1,12 @@
-// Shared plumbing of the LIVE routes (/scores, /profile, /friends, /board): the
-// no-store header, the JSON-body reader with its size cap, the #187 secret check, and
-// the (lang, mode, date) query guard triple the day-addressed reads share. Each of
-// these existed as a byte-identical copy per route (four by the time /board landed) —
-// one spelling here is what keeps a guard from quietly drifting between routes.
+// Shared plumbing of the LIVE routes (/scores, /profile, /friends, /board, /round): the
+// no-store header, the JSON-body reader with its size cap, the #187 secret check, the
+// Turnstile token check the gated writes share, and the (lang, mode, date) query guard
+// triple the day-addressed reads share. Each of these existed as a byte-identical copy
+// per route (four by the time /board landed) — one spelling here is what keeps a guard
+// from quietly drifting between routes.
 
-import { dayNumber, isValidSecret, VOCAB_BUILDS } from '@whippin/shared';
+import { isIP } from 'node:net';
+import { dayNumber, isValidSecret, VIEWER_IP_HEADER, VOCAB_BUILDS } from '@whippin/shared';
 import { isValidDate } from './layout';
 import type { ScoreMode } from './scoreLimits';
 import { errorResponse, type FnUrlEvent, type FnUrlResult } from './respond';
@@ -84,6 +86,58 @@ export function requireSecret(
     );
   }
   return { ok: true, value: body.secret };
+}
+
+function header(event: FnUrlEvent, name: string): string | undefined {
+  const wanted = name.toLowerCase();
+  for (const [key, value] of Object.entries(event.headers ?? {})) {
+    if (key.toLowerCase() === wanted) return value;
+  }
+  return undefined;
+}
+
+// The CDN's viewer-request function stamps CloudFront's own read of the TCP peer into
+// VIEWER_IP_HEADER, overwriting whatever the viewer sent under that name. It is trusted in
+// production because the Function URL is IAM-locked to that distribution, so a viewer
+// cannot reach this origin around CloudFront and hand it a header of their own; a
+// viewer-supplied X-Forwarded-For chain is deliberately read by nothing here. Local serve
+// has no CDN and supplies requestContext.http.sourceIp instead.
+//
+// It lives HERE, with the other live plumbing, because the Turnstile-gated writes both need
+// it: /scores hashes it for the IP dedup, and #202's word round start hands it to
+// Siteverify. A second route reaching into /scores for it would make that file a utility
+// module for routes it knows nothing about.
+export function clientIp(event: FnUrlEvent, allowSourceIp = false): string | null {
+  const viewer = header(event, VIEWER_IP_HEADER);
+  if (viewer && isIP(viewer)) return viewer;
+
+  if (!allowSourceIp) return null;
+  const source = event.requestContext?.http?.sourceIp;
+  return source && isIP(source) ? source : null;
+}
+
+// Cloudflare tokens run well under this; the bound only exists so a hostile body cannot
+// hand Siteverify a megabyte.
+export const TURNSTILE_TOKEN_MAX_LENGTH = 2_048;
+
+// The Turnstile-gated writes' shared token check (/scores' submission, #202's word round
+// start). A missing or implausible token is refused as the authentication failure it is,
+// before any network call is made.
+export function requireTurnstileToken(
+  body: Record<string, unknown>,
+  headers: Record<string, string>,
+): Guarded<string> {
+  const token = body.turnstileToken;
+  if (
+    typeof token !== 'string' ||
+    token.length === 0 ||
+    token.length > TURNSTILE_TOKEN_MAX_LENGTH
+  ) {
+    return refuse(
+      errorResponse(403, 'turnstile_rejected', 'Turnstile token is missing or invalid.', headers),
+    );
+  }
+  return { ok: true, value: token };
 }
 
 export interface DayParams {

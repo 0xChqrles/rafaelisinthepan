@@ -344,3 +344,164 @@ describe('dynamoRoundStore (#201)', () => {
     ).rejects.toThrow('ProvisionedThroughputExceeded');
   });
 });
+
+// CONTRACT (#202): Word mode's two writes land on the SAME item. START is one conditional
+// UpdateItem stamping `startedAt` — idempotent for this word, restarting for a retired one.
+// SUBMIT reads once (the wait check is arithmetic, which a condition cannot express, and
+// the caller has to be told WHICH bound refused it) and then writes first-write-wins.
+describe('dynamoRoundStore — word mode (#202)', () => {
+  const WORD_KEY = { date: '2026-08-21', lang: 'fr', mode: 'word' } as const;
+  const START_INPUT = { ...WORD_KEY, publicId: PUBLIC_ID, puzzle: PUZZLE, now: NOW };
+
+  function startedItem(
+    startedAt: string,
+    guesses?: string[],
+    puzzle: string = PUZZLE,
+  ): Record<string, AttributeValue> {
+    return {
+      ...(guesses ? { guesses: { L: guesses.map((g) => ({ S: g })) } } : {}),
+      puzzle: { S: puzzle },
+      createdAt: { S: startedAt },
+      startedAt: { S: startedAt },
+    };
+  }
+
+  it('stamps the clock in ONE conditional write, from the SERVER\'s own instant', async () => {
+    const send = vi.fn(async (_command: unknown) => ({
+      Attributes: startedItem(NOW.toISOString()),
+    }));
+    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+
+    const result = await store.start(START_INPUT);
+    expect(result.outcome).toBe('started');
+    // A STRING, like createdAt: the Number spelling is reserved for the one attribute a
+    // condition compares arithmetically.
+    expect(result.state.startedAt).toBe(NOW.toISOString());
+
+    const command = send.mock.calls[0][0] as UpdateItemCommand;
+    expect(command.input).toMatchObject({
+      Key: { pk: { S: `round#${PUBLIC_ID}` }, sk: { S: '2026-08-21#fr#word' } },
+      ReturnValues: 'ALL_NEW',
+    });
+    expectConditionSyntax(command.input.ConditionExpression);
+    // Fresh record OR a retired word's — and never this word's own running clock.
+    expect(command.input.ConditionExpression).toContain('attribute_not_exists(#started)');
+    expect(command.input.ConditionExpression).toContain('#p <> :puzzle');
+    // A restart takes the retired word's log with it.
+    expect(command.input.UpdateExpression).toContain('REMOVE #g');
+  });
+
+  it('resumes the ORIGINAL clock when this word is already running', async () => {
+    const stamped = '2026-08-21T13:59:00.000Z';
+    const send = refuseOnce(startedItem(stamped));
+    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+
+    const result = await store.start(START_INPUT);
+    // The daily is one-shot: a double tap, a retry and a second device all get the one
+    // start, never a fresh minute.
+    expect(result.outcome).toBe('running');
+    expect(result.state.startedAt).toBe(stamped);
+  });
+
+  it('records the whole log once the run could be over, first write wins', async () => {
+    const stamped = '2026-08-21T13:00:00.000Z';
+    const send = vi.fn(async (command: unknown) => {
+      if (command instanceof UpdateItemCommand) {
+        return { Attributes: startedItem(stamped, ['mer', 'loin']) };
+      }
+      return { Item: startedItem(stamped) };
+    });
+    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+
+    const result = await store.submit({
+      ...WORD_KEY,
+      publicId: PUBLIC_ID,
+      puzzle: PUZZLE,
+      guesses: ['mer', 'loin'],
+      minElapsedMs: 64_000,
+      now: NOW,
+    });
+    expect(result.outcome).toBe('submitted');
+    expect(result.state.guesses).toEqual(['mer', 'loin']);
+
+    const write = send.mock.calls.find(([c]) => c instanceof UpdateItemCommand)![0] as UpdateItemCommand;
+    expectConditionSyntax(write.input.ConditionExpression);
+    // Still this word's, still started, still unsubmitted — first-write-wins is decided by
+    // the STORE, not by the read that preceded it.
+    expect(write.input.ConditionExpression).toContain('attribute_not_exists(#g)');
+    expect(write.input.ConditionExpression).toContain('attribute_exists(#started)');
+    expect(write.input.ConditionExpression).toContain('#p = :puzzle');
+  });
+
+  it('refuses a submission that arrives before the run can be over — and writes nothing', async () => {
+    const stamped = new Date(NOW.getTime() - 10_000).toISOString();
+    const send = vi.fn(async (_command: unknown) => ({ Item: startedItem(stamped) }));
+    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+
+    const refused = await store.submit({
+      ...WORD_KEY,
+      publicId: PUBLIC_ID,
+      puzzle: PUZZLE,
+      guesses: ['mer'],
+      minElapsedMs: 64_000,
+      now: NOW,
+    });
+    expect(refused.outcome).toBe('too_early');
+    expect(refused.state.startedAt).toBe(stamped);
+    expect(send.mock.calls.every(([c]) => !(c instanceof UpdateItemCommand))).toBe(true);
+  });
+
+  it('refuses a submission for a run nobody started here', async () => {
+    const send = vi.fn(async (_command: unknown) => ({}));
+    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+    await expect(
+      store.submit({
+        ...WORD_KEY,
+        publicId: PUBLIC_ID,
+        puzzle: PUZZLE,
+        guesses: [],
+        minElapsedMs: 60_000,
+        now: NOW,
+      }),
+    ).resolves.toMatchObject({ outcome: 'not_started' });
+  });
+
+  it('answers a SECOND submission with the run that was recorded', async () => {
+    const stamped = '2026-08-21T13:00:00.000Z';
+    const send = vi.fn(async (_command: unknown) => ({
+      Item: startedItem(stamped, ['mer']),
+    }));
+    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+
+    const again = await store.submit({
+      ...WORD_KEY,
+      publicId: PUBLIC_ID,
+      puzzle: PUZZLE,
+      guesses: ['mer', 'ocean'],
+      minElapsedMs: 64_000,
+      now: NOW,
+    });
+    expect(again.outcome).toBe('already_submitted');
+    expect(again.state.guesses).toEqual(['mer']);
+  });
+
+  it('never hands back a RETIRED word\'s state', async () => {
+    const send = vi.fn(async (_command: unknown) => ({
+      Item: startedItem('2026-08-21T13:00:00.000Z', ['ancien'], 'deadbeef'),
+    }));
+    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+    const refused = await store.submit({
+      ...WORD_KEY,
+      publicId: PUBLIC_ID,
+      puzzle: PUZZLE,
+      guesses: ['mer'],
+      minElapsedMs: 64_000,
+      now: NOW,
+    });
+    // The record names a word this submission knows nothing about: there is no run of THIS
+    // one to end, and the retired one's log must not travel back to the client.
+    expect(refused.outcome).toBe('not_started');
+    expect(refused.state.guesses).toEqual([]);
+    expect(refused.state.startedAt).toBeUndefined();
+  });
+});

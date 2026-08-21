@@ -102,10 +102,17 @@ function capDayRounds(
   return out;
 }
 
-// One Word mode round (#156, retimed by #163). `tried` is the SOURCE OF TRUTH — the
-// counted guesses (folded, in order; free guesses never enter it), from which the whole
-// run replays (game/wordGame.ts replayWordRun) — and `startedAt` is the second one: the
-// wall-clock moment START was tapped.
+// One Word mode round (#156, retimed by #163, server-anchored by #202). `tried` is the
+// SOURCE OF TRUTH — the counted guesses (folded, in order; free guesses never enter it),
+// from which the whole run replays (game/wordGame.ts replayWordRun) — and `startedAt` is
+// the second one: when the run began.
+//
+// Since #202 that instant is the SERVER's, translated into this device's clock: the sync
+// engine reads `startedAt` and the server's own `now` off the round-start answer and
+// anchors `Date.now() - (now - startedAt)`. It holds an ELAPSED SPAN rather than an
+// instant, so a device whose clock is minutes off still runs a 60-second run — and the
+// request's own travel time lands INSIDE the run, which is what keeps an honest submission
+// clear of the server's end-of-run wait check.
 //
 // `deadline` is DERIVED from those two (startedAt + runMs of the log's claimed bonuses)
 // and recomputed on every write, so the clock can never drift away from the guesses that
@@ -122,8 +129,10 @@ function capDayRounds(
 // replaying a stale log against the new map.
 export interface WordRoundProgress {
   word: string;
-  // null until START is tapped: a fetched-but-unplayed day sits at the rules gate, and
-  // the clock has not begun.
+  // null until the SERVER has stamped this round's start (#202): a fetched-but-unplayed
+  // day sits at the rules gate, and the clock has not begun. PLAY asks the server and the
+  // visible clock starts when the answer lands — which is also what makes the daily
+  // one-shot across devices, since the start the second device resumes is the first one.
   startedAt: number | null;
   deadline: number | null;
   tried: string[];
@@ -131,6 +140,12 @@ export interface WordRoundProgress {
   // Same contract as RoundProgress.scoreRecorded (#170/#187): what the population holds
   // for the finished run's claim count, and the submit-once guard with it.
   scoreRecorded?: number;
+  // The server has ACKNOWLEDGED this round's end-of-run log (#202). Only an optimization:
+  // the submission is first-write-wins and safe to repeat, so an unacknowledged round
+  // simply asks again on its next visit. Without it, a run that claimed NOTHING would
+  // re-POST on every mount forever, since an empty stored log reads exactly like an
+  // unsubmitted one.
+  submitted?: boolean;
 }
 
 // What a REPLAY of a word round's log makes of it — the two numbers the store needs to
@@ -286,11 +301,25 @@ interface GameState extends PersistedState {
   // (day, lang) — starts fresh. Same retention/cap policy as ensureRound.
   ensureWordRound: (key: string, word: string) => void;
 
-  // START the active word round's clock (#163): stamp `startedAt` NOW and open the
-  // deadline at the full START_SECONDS. Idempotent — a round that has already started
-  // keeps its clock, so a re-render, a double tap or a rehydration can never restart a
-  // run (the daily is one-shot: no retry, no practice).
-  startWordRun: () => void;
+  // ANCHOR a word round's clock (#163, server-stamped since #202): the sync engine has an
+  // answer carrying the SERVER's `startedAt`, translated into this device's clock, and
+  // stamps it here — opening the deadline at the full START_SECONDS. Keyed rather than
+  // active-keyed, because the answer can land after navigation has moved on.
+  //
+  // Idempotent — a round already anchored keeps its clock, so a re-render, a double tap, a
+  // re-read and a rehydration can never restart or shift a run. That is the whole no-retry
+  // rule, and it lives here so no render path can reopen a finished day.
+  anchorWordRun: (key: string, startedAt: number) => void;
+
+  // Adopt the RECORDED run the server holds for this word round (#202) — a device that
+  // never played it picking up the day's history. Only ever into an EMPTY local log: a
+  // word round's deadline is DERIVED from its log, so adopting a longer one over a run
+  // this device actually played could move the clock, and a finished run must never
+  // re-open. Handed finished values like `adoptRound`, for the same reason.
+  adoptWordRun: (key: string, run: { tried: string[] } & WordRunCache) => void;
+
+  // The server has acknowledged this round's end-of-run log (#202).
+  markWordSubmitted: (key: string) => void;
 
   // Count one Word mode guess (a claim or a near/off-map miss — free guesses never reach
   // here) on the active word round: check the guess against the DEADLINE as of now,
@@ -394,6 +423,14 @@ function freshRound(initialHoles: RuntimeHole[]): RoundProgress {
 //     already using it. It is persisted only so a REFRESH does not end a visit to the
 //     board — App clears it on leaving one — so a stored 'global' is at most one
 //     interrupted visit old, never a preference to honour forever.
+//   v11 SERVER-ANCHORS the word rounds (#202): a run's `startedAt` is the server's stamp
+//     now, and a v10 word round's is a local `Date.now()` the server never saw. There is no
+//     honest way to invent the missing record — its end-of-run submission would be refused
+//     as `not_started`, and its clock is unauditable — so every one of them is DROPPED,
+//     exactly as v7 dropped the pre-clock strike runs (the standing no-back-compat rule).
+//     Sentence rounds, solved days, the streak and the mode preference are untouched; the
+//     cost is a device-local word history that predates the server's clock, which is
+//     pre-launch data.
 //   v10 retires `scoreSubmitted` (2026-08-20): a finished round now asks the population
 //     until the population HOLDS it, so `scoreRecorded` alone settles a round and the old
 //     flag has no reader. It is STRIPPED rather than left as unread cruft (the v1 keyboard
@@ -431,9 +468,11 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
       ? p.onboarded
       : Object.keys(rounds).length > 0 || lastLang != null;
   const solvedDays = p.solvedDays ?? {};
-  // Word rounds only survive from v7 on: before it they were strike runs, and a strike
-  // run cannot be re-read as a clock (see the v7 note above).
-  const wordRounds = version < 7 ? {} : dropRetiredScoreFlag(p.wordRounds ?? {});
+  // Word rounds only survive from v11 on: before v7 they were strike runs, and before v11
+  // their clock was a local stamp no server ever saw (see the notes above). They need no
+  // `scoreSubmitted` strip of their own — v10 stripped the blob that v11 then emptied, so
+  // a surviving word round provably never carried the flag.
+  const wordRounds = version < 11 ? {} : p.wordRounds ?? {};
   const lastMode = p.lastMode === 'word' || p.lastMode === 'sentence' ? p.lastMode : null;
   const sentenceRulesSeen = p.sentenceRulesSeen === true;
   const boardTab = p.boardTab === 'global' ? 'global' : 'friends';
@@ -554,22 +593,49 @@ export const useGameStore = create<GameState>()(
           return { activeWordKey: key, wordRounds: capWordRounds(kept, key) };
         }),
 
-      startWordRun: () =>
+      anchorWordRun: (key, startedAt) =>
         set((s) => {
-          const key = s.activeWordKey;
-          if (!key) return {};
           const round = s.wordRounds[key];
           // Already running (or already run out): the clock is stamped once and never
-          // re-stamped. This is the whole no-retry rule, and it lives here rather than in
-          // the screen so no render path can reopen a finished day.
+          // re-stamped — a re-read must not shift a run under the player.
           if (!round || round.startedAt !== null) return {};
-          const startedAt = Date.now();
+          // A round with no start has no log (a guess can only land while running), so the
+          // deadline opens at the bare START_SECONDS. On a device joining a run already in
+          // progress the anchor is already that far in the past, and the countdown resumes
+          // with the real time remaining.
           return {
             wordRounds: {
               ...s.wordRounds,
               [key]: { ...round, startedAt, deadline: startedAt + runMs(0) },
             },
           };
+        }),
+
+      adoptWordRun: (key, run) =>
+        set((s) => {
+          const round = s.wordRounds[key];
+          // Nothing to adopt INTO (the round was evicted or reset under this key), no
+          // clock to price the log against, or a log of this device's own — see the type
+          // above for why the last one is left alone.
+          if (!round || round.startedAt === null || round.tried.length > 0) return {};
+          return {
+            wordRounds: {
+              ...s.wordRounds,
+              [key]: {
+                ...round,
+                tried: run.tried,
+                claimed: run.claimed,
+                deadline: round.startedAt + runMs(run.bonus),
+              },
+            },
+          };
+        }),
+
+      markWordSubmitted: (key) =>
+        set((s) => {
+          const round = s.wordRounds[key];
+          if (!round || round.submitted) return {};
+          return { wordRounds: { ...s.wordRounds, [key]: { ...round, submitted: true } } };
         }),
 
       // Reads through `get()` rather than a `set` updater because it has to REPORT what it
@@ -731,7 +797,7 @@ export const useGameStore = create<GameState>()(
     {
       name: 'whippin-round',
       storage,
-      version: 10, // v10: the retired scoreSubmitted flag (see migratePersisted)
+      version: 11, // v11: word rounds are server-anchored (see migratePersisted)
       migrate: migratePersisted,
       // Persist rounds (both modes'), last language/mode, the onboarding flag and the
       // solved-day sets; the active keys and the actions are transient. Each language's

@@ -24,6 +24,9 @@ import {
 // condition reads the item once, consistently, to classify the refusal — the condition
 // cannot say which clause rejected it, and the caller owes the client the distinction (a
 // cap stops the round; a rate refusal only delays it; a retired puzzle restarts it).
+//
+// WORD mode's two writes (#202) land on the SAME item: `start` stamps `startedAt` (one
+// conditional UpdateItem, the append's shape) and `submit` records the whole log once.
 export function dynamoRoundStore(client: DynamoDBClient, tableName: string): RoundStore {
   const itemKey = (key: RoundKey, publicId: string) => ({
     pk: { S: roundPartition(publicId) },
@@ -49,6 +52,7 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
     '#p': 'puzzle',
     '#last': 'lastWriteAt',
     '#created': 'createdAt',
+    '#started': 'startedAt',
   };
 
   return {
@@ -164,6 +168,92 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
       }
       return { outcome: 'too_fast', state: stored };
     },
+
+    // WORD mode's first write (#202): stamp the round's start from THIS server's clock.
+    //
+    // One conditional UpdateItem does both branches the operation has. `attribute_not_exists
+    // (#started) OR #p <> :puzzle` passes for a record that does not exist (the first
+    // clause — a missing attribute makes the comparison in the second FALSE, never true),
+    // and for one naming a RETIRED word (the round restarts, so its log is REMOVEd with the
+    // old start). It fails for exactly the case that must not move: this puzzle's clock is
+    // already stamped, which the classification read below answers with.
+    async start(input) {
+      const stampedAt = input.now.toISOString();
+      try {
+        const response = await client.send(
+          new UpdateItemCommand({
+            TableName: tableName,
+            Key: itemKey(input, input.publicId),
+            UpdateExpression:
+              'SET #started = :now, #p = :puzzle, #created = :now REMOVE #g',
+            ConditionExpression: 'attribute_not_exists(#started) OR #p <> :puzzle',
+            ExpressionAttributeNames: names,
+            ExpressionAttributeValues: {
+              ':puzzle': { S: input.puzzle },
+              ':now': { S: stampedAt },
+            },
+            ReturnValues: 'ALL_NEW',
+          }),
+        );
+        return { outcome: 'started', state: itemToState(response.Attributes)! };
+      } catch (error) {
+        if ((error as { name?: string }).name !== 'ConditionalCheckFailedException') throw error;
+      }
+      // Already running: the ORIGINAL start stands, and the answer carries it so a second
+      // tap, a retry or a second device all resume the one clock. `stateForTag` is belt and
+      // braces — the condition only fails for this puzzle's own record.
+      return {
+        outcome: 'running',
+        state: stateForTag(await readItem(input, input.publicId), input.puzzle),
+      };
+    },
+
+    // WORD mode's second and last write (#202): the whole log, once.
+    //
+    // It reads BEFORE writing, unlike the streaming append, because the two refusals it owes
+    // the caller are not expressible as conditions: the wait check compares instants
+    // arithmetically (DynamoDB's condition grammar has none) and the caller has to be told
+    // WHICH bound refused it. Neither is racy — `startedAt` is stamped once and never moves,
+    // and the write itself still carries `attribute_not_exists(#g)`, so first-write-wins is
+    // decided by the store rather than by the read that preceded it.
+    async submit(input) {
+      const stored = stateForTag(await readItem(input, input.publicId), input.puzzle);
+      if (!stored.startedAt) return { outcome: 'not_started', state: empty() };
+      if (stored.guesses.length > 0) return { outcome: 'already_submitted', state: stored };
+      if (input.now.getTime() - Date.parse(stored.startedAt) < input.minElapsedMs) {
+        return { outcome: 'too_early', state: stored };
+      }
+
+      try {
+        const response = await client.send(
+          new UpdateItemCommand({
+            TableName: tableName,
+            Key: itemKey(input, input.publicId),
+            UpdateExpression: 'SET #g = :log',
+            // Path-only condition syntax, the append's rule: the record must still be this
+            // puzzle's, still started, and still unsubmitted.
+            ConditionExpression:
+              '#p = :puzzle AND attribute_exists(#started) AND attribute_not_exists(#g)',
+            ExpressionAttributeNames: names,
+            ExpressionAttributeValues: {
+              ':puzzle': { S: input.puzzle },
+              ':log': { L: input.guesses.map((guess) => ({ S: guess })) },
+            },
+            ReturnValues: 'ALL_NEW',
+          }),
+        );
+        return { outcome: 'submitted', state: itemToState(response.Attributes)! };
+      } catch (error) {
+        if ((error as { name?: string }).name !== 'ConditionalCheckFailedException') throw error;
+      }
+      // Lost the race. Re-read and let what STANDS say which race it was: another device's
+      // submission landing first, or the daily being re-published under us — where this log
+      // describes a retired word and the round has restarted without it.
+      const now = stateForTag(await readItem(input, input.publicId), input.puzzle);
+      return now.guesses.length > 0
+        ? { outcome: 'already_submitted', state: now }
+        : { outcome: 'not_started', state: now };
+    },
   };
 }
 
@@ -184,6 +274,7 @@ type Item = Record<string, AttributeValue> | undefined;
 
 function itemToState(item: Item): RoundState | null {
   if (!item) return null;
+  const startedAt = item.startedAt?.S;
   return {
     guesses: item.guesses?.L?.map((v) => v.S ?? '') ?? [],
     // Written as a STRING (`:created`), read as one: `lastWriteAt` is the only round
@@ -192,6 +283,10 @@ function itemToState(item: Item): RoundState | null {
     // silent — the `?? ''` fallback makes every response carry an empty createdAt for
     // the item's whole life — so the two spellings are kept next to each other.
     createdAt: item.createdAt?.S ?? '',
+    // ABSENT rather than empty when unstamped (a sentence round, an unstarted word one):
+    // the word submit's "is there a run to end?" test reads exactly this, and `''` would
+    // pass a truthiness check into `Date.parse` and answer NaN.
+    ...(startedAt === undefined ? {} : { startedAt }),
   };
 }
 
