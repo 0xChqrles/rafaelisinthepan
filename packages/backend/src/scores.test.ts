@@ -28,6 +28,7 @@ const SECRET = '00112233445566778899aabbccddeeff';
 
 const SENTENCE: Puzzle = {
   lang: 'fr',
+  revision: 'e5f6071829304051',
   words: ['un', 'deux', 'trois'],
   holes: [
     {

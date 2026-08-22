@@ -90,6 +90,9 @@ describe('parsePuzzle (shape validation)', () => {
   // A minimal well-formed puzzle per the schema (accents kept in words/display forms).
   const valid = () => ({
     lang: 'fr',
+    // WHICH PUBLISHED VERSION (#203) — stamped by `puzzle:publish`, and the round's identity
+    // on the wire, so a puzzle without one cannot be played.
+    revision: 'a1b2c3d4e5f60718',
     words: ['la', 'forêt', 'ancienne'],
     holes: [
       {
@@ -107,6 +110,12 @@ describe('parsePuzzle (shape validation)', () => {
   it('accepts and returns a well-formed puzzle unchanged', () => {
     const p = valid();
     expect(parsePuzzle(p)).toEqual(p);
+  });
+
+  it('refuses a puzzle with no published version — there is nothing to key its round on', () => {
+    const { revision: _none, ...unstamped } = valid();
+    expect(() => parsePuzzle(unstamped)).toThrow(/revision/);
+    expect(() => parsePuzzle({ ...valid(), revision: '' })).toThrow(/revision/);
   });
 
   it('accepts repeated hole occurrences that share one secret rank map', () => {

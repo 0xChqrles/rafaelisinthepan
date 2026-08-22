@@ -95,8 +95,15 @@ function checkRankAnnotations(entry: Record<string, unknown>): void {
 // per-entry distance annotations (#115)).
 export function parsePuzzle(data: unknown): Puzzle {
   if (!isRecord(data)) throw new Error('malformed puzzle: not an object');
-  const { lang, words, holes, ranks } = data;
+  const { lang, words, holes, ranks, revision } = data;
   if (typeof lang !== 'string') throw new Error('malformed puzzle: missing "lang"');
+  // WHICH PUBLISHED VERSION this is (#203). It is the round's identity on the wire, so a
+  // puzzle without one cannot be played: the server would have nothing to check its slice
+  // and its rank maps against. Stamped by `puzzle:publish`; an artifact predating it is
+  // republished, never limped on (the no-back-compat rule).
+  if (typeof revision !== 'string' || revision.length === 0) {
+    throw new Error('malformed puzzle: missing "revision"');
+  }
   if (!Array.isArray(words) || !words.every((w) => typeof w === 'string')) {
     throw new Error('malformed puzzle: "words" must be an array of strings');
   }

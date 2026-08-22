@@ -7,8 +7,8 @@ import { beginRoundSync, type RoundSyncContext } from '../state/roundSync';
 // remounts (archive round-trips, StrictMode's replay) rejoin the same conversation
 // instead of minting a second one.
 export default function useRoundSync(ctx: RoundSyncContext): void {
-  const { roundKey, lang, mode, date, ranks, freshHoles } = ctx;
+  const { roundKey, lang, mode, date, revision, ranks, freshHoles } = ctx;
   useEffect(() => {
-    beginRoundSync({ roundKey, lang, mode, date, ranks, freshHoles });
-  }, [roundKey, lang, mode, date, ranks, freshHoles]);
+    beginRoundSync({ roundKey, lang, mode, date, revision, ranks, freshHoles });
+  }, [roundKey, lang, mode, date, revision, ranks, freshHoles]);
 }

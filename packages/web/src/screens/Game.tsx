@@ -103,6 +103,7 @@ export default function Game({
       vocabSet={vocab.vocabSet}
       prefixSet={vocab.prefixSet}
       lang={puzzle.lang}
+      revision={puzzle.revision}
       dayNumber={dayNumber}
       isActiveDay={isActiveDay}
       deferResultsAnimation={deferResultsAnimation}
@@ -121,6 +122,7 @@ function Round({
   vocabSet,
   prefixSet,
   lang,
+  revision,
   dayNumber,
   isActiveDay,
   deferResultsAnimation,
@@ -133,6 +135,8 @@ function Round({
   vocabSet: Set<string>;
   prefixSet: Set<string>;
   lang: string;
+  // WHICH PUBLISHED VERSION this puzzle is (#203) — the round's identity everywhere.
+  revision: string;
   dayNumber: number;
   isActiveDay: boolean;
   deferResultsAnimation: boolean;
@@ -178,6 +182,8 @@ function Round({
     lang,
     mode: 'sentence',
     date: dateForDayNumber(dayNumber),
+    // The round's identity on the wire (#203): the version this puzzle was published as.
+    revision,
     ranks,
     freshHoles,
   });
@@ -186,8 +192,8 @@ function Round({
   // (new day OR new language) resets to freshHoles. useLayoutEffect commits the reset
   // before the browser paints, so a stale day's holes never flash.
   useLayoutEffect(() => {
-    ensureRound(roundKey, freshHoles);
-  }, [ensureRound, roundKey, freshHoles]);
+    ensureRound(roundKey, freshHoles, revision);
+  }, [ensureRound, roundKey, freshHoles, revision]);
 
   // Persisted round state for THIS round, read straight out of the keyed map. Use it
   // only when its holes still match THIS puzzle: a re-published sentence keeps the

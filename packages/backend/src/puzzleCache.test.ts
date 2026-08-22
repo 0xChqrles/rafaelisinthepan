@@ -14,16 +14,17 @@
 // sentence the store holds?".
 
 import { describe, expect, it, vi } from 'vitest';
-import { puzzleTag, type Puzzle } from '@whippin/shared';
-import { loadPuzzle, loadSlice, revisionOf } from './puzzleCache';
+import type { Puzzle } from '@whippin/shared';
+import { loadPuzzle, loadSlice } from './puzzleCache';
 import { buildSlice } from './slice';
 import type { PuzzleStore } from './store';
 
 const TODAY = '2026-08-21';
 
-function puzzleFor(date: string, secret = 'phare', aliasRank = 0): Puzzle {
+function puzzleFor(date: string, secret = 'phare', aliasRank = 0, revision = REV): Puzzle {
   return {
     lang: 'fr',
+    revision,
     words: [date],
     holes: [
       { pos: 0, secret: { word: secret, slug: secret }, start: { word: 'quai', slug: 'quai' }, start_rank: 2 },
@@ -39,14 +40,14 @@ function puzzleFor(date: string, secret = 'phare', aliasRank = 0): Puzzle {
   };
 }
 
-const REV = puzzleTag([{ pos: 0, secret: 'phare' }]);
+const REV = 'a1b2c3d4e5f60718';
 
-function countingStore(present = true, secret = 'phare', aliasRank = 0) {
+function countingStore(present = true, secret = 'phare', aliasRank = 0, revision = REV) {
   const getPuzzle = vi.fn(async (date: string) =>
-    present ? puzzleFor(date, secret, aliasRank) : null,
+    present ? puzzleFor(date, secret, aliasRank, revision) : null,
   );
   const getSlice = vi.fn(async (date: string) =>
-    present ? buildSlice(puzzleFor(date, secret, aliasRank)) : null,
+    present ? buildSlice(puzzleFor(date, secret, aliasRank, revision)) : null,
   );
   const store: PuzzleStore = {
     getPuzzle,
@@ -74,26 +75,28 @@ describe('both artifacts are read FRESH', () => {
     expect(getPuzzle).toHaveBeenCalledTimes(2);
   });
 
-  // The whole reason the cache went. A held slice cannot answer with an alias set the store
-  // has since changed, because there is nothing held to answer with.
+  // The whole reason the cache went, and the reason the VERSION exists. A correction that
+  // re-runs the merge walk moves a rank-0 alias without touching a hole — invisible to any
+  // identity derived from the sentence, and decisive for `solved`.
   it('sees a correction that moves a rank-0 ALIAS without touching a hole', async () => {
     const before = countingStore(true, 'phare', 0);
     expect((await loadSlice(before.store, TODAY, 'fr', REV))?.holes.phare.ranks.phares).toBe(0);
 
-    // Same sentence, same holes, same tag — only the group changed.
-    const after = countingStore(true, 'phare', 1);
-    expect(revisionOf(puzzleFor(TODAY, 'phare', 1))).toBe(REV);
-    expect((await loadSlice(after.store, TODAY, 'fr', REV))?.holes.phare.ranks.phares).toBe(1);
+    // Same sentence, same holes — a NEW published version, so a caller on the old one is
+    // refused rather than derived against the corrected maps.
+    const after = countingStore(true, 'phare', 1, 'b2c3d4e5f6071829');
+    expect(await loadSlice(after.store, TODAY, 'fr', REV)).toBeNull();
+    expect((await loadSlice(after.store, TODAY, 'fr', 'b2c3d4e5f6071829'))?.holes.phare.ranks.phares).toBe(1);
   });
 });
 
-describe('the revision tag — is this caller playing the sentence the store holds?', () => {
-  const OTHER = puzzleTag([{ pos: 0, secret: 'lampe' }]);
+describe('the version — is this caller playing the puzzle the store holds?', () => {
+  const OTHER = 'c3d4e5f607182930';
 
-  it('answers NULL for a caller on a sentence the store has replaced', async () => {
+  it('answers NULL for a caller on a version the store has replaced', async () => {
     // The route turns this into the day-addressed 404, which is the honest answer for a
     // puzzle that is gone.
-    const { store } = countingStore(true, 'lampe');
+    const { store } = countingStore(true, 'lampe', 0, OTHER);
     expect(await loadSlice(store, TODAY, 'fr', REV)).toBeNull();
     expect(await loadPuzzle(store, TODAY, 'fr', REV)).toBeNull();
     // …and serves the caller who IS on it.

@@ -39,6 +39,12 @@ export interface RoundProgress {
   // stays blank until it lands. It is also the FREEZE: a solved round accepts no further
   // appends, so the conversation is over and a reload must not re-open it.
   recorded?: boolean;
+  // WHICH PUBLISHED VERSION this round was played on (#203, user-decided 2026-08-22). A
+  // republish means the puzzle contained an error, so the round it retires STARTS OVER: its
+  // guesses were answers to a different question, and a corrected rank map can move the very
+  // aliases that decided whether a hole was solved. Absent on a round stored before the stamp
+  // existed, which is adopted rather than reset — the puzzle itself has not changed there.
+  revision?: string;
   // The server refused further appends at the guess cap (#201): the round keeps playing
   // locally but has STOPPED COUNTING — it must never submit a score, so no leaderboard
   // entry can exist for it. Set only by the sync engine on the server's round_full
@@ -295,7 +301,7 @@ interface GameState extends PersistedState {
   // re-published with a different sentence — starts fresh from `initialHoles`. Keeps
   // every day round (the archive needs history), drops any legacy non-day round, then
   // bounds the map with the MAX_DAY_ROUNDS most-recent cap.
-  ensureRound: (key: string, initialHoles: RuntimeHole[]) => void;
+  ensureRound: (key: string, initialHoles: RuntimeHole[], revision: string) => void;
 
   // Reconcile the persisted WORD rounds to `key` (#156): a matching key playing the SAME
   // word rehydrates untouched; a new key — or a republished different word under the same
@@ -382,8 +388,8 @@ const storage = createJSONStorage<PersistedState>(() => {
   return window.localStorage;
 });
 
-function freshRound(initialHoles: RuntimeHole[]): RoundProgress {
-  return { holes: initialHoles, guessCount: 0, tried: [], progress: 0 };
+function freshRound(initialHoles: RuntimeHole[], revision: string): RoundProgress {
+  return { holes: initialHoles, guessCount: 0, tried: [], progress: 0, revision };
 }
 
 // Version upgrades for the persisted blob (exported for the invariant tests).
@@ -570,7 +576,7 @@ export const useGameStore = create<GameState>()(
         return true;
       },
 
-      ensureRound: (key, initialHoles) =>
+      ensureRound: (key, initialHoles, revision) =>
         set((s) => {
           // Retention: keep EVERY day round regardless of its day — the archive rehydrates
           // a past day's progress, so a new day must not wipe yesterday's (#54). Any legacy
@@ -579,14 +585,19 @@ export const useGameStore = create<GameState>()(
           for (const [k, v] of Object.entries(s.rounds)) {
             if (dayNumberOf(k) !== null) kept[k] = v; // day round — always retained
           }
-          // Same key + matching holes -> rehydrate untouched; a brand-new key OR a
-          // re-published sentence under the same (day, lang) key (holes no longer match)
-          // -> fresh from initialHoles, so stale holes never reach scoring.
+          // Same key, same PUBLISHED VERSION, matching holes -> rehydrate untouched. A
+          // brand-new key, a re-published puzzle (#203: any correction is a new version, and
+          // its round starts over), or holes that no longer match -> fresh from initialHoles,
+          // so a retired board never reaches scoring.
+          //
+          // The hole check is kept beside the version as a floor: it is what stops secrets
+          // absent from `ranks` reaching the scoring code, whatever the stamp says.
           const existing = s.rounds[key];
+          const sameVersion = existing?.revision === undefined || existing.revision === revision;
           kept[key] =
-            existing && holesMatchPuzzle(existing.holes, initialHoles)
-              ? existing
-              : freshRound(initialHoles);
+            existing && sameVersion && holesMatchPuzzle(existing.holes, initialHoles)
+              ? { ...existing, revision }
+              : freshRound(initialHoles, revision);
           // Bound the map: evict the oldest day rounds beyond MAX_DAY_ROUNDS.
           return { activeKey: key, rounds: capDayRounds(kept, key) };
         }),

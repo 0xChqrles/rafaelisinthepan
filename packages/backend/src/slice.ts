@@ -29,7 +29,7 @@
 // is the one path where the player genuinely waits on the answer.
 
 import { gunzipSync, gzipSync } from 'node:zlib';
-import { holeProgress, puzzleTag, rankCount, type Puzzle } from '@whippin/shared';
+import { holeProgress, rankCount, type Puzzle } from '@whippin/shared';
 
 // One secret's slice: what the progress formula needs, plus every key that can still move it.
 export interface SliceHole {
@@ -45,16 +45,15 @@ export interface SliceHole {
 
 export interface PuzzleSlice {
   lang: string;
-  // WHICH REVISION of the daily this describes — the same tag the client computes from the
-  // holes it is playing and the server stores beside a round (`@whippin/shared`).
+  // WHICH PUBLISHED VERSION of the daily this describes — the puzzle's own `revision`, so
+  // the two objects `publish` writes carry one identity and the client sends it too.
   //
-  // Without it the artifact is anonymous, and nothing catches the two ways a republish
-  // separates a puzzle from its slice: a WARM Lambda holds a cached slice for as long as it
-  // lives, so it would keep deriving the retired sentence's ranks against the corrected
-  // round; and publish replaces two objects, so a reader between them sees one revision's
-  // puzzle beside another's slice. Both produce a percentage that is quietly about the wrong
-  // sentence — and a `solved` that is too, which is the one value that cannot be taken back.
-  puzzle: string;
+  // Without it the artifact is anonymous. Publish replaces two objects, so a reader landing
+  // between them sees one version's puzzle beside another's — and since rank 0 is a GROUP, a
+  // correction moves exactly the aliases that decide whether a guess SOLVED the puzzle. That
+  // produces a solve, and a permanent score, belonging to neither version. The sentence's
+  // hole layout cannot catch it: a corrected puzzle usually has the same holes.
+  revision: string;
   // Keyed by SECRET slug, like the puzzle's own `ranks`. Duplicate sentence occurrences of
   // one secret share a single entry — they are one logical progress target (the web's
   // `computeProgress` collapses them the same way).
@@ -92,10 +91,7 @@ export function buildSlice(puzzle: Puzzle): PuzzleSlice {
     }
     holes[secret] = { n: rankCount(full), startRank: hole.start_rank, ranks };
   }
-  // From the puzzle's OWN holes, before the dedup above: the tag counts every occurrence,
-  // because the client's runtime holes do.
-  const tag = puzzleTag(puzzle.holes.map((h) => ({ pos: h.pos, secret: h.secret.slug })));
-  return { lang: puzzle.lang, puzzle: tag, holes };
+  return { lang: puzzle.lang, revision: puzzle.revision, holes };
 }
 
 // Read a stored log against the day's slice. Pure, and the ONE place the two stored fields
@@ -139,13 +135,17 @@ export function parseSlice(data: unknown): PuzzleSlice {
   if (typeof data !== 'object' || data === null || Array.isArray(data)) {
     throw new Error('malformed slice: not an object');
   }
-  const { lang, puzzle, holes } = data as { lang?: unknown; puzzle?: unknown; holes?: unknown };
+  const { lang, revision, holes } = data as {
+    lang?: unknown;
+    revision?: unknown;
+    holes?: unknown;
+  };
   if (typeof lang !== 'string') throw new Error('malformed slice: missing "lang"');
-  // An untagged slice is a pre-#203-review artifact: it would derive against whatever
-  // puzzle asked, which is exactly what the tag exists to make impossible. Refused rather
-  // than trusted — a day whose slice predates this is republished, never limped on.
-  if (typeof puzzle !== 'string' || puzzle.length === 0) {
-    throw new Error('malformed slice: missing "puzzle" revision tag');
+  // An unversioned slice would derive against whatever version asked, which is exactly what
+  // the stamp exists to make impossible. Refused rather than trusted — a day whose slice
+  // predates this is republished, never limped on.
+  if (typeof revision !== 'string' || revision.length === 0) {
+    throw new Error('malformed slice: missing "revision"');
   }
   if (typeof holes !== 'object' || holes === null || Array.isArray(holes)) {
     throw new Error('malformed slice: "holes" must be an object');

@@ -71,6 +71,17 @@ export interface Puzzle {
   holes: Hole[]; // one per selected occurrence, sorted by pos ascending
   ranks: RankMap; // keyed by secret slug, then input slug
   source?: Source; // optional origin metadata (#5), shown on the solved screen (#8)
+  // WHICH PUBLISHED VERSION of this daily (#203, user-decided 2026-08-22). Stamped by
+  // `puzzle:publish` — generation does not write it — as a hash of the file's own content,
+  // so re-publishing the SAME file is a no-op while any real correction is a new version.
+  //
+  // It is the round's identity everywhere: the client sends it, the derivation slice carries
+  // it, and the server refuses to derive anything unless all three agree. The sentence's
+  // hole layout used to play that part, which could not tell one version of a sentence from
+  // a corrected one — and since rank 0 is a GROUP, a correction moves exactly the aliases
+  // that decide whether a guess solved the puzzle. A republish means the puzzle was wrong,
+  // so the round it retires starts over: its guesses were answers to a different question.
+  revision: string;
 }
 
 // The second puzzle type: ONE word and its ranked neighborhood, with no sentence

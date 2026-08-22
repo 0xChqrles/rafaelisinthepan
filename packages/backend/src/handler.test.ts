@@ -33,6 +33,7 @@ vi.mock('./ogCard', async () => {
 // A minimal but schema-valid puzzle, keyed by the date the fixed clock resolves to.
 const PUZZLE: Puzzle = {
   lang: 'fr',
+  revision: 'd4e5f60718293040',
   words: ['la', 'forêt', 'ancienne'],
   holes: [
     {

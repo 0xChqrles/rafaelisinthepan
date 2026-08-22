@@ -17,6 +17,7 @@ const DATE = '2026-06-29';
 function puzzle(lang: string, tag: string): Puzzle {
   return {
     lang,
+    revision: `f6${lang}${tag}`,
     words: [tag],
     holes: [{ pos: 0, secret: { word: tag, slug: tag }, start: { word: tag, slug: tag }, start_rank: 1 }],
     ranks: {},
@@ -35,7 +36,7 @@ beforeAll(async () => {
     path.join(root, sliceKey(DATE, 'fr')),
     encodeSlice({
       lang: 'fr',
-      puzzle: 'abc123',
+      revision: 'abc123',
       holes: { vent: { n: 4, startRank: 2, ranks: { vent: 0 } } },
     }),
   );

@@ -47,7 +47,7 @@
                               the DERIVED progress + solve and the score row they record,
                               full-state answers carrying the server's own clock
       roundStore.ts           round storage contract; round#<publicId> partition, sort key
-                              <lang>#<mode>#<date> (#203); the puzzle tag +
+                              <lang>#<mode>#<date> (#203); the published-version tag +
                               ROUND_GUESS_CAP / ROUND_WRITE_MIN_MS semantics, Word mode's
                               startedAt / first-write-wins log, and #203's stored summary
       dynamoRoundStore.ts     prod ONE conditional UpdateItem (both bounds in the condition) +
@@ -61,7 +61,7 @@
       layout.ts               storeKey() / sliceKey() — the keys shared by readers + publish (#17/#4/#203)
       serve.ts                local HTTP server: Function-URL⇄HTTP adapter over createHandler (#17)
       publish.ts              place a generated puzzle into local store (default) or S3 (#17/#4),
-                              deriving its #203 slice beside it
+                              stamping its #203 `revision` and deriving its slice beside it
       config.ts               env names + one decrypted SSM GetParameters read
       index.ts                Lambda entrypoint (S3/Dynamo stores + async secret initialization)
     .local-store/<date>.<lang>.json          local puzzle store (gitignored) read by serve/fsStore
@@ -343,12 +343,13 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   settle delayed past a better one is refused rather than parking a stale percentage.
   `parseSlice` checks the rank VALUES too, not only the field shapes, and `encodeSlice` runs
   it before writing: a malformed puzzle then fails loudly at PUBLISH instead of shipping a
-  day whose every append answers the day-addressed 404. **NEITHER artifact is cached**: the full one
-  because the score it feeds is a permanent first-write-wins row, and the SLICE because rank
-  0 is a GROUP — every alias of the secret's group sits there, and a correction re-running
-  the #104 merge walk moves them without touching a hole, so no revision tag can see it and a
-  stale slice decides `solved` wrongly in both directions. The slice's own tag survives for
-  the job it can hold: is this caller playing the sentence the store holds? Publish writes the slice FIRST so the puzzle's appearance implies its slice is
+  day whose every append answers the day-addressed 404. **NEITHER artifact is cached** — the full one because the
+  score it feeds is a permanent first-write-wins row, the slice because a cache had no way to
+  notice a correction until the version below existed (it would be safe to reinstate keyed by
+  it; fresh is simply cheap enough not to need one). **`publish` stamps a `revision`** on the
+  puzzle and its slice — a hash of the puzzle's own content, so an identical republish is a
+  no-op — and `loadSlice`/`loadPuzzle` refuse anything that does not name the version the
+  caller sent. Publish writes the slice FIRST so the puzzle's appearance implies its slice is
   there. **A corrective write that does not land is not claimed** — `settle` REPORTS whether
   the state it asked for is now the stored one, so a declined condition (a concurrent
   republish) is a verdict rather than a success: the answer carries the state as stored, no

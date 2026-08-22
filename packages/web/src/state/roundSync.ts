@@ -23,13 +23,7 @@
 // pattern): a ref would not survive a real unmount, and neither the queue nor the
 // in-flight write may be duplicated by a remount (archive round-trips, StrictMode).
 
-import {
-  puzzleTag as puzzleTagOf,
-  ROUND_GUESS_CAP,
-  ROUND_WRITE_MIN_MS,
-  type RankMap,
-  type RuntimeHole,
-} from '@whippin/shared';
+import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS, type RankMap, type RuntimeHole } from '@whippin/shared';
 import { parseRound, postRoundBody, roundUrl, type RoundState } from '../api';
 import { applyGuessToHoles, computeProgress, guessKey } from '../game/scoring';
 import { useGameStore } from './gameStore';
@@ -47,6 +41,10 @@ export interface RoundSyncContext {
   // that would look like "my history doesn't follow me" instead of a compile error.
   mode: 'sentence';
   date: string;
+  // WHICH PUBLISHED VERSION of this daily is being played — the round's identity everywhere
+  // (#203). The hole layout used to play that part and could not tell a corrected puzzle
+  // from the one it replaced when the sentence was unchanged.
+  revision: string;
   ranks: RankMap;
   freshHoles: RuntimeHole[];
 }
@@ -92,11 +90,10 @@ const MAX_FLIGHTS = 3;
 // Ceiling on the retry window, so an outage cannot spin a request a second.
 const MAX_BACKOFF_MS = 30_000;
 
-// `fnvTag` and `puzzleTag` moved to @whippin/shared with #203, when the derivation slice
-// started carrying the revision it describes: the SERVER computes the same value from a
-// puzzle now, so it can refuse to derive against an artifact of another revision.
-// Re-exported here because `wordRoundSync` and this module's callers already name them.
-export { fnvTag, puzzleTag } from '@whippin/shared';
+// Word mode still derives its tag from the day's word (`wordRoundSync`); the SENTENCE
+// daily's is the published puzzle's own `revision` (#203), which is what the context below
+// carries. Re-exported because `wordRoundSync` names it.
+export { fnvTag } from '@whippin/shared';
 
 // How long the next APPEND must wait for the per-player write interval — measured from
 // when the previous write SETTLED, not from when it was sent.
@@ -182,7 +179,7 @@ function pruneFlights(keep: string): void {
 // conversation: the first registration reads the server's copy and adopts whatever the
 // local device is missing; later registrations only refresh the context.
 export function beginRoundSync(ctx: RoundSyncContext): void {
-  const puzzle = puzzleTagOf(ctx.freshHoles);
+  const puzzle = ctx.revision;
   const existing = flights.get(ctx.roundKey);
   if (existing) {
     // A sentence re-published UNDER an open conversation: the acked prefix describes the

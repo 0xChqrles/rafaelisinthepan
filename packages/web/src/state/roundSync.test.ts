@@ -22,7 +22,6 @@ import {
   beginRoundSync,
   mergeLogs,
   notifyGuess,
-  puzzleTag,
   replayHoles,
   resetRoundSync,
   writeDelayMs,
@@ -71,12 +70,18 @@ function freshHoles(): RuntimeHole[] {
   ];
 }
 
+// The published VERSION a round is played on (#203) — the round's identity everywhere, and
+// what a republish changes.
+const REVISION = 'a1b2c3d4e5f60718';
+const CORRECTED_REVISION = 'b2c3d4e5f6071829';
+
 function ctx(key: string = KEY) {
   return {
     roundKey: key,
     lang: 'fr',
     mode: 'sentence',
     date: '2026-08-21',
+    revision: REVISION,
     ranks: SECRET_MAP,
     freshHoles: freshHoles(),
   } as const;
@@ -216,21 +221,6 @@ describe('replayHoles', () => {
   });
 });
 
-describe('puzzleTag', () => {
-  it('names the puzzle by what holesMatchPuzzle itself compares', () => {
-    const other = freshHoles();
-    other[1] = { ...other[1], secret: 'antique' };
-    expect(puzzleTag(freshHoles())).toBe(puzzleTag(freshHoles()));
-    // A re-published sentence under the same (day, lang) key is a DIFFERENT puzzle, and
-    // the tag is the only thing that tells the server so.
-    expect(puzzleTag(other)).not.toBe(puzzleTag(freshHoles()));
-  });
-
-  it('fits the tag the route accepts', () => {
-    expect(puzzleTag(freshHoles())).toMatch(/^[a-z0-9]{1,32}$/);
-  });
-});
-
 describe('write pacing', () => {
   it('flushes the first write immediately', () => {
     expect(writeDelayMs(0, T0)).toBe(0);
@@ -261,7 +251,7 @@ describe('engine', () => {
 
     expect(post).toHaveBeenCalledOnce();
     // The read carries the player key and the puzzle tag, and asks for nothing else.
-    expect(bodyOf(0).puzzle).toBe(puzzleTag(freshHoles()));
+    expect(bodyOf(0).puzzle).toBe(REVISION);
     expect(bodyOf(0).guesses).toBeUndefined();
 
     expect(round()?.tried).toEqual(['bois']);
@@ -469,6 +459,7 @@ describe('engine', () => {
     ];
     beginRoundSync({
       ...ctx(),
+      revision: CORRECTED_REVISION,
       freshHoles: corrected,
       ranks: { ...SECRET_MAP, antique: { antique: { word: 'antique', rank: 0 } } },
     });
@@ -482,7 +473,7 @@ describe('engine', () => {
     expect(round()?.holes).toEqual(freshHoles());
     // ...and the corrected puzzle asked the server about ITSELF.
     expect(post).toHaveBeenCalledTimes(2);
-    expect(bodyOf(1).puzzle).toBe(puzzleTag(corrected));
+    expect(bodyOf(1).puzzle).toBe(CORRECTED_REVISION);
   });
 
   it('closes on a 4xx VERDICT instead of spinning on it forever', async () => {

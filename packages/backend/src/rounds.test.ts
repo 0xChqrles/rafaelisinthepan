@@ -20,7 +20,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   generateSecret,
   publicIdFromSecret,
-  puzzleTag,
   ROUND_GUESS_CAP,
   ROUND_WRITE_MIN_MS,
   WORD_MISS_CAP,
@@ -64,6 +63,7 @@ const WORD_ARTIFACT: WordPuzzle = {
 // walked from 0% to solved and every rank the derivation reads is inside the slice.
 const SENTENCE: Puzzle = {
   lang: 'fr',
+  revision: 'a1b2c3d4e5f60718',
   words: ['le', 'phare', 'de', 'nuit'],
   holes: [
     { pos: 1, secret: { word: 'phare', slug: 'phare' }, start: { word: 'quai', slug: 'quai' }, start_rank: 2 },
@@ -90,18 +90,19 @@ const SENTENCE: Puzzle = {
 // to be selected by.
 const CORRECTED: Puzzle = {
   ...SENTENCE,
+  // A REPUBLISH is a new version, whatever changed — here the sentence, but a corrected
+  // rank map would be one too, which is the whole point of the stamp (#203).
+  revision: 'b2c3d4e5f6071829',
   words: ['la', 'lampe', 'de', 'nuit'],
   holes: [
     { pos: 1, secret: { word: 'phare', slug: 'phare' }, start: { word: 'quai', slug: 'quai' }, start_rank: 2 },
   ],
 };
 
-// Every round names the REVISION it is playing (#203), and the store's artifacts carry the
-// same tag — so these are the tags, not invented strings.
-const tagOf = (puzzle: Puzzle) =>
-  puzzleTag(puzzle.holes.map((h) => ({ pos: h.pos, secret: h.secret.slug })));
-const PUZZLE = tagOf(SENTENCE);
-const CORRECTED_TAG = tagOf(CORRECTED);
+// Every round names the published VERSION it is playing (#203), and the store's two objects
+// carry the same one — so these are the real values, not invented strings.
+const PUZZLE = SENTENCE.revision;
+const CORRECTED_TAG = CORRECTED.revision;
 
 // `undefined` = the artifact must never be read on this path; `null` = the daily was never
 // published. The SLICE is derived from the same puzzle, exactly as `puzzle:publish` does,

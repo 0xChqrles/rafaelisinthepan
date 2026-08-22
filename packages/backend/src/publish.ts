@@ -12,6 +12,7 @@
 // name from the `PuzzleBucketName` output of `WhippinBackendStack` — the infra code is the
 // single source of truth, so there is no bucket flag/env. Looking it up needs AWS creds
 // (already required to upload) + `cloudformation:DescribeStacks`.
+import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -98,6 +99,19 @@ export function planPublish(
   return { day, key, slice, target: { kind: 'local' } };
 }
 
+// WHICH PUBLISHED VERSION this is (#203, user-decided 2026-08-22). A hash of the puzzle's
+// own CONTENT, so re-publishing the identical file is a no-op — nobody's round is disturbed
+// — while any real correction is a new version and the rounds playing the old one start over.
+//
+// Any `revision` already on the input is stripped first, or publishing a file that came back
+// out of the store would hash its own stamp and mint a different version every time.
+// Generation never writes the field; publish is where an artifact becomes a served thing,
+// and this is a property of the SERVING, not of the authoring.
+export function puzzleRevision(raw: unknown): string {
+  const { revision: _stamped, ...content } = raw as Record<string, unknown>;
+  return createHash('sha256').update(JSON.stringify(content)).digest('hex').slice(0, 16);
+}
+
 // Resolve a user-supplied path against the directory the command was INVOKED from,
 // not the package dir pnpm `cd`s into. pnpm/npm set INIT_CWD to the original cwd, so
 // `pnpm puzzle:publish path/from/repo-root.json` works as typed.
@@ -135,9 +149,14 @@ async function main() {
   }
 
   const file = resolveInput(args.file);
-  const text = await readFile(file, 'utf8').catch(() => die(`cannot read ${file}`));
-  const raw = JSON.parse(text) as unknown;
-  const artifact = asArtifact(raw, file);
+  const source = await readFile(file, 'utf8').catch(() => die(`cannot read ${file}`));
+  const parsed = JSON.parse(source) as Record<string, unknown>;
+  const artifact = asArtifact(parsed, file);
+  // The SENTENCE puzzle is published carrying its own version; a word artifact is not (Word
+  // mode keys its round on the day's word and reads one artifact, once).
+  const raw =
+    artifact.mode === 'sentence' ? { ...parsed, revision: puzzleRevision(parsed) } : parsed;
+  const text = artifact.mode === 'sentence' ? JSON.stringify(raw) : source;
 
   // For S3, the destination is always the deployed bucket, discovered from the stack output.
   const deployed = args.s3 ? await stackOutputs() : undefined;
@@ -155,7 +174,7 @@ async function main() {
   let slice: Buffer | undefined;
   if (plan.slice) {
     try {
-      slice = encodeSlice(buildSlice(raw as Puzzle));
+      slice = encodeSlice(buildSlice(raw as unknown as Puzzle));
     } catch (err) {
       die(`${file}: cannot build the derivation slice (${err instanceof Error ? err.message : String(err)}).`);
     }
