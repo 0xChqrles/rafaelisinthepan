@@ -69,9 +69,18 @@ describe('memoryRoundStore.settle — the corrective write (#203)', () => {
     expect((await store.get(KEY, PUBLIC_ID, PUZZLE))?.progress).toBe(40);
   });
 
-  it('is a no-op for a round the store does not hold', async () => {
+  it('is a no-op for a round the store does not hold, and SAYS so', async () => {
     const store = memoryRoundStore();
-    await expect(store.settle(settle(90))).resolves.toBeUndefined();
+    await expect(store.settle(settle(90))).resolves.toBe(false);
     expect(await store.get(KEY, PUBLIC_ID, PUZZLE)).toBeNull();
+  });
+
+  it('reports whether the asked-for state is now the stored one', async () => {
+    // The route claims a solve only when the store confirms it took one — a record of
+    // another puzzle, or one already holding better, took nothing.
+    const store = await seeded(40);
+    await expect(store.settle(settle(75))).resolves.toBe(true);
+    await expect(store.settle(settle(40))).resolves.toBe(false);
+    await expect(store.settle({ ...settle(90), puzzle: 'deadbeef' })).resolves.toBe(false);
   });
 });

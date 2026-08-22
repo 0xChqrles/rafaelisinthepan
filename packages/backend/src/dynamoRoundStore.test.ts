@@ -700,7 +700,9 @@ describe('dynamoRoundStore — the derived summary (#203)', () => {
   it('the corrective write is ONE conditional update, gated on the puzzle identity', async () => {
     const send = vi.fn(async (_command: unknown) => ({}));
     const { store } = makeStore(send);
-    await store.settle({ ...KEY, publicId: PUBLIC_ID, puzzle: PUZZLE, progress: 100, solved: true });
+    await expect(
+      store.settle({ ...KEY, publicId: PUBLIC_ID, puzzle: PUZZLE, progress: 100, solved: true }),
+    ).resolves.toBe(true);
 
     expect(send).toHaveBeenCalledTimes(1);
     const command = send.mock.calls[0][0] as UpdateItemCommand;
@@ -728,9 +730,11 @@ describe('dynamoRoundStore — the derived summary (#203)', () => {
       });
     });
     const { store } = makeStore(send);
+    // Reported, not swallowed: the caller has to know the state it asked for is not the
+    // stored one, or it claims a solve this record never took.
     await expect(
       store.settle({ ...KEY, publicId: PUBLIC_ID, puzzle: PUZZLE, progress: 100, solved: true }),
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(false);
   });
 
   it('surfaces an operational failure of the corrective write, so the caller can retry it', async () => {
@@ -810,7 +814,8 @@ describe('dynamoRoundStore — the corrective write is MONOTONIC (#203)', () => 
     });
     const { store } = makeStore(send);
     // Indistinguishable from a republish, and neither is a retry — the row already holds
-    // something at least as true as what this write carried.
-    await expect(store.settle(settle(60, false))).resolves.toBeUndefined();
+    // something at least as true as what this write carried. It still reports FALSE, so a
+    // caller can never read "declined" as "landed".
+    await expect(store.settle(settle(60, false))).resolves.toBe(false);
   });
 });

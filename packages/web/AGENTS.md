@@ -464,7 +464,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   FACT (`markRoundRecorded`) — it says the day's score row exists, and it says the round is
   FROZEN, so the conversation closes — and its log is adopted SERVER-ONLY, where every other
   answer merges the local one under it: a frozen round's stored log is final, so keeping the
-  guesses it refused would leave the screen counting tries the recorded score does not.
+  guesses it refused would leave the screen counting tries the recorded score does not. It is
+  still DEDUPED (`mergeLogs` against an empty local log), because the stored log is RAW and
+  two devices can each have sent a surface of one group — the same disagreement from the
+  other side.
   **The `round_solved` 409 must do BOTH**: a plain 4xx
   closes WITHOUT adopting, leaving this tab rendering an unsolved board with its guesses
   still on screen — the exact symptom the freeze exists to prevent — and a plain 409 adopts

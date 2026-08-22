@@ -119,10 +119,13 @@ export function memoryRoundStore(): RoundStore {
     // clause, restated here so both backends refuse the same stale correction.
     async settle(input) {
       const item = rounds.get(itemKey(input, input.publicId));
-      if (!item || item.puzzle !== input.puzzle) return;
-      if (item.progress !== undefined && item.progress > input.progress) return;
+      // REPORTS whether the asked-for state is now the stored one (roundStore.ts): a record
+      // of another puzzle, or one already holding better, took nothing from this call.
+      if (!item || item.puzzle !== input.puzzle) return false;
+      if (item.progress !== undefined && item.progress > input.progress) return false;
       item.progress = input.progress;
       if (input.solved) item.solved = true;
+      return true;
     },
 
     // Word mode's round START (#202): stamp the server clock, once per puzzle. A record

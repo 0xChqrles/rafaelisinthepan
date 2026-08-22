@@ -1,18 +1,22 @@
 // CONTRACT (#203): the per-instance loading rule, three lines.
 //
-//   | any append, any day | the SLICE         | cached, ~100 days     |
-//   | today               | the full artifact | cached — ONE day only |
-//   | an archive solve    | the full artifact | loaded and DISCARDED  |
+//   | any append, any day | the SLICE         | cached, ~100 days, ~5 min fresh |
+//   | a solve, any day    | the full artifact | loaded and DISCARDED           |
 //
-// Today's repeats and is worth holding; an archive day's is what would FILL an instance,
-// which is the problem the slice exists to avoid. The full cache is swept against the
-// server's own active day, or "today" quietly becomes "every day this instance has seen".
-// A MISS is never cached — a day published slightly late must become playable without
-// waiting for the instance to recycle.
+// The split is about what the value COSTS IF IT IS WRONG: the slice feeds `progress` (the
+// next append recomputes it) and `solved` (rank 0 is the secret in every revision of one
+// sentence), so bounded staleness is safe. The FULL artifact feeds the SCORE — one
+// first-write-wins row, permanent, never revisited — so it is read fresh, every time.
+//
+// A republish has to reach a warm instance, and TWO things carry it: the slice names the
+// SENTENCE it describes, so a caller already on the corrected daily is detected at once; and
+// a freshness window covers the rest, since a correction that leaves the holes alone changes
+// no tag. A MISS is never cached — a day published slightly late must become playable
+// without waiting for the instance to recycle.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { puzzleTag, type Puzzle } from '@whippin/shared';
-import { loadPuzzle, loadSlice, resetArtifactCache } from './puzzleCache';
+import { loadPuzzle, loadSlice, resetArtifactCache, SLICE_MAX_AGE_MS } from './puzzleCache';
 import { buildSlice } from './slice';
 import type { PuzzleStore } from './store';
 
@@ -83,38 +87,26 @@ describe('the slice cache — every append, every day', () => {
   });
 });
 
-describe('the full artifact — today is cached, an archive day is not', () => {
-  it('reads TODAY once and answers later solves from memory', async () => {
+describe('the full artifact — never cached, because the SCORE is permanent', () => {
+  it('reads the store EVERY time, today included', async () => {
+    // It is loaded once per round, on the append that solves it, and what it produces is a
+    // first-write-wins row nobody revisits. 52 ms on that path buys the one number that
+    // cannot be corrected afterwards.
     const { store, getPuzzle } = countingStore();
-    await loadPuzzle(store, TODAY, 'fr', TODAY, REV);
-    await loadPuzzle(store, TODAY, 'fr', TODAY, REV);
-    expect(getPuzzle).toHaveBeenCalledTimes(1);
-  });
-
-  it('LOADS AND DISCARDS an archive day, so browsing a month leaves nothing resident', async () => {
-    const { store, getPuzzle } = countingStore();
-    await loadPuzzle(store, '2026-07-01', 'fr', TODAY, REV);
-    await loadPuzzle(store, '2026-07-01', 'fr', TODAY, REV);
-    expect(getPuzzle).toHaveBeenCalledTimes(2);
-  });
-
-  it('drops the held day at the 22:00 flip, or "today" becomes every day it has seen', async () => {
-    const { store, getPuzzle } = countingStore();
-    await loadPuzzle(store, TODAY, 'fr', TODAY, REV);
-    expect(getPuzzle).toHaveBeenCalledTimes(1);
-    // The server's active day moves on: yesterday's entry is no longer today's.
-    await loadPuzzle(store, '2026-08-22', 'fr', '2026-08-22', REV);
-    expect(getPuzzle).toHaveBeenCalledTimes(2);
-    // And the retired day is gone rather than lingering as a second resident artifact.
-    await loadPuzzle(store, TODAY, 'fr', '2026-08-22', REV);
+    await loadPuzzle(store, TODAY, 'fr', REV);
+    await loadPuzzle(store, TODAY, 'fr', REV);
+    await loadPuzzle(store, '2026-07-01', 'fr', REV);
     expect(getPuzzle).toHaveBeenCalledTimes(3);
   });
 
-  it('never caches a MISS here either', async () => {
-    const { store, getPuzzle } = countingStore(false);
-    expect(await loadPuzzle(store, TODAY, 'fr', TODAY, REV)).toBeNull();
-    expect(await loadPuzzle(store, TODAY, 'fr', TODAY, REV)).toBeNull();
-    expect(getPuzzle).toHaveBeenCalledTimes(2);
+  it('answers NULL for a caller on a revision the store has replaced', async () => {
+    const { store } = countingStore(true, 'lampe');
+    expect(await loadPuzzle(store, TODAY, 'fr', REV)).toBeNull();
+  });
+
+  it('answers NULL for an unpublished day', async () => {
+    const { store } = countingStore(false);
+    expect(await loadPuzzle(store, TODAY, 'fr', REV)).toBeNull();
   });
 });
 
@@ -148,16 +140,41 @@ describe('revision binding — a republish must not be served from a warm cache'
     expect(await loadSlice(store, TODAY, 'fr', REV)).toBeNull();
   });
 
-  it('binds the FULL artifact too — a score is counted off the maps of ONE puzzle', async () => {
+  it('REVALIDATES a stale entry even for a caller whose tag still matches it', async () => {
+    // The tag only detects "caller ahead of cache". A caller still on the OLD sentence
+    // matches the OLD cached slice, so nothing ever re-reads — which is how a republish
+    // failed to reach a warm instance at all (found on review). The freshness window is
+    // what covers it, and it is also the only thing that covers a correction leaving the
+    // holes alone, since that changes no tag.
     const first = countingStore(true, 'phare');
-    expect(await loadPuzzle(first.store, TODAY, 'fr', TODAY, REV)).toBeTruthy();
+    const t0 = 1_000_000;
+    expect(await loadSlice(first.store, TODAY, 'fr', REV, t0)).toBeTruthy();
+    // Inside the window, the held copy answers.
+    expect(await loadSlice(first.store, TODAY, 'fr', REV, t0 + SLICE_MAX_AGE_MS - 1)).toBeTruthy();
+    expect(first.getSlice).toHaveBeenCalledTimes(1);
+    // Past it, the store is asked again — which is what lets a republish land.
+    await loadSlice(first.store, TODAY, 'fr', REV, t0 + SLICE_MAX_AGE_MS);
+    expect(first.getSlice).toHaveBeenCalledTimes(2);
+  });
 
-    const second = countingStore(true, 'lampe');
-    // The cached artifact describes the retired sentence: re-fetched rather than counted
-    // against, since a score row is first-write-wins and permanent.
-    expect(await loadPuzzle(second.store, TODAY, 'fr', TODAY, OTHER)).toBeTruthy();
-    expect(second.getPuzzle).toHaveBeenCalledTimes(1);
-    // And a caller on the retired revision gets nothing rather than the wrong maps.
-    expect(await loadPuzzle(second.store, TODAY, 'fr', TODAY, REV)).toBeNull();
+  it('bounds the cache on a MISMATCHED load too, not only a matching one', async () => {
+    // The mismatch path inserts and returns; returning before the eviction let 101
+    // mismatched loads sit resident past a 100-entry limit (found on review).
+    const { store } = countingStore(true, 'lampe');
+    for (let i = 0; i < 130; i += 1) {
+      const day = `2026-03-${String((i % 28) + 1).padStart(2, '0')}`;
+      expect(await loadSlice(store, day, `l${i}`, REV)).toBeNull();
+    }
+    // Every one of those was a mismatch; the map is still bounded.
+    const { store: fresh, getSlice } = countingStore(true, 'phare');
+    await loadSlice(fresh, TODAY, 'fr', REV);
+    expect(getSlice).toHaveBeenCalledTimes(1);
+  });
+
+  it('binds the FULL artifact too — a score is counted off the maps of ONE puzzle', async () => {
+    const { store } = countingStore(true, 'lampe');
+    // A caller on the retired revision gets nothing rather than the wrong maps.
+    expect(await loadPuzzle(store, TODAY, 'fr', REV)).toBeNull();
+    expect(await loadPuzzle(store, TODAY, 'fr', OTHER)).toBeTruthy();
   });
 });

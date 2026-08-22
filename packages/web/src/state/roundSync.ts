@@ -312,22 +312,29 @@ function requestBody(f: RoundFlight, guesses?: string[], challenge?: string) {
 // further guesses, so the conversation is over. Only ever true, so this can never un-finish
 // a round.
 //
-// It adopts the server's log EXACTLY, where every other answer merges the local one under
-// it (corrected on review). A frozen round's log is final: the guesses this device still had
+// It adopts the SERVER's log alone, where every other answer merges the local one under it
+// (corrected on review). A frozen round's log is final: the guesses this device still had
 // pending were REFUSED and are never stored, so merging them back in leaves the screen
 // counting tries the population's score does not — a headline that disagrees with the
 // leaderboard rank printed beneath it, permanently. #203 says those guesses are dropped for
 // good; this is where that happens.
+//
+// It still goes through `mergeLogs` — against an EMPTY local log — because the server's own
+// log is RAW (corrected again on review). Two devices can each have sent a different surface
+// of one group, so the stored log holds two entries the server scores as ONE
+// (`countTries`/#104). Adopting it verbatim put that raw length in the headline against a
+// recorded score one lower — the same disagreement, reached from the other side. `tried` is
+// deduped by the identity the score uses; `serverCount` stays the RAW length, since the cap
+// counts what is STORED.
 function adoptSolved(f: RoundFlight, key: string, solved: boolean, serverGuesses: string[]): void {
   if (!solved) return;
   const round = useGameStore.getState().rounds[key];
-  if (round && !sameLog(serverGuesses, round.tried)) {
-    const holes = replayHoles(f.freshHoles, f.ranks, serverGuesses);
-    useGameStore
-      .getState()
-      .adoptRound(key, serverGuesses, holes, computeProgress(holes, f.ranks));
+  const { guesses } = mergeLogs(serverGuesses, [], (t) => guessKey(f.ranks, t));
+  if (round && !sameLog(guesses, round.tried)) {
+    const holes = replayHoles(f.freshHoles, f.ranks, guesses);
+    useGameStore.getState().adoptRound(key, guesses, holes, computeProgress(holes, f.ranks));
   }
-  f.pendingFrom = serverGuesses.length;
+  f.pendingFrom = guesses.length;
   f.serverCount = serverGuesses.length;
   useGameStore.getState().markRoundRecorded(key);
   f.closed = true;

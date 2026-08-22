@@ -725,18 +725,28 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   several typable spellings (fr averages 2.58 keys per rank, up to 11.1). **Every figure
   here is FRENCH** — the local store holds no real English sentence puzzle, so generate one
   and re-measure before sizing anything on it.
-  - **The loading rule, three lines:** any append, any day → the SLICE, cached ~100 days;
-    TODAY → the full artifact, cached for ONE DAY ONLY; an ARCHIVE SOLVE → the full
-    artifact, loaded and DISCARDED. Today's is cached because it is the only one that
-    repeats; an archive day's is what would FILL an instance, which is the problem the slice
-    exists to avoid — browsing a month must not leave a month resident. **The cache is keyed
-    by DATE and swept against the server's active day**, or "today" quietly becomes "every
-    day this instance has seen". *(The full artifact is loaded on a SOLVE rather than on
-    every append: nothing today consumes a mid-round score. #206's exact live try count is
-    what widens it, and the cache is already what makes that cheap.)*
-  - **Memory, per warm Lambda against its 512 MB:** today's fr artifact 18 MB (worst of 49),
-    the slice cache ~14 MB, **~32 MB steady** for one language, ~50 MB peak during an
-    archive solve. A second language adds another artifact, of unmeasured size.
+  - **The loading rule, and it is about WHAT THE VALUE COSTS IF IT IS WRONG** (settled on
+    review, replacing a "today's artifact is cached for one day" rule): any append, any day →
+    the SLICE, cached ~100 days behind a ~5-minute freshness window; a SOLVE, any day → the
+    full artifact, **read FRESH and discarded**. The slice feeds `progress`, which the next
+    append recomputes, and `solved`, which a rank correction can barely move (rank 0 is the
+    secret's own slug in every revision of one sentence) — both self-heal, so a cache is
+    affordable and it is what makes an append cheap. The full artifact feeds the SCORE: one
+    first-write-wins row, permanent, never revisited, so it is never derived from anything an
+    instance happens to be holding. That costs one 52 ms parse per SOLVE — once per round, on
+    a path that has just done a DynamoDB write — to buy the one number nobody can correct
+    afterwards. *(When #206 wants a live per-append count, the cache comes back with whatever
+    freshness that number needs.)*
+  - **A REPUBLISH HAS TO REACH A WARM INSTANCE, and TWO things carry it** — neither alone is
+    enough, which review found the hard way. The slice NAMES THE SENTENCE it describes, so a
+    caller already on the corrected daily is detected at once and the stale entry re-fetched;
+    but the tag is a sentence's identity, not its rank maps', so a correction that leaves the
+    holes alone changes nothing, and a caller still on the OLD sentence matches the OLD entry
+    forever. The FRESHNESS WINDOW covers both: nothing invalidates a Lambda's own memory, and
+    matching the browser `max-age` the puzzle route already serves makes the origin's
+    derivation correct on the same timescale the player's own copy does.
+  - **Memory, per warm Lambda against its 512 MB:** the slice cache ~14 MB, with the artifact
+    resident only for the moment a solve is being scored.
   - **Measured** (node, `2026-07-25.fr.json`): full 6.21 MB raw / 0.80 MB gzipped / 52.3 ms
     to gunzip+parse / **16.6 MB retained**; slice 66.7 KB / **12.5 KB** gzipped / **0.51 ms**
     / **0.22 MB**. The heap figures are RETAINED measurements (three copies parsed and held,
@@ -794,7 +804,11 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   answer merges the local log under the server's. A frozen round's stored log is final —
   the guesses it refused are never stored — so merging them back would leave the screen
   counting tries the recorded score does not, a headline permanently disagreeing with the
-  rank printed beneath it. This is where "dropped for good" actually happens.
+  rank printed beneath it. This is where "dropped for good" actually happens. **It is still
+  DEDUPED by canonical identity** on the way in: the stored log is RAW, and two devices can
+  each have sent a different surface of one group, so adopting it verbatim puts a raw length
+  in the headline against a score `countTries` counted one lower — the same disagreement from
+  the other side.
 - **Turnstile MOVES to ROUND START** (and to #204's account link). Round creation is
   available to every unlinked visitor, so it carries more weight than it did. Word mode
   already gated its START; the sentence round has no start message, so the challenge rides

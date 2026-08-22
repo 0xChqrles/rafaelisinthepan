@@ -266,11 +266,15 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
             },
           }),
         );
+        return true;
       } catch (error) {
         // Either the round was re-published under us — there is no summary of THIS puzzle
         // to correct, and the fresh round derives its own on its next append — or a better
-        // correction already landed. Both are the right outcome, and neither is a retry.
+        // correction already landed. Both are the right outcome, and neither is a retry —
+        // but neither is a SUCCESS either: the caller has to know the state it asked for is
+        // not the stored one, or it claims a solve this record never took.
         if ((error as { name?: string }).name !== 'ConditionalCheckFailedException') throw error;
+        return false;
       }
     },
 

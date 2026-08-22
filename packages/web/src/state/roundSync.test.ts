@@ -614,6 +614,20 @@ describe('the server-held solve (#203)', () => {
     expect(round()?.guessCount).toBe(2);
   });
 
+  it('DEDUPS the server log it adopts — the score counts identities, not entries', async () => {
+    // Two devices each sent a different surface of one group, so the stored log holds two
+    // entries the server scores as ONE (`countTries`/#104). Adopting it verbatim put that
+    // raw length in the headline against a recorded score one lower.
+    seedRound([]);
+    post.mockResolvedValueOnce(ok(['foret', 'foretz'], true));
+    beginRoundSync(ctx());
+    await settle(60_000);
+
+    // `foretz` is an alias of `foret` in every map: one counted try.
+    expect(round()?.tried).toEqual(['foret']);
+    expect(round()?.guessCount).toBe(1);
+  });
+
   it('adopts server-only on a READ that finds the round already frozen', async () => {
     // A second device opening a day the first one solved: same rule, and it is the path a
     // reload takes.

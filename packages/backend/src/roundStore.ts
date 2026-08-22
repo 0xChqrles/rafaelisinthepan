@@ -170,6 +170,12 @@ export interface RoundStore {
   // one puzzle's life, so refusing a lowering write costs nothing correct; a solve is never
   // refused by it, since a solved derivation is exactly 100.
   //
+  // **It REPORTS whether the state it asked for is now the stored one** — true when the write
+  // applied, FALSE when the condition refused it (found on review: swallowing that refusal
+  // resolved the promise, and the route then claimed a solve the record had never taken,
+  // because a concurrent republish had made it name another puzzle). A `false` is a VERDICT,
+  // never a retry: a condition that refused once refuses again.
+  //
   // **The APPEND is deliberately NOT guarded the same way**, so the stored percentage can
   // DIP for the moment between that write and this one: the append writes what the caller
   // derived from its own eventually-consistent read, which a concurrent device may already
@@ -180,7 +186,7 @@ export interface RoundStore {
   // a correct guess dropped to protect a value derived FROM it, which is the load-bearing
   // thing traded for the derived one. The append's job is to store guesses; the summary
   // rides along.
-  settle(input: RoundSettleInput): Promise<void>;
+  settle(input: RoundSettleInput): Promise<boolean>;
   // WORD mode's two writes (#202) — the mode streams nothing, because what syncing buys is
   // the live friends board and a 60-second run is over before anyone opens it.
   //

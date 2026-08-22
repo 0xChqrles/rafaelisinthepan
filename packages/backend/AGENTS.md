@@ -343,12 +343,16 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   settle delayed past a better one is refused rather than parking a stale percentage.
   `parseSlice` checks the rank VALUES too, not only the field shapes, and `encodeSlice` runs
   it before writing: a malformed puzzle then fails loudly at PUBLISH instead of shipping a
-  day whose every append answers the day-addressed 404. **The artifacts NAME their revision**
-  and `puzzleCache` selects by it — a cached slice or artifact describing another sentence is
-  re-fetched, and a caller on a retired one gets the 404; publish writes the slice FIRST so
-  the puzzle's appearance implies its slice is there. **A corrective write that does not land
-  is not claimed**: the answer carries the state as stored, no score row is written, and the
-  client keeps its conversation open. **A missing round is CONFIRMED consistently** before
+  day whose every append answers the day-addressed 404. **The slice NAMES the sentence it
+  describes AND ages out** (`SLICE_MAX_AGE_MS`): the tag catches a caller already on the
+  corrected daily, the window catches everything the tag cannot see — a ranks-only
+  correction, and a caller still on the old sentence who would otherwise match the stale
+  entry forever. The FULL artifact is not cached at all, because the score it feeds is
+  permanent. Publish writes the slice FIRST so the puzzle's appearance implies its slice is
+  there. **A corrective write that does not land is not claimed** — `settle` REPORTS whether
+  the state it asked for is now the stored one, so a declined condition (a concurrent
+  republish) is a verdict rather than a success: the answer carries the state as stored, no
+  score row is written, and the client keeps its conversation open. **A missing round is CONFIRMED consistently** before
   the round-start challenge is demanded, since the derivation's pre-read is eventually
   consistent and a stale `null` 403s an append the client sent no token with. And
   **`/scores` takes the caller's `id`** so the band it reports is theirs rather than whoever

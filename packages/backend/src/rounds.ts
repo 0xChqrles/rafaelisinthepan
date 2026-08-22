@@ -395,7 +395,6 @@ export async function handleRound(
     puzzleStore,
     deps,
     event,
-    serverDate,
     instant,
     responseHeaders,
   );
@@ -446,7 +445,6 @@ async function settleAppend(
   puzzleStore: PuzzleStore,
   deps: RoundHandlerDeps,
   event: FnUrlEvent,
-  serverDate: string,
   instant: Date,
   headers: Record<string, string>,
 ): Promise<FnUrlResult> {
@@ -462,7 +460,7 @@ async function settleAppend(
     // the outcome this whole check exists to prevent, reached by a rarer route. The same
     // comparison fixes `progress`, whose "lands slightly low and the next write corrects
     // it" only holds while there IS a next write.
-    if (await retryWrite(() =>
+    if (await confirmWrite(() =>
       deps.roundStore.settle({ ...key, publicId, puzzle, progress: truth.progress, solved: truth.solved }),
     )) {
       state.progress = truth.progress;
@@ -477,6 +475,10 @@ async function settleAppend(
       // as unsolved and still accepts appends). The answer below therefore carries the state
       // as STORED, no score is recorded, and the client keeps its conversation open. What is
       // lost is this round's standing, which is the honest outcome of a solve nothing kept.
+      //
+      // "Did not land" covers a REFUSED write as well as a failing one (corrected again on
+      // review): a concurrent republish makes the record name another puzzle, the condition
+      // declines, and swallowing that as success claimed a solve the record never took.
       console.error(
         `[round] solve NOT recorded (corrective write failed): ${key.date} ${key.lang} ${publicId}.`,
       );
@@ -494,7 +496,7 @@ async function settleAppend(
   // Recording it is the last thing the append does, so the answer the client adopts is never
   // ahead of the population it is about to read.
   if (truth.solved && solveIsStored) {
-    await recordSentenceScore(round, puzzleStore, deps, event, serverDate, instant);
+    await recordSentenceScore(round, puzzleStore, deps, event, instant);
   }
   return json(200, roundBody(state, instant), headers);
 }
@@ -513,11 +515,10 @@ async function recordSentenceScore(
   puzzleStore: PuzzleStore,
   deps: RoundHandlerDeps,
   event: FnUrlEvent,
-  serverDate: string,
   instant: Date,
 ): Promise<void> {
   const { key, publicId, state } = round;
-  const puzzle = await loadPuzzle(puzzleStore, key.date, key.lang, serverDate, round.puzzle);
+  const puzzle = await loadPuzzle(puzzleStore, key.date, key.lang, round.puzzle);
   if (!puzzle) {
     console.error(`[round] no puzzle to score ${key.date} ${key.lang} for ${publicId}.`);
     return;
@@ -571,17 +572,18 @@ async function recordScoreRow(
   }
 }
 
-// A write that must not be dropped. Two retries with a short backoff — enough to ride out a
-// throttle, bounded so it can never hold a player's append open.
+// A write that must not be dropped, and whose CONFIRMATION the caller owes a check: an
+// outcome this route claims in its answer has to be one the store actually holds.
 //
-// REPORTS whether it landed, and the caller owes it a check: an outcome this route claims in
-// its answer has to be one the store actually holds.
-async function retryWrite(write: () => Promise<void>): Promise<boolean> {
+// The two ways it can fail are not the same thing. A THROW is transport — two retries with a
+// short backoff ride out a throttle, bounded so it can never hold a player's append open.
+// A `false` is the store's CONDITION declining, which is a verdict: retrying cannot change
+// what the record now says, so it is reported straight back.
+async function confirmWrite(write: () => Promise<boolean>): Promise<boolean> {
   const delays = [50, 150];
   for (let attempt = 0; ; attempt += 1) {
     try {
-      await write();
-      return true;
+      return await write();
     } catch (error) {
       if (attempt >= delays.length) {
         console.error('[round] corrective write failed after retries:', error);

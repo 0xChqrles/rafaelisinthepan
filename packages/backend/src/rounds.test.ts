@@ -1028,3 +1028,34 @@ describe('what the answer is allowed to claim (#203)', () => {
     expect(parsed(second).guesses).toEqual(['mer', 'quai']);
   });
 });
+
+// CONTRACT (#203, added on review): a corrective write that is DECLINED is not a write that
+// landed. A concurrent republish makes the record name another puzzle, the store's condition
+// refuses, and swallowing that as success claimed a solve the record never took — recording
+// a permanent score row beside it.
+describe('a declined corrective write is not a solve (#203)', () => {
+  it('does not claim a solve the store refused, and records no score', async () => {
+    const store = memoryRoundStore();
+    const inner = store.append.bind(store);
+    const handler = makeHandler({
+      roundStore: {
+        ...store,
+        // The append stores the guesses but derives nothing — the stale-pre-read shape that
+        // makes a corrective write necessary at all.
+        append: (input) => inner({ ...input, progress: 0, solved: false }),
+        // …and the record has moved on under us, so the condition declines.
+        async settle() {
+          return false;
+        },
+      },
+    });
+
+    const answer = await handler(event({ body: body({ guesses: ['phare', 'nuit'] }) }));
+    expect(answer.statusCode).toBe(200);
+    expect(parsed(answer).guesses).toEqual(['phare', 'nuit']);
+    expect(parsed(answer).solved).toBeUndefined();
+    expect(await handler.scoreStore.list({ date: ACTIVE_DATE, lang: 'fr', mode: 'sentence' })).toEqual(
+      [],
+    );
+  });
+});
