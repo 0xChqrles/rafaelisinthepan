@@ -360,8 +360,9 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   Object.prototype, which swallowed a `constructor` secret whole). A truth that reads SOLVED
   then records the day's score row — `countTries` over the FULL artifact (`loadPuzzle`), the
   one thing the slice cannot answer — and that write's failures are LOGGED, never surfaced:
-  the answer is about the log. `puzzleCache.ts` is module state and therefore a test seam
-  (`resetArtifactCache`), because one test's store must never answer another's reads.
+  the answer is about the log. `puzzleCache.ts` holds NO state — both reads are fresh, so
+  there is nothing to reset between tests and nothing an instance can answer a later
+  request from.
   Round CREATION is Turnstile-gated: the sentence round has no START message, so the
   challenge rides the append whose pre-read found nothing (`requireRoundStart`), and a bare
   token with no guesses is a 400 rather than a free challenge to burn. `RoundHandlerDeps`

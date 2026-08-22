@@ -1271,6 +1271,27 @@ publish/inventory/backend:dev (backend), dev/build (web), cdk synth/diff/deploy
 These need a human decision; I did **not** change code or blindly record the
 intended invariant.
 
+**#1 — NOTHING IDENTIFIES A RANK-MAP REVISION, and #203's derivation needs one.**
+Every identity in the system is the SENTENCE's: the round tag is the hole signature (#201,
+because that is what retires a log), and the slice carries the same tag. A correction that
+re-runs the #104 merge walk on the SAME sentence therefore changes the rank maps while every
+tag stays equal — and rank 0 is a GROUP, so the aliases that decide `solved` are exactly what
+moves (79 of 151 hole occurrences in the local fr store carry more than one rank-0 key).
+Two consequences, both reachable and both permanent:
+- **Across the two published objects.** `puzzle:publish` writes the slice and the puzzle
+  separately, so a request landing between them derives `solved` from the NEW slice and the
+  score from the OLD artifact, and both pass the tag check.
+- **Across client and server.** `ensureRound` rehydrates a stored round whenever the holes
+  match, and `adopt` skips its replay when the log is unchanged — so a device that reloads a
+  same-hole correction keeps the retired board, its solved state and its progress, with
+  nothing that ever recomputes them.
+Fresh reads (which replaced #203's caches) remove stale Lambda memory; they do not give the
+three copies a shared revision. The two ways out are a REVISION distinct from sentence
+identity — carried by the published puzzle and the slice, sent by the client, compared for
+equality — or an explicit rule that a republish must change the sentence, enforced in
+`publish`. The first is a cross-package schema + protocol change; the second forbids
+ranks-only corrections. Both are the user's call, so neither is implemented.
+
 *(Resolved 2026-06-22: a guess fills **all** improving holes — the old "at most one
 hole" intent was superseded by an explicit decision to treat each impacted secret
 consecutively.)*

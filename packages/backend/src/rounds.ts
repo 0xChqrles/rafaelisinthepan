@@ -276,8 +276,8 @@ export async function handleRound(
   }
 
   const key: RoundKey = { date, lang, mode };
-  // The two reads the derivation needs, CONCURRENTLY: neither depends on the other, so a
-  // slice cache miss hides inside a round trip already being paid for. The round read is
+  // The two reads the derivation needs, CONCURRENTLY: neither depends on the other, so the
+  // slice's GET hides inside a round trip already being paid for. The round read is
   // EVENTUALLY consistent (roundStore.ts states why that is enough here).
   const [seen, slice] = await Promise.all([
     rounds.get(key, publicId, puzzle, { consistent: false }),

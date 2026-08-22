@@ -167,10 +167,16 @@ async function main() {
     // in STACK_REGION (the stack is pinned there), so address it explicitly.
     const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
     const client = new S3Client({ region: STACK_REGION });
-    // The SLICE goes FIRST (ordered on review): these are two objects, so a reader between
-    // them sees one revision's puzzle beside another's. Writing the derivation artifact
-    // first means the puzzle's appearance always implies its slice is already there — the
-    // harmful direction, since the other one is caught by the slice's own revision tag.
+    // The SLICE goes FIRST: these are two objects, so a reader between them sees one
+    // revision's puzzle beside another's, and writing the derivation artifact first at least
+    // means the puzzle's appearance implies its slice is there.
+    //
+    // **It does NOT close the window.** An earlier comment here claimed the remaining
+    // direction was caught by the slice's revision tag; that is false for a SAME-HOLE
+    // correction, where both objects carry the same tag and a request landing between the
+    // two writes derives `solved` from the new slice and the score from the old artifact.
+    // See the open decision in the root AGENTS.md — the tag identifies a SENTENCE, and
+    // nothing here identifies a rank-map revision.
     if (plan.slice && slice) {
       await client.send(
         new PutObjectCommand({
