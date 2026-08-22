@@ -39,6 +39,15 @@ export function storeKey(date: string, lang: string, mode: PuzzleMode = 'sentenc
   return mode === 'word' ? `${date}.${lang}.word.json` : `${date}.${lang}.json`;
 }
 
+// #203's derivation slice, published BESIDE the sentence puzzle by `puzzle:publish` and
+// read straight from the store by the round route — never through CloudFront, so there is
+// no new route and no cache-policy change. Same flat, fully-determined layout as the
+// puzzle; the `.gz` is literal, because the object IS gzip bytes (these slugs share long
+// prefixes and compress 5.3x, so a 66.7 KB slice travels as 12.5 KB).
+export function sliceKey(date: string, lang: string): string {
+  return `${date}.${lang}.slice.json.gz`;
+}
+
 // Default local store root: packages/backend/.local-store (gitignored). Override with
 // the PUZZLE_STORE env var. Resolved from this module so it is the same dir whether
 // `serve` or `publish` is run from the repo root or the package directory.

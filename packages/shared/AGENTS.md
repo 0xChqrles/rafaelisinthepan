@@ -13,6 +13,10 @@
     src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
     src/scores.ts             WORD_CLAIM_ZONE + Word mode's clock/caps (web+backend), the #201
                               round bounds, VIEWER_IP_HEADER (infra+backend)
+    src/scoring.ts            what a guess LOG means (#203): s()/holeProgress, rankCount,
+                              guessKey, countTries — the readings BOTH ends now perform
+    src/puzzleTag.ts          fnvTag — Word mode's round tag. The SENTENCE daily's is the
+                              published puzzle's own `revision` (#203), stamped by publish
     src/identity.ts           the #187 player key: secret format + publicId derivation (web+backend)
     src/leaderboard.ts        the #190 board rules: competition tie ranks, the plain top-50 cut,
                               own-row window + the Board API types (backend cuts, web renders)
@@ -44,9 +48,9 @@
 - `src/day.ts` is the ONE 22:00-ET DST-correct game-day definition (client + server
   + publish) — see the routing contract in the root `AGENTS.md`.
 - `src/scores.ts` also owns `VIEWER_IP_HEADER`, the header the CDN's viewer-request
-  function stamps the connecting address into and the ONLY client address the score handler
+  function stamps the connecting address into and the ONLY client address the round handler
   trusts (#169). It lives here because INFRA writes it and the BACKEND reads it, and a
-  drift is a 500 on every score POST that no local run can reproduce; the reason it is a
+  drift is a 500 on live round writes that no local run can reproduce; the reason it is a
   stamped header rather than CloudFront's own `CloudFront-Viewer-Address` is recorded in
   the root `AGENTS.md`.
 - `src/avatar.ts` is the ONE definition of the #188 avatar encoding (palette byte + 100
@@ -156,6 +160,22 @@
   One web palette used to be pinned COPIES of ramp stops; with the calm redesign Word
   mode's rarity ladder is AUTHORED instead (`rarity.test.ts` still pins its hexes and
   re-measured dE constraints, so a retune stays a deliberate act).
+- **`src/scoring.ts` is the ONE reading of a guess log (#203).** It moved here from the web
+  when the SERVER started deriving a round's `solved`, its `progress` and its score from the
+  log it stores: `s`/`holeProgress` (the reconstruction curve), `rankCount` (N is GROUPS, not
+  keys), `guessKey` (#104's whole-outcome identity) and `countTries` (the sentence score —
+  distinct identities in a log). Two spellings would let the number on screen disagree with
+  the one the leaderboard recorded and #211's calendar fills from, over the same log. What
+  stays in `web/game/scoring.ts` is only what the SCREEN has: the RuntimeHole improvement
+  rule and `computeProgress` over them.
+- **A round's tag names WHICH PUZZLE its state belongs to**, and for the SENTENCE daily that
+  is the published `revision` (#203, user-decided 2026-08-22) — a hash of the complete
+  puzzle content (rank maps included), stamped by `puzzle:publish` onto the puzzle and its
+  slice alike, sent by the client, compared for equality by the
+  server. It replaced a tag derived from the sentence's holes, which could not tell a
+  corrected puzzle from the one it replaced whenever the sentence was unchanged — and since
+  rank 0 is a GROUP, that is exactly what a correction moves. `src/puzzleTag.ts` keeps only
+  `fnvTag`, which Word mode still derives its own tag with.
 - `src/leaderboard.ts` is the ONE definition of the #190 board's ranking rules —
   competition-style tie ranks, the plain top-50 cut (nothing folded, user-decided
   2026-08-20), the own-row ±2 window — plus the `Board`/`BoardRow` API types. The

@@ -90,6 +90,9 @@ describe('parsePuzzle (shape validation)', () => {
   // A minimal well-formed puzzle per the schema (accents kept in words/display forms).
   const valid = () => ({
     lang: 'fr',
+    // WHICH PUBLISHED VERSION (#203) — stamped by `puzzle:publish`, and the round's identity
+    // on the wire, so a puzzle without one cannot be played.
+    revision: 'a1b2c3d4e5f60718',
     words: ['la', 'forêt', 'ancienne'],
     holes: [
       {
@@ -107,6 +110,12 @@ describe('parsePuzzle (shape validation)', () => {
   it('accepts and returns a well-formed puzzle unchanged', () => {
     const p = valid();
     expect(parsePuzzle(p)).toEqual(p);
+  });
+
+  it('refuses a puzzle with no published version — there is nothing to key its round on', () => {
+    const { revision: _none, ...unstamped } = valid();
+    expect(() => parsePuzzle(unstamped)).toThrow(/revision/);
+    expect(() => parsePuzzle({ ...valid(), revision: '' })).toThrow(/revision/);
   });
 
   it('accepts repeated hole occurrences that share one secret rank map', () => {
@@ -337,16 +346,26 @@ describe('parseWordPuzzle (shape validation)', () => {
 // failure, never as NaN bars on the solved screen.
 describe('scoresUrl', () => {
   it('addresses the /scores route with lang, date and the REQUIRED mode', () => {
-    expect(scoresUrl('fr', '2026-08-14', 'sentence', 'https://api.example')).toBe(
+    expect(scoresUrl('fr', '2026-08-14', 'sentence', undefined, 'https://api.example')).toBe(
       'https://api.example/scores?lang=fr&date=2026-08-14&mode=sentence',
     );
-    expect(scoresUrl('en', '2026-08-14', 'word', 'https://api.example')).toBe(
+    expect(scoresUrl('en', '2026-08-14', 'word', undefined, 'https://api.example')).toBe(
       'https://api.example/scores?lang=en&date=2026-08-14&mode=word',
     );
   });
 
+  it('names the CALLER with their public id, which is what makes `bucket` theirs (#203)', () => {
+    // Matching a local count against the bands only ever says "somebody scored this"; the
+    // server locates the row that is actually this player's.
+    expect(
+      scoresUrl('fr', '2026-08-14', 'sentence', 'lfd5pqz5pa7zjm5u', 'https://api.example'),
+    ).toBe('https://api.example/scores?lang=fr&date=2026-08-14&mode=sentence&id=lfd5pqz5pa7zjm5u');
+  });
+
   it('throws without a configured base (never a silent same-origin fetch)', () => {
-    expect(() => scoresUrl('fr', '2026-08-14', 'sentence', '')).toThrow(/VITE_API_BASE_URL/);
+    expect(() => scoresUrl('fr', '2026-08-14', 'sentence', undefined, '')).toThrow(
+      /VITE_API_BASE_URL/,
+    );
   });
 });
 
@@ -498,7 +517,15 @@ describe('roundUrl + parseRound (#201/#202)', () => {
       // that this client did NOT stamp the clock — so it never gains writer authority by
       // an omission.
       resumed: true,
+      // The server's own reading of the log it stores (#203); absent means "not yet",
+      // never "no longer", since it is only ever written true.
+      solved: false,
     });
+  });
+
+  it('carries the SERVER\'s solve (#203), which is what says the score row exists', () => {
+    expect(parseRound({ ...valid(), solved: true }).solved).toBe(true);
+    expect(() => parseRound({ ...valid(), solved: 'yes' })).toThrow(/solved/);
   });
 
   it("carries Word mode's server-stamped clock, and what it did", () => {

@@ -22,7 +22,6 @@ import {
   beginRoundSync,
   mergeLogs,
   notifyGuess,
-  puzzleTag,
   replayHoles,
   resetRoundSync,
   writeDelayMs,
@@ -41,6 +40,11 @@ vi.mock('../api', async (importOriginal) => ({
   roundUrl: (lang: string, date: string, mode: string) =>
     `https://api.test/round?lang=${lang}&date=${date}&mode=${mode}`,
 }));
+
+// ROUND CREATION is Turnstile-gated (#203): the engine mints a challenge for the append
+// that creates the record. The real module throws without VITE_TURNSTILE_SITE_KEY (the
+// `roundUrl` reason above) and would turn every creating append into a failed write.
+vi.mock('../turnstile', () => ({ turnstileToken: async () => 'challenge' }));
 
 const post = vi.mocked(postRoundBody);
 
@@ -66,18 +70,24 @@ function freshHoles(): RuntimeHole[] {
   ];
 }
 
+// The published VERSION a round is played on (#203) — the round's identity everywhere, and
+// what a republish changes.
+const REVISION = 'a1b2c3d4e5f60718';
+const CORRECTED_REVISION = 'b2c3d4e5f6071829';
+
 function ctx(key: string = KEY) {
   return {
     roundKey: key,
     lang: 'fr',
     mode: 'sentence',
     date: '2026-08-21',
+    revision: REVISION,
     ranks: SECRET_MAP,
     freshHoles: freshHoles(),
   } as const;
 }
 
-function ok(guesses: string[]) {
+function ok(guesses: string[], solved = false) {
   return {
     ok: true,
     status: 200,
@@ -85,22 +95,27 @@ function ok(guesses: string[]) {
       guesses,
       createdAt: '2026-08-21T09:00:00.000Z',
       // Every answer carries the server's own clock (#202); a sentence round has no
-      // startedAt to carry with it.
+      // startedAt to carry with it. `solved` is what the SERVER derived from the log it
+      // stores (#203) — the fact that says the day's score row exists.
+      solved,
       now: '2026-08-21T09:30:00.000Z',
     }),
   } as unknown as Response;
 }
 
 // A refusal is an ANSWER: 409 and 429 carry the UNCHANGED stored log exactly like a 200.
-function refusal(status: number, guesses: string[]) {
+// A refusal is an ANSWER: it carries the stored state of the puzzle ASKED about. An EMPTY
+// one (no record of this puzzle yet — a rate-refused restart) carries an empty `createdAt`,
+// which is what tells "refused an existing round" from "refused before creating one".
+function refusal(status: number, guesses: string[], error?: string) {
   return {
     ok: false,
     status,
     json: async () => ({
-      error: status === 409 ? 'round_full' : 'too_fast',
+      error: error ?? (status === 409 ? 'round_full' : 'too_fast'),
       message: 'refused',
       guesses,
-      createdAt: '2026-08-21T09:00:00.000Z',
+      createdAt: guesses.length === 0 ? '' : '2026-08-21T09:00:00.000Z',
       now: '2026-08-21T09:30:00.000Z',
     }),
   } as unknown as Response;
@@ -133,8 +148,18 @@ function round(key: string = KEY) {
   return useGameStore.getState().rounds[key];
 }
 
-function bodyOf(call: number): { secret: string; puzzle: string; guesses?: string[] } {
-  return post.mock.calls[call][1] as { secret: string; puzzle: string; guesses?: string[] };
+function bodyOf(call: number): {
+  secret: string;
+  puzzle: string;
+  guesses?: string[];
+  turnstileToken?: string;
+} {
+  return post.mock.calls[call][1] as {
+    secret: string;
+    puzzle: string;
+    guesses?: string[];
+    turnstileToken?: string;
+  };
 }
 
 async function settle(ms = 0): Promise<void> {
@@ -196,21 +221,6 @@ describe('replayHoles', () => {
   });
 });
 
-describe('puzzleTag', () => {
-  it('names the puzzle by what holesMatchPuzzle itself compares', () => {
-    const other = freshHoles();
-    other[1] = { ...other[1], secret: 'antique' };
-    expect(puzzleTag(freshHoles())).toBe(puzzleTag(freshHoles()));
-    // A re-published sentence under the same (day, lang) key is a DIFFERENT puzzle, and
-    // the tag is the only thing that tells the server so.
-    expect(puzzleTag(other)).not.toBe(puzzleTag(freshHoles()));
-  });
-
-  it('fits the tag the route accepts', () => {
-    expect(puzzleTag(freshHoles())).toMatch(/^[a-z0-9]{1,32}$/);
-  });
-});
-
 describe('write pacing', () => {
   it('flushes the first write immediately', () => {
     expect(writeDelayMs(0, T0)).toBe(0);
@@ -241,7 +251,7 @@ describe('engine', () => {
 
     expect(post).toHaveBeenCalledOnce();
     // The read carries the player key and the puzzle tag, and asks for nothing else.
-    expect(bodyOf(0).puzzle).toBe(puzzleTag(freshHoles()));
+    expect(bodyOf(0).puzzle).toBe(REVISION);
     expect(bodyOf(0).guesses).toBeUndefined();
 
     expect(round()?.tried).toEqual(['bois']);
@@ -449,6 +459,7 @@ describe('engine', () => {
     ];
     beginRoundSync({
       ...ctx(),
+      revision: CORRECTED_REVISION,
       freshHoles: corrected,
       ranks: { ...SECRET_MAP, antique: { antique: { word: 'antique', rank: 0 } } },
     });
@@ -462,7 +473,7 @@ describe('engine', () => {
     expect(round()?.holes).toEqual(freshHoles());
     // ...and the corrected puzzle asked the server about ITSELF.
     expect(post).toHaveBeenCalledTimes(2);
-    expect(bodyOf(1).puzzle).toBe(puzzleTag(corrected));
+    expect(bodyOf(1).puzzle).toBe(CORRECTED_REVISION);
   });
 
   it('closes on a 4xx VERDICT instead of spinning on it forever', async () => {
@@ -536,5 +547,132 @@ describe('engine', () => {
     notifyGuess(roundKeyForDay(24, 'fr'));
     await settle();
     expect(post).toHaveBeenCalled();
+  });
+});
+
+// CONTRACT (#203): the server derives the solve, and the client adopts that FACT. It is
+// what says the day's score row exists — so the standing is readable — and it is the
+// FREEZE, so the conversation is over.
+describe('the server-held solve (#203)', () => {
+  it('marks the round recorded off an answer that says solved, and stops writing', async () => {
+    seedRound(['bois']);
+    post.mockResolvedValueOnce(status(404)).mockResolvedValueOnce(ok(['bois'], true));
+    beginRoundSync(ctx());
+    await settle(60_000);
+
+    expect(round()?.recorded).toBe(true);
+    const writes = post.mock.calls.length;
+    // Nothing more is sent, whatever else lands locally.
+    seedRound(['bois', 'chemin']);
+    notifyGuess(KEY);
+    await settle(60_000);
+    expect(post).toHaveBeenCalledTimes(writes);
+  });
+
+  it('ADOPTS the stored log on the freeze refusal AND closes — it must do both', async () => {
+    // A plain 4xx would close WITHOUT adopting, leaving this tab rendering an unsolved
+    // board with its guesses still on screen; a plain 409 would adopt WITHOUT closing, and
+    // `pump` would resend immediately with the failure count reset — no backoff at all.
+    seedRound(['bois']);
+    post
+      .mockResolvedValueOnce(status(404))
+      .mockResolvedValueOnce(refusal(409, ['bois', 'foret'], 'round_solved'));
+    beginRoundSync(ctx());
+    await settle(60_000);
+
+    expect(round()?.tried).toEqual(['bois', 'foret']);
+    expect(round()?.recorded).toBe(true);
+    // Its unsent guesses are dropped for good — harmless to the score, since fewer tries
+    // is a better one — but the board is the server's, not this tab's stale copy.
+    expect(round()?.holes[0].rank).toBe(0);
+    const writes = post.mock.calls.length;
+    await settle(60_000);
+    expect(post).toHaveBeenCalledTimes(writes);
+  });
+
+  it('adopts a solved log SERVER-ONLY — the refused guesses are not kept', async () => {
+    // A frozen round's stored log is final: the batch it refused is never stored, so
+    // merging it back in would leave the screen counting tries the recorded score does not
+    // — a headline permanently disagreeing with the rank printed under it.
+    seedRound(['bois', 'chemin', 'vieille']);
+    post
+      .mockResolvedValueOnce(status(404))
+      .mockResolvedValueOnce(refusal(409, ['bois', 'foret'], 'round_solved'));
+    beginRoundSync(ctx());
+    await settle(60_000);
+
+    expect(round()?.tried).toEqual(['bois', 'foret']);
+    expect(round()?.guessCount).toBe(2);
+  });
+
+  it('DEDUPS the server log it adopts — the score counts identities, not entries', async () => {
+    // Two devices each sent a different surface of one group, so the stored log holds two
+    // entries the server scores as ONE (`countTries`/#104). Adopting it verbatim put that
+    // raw length in the headline against a recorded score one lower.
+    seedRound([]);
+    post.mockResolvedValueOnce(ok(['foret', 'foretz'], true));
+    beginRoundSync(ctx());
+    await settle(60_000);
+
+    // `foretz` is an alias of `foret` in every map: one counted try.
+    expect(round()?.tried).toEqual(['foret']);
+    expect(round()?.guessCount).toBe(1);
+  });
+
+  it('adopts server-only on a READ that finds the round already frozen', async () => {
+    // A second device opening a day the first one solved: same rule, and it is the path a
+    // reload takes.
+    seedRound(['bois', 'chemin']);
+    post.mockResolvedValueOnce(ok(['bois', 'foret'], true));
+    beginRoundSync(ctx());
+    await settle(60_000);
+
+    expect(round()?.tried).toEqual(['bois', 'foret']);
+    expect(round()?.recorded).toBe(true);
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not take an EMPTY refusal as proof the round was created', async () => {
+    // A rate-refused RESTART answers the empty state, because no record of THIS puzzle
+    // exists yet. Reading that as creation makes the retry omit the round-start challenge,
+    // which is a 403, which is a verdict — and the conversation closes on a round that was
+    // never created at all.
+    seedRound(['bois']);
+    post
+      .mockResolvedValueOnce(status(404))
+      .mockResolvedValueOnce(refusal(429, [], 'too_fast'))
+      .mockResolvedValue(ok(['bois']));
+    beginRoundSync(ctx());
+    await settle(60_000);
+
+    // The retry still carries the challenge, because nothing has demonstrated a record.
+    expect(bodyOf(2).turnstileToken).toBe('challenge');
+  });
+
+  it('does not re-open a recorded round on a reload — the flag is PERSISTED', async () => {
+    // The round is settled and the server refuses every append: re-opening the
+    // conversation would spend a guaranteed-409 request on every mount.
+    seedRound(['bois'], { recorded: true });
+    beginRoundSync(ctx());
+    await settle(60_000);
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('carries the round-start challenge on the CREATING append only', async () => {
+    seedRound(['bois']);
+    post.mockResolvedValueOnce(status(404)).mockResolvedValue(ok(['bois']));
+    beginRoundSync(ctx());
+    await settle(60_000);
+    // The read carries none (a bare token names no write); the append that creates the
+    // record does.
+    expect(bodyOf(0).turnstileToken).toBeUndefined();
+    expect(bodyOf(1).turnstileToken).toBe('challenge');
+
+    seedRound(['bois', 'chemin']);
+    notifyGuess(KEY);
+    await settle(60_000);
+    // The record exists now: a later append costs no challenge.
+    expect(bodyOf(2).guesses).toEqual(['chemin']);
+    expect(bodyOf(2).turnstileToken).toBeUndefined();
   });
 });

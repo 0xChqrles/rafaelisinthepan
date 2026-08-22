@@ -26,26 +26,28 @@ let initializedHandler: Promise<ProductionHandler> | undefined;
 
 function initializeHandler(): Promise<ProductionHandler> {
   initializedHandler ??= loadScoreSecrets(ssm, config)
-    .then((secrets) =>
-      createHandler({
+    .then((secrets) => {
+      const scoreStore = dynamoScoreStore(dynamo, config.scoreTable);
+      return createHandler({
         store: s3Store(s3, config.bucket),
         allowedOrigin: config.allowedOrigin,
         siteOrigin: config.siteOrigin,
-        scores: {
-          scoreStore: dynamoScoreStore(dynamo, config.scoreTable),
-          turnstile: turnstileVerifier(secrets.turnstileSecret),
-          ipHmacSecret: secrets.ipHmacSecret,
-        },
+        // Read-only since #203: the population is WRITTEN by the round route below.
+        scores: { scoreStore },
         profiles: dynamoProfileStore(dynamo, config.scoreTable),
         friends: dynamoFriendStore(dynamo, config.scoreTable),
         rounds: {
           roundStore: dynamoRoundStore(dynamo, config.scoreTable),
-          // Word mode's round START is Turnstile-gated (#202) — the same Siteverify the
-          // score submission uses.
+          // A finished round records its own score row (#203), so the round route holds
+          // the same store the /scores read does — and the address secret that meters it.
+          scoreStore,
+          ipHmacSecret: secrets.ipHmacSecret,
+          // ROUND START is Turnstile-gated in both modes (#202/#203) — the one Siteverify
+          // left, now that the score POST it used to share is retired.
           turnstile: turnstileVerifier(secrets.turnstileSecret),
         },
-      }),
-    )
+      });
+    })
     .catch((error: unknown) => {
       initializedHandler = undefined;
       throw error;

@@ -9,13 +9,15 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Puzzle } from '@whippin/shared';
 import { fsStore } from './fsStore';
-import { storeKey } from './layout';
+import { encodeSlice } from './slice';
+import { sliceKey, storeKey } from './layout';
 
 const DATE = '2026-06-29';
 
 function puzzle(lang: string, tag: string): Puzzle {
   return {
     lang,
+    revision: `f6${lang}${tag}`,
     words: [tag],
     holes: [{ pos: 0, secret: { word: tag, slug: tag }, start: { word: tag, slug: tag }, start_rank: 1 }],
     ranks: {},
@@ -29,6 +31,15 @@ beforeAll(async () => {
   // One puzzle per (date, lang), keyed flat — two languages share the same day.
   await writeFile(path.join(root, storeKey(DATE, 'fr')), JSON.stringify(puzzle('fr', 'vent')));
   await writeFile(path.join(root, storeKey(DATE, 'en')), JSON.stringify(puzzle('en', 'kitchen')));
+  // #203's slice rests GZIPPED beside the puzzle it was derived from.
+  await writeFile(
+    path.join(root, sliceKey(DATE, 'fr')),
+    encodeSlice({
+      lang: 'fr',
+      revision: 'abc123',
+      holes: { vent: { n: 4, startRank: 2, ranks: { vent: 0 } } },
+    }),
+  );
 });
 
 afterAll(async () => {
@@ -47,5 +58,13 @@ describe('fsStore — mirrors s3Store, reads the flat key directly', () => {
 
   it('returns null (not a throw) when no file exists for the day', async () => {
     expect(await fsStore(root).getPuzzle('1999-01-01', 'fr')).toBeNull();
+  });
+
+  it('reads the #203 slice as BYTES and decodes it, with the same null-not-throw rule', async () => {
+    const slice = await fsStore(root).getSlice(DATE, 'fr');
+    expect(slice?.holes.vent).toEqual({ n: 4, startRank: 2, ranks: { vent: 0 } });
+    // A missing slice IS a missing puzzle upstream — a clean null, never a throw.
+    expect(await fsStore(root).getSlice(DATE, 'en')).toBeNull();
+    expect(await fsStore(root).getSlice('1999-01-01', 'fr')).toBeNull();
   });
 });

@@ -77,9 +77,12 @@ describe('score production boundary (#169)', () => {
       (policy) =>
         policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinLiveScoresOrigin',
     );
+    // `id` joined the addressing triple with #203: the read reports the CALLER's own band,
+    // so the handler needs the publicId naming them. An unlisted parameter never reaches the
+    // Lambda, so the standing would silently go blank for everybody.
     expect(scorePolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
       QueryStringBehavior: 'whitelist',
-      QueryStrings: ['lang', 'date', 'mode'],
+      QueryStrings: ['lang', 'date', 'mode', 'id'],
     });
     expect(scorePolicy?.Properties.OriginRequestPolicyConfig.CookiesConfig).toEqual({
       CookieBehavior: 'none',
@@ -215,12 +218,16 @@ describe('score production boundary (#169)', () => {
     });
   });
 
-  it('stamps the trusted viewer address the score handler requires onto the score route', () => {
+  it('stamps the trusted viewer address onto EVERY route whose handler reads one', () => {
     // `allExcept` forwards viewer headers ONLY — never a CloudFront-GENERATED one — so the
-    // policy above cannot deliver CloudFront-Viewer-Address, and the handler throws on
-    // every POST without a trusted address. A viewer-request function supplies it instead.
+    // policy above cannot deliver CloudFront-Viewer-Address, and a handler that needs a
+    // trusted address throws without it. A viewer-request function supplies it instead.
     // Nothing else can catch this: `pnpm backend:dev` has no CDN, and the handler's own
     // tests hand it the header directly.
+    //
+    // Since #203 that is TWO routes. `/round` verifies both modes' Turnstile-gated round
+    // START against the connecting address and records the day's score row metered by its
+    // HMAC; `/scores` keeps the association because its own shape is unchanged.
     const functions = Object.values(template.findResources('AWS::CloudFront::Function'));
     expect(functions).toHaveLength(1);
     const code = functions[0].Properties.FunctionCode as string;
@@ -237,10 +244,19 @@ describe('score production boundary (#169)', () => {
       string,
       unknown
     >[];
-    const scores = behaviors.find(({ PathPattern }) => PathPattern === 'scores*');
-    const associations = scores?.FunctionAssociations as { EventType: string }[];
-    expect(associations).toHaveLength(1);
-    expect(associations[0].EventType).toBe('viewer-request');
+    for (const pattern of ['scores*', 'round*']) {
+      const behavior = behaviors.find(({ PathPattern }) => PathPattern === pattern);
+      const associations = behavior?.FunctionAssociations as { EventType: string }[];
+      expect(associations, pattern).toHaveLength(1);
+      // VIEWER_REQUEST runs before the cache lookup, so what it stamps IS a viewer header
+      // by the time the origin request policy decides what to forward.
+      expect(associations[0].EventType, pattern).toBe('viewer-request');
+    }
+    // The routes with no per-address logic stay clean.
+    for (const pattern of ['profile*', 'board*', 'friends*']) {
+      const behavior = behaviors.find(({ PathPattern }) => PathPattern === pattern);
+      expect(behavior?.FunctionAssociations, pattern).toBeUndefined();
+    }
   });
 });
 

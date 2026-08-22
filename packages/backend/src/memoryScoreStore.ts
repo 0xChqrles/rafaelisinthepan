@@ -13,7 +13,8 @@ interface DedupCount {
 }
 
 // Process-local store for `pnpm backend:dev`: same ScoreStore contract as DynamoDB —
-// per-player first-write-wins rows, atomic IP allowance — with no AWS account.
+// first-write-wins per published revision, with an atomic allowance on row creation only —
+// and no AWS account.
 // Restarting the local server intentionally resets this lab data.
 //
 // `submissionLimit` defaults to the SHARED production rule, so this store's contract test
@@ -24,7 +25,8 @@ export function memoryScoreStore(
   now: () => Date = () => new Date(),
   submissionLimit: number = SCORE_SUBMISSION_LIMIT,
 ): ScoreStore {
-  const days = new Map<string, Map<string, number>>();
+  // Per player: the score AND the published version it was earned on (#203).
+  const days = new Map<string, Map<string, { score: number; revision: string }>>();
   const dedup = new Map<string, DedupCount>();
   // Mirror DynamoDB's ClientRequestToken: an internal/replayed identical request must
   // return the same outcome without consuming a second allowance or writing twice.
@@ -33,18 +35,18 @@ export function memoryScoreStore(
   return {
     async list(key) {
       const rows: ScoreRow[] = [];
-      for (const [publicId, score] of days.get(dayKey(key)) ?? []) {
-        rows.push({ publicId, score });
+      for (const [publicId, row] of days.get(dayKey(key)) ?? []) {
+        rows.push({ publicId, score: row.score });
       }
       return rows;
     },
 
     async getMany(key, publicIds) {
-      const day = days.get(dayKey(key)) ?? new Map<string, number>();
+      const day = days.get(dayKey(key));
       const rows: ScoreRow[] = [];
       for (const publicId of new Set(publicIds)) {
-        const score = day.get(publicId);
-        if (score !== undefined) rows.push({ publicId, score });
+        const row = day?.get(publicId);
+        if (row !== undefined) rows.push({ publicId, score: row.score });
       }
       return rows;
     },
@@ -58,10 +60,16 @@ export function memoryScoreStore(
         return outcome;
       };
 
-      // Both conditions are one atomic decision, and an existing row is the truer
-      // refusal: it is idempotent and consumes no allowance (dynamoScoreStore's order).
-      const day = days.get(dayKey(input)) ?? new Map<string, number>();
-      if (day.has(input.publicId)) return settle('already_recorded');
+      const day = days.get(dayKey(input)) ?? new Map<string, { score: number; revision: string }>();
+      // First write wins PER VERSION (dynamoScoreStore.ts states why): a row earned on a
+      // REPUBLISHED puzzle belongs to a round that has already started over. Replacing it
+      // consumes no allowance because it does not add a player to the population.
+      const held = day.get(input.publicId);
+      if (held && held.revision === input.revision) return settle('already_recorded');
+      if (held) {
+        day.set(input.publicId, { score: input.score, revision: input.revision });
+        return settle('recorded');
+      }
 
       const dKey = dedupKey(input, input.ipHash);
       const existing = dedup.get(dKey);
@@ -70,7 +78,7 @@ export function memoryScoreStore(
       if (active && active.count >= submissionLimit) return settle('capped');
 
       dedup.set(dKey, { count: (active?.count ?? 0) + 1, expiresAt: input.expiresAt });
-      day.set(input.publicId, input.score);
+      day.set(input.publicId, { score: input.score, revision: input.revision });
       days.set(dayKey(input), day);
       return settle('recorded');
     },

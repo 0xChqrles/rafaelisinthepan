@@ -12,11 +12,13 @@
 // name from the `PuzzleBucketName` output of `WhippinBackendStack` — the infra code is the
 // single source of truth, so there is no bucket flag/env. Looking it up needs AWS creds
 // (already required to upload) + `cloudformation:DescribeStacks`.
+import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { activeDate, type Puzzle, type WordPuzzle } from '@whippin/shared';
-import { defaultLocalStoreRoot, isValidDate, storeKey, type PuzzleMode } from './layout';
+import { defaultLocalStoreRoot, isValidDate, sliceKey, storeKey, type PuzzleMode } from './layout';
+import { buildSlice, encodeSlice } from './slice';
 import { STACK_REGION, stackOutputs } from './stack';
 
 interface Args {
@@ -60,6 +62,12 @@ function die(msg: string): never {
 interface PublishPlan {
   day: string; // the GAME DAY this puzzle is served as (22:00-ET day of #2/#6)
   key: string; // storeKey(day, lang, mode) — the SAME key the readers GetObject/readFile
+  // #203's derivation slice, published BESIDE a sentence puzzle (never for a word
+  // artifact — Word mode reads its whole map once, at submit, and needs none). The backend
+  // has NO fallback for a missing one, so it is part of the same publish rather than a
+  // follow-up: a day whose slice is absent cannot derive anything and answers the
+  // day-addressed 404.
+  slice?: string;
   target: { kind: 'local' } | { kind: 's3'; bucket: string };
 }
 
@@ -83,11 +91,25 @@ export function planPublish(
   const day = args.day ?? activeDate(now);
   if (!isValidDate(day)) throw new Error(`invalid --day "${day}" (expected YYYY-MM-DD).`);
   const key = storeKey(day, lang, mode);
+  const slice = mode === 'sentence' ? sliceKey(day, lang) : undefined;
   if (args.s3) {
     if (!bucket) throw new Error('--s3 requires the deployed bucket (no stack output resolved).');
-    return { day, key, target: { kind: 's3', bucket } };
+    return { day, key, slice, target: { kind: 's3', bucket } };
   }
-  return { day, key, target: { kind: 'local' } };
+  return { day, key, slice, target: { kind: 'local' } };
+}
+
+// WHICH PUBLISHED VERSION this is (#203, user-decided 2026-08-22). A hash of the puzzle's
+// own CONTENT, so re-publishing the identical file is a no-op — nobody's round is disturbed
+// — while any real correction is a new version and the rounds playing the old one start over.
+//
+// Any `revision` already on the input is stripped first, or publishing a file that came back
+// out of the store would hash its own stamp and mint a different version every time.
+// Generation never writes the field; publish is where an artifact becomes a served thing,
+// and this is a property of the SERVING, not of the authoring.
+export function puzzleRevision(raw: unknown): string {
+  const { revision: _stamped, ...content } = raw as Record<string, unknown>;
+  return createHash('sha256').update(JSON.stringify(content)).digest('hex').slice(0, 16);
 }
 
 // Resolve a user-supplied path against the directory the command was INVOKED from,
@@ -127,8 +149,14 @@ async function main() {
   }
 
   const file = resolveInput(args.file);
-  const text = await readFile(file, 'utf8').catch(() => die(`cannot read ${file}`));
-  const artifact = asArtifact(JSON.parse(text), file);
+  const source = await readFile(file, 'utf8').catch(() => die(`cannot read ${file}`));
+  const parsed = JSON.parse(source) as Record<string, unknown>;
+  const artifact = asArtifact(parsed, file);
+  // The SENTENCE puzzle is published carrying its own version; a word artifact is not (Word
+  // mode keys its round on the day's word and reads one artifact, once).
+  const raw =
+    artifact.mode === 'sentence' ? { ...parsed, revision: puzzleRevision(parsed) } : parsed;
+  const text = artifact.mode === 'sentence' ? JSON.stringify(raw) : source;
 
   // For S3, the destination is always the deployed bucket, discovered from the stack output.
   const deployed = args.s3 ? await stackOutputs() : undefined;
@@ -140,12 +168,44 @@ async function main() {
     die(err instanceof Error ? err.message : String(err));
   }
 
+  // #203: the derivation slice is derived here, from the same bytes being published, so the
+  // two objects can never describe different puzzles. A malformed puzzle fails LOUDLY here
+  // rather than publishing a sentence the round route can then never read.
+  let slice: Buffer | undefined;
+  if (plan.slice) {
+    try {
+      slice = encodeSlice(buildSlice(raw as unknown as Puzzle));
+    } catch (err) {
+      die(`${file}: cannot build the derivation slice (${err instanceof Error ? err.message : String(err)}).`);
+    }
+  }
+
   if (plan.target.kind === 's3') {
     const { bucket } = plan.target;
     // Import the SDK only on the S3 path so the local path stays AWS-free. The bucket lives
     // in STACK_REGION (the stack is pinned there), so address it explicitly.
     const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
     const client = new S3Client({ region: STACK_REGION });
+    // The SLICE goes FIRST: these are two objects, so a reader between them sees one
+    // version's puzzle beside another's, and writing the derivation artifact first means the
+    // puzzle's appearance implies its slice is there.
+    //
+    // The window itself is closed by the VERSION both objects carry (#203): a caller names
+    // one, and the route derives nothing unless the slice and the artifact both name the
+    // same. Between these two writes it is simply a day-addressed 404 — which the ordering
+    // then keeps as short as it can be.
+    if (plan.slice && slice) {
+      await client.send(
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: plan.slice,
+          Body: slice,
+          ContentType: 'application/json',
+          ContentEncoding: 'gzip',
+        }),
+      );
+      console.log(`[publish] s3://${bucket}/${plan.slice}  (${slice.byteLength} bytes gzipped)`);
+    }
     await client.send(
       new PutObjectCommand({
         Bucket: bucket,
@@ -183,6 +243,12 @@ async function main() {
   const root = rootArg ? resolveInput(rootArg) : defaultLocalStoreRoot();
   const dest = path.join(root, plan.key);
   await mkdir(path.dirname(dest), { recursive: true });
+  // The slice first, the puzzle second — the S3 ordering above, for its reason.
+  if (plan.slice && slice) {
+    const sliceDest = path.join(root, plan.slice);
+    await writeFile(sliceDest, slice);
+    console.log(`[publish] ${sliceDest}  (${slice.byteLength} bytes gzipped)`);
+  }
   await writeFile(dest, text);
   console.log(`[publish] ${dest}  (${artifact.lang}, ${artifact.mode}, day ${plan.day})`);
 }

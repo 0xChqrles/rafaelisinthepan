@@ -27,16 +27,26 @@ export interface RoundProgress {
   // language WITHOUT re-loading its puzzle's rank map. Game recomputes and syncs it;
   // it is derived UI state, never the source of truth for scoring.
   progress: number;
-  // The score the daily population actually RECORDED for this round (#170/#187) — first
-  // write wins per player, so a duplicate submission (another device/tab under the same
-  // key) is answered with the STORED row's score, which can differ from this round's own
-  // count. Revisit GETs locate the standing by this value, and it is ALSO the submit-once
-  // guard: set means the population holds this round, so a reload only ever GETs. Unset
-  // means it holds nothing — a refused submission, a backend failure, or a round that has
-  // simply not finished — and the next visit asks again (see `shouldSubmitScore`).
-  scoreRecorded?: number;
+  // The SERVER has this round's solve on record (#203), which is when its score row
+  // exists and a standing becomes readable. It is the server's own reading of the log it
+  // stores — set by the sync engine off any answer that says `solved` — never this
+  // device's board, which flips a beat earlier, before the solving append has landed.
+  //
+  // It replaced the recorded SCORE the round used to persist (#170/#187): there is no
+  // client-claimed score left to reconcile against, so what a finished round needs to know
+  // is only WHETHER the population holds it. Unset means it does not yet — the flush is
+  // still in flight, was refused, or the round is simply unfinished — and the standing
+  // stays blank until it lands. It is also the FREEZE: a solved round accepts no further
+  // appends, so the conversation is over and a reload must not re-open it.
+  recorded?: boolean;
+  // WHICH PUBLISHED VERSION this round was played on (#203, user-decided 2026-08-22). A
+  // republish means the puzzle contained an error, so the round it retires STARTS OVER: its
+  // guesses were answers to a different question, and a corrected rank map can move the very
+  // aliases that decided whether a hole was solved. Absent on a round stored before the stamp
+  // existed, which is adopted rather than reset — the puzzle itself has not changed there.
+  revision?: string;
   // The server refused further appends at the guess cap (#201): the round keeps playing
-  // locally but has STOPPED COUNTING — it must never submit a score, so no leaderboard
+  // locally but has STOPPED COUNTING. It never becomes server-recorded, so no leaderboard
   // entry can exist for it. Set only by the sync engine on the server's round_full
   // refusal; never cleared (a capped round stays capped).
   capped?: boolean;
@@ -137,9 +147,6 @@ export interface WordRoundProgress {
   deadline: number | null;
   tried: string[];
   claimed: number;
-  // Same contract as RoundProgress.scoreRecorded (#170/#187): what the population holds
-  // for the finished run's claim count, and the submit-once guard with it.
-  scoreRecorded?: number;
   // The server has ACKNOWLEDGED this round's end-of-run log (#202). Only an optimization:
   // the submission is first-write-wins and safe to repeat, so an unacknowledged round
   // simply asks again on its next visit. Without it, a run that claimed NOTHING would
@@ -289,12 +296,12 @@ interface GameState extends PersistedState {
   // (for example when a re-published puzzle reset the round but not the solved-day fact).
   recordSolve: (lang: string, solvedDay: number, activeDay: number) => boolean;
 
-  // Reconcile the persisted rounds to `key`. A matching key with matching holes
-  // rehydrates its stored progress; a brand-new key — or the same key whose puzzle was
-  // re-published with a different sentence — starts fresh from `initialHoles`. Keeps
+  // Reconcile the persisted rounds to `key`. A matching published revision with matching
+  // holes rehydrates its stored progress; a brand-new key — or the same key under a new
+  // published revision — starts fresh from `initialHoles`. Keeps
   // every day round (the archive needs history), drops any legacy non-day round, then
   // bounds the map with the MAX_DAY_ROUNDS most-recent cap.
-  ensureRound: (key: string, initialHoles: RuntimeHole[]) => void;
+  ensureRound: (key: string, initialHoles: RuntimeHole[], revision: string) => void;
 
   // Reconcile the persisted WORD rounds to `key` (#156): a matching key playing the SAME
   // word rehydrates untouched; a new key — or a republished different word under the same
@@ -355,22 +362,17 @@ interface GameState extends PersistedState {
   adoptRound: (key: string, tried: string[], holes: RuntimeHole[], progress: number) => void;
 
   // Mark the active-keyed round CAPPED (#201): the server refused further appends at
-  // ROUND_GUESS_CAP, so the round stops counting and must never submit a score.
+  // ROUND_GUESS_CAP, so the round stops counting and never becomes server-recorded.
   markRoundCapped: (key: string) => void;
 
   // A warm hit improved a hole on the active round: swap in its closer (accented)
   // word + lower rank.
   improveHole: (index: number, word: string, rank: number) => void;
 
-  // Record what the daily population HOLDS for THIS keyed round (#170/#187) — the score
-  // the server's first-write-wins row actually took, so a revisit GET locates the standing
-  // by that rather than by the local count a duplicate submission failed to record. The
-  // request can finish after navigation has changed the active round, so completion must
-  // carry the identity it started with rather than consulting activeKey at response time.
-  // Written ONLY on an answer that records: a refusal leaves the round with no recorded
-  // score, which is exactly what lets the next visit ask the population again.
-  markScoreRecorded: (key: string, recorded: number) => void;
-  markWordScoreRecorded: (key: string, recorded: number) => void;
+  // The SERVER holds THIS keyed round's solve (#203) — read off a round answer's `solved`,
+  // never off the local board. Keyed rather than active-keyed because an answer routinely
+  // lands after navigation has moved on. Idempotent, and only ever set.
+  markRoundRecorded: (key: string) => void;
 
   // Cache the active round's reconstruction progress (for the selector badge). No-op
   // when unchanged so it never churns the store.
@@ -386,8 +388,8 @@ const storage = createJSONStorage<PersistedState>(() => {
   return window.localStorage;
 });
 
-function freshRound(initialHoles: RuntimeHole[]): RoundProgress {
-  return { holes: initialHoles, guessCount: 0, tried: [], progress: 0 };
+function freshRound(initialHoles: RuntimeHole[], revision: string): RoundProgress {
+  return { holes: initialHoles, guessCount: 0, tried: [], progress: 0, revision };
 }
 
 // Version upgrades for the persisted blob (exported for the invariant tests).
@@ -438,10 +440,29 @@ function freshRound(initialHoles: RuntimeHole[]): RoundProgress {
 //     round a 4xx burned (and, before the 2026-08-16 correction, every 5xx too) carried the
 //     flag with no recorded score, and now submits again on the next visit to its solved
 //     screen.
-function dropRetiredScoreFlag<T>(rounds: Record<string, T>): Record<string, T> {
+//   v12 retires `scoreRecorded` from BOTH round maps (#203): there is no client-claimed
+//     score left to reconcile — the server derives it from the guess log and records the
+//     row itself — so what a finished round persists is `recorded`, a plain "the server
+//     holds this round's solve", written from the round answers rather than from a score
+//     POST. STRIPPED, not translated (the v10 precedent, and the standing no-back-compat
+//     rule): a word round already carries `submitted` for exactly this, and a sentence
+//     round appended to AFTER this ships re-learns the fact from the answer that says
+//     `solved`.
+//     **A round already SOLVED before this ships does NOT recover, and never will**
+//     (corrected on review): its stored row was written by a pre-#203 append, so it carries
+//     no `solved` attribute, its mount READ answers `solved: false`, and with nothing left
+//     pending no append ever fires to derive one — so `recorded` is never set and its solved
+//     screen silently loses the standing line for good. Backfilling it server-side would be
+//     the compatibility layer this repo does not keep, and the cost is bounded to
+//     pre-launch rounds at most a day old against an archive that is wiped before launch.
+function dropRetiredScoreFields<T>(rounds: Record<string, T>): Record<string, T> {
   return Object.fromEntries(
     Object.entries(rounds).map(([key, round]) => {
-      const { scoreSubmitted: _retired, ...rest } = round as T & { scoreSubmitted?: boolean };
+      const {
+        scoreSubmitted: _submitted,
+        scoreRecorded: _recorded,
+        ...rest
+      } = round as T & { scoreSubmitted?: boolean; scoreRecorded?: number };
       return [key, rest as T];
     }),
   );
@@ -461,7 +482,7 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
     };
   }
   const p = persisted as Partial<PersistedState>;
-  const rounds = dropRetiredScoreFlag(p.rounds ?? {});
+  const rounds = dropRetiredScoreFields(p.rounds ?? {});
   const lastLang = p.lastLang ?? null;
   const onboarded =
     typeof p.onboarded === 'boolean'
@@ -469,10 +490,9 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
       : Object.keys(rounds).length > 0 || lastLang != null;
   const solvedDays = p.solvedDays ?? {};
   // Word rounds only survive from v11 on: before v7 they were strike runs, and before v11
-  // their clock was a local stamp no server ever saw (see the notes above). They need no
-  // `scoreSubmitted` strip of their own — v10 stripped the blob that v11 then emptied, so
-  // a surviving word round provably never carried the flag.
-  const wordRounds = version < 11 ? {} : p.wordRounds ?? {};
+  // their clock was a local stamp no server ever saw (see the notes above). A v11 one CAN
+  // carry `scoreRecorded`, so it is stripped like a sentence round's.
+  const wordRounds = version < 11 ? {} : dropRetiredScoreFields(p.wordRounds ?? {});
   const lastMode = p.lastMode === 'word' || p.lastMode === 'sentence' ? p.lastMode : null;
   const sentenceRulesSeen = p.sentenceRulesSeen === true;
   const boardTab = p.boardTab === 'global' ? 'global' : 'friends';
@@ -556,7 +576,7 @@ export const useGameStore = create<GameState>()(
         return true;
       },
 
-      ensureRound: (key, initialHoles) =>
+      ensureRound: (key, initialHoles, revision) =>
         set((s) => {
           // Retention: keep EVERY day round regardless of its day — the archive rehydrates
           // a past day's progress, so a new day must not wipe yesterday's (#54). Any legacy
@@ -565,14 +585,25 @@ export const useGameStore = create<GameState>()(
           for (const [k, v] of Object.entries(s.rounds)) {
             if (dayNumberOf(k) !== null) kept[k] = v; // day round — always retained
           }
-          // Same key + matching holes -> rehydrate untouched; a brand-new key OR a
-          // re-published sentence under the same (day, lang) key (holes no longer match)
-          // -> fresh from initialHoles, so stale holes never reach scoring.
+          // Same key, same PUBLISHED VERSION, matching holes -> rehydrate untouched. A
+          // brand-new key, a re-published puzzle (#203: any correction is a new version, and
+          // its round starts over), or holes that no longer match -> fresh from initialHoles,
+          // so a retired board never reaches scoring.
+          //
+          // The hole check is kept beside the version as a floor: it is what stops secrets
+          // absent from `ranks` reaching the scoring code, whatever the stamp says.
+          //
+          // **`solvedDays` is deliberately NOT touched.** A republish is OUR error, not the
+          // player's, and the streak is a reward for showing up — taking a day back because
+          // we shipped a broken puzzle would punish them for it. So the credit stands, and
+          // solving the corrected version cannot claim it twice (`recordSolve` already
+          // refuses a day it holds), which is the same rule a re-solve has always followed.
           const existing = s.rounds[key];
+          const sameVersion = existing?.revision === undefined || existing.revision === revision;
           kept[key] =
-            existing && holesMatchPuzzle(existing.holes, initialHoles)
-              ? existing
-              : freshRound(initialHoles);
+            existing && sameVersion && holesMatchPuzzle(existing.holes, initialHoles)
+              ? { ...existing, revision }
+              : freshRound(initialHoles, revision);
           // Bound the map: evict the oldest day rounds beyond MAX_DAY_ROUNDS.
           return { activeKey: key, rounds: capDayRounds(kept, key) };
         }),
@@ -770,23 +801,11 @@ export const useGameStore = create<GameState>()(
           };
         }),
 
-      // Idempotent on the VALUE, not on having been called: the server is first-write-wins,
-      // so every accepted submission of one round answers with the same recorded score, and
-      // re-writing it is a no-op to skip rather than a second write to refuse. Guarding on
-      // "already answered once" instead would be the bug the submit-once flag was: a round
-      // the server had refused could never take the score a later retry finally recorded.
-      markScoreRecorded: (key, recorded) =>
+      markRoundRecorded: (key) =>
         set((s) => {
           const round = s.rounds[key];
-          if (!round || round.scoreRecorded === recorded) return {};
-          return { rounds: { ...s.rounds, [key]: { ...round, scoreRecorded: recorded } } };
-        }),
-
-      markWordScoreRecorded: (key, recorded) =>
-        set((s) => {
-          const round = s.wordRounds[key];
-          if (!round || round.scoreRecorded === recorded) return {};
-          return { wordRounds: { ...s.wordRounds, [key]: { ...round, scoreRecorded: recorded } } };
+          if (!round || round.recorded) return {};
+          return { rounds: { ...s.rounds, [key]: { ...round, recorded: true } } };
         }),
 
       syncProgress: (value) =>
@@ -801,7 +820,7 @@ export const useGameStore = create<GameState>()(
     {
       name: 'whippin-round',
       storage,
-      version: 11, // v11: word rounds are server-anchored (see migratePersisted)
+      version: 12, // v12: the recorded SCORE is retired; the server derives it (#203)
       migrate: migratePersisted,
       // Persist rounds (both modes'), last language/mode, the onboarding flag and the
       // solved-day sets; the active keys and the actions are transient. Each language's

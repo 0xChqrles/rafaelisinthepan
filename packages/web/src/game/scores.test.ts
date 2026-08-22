@@ -1,25 +1,23 @@
 // CONTRACT: the solved screen's STANDING (#170) over the backend's histogram (#169). The
 // backend owns the bucket EDGES (this module only reads the inclusive ranges the API
 // returned); the WEB owns the reading:
-//   - a score is located in the inclusive ranges (the GET path sends `bucket: null`);
 //   - RANK is competition ranking — everyone strictly ahead, plus one — so a whole band
 //     shares its rank, which is the only honest number at bucket granularity;
 //   - sentence is lower-is-better (ahead = FEWER tries), word is higher-is-better
 //     (ahead = MORE claims);
 //   - TOP uses the midpoint of the shared bucket, and only above PERCENT_MIN_TOTAL players
 //     AND from PERCENT_MIN_RANK on (a single-digit rank has already said it);
-//   - a finished round submits ONCE: only finished-and-not-yet-submitted rounds POST.
+// `shouldSubmitScore`/`shouldAskPopulation` are GONE (#203): there is no submission left
+// to gate — the server derives the score from the log it stores and records the row itself,
+// so a finished round only ever READS, and only once the server says it holds it.
 
 import { describe, it, expect } from 'vitest';
 import type { ScoreHistogramBucket } from '@whippin/shared';
 import {
   PERCENT_MIN_RANK,
   PERCENT_MIN_TOTAL,
-  bucketIndexOf,
   formatTopPct,
   scoreStanding,
-  shouldAskPopulation,
-  shouldSubmitScore,
 } from './scores';
 
 // Four ascending bands in the API's shape; counts chosen per test.
@@ -32,21 +30,6 @@ function buckets(counts: number[]): ScoreHistogramBucket[] {
   ];
   return edges.map((range, i) => ({ ...range, count: counts[i] ?? 0 }));
 }
-
-describe('bucketIndexOf', () => {
-  it('locates a score in the inclusive ranges (the GET path, where the API sends bucket: null)', () => {
-    const b = buckets([0, 0, 0, 0]);
-    expect(bucketIndexOf(b, 1)).toBe(0);
-    expect(bucketIndexOf(b, 3)).toBe(0);
-    expect(bucketIndexOf(b, 4)).toBe(1);
-    expect(bucketIndexOf(b, 12)).toBe(3);
-  });
-
-  it('returns null for a score no range holds — say nothing rather than lie', () => {
-    expect(bucketIndexOf(buckets([0, 0, 0, 0]), 13)).toBeNull();
-    expect(bucketIndexOf(buckets([0, 0, 0, 0]), 0)).toBeNull();
-  });
-});
 
 describe('scoreStanding — rank is everyone strictly ahead, plus one', () => {
   // Population: 5 in the best sentence band, 3, 2, then 7 in the worst. 17 players.
@@ -169,46 +152,5 @@ describe('formatTopPct — at most ONE decimal, no machine zeros', () => {
     expect(formatTopPct(50)).toBe('50');
     expect(formatTopPct(100)).toBe('100');
     expect(formatTopPct(12.501)).toBe('12.5');
-  });
-});
-
-describe('shouldSubmitScore — a round owes its score until the POPULATION holds it', () => {
-  it('a finished round the population does not hold POSTs', () => {
-    expect(shouldSubmitScore(true, undefined)).toBe(true);
-  });
-
-  it('a recorded score settles the round — that alone is the submit-once guard', () => {
-    expect(shouldSubmitScore(true, 7)).toBe(false);
-    // Zero is a real Word-mode score (no claims), never "nothing recorded".
-    expect(shouldSubmitScore(true, 0)).toBe(false);
-  });
-
-  it('an unfinished round never submits, recorded or not', () => {
-    expect(shouldSubmitScore(false, undefined)).toBe(false);
-    expect(shouldSubmitScore(false, 7)).toBe(false);
-  });
-});
-
-describe('shouldAskPopulation — the #201 cap suppresses the POST, not the standing', () => {
-  it('asks for a finished round that may still claim its place', () => {
-    expect(shouldAskPopulation(true, true, undefined)).toBe(true);
-  });
-
-  it('still READS the standing of a capped round the population already holds', () => {
-    // Solved, submitted, and only THEN capped by a lagging flush: the row is in the
-    // day's population and the rank is real. A client flag must not hide what the
-    // population itself already answered — on that visit or on any later one.
-    expect(shouldAskPopulation(true, false, 12)).toBe(true);
-  });
-
-  it('asks nothing for a capped round with no recorded score', () => {
-    // It stopped counting before it ever placed: there is no entry to claim and none to
-    // read, so the standing slot stays honestly empty.
-    expect(shouldAskPopulation(true, false, undefined)).toBe(false);
-  });
-
-  it('asks nothing before the round is finished', () => {
-    expect(shouldAskPopulation(false, true, undefined)).toBe(false);
-    expect(shouldAskPopulation(false, true, 12)).toBe(false);
   });
 });

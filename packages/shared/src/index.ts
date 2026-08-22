@@ -8,6 +8,8 @@ export * from './heat';
 export * from './cardSvg';
 export * from './day';
 export * from './scores';
+export * from './scoring';
+export * from './puzzleTag';
 export * from './leaderboard';
 export * from './identity';
 export * from './avatar';

@@ -95,8 +95,15 @@ function checkRankAnnotations(entry: Record<string, unknown>): void {
 // per-entry distance annotations (#115)).
 export function parsePuzzle(data: unknown): Puzzle {
   if (!isRecord(data)) throw new Error('malformed puzzle: not an object');
-  const { lang, words, holes, ranks } = data;
+  const { lang, words, holes, ranks, revision } = data;
   if (typeof lang !== 'string') throw new Error('malformed puzzle: missing "lang"');
+  // WHICH PUBLISHED VERSION this is (#203). It is the round's identity on the wire, so a
+  // puzzle without one cannot be played: the server would have nothing to check its slice
+  // and its rank maps against. Stamped by `puzzle:publish`; an artifact predating it is
+  // republished, never limped on (the no-back-compat rule).
+  if (typeof revision !== 'string' || revision.length === 0) {
+    throw new Error('malformed puzzle: missing "revision"');
+  }
   if (!Array.isArray(words) || !words.every((w) => typeof w === 'string')) {
     throw new Error('malformed puzzle: "words" must be an array of strings');
   }
@@ -166,13 +173,24 @@ export function parseWordPuzzle(data: unknown): WordPuzzle {
   return data as unknown as WordPuzzle;
 }
 
-// The live score histogram (#169/#170): GET reads a day's population, POST records the
-// player's score and returns the population WITH it — one round trip on the happy path.
-// Unlike the puzzle route, `mode` is REQUIRED here.
-export function scoresUrl(lang: string, date: string, mode: Mode, base: string = apiBase()): string {
-  return `${requireApiBase(base)}/scores?lang=${encodeURIComponent(lang)}&date=${encodeURIComponent(
+// The live score population (#169/#170), READ-ONLY since #203: a finished round no longer
+// claims its score — the server derives it from the guess log and records the row itself
+// (the round route), so this is a plain GET of the day's bands. Unlike the puzzle route,
+// `mode` is REQUIRED here.
+export function scoresUrl(
+  lang: string,
+  date: string,
+  mode: Mode,
+  id?: string,
+  base: string = apiBase(),
+): string {
+  const root = `${requireApiBase(base)}/scores?lang=${encodeURIComponent(lang)}&date=${encodeURIComponent(
     date,
   )}&mode=${encodeURIComponent(mode)}`;
+  // The caller's PUBLIC id (#203, added on review), which is what makes the answer's
+  // `bucket` this player's rather than whoever else recorded the same number. `id` is in the
+  // score behavior's allowList — the root AGENTS.md three-package contract.
+  return id ? `${root}&id=${encodeURIComponent(id)}` : root;
 }
 
 // Runtime shape check for the histogram response — the parsePuzzle contract: a truncated
@@ -226,23 +244,17 @@ async function postSignedJson(url: string, body: unknown): Promise<Response> {
   });
 }
 
-export async function postScoreBody(
-  url: string,
-  body: { secret: string; score: number; turnstileToken: string },
-): Promise<Response> {
-  return postSignedJson(url, body);
-}
-
-// The round route (#201/#202): the server-authoritative state of one player's play on one
-// daily, one item per (date, lang, mode, publicId). POST-only like /friends —
+// The round route (#201/#202/#203): the server-authoritative state of one player's play on
+// one daily, one item per (date, lang, mode, publicId). POST-only like /friends —
 // `{secret, puzzle}` reads the stored round (404 = none yet); SENTENCE mode streams into it
-// with `{secret, puzzle, guesses}`, while WORD mode writes twice, `{secret, puzzle,
-// turnstileToken}` to START its server-stamped clock and one `{secret, puzzle, guesses}`
-// carrying the whole log at the end. EVERY answer, refusals included, carries the full
-// state, so a write is also a reconciliation. `puzzle` is the opaque tag naming WHICH
-// puzzle the state belongs to (state/roundSync.ts `puzzleTag`), which is how a re-published
-// daily restarts it instead of inheriting the retired one's. The three query parameters are
-// in the round CloudFront behavior's allowList (the root AGENTS.md three-package contract).
+// with `{secret, puzzle, guesses}`, carrying a `turnstileToken` on the append that CREATES
+// the round, while WORD mode writes twice, `{secret, puzzle, turnstileToken}` to START its
+// server-stamped clock and one `{secret, puzzle, guesses}` carrying the whole log at the
+// end. EVERY answer, refusals included, carries the full state, so a write is also a
+// reconciliation. In sentence mode `puzzle` is the published revision naming WHICH puzzle
+// the state belongs to, which is how a corrected daily restarts instead of inheriting the
+// retired one's log. The three query parameters are in the round CloudFront
+// behavior's allowList (the root AGENTS.md three-package contract).
 export function roundUrl(lang: string, date: string, mode: Mode, base: string = apiBase()): string {
   return `${requireApiBase(base)}/round?lang=${encodeURIComponent(lang)}&date=${encodeURIComponent(
     date,
@@ -274,6 +286,11 @@ export interface RoundState {
   // clock belongs to another device (or another tab), and this one cannot know what that
   // run has claimed — so it must never write for it.
   resumed: boolean;
+  // Sentence mode: has the SERVER read this round's log as solved (#203)? It is the server
+  // deriving what it stores, and it is what says the day's score row is recorded — which is
+  // when a standing becomes readable. Only ever written true, so `false` means "not yet",
+  // never "no longer".
+  solved: boolean;
 }
 
 // Runtime shape check for the round response — the parsePuzzle contract: a wrong-shaped
@@ -289,13 +306,16 @@ function requireInstant(value: unknown, field: string): string {
 
 export function parseRound(data: unknown): RoundState {
   if (!isRecord(data)) throw new Error('malformed round: not an object');
-  const { guesses, createdAt, startedAt, submittedAt, resumed } = data;
+  const { guesses, createdAt, startedAt, submittedAt, resumed, solved } = data;
   if (!Array.isArray(guesses) || !guesses.every((g) => typeof g === 'string')) {
     throw new Error('malformed round: "guesses" must be an array of strings');
   }
   if (typeof createdAt !== 'string') throw new Error('malformed round: bad "createdAt"');
   if (resumed !== undefined && typeof resumed !== 'boolean') {
     throw new Error('malformed round: bad "resumed"');
+  }
+  if (solved !== undefined && typeof solved !== 'boolean') {
+    throw new Error('malformed round: bad "solved"');
   }
   return {
     guesses: guesses as string[],
@@ -306,6 +326,9 @@ export function parseRound(data: unknown): RoundState {
     // Only a START answers it. Absent means "not a start", and the safe reading of an
     // answer that did not say is that this client did NOT stamp the clock.
     resumed: resumed !== false,
+    // Absent means the server holds no solve for this round — a word round, or a sentence
+    // one still being played.
+    solved: solved === true,
   };
 }
 

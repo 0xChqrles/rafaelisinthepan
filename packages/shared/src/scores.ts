@@ -51,11 +51,11 @@ export const ROUND_GUESS_CAP = 500;
 export const ROUND_WRITE_MIN_MS = 1_000;
 
 // The header a CloudFront viewer-request function stamps the connecting viewer's IP into,
-// and the ONLY client address the score handler trusts in production (#169). Named here
+// and the ONLY client address the round handler trusts in production (#169). Named here
 // because it is a CDN⇔handler contract: infra writes it, the backend reads it, and a
-// drift is a silent 500 on every score POST that no local run can reproduce.
+// drift is a silent 500 on live round writes that no local run can reproduce.
 //
-// It exists because NO single origin-request policy can carry both halves a /scores POST
+// It exists because NO single origin-request policy can carry both halves a /round POST
 // needs. `CloudFront-Viewer-Address` is a GENERATED header, so only the allow-list and
 // "all viewer headers + CloudFront headers" modes can add it — but the viewer's
 // `x-amz-content-sha256`, which OAC needs to sign a Lambda-URL POST, can never be named in

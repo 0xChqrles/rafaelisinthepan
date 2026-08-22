@@ -8,7 +8,11 @@ import type { FnUrlEvent } from './respond';
 import type { PuzzleStore } from './store';
 
 // The card routes never touch the store; stub it so nothing else is exercised.
-const store: PuzzleStore = { getPuzzle: async () => null, getWordPuzzle: async () => null };
+const store: PuzzleStore = {
+  getPuzzle: async () => null,
+  getWordPuzzle: async () => null,
+  getSlice: async () => null,
+};
 const handler = createHandler({ store });
 
 const get = (rawPath: string, headers: Record<string, string> = {}): FnUrlEvent => ({

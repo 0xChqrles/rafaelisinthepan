@@ -1,0 +1,109 @@
+// CONTRACT (#203, settled over two review rounds): the round route reads BOTH artifacts
+// FRESH, and neither is cached.
+//
+//   | any append, any day | the SLICE         | read fresh |
+//   | a solve, any day    | the full artifact | read fresh |
+//
+// The issue designed a slice cache and a one-day cache for today's artifact. Both were
+// removed while the only revision signal was the hole layout: RANK 0 IS A GROUP, so a
+// correction can move solve aliases without touching a hole, and a stale slice decides
+// `solved` wrongly in both directions. The published content revision now covers that
+// correction and could safely key a cache; fresh remains the simpler, cheap-enough rule.
+
+import { describe, expect, it, vi } from 'vitest';
+import type { Puzzle } from '@whippin/shared';
+import { loadPuzzle, loadSlice } from './puzzleReads';
+import { buildSlice } from './slice';
+import type { PuzzleStore } from './store';
+
+const TODAY = '2026-08-21';
+
+function puzzleFor(date: string, secret = 'phare', aliasRank = 0, revision = REV): Puzzle {
+  return {
+    lang: 'fr',
+    revision,
+    words: [date],
+    holes: [
+      { pos: 0, secret: { word: secret, slug: secret }, start: { word: 'quai', slug: 'quai' }, start_rank: 2 },
+    ],
+    ranks: {
+      [secret]: {
+        [secret]: { word: secret, rank: 0 },
+        // The ALIAS whose rank a correction moves without touching a hole.
+        [`${secret}s`]: { word: secret, rank: aliasRank },
+        quai: { word: 'quai', rank: 2 },
+      },
+    },
+  };
+}
+
+const REV = 'a1b2c3d4e5f60718';
+
+function countingStore(present = true, secret = 'phare', aliasRank = 0, revision = REV) {
+  const getPuzzle = vi.fn(async (date: string) =>
+    present ? puzzleFor(date, secret, aliasRank, revision) : null,
+  );
+  const getSlice = vi.fn(async (date: string) =>
+    present ? buildSlice(puzzleFor(date, secret, aliasRank, revision)) : null,
+  );
+  const store: PuzzleStore = {
+    getPuzzle,
+    async getWordPuzzle() {
+      return null;
+    },
+    getSlice,
+  };
+  return { store, getPuzzle, getSlice };
+}
+
+describe('both artifacts are read FRESH', () => {
+  it('reads the slice on every append, today and archive alike', async () => {
+    const { store, getSlice } = countingStore();
+    await loadSlice(store, TODAY, 'fr', REV);
+    await loadSlice(store, TODAY, 'fr', REV);
+    await loadSlice(store, '2026-07-01', 'fr', REV);
+    expect(getSlice).toHaveBeenCalledTimes(3);
+  });
+
+  it('reads the full artifact on every solve', async () => {
+    const { store, getPuzzle } = countingStore();
+    await loadPuzzle(store, TODAY, 'fr', REV);
+    await loadPuzzle(store, TODAY, 'fr', REV);
+    expect(getPuzzle).toHaveBeenCalledTimes(2);
+  });
+
+  // The whole reason the cache went, and the reason the VERSION exists. A correction that
+  // re-runs the merge walk moves a rank-0 alias without touching a hole — invisible to any
+  // identity derived from the sentence, and decisive for `solved`.
+  it('sees a correction that moves a rank-0 ALIAS without touching a hole', async () => {
+    const before = countingStore(true, 'phare', 0);
+    expect((await loadSlice(before.store, TODAY, 'fr', REV))?.holes.phare.ranks.phares).toBe(0);
+
+    // Same sentence, same holes — a NEW published version, so a caller on the old one is
+    // refused rather than derived against the corrected maps.
+    const after = countingStore(true, 'phare', 1, 'b2c3d4e5f6071829');
+    expect(await loadSlice(after.store, TODAY, 'fr', REV)).toBeNull();
+    expect((await loadSlice(after.store, TODAY, 'fr', 'b2c3d4e5f6071829'))?.holes.phare.ranks.phares).toBe(1);
+  });
+});
+
+describe('the version — is this caller playing the puzzle the store holds?', () => {
+  const OTHER = 'c3d4e5f607182930';
+
+  it('answers NULL for a caller on a version the store has replaced', async () => {
+    // The route turns this into the day-addressed 404, which is the honest answer for a
+    // puzzle that is gone.
+    const { store } = countingStore(true, 'lampe', 0, OTHER);
+    expect(await loadSlice(store, TODAY, 'fr', REV)).toBeNull();
+    expect(await loadPuzzle(store, TODAY, 'fr', REV)).toBeNull();
+    // …and serves the caller who IS on it.
+    expect(await loadSlice(store, TODAY, 'fr', OTHER)).toBeTruthy();
+    expect(await loadPuzzle(store, TODAY, 'fr', OTHER)).toBeTruthy();
+  });
+
+  it('answers NULL for an unpublished day', async () => {
+    const { store } = countingStore(false);
+    expect(await loadSlice(store, TODAY, 'fr', REV)).toBeNull();
+    expect(await loadPuzzle(store, TODAY, 'fr', REV)).toBeNull();
+  });
+});

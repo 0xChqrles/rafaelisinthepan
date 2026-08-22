@@ -18,6 +18,10 @@ interface RoundItem {
   // When the end-of-run log was RECORDED — the submission's own marker, never the log's
   // length (roundStore.ts: a 0-claim run records an empty log).
   submittedAt?: string;
+  // The summary the server DERIVED from the log beside it (#203). `solved` is only ever
+  // written true, and its presence is what freezes further appends.
+  progress?: number;
+  solved?: boolean;
 }
 
 // Process-local store for `pnpm backend:dev`: the same RoundStore contract as DynamoDB —
@@ -38,6 +42,8 @@ export function memoryRoundStore(): RoundStore {
     // was recorded.
     ...(item.startedAt === undefined ? {} : { startedAt: item.startedAt }),
     ...(item.submittedAt === undefined ? {} : { submittedAt: item.submittedAt }),
+    ...(item.progress === undefined ? {} : { progress: item.progress }),
+    ...(item.solved === true ? { solved: true } : {}),
   });
 
   // The state a caller may be TOLD about, which is only ever the state of the puzzle it
@@ -62,6 +68,9 @@ export function memoryRoundStore(): RoundStore {
       const existing = rounds.get(id);
       const nowMs = input.now.getTime();
       const paced = !existing || existing.lastWriteAt < nowMs - ROUND_WRITE_MIN_MS;
+      // `solved` is only ever written TRUE (roundStore.ts), so an unsolved append leaves
+      // whatever is there alone — which, on this branch, is never `true` anyway.
+      const derived = { progress: input.progress, ...(input.solved ? { solved: true } : {}) };
 
       // The route never sends an over-cap batch, but the store owns the invariant:
       // refuse rather than create (or restart) a record born past the cap.
@@ -70,8 +79,9 @@ export function memoryRoundStore(): RoundStore {
       }
 
       // A RETIRED puzzle's log: the round restarted under the same key, so the batch
-      // REPLACES it rather than growing it. The interval still applies — otherwise
-      // varying the tag would be a way around the rate bound.
+      // REPLACES it rather than growing it — the retired puzzle's derived summary included,
+      // or its `solved` would freeze a round nobody is playing any more. The interval still
+      // applies, otherwise varying the tag would be a way around the rate bound.
       if (!existing || existing.puzzle !== input.puzzle) {
         // The refusal answers with the state of the puzzle that was ASKED about — never
         // the retired one's log, which the client would adopt as this round's truth (the
@@ -82,20 +92,40 @@ export function memoryRoundStore(): RoundStore {
           puzzle: input.puzzle,
           createdAt: input.now.toISOString(),
           lastWriteAt: nowMs,
+          ...derived,
         };
         rounds.set(id, item);
         return { outcome: 'appended' as const, state: stateOf(item) };
       }
 
-      // Cap first, then interval — the same order the Dynamo classification reads them
-      // in, so a doubly-refused append answers round_full on both backends.
+      // Solved first, then cap, then interval — the same order the Dynamo classification
+      // reads them in, so a doubly-refused append answers alike on both backends.
+      if (existing.solved) {
+        return { outcome: 'round_solved' as const, state: stateOf(existing) };
+      }
       if (existing.guesses.length + input.guesses.length > ROUND_GUESS_CAP) {
         return { outcome: 'round_full' as const, state: stateOf(existing) };
       }
       if (!paced) return { outcome: 'too_fast' as const, state: stateOf(existing) };
       existing.guesses.push(...input.guesses);
       existing.lastWriteAt = nowMs;
+      Object.assign(existing, derived);
       return { outcome: 'appended' as const, state: stateOf(existing) };
+    },
+
+    // The corrective write (#203): the summary derived from the log the append actually
+    // produced. A record naming a different puzzle has already restarted and has nothing
+    // here to correct, and progress only ever RISES — the Dynamo store's monotonicity
+    // clause, restated here so both backends refuse the same stale correction.
+    async settle(input) {
+      const item = rounds.get(itemKey(input, input.publicId));
+      // REPORTS whether the asked-for state is now the stored one (roundStore.ts): a record
+      // of another puzzle, or one already holding better, took nothing from this call.
+      if (!item || item.puzzle !== input.puzzle) return false;
+      if (item.progress !== undefined && item.progress > input.progress) return false;
+      item.progress = input.progress;
+      if (input.solved) item.solved = true;
+      return true;
     },
 
     // Word mode's round START (#202): stamp the server clock, once per puzzle. A record

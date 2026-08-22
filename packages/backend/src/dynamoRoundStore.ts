@@ -33,15 +33,16 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
     sk: { S: roundSortKey(key) },
   });
 
-  // Strong consistency, for the score store's reason: the read lands right after this
-  // player's own appends — the sync's catch-up on load, and the classification of the
-  // write that just failed — which must not be invisible to it.
-  const readItem = async (key: RoundKey, publicId: string) => {
+  // Strongly consistent BY DEFAULT, for the score store's reason: the read lands right
+  // after this player's own appends — the sync's catch-up on load, and the classification
+  // of the write that just failed — which must not be invisible to it. #203's pre-write
+  // derivation read opts out (see `RoundStore.get`), which halves what that read costs.
+  const readItem = async (key: RoundKey, publicId: string, consistent = true) => {
     const response = await client.send(
       new GetItemCommand({
         TableName: tableName,
         Key: itemKey(key, publicId),
-        ConsistentRead: true,
+        ConsistentRead: consistent,
       }),
     );
     return response.Item;
@@ -62,6 +63,8 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
     createdAt: '#created',
     startedAt: '#started',
     submittedAt: '#sub',
+    progress: '#prog',
+    solved: '#solved',
   } as const;
 
   // The alias map for exactly the attributes one command touches.
@@ -69,8 +72,8 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
     Object.fromEntries(attributes.map((attribute) => [NAMES[attribute], attribute]));
 
   return {
-    async get(key, publicId, puzzle) {
-      const item = await readItem(key, publicId);
+    async get(key, publicId, puzzle, opts) {
+      const item = await readItem(key, publicId, opts?.consistent !== false);
       // A record naming a DIFFERENT puzzle is an honest "nothing stored for this one":
       // the daily was re-published under the same key and this log is the retired
       // sentence's (roundStore.ts).
@@ -87,8 +90,15 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
         ':now': { N: String(nowMs) },
         ':created': { S: input.now.toISOString() },
         ':cutoff': { N: String(cutoff) },
+        ':progress': { N: String(input.progress) },
+        // Declared only where it is NAMED: an unused ExpressionAttributeValue is the same
+        // ValidationException an unused alias is.
+        ...(input.solved ? { ':solved': { BOOL: true } } : {}),
         ...extra,
       });
+      // `solved` is only ever written TRUE (roundStore.ts), so an unsolved append names it
+      // in the CONDITION and nowhere else.
+      const markSolved = input.solved ? ', #solved = :solved' : '';
 
       // The store owns the cap invariant, and this half of it cannot be a condition: a
       // batch too large for an EMPTY log has nothing to compare against (a missing
@@ -108,7 +118,8 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
             Key: itemKey(input, input.publicId),
             UpdateExpression:
               'SET #g = list_append(if_not_exists(#g, :empty), :batch), ' +
-              '#p = :puzzle, #last = :now, #created = if_not_exists(#created, :created)',
+              '#p = :puzzle, #last = :now, #created = if_not_exists(#created, :created), ' +
+              `#prog = :progress${markSolved}`,
             // Every clause is path-only CONDITION syntax. DynamoDB's condition grammar
             // has NO arithmetic, its function list is attribute_exists /
             // attribute_not_exists / attribute_type / begins_with / contains /
@@ -118,10 +129,26 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
             // expressed as ROOM (`:room` = the cap minus this batch) against the log's own
             // size, which bounds the RESULTING log exactly as `size + batch <= cap` would:
             // the result may REACH the cap, never pass it.
+            //
+            // The last clause is #203's FREEZE: once `solved` is set, further appends are
+            // refused — evaluated as part of the same write, so it costs no extra read
+            // (Word mode's submit already works this way, `attribute_not_exists(#sub)`).
+            // It is not an anti-cheat measure: sentence score is unique tries and lower is
+            // better, so padding a log after the solve only ever makes the score worse.
+            // What it prevents is a RECORDED SCORE SILENTLY CHANGING after it is on the
+            // leaderboard, which reads as a bug whoever caused it.
             ConditionExpression:
               '(attribute_not_exists(#last) OR #last < :cutoff) ' +
-              'AND (attribute_not_exists(#g) OR (size(#g) <= :room AND #p = :puzzle))',
-            ExpressionAttributeNames: aliases('guesses', 'puzzle', 'lastWriteAt', 'createdAt'),
+              'AND (attribute_not_exists(#g) OR (size(#g) <= :room AND #p = :puzzle)) ' +
+              'AND attribute_not_exists(#solved)',
+            ExpressionAttributeNames: aliases(
+              'guesses',
+              'puzzle',
+              'lastWriteAt',
+              'createdAt',
+              'progress',
+              'solved',
+            ),
             ExpressionAttributeValues: values({
               ':empty': { L: [] },
               ':room': { N: String(ROUND_GUESS_CAP - input.guesses.length) },
@@ -134,7 +161,7 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
         if ((error as { name?: string }).name !== 'ConditionalCheckFailedException') throw error;
       }
 
-      // The condition named three bounds; classify against the stored item.
+      // The condition named four bounds; classify against the stored item.
       const item = await readItem(input, input.publicId);
       const last = numberOf(item?.lastWriteAt);
       const paced = last === undefined || last < cutoff;
@@ -149,12 +176,26 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
             new UpdateItemCommand({
               TableName: tableName,
               Key: itemKey(input, input.publicId),
-              UpdateExpression: 'SET #g = :batch, #p = :puzzle, #last = :now, #created = :created',
+              // A restart takes the RETIRED puzzle's derived summary with it: its `solved`
+              // would otherwise freeze the fresh round on a sentence nobody is playing any
+              // more (the word start's `REMOVE #g, #sub` rule).
+              UpdateExpression:
+                'SET #g = :batch, #p = :puzzle, #last = :now, #created = :created, ' +
+                (input.solved
+                  ? '#prog = :progress, #solved = :solved'
+                  : '#prog = :progress REMOVE #solved'),
               // Only a record still naming the retired puzzle may be replaced, so two
               // tabs racing the same restart cannot wipe each other's fresh log.
               ConditionExpression:
                 '#p <> :puzzle AND (attribute_not_exists(#last) OR #last < :cutoff)',
-              ExpressionAttributeNames: aliases('guesses', 'puzzle', 'lastWriteAt', 'createdAt'),
+              ExpressionAttributeNames: aliases(
+                'guesses',
+                'puzzle',
+                'lastWriteAt',
+                'createdAt',
+                'progress',
+                'solved',
+              ),
               ExpressionAttributeValues: values({}),
               ReturnValues: 'ALL_NEW',
             }),
@@ -174,12 +215,67 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
 
       const stored = itemToState(item);
       if (!stored) return { outcome: 'too_fast', state: empty() };
+      // A SOLVED round is settled — the truest answer of the three, since neither retrying
+      // nor a smaller batch can ever be accepted again (#203).
+      if (stored.solved) return { outcome: 'round_solved', state: stored };
       // A log already at (or within one batch of) the cap is the cap refusal — the truer
       // answer, since retrying can never succeed — and anything else is the interval.
       if (stored.guesses.length + input.guesses.length > ROUND_GUESS_CAP) {
         return { outcome: 'round_full', state: stored };
       }
       return { outcome: 'too_fast', state: stored };
+    },
+
+    // The corrective write (#203; roundStore.ts states why it exists). ONE conditional
+    // UpdateItem under two clauses.
+    //
+    // The puzzle's identity: a record naming a DIFFERENT one has already restarted and has
+    // nothing here to correct.
+    //
+    // And MONOTONICITY, the same shape `solved` gets by being write-only-true. Two settles
+    // can be in flight at once (this one is behind a retry backoff, and a second device's
+    // append can land and settle inside it), and the later ARRIVAL may carry the older log:
+    // last-writer-wins would then park a lower percentage on the row for good, since a
+    // solved round takes no further append to repair it. Progress only ever RISES within one
+    // puzzle's life — a round's log only grows, and a longer log can only reach equal-or-
+    // better ranks — so refusing a write that would lower it costs nothing correct. `<=`
+    // rather than `<` so a SOLVE still lands when the percentage is already what it will be:
+    // a solved derivation is exactly 100, which is also why this clause can never refuse one
+    // (100 is the maximum a stored value can hold).
+    async settle(input) {
+      try {
+        await client.send(
+          new UpdateItemCommand({
+            TableName: tableName,
+            Key: itemKey(input, input.publicId),
+            UpdateExpression: input.solved
+              ? 'SET #prog = :progress, #solved = :solved'
+              : 'SET #prog = :progress',
+            // Path-only condition syntax, the append's rule: a comparator against a value is
+            // the grammar's own (`#last < :cutoff` already relies on it), where arithmetic
+            // and `if_not_exists` are not.
+            ConditionExpression:
+              '#p = :puzzle AND (attribute_not_exists(#prog) OR #prog <= :progress)',
+            ExpressionAttributeNames: input.solved
+              ? aliases('progress', 'solved', 'puzzle')
+              : aliases('progress', 'puzzle'),
+            ExpressionAttributeValues: {
+              ':progress': { N: String(input.progress) },
+              ':puzzle': { S: input.puzzle },
+              ...(input.solved ? { ':solved': { BOOL: true } } : {}),
+            },
+          }),
+        );
+        return true;
+      } catch (error) {
+        // Either the round was re-published under us — there is no summary of THIS puzzle
+        // to correct, and the fresh round derives its own on its next append — or a better
+        // correction already landed. Both are the right outcome, and neither is a retry —
+        // but neither is a SUCCESS either: the caller has to know the state it asked for is
+        // not the stored one, or it claims a solve this record never took.
+        if ((error as { name?: string }).name !== 'ConditionalCheckFailedException') throw error;
+        return false;
+      }
     },
 
     // WORD mode's first write (#202): stamp the round's start from THIS server's clock.
@@ -302,6 +398,7 @@ function itemToState(item: Item): RoundState | null {
   if (!item) return null;
   const startedAt = item.startedAt?.S;
   const submittedAt = item.submittedAt?.S;
+  const progress = numberOf(item.progress);
   return {
     guesses: item.guesses?.L?.map((v) => v.S ?? '') ?? [],
     // Written as a STRING (`:created`), read as one: `lastWriteAt` is the only round
@@ -316,6 +413,11 @@ function itemToState(item: Item): RoundState | null {
     // submission's own marker and follows the same rule.
     ...(startedAt === undefined ? {} : { startedAt }),
     ...(submittedAt === undefined ? {} : { submittedAt }),
+    // The derived summary (#203). ABSENT rather than 0/false on a round that has none —
+    // a word round, or a sentence round written before its first append — for the
+    // `startedAt` reason: the freeze and the corrective write both test presence.
+    ...(progress === undefined ? {} : { progress }),
+    ...(item.solved?.BOOL === true ? { solved: true } : {}),
   };
 }
 

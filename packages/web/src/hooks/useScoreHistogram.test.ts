@@ -1,21 +1,28 @@
-// CONTRACT (#170): one finished round starts one score conversation. React may unmount
-// the solved screen while that conversation is pending (archive/tutorial navigation),
-// but a new mount must subscribe to the existing work rather than POST the score again.
-// And a round is settled by the POPULATION, not by the conversation: only an answer that
-// RECORDS the score stops it asking, so a refusal and a failure alike stay retryable on
-// the next visit rather than losing that score on a visit the player cannot repeat.
+// CONTRACT (#170, narrowed by #203): one finished round starts one POPULATION READ. React
+// may unmount the solved screen while that read is pending (archive/tutorial navigation),
+// but a new mount must subscribe to the existing work rather than fire a second request.
+//
+// What #203 retired: the POST, the Turnstile token it carried, the recorded score it
+// persisted, and the whole ask-until-recorded machinery around it. The server derives a
+// round's score from the guess log it already holds and records the row itself, so this is
+// a plain GET — and the round's own score is what locates it in the returned bands, since
+// both ends read the same log.
 
 import { describe, expect, it, vi } from 'vitest';
-import { shareScoreFlight, syncScore, type ScorePlacement } from './useScoreHistogram';
+import { readPopulation, shareScoreFlight, type ScorePlacement } from './useScoreHistogram';
 
-const postScoreBody = vi.hoisted(() => vi.fn());
 vi.mock('../api', () => ({
-  postScoreBody,
-  scoresUrl: () => 'https://api.test/scores',
+  scoresUrl: (lang: string, date: string, mode: string, id?: string) =>
+    `https://api.test/scores?lang=${lang}&date=${date}&mode=${mode}${id ? `&id=${id}` : ''}`,
   parseScoreHistogram: (data: unknown) => data,
 }));
-vi.mock('../turnstile', () => ({ turnstileToken: async () => 'token' }));
 vi.mock('../identity', () => ({ playerSecret: () => '00112233445566778899aabbccddeeff' }));
+vi.mock('@whippin/shared', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  publicIdFromSecret: async () => PLAYER_ID,
+}));
+
+const PLAYER_ID = 'lfd5pqz5pa7zjm5u';
 
 describe('shareScoreFlight — one pending conversation per round', () => {
   it('shares pending work across callers and releases it after settlement', async () => {
@@ -27,15 +34,15 @@ describe('shareScoreFlight — one pending conversation per round', () => {
         }),
     );
 
-    const first = shareScoreFlight('post:sentence:fr:1:7', start);
-    const remount = shareScoreFlight('post:sentence:fr:1:7', start);
+    const first = shareScoreFlight('sentence:fr:1:7', start);
+    const remount = shareScoreFlight('sentence:fr:1:7', start);
     expect(remount).toBe(first);
     expect(start).toHaveBeenCalledTimes(1);
 
     resolves[0](null);
     await first;
 
-    const revisit = shareScoreFlight('post:sentence:fr:1:7', start);
+    const revisit = shareScoreFlight('sentence:fr:1:7', start);
     expect(revisit).not.toBe(first);
     expect(start).toHaveBeenCalledTimes(2);
     resolves[1](null);
@@ -48,120 +55,53 @@ describe('shareScoreFlight — one pending conversation per round', () => {
       .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValueOnce(null);
 
-    await expect(shareScoreFlight('post:word:en:2:3', start)).resolves.toBeNull();
-    await expect(shareScoreFlight('post:word:en:2:3', start)).resolves.toBeNull();
+    await expect(shareScoreFlight('word:en:2:3', start)).resolves.toBeNull();
+    await expect(shareScoreFlight('word:en:2:3', start)).resolves.toBeNull();
     expect(start).toHaveBeenCalledTimes(2);
   });
 });
 
-describe('syncScore — a round asks until the population HOLDS its score', () => {
-  const submit = async (status: number, body: unknown = null) => {
-    const markRecorded = vi.fn();
-    postScoreBody.mockResolvedValueOnce({
-      ok: status >= 200 && status < 300,
-      status,
-      json: async () => body,
-    });
-    const placement = await syncScore(markRecorded, 'sentence', 'fr', '2026-08-15', 7);
-    return { markRecorded, placement };
+describe('readPopulation — the day\'s bands, located by this round\'s own score', () => {
+  const read = async (response: { ok: boolean; json?: () => Promise<unknown> }) => {
+    const fetchMock = vi.fn(async () => response);
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      return { placement: await readPopulation('sentence', 'fr', '2026-08-15'), fetchMock };
+    } finally {
+      vi.unstubAllGlobals();
+    }
   };
 
-  it('records the score when the server accepts it', async () => {
+  it('READS — never writes — and NAMES the caller, so the band it gets back is theirs', async () => {
     const histogram = { buckets: [{ min: 7, max: 7, count: 1 }], total: 1, bucket: 0 };
-    const { markRecorded, placement } = await submit(200, histogram);
-    expect(markRecorded).toHaveBeenCalledOnce();
-    expect(markRecorded).toHaveBeenCalledWith(7);
+    const { placement, fetchMock } = await read({ ok: true, json: async () => histogram });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://api.test/scores?lang=fr&date=2026-08-15&mode=sentence&id=${PLAYER_ID}`,
+    );
     expect(placement).toEqual({ histogram, bucket: 0 });
   });
 
-  it('persists the STORED row\'s score when first-write-wins answered a duplicate (#187)', async () => {
-    // Another device already recorded 9 under this key; this device finished at 7. The
-    // server answers with the stored band, and THAT score — never the local 7 — is what
-    // revisit GETs must locate with, or the standing changes between the POST and the
-    // next reload.
+  it('takes the SERVER\'s bucket, never one matched off the local count', async () => {
+    // Matching by value says "somebody recorded this number", not "this row is yours": a
+    // round the IP cap refused, or a Word daily another device submitted first, would
+    // borrow an unrelated player's standing.
     const histogram = {
       buckets: [
         { min: 4, max: 4, count: 1 },
-        { min: 9, max: 9, count: 1 },
+        { min: 7, max: 7, count: 2 },
       ],
-      total: 2,
-      bucket: 1,
-    };
-    const { markRecorded, placement } = await submit(200, histogram);
-    expect(markRecorded).toHaveBeenCalledWith(9);
-    expect(placement).toEqual({ histogram, bucket: 1 });
-  });
-
-  it('authenticates the POST with the player key (#187) beside the score and token', async () => {
-    await submit(200, { buckets: [], total: 0, bucket: null });
-    expect(postScoreBody).toHaveBeenLastCalledWith('https://api.test/scores', {
-      secret: '00112233445566778899aabbccddeeff',
-      score: 7,
-      turnstileToken: 'token',
-    });
-  });
-
-  it('records NOTHING when the server REFUSES it — a 4xx leaves the round retryable', async () => {
-    // The refusal that matters is the 403: Turnstile refusing the REQUEST, never the
-    // server judging the SCORE. Persisting a "submitted" flag here dropped that score
-    // from the day's population for good, silently, on a visit the player cannot repeat —
-    // and the round could not tell that refusal apart from an honest one afterwards.
-    for (const status of [400, 403, 404, 429]) {
-      const { markRecorded, placement } = await submit(status);
-      expect(markRecorded).not.toHaveBeenCalled();
-      expect(placement).toBeNull();
-    }
-  });
-
-  it('locates the revisit GET by the recorded score, never the local count (#187)', async () => {
-    const histogram = {
-      buckets: [
-        { min: 4, max: 4, count: 1 },
-        { min: 9, max: 9, count: 1 },
-      ],
-      total: 2,
+      total: 3,
+      // The population holds no row for this caller, even though the number exists.
       bucket: null,
     };
-    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => histogram }));
-    vi.stubGlobal('fetch', fetchMock);
-    try {
-      const markRecorded = vi.fn();
-      // Local count 7, but the population recorded 9 for this round on another device.
-      const placement = await syncScore(markRecorded, 'sentence', 'fr', '2026-08-15', 7, 9);
-      expect(placement).toEqual({ histogram, bucket: 1 });
-      expect(markRecorded).not.toHaveBeenCalled();
-    } finally {
-      vi.unstubAllGlobals();
-    }
+    const { placement } = await read({ ok: true, json: async () => histogram });
+    expect(placement).toEqual({ histogram, bucket: null });
   });
 
-  it('RE-SUBMITS a round the population does not hold, rather than GETting a standing that is not there', async () => {
-    // The revisit that finds a round with no recorded score — one a 4xx refused, one a
-    // 5xx or a dead Turnstile never got an answer for — POSTs again instead of reading.
-    // Safe by construction since #187: the row is first-write-wins, so a duplicate
-    // changes nothing server-side and comes back with the STORED band. Falling back to a
-    // GET here could only ever locate the LOCAL count, which would place this round in
-    // whatever band another player happened to record at that score.
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
-    try {
-      const histogram = { buckets: [{ min: 7, max: 7, count: 1 }], total: 1, bucket: 0 };
-      const { markRecorded, placement } = await submit(200, histogram);
-      expect(fetchMock).not.toHaveBeenCalled();
-      expect(markRecorded).toHaveBeenCalledWith(7);
-      expect(placement).toEqual({ histogram, bucket: 0 });
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
-  it('records nothing when the server FAILS — a 5xx must stay retryable', async () => {
-    // The failure this guards against is not hypothetical: a cold-start secret read, a
-    // throttled write, or a CDN 502 would otherwise drop that score from the day's
-    // population for good.
-    for (const status of [500, 502, 503]) {
-      const { markRecorded, placement } = await submit(status);
-      expect(markRecorded).not.toHaveBeenCalled();
+  it('is silent on every failure — the slot simply shows nothing', async () => {
+    for (const status of [404, 429, 500, 503]) {
+      const { placement } = await read({ ok: false, json: async () => ({ status }) });
       expect(placement).toBeNull();
     }
   });

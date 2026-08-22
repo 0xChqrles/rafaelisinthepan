@@ -2,7 +2,8 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Puzzle, WordPuzzle } from '@whippin/shared';
 import type { PuzzleStore } from './store';
-import { storeKey, type PuzzleMode } from './layout';
+import { decodeSlice } from './slice';
+import { sliceKey, storeKey, type PuzzleMode } from './layout';
 
 // A directory-backed PuzzleStore — the LOCAL mirror of `s3Store`, so the same
 // `createHandler` logic (#2) runs on a laptop with no AWS account (issue #17).
@@ -26,6 +27,15 @@ export function fsStore(root: string): PuzzleStore {
     },
     async getWordPuzzle(date, lang) {
       return (await read(date, lang, 'word')) as WordPuzzle | null;
+    },
+    // #203's slice: gzip bytes, so it is read raw and decoded rather than parsed as text.
+    async getSlice(date, lang) {
+      try {
+        return decodeSlice(await readFile(path.join(root, sliceKey(date, lang))));
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+        throw err;
+      }
     },
   };
 }

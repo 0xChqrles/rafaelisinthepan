@@ -16,7 +16,7 @@ const STRINGS = {
   loading: { en: 'LOADING…', fr: 'CHARGEMENT…' },
   failedPuzzle: { en: 'FAILED TO LOAD PUZZLE', fr: 'ÉCHEC DU CHARGEMENT DU PUZZLE' },
   failedVocab: { en: 'FAILED TO LOAD VOCABULARY', fr: 'ÉCHEC DU CHARGEMENT DU DICTIONNAIRE' },
-  // The #188 profile read. Its failure is NOT silent like a score submission's: what
+  // The #188 profile read. Its failure is NOT silent like background round sync: what
   // the server holds is the editor's whole starting point, so a guess could be saved
   // over the real profile — the reader retries instead.
   failedProfile: { en: 'FAILED TO LOAD PROFILE', fr: 'ÉCHEC DU CHARGEMENT DU PROFIL' },

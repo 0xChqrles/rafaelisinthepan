@@ -5,9 +5,9 @@
 //     MAX_DAY_ROUNDS most-recent cap (oldest day rounds evicted beyond it);
 //   - switching LANGUAGE keeps BOTH rounds — coming back restores the in-progress one
 //     (drives the language selector's per-language status + no-confirmation switching);
-//   - the SAME key rehydrates the stored progress untouched (mid-round reload) — UNLESS
-//     the puzzle was re-published with a different sentence (holes no longer match), in
-//     which case the round resets so stale holes never reach scoring;
+//   - the SAME key + published revision rehydrates stored progress untouched (mid-round
+//     reload); a new revision resets even when only the rank maps changed, while the hole
+//     check remains a structural safety floor;
 //   - score = number of UNIQUE valid tries, deduped by folded slug;
 //   - an improved hole swaps in the closer word + lower rank; solved holes stay locked;
 //   - progress is cached per round for the selector badge;
@@ -15,6 +15,10 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { useGameStore, roundKeyForDay, migratePersisted, holesMatchPuzzle } from './gameStore';
+
+// The published VERSION a round is played on (#203). Every call here plays ONE version;
+// what a REPUBLISH does has its own suite below.
+const REV = 'a1b2c3d4e5f60718';
 import { runMs } from '../game/wordGame';
 import type { RuntimeHole } from '@whippin/shared';
 
@@ -102,7 +106,7 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
 
   it('initializes a fresh word round AT THE GATE, separate from sentence rounds', () => {
     const { ensureRound, ensureWordRound } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles());
+    ensureRound('d:5:fr', freshHoles(), REV);
     ensureWordRound('w:5:fr', 'phare');
     const s = useGameStore.getState();
     expect(s.activeWordKey).toBe('w:5:fr');
@@ -408,7 +412,7 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
 
 describe('ensureRound — day/language keying', () => {
   it('initializes a fresh round for a brand-new key and makes it active', () => {
-    useGameStore.getState().ensureRound('d:5:fr', freshHoles());
+    useGameStore.getState().ensureRound('d:5:fr', freshHoles(), REV);
     const s = useGameStore.getState();
     expect(s.activeKey).toBe('d:5:fr');
     expect(s.rounds['d:5:fr']).toEqual({
@@ -416,24 +420,31 @@ describe('ensureRound — day/language keying', () => {
       guessCount: 0,
       tried: [],
       progress: 0,
+      revision: REV,
     });
   });
 
   it('KEEPS yesterday\'s day round when a new day flips (archive history, #54)', () => {
     const { ensureRound, recordGuess, improveHole } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles());
+    ensureRound('d:5:fr', freshHoles(), REV);
     recordGuess('bois');
     improveHole(0, 'forêt', 0); // solved a hole yesterday
     expect(activeRound()?.guessCount).toBe(1);
 
     // A new day flips -> a different key -> today starts fresh, but yesterday's round
     // survives so the archive can rehydrate its progress.
-    ensureRound('d:6:fr', freshHoles());
+    ensureRound('d:6:fr', freshHoles(), REV);
     const s = useGameStore.getState();
     expect(s.activeKey).toBe('d:6:fr');
     expect(s.rounds['d:5:fr']?.guessCount).toBe(1); // preserved
     expect(s.rounds['d:5:fr']?.holes[0].rank).toBe(0);
-    expect(s.rounds['d:6:fr']).toEqual({ holes: freshHoles(), guessCount: 0, tried: [], progress: 0 });
+    expect(s.rounds['d:6:fr']).toEqual({
+      holes: freshHoles(),
+      guessCount: 0,
+      tried: [],
+      progress: 0,
+      revision: REV,
+    });
   });
 
   it('caps the map: with > MAX_DAY_ROUNDS day rounds the oldest are evicted, the newest kept', () => {
@@ -448,7 +459,7 @@ describe('ensureRound — day/language keying', () => {
 
     // A brand-new newest day pushes the count over the cap -> the single oldest (day 1) is
     // evicted; everything newer, including the new active round, is kept.
-    useGameStore.getState().ensureRound(`d:${CAP + 1}:fr`, freshHoles());
+    useGameStore.getState().ensureRound(`d:${CAP + 1}:fr`, freshHoles(), REV);
     const s = useGameStore.getState();
     expect(Object.keys(s.rounds).length).toBe(CAP); // still capped
     expect(s.rounds['d:1:fr']).toBeUndefined(); // oldest evicted
@@ -459,17 +470,17 @@ describe('ensureRound — day/language keying', () => {
 
   it('switching LANGUAGE keeps both rounds; coming back restores the in-progress one', () => {
     const { ensureRound, recordGuess, improveHole } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles());
+    ensureRound('d:5:fr', freshHoles(), REV);
     recordGuess('bois');
     improveHole(0, 'forêt', 12);
 
     // Switch to the same day's other language: the FR round survives untouched.
-    ensureRound('d:5:en', freshHoles());
+    ensureRound('d:5:en', freshHoles(), REV);
     expect(activeRound()?.guessCount).toBe(0); // EN is fresh
     expect(useGameStore.getState().rounds['d:5:fr']).toBeDefined();
 
     // Come back to FR: its mid-game state is restored, not reset.
-    ensureRound('d:5:fr', freshHoles());
+    ensureRound('d:5:fr', freshHoles(), REV);
     const fr = activeRound();
     expect(fr?.guessCount).toBe(1);
     expect(fr?.holes[0].rank).toBe(12);
@@ -478,14 +489,14 @@ describe('ensureRound — day/language keying', () => {
 
   it('the SAME key is a no-op -> mid-round progress rehydrates untouched', () => {
     const { ensureRound, recordGuess, improveHole, syncProgress } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles());
+    ensureRound('d:5:fr', freshHoles(), REV);
     recordGuess('bois');
     improveHole(0, 'forêt', 12);
     syncProgress(42);
     const mid = activeRound();
 
     // A reload calls ensureRound again with the SAME key + the same fresh holes.
-    ensureRound('d:5:fr', freshHoles());
+    ensureRound('d:5:fr', freshHoles(), REV);
     const after = activeRound();
     expect(after).toEqual(mid); // NOT reset to freshHoles
     expect(after?.holes[0].rank).toBe(12);
@@ -498,14 +509,14 @@ describe('ensureRound — day/language keying', () => {
     const { ensureRound, recordGuess } = useGameStore.getState();
     // Simulate an older persisted blob that still carries a retired ?puzzle= override
     // round ("o:<nonce>:<lang>") alongside a real day round.
-    ensureRound('d:5:fr', freshHoles());
+    ensureRound('d:5:fr', freshHoles(), REV);
     recordGuess('bois');
     useGameStore.setState((s) => ({
       rounds: { ...s.rounds, 'o:legacy:fr': { holes: freshHoles(), guessCount: 3, tried: ['x', 'y', 'z'], progress: 10 } },
     }));
 
     // The next reconcile to any day key purges the legacy round and preserves day history.
-    ensureRound('d:6:en', freshHoles());
+    ensureRound('d:6:en', freshHoles(), REV);
     const s = useGameStore.getState();
     expect(s.activeKey).toBe('d:6:en');
     expect(s.rounds['o:legacy:fr']).toBeUndefined(); // legacy round dropped
@@ -514,7 +525,7 @@ describe('ensureRound — day/language keying', () => {
 
   it('resets when the same (day, lang) key is re-published with a DIFFERENT sentence', () => {
     const { ensureRound, recordGuess, improveHole } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles());
+    ensureRound('d:5:fr', freshHoles(), REV);
     recordGuess('bois');
     improveHole(0, 'forêt', 12);
 
@@ -524,8 +535,14 @@ describe('ensureRound — day/language keying', () => {
       { pos: 2, secret: 'chat', word: 'animal', rank: 60, startRank: 60 },
       { pos: 4, secret: 'noir', word: 'sombre', rank: 30, startRank: 30 },
     ];
-    ensureRound('d:5:fr', newHoles);
-    expect(activeRound()).toEqual({ holes: newHoles, guessCount: 0, tried: [], progress: 0 });
+    ensureRound('d:5:fr', newHoles, REV);
+    expect(activeRound()).toEqual({
+      holes: newHoles,
+      guessCount: 0,
+      tried: [],
+      progress: 0,
+      revision: REV,
+    });
   });
 
   it('matches duplicate secret slugs by position without collapsing hole instances', () => {
@@ -539,9 +556,9 @@ describe('ensureRound — day/language keying', () => {
       ]),
     ).toBe(false);
 
-    useGameStore.getState().ensureRound('d:5:fr', repeated);
+    useGameStore.getState().ensureRound('d:5:fr', repeated, REV);
     useGameStore.getState().improveHole(0, 'chat', 0);
-    useGameStore.getState().ensureRound('d:5:fr', repeated);
+    useGameStore.getState().ensureRound('d:5:fr', repeated, REV);
 
     expect(activeRound()?.holes).toHaveLength(3);
     expect(activeRound()?.holes.map((hole) => hole.pos)).toEqual([1, 3, 5]);
@@ -550,7 +567,7 @@ describe('ensureRound — day/language keying', () => {
 });
 
 describe('recordGuess — score = unique valid tries (on the active round)', () => {
-  beforeEach(() => useGameStore.getState().ensureRound('d:5:fr', freshHoles()));
+  beforeEach(() => useGameStore.getState().ensureRound('d:5:fr', freshHoles(), REV));
 
   it('counts each distinct guess once', () => {
     const { recordGuess } = useGameStore.getState();
@@ -583,7 +600,7 @@ describe('recordGuess — score = unique valid tries (on the active round)', () 
   });
 
   it('counts one shared-secret solve once even when it resolves repeated holes', () => {
-    useGameStore.getState().ensureRound('d:5:fr', repeatedSecretHoles());
+    useGameStore.getState().ensureRound('d:5:fr', repeatedSecretHoles(), REV);
     const { recordGuess, improveHole } = useGameStore.getState();
 
     recordGuess('chat');
@@ -605,7 +622,7 @@ describe('recordGuess — score = unique valid tries (on the active round)', () 
 });
 
 describe('adoptRound — the server answer becomes the round truth (#201)', () => {
-  beforeEach(() => useGameStore.getState().ensureRound('d:5:fr', freshHoles()));
+  beforeEach(() => useGameStore.getState().ensureRound('d:5:fr', freshHoles(), REV));
 
   it('replaces tried + holes and derives the count from the merged log', () => {
     const adopted: RuntimeHole[] = [
@@ -639,7 +656,7 @@ describe('adoptRound — the server answer becomes the round truth (#201)', () =
 });
 
 describe('markRoundCapped — the cap stops the round counting (#201)', () => {
-  beforeEach(() => useGameStore.getState().ensureRound('d:5:fr', freshHoles()));
+  beforeEach(() => useGameStore.getState().ensureRound('d:5:fr', freshHoles(), REV));
 
   it('marks the round capped', () => {
     useGameStore.getState().markRoundCapped('d:5:fr');
@@ -663,7 +680,7 @@ describe('markRoundCapped — the cap stops the round counting (#201)', () => {
 });
 
 describe('improveHole — closer word + lower rank, others untouched', () => {
-  beforeEach(() => useGameStore.getState().ensureRound('d:5:fr', freshHoles()));
+  beforeEach(() => useGameStore.getState().ensureRound('d:5:fr', freshHoles(), REV));
 
   it('swaps in the improved hole only', () => {
     useGameStore.getState().improveHole(1, 'antique', 3);
@@ -696,7 +713,7 @@ describe('improveHole — closer word + lower rank, others untouched', () => {
 });
 
 describe('syncProgress — cached per round for the selector badge', () => {
-  beforeEach(() => useGameStore.getState().ensureRound('d:5:fr', freshHoles()));
+  beforeEach(() => useGameStore.getState().ensureRound('d:5:fr', freshHoles(), REV));
 
   it('stores the value on the active round', () => {
     useGameStore.getState().syncProgress(63);
@@ -712,80 +729,52 @@ describe('syncProgress — cached per round for the selector badge', () => {
   });
 });
 
-// CONTRACT (#170/#187): the RECORDED score PERSISTS with its round, next to the solved
-// state, so a reload or a revisit reads the histogram instead of re-submitting — and its
-// ABSENCE is what lets a round the population never took ask again (2026-08-20, retiring
-// the submit-once flag). One value per mode's round shape; both actions target the key
-// captured when the request started, even if navigation has made a different round active
-// by completion.
-describe('recorded scores (#170/#187) — markScoreRecorded / markWordScoreRecorded', () => {
-  it('records on the keyed sentence round, and persists on the round itself', () => {
-    const { ensureRound, markScoreRecorded } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles());
-    expect(activeRound()?.scoreRecorded).toBeUndefined();
-    markScoreRecorded('d:5:fr', 9);
-    expect(activeRound()?.scoreRecorded).toBe(9);
+// CONTRACT (#203): what a finished round persists is `recorded` — the SERVER holds this
+// round's solve, read off a round answer rather than off the local board — which is what
+// makes its score row (and therefore its standing) readable, and what says the round is
+// frozen. It replaced the recorded SCORE, which existed to reconcile a client-claimed one;
+// there is none left to reconcile. It targets the key captured when the request started,
+// even if navigation has made a different round active by the time the answer lands.
+describe('the server-held solve (#203) — markRoundRecorded', () => {
+  it('marks the keyed round, and persists on the round itself', () => {
+    const { ensureRound, markRoundRecorded } = useGameStore.getState();
+    ensureRound('d:5:fr', freshHoles(), REV);
+    expect(activeRound()?.recorded).toBeUndefined();
+    markRoundRecorded('d:5:fr');
+    expect(activeRound()?.recorded).toBe(true);
     const before = useGameStore.getState().rounds;
-    markScoreRecorded('d:5:fr', 9);
-    expect(useGameStore.getState().rounds).toBe(before); // idempotent on the VALUE — no churn
+    markRoundRecorded('d:5:fr');
+    expect(useGameStore.getState().rounds).toBe(before); // idempotent — no churn
   });
 
-  it('takes the score a RETRY finally records — the heal the submit-once flag blocked', () => {
-    // The round whose first POST was refused (or never answered) holds nothing, so the
-    // next visit submits again. Guarding on "already answered once" is what used to strand
-    // it: the retry succeeded and the store threw its answer away.
-    const { ensureRound, markScoreRecorded } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles());
-    expect(activeRound()?.scoreRecorded).toBeUndefined(); // refused: nothing recorded
-    markScoreRecorded('d:5:fr', 3);
-    expect(activeRound()?.scoreRecorded).toBe(3);
-  });
-
-  it('records on the keyed word round without touching the sentence round', () => {
-    const { ensureRound, ensureWordRound, markWordScoreRecorded } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles());
-    ensureWordRound('w:5:fr', 'phare');
-    markWordScoreRecorded('w:5:fr', 12);
+  it('marks the round the answer is about, not the newly active one', () => {
+    const { ensureRound, markRoundRecorded } = useGameStore.getState();
+    ensureRound('d:5:fr', freshHoles(), REV);
+    ensureRound('d:6:fr', freshHoles(), REV); // the active round has moved on
+    markRoundRecorded('d:5:fr');
     const s = useGameStore.getState();
-    expect(s.wordRounds['w:5:fr'].scoreRecorded).toBe(12);
-    expect(s.rounds['d:5:fr'].scoreRecorded).toBeUndefined();
+    expect(s.rounds['d:5:fr'].recorded).toBe(true);
+    expect(s.rounds['d:6:fr'].recorded).toBeUndefined();
   });
 
-  it('records on the submitting round after navigation, not the newly active round', () => {
-    const { ensureRound, ensureWordRound, markScoreRecorded, markWordScoreRecorded } =
-      useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles());
-    ensureRound('d:6:fr', freshHoles()); // active sentence round has moved on
-    markScoreRecorded('d:5:fr', 9);
-
-    ensureWordRound('w:5:fr', 'phare');
-    ensureWordRound('w:6:fr', 'océan'); // active Word round has moved on
-    markWordScoreRecorded('w:5:fr', 12);
-
-    const s = useGameStore.getState();
-    expect(s.rounds['d:5:fr'].scoreRecorded).toBe(9);
-    expect(s.rounds['d:6:fr'].scoreRecorded).toBeUndefined();
-    expect(s.wordRounds['w:5:fr'].scoreRecorded).toBe(12);
-    expect(s.wordRounds['w:6:fr'].scoreRecorded).toBeUndefined();
-  });
-
-  it('a round rehydrated under the same key keeps its recorded score (the revisit guard)', () => {
-    const { ensureRound, markScoreRecorded } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles());
-    markScoreRecorded('d:5:fr', 9);
-    // The same puzzle reconciles again (a reload): the value survives untouched.
-    useGameStore.getState().ensureRound('d:5:fr', freshHoles());
-    expect(activeRound()?.scoreRecorded).toBe(9);
-    // A re-published different sentence resets the round — recorded score included.
+  it('survives a rehydration under the same key, and resets with a re-published sentence', () => {
+    const { ensureRound, markRoundRecorded } = useGameStore.getState();
+    ensureRound('d:5:fr', freshHoles(), REV);
+    markRoundRecorded('d:5:fr');
+    // The same puzzle reconciles again (a reload): the flag survives, so the conversation
+    // is not re-opened for a guaranteed refusal.
+    useGameStore.getState().ensureRound('d:5:fr', freshHoles(), REV);
+    expect(activeRound()?.recorded).toBe(true);
+    // A re-published different sentence resets the round — the server's solve was about
+    // the retired one.
     const changed = freshHoles().map((h) => ({ ...h, secret: `${h.secret}-x` }));
-    useGameStore.getState().ensureRound('d:5:fr', changed);
-    expect(activeRound()?.scoreRecorded).toBeUndefined();
+    useGameStore.getState().ensureRound('d:5:fr', changed, REV);
+    expect(activeRound()?.recorded).toBeUndefined();
   });
 
   it('is a no-op for an unknown key', () => {
     const before = useGameStore.getState().rounds;
-    useGameStore.getState().markScoreRecorded('d:999:fr', 9);
-    useGameStore.getState().markWordScoreRecorded('w:999:fr', 12);
+    useGameStore.getState().markRoundRecorded('d:999:fr');
     expect(useGameStore.getState().rounds).toBe(before);
   });
 });
@@ -1066,11 +1055,14 @@ describe('migratePersisted — persisted-blob upgrades', () => {
     expect(migratePersisted({ ...blob, boardTab: 'nonsense' }, 9).boardTab).toBe('friends');
   });
 
-  // v9 -> v10 (2026-08-20): the retired scoreSubmitted flag. Stripping it is what HEALS
-  // the rounds it stranded — a round a 4xx burned kept the flag with NO recorded score,
-  // and `scoreRecorded` alone now decides whether to ask the population again. A round
-  // that really was recorded keeps its score and still never re-submits.
-  it('v9 -> v10 strips scoreSubmitted from the sentence rounds and keeps scoreRecorded', () => {
+  // v11 -> v12 (#203): the retired scoreRecorded VALUE, on BOTH round maps. There is no
+  // client-claimed score left to reconcile — the server derives it from the log it stores
+  // and records the row itself — so a finished round persists only `recorded`, written from
+  // a round answer. Stripped rather than translated (the v10 precedent): a sentence round
+  // the population already holds re-learns it from its next mount READ, and a word round
+  // already carries `submitted`. v10's own `scoreSubmitted` strip rides along, since a blob
+  // older than that can carry both.
+  it('v11 -> v12 strips scoreRecorded (and the older scoreSubmitted) from both round maps', () => {
     const out = migratePersisted(
       {
         rounds: {
@@ -1080,25 +1072,34 @@ describe('migratePersisted — persisted-blob upgrades', () => {
             holes: [],
             tried: [],
             progress: 0,
-            scoreSubmitted: true,
             scoreRecorded: 9,
+          },
+        },
+        wordRounds: {
+          'w:6:fr': {
+            word: 'phare',
+            startedAt: 1,
+            deadline: 2,
+            tried: [],
+            claimed: 0,
+            scoreRecorded: 12,
+            submitted: true,
           },
         },
         lastLang: 'fr',
         onboarded: true,
         solvedDays: {},
       },
-      9,
+      11,
     );
-    // Burned by a refusal: the flag is gone and nothing was recorded, so this round asks again.
-    expect(out.rounds['d:5:fr']).not.toHaveProperty('scoreSubmitted');
-    expect(out.rounds['d:5:fr'].scoreRecorded).toBeUndefined();
-    // Genuinely recorded: the score survives, which is what keeps it from re-submitting.
-    expect(out.rounds['d:6:fr']).not.toHaveProperty('scoreSubmitted');
-    expect(out.rounds['d:6:fr'].scoreRecorded).toBe(9);
-    // The WORD half of this upgrade has no test left to write: v11 empties those rounds
-    // outright, so a surviving one provably never carried the flag.
-    expect(out.wordRounds).toEqual({});
+    for (const round of Object.values(out.rounds)) {
+      expect(round).not.toHaveProperty('scoreRecorded');
+      expect(round).not.toHaveProperty('scoreSubmitted');
+    }
+    // The word round survives v11 intact APART from the retired value: its own
+    // acknowledgement is what keeps it from re-submitting.
+    expect(out.wordRounds['w:6:fr']).not.toHaveProperty('scoreRecorded');
+    expect(out.wordRounds['w:6:fr'].submitted).toBe(true);
   });
 
   it('keeps an existing solvedDays across the upgrade (no backfill, but no data loss)', () => {
@@ -1111,3 +1112,50 @@ describe('migratePersisted — persisted-blob upgrades', () => {
 
 // Restore the module's initial state so a later import sees a clean store.
 useGameStore.setState(initial, false);
+
+// CONTRACT (#203, user-decided 2026-08-22): a REPUBLISH means the puzzle contained an
+// error, so the round it retires STARTS OVER. Its guesses were answers to a different
+// question, and a corrected rank map can move the very aliases that decided whether a hole
+// was solved — which the sentence's own shape cannot show, since a correction usually keeps
+// the same holes.
+describe('a republished puzzle resets its round (#203)', () => {
+  const OTHER = 'b2c3d4e5f6071829';
+
+  it('starts over when the published VERSION changed, even with identical holes', () => {
+    const { ensureRound, recordGuess } = useGameStore.getState();
+    ensureRound('d:5:fr', freshHoles(), REV);
+    recordGuess('bois');
+    expect(useGameStore.getState().rounds['d:5:fr'].tried).toEqual(['bois']);
+
+    // Same sentence, same holes — a corrected neighborhood.
+    useGameStore.getState().ensureRound('d:5:fr', freshHoles(), OTHER);
+    const round = useGameStore.getState().rounds['d:5:fr'];
+    expect(round.tried).toEqual([]);
+    expect(round.guessCount).toBe(0);
+    expect(round.progress).toBe(0);
+    expect(round.revision).toBe(OTHER);
+  });
+
+  it('rehydrates untouched when the version is the same', () => {
+    const { ensureRound, recordGuess } = useGameStore.getState();
+    ensureRound('d:5:fr', freshHoles(), REV);
+    recordGuess('bois');
+    useGameStore.getState().ensureRound('d:5:fr', freshHoles(), REV);
+    expect(useGameStore.getState().rounds['d:5:fr'].tried).toEqual(['bois']);
+  });
+
+  it('ADOPTS a round stored before the stamp existed rather than wiping it', () => {
+    // The puzzle has not changed there — only this field is new — so a deploy must not
+    // throw away everyone's in-progress round.
+    useGameStore.setState((s) => ({
+      rounds: {
+        ...s.rounds,
+        'd:9:fr': { holes: freshHoles(), guessCount: 1, tried: ['bois'], progress: 12 },
+      },
+    }));
+    useGameStore.getState().ensureRound('d:9:fr', freshHoles(), REV);
+    const round = useGameStore.getState().rounds['d:9:fr'];
+    expect(round.tried).toEqual(['bois']);
+    expect(round.revision).toBe(REV);
+  });
+});

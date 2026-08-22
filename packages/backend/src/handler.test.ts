@@ -33,6 +33,7 @@ vi.mock('./ogCard', async () => {
 // A minimal but schema-valid puzzle, keyed by the date the fixed clock resolves to.
 const PUZZLE: Puzzle = {
   lang: 'fr',
+  revision: 'd4e5f60718293040',
   words: ['la', 'forêt', 'ancienne'],
   holes: [
     {
@@ -80,6 +81,9 @@ function fakeStore(): PuzzleStore {
     },
     async getWordPuzzle(date, lang) {
       return PUBLISHED_FR.has(date) && lang === 'fr' ? WORD_PUZZLE : null;
+    },
+    async getSlice() {
+      return null;
     },
   };
 }
@@ -131,6 +135,7 @@ function oversizedHandler() {
     store: {
       async getPuzzle(date, lang) { return date === ACTIVE_DATE && lang === 'fr' ? puzzle : null; },
       async getWordPuzzle() { return null; },
+      async getSlice() { return null; },
     },
   });
 }
@@ -238,6 +243,9 @@ describe('puzzle endpoint — date-addressed (GET /?lang=&date=)', () => {
         async getWordPuzzle() {
           return null;
         },
+        async getSlice() {
+          return null;
+        },
       },
     });
     const res = await handler(event({ query: { lang: 'fr', date: ACTIVE_DATE, mode: 'word' } }));
@@ -279,6 +287,9 @@ describe('puzzle endpoint — date-addressed (GET /?lang=&date=)', () => {
           throw new Error('s3 boom');
         },
         async getWordPuzzle() {
+          throw new Error('s3 boom');
+        },
+        async getSlice() {
           throw new Error('s3 boom');
         },
       },

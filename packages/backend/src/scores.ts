@@ -1,39 +1,26 @@
-import { createHash, createHmac, randomUUID } from 'node:crypto';
-import { publicIdFromSecret, type ScoreHistogram } from '@whippin/shared';
-import {
-  clientIp,
-  LIVE_HEADERS,
-  readJsonObject,
-  requireDayParams,
-  requireSecret,
-  requireTurnstileToken,
-} from './liveRoute';
-import { sentenceScoreMaximum, wordScoreMaximum } from './scoreLimits';
-import {
-  SCORE_DEDUP_TTL_SECONDS,
-  type ScoreKey,
-  type ScoreRow,
-  type ScoreStore,
-} from './scoreStore';
+// The score route: `GET /scores?lang=&date=&mode=` — the day's anonymous population, as
+// the solved screen and the post-mortem read it.
+//
+// IT IS READ-ONLY SINCE #203. The score used to be something the CLIENT claimed, POSTed
+// with an invisible Turnstile token and validated against a per-mode ceiling. With the
+// guess log server-side (#201) the server derives it instead: the round route records one
+// row per player per daily the moment a round finishes (`rounds.ts`). So the POST, its
+// range validation, its Turnstile gate and the whole `scoreRecorded` state machine behind
+// it are retired — Turnstile moved to ROUND START, where the state is actually minted.
+//
+// The IP dedup did NOT retire with the POST: it is the volume floor UNDER the per-player
+// rows, and it moved with the write it meters (`rounds.ts` hashes the trusted viewer
+// address). `hashClientIp` stays here, beside the store contract that names the digest.
+
+import { createHmac } from 'node:crypto';
+import { PUBLIC_ID_PATTERN, type ScoreHistogram } from '@whippin/shared';
+import { LIVE_HEADERS, requireDayParams } from './liveRoute';
+import type { ScoreKey, ScoreRow, ScoreStore } from './scoreStore';
 import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respond';
 import type { PuzzleStore } from './store';
-import type { TurnstileVerifier } from './turnstile';
 
 export interface ScoreHandlerDeps {
   scoreStore: ScoreStore;
-  turnstile: TurnstileVerifier;
-  ipHmacSecret: string;
-  // Only the direct local HTTP adapter is allowed to trust its socket peer. In Lambda,
-  // requestContext.sourceIp is CloudFront's edge, not the viewer.
-  allowSourceIp?: boolean;
-  // Are the verifier's tokens SINGLE-USE? A real Turnstile token is, which is what makes
-  // its hash a perfect idempotency key (see the submission below). The LOCAL accept-all
-  // verifier's are not — Cloudflare's always-passing test site key hands the browser the
-  // same dummy token on every challenge — so hashing it collapses every local submission
-  // of the day onto ONE key: the first is recorded and every later one is waved through
-  // as a replay. Local serve sets this false and gets a fresh idempotency token per
-  // request instead.
-  singleUseTokens?: boolean;
 }
 
 export function hashClientIp(ip: string, secret: string): string {
@@ -43,9 +30,9 @@ export function hashClientIp(ip: string, secret: string): string {
 // The histogram is DERIVED from the day's per-player rows at read time (#187): one bucket
 // per distinct recorded score, ascending, each an exact inclusive range. The rows are a
 // strict superset of the retired bucket counters, so the response shape the solved screen
-// consumes (#170/#176/#180) is unchanged — only the numbers' origin moved. `own` locates
-// the caller's recorded score on POST; GET passes null (a revisiting client already knows
-// its persisted score and locates it in the ranges itself).
+// consumes (#170/#176/#180) is unchanged — only the numbers' origin moved. `own` used to
+// locate the caller's score on POST; with the POST retired (#203) every read is the
+// anonymous one and the client locates its own count in the ranges.
 export function derivedHistogram(rows: readonly ScoreRow[], own: number | null): ScoreHistogram {
   const counts = new Map<number, number>();
   for (const row of rows) counts.set(row.score, (counts.get(row.score) ?? 0) + 1);
@@ -64,56 +51,43 @@ export async function handleScores(
   puzzleStore: PuzzleStore,
   deps: ScoreHandlerDeps,
   serverDate: string,
-  instant: Date,
   cors: Record<string, string>,
 ): Promise<FnUrlResult> {
   const responseHeaders = { ...cors, ...LIVE_HEADERS };
   const method = event.requestContext?.http?.method ?? 'GET';
+  if (method !== 'GET') {
+    return errorResponse(
+      405,
+      'method_not_allowed',
+      'The score route is read-only: a round records its own score when it finishes.',
+      responseHeaders,
+    );
+  }
 
   // The shared (lang, mode, date) guard triple + future guard (liveRoute.ts).
   const params = requireDayParams(event, serverDate, responseHeaders);
   if (!params.ok) return params.response;
   const { lang, mode, date } = params.value;
 
-  const key: ScoreKey = { date, lang, mode };
-  let score: number | undefined;
-  let secret: string | undefined;
-  let turnstileToken: string | undefined;
-  let remoteIp: string | null = null;
-
-  if (method === 'POST') {
-    const parsed = readJsonObject(event, 'Score', responseHeaders);
-    if (!parsed.ok) return parsed.response;
-    const body = parsed.value;
-    if (typeof body.score !== 'number' || !Number.isInteger(body.score)) {
-      return errorResponse(400, 'bad_request', 'Body field "score" must be an integer.', responseHeaders);
-    }
-    score = body.score;
-    // Authentication without accounts (#187): the server DERIVES the public identity
-    // from the secret below and stores nothing secret.
-    const checked = requireSecret(body, responseHeaders);
-    if (!checked.ok) return checked.response;
-    secret = checked.value;
-    const token = requireTurnstileToken(body, responseHeaders);
-    if (!token.ok) return token.response;
-    turnstileToken = token.value;
-    remoteIp = clientIp(event, deps.allowSourceIp === true);
-    if (!remoteIp) {
-      throw new Error('Score submission has no trusted client IP address.');
-    }
-
-    // One server-side Siteverify call. A false result is an authentication rejection;
-    // transport/service errors throw and follow the handler's operational 500 path.
-    if (!(await deps.turnstile.verify(turnstileToken, remoteIp))) {
-      return errorResponse(403, 'turnstile_rejected', 'Turnstile token is invalid.', responseHeaders);
-    }
+  // The caller's PUBLIC id, never the secret — so it may travel in the query. It is what
+  // makes the answer's `bucket` AUTHORITATIVE (added on review): without it a client can
+  // only match its own count against the bands, which says "somebody scored this" and not
+  // "you are in here". A round whose row the IP cap refused, or a Word daily the other
+  // device submitted first, then borrows an unrelated player's standing.
+  //
+  // Nothing BINDS it to the caller, exactly as on /board: a publicId is broadcast by design
+  // (an invite link IS one) and this only ever reads a population the same id can already
+  // reach there.
+  const id = event.queryStringParameters?.id;
+  if (id !== undefined && !PUBLIC_ID_PATTERN.test(id)) {
+    return errorResponse(400, 'bad_request', 'Query parameter "id" must be a player id.', responseHeaders);
   }
 
-  // A score population exists only for a published daily. POST also needs the artifact to
-  // derive the mode's real ceiling (especially a short Word map).
-  const wordPuzzle = mode === 'word' ? await puzzleStore.getWordPuzzle(date, lang) : null;
-  const sentencePuzzle = mode === 'sentence' ? await puzzleStore.getPuzzle(date, lang) : null;
-  const puzzle = wordPuzzle ?? sentencePuzzle;
+  // A score population exists only for a published daily.
+  const puzzle =
+    mode === 'word'
+      ? await puzzleStore.getWordPuzzle(date, lang)
+      : await puzzleStore.getPuzzle(date, lang);
   if (puzzle == null) {
     return errorResponse(
       404,
@@ -124,63 +98,10 @@ export async function handleScores(
     );
   }
 
-  if (method === 'GET') {
-    const rows = await deps.scoreStore.list(key);
-    return json(200, derivedHistogram(rows, null), responseHeaders);
-  }
-
-  // POST-only values were established above.
-  const submittedScore = score!;
-  const maximum =
-    mode === 'word'
-      ? wordScoreMaximum(wordPuzzle!)
-      : sentenceScoreMaximum(lang, sentencePuzzle!);
-  const minimum = mode === 'word' ? 0 : 1;
-  if (maximum == null || submittedScore < minimum || submittedScore > maximum) {
-    return errorResponse(
-      400,
-      'invalid_score',
-      `Score must be an integer from ${minimum} to ${maximum ?? 0} for this daily.`,
-      responseHeaders,
-    );
-  }
-
-  const publicId = await publicIdFromSecret(secret!);
-  const ipHash = hashClientIp(remoteIp!, deps.ipHmacSecret);
-  const outcome = await deps.scoreStore.submit({
-    ...key,
-    publicId,
-    score: submittedScore,
-    submittedAt: instant.toISOString(),
-    ipHash,
-    expiresAt: Math.floor(instant.getTime() / 1000) + SCORE_DEDUP_TTL_SECONDS,
-    // DynamoDB ClientRequestToken permits 1–36 characters. This stores neither the
-    // Turnstile token nor another user-linked value. Hashing the token is what makes a
-    // retry of ONE submission idempotent — sound exactly because a real token is
-    // single-use; where it is not (see `singleUseTokens`), a fresh id per request is the
-    // honest key, since two submissions carrying the same dummy token are two submissions.
-    requestToken:
-      deps.singleUseTokens === false
-        ? randomUUID()
-        : createHash('sha256').update(turnstileToken!).digest('hex').slice(0, 36),
-  });
-  if (outcome === 'capped') {
-    return errorResponse(
-      429,
-      'submission_limit',
-      'Score submission limit reached.',
-      { ...responseHeaders, 'Retry-After': String(SCORE_DEDUP_TTL_SECONDS) },
-    );
-  }
-
-  // Strongly consistent: this caller's committed row is guaranteed present (and
-  // concurrent submissions may already be too). On `already_recorded` the FIRST write
-  // won, so the honest bucket is the STORED row's score — never the resubmission's,
-  // which changed nothing.
+  const key: ScoreKey = { date, lang, mode };
   const rows = await deps.scoreStore.list(key);
-  const own =
-    outcome === 'recorded'
-      ? submittedScore
-      : rows.find((row) => row.publicId === publicId)?.score ?? null;
+  // Null when the caller named nobody, and null when the population holds no row for them —
+  // which is the honest "you are not in this" the client draws no standing for.
+  const own = id === undefined ? null : rows.find((row) => row.publicId === id)?.score ?? null;
   return json(200, derivedHistogram(rows, own), responseHeaders);
 }

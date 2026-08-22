@@ -157,6 +157,7 @@ describe('anchorFrom — the run’s clock, translated', () => {
     submittedAt: null,
     now: at(nowAt),
     resumed: false,
+    solved: false,
   });
 
   it('holds the ELAPSED span, so a device clock hours off still runs one minute', () => {

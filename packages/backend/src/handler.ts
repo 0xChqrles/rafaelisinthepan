@@ -53,16 +53,18 @@ export interface HandlerDeps {
   // Canonical site origin (apex) for the share card's absolute URLs (#8). When unset, the
   // share HTML falls back to the request origin (local dev).
   siteOrigin?: string;
-  // Score collection (#169). Optional only so read-only handler/unit consumers that never
+  // The score POPULATION (#169) — a read-only route since #203, since a finished round
+  // records its own row. Optional only so read-only handler/unit consumers that never
   // touch /scores stay lightweight; production and the local server always provide it.
   scores?: ScoreHandlerDeps;
   // Player profiles (#188), same optionality rationale.
   profiles?: ProfileStore;
   // The friends graph (#189), same optionality rationale.
   friends?: FriendStore;
-  // The per-round guess log (#201) and Word mode's two writes (#202), same optionality
-  // rationale. It carries a Turnstile verifier of its own because the word round START is
-  // gated (the only write here that mints state for a caller who has done nothing yet).
+  // The per-round guess log (#201), Word mode's two writes (#202) and the derived score
+  // (#203), same optionality rationale. It carries a Turnstile verifier of its own because
+  // ROUND START is gated in both modes, and the score store because a finished round is
+  // now what records the day's population.
   rounds?: RoundHandlerDeps;
 }
 
@@ -264,7 +266,7 @@ export function createHandler(deps: HandlerDeps) {
 
       if (isScoresRoute) {
         if (!deps.scores) throw new Error('Score collection is not configured.');
-        return await handleScores(event, deps.store, deps.scores, date, instant, cors);
+        return await handleScores(event, deps.store, deps.scores, date, cors);
       }
 
       if (isProfileRoute) {
@@ -293,8 +295,9 @@ export function createHandler(deps: HandlerDeps) {
 
       if (isRoundRoute) {
         if (!deps.rounds) throw new Error('Round state sync is not configured.');
-        // The puzzle store is read on ONE path here — Word mode's end-of-run submission,
-        // which validates its log against the day's artifact (#202).
+        // The puzzle store is read on THREE paths here since #203 — the sentence append's
+        // derivation slice, the full artifact a solve is scored from, and Word mode's
+        // end-of-run submission (#202).
         return await handleRound(event, deps.store, deps.rounds, date, instant, cors);
       }
 

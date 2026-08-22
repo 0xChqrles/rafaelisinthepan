@@ -110,6 +110,10 @@ function firstWriteResult(command: UpdateItemCommand): Record<string, AttributeV
     puzzle: values[':puzzle'],
     createdAt: values[':created'],
     lastWriteAt: values[':now'],
+    progress: values[':progress'],
+    // `solved` is only ever WRITTEN true (#203), so an unsolved append declares no value
+    // for it at all and the item simply has none.
+    ...(values[':solved'] ? { solved: values[':solved'] } : {}),
   };
 }
 
@@ -147,7 +151,7 @@ describe('dynamoRoundStore (#201)', () => {
     // Read-after-write: the catch-up read lands right after this player's own appends.
     expect((send.mock.calls[0][0] as GetItemCommand).input).toMatchObject({
       TableName: 'scores',
-      Key: { pk: { S: `round#${PUBLIC_ID}` }, sk: { S: '2026-08-21#fr#sentence' } },
+      Key: { pk: { S: `round#${PUBLIC_ID}` }, sk: { S: 'fr#sentence#2026-08-21' } },
       ConsistentRead: true,
     });
   });
@@ -179,6 +183,8 @@ describe('dynamoRoundStore (#201)', () => {
       publicId: PUBLIC_ID,
       guesses: ['foret'],
       puzzle: PUZZLE,
+      progress: 0,
+      solved: false,
       now: NOW,
     });
     expect(result.outcome).toBe('appended');
@@ -190,7 +196,7 @@ describe('dynamoRoundStore (#201)', () => {
     const command = send.mock.calls[0][0] as UpdateItemCommand;
     expect(command.input).toMatchObject({
       TableName: 'scores',
-      Key: { pk: { S: `round#${PUBLIC_ID}` }, sk: { S: '2026-08-21#fr#sentence' } },
+      Key: { pk: { S: `round#${PUBLIC_ID}` }, sk: { S: 'fr#sentence#2026-08-21' } },
       ReturnValues: 'ALL_NEW',
       ExpressionAttributeValues: {
         ':batch': { L: [{ S: 'foret' }] },
@@ -227,6 +233,8 @@ describe('dynamoRoundStore (#201)', () => {
       publicId: PUBLIC_ID,
       guesses: ['a', 'b', 'c'],
       puzzle: PUZZLE,
+      progress: 0,
+      solved: false,
       now: NOW,
     });
     const command = send.mock.calls[0][0] as UpdateItemCommand;
@@ -243,6 +251,8 @@ describe('dynamoRoundStore (#201)', () => {
       publicId: PUBLIC_ID,
       guesses: Array.from({ length: ROUND_GUESS_CAP + 1 }, () => 'a'),
       puzzle: PUZZLE,
+      progress: 0,
+      solved: false,
       now: NOW,
     });
     // A missing attribute has no size, so this half of the cap cannot be a condition —
@@ -261,6 +271,8 @@ describe('dynamoRoundStore (#201)', () => {
       publicId: PUBLIC_ID,
       guesses: ['one-more'],
       puzzle: PUZZLE,
+      progress: 0,
+      solved: false,
       now: NOW,
     });
     // The log is at the cap and any batch would overflow it: the cap refusal, not the
@@ -278,6 +290,8 @@ describe('dynamoRoundStore (#201)', () => {
       publicId: PUBLIC_ID,
       guesses: ['foret'],
       puzzle: PUZZLE,
+      progress: 0,
+      solved: false,
       now: NOW,
     });
     expect(refused.outcome).toBe('too_fast');
@@ -293,6 +307,8 @@ describe('dynamoRoundStore (#201)', () => {
       publicId: PUBLIC_ID,
       guesses: ['bois'],
       puzzle: PUZZLE,
+      progress: 0,
+      solved: false,
       now: NOW,
     });
     expect(result.outcome).toBe('appended');
@@ -317,6 +333,8 @@ describe('dynamoRoundStore (#201)', () => {
       publicId: PUBLIC_ID,
       guesses: ['bois'],
       puzzle: PUZZLE,
+      progress: 0,
+      solved: false,
       now: NOW,
     });
     expect(refused.outcome).toBe('too_fast');
@@ -353,6 +371,8 @@ describe('dynamoRoundStore (#201)', () => {
       publicId: PUBLIC_ID,
       guesses: ['bois'],
       puzzle: PUZZLE,
+      progress: 0,
+      solved: false,
       now: NOW,
     });
     expect(updates).toBe(2); // the append, then the refused replace
@@ -374,6 +394,8 @@ describe('dynamoRoundStore (#201)', () => {
         publicId: PUBLIC_ID,
         guesses: ['a'],
         puzzle: PUZZLE,
+        progress: 0,
+        solved: false,
         now: NOW,
       }),
     ).rejects.toThrow('ProvisionedThroughputExceeded');
@@ -417,7 +439,7 @@ describe('dynamoRoundStore — word mode (#202)', () => {
 
     const command = send.mock.calls[0][0] as UpdateItemCommand;
     expect(command.input).toMatchObject({
-      Key: { pk: { S: `round#${PUBLIC_ID}` }, sk: { S: '2026-08-21#fr#word' } },
+      Key: { pk: { S: `round#${PUBLIC_ID}` }, sk: { S: 'fr#word#2026-08-21' } },
       ReturnValues: 'ALL_NEW',
     });
     expectConditionSyntax(command.input.ConditionExpression);
@@ -597,5 +619,203 @@ describe('a recorded 0-claim run (#202)', () => {
     expect(again.state.guesses).toEqual([]);
     // Refused before the store was touched at all.
     expect(checked.mock.calls.every(([c]) => !(c instanceof UpdateItemCommand))).toBe(true);
+  });
+});
+
+// CONTRACT (#203): the derived summary rides the append's own mutation, a SOLVED round is
+// frozen by one more clause on the condition it already sends, and the corrective write is
+// the one small extra mutation — issued only when the returned log disagrees.
+describe('dynamoRoundStore — the derived summary (#203)', () => {
+  const derived = (progress: number, solved: boolean) => ({
+    ...KEY,
+    publicId: PUBLIC_ID,
+    guesses: ['mer'],
+    puzzle: PUZZLE,
+    progress,
+    solved,
+    now: NOW,
+  });
+
+  it('writes progress with the guesses, in ONE mutation, and reads it back', async () => {
+    const send = vi.fn(async (command: unknown) => ({
+      Attributes: firstWriteResult(command as UpdateItemCommand),
+    }));
+    const { store } = makeStore(send);
+
+    const result = await store.append(derived(42.5, false));
+    expect(result.outcome).toBe('appended');
+    expect(result.state.progress).toBe(42.5);
+    // Only ever written TRUE: an unsolved append leaves the attribute absent, so nothing
+    // can un-finish a day another device just finished.
+    expect(result.state.solved).toBeUndefined();
+    expect(send).toHaveBeenCalledTimes(1);
+
+    const command = send.mock.calls[0][0] as UpdateItemCommand;
+    expect(command.input.UpdateExpression).toContain('#prog = :progress');
+    expect(command.input.UpdateExpression).not.toContain('#solved =');
+    expect(command.input.ExpressionAttributeValues).not.toHaveProperty(':solved');
+  });
+
+  it('FREEZES the round with a path-only clause on the condition it already sends', async () => {
+    const send = vi.fn(async (command: unknown) => ({
+      Attributes: firstWriteResult(command as UpdateItemCommand),
+    }));
+    const { store } = makeStore(send);
+    await store.append(derived(100, true));
+
+    const command = send.mock.calls[0][0] as UpdateItemCommand;
+    // No extra READ buys the freeze — DynamoDB evaluates it as part of the same write.
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(command.input.ConditionExpression).toContain('attribute_not_exists(#solved)');
+    expectConditionSyntax(command.input.ConditionExpression);
+    expect(command.input.UpdateExpression).toContain('#solved = :solved');
+  });
+
+  it('classifies a refusal on a SOLVED record as round_solved, above the cap and the interval', async () => {
+    // The stored item is at the cap AND inside the interval AND solved: the truest answer
+    // is the one that can never be retried into success.
+    const solved = {
+      ...storedItem(Array.from({ length: ROUND_GUESS_CAP }, (_, i) => `g${i}`), NOW.getTime()),
+      solved: { BOOL: true },
+      progress: { N: '100' },
+    };
+    const { store } = makeStore(refuseOnce(solved));
+
+    const refused = await store.append(derived(100, false));
+    expect(refused.outcome).toBe('round_solved');
+    expect(refused.state.solved).toBe(true);
+    expect(refused.state.progress).toBe(100);
+  });
+
+  it('a RESTART clears the retired puzzle\'s solve, or the fresh round is born frozen', async () => {
+    const retired = { ...storedItem(['ancien'], 1, 'deadbeef'), solved: { BOOL: true } };
+    const { store, send } = makeStore(refuseOnce(retired));
+
+    const result = await store.append(derived(10, false));
+    expect(result.outcome).toBe('appended');
+    const replace = send.mock.calls.at(-1)![0] as UpdateItemCommand;
+    expect(replace.input.UpdateExpression).toContain('REMOVE #solved');
+  });
+
+  it('the corrective write is ONE conditional update, gated on the puzzle identity', async () => {
+    const send = vi.fn(async (_command: unknown) => ({}));
+    const { store } = makeStore(send);
+    await expect(
+      store.settle({ ...KEY, publicId: PUBLIC_ID, puzzle: PUZZLE, progress: 100, solved: true }),
+    ).resolves.toBe(true);
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const command = send.mock.calls[0][0] as UpdateItemCommand;
+    expect(command.input.UpdateExpression).toBe('SET #prog = :progress, #solved = :solved');
+    // A record naming a DIFFERENT puzzle has already restarted and has nothing here to
+    // correct. (The monotonicity clause beside it has its own suite below.)
+    expect(command.input.ConditionExpression).toContain('#p = :puzzle');
+    expectConditionSyntax(command.input.ConditionExpression);
+  });
+
+  it('corrects progress alone without ever writing solved false', async () => {
+    const send = vi.fn(async (_command: unknown) => ({}));
+    const { store } = makeStore(send);
+    await store.settle({ ...KEY, publicId: PUBLIC_ID, puzzle: PUZZLE, progress: 66, solved: false });
+    const command = send.mock.calls[0][0] as UpdateItemCommand;
+    expect(command.input.UpdateExpression).toBe('SET #prog = :progress');
+    expect(command.input.ExpressionAttributeValues).not.toHaveProperty(':solved');
+  });
+
+  it('leaves a re-published round alone rather than correcting a summary of the wrong puzzle', async () => {
+    const send = vi.fn(async () => {
+      throw new ConditionalCheckFailedException({
+        $metadata: {},
+        message: 'The conditional request failed',
+      });
+    });
+    const { store } = makeStore(send);
+    // Reported, not swallowed: the caller has to know the state it asked for is not the
+    // stored one, or it claims a solve this record never took.
+    await expect(
+      store.settle({ ...KEY, publicId: PUBLIC_ID, puzzle: PUZZLE, progress: 100, solved: true }),
+    ).resolves.toBe(false);
+  });
+
+  it('surfaces an operational failure of the corrective write, so the caller can retry it', async () => {
+    // It is the LAST chance to record a solve: once the puzzle is solved the player stops
+    // guessing, so nothing later comes along to notice the omission.
+    const send = vi.fn(async () => {
+      throw new Error('ProvisionedThroughputExceeded');
+    });
+    const { store } = makeStore(send);
+    await expect(
+      store.settle({ ...KEY, publicId: PUBLIC_ID, puzzle: PUZZLE, progress: 100, solved: true }),
+    ).rejects.toThrow('ProvisionedThroughputExceeded');
+  });
+
+  it('reads the pre-write derivation EVENTUALLY consistently, and everything else strongly', async () => {
+    const send = vi.fn(async (_command: unknown) => ({ Item: storedItem(['bois'], 1) }));
+    const { store } = makeStore(send);
+    await store.get(KEY, PUBLIC_ID, PUZZLE, { consistent: false });
+    expect((send.mock.calls[0][0] as GetItemCommand).input.ConsistentRead).toBe(false);
+    await store.get(KEY, PUBLIC_ID, PUZZLE);
+    expect((send.mock.calls[1][0] as GetItemCommand).input.ConsistentRead).toBe(true);
+  });
+});
+
+// CONTRACT (#203, tightened on review): `progress` is written UPWARD only. Two settles can
+// be in flight at once — the corrective write sits behind a retry backoff, and another
+// device's append can land and settle inside it — so the later ARRIVAL may carry the older
+// log. Last-writer-wins would park a lower percentage on the row for good, since a solved
+// round takes no further append to repair it.
+describe('dynamoRoundStore — the corrective write is MONOTONIC (#203)', () => {
+  const settle = (progress: number, solved: boolean) => ({
+    ...KEY,
+    publicId: PUBLIC_ID,
+    puzzle: PUZZLE,
+    progress,
+    solved,
+  });
+
+  it('guards the write with a comparison the CONDITION grammar actually has', async () => {
+    const send = vi.fn(async (_command: unknown) => ({}));
+    const { store } = makeStore(send);
+    await store.settle(settle(60, false));
+
+    const command = send.mock.calls[0][0] as UpdateItemCommand;
+    expect(command.input.ConditionExpression).toBe(
+      '#p = :puzzle AND (attribute_not_exists(#prog) OR #prog <= :progress)',
+    );
+    // A comparator against a value is the grammar's own (`#last < :cutoff` relies on it);
+    // arithmetic and `if_not_exists` are what it does not have.
+    expectConditionSyntax(command.input.ConditionExpression);
+  });
+
+  it('lets the FIRST correction through on a row that has no progress yet', async () => {
+    const send = vi.fn(async (_command: unknown) => ({}));
+    const { store } = makeStore(send);
+    await store.settle(settle(60, false));
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('is `<=` so a SOLVE still lands when the percentage is already what it will be', async () => {
+    // A solved derivation is exactly 100, which is also the maximum a stored value can
+    // hold — so this clause can never refuse a solve, only a lowering correction.
+    const send = vi.fn(async (_command: unknown) => ({}));
+    const { store } = makeStore(send);
+    await store.settle(settle(100, true));
+    const command = send.mock.calls[0][0] as UpdateItemCommand;
+    expect(command.input.ExpressionAttributeValues![':progress']).toEqual({ N: '100' });
+    expect(command.input.UpdateExpression).toContain('#solved = :solved');
+  });
+
+  it('swallows the refusal: a better correction landing first is the right outcome', async () => {
+    const send = vi.fn(async (_command: unknown) => {
+      throw new ConditionalCheckFailedException({
+        $metadata: {},
+        message: 'The conditional request failed',
+      });
+    });
+    const { store } = makeStore(send);
+    // Indistinguishable from a republish, and neither is a retry — the row already holds
+    // something at least as true as what this write carried. It still reports FALSE, so a
+    // caller can never read "declined" as "landed".
+    await expect(store.settle(settle(60, false))).resolves.toBe(false);
   });
 });

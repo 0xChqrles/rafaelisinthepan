@@ -15,7 +15,8 @@
       api.ts                  backend client: puzzleUrl/wordPuzzleUrl, 404->NO PUZZLE
       identity.ts             the #187 player key: localStorage secret, generated on first need
       state/roundSync.ts      the #201 sync engine: coalesced flushes, server-log adoption,
-                            cap handling (one module-level conversation per round)
+                            cap handling, #203's round-start challenge + solved freeze
+                            (one module-level conversation per round)
       hooks/useRoundSync.ts   its React binding: registers the round's context on mount
       state/wordRoundSync.ts  Word mode's #202 conversation: the Turnstile-gated round start,
                               the clock anchor, ONE end-of-run submission
@@ -41,7 +42,8 @@
       components/WordSlash.tsx    the slash a claim cuts the day's word with
       components/WordSubject.tsx  the day's word while the run is on: the word alone, centred
       hooks/useCountdown.ts   the run's deadline, as a ticking clock (HUD) and as one flip (screen)
-      game/scoring.ts         s(rank), holeProgress, computeProgress
+      game/scoring.ts         the SCREEN's reading: applyGuessToHoles + computeProgress over
+                              RuntimeHoles (the arithmetic itself is @whippin/shared's since #203)
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
       hooks/useLetterWave.ts  #129's ambient ripple, shared by every surface that waves
       components/routeDrawing.tsx  THE route drawing: geometry, frame vars + the row parts
@@ -409,10 +411,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   one `adoptRound` write — the merged log, the replayed holes AND their `progress`, since
   `syncProgress` can only ever repair the ACTIVE round and an adoption routinely lands
   after the player has navigated away (that day's archive cell would keep painting a stale
-  fill until they reopened exactly it). Every call also carries the `puzzleTag` of the
-  holes it is about, which is what lets a re-published sentence restart the server's log
-  instead of inheriting it (root `AGENTS.md`) — and **every ANSWER is checked back against
-  the tag that asked for it**. A flight is MUTATED in place on re-registration, so a
+  fill until they reopened exactly it). Every call also carries the puzzle's published
+  `revision` — a content hash that covers its rank maps, not a tag derived from the holes —
+  which is what lets any real republish restart the server's log instead of inheriting it
+  (root `AGENTS.md`). **Every ANSWER is checked back against the revision that asked for
+  it.** A flight is MUTATED in place on re-registration, so a
   republish landing while a request is in the air would otherwise apply the retired
   puzzle's log using the corrected puzzle's ranks and holes: the tag's purpose defeated
   from the inside. A superseded answer writes nothing — not its log, not its cap, not its
@@ -439,19 +442,43 @@ it to the local store — see `packages/backend/AGENTS.md`).
   leaderboard entry of a round that was never full. When it IS full the flag is persisted
   (`RoundProgress.capped`, READ on every mount so a reload does not re-open a settled
   round) and the conversation closes: play continues
-  locally but the solved screen suppresses the score SUBMISSION — `canSubmit: !overCap`,
-  where `overCap` also covers local offline play that outgrew any server's cap. It
-  suppresses the POST alone (`game/scores.ts` `shouldAskPopulation`): a round the population
-  already holds keeps reading its standing, since a client flag must not hide what the
-  population itself answered. `canSubmit` is read at LAUNCH time (a ref, like
-  `recordedScore`) rather than depended on: a round can be capped by a lagging flush while
-  its own score POST is still in the air, and tearing the effect down there cancelled the
-  answer to a request about to succeed — with nothing left to re-open it, since
-  `markRecorded`'s write is deliberately not a dependency either. **An ADOPTED solve is not a fresh solve** — `Game` claims the
+  locally but can never become server-recorded. There is no client score submission since
+  #203: `useScoreHistogram` launches its population READ only when the server's `solved`
+  answer has persisted `RoundProgress.recorded`, so capped/offline-only play has no row to
+  claim and asks for no standing. A round already marked recorded still reads the
+  population; a later local flag cannot hide a row the server demonstrably holds.
+  **An ADOPTED solve is not a fresh solve** — `Game` claims the
   solved beats at submit time (`solvedByPlay`), so a second tab finishing the board under
   this one replays no celebration and fires no second `solve` event. `RoundSyncContext.mode`
   stays TYPED `'sentence'`: Word mode got its OWN conversation (below) rather than a widened
   one, because the two shapes share only the transport.
+  A changed revision resets the local board too, while an unstamped pre-deploy round with
+  matching holes is adopted and stamped in place. The reset deliberately leaves
+  `solvedDays` alone: a republish is the publisher's error, streak credit rewards showing
+  up, and `recordSolve` prevents the corrected version from claiming the day twice.
+
+- **Derived scores (#203):** the sync engine gained two jobs. (1) ROUND CREATION carries a
+  Turnstile challenge — the sentence round has no START message, so the token rides the
+  append whose read found nothing (`RoundFlight.created`), and every later append carries
+  none. A failure there is an ordinary failed write, retried with the rest: the round keeps
+  playing locally, which is why nothing is said on screen (Word mode's PLAY is the one write
+  that speaks, because nothing begins without it). (2) The SERVER's `solved` is adopted as a
+  FACT (`markRoundRecorded`) — it says the day's score row exists, and it says the round is
+  FROZEN, so the conversation closes — and its log is adopted SERVER-ONLY, where every other
+  answer merges the local one under it: a frozen round's stored log is final, so keeping the
+  guesses it refused would leave the screen counting tries the recorded score does not. It is
+  still DEDUPED (`mergeLogs` against an empty local log), because the stored log is RAW and
+  two devices can each have sent a surface of one group — the same disagreement from the
+  other side.
+  **The `round_solved` 409 must do BOTH**: a plain 4xx
+  closes WITHOUT adopting, leaving this tab rendering an unsolved board with its guesses
+  still on screen — the exact symptom the freeze exists to prevent — and a plain 409 adopts
+  WITHOUT closing, so `pump` resends immediately with `failures` reset, at no backoff at all.
+  The persisted flag is read on every mount for the cap's own reason: a reload must not
+  re-open a settled round for a guaranteed refusal. **`created` only flips on an answer that
+  DEMONSTRATES a record** (its `createdAt`): a rate-refused RESTART carries the EMPTY state,
+  and taking that as creation makes the retry omit the challenge — a 403, which is a verdict,
+  closing the conversation on a round that was never created.
 
 - **Word mode's round start and end-of-run submission (#202):** `state/wordRoundSync.ts`,
   bound by `hooks/useWordRoundSync`. The product contract — why the fast game syncs LEAST,
@@ -1954,50 +1981,34 @@ it to the local store — see `packages/backend/AGENTS.md`).
   2026-08-15 — see below):** both modes' result stacks show where the finished score sits
   in the day's anonymous population (#169), above the mode's own metrics and SHARE — the
   comparison story that replaced the removed LLM benchmark.
-  ONE rule for the round trip (`hooks/useScoreHistogram`): a FINISHED round whose score the
-  population does not hold POSTs it — carrying an invisible Turnstile token (`turnstile.ts`,
-  the only module that knows Turnstile exists, the analytics.ts pattern; site key
-  `VITE_TURNSTILE_SITE_KEY`, .env.example ships Cloudflare's always-passing invisible TEST
-  key for local play, while production's required GitHub repo variable is injected by
-  `deploy.yml` and `vite.config.ts` rejects an unset production build; **the production key
-  must be provisioned as an INVISIBLE widget, never Cloudflare's default "Managed"** — the
-  client renders into a hidden container, so a Managed key that escalates to an interactive
-  challenge can never be completed and silently drops the score of exactly the players
-  Cloudflare doubts. Nothing in code can detect the widget type, so it is a provisioning
-  rule, stated in `.env.example` and the workflows README. A failed or stalled script load
-  NEVER sticks: load/error are joined by a 20-second script timeout, and every rejection
-  clears the cached module promise, since a rejected promise left in it would disable
-  submission for the whole session) and the
-  `x-amz-content-sha256`
-  hash of the exact body bytes it sends (`api.postScoreBody` — the root AGENTS.md's OAC
-  contract), plus the PLAYER KEY (#187, `src/identity.ts`): the localStorage secret
-  generated on this first need, sent in the body as the round's identity — the server
-  keys the day's one first-write-wins row by the publicId it derives from it — and the
-  POST's response IS the histogram (one round trip on the happy path);
-  a round the population already HOLDS GETs the read-only twin on revisits — locating the
-  standing by the persisted `scoreRecorded` (#187) and by it ALONE: the population is
-  first-write-wins per player, so a duplicate submission (another device/tab under one key)
-  is answered with the STORED row's score, which is what a 2xx persists. **`scoreRecorded`
-  is the WHOLE state machine, and a round asks until the population HOLDS it (user-decided
-  2026-08-20, RETIRING the `scoreSubmitted` flag and the VERDICT rule with it — store
-  **v10** strips the field).** Present, the round is settled and every later visit only ever
-  GETs; ABSENT, the round still owes its score and the next visit to its solved screen POSTs
-  again — a refusal included, where the flag used to end the conversation on any 4xx.
-  The refusal that made this wrong is the **403**: Turnstile refusing the REQUEST is not the
-  server judging the SCORE, and `turnstileToken()` builds a fresh widget on every call, so
-  the retry asks with a token that can actually pass — where before, that player was
-  silently out of the day's population for good, on a visit they cannot repeat. Re-asking is
-  safe BY CONSTRUCTION since #187: the row is first-write-wins, a duplicate consumes no IP
-  allowance, and a 400/403/404 returns before the store is touched at all — so the cost is a
-  handful of refused requests per stuck round per day. **The client flag was never the
-  anti-abuse boundary** (Turnstile, the IP cap, the range check and first-write-wins are);
-  it only ever bound the honest player. The store action is idempotent on the VALUE rather
-  than on having been called, which is what lets a retry's answer land: guarding on "already
-  answered once" is exactly what stranded the rounds it burned. It is also what lets a Word
-  run whose clock died with the tab closed submit on the revisit that finds it over. The
-  completion is keyed to the round that launched it (never whichever round navigation made
-  active later), and an in-flight conversation is shared across real component remounts so
-  leaving for the archive/tutorial and returning cannot mint a second POST. EVERY
+  ONE rule (`hooks/useScoreHistogram`), and since #203 it is a plain READ: a round the
+  SERVER holds — `RoundProgress.recorded` for a sentence round, `submitted` for a word run —
+  GETs the day's bands and locates itself in them by its own score. Both ends read the same
+  log — and the read NAMES the caller (`id`, the PUBLIC id, the /board rule) so the band it
+  gets back is THEIRS, not whoever else recorded the same number (corrected on review:
+  matching by value gave a round the IP cap refused, or a Word daily another device
+  submitted first, an unrelated player's rank). A population holding no row for the caller
+  answers `bucket: null` and no standing is drawn; `bucketIndexOf` retired with the guess.
+  **What #203 RETIRED here** (no-back-compat): the score POST, the invisible Turnstile token
+  it carried (`turnstile.ts` serves ROUND START instead, and gained
+  `prefetchTurnstileToken` — asked for while the puzzle loads and while the Word gate is on
+  screen, so the challenge is in hand before the player acts; a prefetched token is consumed
+  EXACTLY ONCE, since a real one is single-use), the OAC-hashed `api.postScoreBody`, the
+  persisted `scoreRecorded` VALUE and the whole ask-until-recorded state machine of
+  2026-08-20, plus `game/scores.ts`'s `shouldSubmitScore`/`shouldAskPopulation` and the
+  `canSubmit` cap gate. The server derives the score from the log it already holds and
+  records the row itself, so there is nothing to claim, nothing to validate and nothing to
+  retry — and the #201 cap needs no client rule either, since a capped round's appends were
+  refused and its solve never reached the server.
+  **The gate is the SERVER's fact, not the local board's**: `solved` flips a beat before the
+  solving append lands, and reading the population then would find nothing and — with no
+  retry left — leave the standing blank for good. `recorded` is written by the sync engine
+  off any round answer that says `solved`, and it is PERSISTED (store **v12**, which strips
+  the retired `scoreRecorded` from both round maps), so a reload reads its standing straight
+  away and an older round re-learns the fact from its next mount READ.
+  The completion is keyed to the round that launched it (never whichever round navigation
+  made active later), and an in-flight read is shared across real component remounts so
+  leaving for the archive/tutorial and returning cannot mint a second request. EVERY
   failure is silent by decision: the solved screen simply shows no standing, never an
   error. **What it shows is ONE LINE — the player's RANK** (`components/ScoreRank`,
   user-decided 2026-08-15, replacing the brick histogram that replaced the first cut's

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   BatchGetItemCommand,
   QueryCommand,
@@ -11,6 +12,7 @@ import {
   dayKey,
   dedupKey,
   type ScoreRow,
+  type ScoreSubmission,
   type ScoreStore,
 } from './scoreStore';
 
@@ -34,10 +36,27 @@ export interface DynamoScoreStoreOptions {
   wait?: (ms: number) => Promise<void>;
 }
 
-// DynamoDB's transaction makes the per-IP allowance and the per-player row one
-// indivisible write: a refused submission — capped OR already recorded — changes neither
-// item. The table uses a composite (`pk`, `sk`) key so one Query returns a daily's whole
-// population; no scans or secondary indexes exist.
+function scoreItem(input: ScoreSubmission): Record<string, AttributeValue> {
+  return {
+    pk: { S: dayKey(input) },
+    sk: { S: input.publicId },
+    score: { N: String(input.score) },
+    submittedAt: { S: input.submittedAt },
+    revision: { S: input.revision },
+  };
+}
+
+// The create and replacement transactions are different DynamoDB requests. Their tokens
+// must therefore be different too, while still carrying the route token's revision identity.
+function replacementToken(requestToken: string): string {
+  return createHash('sha256').update(`replace#${requestToken}`).digest('hex').slice(0, 36);
+}
+
+// Creating a row and spending its per-IP allowance is one indivisible transaction. A
+// republish replaces the existing row with a revision-conditional write and deliberately
+// leaves the allowance alone: the population still contains one player. The table uses a
+// composite (`pk`, `sk`) key so one Query returns a daily's whole population; no scans or
+// secondary indexes exist.
 export function dynamoScoreStore(
   client: DynamoDBClient,
   tableName: string,
@@ -72,7 +91,7 @@ export function dynamoScoreStore(
     // The friends board's read: the caller holds the exact sort keys, so this is
     // BatchGetItem — 100 keys a call, constant in the day's population where a
     // partition Query is O(everyone who played today). Strongly consistent for the
-    // Query's own reason (a player opening the board right after their score POST must
+    // Query's own reason (a player opening the board right after a solving round write must
     // see their row). UnprocessedKeys are retried; keys still unprocessed after that
     // surface as the operational error they are — silently dropping them would drop a
     // friend's score from the board.
@@ -109,7 +128,7 @@ export function dynamoScoreStore(
         await client.send(
           new TransactWriteItemsCommand({
             // Makes an SDK/network retry of this transaction idempotent. The handler
-            // derives it from (not stores) the one-use Turnstile token.
+            // derives it from the daily, player and published revision.
             ClientRequestToken: input.requestToken,
             TransactItems: [
               {
@@ -133,17 +152,14 @@ export function dynamoScoreStore(
                 },
               },
               {
-                // First write wins (#187): one row per (date, lang, mode, publicId).
-                // The daily cannot be replayed, so a second submission never overwrites.
+                // This transaction CREATES a player's row only. If it already exists,
+                // Dynamo returns it below so the same revision can stop idempotently and a
+                // republished revision can replace it without touching the allowance.
                 Put: {
                   TableName: tableName,
-                  Item: {
-                    pk: { S: dayKey(input) },
-                    sk: { S: input.publicId },
-                    score: { N: String(input.score) },
-                    submittedAt: { S: input.submittedAt },
-                  },
+                  Item: scoreItem(input),
                   ConditionExpression: 'attribute_not_exists(pk)',
+                  ReturnValuesOnConditionCheckFailure: 'ALL_OLD',
                 },
               },
             ],
@@ -151,17 +167,56 @@ export function dynamoScoreStore(
         );
         return 'recorded';
       } catch (error) {
-        // Exactly two conditions exist: [0] the IP allowance, [1] the first-write-wins
-        // row. Anything else (conflicts, throttling, validation) is operational and must
-        // surface/retry rather than silently lose a score. When both fail, the existing
-        // row is the truer answer — it is idempotent and consumes nothing.
+        // Exactly two conditions exist: [0] the IP allowance, [1] row creation. Anything
+        // else (conflicts, throttling, validation) is operational and must surface/retry.
         const transaction = error as {
           name?: string;
-          CancellationReasons?: { Code?: string }[];
+          CancellationReasons?: { Code?: string; Item?: Record<string, AttributeValue> }[];
         };
         if (transaction.name === 'TransactionCanceledException') {
           const reasons = transaction.CancellationReasons ?? [];
-          if (reasons[1]?.Code === 'ConditionalCheckFailed') return 'already_recorded';
+          if (reasons[1]?.Code === 'ConditionalCheckFailed') {
+            const heldRevision = reasons[1].Item?.revision?.S;
+            if (heldRevision === input.revision) return 'already_recorded';
+
+            try {
+              await client.send(
+                new TransactWriteItemsCommand({
+                  ClientRequestToken: replacementToken(input.requestToken),
+                  TransactItems: [
+                    {
+                      Put: {
+                        TableName: tableName,
+                        Item: scoreItem(input),
+                        // Replace only a row from another published version. Replaying this
+                        // version is idempotent, while an unstamped row is retired like any
+                        // other old version.
+                        ConditionExpression:
+                          'attribute_exists(pk) AND (attribute_not_exists(#rev) OR #rev <> :revision)',
+                        ExpressionAttributeNames: { '#rev': 'revision' },
+                        ExpressionAttributeValues: { ':revision': { S: input.revision } },
+                      },
+                    },
+                  ],
+                }),
+              );
+              return 'recorded';
+            } catch (replacementError) {
+              const replacement = replacementError as {
+                name?: string;
+                CancellationReasons?: { Code?: string }[];
+              };
+              if (
+                replacement.name === 'TransactionCanceledException' &&
+                replacement.CancellationReasons?.[0]?.Code === 'ConditionalCheckFailed'
+              ) {
+                // Another request already wrote this version. This request consumed no
+                // allowance and changed nothing.
+                return 'already_recorded';
+              }
+              throw replacementError;
+            }
+          }
           if (reasons[0]?.Code === 'ConditionalCheckFailed') return 'capped';
         }
         throw error;

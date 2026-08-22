@@ -25,14 +25,11 @@ export const PERCENT_MIN_TOTAL = 10;
 // and the percentage is what carries the standing. So the badge starts at rank 10.
 export const PERCENT_MIN_RANK = 10;
 
-// Locate a score in the API's inclusive ranges — the GET path, where the server returns
-// `bucket: null` because a revisiting client already knows its persisted score. Null for
-// a score no range holds (a malformed histogram, or a local score the population never
-// recorded, #187): the standing then simply isn't drawn rather than lying.
-export function bucketIndexOf(buckets: readonly ScoreHistogramBucket[], score: number): number | null {
-  const index = buckets.findIndex(({ min, max }) => score >= min && score <= max);
-  return index < 0 ? null : index;
-}
+// `bucketIndexOf` is GONE (#203, on review). It located a score in the returned ranges,
+// which answers "somebody recorded this number" and not "this row is YOURS": a round the
+// population does not hold — one the IP cap refused, or a Word daily another device
+// submitted first — would borrow an unrelated player's standing. The read names the caller
+// now and the SERVER locates them (`useScoreHistogram`), so there is nothing left to guess.
 
 // Where the player stands (user-decided 2026-08-15, replacing the population histogram —
 // "the histogram is actually ugly": a bar field asks to be decoded, where a rank is the
@@ -87,34 +84,13 @@ export function formatTopPct(pct: number): string {
   return String(Math.round(pct * 10) / 10);
 }
 
-// Whether a finished round still owes the population its score. The question is what the
-// POPULATION HOLDS — never whether the server has answered before (user-decided
-// 2026-08-20, retiring the submit-once flag): a round is settled when `scoreRecorded`
-// names its band, and a round the server REFUSED has nothing in the population, so it
-// asks again on the next visit. The recorded score persists with the round (#7/#9's
-// pattern), so a reload can never double-submit — and a round finished offline (or a Word
-// run whose clock died with the tab closed) submits the first time its result is actually
-// seen.
-export function shouldSubmitScore(finished: boolean, recordedScore: number | undefined): boolean {
-  return finished && recordedScore === undefined;
-}
-
-// Whether a finished round has anything to ASK the population at all — the round trip's
-// outer gate, where `shouldSubmitScore` decides which half of it runs.
-//
-// `canSubmit` is false for a #201 CAPPED round: past the server's guess cap the round
-// stopped counting, so it may never claim a place. It may still READ one it already holds
-// — a round that solved, submitted, and only then took a lagging flush's cap refusal has
-// a real recorded rank in the day's population, and a client flag must not decide what
-// the population itself already answered. So the cap suppresses the POST and nothing
-// else; hiding the standing too would lose it on that visit and on every later one.
-export function shouldAskPopulation(
-  finished: boolean,
-  canSubmit: boolean,
-  recordedScore: number | undefined,
-): boolean {
-  return finished && (recordedScore !== undefined || shouldSubmitScore(canSubmit, recordedScore));
-}
+// `shouldSubmitScore` / `shouldAskPopulation` are GONE (#203). They decided which half of
+// a POST-or-GET round trip ran, and whether a #201 capped round was still allowed to claim
+// a place. There is no submission left to gate: the server derives the score from the log
+// it stores and writes the row itself, so a finished round only ever READS — and it reads
+// exactly when the server says it holds the round (`RoundProgress.recorded`, the word
+// round's `submitted`). The cap needs no rule of its own either: a capped round's appends
+// were refused, so its solve never reached the server and no row exists to find.
 
 // The standing is FIXED-WIDTH TYPE — the pixel font does not reflow, and `body` is
 // `overflow: hidden`, so a line that outruns its column is CUT OFF rather than scrolled to.

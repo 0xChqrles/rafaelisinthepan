@@ -42,6 +42,9 @@ const START = 'port';
 const script: TutorialScript = {
   puzzle: {
     lang,
+    // A LESSON's board, never a published daily: it is not served, not synced and never
+    // scored, so its version is a constant rather than a publish stamp (#203).
+    revision: 'tutorial',
     words: [word.word],
     holes: [
       {

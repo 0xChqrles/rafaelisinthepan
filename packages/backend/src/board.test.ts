@@ -6,7 +6,6 @@ import { memoryProfileStore } from './memoryProfileStore';
 import type { FnUrlEvent } from './respond';
 import type { ScoreRow, ScoreStore } from './scoreStore';
 import type { PuzzleStore } from './store';
-import { localTurnstileVerifier } from './turnstile';
 
 // The /board route (#190): the GLOBAL top-50 read (anonymous GET) and the FRIENDS board
 // (authenticated POST). The ranking rules themselves are contract-tested in
@@ -23,6 +22,7 @@ const DATE = activeDate(NOW);
 const emptyStore: PuzzleStore = {
   getPuzzle: async () => null,
   getWordPuzzle: async () => null,
+  getSlice: async () => null,
 };
 
 // A read-only score population: /board never writes, so `submit` is unreachable.
@@ -42,7 +42,7 @@ function makeHandler(rows: ScoreRow[]) {
   const handler = createHandler({
     store: emptyStore,
     now: () => NOW,
-    scores: { scoreStore: fixedScores(rows), turnstile: localTurnstileVerifier, ipHmacSecret: 'x'.repeat(64) },
+    scores: { scoreStore: fixedScores(rows) },
     profiles,
     friends,
   });
@@ -189,8 +189,6 @@ describe('board route (#190)', () => {
           { publicId: me, score: 7 },
           { publicId: other, score: 3 },
         ]),
-        turnstile: localTurnstileVerifier,
-        ipHmacSecret: 'x'.repeat(64),
       },
       profiles: flaky,
       friends: memoryFriendStore(),

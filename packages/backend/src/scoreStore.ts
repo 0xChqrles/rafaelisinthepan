@@ -18,17 +18,25 @@ export interface ScoreRow {
 }
 
 // What one submission did:
-//   recorded — the row was written (and one IP allowance consumed);
-//   already_recorded — the player already has a row for this daily. First write wins:
-//     the daily cannot be replayed, so a second submission is never legitimate, and it
-//     consumes no IP allowance;
-//   capped — the hashed IP's volume allowance is exhausted; nothing changed.
+//   recorded — the row was created, or a retired version's row was replaced. Only creation
+//     consumes one IP allowance because replacement does not add a player to the population;
+//   already_recorded — this version already has the player's row. First write wins within
+//     one version, and the repeat consumes no IP allowance;
+//   capped — no player row existed and the hashed IP's volume allowance was exhausted;
+//     nothing changed.
 export type ScoreSubmitOutcome = 'recorded' | 'already_recorded' | 'capped';
 
 export interface ScoreSubmission extends ScoreKey {
   publicId: string;
   score: number;
   submittedAt: string;
+  // WHICH PUBLISHED VERSION of the daily this score was earned on (#203, user-decided
+  // 2026-08-22). First-write-wins is per VERSION: a republish means the puzzle contained an
+  // error, so the round it retired started over — and a score recorded on that retired
+  // puzzle must not stand in the way of the one the player then actually earns. Without it
+  // the corrected submission is answered `already_recorded` and the old number keeps the
+  // day, which is the one outcome a correction exists to prevent.
+  revision: string;
   ipHash: string;
   expiresAt: number;
   requestToken: string;
@@ -42,8 +50,9 @@ export interface ScoreStore {
   // those directly instead of paging the whole day partition to keep at most
   // FRIENDS_MAX + 1 rows. A player with no recorded score simply has no row.
   getMany(key: ScoreKey, publicIds: readonly string[]): Promise<ScoreRow[]>;
-  // The per-IP allowance and the row's first-write-wins condition are one atomic
-  // decision: a refused submission (either outcome) changes neither item.
+  // Creating a player's first row atomically spends one per-IP allowance. A later published
+  // version conditionally replaces that same row without spending another allowance;
+  // within one version first write wins. Every refusal changes nothing.
   submit(input: ScoreSubmission): Promise<ScoreSubmitOutcome>;
 }
 
