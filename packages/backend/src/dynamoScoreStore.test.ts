@@ -14,6 +14,7 @@ const SUBMISSION: ScoreSubmission = {
   publicId: 'lfd5pqz5pa7zjm5u',
   score: 12,
   submittedAt: '2026-08-13T14:00:00.000Z',
+  revision: 'a1b2c3d4e5f60718',
   ipHash: 'abcdef0123456789',
   expiresAt: 1_800_000_000,
   requestToken: '0123456789abcdef0123456789abcdef0123',
@@ -143,8 +144,12 @@ describe('dynamoScoreStore (#187)', () => {
         sk: { S: SUBMISSION.publicId },
         score: { N: '12' },
         submittedAt: { S: SUBMISSION.submittedAt },
+        // The PUBLISHED VERSION this score was earned on (#203): first-write-wins is per
+        // version, so a corrected puzzle's score is not blocked by the retired one's.
+        revision: { S: SUBMISSION.revision },
       },
-      ConditionExpression: 'attribute_not_exists(pk)',
+      ConditionExpression:
+        'attribute_not_exists(pk) OR attribute_not_exists(#rev) OR #rev <> :revision',
     });
   });
 

@@ -522,7 +522,15 @@ async function recordSentenceScore(
     console.error(`[round] no puzzle to score ${key.date} ${key.lang} for ${publicId}.`);
     return;
   }
-  await recordScoreRow(key, publicId, countTries(puzzle.ranks, state.guesses), deps, event, instant);
+  await recordScoreRow(
+    key,
+    publicId,
+    countTries(puzzle.ranks, state.guesses),
+    round.puzzle,
+    deps,
+    event,
+    instant,
+  );
 }
 
 // One recorded score per player per daily (#187), written by the SERVER now that the log
@@ -535,6 +543,8 @@ async function recordScoreRow(
   key: RoundKey,
   publicId: string,
   score: number,
+  // The version of the daily this score was earned on — the round's own tag (#203).
+  revision: string,
   deps: RoundHandlerDeps,
   event: FnUrlEvent,
   instant: Date,
@@ -553,13 +563,16 @@ async function recordScoreRow(
       publicId,
       score,
       submittedAt: instant.toISOString(),
+      revision,
       ipHash: hashClientIp(remoteIp, deps.ipHmacSecret),
       expiresAt: Math.floor(instant.getTime() / 1000) + SCORE_DEDUP_TTL_SECONDS,
-      // The row is first-write-wins and unique per (daily, player), so its own key is a
-      // perfect DynamoDB idempotency token — where the retired POST hashed a single-use
-      // Turnstile token this write does not have.
+      // The row is first-write-wins per VERSION and unique per (daily, player), so its own
+      // key is a perfect DynamoDB idempotency token — where the retired POST hashed a
+      // single-use Turnstile token this write does not have. The REVISION is part of it:
+      // without it, a corrected round's submission looks to DynamoDB like a replay of the
+      // retired one's and is silently dropped before its condition is ever evaluated.
       requestToken: createHash('sha256')
-        .update(`${key.date}#${key.lang}#${key.mode}#${publicId}`)
+        .update(`${key.date}#${key.lang}#${key.mode}#${publicId}#${revision}`)
         .digest('hex')
         .slice(0, 36),
     });
@@ -684,14 +697,7 @@ async function submitWordRound(
   // the same artifact the write just validated against. `already_submitted` records
   // nothing — first write wins, and that earlier submission already recorded its own.
   if (outcome === 'submitted') {
-    await recordScoreRow(
-      { date, lang, mode },
-      publicId,
-      claims,
-      deps,
-      event,
-      instant,
-    );
+    await recordScoreRow({ date, lang, mode }, publicId, claims, puzzle, deps, event, instant);
   }
   // `already_submitted` is not a refusal but the /scores answer: the daily is one-shot and
   // cannot be replayed, so the FIRST write stands and the caller is told what it says.

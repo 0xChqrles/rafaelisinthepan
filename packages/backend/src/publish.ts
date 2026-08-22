@@ -187,15 +187,13 @@ async function main() {
     const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
     const client = new S3Client({ region: STACK_REGION });
     // The SLICE goes FIRST: these are two objects, so a reader between them sees one
-    // revision's puzzle beside another's, and writing the derivation artifact first at least
-    // means the puzzle's appearance implies its slice is there.
+    // version's puzzle beside another's, and writing the derivation artifact first means the
+    // puzzle's appearance implies its slice is there.
     //
-    // **It does NOT close the window.** An earlier comment here claimed the remaining
-    // direction was caught by the slice's revision tag; that is false for a SAME-HOLE
-    // correction, where both objects carry the same tag and a request landing between the
-    // two writes derives `solved` from the new slice and the score from the old artifact.
-    // See the open decision in the root AGENTS.md — the tag identifies a SENTENCE, and
-    // nothing here identifies a rank-map revision.
+    // The window itself is closed by the VERSION both objects carry (#203): a caller names
+    // one, and the route derives nothing unless the slice and the artifact both name the
+    // same. Between these two writes it is simply a day-addressed 404 — which the ordering
+    // then keeps as short as it can be.
     if (plan.slice && slice) {
       await client.send(
         new PutObjectCommand({

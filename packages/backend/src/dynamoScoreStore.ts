@@ -133,8 +133,12 @@ export function dynamoScoreStore(
                 },
               },
               {
-                // First write wins (#187): one row per (date, lang, mode, publicId).
-                // The daily cannot be replayed, so a second submission never overwrites.
+                // First write wins PER VERSION (#187, scoped by #203): one row per
+                // (date, lang, mode, publicId). The daily cannot be replayed, so a second
+                // submission never overwrites — unless the puzzle itself was REPUBLISHED,
+                // where the stored row belongs to a retired puzzle and the round that
+                // earned it has already started over. A row with no version at all predates
+                // the stamp and is replaced on the same reasoning.
                 Put: {
                   TableName: tableName,
                   Item: {
@@ -142,8 +146,12 @@ export function dynamoScoreStore(
                     sk: { S: input.publicId },
                     score: { N: String(input.score) },
                     submittedAt: { S: input.submittedAt },
+                    revision: { S: input.revision },
                   },
-                  ConditionExpression: 'attribute_not_exists(pk)',
+                  ConditionExpression:
+                    'attribute_not_exists(pk) OR attribute_not_exists(#rev) OR #rev <> :revision',
+                  ExpressionAttributeNames: { '#rev': 'revision' },
+                  ExpressionAttributeValues: { ':revision': { S: input.revision } },
                 },
               },
             ],

@@ -29,6 +29,13 @@ export interface ScoreSubmission extends ScoreKey {
   publicId: string;
   score: number;
   submittedAt: string;
+  // WHICH PUBLISHED VERSION of the daily this score was earned on (#203, user-decided
+  // 2026-08-22). First-write-wins is per VERSION: a republish means the puzzle contained an
+  // error, so the round it retired started over — and a score recorded on that retired
+  // puzzle must not stand in the way of the one the player then actually earns. Without it
+  // the corrected submission is answered `already_recorded` and the old number keeps the
+  // day, which is the one outcome a correction exists to prevent.
+  revision: string;
   ipHash: string;
   expiresAt: number;
   requestToken: string;
@@ -42,8 +49,8 @@ export interface ScoreStore {
   // those directly instead of paging the whole day partition to keep at most
   // FRIENDS_MAX + 1 rows. A player with no recorded score simply has no row.
   getMany(key: ScoreKey, publicIds: readonly string[]): Promise<ScoreRow[]>;
-  // The per-IP allowance and the row's first-write-wins condition are one atomic
-  // decision: a refused submission (either outcome) changes neither item.
+  // The per-IP allowance and the row's first-write-wins-PER-VERSION condition are one
+  // atomic decision: a refused submission (either outcome) changes neither item.
   submit(input: ScoreSubmission): Promise<ScoreSubmitOutcome>;
 }
 

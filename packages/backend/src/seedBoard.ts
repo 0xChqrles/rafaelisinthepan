@@ -198,7 +198,9 @@ async function main() {
       roundPath,
       {
         secret,
-        puzzle: `seed${date.replace(/-/g, '')}`,
+        // The day's PUBLISHED VERSION (#203) — the round's identity, and what the route
+        // checks its slice and rank maps against. An invented tag is a 404 on every seed.
+        puzzle: puzzle.revision,
         guesses: playthrough(puzzle, score),
         turnstileToken: 'local',
       },

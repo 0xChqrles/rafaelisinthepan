@@ -10,6 +10,7 @@ function submission(overrides: Partial<ScoreSubmission> = {}): ScoreSubmission {
     publicId: 'player-a',
     score: 7,
     submittedAt: '2026-08-13T14:00:00.000Z',
+    revision: 'a1b2c3d4e5f60718',
     ipHash: 'hash-a',
     expiresAt: 200_000,
     requestToken: 'request-0',
@@ -136,5 +137,60 @@ describe('memoryScoreStore — local mirror of storage semantics (#187)', () => 
       ).toBe('recorded');
     }
     expect((await store.list(KEY)).length).toBe(SCORE_SUBMISSION_LIMIT + 3);
+  });
+});
+
+// CONTRACT (#203, user-decided 2026-08-22): first write wins PER PUBLISHED VERSION. A
+// republish means the puzzle contained an error and the round it retired started over, so
+// the score that round earned must not stand in the way of the one the player then actually
+// earns — which is what `already_recorded` did, silently, leaving the old number on the day.
+describe('first-write-wins is per VERSION (#203)', () => {
+  const KEY = { date: '2026-08-13', lang: 'fr', mode: 'sentence' as const };
+  // `token` varies independently so the two DIFFERENT things can be told apart: a replay of
+  // one request (same token — answered with what it answered before) and a genuinely second
+  // submission landing on the same row (different token — the condition decides).
+  const submit = (
+    store: ReturnType<typeof memoryScoreStore>,
+    score: number,
+    revision: string,
+    token = `token-${revision}`,
+  ) =>
+    store.submit({
+      ...KEY,
+      publicId: 'lfd5pqz5pa7zjm5u',
+      score,
+      submittedAt: '2026-08-13T14:00:00.000Z',
+      revision,
+      ipHash: 'hash',
+      expiresAt: 0,
+      requestToken: token,
+    });
+
+  it('refuses a repeat on the SAME version and takes the score of a NEW one', async () => {
+    const store = memoryScoreStore(() => new Date());
+    await expect(submit(store, 2, 'a1b2c3d4e5f60718')).resolves.toBe('recorded');
+    await expect(submit(store, 5, 'a1b2c3d4e5f60718', 'other')).resolves.toBe('already_recorded');
+    expect(await store.list(KEY)).toEqual([{ publicId: 'lfd5pqz5pa7zjm5u', score: 2 }]);
+
+    // The puzzle is corrected: the round started over, and so does its score.
+    await expect(submit(store, 1, 'b2c3d4e5f6071829')).resolves.toBe('recorded');
+    expect(await store.list(KEY)).toEqual([{ publicId: 'lfd5pqz5pa7zjm5u', score: 1 }]);
+  });
+
+  it('carries the revision INTO the idempotency token, or the corrected write is a "replay"', async () => {
+    // The route derives the token from the row key AND the revision. Without the revision
+    // the corrected submission looks like a retry of the retired one and is dropped before
+    // its condition is ever evaluated — which is exactly how the old score kept the day.
+    const store = memoryScoreStore(() => new Date());
+    await submit(store, 2, 'a1b2c3d4e5f60718', 'shared');
+    await expect(submit(store, 1, 'b2c3d4e5f6071829', 'shared')).resolves.toBe('recorded');
+    expect(await store.list(KEY)).toEqual([{ publicId: 'lfd5pqz5pa7zjm5u', score: 2 }]);
+  });
+
+  it('keeps ONE row per player — a corrected score replaces, never accumulates', async () => {
+    const store = memoryScoreStore(() => new Date());
+    await submit(store, 2, 'a1b2c3d4e5f60718');
+    await submit(store, 1, 'b2c3d4e5f6071829');
+    expect(await store.list(KEY)).toHaveLength(1);
   });
 });

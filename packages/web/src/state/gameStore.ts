@@ -592,6 +592,12 @@ export const useGameStore = create<GameState>()(
           //
           // The hole check is kept beside the version as a floor: it is what stops secrets
           // absent from `ranks` reaching the scoring code, whatever the stamp says.
+          //
+          // **`solvedDays` is deliberately NOT touched.** A republish is OUR error, not the
+          // player's, and the streak is a reward for showing up — taking a day back because
+          // we shipped a broken puzzle would punish them for it. So the credit stands, and
+          // solving the corrected version cannot claim it twice (`recordSolve` already
+          // refuses a day it holds), which is the same rule a re-solve has always followed.
           const existing = s.rounds[key];
           const sameVersion = existing?.revision === undefined || existing.revision === revision;
           kept[key] =
