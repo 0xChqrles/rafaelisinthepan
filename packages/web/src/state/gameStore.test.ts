@@ -917,11 +917,13 @@ describe('migratePersisted — persisted-blob upgrades', () => {
     expect('routeSeen' in out).toBe(false);
   });
 
-  it('v2 -> v3 adds an empty solvedDays and preserves rounds/lastLang/onboarded', () => {
+  it('v2 -> v3 adds an empty solvedDays and preserves lastLang/onboarded', () => {
+    // The rounds themselves do NOT survive: any blob older than v13 predates the published
+    // revision, so its sentence rounds are dropped (see migratePersisted).
     const rounds = { 'd:5:fr': { holes: freshHoles(), guessCount: 2, tried: ['a', 'b'], progress: 10 } };
     const out = migratePersisted({ rounds, lastLang: 'fr', onboarded: true }, 2);
     expect(out).toEqual({
-      rounds,
+      rounds: {},
       wordRounds: {},
       lastLang: 'fr',
       lastMode: null,
@@ -944,7 +946,8 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       4,
     );
     expect(out).toEqual({
-      rounds,
+      // Dropped: a pre-v13 blob carries no published revision (see migratePersisted).
+      rounds: {},
       wordRounds: {},
       lastLang: 'fr',
       lastMode: null,
@@ -977,7 +980,9 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       6,
     );
     expect(out.wordRounds).toEqual({});
-    expect(out).toMatchObject({ rounds, lastLang: 'fr', lastMode: 'word', onboarded: true, solvedDays });
+    // Sentence rounds go too, for v13's own reason — this blob predates the revision stamp.
+    expect(out.rounds).toEqual({});
+    expect(out).toMatchObject({ lastLang: 'fr', lastMode: 'word', onboarded: true, solvedDays });
   });
 
   // v10 -> v11 (#202): a word round's clock is the SERVER's stamp now. A v10 round's is a
@@ -1007,7 +1012,34 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       10,
     );
     expect(out.wordRounds).toEqual({});
-    expect(out).toMatchObject({ rounds, lastLang: 'fr', lastMode: 'word', solvedDays: { fr: [10] } });
+    // And the sentence rounds go with them, for v13's own reason (no published revision).
+    expect(out.rounds).toEqual({});
+    expect(out).toMatchObject({ lastLang: 'fr', lastMode: 'word', solvedDays: { fr: [10] } });
+  });
+
+  // v12 -> v13 (#203): a sentence round stored before the published revision existed cannot
+  // say WHICH version it was played against, and matching holes prove nothing about the maps
+  // (rank 0 is a GROUP, so a correction moves aliases without touching a hole). The standing
+  // no-back-compat rule applies, exactly as it did for v7's strike runs and v11's word
+  // rounds — but the STREAK is a separate fact and survives, as it did there.
+  it('v12 -> v13 drops pre-revision sentence rounds and keeps the streak', () => {
+    const rounds = { 'd:5:fr': { holes: freshHoles(), guessCount: 2, tried: ['a', 'b'], progress: 10 } };
+    const wordRounds = { 'w:5:fr': { word: 'phare', startedAt: 1, deadline: 2, tried: [], claimed: 0 } };
+    const solvedDays = { fr: [10, 11] };
+    const out = migratePersisted(
+      { rounds, wordRounds, lastLang: 'fr', onboarded: true, solvedDays },
+      12,
+    );
+    expect(out.rounds).toEqual({});
+    expect(out.wordRounds).toEqual(wordRounds);
+    expect(out.solvedDays).toEqual(solvedDays);
+  });
+
+  it('grandfathers a veteran off the RAW blob, not the dropped rounds', () => {
+    // `onboarded` asks whether this person has played before. Reading the post-drop map
+    // would hand the tutorial back to every veteran whose only signal was their history.
+    const rounds = { 'd:5:fr': { holes: freshHoles(), guessCount: 2, tried: ['a'], progress: 10 } };
+    expect(migratePersisted({ rounds, lastLang: null }, 12).onboarded).toBe(true);
   });
 
   it('a v11 blob keeps its server-anchored word rounds untouched', () => {
@@ -1144,9 +1176,11 @@ describe('a republished puzzle resets its round (#203)', () => {
     expect(useGameStore.getState().rounds['d:5:fr'].tried).toEqual(['bois']);
   });
 
-  it('ADOPTS a round stored before the stamp existed rather than wiping it', () => {
-    // The puzzle has not changed there — only this field is new — so a deploy must not
-    // throw away everyone's in-progress round.
+  it('RESETS a round stored with no revision rather than adopting it', () => {
+    // The standing no-back-compat rule: v13 drops these at the migration, so one reaching
+    // ensureRound is not a shape to accommodate. Matching holes prove nothing about the maps
+    // either — rank 0 is a GROUP, so a correction can move the aliases that decide `solved`
+    // without touching a hole.
     useGameStore.setState((s) => ({
       rounds: {
         ...s.rounds,
@@ -1155,7 +1189,8 @@ describe('a republished puzzle resets its round (#203)', () => {
     }));
     useGameStore.getState().ensureRound('d:9:fr', freshHoles(), REV);
     const round = useGameStore.getState().rounds['d:9:fr'];
-    expect(round.tried).toEqual(['bois']);
+    expect(round.tried).toEqual([]);
+    expect(round.guessCount).toBe(0);
     expect(round.revision).toBe(REV);
   });
 });
