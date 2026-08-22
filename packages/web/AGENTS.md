@@ -462,12 +462,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   playing locally, which is why nothing is said on screen (Word mode's PLAY is the one write
   that speaks, because nothing begins without it). (2) The SERVER's `solved` is adopted as a
   FACT (`markRoundRecorded`) — it says the day's score row exists, and it says the round is
-  FROZEN, so the conversation closes. **The `round_solved` 409 must do BOTH**: a plain 4xx
+  FROZEN, so the conversation closes — and its log is adopted SERVER-ONLY, where every other
+  answer merges the local one under it: a frozen round's stored log is final, so keeping the
+  guesses it refused would leave the screen counting tries the recorded score does not.
+  **The `round_solved` 409 must do BOTH**: a plain 4xx
   closes WITHOUT adopting, leaving this tab rendering an unsolved board with its guesses
   still on screen — the exact symptom the freeze exists to prevent — and a plain 409 adopts
   WITHOUT closing, so `pump` resends immediately with `failures` reset, at no backoff at all.
   The persisted flag is read on every mount for the cap's own reason: a reload must not
-  re-open a settled round for a guaranteed refusal.
+  re-open a settled round for a guaranteed refusal. **`created` only flips on an answer that
+  DEMONSTRATES a record** (its `createdAt`): a rate-refused RESTART carries the EMPTY state,
+  and taking that as creation makes the retry omit the challenge — a 403, which is a verdict,
+  closing the conversation on a round that was never created.
 
 - **Word mode's round start and end-of-run submission (#202):** `state/wordRoundSync.ts`,
   bound by `hooks/useWordRoundSync`. The product contract — why the fast game syncs LEAST,
@@ -1973,9 +1979,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   ONE rule (`hooks/useScoreHistogram`), and since #203 it is a plain READ: a round the
   SERVER holds — `RoundProgress.recorded` for a sentence round, `submitted` for a word run —
   GETs the day's bands and locates itself in them by its own score. Both ends read the same
-  log, so the local count IS the recorded one; where they can genuinely differ (two devices
-  on one WORD daily, where the population holds whichever run submitted first) no band
-  matches and the standing is simply not drawn.
+  log — and the read NAMES the caller (`id`, the PUBLIC id, the /board rule) so the band it
+  gets back is THEIRS, not whoever else recorded the same number (corrected on review:
+  matching by value gave a round the IP cap refused, or a Word daily another device
+  submitted first, an unrelated player's rank). A population holding no row for the caller
+  answers `bucket: null` and no standing is drawn; `bucketIndexOf` retired with the guess.
   **What #203 RETIRED here** (no-back-compat): the score POST, the invisible Turnstile token
   it carried (`turnstile.ts` serves ROUND START instead, and gained
   `prefetchTurnstileToken` — asked for while the puzzle loads and while the Word gate is on

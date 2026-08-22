@@ -753,6 +753,20 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     step (`slug()` ⇔ `fold()`) and no reason for a second. **SENTENCE ONLY:** Word mode reads
     its artifact once per run at submit, and its round START reads no store at all, which
     matters — that is the one path where the player genuinely waits on a response.
+  - **THE ARTIFACTS NAME THEIR REVISION, and a cached one is bound to it** (added on
+    review). The slice carries the `puzzle` tag the client computes from its holes and the
+    server already stores beside a round (`shared/src/puzzleTag.ts`, moved out of the web for
+    this). Without it the artifact is anonymous, and nothing catches the two ways a republish
+    separates a puzzle from its slice: a WARM instance holds a cached slice for as long as it
+    lives — there is no TTL and no invalidation reaching into a Lambda — so it would keep
+    deriving the retired sentence's ranks against the corrected round, indefinitely; and
+    publish replaces two objects, so a reader between them sees one revision's puzzle beside
+    another's. Both produce a percentage quietly about the wrong sentence, and a `solved`
+    that is too. So both loaders take the revision the CALLER is playing, an entry that does
+    not match is dropped and re-fetched once, and a fetch that still does not match is a
+    caller on a RETIRED revision — answered with the day-addressed 404, which is the same
+    thing the tag already says about a retired log. Publish writes the SLICE FIRST for the
+    same reason: the puzzle's appearance then always implies its slice is already there.
   - **A MISSING SLICE IS A MISSING PUZZLE** — the same day-addressed 404. There is no
     degraded mode: either publishing failed or the day was never published. **Every
     published puzzle needs its slice in the store before this merges** — republishing the
@@ -768,6 +782,19 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   cost and the 1 MB limit are measured on what is READ). Reordered, `fr#sentence#2026-08-`
   returns about 31 rows, which removes the pagination problem rather than handling it. **No
   migration** — the archive is wiped before launch.
+- **The standing is the SERVER's answer about THIS player, not a number match** (corrected
+  on review). `/scores` takes the caller's PUBLIC id — the `/board` rule, so it may travel
+  in a query — and reports which band is theirs; `id` joins the addressing triple in the
+  score behavior's allowList (the three-package contract). Matching a local count against
+  the returned bands only ever says "somebody recorded this number": a round whose row the
+  IP cap refused, or a Word daily another device submitted first, would borrow an unrelated
+  player's rank. A population that holds no row for the caller now answers `bucket: null`,
+  and no standing is drawn.
+- **A SOLVED round's log is adopted SERVER-ONLY** (corrected on review), where every other
+  answer merges the local log under the server's. A frozen round's stored log is final —
+  the guesses it refused are never stored — so merging them back would leave the screen
+  counting tries the recorded score does not, a headline permanently disagreeing with the
+  rank printed beneath it. This is where "dropped for good" actually happens.
 - **Turnstile MOVES to ROUND START** (and to #204's account link). Round creation is
   available to every unlinked visitor, so it carries more weight than it did. Word mode
   already gated its START; the sentence round has no start message, so the challenge rides
@@ -903,8 +930,9 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   `shared`: infra writes it, the backend reads it, and a drift is a 500 on every gated
   write that no local run and no synthesized template can reproduce.
 - `/scores` has its OWN zero-TTL CloudFront behavior because the histogram is live; it must
-  never inherit the puzzle's year-long `s-maxage`. Its query allowList is exactly the three
-  parameters the handler reads (`lang`, `date`, `mode`), and its origin-request policy
+  never inherit the puzzle's year-long `s-maxage`. Its query allowList is exactly the
+  parameters the handler reads (`lang`, `date`, `mode`, and since #203 `id` — the caller's
+  PUBLIC id, which is what makes the answer's band theirs), and its origin-request policy
   carries the viewer-supplied `x-amz-content-sha256` outside the cache key. Local
   `backend:dev` uses the same handler with an in-memory row store and an explicitly
   local accept-all Turnstile verifier.

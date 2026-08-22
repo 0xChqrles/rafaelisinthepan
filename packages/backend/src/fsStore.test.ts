@@ -33,7 +33,11 @@ beforeAll(async () => {
   // #203's slice rests GZIPPED beside the puzzle it was derived from.
   await writeFile(
     path.join(root, sliceKey(DATE, 'fr')),
-    encodeSlice({ lang: 'fr', holes: { vent: { n: 4, startRank: 2, ranks: { vent: 0 } } } }),
+    encodeSlice({
+      lang: 'fr',
+      puzzle: 'abc123',
+      holes: { vent: { n: 4, startRank: 2, ranks: { vent: 0 } } },
+    }),
   );
 });
 

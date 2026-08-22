@@ -77,9 +77,12 @@ describe('score production boundary (#169)', () => {
       (policy) =>
         policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinLiveScoresOrigin',
     );
+    // `id` joined the addressing triple with #203: the read reports the CALLER's own band,
+    // so the handler needs the publicId naming them. An unlisted parameter never reaches the
+    // Lambda, so the standing would silently go blank for everybody.
     expect(scorePolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
       QueryStringBehavior: 'whitelist',
-      QueryStrings: ['lang', 'date', 'mode'],
+      QueryStrings: ['lang', 'date', 'mode', 'id'],
     });
     expect(scorePolicy?.Properties.OriginRequestPolicyConfig.CookiesConfig).toEqual({
       CookieBehavior: 'none',

@@ -337,16 +337,26 @@ describe('parseWordPuzzle (shape validation)', () => {
 // failure, never as NaN bars on the solved screen.
 describe('scoresUrl', () => {
   it('addresses the /scores route with lang, date and the REQUIRED mode', () => {
-    expect(scoresUrl('fr', '2026-08-14', 'sentence', 'https://api.example')).toBe(
+    expect(scoresUrl('fr', '2026-08-14', 'sentence', undefined, 'https://api.example')).toBe(
       'https://api.example/scores?lang=fr&date=2026-08-14&mode=sentence',
     );
-    expect(scoresUrl('en', '2026-08-14', 'word', 'https://api.example')).toBe(
+    expect(scoresUrl('en', '2026-08-14', 'word', undefined, 'https://api.example')).toBe(
       'https://api.example/scores?lang=en&date=2026-08-14&mode=word',
     );
   });
 
+  it('names the CALLER with their public id, which is what makes `bucket` theirs (#203)', () => {
+    // Matching a local count against the bands only ever says "somebody scored this"; the
+    // server locates the row that is actually this player's.
+    expect(
+      scoresUrl('fr', '2026-08-14', 'sentence', 'lfd5pqz5pa7zjm5u', 'https://api.example'),
+    ).toBe('https://api.example/scores?lang=fr&date=2026-08-14&mode=sentence&id=lfd5pqz5pa7zjm5u');
+  });
+
   it('throws without a configured base (never a silent same-origin fetch)', () => {
-    expect(() => scoresUrl('fr', '2026-08-14', 'sentence', '')).toThrow(/VITE_API_BASE_URL/);
+    expect(() => scoresUrl('fr', '2026-08-14', 'sentence', undefined, '')).toThrow(
+      /VITE_API_BASE_URL/,
+    );
   });
 });
 

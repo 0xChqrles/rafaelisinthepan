@@ -100,6 +100,8 @@ function event(options: {
   };
 }
 
+const QUERY = { lang: 'fr', date: ACTIVE_DATE, mode: 'sentence' };
+
 function parsed(response: { body: string }): ScoreHistogram {
   return JSON.parse(response.body) as ScoreHistogram;
 }
@@ -160,6 +162,59 @@ describe('GET /scores', () => {
       // ranges itself.
       bucket: null,
     });
+  });
+
+  // CONTRACT (#203, added on review): the read NAMES the caller, and the server answers
+  // which band is THEIRS. Matching a local count against the bands only ever says "somebody
+  // recorded this number".
+  it('reports the CALLER\'s own band when they name themselves', async () => {
+    const scoreStore = memoryScoreStore(() => NOW);
+    const key = { date: ACTIVE_DATE, lang: 'fr', mode: 'sentence' as const };
+    const mine = 'lfd5pqz5pa7zjm5u';
+    const other = 'z2ztx5ut4lj7ax47';
+    for (const [publicId, score] of [[mine, 9], [other, 4]] as const) {
+      await scoreStore.submit({
+        ...key,
+        publicId,
+        score,
+        submittedAt: NOW.toISOString(),
+        ipHash: `hash-${publicId}`,
+        expiresAt: 0,
+        requestToken: `token-${publicId}`,
+      });
+    }
+    const handler = makeHandler({ scores: { scoreStore } });
+    const named = parsed(await handler(event({ query: { ...QUERY, id: mine } })));
+    expect(named.bucket).toBe(1); // the 9 band, ascending
+    // Naming nobody says nothing about anybody.
+    expect(parsed(await handler(event())).bucket).toBeNull();
+  });
+
+  it('answers NULL for a player the population does not hold, whatever anyone else scored', async () => {
+    // The round whose row the IP cap refused, or the Word daily another device submitted
+    // first: the number exists in the bands, but not as this player's.
+    const scoreStore = memoryScoreStore(() => NOW);
+    await scoreStore.submit({
+      date: ACTIVE_DATE,
+      lang: 'fr',
+      mode: 'sentence',
+      publicId: 'z2ztx5ut4lj7ax47',
+      score: 9,
+      submittedAt: NOW.toISOString(),
+      ipHash: 'hash',
+      expiresAt: 0,
+      requestToken: 'token',
+    });
+    const handler = makeHandler({ scores: { scoreStore } });
+    const response = parsed(await handler(event({ query: { ...QUERY, id: 'lfd5pqz5pa7zjm5u' } })));
+    expect(response.buckets).toEqual([{ min: 9, max: 9, count: 1 }]);
+    expect(response.bucket).toBeNull();
+  });
+
+  it('refuses a malformed id rather than reading the population for a non-player', async () => {
+    const response = await makeHandler()(event({ query: { ...QUERY, id: 'nope' } }));
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(response.body).error).toBe('bad_request');
   });
 
   it.each([

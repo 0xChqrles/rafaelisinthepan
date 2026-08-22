@@ -343,7 +343,17 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   settle delayed past a better one is refused rather than parking a stale percentage.
   `parseSlice` checks the rank VALUES too, not only the field shapes, and `encodeSlice` runs
   it before writing: a malformed puzzle then fails loudly at PUBLISH instead of shipping a
-  day whose every append answers the day-addressed 404. A truth that reads SOLVED
+  day whose every append answers the day-addressed 404. **The artifacts NAME their revision**
+  and `puzzleCache` selects by it — a cached slice or artifact describing another sentence is
+  re-fetched, and a caller on a retired one gets the 404; publish writes the slice FIRST so
+  the puzzle's appearance implies its slice is there. **A corrective write that does not land
+  is not claimed**: the answer carries the state as stored, no score row is written, and the
+  client keeps its conversation open. **A missing round is CONFIRMED consistently** before
+  the round-start challenge is demanded, since the derivation's pre-read is eventually
+  consistent and a stale `null` 403s an append the client sent no token with. And
+  **`/scores` takes the caller's `id`** so the band it reports is theirs rather than whoever
+  else recorded the same number (`buildSlice` also stopped reading `holes[secret]` through
+  Object.prototype, which swallowed a `constructor` secret whole). A truth that reads SOLVED
   then records the day's score row — `countTries` over the FULL artifact (`loadPuzzle`), the
   one thing the slice cannot answer — and that write's failures are LOGGED, never surfaced:
   the answer is about the log. `puzzleCache.ts` is module state and therefore a test seam

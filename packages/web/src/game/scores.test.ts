@@ -1,7 +1,6 @@
 // CONTRACT: the solved screen's STANDING (#170) over the backend's histogram (#169). The
 // backend owns the bucket EDGES (this module only reads the inclusive ranges the API
 // returned); the WEB owns the reading:
-//   - a score is located in the inclusive ranges (the GET path sends `bucket: null`);
 //   - RANK is competition ranking — everyone strictly ahead, plus one — so a whole band
 //     shares its rank, which is the only honest number at bucket granularity;
 //   - sentence is lower-is-better (ahead = FEWER tries), word is higher-is-better
@@ -17,7 +16,6 @@ import type { ScoreHistogramBucket } from '@whippin/shared';
 import {
   PERCENT_MIN_RANK,
   PERCENT_MIN_TOTAL,
-  bucketIndexOf,
   formatTopPct,
   scoreStanding,
 } from './scores';
@@ -32,21 +30,6 @@ function buckets(counts: number[]): ScoreHistogramBucket[] {
   ];
   return edges.map((range, i) => ({ ...range, count: counts[i] ?? 0 }));
 }
-
-describe('bucketIndexOf', () => {
-  it('locates a score in the inclusive ranges (the GET path, where the API sends bucket: null)', () => {
-    const b = buckets([0, 0, 0, 0]);
-    expect(bucketIndexOf(b, 1)).toBe(0);
-    expect(bucketIndexOf(b, 3)).toBe(0);
-    expect(bucketIndexOf(b, 4)).toBe(1);
-    expect(bucketIndexOf(b, 12)).toBe(3);
-  });
-
-  it('returns null for a score no range holds — say nothing rather than lie', () => {
-    expect(bucketIndexOf(buckets([0, 0, 0, 0]), 13)).toBeNull();
-    expect(bucketIndexOf(buckets([0, 0, 0, 0]), 0)).toBeNull();
-  });
-});
 
 describe('scoreStanding — rank is everyone strictly ahead, plus one', () => {
   // Population: 5 in the best sentence band, 3, 2, then 7 in the worst. 17 players.

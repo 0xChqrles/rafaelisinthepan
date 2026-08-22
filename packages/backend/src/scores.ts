@@ -13,7 +13,7 @@
 // address). `hashClientIp` stays here, beside the store contract that names the digest.
 
 import { createHmac } from 'node:crypto';
-import type { ScoreHistogram } from '@whippin/shared';
+import { PUBLIC_ID_PATTERN, type ScoreHistogram } from '@whippin/shared';
 import { LIVE_HEADERS, requireDayParams } from './liveRoute';
 import type { ScoreKey, ScoreRow, ScoreStore } from './scoreStore';
 import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respond';
@@ -69,6 +69,20 @@ export async function handleScores(
   if (!params.ok) return params.response;
   const { lang, mode, date } = params.value;
 
+  // The caller's PUBLIC id, never the secret — so it may travel in the query. It is what
+  // makes the answer's `bucket` AUTHORITATIVE (added on review): without it a client can
+  // only match its own count against the bands, which says "somebody scored this" and not
+  // "you are in here". A round whose row the IP cap refused, or a Word daily the other
+  // device submitted first, then borrows an unrelated player's standing.
+  //
+  // Nothing BINDS it to the caller, exactly as on /board: a publicId is broadcast by design
+  // (an invite link IS one) and this only ever reads a population the same id can already
+  // reach there.
+  const id = event.queryStringParameters?.id;
+  if (id !== undefined && !PUBLIC_ID_PATTERN.test(id)) {
+    return errorResponse(400, 'bad_request', 'Query parameter "id" must be a player id.', responseHeaders);
+  }
+
   // A score population exists only for a published daily.
   const puzzle =
     mode === 'word'
@@ -86,5 +100,8 @@ export async function handleScores(
 
   const key: ScoreKey = { date, lang, mode };
   const rows = await deps.scoreStore.list(key);
-  return json(200, derivedHistogram(rows, null), responseHeaders);
+  // Null when the caller named nobody, and null when the population holds no row for them —
+  // which is the honest "you are not in this" the client draws no standing for.
+  const own = id === undefined ? null : rows.find((row) => row.publicId === id)?.score ?? null;
+  return json(200, derivedHistogram(rows, own), responseHeaders);
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { dateForDayNumber, type ScoreHistogram } from '@whippin/shared';
+import { dateForDayNumber, publicIdFromSecret, type ScoreHistogram } from '@whippin/shared';
 import { parseScoreHistogram, scoresUrl } from '../api';
-import { bucketIndexOf } from '../game/scores';
+import { playerSecret } from '../identity';
 import type { Mode } from '../langs';
 
 // The solved screen's population data (#170), a plain READ since #203.
@@ -20,13 +20,19 @@ import type { Mode } from '../langs';
 // looking for exists — the local board flips solved a beat earlier, while the solving
 // append is still in flight.
 //
+// **The read NAMES the player, and the server answers WHICH BAND IS THEIRS** (corrected on
+// review). Matching the local count against the returned bands only ever says "somebody
+// scored this": a round whose row the IP cap refused, or a Word daily another device
+// submitted first, would borrow an unrelated player's standing and show a rank it never
+// earned. `id` is the PUBLIC id, so it may travel in the query (the /board rule).
+//
 // EVERY failure is silent by decision: the solved screen simply shows no standing, never
 // an error.
 export interface ScorePlacement {
   histogram: ScoreHistogram;
-  // The player's bucket index, located from this round's own score in the API's inclusive
-  // ranges. Null when nothing can honestly be highlighted — including a population that
-  // does not hold this round at all, which is drawn as no standing rather than a lie.
+  // The player's bucket index, as the SERVER located it among the day's rows. Null when
+  // nothing can honestly be highlighted — including a population holding no row for this
+  // player, which is drawn as no standing rather than as somebody else's.
   bucket: number | null;
 }
 
@@ -74,17 +80,22 @@ export async function readPopulation(
   mode: Mode,
   lang: string,
   date: string,
-  score: number,
 ): Promise<ScorePlacement | null> {
-  const response = await fetch(scoresUrl(lang, date, mode));
+  // Derived in its OWN try, the leaderboard's rule: `crypto.subtle` is absent outside a
+  // secure context (the LAN-IP mobile check), and there the honest answer is no standing
+  // rather than a guessed one.
+  let id: string | undefined;
+  try {
+    id = await publicIdFromSecret(playerSecret());
+  } catch {
+    return null;
+  }
+  const response = await fetch(scoresUrl(lang, date, mode, id));
   if (!response.ok) return null;
   const histogram = parseScoreHistogram(await response.json());
-  // The bands are exact (min == max == a recorded score) and the server derived this
-  // round's score from the same log this device replays, so locating by the local count is
-  // locating by the recorded one. Where they can genuinely differ — two devices playing one
-  // WORD daily, where the population holds whichever run submitted first — no band matches
-  // and the standing is simply not drawn.
-  return { histogram, bucket: bucketIndexOf(histogram.buckets, score) };
+  // `bucket` is the server's answer about THIS player, so a population that does not hold
+  // them says so with null instead of handing back whoever else recorded the same number.
+  return { histogram, bucket: histogram.bucket };
 }
 
 export default function useScoreHistogram({
@@ -121,7 +132,7 @@ export default function useScoreHistogram({
       setPlacement('pending');
     }
     const promise = shareScoreFlight(key, () =>
-      readPopulation(mode, lang, dateForDayNumber(dayNumber), score),
+      readPopulation(mode, lang, dateForDayNumber(dayNumber)),
     );
     let cancelled = false;
     void promise.then((result) => {

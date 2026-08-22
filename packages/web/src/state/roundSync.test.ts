@@ -99,6 +99,9 @@ function ok(guesses: string[], solved = false) {
 }
 
 // A refusal is an ANSWER: 409 and 429 carry the UNCHANGED stored log exactly like a 200.
+// A refusal is an ANSWER: it carries the stored state of the puzzle ASKED about. An EMPTY
+// one (no record of this puzzle yet — a rate-refused restart) carries an empty `createdAt`,
+// which is what tells "refused an existing round" from "refused before creating one".
 function refusal(status: number, guesses: string[], error?: string) {
   return {
     ok: false,
@@ -107,7 +110,7 @@ function refusal(status: number, guesses: string[], error?: string) {
       error: error ?? (status === 409 ? 'round_full' : 'too_fast'),
       message: 'refused',
       guesses,
-      createdAt: '2026-08-21T09:00:00.000Z',
+      createdAt: guesses.length === 0 ? '' : '2026-08-21T09:00:00.000Z',
       now: '2026-08-21T09:30:00.000Z',
     }),
   } as unknown as Response;
@@ -594,6 +597,51 @@ describe('the server-held solve (#203)', () => {
     const writes = post.mock.calls.length;
     await settle(60_000);
     expect(post).toHaveBeenCalledTimes(writes);
+  });
+
+  it('adopts a solved log SERVER-ONLY — the refused guesses are not kept', async () => {
+    // A frozen round's stored log is final: the batch it refused is never stored, so
+    // merging it back in would leave the screen counting tries the recorded score does not
+    // — a headline permanently disagreeing with the rank printed under it.
+    seedRound(['bois', 'chemin', 'vieille']);
+    post
+      .mockResolvedValueOnce(status(404))
+      .mockResolvedValueOnce(refusal(409, ['bois', 'foret'], 'round_solved'));
+    beginRoundSync(ctx());
+    await settle(60_000);
+
+    expect(round()?.tried).toEqual(['bois', 'foret']);
+    expect(round()?.guessCount).toBe(2);
+  });
+
+  it('adopts server-only on a READ that finds the round already frozen', async () => {
+    // A second device opening a day the first one solved: same rule, and it is the path a
+    // reload takes.
+    seedRound(['bois', 'chemin']);
+    post.mockResolvedValueOnce(ok(['bois', 'foret'], true));
+    beginRoundSync(ctx());
+    await settle(60_000);
+
+    expect(round()?.tried).toEqual(['bois', 'foret']);
+    expect(round()?.recorded).toBe(true);
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not take an EMPTY refusal as proof the round was created', async () => {
+    // A rate-refused RESTART answers the empty state, because no record of THIS puzzle
+    // exists yet. Reading that as creation makes the retry omit the round-start challenge,
+    // which is a 403, which is a verdict — and the conversation closes on a round that was
+    // never created at all.
+    seedRound(['bois']);
+    post
+      .mockResolvedValueOnce(status(404))
+      .mockResolvedValueOnce(refusal(429, [], 'too_fast'))
+      .mockResolvedValue(ok(['bois']));
+    beginRoundSync(ctx());
+    await settle(60_000);
+
+    // The retry still carries the challenge, because nothing has demonstrated a record.
+    expect(bodyOf(2).turnstileToken).toBe('challenge');
   });
 
   it('does not re-open a recorded round on a reload — the flag is PERSISTED', async () => {

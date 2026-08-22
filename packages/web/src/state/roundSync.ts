@@ -23,7 +23,13 @@
 // pattern): a ref would not survive a real unmount, and neither the queue nor the
 // in-flight write may be duplicated by a remount (archive round-trips, StrictMode).
 
-import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS, type RankMap, type RuntimeHole } from '@whippin/shared';
+import {
+  puzzleTag as puzzleTagOf,
+  ROUND_GUESS_CAP,
+  ROUND_WRITE_MIN_MS,
+  type RankMap,
+  type RuntimeHole,
+} from '@whippin/shared';
 import { parseRound, postRoundBody, roundUrl, type RoundState } from '../api';
 import { applyGuessToHoles, computeProgress, guessKey } from '../game/scoring';
 import { useGameStore } from './gameStore';
@@ -86,28 +92,11 @@ const MAX_FLIGHTS = 3;
 // Ceiling on the retry window, so an outage cannot spin a request a second.
 const MAX_BACKOFF_MS = 30_000;
 
-// A puzzle SIGNATURE folded to the short opaque tag the server stores beside a round and
-// only ever compares (backend roundStore.ts, `PUZZLE_TAG_SHAPE`). FNV-1a, base 36, so any
-// signature — a sentence's holes, a word's slug — becomes a handful of characters the wire
-// shape accepts. ONE encoding for both dailies: two spellings would be two ways for a tag
-// to stop matching itself.
-export function fnvTag(signature: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < signature.length; i += 1) {
-    hash ^= signature.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(36);
-}
-
-// Which PUZZLE a round's log belongs to. A round key is only (day, lang, mode), so
-// RE-PUBLISHING a different sentence keeps the key while changing the puzzle — the store
-// resets the local round on exactly that (`holesMatchPuzzle`), and without this tag the
-// mount read would hand the RETIRED sentence's log straight back and undo the reset for
-// good. The signature is what `holesMatchPuzzle` itself compares.
-export function puzzleTag(holes: RuntimeHole[]): string {
-  return fnvTag(holes.map((h) => `${h.pos}:${h.secret}`).join('|'));
-}
+// `fnvTag` and `puzzleTag` moved to @whippin/shared with #203, when the derivation slice
+// started carrying the revision it describes: the SERVER computes the same value from a
+// puzzle now, so it can refuse to derive against an artifact of another revision.
+// Re-exported here because `wordRoundSync` and this module's callers already name them.
+export { fnvTag, puzzleTag } from '@whippin/shared';
 
 // How long the next APPEND must wait for the per-player write interval — measured from
 // when the previous write SETTLED, not from when it was sent.
@@ -193,7 +182,7 @@ function pruneFlights(keep: string): void {
 // conversation: the first registration reads the server's copy and adopts whatever the
 // local device is missing; later registrations only refresh the context.
 export function beginRoundSync(ctx: RoundSyncContext): void {
-  const puzzle = puzzleTag(ctx.freshHoles);
+  const puzzle = puzzleTagOf(ctx.freshHoles);
   const existing = flights.get(ctx.roundKey);
   if (existing) {
     // A sentence re-published UNDER an open conversation: the acked prefix describes the
@@ -317,12 +306,29 @@ function requestBody(f: RoundFlight, guesses?: string[], challenge?: string) {
   return { secret: playerSecret(), puzzle: f.puzzle, guesses, turnstileToken: challenge };
 }
 
-// Adopt the two things the server DERIVED about this round (#203), which the client cannot
-// read off its own board: whether the SERVER has it on record as solved — which is when the
-// day's score row exists and a standing becomes readable — and, with it, that the round is
-// frozen and the conversation is over. Only ever true, so this can never un-finish a round.
-function adoptSolved(f: RoundFlight, key: string, solved: boolean): void {
+// Adopt what the server DERIVED about this round (#203), which the client cannot read off
+// its own board: the SERVER has it on record as solved. That is when the day's score row
+// exists and a standing becomes readable, and it is also the FREEZE — the round takes no
+// further guesses, so the conversation is over. Only ever true, so this can never un-finish
+// a round.
+//
+// It adopts the server's log EXACTLY, where every other answer merges the local one under
+// it (corrected on review). A frozen round's log is final: the guesses this device still had
+// pending were REFUSED and are never stored, so merging them back in leaves the screen
+// counting tries the population's score does not — a headline that disagrees with the
+// leaderboard rank printed beneath it, permanently. #203 says those guesses are dropped for
+// good; this is where that happens.
+function adoptSolved(f: RoundFlight, key: string, solved: boolean, serverGuesses: string[]): void {
   if (!solved) return;
+  const round = useGameStore.getState().rounds[key];
+  if (round && !sameLog(serverGuesses, round.tried)) {
+    const holes = replayHoles(f.freshHoles, f.ranks, serverGuesses);
+    useGameStore
+      .getState()
+      .adoptRound(key, serverGuesses, holes, computeProgress(holes, f.ranks));
+  }
+  f.pendingFrom = serverGuesses.length;
+  f.serverCount = serverGuesses.length;
   useGameStore.getState().markRoundRecorded(key);
   f.closed = true;
 }
@@ -359,12 +365,16 @@ async function readRound(f: RoundFlight, key: string): Promise<void> {
     // Re-checked after the body: reading it is another await, and a republish landing
     // inside it would leave this log describing the retired sentence.
     if (superseded(f, puzzle)) return;
-    adopt(f, key, state.guesses);
     // The server HAS a record for this puzzle, so no further append mints one and none
     // carries a challenge.
     f.created = true;
-    adoptSolved(f, key, state.solved);
-    if (f.closed) return;
+    // A SOLVED round is frozen: its stored log is the whole truth, and merging local extras
+    // under it would keep tries the server refused. Every other answer merges.
+    if (state.solved) {
+      adoptSolved(f, key, true, state.guesses);
+      return;
+    }
+    adopt(f, key, state.guesses);
   } else if (response.status === 404) {
     // The server holds nothing for THIS puzzle: a fresh round, or a daily re-published
     // under the same key whose old record is retired. Nothing is acked, and the first
@@ -429,18 +439,25 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
     // A superseded answer describes the RETIRED puzzle: not its log, not its cap, not
     // its failure count. The republish already reset this flight to read again.
     if (superseded(f, puzzle)) return;
-    adopt(f, key, state.guesses);
     f.failures = 0;
-    // Whatever it says, the server now holds a record for this puzzle.
-    f.created = true;
+    // The server holds a record for this puzzle — but only when this answer DEMONSTRATES
+    // one (corrected on review). A rate-refused RESTART answers the EMPTY state, because no
+    // record of this puzzle exists yet (`stateForTag`); taking that as creation makes the
+    // retry omit the round-start challenge, which is a 403, which is a VERDICT — and the
+    // conversation closes on a round that was never created. A 200 always created one; a
+    // refusal only did if it carried real state, which `createdAt` is the mark of.
+    if (response.ok || state.createdAt !== '') f.created = true;
     // The FREEZE (#203): a solved round accepts nothing more. This is the one answer that
     // must do BOTH things — ADOPT the stored state, so the tab renders the round solved
     // instead of an unsolved board with its guesses still on screen, and CLOSE, so `pump`
     // does not resend immediately (and, with `failures` reset above, with no backoff at
-    // all). Any unsent guesses are dropped for good; harmless to the score, since fewer
-    // tries is a better one in sentence mode.
-    adoptSolved(f, key, state.solved || error === 'round_solved');
-    if (f.closed) return;
+    // all). The batch it refused is dropped for good, which is why the adoption is
+    // server-ONLY: those tries are not in the score the population recorded.
+    if (state.solved || error === 'round_solved') {
+      adoptSolved(f, key, true, state.guesses);
+      return;
+    }
+    adopt(f, key, state.guesses);
     if (response.status === 409 && f.serverCount >= ROUND_GUESS_CAP) {
       // The cap: the round stops counting (#201). Mark the round so the score is never
       // submitted, close the conversation, and let local play continue untouched.

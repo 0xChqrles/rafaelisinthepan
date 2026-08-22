@@ -29,7 +29,7 @@
 // is the one path where the player genuinely waits on the answer.
 
 import { gunzipSync, gzipSync } from 'node:zlib';
-import { holeProgress, rankCount, type Puzzle } from '@whippin/shared';
+import { holeProgress, puzzleTag, rankCount, type Puzzle } from '@whippin/shared';
 
 // One secret's slice: what the progress formula needs, plus every key that can still move it.
 export interface SliceHole {
@@ -45,6 +45,16 @@ export interface SliceHole {
 
 export interface PuzzleSlice {
   lang: string;
+  // WHICH REVISION of the daily this describes — the same tag the client computes from the
+  // holes it is playing and the server stores beside a round (`@whippin/shared`).
+  //
+  // Without it the artifact is anonymous, and nothing catches the two ways a republish
+  // separates a puzzle from its slice: a WARM Lambda holds a cached slice for as long as it
+  // lives, so it would keep deriving the retired sentence's ranks against the corrected
+  // round; and publish replaces two objects, so a reader between them sees one revision's
+  // puzzle beside another's slice. Both produce a percentage that is quietly about the wrong
+  // sentence — and a `solved` that is too, which is the one value that cannot be taken back.
+  puzzle: string;
   // Keyed by SECRET slug, like the puzzle's own `ranks`. Duplicate sentence occurrences of
   // one secret share a single entry — they are one logical progress target (the web's
   // `computeProgress` collapses them the same way).
@@ -66,7 +76,13 @@ export function buildSlice(puzzle: Puzzle): PuzzleSlice {
     const secret = hole.secret.slug;
     // One entry per SECRET: repeated occurrences carry the same map and the same start
     // hint, and generation guarantees it (the schema keys `ranks` by secret slug).
-    if (holes[secret]) continue;
+    //
+    // `Object.hasOwn`, never a truthiness test — the rule `deriveRound` states below, broken
+    // here until review caught it. A secret slug is all lowercase letters, so `constructor`
+    // is a word a puzzle can genuinely be built on, and `holes[secret]` answers it with
+    // Object.prototype's own: that hole would be SKIPPED, absent from the slice, and the
+    // round would report SOLVED once the other two secrets were found.
+    if (Object.hasOwn(holes, secret)) continue;
     const full = puzzle.ranks[secret];
     if (!full) throw new Error(`puzzle has no ranks for secret "${secret}"`);
     const ranks: Record<string, number> = Object.create(null) as Record<string, number>;
@@ -76,7 +92,10 @@ export function buildSlice(puzzle: Puzzle): PuzzleSlice {
     }
     holes[secret] = { n: rankCount(full), startRank: hole.start_rank, ranks };
   }
-  return { lang: puzzle.lang, holes };
+  // From the puzzle's OWN holes, before the dedup above: the tag counts every occurrence,
+  // because the client's runtime holes do.
+  const tag = puzzleTag(puzzle.holes.map((h) => ({ pos: h.pos, secret: h.secret.slug })));
+  return { lang: puzzle.lang, puzzle: tag, holes };
 }
 
 // Read a stored log against the day's slice. Pure, and the ONE place the two stored fields
@@ -120,8 +139,14 @@ export function parseSlice(data: unknown): PuzzleSlice {
   if (typeof data !== 'object' || data === null || Array.isArray(data)) {
     throw new Error('malformed slice: not an object');
   }
-  const { lang, holes } = data as { lang?: unknown; holes?: unknown };
+  const { lang, puzzle, holes } = data as { lang?: unknown; puzzle?: unknown; holes?: unknown };
   if (typeof lang !== 'string') throw new Error('malformed slice: missing "lang"');
+  // An untagged slice is a pre-#203-review artifact: it would derive against whatever
+  // puzzle asked, which is exactly what the tag exists to make impossible. Refused rather
+  // than trusted — a day whose slice predates this is republished, never limped on.
+  if (typeof puzzle !== 'string' || puzzle.length === 0) {
+    throw new Error('malformed slice: missing "puzzle" revision tag');
+  }
   if (typeof holes !== 'object' || holes === null || Array.isArray(holes)) {
     throw new Error('malformed slice: "holes" must be an object');
   }

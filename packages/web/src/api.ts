@@ -170,10 +170,20 @@ export function parseWordPuzzle(data: unknown): WordPuzzle {
 // claims its score — the server derives it from the guess log and records the row itself
 // (the round route), so this is a plain GET of the day's bands. Unlike the puzzle route,
 // `mode` is REQUIRED here.
-export function scoresUrl(lang: string, date: string, mode: Mode, base: string = apiBase()): string {
-  return `${requireApiBase(base)}/scores?lang=${encodeURIComponent(lang)}&date=${encodeURIComponent(
+export function scoresUrl(
+  lang: string,
+  date: string,
+  mode: Mode,
+  id?: string,
+  base: string = apiBase(),
+): string {
+  const root = `${requireApiBase(base)}/scores?lang=${encodeURIComponent(lang)}&date=${encodeURIComponent(
     date,
   )}&mode=${encodeURIComponent(mode)}`;
+  // The caller's PUBLIC id (#203, added on review), which is what makes the answer's
+  // `bucket` this player's rather than whoever else recorded the same number. `id` is in the
+  // score behavior's allowList — the root AGENTS.md three-package contract.
+  return id ? `${root}&id=${encodeURIComponent(id)}` : root;
 }
 
 // Runtime shape check for the histogram response — the parsePuzzle contract: a truncated

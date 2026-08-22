@@ -15,6 +15,8 @@
                               round bounds, VIEWER_IP_HEADER (infra+backend)
     src/scoring.ts            what a guess LOG means (#203): s()/holeProgress, rankCount,
                               guessKey, countTries — the readings BOTH ends now perform
+    src/puzzleTag.ts          WHICH puzzle a round's state (#201) and a derivation artifact
+                              (#203) belong to: fnvTag + puzzleTag
     src/identity.ts           the #187 player key: secret format + publicId derivation (web+backend)
     src/leaderboard.ts        the #190 board rules: competition tie ranks, the plain top-50 cut,
                               own-row window + the Board API types (backend cuts, web renders)
@@ -166,6 +168,13 @@
   the one the leaderboard recorded and #211's calendar fills from, over the same log. What
   stays in `web/game/scoring.ts` is only what the SCREEN has: the RuntimeHole improvement
   rule and `computeProgress` over them.
+- **`src/puzzleTag.ts` is the ONE spelling of a puzzle's REVISION.** The client computes it
+  from the holes it is playing, the server stores it beside a round and compares it, and
+  since #203 the derivation SLICE carries it too — so an artifact can be refused when it
+  describes a sentence the caller is not playing (a warm cache holding a retired revision, a
+  republish caught between its two objects). It moved out of the web when the server stopped
+  merely relaying the tag and started computing one from a `Puzzle`; two spellings would let
+  an artifact claim a revision it is not.
 - `src/leaderboard.ts` is the ONE definition of the #190 board's ranking rules —
   competition-style tie ranks, the plain top-50 cut (nothing folded, user-decided
   2026-08-20), the own-row ±2 window — plus the `Board`/`BoardRow` API types. The

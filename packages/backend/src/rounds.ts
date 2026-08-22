@@ -279,13 +279,16 @@ export async function handleRound(
   // The two reads the derivation needs, CONCURRENTLY: neither depends on the other, so a
   // slice cache miss hides inside a round trip already being paid for. The round read is
   // EVENTUALLY consistent (roundStore.ts states why that is enough here).
-  const [stored, slice] = await Promise.all([
+  const [seen, slice] = await Promise.all([
     rounds.get(key, publicId, puzzle, { consistent: false }),
-    loadSlice(puzzleStore, date, lang),
+    // The revision the CALLER is playing: an artifact describing another one is refused
+    // rather than derived against (puzzleCache.ts).
+    loadSlice(puzzleStore, date, lang, puzzle),
   ]);
   if (!slice) {
     // A missing slice IS a missing puzzle — there is no degraded mode: either publishing
-    // failed or the day was never published, and both are the same day-addressed answer.
+    // failed, or the day was never published, or this caller is still on a revision the
+    // store has replaced. All three are the same day-addressed answer.
     return errorResponse(404, 'not_found', `No puzzle for ${date} (${lang}).`, responseHeaders, {
       date,
       lang,
@@ -293,12 +296,23 @@ export async function handleRound(
   }
 
   // Turnstile gates ROUND CREATION (#203): the token moved off the retired score POST, and
-  // an unlinked visitor can now mint state here. `stored === null` covers both cases that
-  // create a record — a fresh round, and one whose stored log names a RETIRED puzzle and is
-  // about to be replaced. An append to a record that already exists costs no challenge.
+  // an unlinked visitor can now mint state here. A missing record covers both cases that
+  // create one — a fresh round, and one whose stored log names a RETIRED puzzle and is about
+  // to be replaced. An append to a record that already exists costs no challenge.
+  //
+  // But the read above is EVENTUALLY consistent, so its `null` is not evidence (corrected on
+  // review). A stale one demands a challenge the client has no reason to send — it only ever
+  // carries one on the append it believes creates the round — so the write is refused 403,
+  // which the client reads as a VERDICT and closes the conversation on, for the rest of that
+  // tab's life. One strongly consistent confirmation before demanding anything: it costs a
+  // read on the rare path that looks like creation, and nothing on the common one.
+  let stored = seen;
   if (!stored) {
-    const gate = await requireRoundStart(body, event, deps, responseHeaders);
-    if (gate) return gate;
+    stored = await rounds.get(key, publicId, puzzle);
+    if (!stored) {
+      const gate = await requireRoundStart(body, event, deps, responseHeaders);
+      if (gate) return gate;
+    }
   }
 
   // Derived from what THIS caller can see: the stored log for this puzzle plus the batch.
@@ -438,28 +452,48 @@ async function settleAppend(
 ): Promise<FnUrlResult> {
   const { key, publicId, puzzle, slice, state } = round;
   const truth = deriveRound(slice, state.guesses);
-  const storedSolved = state.solved === true;
-  if (truth.progress !== state.progress || (truth.solved && !storedSolved)) {
+  // What the append itself already made durable.
+  let solveIsStored = state.solved === true;
+  const solveNeedsWrite = truth.solved && !solveIsStored;
+  if (truth.progress !== state.progress || solveNeedsWrite) {
     // The LAST chance to record this solve, so it is RETRIED rather than fired and
     // forgotten: once the puzzle is solved the player stops guessing, so no later append
     // will come along to notice the omission — a dropped corrective write leaves exactly
     // the outcome this whole check exists to prevent, reached by a rarer route. The same
     // comparison fixes `progress`, whose "lands slightly low and the next write corrects
     // it" only holds while there IS a next write.
-    await retryWrite(() =>
+    if (await retryWrite(() =>
       deps.roundStore.settle({ ...key, publicId, puzzle, progress: truth.progress, solved: truth.solved }),
-    );
-    state.progress = truth.progress;
-    if (truth.solved) state.solved = true;
+    )) {
+      state.progress = truth.progress;
+      if (truth.solved) {
+        state.solved = true;
+        solveIsStored = true;
+      }
+    } else if (solveNeedsWrite) {
+      // **The write did not land, so the solve is NOT durable** (corrected on review: this
+      // used to answer `solved: true` regardless, which recorded a score, told the client
+      // the round was frozen, and closed its conversation — over a row DynamoDB still reads
+      // as unsolved and still accepts appends). The answer below therefore carries the state
+      // as STORED, no score is recorded, and the client keeps its conversation open. What is
+      // lost is this round's standing, which is the honest outcome of a solve nothing kept.
+      console.error(
+        `[round] solve NOT recorded (corrective write failed): ${key.date} ${key.lang} ${publicId}.`,
+      );
+    }
   }
   // The round FINISHED on this append — and only ONE append ever can, because the freeze
   // refuses every later one, so this fires once per round. Note it is keyed on the RETURNED
   // log rather than on what this caller derived: in the two-device race the solve exists
   // only in the union, and the write that lands second is the one that sees it.
   //
-  // Recording the score is the last thing the append does, so the answer the client adopts
-  // is never ahead of the population it is about to read.
-  if (truth.solved) {
+  // Gated on the solve being STORED, not merely derived: a score row is first-write-wins and
+  // permanent, so recording one beside a round row that says unsolved would put the two
+  // stores into exactly the disagreement this design keeps out of them.
+  //
+  // Recording it is the last thing the append does, so the answer the client adopts is never
+  // ahead of the population it is about to read.
+  if (truth.solved && solveIsStored) {
     await recordSentenceScore(round, puzzleStore, deps, event, serverDate, instant);
   }
   return json(200, roundBody(state, instant), headers);
@@ -483,7 +517,7 @@ async function recordSentenceScore(
   instant: Date,
 ): Promise<void> {
   const { key, publicId, state } = round;
-  const puzzle = await loadPuzzle(puzzleStore, key.date, key.lang, serverDate);
+  const puzzle = await loadPuzzle(puzzleStore, key.date, key.lang, serverDate, round.puzzle);
   if (!puzzle) {
     console.error(`[round] no puzzle to score ${key.date} ${key.lang} for ${publicId}.`);
     return;
@@ -539,16 +573,19 @@ async function recordScoreRow(
 
 // A write that must not be dropped. Two retries with a short backoff — enough to ride out a
 // throttle, bounded so it can never hold a player's append open.
-async function retryWrite(write: () => Promise<void>): Promise<void> {
+//
+// REPORTS whether it landed, and the caller owes it a check: an outcome this route claims in
+// its answer has to be one the store actually holds.
+async function retryWrite(write: () => Promise<void>): Promise<boolean> {
   const delays = [50, 150];
   for (let attempt = 0; ; attempt += 1) {
     try {
       await write();
-      return;
+      return true;
     } catch (error) {
       if (attempt >= delays.length) {
         console.error('[round] corrective write failed after retries:', error);
-        return;
+        return false;
       }
       await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
     }

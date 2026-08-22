@@ -167,15 +167,10 @@ async function main() {
     // in STACK_REGION (the stack is pinned there), so address it explicitly.
     const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
     const client = new S3Client({ region: STACK_REGION });
-    await client.send(
-      new PutObjectCommand({
-        Bucket: bucket,
-        Key: plan.key,
-        Body: text,
-        ContentType: 'application/json; charset=utf-8',
-      }),
-    );
-    console.log(`[publish] s3://${bucket}/${plan.key}  (${artifact.lang}, ${artifact.mode}, day ${plan.day})`);
+    // The SLICE goes FIRST (ordered on review): these are two objects, so a reader between
+    // them sees one revision's puzzle beside another's. Writing the derivation artifact
+    // first means the puzzle's appearance always implies its slice is already there — the
+    // harmful direction, since the other one is caught by the slice's own revision tag.
     if (plan.slice && slice) {
       await client.send(
         new PutObjectCommand({
@@ -188,6 +183,15 @@ async function main() {
       );
       console.log(`[publish] s3://${bucket}/${plan.slice}  (${slice.byteLength} bytes gzipped)`);
     }
+    await client.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: plan.key,
+        Body: text,
+        ContentType: 'application/json; charset=utf-8',
+      }),
+    );
+    console.log(`[publish] s3://${bucket}/${plan.key}  (${artifact.lang}, ${artifact.mode}, day ${plan.day})`);
 
     // The puzzle URL is date-addressed and the CDN holds it via a year-long s-maxage, so a
     // REPUBLISH must invalidate the cached entry or the correction would never reach the
@@ -216,13 +220,14 @@ async function main() {
   const root = rootArg ? resolveInput(rootArg) : defaultLocalStoreRoot();
   const dest = path.join(root, plan.key);
   await mkdir(path.dirname(dest), { recursive: true });
-  await writeFile(dest, text);
-  console.log(`[publish] ${dest}  (${artifact.lang}, ${artifact.mode}, day ${plan.day})`);
+  // The slice first, the puzzle second — the S3 ordering above, for its reason.
   if (plan.slice && slice) {
     const sliceDest = path.join(root, plan.slice);
     await writeFile(sliceDest, slice);
     console.log(`[publish] ${sliceDest}  (${slice.byteLength} bytes gzipped)`);
   }
+  await writeFile(dest, text);
+  console.log(`[publish] ${dest}  (${artifact.lang}, ${artifact.mode}, day ${plan.day})`);
 }
 
 // Run as a CLI only when executed directly (`tsx src/publish.ts ...`), NOT when this

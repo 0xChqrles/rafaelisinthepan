@@ -22,6 +22,15 @@
 // The full cache is keyed by DATE and swept against the SERVER's own active day, or
 // "today" quietly becomes "every day this instance has seen".
 //
+// **A cached artifact is bound to the REVISION it describes** (added on review). Keyed by
+// date and language alone, a warm instance keeps deriving against the sentence that was
+// published this morning for as long as it lives — there is no TTL and no invalidation
+// reaching in here, so a corrected daily would be scored against the retired one's ranks
+// indefinitely. Both loaders therefore take the tag the CALLER is playing, and an entry that
+// does not match is dropped and re-fetched once. A fetch that STILL does not match is not a
+// stale cache but a caller on a retired revision, and it answers null — the day-addressed
+// 404 the route already has for a puzzle it cannot derive against.
+//
 // A MISS is never cached. A day published slightly late must become playable without
 // waiting for the instance to recycle, exactly as the puzzle route's short negative TTL
 // intends at the edge.
@@ -34,6 +43,7 @@
 // route — cheaper for them and dearer for us. Gating first would cost every honest append
 // its concurrency to bound nothing.
 
+import { puzzleTag } from '@whippin/shared';
 import type { Puzzle } from '@whippin/shared';
 import type { PuzzleSlice } from './slice';
 import type { PuzzleStore } from './store';
@@ -55,18 +65,26 @@ export async function loadSlice(
   store: PuzzleStore,
   date: string,
   lang: string,
+  revision: string,
 ): Promise<PuzzleSlice | null> {
   const key = cacheKey(date, lang);
   const cached = slices.get(key);
-  if (cached) {
+  if (cached && cached.puzzle === revision) {
     // Re-insert so Map's insertion order is a true LRU.
     slices.delete(key);
     slices.set(key, cached);
     return cached;
   }
+  // Either nothing held, or what is held describes another revision: one re-fetch settles
+  // which (a republish this instance has not seen, or a caller still on the old sentence).
   const slice = await store.getSlice(date, lang);
   if (!slice) return null;
   slices.set(key, slice);
+  if (slice.puzzle !== revision) {
+    // The store's own copy disagrees with the caller. Cached anyway — it is the current
+    // revision, and the next caller on it should not pay for this fetch again.
+    return null;
+  }
   // Evict the least recently used entries down to the bound.
   for (const oldest of slices.keys()) {
     if (slices.size <= MAX_CACHED_SLICES) break;
@@ -83,6 +101,7 @@ export async function loadPuzzle(
   date: string,
   lang: string,
   serverDate: string,
+  revision: string,
 ): Promise<Puzzle | null> {
   // The 22:00 flip: yesterday's entry stops being "today's" the moment the server's active
   // day moves, and holding it is how the one-day cache turns into an unbounded one.
@@ -91,13 +110,17 @@ export async function loadPuzzle(
   }
   const active = date === serverDate;
   const key = cacheKey(date, lang);
+  const matches = (puzzle: Puzzle) =>
+    puzzleTag(puzzle.holes.map((h) => ({ pos: h.pos, secret: h.secret.slug }))) === revision;
   if (active) {
     const cached = puzzles.get(key);
-    if (cached) return cached;
+    // The slice's rule, for the same reason: a score counted off a retired sentence's maps
+    // is a score about another puzzle, and it is first-write-wins and permanent.
+    if (cached && matches(cached)) return cached;
   }
   const puzzle = await store.getPuzzle(date, lang);
   if (puzzle && active) puzzles.set(key, puzzle);
-  return puzzle;
+  return puzzle && matches(puzzle) ? puzzle : null;
 }
 
 // Test seam: module state must not leak between tests (and a store swapped under a warm

@@ -20,6 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   generateSecret,
   publicIdFromSecret,
+  puzzleTag,
   ROUND_GUESS_CAP,
   ROUND_WRITE_MIN_MS,
   WORD_MISS_CAP,
@@ -33,6 +34,7 @@ import { memoryScoreStore } from './memoryScoreStore';
 import { resetArtifactCache } from './puzzleCache';
 import { buildSlice } from './slice';
 import type { ScoreStore } from './scoreStore';
+import type { RoundStore } from './roundStore';
 import type { FnUrlEvent } from './respond';
 import type { PuzzleStore } from './store';
 
@@ -42,7 +44,6 @@ const PAST_DATE = '2026-08-19';
 const FUTURE_DATE = '2026-08-23';
 const ORIGIN = 'https://whippin.example';
 const SECRET = generateSecret();
-const PUZZLE = 'a1b2c3d4';
 
 // The day's word artifact, for the ONE path that reads a puzzle store (#202's end-of-run
 // submission). Three claimable groups inside the zone plus one far outside it, so the
@@ -85,19 +86,38 @@ const SENTENCE: Puzzle = {
   },
 };
 
+// The CORRECTED daily a republish puts in the store's place: different holes, so a
+// different revision tag — which is what a client sees change, and what the artifacts have
+// to be selected by.
+const CORRECTED: Puzzle = {
+  ...SENTENCE,
+  words: ['la', 'lampe', 'de', 'nuit'],
+  holes: [
+    { pos: 1, secret: { word: 'phare', slug: 'phare' }, start: { word: 'quai', slug: 'quai' }, start_rank: 2 },
+  ],
+};
+
+// Every round names the REVISION it is playing (#203), and the store's artifacts carry the
+// same tag — so these are the tags, not invented strings.
+const tagOf = (puzzle: Puzzle) =>
+  puzzleTag(puzzle.holes.map((h) => ({ pos: h.pos, secret: h.secret.slug })));
+const PUZZLE = tagOf(SENTENCE);
+const CORRECTED_TAG = tagOf(CORRECTED);
+
 // `undefined` = the artifact must never be read on this path; `null` = the daily was never
-// published. The SLICE is derived from the same puzzle, exactly as `puzzle:publish` does.
-function puzzleStore(word?: WordPuzzle | null, sentence: Puzzle | null = SENTENCE): PuzzleStore {
+// published. The SLICE is derived from the same puzzle, exactly as `puzzle:publish` does,
+// and `sentence` is a HOLDER so a test can republish under a live handler.
+function puzzleStore(word: WordPuzzle | null | undefined, sentence: { current: Puzzle | null }): PuzzleStore {
   return {
     async getPuzzle() {
-      return sentence;
+      return sentence.current;
     },
     async getWordPuzzle() {
       if (word === undefined) throw new Error('the round route must not read the word artifact');
       return word;
     },
     async getSlice() {
-      return sentence ? buildSlice(sentence) : null;
+      return sentence.current ? buildSlice(sentence.current) : null;
     },
   };
 }
@@ -110,16 +130,18 @@ function makeHandler(
     sentence?: Puzzle | null;
     turnstile?: boolean;
     scoreStore?: ScoreStore;
+    roundStore?: RoundStore;
   } = {},
 ) {
   let current = START.getTime();
   const scoreStore = options.scoreStore ?? memoryScoreStore(() => new Date(current));
+  const sentence = { current: options.sentence === undefined ? SENTENCE : options.sentence };
   const handler = createHandler({
-    store: puzzleStore(options.word, options.sentence === undefined ? SENTENCE : options.sentence),
+    store: puzzleStore(options.word, sentence),
     now: () => new Date(current),
     allowedOrigin: ORIGIN,
     rounds: {
-      roundStore: memoryRoundStore(),
+      roundStore: options.roundStore ?? memoryRoundStore(),
       scoreStore,
       ipHmacSecret: 'x'.repeat(64),
       turnstile: { async verify() { return options.turnstile !== false; } },
@@ -130,6 +152,11 @@ function makeHandler(
     scoreStore,
     advance(ms: number) {
       current += ms;
+    },
+    // A republish under a LIVE handler — the artifact cache is deliberately NOT reset, so
+    // what the tests exercise is the cache noticing the revision changed under it.
+    republish(puzzle: Puzzle) {
+      sentence.current = puzzle;
     },
   });
 }
@@ -336,16 +363,17 @@ describe('a re-published daily restarts the log (#201)', () => {
     await handler(event({ body: body({ guesses: ['ancien'] }) }));
     handler.advance(ROUND_WRITE_MIN_MS + 1);
 
+    handler.republish(CORRECTED);
     const restarted = await handler(
-      event({ body: { secret: SECRET, puzzle: 'deadbeef', guesses: ['bois'], turnstileToken: 'tok' } }),
+      event({ body: { secret: SECRET, puzzle: CORRECTED_TAG, guesses: ['mer'], turnstileToken: 'tok' } }),
     );
     expect(restarted.statusCode).toBe(200);
-    expect(parsed(restarted).guesses).toEqual(['bois']);
+    expect(parsed(restarted).guesses).toEqual(['mer']);
 
     // And the new tag is what the record now answers to.
     handler.advance(ROUND_WRITE_MIN_MS + 1);
-    const read = await handler(event({ body: { secret: SECRET, puzzle: 'deadbeef' } }));
-    expect(parsed(read).guesses).toEqual(['bois']);
+    const read = await handler(event({ body: { secret: SECRET, puzzle: CORRECTED_TAG } }));
+    expect(parsed(read).guesses).toEqual(['mer']);
   });
 
   it('never hands the retired log back on a rate-refused restart', async () => {
@@ -356,8 +384,9 @@ describe('a re-published daily restarts the log (#201)', () => {
     // refusals included, is adopted by the client as this round's truth — so a 429
     // carrying the retired sentence's log would reintroduce exactly the guesses the tag
     // exists to exclude.
+    handler.republish(CORRECTED);
     const refused = await handler(
-      event({ body: { secret: SECRET, puzzle: 'deadbeef', guesses: ['bois'], turnstileToken: 'tok' } }),
+      event({ body: { secret: SECRET, puzzle: CORRECTED_TAG, guesses: ['mer'], turnstileToken: 'tok' } }),
     );
     expect(refused.statusCode).toBe(429);
     expect(parsed(refused).guesses).toEqual([]);
@@ -821,8 +850,9 @@ describe('the derived summary (#203)', () => {
     // The daily is re-published: the record names a retired sentence, so the batch
     // REPLACES the log — and the freeze must go with it, or the corrected puzzle would be
     // unplayable for everyone who had solved the retired one.
+    handler.republish(CORRECTED);
     const restarted = await handler(
-      event({ body: { secret: SECRET, puzzle: 'deadbeef', guesses: ['mer'], turnstileToken: 'tok' } }),
+      event({ body: { secret: SECRET, puzzle: CORRECTED_TAG, guesses: ['mer'], turnstileToken: 'tok' } }),
     );
     expect(restarted.statusCode).toBe(200);
     expect(parsed(restarted).solved).toBeUndefined();
@@ -936,5 +966,65 @@ describe('the word run\'s recorded score (#203)', () => {
     const rows = await handler.scoreStore.list(wordKey);
     expect(rows).toHaveLength(1);
     expect(rows[0].score).toBe(1);
+  });
+});
+
+
+// CONTRACT (#203, added on review): an outcome this route CLAIMS has to be one the store
+// actually holds, and an eventually-consistent read is never evidence of absence.
+describe('what the answer is allowed to claim (#203)', () => {
+  const solvedKey = { date: ACTIVE_DATE, lang: 'fr', mode: 'sentence' as const };
+
+  it('does NOT report a solve whose corrective write never landed', async () => {
+    // The rare race (the append derived unsolved, the returned log is solved) meeting three
+    // consecutive write failures. This used to answer `solved: true`, record a score and
+    // close the client's conversation over a row DynamoDB still reads as unsolved.
+    const store = memoryRoundStore();
+    const inner = store.append.bind(store);
+    const handler = makeHandler({
+      roundStore: {
+        ...store,
+        // Land the guesses, but write the summary as though the caller had derived nothing —
+        // which is what a stale pre-read produces.
+        append: (input) => inner({ ...input, progress: 0, solved: false }),
+        async settle() {
+          throw new Error('ProvisionedThroughputExceeded');
+        },
+      },
+    });
+
+    const answer = await handler(event({ body: body({ guesses: ['phare', 'nuit'] }) }));
+    expect(answer.statusCode).toBe(200);
+    // The guesses ARE stored — that write committed.
+    expect(parsed(answer).guesses).toEqual(['phare', 'nuit']);
+    // But nothing claims a solve the store does not hold, so the client keeps its
+    // conversation open rather than closing on a freeze that is not there…
+    expect(parsed(answer).solved).toBeUndefined();
+    // …and no score row is recorded beside a round row that reads unsolved.
+    expect(await handler.scoreStore.list(solvedKey)).toEqual([]);
+  });
+
+  it('CONFIRMS a missing round consistently before demanding a challenge', async () => {
+    // The pre-read is eventually consistent, so its `null` is not evidence. A stale one
+    // demands a token the client only ever sends on the append it believes creates the
+    // round — so the write is 403'd, which the client reads as a VERDICT and closes on.
+    const store = memoryRoundStore();
+    const handler = makeHandler({
+      roundStore: {
+        ...store,
+        get: (key, publicId, puzzle, opts) =>
+          // Exactly the failure mode: the fast read is blind, the consistent one is not.
+          opts?.consistent === false ? Promise.resolve(null) : store.get(key, publicId, puzzle),
+      },
+    });
+
+    expect((await handler(event({ body: body({ guesses: ['mer'] }) }))).statusCode).toBe(200);
+    handler.advance(ROUND_WRITE_MIN_MS + 1);
+    // The client believes the round exists and sends no challenge — correctly.
+    const second = await handler(
+      event({ body: { secret: SECRET, puzzle: PUZZLE, guesses: ['quai'] } }),
+    );
+    expect(second.statusCode).toBe(200);
+    expect(parsed(second).guesses).toEqual(['mer', 'quai']);
   });
 });

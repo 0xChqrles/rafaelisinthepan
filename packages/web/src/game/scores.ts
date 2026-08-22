@@ -25,14 +25,11 @@ export const PERCENT_MIN_TOTAL = 10;
 // and the percentage is what carries the standing. So the badge starts at rank 10.
 export const PERCENT_MIN_RANK = 10;
 
-// Locate a score in the API's inclusive ranges — the GET path, where the server returns
-// `bucket: null` because a revisiting client already knows its persisted score. Null for
-// a score no range holds (a malformed histogram, or a local score the population never
-// recorded, #187): the standing then simply isn't drawn rather than lying.
-export function bucketIndexOf(buckets: readonly ScoreHistogramBucket[], score: number): number | null {
-  const index = buckets.findIndex(({ min, max }) => score >= min && score <= max);
-  return index < 0 ? null : index;
-}
+// `bucketIndexOf` is GONE (#203, on review). It located a score in the returned ranges,
+// which answers "somebody recorded this number" and not "this row is YOURS": a round the
+// population does not hold — one the IP cap refused, or a Word daily another device
+// submitted first — would borrow an unrelated player's standing. The read names the caller
+// now and the SERVER locates them (`useScoreHistogram`), so there is nothing left to guess.
 
 // Where the player stands (user-decided 2026-08-15, replacing the population histogram —
 // "the histogram is actually ugly": a bar field asks to be decoded, where a rank is the

@@ -13,7 +13,7 @@
 //     rather than deriving a silent 0%.
 
 import { describe, expect, it } from 'vitest';
-import { holeProgress, type Puzzle } from '@whippin/shared';
+import { holeProgress, puzzleTag, type Puzzle } from '@whippin/shared';
 import { buildSlice, decodeSlice, deriveRound, encodeSlice, parseSlice } from './slice';
 
 // Two holes; the second is a REPEATED occurrence of the first secret, so the slice must
@@ -137,25 +137,44 @@ describe('the stored form — one codec, and a refusal for anything else', () =>
   it('refuses a wrong-shaped slice rather than deriving a silent 0%', () => {
     expect(() => parseSlice(null)).toThrow(/not an object/);
     expect(() => parseSlice({ holes: {} })).toThrow(/lang/);
-    expect(() => parseSlice({ lang: 'fr' })).toThrow(/holes/);
-    expect(() => parseSlice({ lang: 'fr', holes: { a: { n: 0, startRank: 1, ranks: {} } } })).toThrow(
-      /hole entry/,
-    );
+    expect(() => parseSlice({ lang: 'fr', puzzle: 'abc123' })).toThrow(/holes/);
     expect(() =>
-      parseSlice({ lang: 'fr', holes: { a: { n: 4, startRank: -1, ranks: {} } } }),
+      parseSlice({ lang: 'fr', puzzle: 'abc123', holes: { a: { n: 0, startRank: 1, ranks: {} } } }),
     ).toThrow(/hole entry/);
+    expect(() =>
+      parseSlice({ lang: 'fr', puzzle: 'abc123', holes: { a: { n: 4, startRank: -1, ranks: {} } } }),
+    ).toThrow(/hole entry/);
+  });
+
+  // The artifact has to say WHICH REVISION it describes, or a warm instance keeps deriving
+  // the retired sentence's ranks against the corrected round (puzzleCache.ts).
+  it('refuses an UNTAGGED slice — it would derive against whatever puzzle asked', () => {
+    expect(() => parseSlice({ lang: 'fr', holes: { a: { n: 4, startRank: 2, ranks: {} } } })).toThrow(
+      /puzzle/,
+    );
+  });
+
+  it('stamps the puzzle\'s own revision, counting every hole a repeated secret has', () => {
+    const slice = buildSlice(PUZZLE);
+    expect(slice.puzzle).toBe(
+      puzzleTag(PUZZLE.holes.map((h) => ({ pos: h.pos, secret: h.secret.slug }))),
+    );
+    // Three holes, two slice entries — the tag is the SENTENCE's shape, not the slice's.
+    const collapsed = buildSlice({ ...PUZZLE, holes: PUZZLE.holes.slice(1) });
+    expect(collapsed.puzzle).not.toBe(slice.puzzle);
   });
 
   // The two SILENT readings a partial object produces are what the refusal is for, so they
   // are named rather than left to the shape checks above (tightened on review, where the
   // comment promised more than the code did).
   it('refuses an EMPTY holes map — it would answer 0% and never solve, for every log', () => {
-    expect(() => parseSlice({ lang: 'fr', holes: {} })).toThrow(/empty/);
+    expect(() => parseSlice({ lang: 'fr', puzzle: 'abc123', holes: {} })).toThrow(/empty/);
   });
 
   it('refuses a non-numeric or out-of-range rank — it would hide a reachable secret', () => {
     const withRank = (rank: unknown) => ({
       lang: 'fr',
+      puzzle: 'abc123',
       holes: { phare: { n: 4, startRank: 2, ranks: { mer: rank } } },
     });
     // A string compares false against every `best`, so the secret becomes unreachable
@@ -171,6 +190,6 @@ describe('the stored form — one codec, and a refusal for anything else', () =>
   it('VALIDATES what it encodes, so a malformed puzzle fails at PUBLISH, not at every append', () => {
     // A day whose slice the reader refuses answers the day-addressed 404 on every append.
     // Failing here puts that in front of a person instead.
-    expect(() => encodeSlice({ lang: 'fr', holes: {} })).toThrow(/empty/);
+    expect(() => encodeSlice({ lang: 'fr', puzzle: 'abc123', holes: {} })).toThrow(/empty/);
   });
 });

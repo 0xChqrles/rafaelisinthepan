@@ -59,7 +59,8 @@
   off because a backup would retain the pseudonymous dedup items past their privacy
   lifetime. `/scores` has a separate `scores*` behavior that allows writes
   and uses AWS's managed zero-TTL `CachingDisabled` policy. Its origin-request policy
-  forwards exactly the `lang`/`date`/`mode` queries outside the unused cache key and uses
+  forwards exactly the `lang`/`date`/`mode`/`id` queries outside the unused cache key (`id`
+  since #203: the read reports the CALLER's own band) and uses
   CloudFront's `allExcept: Host` header mode — the AWS Lambda-URL pattern, which carries the
   viewer's `x-amz-content-sha256` (mandatory for OAC to sign a Lambda-URL POST) and lets
   CloudFront set Host to the Function URL's own domain for that signature. CloudFront rejects

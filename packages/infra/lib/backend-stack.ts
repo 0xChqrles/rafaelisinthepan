@@ -341,11 +341,15 @@ export class BackendStack extends Stack {
         cookieBehavior: cloudfront.OriginRequestCookieBehavior.none(),
       });
 
+    // `id` joined the three addressing queries with #203: the read reports the CALLER's own
+    // band, so the handler needs the publicId naming them (never the secret — that would be
+    // a query string, which no route here puts one in). An unlisted parameter never reaches
+    // the Lambda at all, so the standing would silently go blank for everybody.
     const scoreOriginRequestPolicy = liveOriginRequestPolicy(
       'ScoreOriginRequestPolicy',
       'WhippinLiveScoresOrigin',
       'Live scores: forward exact queries and Lambda-URL-safe headers outside cache.',
-      ['lang', 'date', 'mode'],
+      ['lang', 'date', 'mode', 'id'],
     );
 
     // `/profile` (#188) reads ONE query, the public id a board row resolves by.
