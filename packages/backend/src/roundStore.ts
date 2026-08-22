@@ -169,6 +169,17 @@ export interface RoundStore {
   // (a solved round takes no further append to repair it). Progress only ever rises within
   // one puzzle's life, so refusing a lowering write costs nothing correct; a solve is never
   // refused by it, since a solved derivation is exactly 100.
+  //
+  // **The APPEND is deliberately NOT guarded the same way**, so the stored percentage can
+  // DIP for the moment between that write and this one: the append writes what the caller
+  // derived from its own eventually-consistent read, which a concurrent device may already
+  // have bettered. The dip is repaired by the settle that follows in the same request, off
+  // the ALL_NEW log — and an unsolved round's next append would derive it correctly anyway,
+  // so only the retry budget running out leaves it standing (already the logged failure
+  // path). Guarding the append instead would REFUSE THE WHOLE WRITE in exactly that case:
+  // a correct guess dropped to protect a value derived FROM it, which is the load-bearing
+  // thing traded for the derived one. The append's job is to store guesses; the summary
+  // rides along.
   settle(input: RoundSettleInput): Promise<void>;
   // WORD mode's two writes (#202) — the mode streams nothing, because what syncing buys is
   // the live friends board and a 60-second run is over before anyone opens it.

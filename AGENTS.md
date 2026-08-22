@@ -679,7 +679,13 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   later ARRIVAL may carry the older log, and last-writer-wins would park a lower percentage
   on the row for good, since a solved round takes no further append to repair it. Progress
   only rises within one puzzle's life, so refusing a lowering write costs nothing correct,
-  and a solve is never refused by it (a solved derivation is exactly 100).
+  and a solve is never refused by it (a solved derivation is exactly 100). **The APPEND is
+  deliberately not guarded the same way** — understood and accepted on review: the stored
+  percentage can DIP for the moment between the append and its own settle, since the append
+  writes what the caller derived from an eventually-consistent read. Guarding it would
+  refuse the whole write in that case, dropping a correct guess to protect a value derived
+  from it; nothing reads the stored percentage mid-round today, and the settle repairs it
+  off the ALL_NEW log in the same request.
   The pre-read STAYS — it is what supplies values to write in the same operation, which is
   what holds this at one read plus one write; the returned item is a VERIFICATION, not a
   replacement. **That corrective write is the LAST chance to record the solve, so it is
