@@ -19,7 +19,7 @@
       s3Store.ts, fsStore.ts  store impls: S3 (prod) and local FS (#17), both read the same key
       slice.ts                #203's DERIVATION SLICE: build it from a puzzle, read a log against
                               it (progress + solved), its gzip codec and its shape check
-      puzzleCache.ts          #203's artifact reads: the slice (every append) and the full
+      puzzleReads.ts          #203's artifact reads: the slice (every append) and the full
                               puzzle (a solve), BOTH fresh, both gated on the caller's revision
       scores.ts               /scores GET route (READ-ONLY since #203): params, derived histogram
       scoreLimits.ts          the Word field's claim ceiling (the sentence one retired with #203)
@@ -363,7 +363,7 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   Object.prototype, which swallowed a `constructor` secret whole). A truth that reads SOLVED
   then records the day's score row — `countTries` over the FULL artifact (`loadPuzzle`), the
   one thing the slice cannot answer — and that write's failures are LOGGED, never surfaced:
-  the answer is about the log. `puzzleCache.ts` holds NO state — both reads are fresh, so
+  the answer is about the log. `puzzleReads.ts` holds NO state — both reads are fresh, so
   there is nothing to reset between tests and nothing an instance can answer a later
   request from.
   Round CREATION is Turnstile-gated: the sentence round has no START message, so the

@@ -12,7 +12,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import type { Puzzle } from '@whippin/shared';
-import { loadPuzzle, loadSlice } from './puzzleCache';
+import { loadPuzzle, loadSlice } from './puzzleReads';
 import { buildSlice } from './slice';
 import type { PuzzleStore } from './store';
 

@@ -1,5 +1,7 @@
-// The round route's artifact reads (#203). BOTH ARE FRESH — there is no cache here any
-// more, and the reason is worth the whole comment.
+// The round route's artifact reads (#203). BOTH ARE FRESH — nothing here is cached, and the
+// reason is worth the whole comment. (This module was `puzzleCache.ts` while it briefly held
+// one; the name went with the cache, since a file called a cache that is not one misleads
+// every later reader.)
 //
 //   | any append, any day | the SLICE         | read fresh, ~12.5 KB gzipped, 0.51 ms |
 //   | a solve, any day    | the full artifact | read fresh, ~0.8 MB gzipped, 52 ms    |

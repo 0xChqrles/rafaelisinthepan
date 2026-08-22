@@ -148,7 +148,7 @@ describe('the stored form — one codec, and a refusal for anything else', () =>
   });
 
   // The artifact has to say WHICH REVISION it describes, or a warm instance keeps deriving
-  // the retired sentence's ranks against the corrected round (puzzleCache.ts).
+  // the retired sentence's ranks against the corrected round (puzzleReads.ts).
   it('refuses an UNVERSIONED slice — it would derive against whatever version asked', () => {
     expect(() => parseSlice({ lang: 'fr', holes: { a: { n: 4, startRank: 2, ranks: {} } } })).toThrow(
       /revision/,

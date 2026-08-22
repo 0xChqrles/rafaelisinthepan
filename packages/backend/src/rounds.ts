@@ -56,7 +56,7 @@ import {
   requireSecret,
   requireTurnstileToken,
 } from './liveRoute';
-import { loadPuzzle, loadSlice } from './puzzleCache';
+import { loadPuzzle, loadSlice } from './puzzleReads';
 import { deriveRound, type PuzzleSlice } from './slice';
 import {
   PUZZLE_TAG_SHAPE,
@@ -282,7 +282,7 @@ export async function handleRound(
   const [seen, slice] = await Promise.all([
     rounds.get(key, publicId, puzzle, { consistent: false }),
     // The revision the CALLER is playing: an artifact describing another one is refused
-    // rather than derived against (puzzleCache.ts).
+    // rather than derived against (puzzleReads.ts).
     loadSlice(puzzleStore, date, lang, puzzle),
   ]);
   if (!slice) {
@@ -505,7 +505,7 @@ async function settleAppend(
 // dedups on a guess's rank in EVERY map — so this is the one thing the slice cannot answer
 // and the full artifact has to be loaded for. It happens ONCE per round, and the artifact is
 // read FRESH. A corrected published version starts a new round and replaces this player's
-// retired-version score row (puzzleCache.ts).
+// retired-version score row (puzzleReads.ts).
 //
 // Every failure here is SILENT to the caller. The guesses are stored, the round is settled,
 // and the answer is about the LOG; a population that could not be written is a missing
