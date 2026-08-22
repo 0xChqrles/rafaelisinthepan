@@ -725,28 +725,28 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   several typable spellings (fr averages 2.58 keys per rank, up to 11.1). **Every figure
   here is FRENCH** — the local store holds no real English sentence puzzle, so generate one
   and re-measure before sizing anything on it.
-  - **The loading rule, and it is about WHAT THE VALUE COSTS IF IT IS WRONG** (settled on
-    review, replacing a "today's artifact is cached for one day" rule): any append, any day →
-    the SLICE, cached ~100 days behind a ~5-minute freshness window; a SOLVE, any day → the
-    full artifact, **read FRESH and discarded**. The slice feeds `progress`, which the next
-    append recomputes, and `solved`, which a rank correction can barely move (rank 0 is the
-    secret's own slug in every revision of one sentence) — both self-heal, so a cache is
-    affordable and it is what makes an append cheap. The full artifact feeds the SCORE: one
-    first-write-wins row, permanent, never revisited, so it is never derived from anything an
-    instance happens to be holding. That costs one 52 ms parse per SOLVE — once per round, on
-    a path that has just done a DynamoDB write — to buy the one number nobody can correct
-    afterwards. *(When #206 wants a live per-append count, the cache comes back with whatever
-    freshness that number needs.)*
-  - **A REPUBLISH HAS TO REACH A WARM INSTANCE, and TWO things carry it** — neither alone is
-    enough, which review found the hard way. The slice NAMES THE SENTENCE it describes, so a
-    caller already on the corrected daily is detected at once and the stale entry re-fetched;
-    but the tag is a sentence's identity, not its rank maps', so a correction that leaves the
-    holes alone changes nothing, and a caller still on the OLD sentence matches the OLD entry
-    forever. The FRESHNESS WINDOW covers both: nothing invalidates a Lambda's own memory, and
-    matching the browser `max-age` the puzzle route already serves makes the origin's
-    derivation correct on the same timescale the player's own copy does.
-  - **Memory, per warm Lambda against its 512 MB:** the slice cache ~14 MB, with the artifact
-    resident only for the moment a solve is being scored.
+  - **BOTH ARTIFACTS ARE READ FRESH; there is no cache** (settled over two review rounds,
+    replacing this issue's own slice cache and one-day artifact cache). The full artifact
+    went first: the SCORE it feeds is a first-write-wins row that is never revisited, so it
+    must not be derived from whatever an instance happens to be holding. The slice cache went
+    on a fact the design did not have — **RANK 0 IS A GROUP, NOT A SLUG.** Every alias of the
+    secret's group sits at rank 0 (measured on the 51 local fr puzzles: 79 of 151 hole
+    occurrences carry more than one rank-0 key, worst 27), and a correction that re-runs the
+    #104 merge walk moves aliases in and out of that group WITHOUT touching a hole — so the
+    revision tag cannot see it. A stale slice then decides `solved` wrongly in BOTH
+    directions, and neither heals: an alias it ranks 0 that the store ranks 1 FREEZES a round
+    and records a permanent score for a puzzle nobody solved; an alias it ranks 1 that the
+    store ranks 0 records nothing, and the client — whose own board says solved — has nothing
+    left to append, so the "next append corrects it" this file used to promise never happens.
+    *(An earlier draft of this section claimed `solved` self-heals. It does not; the claim was
+    wrong and is retracted here.)* Validating only the SOLVE path against the fresh artifact
+    fixes the first direction and cannot reach the second, since that path is never entered.
+  - **What reading fresh costs:** one ~12.5 KB GET plus a 0.51 ms parse per append, issued
+    CONCURRENTLY with the round item's DynamoDB read — so no wall-clock on a request already
+    waiting on a comparable round trip — and on the order of $0.60 a month in S3 GETs at
+    1,000 players averaging 50 guesses. **The slice still earns its keep:** what #203 measured
+    as unviable was PARSING a 6.21 MB artifact per append, and that is exactly what this
+    never does. The full artifact is parsed once per round, on the solve.
   - **Measured** (node, `2026-07-25.fr.json`): full 6.21 MB raw / 0.80 MB gzipped / 52.3 ms
     to gunzip+parse / **16.6 MB retained**; slice 66.7 KB / **12.5 KB** gzipped / **0.51 ms**
     / **0.22 MB**. The heap figures are RETAINED measurements (three copies parsed and held,

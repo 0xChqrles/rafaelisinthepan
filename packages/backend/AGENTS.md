@@ -19,8 +19,8 @@
       s3Store.ts, fsStore.ts  store impls: S3 (prod) and local FS (#17), both read the same key
       slice.ts                #203's DERIVATION SLICE: build it from a puzzle, read a log against
                               it (progress + solved), its gzip codec and its shape check
-      puzzleCache.ts          #203's per-instance loading rule: the slice cached ~100 days,
-                              today's full artifact for ONE day, an archive day's discarded
+      puzzleCache.ts          #203's artifact reads: the slice (every append) and the full
+                              puzzle (a solve), BOTH fresh, both gated on the caller's revision
       scores.ts               /scores GET route (READ-ONLY since #203): params, derived histogram
       scoreLimits.ts          the Word field's claim ceiling (the sentence one retired with #203)
       liveRoute.ts            what the LIVE routes share: no-store headers, the JSON-body
@@ -343,12 +343,12 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   settle delayed past a better one is refused rather than parking a stale percentage.
   `parseSlice` checks the rank VALUES too, not only the field shapes, and `encodeSlice` runs
   it before writing: a malformed puzzle then fails loudly at PUBLISH instead of shipping a
-  day whose every append answers the day-addressed 404. **The slice NAMES the sentence it
-  describes AND ages out** (`SLICE_MAX_AGE_MS`): the tag catches a caller already on the
-  corrected daily, the window catches everything the tag cannot see — a ranks-only
-  correction, and a caller still on the old sentence who would otherwise match the stale
-  entry forever. The FULL artifact is not cached at all, because the score it feeds is
-  permanent. Publish writes the slice FIRST so the puzzle's appearance implies its slice is
+  day whose every append answers the day-addressed 404. **NEITHER artifact is cached**: the full one
+  because the score it feeds is a permanent first-write-wins row, and the SLICE because rank
+  0 is a GROUP — every alias of the secret's group sits there, and a correction re-running
+  the #104 merge walk moves them without touching a hole, so no revision tag can see it and a
+  stale slice decides `solved` wrongly in both directions. The slice's own tag survives for
+  the job it can hold: is this caller playing the sentence the store holds? Publish writes the slice FIRST so the puzzle's appearance implies its slice is
   there. **A corrective write that does not land is not claimed** — `settle` REPORTS whether
   the state it asked for is now the stored one, so a declined condition (a concurrent
   republish) is a verdict rather than a success: the answer carries the state as stored, no

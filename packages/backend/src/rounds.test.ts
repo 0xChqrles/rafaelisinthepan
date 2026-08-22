@@ -31,7 +31,6 @@ import {
 import { createHandler } from './handler';
 import { memoryRoundStore } from './memoryRoundStore';
 import { memoryScoreStore } from './memoryScoreStore';
-import { resetArtifactCache } from './puzzleCache';
 import { buildSlice } from './slice';
 import type { ScoreStore } from './scoreStore';
 import type { RoundStore } from './roundStore';
@@ -212,9 +211,6 @@ function parsed(response: { body: string }): RoundResponse {
 beforeEach(() => {
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
-  // The artifact cache is per-INSTANCE module state: one test's store must never answer
-  // another's reads.
-  resetArtifactCache();
 });
 
 afterEach(() => {

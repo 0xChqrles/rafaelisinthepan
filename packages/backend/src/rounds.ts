@@ -503,9 +503,8 @@ async function settleAppend(
 
 // THE SCORE, derived rather than claimed (#203). It counts UNIQUE tries, and `guessKey`
 // dedups on a guess's rank in EVERY map — so this is the one thing the slice cannot answer
-// and the full artifact has to be loaded for. It happens ONCE per round: today's artifact
-// is cached (nearly all traffic is the active daily, so one instance holds one day's), an
-// archive day's is loaded and discarded (caching it is what fills an instance).
+// and the full artifact has to be loaded for. It happens ONCE per round, and the artifact is
+// read FRESH: what it produces is a first-write-wins row nobody revisits (puzzleCache.ts).
 //
 // Every failure here is SILENT to the caller. The guesses are stored, the round is settled,
 // and the answer is about the LOG; a population that could not be written is a missing
