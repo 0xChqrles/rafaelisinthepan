@@ -3,22 +3,36 @@
 // guard triple, storing the RAW ordered log as strings with no interpretation. The read
 // answers the stored round (404 = none yet); the append validates every guess (folded
 // slug shape, the language's own max length from #200), enforces the 500-guess cap and
-// the ~1s per-player write interval in ONE atomic decision, and EVERY answer — the two
+// the ~1s per-player write interval in ONE atomic decision, and EVERY answer — the
 // refusals included — carries the full state so a write is also a reconciliation.
 // Archive days sync like today's, and a re-published daily restarts the log rather than
 // handing back the retired puzzle's.
+//
+// CONTRACT (#203): the score stops being something the client claims. Every sentence
+// append reads the day's DERIVATION SLICE, derives `progress` and `solved` from (the
+// stored log + the batch) and writes them in the SAME mutation; it verifies against the
+// log the append returned and corrects it when they disagree; a SOLVED round is frozen and
+// refuses further appends; the append that solves a round records the day's score row from
+// the FULL artifact (unique tries by `guessKey`); and round CREATION is Turnstile-gated in
+// both modes, since that is where a caller who has done nothing yet mints state.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   generateSecret,
+  publicIdFromSecret,
   ROUND_GUESS_CAP,
   ROUND_WRITE_MIN_MS,
   WORD_MISS_CAP,
   wordRunFloorMs,
+  type Puzzle,
   type WordPuzzle,
 } from '@whippin/shared';
 import { createHandler } from './handler';
 import { memoryRoundStore } from './memoryRoundStore';
+import { memoryScoreStore } from './memoryScoreStore';
+import { resetArtifactCache } from './puzzleCache';
+import { buildSlice } from './slice';
+import type { ScoreStore } from './scoreStore';
 import type { FnUrlEvent } from './respond';
 import type { PuzzleStore } from './store';
 
@@ -46,17 +60,44 @@ const WORD_ARTIFACT: WordPuzzle = {
   },
 };
 
-// `undefined` = the store must never be touched (every sentence path, and every word path
-// but the submission); `null` = the daily was never published.
-function puzzleStore(word?: WordPuzzle | null): PuzzleStore {
+// The day's SENTENCE puzzle: two holes, each starting two ranks out, so a log can be
+// walked from 0% to solved and every rank the derivation reads is inside the slice.
+const SENTENCE: Puzzle = {
+  lang: 'fr',
+  words: ['le', 'phare', 'de', 'nuit'],
+  holes: [
+    { pos: 1, secret: { word: 'phare', slug: 'phare' }, start: { word: 'quai', slug: 'quai' }, start_rank: 2 },
+    { pos: 3, secret: { word: 'nuit', slug: 'nuit' }, start: { word: 'soir', slug: 'soir' }, start_rank: 2 },
+  ],
+  ranks: {
+    phare: {
+      phare: { word: 'phare', rank: 0 },
+      mer: { word: 'mer', rank: 1, dq: 255 },
+      quai: { word: 'quai', rank: 2, dq: 128 },
+      loin: { word: 'loin', rank: 9, dq: 0 },
+    },
+    nuit: {
+      nuit: { word: 'nuit', rank: 0 },
+      lune: { word: 'lune', rank: 1, dq: 255 },
+      soir: { word: 'soir', rank: 2, dq: 128 },
+      loin: { word: 'loin', rank: 7, dq: 0 },
+    },
+  },
+};
+
+// `undefined` = the artifact must never be read on this path; `null` = the daily was never
+// published. The SLICE is derived from the same puzzle, exactly as `puzzle:publish` does.
+function puzzleStore(word?: WordPuzzle | null, sentence: Puzzle | null = SENTENCE): PuzzleStore {
   return {
-    // NOTHING here reads the sentence puzzle — asserted by never being called.
     async getPuzzle() {
-      throw new Error('the round route must not read the puzzle store');
+      return sentence;
     },
     async getWordPuzzle() {
-      if (word === undefined) throw new Error('the round route must not read the puzzle store');
+      if (word === undefined) throw new Error('the round route must not read the word artifact');
       return word;
+    },
+    async getSlice() {
+      return sentence ? buildSlice(sentence) : null;
     },
   };
 }
@@ -64,20 +105,29 @@ function puzzleStore(word?: WordPuzzle | null): PuzzleStore {
 // One handler per test, over ONE memory store, driven by an advancing clock: sequences
 // of writes must land on the same record, and the interval needs real time movement.
 function makeHandler(
-  options: { word?: WordPuzzle | null; turnstile?: boolean } = {},
+  options: {
+    word?: WordPuzzle | null;
+    sentence?: Puzzle | null;
+    turnstile?: boolean;
+    scoreStore?: ScoreStore;
+  } = {},
 ) {
   let current = START.getTime();
+  const scoreStore = options.scoreStore ?? memoryScoreStore(() => new Date(current));
   const handler = createHandler({
-    store: puzzleStore(options.word),
+    store: puzzleStore(options.word, options.sentence === undefined ? SENTENCE : options.sentence),
     now: () => new Date(current),
     allowedOrigin: ORIGIN,
     rounds: {
       roundStore: memoryRoundStore(),
+      scoreStore,
+      ipHmacSecret: 'x'.repeat(64),
       turnstile: { async verify() { return options.turnstile !== false; } },
       allowSourceIp: true,
     },
   });
   return Object.assign(handler, {
+    scoreStore,
     advance(ms: number) {
       current += ms;
     },
@@ -93,8 +143,12 @@ function wordEvent(extra: Record<string, unknown> = {}, query = WORD_QUERY): FnU
 }
 
 // Every call carries the player key AND the tag naming which puzzle the log belongs to.
+// An APPEND also carries the round-start challenge (#203): the route only verifies it on
+// the write that CREATES the record, so sending it on every append is what a client does.
+// A READ must NOT carry one — a bare token names no write and is refused.
 function body(extra: Record<string, unknown> = {}): Record<string, unknown> {
-  return { secret: SECRET, puzzle: PUZZLE, ...extra };
+  const writing = Object.hasOwn(extra, 'guesses');
+  return { secret: SECRET, puzzle: PUZZLE, ...(writing ? { turnstileToken: 'tok' } : {}), ...extra };
 }
 
 function event(options: {
@@ -117,6 +171,8 @@ interface RoundResponse {
   createdAt: string;
   startedAt?: string;
   submittedAt?: string;
+  progress?: number;
+  solved?: boolean;
   now: string;
   resumed?: boolean;
   error?: string;
@@ -128,6 +184,10 @@ function parsed(response: { body: string }): RoundResponse {
 
 beforeEach(() => {
   vi.spyOn(console, 'warn').mockImplementation(() => {});
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  // The artifact cache is per-INSTANCE module state: one test's store must never answer
+  // another's reads.
+  resetArtifactCache();
 });
 
 afterEach(() => {
@@ -277,7 +337,7 @@ describe('a re-published daily restarts the log (#201)', () => {
     handler.advance(ROUND_WRITE_MIN_MS + 1);
 
     const restarted = await handler(
-      event({ body: { secret: SECRET, puzzle: 'deadbeef', guesses: ['bois'] } }),
+      event({ body: { secret: SECRET, puzzle: 'deadbeef', guesses: ['bois'], turnstileToken: 'tok' } }),
     );
     expect(restarted.statusCode).toBe(200);
     expect(parsed(restarted).guesses).toEqual(['bois']);
@@ -297,7 +357,7 @@ describe('a re-published daily restarts the log (#201)', () => {
     // carrying the retired sentence's log would reintroduce exactly the guesses the tag
     // exists to exclude.
     const refused = await handler(
-      event({ body: { secret: SECRET, puzzle: 'deadbeef', guesses: ['bois'] } }),
+      event({ body: { secret: SECRET, puzzle: 'deadbeef', guesses: ['bois'], turnstileToken: 'tok' } }),
     );
     expect(refused.statusCode).toBe(429);
     expect(parsed(refused).guesses).toEqual([]);
@@ -667,5 +727,214 @@ describe('word mode: a run that claimed nothing (#202)', () => {
     const joined = await handler(wordEvent({ turnstileToken: 'ok' }));
     expect(parsed(joined).resumed).toBe(true);
     expect(parsed(joined).startedAt).toBe(START.toISOString());
+  });
+});
+
+// CONTRACT (#203): the server DERIVES what it used to be told.
+describe('the derived summary (#203)', () => {
+  // `SENTENCE`'s two holes both start at rank 2; typing a secret solves its own hole.
+  const solvedKey = { date: ACTIVE_DATE, lang: 'fr', mode: 'sentence' as const };
+
+  async function appendGuesses(handler: ReturnType<typeof makeHandler>, ...batches: string[][]) {
+    let last = await handler(event({ body: body({ guesses: batches[0] }) }));
+    for (const batch of batches.slice(1)) {
+      handler.advance(ROUND_WRITE_MIN_MS + 1);
+      last = await handler(event({ body: body({ guesses: batch }) }));
+    }
+    return last;
+  }
+
+  it('writes progress and solved BESIDE the guesses, in the same answer', async () => {
+    const handler = makeHandler();
+    const first = parsed(await appendGuesses(handler, ['mer']));
+    // One hole moved from rank 2 to rank 1, the other is untouched: real progress, and
+    // nothing solved.
+    expect(first.progress).toBeGreaterThan(0);
+    expect(first.progress).toBeLessThan(100);
+    expect(first.solved).toBeUndefined();
+  });
+
+  it('reads a guess the slice does not hold as no progress at all', async () => {
+    const handler = makeHandler();
+    const answer = parsed(await appendGuesses(handler, ['zzz']));
+    expect(answer.progress).toBe(0);
+    expect(answer.guesses).toEqual(['zzz']);
+  });
+
+  it('marks the round SOLVED once every secret is typed, and records the day\'s score', async () => {
+    const handler = makeHandler();
+    const answer = parsed(await appendGuesses(handler, ['mer'], ['phare', 'nuit']));
+    expect(answer.solved).toBe(true);
+    expect(answer.progress).toBeCloseTo(100, 10);
+
+    // The score is DERIVED from the stored log by the counted-try identity — three
+    // distinct guesses here — and written by the append that solved the round, so the
+    // population already holds it by the time the client can read a standing.
+    const rows = await handler.scoreStore.list(solvedKey);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].score).toBe(3);
+    expect(rows[0].publicId).toBe(await publicIdFromSecret(SECRET));
+  });
+
+  it('counts UNIQUE tries: two surfaces of one group are one try', async () => {
+    // `loin` is the same GROUP in neither map, but it IS one identity typed twice.
+    const handler = makeHandler();
+    await appendGuesses(handler, ['loin'], ['loin', 'mer'], ['phare', 'nuit']);
+    const rows = await handler.scoreStore.list(solvedKey);
+    // loin, mer, phare, nuit — the repeat does not count twice.
+    expect(rows[0].score).toBe(4);
+  });
+
+  it('FREEZES a solved round: further appends are refused and nothing is stored', async () => {
+    const handler = makeHandler();
+    await appendGuesses(handler, ['phare', 'nuit']);
+    handler.advance(ROUND_WRITE_MIN_MS + 1);
+
+    const refused = await handler(event({ body: body({ guesses: ['mer'] }) }));
+    expect(refused.statusCode).toBe(409);
+    expect(parsed(refused).error).toBe('round_solved');
+    // The refusal is an ANSWER: it carries the stored state, so the tab that sent it
+    // renders the round solved instead of an unsolved board with its guesses on screen.
+    expect(parsed(refused).guesses).toEqual(['phare', 'nuit']);
+    expect(parsed(refused).solved).toBe(true);
+
+    // And a later READ shows the log unchanged — the refused batch is dropped for good.
+    handler.advance(ROUND_WRITE_MIN_MS + 1);
+    expect(parsed(await handler(event())).guesses).toEqual(['phare', 'nuit']);
+  });
+
+  it('records the score ONCE, however many appends follow', async () => {
+    const handler = makeHandler();
+    await appendGuesses(handler, ['phare', 'nuit']);
+    handler.advance(ROUND_WRITE_MIN_MS + 1);
+    await handler(event({ body: body({ guesses: ['mer'] }) })); // refused by the freeze
+    const rows = await handler.scoreStore.list(solvedKey);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].score).toBe(2);
+  });
+
+  it('a RESTARTED round loses the retired puzzle\'s solve rather than staying frozen', async () => {
+    const handler = makeHandler();
+    await appendGuesses(handler, ['phare', 'nuit']);
+    handler.advance(ROUND_WRITE_MIN_MS + 1);
+
+    // The daily is re-published: the record names a retired sentence, so the batch
+    // REPLACES the log — and the freeze must go with it, or the corrected puzzle would be
+    // unplayable for everyone who had solved the retired one.
+    const restarted = await handler(
+      event({ body: { secret: SECRET, puzzle: 'deadbeef', guesses: ['mer'], turnstileToken: 'tok' } }),
+    );
+    expect(restarted.statusCode).toBe(200);
+    expect(parsed(restarted).solved).toBeUndefined();
+    expect(parsed(restarted).guesses).toEqual(['mer']);
+  });
+
+  it('answers the day-addressed 404 when the slice is missing — there is no degraded mode', async () => {
+    const handler = makeHandler({ sentence: null });
+    const response = await handler(event({ body: body({ guesses: ['mer'] }) }));
+    expect(response.statusCode).toBe(404);
+    expect(JSON.parse(response.body).error).toBe('not_found');
+  });
+
+  it('a READ needs no slice and derives nothing', async () => {
+    // The mount read is the player's own state, not a population claim — it must stay
+    // cheap, and it must work on a day whose slice is missing.
+    const handler = makeHandler({ sentence: null });
+    expect((await handler(event())).statusCode).toBe(404); // nothing stored, not a slice 404
+  });
+});
+
+// CONTRACT (#203): ROUND START is Turnstile-gated in both modes. Round creation is
+// available to every unlinked visitor, so it carries the challenge the retired score POST
+// used to — and only round CREATION does: a later append to a record that already exists
+// costs nothing.
+describe('the round-start challenge (#203)', () => {
+  it('refuses to CREATE a sentence round without a challenge', async () => {
+    const handler = makeHandler();
+    const response = await handler(
+      event({ body: { secret: SECRET, puzzle: PUZZLE, guesses: ['mer'] } }),
+    );
+    expect(response.statusCode).toBe(403);
+    expect(JSON.parse(response.body).error).toBe('turnstile_rejected');
+
+    // Nothing was stored: the refusal comes before the write.
+    const read = await handler(event());
+    expect(read.statusCode).toBe(404);
+  });
+
+  it('refuses a challenge the verifier rejects', async () => {
+    const handler = makeHandler({ turnstile: false });
+    const response = await handler(event({ body: body({ guesses: ['mer'] }) }));
+    expect(response.statusCode).toBe(403);
+  });
+
+  it('asks ONCE: an append to an existing round needs no challenge', async () => {
+    const handler = makeHandler();
+    expect((await handler(event({ body: body({ guesses: ['mer'] }) }))).statusCode).toBe(200);
+    handler.advance(ROUND_WRITE_MIN_MS + 1);
+    const second = await handler(
+      event({ body: { secret: SECRET, puzzle: PUZZLE, guesses: ['quai'] } }),
+    );
+    expect(second.statusCode).toBe(200);
+    expect(parsed(second).guesses).toEqual(['mer', 'quai']);
+  });
+
+  it('refuses a bare token on a sentence round — it names no write', async () => {
+    const handler = makeHandler();
+    const response = await handler(
+      event({ body: { secret: SECRET, puzzle: PUZZLE, turnstileToken: 'tok' } }),
+    );
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(response.body).error).toBe('bad_request');
+  });
+});
+
+// CONTRACT (#203): Word mode's end-of-run SUBMISSION is what records its score row, the
+// way the solving append does for a sentence round. The claim count comes from the same
+// log and the same artifact the write already validated against.
+describe('the word run\'s recorded score (#203)', () => {
+  const wordKey = { date: ACTIVE_DATE, lang: 'fr', mode: 'word' as const };
+
+  async function startedRun() {
+    const handler = makeHandler({ word: WORD_ARTIFACT });
+    await handler(wordEvent({ turnstileToken: 'ok' }));
+    return handler;
+  }
+
+  it('records the claim count when the run is stored', async () => {
+    const handler = await startedRun();
+    handler.advance(wordRunFloorMs(2) + 1);
+    const submitted = await handler(wordEvent({ guesses: ['mer', 'ocean', 'zzz'] }));
+    expect(submitted.statusCode).toBe(200);
+
+    const rows = await handler.scoreStore.list(wordKey);
+    // Two claims and a miss: the score is the CLAIMS, and it is the server's own count.
+    expect(rows).toHaveLength(1);
+    expect(rows[0].score).toBe(2);
+  });
+
+  it('records a 0-claim run — an empty log is a real result, not an absence', async () => {
+    const handler = await startedRun();
+    handler.advance(wordRunFloorMs(0) + 1);
+    await handler(wordEvent({ guesses: [] }));
+    expect(await handler.scoreStore.list(wordKey)).toEqual([
+      { publicId: await publicIdFromSecret(SECRET), score: 0 },
+    ]);
+  });
+
+  it('records nothing on a REFUSED submission, and nothing more on a repeat', async () => {
+    const handler = await startedRun();
+    // Too early: the run cannot be over yet, so no row is written.
+    const early = await handler(wordEvent({ guesses: ['mer'] }));
+    expect(early.statusCode).toBe(409);
+    expect(await handler.scoreStore.list(wordKey)).toEqual([]);
+
+    handler.advance(wordRunFloorMs(1) + 1);
+    await handler(wordEvent({ guesses: ['mer'] }));
+    // First write wins: a second submission changes neither the log nor the population.
+    await handler(wordEvent({ guesses: ['mer', 'ocean'] }));
+    const rows = await handler.scoreStore.list(wordKey);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].score).toBe(1);
   });
 });

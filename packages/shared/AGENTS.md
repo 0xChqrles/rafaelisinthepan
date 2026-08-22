@@ -13,6 +13,8 @@
     src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
     src/scores.ts             WORD_CLAIM_ZONE + Word mode's clock/caps (web+backend), the #201
                               round bounds, VIEWER_IP_HEADER (infra+backend)
+    src/scoring.ts            what a guess LOG means (#203): s()/holeProgress, rankCount,
+                              guessKey, countTries — the readings BOTH ends now perform
     src/identity.ts           the #187 player key: secret format + publicId derivation (web+backend)
     src/leaderboard.ts        the #190 board rules: competition tie ranks, the plain top-50 cut,
                               own-row window + the Board API types (backend cuts, web renders)
@@ -156,6 +158,14 @@
   One web palette used to be pinned COPIES of ramp stops; with the calm redesign Word
   mode's rarity ladder is AUTHORED instead (`rarity.test.ts` still pins its hexes and
   re-measured dE constraints, so a retune stays a deliberate act).
+- **`src/scoring.ts` is the ONE reading of a guess log (#203).** It moved here from the web
+  when the SERVER started deriving a round's `solved`, its `progress` and its score from the
+  log it stores: `s`/`holeProgress` (the reconstruction curve), `rankCount` (N is GROUPS, not
+  keys), `guessKey` (#104's whole-outcome identity) and `countTries` (the sentence score —
+  distinct identities in a log). Two spellings would let the number on screen disagree with
+  the one the leaderboard recorded and #211's calendar fills from, over the same log. What
+  stays in `web/game/scoring.ts` is only what the SCREEN has: the RuntimeHole improvement
+  rule and `computeProgress` over them.
 - `src/leaderboard.ts` is the ONE definition of the #190 board's ranking rules —
   competition-style tie ranks, the plain top-50 cut (nothing folded, user-decided
   2026-08-20), the own-row ±2 window — plus the `Board`/`BoardRow` API types. The

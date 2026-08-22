@@ -12,6 +12,7 @@ const OTHER_SECRET = 'b'.repeat(32);
 const emptyStore: PuzzleStore = {
   getPuzzle: async () => null,
   getWordPuzzle: async () => null,
+  getSlice: async () => null,
 };
 
 function makeHandler(friends: FriendStore = memoryFriendStore()) {

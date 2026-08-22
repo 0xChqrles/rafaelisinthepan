@@ -28,13 +28,16 @@
 // server only ever compares it, which is the same "stores strings, interprets nothing"
 // rule the log itself follows.
 //
-// The SENTENCE paths read NO puzzle store: the log is the player's own working state, not
-// a population claim, so an unpublished day needs no guard beyond the shared future-skew
-// window — and archive rounds sync like today's (#201), which is what makes a player's
-// full history follow them to a new device. Word mode's SUBMIT is the one exception: it
-// validates the log against the day's artifact, which only the artifact can answer.
+// Since #203 the SENTENCE append READS THE DAY'S PUZZLE too — overturning #201's explicit
+// "there is NO puzzle-store read". The score stops being something the client claims: the
+// server derives `progress` and `solved` from the stored log on every append and records
+// the score row itself when the round finishes. What it reads is the small DERIVATION
+// SLICE (slice.ts), not the multi-megabyte artifact — and the full artifact only when a
+// round actually solves, because only the score needs every rank. Word mode's SUBMIT
+// already read the artifact (#202); it is simply no longer the only path that does.
 
 import {
+  countTries,
   fold,
   publicIdFromSecret,
   ROUND_GUESS_CAP,
@@ -44,6 +47,7 @@ import {
   wordRunFloorMs,
   type WordRanks,
 } from '@whippin/shared';
+import { createHash } from 'node:crypto';
 import {
   clientIp,
   LIVE_HEADERS,
@@ -52,7 +56,16 @@ import {
   requireSecret,
   requireTurnstileToken,
 } from './liveRoute';
-import { PUZZLE_TAG_SHAPE, type RoundState, type RoundStore } from './roundStore';
+import { loadPuzzle, loadSlice } from './puzzleCache';
+import { deriveRound, type PuzzleSlice } from './slice';
+import {
+  PUZZLE_TAG_SHAPE,
+  type RoundKey,
+  type RoundState,
+  type RoundStore,
+} from './roundStore';
+import { hashClientIp } from './scores';
+import { SCORE_DEDUP_TTL_SECONDS, type ScoreStore } from './scoreStore';
 import { wordScoreMaximum, type ScoreMode } from './scoreLimits';
 import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respond';
 import type { PuzzleStore } from './store';
@@ -60,8 +73,16 @@ import type { TurnstileVerifier } from './turnstile';
 
 export interface RoundHandlerDeps {
   roundStore: RoundStore;
-  // Word mode's round START is Turnstile-gated (#202) — the one write here that mints
-  // state for a caller who has done nothing yet.
+  // Since #203 a finished round records its OWN score row — there is no score POST left to
+  // do it (the client-claimed score and its range validation are retired), so the day's
+  // population is written from here.
+  scoreStore: ScoreStore;
+  // The #169 volume floor under those rows moved here with the write: the round path is
+  // where a score is now recorded, so it is where the address is hashed.
+  ipHmacSecret: string;
+  // Turnstile gates ROUND START in both modes (#203 moved it off the score POST): Word
+  // mode's explicit START, and the sentence append that CREATES a round. Round creation is
+  // available to every unlinked visitor, so it carries more weight than it did.
   turnstile: TurnstileVerifier;
   // Only the direct local HTTP adapter may trust its socket peer (the /scores rule).
   allowSourceIp?: boolean;
@@ -132,15 +153,11 @@ export async function handleRound(
   // prevention — the day's artifact is public and anyone determined can type its words —
   // but because the end-of-run wait check needs an anchor the client cannot move. A
   // client-supplied start is simply backdated and the bound evaporates.
-  if (body.turnstileToken !== undefined) {
-    if (mode !== 'word') {
-      return errorResponse(
-        400,
-        'bad_request',
-        'Only a word round is started: the sentence log streams and needs no clock.',
-        responseHeaders,
-      );
-    }
+  //
+  // A SENTENCE round has no clock, so it has no START message: its Turnstile token rides
+  // the append that CREATES the round (#203) and is checked there, once the pre-read has
+  // said whether anything is stored for this puzzle yet.
+  if (mode === 'word' && body.turnstileToken !== undefined) {
     if (body.guesses !== undefined) {
       // The two word writes are separate messages and no client sends both. Dispatching on
       // the token and silently DROPPING the guesses would answer 200 to a caller whose log
@@ -192,6 +209,16 @@ export async function handleRound(
   }
 
   const rawGuesses = body.guesses;
+  if (mode !== 'word' && body.turnstileToken !== undefined && rawGuesses === undefined) {
+    // A sentence round is created BY its first append, so a bare token names no write. It
+    // is a protocol violation rather than a free challenge to burn.
+    return errorResponse(
+      400,
+      'bad_request',
+      'A sentence round has no clock to start: its token rides the first append.',
+      responseHeaders,
+    );
+  }
   if (rawGuesses === undefined) {
     // READ: the caller's stored round FOR THIS PUZZLE. A 404 is the honest "nothing
     // yet" — a fresh round (or a re-published daily whose old log is retired), local
@@ -241,11 +268,43 @@ export async function handleRound(
     return await submitWordRound(
       { date, lang, mode, publicId, puzzle, guesses },
       puzzleStore,
-      rounds,
+      deps,
+      event,
       instant,
       responseHeaders,
     );
   }
+
+  const key: RoundKey = { date, lang, mode };
+  // The two reads the derivation needs, CONCURRENTLY: neither depends on the other, so a
+  // slice cache miss hides inside a round trip already being paid for. The round read is
+  // EVENTUALLY consistent (roundStore.ts states why that is enough here).
+  const [stored, slice] = await Promise.all([
+    rounds.get(key, publicId, puzzle, { consistent: false }),
+    loadSlice(puzzleStore, date, lang),
+  ]);
+  if (!slice) {
+    // A missing slice IS a missing puzzle — there is no degraded mode: either publishing
+    // failed or the day was never published, and both are the same day-addressed answer.
+    return errorResponse(404, 'not_found', `No puzzle for ${date} (${lang}).`, responseHeaders, {
+      date,
+      lang,
+    });
+  }
+
+  // Turnstile gates ROUND CREATION (#203): the token moved off the retired score POST, and
+  // an unlinked visitor can now mint state here. `stored === null` covers both cases that
+  // create a record — a fresh round, and one whose stored log names a RETIRED puzzle and is
+  // about to be replaced. An append to a record that already exists costs no challenge.
+  if (!stored) {
+    const gate = await requireRoundStart(body, event, deps, responseHeaders);
+    if (gate) return gate;
+  }
+
+  // Derived from what THIS caller can see: the stored log for this puzzle plus the batch.
+  // A record naming a retired puzzle answers `null` above, so the batch REPLACES the log
+  // and the derivation describes exactly that.
+  const derived = deriveRound(slice, [...(stored?.guesses ?? []), ...guesses]);
 
   const { outcome, state } = await rounds.append({
     date,
@@ -254,8 +313,25 @@ export async function handleRound(
     publicId,
     guesses,
     puzzle,
+    progress: derived.progress,
+    solved: derived.solved,
     now: instant,
   });
+  if (outcome === 'round_solved') {
+    // The FREEZE (#203): this round is finished and its score is recorded, so nothing more
+    // may join its log. The client must do BOTH things here — ADOPT the state (so the tab
+    // renders the round solved instead of showing an unsolved board with its guesses still
+    // on screen) and CLOSE the conversation (so it stops asking). Its unsent guesses are
+    // dropped for good; harmless to the score, since fewer tries is a better one.
+    return refusal(
+      409,
+      'round_solved',
+      'This round is solved and accepts no further guesses.',
+      state,
+      instant,
+      responseHeaders,
+    );
+  }
   if (outcome === 'round_full') {
     // The refusal means THIS BATCH does not fit, which is not always "the round is
     // full": a batch sized against a stale view of the log (another device pushed it
@@ -297,7 +373,186 @@ export async function handleRound(
       { ...responseHeaders, 'Retry-After': '1' },
     );
   }
-  return answer(state);
+  // APPENDED. The write is atomic, but the read -> derive -> write sequence is not, so what
+  // it stored may already describe a log one batch out of date. Verify against the log the
+  // append RETURNED before answering (roundStore.ts `RoundSettleInput` states the race).
+  return await settleAppend(
+    { key, publicId, puzzle, slice, state },
+    puzzleStore,
+    deps,
+    event,
+    serverDate,
+    instant,
+    responseHeaders,
+  );
+}
+
+// The Turnstile gate on a sentence ROUND START (#203). Returns the refusal to answer with,
+// or null when the caller may create the round. It is the same challenge Word mode's START
+// runs, on the one sentence write that mints state for a caller who has done nothing yet.
+async function requireRoundStart(
+  body: Record<string, unknown>,
+  event: FnUrlEvent,
+  deps: RoundHandlerDeps,
+  headers: Record<string, string>,
+): Promise<FnUrlResult | null> {
+  const token = requireTurnstileToken(body, headers);
+  if (!token.ok) return token.response;
+  const remoteIp = clientIp(event, deps.allowSourceIp === true);
+  if (!remoteIp) {
+    throw new Error('Round start has no trusted client IP address.');
+  }
+  if (!(await deps.turnstile.verify(token.value, remoteIp))) {
+    return errorResponse(403, 'turnstile_rejected', 'Turnstile token is invalid.', headers);
+  }
+  return null;
+}
+
+interface AppendedRound {
+  key: RoundKey;
+  publicId: string;
+  puzzle: string;
+  slice: PuzzleSlice;
+  state: RoundState;
+}
+
+// What an ACCEPTED append still owes, before it answers.
+//
+// `list_append` and its condition are one operation and cannot be raced — but the values
+// written beside them were derived from a snapshot taken BEFORE it, and deriving from
+// *(my read + my batch)* misses a solve that exists only in the UNION of two concurrent
+// batches. The append returns the true merged log (`ReturnValues: ALL_NEW`), so the check
+// costs no extra read: derive again from what came back and, when it disagrees, correct it.
+//
+// The pre-read STAYS: it is what supplies values to write in the same operation, which is
+// what holds this at one read plus one write. The returned item is a VERIFICATION, not a
+// replacement — normally it agrees and nothing more happens.
+async function settleAppend(
+  round: AppendedRound,
+  puzzleStore: PuzzleStore,
+  deps: RoundHandlerDeps,
+  event: FnUrlEvent,
+  serverDate: string,
+  instant: Date,
+  headers: Record<string, string>,
+): Promise<FnUrlResult> {
+  const { key, publicId, puzzle, slice, state } = round;
+  const truth = deriveRound(slice, state.guesses);
+  const storedSolved = state.solved === true;
+  if (truth.progress !== state.progress || (truth.solved && !storedSolved)) {
+    // The LAST chance to record this solve, so it is RETRIED rather than fired and
+    // forgotten: once the puzzle is solved the player stops guessing, so no later append
+    // will come along to notice the omission — a dropped corrective write leaves exactly
+    // the outcome this whole check exists to prevent, reached by a rarer route. The same
+    // comparison fixes `progress`, whose "lands slightly low and the next write corrects
+    // it" only holds while there IS a next write.
+    await retryWrite(() =>
+      deps.roundStore.settle({ ...key, publicId, puzzle, progress: truth.progress, solved: truth.solved }),
+    );
+    state.progress = truth.progress;
+    if (truth.solved) state.solved = true;
+  }
+  // The round FINISHED on this append — and only ONE append ever can, because the freeze
+  // refuses every later one, so this fires once per round. Note it is keyed on the RETURNED
+  // log rather than on what this caller derived: in the two-device race the solve exists
+  // only in the union, and the write that lands second is the one that sees it.
+  //
+  // Recording the score is the last thing the append does, so the answer the client adopts
+  // is never ahead of the population it is about to read.
+  if (truth.solved) {
+    await recordSentenceScore(round, puzzleStore, deps, event, serverDate, instant);
+  }
+  return json(200, roundBody(state, instant), headers);
+}
+
+// THE SCORE, derived rather than claimed (#203). It counts UNIQUE tries, and `guessKey`
+// dedups on a guess's rank in EVERY map — so this is the one thing the slice cannot answer
+// and the full artifact has to be loaded for. It happens ONCE per round: today's artifact
+// is cached (nearly all traffic is the active daily, so one instance holds one day's), an
+// archive day's is loaded and discarded (caching it is what fills an instance).
+//
+// Every failure here is SILENT to the caller. The guesses are stored, the round is settled,
+// and the answer is about the LOG; a population that could not be written is a missing
+// standing, never a refused append.
+async function recordSentenceScore(
+  round: AppendedRound,
+  puzzleStore: PuzzleStore,
+  deps: RoundHandlerDeps,
+  event: FnUrlEvent,
+  serverDate: string,
+  instant: Date,
+): Promise<void> {
+  const { key, publicId, state } = round;
+  const puzzle = await loadPuzzle(puzzleStore, key.date, key.lang, serverDate);
+  if (!puzzle) {
+    console.error(`[round] no puzzle to score ${key.date} ${key.lang} for ${publicId}.`);
+    return;
+  }
+  await recordScoreRow(key, publicId, countTries(puzzle.ranks, state.guesses), deps, event, instant);
+}
+
+// One recorded score per player per daily (#187), written by the SERVER now that the log
+// is (#203) — the shape both modes share, since only what the score COUNTS differs.
+//
+// Every failure here is SILENT to the caller. The guesses are stored and the answer is
+// about the LOG; a population that could not be written is a missing standing, never a
+// refused write.
+async function recordScoreRow(
+  key: RoundKey,
+  publicId: string,
+  score: number,
+  deps: RoundHandlerDeps,
+  event: FnUrlEvent,
+  instant: Date,
+): Promise<void> {
+  try {
+    // The #169 volume floor, unchanged in shape: the address is HMACed and only the digest
+    // reaches the store. A caller with no trusted address cannot be metered, so its score
+    // is not recorded — the same stance the retired score POST took.
+    const remoteIp = clientIp(event, deps.allowSourceIp === true);
+    if (!remoteIp) {
+      console.error(`[round] no trusted address to meter ${key.date} ${key.lang} ${publicId}.`);
+      return;
+    }
+    const outcome = await deps.scoreStore.submit({
+      ...key,
+      publicId,
+      score,
+      submittedAt: instant.toISOString(),
+      ipHash: hashClientIp(remoteIp, deps.ipHmacSecret),
+      expiresAt: Math.floor(instant.getTime() / 1000) + SCORE_DEDUP_TTL_SECONDS,
+      // The row is first-write-wins and unique per (daily, player), so its own key is a
+      // perfect DynamoDB idempotency token — where the retired POST hashed a single-use
+      // Turnstile token this write does not have.
+      requestToken: createHash('sha256')
+        .update(`${key.date}#${key.lang}#${key.mode}#${publicId}`)
+        .digest('hex')
+        .slice(0, 36),
+    });
+    if (outcome === 'capped') {
+      console.warn(`[round] score not recorded (IP allowance): ${key.date} ${key.lang} ${key.mode}.`);
+    }
+  } catch (error) {
+    console.error(`[round] failed to record the score for ${key.date} ${key.lang}:`, error);
+  }
+}
+
+// A write that must not be dropped. Two retries with a short backoff — enough to ride out a
+// throttle, bounded so it can never hold a player's append open.
+async function retryWrite(write: () => Promise<void>): Promise<void> {
+  const delays = [50, 150];
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await write();
+      return;
+    } catch (error) {
+      if (attempt >= delays.length) {
+        console.error('[round] corrective write failed after retries:', error);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+    }
+  }
 }
 
 interface WordSubmission {
@@ -316,11 +571,13 @@ interface WordSubmission {
 async function submitWordRound(
   input: WordSubmission,
   puzzleStore: PuzzleStore,
-  rounds: RoundStore,
+  deps: RoundHandlerDeps,
+  event: FnUrlEvent,
   instant: Date,
   headers: Record<string, string>,
 ): Promise<FnUrlResult> {
   const { date, lang, mode, publicId, puzzle, guesses } = input;
+  const rounds = deps.roundStore;
   const artifact = await puzzleStore.getWordPuzzle(date, lang);
   if (!artifact) {
     // A run can only ever have been started on a published artifact, so this is the
@@ -382,6 +639,20 @@ async function submitWordRound(
       state,
       instant,
       headers,
+    );
+  }
+  // The RUN was recorded here, so this is where its score joins the day's population
+  // (#203): the claim count is what the client used to POST, derived from the same log and
+  // the same artifact the write just validated against. `already_submitted` records
+  // nothing — first write wins, and that earlier submission already recorded its own.
+  if (outcome === 'submitted') {
+    await recordScoreRow(
+      { date, lang, mode },
+      publicId,
+      claims,
+      deps,
+      event,
+      instant,
     );
   }
   // `already_submitted` is not a refusal but the /scores answer: the daily is one-shot and

@@ -24,10 +24,11 @@
 // in-flight write may be duplicated by a remount (archive round-trips, StrictMode).
 
 import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS, type RankMap, type RuntimeHole } from '@whippin/shared';
-import { parseRound, postRoundBody, roundUrl } from '../api';
+import { parseRound, postRoundBody, roundUrl, type RoundState } from '../api';
 import { applyGuessToHoles, computeProgress, guessKey } from '../game/scoring';
 import { useGameStore } from './gameStore';
 import { playerSecret } from '../identity';
+import { turnstileToken } from '../turnstile';
 
 export interface RoundSyncContext {
   roundKey: string;
@@ -58,6 +59,12 @@ interface RoundFlight extends RoundSyncContext {
   serverCount: number;
   // The initial read has landed (or 404'd): local extras are safe to append from here on.
   readDone: boolean;
+  // Does the server already hold a record for THIS puzzle? Round CREATION is Turnstile-
+  // gated since #203 (the challenge moved off the retired score POST to where state is
+  // actually minted), so the first append carries a token and every later one does not.
+  // Set from the read (a 200 means a record exists, a 404 that none does) and from the
+  // first accepted append.
+  created: boolean;
   // When the last APPEND SETTLED — see `writeDelayMs`.
   lastWriteSettledAt: number;
   failures: number;
@@ -196,6 +203,7 @@ export function beginRoundSync(ctx: RoundSyncContext): void {
       existing.pendingFrom = 0;
       existing.serverCount = 0;
       existing.readDone = false;
+      existing.created = false;
       existing.closed = false;
       existing.failures = 0;
     }
@@ -213,6 +221,7 @@ export function beginRoundSync(ctx: RoundSyncContext): void {
     pendingFrom: 0,
     serverCount: 0,
     readDone: false,
+    created: false,
     lastWriteSettledAt: 0,
     failures: 0,
     lastFailureAt: 0,
@@ -240,7 +249,11 @@ async function pump(key: string): Promise<void> {
   // here is what keeps a reload from re-opening the conversation for a read, a
   // guaranteed-409 append and another `round_full` line — reload noise in a signal whose
   // whole value is that each entry means a real player hit the cap.
-  if (round.capped) {
+  //
+  // `recorded` is the same rule for the #203 FREEZE: the server has this round's solve on
+  // record and refuses every further append, so a reload must not re-open the conversation
+  // to be told so again.
+  if (round.capped || round.recorded) {
     f.closed = true;
     return;
   }
@@ -300,8 +313,18 @@ async function pump(key: string): Promise<void> {
   void pump(key); // reassess: retries, coalesced arrivals, adoption leftovers
 }
 
-function requestBody(f: RoundFlight, guesses?: string[]) {
-  return { secret: playerSecret(), puzzle: f.puzzle, guesses };
+function requestBody(f: RoundFlight, guesses?: string[], challenge?: string) {
+  return { secret: playerSecret(), puzzle: f.puzzle, guesses, turnstileToken: challenge };
+}
+
+// Adopt the two things the server DERIVED about this round (#203), which the client cannot
+// read off its own board: whether the SERVER has it on record as solved — which is when the
+// day's score row exists and a standing becomes readable — and, with it, that the round is
+// frozen and the conversation is over. Only ever true, so this can never un-finish a round.
+function adoptSolved(f: RoundFlight, key: string, solved: boolean): void {
+  if (!solved) return;
+  useGameStore.getState().markRoundRecorded(key);
+  f.closed = true;
 }
 
 // Is this answer still about the puzzle that asked for it? A flight is MUTATED in place
@@ -326,9 +349,9 @@ async function readRound(f: RoundFlight, key: string): Promise<void> {
   }
   if (superseded(f, puzzle)) return;
   if (response.ok) {
-    let guesses: string[];
+    let state: RoundState;
     try {
-      guesses = parseRound(await response.json()).guesses;
+      state = parseRound(await response.json());
     } catch {
       retryLater(f);
       return;
@@ -336,13 +359,19 @@ async function readRound(f: RoundFlight, key: string): Promise<void> {
     // Re-checked after the body: reading it is another await, and a republish landing
     // inside it would leave this log describing the retired sentence.
     if (superseded(f, puzzle)) return;
-    adopt(f, key, guesses);
+    adopt(f, key, state.guesses);
+    // The server HAS a record for this puzzle, so no further append mints one and none
+    // carries a challenge.
+    f.created = true;
+    adoptSolved(f, key, state.solved);
+    if (f.closed) return;
   } else if (response.status === 404) {
     // The server holds nothing for THIS puzzle: a fresh round, or a daily re-published
     // under the same key whose old record is retired. Nothing is acked, and the first
-    // append creates (or replaces) the record.
+    // append creates (or replaces) the record — carrying the round-start challenge.
     f.pendingFrom = 0;
     f.serverCount = 0;
+    f.created = false;
   } else if (isVerdict(response.status)) {
     f.closed = true;
     return;
@@ -358,7 +387,16 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
   const puzzle = f.puzzle;
   let response: Response;
   try {
-    response = await postRoundBody(roundUrl(f.lang, f.date, f.mode), requestBody(f, batch));
+    // ROUND CREATION carries a Turnstile challenge (#203). It is prefetched while the
+    // puzzle loads, so by the first guess it is normally already in hand; a failure here
+    // is an ordinary failed write, retried with the rest — the round keeps playing
+    // locally either way, which is why nothing is said on screen (Word mode's PLAY is the
+    // one write that speaks, because nothing begins without it).
+    const challenge = f.created ? undefined : await turnstileToken();
+    response = await postRoundBody(
+      roundUrl(f.lang, f.date, f.mode),
+      requestBody(f, batch, challenge),
+    );
   } catch {
     // The write never reached an answer — and it may still have COMMITTED (a suspended
     // tab, a dropped connection, a gateway timeout). Re-sending the same batch would
@@ -378,9 +416,12 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
     // All three carry the full stored log (the route's own contract), so all three
     // reconcile the same way — which is what makes a refusal useful rather than merely
     // survivable.
-    let guesses: string[];
+    let state: RoundState;
+    let error: string | undefined;
     try {
-      guesses = parseRound(await response.json()).guesses;
+      const data = (await response.json()) as { error?: unknown };
+      error = typeof data.error === 'string' ? data.error : undefined;
+      state = parseRound(data);
     } catch {
       if (!superseded(f, puzzle)) resync(f);
       return;
@@ -388,8 +429,18 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
     // A superseded answer describes the RETIRED puzzle: not its log, not its cap, not
     // its failure count. The republish already reset this flight to read again.
     if (superseded(f, puzzle)) return;
-    adopt(f, key, guesses);
+    adopt(f, key, state.guesses);
     f.failures = 0;
+    // Whatever it says, the server now holds a record for this puzzle.
+    f.created = true;
+    // The FREEZE (#203): a solved round accepts nothing more. This is the one answer that
+    // must do BOTH things — ADOPT the stored state, so the tab renders the round solved
+    // instead of an unsolved board with its guesses still on screen, and CLOSE, so `pump`
+    // does not resend immediately (and, with `failures` reset above, with no backoff at
+    // all). Any unsent guesses are dropped for good; harmless to the score, since fewer
+    // tries is a better one in sentence mode.
+    adoptSolved(f, key, state.solved || error === 'round_solved');
+    if (f.closed) return;
     if (response.status === 409 && f.serverCount >= ROUND_GUESS_CAP) {
       // The cap: the round stops counting (#201). Mark the round so the score is never
       // submitted, close the conversation, and let local play continue untouched.

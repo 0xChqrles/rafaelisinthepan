@@ -8,7 +8,9 @@
 //     (ahead = MORE claims);
 //   - TOP uses the midpoint of the shared bucket, and only above PERCENT_MIN_TOTAL players
 //     AND from PERCENT_MIN_RANK on (a single-digit rank has already said it);
-//   - a finished round submits ONCE: only finished-and-not-yet-submitted rounds POST.
+// `shouldSubmitScore`/`shouldAskPopulation` are GONE (#203): there is no submission left
+// to gate — the server derives the score from the log it stores and records the row itself,
+// so a finished round only ever READS, and only once the server says it holds it.
 
 import { describe, it, expect } from 'vitest';
 import type { ScoreHistogramBucket } from '@whippin/shared';
@@ -18,8 +20,6 @@ import {
   bucketIndexOf,
   formatTopPct,
   scoreStanding,
-  shouldAskPopulation,
-  shouldSubmitScore,
 } from './scores';
 
 // Four ascending bands in the API's shape; counts chosen per test.
@@ -169,46 +169,5 @@ describe('formatTopPct — at most ONE decimal, no machine zeros', () => {
     expect(formatTopPct(50)).toBe('50');
     expect(formatTopPct(100)).toBe('100');
     expect(formatTopPct(12.501)).toBe('12.5');
-  });
-});
-
-describe('shouldSubmitScore — a round owes its score until the POPULATION holds it', () => {
-  it('a finished round the population does not hold POSTs', () => {
-    expect(shouldSubmitScore(true, undefined)).toBe(true);
-  });
-
-  it('a recorded score settles the round — that alone is the submit-once guard', () => {
-    expect(shouldSubmitScore(true, 7)).toBe(false);
-    // Zero is a real Word-mode score (no claims), never "nothing recorded".
-    expect(shouldSubmitScore(true, 0)).toBe(false);
-  });
-
-  it('an unfinished round never submits, recorded or not', () => {
-    expect(shouldSubmitScore(false, undefined)).toBe(false);
-    expect(shouldSubmitScore(false, 7)).toBe(false);
-  });
-});
-
-describe('shouldAskPopulation — the #201 cap suppresses the POST, not the standing', () => {
-  it('asks for a finished round that may still claim its place', () => {
-    expect(shouldAskPopulation(true, true, undefined)).toBe(true);
-  });
-
-  it('still READS the standing of a capped round the population already holds', () => {
-    // Solved, submitted, and only THEN capped by a lagging flush: the row is in the
-    // day's population and the rank is real. A client flag must not hide what the
-    // population itself already answered — on that visit or on any later one.
-    expect(shouldAskPopulation(true, false, 12)).toBe(true);
-  });
-
-  it('asks nothing for a capped round with no recorded score', () => {
-    // It stopped counting before it ever placed: there is no entry to claim and none to
-    // read, so the standing slot stays honestly empty.
-    expect(shouldAskPopulation(true, false, undefined)).toBe(false);
-  });
-
-  it('asks nothing before the round is finished', () => {
-    expect(shouldAskPopulation(false, true, undefined)).toBe(false);
-    expect(shouldAskPopulation(false, true, 12)).toBe(false);
   });
 });

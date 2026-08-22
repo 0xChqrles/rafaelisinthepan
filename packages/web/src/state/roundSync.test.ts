@@ -42,6 +42,11 @@ vi.mock('../api', async (importOriginal) => ({
     `https://api.test/round?lang=${lang}&date=${date}&mode=${mode}`,
 }));
 
+// ROUND CREATION is Turnstile-gated (#203): the engine mints a challenge for the append
+// that creates the record. The real module throws without VITE_TURNSTILE_SITE_KEY (the
+// `roundUrl` reason above) and would turn every creating append into a failed write.
+vi.mock('../turnstile', () => ({ turnstileToken: async () => 'challenge' }));
+
 const post = vi.mocked(postRoundBody);
 
 const T0 = 1_700_000_000_000;
@@ -77,7 +82,7 @@ function ctx(key: string = KEY) {
   } as const;
 }
 
-function ok(guesses: string[]) {
+function ok(guesses: string[], solved = false) {
   return {
     ok: true,
     status: 200,
@@ -85,19 +90,21 @@ function ok(guesses: string[]) {
       guesses,
       createdAt: '2026-08-21T09:00:00.000Z',
       // Every answer carries the server's own clock (#202); a sentence round has no
-      // startedAt to carry with it.
+      // startedAt to carry with it. `solved` is what the SERVER derived from the log it
+      // stores (#203) — the fact that says the day's score row exists.
+      solved,
       now: '2026-08-21T09:30:00.000Z',
     }),
   } as unknown as Response;
 }
 
 // A refusal is an ANSWER: 409 and 429 carry the UNCHANGED stored log exactly like a 200.
-function refusal(status: number, guesses: string[]) {
+function refusal(status: number, guesses: string[], error?: string) {
   return {
     ok: false,
     status,
     json: async () => ({
-      error: status === 409 ? 'round_full' : 'too_fast',
+      error: error ?? (status === 409 ? 'round_full' : 'too_fast'),
       message: 'refused',
       guesses,
       createdAt: '2026-08-21T09:00:00.000Z',
@@ -133,8 +140,18 @@ function round(key: string = KEY) {
   return useGameStore.getState().rounds[key];
 }
 
-function bodyOf(call: number): { secret: string; puzzle: string; guesses?: string[] } {
-  return post.mock.calls[call][1] as { secret: string; puzzle: string; guesses?: string[] };
+function bodyOf(call: number): {
+  secret: string;
+  puzzle: string;
+  guesses?: string[];
+  turnstileToken?: string;
+} {
+  return post.mock.calls[call][1] as {
+    secret: string;
+    puzzle: string;
+    guesses?: string[];
+    turnstileToken?: string;
+  };
 }
 
 async function settle(ms = 0): Promise<void> {
@@ -536,5 +553,73 @@ describe('engine', () => {
     notifyGuess(roundKeyForDay(24, 'fr'));
     await settle();
     expect(post).toHaveBeenCalled();
+  });
+});
+
+// CONTRACT (#203): the server derives the solve, and the client adopts that FACT. It is
+// what says the day's score row exists — so the standing is readable — and it is the
+// FREEZE, so the conversation is over.
+describe('the server-held solve (#203)', () => {
+  it('marks the round recorded off an answer that says solved, and stops writing', async () => {
+    seedRound(['bois']);
+    post.mockResolvedValueOnce(status(404)).mockResolvedValueOnce(ok(['bois'], true));
+    beginRoundSync(ctx());
+    await settle(60_000);
+
+    expect(round()?.recorded).toBe(true);
+    const writes = post.mock.calls.length;
+    // Nothing more is sent, whatever else lands locally.
+    seedRound(['bois', 'chemin']);
+    notifyGuess(KEY);
+    await settle(60_000);
+    expect(post).toHaveBeenCalledTimes(writes);
+  });
+
+  it('ADOPTS the stored log on the freeze refusal AND closes — it must do both', async () => {
+    // A plain 4xx would close WITHOUT adopting, leaving this tab rendering an unsolved
+    // board with its guesses still on screen; a plain 409 would adopt WITHOUT closing, and
+    // `pump` would resend immediately with the failure count reset — no backoff at all.
+    seedRound(['bois']);
+    post
+      .mockResolvedValueOnce(status(404))
+      .mockResolvedValueOnce(refusal(409, ['bois', 'foret'], 'round_solved'));
+    beginRoundSync(ctx());
+    await settle(60_000);
+
+    expect(round()?.tried).toEqual(['bois', 'foret']);
+    expect(round()?.recorded).toBe(true);
+    // Its unsent guesses are dropped for good — harmless to the score, since fewer tries
+    // is a better one — but the board is the server's, not this tab's stale copy.
+    expect(round()?.holes[0].rank).toBe(0);
+    const writes = post.mock.calls.length;
+    await settle(60_000);
+    expect(post).toHaveBeenCalledTimes(writes);
+  });
+
+  it('does not re-open a recorded round on a reload — the flag is PERSISTED', async () => {
+    // The round is settled and the server refuses every append: re-opening the
+    // conversation would spend a guaranteed-409 request on every mount.
+    seedRound(['bois'], { recorded: true });
+    beginRoundSync(ctx());
+    await settle(60_000);
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('carries the round-start challenge on the CREATING append only', async () => {
+    seedRound(['bois']);
+    post.mockResolvedValueOnce(status(404)).mockResolvedValue(ok(['bois']));
+    beginRoundSync(ctx());
+    await settle(60_000);
+    // The read carries none (a bare token names no write); the append that creates the
+    // record does.
+    expect(bodyOf(0).turnstileToken).toBeUndefined();
+    expect(bodyOf(1).turnstileToken).toBe('challenge');
+
+    seedRound(['bois', 'chemin']);
+    notifyGuess(KEY);
+    await settle(60_000);
+    // The record exists now: a later append costs no challenge.
+    expect(bodyOf(2).guesses).toEqual(['chemin']);
+    expect(bodyOf(2).turnstileToken).toBeUndefined();
   });
 });

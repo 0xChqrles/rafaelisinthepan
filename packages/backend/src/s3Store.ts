@@ -1,7 +1,8 @@
 import { type S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import type { Puzzle, WordPuzzle } from '@whippin/shared';
 import { isNotFound, type PuzzleStore } from './store';
-import { storeKey, type PuzzleMode } from './layout';
+import { decodeSlice } from './slice';
+import { sliceKey, storeKey, type PuzzleMode } from './layout';
 
 // S3 layout (shared with the local store via `layout.storeKey`):
 // s3://<bucket>/<YYYY-MM-DD>.<lang>.json          — the sentence puzzle
@@ -29,6 +30,20 @@ export function s3Store(client: S3Client, bucket: string): PuzzleStore {
     },
     async getWordPuzzle(date, lang) {
       return (await read(date, lang, 'word')) as WordPuzzle | null;
+    },
+    // #203's slice: the object IS gzip, so it is read as BYTES and decoded — never
+    // `transformToString`, which would hand JSON.parse a mangled binary blob.
+    async getSlice(date, lang) {
+      try {
+        const got = await client.send(
+          new GetObjectCommand({ Bucket: bucket, Key: sliceKey(date, lang) }),
+        );
+        if (!got.Body) return null;
+        return decodeSlice(await got.Body.transformToByteArray());
+      } catch (err) {
+        if (isNotFound(err)) return null;
+        throw err;
+      }
     },
   };
 }

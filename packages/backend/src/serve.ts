@@ -33,6 +33,8 @@ const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN ?? '*';
 const LOCAL_SUBMISSION_LIMIT = Number.POSITIVE_INFINITY;
 const LOCAL_IP_HMAC_SECRET = randomBytes(32).toString('hex');
 
+const localScoreStore = memoryScoreStore(() => new Date(), LOCAL_SUBMISSION_LIMIT);
+
 const handler = createHandler({
   store: fsStore(STORE_ROOT),
   // No siteOrigin: the preview pages (`/s/<token>`, `/i/<publicId>`) fall back to the
@@ -40,21 +42,18 @@ const handler = createHandler({
   // (web/vite.config.ts), so a page served through the proxy addresses the app rather
   // than this server. Reached directly on :8787 it addresses :8787, which is honest.
   allowedOrigin: ALLOWED_ORIGIN,
-  scores: {
-    scoreStore: memoryScoreStore(() => new Date(), LOCAL_SUBMISSION_LIMIT),
-    // Explicitly local-only: the production entrypoint always wires real Siteverify.
-    turnstile: localTurnstileVerifier,
-    ipHmacSecret: LOCAL_IP_HMAC_SECRET,
-    allowSourceIp: true,
-    // The accept-all verifier's tokens are not single-use (Cloudflare's test key repeats
-    // one dummy token), so they cannot be the idempotency key — see ScoreHandlerDeps.
-    singleUseTokens: false,
-  },
+  // Read-only since #203 — the population is written by the round route below.
+  scores: { scoreStore: localScoreStore },
   profiles: memoryProfileStore(),
   friends: memoryFriendStore(),
   rounds: {
     roundStore: memoryRoundStore(),
-    // Word mode's round start (#202) is gated by the same accept-all local verifier.
+    // A finished round records its own score row (#203), off the same in-memory store the
+    // /scores read serves from.
+    scoreStore: localScoreStore,
+    ipHmacSecret: LOCAL_IP_HMAC_SECRET,
+    // ROUND START is gated in both modes (#202/#203) by the accept-all local verifier.
+    // Explicitly local-only: the production entrypoint always wires real Siteverify.
     turnstile: localTurnstileVerifier,
     allowSourceIp: true,
   },
@@ -99,7 +98,7 @@ server.listen(PORT, () => {
   console.log(`[backend]   store:  ${STORE_ROOT}`);
   console.log(`[backend]   origin: ${ALLOWED_ORIGIN}`);
   console.log(`[backend]   scores: in-memory; Turnstile accept-all (local only)`);
-  console.log(`[backend]   GET /?lang=<xx>&date=<YYYY-MM-DD>[&mode=word]  GET|POST /scores?lang=&date=&mode=`);
+  console.log(`[backend]   GET /?lang=<xx>&date=<YYYY-MM-DD>[&mode=word]  GET /scores?lang=&date=&mode=`);
   console.log(`[backend]   GET /profile?id=<publicId>  POST /profile  POST /friends`);
   console.log(`[backend]   GET|POST /board?lang=&date=&mode=[&id=]  POST /round?lang=&date=&mode=`);
   console.log(`[backend]   GET /today  GET /s/<token>  GET /og/<token>.png`);

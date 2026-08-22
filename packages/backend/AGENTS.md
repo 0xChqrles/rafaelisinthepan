@@ -15,11 +15,14 @@
     src/
       handler.ts              createHandler() — the ONE day/404/CORS/Puzzle logic (Lambda + local);
                               also the share routes and #189's invite preview (/i/<publicId>)
-      store.ts                PuzzleStore interface (date+lang -> Puzzle | null)
+      store.ts                PuzzleStore interface (date+lang -> Puzzle | WordPuzzle | PuzzleSlice | null)
       s3Store.ts, fsStore.ts  store impls: S3 (prod) and local FS (#17), both read the same key
-      scores.ts               /scores GET+POST route: params, auth (publicId), Turnstile,
-                              range, HMAC, derived histogram, response
-      scoreLimits.ts          puzzle-aware possible-score limits (per-mode ceilings)
+      slice.ts                #203's DERIVATION SLICE: build it from a puzzle, read a log against
+                              it (progress + solved), its gzip codec and its shape check
+      puzzleCache.ts          #203's per-instance loading rule: the slice cached ~100 days,
+                              today's full artifact for ONE day, an archive day's discarded
+      scores.ts               /scores GET route (READ-ONLY since #203): params, derived histogram
+      scoreLimits.ts          the Word field's claim ceiling (the sentence one retired with #203)
       liveRoute.ts            what the LIVE routes share: no-store headers, the JSON-body
                               reader + size cap, the #187 secret check, the (lang, mode,
                               date) + future-skew guard, the trusted viewer address and the
@@ -38,14 +41,15 @@
       friendStore.ts          mutual-edge storage contract; friends#<publicId> partition + FRIENDS_MAX
       dynamoFriendStore.ts    prod one-transaction link/unlink (both directions) + consistent Query
       memoryFriendStore.ts    process-local implementation for backend:dev/tests
-      rounds.ts               POST /round (#201/#202): the per-round state — read, sentence
+      rounds.ts               POST /round (#201/#202/#203): the per-round state — read, sentence
                               append, Word mode's Turnstile-gated start + end-of-run submission;
-                              slug + length validation, cap / interval / wait refusals, full-state
-                              answers carrying the server's own clock
+                              slug + length validation, cap / interval / wait / freeze refusals,
+                              the DERIVED progress + solve and the score row they record,
+                              full-state answers carrying the server's own clock
       roundStore.ts           round storage contract; round#<publicId> partition, sort key
-                              <date>#<lang>#<mode>; the puzzle tag +
-                              ROUND_GUESS_CAP / ROUND_WRITE_MIN_MS semantics, and Word mode's
-                              startedAt / first-write-wins log
+                              <lang>#<mode>#<date> (#203); the puzzle tag +
+                              ROUND_GUESS_CAP / ROUND_WRITE_MIN_MS semantics, Word mode's
+                              startedAt / first-write-wins log, and #203's stored summary
       dynamoRoundStore.ts     prod ONE conditional UpdateItem (both bounds in the condition) +
                               consistent classification read on a refusal; the word start's own
                               conditional stamp and the submit's read-then-conditional-write
@@ -54,12 +58,14 @@
       avatarModeration.ts     #188 best-effort swastika template match on the decoded grid
       turnstile.ts            Cloudflare Siteverify + explicit local accept-all verifier
       ogCard.ts               resvg-wasm rasterizer + the preview PAGE template (share links + #189 invites)
-      layout.ts               storeKey() — the <date>.<lang>.json key shared by readers + publish (#17/#4)
+      layout.ts               storeKey() / sliceKey() — the keys shared by readers + publish (#17/#4/#203)
       serve.ts                local HTTP server: Function-URL⇄HTTP adapter over createHandler (#17)
-      publish.ts              place a generated puzzle into local store (default) or S3 (#17/#4)
+      publish.ts              place a generated puzzle into local store (default) or S3 (#17/#4),
+                              deriving its #203 slice beside it
       config.ts               env names + one decrypted SSM GetParameters read
       index.ts                Lambda entrypoint (S3/Dynamo stores + async secret initialization)
-    .local-store/<date>.<lang>.json  local puzzle store (gitignored) read by serve/fsStore
+    .local-store/<date>.<lang>.json          local puzzle store (gitignored) read by serve/fsStore
+    .local-store/<date>.<lang>.slice.json.gz  its #203 derivation slice, written by publish
 ```
 
 ---
@@ -80,41 +86,32 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
 
 *(Safe to update without touching the invariants above.)*
 
-- **Score collection (#169; per-player rows + identity #187):** the ONE handler serves
-  `GET|POST /scores?lang=&date=&mode=sentence|word`; `mode` is mandatory. A successful
-  response is `{ buckets: [{ min, max, count }], total, bucket }`, inclusive ranges
-  **derived at read time from the day's per-player rows** (one exact ascending band per
-  distinct recorded score; an empty population is `buckets: []`); `bucket` is the
-  caller's RECORDED score's index on POST and `null` on GET (a revisiting client already
-  knows its persisted score). Every response is `no-store`. POST takes
-  `{ secret, score, turnstileToken }`: it authenticates by deriving the publicId from
-  the player key (shared `identity.ts` — a malformed key is a 400, nothing secret is
-  ever stored), requires an integer score + nonempty Turnstile token, uses one
-  Cloudflare Siteverify call, reads the published puzzle, and rejects an impossible
-  score (sentence: 1..the language's existence-set size, read from the generated shared
-  vocab metadata, #200; Word: 0..the artifact's distinct ranks inside shared
-  `WORD_CLAIM_ZONE`). It HMACs the trusted client address —
-  read from shared `VIEWER_IP_HEADER`, which a CloudFront viewer-request function stamps
-  (see the root `AGENTS.md` for why the origin-request policy cannot carry it) — and
-  hands only the digest to `ScoreStore`. A value that is not a bare IP is no identity at
-  all: `clientIp` returns null and the POST fails rather than dedup a submission under a
-  parsed fragment. `dynamoScoreStore` writes ONE transaction — the conditional
+- **Score population (#169; per-player rows + identity #187; READ-ONLY since #203):** the
+  ONE handler serves `GET /scores?lang=&date=&mode=sentence|word`; `mode` is mandatory. A
+  successful response is `{ buckets: [{ min, max, count }], total, bucket }`, inclusive
+  ranges **derived at read time from the day's per-player rows** (one exact ascending band
+  per distinct recorded score; an empty population is `buckets: []`), with `bucket` always
+  `null` — the read carries no identity, and the client locates its own score in the
+  ranges. Every response is `no-store`. A POST is a named **405**: the row is written by the
+  ROUND route from the log the server already holds (#203), so this file no longer
+  authenticates, verifies Turnstile, validates a range or hashes an address —
+  `hashClientIp` stays here beside the store contract, but its caller is `rounds.ts`.
+  It still reads the published puzzle, so an unpublished daily 404s rather than getting an
+  empty population. `dynamoScoreStore` writes ONE transaction — the conditional
   5-count/48h-TTL dedup update plus the first-write-wins conditional put of the
-  `(date, lang, mode, publicId)` row — using a hash of the one-use token as DynamoDB's
-  idempotency token; its following strongly-consistent day-partition Query guarantees
-  the returned histogram includes the caller. A second submission from the same player
-  is `already_recorded`: nothing changes, no allowance is consumed, and the 200 reports
-  the STORED row's standing. The sixth distinct-player write per IP is a no-mutation
-  429. Local serve swaps in `memoryScoreStore`, a random per-process HMAC key and
+  `(date, lang, mode, publicId)` row — using a hash of the ROW's own key as DynamoDB's
+  idempotency token (#203: the retired POST hashed its one-use Turnstile token, which this
+  write does not have; the row is unique per daily and per player, so its key is a better
+  one). A second submission from the same player is `already_recorded`: nothing changes and
+  no allowance is consumed. The sixth distinct-player write per IP is a no-mutation refusal
+  the round route LOGS and swallows — the guesses are stored and the answer is about the
+  LOG, so a population that could not be written is a missing standing, never a refused
+  append. Local serve swaps in `memoryScoreStore`, a random per-process HMAC key and
   `localTurnstileVerifier`; restart clears local scores. Production config requires
   `SCORE_TABLE`, `TURNSTILE_SECRET_PARAMETER`, and `IP_HMAC_SECRET_PARAMETER` in addition
   to the puzzle settings. On first use, `index.ts` resolves both SecureStrings with ONE
   decrypted SSM `GetParameters` call and retains only their values in memory; a failed read
   is discarded so the next invocation retries. The HMAC key must contain 32+ bytes.
-  Production POST also requires `x-amz-content-sha256`, the lowercase hex SHA-256 of the
-  exact UTF-8 body bytes: CloudFront OAC needs it before the handler can run. The score
-  behavior forwards it and CORS allows it; local serve has no OAC and cannot verify this
-  production-only boundary.
 
 - **Player profile (#188):** the ONE handler also serves `GET /profile?id=<publicId>`
   (public row: `{ publicId, name, avatar }`; 400 malformed id, 404 never customized) and
@@ -241,9 +238,9 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   — the product contract (server-authoritative state, strings-not-indices, the two
   bounds, cap semantics) lives in the root `AGENTS.md`. Implementation notes: POST-only
   like /friends (a GET is a named 405); the shared `requireDayParams` guard triple
-  applies, but the route reads NO puzzle store — the log is the player's own working
-  state, not a population claim, so an unpublished day needs no guard beyond the future
-  window and archive days sync like today's. `{secret, puzzle}` reads (404 = none yet, and
+  applies. Archive days sync like today's. *(This said the route reads NO puzzle store;
+  #203 overturned it for the APPEND — see its own bullet below — and the READ still reads
+  none.)* `{secret, puzzle}` reads (404 = none yet, and
   also "nothing stored for THIS puzzle" — the tag's whole job, root `AGENTS.md`);
   `{secret, puzzle, guesses}` appends. Validation is fail-closed BEFORE the store: a
   `PUZZLE_TAG_SHAPE` tag, then a non-empty string array of at most `ROUND_GUESS_CAP`
@@ -253,14 +250,14 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   body cap is this route's own (`readJsonObject`'s optional bound), DERIVED from the cap
   and the longest `maxSlugLength` rather than hand-picked — a coalesced flush of 500 slugs
   legitimately exceeds the default 4 KB live-body cap. Storage is the score table:
-  partition `round#<publicId>`, sort key `<date>#<lang>#<mode>` (per PLAYER — the reason is
-  in the root `AGENTS.md`), attributes `guesses` (string list), `puzzle`, `createdAt`,
-  `lastWriteAt` (ms epoch). `lastWriteAt` is the ONE Number here because it is the only one
+  partition `round#<publicId>`, sort key `<lang>#<mode>#<date>` (per PLAYER — the reason is
+  in the root `AGENTS.md`; the order is #203's), attributes `guesses` (string list),
+  `puzzle`, `createdAt`, `lastWriteAt` (ms epoch), plus #203's `progress`/`solved`. `lastWriteAt` is the ONE Number here because it is the only one
   compared arithmetically in the condition; `createdAt` is a String, and writing it as a
   Number reads back as `''` on every response for the item's whole life. The append is ONE
   conditional UpdateItem whose ConditionExpression carries every bound —
-  `(attribute_not_exists(#last) OR #last < :cutoff) AND (attribute_not_exists(#g) OR (size(#g) <= :room AND #p = :puzzle))`
-  (the RESULT may reach the cap, never pass it) — with `ReturnValues: ALL_NEW` so the happy
+  `(attribute_not_exists(#last) OR #last < :cutoff) AND (attribute_not_exists(#g) OR (size(#g) <= :room AND #p = :puzzle)) AND attribute_not_exists(#solved)`
+  (the RESULT may reach the cap, never pass it; the last clause is #203's freeze) — with `ReturnValues: ALL_NEW` so the happy
   path is one call. **Every clause is path-only CONDITION syntax and must stay that way:**
   DynamoDB's condition grammar has NO arithmetic and its whole function list is
   attribute_exists / attribute_not_exists / attribute_type / begins_with / contains /
@@ -331,6 +328,33 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   few-second preflight cache costs an extra OPTIONS invocation and an RTT stall every few
   writes.
 
+- **Derived scores (#203):** the same route, `mode=sentence`. The product contract (why the
+  score stops being claimed, the slice, the loading rule, the freeze, the corrective write,
+  the sort-key reorder) lives in the root `AGENTS.md`. Implementation notes: an APPEND now
+  fires `rounds.get(..., { consistent: false })` and `loadSlice` CONCURRENTLY — neither
+  depends on the other, so a cache miss hides inside a round trip already being paid for —
+  derives from *(stored log + batch)*, and hands the two values to `append`, which writes
+  them in its own mutation and carries `attribute_not_exists(#solved)` as a fourth clause of
+  the condition it already sends. A missing slice is the day-addressed 404; the READ path
+  loads none, so a mount read stays as cheap as it was. After the append, `settleAppend`
+  re-derives from the RETURNED log and, on a disagreement, calls `roundStore.settle` behind
+  a small bounded RETRY (it is the last chance to record a solve). A truth that reads SOLVED
+  then records the day's score row — `countTries` over the FULL artifact (`loadPuzzle`), the
+  one thing the slice cannot answer — and that write's failures are LOGGED, never surfaced:
+  the answer is about the log. `puzzleCache.ts` is module state and therefore a test seam
+  (`resetArtifactCache`), because one test's store must never answer another's reads.
+  Round CREATION is Turnstile-gated: the sentence round has no START message, so the
+  challenge rides the append whose pre-read found nothing (`requireRoundStart`), and a bare
+  token with no guesses is a 400 rather than a free challenge to burn. `RoundHandlerDeps`
+  therefore carries `scoreStore` + `ipHmacSecret` beside its verifier — explicitly, rather
+  than reaching into `deps.scores` for them, which would make that file a utility module for
+  a route it knows nothing about. **`round*` gained the CDN's viewer-request function**
+  (`infra/lib/backend-stack.ts`): both the gate and the IP-metered score row need a trusted
+  address, and its absence there was already a latent 500 on every #202 word round start.
+  **`pnpm board:seed` PLAYS the day** now rather than posting numbers: one append per seed
+  carrying the puzzle's secrets plus enough distinct misses to land on the score it wants
+  (`playthrough`), which is also why it reads the day's puzzle and copies a slice forward
+  with it.
 - **Word mode's daily artifact (#154/#156):** the ONE puzzle endpoint also serves the
   single-word artifact under `mode=word` (`GET /?lang=&date=&mode=word`; absent/
   `sentence` = the sentence puzzle, anything else = 400) with identical day-addressing,

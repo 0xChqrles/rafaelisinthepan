@@ -97,9 +97,53 @@ function loadTurnstile(): Promise<TurnstileApi> {
   return scriptPromise;
 }
 
-// One fresh token for one submission. Rejects when unconfigured, blocked, errored or
-// timed out — the caller treats every rejection the same way (no submission, no message).
+// How long a PREFETCHED token may sit before it is minted again. Cloudflare accepts a
+// token for 300 seconds; this stays well inside that, so a challenge held from the moment
+// a screen appeared is still valid when the player finally acts.
+const PREFETCH_MAX_AGE_MS = 120_000;
+
+let prefetched: { at: number; token: Promise<string> } | null = null;
+
+// Start a challenge NOW, so it is in hand before the player acts (#203). Both places that
+// need one are moments the player is reading rather than playing — the sentence puzzle
+// loading, and Word mode's rules gate — and in Word mode round start IS clock start, so a
+// bot check landing exactly then costs real seconds on a 60-second game.
+//
+// Fire-and-forget by design: a failure here is not a failure of anything, because the
+// caller that actually needs a token mints a fresh one when the held one is stale or
+// rejected. Cheap to call repeatedly — a live prefetch is left alone.
+export function prefetchTurnstileToken(siteKey: string = turnstileSiteKey()): void {
+  if (!siteKey || (prefetched && Date.now() - prefetched.at < PREFETCH_MAX_AGE_MS)) return;
+  const held = { at: Date.now(), token: mintToken(siteKey) };
+  prefetched = held;
+  // Nothing awaits this until a caller asks, and an unawaited rejection would surface as
+  // an unhandled promise rejection in the console.
+  void held.token.catch(() => {
+    if (prefetched === held) prefetched = null;
+  });
+}
+
+// One fresh token for one write. Rejects when unconfigured, blocked, errored or timed out —
+// the caller treats every rejection the same way (no write, no message; Word mode's PLAY is
+// the one exception and says so on screen).
+//
+// A PREFETCHED challenge is consumed here, and consumed EXACTLY ONCE: a Turnstile token is
+// single-use, so handing the same one to two writes would have the second refused 403 by
+// Siteverify. A stale or rejected prefetch simply falls through to a fresh mint.
 export async function turnstileToken(siteKey: string = turnstileSiteKey()): Promise<string> {
+  const held = prefetched;
+  if (held && Date.now() - held.at < PREFETCH_MAX_AGE_MS) {
+    prefetched = null;
+    try {
+      return await held.token;
+    } catch {
+      // Fall through: the prefetch failed, but this caller genuinely needs a token now.
+    }
+  }
+  return mintToken(siteKey);
+}
+
+async function mintToken(siteKey: string): Promise<string> {
   if (!siteKey) throw new Error('VITE_TURNSTILE_SITE_KEY is not set.');
   const turnstile = await loadTurnstile();
   // The invisible widget still wants a container; it never paints into it.
@@ -141,4 +185,9 @@ export async function turnstileToken(siteKey: string = turnstileSiteKey()): Prom
   } finally {
     cleanup();
   }
+}
+
+// Test seam: a held challenge must not leak between tests.
+export function resetTurnstilePrefetch(): void {
+  prefetched = null;
 }

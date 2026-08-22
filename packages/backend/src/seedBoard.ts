@@ -14,10 +14,17 @@
 // a few seeds — clicking one in the app is the real one-tap friend flow, and the
 // easiest way to land seeds on your own friends board without hunting down your id.
 //
-// If the active day has no local fr sentence puzzle (scores validate against the
-// published daily), the newest one in the local store is copied to today's key.
+// If the active day has no local fr sentence puzzle, the newest one in the local store is
+// copied to today's key — its #203 derivation SLICE with it, since the round route reads
+// that and a day without one answers the day-addressed 404.
+//
+// Since #203 a score is not something a client can claim: the server derives it from the
+// guess log it stores. So a seed does not POST a number — it PLAYS the day, in one append
+// carrying the puzzle's three secrets plus enough distinct misses to land on the score this
+// seeder wants (the sentence score is UNIQUE TRIES). That is why this file now reads the
+// day's puzzle: only the artifact says what solves it.
 
-import { copyFileSync, existsSync, readdirSync } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   AVATAR_CELLS,
@@ -25,8 +32,9 @@ import {
   encodeAvatar,
   invitePath,
   publicIdFromSecret,
+  type Puzzle,
 } from '@whippin/shared';
-import { defaultLocalStoreRoot } from './layout';
+import { defaultLocalStoreRoot, sliceKey } from './layout';
 
 const API = process.env.WHIPPIN_API ?? 'http://localhost:8787';
 const SITE = process.env.WHIPPIN_SITE ?? 'http://localhost:5199';
@@ -87,12 +95,15 @@ async function post(path: string, body: unknown, ip?: string): Promise<Response>
   });
 }
 
-// Scores validate against the PUBLISHED daily, so make sure today's key exists in the
-// local store — copying the newest fr sentence puzzle forward is enough for seeding.
-function ensureLocalPuzzle(date: string): void {
+// The seeds PLAY the published daily, so make sure today's key exists in the local store —
+// copying the newest fr sentence puzzle forward is enough for seeding. Its DERIVATION SLICE
+// travels with it (#203): the round route reads that on every append, and a day whose slice
+// is missing answers the day-addressed 404 with no degraded mode.
+function ensureLocalPuzzle(date: string): Puzzle {
   const root = process.env.PUZZLE_STORE ?? defaultLocalStoreRoot();
   const wanted = join(root, `${date}.${LANG}.json`);
-  if (existsSync(wanted)) return;
+  const read = () => JSON.parse(readFileSync(wanted, 'utf8')) as Puzzle;
+  if (existsSync(wanted) && existsSync(join(root, sliceKey(date, LANG)))) return read();
   // A fresh clone has no store directory at all — say "publish one first" instead of
   // letting readdirSync surface a raw ENOENT.
   if (!existsSync(root)) {
@@ -102,13 +113,44 @@ function ensureLocalPuzzle(date: string): void {
     .filter((name) => name.endsWith(`.${LANG}.json`) && !name.endsWith(`.${LANG}.word.json`))
     // Only PAST days: a future-dated test fixture must not become today's sentence.
     .filter((name) => name.slice(0, 10) <= date)
+    // …and only ones that carry a slice, since a puzzle without one cannot be played.
+    .filter((name) => existsSync(join(root, sliceKey(name.slice(0, 10), LANG))))
     .sort();
   const newest = candidates.at(-1);
   if (!newest) {
-    throw new Error(`no ${LANG} sentence puzzle in ${root} to copy to ${date} — publish one first.`);
+    throw new Error(
+      `no published ${LANG} sentence puzzle in ${root} to copy to ${date} — run pnpm puzzle:publish first.`,
+    );
   }
+  const from = newest.slice(0, 10);
   copyFileSync(join(root, newest), wanted);
-  console.log(`[seed] copied ${newest} -> ${date}.${LANG}.json (local store)`);
+  copyFileSync(join(root, sliceKey(from, LANG)), join(root, sliceKey(date, LANG)));
+  console.log(`[seed] copied ${newest} (+ its slice) -> ${date}.${LANG}.* (local store)`);
+  return read();
+}
+
+// A log that solves `puzzle` in exactly `score` UNIQUE tries: its secrets, plus distinct
+// MISSES to pad. A miss is a counted try like any other (that is what makes a lower score
+// better), and it is what lets a seeder aim at a number now that the number is derived.
+// The filler is letters only, because a guess on the wire is a folded slug and `fold`
+// drops everything else — and it is checked against the day's own maps, so a filler can
+// never collapse into another try's identity.
+function playthrough(puzzle: Puzzle, score: number): string[] {
+  const secrets = [...new Set(puzzle.holes.map((hole) => hole.secret.slug))];
+  if (score < secrets.length) {
+    throw new Error(`cannot solve ${puzzle.words.length} words in ${score} tries.`);
+  }
+  const known = (slug: string) =>
+    Object.values(puzzle.ranks).some((map) => Object.hasOwn(map, slug));
+  const misses: string[] = [];
+  for (let i = 0; misses.length < score - secrets.length; i += 1) {
+    // Base-26 in letters: `zzaa`, `zzab`, … — never digits, which fold away to nothing.
+    const tail = `${String.fromCharCode(97 + Math.floor(i / 26))}${String.fromCharCode(97 + (i % 26))}`;
+    const filler = `zz${tail}`;
+    if (!known(filler)) misses.push(filler);
+  }
+  // The secrets LAST, so the log reads like a real run ending on its solve.
+  return [...misses, ...secrets];
 }
 
 function friendArg(): string | null {
@@ -132,8 +174,8 @@ async function main() {
     throw new Error(`no backend at ${API} — start it first: pnpm backend:dev`);
   }
   const date = today.date;
-  ensureLocalPuzzle(date);
-  const scoresPath = `/scores?lang=${LANG}&date=${date}&mode=${MODE}`;
+  const puzzle = ensureLocalPuzzle(date);
+  const roundPath = `/round?lang=${LANG}&date=${date}&mode=${MODE}`;
 
   // 60 scored players: 40 distinct scores, then a 20-player tie across the top-50
   // cut. Every 9th-ish player skips the profile (the assigned-identity fallback).
@@ -148,12 +190,21 @@ async function main() {
       if (!r.ok) console.log(`[seed] profile ${i} refused:`, r.status, await r.text());
     }
     const score = i < 40 ? i + 3 : 50;
+    // ONE append per seed: it creates the round (so it carries the round-start challenge,
+    // which the local accept-all verifier waves through), solves the day, and the server
+    // derives the score and records the row. The per-daily write interval is per PLAYER,
+    // so 60 seeds in a row never pace each other.
     const r = await post(
-      scoresPath,
-      { secret, score, turnstileToken: 'local' },
+      roundPath,
+      {
+        secret,
+        puzzle: `seed${date.replace(/-/g, '')}`,
+        guesses: playthrough(puzzle, score),
+        turnstileToken: 'local',
+      },
       `10.0.${Math.floor(i / 50)}.${(i % 50) + 1}`,
     );
-    if (!r.ok) console.log(`[seed] score ${i} refused:`, r.status, await r.text());
+    if (!r.ok) console.log(`[seed] round ${i} refused:`, r.status, await r.text());
   }
 
   // Two profile-only players with NO score today — the friends board's "not played

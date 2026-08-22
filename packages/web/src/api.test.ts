@@ -498,7 +498,15 @@ describe('roundUrl + parseRound (#201/#202)', () => {
       // that this client did NOT stamp the clock — so it never gains writer authority by
       // an omission.
       resumed: true,
+      // The server's own reading of the log it stores (#203); absent means "not yet",
+      // never "no longer", since it is only ever written true.
+      solved: false,
     });
+  });
+
+  it('carries the SERVER\'s solve (#203), which is what says the score row exists', () => {
+    expect(parseRound({ ...valid(), solved: true }).solved).toBe(true);
+    expect(() => parseRound({ ...valid(), solved: 'yes' })).toThrow(/solved/);
   });
 
   it("carries Word mode's server-stamped clock, and what it did", () => {

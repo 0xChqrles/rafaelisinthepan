@@ -391,17 +391,21 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   for the extra consistent read a refusal costs the store: without a body, that read
   exists only to choose between two status codes, and a client refused mid-sync stays
   stale until its next accepted write.) No sockets, no SSE: an open tab reconciles on its
-  own next write. The day-addressed guard triple applies; there is **NO puzzle-store
-  read** — the log is the player's own working state, not a population claim, so
-  **archive days sync exactly like today's**, which is what makes a player's full history
-  follow them to a new device.
-- **The server stores strings and interprets nothing.** Guesses are the folded forms
-  typed, in order — never indices (an index doesn't fit fr's ~128k vocab in `uint16`,
+  own next write. The day-addressed guard triple applies. **Archive days sync exactly like
+  today's**, which is what makes a player's full history follow them to a new device.
+  *(This bullet said "there is NO puzzle-store read" until #203, which OVERTURNED it: an
+  APPEND now reads the day's derivation slice, and a solve the full artifact. The READ
+  still reads no store — see the #203 section below.)*
+- **The server stores strings, and interpreted nothing until #203.** Guesses are the folded
+  forms typed, in order — never indices (an index doesn't fit fr's ~128k vocab in `uint16`,
   misses have no rank-map index at all, and it would bind stored history to a regenerable
-  artifact) — and no `guessKey`/replay/scoring runs server-side: the client interprets
-  the raw log for display. Validation asks the CONTRACT rather than restating it: a guess
+  artifact). Validation asks the CONTRACT rather than restating it: a guess
   is one `fold()` leaves alone, at most the language's `maxSlugLength` (#200) — never a
   third regex spelling of slug()/fold(), free to drift from the two that matter.
+  *(What #203 changed: the server now READS that log — `guessKey`, the progress formula and
+  the score all run server-side. What it still does not do is interpret it on the WAY IN:
+  the stored form is unchanged, the client still interprets it for display, and every
+  derivation is a pure read of strings the store never inspects.)*
 - **The record NAMES ITS PUZZLE (`puzzle`), and a different name restarts it.** A round
   key is only (date, lang, mode), so re-publishing a different sentence keeps the key
   while changing the puzzle entirely — which the client already resets its local round on
@@ -491,7 +495,8 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   (`infra/lib/backend-stack.ts`) over the shared zero-TTL/allExcept-Host live shape.
   **Storage is the score table, partitioned per PLAYER** (corrected 2026-08-21, superseding
   the day partition this issue first sketched): partition `round#<publicId>`, sort key
-  `<date>#<lang>#<mode>`, attributes `guesses` (string list), `puzzle`, `createdAt`,
+  `<lang>#<mode>#<date>` (REORDERED by #203 from `<date>#<lang>#<mode>` — see its section),
+  attributes `guesses` (string list), `puzzle`, `createdAt`,
   `lastWriteAt` — still one item per `(date, lang, mode, publicId)`. A DynamoDB list has
   no partial update, so `list_append` rewrites the whole growing item and a long round's
   writes get progressively more expensive; under a DAY partition every player's writes for
@@ -500,7 +505,8 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   anyway — /board resolves the caller's friends into exact row keys and fetches those
   (BatchGetItem), the shape a future progress read (#206) takes too.
 - **Scope:** sentence mode streams (coalesced writes). Word mode's two-write shape is
-  #202, below; retiring the client-claimed score POST for server-derived scores is #203.
+  #202, below; the client-claimed score POST was retired for server-derived scores by
+  #203, below.
   `RoundSyncContext.mode` stays TYPED `'sentence'` — the route, the URL and the stored item
   are all mode-generic, but the two CONVERSATIONS are not, so Word mode got its own engine
   rather than a widened one (see #202's own note).
@@ -627,6 +633,137 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   `Date.now()` no server ever saw, their submission would be refused `not_started`, and
   there is no honest way to invent the missing record (the v7 strike-run precedent).
 
+### Derived scores (#203, decided 2026-08-21)
+
+- **With the log server-side (#201), the score stops being something the CLIENT CLAIMS.**
+  The server derives it from the log it already holds, so the `/scores` POST, the score's
+  range validation, the whole `scoreRecorded` state machine (its retry-until-recorded rule
+  included) and its store field are all RETIRED. `/scores` is a READ. What a finished round
+  persists instead is `recorded` — a plain "the SERVER holds this round's solve" — read off
+  a round answer, never off the local board, which flips a beat earlier.
+- **It never needs the vocab existence set.** SOLVED is "every secret slug has a guess at
+  rank 0 in its map"; PROGRESS is `s(rank)`, `start_rank` and N per hole; WORD CLAIMS are
+  entries at rank ≤ `WORD_CLAIM_ZONE` — all in the puzzle JSON. The only thing the
+  vocabulary would buy is rejecting non-words in sentence mode, and that only ever HELPS a
+  cheater: the sentence score is unique tries and lower is better, so padding a log makes
+  the score worse. Client-side vocab filtering is therefore safe to trust, and a
+  multi-megabyte word list never has to reach a Lambda.
+- **The readings are CROSS-PACKAGE now** (`shared/src/scoring.ts`): `s`/`holeProgress`,
+  `rankCount`, `guessKey` and `countTries` moved out of the web when the server started
+  performing them. Two spellings would let the number on screen disagree with the one the
+  leaderboard recorded and #211's calendar fills from, over the same log.
+- **`progress` and `solved` are STORED on the round row, in the write that appends the
+  guesses.** The handler reads the row, derives both from the stored log plus the incoming
+  batch, then issues ONE conditional UpdateItem that appends and sets them together — one
+  mutation, so nothing can half-fail and no stored summary can disagree with the log beside
+  it. The extra read is cheap (a small item; reads price well under writes) and its round
+  trip is one the player never feels, since the board has already reacted locally (#201).
+  It is EVENTUALLY CONSISTENT: the only things derived from it are `progress`, which
+  self-corrects, and `solved`, which is write-only-true; every bound that must not be raced
+  lives in the write's own condition.
+  **`solved` is only ever written TRUE.** A second device can append between that read and
+  that write, so the derived values may describe a log one guess stale — harmless for a
+  percentage, fatal for a flag, since writing `false` over a `true` another device just set
+  would un-finish a finished day.
+- **A solve can be MISSED when two devices append at once, and the append's own answer is
+  the fix.** The write is atomic; the read → derive → write SEQUENCE is not, and deriving
+  from *(my read + my batch)* misses a solve that exists only in the UNION of two concurrent
+  batches (each sees half, each derives `solved: false`, both pass
+  `attribute_not_exists(#solved)`). Not an eventual-consistency problem — a strongly
+  consistent read behaves identically, since both reads still precede both writes. The
+  append returns the merged truth (`ReturnValues: ALL_NEW`), so: **after it returns, derive
+  again from the RETURNED log, and when it disagrees issue one small conditional write.**
+  The pre-read STAYS — it is what supplies values to write in the same operation, which is
+  what holds this at one read plus one write; the returned item is a VERIFICATION, not a
+  replacement. **That corrective write is the LAST chance to record the solve, so it is
+  RETRIED rather than fired and forgotten:** once the puzzle is solved the player stops
+  guessing, so no later append comes along to notice the omission. The same comparison
+  fixes `progress`, whose "the next write corrects it" only holds while there IS a next
+  write. Do NOT simply write the derived values back every time — DynamoDB charges an
+  update by the whole item size, so a second write per append would double the write cost.
+- **A SOLVED round stops accepting appends**, by one more clause on the ConditionExpression
+  the append already sends (`AND attribute_not_exists(#solved)`) — no extra read, exactly as
+  Word mode's `attribute_not_exists(#sub)` works. **Not an anti-cheat measure** (padding a
+  log after the solve only ever worsens the score); what it prevents is a RECORDED SCORE
+  SILENTLY CHANGING after it is on the leaderboard, which reads as a bug whoever caused it.
+  **The refused device has to do BOTH things, and that is NEW client code** (#201's rules
+  answer neither): a plain 4xx closes WITHOUT adopting, leaving a second tab rendering an
+  unsolved board with its guesses on screen — the symptom the freeze exists to prevent; a
+  409 adopts WITHOUT closing, and `pump` resends immediately with `failures` reset, so with
+  no backoff at all. So the `round_solved` 409 is ADOPTED **and** closes. That device's
+  unsent guesses are dropped for good — harmless to the score, but never silently on screen.
+- **The score row is written by the round path**, from the FULL artifact: the sentence score
+  counts UNIQUE TRIES and `guessKey` dedups on a guess's rank in EVERY map, which the slice
+  cannot answer. It is the last thing the solving append does, so the answer the client
+  adopts is never ahead of the population it is about to read. Word mode's end-of-run
+  SUBMISSION records its claim count the same way. **The #169 HMAC-IP volume floor moved
+  with the write** (the round path hashes the trusted viewer address), which is why
+  `/round` now wears the CDN's viewer-request function too — its absence there was already
+  a latent 500 on every #202 word round start.
+- **What it LOADS, and how big that is.** A sentence puzzle is 6.44 MB with ~107,000
+  rank-map entries; parsing that on every append is not viable, and per-instance caching
+  does not rescue it, since `/round` serves any archive day. So publish places a small
+  **DERIVATION SLICE** beside each sentence puzzle — every key ranked at or below that
+  hole's `start_rank`, plus `n` and `start_rank` per secret. Measured across the 49 fr
+  puzzles in the local store: full artifact **median 4.57 MB** (1.29–7.78), slice **median
+  14.1 KB** (4.6–65.3) — **332×**. A hole's rank only ever improves from `start_rank`, so
+  nothing above it can move the percentage: the slice covers BOTH `progress` and `solved` on
+  every append. It is bigger than `start_rank × 3` suggests because a rank is a GROUP with
+  several typable spellings (fr averages 2.58 keys per rank, up to 11.1). **Every figure
+  here is FRENCH** — the local store holds no real English sentence puzzle, so generate one
+  and re-measure before sizing anything on it.
+  - **The loading rule, three lines:** any append, any day → the SLICE, cached ~100 days;
+    TODAY → the full artifact, cached for ONE DAY ONLY; an ARCHIVE SOLVE → the full
+    artifact, loaded and DISCARDED. Today's is cached because it is the only one that
+    repeats; an archive day's is what would FILL an instance, which is the problem the slice
+    exists to avoid — browsing a month must not leave a month resident. **The cache is keyed
+    by DATE and swept against the server's active day**, or "today" quietly becomes "every
+    day this instance has seen". *(The full artifact is loaded on a SOLVE rather than on
+    every append: nothing today consumes a mid-round score. #206's exact live try count is
+    what widens it, and the cache is already what makes that cheap.)*
+  - **Memory, per warm Lambda against its 512 MB:** today's fr artifact 18 MB (worst of 49),
+    the slice cache ~14 MB, **~32 MB steady** for one language, ~50 MB peak during an
+    archive solve. A second language adds another artifact, of unmeasured size.
+  - **Measured** (node, `2026-07-25.fr.json`): full 6.21 MB raw / 0.80 MB gzipped / 52.3 ms
+    to gunzip+parse / **16.6 MB retained**; slice 66.7 KB / **12.5 KB** gzipped / **0.51 ms**
+    / **0.22 MB**. The heap figures are RETAINED measurements (three copies parsed and held,
+    then divided) — a single `heapUsed` reading of one parse reports anything between 5 and
+    35 MB for the same file. Across all 49 the retained range is 12–18 MB. **Fetch the slice
+    CONCURRENTLY with the DynamoDB read** — neither depends on the other, so a cache miss
+    hides inside a round trip already being paid for. It rests GZIPPED (these slugs share
+    long prefixes and compress 5.3×).
+  - **Produced by `pnpm puzzle:publish`, not generation.** The slice is a pure function of
+    the puzzle with no authoring decision in it, and publish is already where an artifact
+    becomes a served thing. Two reasons over `gen_phrase.py`: republishing gives an EXISTING
+    puzzle its slice where generation would mean regenerating it, and publish is TypeScript
+    like the backend that reads it — there is already one cross-language contract to keep in
+    step (`slug()` ⇔ `fold()`) and no reason for a second. **SENTENCE ONLY:** Word mode reads
+    its artifact once per run at submit, and its round START reads no store at all, which
+    matters — that is the one path where the player genuinely waits on a response.
+  - **A MISSING SLICE IS A MISSING PUZZLE** — the same day-addressed 404. There is no
+    degraded mode: either publishing failed or the day was never published. **Every
+    published puzzle needs its slice in the store before this merges** — republishing the
+    existing puzzles is part of shipping this, not a follow-up. The backend reads it
+    straight from the store, not through CloudFront, so there is no new route and no
+    cache-policy change.
+- **The sort key is REORDERED**, `<date>#<lang>#<mode>` → `<lang>#<mode>#<date>`. It lands
+  here rather than in #211, which is what needs it, because this is the first issue to write
+  `progress`/`solved` onto round rows and reordering afterwards would mean those rows had
+  been written under two schemes. What it buys: #211 reads a calendar as ONE Query over a
+  month, and with the date first a month prefix matches every language and every mode — up
+  to ~124 rows. A `FilterExpression` does not help (DynamoDB filters AFTER reading, so the
+  cost and the 1 MB limit are measured on what is READ). Reordered, `fr#sentence#2026-08-`
+  returns about 31 rows, which removes the pagination problem rather than handling it. **No
+  migration** — the archive is wiped before launch.
+- **Turnstile MOVES to ROUND START** (and to #204's account link). Round creation is
+  available to every unlinked visitor, so it carries more weight than it did. Word mode
+  already gated its START; the sentence round has no start message, so the challenge rides
+  the append that CREATES the record and is verified only there — a later append to an
+  existing round costs none. **The token is PREFETCHED** while the puzzle loads and while
+  the Word gate is on screen, so it is in hand before the player acts: in Word mode round
+  start IS clock start, and a bot check landing exactly then costs real seconds on a
+  60-second game.
+
 ### Day-addressed routing & the game day
 
 - **Routing (#6), date-addressed (decided 2026-07-05, replacing the #42 version-in-URL
@@ -690,28 +827,20 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   untrusted by design, trust comes from the friends graph (#189), and the percentile is
   the one public stat that survives faking.
 - The ONE backend handler also owns the daily score population:
-  `GET|POST /scores?lang=<lang>&date=<YYYY-MM-DD>&mode=<sentence|word>`; unlike the
-  puzzle route, **`mode` is required**. POST takes `{ secret, score, turnstileToken }`
-  (the secret travels in the **body**, never a query string — the `/scores` behavior
-  contract below is untouched), verifies Turnstile server-side, validates the score
-  against that published daily/mode, derives the publicId, and writes **ONE row per
-  `(date, lang, mode, publicId)` with a conditional put — first write wins**: the daily
-  can't be replayed, so a second submission can never change a standing; it changes
-  nothing, consumes no IP allowance, and is answered 200 with the STORED row's standing.
-  **That idempotence is LOAD-BEARING for the client, not just a guard against replay**
-  (user-decided 2026-08-20): a round whose POST the server REFUSED or never answered is
-  re-submitted on the next visit to its solved screen, because a refusal leaves the
-  population holding nothing and a 403 is Turnstile refusing the request rather than the
-  server judging the score. So a repeat POST is an ordinary, expected call — see the #170
-  round trip in `packages/web/AGENTS.md`. The
-  response is the UPDATED histogram so the caller's score is already included. GET is
-  the read-only twin for solved revisits. The puzzle route's malformed-param and future
-  +1-day guards apply; a population is never created for an unpublished puzzle.
-  **Production POST callers must SHA-256 the exact UTF-8 body bytes they send and put the
-  lowercase hex digest in `x-amz-content-sha256`.** The body must not be reserialized after
-  hashing. This is a hard CloudFront-OAC/Lambda-URL contract: Lambda rejects an unsigned
-  POST before the handler runs. The score behavior forwards the header and CORS allows it;
-  local `backend:dev` has no OAC and therefore cannot surface a missing hash.
+  `GET /scores?lang=<lang>&date=<YYYY-MM-DD>&mode=<sentence|word>`; unlike the
+  puzzle route, **`mode` is required**. **It is READ-ONLY since #203** — a POST is a named
+  405. The row is written by the ROUND route, from a log the server already holds: the
+  round that finishes writes **ONE row per `(date, lang, mode, publicId)` with a
+  conditional put — first write wins**, since the daily can't be replayed. The puzzle
+  route's malformed-param and future +1-day guards apply; a population is never created
+  for an unpublished puzzle.
+  *(What #203 retired here: the POST itself, the `{ secret, score, turnstileToken }` body,
+  the server-side Turnstile verification, the range validation against the daily, and the
+  client-side ask-until-recorded rule of 2026-08-20 that leaned on the write's idempotence.
+  The `x-amz-content-sha256` OAC contract still governs every OTHER live POST — /profile,
+  /friends, /board and /round — unchanged: hash the exact UTF-8 body bytes you send, and
+  never reserialize after hashing; local `backend:dev` has no OAC and cannot surface a
+  missing hash.)*
 - **The histogram is DERIVED from the day's rows at read time (#187), subsuming the #169
   bucket counters** — per-player rows are a strict superset, and two stores answering
   the same question would drift, so the counter items and the fixed bucket edges are
@@ -719,28 +848,32 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   (`{ buckets, total, bucket }`, inclusive ranges) with the bands now **one exact band
   per distinct recorded score, ascending** — a day partition is small, one Query +
   compute in the handler. An empty population is honestly `buckets: []`.
-- **Score limits are gameplay limits, not a generic integer cap.** Sentence mode counts
-  unique vocabulary-valid tries, so its ceiling is the language's existence-set size —
-  read from the GENERATED vocab metadata (#200 above), which also defines what counts as
-  a supported `lang` on every day-addressed live route.
-  Word mode counts claimed groups, so its ceiling is the distinct claimable ranks in that
-  artifact, bounded by the ONE shared `WORD_CLAIM_ZONE` constant
-  (`shared/src/scores.ts`, consumed by web + backend). The bands the API returns are
-  derived from the recorded rows (#187); consumers render the ranges returned by the API
-  rather than restating them.
-- The hashed-IP dedup stays as a **volume sanity floor** under the per-player rows: POST
-  dedups by `HMAC-SHA256(client IP, server secret)` and **never stores a raw IP**.
+- **A score's LIMITS were gameplay limits, and #203 retired the sentence one outright.**
+  Sentence mode counts unique vocabulary-valid tries, and the server now COUNTS them off
+  the log it stored — there is no claimed number left to bound, so the existence-set
+  ceiling is gone (`VOCAB_BUILDS` still says which languages are supported and how long a
+  stored guess may be, #200/#201). Word mode's remains, as a FIELD check rather than a
+  score check: an end-of-run log may claim at most the distinct claimable ranks in that
+  artifact, bounded by the ONE shared `WORD_CLAIM_ZONE` constant (`shared/src/scores.ts`,
+  consumed by web + backend). The bands the API returns are derived from the recorded rows
+  (#187); consumers render the ranges returned by the API rather than restating them.
+- The hashed-IP dedup stays as a **volume sanity floor** under the per-player rows: the
+  write dedups by `HMAC-SHA256(client IP, server secret)` and **never stores a raw IP**.
   Up to **5** recorded rows are allowed per `(date, lang, mode, ipHash)`; the dedup item
   expires after 48 hours. Its conditional count update and the row's first-write-wins
   conditional put are one DynamoDB transaction, so a capped/failing/duplicate request
   cannot change just one half (and a refused duplicate consumes no allowance). What is
   retained is the score row — `(date, lang, mode)` partition, `publicId` sort key,
-  `score` + `submittedAt` — keyed by the derived publicId, no personal data.
+  `score` + `submittedAt` — keyed by the derived publicId, no personal data. **Since #203
+  it is the ROUND route that spends it**, on the write that records a finished round.
 - **The client IP the dedup hashes arrives in `VIEWER_IP_HEADER` (`shared/src/scores.ts`),
   stamped by a CloudFront viewer-request FUNCTION — corrected 2026-08-16, superseding
   "the origin-request policy forwards CloudFront's trusted viewer address".** That older
-  rule cannot be implemented: a /scores POST needs two things at the origin and NO single
-  header mode carries both.
+  rule cannot be implemented: a live POST needs two things at the origin and NO single
+  header mode carries both. *(It was written for the /scores POST; since #203 the routes
+  that need a trusted address are `/scores`'s successor writes on `/round` — the
+  Turnstile-gated round start and the score row — and the function is associated with BOTH
+  behaviors.)*
   - The viewer's `x-amz-content-sha256` (OAC cannot sign a Lambda-URL POST without it) can
     never be named in an allow-list — CloudFront rejects the whole policy ("The parameter
     Headers contains x-amz-content-sha256 that is not allowed", verified against the live
@@ -754,13 +887,13 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   supplies the address as an ordinary viewer header that mode already carries. It is
   unspoofable because the function OVERWRITES it from CloudFront's own read of the TCP
   peer. **Three packages agree on that ONE header name**, which is why it lives in
-  `shared`: infra writes it, the backend reads it, and a drift is a 500 on every score
-  POST that no local run and no synthesized template can reproduce.
+  `shared`: infra writes it, the backend reads it, and a drift is a 500 on every gated
+  write that no local run and no synthesized template can reproduce.
 - `/scores` has its OWN zero-TTL CloudFront behavior because the histogram is live; it must
   never inherit the puzzle's year-long `s-maxage`. Its query allowList is exactly the three
   parameters the handler reads (`lang`, `date`, `mode`), and its origin-request policy
   carries the viewer-supplied `x-amz-content-sha256` outside the cache key. Local
-  `backend:dev` uses the same handler with an in-memory counter store and an explicitly
+  `backend:dev` uses the same handler with an in-memory row store and an explicitly
   local accept-all Turnstile verifier.
 
 ### Player profile (#188, decided 2026-08-18)

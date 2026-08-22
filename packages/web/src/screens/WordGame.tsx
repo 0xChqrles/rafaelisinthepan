@@ -7,7 +7,8 @@ import { KB_EXIT_FALLBACK_MS } from './Game';
 import { useDeadlinePassed } from '../hooks/useCountdown';
 import useScoreHistogram from '../hooks/useScoreHistogram';
 import useWordRoundSync from '../hooks/useWordRoundSync';
-import { startWordRound, startedRunHere } from '../state/wordRoundSync';
+import { startWordRound } from '../state/wordRoundSync';
+import { prefetchTurnstileToken } from '../turnstile';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import {
   bonusSeconds,
@@ -136,13 +137,6 @@ function WordRound({
   );
   const ensureWordRound = useGameStore((s) => s.ensureWordRound);
   const recordWordGuess = useGameStore((s) => s.recordWordGuess);
-  const markWordScoreRecorded = useGameStore((s) => s.markWordScoreRecorded);
-  // The score request outlives this screen if the player navigates away. Keep its
-  // completion attached to the round that launched it, never the next active Word day.
-  const markThisWordScoreRecorded = useCallback(
-    (recorded: number) => markWordScoreRecorded(roundKey, recorded),
-    [markWordScoreRecorded, roundKey],
-  );
 
   // Reconcile before paint, like the sentence round: a matching key playing the same
   // word rehydrates; a republished different word resets.
@@ -194,6 +188,12 @@ function WordRound({
   // as impossibly early — intermittently, on slow connections only.
   const [starting, setStarting] = useState(false);
   const [startFailed, setStartFailed] = useState(false);
+  // The challenge PLAY needs, asked for while the GATE is on screen (#203). In Word mode
+  // round start IS clock start, so a bot check landing exactly then costs real seconds on a
+  // 60-second game; asking while the player reads the rules puts it in hand beforehand.
+  useEffect(() => {
+    if (!started) prefetchTurnstileToken();
+  }, [started, roundKey]);
   const handlePlay = useCallback(() => {
     if (starting) return;
     setStarting(true);
@@ -212,27 +212,19 @@ function WordRound({
   const run = useMemo(() => replayWordRun(ranks, tried), [ranks, tried]);
   const score = run.claimed.length;
 
-  // The day's score population (#170): a run whose clock has died submits its claim count
-  // — including a run that ended while the tab was closed, whose first submission happens
-  // on the revisit that finds it over — and the persisted scoreRecorded turns every later
-  // visit into a read-only GET, while its ABSENCE lets a refused or failed submission try
-  // again. Renders on the post-mortem only.
+  // The day's score population (#170), READ once the SERVER holds this run (#203). The
+  // claim count is no longer POSTed: the end-of-run SUBMISSION is what records the row, so
+  // the standing is readable exactly when that write has been acknowledged — which
+  // `submitted` already says, whether this device wrote the run or merely read that another
+  // one had. It also answers, for free, the thing this gate used to spell out itself: a
+  // device that only JOINED a run in progress never writes (`mayWrite`), so it has nothing
+  // to stand on until the real run's submission lands. Renders on the post-mortem only.
   const placement = useScoreHistogram({
-    // FINISHED, and this device's run to report (#202). A device that JOINED a run in
-    // progress — a second device under the same key, or a second tab holding a stale copy —
-    // anchors the server's start with an empty log and no way to know what the real run has
-    // claimed, so its clock dies at the bare START_SECONDS while the run is still being
-    // played elsewhere. Its score is first-write-wins like everyone's, so submitting it
-    // would record a 0 that the real run can then never replace. Same rule as the round
-    // log's own write (state/wordRoundSync.ts `mayWrite`), read at render because it only
-    // ever flips false -> true, in the same commit as the clock it anchors.
-    finished: ended && (tried.length > 0 || startedRunHere(roundKey, puzzle.word.slug)),
-    markRecorded: markThisWordScoreRecorded,
+    finished: ended && live?.submitted === true,
     mode: 'word',
     lang,
     dayNumber,
     score,
-    recordedScore: live?.scoreRecorded,
   });
 
   // The claims broken down by grade, ladder order — what the end screen's share text, the

@@ -712,80 +712,52 @@ describe('syncProgress — cached per round for the selector badge', () => {
   });
 });
 
-// CONTRACT (#170/#187): the RECORDED score PERSISTS with its round, next to the solved
-// state, so a reload or a revisit reads the histogram instead of re-submitting — and its
-// ABSENCE is what lets a round the population never took ask again (2026-08-20, retiring
-// the submit-once flag). One value per mode's round shape; both actions target the key
-// captured when the request started, even if navigation has made a different round active
-// by completion.
-describe('recorded scores (#170/#187) — markScoreRecorded / markWordScoreRecorded', () => {
-  it('records on the keyed sentence round, and persists on the round itself', () => {
-    const { ensureRound, markScoreRecorded } = useGameStore.getState();
+// CONTRACT (#203): what a finished round persists is `recorded` — the SERVER holds this
+// round's solve, read off a round answer rather than off the local board — which is what
+// makes its score row (and therefore its standing) readable, and what says the round is
+// frozen. It replaced the recorded SCORE, which existed to reconcile a client-claimed one;
+// there is none left to reconcile. It targets the key captured when the request started,
+// even if navigation has made a different round active by the time the answer lands.
+describe('the server-held solve (#203) — markRoundRecorded', () => {
+  it('marks the keyed round, and persists on the round itself', () => {
+    const { ensureRound, markRoundRecorded } = useGameStore.getState();
     ensureRound('d:5:fr', freshHoles());
-    expect(activeRound()?.scoreRecorded).toBeUndefined();
-    markScoreRecorded('d:5:fr', 9);
-    expect(activeRound()?.scoreRecorded).toBe(9);
+    expect(activeRound()?.recorded).toBeUndefined();
+    markRoundRecorded('d:5:fr');
+    expect(activeRound()?.recorded).toBe(true);
     const before = useGameStore.getState().rounds;
-    markScoreRecorded('d:5:fr', 9);
-    expect(useGameStore.getState().rounds).toBe(before); // idempotent on the VALUE — no churn
+    markRoundRecorded('d:5:fr');
+    expect(useGameStore.getState().rounds).toBe(before); // idempotent — no churn
   });
 
-  it('takes the score a RETRY finally records — the heal the submit-once flag blocked', () => {
-    // The round whose first POST was refused (or never answered) holds nothing, so the
-    // next visit submits again. Guarding on "already answered once" is what used to strand
-    // it: the retry succeeded and the store threw its answer away.
-    const { ensureRound, markScoreRecorded } = useGameStore.getState();
+  it('marks the round the answer is about, not the newly active one', () => {
+    const { ensureRound, markRoundRecorded } = useGameStore.getState();
     ensureRound('d:5:fr', freshHoles());
-    expect(activeRound()?.scoreRecorded).toBeUndefined(); // refused: nothing recorded
-    markScoreRecorded('d:5:fr', 3);
-    expect(activeRound()?.scoreRecorded).toBe(3);
-  });
-
-  it('records on the keyed word round without touching the sentence round', () => {
-    const { ensureRound, ensureWordRound, markWordScoreRecorded } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles());
-    ensureWordRound('w:5:fr', 'phare');
-    markWordScoreRecorded('w:5:fr', 12);
+    ensureRound('d:6:fr', freshHoles()); // the active round has moved on
+    markRoundRecorded('d:5:fr');
     const s = useGameStore.getState();
-    expect(s.wordRounds['w:5:fr'].scoreRecorded).toBe(12);
-    expect(s.rounds['d:5:fr'].scoreRecorded).toBeUndefined();
+    expect(s.rounds['d:5:fr'].recorded).toBe(true);
+    expect(s.rounds['d:6:fr'].recorded).toBeUndefined();
   });
 
-  it('records on the submitting round after navigation, not the newly active round', () => {
-    const { ensureRound, ensureWordRound, markScoreRecorded, markWordScoreRecorded } =
-      useGameStore.getState();
+  it('survives a rehydration under the same key, and resets with a re-published sentence', () => {
+    const { ensureRound, markRoundRecorded } = useGameStore.getState();
     ensureRound('d:5:fr', freshHoles());
-    ensureRound('d:6:fr', freshHoles()); // active sentence round has moved on
-    markScoreRecorded('d:5:fr', 9);
-
-    ensureWordRound('w:5:fr', 'phare');
-    ensureWordRound('w:6:fr', 'océan'); // active Word round has moved on
-    markWordScoreRecorded('w:5:fr', 12);
-
-    const s = useGameStore.getState();
-    expect(s.rounds['d:5:fr'].scoreRecorded).toBe(9);
-    expect(s.rounds['d:6:fr'].scoreRecorded).toBeUndefined();
-    expect(s.wordRounds['w:5:fr'].scoreRecorded).toBe(12);
-    expect(s.wordRounds['w:6:fr'].scoreRecorded).toBeUndefined();
-  });
-
-  it('a round rehydrated under the same key keeps its recorded score (the revisit guard)', () => {
-    const { ensureRound, markScoreRecorded } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles());
-    markScoreRecorded('d:5:fr', 9);
-    // The same puzzle reconciles again (a reload): the value survives untouched.
+    markRoundRecorded('d:5:fr');
+    // The same puzzle reconciles again (a reload): the flag survives, so the conversation
+    // is not re-opened for a guaranteed refusal.
     useGameStore.getState().ensureRound('d:5:fr', freshHoles());
-    expect(activeRound()?.scoreRecorded).toBe(9);
-    // A re-published different sentence resets the round — recorded score included.
+    expect(activeRound()?.recorded).toBe(true);
+    // A re-published different sentence resets the round — the server's solve was about
+    // the retired one.
     const changed = freshHoles().map((h) => ({ ...h, secret: `${h.secret}-x` }));
     useGameStore.getState().ensureRound('d:5:fr', changed);
-    expect(activeRound()?.scoreRecorded).toBeUndefined();
+    expect(activeRound()?.recorded).toBeUndefined();
   });
 
   it('is a no-op for an unknown key', () => {
     const before = useGameStore.getState().rounds;
-    useGameStore.getState().markScoreRecorded('d:999:fr', 9);
-    useGameStore.getState().markWordScoreRecorded('w:999:fr', 12);
+    useGameStore.getState().markRoundRecorded('d:999:fr');
     expect(useGameStore.getState().rounds).toBe(before);
   });
 });
@@ -1066,11 +1038,14 @@ describe('migratePersisted — persisted-blob upgrades', () => {
     expect(migratePersisted({ ...blob, boardTab: 'nonsense' }, 9).boardTab).toBe('friends');
   });
 
-  // v9 -> v10 (2026-08-20): the retired scoreSubmitted flag. Stripping it is what HEALS
-  // the rounds it stranded — a round a 4xx burned kept the flag with NO recorded score,
-  // and `scoreRecorded` alone now decides whether to ask the population again. A round
-  // that really was recorded keeps its score and still never re-submits.
-  it('v9 -> v10 strips scoreSubmitted from the sentence rounds and keeps scoreRecorded', () => {
+  // v11 -> v12 (#203): the retired scoreRecorded VALUE, on BOTH round maps. There is no
+  // client-claimed score left to reconcile — the server derives it from the log it stores
+  // and records the row itself — so a finished round persists only `recorded`, written from
+  // a round answer. Stripped rather than translated (the v10 precedent): a sentence round
+  // the population already holds re-learns it from its next mount READ, and a word round
+  // already carries `submitted`. v10's own `scoreSubmitted` strip rides along, since a blob
+  // older than that can carry both.
+  it('v11 -> v12 strips scoreRecorded (and the older scoreSubmitted) from both round maps', () => {
     const out = migratePersisted(
       {
         rounds: {
@@ -1080,25 +1055,34 @@ describe('migratePersisted — persisted-blob upgrades', () => {
             holes: [],
             tried: [],
             progress: 0,
-            scoreSubmitted: true,
             scoreRecorded: 9,
+          },
+        },
+        wordRounds: {
+          'w:6:fr': {
+            word: 'phare',
+            startedAt: 1,
+            deadline: 2,
+            tried: [],
+            claimed: 0,
+            scoreRecorded: 12,
+            submitted: true,
           },
         },
         lastLang: 'fr',
         onboarded: true,
         solvedDays: {},
       },
-      9,
+      11,
     );
-    // Burned by a refusal: the flag is gone and nothing was recorded, so this round asks again.
-    expect(out.rounds['d:5:fr']).not.toHaveProperty('scoreSubmitted');
-    expect(out.rounds['d:5:fr'].scoreRecorded).toBeUndefined();
-    // Genuinely recorded: the score survives, which is what keeps it from re-submitting.
-    expect(out.rounds['d:6:fr']).not.toHaveProperty('scoreSubmitted');
-    expect(out.rounds['d:6:fr'].scoreRecorded).toBe(9);
-    // The WORD half of this upgrade has no test left to write: v11 empties those rounds
-    // outright, so a surviving one provably never carried the flag.
-    expect(out.wordRounds).toEqual({});
+    for (const round of Object.values(out.rounds)) {
+      expect(round).not.toHaveProperty('scoreRecorded');
+      expect(round).not.toHaveProperty('scoreSubmitted');
+    }
+    // The word round survives v11 intact APART from the retired value: its own
+    // acknowledgement is what keeps it from re-submitting.
+    expect(out.wordRounds['w:6:fr']).not.toHaveProperty('scoreRecorded');
+    expect(out.wordRounds['w:6:fr'].submitted).toBe(true);
   });
 
   it('keeps an existing solvedDays across the upgrade (no backfill, but no data loss)', () => {

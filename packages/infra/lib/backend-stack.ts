@@ -270,8 +270,12 @@ export class BackendStack extends Stack {
     // that can never be used.
     const scoreCachePolicy = cloudfront.CachePolicy.CACHING_DISABLED;
 
-    // The score POST needs TWO things at the origin, and no single header mode carries
-    // both — which is the whole reason this function exists.
+    // The Turnstile-gated WRITES need TWO things at the origin, and no single header mode
+    // carries both — which is the whole reason this function exists. It was the score POST
+    // when it was written; since #203 that POST is retired and the writes are `/round`'s
+    // (both modes' round START verifies a challenge against the connecting address, and a
+    // finished round records the score row the POST used to, IP-metered the same way), so
+    // the function is associated with BOTH behaviors.
     //
     //  - The viewer's `x-amz-content-sha256`: OAC cannot sign a POST to a Lambda URL
     //    without the exact viewer-computed body hash. CloudFront REFUSES to name any
@@ -297,7 +301,7 @@ export class BackendStack extends Stack {
     // ALONE ships a Lambda that throws on every POST (no trusted address), and neither
     // `pnpm backend:dev` nor a synthesized template can show it — only a real edge request.
     const viewerIpFn = new cloudfront.Function(this, 'ScoreViewerIpFn', {
-      comment: 'Stamp the connecting viewer address into the score route\'s trusted header.',
+      comment: 'Stamp the connecting viewer address into the live routes\' trusted header.',
       runtime: cloudfront.FunctionRuntime.JS_2_0,
       code: cloudfront.FunctionCode.fromInline(
         [
@@ -406,6 +410,15 @@ export class BackendStack extends Stack {
 
     const functionOrigin = origins.FunctionUrlOrigin.withOriginAccessControl(fnUrl);
 
+    // ONE association, worn by every behavior whose handler reads a trusted client
+    // address. Removing it from `/round` ships a Lambda that throws on every round start,
+    // which neither `backend:dev` nor a synthesized template can show — only a real edge
+    // request — which is why `backend-stack.test.ts` pins both associations.
+    const viewerIpAssociation: cloudfront.FunctionAssociation = {
+      function: viewerIpFn,
+      eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
+    };
+
     // ONE shape for every LIVE route's BEHAVIOR too: zero-TTL because the data is live
     // (it must never inherit the puzzle's year-long s-maxage), ALL methods because each
     // of these routes has a write or an authenticated POST, and the route's own
@@ -447,23 +460,24 @@ export class BackendStack extends Stack {
       // Every LIVE route wears the same behavior — zero-TTL (the data IS live), ALL
       // methods (each has a write or an authenticated POST), and its own origin-request
       // policy. Each pattern also catches a harmless trailing slash; the handler still
-      // accepts only the exact normalized route. Only /scores differs, by the one thing
-      // that is genuinely its own: the viewer-IP function.
+      // accepts only the exact normalized route. Two of them differ, by the one thing that
+      // is not shared: the viewer-IP function, wanted wherever the handler needs a TRUSTED
+      // client address. Since #203 that is `/round` — both modes' Turnstile-gated round
+      // START verifies the challenge against it, and a finished round records the day's
+      // score row metered by its HMAC — as well as `/scores`, kept because the route's
+      // shape is otherwise unchanged. Runs before the cache lookup, so the header it
+      // stamps IS a viewer header by the time the origin request policy decides what to
+      // forward.
       additionalBehaviors: {
         'scores*': liveBehavior(scoreOriginRequestPolicy, {
           cachePolicy: scoreCachePolicy,
-          // Runs before the cache lookup, so the header it stamps IS a viewer header by
-          // the time the origin request policy decides what to forward.
-          functionAssociations: [
-            {
-              function: viewerIpFn,
-              eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
-            },
-          ],
+          functionAssociations: [viewerIpAssociation],
         }),
         'profile*': liveBehavior(profileOriginRequestPolicy),
         'board*': liveBehavior(boardOriginRequestPolicy),
-        'round*': liveBehavior(roundOriginRequestPolicy),
+        'round*': liveBehavior(roundOriginRequestPolicy, {
+          functionAssociations: [viewerIpAssociation],
+        }),
         'friends*': liveBehavior(friendsOriginRequestPolicy),
       },
     });

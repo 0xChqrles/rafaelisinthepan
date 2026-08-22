@@ -16,7 +16,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { activeDate, type Puzzle, type WordPuzzle } from '@whippin/shared';
-import { defaultLocalStoreRoot, isValidDate, storeKey, type PuzzleMode } from './layout';
+import { defaultLocalStoreRoot, isValidDate, sliceKey, storeKey, type PuzzleMode } from './layout';
+import { buildSlice, encodeSlice } from './slice';
 import { STACK_REGION, stackOutputs } from './stack';
 
 interface Args {
@@ -60,6 +61,12 @@ function die(msg: string): never {
 interface PublishPlan {
   day: string; // the GAME DAY this puzzle is served as (22:00-ET day of #2/#6)
   key: string; // storeKey(day, lang, mode) — the SAME key the readers GetObject/readFile
+  // #203's derivation slice, published BESIDE a sentence puzzle (never for a word
+  // artifact — Word mode reads its whole map once, at submit, and needs none). The backend
+  // has NO fallback for a missing one, so it is part of the same publish rather than a
+  // follow-up: a day whose slice is absent cannot derive anything and answers the
+  // day-addressed 404.
+  slice?: string;
   target: { kind: 'local' } | { kind: 's3'; bucket: string };
 }
 
@@ -83,11 +90,12 @@ export function planPublish(
   const day = args.day ?? activeDate(now);
   if (!isValidDate(day)) throw new Error(`invalid --day "${day}" (expected YYYY-MM-DD).`);
   const key = storeKey(day, lang, mode);
+  const slice = mode === 'sentence' ? sliceKey(day, lang) : undefined;
   if (args.s3) {
     if (!bucket) throw new Error('--s3 requires the deployed bucket (no stack output resolved).');
-    return { day, key, target: { kind: 's3', bucket } };
+    return { day, key, slice, target: { kind: 's3', bucket } };
   }
-  return { day, key, target: { kind: 'local' } };
+  return { day, key, slice, target: { kind: 'local' } };
 }
 
 // Resolve a user-supplied path against the directory the command was INVOKED from,
@@ -128,7 +136,8 @@ async function main() {
 
   const file = resolveInput(args.file);
   const text = await readFile(file, 'utf8').catch(() => die(`cannot read ${file}`));
-  const artifact = asArtifact(JSON.parse(text), file);
+  const raw = JSON.parse(text) as unknown;
+  const artifact = asArtifact(raw, file);
 
   // For S3, the destination is always the deployed bucket, discovered from the stack output.
   const deployed = args.s3 ? await stackOutputs() : undefined;
@@ -138,6 +147,18 @@ async function main() {
     plan = planPublish(args, artifact.lang, new Date(), deployed?.bucket, artifact.mode);
   } catch (err) {
     die(err instanceof Error ? err.message : String(err));
+  }
+
+  // #203: the derivation slice is derived here, from the same bytes being published, so the
+  // two objects can never describe different puzzles. A malformed puzzle fails LOUDLY here
+  // rather than publishing a sentence the round route can then never read.
+  let slice: Buffer | undefined;
+  if (plan.slice) {
+    try {
+      slice = encodeSlice(buildSlice(raw as Puzzle));
+    } catch (err) {
+      die(`${file}: cannot build the derivation slice (${err instanceof Error ? err.message : String(err)}).`);
+    }
   }
 
   if (plan.target.kind === 's3') {
@@ -155,6 +176,18 @@ async function main() {
       }),
     );
     console.log(`[publish] s3://${bucket}/${plan.key}  (${artifact.lang}, ${artifact.mode}, day ${plan.day})`);
+    if (plan.slice && slice) {
+      await client.send(
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: plan.slice,
+          Body: slice,
+          ContentType: 'application/json',
+          ContentEncoding: 'gzip',
+        }),
+      );
+      console.log(`[publish] s3://${bucket}/${plan.slice}  (${slice.byteLength} bytes gzipped)`);
+    }
 
     // The puzzle URL is date-addressed and the CDN holds it via a year-long s-maxage, so a
     // REPUBLISH must invalidate the cached entry or the correction would never reach the
@@ -185,6 +218,11 @@ async function main() {
   await mkdir(path.dirname(dest), { recursive: true });
   await writeFile(dest, text);
   console.log(`[publish] ${dest}  (${artifact.lang}, ${artifact.mode}, day ${plan.day})`);
+  if (plan.slice && slice) {
+    const sliceDest = path.join(root, plan.slice);
+    await writeFile(sliceDest, slice);
+    console.log(`[publish] ${sliceDest}  (${slice.byteLength} bytes gzipped)`);
+  }
 }
 
 // Run as a CLI only when executed directly (`tsx src/publish.ts ...`), NOT when this

@@ -69,8 +69,12 @@
   `ScoreViewerIpFn` viewer-request FUNCTION stamps the connecting address into
   `@whippin/shared`'s `VIEWER_IP_HEADER` instead — see the root `AGENTS.md` for why no single
   header mode can serve both halves. Removing that function ships a Lambda that throws on
-  every score POST, which neither `backend:dev` nor a synthesized template can show;
-  `backend-stack.test.ts` pins the association and the stamp. **`/profile` (#188)** has
+  every gated write, which neither `backend:dev` nor a synthesized template can show;
+  `backend-stack.test.ts` pins the associations and the stamp. **Since #203 it is
+  associated with `/round` as well** — both modes' Turnstile-gated round START verifies the
+  challenge against the connecting address, and a finished round records the day's score
+  row metered by its HMAC (the score POST that used to do that is retired). Its absence
+  there was already a latent 500 on every #202 word round start. **`/profile` (#188)** has
   its own `profile*` behavior on the same shape: `CachingDisabled`, ALLOW_ALL methods,
   and an origin-request policy forwarding exactly the `id` query (the one parameter the
   profile handler reads) with `allExcept: Host` headers for the OAC-signed POST — no
@@ -82,10 +86,11 @@
   `CachingDisabled`, ALLOW_ALL methods (the friends-board read is an authenticated POST),
   `allExcept: Host` headers, and an origin-request allow-list of exactly the FOUR queries
   the board handler reads (`lang`/`date`/`mode`/`id`) — no viewer-IP function, no per-IP
-  logic. **`/round` (#201)** is the fifth behavior on that shape — `CachingDisabled`,
+  logic. **`/round` (#201/#203)** is the fifth behavior on that shape — `CachingDisabled`,
   ALLOW_ALL methods (the route is POST-only; the player key authenticates in the body),
   `allExcept: Host` headers, and an origin-request allow-list of exactly the THREE
-  addressing queries (`lang`/`date`/`mode`) — no viewer-IP function, no per-IP logic.
+  addressing queries (`lang`/`date`/`mode`) — plus, since #203, the viewer-IP function,
+  because this is now the route with per-address logic (see above).
   The table grant adds
   `GetItem` for the profile read (the upsert reuses `UpdateItem`) and **`DeleteItem` for
   #189's symmetric friend removal, the only delete on this table**; all are pinned by

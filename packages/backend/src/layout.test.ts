@@ -5,7 +5,7 @@
 // spec, not the implementation.
 
 import { describe, it, expect } from 'vitest';
-import { isValidDate, storeKey } from './layout';
+import { isValidDate, sliceKey, storeKey } from './layout';
 
 describe('storeKey — flat "<date>.<lang>.json"', () => {
   it('joins the game day and lang, no folder, no words', () => {
@@ -22,6 +22,21 @@ describe('storeKey — flat "<date>.<lang>.json"', () => {
     expect(storeKey('2026-06-29', 'fr').startsWith('2026-06')).toBe(true);
     expect(storeKey('2026-06-01', 'en').startsWith('2026-06')).toBe(true);
     expect(storeKey('2026-06-29', 'fr').startsWith('2026')).toBe(true);
+  });
+});
+
+// CONTRACT (#203): the derivation slice sits BESIDE the puzzle, in the same flat layout,
+// and its key says it is gzip — the object IS compressed bytes, so a reader that decodes
+// it as text hands JSON.parse a mangled blob.
+describe('sliceKey — the derivation slice, beside the sentence puzzle', () => {
+  it('is one deterministic key per (date, lang), distinct from the puzzle\'s', () => {
+    expect(sliceKey('2026-06-29', 'fr')).toBe('2026-06-29.fr.slice.json.gz');
+    expect(sliceKey('2026-06-29', 'fr')).not.toBe(storeKey('2026-06-29', 'fr'));
+    expect(sliceKey('2026-06-29', 'en')).not.toBe(sliceKey('2026-06-29', 'fr'));
+  });
+
+  it('shares the same date PREFIX, so a day still lists as one unit', () => {
+    expect(sliceKey('2026-06-29', 'fr').startsWith('2026-06')).toBe(true);
   });
 });
 

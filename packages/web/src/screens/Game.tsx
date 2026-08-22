@@ -31,7 +31,8 @@ import LoadError from '../components/LoadError';
 import { buildHistory } from '../game/history';
 import { t, ariaHoleHistory, srHoleResult } from '../i18n';
 import { track } from '../analytics';
-import { fold, dateForDayNumber, ROUND_GUESS_CAP } from '@whippin/shared';
+import { fold, dateForDayNumber } from '@whippin/shared';
+import { prefetchTurnstileToken } from '../turnstile';
 import type {
   HitState,
   Hole,
@@ -161,13 +162,6 @@ function Round({
   const improveHole = useGameStore((s) => s.improveHole);
   const syncProgress = useGameStore((s) => s.syncProgress);
   const recordSolve = useGameStore((s) => s.recordSolve);
-  const markScoreRecorded = useGameStore((s) => s.markScoreRecorded);
-  // The POST may finish after this screen has left. Bind its completion to THIS round so
-  // it cannot mark whichever day happens to be active at response time.
-  const markThisScoreRecorded = useCallback(
-    (recorded: number) => markScoreRecorded(roundKey, recorded),
-    [markScoreRecorded, roundKey],
-  );
 
   // The client's active game day (local, DST-correct) — the streak's reference point. May
   // be dayNumber + 1 when an in-flight round is finished just past the 22:00 flip; the
@@ -273,32 +267,32 @@ function Round({
     [],
   );
 
+  // ROUND CREATION is Turnstile-gated (#203), and the challenge is asked for HERE — while
+  // the puzzle is on screen and the player is reading it — so it is in hand by the time
+  // the first guess needs it rather than sitting in front of that write. Fire-and-forget:
+  // the sync engine mints a fresh one if this never arrives.
+  useEffect(() => {
+    prefetchTurnstileToken();
+  }, [roundKey]);
+
   const solved = holes.every((h) => h.rank === 0); // sentence discovered -> round over
   const allWordsResolved = solved && resolvedHoleIndices.size === holes.length;
 
-  // The day's score population (#170): a fresh solve POSTs this round's try count (the
-  // persisted scoreRecorded turns every later visit into a read-only GET, and its ABSENCE
-  // is what lets a refused or failed submission try again), and the result renders on the
-  // solved screen only. Started as soon as the store reports the round solved, so the
-  // network round trip runs behind the solving choreography.
+  // The day's score population (#170), READ once the SERVER holds this round (#203). The
+  // score is no longer claimed: the append that solves the round is what records the row,
+  // and `recorded` is the server's own answer that it did. Gating on the local `solved`
+  // alone would read a population one round trip before this round joined it — and, with
+  // nothing left to retry, would leave the standing blank for good.
   //
-  // A CAPPED round never joins that population (#201): past the server's guess cap the
-  // round has stopped counting — by the server's own refusal (capped) or because local
-  // offline play outgrew what any server could ever hold — so there is no leaderboard
-  // entry to claim. It suppresses the SUBMISSION and nothing else: a round whose score
-  // the population already holds (it solved, the POST landed, a lagging flush was capped
-  // afterwards) has a real recorded rank, and hiding its standing on that visit and every
-  // later one would be the flag deciding what the population itself already answered.
-  const overCap = live?.capped === true || history.length > ROUND_GUESS_CAP;
+  // A CAPPED round simply never gets there: past the server's guess cap its appends are
+  // refused, so its solve never reaches the server and no row exists to stand in. The
+  // client needs no rule of its own for that any more.
   const placement = useScoreHistogram({
-    finished: solved,
-    canSubmit: !overCap,
-    markRecorded: markThisScoreRecorded,
+    finished: solved && live?.recorded === true,
     mode: 'sentence',
     lang,
     dayNumber,
     score: guessCount,
-    recordedScore: live?.scoreRecorded,
   });
   // The one-time instructions GATE (2026-08-11): the mode's own rules, stated ONCE ever
   // before the first sentence round — the phrase is on screen, but the keyboard and the
