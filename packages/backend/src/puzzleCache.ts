@@ -25,6 +25,14 @@
 // A MISS is never cached. A day published slightly late must become playable without
 // waiting for the instance to recycle, exactly as the puzzle route's short negative TTL
 // intends at the edge.
+//
+// The slice fetch sits BEFORE the round-start challenge (it has to: the pre-read that says
+// whether a challenge is even owed is the other half of the same `Promise.all`), so an
+// unauthenticated caller can walk past dates and evict hot entries. Left alone deliberately:
+// what that buys them is one ~12 KB GET and a 0.5 ms parse on somebody's next append, and
+// the same caller can already pull the whole 6 MB artifact for any past day off the puzzle
+// route — cheaper for them and dearer for us. Gating first would cost every honest append
+// its concurrency to bound nothing.
 
 import type { Puzzle } from '@whippin/shared';
 import type { PuzzleSlice } from './slice';

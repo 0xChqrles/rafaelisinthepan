@@ -438,10 +438,17 @@ function freshRound(initialHoles: RuntimeHole[]): RoundProgress {
 //     score left to reconcile — the server derives it from the guess log and records the
 //     row itself — so what a finished round persists is `recorded`, a plain "the server
 //     holds this round's solve", written from the round answers rather than from a score
-//     POST. STRIPPED, not translated (the v10 precedent): a sentence round the population
-//     already holds re-learns it from its next mount READ, which answers `solved: true`,
-//     and a word round already carries `submitted` for exactly that. The one cost is that
-//     an already-solved round shows no standing until that read lands.
+//     POST. STRIPPED, not translated (the v10 precedent, and the standing no-back-compat
+//     rule): a word round already carries `submitted` for exactly this, and a sentence
+//     round appended to AFTER this ships re-learns the fact from the answer that says
+//     `solved`.
+//     **A round already SOLVED before this ships does NOT recover, and never will**
+//     (corrected on review): its stored row was written by a pre-#203 append, so it carries
+//     no `solved` attribute, its mount READ answers `solved: false`, and with nothing left
+//     pending no append ever fires to derive one — so `recorded` is never set and its solved
+//     screen silently loses the standing line for good. Backfilling it server-side would be
+//     the compatibility layer this repo does not keep, and the cost is bounded to
+//     pre-launch rounds at most a day old against an archive that is wiped before launch.
 function dropRetiredScoreFields<T>(rounds: Record<string, T>): Record<string, T> {
   return Object.fromEntries(
     Object.entries(rounds).map(([key, round]) => {

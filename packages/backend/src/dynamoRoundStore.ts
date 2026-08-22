@@ -226,9 +226,22 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
       return { outcome: 'too_fast', state: stored };
     },
 
-    // The corrective write (#203; roundStore.ts states why it exists). One conditional
-    // UpdateItem, and the condition is only the puzzle's identity: a record naming a
-    // DIFFERENT one has already restarted and has nothing here to correct.
+    // The corrective write (#203; roundStore.ts states why it exists). ONE conditional
+    // UpdateItem under two clauses.
+    //
+    // The puzzle's identity: a record naming a DIFFERENT one has already restarted and has
+    // nothing here to correct.
+    //
+    // And MONOTONICITY, the same shape `solved` gets by being write-only-true. Two settles
+    // can be in flight at once (this one is behind a retry backoff, and a second device's
+    // append can land and settle inside it), and the later ARRIVAL may carry the older log:
+    // last-writer-wins would then park a lower percentage on the row for good, since a
+    // solved round takes no further append to repair it. Progress only ever RISES within one
+    // puzzle's life — a round's log only grows, and a longer log can only reach equal-or-
+    // better ranks — so refusing a write that would lower it costs nothing correct. `<=`
+    // rather than `<` so a SOLVE still lands when the percentage is already what it will be:
+    // a solved derivation is exactly 100, which is also why this clause can never refuse one
+    // (100 is the maximum a stored value can hold).
     async settle(input) {
       try {
         await client.send(
@@ -238,7 +251,11 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
             UpdateExpression: input.solved
               ? 'SET #prog = :progress, #solved = :solved'
               : 'SET #prog = :progress',
-            ConditionExpression: '#p = :puzzle',
+            // Path-only condition syntax, the append's rule: a comparator against a value is
+            // the grammar's own (`#last < :cutoff` already relies on it), where arithmetic
+            // and `if_not_exists` are not.
+            ConditionExpression:
+              '#p = :puzzle AND (attribute_not_exists(#prog) OR #prog <= :progress)',
             ExpressionAttributeNames: input.solved
               ? aliases('progress', 'solved', 'puzzle')
               : aliases('progress', 'puzzle'),
@@ -250,8 +267,9 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
           }),
         );
       } catch (error) {
-        // The round was re-published under us: there is no summary of THIS puzzle to
-        // correct, and the fresh round derives its own on its next append.
+        // Either the round was re-published under us — there is no summary of THIS puzzle
+        // to correct, and the fresh round derives its own on its next append — or a better
+        // correction already landed. Both are the right outcome, and neither is a retry.
         if ((error as { name?: string }).name !== 'ConditionalCheckFailedException') throw error;
       }
     },

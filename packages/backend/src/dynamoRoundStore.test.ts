@@ -697,7 +697,7 @@ describe('dynamoRoundStore — the derived summary (#203)', () => {
     expect(replace.input.UpdateExpression).toContain('REMOVE #solved');
   });
 
-  it('the corrective write is ONE conditional update, and only the puzzle identity gates it', async () => {
+  it('the corrective write is ONE conditional update, gated on the puzzle identity', async () => {
     const send = vi.fn(async (_command: unknown) => ({}));
     const { store } = makeStore(send);
     await store.settle({ ...KEY, publicId: PUBLIC_ID, puzzle: PUZZLE, progress: 100, solved: true });
@@ -705,7 +705,9 @@ describe('dynamoRoundStore — the derived summary (#203)', () => {
     expect(send).toHaveBeenCalledTimes(1);
     const command = send.mock.calls[0][0] as UpdateItemCommand;
     expect(command.input.UpdateExpression).toBe('SET #prog = :progress, #solved = :solved');
-    expect(command.input.ConditionExpression).toBe('#p = :puzzle');
+    // A record naming a DIFFERENT puzzle has already restarted and has nothing here to
+    // correct. (The monotonicity clause beside it has its own suite below.)
+    expect(command.input.ConditionExpression).toContain('#p = :puzzle');
     expectConditionSyntax(command.input.ConditionExpression);
   });
 
@@ -750,5 +752,65 @@ describe('dynamoRoundStore — the derived summary (#203)', () => {
     expect((send.mock.calls[0][0] as GetItemCommand).input.ConsistentRead).toBe(false);
     await store.get(KEY, PUBLIC_ID, PUZZLE);
     expect((send.mock.calls[1][0] as GetItemCommand).input.ConsistentRead).toBe(true);
+  });
+});
+
+// CONTRACT (#203, tightened on review): `progress` is written UPWARD only. Two settles can
+// be in flight at once — the corrective write sits behind a retry backoff, and another
+// device's append can land and settle inside it — so the later ARRIVAL may carry the older
+// log. Last-writer-wins would park a lower percentage on the row for good, since a solved
+// round takes no further append to repair it.
+describe('dynamoRoundStore — the corrective write is MONOTONIC (#203)', () => {
+  const settle = (progress: number, solved: boolean) => ({
+    ...KEY,
+    publicId: PUBLIC_ID,
+    puzzle: PUZZLE,
+    progress,
+    solved,
+  });
+
+  it('guards the write with a comparison the CONDITION grammar actually has', async () => {
+    const send = vi.fn(async (_command: unknown) => ({}));
+    const { store } = makeStore(send);
+    await store.settle(settle(60, false));
+
+    const command = send.mock.calls[0][0] as UpdateItemCommand;
+    expect(command.input.ConditionExpression).toBe(
+      '#p = :puzzle AND (attribute_not_exists(#prog) OR #prog <= :progress)',
+    );
+    // A comparator against a value is the grammar's own (`#last < :cutoff` relies on it);
+    // arithmetic and `if_not_exists` are what it does not have.
+    expectConditionSyntax(command.input.ConditionExpression);
+  });
+
+  it('lets the FIRST correction through on a row that has no progress yet', async () => {
+    const send = vi.fn(async (_command: unknown) => ({}));
+    const { store } = makeStore(send);
+    await store.settle(settle(60, false));
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('is `<=` so a SOLVE still lands when the percentage is already what it will be', async () => {
+    // A solved derivation is exactly 100, which is also the maximum a stored value can
+    // hold — so this clause can never refuse a solve, only a lowering correction.
+    const send = vi.fn(async (_command: unknown) => ({}));
+    const { store } = makeStore(send);
+    await store.settle(settle(100, true));
+    const command = send.mock.calls[0][0] as UpdateItemCommand;
+    expect(command.input.ExpressionAttributeValues![':progress']).toEqual({ N: '100' });
+    expect(command.input.UpdateExpression).toContain('#solved = :solved');
+  });
+
+  it('swallows the refusal: a better correction landing first is the right outcome', async () => {
+    const send = vi.fn(async (_command: unknown) => {
+      throw new ConditionalCheckFailedException({
+        $metadata: {},
+        message: 'The conditional request failed',
+      });
+    });
+    const { store } = makeStore(send);
+    // Indistinguishable from a republish, and neither is a retry — the row already holds
+    // something at least as true as what this write carried.
+    await expect(store.settle(settle(60, false))).resolves.toBeUndefined();
   });
 });

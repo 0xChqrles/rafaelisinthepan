@@ -338,7 +338,12 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   the condition it already sends. A missing slice is the day-addressed 404; the READ path
   loads none, so a mount read stays as cheap as it was. After the append, `settleAppend`
   re-derives from the RETURNED log and, on a disagreement, calls `roundStore.settle` behind
-  a small bounded RETRY (it is the last chance to record a solve). A truth that reads SOLVED
+  a small bounded RETRY (it is the last chance to record a solve). That write is MONOTONIC
+  in `progress` — one comparison clause on its condition, mirrored by the memory store, so a
+  settle delayed past a better one is refused rather than parking a stale percentage.
+  `parseSlice` checks the rank VALUES too, not only the field shapes, and `encodeSlice` runs
+  it before writing: a malformed puzzle then fails loudly at PUBLISH instead of shipping a
+  day whose every append answers the day-addressed 404. A truth that reads SOLVED
   then records the day's score row — `countTries` over the FULL artifact (`loadPuzzle`), the
   one thing the slice cannot answer — and that write's failures are LOGGED, never surfaced:
   the answer is about the log. `puzzleCache.ts` is module state and therefore a test seam

@@ -673,6 +673,13 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   consistent read behaves identically, since both reads still precede both writes. The
   append returns the merged truth (`ReturnValues: ALL_NEW`), so: **after it returns, derive
   again from the RETURNED log, and when it disagrees issue one small conditional write.**
+  **That write raises `progress` and never lowers it** (added on review), the shape `solved`
+  gets from being write-only-true: two settles can be in flight at once — this one sits
+  behind a retry backoff, and another device's append can land and settle inside it — so the
+  later ARRIVAL may carry the older log, and last-writer-wins would park a lower percentage
+  on the row for good, since a solved round takes no further append to repair it. Progress
+  only rises within one puzzle's life, so refusing a lowering write costs nothing correct,
+  and a solve is never refused by it (a solved derivation is exactly 100).
   The pre-read STAYS — it is what supplies values to write in the same operation, which is
   what holds this at one read plus one write; the returned item is a VERIFICATION, not a
   replacement. **That corrective write is the LAST chance to record the solve, so it is

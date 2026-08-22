@@ -115,10 +115,12 @@ export function memoryRoundStore(): RoundStore {
 
     // The corrective write (#203): the summary derived from the log the append actually
     // produced. A record naming a different puzzle has already restarted and has nothing
-    // here to correct.
+    // here to correct, and progress only ever RISES — the Dynamo store's monotonicity
+    // clause, restated here so both backends refuse the same stale correction.
     async settle(input) {
       const item = rounds.get(itemKey(input, input.publicId));
       if (!item || item.puzzle !== input.puzzle) return;
+      if (item.progress !== undefined && item.progress > input.progress) return;
       item.progress = input.progress;
       if (input.solved) item.solved = true;
     },

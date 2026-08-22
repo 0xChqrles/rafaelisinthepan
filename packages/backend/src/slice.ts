@@ -108,6 +108,14 @@ export function deriveRound(slice: PuzzleSlice, guesses: readonly string[]): Rou
 // Runtime shape check for a slice read back out of the store — the `parsePuzzle` contract:
 // a truncated or wrong-shaped object must surface as a failure, never as a round that
 // silently derives 0% and never solves.
+//
+// It checks the VALUES too, not only the field shapes (tightened on review, where the
+// comment above promised more than the code did). The two silent readings it exists to make
+// unreachable are exactly the ones a partial object produces: an EMPTY `holes` map, which
+// `deriveRound` answers `{progress: 0, solved: false}` for every log forever, and a
+// non-numeric rank, which compares false against every `best` and makes a reachable secret
+// permanently unreachable. Neither is expensive to rule out — the walk is over the same
+// keys `deriveRound` reads, on an object that parses in half a millisecond.
 export function parseSlice(data: unknown): PuzzleSlice {
   if (typeof data !== 'object' || data === null || Array.isArray(data)) {
     throw new Error('malformed slice: not an object');
@@ -116,6 +124,11 @@ export function parseSlice(data: unknown): PuzzleSlice {
   if (typeof lang !== 'string') throw new Error('malformed slice: missing "lang"');
   if (typeof holes !== 'object' || holes === null || Array.isArray(holes)) {
     throw new Error('malformed slice: "holes" must be an object');
+  }
+  // A sentence puzzle always has holes, so an empty map is a truncated slice, not a
+  // puzzle with nothing to solve.
+  if (Object.keys(holes as object).length === 0) {
+    throw new Error('malformed slice: "holes" is empty');
   }
   for (const hole of Object.values(holes as Record<string, unknown>)) {
     const h = hole as { n?: unknown; startRank?: unknown; ranks?: unknown };
@@ -127,9 +140,17 @@ export function parseSlice(data: unknown): PuzzleSlice {
       !Number.isInteger(h.startRank) ||
       h.startRank < 0 ||
       typeof h.ranks !== 'object' ||
-      h.ranks === null
+      h.ranks === null ||
+      Array.isArray(h.ranks)
     ) {
       throw new Error('malformed slice: bad hole entry');
+    }
+    for (const rank of Object.values(h.ranks as Record<string, unknown>)) {
+      // Non-negative, like every rank in the schema, and no farther than the start —
+      // a key beyond it cannot move this hole and has no business in the slice.
+      if (typeof rank !== 'number' || !Number.isInteger(rank) || rank < 0 || rank > h.startRank) {
+        throw new Error('malformed slice: bad rank in a hole');
+      }
     }
   }
   return data as PuzzleSlice;
@@ -137,8 +158,12 @@ export function parseSlice(data: unknown): PuzzleSlice {
 
 // The slice travels and rests GZIPPED — the writer and both readers share one codec, so a
 // stored object can never be encoded one way and read another.
+//
+// It VALIDATES what it is about to write, so the codec can never encode a slice the reader
+// would refuse: a malformed puzzle then fails LOUDLY at publish, where a person is watching,
+// instead of shipping a day whose every append answers the day-addressed 404.
 export function encodeSlice(slice: PuzzleSlice): Buffer {
-  return gzipSync(Buffer.from(JSON.stringify(slice), 'utf8'));
+  return gzipSync(Buffer.from(JSON.stringify(parseSlice(slice)), 'utf8'));
 }
 
 export function decodeSlice(bytes: Uint8Array): PuzzleSlice {

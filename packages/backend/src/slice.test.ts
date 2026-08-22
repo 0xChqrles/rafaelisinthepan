@@ -145,4 +145,32 @@ describe('the stored form — one codec, and a refusal for anything else', () =>
       parseSlice({ lang: 'fr', holes: { a: { n: 4, startRank: -1, ranks: {} } } }),
     ).toThrow(/hole entry/);
   });
+
+  // The two SILENT readings a partial object produces are what the refusal is for, so they
+  // are named rather than left to the shape checks above (tightened on review, where the
+  // comment promised more than the code did).
+  it('refuses an EMPTY holes map — it would answer 0% and never solve, for every log', () => {
+    expect(() => parseSlice({ lang: 'fr', holes: {} })).toThrow(/empty/);
+  });
+
+  it('refuses a non-numeric or out-of-range rank — it would hide a reachable secret', () => {
+    const withRank = (rank: unknown) => ({
+      lang: 'fr',
+      holes: { phare: { n: 4, startRank: 2, ranks: { mer: rank } } },
+    });
+    // A string compares false against every `best`, so the secret becomes unreachable
+    // while everything else looks fine.
+    expect(() => parseSlice(withRank('1'))).toThrow(/bad rank/);
+    expect(() => parseSlice(withRank(-1))).toThrow(/bad rank/);
+    expect(() => parseSlice(withRank(1.5))).toThrow(/bad rank/);
+    // And a rank beyond the start cannot move this hole, so it has no business here.
+    expect(() => parseSlice(withRank(9))).toThrow(/bad rank/);
+    expect(parseSlice(withRank(1))).toBeTruthy();
+  });
+
+  it('VALIDATES what it encodes, so a malformed puzzle fails at PUBLISH, not at every append', () => {
+    // A day whose slice the reader refuses answers the day-addressed 404 on every append.
+    // Failing here puts that in front of a person instead.
+    expect(() => encodeSlice({ lang: 'fr', holes: {} })).toThrow(/empty/);
+  });
 });

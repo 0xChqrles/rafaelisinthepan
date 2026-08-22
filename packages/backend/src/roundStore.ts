@@ -161,6 +161,14 @@ export interface RoundStore {
   // forgotten: once a puzzle is solved the player stops guessing, so no later append will
   // come along to notice the omission. A record naming a different puzzle has nothing to
   // correct and is left alone.
+  //
+  // **`progress` is written UPWARD only**, the shape `solved` gets from being write-only-
+  // true. Two settles can be in flight at once — this one sits behind a retry backoff, and
+  // another device's append can land and settle inside it — so the later ARRIVAL may carry
+  // the older log, and last-writer-wins would park a lower percentage on the row for good
+  // (a solved round takes no further append to repair it). Progress only ever rises within
+  // one puzzle's life, so refusing a lowering write costs nothing correct; a solve is never
+  // refused by it, since a solved derivation is exactly 100.
   settle(input: RoundSettleInput): Promise<void>;
   // WORD mode's two writes (#202) — the mode streams nothing, because what syncing buys is
   // the live friends board and a 60-second run is over before anyone opens it.
