@@ -565,9 +565,10 @@ function WordRound({
                 <div className="coach-rules" aria-hidden="true">
                   <CoachText copy={gateRules} />
                 </div>
-                {/* A failed start is LOUD, unlike a score submission's: the clock is the
-                    server's, so nothing began — and saying nothing would leave the player
-                    tapping a gate that never opens. PLAY itself is the retry. */}
+                {/* A failed start is LOUD, unlike sentence mode's background sync: the
+                    clock is the server's, so nothing began — and saying nothing would
+                    leave the player tapping a gate that never opens. PLAY itself is the
+                    retry. */}
                 {startFailed && <p className="status error">{t(lang, 'failedStart')}</p>}
                 <button
                   type="button"

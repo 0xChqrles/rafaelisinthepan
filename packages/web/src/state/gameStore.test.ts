@@ -5,9 +5,9 @@
 //     MAX_DAY_ROUNDS most-recent cap (oldest day rounds evicted beyond it);
 //   - switching LANGUAGE keeps BOTH rounds — coming back restores the in-progress one
 //     (drives the language selector's per-language status + no-confirmation switching);
-//   - the SAME key rehydrates the stored progress untouched (mid-round reload) — UNLESS
-//     the puzzle was re-published with a different sentence (holes no longer match), in
-//     which case the round resets so stale holes never reach scoring;
+//   - the SAME key + published revision rehydrates stored progress untouched (mid-round
+//     reload); a new revision resets even when only the rank maps changed, while the hole
+//     check remains a structural safety floor;
 //   - score = number of UNIQUE valid tries, deduped by folded slug;
 //   - an improved hole swaps in the closer word + lower rank; solved holes stay locked;
 //   - progress is cached per round for the selector badge;

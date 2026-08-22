@@ -15,7 +15,7 @@ import {
 } from './respond';
 
 describe('CORS headers', () => {
-  it('permits the payload hash required by CloudFront OAC for score POSTs', () => {
+  it('permits the payload hash required by CloudFront OAC for live POSTs', () => {
     expect(corsHeaders('https://whippin.ai')['Access-Control-Allow-Headers']).toContain(
       'X-Amz-Content-Sha256',
     );

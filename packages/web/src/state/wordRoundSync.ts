@@ -42,8 +42,8 @@ export interface WordRoundContext {
   roundKey: string;
   lang: string;
   date: string;
-  // The day's word slug — this daily's puzzle identity, the way the hole signature is the
-  // sentence's. A republished different word restarts the round on both ends.
+  // The day's word slug — this daily's puzzle identity (sentence mode instead forwards its
+  // published revision). A republished different word restarts the round on both ends.
   word: string;
   ranks: WordRanks;
   // The existence set's size: what a claim's seconds are priced against (#163), and

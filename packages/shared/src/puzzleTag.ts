@@ -5,9 +5,10 @@
 // the log and only ever compares it for equality, and a read for a different tag is an
 // honest "nothing stored for this one".
 //
-// The SENTENCE daily's tag is the published puzzle's own `revision` (#203) — a version
-// stamped by `puzzle:publish`, which is the only thing that can tell a corrected puzzle from
-// the one it replaces when the sentence itself has not changed. It needs no encoding here.
+// The SENTENCE daily's tag is the published puzzle's own `revision` (#203) — a hash of its
+// complete content, rank maps included, stamped by `puzzle:publish`. It can therefore tell a
+// corrected puzzle from the one it replaces when the sentence itself has not changed and
+// needs no encoding here.
 // What remains is Word mode's, which is still derived from the day's word.
 //
 // FNV-1a, base 36, so any signature becomes a handful of characters that fit the wire shape.

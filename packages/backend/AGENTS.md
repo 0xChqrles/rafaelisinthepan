@@ -97,16 +97,18 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   authenticates, verifies Turnstile, validates a range or hashes an address —
   `hashClientIp` stays here beside the store contract, but its caller is `rounds.ts`.
   It still reads the published puzzle, so an unpublished daily 404s rather than getting an
-  empty population. `dynamoScoreStore` writes ONE transaction — the conditional
-  5-count/48h-TTL dedup update plus the first-write-wins conditional put of the
-  `(date, lang, mode, publicId)` row — using a hash of the ROW's own key as DynamoDB's
-  idempotency token (#203: the retired POST hashed its one-use Turnstile token, which this
-  write does not have; the row is unique per daily and per player, so its key is a better
-  one). A second submission from the same player is `already_recorded`: nothing changes and
-  no allowance is consumed. The sixth distinct-player write per IP is a no-mutation refusal
-  the round route LOGS and swallows — the guesses are stored and the answer is about the
-  LOG, so a population that could not be written is a missing standing, never a refused
-  append. Local serve swaps in `memoryScoreStore`, a random per-process HMAC key and
+  empty population. `dynamoScoreStore` creates a row with ONE transaction — the conditional
+  5-count/48h-TTL dedup update plus a create-only put of the `(date, lang, mode, publicId)`
+  row. The row and its idempotency token both carry the published `revision`: a second
+  submission on that version is `already_recorded`, while a different revision conditionally
+  replaces the SAME row in a one-item transaction and consumes no new IP allowance. The
+  sixth distinct-player write per IP is a no-mutation refusal, but it cannot block that
+  replacement because the population still contains one player. The round route LOGS and
+  swallows a genuine cap — the guesses are stored and the answer is about the LOG, so a
+  population that could not be written is a missing standing, never a refused append. Per
+  the root contract, population reads deliberately retain an old-version row until that
+  player solves the correction. Local serve swaps in `memoryScoreStore`, a random
+  per-process HMAC key and
   `localTurnstileVerifier`; restart clears local scores. Production config requires
   `SCORE_TABLE`, `TURNSTILE_SECRET_PARAMETER`, and `IP_HMAC_SECRET_PARAMETER` in addition
   to the puzzle settings. On first use, `index.ts` resolves both SecureStrings with ONE
@@ -132,7 +134,7 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   hand a player the profile they just replaced — or, after a first save, a 404 saying
   they never customized one. No Turnstile, no IP dedup: the secret is the auth and
   the only row you can write is your own. Production POST needs `x-amz-content-sha256`
-  like the score POST (same OAC boundary); the `id` query must stay in the CloudFront
+  like every live JSON write (same OAC boundary); the `id` query must stay in the CloudFront
   profile behavior's allowList (root `AGENTS.md` contract).
 
 - **Invite link preview (#189, user-decided 2026-08-20):** the ONE handler also serves the
@@ -332,7 +334,7 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   score stops being claimed, the slice, the loading rule, the freeze, the corrective write,
   the sort-key reorder) lives in the root `AGENTS.md`. Implementation notes: an APPEND now
   fires `rounds.get(..., { consistent: false })` and `loadSlice` CONCURRENTLY — neither
-  depends on the other, so a cache miss hides inside a round trip already being paid for —
+  depends on the other, so the slice fetch hides inside a round trip already being paid for —
   derives from *(stored log + batch)*, and hands the two values to `append`, which writes
   them in its own mutation and carries `attribute_not_exists(#solved)` as a fourth clause of
   the condition it already sends. A missing slice is the day-addressed 404; the READ path
@@ -343,14 +345,14 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   settle delayed past a better one is refused rather than parking a stale percentage.
   `parseSlice` checks the rank VALUES too, not only the field shapes, and `encodeSlice` runs
   it before writing: a malformed puzzle then fails loudly at PUBLISH instead of shipping a
-  day whose every append answers the day-addressed 404. **NEITHER artifact is cached** — the full one because the
-  score it feeds is a permanent first-write-wins row, the slice because a cache had no way to
-  notice a correction until the version below existed (it would be safe to reinstate keyed by
-  it; fresh is simply cheap enough not to need one). **`publish` stamps a `revision`** on the
-  puzzle and its slice — a hash of the puzzle's own content, so an identical republish is a
-  no-op — and `loadSlice`/`loadPuzzle` refuse anything that does not name the version the
-  caller sent. Publish writes the slice FIRST so the puzzle's appearance implies its slice is
-  there. **A corrective write that does not land is not claimed** — `settle` REPORTS whether
+  day whose every append answers the day-addressed 404. **NEITHER artifact is cached.** The
+  published revision now makes a revision-keyed cache correct, but fresh remains simpler and
+  cheap: the small slice fetch overlaps the round read, and the full artifact is loaded only
+  on solve. **`publish` stamps a `revision`** on the puzzle and its slice — a hash of the
+  complete puzzle content, rank maps included, so an identical republish is a no-op — and
+  `loadSlice`/`loadPuzzle` refuse anything that does not name the version the caller sent.
+  Publish writes the slice FIRST; the shared revision makes the two-object window fail closed
+  as a 404 rather than mixing their contents. **A corrective write that does not land is not claimed** — `settle` REPORTS whether
   the state it asked for is now the stored one, so a declined condition (a concurrent
   republish) is a verdict rather than a success: the answer carries the state as stored, no
   score row is written, and the client keeps its conversation open. **A missing round is CONFIRMED consistently** before

@@ -115,7 +115,7 @@ describe('dynamoScoreStore (#187)', () => {
     expect(middle).toEqual([25, 50, 100, 200]);
   });
 
-  it('atomically writes the capped dedup item and the first-write-wins row in one transaction', async () => {
+  it('atomically spends the allowance only when it creates a player row', async () => {
     const send = vi.fn(async (_command: unknown) => ({}));
     const store = dynamoScoreStore({ send } as unknown as DynamoDBClient, 'scores');
     await expect(store.submit(SUBMISSION)).resolves.toBe('recorded');
@@ -148,29 +148,126 @@ describe('dynamoScoreStore (#187)', () => {
         // version, so a corrected puzzle's score is not blocked by the retired one's.
         revision: { S: SUBMISSION.revision },
       },
-      ConditionExpression:
-        'attribute_not_exists(pk) OR attribute_not_exists(#rev) OR #rev <> :revision',
+      ConditionExpression: 'attribute_not_exists(pk)',
+      ReturnValuesOnConditionCheckFailure: 'ALL_OLD',
     });
   });
 
-  it('maps each condition failure to its outcome and rethrows operational cancellations', async () => {
-    const outcomes: Array<[reasons: { Code?: string }[], expected: string]> = [
-      // The IP allowance is exhausted; the row condition never evaluated against a row.
-      [[{ Code: 'ConditionalCheckFailed' }, { Code: 'None' }], 'capped'],
-      // The player already has a row: first write wins, no allowance consumed.
-      [[{ Code: 'None' }, { Code: 'ConditionalCheckFailed' }], 'already_recorded'],
-      // Both failed: the existing row is the truer, idempotent answer.
-      [[{ Code: 'ConditionalCheckFailed' }, { Code: 'ConditionalCheckFailed' }], 'already_recorded'],
-    ];
-    for (const [reasons, expected] of outcomes) {
-      const send = vi.fn(async () => {
-        throw { name: 'TransactionCanceledException', CancellationReasons: reasons };
-      });
-      await expect(
-        dynamoScoreStore({ send } as unknown as DynamoDBClient, 'scores').submit(SUBMISSION),
-      ).resolves.toBe(expected);
-    }
+  it('replaces a retired revision without spending a capped allowance', async () => {
+    let call = 0;
+    const send = vi.fn(async (_command: unknown) => {
+      call += 1;
+      if (call === 1) {
+        throw {
+          name: 'TransactionCanceledException',
+          CancellationReasons: [
+            { Code: 'ConditionalCheckFailed' },
+            {
+              Code: 'ConditionalCheckFailed',
+              Item: {
+                pk: { S: 'score#2026-08-13#fr#word' },
+                sk: { S: SUBMISSION.publicId },
+                revision: { S: 'retired-revision' },
+              },
+            },
+          ],
+        };
+      }
+      return {};
+    });
+    const store = dynamoScoreStore({ send } as unknown as DynamoDBClient, 'scores');
+    await expect(store.submit(SUBMISSION)).resolves.toBe('recorded');
+    expect(send).toHaveBeenCalledTimes(2);
 
+    const create = send.mock.calls[0][0] as TransactWriteItemsCommand;
+    const replacement = send.mock.calls[1][0] as TransactWriteItemsCommand;
+    expect(replacement).toBeInstanceOf(TransactWriteItemsCommand);
+    expect(replacement.input.ClientRequestToken).not.toBe(create.input.ClientRequestToken);
+    expect(replacement.input.ClientRequestToken).toHaveLength(36);
+    expect(replacement.input.TransactItems).toHaveLength(1);
+    expect(replacement.input.TransactItems?.[0].Put).toMatchObject({
+      Item: {
+        score: { N: '12' },
+        revision: { S: SUBMISSION.revision },
+      },
+      ConditionExpression:
+        'attribute_exists(pk) AND (attribute_not_exists(#rev) OR #rev <> :revision)',
+      ExpressionAttributeValues: { ':revision': { S: SUBMISSION.revision } },
+    });
+    // The replacement transaction contains no dedup update: the population still has
+    // exactly one row for this player.
+    expect(replacement.input.TransactItems?.[0].Update).toBeUndefined();
+  });
+
+  it('keeps a replacement idempotent when another request writes it first', async () => {
+    let call = 0;
+    const send = vi.fn(async (_command: unknown) => {
+      call += 1;
+      if (call === 1) {
+        throw {
+          name: 'TransactionCanceledException',
+          CancellationReasons: [
+            { Code: 'None' },
+            {
+              Code: 'ConditionalCheckFailed',
+              Item: {
+                pk: { S: 'score#2026-08-13#fr#word' },
+                sk: { S: SUBMISSION.publicId },
+              },
+            },
+          ],
+        };
+      }
+      throw {
+        name: 'TransactionCanceledException',
+        CancellationReasons: [{ Code: 'ConditionalCheckFailed' }],
+      };
+    });
+    const store = dynamoScoreStore({ send } as unknown as DynamoDBClient, 'scores');
+    // A concurrent request wrote this version between create and replacement. This one
+    // changes no row and spends no allowance.
+    await expect(store.submit(SUBMISSION)).resolves.toBe('already_recorded');
+    const replacement = send.mock.calls[1][0] as TransactWriteItemsCommand;
+    expect(replacement.input.TransactItems?.[0].Put).toMatchObject({
+      ConditionExpression:
+        'attribute_exists(pk) AND (attribute_not_exists(#rev) OR #rev <> :revision)',
+      ExpressionAttributeValues: { ':revision': { S: SUBMISSION.revision } },
+    });
+  });
+
+  it('maps same-version and cap failures without mutating either item', async () => {
+    const sameVersion = vi.fn(async () => {
+      throw {
+        name: 'TransactionCanceledException',
+        CancellationReasons: [
+          { Code: 'ConditionalCheckFailed' },
+          {
+            Code: 'ConditionalCheckFailed',
+            Item: { revision: { S: SUBMISSION.revision } },
+          },
+        ],
+      };
+    });
+    await expect(
+      dynamoScoreStore({ send: sameVersion } as unknown as DynamoDBClient, 'scores').submit(
+        SUBMISSION,
+      ),
+    ).resolves.toBe('already_recorded');
+    expect(sameVersion).toHaveBeenCalledTimes(1);
+
+    const capped = vi.fn(async () => {
+      throw {
+        name: 'TransactionCanceledException',
+        CancellationReasons: [{ Code: 'ConditionalCheckFailed' }, { Code: 'None' }],
+      };
+    });
+    await expect(
+      dynamoScoreStore({ send: capped } as unknown as DynamoDBClient, 'scores').submit(SUBMISSION),
+    ).resolves.toBe('capped');
+    expect(capped).toHaveBeenCalledTimes(1);
+  });
+
+  it('rethrows operational cancellations', async () => {
     const conflict = new Error('transaction conflict');
     Object.assign(conflict, {
       name: 'TransactionCanceledException',

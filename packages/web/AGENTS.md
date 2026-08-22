@@ -411,10 +411,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   one `adoptRound` write — the merged log, the replayed holes AND their `progress`, since
   `syncProgress` can only ever repair the ACTIVE round and an adoption routinely lands
   after the player has navigated away (that day's archive cell would keep painting a stale
-  fill until they reopened exactly it). Every call also carries the `puzzleTag` of the
-  holes it is about, which is what lets a re-published sentence restart the server's log
-  instead of inheriting it (root `AGENTS.md`) — and **every ANSWER is checked back against
-  the tag that asked for it**. A flight is MUTATED in place on re-registration, so a
+  fill until they reopened exactly it). Every call also carries the puzzle's published
+  `revision` — a content hash that covers its rank maps, not a tag derived from the holes —
+  which is what lets any real republish restart the server's log instead of inheriting it
+  (root `AGENTS.md`). **Every ANSWER is checked back against the revision that asked for
+  it.** A flight is MUTATED in place on re-registration, so a
   republish landing while a request is in the air would otherwise apply the retired
   puzzle's log using the corrected puzzle's ranks and holes: the tag's purpose defeated
   from the inside. A superseded answer writes nothing — not its log, not its cap, not its
@@ -441,19 +442,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
   leaderboard entry of a round that was never full. When it IS full the flag is persisted
   (`RoundProgress.capped`, READ on every mount so a reload does not re-open a settled
   round) and the conversation closes: play continues
-  locally but the solved screen suppresses the score SUBMISSION — `canSubmit: !overCap`,
-  where `overCap` also covers local offline play that outgrew any server's cap. It
-  suppresses the POST alone (`game/scores.ts` `shouldAskPopulation`): a round the population
-  already holds keeps reading its standing, since a client flag must not hide what the
-  population itself answered. `canSubmit` is read at LAUNCH time (a ref, like
-  `recordedScore`) rather than depended on: a round can be capped by a lagging flush while
-  its own score POST is still in the air, and tearing the effect down there cancelled the
-  answer to a request about to succeed — with nothing left to re-open it, since
-  `markRecorded`'s write is deliberately not a dependency either. **An ADOPTED solve is not a fresh solve** — `Game` claims the
+  locally but can never become server-recorded. There is no client score submission since
+  #203: `useScoreHistogram` launches its population READ only when the server's `solved`
+  answer has persisted `RoundProgress.recorded`, so capped/offline-only play has no row to
+  claim and asks for no standing. A round already marked recorded still reads the
+  population; a later local flag cannot hide a row the server demonstrably holds.
+  **An ADOPTED solve is not a fresh solve** — `Game` claims the
   solved beats at submit time (`solvedByPlay`), so a second tab finishing the board under
   this one replays no celebration and fires no second `solve` event. `RoundSyncContext.mode`
   stays TYPED `'sentence'`: Word mode got its OWN conversation (below) rather than a widened
   one, because the two shapes share only the transport.
+  A changed revision resets the local board too, while an unstamped pre-deploy round with
+  matching holes is adopted and stamped in place. The reset deliberately leaves
+  `solvedDays` alone: a republish is the publisher's error, streak credit rewards showing
+  up, and `recordSolve` prevents the corrected version from claiming the day twice.
 
 - **Derived scores (#203):** the sync engine gained two jobs. (1) ROUND CREATION carries a
   Turnstile challenge — the sentence round has no START message, so the token rides the

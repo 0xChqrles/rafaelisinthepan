@@ -46,7 +46,7 @@ export interface RoundProgress {
   // existed, which is adopted rather than reset — the puzzle itself has not changed there.
   revision?: string;
   // The server refused further appends at the guess cap (#201): the round keeps playing
-  // locally but has STOPPED COUNTING — it must never submit a score, so no leaderboard
+  // locally but has STOPPED COUNTING. It never becomes server-recorded, so no leaderboard
   // entry can exist for it. Set only by the sync engine on the server's round_full
   // refusal; never cleared (a capped round stays capped).
   capped?: boolean;
@@ -296,9 +296,9 @@ interface GameState extends PersistedState {
   // (for example when a re-published puzzle reset the round but not the solved-day fact).
   recordSolve: (lang: string, solvedDay: number, activeDay: number) => boolean;
 
-  // Reconcile the persisted rounds to `key`. A matching key with matching holes
-  // rehydrates its stored progress; a brand-new key — or the same key whose puzzle was
-  // re-published with a different sentence — starts fresh from `initialHoles`. Keeps
+  // Reconcile the persisted rounds to `key`. A matching published revision with matching
+  // holes rehydrates its stored progress; a brand-new key — or the same key under a new
+  // published revision — starts fresh from `initialHoles`. Keeps
   // every day round (the archive needs history), drops any legacy non-day round, then
   // bounds the map with the MAX_DAY_ROUNDS most-recent cap.
   ensureRound: (key: string, initialHoles: RuntimeHole[], revision: string) => void;
@@ -362,7 +362,7 @@ interface GameState extends PersistedState {
   adoptRound: (key: string, tried: string[], holes: RuntimeHole[], progress: number) => void;
 
   // Mark the active-keyed round CAPPED (#201): the server refused further appends at
-  // ROUND_GUESS_CAP, so the round stops counting and must never submit a score.
+  // ROUND_GUESS_CAP, so the round stops counting and never becomes server-recorded.
   markRoundCapped: (key: string) => void;
 
   // A warm hit improved a hole on the active round: swap in its closer (accented)

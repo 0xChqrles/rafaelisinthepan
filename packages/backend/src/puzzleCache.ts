@@ -9,8 +9,8 @@
 // in the system was the SENTENCE's hole layout, nothing could tell a cached artifact from a
 // corrected one — and since rank 0 is a GROUP (79 of 151 hole occurrences in the local fr
 // store carry more than one rank-0 key, worst 27), a correction moves exactly the aliases
-// that decide `solved`. A stale slice then produced a frozen round and a permanent score for
-// a puzzle nobody solved, or silently swallowed a real solve, with nothing to correct either.
+// that decide `solved`. A stale slice then froze a round and recorded a score for a puzzle
+// nobody solved, or silently swallowed a real solve, with nothing to correct either.
 //
 // The published `revision` (#203, user-decided 2026-08-22) would now make a cache safe — a
 // version's content never changes, so an entry keyed by it can never go stale. It stays gone

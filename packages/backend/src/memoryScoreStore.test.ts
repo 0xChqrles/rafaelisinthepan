@@ -193,4 +193,36 @@ describe('first-write-wins is per VERSION (#203)', () => {
     await submit(store, 1, 'b2c3d4e5f6071829');
     expect(await store.list(KEY)).toHaveLength(1);
   });
+
+  it('replaces at an exhausted IP allowance without consuming another slot', async () => {
+    const store = memoryScoreStore(() => new Date(100_000_000), 1);
+    await expect(store.submit(submission({ score: 4, requestToken: 'old' }))).resolves.toBe(
+      'recorded',
+    );
+
+    // The one allowed population row already exists. A correction changes that row; it
+    // does not add a player and therefore must not ask the allowance for a second slot.
+    await expect(
+      store.submit(
+        submission({
+          score: 3,
+          revision: 'b2c3d4e5f6071829',
+          requestToken: 'corrected',
+        }),
+      ),
+    ).resolves.toBe('recorded');
+    await expect(
+      store.submit(
+        submission({
+          score: 2,
+          revision: 'b2c3d4e5f6071829',
+          requestToken: 'same-version',
+        }),
+      ),
+    ).resolves.toBe('already_recorded');
+    await expect(
+      store.submit(submission({ publicId: 'player-b', requestToken: 'new-player' })),
+    ).resolves.toBe('capped');
+    expect(await store.list(KEY)).toEqual([{ publicId: 'player-a', score: 3 }]);
+  });
 });

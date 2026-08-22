@@ -153,8 +153,8 @@ function makeHandler(
     advance(ms: number) {
       current += ms;
     },
-    // A republish under a LIVE handler — the artifact cache is deliberately NOT reset, so
-    // what the tests exercise is the cache noticing the revision changed under it.
+    // A republish under a LIVE handler. Artifact reads are fresh, so later requests must see
+    // the new revision without resetting any process-local state.
     republish(puzzle: Puzzle) {
       sentence.current = puzzle;
     },
@@ -1029,7 +1029,7 @@ describe('what the answer is allowed to claim (#203)', () => {
 // CONTRACT (#203, added on review): a corrective write that is DECLINED is not a write that
 // landed. A concurrent republish makes the record name another puzzle, the store's condition
 // refuses, and swallowing that as success claimed a solve the record never took — recording
-// a permanent score row beside it.
+// a score row beside it.
 describe('a declined corrective write is not a solve (#203)', () => {
   it('does not claim a solve the store refused, and records no score', async () => {
     const store = memoryRoundStore();

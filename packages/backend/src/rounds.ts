@@ -489,9 +489,9 @@ async function settleAppend(
   // log rather than on what this caller derived: in the two-device race the solve exists
   // only in the union, and the write that lands second is the one that sees it.
   //
-  // Gated on the solve being STORED, not merely derived: a score row is first-write-wins and
-  // permanent, so recording one beside a round row that says unsolved would put the two
-  // stores into exactly the disagreement this design keeps out of them.
+  // Gated on the solve being STORED, not merely derived: within this published version the
+  // score is first-write-wins, so recording one beside a round row that says unsolved would
+  // put the two stores into exactly the disagreement this design keeps out of them.
   //
   // Recording it is the last thing the append does, so the answer the client adopts is never
   // ahead of the population it is about to read.
@@ -504,7 +504,8 @@ async function settleAppend(
 // THE SCORE, derived rather than claimed (#203). It counts UNIQUE tries, and `guessKey`
 // dedups on a guess's rank in EVERY map — so this is the one thing the slice cannot answer
 // and the full artifact has to be loaded for. It happens ONCE per round, and the artifact is
-// read FRESH: what it produces is a first-write-wins row nobody revisits (puzzleCache.ts).
+// read FRESH. A corrected published version starts a new round and replaces this player's
+// retired-version score row (puzzleCache.ts).
 //
 // Every failure here is SILENT to the caller. The guesses are stored, the round is settled,
 // and the answer is about the LOG; a population that could not be written is a missing

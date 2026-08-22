@@ -17,7 +17,8 @@
 //
 // At ROUND_GUESS_CAP the server refuses further appends (`round_full`): the round keeps
 // playing locally but has stopped counting — the engine marks it capped and closes the
-// conversation, and the solved screen suppresses its score submission accordingly.
+// conversation. It never becomes server-recorded, so the solved screen launches no
+// population read; there is no client score submission since #203.
 //
 // One conversation per round lives in a MODULE-level map (the activeScoreFlights
 // pattern): a ref would not survive a real unmount, and neither the queue nor the
@@ -50,7 +51,7 @@ export interface RoundSyncContext {
 }
 
 interface RoundFlight extends RoundSyncContext {
-  // Which PUZZLE this conversation is about (see `puzzleTag`).
+  // Which published puzzle VERSION this conversation is about.
   puzzle: string;
   // Prefix of the round's persisted `tried` known to be on the server. Everything from
   // here on is the pending batch; adoption resets it to the acked prefix length.

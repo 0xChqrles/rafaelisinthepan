@@ -23,7 +23,7 @@ function defaultStorage(): Storage | null {
   // The `localStorage` PROPERTY itself throws a SecurityError when storage is disabled
   // (e.g. blocked cookies) — that read happens while evaluating the default parameter,
   // outside playerSecret's own try — so it needs its own catch or a denied storage
-  // would fail score submission instead of degrading to the session identity.
+  // would fail authenticated live requests instead of degrading to the session identity.
   try {
     return typeof window === 'undefined' ? null : window.localStorage;
   } catch {

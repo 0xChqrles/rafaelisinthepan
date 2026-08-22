@@ -4,14 +4,11 @@
 //   | any append, any day | the SLICE         | read fresh |
 //   | a solve, any day    | the full artifact | read fresh |
 //
-// The issue designed a slice cache and a one-day cache for today's artifact. The full one
-// went first — the SCORE it feeds is a first-write-wins row nobody revisits. The slice cache
-// went because RANK 0 IS A GROUP: every alias of the secret's group sits at rank 0 (79 of
-// 151 hole occurrences in the local fr store, worst 27), and a correction that re-runs the
-// #104 merge walk moves aliases in and out of it WITHOUT touching a hole — so the revision
-// tag cannot see it, and a stale slice decides `solved` wrongly in both directions, neither
-// of which heals. What survives is the tag, whose honest job is "is this caller playing the
-// sentence the store holds?".
+// The issue designed a slice cache and a one-day cache for today's artifact. Both were
+// removed while the only revision signal was the hole layout: RANK 0 IS A GROUP, so a
+// correction can move solve aliases without touching a hole, and a stale slice decides
+// `solved` wrongly in both directions. The published content revision now covers that
+// correction and could safely key a cache; fresh remains the simpler, cheap-enough rule.
 
 import { describe, expect, it, vi } from 'vitest';
 import type { Puzzle } from '@whippin/shared';

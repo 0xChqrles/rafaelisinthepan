@@ -51,7 +51,7 @@ export interface PuzzleSlice {
   // Without it the artifact is anonymous. Publish replaces two objects, so a reader landing
   // between them sees one version's puzzle beside another's — and since rank 0 is a GROUP, a
   // correction moves exactly the aliases that decide whether a guess SOLVED the puzzle. That
-  // produces a solve, and a permanent score, belonging to neither version. The sentence's
+  // produces a solve and a score belonging to neither version. The sentence's
   // hole layout cannot catch it: a corrected puzzle usually has the same holes.
   revision: string;
   // Keyed by SECRET slug, like the puzzle's own `ranks`. Duplicate sentence occurrences of

@@ -48,9 +48,9 @@
 - `src/day.ts` is the ONE 22:00-ET DST-correct game-day definition (client + server
   + publish) — see the routing contract in the root `AGENTS.md`.
 - `src/scores.ts` also owns `VIEWER_IP_HEADER`, the header the CDN's viewer-request
-  function stamps the connecting address into and the ONLY client address the score handler
+  function stamps the connecting address into and the ONLY client address the round handler
   trusts (#169). It lives here because INFRA writes it and the BACKEND reads it, and a
-  drift is a 500 on every score POST that no local run can reproduce; the reason it is a
+  drift is a 500 on live round writes that no local run can reproduce; the reason it is a
   stamped header rather than CloudFront's own `CloudFront-Viewer-Address` is recorded in
   the root `AGENTS.md`.
 - `src/avatar.ts` is the ONE definition of the #188 avatar encoding (palette byte + 100
@@ -169,8 +169,9 @@
   stays in `web/game/scoring.ts` is only what the SCREEN has: the RuntimeHole improvement
   rule and `computeProgress` over them.
 - **A round's tag names WHICH PUZZLE its state belongs to**, and for the SENTENCE daily that
-  is the published `revision` (#203, user-decided 2026-08-22) — stamped by `puzzle:publish`
-  onto the puzzle and its slice alike, sent by the client, compared for equality by the
+  is the published `revision` (#203, user-decided 2026-08-22) — a hash of the complete
+  puzzle content (rank maps included), stamped by `puzzle:publish` onto the puzzle and its
+  slice alike, sent by the client, compared for equality by the
   server. It replaced a tag derived from the sentence's holes, which could not tell a
   corrected puzzle from the one it replaced whenever the sentence was unchanged — and since
   rank 0 is a GROUP, that is exactly what a correction moves. `src/puzzleTag.ts` keeps only

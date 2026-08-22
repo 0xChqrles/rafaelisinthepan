@@ -251,9 +251,9 @@ async function postSignedJson(url: string, body: unknown): Promise<Response> {
 // the round, while WORD mode writes twice, `{secret, puzzle, turnstileToken}` to START its
 // server-stamped clock and one `{secret, puzzle, guesses}` carrying the whole log at the
 // end. EVERY answer, refusals included, carries the full state, so a write is also a
-// reconciliation. `puzzle` is the opaque tag naming WHICH puzzle the state belongs to
-// (state/roundSync.ts `puzzleTag`), which is how a re-published daily restarts it instead of
-// inheriting the retired one's. The three query parameters are in the round CloudFront
+// reconciliation. In sentence mode `puzzle` is the published revision naming WHICH puzzle
+// the state belongs to, which is how a corrected daily restarts instead of inheriting the
+// retired one's log. The three query parameters are in the round CloudFront
 // behavior's allowList (the root AGENTS.md three-package contract).
 export function roundUrl(lang: string, date: string, mode: Mode, base: string = apiBase()): string {
   return `${requireApiBase(base)}/round?lang=${encodeURIComponent(lang)}&date=${encodeURIComponent(

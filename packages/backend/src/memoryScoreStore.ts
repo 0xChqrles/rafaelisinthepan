@@ -13,7 +13,8 @@ interface DedupCount {
 }
 
 // Process-local store for `pnpm backend:dev`: same ScoreStore contract as DynamoDB —
-// per-player first-write-wins rows, atomic IP allowance — with no AWS account.
+// first-write-wins per published revision, with an atomic allowance on row creation only —
+// and no AWS account.
 // Restarting the local server intentionally resets this lab data.
 //
 // `submissionLimit` defaults to the SHARED production rule, so this store's contract test
@@ -59,13 +60,16 @@ export function memoryScoreStore(
         return outcome;
       };
 
-      // Both conditions are one atomic decision, and an existing row is the truer
-      // refusal: it is idempotent and consumes no allowance (dynamoScoreStore's order).
       const day = days.get(dayKey(input)) ?? new Map<string, { score: number; revision: string }>();
       // First write wins PER VERSION (dynamoScoreStore.ts states why): a row earned on a
-      // REPUBLISHED puzzle belongs to a round that has already started over.
+      // REPUBLISHED puzzle belongs to a round that has already started over. Replacing it
+      // consumes no allowance because it does not add a player to the population.
       const held = day.get(input.publicId);
       if (held && held.revision === input.revision) return settle('already_recorded');
+      if (held) {
+        day.set(input.publicId, { score: input.score, revision: input.revision });
+        return settle('recorded');
+      }
 
       const dKey = dedupKey(input, input.ipHash);
       const existing = dedup.get(dKey);
