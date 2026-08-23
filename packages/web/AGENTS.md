@@ -443,7 +443,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **WORD mode gained the same load gate** (`useWordRoundSync` returns a `RoundLoad`, the
     engine publishes it): its run UI waits for the mount read, which also closes the hazard
     recorded in the #202 bullet below — PLAY was tappable while that read was in flight, and
-    a session that starts a run it cannot see becomes its writer.
+    a session that starts a run it cannot see becomes its writer. A recorded answer publishes
+    the server log into that transient load; `settleWordRun` then clears the acknowledged
+    persisted outbox, marks the run submitted, preserves its finished deadline and caches the
+    authoritative claim count clamped to `CLAIM_ZONE`, so summary progress cannot exceed 100%.
   - **`statusOf` takes a SERVER summary** (`{progress, solved}`) and has no producer yet:
     the archive and the chooser pass `undefined`, so every SENTENCE day reads as not started
     until #211 lands. **#214 and #211 ship together** — see the Ordering note on both issues.
@@ -553,20 +556,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
     own travel time lands INSIDE the run — the margin that keeps an honest submission clear
     of the server's wait check. Re-anchoring is a no-op by construction: a re-read must
     never shift a run under the player.
-  - **The MOUNT READ writes nothing** and is what makes the daily one-shot across devices;
-    it also carries a finished day's RECORDED run to a device that never played it
-    (`adoptWordRun`). That adoption only ever lands in an EMPTY local log — a word round's
-    deadline is derived from its log, so adopting a longer one over a run this device
-    played could move a clock that has already stopped. A read that finds a NON-EMPTY log
-    also marks the round submitted: the server demonstrably holds a run for it, so this
-    device owes nothing, and without that a freshly linked device would POST the run it
-    just adopted straight back on every visit.
+  - **The MOUNT READ writes no SERVER state** and is what makes the daily one-shot across
+    devices; it also carries a finished day's RECORDED run to a device that never played
+    it. That log is published into transient `roundLoads`, while `settleWordRun` clears the
+    persisted local outbox and marks the round submitted: the server demonstrably holds a
+    run for it, so this device owes nothing. The existing deadline stays frozen — adopting
+    a longer winning run must never reopen one this device already finished — and only the
+    authoritative claim count is cached for unloaded summary surfaces.
   - **The run's END asks for the one write.** `beginWordRoundSync(ctx, over)` takes the
     deadline's own fact (a log cannot see a wall clock); the log is truncated to what the
-    route accepts (`submittableLog` — only misses can run away) and the acknowledgement is
-    PERSISTED (`RoundProgress`-style `submitted`), purely so a run that claimed nothing does
-    not re-POST on every mount, since an empty stored log reads exactly like an unsubmitted
-    one. A `too_early` refusal is waited out; every other 4xx closes the conversation.
+    route accepts (`submittableLog` — only misses can run away), then a valid 2xx publishes
+    the server's first-write-wins log and settles the persisted outbox. `submitted` is kept
+    purely so a recorded run that claimed nothing does not re-POST on every mount, since an
+    empty server log otherwise reads exactly like an unsubmitted one. A `too_early` refusal
+    is waited out; every other 4xx closes the conversation.
     **`over` is the RETIRED run's fact once a different word is published**, so a republish
     resets it with everything else the flight knows: carrying it across made the fresh
     round's first act a submission of the empty log the reset had just given it, refused

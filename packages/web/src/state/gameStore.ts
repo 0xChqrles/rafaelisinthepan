@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { RuntimeHole } from '@whippin/shared';
 import { isLang, type Mode } from '../langs';
-import { runMs } from '../game/wordGame';
+import { CLAIM_ZONE, runMs } from '../game/wordGame';
 
 // Which crowd the #190 leaderboard is showing: the friends graph (the trusted default)
 // or the global top 50. It lives here rather than in the screen because the screen
@@ -685,14 +685,25 @@ export const useGameStore = create<GameState>()(
         set((s) => {
           const round = s.wordRounds[key];
           if (!round) return {};
-          if (round.submitted && round.tried.length === 0 && round.claimed === claimed) return {};
+          // `claimed` is a persisted SUMMARY read by surfaces that do not load the rank
+          // map. Keep its own store boundary inside the product's finite claim field even
+          // if a malformed/corrupt authoritative log somehow reaches this action; no
+          // calendar or chooser may render progress above 100%.
+          const settledClaimed = Math.min(CLAIM_ZONE, Math.max(0, claimed));
+          if (
+            round.submitted &&
+            round.tried.length === 0 &&
+            round.claimed === settledClaimed
+          ) {
+            return {};
+          }
           return {
             wordRounds: {
               ...s.wordRounds,
               [key]: {
                 ...round,
                 tried: [],
-                claimed,
+                claimed: settledClaimed,
                 submitted: true,
               },
             },

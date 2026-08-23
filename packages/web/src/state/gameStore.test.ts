@@ -19,7 +19,7 @@ import { useGameStore, roundKeyForDay, migratePersisted, roundLoadFor } from './
 // The published VERSION a round is played on (#203). Every call here plays ONE version;
 // what a REPUBLISH does has its own suite below.
 const REV = 'a1b2c3d4e5f60718';
-import { runMs } from '../game/wordGame';
+import { CLAIM_ZONE, runMs } from '../game/wordGame';
 import type { RuntimeHole } from '@whippin/shared';
 
 const initial = useGameStore.getState();
@@ -175,6 +175,21 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
     expect(after).toMatchObject({ tried: [], claimed: 0, submitted: true });
     settleWordRun('w:5:fr', 0);
     expect(wordRound()).toBe(after); // no second write, so nothing re-serializes
+  });
+
+  it('clamps the persisted authoritative count to the finite claim field', () => {
+    const { ensureWordRound, settleWordRun } = useGameStore.getState();
+    ensureWordRound('w:5:fr', 'phare');
+
+    // The normal caller derives this from replayWordRun and can never exceed the zone.
+    // The store still owns the persisted summary invariant: archive/chooser progress must
+    // remain bounded even if corrupt server state crosses that caller boundary.
+    settleWordRun('w:5:fr', CLAIM_ZONE + 1);
+
+    expect(wordRound()).toMatchObject({ tried: [], claimed: CLAIM_ZONE, submitted: true });
+    const settled = wordRound();
+    settleWordRun('w:5:fr', CLAIM_ZONE + 2);
+    expect(wordRound()).toBe(settled); // equal after clamping, so no redundant persist write
   });
 
   it('takes no guesses after the server has settled the run', () => {
