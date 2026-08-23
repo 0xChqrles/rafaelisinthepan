@@ -17,12 +17,19 @@
 // an empty map is the claim "none of these days was started", and a false one paints a whole
 // calendar as untouched. The screens render a loading state off that null. There is no local
 // fallback.
+//
+// **No token, no fetch** (#216). An identity that has never been bootstrapped cannot own
+// server rows, so its calendar, chooser and streak are known-empty WITHOUT a request — and
+// asking would be a private read on a visit that has performed none of the deliberate acts
+// that create an identity. That is an ANSWER, not a loading state: the surfaces render an
+// unplayed month and a zero streak, exactly as they would for a player who has played
+// nothing.
 
 import { useCallback, useEffect } from 'react';
 import { create } from 'zustand';
 import { boundSolvedDays } from '@whippin/shared';
 import { historyUrl, parsePlayerHistory, postHistoryBody } from '../api';
-import { hasPlayerIdentity, playerSecret } from '../identity';
+import { deviceIdentity, identityEpoch, markDeviceSignedOut } from '../identity';
 import type { Mode } from '../langs';
 import { statusOf, type RoundSummary, type Status } from './status';
 
@@ -106,21 +113,18 @@ export async function loadPlayerHistory(
   if (existing) return existing;
 
   const monthId = month === undefined ? null : monthKey(lang, mode, month);
-
-  // A visitor with NO identity cannot own server rows, so their history is KNOWN-empty —
-  // an ANSWER, not a loading state. Asking the server would also be the act that MINTS a
-  // key (identity.ts's first-need rule): a deep-linked /select visit must not persist an
-  // identity for someone who never played, and a brand-new visitor's chooser and game
-  // screen must not spend network on a question whose answer is already known. The first
-  // state-creating act (a guess) mints the key; later mounts read normally.
-  if (!hasPlayerIdentity()) {
+  const identity = deviceIdentity();
+  if (!identity) {
+    // Known empty, and said as an ANSWER — `ready` with real values, never `idle` or a
+    // pending null, or every surface would breathe forever behind a request nobody made.
+    // A collection-less flight still leaves the solved entry entirely alone.
     setMonth(monthId, (previous) => ({ phase: 'ready', days: previous.days ?? new Map() }));
     if (collection) {
       setSolved(lang, (previous) => ({ phase: 'ready', days: previous.days ?? [] }));
     }
     return;
   }
-
+  const epoch = identityEpoch();
   const flight = (async () => {
     // A REVALIDATION keeps the values it already holds while the fresh read is in flight —
     // stale-but-good beats a skeleton over a month the player was just looking at (the
@@ -133,11 +137,20 @@ export async function loadPlayerHistory(
     }
     try {
       const response = await postHistoryBody(historyUrl(lang, mode, month), {
-        secret: playerSecret(),
+        token: identity.token,
         ...(collection ? {} : { collection: false }),
       });
-      if (!response.ok) throw new Error(`history read failed: ${response.status}`);
+      if (!response.ok) {
+        // The distinct signed-out answer (#216) raises the screen that explains it; every
+        // other refusal is the ordinary failure below. A 5xx never signs anyone out.
+        if (response.status === 401) await noteSignedOut(response);
+        throw new Error(`history read failed: ${response.status}`);
+      }
       const history = parsePlayerHistory(await response.json());
+      // An answer that outlived the identity that asked for it describes an account this
+      // device no longer acts as; committing it would walk that account's history into the
+      // new one's surfaces.
+      if (identityEpoch() !== epoch) return;
       setMonth(monthId, () => ({
         phase: 'ready',
         days: new Map(
@@ -304,6 +317,17 @@ export function noteSolvedDay(lang: string, solvedDay: number, credited: boolean
     days: boundSolvedDays([...(previous.days ?? []), solvedDay]),
   }));
   return true;
+}
+
+// Read the refusal's own code: only `unknown_device` means signed out, and the status alone
+// would do it for any other 401 this route might ever answer.
+async function noteSignedOut(response: Response): Promise<void> {
+  try {
+    const data = (await response.json()) as { error?: unknown };
+    if (data.error === 'unknown_device') markDeviceSignedOut();
+  } catch {
+    // A refusal with no readable body says nothing about the device.
+  }
 }
 
 // Test seam: drop every cached summary and conversation (module state must not leak

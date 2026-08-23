@@ -1,46 +1,60 @@
-// Player identity without accounts (#187): a random 128-bit SECRET the client generates
-// on first need and keeps in localStorage. It is simultaneously the ID and the password —
-// possession is the proof of ownership, so the server never registers or stores anything
-// secret; it DERIVES the public identity from the secret on every authenticated call.
-// Pasting the key on another device is the same identity (#188's designed backup
-// affordance — its UI surface is not yet placed); losing localStorage loses it —
-// accepted by design.
+// Device identity (#216) — what a device HOLDS, and what the server ASSIGNS it.
 //
-// This module lives in shared because the derivation is a cross-package contract: the WEB
-// generates and sends the secret, the BACKEND turns it into the publicId every stored row
-// is keyed by. Two implementations would drift into two identities for one key.
+// Until #216 the identity WAS a 128-bit secret in localStorage (#187), and the account id
+// was derived from it on the client. Every device that reached an account held that same
+// secret, so nothing was device-specific and nothing could be revoked: the only remedy for
+// a leaked account was to abandon it — losing the archive, the streak and every friend.
+// A device now holds its own REVOCABLE token, and the account id is assigned by the server.
+//
+// This module is a cross-package contract. The WEB mints the token and sends it; the
+// BACKEND validates it, hashes it, and reads the ONE device item keyed by that hash. Two
+// spellings of the token's shape would fork one device into two — or, worse, admit a
+// non-canonical value that keys a different row.
+//
+// The CLIENT never hashes anything any more: `crypto.subtle` is absent outside a secure
+// context, which already forced a leaderboard workaround for LAN-IP testing on a phone.
+// Minting still uses `crypto.getRandomValues`, which every context has, so the entropy is
+// unchanged. Hashing is the server's (`backend/src/deviceStore.ts`).
+//
+// `assigned.ts` is untouched: it keeps deriving the pseudonym and the mark from the account
+// id, which is why a server-assigned id keeps the exact shape a derived one had.
 
-// The secret travels and stores as 32 lowercase hex characters (16 random bytes).
-export const SECRET_PATTERN = /^[0-9a-f]{32}$/;
+// The RAW device token: 32 random bytes as exactly 64 LOWERCASE hex characters. The server
+// accepts only this spelling and never normalizes an uppercase one, so one token has one
+// hash and one row.
+export const DEVICE_TOKEN_BYTES = 32;
+export const DEVICE_TOKEN_PATTERN = /^[0-9a-f]{64}$/;
 
-export function isValidSecret(value: unknown): value is string {
-  return typeof value === 'string' && SECRET_PATTERN.test(value);
+export function isValidDeviceToken(value: unknown): value is string {
+  return typeof value === 'string' && DEVICE_TOKEN_PATTERN.test(value);
+}
+
+function hex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 // Uses the Web Crypto API, which browsers and Node (>=19, Lambda's Node 22 included)
 // expose on the same global — one implementation everywhere this package runs.
-export function generateSecret(): string {
-  const bytes = new Uint8Array(16);
+export function generateDeviceToken(): string {
+  const bytes = new Uint8Array(DEVICE_TOKEN_BYTES);
   globalThis.crypto.getRandomValues(bytes);
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return hex(bytes);
 }
 
 // RFC 4648 base32, lowercased: compact, case-insensitive-safe, and free of characters a
-// URL or a filename would ever need escaped (#188 will print publicIds).
+// URL or a filename would ever need escaped (an invite link IS a publicId, #189).
 const BASE32_ALPHABET = 'abcdefghijklmnopqrstuvwxyz234567';
 
-// publicId = the first 10 bytes of SHA-256 over the secret's UTF-8 bytes, base32 — 80
-// bits in exactly 16 characters (no padding). Truncation keeps it short enough to
-// display while collisions stay out of reach for any real player population.
-export const PUBLIC_ID_PATTERN = /^[a-z2-7]{16}$/;
+// 80 bits in exactly 16 characters (no padding) — short enough to display, with collisions
+// out of reach for any real player population.
+const ID_BYTES = 10;
 
-export async function publicIdFromSecret(secret: string): Promise<string> {
-  if (!isValidSecret(secret)) throw new Error('publicIdFromSecret: malformed secret');
-  const digest = await globalThis.crypto.subtle.digest(
-    'SHA-256',
-    new TextEncoder().encode(secret),
-  );
-  const bytes = new Uint8Array(digest).subarray(0, 10);
+export const PUBLIC_ID_PATTERN = /^[a-z2-7]{16}$/;
+// A device id is the same shape as an account id and read in exactly the same places (a
+// body field, a GSI sort key), so it is the same rule rather than a second one.
+export const DEVICE_ID_PATTERN = PUBLIC_ID_PATTERN;
+
+function base32(bytes: Uint8Array): string {
   let bits = 0;
   let value = 0;
   let out = '';
@@ -53,4 +67,23 @@ export async function publicIdFromSecret(secret: string): Promise<string> {
     }
   }
   return out;
+}
+
+function randomId(): string {
+  const bytes = new Uint8Array(ID_BYTES);
+  globalThis.crypto.getRandomValues(bytes);
+  return base32(bytes);
+}
+
+// The ACCOUNT id — server-assigned since #216, where it used to be SHA-256 over the
+// client's secret. It is public by design (an invite link carries one) and it is what
+// `assigned.ts` derives a player's pseudonym and mark from, so its shape is unchanged.
+export function generatePublicId(): string {
+  return randomId();
+}
+
+// The DEVICE id — the handle the sign-out screen lists and revokes by. It never
+// authenticates anything: the token does, and the token is never stored server-side.
+export function generateDeviceId(): string {
+  return randomId();
 }

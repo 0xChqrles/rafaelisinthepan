@@ -11,6 +11,7 @@ import { createServer, type IncomingMessage } from 'node:http';
 import { createHandler } from './handler';
 import { fsStore } from './fsStore';
 import { defaultLocalStoreRoot } from './layout';
+import { memoryDeviceStore } from './memoryDeviceStore';
 import { memoryFriendStore } from './memoryFriendStore';
 import { memoryHistoryStore } from './memoryHistoryStore';
 import { memoryProfileStore } from './memoryProfileStore';
@@ -35,6 +36,10 @@ const LOCAL_SUBMISSION_LIMIT = Number.POSITIVE_INFINITY;
 const LOCAL_IP_HMAC_SECRET = randomBytes(32).toString('hex');
 
 const localScoreStore = memoryScoreStore(() => new Date(), LOCAL_SUBMISSION_LIMIT);
+// The identity every authenticated route resolves its caller through (#216). In memory
+// like the rest: restarting the local server signs every local device out, which is exactly
+// what a wiped table does.
+const localDeviceStore = memoryDeviceStore();
 
 const handler = createHandler({
   store: fsStore(STORE_ROOT),
@@ -47,8 +52,16 @@ const handler = createHandler({
   scores: { scoreStore: localScoreStore },
   profiles: memoryProfileStore(),
   friends: memoryFriendStore(),
+  devices: {
+    deviceStore: localDeviceStore,
+    // The bootstrap is Turnstile-gated (#216) by the accept-all local verifier, exactly
+    // like a round start.
+    turnstile: localTurnstileVerifier,
+    allowSourceIp: true,
+  },
   rounds: {
     roundStore: memoryRoundStore(),
+    deviceStore: localDeviceStore,
     // A finished round records its own score row (#203), off the same in-memory store the
     // /scores read serves from.
     scoreStore: localScoreStore,
@@ -101,11 +114,11 @@ server.listen(PORT, () => {
   console.log(`[backend] local puzzle server on http://localhost:${PORT}`);
   console.log(`[backend]   store:  ${STORE_ROOT}`);
   console.log(`[backend]   origin: ${ALLOWED_ORIGIN}`);
-  console.log(`[backend]   scores: in-memory; Turnstile accept-all (local only)`);
+  console.log(`[backend]   scores + devices: in-memory; Turnstile accept-all (local only)`);
   console.log(`[backend]   GET /?lang=<xx>&date=<YYYY-MM-DD>[&mode=word]  GET /scores?lang=&date=&mode=`);
   console.log(`[backend]   GET /profile?id=<publicId>  POST /profile  POST /friends`);
   console.log(`[backend]   GET|POST /board?lang=&date=&mode=[&id=]  POST /round?lang=&date=&mode=`);
-  console.log(`[backend]   POST /history?lang=&mode=[&month=YYYY-MM]`);
+  console.log(`[backend]   POST /history?lang=&mode=[&month=YYYY-MM]  POST /devices`);
   console.log(`[backend]   GET /today  GET /s/<token>  GET /og/<token>.png`);
   console.log(`[backend] point the front at it: VITE_API_BASE_URL=http://localhost:${PORT}`);
 });

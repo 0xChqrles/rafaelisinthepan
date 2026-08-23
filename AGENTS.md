@@ -1043,6 +1043,110 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   rejected separate-summary-row design above remains the lever if read amplification becomes
   material.
 
+### Devices: per-device tokens, revocation, and where an account is created (#216, decided 2026-08-23)
+
+- **A device holds a REVOCABLE token; the SERVER assigns the account.** #187's identity was a
+  128-bit secret in localStorage, and every device that reached an account held that same
+  secret — so there was nothing device-specific to revoke: the only remedy for a leaked
+  account was to abandon it, losing the archive, the streak and every friend. **Signing a
+  device out has to be possible WITHOUT holding that device**, which requires the device to
+  stop holding the account credential and hold a revocable one instead. What is gone:
+  `shared/src/identity.ts`'s client-side account derivation (random secret → SHA-256 → public
+  id) and with it the `crypto.subtle` secure-context problem that already forced a leaderboard
+  workaround for LAN-IP testing on a phone. `shared/src/assigned.ts` is untouched and keeps
+  deriving the pseudonym and the mark from the server-assigned account id. **No back-compat
+  and no migration** — the DB is wiped before launch, the standing rule for this epic.
+- **THE TOKEN CONTRACT IS EXACT** (`shared/src/identity.ts`): the client generates 32 random
+  bytes with `crypto.getRandomValues`, encodes them as **exactly 64 lowercase hexadecimal
+  characters**, and PERSISTS that value before sending the first request. The server accepts
+  only `^[0-9a-f]{64}$`; it rejects a malformed or non-canonical value **before hashing,
+  logging or reading DynamoDB**, it **never normalizes uppercase**, and the raw token is never
+  logged. The client never HASHES anything — it mints and sends, and hashing is the server's.
+- **ONE DynamoDB item per device**, keyed by `SHA-256(token)` and never by the token itself:
+  the hash is deterministic, so authentication is one direct base-table read, and the server
+  stores nothing that can authenticate. The one item serves both access patterns — **base key
+  `device#<tokenHash>` → device → account** on every authenticated call, and a **GSI
+  (`DeviceByAccount`, `player#<accountId>` / `device#<deviceId>`)** for the sign-out screen.
+  The security-sensitive path is the BASE item: authentication reads it directly and then
+  requires **its account row still to exist** (`player#<accountId>` / `account`). The GSI may
+  briefly lag a create or a delete — a cosmetic device-list delay only. Revocation deletes the
+  base item, so a stale GSI result can never keep a token authenticable; the account check is
+  the backstop for the reverse, rejecting a device item an eventually-consistent enumeration
+  missed. The base primary key is projected into the GSI, so a listed device still identifies
+  the one item to delete. **`lastSeenAt` moves at most once a DAY per device** — it rides
+  every authenticated call, and `/round` writes about once a second while a player types.
+- **Authenticated calls carry the DEVICE TOKEN where they carried the player secret.** Every
+  private route (`/profile` POST, `/friends`, `/board` POST, `/round`, `/history`) takes
+  `{ token }` in the BODY and resolves it to an account. It costs one extra direct read on
+  every authenticated call, `/round`'s hot path included. The **user-agent is a structured
+  object** (device family, OS, browser) parsed **server-side** from the `User-Agent` header —
+  the client can lie and the server sees the header anyway — and stored as FIELDS rather than
+  a formatted string, so the UI can render icons and change its wording without a migration.
+  It is deliberately COARSE (`backend/src/userAgent.ts`): the label exists so a person
+  recognises their own phone, no product rule reads it, and what actually matters is the ORDER
+  of its checks, since every Chromium browser impersonates the others. No rename affordance:
+  "iPhone / Chrome" is enough.
+- **AN ACCOUNT IS CREATED LAZILY, ON FIRST NEED — never on page open.** Creating on load turns
+  account creation into an unauthenticated write that every crawler and every bot triggers. A
+  visit that performs none of the acts below creates neither a token nor a server row. The
+  triggers, all deliberate: **the first guess** (sentence or word) · **starting a word round**
+  · **opening the leaderboard** (the friends board read is authenticated) · **sending an
+  invite link** · **accepting one** · **saving a profile**. Invites are gated on NEITHER side:
+  accepting cannot be gated (the accepter is by definition a brand-new visitor clicking a
+  link, and that is the entire invite funnel, #189), and if accepting is not gated, sending is
+  not either. The identity EDITOR (`/profile`) resolves an identity when it opens rather than
+  when it saves — it cannot show a player their identity without one, and its wired entry
+  point (the leaderboard) has already minted one, so only a deep link ever mints there.
+- **NO TOKEN MEANS NO PRIVATE GAME-STATE FETCH.** A puzzle, a calendar or a language summary
+  with no local device token KNOWS the player's server state is empty and must not call
+  `/round` or the private history routes merely to learn that. It is an ANSWER, not a loading
+  state: the round publishes a ready-and-empty authoritative state and the history publishes a
+  ready empty month and collection, so no surface breathes behind a request nobody made. The
+  first state-creating action bootstraps the identity and performs its intended mutation;
+  later mounts, now holding a token, read authoritative state normally. This is #216
+  implementation work at #214's round boundary and #211's history boundary.
+- **TURNSTILE SITS ON THE REQUEST THAT CREATES STATE** — account/device creation, and round
+  creation as it already does (#203). The token is generated and stored immediately before the
+  bootstrap, and **bootstrap is IDEMPOTENT by token hash**: if the first answer is lost after
+  commit, retrying returns the device/account already created rather than minting another
+  identity. **A brand-new player's first guess therefore spends TWO challenges** — one for the
+  bootstrap, one for the round creation #203 gates — where the issue asked for one. Folding
+  them into a single request would mean an ordinary authenticated write could mint an
+  identity, which is exactly what the next rule forbids; both tokens are invisible and
+  prefetched, so the cost is one extra Siteverify call on the first guess of a new player's
+  life.
+- **AN ARBITRARY UNKNOWN TOKEN NEVER CREATES AN IDENTITY.** Only the explicit bootstrap
+  request, with a canonical token and Turnstile proof, may do that. A malformed token is an
+  input error (**400 `bad_request`**); a well-formed token missing from the base table on an
+  ordinary authenticated request is **401 `unknown_device`**. That distinction is what stops a
+  revoked device from silently becoming a fresh account on its next write.
+- **SIGNED OUT: the server answers a distinct, unambiguous `unknown_device`**, and the client
+  shows a screen with **RECONNECT** (into #204's link flow) and a secondary **SKIP** that
+  discards the old token, generates a new one and starts fresh. Only on that explicit answer —
+  a 5xx or a dropped connection must never sign anyone out, which is why every caller reads
+  the error CODE rather than the status alone. The copy says what is being left behind, or a
+  vanished streak and an empty friends list read as a bug rather than as the sign-out that
+  caused them. **RECONNECT is NOT WIRED in #216**: the email link flow is #204's, so the
+  screen takes the handler as a prop and offers SKIP alone until then — a button that does
+  nothing is worse than a screen that only offers what it can do.
+- **LOCAL STATE FOLLOWS THE IDENTITY THAT OWNS IT** (`web/state/identityScope.ts`, installed
+  once from `main.tsx`): when `accountId` changes or becomes unknown, clear the sentence
+  outbox, the transient round loads, the private history/streak summaries and every other
+  account-scoped cache; when only `deviceId` changes, clear device-owned state such as the
+  Word round; merely binding an email to the same account changes neither identity and clears
+  nothing. **Every in-flight private request captures the current `(accountId, deviceId)`
+  epoch and its answer is ignored after that tuple changes** — clearing storage without
+  fencing old responses would let the identity just left repopulate the new one's state.
+- **ONE route, POST-only like /friends** (the token is the auth and travels in the BODY, so
+  its CloudFront behavior's query allow-list is EMPTY — the standing three-package contract):
+  `POST /devices`. `{token, turnstileToken}` bootstraps, `{token}` lists the account's
+  devices, `{token, revoke: "<deviceId>"}` deletes that one base item; every answer carries
+  `{accountId, deviceId, devices}` so a client never has to guess what a write did, and **no
+  answer ever carries the token back**. Revoking the CALLING device is allowed — signing this
+  one out is a thing a person may want, and refusing it would be a rule the screen then has to
+  explain. The bootstrap is the third behavior wearing the CDN's viewer-request function,
+  since a gated write needs a trusted address.
+
 ### Day-addressed routing & the game day
 
 - **Routing (#6), date-addressed (decided 2026-07-05, replacing the #42 version-in-URL
@@ -1091,20 +1195,16 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
 
 ### Live score collection (#169, decided 2026-08-13; per-player rows + identity #187, decided 2026-08-18)
 
-- **Player identity is a secret key, no accounts (#187):** the client generates a random
-  128-bit secret on first authenticated live request, keeps it in localStorage
-  (`web/src/identity.ts`), and sends it in the POST body — it is simultaneously the ID
-  and the password. The server derives `publicId` = first 10 bytes of
-  SHA-256(secret), base32 (16 chars) on every authenticated call and **stores nothing
-  secret** — no registration, no stored credentials. The derivation lives in
-  **`shared/src/identity.ts`** because it is a cross-package contract: the web generates
-  and sends the secret, the backend keys every stored row by the derived publicId, and a
-  drift forks one key into two identities. No unique usernames (a lost key would freeze
-  the name forever); losing localStorage loses the identity — accepted, the remedy is
-  the copyable-key backup (#188), which doubles as device linking. Anti-cheat stance:
-  **assume heavy cheating and design so it doesn't matter** — global rankings are
-  untrusted by design, trust comes from the friends graph (#189), and the percentile is
-  the one public stat that survives faking.
+- **Player identity is a DEVICE TOKEN and a server-assigned ACCOUNT (#216, decided
+  2026-08-23; it REPLACED #187's shared secret — see the devices section below for the
+  whole model).** Until then the identity WAS a random 128-bit secret in localStorage that
+  every device on an account held, and `publicId` was `SHA-256(secret)` derived on the
+  client — so nothing was device-specific and nothing could be revoked. What survives from
+  #187 is the SHAPE of the public id (`[a-z2-7]{16}`, what `assigned.ts` derives a
+  pseudonym and a mark from) and the STANCE: no unique usernames, no registration, and
+  **assume heavy cheating and design so it doesn't matter** — global rankings are untrusted
+  by design, trust comes from the friends graph (#189), and the percentile is the one
+  public stat that survives faking.
 - The ONE backend handler also owns the daily score population:
   `GET /scores?lang=<lang>&date=<YYYY-MM-DD>&mode=<sentence|word>`; unlike the
   puzzle route, **`mode` is required**. **It is READ-ONLY since #203** — a POST is a named

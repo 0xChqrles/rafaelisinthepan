@@ -13,7 +13,11 @@
       hooks/useVocab.ts       fetch+cache the per-language existence Set (once per session)
       hooks/usePuzzle.ts      fetch the client-computed day's puzzle from the backend
       api.ts                  backend client: puzzleUrl/wordPuzzleUrl, 404->NO PUZZLE
-      identity.ts             the #187 player key: localStorage secret, generated on first need
+      identity.ts             the #216 DEVICE identity: a localStorage token minted on the
+                              first deliberate act, the server-assigned account it resolves
+                              to, the signed-out flag and the identity epoch
+      state/identityScope.ts  what an identity OWNS, cleared when it changes (wired in main)
+      screens/SignedOut.tsx   the `unknown_device` screen: what is left behind + START FRESH
       state/roundSync.ts      the #201 sync engine, reworked by #214: coalesced prefix writes,
                             the transient server snapshot it publishes for the screen, the
                             outbox it settles by identity, cap + freeze, #203's round-start
@@ -31,7 +35,7 @@
       screens/Profile.tsx     the #188 profile editor (/profile): name, tap-to-paint 10×10 grid,
                               ground-swatch palette picker (#190 wires the entry point)
       screens/FriendInvite.tsx  the #189 invite link's landing (/join/<publicId>): POST the mutual
-                              edge with the player key, then continue into the game. The link
+                              edge with this device's token, then continue into the game. The link
                               players SHARE is /i/<publicId>, served by the backend for its preview
       screens/Leaderboard.tsx the #190 leaderboard (/<lang>[/word]/board): friends board first,
                               global top 50; identity strip (EDIT -> /profile) + INVITE share
@@ -406,6 +410,36 @@ it to the local store — see `packages/backend/AGENTS.md`).
 
 *(Safe to update without touching the invariants above.)*
 
+- **Devices: per-device tokens, revocation, and where an account is created (#216).** The
+  product contract — the token's exact shape, why an account is created lazily, what
+  `unknown_device` means, what local state an identity owns — lives in the root `AGENTS.md`.
+  What is this package's:
+  - **`identity.ts` is the whole client half**, and it is a zustand store rather than a
+    function: the signed-out screen and the leaderboard's identity strip both re-render on it.
+    `deviceIdentity()` is the SYNCHRONOUS "should I even ask the server?" test every private
+    read makes; `ensureDeviceIdentity()` is the ONE bootstrap flight (the `activeScoreFlights`
+    pattern — a first guess while the leaderboard is mounting must not mint two accounts);
+    `identityEpoch()` is what an in-flight request captures and its answer is checked against.
+  - **The token is PERSISTED before the bootstrap request, and a token with no ids is NOT an
+    identity.** That intermediate state is what makes a lost answer recoverable: the retry
+    sends the SAME token, which is what the server's idempotence is keyed by. It reads as
+    tokenless for the no-private-fetch rule, and correctly so — the client waits for the
+    bootstrap answer before performing the act it bootstrapped FOR, so an account created
+    behind a lost answer is empty.
+  - **The tokenless branch is an ANSWER, not a loading state.** `roundSync` publishes a
+    ready-and-empty authoritative round and `state/history.ts` a ready empty month and
+    collection, so nothing breathes behind a request nobody made — the same rule #211's
+    explicit-loading bullet states for a month that has not arrived.
+  - **`markDeviceSignedOut` is called on the CODE, never the status.** Every private caller
+    reads the refusal's body and acts only on `401 unknown_device`; a 5xx, a dropped
+    connection or any other 4xx must never take a player's account away.
+  - **`state/identityScope.ts` holds the whole list of what an identity owns**, wired once
+    from `main.tsx` rather than as import-time side effects in five modules — so `identity.ts`
+    keeps knowing nothing about the game, and the list is one readable block.
+  - **`SignedOut` takes its RECONNECT handler as a PROP, and #216 passes none.** The email
+    link flow is #204's; a button that does nothing is worse than a screen that only offers
+    what it can actually do, so START FRESH is the only action until then.
+
 - **Local storage is an OUTBOX; a capped round ends at ∞ (#214).** The product contract —
   the three values, the load order, what the cap means, the share token, what was removed —
   lives in the root `AGENTS.md`. What is this package's:
@@ -774,7 +808,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `additionalBehaviors`, and `changeOrigin`/`xfwd` are pinned OFF (Vite's string shorthand
   does not leave them off) so the backend, which has no `siteOrigin` locally, reads the
   BROWSER's Host and bounces to the app rather than to itself.
-  The landing POSTs `{secret, add}` with the player key
+  The landing POSTs `{token, add}` with this device's token
   (`identity.ts`, generated on this first need, which is what lands the edge before a
   brand-new visitor's first game) and **a SUCCESSFUL add is CONFIRMED on screen**
   (user-decided 2026-08-20, superseding the silent continue-into-the-game beat — the
@@ -836,7 +870,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (stale-but-good beats a spinner) and FAILED shown only when there is nothing to draw.
   A screen-global failure flag painted an error frame over the OTHER tab's perfectly
   good board for a render on every flip back. (App keys the screen on lang:mode so a
-  switch resets.) The friends read is the authenticated `POST /board {secret}` via the
+  switch resets.) The friends read is the authenticated `POST /board {token}` via the
   OAC-hashed body, the global read the anonymous GET widened with the caller's PUBLIC
   id for the own window — **derived in its own try**, since the global board needs no
   identity and `crypto.subtle` is absent outside a secure context (the LAN-IP mobile

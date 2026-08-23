@@ -1,25 +1,25 @@
 // The round route on the ONE handler: POST /round?lang=&date=&mode=.
 //
 // SENTENCE mode STREAMS its guess log (#201):
-//   { secret, puzzle }                 — your stored round for that daily (404 = none yet);
-//   { secret, puzzle, guesses: [...] } — append to its ordered guess log.
+//   { token, puzzle }                 — your stored round for that daily (404 = none yet);
+//   { token, puzzle, guesses: [...] } — append to its ordered guess log.
 //
 // WORD mode writes exactly TWICE (#202) — the intuition says the opposite, but the fast
 // game benefits least: what syncing buys is the live friends board, and a 60-second run is
 // over before anyone opens it.
-//   { secret, puzzle, turnstileToken } — START: stamp this round's clock from the SERVER's
-//                                        own clock, onto the same record. Its answer adds
-//                                        `resumed`: false when THIS call stamped it, true
-//                                        when it joined a clock already running;
-//   { secret, puzzle, guesses: [...] } — SUBMIT the whole log, once, at the end of the run.
+//   { token, puzzle, turnstileToken } — START: stamp this round's clock from the SERVER's
+//                                       own clock, onto the same record. Its answer adds
+//                                       `resumed`: false when THIS call stamped it, true
+//                                       when it joined a clock already running;
+//   { token, puzzle, guesses: [...] } — SUBMIT the whole log, once, at the end of the run.
 //
 // Every call answers with the FULL stored state `{ guesses, createdAt, startedAt?, now }` —
 // a 200 and EVERY refusal — so a write is also a reconciliation: the caller computes
 // against stale local state, the server answers with truth, and the tab re-renders correct.
 // `now` is the server's own clock at the moment it answered, which is what lets a client
 // anchor its countdown to the server's `startedAt` without trusting its own device clock.
-// The route is POST-only for the /friends reason — the secret is the auth (#187) and it
-// travels in the BODY, never in a query string, so there is no way to ask without proving
+// The route is POST-only for the /friends reason — the device token is the auth (#216) and
+// it travels in the BODY, never in a query string, so there is no way to ask without proving
 // who you are. Its CloudFront behavior forwards exactly the three addressing queries (the
 // root AGENTS.md allowList contract); a production POST still needs
 // `x-amz-content-sha256` over the exact body bytes (OAC).
@@ -41,7 +41,6 @@ import {
   countTries,
   dayNumber,
   fold,
-  publicIdFromSecret,
   ROUND_GUESS_CAP,
   VOCAB_BUILDS,
   WORD_CLAIM_ZONE,
@@ -55,9 +54,10 @@ import {
   LIVE_HEADERS,
   readJsonObject,
   requireDayParams,
-  requireSecret,
+  requireDevice,
   requireTurnstileToken,
 } from './liveRoute';
+import type { DeviceStore } from './deviceStore';
 import type { PlayerHistoryStore } from './historyStore';
 import { loadPuzzle, loadSlice } from './puzzleReads';
 import { deriveRound, type PuzzleSlice } from './slice';
@@ -76,6 +76,9 @@ import type { TurnstileVerifier } from './turnstile';
 
 export interface RoundHandlerDeps {
   roundStore: RoundStore;
+  // Every path here is authenticated: the caller's device token resolves to the ACCOUNT
+  // every round row, score row and solved day is keyed by (#216).
+  deviceStore: DeviceStore;
   // Since #203 a finished round records its OWN score row — there is no score POST left to
   // do it (the client-claimed score and its range validation are retired), so the day's
   // population is written from here.
@@ -128,7 +131,7 @@ export async function handleRound(
     return errorResponse(
       405,
       'method_not_allowed',
-      'The round route is POST-only: the player key authenticates in the body.',
+      'The round route is POST-only: the device token authenticates in the body.',
       responseHeaders,
     );
   }
@@ -141,9 +144,9 @@ export async function handleRound(
   const parsed = readJsonObject(event, 'Round', responseHeaders, bodyMaxBytes(mode));
   if (!parsed.ok) return parsed.response;
   const body = parsed.value;
-  const checked = requireSecret(body, responseHeaders);
-  if (!checked.ok) return checked.response;
-  const publicId = await publicIdFromSecret(checked.value);
+  const auth = await requireDevice(body, responseHeaders, deps.deviceStore, instant);
+  if (!auth.ok) return auth.response;
+  const publicId = auth.value.account.accountId;
 
   const puzzle = body.puzzle;
   if (typeof puzzle !== 'string' || !PUZZLE_TAG_SHAPE.test(puzzle)) {

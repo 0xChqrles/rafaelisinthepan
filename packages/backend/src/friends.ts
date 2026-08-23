@@ -1,25 +1,27 @@
 // The #189 friends route on the ONE handler: POST /friends.
 //
-//   { secret }                    — your list (the trusted board's population, #190);
-//   { secret, add: "<publicId>" } — the MUTUAL edge an invite link's click records;
-//   { secret, remove: "<id>" }    — the symmetric removal.
+//   { token }                    — your list (the trusted board's population, #190);
+//   { token, add: "<publicId>" } — the MUTUAL edge an invite link's click records;
+//   { token, remove: "<id>" }    — the symmetric removal.
 //
 // Every call answers with the caller's current list, so a client never has to guess what a
-// write did — and every call is a POST for one reason: the secret is the auth (#187) and it
-// travels in the BODY, never in a query string. That is also why the read is a POST: the
-// server resolves YOUR edges, and there is no way to ask for them without proving who you
-// are. The route reads no query parameter at all, which is what its CloudFront behavior's
-// empty query allow-list says (root AGENTS.md); a production POST still needs
+// write did — and every call is a POST for one reason: the device token is the auth (#216)
+// and it travels in the BODY, never in a query string. That is also why the read is a POST:
+// the server resolves YOUR edges, and there is no way to ask for them without proving who
+// you are. The route reads no query parameter at all, which is what its CloudFront
+// behavior's empty query allow-list says (root AGENTS.md); a production POST still needs
 // `x-amz-content-sha256` over the exact body bytes, like every other write here (OAC).
 
-import { publicIdFromSecret, PUBLIC_ID_PATTERN } from '@whippin/shared';
+import { PUBLIC_ID_PATTERN } from '@whippin/shared';
+import type { DeviceStore } from './deviceStore';
 import { FRIENDS_MAX, type FriendStore } from './friendStore';
-import { LIVE_HEADERS, readJsonObject, requireSecret } from './liveRoute';
+import { LIVE_HEADERS, readJsonObject, requireDevice } from './liveRoute';
 import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respond';
 
 export async function handleFriends(
   event: FnUrlEvent,
   friends: FriendStore,
+  devices: DeviceStore,
   instant: Date,
   cors: Record<string, string>,
 ): Promise<FnUrlResult> {
@@ -29,7 +31,7 @@ export async function handleFriends(
     return errorResponse(
       405,
       'method_not_allowed',
-      'The friends route is POST-only: the player key authenticates in the body.',
+      'The friends route is POST-only: the device token authenticates in the body.',
       responseHeaders,
     );
   }
@@ -38,10 +40,10 @@ export async function handleFriends(
   if (!parsed.ok) return parsed.response;
   const body = parsed.value;
 
-  // Authentication without accounts (#187): the edges are keyed by the identity DERIVED
-  // from the secret — so the only graph a caller can read or change is their own.
-  const secret = requireSecret(body, responseHeaders);
-  if (!secret.ok) return secret.response;
+  // Authentication (#216): the edges are keyed by the ACCOUNT the caller's device token
+  // resolves to — so the only graph a caller can read or change is their own.
+  const auth = await requireDevice(body, responseHeaders, devices, instant);
+  if (!auth.ok) return auth.response;
 
   // The field name IS the verb and its value is the target, so a body can neither name an
   // operation with nothing to apply it to nor ask for two opposite things at once.
@@ -65,7 +67,7 @@ export async function handleFriends(
     );
   }
 
-  const publicId = await publicIdFromSecret(secret.value);
+  const publicId = auth.value.account.accountId;
 
   if (wantsAdd) {
     const friendId = target as string;

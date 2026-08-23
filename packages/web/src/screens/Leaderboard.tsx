@@ -3,7 +3,6 @@ import {
   anonName,
   dateForDayNumber,
   defaultAvatar,
-  publicIdFromSecret,
   type Board,
   type BoardPlayer,
   type BoardRow,
@@ -25,7 +24,7 @@ import ModeTabs from '../components/ModeTabs';
 import TopBar from '../components/TopBar';
 import useShare from '../hooks/useShare';
 import useToday from '../hooks/useToday';
-import { playerSecret } from '../identity';
+import { ensureDeviceIdentity, markDeviceSignedOut } from '../identity';
 import { useGameStore, type BoardTab } from '../state/gameStore';
 import {
   pathForBoard,
@@ -126,9 +125,13 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
     (async () => {
       let publicId: string;
       try {
-        publicId = await publicIdFromSecret(playerSecret());
+        // OPENING THE LEADERBOARD IS A TRIGGER (#216): the friends board is an
+        // authenticated read, this strip is the player's own identity, and the INVITE
+        // button shares their own link — none of the three exists without an account, so
+        // the screen mints one. It is the one deliberate act on this route.
+        publicId = (await ensureDeviceIdentity()).accountId;
       } catch {
-        // No identity at all (crypto.subtle outside a secure context): the strip draws
+        // The bootstrap did not land (offline, a refused challenge): the strip draws
         // nothing rather than a skeleton with nothing behind it.
         if (!cancelled) setMeSettled(true);
         return;
@@ -164,7 +167,8 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
     let cancelled = false;
     (async () => {
       try {
-        const response = await postFriendsBody(friendsUrl(), { secret: playerSecret() });
+        const identity = await ensureDeviceIdentity();
+        const response = await postFriendsBody(friendsUrl(), { token: identity.token });
         if (cancelled || !response.ok) return;
         const ids = parseFriends(await response.json());
         if (!cancelled) setFriendIds(new Set(ids));
@@ -181,35 +185,34 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
   // re-reads rather than trusting a snapshot from minutes ago; the cached board holds
   // the screen while the fresh one is in flight (stale-but-good beats a spinner), and
   // RETRY refetches. FRIENDS is the authenticated POST — the server resolves YOUR
-  // edges, so the read has to prove who is asking (#187: the secret in the body, never
-  // a query string). GLOBAL is the anonymous GET, widened with the caller's own window
-  // via their PUBLIC id.
+  // edges, so the read has to prove who is asking (#216: the device token in the body,
+  // never a query string). GLOBAL is the anonymous GET, widened with the caller's own
+  // window via their PUBLIC id.
   useEffect(() => {
     let cancelled = false;
     // A standing failure turns back into the loading state for this pass.
     setBoards((prev) => (prev[tab] === 'failed' ? { ...prev, [tab]: undefined } : prev));
     (async () => {
       try {
-        const secret = playerSecret();
-        // The global read needs NO identity — the caller's public id only widens it
-        // with their own window, and deriving it can genuinely fail (crypto.subtle is
-        // absent outside a secure context, e.g. the LAN-IP mobile check `board:seed`
-        // exists to support). A failed derivation degrades to the plain anonymous
-        // read; it must never kill a tab that needs no identity.
-        let id: string | undefined;
-        if (tab === 'global') {
-          try {
-            id = await publicIdFromSecret(secret);
-          } catch {
-            id = undefined;
-          }
-        }
+        // Opening this screen is the trigger, so both tabs share the ONE bootstrap the
+        // identity strip started. The GLOBAL read still needs no identity of its own — the
+        // caller's public id only widens it with their own window — so a bootstrap that did
+        // not land degrades it to the plain anonymous read rather than failing a tab that
+        // needs nobody.
+        const identity = await ensureDeviceIdentity().catch(() => null);
+        if (tab === 'friends' && identity === null) throw new Error('no identity');
         const response =
-          tab === 'friends'
-            ? await postBoardBody(boardUrl(lang, date, mode), { secret })
-            : await fetch(boardUrl(lang, date, mode, id));
+          tab === 'friends' && identity !== null
+            ? await postBoardBody(boardUrl(lang, date, mode), { token: identity.token })
+            : await fetch(boardUrl(lang, date, mode, identity?.accountId));
         if (cancelled) return;
-        if (!response.ok) throw new Error(`board answered ${response.status}`);
+        if (!response.ok) {
+          if (response.status === 401) {
+            const data = (await response.json().catch(() => ({}))) as { error?: unknown };
+            if (data.error === 'unknown_device') markDeviceSignedOut();
+          }
+          throw new Error(`board answered ${response.status}`);
+        }
         const board = parseBoard(await response.json());
         if (!cancelled) setBoards((prev) => ({ ...prev, [tab]: board }));
       } catch {

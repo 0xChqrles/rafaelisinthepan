@@ -52,6 +52,26 @@ vi.mock('../api', async (importOriginal) => ({
 // `roundUrl` reason above) and would turn every creating append into a failed write.
 vi.mock('../turnstile', () => ({ turnstileToken: async () => 'challenge' }));
 
+// This device's IDENTITY (#216). Every case below is signed in except the tokenless one at
+// the end, which flips the flag: no identity means no private fetch at all, and the FIRST
+// GUESS is what mints one.
+const identity = vi.hoisted(() => ({
+  present: true,
+  value: { token: 'f'.repeat(64), accountId: 'a'.repeat(16), deviceId: 'd'.repeat(16) },
+  signedOut: vi.fn(),
+}));
+
+vi.mock('../identity', () => ({
+  deviceIdentity: () => (identity.present ? identity.value : null),
+  ensureDeviceIdentity: async () => {
+    identity.present = true;
+    return identity.value;
+  },
+  identityEpoch: () => (identity.present ? `${identity.value.accountId}:${identity.value.deviceId}` : null),
+  markDeviceSignedOut: identity.signedOut,
+}));
+
+
 const post = vi.mocked(postRoundBody);
 
 const T0 = 1_700_000_000_000;
@@ -161,13 +181,13 @@ function capped(key: string = KEY): boolean {
 }
 
 function bodyOf(call: number): {
-  secret: string;
+  token: string;
   puzzle: string;
   guesses?: string[];
   turnstileToken?: string;
 } {
   return post.mock.calls[call][1] as {
-    secret: string;
+    token: string;
     puzzle: string;
     guesses?: string[];
     turnstileToken?: string;
@@ -189,6 +209,8 @@ beforeEach(() => {
   vi.setSystemTime(T0);
   resetRoundSync();
   post.mockReset();
+  identity.present = true;
+  identity.signedOut.mockReset();
   useGameStore.setState(
     { outbox: {}, wordRounds: {}, roundLoads: {}, activeWordKey: null },
     false,
@@ -768,5 +790,58 @@ describe('publishing an UNCHANGED state writes nothing', () => {
     await settle(2 * ROUND_WRITE_MIN_MS);
     expect(load()).not.toBe(first);
     expect(server()?.guesses).toEqual(['bois', 'chemin']);
+  });
+});
+
+describe('no token, no private fetch (#216)', () => {
+  it('makes a tokenless round READY and EMPTY without asking the server', async () => {
+    // A device that has never bootstrapped owns no server round, so the authoritative state
+    // is KNOWN empty. Asking would be a private read on a visit that has performed none of
+    // the deliberate acts that create an identity — and it would bootstrap an account for a
+    // player who has not acted.
+    identity.present = false;
+    beginRoundSync(ctx());
+    await settle();
+    expect(post).not.toHaveBeenCalled();
+    expect(load()).toEqual({
+      status: 'ready',
+      puzzle: REVISION,
+      server: { guesses: [], solved: false, solvedByAppend: false },
+    });
+  });
+
+  it('mints the identity on the FIRST GUESS and appends with the token it was handed', async () => {
+    identity.present = false;
+    beginRoundSync(ctx());
+    await settle();
+
+    post.mockResolvedValueOnce(ok(['bois']));
+    seedOutbox(['bois']);
+    notifyGuess(KEY);
+    await settle();
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(bodyOf(0)).toMatchObject({ token: 'f'.repeat(64), guesses: ['bois'] });
+    // The round did not exist, so the creating append still carries the #203 challenge.
+    expect(bodyOf(0).turnstileToken).toBe('challenge');
+  });
+
+  it('signs the device out on `unknown_device`, and on nothing else', async () => {
+    // The one answer that may. A 5xx is an unknown write outcome and a 400 is an ordinary
+    // verdict; neither may take a player's account away.
+    post.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: 'unknown_device' }),
+    } as unknown as Response);
+    beginRoundSync(ctx());
+    await settle();
+    expect(identity.signedOut).toHaveBeenCalledTimes(1);
+
+    resetRoundSync();
+    identity.signedOut.mockReset();
+    post.mockResolvedValueOnce(status(400));
+    beginRoundSync(ctx());
+    await settle();
+    expect(identity.signedOut).not.toHaveBeenCalled();
   });
 });

@@ -1,18 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import {
-  AVATAR_CELLS,
-  blankAvatar,
-  encodeAvatar,
-  publicIdFromSecret,
-  NAME_MAX_LENGTH,
-} from '@whippin/shared';
+import { AVATAR_CELLS, blankAvatar, encodeAvatar, NAME_MAX_LENGTH } from '@whippin/shared';
 import { createHandler } from './handler';
+import { memoryDeviceStore } from './memoryDeviceStore';
 import { memoryProfileStore } from './memoryProfileStore';
 import type { FnUrlEvent } from './respond';
 import type { PuzzleStore } from './store';
-
-const SECRET = 'a'.repeat(32);
-const OTHER_SECRET = 'b'.repeat(32);
+import { seedDevice } from './testDevice';
 
 const emptyStore: PuzzleStore = {
   getPuzzle: async () => null,
@@ -20,10 +13,23 @@ const emptyStore: PuzzleStore = {
   getSlice: async () => null,
 };
 
-function makeHandler(profiles = memoryProfileStore()) {
+async function makeHandler(profiles = memoryProfileStore()) {
+  const devices = memoryDeviceStore();
   return {
     profiles,
-    handler: createHandler({ store: emptyStore, profiles }),
+    handler: createHandler({
+      store: emptyStore,
+      profiles,
+      devices: {
+        deviceStore: devices,
+        turnstile: { verify: async () => true },
+        allowSourceIp: true,
+      },
+    }),
+    // Two devices on two ACCOUNTS: the profile is the account's, so writing from one must
+    // never be visible under the other's id.
+    me: await seedDevice(devices),
+    other: await seedDevice(devices),
   };
 }
 
@@ -56,17 +62,17 @@ function swastikaAvatar(): string {
 }
 
 describe('profile route (#188)', () => {
-  it('writes the row keyed by the DERIVED publicId and reads it back', async () => {
-    const { handler } = makeHandler();
+  it("writes the row keyed by the CALLER's account and reads it back", async () => {
+    const { handler, me } = await makeHandler();
     const avatar = blankAvatar(1);
-    const posted = await handler(post({ secret: SECRET, name: 'Chqrles', avatar }));
+    const posted = await handler(post({ token: me.token, name: 'Chqrles', avatar }));
     expect(posted.statusCode).toBe(200);
-    const publicId = await publicIdFromSecret(SECRET);
-    // The response carries the derived identity and the name VERBATIM — never the
-    // secret, and never a name the server quietly rewrote (the shared rule refuses a
+    const publicId = me.accountId;
+    // The response carries the resolved account and the name VERBATIM — never the device
+    // token, and never a name the server quietly rewrote (the shared rule refuses a
     // non-conforming one instead, below).
     expect(JSON.parse(posted.body)).toEqual({ publicId, name: 'Chqrles', avatar });
-    expect(posted.body).not.toContain(SECRET);
+    expect(posted.body).not.toContain(me.token);
     expect(posted.headers['Cache-Control']).toBe('no-store');
 
     const read = await handler(get(publicId));
@@ -75,11 +81,11 @@ describe('profile route (#188)', () => {
   });
 
   it('upserts: a second write replaces name and avatar for the same identity', async () => {
-    const { handler } = makeHandler();
-    await handler(post({ secret: SECRET, name: 'First', avatar: blankAvatar(0) }));
-    const second = await handler(post({ secret: SECRET, name: 'Second', avatar: blankAvatar(2) }));
+    const { handler, me } = await makeHandler();
+    await handler(post({ token: me.token, name: 'First', avatar: blankAvatar(0) }));
+    const second = await handler(post({ token: me.token, name: 'Second', avatar: blankAvatar(2) }));
     expect(second.statusCode).toBe(200);
-    const publicId = await publicIdFromSecret(SECRET);
+    const publicId = me.accountId;
     const read = await handler(get(publicId));
     expect(JSON.parse(read.body)).toEqual({
       publicId,
@@ -88,27 +94,38 @@ describe('profile route (#188)', () => {
     });
   });
 
-  it('two secrets are two identities', async () => {
-    const { handler } = makeHandler();
-    await handler(post({ secret: SECRET, name: 'One', avatar: blankAvatar() }));
-    await handler(post({ secret: OTHER_SECRET, name: 'Two', avatar: blankAvatar() }));
-    const one = await handler(get(await publicIdFromSecret(SECRET)));
-    const two = await handler(get(await publicIdFromSecret(OTHER_SECRET)));
+  it('two devices on two accounts are two identities', async () => {
+    const { handler, me, other } = await makeHandler();
+    await handler(post({ token: me.token, name: 'One', avatar: blankAvatar() }));
+    await handler(post({ token: other.token, name: 'Two', avatar: blankAvatar() }));
+    const one = await handler(get(me.accountId));
+    const two = await handler(get(other.accountId));
     expect(JSON.parse(one.body).name).toBe('One');
     expect(JSON.parse(two.body).name).toBe('Two');
   });
 
-  it('refuses a write without a well-formed secret', async () => {
-    const { handler } = makeHandler();
-    for (const secret of [undefined, '', 'not-a-key', 'A'.repeat(32), 'a'.repeat(31)]) {
-      const response = await handler(post({ secret, name: 'x', avatar: blankAvatar() }));
+  it('refuses a write without a canonical device token', async () => {
+    const { handler } = await makeHandler();
+    // Malformed is an INPUT error, never `unknown_device`: an uppercase spelling is
+    // refused rather than normalized, or one token would key two rows.
+    for (const token of [undefined, '', 'not-a-token', 'A'.repeat(64), 'a'.repeat(63)]) {
+      const response = await handler(post({ token, name: 'x', avatar: blankAvatar() }));
       expect(response.statusCode).toBe(400);
       expect(JSON.parse(response.body).error).toBe('bad_request');
     }
   });
 
+  it('refuses a write from a device nobody holds with unknown_device (#216)', async () => {
+    const { handler } = await makeHandler();
+    const response = await handler(
+      post({ token: 'f'.repeat(64), name: 'x', avatar: blankAvatar() }),
+    );
+    expect(response.statusCode).toBe(401);
+    expect(JSON.parse(response.body).error).toBe('unknown_device');
+  });
+
   it('rejects every name the SHARED rule would change', async () => {
-    const { handler } = makeHandler();
+    const { handler, me } = await makeHandler();
     // The web can produce none of these: the charset rule is the shared one, so the
     // store only ever holds what the editor can. A caller going around it is refused,
     // never silently rewritten.
@@ -126,47 +143,47 @@ describe('profile route (#188)', () => {
       '😀',
     ];
     for (const name of refused) {
-      const response = await handler(post({ secret: SECRET, name, avatar: blankAvatar() }));
+      const response = await handler(post({ token: me.token, name, avatar: blankAvatar() }));
       expect(response.statusCode).toBe(400);
       expect(JSON.parse(response.body).error).toBe('bad_request');
     }
     // Exactly the cap is fine, underscores are the one separator, and the empty name
     // is a valid avatar-only profile.
     for (const name of ['x'.repeat(NAME_MAX_LENGTH), 'jean_pierre', 'X4E9', '']) {
-      const response = await handler(post({ secret: SECRET, name, avatar: blankAvatar() }));
+      const response = await handler(post({ token: me.token, name, avatar: blankAvatar() }));
       expect(response.statusCode).toBe(200);
     }
   });
 
   it('rejects a banned name with its own error code', async () => {
-    const { handler } = makeHandler();
+    const { handler, me } = await makeHandler();
     const response = await handler(
-      post({ secret: SECRET, name: 'H1tl3r', avatar: blankAvatar() }),
+      post({ token: me.token, name: 'H1tl3r', avatar: blankAvatar() }),
     );
     expect(response.statusCode).toBe(400);
     expect(JSON.parse(response.body).error).toBe('name_rejected');
   });
 
   it('rejects a malformed avatar and a swastika avatar', async () => {
-    const { handler } = makeHandler();
-    const malformed = await handler(post({ secret: SECRET, name: 'x', avatar: 'nope' }));
+    const { handler, me } = await makeHandler();
+    const malformed = await handler(post({ token: me.token, name: 'x', avatar: 'nope' }));
     expect(malformed.statusCode).toBe(400);
     expect(JSON.parse(malformed.body).error).toBe('bad_request');
 
-    const symbol = await handler(post({ secret: SECRET, name: 'x', avatar: swastikaAvatar() }));
+    const symbol = await handler(post({ token: me.token, name: 'x', avatar: swastikaAvatar() }));
     expect(symbol.statusCode).toBe(400);
     expect(JSON.parse(symbol.body).error).toBe('avatar_rejected');
   });
 
   it('a refused write stores nothing', async () => {
-    const { handler } = makeHandler();
-    await handler(post({ secret: SECRET, name: 'nazi', avatar: blankAvatar() }));
-    const read = await handler(get(await publicIdFromSecret(SECRET)));
+    const { handler, me } = await makeHandler();
+    await handler(post({ token: me.token, name: 'nazi', avatar: blankAvatar() }));
+    const read = await handler(get(me.accountId));
     expect(read.statusCode).toBe(404);
   });
 
   it('GET validates the id and 404s an unknown profile', async () => {
-    const { handler } = makeHandler();
+    const { handler } = await makeHandler();
     for (const id of [undefined, '', 'UPPER', 'short', '0'.repeat(16)]) {
       const response = await handler(get(id));
       expect(response.statusCode).toBe(400);
@@ -176,7 +193,7 @@ describe('profile route (#188)', () => {
   });
 
   it('refuses non-GET/POST methods and answers preflight', async () => {
-    const { handler } = makeHandler();
+    const { handler } = await makeHandler();
     const del = await handler({
       rawPath: '/profile',
       requestContext: { http: { method: 'DELETE' } },

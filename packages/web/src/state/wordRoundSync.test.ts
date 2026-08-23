@@ -47,6 +47,21 @@ vi.mock('../api', async (importOriginal) => ({
 // The invisible challenge is the one thing this engine cannot exercise for real.
 vi.mock('../turnstile', () => ({ turnstileToken: vi.fn() }));
 
+// This device's IDENTITY (#216). The engine's own tokenless branch — no identity means no
+// private fetch at all — is exercised in `identity.test.ts`; here the device is signed in,
+// which is what every case below is about.
+vi.mock('../identity', () => ({
+  deviceIdentity: () => ({ token: 'f'.repeat(64), accountId: 'a'.repeat(16), deviceId: 'd'.repeat(16) }),
+  ensureDeviceIdentity: async () => ({
+    token: 'f'.repeat(64),
+    accountId: 'a'.repeat(16),
+    deviceId: 'd'.repeat(16),
+  }),
+  identityEpoch: () => `${'a'.repeat(16)}:${'d'.repeat(16)}`,
+  markDeviceSignedOut: vi.fn(),
+}));
+
+
 const post = vi.mocked(postRoundBody);
 const challenge = vi.mocked(turnstileToken);
 
@@ -122,7 +137,7 @@ const serverGuesses = () => {
 
 function bodyOf(call: number) {
   return post.mock.calls[call][1] as {
-    secret: string;
+    token: string;
     puzzle: string;
     guesses?: string[];
     turnstileToken?: string;

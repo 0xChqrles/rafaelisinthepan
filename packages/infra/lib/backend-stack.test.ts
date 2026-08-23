@@ -70,10 +70,10 @@ describe('score production boundary (#169)', () => {
       template.findResources('AWS::CloudFront::OriginRequestPolicy'),
     );
     // The score policy, the profile policy (#188), the friends policy (#189), the
-    // board policy (#190), the round policy (#201) and the history policy (#211) — each
-    // forwards exactly the queries its handler route reads (the root AGENTS.md allowList
-    // contract).
-    expect(policies).toHaveLength(6);
+    // board policy (#190), the round policy (#201), the history policy (#211) and the
+    // devices policy (#216) — each forwards exactly the queries its handler route reads
+    // (the root AGENTS.md allowList contract).
+    expect(policies).toHaveLength(7);
     const scorePolicy = policies.find(
       (policy) =>
         policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinLiveScoresOrigin',
@@ -138,7 +138,7 @@ describe('score production boundary (#169)', () => {
     const friends = behaviors.find(({ PathPattern }) => PathPattern === 'friends*');
     // The graph is live data, like /scores and /profile.
     expect(friends?.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
-    // The route is POST-only: the player key authenticates in the body.
+    // The route is POST-only: the device token authenticates in the body.
     expect(friends?.AllowedMethods).toContain('POST');
 
     const policies = Object.values(
@@ -197,7 +197,7 @@ describe('score production boundary (#169)', () => {
     const round = behaviors.find(({ PathPattern }) => PathPattern === 'round*');
     // The guess log is live data, like the other four.
     expect(round?.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
-    // The route is POST-only: the player key authenticates in the body.
+    // The route is POST-only: the device token authenticates in the body.
     expect(round?.AllowedMethods).toContain('POST');
 
     const policies = Object.values(
@@ -219,6 +219,35 @@ describe('score production boundary (#169)', () => {
     });
   });
 
+  it('uses a deployable zero-cache devices behavior forwarding NO query (#216)', () => {
+    const distributions = Object.values(template.findResources('AWS::CloudFront::Distribution'));
+    const behaviors = distributions[0].Properties.DistributionConfig.CacheBehaviors as Record<
+      string,
+      unknown
+    >[];
+    const devices = behaviors.find(({ PathPattern }) => PathPattern === 'devices*');
+    // Identity is live data, and a device list is private: it must never sit at the edge.
+    expect(devices?.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
+    // POST-only: the device token authenticates in the body.
+    expect(devices?.AllowedMethods).toContain('POST');
+
+    const policies = Object.values(
+      template.findResources('AWS::CloudFront::OriginRequestPolicy'),
+    );
+    const devicesPolicy = policies.find(
+      (policy) => policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinDevicesOrigin',
+    );
+    // Nothing to forward — the /friends rule. The header mode still has to be the
+    // Lambda-URL-safe one, since it is what carries the OAC-signed body hash.
+    expect(devicesPolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
+      QueryStringBehavior: 'none',
+    });
+    expect(devicesPolicy?.Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
+      HeaderBehavior: 'allExcept',
+      Headers: ['Host'],
+    });
+  });
+
   it('uses a deployable zero-cache history behavior with exact query forwarding (#211)', () => {
     const distributions = Object.values(template.findResources('AWS::CloudFront::Distribution'));
     const behaviors = distributions[0].Properties.DistributionConfig.CacheBehaviors as Record<
@@ -228,7 +257,7 @@ describe('score production boundary (#169)', () => {
     const history = behaviors.find(({ PathPattern }) => PathPattern === 'history*');
     // A player's own history is live AND private: it must never sit at the edge.
     expect(history?.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
-    // POST-only: the player key authenticates in the body, like /friends and /round.
+    // POST-only: the device token authenticates in the body, like /friends and /round.
     expect(history?.AllowedMethods).toContain('POST');
 
     const policies = Object.values(
@@ -258,9 +287,10 @@ describe('score production boundary (#169)', () => {
     // Nothing else can catch this: `pnpm backend:dev` has no CDN, and the handler's own
     // tests hand it the header directly.
     //
-    // Since #203 that is TWO routes. `/round` verifies both modes' Turnstile-gated round
-    // START against the connecting address and records the day's score row metered by its
-    // HMAC; `/scores` keeps the association because its own shape is unchanged.
+    // Since #203 that is TWO routes, and since #216 THREE. `/round` verifies both modes'
+    // Turnstile-gated round START against the connecting address and records the day's score
+    // row metered by its HMAC; `/devices` verifies the gated bootstrap that mints an
+    // identity; `/scores` keeps the association because its own shape is unchanged.
     const functions = Object.values(template.findResources('AWS::CloudFront::Function'));
     expect(functions).toHaveLength(1);
     const code = functions[0].Properties.FunctionCode as string;
@@ -277,7 +307,7 @@ describe('score production boundary (#169)', () => {
       string,
       unknown
     >[];
-    for (const pattern of ['scores*', 'round*']) {
+    for (const pattern of ['scores*', 'round*', 'devices*']) {
       const behavior = behaviors.find(({ PathPattern }) => PathPattern === pattern);
       const associations = behavior?.FunctionAssociations as { EventType: string }[];
       expect(associations, pattern).toHaveLength(1);
@@ -304,6 +334,25 @@ describe('per-player score storage (#187)', () => {
     expect(tables[0].Properties.TimeToLiveSpecification).toEqual({
       AttributeName: 'expiresAt',
       Enabled: true,
+    });
+  });
+
+  it('indexes an account\'s devices, sparsely and off the authentication path (#216)', () => {
+    const tables = Object.values(template.findResources('AWS::DynamoDB::Table'));
+    const indexes = tables[0].Properties.GlobalSecondaryIndexes as Record<string, unknown>[];
+    // ONE index. Authentication is a direct base-table read by the token's hash, so the
+    // index exists only for the sign-out screen's "which devices does this account have".
+    expect(indexes).toHaveLength(1);
+    expect(indexes[0].IndexName).toBe('DeviceByAccount');
+    expect(indexes[0].KeySchema).toEqual([
+      { AttributeName: 'gsi1pk', KeyType: 'HASH' },
+      { AttributeName: 'gsi1sk', KeyType: 'RANGE' },
+    ]);
+    // Enough to RENDER a device row; the base primary key comes along by construction, so
+    // a listed device still identifies the one item to delete.
+    expect(indexes[0].Projection).toEqual({
+      ProjectionType: 'INCLUDE',
+      NonKeyAttributes: ['deviceId', 'accountId', 'agent', 'createdAt', 'lastSeenAt'],
     });
   });
 

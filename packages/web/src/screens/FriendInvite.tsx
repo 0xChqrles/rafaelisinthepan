@@ -4,7 +4,7 @@ import Avatar from '../components/Avatar';
 import LoadingWave from '../components/LoadingWave';
 import LoadError from '../components/LoadError';
 import { friendsUrl, parseProfile, postFriendsBody, profileUrl } from '../api';
-import { playerSecret } from '../identity';
+import { ensureDeviceIdentity, markDeviceSignedOut } from '../identity';
 import { t } from '../i18n';
 import { navigate } from '../routing';
 
@@ -74,14 +74,24 @@ export function shareInviteFlight(
 }
 
 export async function sendInvite(publicId: string): Promise<InviteOutcome> {
+  // ACCEPTING AN INVITE IS A TRIGGER (#216) — and the one that cannot be gated, because the
+  // accepter is by definition a brand-new visitor clicking a link. Their identity is minted
+  // on this first need, which is what lands the edge before their first game.
+  const identity = await ensureDeviceIdentity();
   const response = await postFriendsBody(friendsUrl(), {
-    secret: playerSecret(),
+    token: identity.token,
     add: publicId,
   });
   // A 2xx landed the edge (a re-click of an already-accepted link included — you ARE
   // friends, which is exactly what the confirmation says).
   if (response.ok) return 'added';
   if (response.status >= 500) return 'failed';
+  // A device signed out from elsewhere: the screen that explains it takes over, and the
+  // click continues into the game with nothing announced (no edge was added).
+  if (response.status === 401) {
+    const data = (await response.json().catch(() => ({}))) as { error?: unknown };
+    if (data.error === 'unknown_device') markDeviceSignedOut();
+  }
   return response.status === 409 ? 'full' : 'settled';
 }
 

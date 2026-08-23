@@ -7,12 +7,11 @@ import {
   decodeAvatar,
   defaultAvatar,
   encodeAvatar,
-  publicIdFromSecret,
   sanitizeName,
   NAME_MAX_LENGTH,
 } from '@whippin/shared';
 import { parseProfile, postProfileBody, profileUrl } from '../api';
-import { playerSecret } from '../identity';
+import { ensureDeviceIdentity, markDeviceSignedOut } from '../identity';
 import { navigate } from '../routing';
 import { pathForBoard, resolveHomeLang } from '../langs';
 import { t } from '../i18n';
@@ -96,8 +95,10 @@ export default function Profile() {
   // No puzzle to take a language from: same resolution as the `/` redirect.
   const lang = resolveHomeLang(lastLang, navigator.language);
 
-  const [secret] = useState(() => playerSecret());
-  // Derived once by the load effect; the editor is gated on that read, so every path
+  // This device's token, resolved once by the load effect below (#216) — the editor is
+  // gated on that read, so every path that needs it runs only after it is set.
+  const [token, setToken] = useState('');
+  // Resolved once by the load effect; the editor is gated on that read, so every path
   // that needs it (the save body's name rule) runs only after it is set.
   const [publicId, setPublicId] = useState('');
   const [name, setName] = useState('');
@@ -124,8 +125,14 @@ export default function Profile() {
     setLoad('loading');
     (async () => {
       try {
-        const publicId = await publicIdFromSecret(secret);
+        // The identity EDITOR cannot show a player their identity without one, so opening
+        // it mints one (#216) — the same act as "saving a profile" in the trigger list, one
+        // beat earlier. The wired entry point is the leaderboard, which has already
+        // bootstrapped; only a deep link ever mints here.
+        const identity = await ensureDeviceIdentity();
         if (cancelled) return;
+        setToken(identity.token);
+        const publicId = identity.accountId;
         setPublicId(publicId);
         const response = await fetch(profileUrl(publicId));
         if (cancelled) return;
@@ -166,7 +173,7 @@ export default function Profile() {
     return () => {
       cancelled = true;
     };
-  }, [secret, attempt]);
+  }, [attempt]);
 
   // ---- the name field. Sanitizing a CONTROLLED input's value makes React reassign
   // `node.value`, and assigning `.value` collapses the text cursor to the END of the
@@ -270,7 +277,7 @@ export default function Profile() {
     // name every surface derives it from (nameForStore's WRITE half). The baseline
     // below re-reads the DISPLAY value, so a save can never leave the editor differing
     // from what it just stored.
-    const body = { secret, name: nameForStore(clean, publicId), avatar: encoded };
+    const body = { token, name: nameForStore(clean, publicId), avatar: encoded };
     // The outcome is decided while the dots run; the phases below only pace how the
     // button tells it.
     let outcome: SaveRefusal = null;
@@ -280,6 +287,9 @@ export default function Profile() {
         setBaseline({ name: clean, avatar: body.avatar });
       } else {
         const refusal = (await response.json().catch(() => null)) as { error?: string } | null;
+        // A device signed out from elsewhere raises the screen that explains it; the save
+        // still reports as failed, because it was.
+        if (response.status === 401 && refusal?.error === 'unknown_device') markDeviceSignedOut();
         outcome =
           refusal?.error === 'name_rejected' || refusal?.error === 'avatar_rejected'
             ? refusal.error
@@ -293,7 +303,7 @@ export default function Profile() {
     setPhase('restoring');
     await sleep(SAVE_RESTORE_MS);
     setPhase((current) => (current === 'restoring' ? 'idle' : current));
-  }, [secret, publicId, name, encoded]);
+  }, [token, publicId, name, encoded]);
 
   const saveError =
     refused === 'name_rejected'

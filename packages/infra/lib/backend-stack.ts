@@ -105,6 +105,27 @@ export class BackendStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN,
     });
 
+    // ── The ONE index on this table: an account's devices (#216) ─────────────
+    // A device item is keyed by SHA-256(its token), so AUTHENTICATION is a direct base-table
+    // read and needs no index at all. The sign-out screen asks the opposite question — which
+    // devices does THIS account have — and that is what this answers. It is SPARSE: only the
+    // device rows carry the two index attributes, so nothing else on the table is in it.
+    //
+    // It is deliberately OFF the security-sensitive path. A GSI is eventually consistent, so
+    // a just-created device may not be listed for a moment and a just-deleted one may still
+    // be; neither can keep a revoked token authenticable, because revocation deletes the
+    // token's own base item. The base primary key is projected automatically, which is what
+    // lets a listed device name the one item to delete.
+    scoreTable.addGlobalSecondaryIndex({
+      indexName: 'DeviceByAccount',
+      partitionKey: { name: 'gsi1pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'gsi1sk', type: dynamodb.AttributeType.STRING },
+      // The label the screen renders, and nothing else: a device row carries no secret, but
+      // projecting ALL would copy every future attribute into a second copy of the item.
+      projectionType: dynamodb.ProjectionType.INCLUDE,
+      nonKeyAttributes: ['deviceId', 'accountId', 'agent', 'createdAt', 'lastSeenAt'],
+    });
+
     // Explicit log group so CloudWatch logs don't accumulate forever (the implicit
     // `/aws/lambda/*` group never expires). DESTROY so teardown is clean; the name is
     // CFN-generated and the function is pointed at it via `logGroup` below.
@@ -182,7 +203,11 @@ export class BackendStack extends Stack {
     // transactional actions through their underlying item permissions, so no Scan
     // surface is needed. The private history (#211) adds NO action: its calendar is a
     // Query over the caller's own round partition and its solved-day collection a
-    // GetItem + UpdateItem on the private player row.
+    // GetItem + UpdateItem on the private player row. Devices (#216) add no action either
+    // — authentication is a GetItem, the bootstrap a transaction of two create-only Puts,
+    // the sign-out list a Query and revocation a DeleteItem — and no explicit index ARN:
+    // a Query against a secondary index is authorized on `<table>/index/*`, which `grant`
+    // adds by itself once the table HAS an index (the GSI declared above is the one).
     scoreTable.grant(
       fn,
       'dynamodb:Query',
@@ -362,7 +387,7 @@ export class BackendStack extends Stack {
       ['id'],
     );
 
-    // `/friends` (#189) reads NO query parameter at all — the player key authenticates in
+    // `/friends` (#189) reads NO query parameter at all — the device token authenticates in
     // the body, so every call is a POST and there is nothing to forward but the headers
     // carrying the OAC-signed body hash. An EMPTY allow-list is the honest statement of
     // that: the day this route grows a query, it has to be named here or CloudFront will
@@ -385,7 +410,7 @@ export class BackendStack extends Stack {
     );
 
     // `/round` (#201) reads THREE — the same day-addressing triple as /scores, since the
-    // guess log is one item per (date, lang, mode, publicId). The player key travels in
+    // guess log is one item per (date, lang, mode, account). The device token travels in
     // the POST body, never in a query.
     const roundOriginRequestPolicy = liveOriginRequestPolicy(
       'RoundOriginRequestPolicy',
@@ -394,9 +419,19 @@ export class BackendStack extends Stack {
       ['lang', 'date', 'mode'],
     );
 
+    // `/devices` (#216) reads NO query at all — the device token is the auth and it travels
+    // in the body, exactly like `/friends`. Same empty-allow-list rule: the day it reads one,
+    // it has to be named here or CloudFront will strip it before the handler sees it.
+    const devicesOriginRequestPolicy = liveOriginRequestPolicy(
+      'DevicesOriginRequestPolicy',
+      'WhippinDevicesOrigin',
+      'Devices: no query strings, Lambda-URL-safe headers outside cache.',
+      [],
+    );
+
     // `/history` (#211) reads THREE — `lang`/`mode` name which game, and `month` the
     // calendar page. NOT `date`: this read is addressed by a MONTH, which is exactly the
-    // sort-key prefix a player's calendar is one Query over. The player key travels in the
+    // sort-key prefix a player's calendar is one Query over. The device token travels in the
     // POST body like every other private read.
     const historyOriginRequestPolicy = liveOriginRequestPolicy(
       'HistoryOriginRequestPolicy',
@@ -497,6 +532,12 @@ export class BackendStack extends Stack {
         }),
         'friends*': liveBehavior(friendsOriginRequestPolicy),
         'history*': liveBehavior(historyOriginRequestPolicy),
+        // The device BOOTSTRAP is Turnstile-gated (#216), so this route needs a trusted
+        // client address exactly as the round start does — the third behavior wearing the
+        // viewer-request function.
+        'devices*': liveBehavior(devicesOriginRequestPolicy, {
+          functionAssociations: [viewerIpAssociation],
+        }),
       },
     });
 

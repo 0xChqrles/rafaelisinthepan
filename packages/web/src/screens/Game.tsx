@@ -464,7 +464,7 @@ function Round({
   useEffect(() => {
     // A FRESH solve is one the SERVER confirmed on a batch THIS device sent
     // (`solvedByAppend`). An adopted one — read at mount, or learned from a `round_solved`
-    // refusal because the same player key finished the board in another tab or on another
+    // refusal because the same ACCOUNT finished the board in another tab or on another
     // device — is history as far as the beats are concerned: the board IS solved, and it is
     // shown solved, but nothing celebrates a finish that already happened somewhere else.
     // A CAPPED round is never fresh: it ends, it does not finish.

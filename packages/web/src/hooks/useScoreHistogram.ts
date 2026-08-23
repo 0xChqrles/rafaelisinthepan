@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { dateForDayNumber, publicIdFromSecret, type ScoreHistogram } from '@whippin/shared';
+import { dateForDayNumber, type ScoreHistogram } from '@whippin/shared';
 import { parseScoreHistogram, scoresUrl } from '../api';
-import { playerSecret } from '../identity';
+import { deviceIdentity } from '../identity';
 import type { Mode } from '../langs';
 
 // The solved screen's population data (#170), a plain READ since #203.
 //
 // It used to be a round trip with a state machine behind it: a finished round POSTed its
-// own score — carrying an invisible Turnstile token and the player key — and persisted
+// own score — carrying an invisible Turnstile token and the player's key — and persisted
 // whatever band the server answered with, so a revisit could GET instead, and a REFUSED
 // submission left the round asking again on the next visit. All of that is retired. The
 // server now derives the score from the guess log it already holds (#201) and records the
@@ -81,16 +81,14 @@ export async function readPopulation(
   lang: string,
   date: string,
 ): Promise<ScorePlacement | null> {
-  // Derived in its OWN try, the leaderboard's rule: `crypto.subtle` is absent outside a
-  // secure context (the LAN-IP mobile check), and there the honest answer is no standing
-  // rather than a guessed one.
-  let id: string | undefined;
-  try {
-    id = await publicIdFromSecret(playerSecret());
-  } catch {
-    return null;
-  }
-  const response = await fetch(scoresUrl(lang, date, mode, id));
+  // The caller's PUBLIC id, which is what makes the returned band THEIRS. Since #216 it is
+  // the SERVER-assigned account id this device already holds, so there is nothing to derive
+  // and no `crypto.subtle` to be missing outside a secure context (the LAN-IP mobile check
+  // that used to need its own try/catch here). A device with no identity has recorded
+  // nothing, so there is no standing to read.
+  const identity = deviceIdentity();
+  if (!identity) return null;
+  const response = await fetch(scoresUrl(lang, date, mode, identity.accountId));
   if (!response.ok) return null;
   const histogram = parseScoreHistogram(await response.json());
   // `bucket` is the server's answer about THIS player, so a population that does not hold

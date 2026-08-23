@@ -37,7 +37,12 @@ import { parseRound, postRoundBody, roundUrl, type RoundState } from '../api';
 import { guessKey } from '../game/scoring';
 import { unacknowledged } from '../game/playLog';
 import { EMPTY_ROUND_SERVER, useGameStore, type RoundLoad, type RoundServer } from './gameStore';
-import { playerSecret } from '../identity';
+import {
+  deviceIdentity,
+  ensureDeviceIdentity,
+  identityEpoch,
+  markDeviceSignedOut,
+} from '../identity';
 import { turnstileToken } from '../turnstile';
 
 export interface RoundSyncContext {
@@ -245,6 +250,19 @@ async function pump(key: string): Promise<void> {
   }
 
   if (!f.readDone) {
+    // **No token means no private fetch** (#216). A device with no identity holds no server
+    // rows by construction, so the round's authoritative state is KNOWN empty — asking would
+    // be a request whose only possible answer we already have, and it would bootstrap an
+    // account for a visit that has not acted. The first guess creates both.
+    if (deviceIdentity() === null) {
+      f.created = false;
+      f.readDone = true;
+      publish(f, key, EMPTY_ROUND_SERVER);
+      // Reassess straight away: a persisted outbox from an earlier visit is owed to the
+      // server the moment an identity exists, and the append is what mints one.
+      void pump(key);
+      return;
+    }
     f.inFlight = readRound(f, key);
   } else {
     const owed = pending(f);
@@ -282,17 +300,28 @@ async function pump(key: string): Promise<void> {
   void pump(key); // reassess: retries, coalesced arrivals, leftovers
 }
 
-function requestBody(f: RoundFlight, guesses?: string[], challenge?: string) {
-  return { secret: playerSecret(), puzzle: f.puzzle, guesses, turnstileToken: challenge };
+function requestBody(f: RoundFlight, token: string, guesses?: string[], challenge?: string) {
+  return { token, puzzle: f.puzzle, guesses, turnstileToken: challenge };
 }
 
-// Is this answer still about the puzzle that asked for it? A flight is MUTATED in place
-// when its round re-registers, so a sentence re-published while a request is in the air
-// leaves that request describing the retired puzzle while `f` already carries the
-// corrected one's revision and ranks. Everything a superseded answer would have written is
-// dropped; the flight has already been reset to read again, and `pump` restarts it.
-function superseded(f: RoundFlight, puzzle: string): boolean {
-  return f.puzzle !== puzzle;
+// Is this answer still about the puzzle — and the IDENTITY — that asked for it? A flight is
+// MUTATED in place when its round re-registers, so a sentence re-published while a request
+// is in the air leaves that request describing the retired puzzle while `f` already carries
+// the corrected one's revision and ranks. The identity half is #216's: `epoch` is captured
+// when the request goes OUT and compared with the one in force when the answer lands, so an
+// answer that outlives a sign-out or a fresh start belongs to an account this device no
+// longer acts as — and adopting it would walk that account's board into the new one.
+// Everything a superseded answer would have written is dropped; the flight has already been
+// reset to read again, and `pump` restarts it.
+function superseded(f: RoundFlight, puzzle: string, epoch: string | null): boolean {
+  return f.puzzle !== puzzle || epoch !== identityEpoch();
+}
+
+// The distinct answer that signs a device out (#216) — and ONLY that one. A 5xx or a
+// dropped connection must never sign anyone out, which is why this reads the error CODE and
+// not merely the status.
+function isUnknownDevice(status: number, error: string | undefined): boolean {
+  return status === 401 && error === 'unknown_device';
 }
 
 // Take the server's answer as this round's truth and publish it to the screen. `byAppend`
@@ -360,25 +389,33 @@ function discardOutbox(f: RoundFlight): void {
 
 async function readRound(f: RoundFlight, key: string): Promise<void> {
   const puzzle = f.puzzle;
+  const identity = deviceIdentity();
+  // `pump` has already taken the tokenless branch, so this can only be a race with a
+  // sign-out; treat it as the superseded answer it would become.
+  if (!identity) return;
+  const epoch = identityEpoch();
   let response: Response;
   try {
-    response = await postRoundBody(roundUrl(f.lang, f.date, f.mode), requestBody(f));
+    response = await postRoundBody(
+      roundUrl(f.lang, f.date, f.mode),
+      requestBody(f, identity.token),
+    );
   } catch {
-    if (!superseded(f, puzzle)) retryLater(f, key);
+    if (!superseded(f, puzzle, epoch)) retryLater(f, key);
     return;
   }
-  if (superseded(f, puzzle)) return;
+  if (superseded(f, puzzle, epoch)) return;
   if (response.ok) {
     let state: RoundState;
     try {
       state = parseRound(await response.json());
     } catch {
-      if (!superseded(f, puzzle)) retryLater(f, key);
+      if (!superseded(f, puzzle, epoch)) retryLater(f, key);
       return;
     }
     // Re-checked after the body: reading it is another await, and a republish landing
     // inside it would leave this log describing the retired sentence.
-    if (superseded(f, puzzle)) return;
+    if (superseded(f, puzzle, epoch)) return;
     // The server HAS a record for this puzzle, so no further append mints one and none
     // carries a challenge.
     f.created = true;
@@ -405,6 +442,10 @@ async function readRound(f: RoundFlight, key: string): Promise<void> {
     f.created = false;
     publish(f, key, EMPTY_ROUND_SERVER);
   } else if (isVerdict(response.status)) {
+    // A device signed out from elsewhere learns it HERE first, since the mount read is the
+    // earliest private call a game route makes. The screen it raises is the whole answer;
+    // this conversation has nothing left to ask.
+    await noteVerdict(response);
     failLoad(f, key);
     f.closed = true;
     return;
@@ -416,10 +457,30 @@ async function readRound(f: RoundFlight, key: string): Promise<void> {
   f.failures = 0;
 }
 
+// A 4xx may be the signed-out answer. Reading the body is cheap and it is the only way to
+// tell `unknown_device` from any other verdict — the status alone would sign a player out
+// for a language the server does not serve.
+async function noteVerdict(response: Response): Promise<void> {
+  let error: string | undefined;
+  try {
+    const data = (await response.json()) as { error?: unknown };
+    error = typeof data.error === 'string' ? data.error : undefined;
+  } catch {
+    return;
+  }
+  if (isUnknownDevice(response.status, error)) markDeviceSignedOut();
+}
+
 async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promise<void> {
   const puzzle = f.puzzle;
   let response: Response;
+  let epoch = identityEpoch();
   try {
+    // THE FIRST GUESS IS A TRIGGER (#216): a device with no identity mints one here, before
+    // the write that needs it. Every later append finds the identity already in hand. A
+    // failed bootstrap is an ordinary failed write, retried with the rest.
+    const identity = await ensureDeviceIdentity();
+    epoch = identityEpoch();
     // ROUND CREATION carries a Turnstile challenge (#203). It is prefetched while the
     // puzzle loads, so by the first guess it is normally already in hand; a failure here
     // is an ordinary failed write, retried with the rest — the round keeps playing
@@ -428,14 +489,14 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
     const challenge = f.created ? undefined : await turnstileToken();
     response = await postRoundBody(
       roundUrl(f.lang, f.date, f.mode),
-      requestBody(f, batch, challenge),
+      requestBody(f, identity.token, batch, challenge),
     );
   } catch {
     // The write never reached an answer — and it may still have COMMITTED (a suspended
     // tab, a dropped connection, a gateway timeout). Re-sending would append the same
     // batch a second time, so the recovery is a RE-READ: only the server can say what it
     // holds, and the outbox shrinks by what that answer shows.
-    if (!superseded(f, puzzle)) resync(f, key);
+    if (!superseded(f, puzzle, epoch)) resync(f, key);
     return;
   }
 
@@ -455,12 +516,13 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
       error = typeof data.error === 'string' ? data.error : undefined;
       state = parseRound(data);
     } catch {
-      if (!superseded(f, puzzle)) resync(f, key);
+      if (!superseded(f, puzzle, epoch)) resync(f, key);
       return;
     }
-    // A superseded answer describes the RETIRED puzzle: not its log, not its cap, not
-    // its failure count. The republish already reset this flight to read again.
-    if (superseded(f, puzzle)) return;
+    // A superseded answer describes the RETIRED puzzle — or an identity this device has
+    // left: not its log, not its cap, not its failure count. The republish (or the sign-out)
+    // already reset this flight to read again.
+    if (superseded(f, puzzle, epoch)) return;
     f.failures = 0;
     // The server holds a record for this puzzle — but only when this answer DEMONSTRATES
     // one (corrected on review). A rate-refused RESTART answers the EMPTY state, because no
@@ -509,8 +571,9 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
     return;
   }
 
-  if (superseded(f, puzzle)) return;
+  if (superseded(f, puzzle, epoch)) return;
   if (isVerdict(response.status)) {
+    await noteVerdict(response);
     f.closed = true;
     return;
   }

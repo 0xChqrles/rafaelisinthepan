@@ -4,7 +4,7 @@
 // and asks for that date's puzzle in ONE fetch. The server only serves dates within
 // a ±1-day clock-skew window of its own active day.
 
-import { isValidAvatar, PUBLIC_ID_PATTERN } from '@whippin/shared';
+import { DEVICE_ID_PATTERN, isValidAvatar, PUBLIC_ID_PATTERN } from '@whippin/shared';
 import type {
   Board,
   BoardPlayer,
@@ -245,12 +245,77 @@ async function postSignedJson(url: string, body: unknown): Promise<Response> {
   });
 }
 
+// The device route (#216): the lazy Turnstile-gated bootstrap that MINTS this device's
+// identity, and the sign-out screen's list + revocation. POST-only like /friends — the
+// device token is the auth and it travels in the BODY, never a query string, so the route
+// reads no query at all (its CloudFront behavior's allow-list is EMPTY, the same
+// three-package contract). The answer never carries the token back: the client already
+// holds it, and echoing it would put it somewhere a proxy or a log could see.
+export function devicesUrl(base: string = apiBase()): string {
+  return `${requireApiBase(base)}/devices`;
+}
+
+export async function postDevicesBody(
+  url: string,
+  body: { token: string; turnstileToken?: string; revoke?: string },
+): Promise<Response> {
+  return postSignedJson(url, body);
+}
+
+export interface DeviceRow {
+  deviceId: string;
+  device: string;
+  os: string;
+  browser: string;
+  createdAt: string;
+  lastSeenAt: string;
+  // Is this the device asking? It holds a token, never a device id, so only the server can
+  // say which row is its own.
+  current: boolean;
+}
+
+export interface DeviceListing {
+  accountId: string;
+  deviceId: string;
+  devices: DeviceRow[];
+}
+
+// Runtime shape check for the bootstrap/list answer — the parsePuzzle contract: a
+// wrong-shaped body must surface as a failed bootstrap, never as an identity of `undefined`
+// keyed into every stored row from here on.
+export function parseDeviceIdentity(data: unknown): DeviceListing {
+  if (!isRecord(data)) throw new Error('malformed device: not an object');
+  const { accountId, deviceId, devices } = data;
+  if (typeof accountId !== 'string' || !PUBLIC_ID_PATTERN.test(accountId)) {
+    throw new Error('malformed device: bad "accountId"');
+  }
+  if (typeof deviceId !== 'string' || !DEVICE_ID_PATTERN.test(deviceId)) {
+    throw new Error('malformed device: bad "deviceId"');
+  }
+  if (!Array.isArray(devices)) throw new Error('malformed device: "devices" must be an array');
+  for (const raw of devices) {
+    const row = raw as Record<string, unknown>;
+    if (
+      !isRecord(raw) ||
+      typeof row.deviceId !== 'string' ||
+      !DEVICE_ID_PATTERN.test(row.deviceId) ||
+      typeof row.device !== 'string' ||
+      typeof row.os !== 'string' ||
+      typeof row.browser !== 'string' ||
+      typeof row.current !== 'boolean'
+    ) {
+      throw new Error('malformed device: bad "devices" row');
+    }
+  }
+  return data as unknown as DeviceListing;
+}
+
 // The round route (#201/#202/#203): the server-authoritative state of one player's play on
-// one daily, one item per (date, lang, mode, publicId). POST-only like /friends —
-// `{secret, puzzle}` reads the stored round (404 = none yet); SENTENCE mode streams into it
-// with `{secret, puzzle, guesses}`, carrying a `turnstileToken` on the append that CREATES
-// the round, while WORD mode writes twice, `{secret, puzzle, turnstileToken}` to START its
-// server-stamped clock and one `{secret, puzzle, guesses}` carrying the whole log at the
+// one daily, one item per (date, lang, mode, account). POST-only like /friends —
+// `{token, puzzle}` reads the stored round (404 = none yet); SENTENCE mode streams into it
+// with `{token, puzzle, guesses}`, carrying a `turnstileToken` on the append that CREATES
+// the round, while WORD mode writes twice, `{token, puzzle, turnstileToken}` to START its
+// server-stamped clock and one `{token, puzzle, guesses}` carrying the whole log at the
 // end. EVERY answer, refusals included, carries the full state, so a write is also a
 // reconciliation. In sentence mode `puzzle` is the published revision naming WHICH puzzle
 // the state belongs to, which is how a corrected daily restarts instead of inheriting the
@@ -264,7 +329,7 @@ export function roundUrl(lang: string, date: string, mode: Mode, base: string = 
 
 export async function postRoundBody(
   url: string,
-  body: { secret: string; puzzle: string; guesses?: string[]; turnstileToken?: string },
+  body: { token: string; puzzle: string; guesses?: string[]; turnstileToken?: string },
 ): Promise<Response> {
   return postSignedJson(url, body);
 }
@@ -346,7 +411,7 @@ export function parseRound(data: unknown): RoundState {
 
 // The PRIVATE player history (#211): the archive calendar's month, the chooser's status
 // strip and the streak's solved-day list, all off what the server already derives from the
-// guess log (#203). POST-only like /friends — the player key authenticates in the BODY, so
+// guess log (#203). POST-only like /friends — the device token authenticates in the BODY, so
 // there is no way to ask for someone else's history. `month` is OPTIONAL: the streak needs
 // the solved-day collection alone, and making that read spend a month Query would cost a
 // whole calendar per game load. All three queries are in the history CloudFront behavior's
@@ -367,7 +432,7 @@ export async function postHistoryBody(
   url: string,
   // `collection: false` opts out of the solved-day read (the chooser never renders the
   // streak); omitted means true, so the original body shape keeps its meaning.
-  body: { secret: string; collection?: boolean },
+  body: { token: string; collection?: boolean },
 ): Promise<Response> {
   return postSignedJson(url, body);
 }
@@ -412,15 +477,15 @@ export function profileUrl(publicId?: string, base: string = apiBase()): string 
 
 export async function postProfileBody(
   url: string,
-  body: { secret: string; name: string; avatar: string },
+  body: { token: string; name: string; avatar: string },
 ): Promise<Response> {
   return postSignedJson(url, body);
 }
 
-// The #189 friends graph: ONE route, POST-only — the player key authenticates in the body
-// (#187) and there is no query to ask with, so a caller can only ever read or change their
-// own edges. `{secret}` reads the list, `{secret, add}` records the mutual edge an invite
-// link's click makes, `{secret, remove}` deletes both sides. Every call answers with the
+// The #189 friends graph: ONE route, POST-only — the device token authenticates in the body
+// (#216) and there is no query to ask with, so a caller can only ever read or change their
+// own edges. `{token}` reads the list, `{token, add}` records the mutual edge an invite
+// link's click makes, `{token, remove}` deletes both sides. Every call answers with the
 // caller's current list.
 export function friendsUrl(base: string = apiBase()): string {
   return `${requireApiBase(base)}/friends`;
@@ -428,7 +493,7 @@ export function friendsUrl(base: string = apiBase()): string {
 
 export async function postFriendsBody(
   url: string,
-  body: { secret: string; add?: string; remove?: string },
+  body: { token: string; add?: string; remove?: string },
 ): Promise<Response> {
   return postSignedJson(url, body);
 }
@@ -445,8 +510,8 @@ export function parseFriends(data: unknown): string[] {
 }
 
 // The #190 leaderboard: GET is the anonymous GLOBAL top 50 (`id` — the caller's PUBLIC
-// id, never the secret — widens it with their own below-the-cut window); POST with
-// `{secret}` is the authenticated FRIENDS board, the trusted surface. Addressed per
+// id, never the token — widens it with their own below-the-cut window); POST with
+// `{token}` is the authenticated FRIENDS board, the trusted surface. Addressed per
 // (day, lang, mode) like everything else; all four query parameters are in the board
 // CloudFront behavior's allowList (the root AGENTS.md three-package contract).
 export function boardUrl(
@@ -462,7 +527,7 @@ export function boardUrl(
   return id ? `${root}&id=${encodeURIComponent(id)}` : root;
 }
 
-export async function postBoardBody(url: string, body: { secret: string }): Promise<Response> {
+export async function postBoardBody(url: string, body: { token: string }): Promise<Response> {
   return postSignedJson(url, body);
 }
 

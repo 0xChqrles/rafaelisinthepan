@@ -31,7 +31,6 @@ import {
   VIEWER_IP_HEADER,
   encodeAvatar,
   invitePath,
-  publicIdFromSecret,
   type Puzzle,
 } from '@whippin/shared';
 import { defaultLocalStoreRoot, sliceKey } from './layout';
@@ -54,10 +53,12 @@ const NAMES = [
   'Charmante', 'Demihard', 'Buvette', 'Marguerite', 'Isabelot',
 ];
 
-// Deterministic 32-hex seed secrets: the same population on every run, so re-seeding
-// after a server restart repairs the exact same board (first-write-wins rows included).
-function secretOf(i: number): string {
-  return i.toString(16).padStart(32, '0');
+// Deterministic 64-hex seed DEVICE TOKENS (#216): the same population on every run, so
+// re-seeding after a server restart repairs the exact same board (first-write-wins rows
+// included). The ACCOUNT behind each one is assigned by the server, so this script learns
+// its ids from the bootstrap answer rather than deriving them.
+function tokenOf(i: number): string {
+  return i.toString(16).padStart(64, '0');
 }
 
 // A small deterministic mirrored drawing per seed, so avatars look authored, not noisy.
@@ -164,6 +165,16 @@ function friendArg(): string | null {
   return match[1];
 }
 
+// Each seed's identity, learned from its own bootstrap. Turnstile is the local accept-all
+// verifier, so the challenge is a placeholder here exactly as it is on the round writes.
+async function bootstrap(i: number, ip: string): Promise<string> {
+  const response = await post('/devices', { token: tokenOf(i), turnstileToken: 'local' }, ip);
+  if (!response.ok) {
+    throw new Error(`device bootstrap ${i} refused: ${response.status} ${await response.text()}`);
+  }
+  return ((await response.json()) as { accountId: string }).accountId;
+}
+
 async function main() {
   const friendId = friendArg();
 
@@ -179,11 +190,16 @@ async function main() {
 
   // 60 scored players: 40 distinct scores, then a 20-player tie across the top-50
   // cut. Every 9th-ish player skips the profile (the assigned-identity fallback).
+  // Every seed's account id, so the invite links below can name one without deriving it.
+  const accountIds = new Map<number, string>();
+
   for (let i = 0; i < 60; i += 1) {
-    const secret = secretOf(i);
+    const ip = `10.0.${Math.floor(i / 50)}.${(i % 50) + 1}`;
+    const token = tokenOf(i);
+    accountIds.set(i, await bootstrap(i, ip));
     if (i % 9 !== 4) {
       const r = await post('/profile', {
-        secret,
+        token,
         name: NAMES[i % NAMES.length],
         avatar: encodeAvatar(i % 5, drawingOf(i)),
       });
@@ -197,14 +213,14 @@ async function main() {
     const r = await post(
       roundPath,
       {
-        secret,
+        token,
         // The day's PUBLISHED VERSION (#203) — the round's identity, and what the route
         // checks its slice and rank maps against. An invented tag is a 404 on every seed.
         puzzle: puzzle.revision,
         guesses: playthrough(puzzle, score),
         turnstileToken: 'local',
       },
-      `10.0.${Math.floor(i / 50)}.${(i % 50) + 1}`,
+      ip,
     );
     if (!r.ok) console.log(`[seed] round ${i} refused:`, r.status, await r.text());
   }
@@ -212,8 +228,9 @@ async function main() {
   // Two profile-only players with NO score today — the friends board's "not played
   // yet" rows once linked.
   for (const i of [60, 61]) {
+    accountIds.set(i, await bootstrap(i, `10.0.2.${i}`));
     const r = await post('/profile', {
-      secret: secretOf(i),
+      token: tokenOf(i),
       name: NAMES[i % NAMES.length],
       avatar: encodeAvatar(i % 5, drawingOf(i)),
     });
@@ -221,11 +238,11 @@ async function main() {
   }
 
   // Optionally befriend the given identity from a few seeds' side — the mutual write
-  // lands both halves, so the caller's board fills without their secret ever leaving
+  // lands both halves, so the caller's board fills without their device token ever leaving
   // their browser.
   if (friendId) {
     for (const i of [2, 7, 19, 47, 60]) {
-      const r = await post('/friends', { secret: secretOf(i), add: friendId });
+      const r = await post('/friends', { token: tokenOf(i), add: friendId });
       if (!r.ok) console.log(`[seed] friend link ${i} refused:`, r.status, await r.text());
     }
     console.log(`[seed] linked 5 seeds (one unplayed) to ${friendId}`);
@@ -238,7 +255,8 @@ async function main() {
   // your dev server is not on the port below.
   console.log('[seed] invite links (click one in the app to land that seed on your friends board):');
   for (const i of [11, 33, 61]) {
-    const id = await publicIdFromSecret(secretOf(i));
+    const id = accountIds.get(i);
+    if (!id) continue;
     const label = i === 61 ? 'has NOT played today' : 'has played';
     console.log(`[seed]   ${SITE}${invitePath(id)}   (${NAMES[i % NAMES.length]}, ${label})`);
   }

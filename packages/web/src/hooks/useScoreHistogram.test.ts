@@ -16,10 +16,14 @@ vi.mock('../api', () => ({
     `https://api.test/scores?lang=${lang}&date=${date}&mode=${mode}${id ? `&id=${id}` : ''}`,
   parseScoreHistogram: (data: unknown) => data,
 }));
-vi.mock('../identity', () => ({ playerSecret: () => '00112233445566778899aabbccddeeff' }));
-vi.mock('@whippin/shared', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  publicIdFromSecret: async () => PLAYER_ID,
+// The caller's PUBLIC id is the SERVER-assigned account this device holds (#216), so there
+// is nothing to derive — and no `crypto.subtle` to be missing outside a secure context.
+vi.mock('../identity', () => ({
+  deviceIdentity: () => ({
+    token: 'f'.repeat(64),
+    accountId: 'lfd5pqz5pa7zjm5u',
+    deviceId: 'd'.repeat(16),
+  }),
 }));
 
 const PLAYER_ID = 'lfd5pqz5pa7zjm5u';

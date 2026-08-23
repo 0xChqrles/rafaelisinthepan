@@ -35,7 +35,12 @@ import { ROUND_WRITE_MIN_MS, WORD_MISS_CAP, type WordRanks } from '@whippin/shar
 import { parseRound, postRoundBody, roundUrl, type RoundState } from '../api';
 import { fnvTag } from './roundSync';
 import { EMPTY_ROUND_SERVER, useGameStore, type RoundServer } from './gameStore';
-import { playerSecret } from '../identity';
+import {
+  deviceIdentity,
+  ensureDeviceIdentity,
+  identityEpoch,
+  markDeviceSignedOut,
+} from '../identity';
 import { turnstileToken } from '../turnstile';
 
 export interface WordRoundContext {
@@ -286,14 +291,20 @@ export function startWordRound(ctx: WordRoundContext): Promise<boolean> {
 
 async function requestStart(ctx: WordRoundContext): Promise<boolean> {
   const puzzle = wordTag(ctx.word);
+  let epoch = identityEpoch();
   let response: Response;
   try {
+    // STARTING A WORD ROUND IS A TRIGGER (#216): a device with no identity mints one here,
+    // before the write that stamps the clock. PLAY already waits on this answer, so the
+    // bootstrap sits inside a beat the player is already watching.
+    const identity = await ensureDeviceIdentity();
+    epoch = identityEpoch();
     // The invisible challenge (web/turnstile.ts) — every failure rejects quietly, and here
     // that is a start the player is told about rather than a silent one: the run cannot
     // begin without it.
     const token = await turnstileToken();
     response = await postRoundBody(roundUrl(ctx.lang, ctx.date, 'word'), {
-      secret: playerSecret(),
+      token: identity.token,
       puzzle,
       turnstileToken: token,
     });
@@ -314,8 +325,10 @@ async function requestStart(ctx: WordRoundContext): Promise<boolean> {
   // word — anchoring the RETIRED word's clock into it (and adopting its log) would start
   // the replacement on a run nobody played. The reader's own round is the check, since a
   // start owns no flight; a superseded start reports failure, and PLAY retries against the
-  // word now on screen.
+  // word now on screen. The identity half is the same rule (#216): a clock stamped for an
+  // account this device has since left must not be anchored into the one that replaced it.
   if (useGameStore.getState().wordRounds[ctx.roundKey]?.word !== ctx.word) return false;
+  if (identityEpoch() !== epoch) return false;
   // `running` is answered 200 too: a second tap, a retry or another device resumes the ONE
   // clock the server already stamped, and the store's anchor is idempotent besides. But
   // only a call that actually STAMPED it makes this session the runner — the answer says
@@ -351,6 +364,14 @@ async function pump(key: string): Promise<void> {
     return;
   }
 
+  if (!f.readDone && deviceIdentity() === null) {
+    // **No token means no private fetch** (#216): a device with no identity holds no server
+    // round, so the mount read has nothing to ask. PLAY is the trigger that creates both.
+    publishLoad(f, key);
+    f.readDone = true;
+    void pump(key);
+    return;
+  }
   f.inFlight = f.readDone ? submitRun(f, key, round.tried) : readRound(f, key);
   try {
     await f.inFlight;
@@ -369,34 +390,38 @@ async function pump(key: string): Promise<void> {
 // when its round re-registers, so a word republished while a request is in the air leaves
 // that request describing the retired one. Everything a superseded answer would have
 // written is dropped; the flight has already been reset to read again.
-function superseded(f: WordFlight, puzzle: string): boolean {
-  return f.puzzle !== puzzle;
+function superseded(f: WordFlight, puzzle: string, epoch: string | null): boolean {
+  return f.puzzle !== puzzle || epoch !== identityEpoch();
 }
 
 async function readRound(f: WordFlight, key: string): Promise<void> {
   const puzzle = f.puzzle;
+  const identity = deviceIdentity();
+  // `pump` has already taken the tokenless branch, so this can only race a sign-out.
+  if (!identity) return;
+  const epoch = identityEpoch();
   let response: Response;
   try {
     response = await postRoundBody(roundUrl(f.lang, f.date, 'word'), {
-      secret: playerSecret(),
+      token: identity.token,
       puzzle,
     });
   } catch {
-    if (!superseded(f, puzzle)) retryLater(f, key);
+    if (!superseded(f, puzzle, epoch)) retryLater(f, key);
     return;
   }
-  if (superseded(f, puzzle)) return;
+  if (superseded(f, puzzle, epoch)) return;
   if (response.ok) {
     let state: RoundState;
     try {
       state = parseRound(await response.json());
     } catch {
-      if (!superseded(f, puzzle)) retryLater(f, key);
+      if (!superseded(f, puzzle, epoch)) retryLater(f, key);
       return;
     }
     // Re-checked after the body: reading it is another await, and a republish landing
     // inside it would leave this state describing the retired word.
-    if (superseded(f, puzzle)) return;
+    if (superseded(f, puzzle, epoch)) return;
     const startedAt = anchorFrom(state);
     if (startedAt !== null) useGameStore.getState().anchorWordRun(key, startedAt);
     if (state.submittedAt !== null) {
@@ -414,6 +439,9 @@ async function readRound(f: WordFlight, key: string): Promise<void> {
     // same key whose old record is retired. Nothing to resume; PLAY will create it.
     publishLoad(f, key);
   } else if (isVerdict(response.status)) {
+    // A device signed out from elsewhere learns it here, on the mount read. The screen it
+    // raises is the whole answer; this conversation has nothing left to ask.
+    await noteVerdict(response);
     failLoad(f, key);
     f.closed = true;
     return;
@@ -425,20 +453,39 @@ async function readRound(f: WordFlight, key: string): Promise<void> {
   f.failures = 0;
 }
 
+// A 4xx may be the signed-out answer (#216). The CODE decides, never the status: a device
+// must not be signed out for a body this route refused for any other reason, and a 5xx or a
+// dropped connection must never sign anyone out at all.
+async function noteVerdict(response: Response): Promise<void> {
+  if (response.status !== 401) return;
+  try {
+    const data = (await response.json()) as { error?: unknown };
+    if (data.error === 'unknown_device') markDeviceSignedOut();
+  } catch {
+    // A refusal with no readable body says nothing about the device.
+  }
+}
+
 async function submitRun(f: WordFlight, key: string, tried: readonly string[]): Promise<void> {
   const puzzle = f.puzzle;
+  let epoch = identityEpoch();
   let response: Response;
   try {
+    // A run this device PLAYED always has an identity — the START minted one — but a
+    // submission can also be the first act after a fresh start, so it ensures one rather
+    // than assuming it.
+    const identity = await ensureDeviceIdentity();
+    epoch = identityEpoch();
     response = await postRoundBody(roundUrl(f.lang, f.date, 'word'), {
-      secret: playerSecret(),
+      token: identity.token,
       puzzle,
       guesses: submittableLog(f.ranks, tried),
     });
   } catch {
-    if (!superseded(f, puzzle)) retryLater(f, key);
+    if (!superseded(f, puzzle, epoch)) retryLater(f, key);
     return;
   }
-  if (superseded(f, puzzle)) return;
+  if (superseded(f, puzzle, epoch)) return;
 
   let state: RoundState | null = null;
   let error: string | undefined;
@@ -449,7 +496,7 @@ async function submitRun(f: WordFlight, key: string, tried: readonly string[]): 
   } catch {
     state = null;
   }
-  if (superseded(f, puzzle)) return;
+  if (superseded(f, puzzle, epoch)) return;
 
   if (response.ok) {
     // 200 covers the SUBMISSION and the "already submitted" answer alike: the daily is
@@ -473,6 +520,7 @@ async function submitRun(f: WordFlight, key: string, tried: readonly string[]): 
   // ever started here; a body this client keeps getting wrong), and retrying it forever
   // would spin one request every 30 seconds for the tab's life.
   if (error !== 'too_early' && isVerdict(response.status)) {
+    if (isVerdictSignedOut(response.status, error)) markDeviceSignedOut();
     f.closed = true;
     return;
   }
@@ -485,6 +533,11 @@ async function submitRun(f: WordFlight, key: string, tried: readonly string[]): 
 function settleAuthoritative(ctx: WordRoundContext, state: RoundState): void {
   const run = replayWordRun(ctx.ranks, state.guesses);
   useGameStore.getState().settleWordRun(ctx.roundKey, run.claimed.length);
+}
+
+// The submission path has already read the refusal's body, so it names the code directly.
+function isVerdictSignedOut(status: number, error: string | undefined): boolean {
+  return status === 401 && error === 'unknown_device';
 }
 
 // A 4xx is a VERDICT — a request this client will keep getting wrong. (409 `too_early` is

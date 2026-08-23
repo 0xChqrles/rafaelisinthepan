@@ -26,7 +26,6 @@
 import {
   boardOwnRows,
   cutBoard,
-  publicIdFromSecret,
   rankBoard,
   PUBLIC_ID_PATTERN,
   type Board,
@@ -34,8 +33,9 @@ import {
   type BoardRow,
   type RankedScore,
 } from '@whippin/shared';
+import type { DeviceStore } from './deviceStore';
 import type { FriendStore } from './friendStore';
-import { LIVE_HEADERS, readJsonObject, requireDayParams, requireSecret } from './liveRoute';
+import { LIVE_HEADERS, readJsonObject, requireDayParams, requireDevice } from './liveRoute';
 import type { ProfileStore } from './profileStore';
 import type { ScoreKey, ScoreStore } from './scoreStore';
 import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respond';
@@ -44,6 +44,8 @@ export interface BoardHandlerDeps {
   scores: ScoreStore;
   profiles: ProfileStore;
   friends: FriendStore;
+  // The trusted face authenticates its caller's device (#216); the anonymous GET does not.
+  devices: DeviceStore;
 }
 
 // How a player with NO public profile is dressed — and the ONE fallback this route
@@ -85,6 +87,7 @@ export async function handleBoard(
   event: FnUrlEvent,
   deps: BoardHandlerDeps,
   serverDate: string,
+  instant: Date,
   cors: Record<string, string>,
 ): Promise<FnUrlResult> {
   const responseHeaders = { ...cors, ...LIVE_HEADERS };
@@ -124,10 +127,10 @@ export async function handleBoard(
   // POST — the friends board. The body carries only the proof of identity.
   const body = readJsonObject(event, 'Board', responseHeaders);
   if (!body.ok) return body.response;
-  const secret = requireSecret(body.value, responseHeaders);
-  if (!secret.ok) return secret.response;
+  const auth = await requireDevice(body.value, responseHeaders, deps.devices, instant);
+  if (!auth.ok) return auth.response;
 
-  const publicId = await publicIdFromSecret(secret.value);
+  const publicId = auth.value.account.accountId;
   const friends = await deps.friends.list(publicId);
   // The trusted board is the caller's edges plus themselves — and the caller already
   // holds the exact row keys, so the store fetches THOSE (batch-shaped, constant in the

@@ -45,6 +45,17 @@ const STRINGS = {
   // side of the pair, and the clicker cannot tell which.
   friendListFull: { en: 'FRIEND LIST FULL', fr: "LISTE D'AMIS PLEINE" },
   retry: { en: 'RETRY', fr: 'RÉESSAYER' },
+  // Signed out from another device (#216). It is a SCREEN, not an error line: the account
+  // is intact and reachable, this device simply no longer holds it.
+  signedOut: { en: 'THIS DEVICE IS SIGNED OUT', fr: 'CET APPAREIL EST DÉCONNECTÉ' },
+  // The copy has to say what is being left behind, or a vanished streak and an empty
+  // friends list read as a bug rather than as the sign-out that caused them.
+  signedOutNote: {
+    en: 'Your streak, your archive and your friends stay on that account. Starting fresh here leaves them behind.',
+    fr: 'Votre série, votre archive et vos amis restent sur ce compte. Repartir de zéro ici les laisse derrière.',
+  },
+  signedOutReconnect: { en: 'RECONNECT', fr: 'SE RECONNECTER' },
+  signedOutSkip: { en: 'START FRESH', fr: 'REPARTIR DE ZÉRO' },
   // The missing-puzzle state is ABNORMAL (a publish that did not happen), and the
   // wording says so — it must not read like a scheduled day off.
   noPuzzle: { en: "TODAY'S PUZZLE IS MISSING", fr: 'LE PUZZLE DU JOUR EST INTROUVABLE' },

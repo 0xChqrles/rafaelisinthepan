@@ -99,6 +99,17 @@
   sort-key prefix #203 reordered the round key for; no viewer-IP function, no per-address
   logic. It adds NO table action: its calendar is a Query over the caller's own round
   partition and its solved-day collection a GetItem + UpdateItem on the private player row.
+  **`/devices` (#216)** is the seventh on that shape — `CachingDisabled` (identity is live
+  AND a device list is private), ALLOW_ALL methods (POST-only; the device token authenticates
+  in the body), `allExcept: Host` headers, an allow-list that is EMPTY because the handler
+  reads no query at all (the `/friends` rule), and the viewer-IP function, because the
+  Turnstile-gated BOOTSTRAP needs a trusted address exactly as a round start does. It brings
+  this table's **ONE secondary index**, `DeviceByAccount` (`gsi1pk`/`gsi1sk`, projecting the
+  device row's label fields): authentication is a direct base-table read by the token's hash,
+  so the index exists only for the sign-out screen's "which devices does this account have".
+  It adds no table action either — `Table.grant` extends to `<table>/index/*` by itself once
+  the table has an index — and `backend-stack.test.ts` pins the index's keys, its projection
+  and the behavior's three-package allow-list.
   The table grant adds
   `GetItem` for the profile read (the upsert reuses `UpdateItem`) and **`DeleteItem` for
   #189's symmetric friend removal, the only delete on this table**; all are pinned by

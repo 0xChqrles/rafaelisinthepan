@@ -37,6 +37,7 @@ import {
 } from './ogCard';
 import { isValidDate } from './layout';
 import { handleBoard } from './board';
+import { handleDevices, type DeviceHandlerDeps } from './devices';
 import { handleFriends } from './friends';
 import type { FriendStore } from './friendStore';
 import { handleHistory } from './history';
@@ -62,6 +63,10 @@ export interface HandlerDeps {
   profiles?: ProfileStore;
   // The friends graph (#189), same optionality rationale.
   friends?: FriendStore;
+  // Devices and the accounts they belong to (#216) — the lazy Turnstile-gated bootstrap,
+  // the sign-out screen's list and its revocation. EVERY authenticated route resolves its
+  // caller through this store, so a deployment that serves any of them provides it.
+  devices?: DeviceHandlerDeps;
   // The per-round guess log (#201), Word mode's two writes (#202) and the derived score
   // (#203), same optionality rationale. It carries a Turnstile verifier of its own because
   // ROUND START is gated in both modes, the score store because a finished round is
@@ -140,13 +145,17 @@ export function createHandler(deps: HandlerDeps) {
     // The private player history (#211): the archive calendar's month, the chooser's
     // status strip and the streak's solved-day list. POST-only for the same reason.
     const isHistoryRoute = normalizedPath === '/history';
+    // Devices (#216): the lazy bootstrap that mints an identity, and the sign-out screen's
+    // list + revocation. POST-only for the same reason — the token is the auth.
+    const isDevicesRoute = normalizedPath === '/devices';
     const isLiveRoute =
       isScoresRoute ||
       isProfileRoute ||
       isFriendsRoute ||
       isBoardRoute ||
       isRoundRoute ||
-      isHistoryRoute;
+      isHistoryRoute ||
+      isDevicesRoute;
     const routeHeaders = isLiveRoute ? { ...cors, 'Cache-Control': 'no-store' } : cors;
 
     // CORS preflight. It carries no data, so `no-store` belongs on the live ROUTES and
@@ -278,26 +287,39 @@ export function createHandler(deps: HandlerDeps) {
         return await handleScores(event, deps.store, deps.scores, date, cors);
       }
 
+      if (isDevicesRoute) {
+        if (!deps.devices) throw new Error('Device identity is not configured.');
+        return await handleDevices(event, deps.devices, instant, cors);
+      }
+
       if (isProfileRoute) {
         if (!deps.profiles) throw new Error('Player profiles are not configured.');
-        return await handleProfile(event, deps.profiles, instant, cors);
+        if (!deps.devices) throw new Error('Device identity is not configured.');
+        return await handleProfile(event, deps.profiles, deps.devices.deviceStore, instant, cors);
       }
 
       if (isFriendsRoute) {
         if (!deps.friends) throw new Error('The friends graph is not configured.');
-        return await handleFriends(event, deps.friends, instant, cors);
+        if (!deps.devices) throw new Error('Device identity is not configured.');
+        return await handleFriends(event, deps.friends, deps.devices.deviceStore, instant, cors);
       }
 
       if (isBoardRoute) {
         // The board is a READ over what the three stores already hold — score rows for
         // the population, edges for the trusted tab, profiles to dress the rows.
-        if (!deps.scores || !deps.profiles || !deps.friends) {
+        if (!deps.scores || !deps.profiles || !deps.friends || !deps.devices) {
           throw new Error('The leaderboard is not configured.');
         }
         return await handleBoard(
           event,
-          { scores: deps.scores.scoreStore, profiles: deps.profiles, friends: deps.friends },
+          {
+            scores: deps.scores.scoreStore,
+            profiles: deps.profiles,
+            friends: deps.friends,
+            devices: deps.devices.deviceStore,
+          },
           date,
+          instant,
           cors,
         );
       }
@@ -316,7 +338,12 @@ export function createHandler(deps: HandlerDeps) {
         if (!deps.rounds) throw new Error('Round state sync is not configured.');
         return await handleHistory(
           event,
-          { rounds: deps.rounds.roundStore, history: deps.rounds.history },
+          {
+            rounds: deps.rounds.roundStore,
+            history: deps.rounds.history,
+            devices: deps.rounds.deviceStore,
+          },
+          instant,
           cors,
         );
       }

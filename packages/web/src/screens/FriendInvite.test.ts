@@ -18,7 +18,16 @@ vi.mock('../api', () => ({
   postFriendsBody,
   friendsUrl: () => 'https://api.test/friends',
 }));
-vi.mock('../identity', () => ({ playerSecret: () => '00112233445566778899aabbccddeeff' }));
+// Accepting an invite is a TRIGGER (#216): the clicker is a brand-new visitor, and their
+// identity is minted on this first need so the edge lands before their first game.
+vi.mock('../identity', () => ({
+  ensureDeviceIdentity: async () => ({
+    token: 'f'.repeat(64),
+    accountId: 'lfd5pqz5pa7zjm5u',
+    deviceId: 'd'.repeat(16),
+  }),
+  markDeviceSignedOut: vi.fn(),
+}));
 
 const INVITER = 'zwjxqk37xfkvtxqu';
 
@@ -62,10 +71,10 @@ describe('sendInvite — the click carries the CLICKER key and the SENDER id', (
     return sendInvite(INVITER);
   };
 
-  it('records the mutual edge with the player key, and a 2xx is the confirmable ADD', async () => {
+  it('records the mutual edge with this device\'s token, and a 2xx is the confirmable ADD', async () => {
     await expect(answer(200)).resolves.toBe('added');
     expect(postFriendsBody).toHaveBeenCalledWith('https://api.test/friends', {
-      secret: '00112233445566778899aabbccddeeff',
+      token: 'f'.repeat(64),
       add: INVITER,
     });
   });
