@@ -61,8 +61,14 @@ describe('daySummaryStatus — a month that has not arrived is UNKNOWN, not "not
     });
   });
 
+  // IDLE claims nothing either — and it does NOT breathe: `loading` means a read is in
+  // flight, so a surface with no request behind it rests still rather than promising an
+  // answer that nobody asked for.
   it('is unknown before anything has asked, so an idle surface claims nothing either', () => {
-    expect(daySummaryStatus(view(null, 'idle'), '2026-08-03').kind).toBe('unknown');
+    expect(daySummaryStatus(view(null, 'idle'), '2026-08-03')).toEqual({
+      kind: 'unknown',
+      loading: false,
+    });
   });
 
   it('a day the ARRIVED month does not name is NONE — the server holds no round for it', () => {

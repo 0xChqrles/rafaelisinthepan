@@ -90,7 +90,13 @@ export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; m
   // derived from (moved from the header, decided 2026-07-21). Hidden at zero, and UNDRAWN
   // (though its box is held, below) until the collection has ARRIVED: a streak counted off
   // an unread history announces a broken chain to someone whose chain is intact.
-  const pendingStreak = sentence && history.solvedDays === null;
+  //
+  // The box is held only while an answer is still COMING. A read that FAILED collapses it,
+  // for the cells' own reason — reserving is a promise, and there is nothing left to arrive
+  // — and the failure is not swallowed by that: the block under the grid says it in words
+  // and offers RETRY, which reloads this collection with the month.
+  const pendingStreak =
+    sentence && history.solvedDays === null && history.solvedPhase !== 'failed';
   const streak = history.solvedDays === null ? 0 : currentStreak(history.solvedDays, activeDay);
 
   const canPrev = compareYearMonth(current, firstMonth) > 0;
@@ -162,10 +168,13 @@ export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; m
           Word mode's archive face, whose runs don't feed the streak (#156, out of
           scope beyond what the round key gives for free).
           Since #211 the collection is a server read, so there is a third state: NOT YET
-          KNOWN. It HOLDS THE HERO'S BOX (invisible), because the returning player this
-          screen is for almost always has a streak — reserving keeps the calendar still
-          for them, where drawing nothing would pull it up and then push it back down on
-          every visit. Once the answer lands, a zero streak collapses the box for good. */}
+          KNOWN. While an answer is still COMING it HOLDS THE HERO'S BOX (invisible),
+          because the returning player this screen is for almost always has a streak —
+          reserving keeps the calendar still for them, where drawing nothing would pull it
+          up and then push it back down on every visit. Once the answer lands, a zero
+          streak collapses the box for good — and so does a read that FAILED, since holding
+          space for a value that is never coming is a promise nothing will keep; the block
+          under the grid is what says so, in words, with RETRY. */}
       {mode === 'sentence' && (pendingStreak || streak > 0) && (
         <div
           className={`archive-streak${pendingStreak ? ' archive-streak-pending' : ''}`}

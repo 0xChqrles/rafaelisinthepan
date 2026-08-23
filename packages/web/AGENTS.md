@@ -468,16 +468,24 @@ it to the local store — see `packages/backend/AGENTS.md`).
     claim "none of these days was started". `daySummaryStatus` is the ONE place the difference
     is turned into something a surface can draw: a missing DAY is `{kind:'none'}`, a missing
     MONTH is `{kind:'unknown', loading}` — the third `Status` kind, whose `loading` half only
-    decides whether the placeholder BREATHES (a read in flight) or rests still (a read that
-    failed). The calendar draws it as a muted, unfilled, un-rippled cell that keeps its number
+    decides whether the placeholder BREATHES. **It is read off the phase being `loading`, never
+    off "not failed"** (corrected on review): breathing PROMISES an answer is coming, so a read
+    that failed and a surface that never asked both rest still. Idle is unreachable today (Word
+    mode is the only `enabled: false` caller and it reads `wordStatusOf`), but a placeholder
+    breathing forever with no request behind it is the same false claim the explicit-loading
+    rule exists to prevent. The calendar draws unknown as a muted, unfilled, un-rippled cell
+    that keeps its number
     and its tap (the day is playable whether or not we know what happened on it); the chooser
     draws the app's skeleton strip; `srStatus` says `srStatusUnknown`, because silence there
     reads as "not started".
-  - **The ARCHIVE holds its streak hero's BOX while the collection is unknown**
+  - **The ARCHIVE holds its streak hero's BOX while an answer is still COMING**
     (`.archive-streak-pending`, `visibility: hidden`). The returning player this screen is for
     almost always has a streak, so reserving keeps the calendar still for them; drawing
     nothing pulled it up and pushed it back down on every visit. A zero streak collapses the
-    box once the answer lands.
+    box once the answer lands — and so does a read that FAILED (corrected on review), for the
+    cells' own reason: reserving is a promise, and after a failure nothing is coming to keep
+    it. The failure is not swallowed by that, because the block under the grid says it in
+    words and its RETRY reloads the collection with the month.
   - **A FAILED read speaks whether or not a month is already drawn** (corrected on review).
     A revalidation deliberately keeps its cached month on screen, so gating the block on
     there being nothing to show made every failure after the first good visit SILENT — an

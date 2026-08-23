@@ -199,8 +199,16 @@ export function usePlayerHistory({
 // between "the server holds no round for this day" and "this month has not arrived" is
 // turned into something a surface can draw. A missing DAY is `none`; a missing MONTH is
 // `unknown`, and the two must never collapse into each other.
+//
+// `loading` says a read is IN FLIGHT, so it is read off that phase alone — never as "not
+// failed". The placeholder breathes to mean "an answer is coming", and an IDLE surface (one
+// whose read is disabled, or the frame before the effect fires) has nothing coming: it must
+// rest still, like a read that failed. Idle is unreachable on today's surfaces — Word mode
+// is the only `enabled: false` caller and it reads `wordStatusOf` instead — but a
+// placeholder that breathes forever with no request behind it is the exact false promise
+// the explicit-loading rule exists to prevent.
 export function daySummaryStatus(view: HistoryView, date: string): Status {
-  if (view.days === null) return { kind: 'unknown', loading: view.daysPhase !== 'failed' };
+  if (view.days === null) return { kind: 'unknown', loading: view.daysPhase === 'loading' };
   return statusOf(view.days.get(date));
 }
 

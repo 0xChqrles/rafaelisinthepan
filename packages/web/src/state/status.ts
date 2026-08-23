@@ -15,8 +15,9 @@ import { t } from '../i18n';
 // UNKNOWN is #211's: the private summary this day's status comes from has not ARRIVED, so
 // nothing can honestly be said about it. It is deliberately NOT `none` — "not started" is a
 // CLAIM, and a whole calendar of false ones is exactly what the explicit-loading rule
-// exists to prevent. `loading` only decides whether the placeholder breathes: a read still
-// in flight says "not yet", a read that failed rests still.
+// exists to prevent. `loading` only decides whether the placeholder breathes, and it means
+// a read is IN FLIGHT: breathing promises an answer is coming, so a read that failed — and
+// a surface that never asked — both rest still.
 export type Status =
   | { kind: 'none' }
   | { kind: 'unknown'; loading: boolean }
