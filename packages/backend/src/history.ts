@@ -84,6 +84,12 @@ export async function handleHistory(
   if (!secret.ok) return secret.response;
   const publicId = await publicIdFromSecret(secret.value);
 
+  // `collection: false` in the body opts OUT of the solved-day read: the language chooser
+  // wants a month strip and never renders the streak, and the collection's consistent
+  // GetItem is real read capacity spent on an answer nobody draws. Absent means true — the
+  // archive and the game screen both want it, and the old body shape keeps its meaning.
+  const collection = parsed.value.collection !== false;
+
   // Neither read depends on the other, so the month Query and the collection's GetItem go
   // out together — the /round rule, where the slice fetch hides inside a round trip the
   // request was paying for anyway.
@@ -91,7 +97,7 @@ export async function handleHistory(
     month === undefined
       ? Promise.resolve([])
       : deps.rounds.listMonth({ lang, mode, month }, publicId),
-    deps.history.solvedDays(publicId, lang),
+    collection ? deps.history.solvedDays(publicId, lang) : Promise.resolve([]),
   ]);
 
   return json(200, { days, solvedDays }, responseHeaders);

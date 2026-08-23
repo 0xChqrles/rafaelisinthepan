@@ -246,7 +246,7 @@ describe('the mount read — what the screen waits on', () => {
     expect(load()).toEqual({
       status: 'ready',
       puzzle: REVISION,
-      server: { guesses: ['bois', 'chemin'], solved: false, solvedByAppend: false },
+      server: { guesses: ['bois', 'chemin'], solved: false, solvedByAppend: false, credited: false },
     });
     // A READ never writes: the request carries no guesses.
     expect(bodyOf(0).guesses).toBeUndefined();
@@ -260,7 +260,7 @@ describe('the mount read — what the screen waits on', () => {
     expect(load()).toEqual({
       status: 'ready',
       puzzle: REVISION,
-      server: { guesses: [], solved: false, solvedByAppend: false },
+      server: { guesses: [], solved: false, solvedByAppend: false, credited: false },
     });
   });
 
@@ -535,6 +535,7 @@ describe('the four refusals', () => {
       solved: true,
       // Learned from a refusal, not confirmed on this device's batch: adopted history.
       solvedByAppend: false,
+      credited: false,
     });
     // The guesses it refused are never stored, so keeping them would leave the screen
     // counting tries the recorded score does not.
@@ -621,7 +622,7 @@ describe('the SERVER\'s solve (#203/#214)', () => {
     post.mockResolvedValueOnce(ok(['foret'], true));
     notifyGuess(KEY);
     await settle();
-    expect(server()).toEqual({ guesses: ['foret'], solved: true, solvedByAppend: true });
+    expect(server()).toEqual({ guesses: ['foret'], solved: true, solvedByAppend: true, credited: false });
   });
 
   it('a solve read at MOUNT is adopted history — nothing may celebrate it', async () => {

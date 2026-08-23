@@ -292,6 +292,12 @@ export interface RoundState {
   // when a standing becomes readable. Only ever written true, so `false` means "not yet",
   // never "no longer".
   solved: boolean;
+  // Carried by the answer that CONFIRMS a solve: did it earn the day's rewards — the
+  // streak credit and the leaderboard row (#211's one on-time predicate, decided on the
+  // SERVER's clock)? The celebration rides this rather than re-making the comparison on
+  // the device clock, which the route's skew window lets disagree by a day. Absent means
+  // false: nothing was earned, or this answer is not the confirming one.
+  credited: boolean;
 }
 
 // Runtime shape check for the round response — the parsePuzzle contract: a wrong-shaped
@@ -307,7 +313,7 @@ function requireInstant(value: unknown, field: string): string {
 
 export function parseRound(data: unknown): RoundState {
   if (!isRecord(data)) throw new Error('malformed round: not an object');
-  const { guesses, createdAt, startedAt, submittedAt, resumed, solved } = data;
+  const { guesses, createdAt, startedAt, submittedAt, resumed, solved, credited } = data;
   if (!Array.isArray(guesses) || !guesses.every((g) => typeof g === 'string')) {
     throw new Error('malformed round: "guesses" must be an array of strings');
   }
@@ -317,6 +323,9 @@ export function parseRound(data: unknown): RoundState {
   }
   if (solved !== undefined && typeof solved !== 'boolean') {
     throw new Error('malformed round: bad "solved"');
+  }
+  if (credited !== undefined && typeof credited !== 'boolean') {
+    throw new Error('malformed round: bad "credited"');
   }
   return {
     guesses: guesses as string[],
@@ -330,6 +339,8 @@ export function parseRound(data: unknown): RoundState {
     // Absent means the server holds no solve for this round — a word round, or a sentence
     // one still being played.
     solved: solved === true,
+    // Absent means nothing was earned (or this answer is not the one confirming a solve).
+    credited: credited === true,
   };
 }
 
@@ -352,7 +363,12 @@ export function historyUrl(
   return month ? `${root}&month=${encodeURIComponent(month)}` : root;
 }
 
-export async function postHistoryBody(url: string, body: { secret: string }): Promise<Response> {
+export async function postHistoryBody(
+  url: string,
+  // `collection: false` opts out of the solved-day read (the chooser never renders the
+  // streak); omitted means true, so the original body shape keeps its meaning.
+  body: { secret: string; collection?: boolean },
+): Promise<Response> {
   return postSignedJson(url, body);
 }
 

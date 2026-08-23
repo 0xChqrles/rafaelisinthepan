@@ -306,6 +306,9 @@ function adopt(f: RoundFlight, key: string, state: RoundState, byAppend: boolean
     // Only ever true, like the flag itself: a later answer about an already-known solve
     // must not downgrade the beats this device already earned.
     solvedByAppend: (f.server.solved && f.server.solvedByAppend) || (state.solved && byAppend),
+    // Same shape: only the CONFIRMING append's answer carries it, and later answers about
+    // the same solve must not take it back.
+    credited: (f.server.solved && f.server.credited) || (state.solved && state.credited),
   });
 }
 
@@ -328,6 +331,7 @@ function sameServer(load: RoundLoad | undefined, puzzle: string, next: RoundServ
   return (
     server.solved === next.solved &&
     server.solvedByAppend === next.solvedByAppend &&
+    server.credited === next.credited &&
     server.guesses.length === next.guesses.length &&
     server.guesses.every((entry, i) => entry === next.guesses[i])
   );

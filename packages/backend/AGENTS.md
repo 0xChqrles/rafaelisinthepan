@@ -402,17 +402,25 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   are the SHARED `liveRoute.ts` (`requireGameParams`, split out of `requireDayParams` because
   this read is addressed by a MONTH rather than a day); `month` is validated against the
   shared `HISTORY_MONTH_PATTERN` and is OPTIONAL, and there is deliberately NO future guard —
-  a month past the active day simply holds no rows. The two reads go out CONCURRENTLY (the
+  a month past the active day simply holds no rows. The body may carry `collection: false`
+  (PR-218 review) to skip the solved-day read entirely — the chooser's month-only shape;
+  absent means true. The two reads go out CONCURRENTLY (the
   /round rule): `RoundStore.listMonth` — one Query over the caller's own partition behind the
   `<lang>#<mode>#<YYYY-MM>-` prefix, `ProjectionExpression`-limited to `sk`/`progress`/`solved`
   so the raw guess logs never leave the store, strongly consistent (a player opens the archive
   right after finishing a day) and PAGED — and `PlayerHistoryStore.solvedDays`. Every response
   is `no-store`; a player with nothing played answers `{days: [], solvedDays: []}`, which is an
   ANSWER. **The write is the ROUND route's**: the append that CONFIRMS a solve credits the day
-  (`creditSolvedDay`) when the round finished ON THE DAY — `onTime(key.date, instant)`, ONE
-  predicate that `recordScoreRow` wears too, so a late finish earns neither the streak credit
-  nor the leaderboard row (see the root `AGENTS.md` on why the flip-edge tolerance had to go,
-  and on what that narrowed for archive plays). Its
+  when the round was played ON THE DAY — `onTime`, ONE predicate, checked once in
+  `settleAppend` for BOTH rewards (before the scoring artifact is even loaded, so an
+  archive solve never parses a multi-MB puzzle for a row that will not be written) and worn
+  by `recordScoreRow` for Word mode, where the judged instant is the run's server-stamped
+  START — its submission is deferred by design, so the write's arrival says nothing about
+  when the run was played (PR-218 review; see the root `AGENTS.md`). The confirming
+  answer carries the verdict (`credited`), which is what the client's celebration rides.
+  A late finish earns neither the streak credit nor the leaderboard row (see the root
+  `AGENTS.md` on why the flip-edge tolerance had to go, and on what that narrowed for
+  archive plays). Its
   failures are LOGGED, never surfaced — the collection is a rebuildable cache of the
   round rows. `dynamoHistoryStore` credits with a NUMBER SET `ADD` under
   `attribute_not_exists(#days) OR size(#days) < :max OR contains(#days, :one)` — condition

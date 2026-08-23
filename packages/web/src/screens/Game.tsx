@@ -15,7 +15,6 @@ import LoadingWave from '../components/LoadingWave';
 import useVocab from '../hooks/useVocab';
 import useScoreHistogram from '../hooks/useScoreHistogram';
 import useRoundSync from '../hooks/useRoundSync';
-import useToday from '../hooks/useToday';
 import { notifyGuess, retryRoundSync } from '../state/roundSync';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import { noteSolvedDay, usePlayerHistory } from '../state/history';
@@ -57,6 +56,12 @@ const STAGGER_MS = 200;
 export const FLOATING_HIT_INTRO_MS = 320;
 
 const STREAK_AFTER_WORDS_MS = 300;
+
+// The streak collection's quiet retry (see its effect): bounded attempts on a doubling
+// delay, sized so a load-time blip recovers long before a solve, while an offline tab
+// stops asking.
+const STREAK_READ_RETRIES = 3;
+const STREAK_READ_RETRY_MS = 4_000;
 
 // One frozen empty log, so a round with nothing to play from does not hand every memo a
 // fresh array on every render.
@@ -170,18 +175,35 @@ function Round({
   const sentenceRulesSeen = useGameStore((s) => s.sentenceRulesSeen);
   const markSentenceRulesSeen = useGameStore((s) => s.markSentenceRulesSeen);
 
-  // The client's active game day (local, DST-correct) — the streak's reference point, and
-  // a LIVE one (`useToday` re-fires at the 22:00 reset). A round carried across that flip
-  // therefore finds it one ahead of the day it is playing, which is exactly the solve
-  // `noteSolvedDay` rules late.
-  const todayDayNumber = useToday();
-
   // The STREAK's own source since #211: the language's solved-day collection, read from the
   // server and held transiently. It is loaded HERE, on the active-day route, because the
   // celebration needs the collection BEFORE the solve — it counts the previous value off it
   // — and by the time a sentence is solved this read has long landed. An archive route
   // never asks: an archive solve never touches the streak.
-  usePlayerHistory({ lang, enabled: isActiveDay });
+  const playerHistory = usePlayerHistory({ lang, enabled: isActiveDay });
+
+  // A FAILED collection read would otherwise be final for the whole round: nothing else
+  // re-asks, and `noteSolvedDay` credits nothing off a collection that never arrived — so a
+  // two-second network blip at load silently suppressed the streak celebration of a solve
+  // twenty minutes later, while the server credited the day. Retried QUIETLY (the
+  // celebration is best-effort, the standing rule for this read) and BOUNDED, so an offline
+  // tab does not ask forever.
+  const streakRetries = useRef(0);
+  useEffect(() => {
+    if (!isActiveDay) return undefined;
+    if (playerHistory.solvedPhase === 'ready') {
+      streakRetries.current = 0;
+      return undefined;
+    }
+    if (playerHistory.solvedPhase !== 'failed') return undefined;
+    if (streakRetries.current >= STREAK_READ_RETRIES) return undefined;
+    const attempt = streakRetries.current;
+    const id = window.setTimeout(() => {
+      streakRetries.current = attempt + 1;
+      playerHistory.retry();
+    }, STREAK_READ_RETRY_MS * 2 ** attempt);
+    return () => window.clearTimeout(id);
+  }, [isActiveDay, playerHistory.solvedPhase, playerHistory.retry]);
 
   // Reconcile the OUTBOX before paint (#214): an outbox naming a different published
   // revision answered a retired question and is dropped. A layout effect commits that
@@ -474,22 +496,20 @@ function Round({
     // play-solve transition (never on the rehydration branch above). `archive`
     // distinguishes a replayed past day ('yes', #55) from the live daily puzzle ('no').
     track('solve', { lang, tries: guessCount, day: dayNumber, archive: isActiveDay ? 'no' : 'yes' });
-    // Streak (#56): ON TIME means ON THE DAY (user-decided 2026-08-23), so ONE comparison
-    // covers everything — a solve past the 22:00 flip was late, and an archive replay never
-    // was on time at all. `noteSolvedDay` makes it, and the SERVER credits by the same rule.
-    //
-    // There used to be a second gate here (`isActiveDay`), because the store's `activeDay-1`
-    // tolerance for the flip-edge was numerically indistinguishable from opening
-    // /<lang>/<yesterday>, and only the ROUTE could tell them apart. With the edge ruled
-    // late, the tolerance is gone and this gate has nothing left to decide: an undated tab
-    // across the flip and a dated past day now both fail the one comparison.
+    // Streak (#56): ON TIME means ON THE DAY (user-decided 2026-08-23), and since the
+    // PR-218 review the verdict is the SERVER's, carried on the confirming append's answer
+    // (`credited`) — one predicate on one clock. Re-making the comparison here on the
+    // device clock let a fast clock inside the route's skew window celebrate a streak day
+    // the server refused, a phantom the transient collection could never take back out.
+    // A solve past the 22:00 flip and an archive replay both come back uncredited, exactly
+    // as the one comparison ruled before.
     //
     // Since #211 the collection this credits is the SERVER's (the append that confirms the
     // solve records the day); this is the transient copy the celebration counts from, and it
     // reports whether the day was genuinely new the same way `recordSolve` did — plus one
     // new refusal: a collection that never arrived cannot say what the previous streak was,
     // so it celebrates nothing rather than printing a guess.
-    const didAdvanceStreak = noteSolvedDay(lang, dayNumber, todayDayNumber);
+    const didAdvanceStreak = noteSolvedDay(lang, dayNumber, server?.credited === true);
     setAnimateResults(true);
     setStreakAdvanced(didAdvanceStreak);
     if (didAdvanceStreak) preloadStreakDialog();

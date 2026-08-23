@@ -210,6 +210,7 @@ interface RoundResponse {
   submittedAt?: string;
   progress?: number;
   solved?: boolean;
+  credited?: boolean;
   now: string;
   resumed?: boolean;
   error?: string;
@@ -802,6 +803,9 @@ describe('the derived summary (#203)', () => {
     const answer = parsed(await appendGuesses(handler, ['mer'], ['phare', 'nuit']));
     expect(answer.solved).toBe(true);
     expect(answer.progress).toBeCloseTo(100, 10);
+    // The confirming answer also says the day was EARNED: the client's celebration rides
+    // this flag instead of re-making the on-time comparison on its own clock.
+    expect(answer.credited).toBe(true);
 
     // The score is DERIVED from the stored log by the counted-try identity — three
     // distinct guesses here — and written by the append that solved the round, so the
@@ -846,6 +850,9 @@ describe('the derived summary (#203)', () => {
     // RULE, not a failed derivation or a refused append.
     expect(parsed(late).solved).toBe(true);
     expect(parsed(late).guesses).toEqual(['phare', 'nuit']);
+    // And the answer SAYS nothing was earned, so no client can celebrate a day the server
+    // refused off its own faster clock.
+    expect(parsed(late).credited).toBe(false);
 
     const me = await publicIdFromSecret(SECRET);
     await expect(handler.historyStore.solvedDays(me, 'fr')).resolves.toEqual([]);
@@ -854,7 +861,9 @@ describe('the derived summary (#203)', () => {
     expect(await handler.scoreStore.list({ date, lang: 'fr', mode: 'sentence' })).toEqual([]);
   });
 
-  it('a late WORD run records no score either — one rule, both dailies', async () => {
+  it('an archive WORD run records no score either — one rule, both dailies', async () => {
+    // A word run's on-time instant is its server-stamped START (the submission is
+    // deferred by design), and an archive replay's start is just as late as its submit.
     const handler = makeHandler({ word: WORD_ARTIFACT });
     const key = { lang: 'fr', date: PAST_DATE, mode: 'word' as const };
     await handler(wordEvent({ turnstileToken: 'ok' }, key));
@@ -865,6 +874,24 @@ describe('the derived summary (#203)', () => {
     expect(submitted.statusCode).toBe(200);
     expect(parsed(submitted).submittedAt).toBeTruthy();
     expect(await handler.scoreStore.list(key)).toEqual([]);
+  });
+
+  it('a word run STARTED on its day keeps its row when the submit lands after the flip', async () => {
+    // #202's own shape: the wait check FORCES a run started near 22:00 to submit after
+    // the flip, and the log may arrive hours later on the revisit that finds the run
+    // over. The row is judged at the server-stamped START — when the run was played —
+    // never at the write's arrival, or normal deferred submission would silently cost a
+    // legitimate run its leaderboard entry.
+    const handler = makeHandler({ word: WORD_ARTIFACT });
+    await handler(wordEvent({ turnstileToken: 'ok' }));
+    // The tab dies mid-run; the revisit lands well past the 22:00 flip.
+    handler.advance(13 * 3_600_000);
+    const submitted = await handler(wordEvent({ guesses: ['mer'] }));
+    expect(submitted.statusCode).toBe(200);
+    expect(parsed(submitted).submittedAt).toBeTruthy();
+    const rows = await handler.scoreStore.list({ lang: 'fr', date: ACTIVE_DATE, mode: 'word' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].score).toBe(1);
   });
 
   it('solving a CORRECTED revision cannot claim the same day twice', async () => {

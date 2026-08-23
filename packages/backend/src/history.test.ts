@@ -8,7 +8,7 @@
 // key for), it answers only the SUMMARY facts and never the raw guess logs, and a solve
 // credits the streak's day exactly where `recordSolve` used to.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { publicIdFromSecret, type PlayerHistory } from '@whippin/shared';
 import { createHandler } from './handler';
 import { memoryHistoryStore } from './memoryHistoryStore';
@@ -134,6 +134,22 @@ describe('history route (#211)', () => {
       (await handler(post({ lang: 'fr', mode: 'sentence' }))).body,
     ) as PlayerHistory;
     expect(body).toEqual({ days: [], solvedDays: [20_669] });
+  });
+
+  it('collection: false skips the solved-day read — the chooser\'s month-only shape', async () => {
+    const { handler, roundStore, history } = makeHandler();
+    const me = await publicIdFromSecret(SECRET);
+    await playDay(roundStore, me, '2026-08-03', 42, false);
+    await history.recordSolvedDay({ publicId: me, lang: 'fr', day: 20_669 });
+    // The store is never even asked: the chooser draws a month strip and no streak, so
+    // paying the collection's consistent read for it is capacity spent on nothing.
+    const spy = vi.spyOn(history, 'solvedDays');
+    const body = JSON.parse(
+      (await handler(post(MONTH, { secret: SECRET, collection: false }))).body,
+    ) as PlayerHistory;
+    expect(spy).not.toHaveBeenCalled();
+    expect(body.days.map((day) => day.date)).toEqual(['2026-08-03']);
+    expect(body.solvedDays).toEqual([]);
   });
 
   it('answers the language\'s solved days, ascending', async () => {

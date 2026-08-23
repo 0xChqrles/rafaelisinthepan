@@ -520,6 +520,9 @@ describe('roundUrl + parseRound (#201/#202)', () => {
       // The server's own reading of the log it stores (#203); absent means "not yet",
       // never "no longer", since it is only ever written true.
       solved: false,
+      // Absent means nothing was earned — only the answer confirming an on-time solve
+      // carries it (#211's one predicate, decided on the server's clock).
+      credited: false,
     });
   });
 

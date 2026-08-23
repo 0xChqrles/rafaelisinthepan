@@ -601,7 +601,7 @@ describe('setOutbox — what an answer left unacknowledged', () => {
 // — and it is NEVER persisted, which is what removes the acknowledged-derived state the
 // outbox model exists to be rid of.
 describe('setRoundLoad — the transient server state', () => {
-  const server = { guesses: ['bois'], solved: false, solvedByAppend: false };
+  const server = { guesses: ['bois'], solved: false, solvedByAppend: false, credited: false };
   const puzzle = REV;
 
   it('holds each round\'s state under its own key', () => {

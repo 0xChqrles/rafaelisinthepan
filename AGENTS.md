@@ -950,7 +950,10 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   tokenless branch.)*
 - **ONE route, POST-only like /friends** (the secret is the auth and travels in the BODY, so
   nobody can ask for another player's history): `POST /history?lang=&mode=[&month=]` answers
-  `{ days, solvedDays }`. **`month` is OPTIONAL, and that is the whole shape of the design:**
+  `{ days, solvedDays }`. The body may carry `collection: false` (PR-218 review) to skip
+  the solved-day read — the language chooser wants a month strip and never renders the
+  streak, so its read must not spend the collection's consistent GetItem; absent means
+  true. **`month` is OPTIONAL, and that is the whole shape of the design:**
   the archive and the chooser want a CALENDAR, while the game screen wants only the
   collection the streak choreography derives its previous value, next value and week row
   from — and making that read spend a month Query would cost a whole calendar per game load.
@@ -1001,11 +1004,21 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   the ordinary bound-not-invariant trade `FRIENDS_MAX` already makes.
 - **ON TIME means ON THE DAY, and LATE HAS NO GRADATIONS (user-decided 2026-08-23): a
   millisecond late is a decade late.** A round earns the day's rewards — the streak credit
-  AND the leaderboard row — only when the day it is playing IS the day the write lands on.
-  The rule is ONE predicate on the server (`rounds.ts` `onTime`), worn by both, and the
-  streak's client half makes the same comparison. A round carried across the 22:00 flip
-  and finished at 22:00:01 was not finished on time; an archive replay never was on time, at
-  any distance; and the two are treated identically because they ARE the same thing.
+  AND the leaderboard row — only when the day it is playing IS the day it was PLAYED on.
+  The rule is ONE predicate on the server (`rounds.ts` `onTime`), worn by both. **Which
+  instant it judges is the mode's own (PR-218 review):** a SENTENCE solve is earned by the
+  append that lands it, so its instant is that write's arrival; a WORD run's is its
+  server-stamped START, because the submission is deferred BY DESIGN — the wait check
+  refuses a write before the run's floor (so a run started near 22:00 can only submit past
+  the flip) and #202 lets the log arrive on a later revisit, so the arrival says nothing
+  about when the run happened, and judging it there dropped the row of a run genuinely
+  played on its day. **The streak's client half no longer makes any comparison** (same
+  review): the solving append's answer carries the verdict (`credited`), because the
+  route's ±1-day skew window lets a fast device clock disagree with the server's — it
+  celebrated a streak day the server refused, a phantom the union merge could never remove.
+  A sentence carried across the 22:00 flip and finished at 22:00:01 was not finished on
+  time; an archive replay never was on time, at any distance; and the two are treated
+  identically because they ARE the same thing.
   **It REPLACED a window that tolerated `activeDay - 1`** for that flip-edge — an in-flight
   round finished a few minutes past the reset — plus a second gate at the client
   (`isActiveDay`, the route) to tell that edge from a deliberate archive replay of yesterday.
@@ -1097,9 +1110,11 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   puzzle route, **`mode` is required**. **It is READ-ONLY since #203** — a POST is a named
   405. The row is written by the ROUND route, from a log the server already holds: the
   round that finishes writes **ONE row per `(date, lang, mode, publicId)`**, including the
-  published `revision` it was earned on — **and ONLY when it finished ON THE DAY**
-  (user-decided 2026-08-23, the same `onTime` predicate the streak credit uses). A
-  leaderboard is a DAY's competition, so a round finished after that day ended is not
+  published `revision` it was earned on — **and ONLY when it was PLAYED ON THE DAY**
+  (user-decided 2026-08-23, the same `onTime` predicate the streak credit uses; a WORD
+  run's on-time instant is its server-stamped START, since its submission is deferred by
+  design — see the #211 section). A
+  leaderboard is a DAY's competition, so a round not played on that day is not
   competing in it, by a millisecond or by ten years: an archive replay records no row, draws
   no standing (`/scores` answers `bucket: null` for a caller the population does not hold)
   and spends no address allowance. It still stores its LOG and still shows its own result —
