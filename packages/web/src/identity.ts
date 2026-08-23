@@ -31,6 +31,21 @@ function defaultStorage(): Storage | null {
   }
 }
 
+// Is there an identity to ask ABOUT, without minting one — the peek the private history
+// read gates on. A visitor with no stored key (and none minted this session) cannot own
+// server rows, so their history is KNOWN-empty; reading it must not be the act that
+// creates an identity, or a deep-linked /select visit mints and persists a key for
+// someone who never played (the "first need" rule above, which the chooser's read was
+// quietly violating).
+export function hasPlayerIdentity(storage: Storage | null = defaultStorage()): boolean {
+  if (sessionSecret !== null) return true;
+  try {
+    return isValidSecret(storage?.getItem(SECRET_STORAGE_KEY) ?? null);
+  } catch {
+    return false;
+  }
+}
+
 export function playerSecret(storage: Storage | null = defaultStorage()): string {
   try {
     const stored = storage?.getItem(SECRET_STORAGE_KEY);

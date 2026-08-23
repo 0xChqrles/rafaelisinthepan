@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { memoryRoundStore } from './memoryRoundStore';
-import type { RoundKey } from './roundStore';
+import { roundMonthPrefix, roundSortKey, roundSortKeyDate, type RoundKey } from './roundStore';
 
 const KEY: RoundKey = { date: '2026-08-21', lang: 'fr', mode: 'sentence' };
 const PUBLIC_ID = 'lfd5pqz5pa7zjm5u';
@@ -82,5 +82,23 @@ describe('memoryRoundStore.settle — the corrective write (#203)', () => {
     await expect(store.settle(settle(75))).resolves.toBe(true);
     await expect(store.settle(settle(40))).resolves.toBe(false);
     await expect(store.settle({ ...settle(90), puzzle: 'deadbeef' })).resolves.toBe(false);
+  });
+});
+
+// The one INVERSE beside the formatters: both stores read the calendar's date back out of
+// the sort key through it, so a future key reorder cannot compile in both while silently
+// shifting every date it emits (the #203 reorder is the precedent).
+describe('roundSortKeyDate — the sort-key formatters\' inverse', () => {
+  it('recovers the exact date a formatter put in', () => {
+    const key: RoundKey = { lang: 'fr', mode: 'sentence', date: '2026-08-21' };
+    expect(roundSortKeyDate(roundSortKey(key), { lang: 'fr', mode: 'sentence', month: '2026-08' })).toBe(
+      '2026-08-21',
+    );
+  });
+
+  it('agrees with the month prefix: prefix + day digits round-trips', () => {
+    const monthKey = { lang: 'en', mode: 'word' as const, month: '2026-12' };
+    const sortKey = `${roundMonthPrefix(monthKey)}05`;
+    expect(roundSortKeyDate(sortKey, monthKey)).toBe('2026-12-05');
   });
 });

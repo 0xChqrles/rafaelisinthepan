@@ -2,6 +2,7 @@ import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
 import {
   roundMonthPrefix,
   roundPartition,
+  roundSortKeyDate,
   roundSortKey,
   type RoundAppendInput,
   type RoundDaySummary,
@@ -61,12 +62,16 @@ export function memoryRoundStore(): RoundStore {
     // this process's own map. A day with no record is simply absent, which is how "not
     // started" is said.
     async listMonth(key, publicId) {
-      const prefix = `${roundPartition(publicId)}/${roundMonthPrefix(key)}`;
+      // The map key is `pk/sk`, so the sort key starts after the partition's own slash —
+      // and the date comes back out of it through the formatters' one inverse
+      // (`roundSortKeyDate`), never local offset arithmetic.
+      const partition = `${roundPartition(publicId)}/`;
+      const prefix = `${partition}${roundMonthPrefix(key)}`;
       const rows: RoundDaySummary[] = [];
       for (const [id, item] of rounds) {
         if (!id.startsWith(prefix)) continue;
         rows.push({
-          date: id.slice(prefix.length - 1 - key.month.length),
+          date: roundSortKeyDate(id.slice(partition.length), key),
           progress: item.progress ?? 0,
           solved: item.solved === true,
         });

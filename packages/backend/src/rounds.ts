@@ -504,17 +504,39 @@ async function settleAppend(
   // Recording it is the last thing the append does, so the answer the client adopts is never
   // ahead of the population it is about to read.
   if (truth.solved && solveIsStored) {
-    await creditSolvedDay(round, deps, instant);
-    await recordSentenceScore(round, puzzleStore, deps, event, instant);
+    // ON TIME (below) gates BOTH of the day's rewards, and it is decided HERE, before
+    // either side effect runs: a late solve (an archive replay, a round carried past the
+    // 22:00 flip) must not load the multi-megabyte scoring artifact only for
+    // `recordScoreRow` to discard the work at its own gate — archive days are explicitly
+    // playable, so that is a live path, not a corner.
+    const credited = onTime(key.date, instant);
+    if (credited) {
+      // The two rewards are INDEPENDENT — neither reads the other, and each swallows its
+      // own failures — so they share the round trip instead of queuing on it: this is the
+      // one response the solving device's celebration is waiting on.
+      await Promise.all([
+        creditSolvedDay(round, deps),
+        recordSentenceScore(round, puzzleStore, deps, event, instant),
+      ]);
+    }
+    // The answer that confirms a solve also says whether it EARNED the day (#211's streak
+    // credit and the leaderboard row wear one predicate). The client's celebration rides
+    // this flag rather than re-making the comparison on its own clock: a device inside the
+    // +1-day skew window would otherwise celebrate a streak day the server refused, and
+    // the transient collection can never take a phantom day back out.
+    return json(200, { ...roundBody(state, instant), credited }, headers);
   }
   return json(200, roundBody(state, instant), headers);
 }
 
 // **ON TIME MEANS ON THE DAY, and LATE HAS NO GRADATIONS** (user-decided 2026-08-23): a
 // millisecond late is a decade late. A round only earns the day's rewards — the streak
-// credit AND the leaderboard row — when the day it is playing IS the day this write lands
-// on. A round carried across the 22:00 flip and finished at 22:00:01 was not finished on
-// time; an archive replay never was on time at all; and the two are the same thing.
+// credit AND the leaderboard row — when the day it is playing IS the day it was PLAYED on.
+// For a sentence that is the day the solving append lands; for a WORD run it is the day of
+// its server-stamped START, because the submission is deferred by design (see
+// `recordScoreRow`). A sentence carried across the 22:00 flip and finished at 22:00:01 was
+// not finished on time; an archive replay never was on time at all; and the two are the
+// same thing.
 //
 // That single rule replaced a window tolerating `activeDay - 1` for the flip-edge, plus a
 // second gate in the CLIENT (the route) to tell that edge from a deliberate archive replay
@@ -531,7 +553,8 @@ function onTime(date: string, instant: Date): boolean {
 }
 
 // THE STREAK's own fact (#211): this language's collection of solved game days, credited
-// when the server CONFIRMS a solve, and only when that solve was ON TIME (above).
+// when the server CONFIRMS a solve, and only when that solve was ON TIME — the caller
+// (`settleAppend`) makes that one `onTime` check for BOTH rewards before either runs.
 // Idempotent by construction (a set insert), so a re-published daily solved again, or a
 // corrective write re-recording a round the store already holds, adds the day once — which
 // is also why solving a corrected revision cannot claim a day twice, and why a republish
@@ -540,13 +563,8 @@ function onTime(date: string, instant: Date): boolean {
 // FAILURE IS SILENT, and that is the point of the collection being a rebuildable cache: the
 // guesses are stored, the solve is durable on the round row, and a streak day that could not
 // be cached is a stat, never a refused append.
-async function creditSolvedDay(
-  round: AppendedRound,
-  deps: RoundHandlerDeps,
-  instant: Date,
-): Promise<void> {
+async function creditSolvedDay(round: AppendedRound, deps: RoundHandlerDeps): Promise<void> {
   const { key, publicId } = round;
-  if (!onTime(key.date, instant)) return;
   const solvedDay = dayNumber(key.date);
   try {
     await deps.history.recordSolvedDay({ publicId, lang: key.lang, day: solvedDay });
@@ -591,13 +609,23 @@ async function recordSentenceScore(
 // One recorded score per player per daily (#187), written by the SERVER now that the log
 // is (#203) — the shape both modes share, since only what the score COUNTS differs.
 //
-// **A LATE finish records NOTHING** (user-decided 2026-08-23). The gate lives here rather
-// than at the two call sites precisely because it is one rule about the whole day's rewards:
-// a leaderboard is a day's competition, so finishing after that day has ended is not
-// competing in it, whether by a millisecond or by ten years. An archive replay therefore
-// records no row and draws no standing — `/scores` answers `bucket: null` for a caller the
-// population does not hold, and the solved screen simply shows no rank line. It also stops
-// spending a #169 address allowance on a day nobody is competing in.
+// **A LATE finish records NOTHING** (user-decided 2026-08-23). The gate lives here because
+// it is one rule about the day's competition: a leaderboard is a day's, so a round not
+// played on it is not competing in it, whether by a millisecond or by ten years. An archive
+// replay therefore records no row and draws no standing — `/scores` answers `bucket: null`
+// for a caller the population does not hold, and the solved screen simply shows no rank
+// line. It also stops spending a #169 address allowance on a day nobody is competing in.
+//
+// **What the gate judges is `earnedAt` — the instant the round was PLAYED, which is not
+// always the write's arrival.** A sentence solve is earned by the append that lands it, so
+// its two instants are one. A WORD run's submission is deferred BY DESIGN: the wait check
+// refuses a write before the run's own floor has elapsed (so a run started near the 22:00
+// flip can ONLY submit after it), and #202 explicitly lets the log arrive hours later on
+// the revisit that finds the run over — so the arrival instant says nothing about when the
+// run happened, and judging it there dropped the row of a run genuinely played on its day.
+// The server-stamped `startedAt` is the instant that does: the run began there and lasted
+// its own bounded clock, and an archive word replay's start is just as late as its
+// submission, so the late-records-nothing rule loses nothing.
 //
 // Every failure here is SILENT to the caller. The guesses are stored and the answer is
 // about the LOG; a population that could not be written is a missing standing, never a
@@ -611,8 +639,11 @@ async function recordScoreRow(
   deps: RoundHandlerDeps,
   event: FnUrlEvent,
   instant: Date,
+  // When the round was PLAYED (see above): the append's own instant for a sentence, the
+  // server-stamped start for a word run.
+  earnedAt: Date = instant,
 ): Promise<void> {
-  if (!onTime(key.date, instant)) return;
+  if (!onTime(key.date, earnedAt)) return;
   try {
     // The #169 volume floor, unchanged in shape: the address is HMACed and only the digest
     // reaches the store. A caller with no trusted address cannot be metered, so its score
@@ -760,8 +791,22 @@ async function submitWordRound(
   // (#203): the claim count is what the client used to POST, derived from the same log and
   // the same artifact the write just validated against. `already_submitted` records
   // nothing — first write wins, and that earlier submission already recorded its own.
+  //
+  // ON TIME is judged at the run's server-stamped START, not at this write's arrival (see
+  // `recordScoreRow`): the submission is deferred by the wait check and by #202's own
+  // revisit shape, so a run played on its day must not lose its row to when the log landed.
   if (outcome === 'submitted') {
-    await recordScoreRow({ date, lang, mode }, publicId, claims, puzzle, deps, event, instant);
+    const earnedAt = state.startedAt ? new Date(state.startedAt) : instant;
+    await recordScoreRow(
+      { date, lang, mode },
+      publicId,
+      claims,
+      puzzle,
+      deps,
+      event,
+      instant,
+      earnedAt,
+    );
   }
   // `already_submitted` is not a refusal but the /scores answer: the daily is one-shot and
   // cannot be replayed, so the FIRST write stands and the caller is told what it says.

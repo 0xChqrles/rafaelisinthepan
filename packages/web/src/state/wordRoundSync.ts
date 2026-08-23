@@ -190,7 +190,7 @@ function pruneFlights(keep: string): void {
 // the unacknowledged submission outbox and is cleared on that acknowledgement.
 function publishLoad(f: WordFlight, key: string, state?: RoundState): void {
   const server: RoundServer = state
-    ? { guesses: state.guesses, solved: false, solvedByAppend: false }
+    ? { guesses: state.guesses, solved: false, solvedByAppend: false, credited: false }
     : EMPTY_ROUND_SERVER;
   useGameStore.getState().setRoundLoad(key, { status: 'ready', puzzle: f.puzzle, server });
 }

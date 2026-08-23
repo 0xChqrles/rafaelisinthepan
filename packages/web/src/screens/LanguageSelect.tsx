@@ -79,6 +79,9 @@ function LanguageCard({
     mode: 'sentence',
     month: isoMonth(yearMonthOf(date)),
     enabled: mode === 'sentence',
+    // The chooser never renders the streak, so its read skips the solved-day collection —
+    // a consistent GetItem otherwise spent, per language, on an answer nobody draws.
+    collection: false,
   });
 
   return (

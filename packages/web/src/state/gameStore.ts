@@ -44,6 +44,11 @@ export interface RoundServer {
   // mount read or a `round_solved` refusal? A solve this device played earns the normal
   // beats; an adopted one is history — shown, never celebrated.
   solvedByAppend: boolean;
+  // Did the confirming answer say the solve EARNED the day — the streak credit and the
+  // leaderboard row (#211's one on-time predicate, decided on the SERVER's clock)? The
+  // celebration reads this instead of comparing days on the device clock, which the
+  // route's skew window lets disagree with the server's by a day.
+  credited: boolean;
 }
 
 // Where a round's authoritative state is, for the ONE screen that has to wait on it. The
@@ -66,7 +71,12 @@ export function roundLoadFor(load: RoundLoad | undefined, puzzle: string): Round
 
 // The server state a round with no stored record starts from — a 404 is "nothing yet",
 // which is an answer, not a failure.
-export const EMPTY_ROUND_SERVER: RoundServer = { guesses: [], solved: false, solvedByAppend: false };
+export const EMPTY_ROUND_SERVER: RoundServer = {
+  guesses: [],
+  solved: false,
+  solvedByAppend: false,
+  credited: false,
+};
 
 // The canonical round key: (server day, language, MODE — #156: the two dailies would
 // otherwise collide on one key). Kept here so the game screens (which build it) and the

@@ -9,6 +9,7 @@ import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
 import {
   roundMonthPrefix,
   roundPartition,
+  roundSortKeyDate,
   roundSortKey,
   type RoundDaySummary,
   type RoundKey,
@@ -111,11 +112,11 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
           }),
         );
         // The DATE is the tail of the sort key the prefix matched — the key is built from
-        // it, so reading it back needs no second attribute on the item.
-        const dateAt = prefix.length - 1 - key.month.length;
+        // it, so reading it back needs no second attribute on the item. The slice is the
+        // formatters' own inverse (`roundSortKeyDate`), never local offset arithmetic.
         for (const item of response.Items ?? []) {
           rows.push({
-            date: (item.sk?.S ?? '').slice(dateAt),
+            date: roundSortKeyDate(item.sk?.S ?? '', key),
             progress: numberOf(item.progress) ?? 0,
             solved: item.solved?.BOOL === true,
           });

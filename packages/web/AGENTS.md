@@ -494,11 +494,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
     older answer still on screen is `staleHistory` in the plain status ink, and both carry
     the same RETRY. Loud either way, for the round load's reason: there is no local history
     left to fall back to.
-  - **`noteSolvedDay` replaced the store's `recordSolve`**, and since 2026-08-23 it makes ONE
-    comparison: the solved day must BE the active day (root `AGENTS.md`). A day already held
-    is still not counted twice, and one refusal is new — a collection that has NOT ARRIVED
-    credits nothing and celebrates nothing. **`Game`'s own `isActiveDay` gate on the streak
-    went with the old tolerance**, along with the freshness re-check in the
+  - **`noteSolvedDay` replaced the store's `recordSolve`**, and since the PR-218 review it
+    reads the SERVER's own verdict rather than re-making the on-time comparison on the
+    device clock: the solving append's answer carries `credited` (root `AGENTS.md`), and
+    `Game` passes it through on the play-solve transition. A day already held is still not
+    counted twice, and a collection that has NOT ARRIVED credits nothing and celebrates
+    nothing. **`Game`'s own `isActiveDay` gate on the streak went with the old tolerance**
+    (it has NO such gate any more), along with the freshness re-check in the
     word-animations effect: both existed to arbitrate a flip-edge that is now simply late,
     and `streakAdvanced` — `noteSolvedDay`'s own answer — settles the celebration alone.
     **A landing answer MERGES into the collection rather than replacing it** (corrected on
@@ -506,16 +508,28 @@ it to the local store — see `packages/backend/AGENTS.md`).
     replacing would take the day straight back out from under a mounted `StreakDialog`, which
     counts its transition off exactly that array. The union is honest as well as safe — the
     collection is monotonic within a language, and the only day this client ever adds is one
-    the server is recording anyway. `loadPlayerHistory` is exported for the contract test
-    that drives a real answer through the commit path.
-    `Game` calls it on the play-solve transition and keeps its own `isActiveDay` gate, which
-    is the only signal that tells the 22:00 flip-edge from an archive replay of yesterday; the
-    SERVER records the day independently, on the append that confirms the solve.
+    the server is recording anyway. **A merge that changes nothing keeps the held array's
+    IDENTITY** (PR-218 review): `StreakDialog`'s master sequence effect depends on arrays
+    derived from it, and a fresh identity landing mid-celebration restarted the whole show.
+    `loadPlayerHistory` is exported for the contract test that drives a real answer through
+    the commit path.
   - **The GAME screen loads the collection with NO month** (`usePlayerHistory({lang, enabled:
     isActiveDay})`): the celebration counts the PREVIOUS streak off it, so it has to be in
     hand before the solve — and asking for a month there would spend a whole calendar's Query
-    on every game load. `StreakDialog` only READS it (`useSolvedDays`), since the screen it
-    mounts inside has already loaded it.
+    on every game load. **A FAILED collection read is retried quietly and BOUNDED**
+    (PR-218 review): nothing else re-asks within a mount, so one blip at load used to
+    silently suppress the streak celebration of a solve made twenty minutes later while
+    the server credited the day. `StreakDialog` only READS it (`useSolvedDays`), since the
+    screen it mounts inside has already loaded it.
+  - **Reads gate on `hasPlayerIdentity` and skip what they don't draw** (PR-218 review):
+    a visitor with no stored key cannot own server rows, so `loadPlayerHistory` publishes a
+    ready-and-EMPTY history without a request — and without MINTING a key, restoring
+    identity.ts's "a visit that never opens a game route never makes one". The language
+    chooser passes `collection: false` (the body says so), so its month strip does not
+    spend the solved-day collection's consistent GetItem on an answer it never renders.
+    And `solved[lang]`'s PHASE is driven only by the most recently started collection
+    read (`solvedReads`): a stale month's failure landing last fails its own month, never
+    the collection another read owns.
   - **Persist v15 DROPS `solvedDays`** — the last device-local half of a player's history, and
     the one that could not follow them to a second device.
 - **Round guess-log sync (#201).** *(RESHAPED by #214, above: the persisted `tried` log,
@@ -578,9 +592,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   stays TYPED `'sentence'`: Word mode got its OWN conversation (below) rather than a widened
   one, because the two shapes share only the transport.
   A changed revision resets the local board too, while an unstamped pre-deploy round with
-  matching holes is adopted and stamped in place. The reset deliberately leaves
-  `solvedDays` alone: a republish is the publisher's error, streak credit rewards showing
-  up, and `recordSolve` prevents the corrected version from claiming the day twice.
+  matching holes is adopted and stamped in place. The reset deliberately leaves the streak's
+  solved-day collection alone (the server's since #211, held transiently): a republish is
+  the publisher's error, streak credit rewards showing up, and both the server's set insert
+  and `noteSolvedDay` decline a day already held, so the corrected version cannot claim the
+  day twice.
 
 - **Derived scores (#203):** the sync engine gained two jobs. (1) ROUND CREATION carries a
   Turnstile challenge — the sentence round has no START message, so the token rides the

@@ -22,7 +22,7 @@ import { useCallback, useEffect } from 'react';
 import { create } from 'zustand';
 import { boundSolvedDays } from '@whippin/shared';
 import { historyUrl, parsePlayerHistory, postHistoryBody } from '../api';
-import { playerSecret } from '../identity';
+import { hasPlayerIdentity, playerSecret } from '../identity';
 import type { Mode } from '../langs';
 import { statusOf, type RoundSummary, type Status } from './status';
 
@@ -67,6 +67,14 @@ const monthKey = (lang: string, mode: Mode, month: string) => `${lang}:${mode}:$
 // caching policy.
 const flights = new Map<string, Promise<void>>();
 
+// WHICH flight drives `solved[lang]`'s PHASE: the most recently started one that reads the
+// collection. The entry is keyed by language while several (lang, mode, month) flights can
+// be in the air at once — paging the archive quickly does exactly that — and letting every
+// settle write the phase is a last-writer-wins race: a failing OLD month read landing last
+// stamps `failed` onto a collection that loaded fine. The DAYS still merge off every
+// successful answer (data is data); only the phase is driver-only.
+const solvedReads = new Map<string, string>();
+
 function setMonth(key: string | null, entry: (previous: MonthEntry) => MonthEntry): void {
   if (key === null) return;
   useHistoryStore.setState((state) => ({
@@ -87,21 +95,46 @@ export async function loadPlayerHistory(
   lang: string,
   mode: Mode,
   month: string | undefined,
+  // `false` opts OUT of the solved-day collection — the language chooser wants a month
+  // strip and never renders the streak, so its read must not spend the collection's
+  // consistent GetItem (the request says so in its body, and this flight leaves the
+  // solved entry entirely alone).
+  collection = true,
 ): Promise<void> {
-  const key = `${lang}:${mode}:${month ?? ''}`;
+  const key = `${lang}:${mode}:${month ?? ''}:${collection ? 'c' : ''}`;
   const existing = flights.get(key);
   if (existing) return existing;
 
   const monthId = month === undefined ? null : monthKey(lang, mode, month);
+
+  // A visitor with NO identity cannot own server rows, so their history is KNOWN-empty —
+  // an ANSWER, not a loading state. Asking the server would also be the act that MINTS a
+  // key (identity.ts's first-need rule): a deep-linked /select visit must not persist an
+  // identity for someone who never played, and a brand-new visitor's chooser and game
+  // screen must not spend network on a question whose answer is already known. The first
+  // state-creating act (a guess) mints the key; later mounts read normally.
+  if (!hasPlayerIdentity()) {
+    setMonth(monthId, (previous) => ({ phase: 'ready', days: previous.days ?? new Map() }));
+    if (collection) {
+      setSolved(lang, (previous) => ({ phase: 'ready', days: previous.days ?? [] }));
+    }
+    return;
+  }
+
   const flight = (async () => {
     // A REVALIDATION keeps the values it already holds while the fresh read is in flight —
     // stale-but-good beats a skeleton over a month the player was just looking at (the
     // leaderboard's rule). Only a month that has NEVER landed renders as loading.
     setMonth(monthId, (previous) => ({ phase: 'loading', days: previous.days }));
-    setSolved(lang, (previous) => ({ phase: 'loading', days: previous.days }));
+    if (collection) {
+      // This flight is now the one DRIVING the collection's phase (see `solvedReads`).
+      solvedReads.set(lang, key);
+      setSolved(lang, (previous) => ({ phase: 'loading', days: previous.days }));
+    }
     try {
       const response = await postHistoryBody(historyUrl(lang, mode, month), {
         secret: playerSecret(),
+        ...(collection ? {} : { collection: false }),
       });
       if (!response.ok) throw new Error(`history read failed: ${response.status}`);
       const history = parsePlayerHistory(await response.json());
@@ -120,15 +153,36 @@ export async function loadPlayerHistory(
       // and a republish does not take a day back), and the only value this client ever adds
       // is a solve the server is recording anyway. `boundSolvedDays` sorts, dedupes and caps
       // the result, so a union of two bounded sets stays one bounded set.
-      setSolved(lang, (previous) => ({
-        phase: 'ready',
-        days: boundSolvedDays([...(previous.days ?? []), ...history.solvedDays]),
-      }));
+      //
+      // **And a merge that changes NOTHING keeps the array it already holds.** Every commit
+      // minting a fresh identity restarted `StreakDialog`'s whole celebration mid-air: the
+      // dialog's master sequence effect depends on arrays derived from this one, and a
+      // mount-time read landing while the dialog is open replayed it from the opening fade
+      // for an answer that said nothing new.
+      if (collection) {
+        setSolved(lang, (previous) => {
+          const merged = boundSolvedDays([...(previous.days ?? []), ...history.solvedDays]);
+          const days =
+            previous.days !== null &&
+            previous.days.length === merged.length &&
+            previous.days.every((day, index) => day === merged[index])
+              ? previous.days
+              : merged;
+          return { phase: 'ready', days };
+        });
+        if (solvedReads.get(lang) === key) solvedReads.delete(lang);
+      }
     } catch {
       // Offline, a refusal, a malformed body — all the same outcome: the surfaces say the
       // summary could not be had, and offer to ask again. There is no local fallback.
       setMonth(monthId, (previous) => ({ phase: 'failed', days: previous.days }));
-      setSolved(lang, (previous) => ({ phase: 'failed', days: previous.days }));
+      // Only the DRIVING flight may fail the collection's phase: a stale month's failure
+      // landing last must not report a collection another read just delivered (or is
+      // about to) as unreadable.
+      if (collection && solvedReads.get(lang) === key) {
+        solvedReads.delete(lang);
+        setSolved(lang, (previous) => ({ phase: 'failed', days: previous.days }));
+      }
     }
   })();
 
@@ -160,11 +214,15 @@ export function usePlayerHistory({
   mode = 'sentence',
   month,
   enabled = true,
+  collection = true,
 }: {
   lang: string;
   mode?: Mode;
   month?: string;
   enabled?: boolean;
+  // `false` skips the solved-day collection (the chooser: a month strip, no streak) —
+  // see `loadPlayerHistory`.
+  collection?: boolean;
 }): HistoryView {
   const monthId = month === undefined ? null : monthKey(lang, mode, month);
   const monthEntry = useHistoryStore((state) =>
@@ -177,12 +235,12 @@ export function usePlayerHistory({
   // immutable and an earlier visit's answer is not evidence.
   useEffect(() => {
     if (!enabled) return;
-    void loadPlayerHistory(lang, mode, month);
-  }, [enabled, lang, mode, month]);
+    void loadPlayerHistory(lang, mode, month, collection);
+  }, [enabled, lang, mode, month, collection]);
 
   const retry = useCallback(() => {
-    if (enabled) void loadPlayerHistory(lang, mode, month);
-  }, [enabled, lang, mode, month]);
+    if (enabled) void loadPlayerHistory(lang, mode, month, collection);
+  }, [enabled, lang, mode, month, collection]);
 
   const monthState = monthEntry ?? IDLE_MONTH;
   const solvedState = solvedEntry ?? IDLE_SOLVED;
@@ -224,20 +282,21 @@ export function useSolvedDays(lang: string): number[] | null {
 // actually inserted the day, which is the signal the celebration rides: a re-solve, an
 // archive replay and a rehydration must not replay the streak's progression.
 //
-// **ON TIME means ON THE DAY** (user-decided 2026-08-23), which is the SAME rule the server
-// credits by: the solved day must BE the active day. A round finished at 22:00:01 was not
-// finished on time, and an archive replay never was — one comparison now says both.
-// It replaced a window that tolerated `activeDay - 1` for the flip-edge, plus an ACTIVE-DAY
-// gate at the caller to tell that edge from an archive replay of yesterday, the two being
-// numerically identical. With the edge ruled late there is nothing to disambiguate, so the
-// caller's gate went with the tolerance.
+// **ON TIME means ON THE DAY** (user-decided 2026-08-23), and since the PR-218 review
+// `credited` is the SERVER's own verdict, carried on the solving append's answer, rather
+// than a comparison this client re-makes on its own clock. The two clocks can disagree:
+// the route tolerates one day of skew, so a fast device can play "tomorrow's" puzzle,
+// celebrate a streak advance the server refused, and hold a phantom day the union merge
+// can never remove — a streak that silently drops back on the next reload. One predicate,
+// one clock, and this half only READS the answer. An archive replay and a flip-edge finish
+// both come back uncredited, exactly as the one comparison ruled before.
 //
 // A day already held is not inserted twice, which is why a re-published puzzle cannot claim
 // the same day again. And a collection that has NOT LOADED credits nothing and celebrates
 // nothing: the previous value is what the choreography counts from, there is no honest way
 // to guess it, and the server still records the solve either way.
-export function noteSolvedDay(lang: string, solvedDay: number, activeDay: number): boolean {
-  if (solvedDay !== activeDay) return false;
+export function noteSolvedDay(lang: string, solvedDay: number, credited: boolean): boolean {
+  if (!credited) return false;
   const held = useHistoryStore.getState().solved[lang]?.days;
   if (!held || held.includes(solvedDay)) return false;
   setSolved(lang, (previous) => ({
@@ -251,5 +310,6 @@ export function noteSolvedDay(lang: string, solvedDay: number, activeDay: number
 // between tests).
 export function resetPlayerHistory(): void {
   flights.clear();
+  solvedReads.clear();
   useHistoryStore.setState({ months: {}, solved: {} }, true);
 }

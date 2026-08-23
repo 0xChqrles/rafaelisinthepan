@@ -14,15 +14,40 @@ import type { PlayerHistory } from '@whippin/shared';
 
 // The transport is stubbed, the READING is not: `parsePlayerHistory` and the whole commit
 // path stay real, because what these tests are about is what an ANSWER does to the store.
-const harness = vi.hoisted(() => ({ answer: { days: [], solvedDays: [] } as PlayerHistory }));
+const harness = vi.hoisted(() => ({
+  answer: { days: [], solvedDays: [] } as PlayerHistory,
+  // What the identity module answers: most tests are ABOUT a player who has one; the
+  // identity-gate tests flip it off.
+  identified: true,
+  // Every body the transport saw, so the collection opt-out is asserted on the wire shape.
+  requests: [] as Array<Record<string, unknown>>,
+  fail: false,
+  // Scripted responders, consumed first-in-first-out before the default behavior — what
+  // lets one test hold a flight in the air while another lands.
+  script: [] as Array<() => Promise<Response>>,
+}));
 
 vi.mock('../api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api')>();
   return {
     ...actual,
     historyUrl: () => 'https://test.invalid/history',
-    postHistoryBody: async () =>
-      ({ ok: true, json: async () => harness.answer }) as unknown as Response,
+    postHistoryBody: async (_url: string, body: Record<string, unknown>) => {
+      harness.requests.push(body);
+      const scripted = harness.script.shift();
+      if (scripted) return scripted();
+      if (harness.fail) return { ok: false, status: 500 } as unknown as Response;
+      return { ok: true, json: async () => harness.answer } as unknown as Response;
+    },
+  };
+});
+
+vi.mock('../identity', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../identity')>();
+  return {
+    ...actual,
+    hasPlayerIdentity: () => harness.identified,
+    playerSecret: () => 'a'.repeat(32),
   };
 });
 
@@ -33,6 +58,10 @@ type HistoryView = import('./history').HistoryView;
 beforeEach(() => {
   resetPlayerHistory();
   harness.answer = { days: [], solvedDays: [] };
+  harness.identified = true;
+  harness.requests = [];
+  harness.fail = false;
+  harness.script = [];
 });
 
 // One real read, landing with the server list given.
@@ -105,40 +134,35 @@ describe('noteSolvedDay — the streak credit the celebration rides', () => {
       solved: { ...state.solved, [lang]: { phase: 'ready' as const, days } },
     }));
 
-  it('inserts TODAY\'s solve, sorted into what the collection already holds', () => {
+  it('inserts a CREDITED solve, sorted into what the collection already holds', () => {
     loaded('fr', [11]);
-    expect(noteSolvedDay('fr', 12, 12)).toBe(true);
+    expect(noteSolvedDay('fr', 12, true)).toBe(true);
     expect(held('fr')).toEqual([11, 12]);
   });
 
   it('a same-day second call credits nothing — a re-solve never counts twice', () => {
     loaded('fr', []);
-    expect(noteSolvedDay('fr', 12, 12)).toBe(true);
-    expect(noteSolvedDay('fr', 12, 12)).toBe(false);
+    expect(noteSolvedDay('fr', 12, true)).toBe(true);
+    expect(noteSolvedDay('fr', 12, true)).toBe(false);
     expect(held('fr')).toEqual([12]);
   });
 
-  it('an ARCHIVE replay credits nothing, at any distance', () => {
+  // ON TIME means ON THE DAY (user-decided 2026-08-23), and `credited` is the SERVER's own
+  // verdict, carried on the confirming append's answer: an archive replay and a solve
+  // carried past the 22:00 flip both come back uncredited, and the client no longer
+  // re-makes the comparison on its own clock — a fast device inside the route's skew
+  // window would otherwise celebrate a phantom day the union merge can never remove.
+  it('an UNCREDITED solve credits nothing — the server\'s verdict is final', () => {
     loaded('fr', [12]);
-    expect(noteSolvedDay('fr', 5, 12)).toBe(false);
-    expect(noteSolvedDay('fr', 11, 12)).toBe(false); // yesterday is an archive day too
+    expect(noteSolvedDay('fr', 5, false)).toBe(false); // an archive replay
+    expect(noteSolvedDay('fr', 11, false)).toBe(false); // the flip-edge is late too
     expect(held('fr')).toEqual([12]);
-  });
-
-  // ON TIME means ON THE DAY (user-decided 2026-08-23). A round carried across the 22:00
-  // flip and finished at 22:00:01 was not finished on time — and it is numerically
-  // identical to opening yesterday from the archive, which is exactly why one comparison
-  // now answers both instead of a window plus a route gate.
-  it('a solve carried PAST the 22:00 flip credits nothing', () => {
-    loaded('fr', [11]);
-    expect(noteSolvedDay('fr', 11, 12)).toBe(false);
-    expect(held('fr')).toEqual([11]);
   });
 
   it('a collection that has NOT ARRIVED credits nothing and celebrates nothing', () => {
     // The choreography counts the PREVIOUS streak off this collection, and there is no
     // honest way to guess it — the server records the solve either way.
-    expect(noteSolvedDay('fr', 12, 12)).toBe(false);
+    expect(noteSolvedDay('fr', 12, true)).toBe(false);
     expect(held('fr')).toBeUndefined();
   });
 
@@ -149,7 +173,7 @@ describe('noteSolvedDay — the streak credit the celebration rides', () => {
     // exactly this array. Within a language the collection only ever grows, so the union is
     // the honest reconciliation as well as the safe one.
     loaded('fr', [11]);
-    expect(noteSolvedDay('fr', 12, 12)).toBe(true);
+    expect(noteSolvedDay('fr', 12, true)).toBe(true);
     await adoptServerAnswer('fr', [11]);
     expect(held('fr')).toEqual([11, 12]);
   });
@@ -161,10 +185,20 @@ describe('noteSolvedDay — the streak credit the celebration rides', () => {
     expect(held('fr')).toEqual([10, 11, 12]);
   });
 
+  it('an answer that changes NOTHING keeps the collection\'s array identity', async () => {
+    // StreakDialog's master sequence effect depends on arrays derived from this one, so a
+    // read landing mid-celebration with nothing new must not mint a fresh identity — that
+    // restarted the whole celebration from the opening fade.
+    loaded('fr', [11, 12]);
+    const before = held('fr');
+    await adoptServerAnswer('fr', [11]);
+    expect(held('fr')).toBe(before);
+  });
+
   it('is per-language — an fr solve does not touch en', () => {
     loaded('fr', []);
     loaded('en', []);
-    noteSolvedDay('fr', 12, 12);
+    noteSolvedDay('fr', 12, true);
     expect(held('fr')).toEqual([12]);
     expect(held('en')).toEqual([]);
   });
@@ -175,10 +209,65 @@ describe('noteSolvedDay — the streak credit the celebration rides', () => {
       'fr',
       Array.from({ length: CAP }, (_, i) => i + 1),
     );
-    expect(noteSolvedDay('fr', CAP + 1, CAP + 1)).toBe(true);
+    expect(noteSolvedDay('fr', CAP + 1, true)).toBe(true);
     const days = held('fr')!;
     expect(days.length).toBe(CAP);
     expect(days[0]).toBe(2);
     expect(days[days.length - 1]).toBe(CAP + 1);
+  });
+});
+
+describe('loadPlayerHistory — the identity gate, the collection opt-out, the phase driver', () => {
+  const solvedOf = (lang: string) => useHistoryStore.getState().solved[lang];
+
+  it('a visitor with NO identity gets a ready-and-EMPTY history without a request', async () => {
+    // No server rows can exist for an identity that does not, so the answer is known — and
+    // asking would be the act that MINTS a key, on a navigation screen (identity.ts's
+    // first-need rule).
+    harness.identified = false;
+    await loadPlayerHistory('fr', 'sentence', '2026-08');
+    expect(harness.requests).toEqual([]);
+    expect(solvedOf('fr')).toEqual({ phase: 'ready', days: [] });
+    expect(useHistoryStore.getState().months['fr:sentence:2026-08']).toEqual({
+      phase: 'ready',
+      days: new Map(),
+    });
+  });
+
+  it('collection: false skips the solved-day read and says so on the wire', async () => {
+    await loadPlayerHistory('fr', 'sentence', '2026-08', false);
+    expect(harness.requests).toEqual([{ secret: 'a'.repeat(32), collection: false }]);
+    // The flight leaves the solved entry entirely alone — phase included.
+    expect(solvedOf('fr')).toBeUndefined();
+    expect(useHistoryStore.getState().months['fr:sentence:2026-08']?.phase).toBe('ready');
+  });
+
+  it('a collection-reading flight omits the flag — the old body shape keeps its meaning', async () => {
+    await loadPlayerHistory('fr', 'sentence', undefined);
+    expect(harness.requests).toEqual([{ secret: 'a'.repeat(32) }]);
+  });
+
+  it('a stale flight\'s failure cannot stamp FAILED over a collection another read drives', async () => {
+    // Two flights race: the OLD month's read fails and lands LAST. Only the most recently
+    // started collection read drives the lang-wide phase, so the stale failure fails its
+    // own month and leaves the collection's phase to the read that owns it.
+    let releaseOld!: () => void;
+    const oldFlightGate = new Promise<void>((resolve) => {
+      releaseOld = resolve;
+    });
+    harness.script.push(async () => {
+      await oldFlightGate;
+      return { ok: false, status: 500 } as unknown as Response;
+    });
+    const oldFlight = loadPlayerHistory('fr', 'sentence', '2026-07');
+    harness.answer = { days: [], solvedDays: [20_000] };
+    await loadPlayerHistory('fr', 'sentence', '2026-08');
+    expect(solvedOf('fr')).toEqual({ phase: 'ready', days: [20_000] });
+    releaseOld();
+    await oldFlight;
+    // The stale failure fails its own MONTH, never the collection.
+    expect(useHistoryStore.getState().months['fr:sentence:2026-07']?.phase).toBe('failed');
+    expect(solvedOf('fr')?.phase).toBe('ready');
+    expect(solvedOf('fr')?.days).toEqual([20_000]);
   });
 });

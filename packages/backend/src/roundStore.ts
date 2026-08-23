@@ -269,3 +269,13 @@ export function roundSortKey(key: RoundKey): string {
 export function roundMonthPrefix(key: RoundMonthKey): string {
   return `${key.lang}#${key.mode}#${key.month}-`;
 }
+
+// The formatters' one INVERSE: the DATE back out of a sort key the month prefix matched.
+// Both stores used to restate this as hand-rolled offset arithmetic in their own coordinate
+// systems, which compiles straight through a key reorder (#203 already made one) while
+// silently emitting shifted date strings — every calendar cell missing its day with no
+// error, and the memory store's tests passing because it made the same mistake. One
+// spelling beside the formatters is what keeps the three in step.
+export function roundSortKeyDate(sortKey: string, key: RoundMonthKey): string {
+  return sortKey.slice(`${key.lang}#${key.mode}#`.length);
+}
