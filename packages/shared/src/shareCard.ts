@@ -18,16 +18,32 @@
 // here derives a cell count (the bounded row itself lives on in web/src/game/share.ts, which
 // summarises the same bar for a text message).
 //
+// **v6 (#214)** adds the CAPPED flag: a round the server refused further appends to at
+// `ROUND_GUESS_CAP`, unsolved, ends at `∞` instead of a try count. The numeric score stays
+// in the token — it is still the ruler's cell count, and the ruler is still one cell per
+// canonical try, never 500 raw storage entries — so the flag changes only what the HEADLINE
+// says. A capped token carries NO solve ticks: the run never finished, and the result the
+// card draws is the reconstruction it reached. v3–v5 are Word mode's ids in this one
+// namespace, so the next sentence format is 6 rather than 3.
+//
 // The payload is BIT-packed (not byte-aligned), then base64url'd, to keep the URL short:
-//   version 4b | lang 2b | day 15b | scoreLen 4b | score <scoreLen>b
+//   version 4b | lang 2b | day 15b | capped 1b | scoreLen 4b | score <scoreLen>b
 //   run    score × ( 1b: 1 = same % as the previous try | 0 = +5b quantized % )
-//   ticks  3b count, then count × ( 1b: 1 = +<bits(score)>b solving try | 0 = never solved )
+//   ticks  (uncapped only) 3b count, then count × ( 1b: 1 = +<bits(score)>b try | 0 = never )
 // The run's cell count is DERIVED from the score (they are the same number), and the repeat
 // bit is what keeps a long game's link short: reconstruction only moves on an IMPROVING
 // guess, and a long game is long precisely because most of its guesses don't improve.
 // A perfect game packs to ~11 chars, a typical dozen-try game to ~15.
 
-const SHARE_VERSION = 2;
+const SHARE_VERSION = 6;
+
+// The RETIRED sentence formats — the ones `decodeLegacyShareTarget` still recovers a
+// language and a day from. Named EXPLICITLY rather than as "anything older than the
+// current version" (#214): v3–v5 are Word mode's ids, and once the sentence version passed
+// them a range test would have handed a malformed or retired WORD token the redirect the
+// codec promises to refuse. A valid current Word token is decoded by its own decoder first;
+// anything else stays a flat 404.
+const LEGACY_SENTENCE_VERSIONS: readonly number[] = [1, 2];
 
 // Word mode's token (#156) lives in the SAME version namespace — the version field is a
 // FORMAT id, and the word result is a different format: no trajectory or ticks — the
@@ -37,10 +53,10 @@ const SHARE_VERSION = 2;
 // DERIVED as the counts' sum, never stored, so the two can never disagree), then the
 // day's UTF-8 DISPLAY word. The card needs that word to reproduce the game's blue
 // terminus while remaining content-addressed by the token (no puzzle-store lookup on an
-// OG request). v3 (score only) and v4 (score + word, no breakdown) are retired; a future
-// sentence-format bump must skip all three ids. decodeLegacyShareTarget's "strictly older
-// than the sentence version" rule keeps rejecting them, so a superseded or malformed Word
-// token still 404s rather than earning a redirect.
+// OG request). v3 (score only) and v4 (score + word, no breakdown) are retired; the
+// sentence format SKIPPED all three ids when #214 bumped it (2 -> 6), and
+// `LEGACY_SENTENCE_VERSIONS` names what may be redirected, so a superseded or malformed
+// Word token still 404s rather than earning a redirect.
 const WORD_SHARE_VERSION = 5;
 
 // How many rarity counts a word token carries — the web's ladder order, commonest first
@@ -76,6 +92,10 @@ export interface ShareResult {
   // Per DISTINCT secret, in sentence order (so the index IS the number under the tick): the
   // 1-based try that dropped it, or null when the run never did (an unfinished run).
   solvedAt: (number | null)[];
+  // The round hit `ROUND_GUESS_CAP` unsolved (#214): every surface says `∞` where it would
+  // say the count. The score still travels — it is the ruler's length — and a capped run
+  // carries no ticks, so this decodes with an empty `solvedAt`.
+  capped?: boolean;
 }
 
 const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
@@ -182,6 +202,8 @@ export function encodeResult(r: ShareResult): string {
   w.write(SHARE_VERSION, VERSION_BITS);
   w.write(Math.max(0, SHARE_LANGS.indexOf(r.lang)), LANG_BITS); // unknown -> 0 (en)
   w.write(clamp(Math.round(r.dayNumber) - ID_EPOCH, 0, (1 << DAY_BITS) - 1), DAY_BITS);
+  const capped = r.capped === true;
+  w.write(capped ? 1 : 0, 1);
 
   const score = clamp(Math.round(r.score), 0, SCORE_MAX);
   const scoreLen = bitLength(score);
@@ -203,6 +225,10 @@ export function encodeResult(r: ShareResult): string {
       prev = q;
     }
   }
+
+  // A CAPPED run ends here: the round never finished, so there is nothing to tick and the
+  // section is absent from the format rather than written empty (#214).
+  if (capped) return bytesToB64url(w.toBytes());
 
   // The TICKS: one entry per distinct secret, in sentence order (so its index IS the number
   // the card stacks under the tick). A tick's try is 1..score, which fits the score's own
@@ -298,14 +324,18 @@ export function decodeWordResult(token: string): WordShareResult | null {
   }
 }
 
-// Every version so far opens with the SAME header — `version | lang | day | scoreLen |
-// score` — and only the payload after it differs. That is what lets an OLD link stay
-// useful: a v1 token can't feed the v2 ruler, but its language and day are right there, so
-// `/s/<v1token>` can send the reader to the day they were shown instead of a dead end.
+// Every version so far opens with the SAME header — `version | lang | day` — and only the
+// payload after it differs. That is what lets an OLD link stay useful: a v1 token can't
+// feed the v6 ruler, but its language and day are right there, so `/s/<v1token>` can send
+// the reader to the day they were shown instead of a dead end.
 //
-// STRICTLY older versions only. A CURRENT-version token that `decodeResult` rejected is
-// malformed, not legacy, and must keep 404-ing — otherwise a hand-crafted token would earn
-// a redirect instead of the flat refusal the codec promises.
+// A NAMED LIST of retired SENTENCE versions, never a range (#214). A CURRENT-version token
+// that `decodeResult` rejected is malformed, not legacy, and must keep 404-ing — otherwise
+// a hand-crafted token would earn a redirect instead of the flat refusal the codec
+// promises. And since the sentence version passed Word mode's ids (3–5) at the v6 bump, a
+// range would additionally have handed a RETIRED or malformed Word token that same
+// redirect; a valid current Word token is decoded by `decodeWordResult` first and never
+// reaches here at all.
 interface LegacyShareTarget {
   version: number;
   lang: string;
@@ -318,7 +348,7 @@ export function decodeLegacyShareTarget(token: string): LegacyShareTarget | null
   try {
     const rd = new BitReader(bytes);
     const version = rd.read(VERSION_BITS);
-    if (version < 1 || version >= SHARE_VERSION) return null;
+    if (!LEGACY_SENTENCE_VERSIONS.includes(version)) return null;
     const lang = SHARE_LANGS[rd.read(LANG_BITS)];
     if (!lang) return null;
     return { version, lang, dayNumber: rd.read(DAY_BITS) + ID_EPOCH };
@@ -341,6 +371,7 @@ export function decodeResult(token: string): ShareResult | null {
     const lang = SHARE_LANGS[rd.read(LANG_BITS)];
     if (!lang) return null;
     const dayNumber = rd.read(DAY_BITS) + ID_EPOCH;
+    const capped = rd.read(1) === 1;
     const scoreLen = rd.read(SCORE_LEN_BITS);
     const score = scoreLen === 0 ? 0 : rd.read(scoreLen);
 
@@ -353,23 +384,25 @@ export function decodeResult(token: string): ShareResult | null {
       trajectory.push(dequant(level));
     }
 
-    const idxBits = bitLength(Math.max(1, score));
-    const tickCount = rd.read(TICK_COUNT_BITS);
     const solvedAt: (number | null)[] = [];
-    for (let i = 0; i < tickCount; i += 1) {
-      if (rd.read(1) === 0) {
-        solvedAt.push(null);
-        continue;
+    if (!capped) {
+      const idxBits = bitLength(Math.max(1, score));
+      const tickCount = rd.read(TICK_COUNT_BITS);
+      for (let i = 0; i < tickCount; i += 1) {
+        if (rd.read(1) === 0) {
+          solvedAt.push(null);
+          continue;
+        }
+        const at = rd.read(idxBits);
+        if (at < 1 || at > score) return null; // a tick must land on a real try
+        solvedAt.push(at);
       }
-      const at = rd.read(idxBits);
-      if (at < 1 || at > score) return null; // a tick must land on a real try
-      solvedAt.push(at);
     }
 
     // Only the final byte's padding bits (0..7) may remain; a whole extra byte means the
     // token was tampered/extended.
     if (rd.remainingBits >= 8) return null;
-    return { lang, dayNumber, score, trajectory, solvedAt };
+    return { lang, dayNumber, score, trajectory, solvedAt, capped };
   } catch {
     return null; // bit overrun (truncated token)
   }

@@ -14,10 +14,14 @@
       hooks/usePuzzle.ts      fetch the client-computed day's puzzle from the backend
       api.ts                  backend client: puzzleUrl/wordPuzzleUrl, 404->NO PUZZLE
       identity.ts             the #187 player key: localStorage secret, generated on first need
-      state/roundSync.ts      the #201 sync engine: coalesced flushes, server-log adoption,
-                            cap handling, #203's round-start challenge + solved freeze
-                            (one module-level conversation per round)
-      hooks/useRoundSync.ts   its React binding: registers the round's context on mount
+      state/roundSync.ts      the #201 sync engine, reworked by #214: coalesced prefix writes,
+                            the transient server snapshot it publishes for the screen, the
+                            outbox it settles by identity, cap + freeze, #203's round-start
+                            challenge (one module-level conversation per round)
+      game/playLog.ts         #214's pure projection: (server log + outbox) -> the play log
+                              every client derivation reads, and the outbox remainder
+      hooks/useRoundSync.ts   its React binding: registers the round's context on mount and
+                              reports WHERE its authoritative state is (the load gate)
       state/wordRoundSync.ts  Word mode's #202 conversation: the Turnstile-gated round start,
                               the clock anchor, ONE end-of-run submission
       hooks/useWordRoundSync.ts  its React binding (the mount read + the run's end)
@@ -42,8 +46,9 @@
       components/WordSlash.tsx    the slash a claim cuts the day's word with
       components/WordSubject.tsx  the day's word while the run is on: the word alone, centred
       hooks/useCountdown.ts   the run's deadline, as a ticking clock (HUD) and as one flip (screen)
-      game/scoring.ts         the SCREEN's reading: applyGuessToHoles + computeProgress over
-                              RuntimeHoles (the arithmetic itself is @whippin/shared's since #203)
+      game/scoring.ts         the SCREEN's reading: applyGuessToHoles + replayHoles +
+                              computeProgress over RuntimeHoles (the arithmetic itself is
+                              @whippin/shared's since #203)
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
       hooks/useLetterWave.ts  #129's ambient ripple, shared by every surface that waves
       components/routeDrawing.tsx  THE route drawing: geometry, frame vars + the row parts
@@ -398,9 +403,64 @@ it to the local store — see `packages/backend/AGENTS.md`).
 
 *(Safe to update without touching the invariants above.)*
 
-- **Round guess-log sync (#201):** `Game`'s Round registers its context with
+- **Local storage is an OUTBOX; a capped round ends at ∞ (#214).** The product contract —
+  the three values, the load order, what the cap means, the share token, what was removed —
+  lives in the root `AGENTS.md`. What is this package's:
+  - **`game/playLog.ts` is the projection**, and `Round` derives EVERYTHING from it: the
+    board (`replayHoles`), the score (its length), the prompt's recall history, the run
+    ruler's trajectory and the solve moments. There is no persisted holes/count/progress
+    mirror left to keep in step with it.
+  - **An outbox exists ONLY while this device owes something.** `ensureOutbox` never
+    creates one — it drops a mismatched revision, prunes legacy keys and caps the map —
+    and `appendOutbox` MINTS it, taking the revision from the caller playing it. That is
+    load-bearing rather than tidy: an accepted write REMOVES the outbox it emptied, so
+    most guesses of a round arrive with nothing to append into. Refusing there (the first
+    cut did) silently dropped every guess after the first — the board reverted on the next
+    replay and the server never heard about them again, which is exactly what a browser
+    run caught and no seeded unit test could.
+  - **`useRoundSync` returns WHERE the round's state is** (`RoundLoad`), and `Round` renders
+    the game body only once it is `ready`: `loading` shows the wave, `failed` shows
+    `failedRound` + RETRY (`retryRoundSync`). A load can only ever FAIL before it has
+    succeeded once — the engine tracks that as its own `settled` flag rather than reusing
+    `readDone`, which `resync` clears — so a recovery read failing behind a live board is a
+    sync hiccup, never a played round taken away mid-guess.
+  - **The animated hole swap survived the board becoming a REPLAY.** The play log is
+    authoritative the instant a guess lands, so the visible board replays it MINUS the
+    guesses still in the air (`deferred`), and ONE timer per guess releases it at its
+    floating hit's `fadeDelayMs`. That is strictly simpler than the `improveHole` it
+    replaced: the replay decides which holes move, so there is nothing per-hole to schedule
+    and nothing to keep monotonic — two guesses released out of order still land on the same
+    board, which is what the old monotonic guard existed to guarantee.
+  - **`publish` skips an UNCHANGED state.** The common answer is the server echoing back
+    what we just sent; writing a new object for it would hand the round fresh state about
+    once a second while a player types and recompute every derivation downstream. (The old
+    engine avoided the same churn for a sharper reason — a rewrite applied every pending hole
+    improvement on the spot — which the `deferred` split now prevents by construction.)
+  - **The capped round's `∞` is `@whippin/shared`'s path data**, drawn in place of
+    `.solved-score-num` (`.solved-score-inf`, `crispEdges`, sized in `em` off the number it
+    replaces) with an `sr-only` `∞` beside it; the unit stays PLURAL, since there is no count
+    for a "1" to agree with. `SolvedScreen` takes `capped` and shares a v6 capped token.
+  - **WORD mode gained the same load gate** (`useWordRoundSync` returns a `RoundLoad`, the
+    engine publishes it): its run UI waits for the mount read, which also closes the hazard
+    recorded in the #202 bullet below — PLAY was tappable while that read was in flight, and
+    a session that starts a run it cannot see becomes its writer. A recorded answer publishes
+    the server log into that transient load; `settleWordRun` then clears the acknowledged
+    persisted outbox, marks the run submitted, clamps any still-live deadline to now and caches
+    the authoritative claim count clamped to `CLAIM_ZONE`, so neither the prompt nor summary
+    progress can remain live after settlement.
+  - **`statusOf` takes a SERVER summary** (`{progress, solved}`) and has no producer yet:
+    the archive and the chooser pass `undefined`, so every SENTENCE day reads as not started
+    until #211 lands. **#214 and #211 ship together** — see the Ordering note on both issues.
+
+- **Round guess-log sync (#201).** *(RESHAPED by #214, above: the persisted `tried` log,
+  `mergeLogs`, the `pendingFrom`/`serverCount` watermarks, `adoptRound`, the persisted
+  `capped`/`recorded` flags and `holesMatchPuzzle` are all GONE — what this bullet describes
+  as "the local log" is now the play-log PROJECTION, and what is persisted is only the
+  outbox. Everything it records about pacing, batching, the cap's two 409s, verdicts and the
+  unknown-outcome re-read still holds, and is why they read the way they do.)*
+  `Game`'s Round registers its context with
   `state/roundSync.ts` (`useRoundSync`) and reports each COUNTED guess to it
-  (`recordGuess` now returns whether the guess entered the log — a deduped repeat owes
+  (a guess is deduped against the play log before it enters the outbox — a repeat owes
   the server nothing). The engine is one module-level conversation per round key (the
   `activeScoreFlights` pattern, so remounts and StrictMode rejoin it): the mount READ
   adopts whatever the local device is missing — that is the cross-device payoff, archive
@@ -439,17 +499,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
   batch clamp is sized against): a batch correctly clamped when it was built still
   overshoots once another device pushes the stored log forward, and there the round has
   room and just needs a smaller batch. Capping on the status alone would suppress the
-  leaderboard entry of a round that was never full. When it IS full the flag is persisted
-  (`RoundProgress.capped`, READ on every mount so a reload does not re-open a settled
-  round) and the conversation closes: play continues
-  locally but can never become server-recorded. There is no client score submission since
-  #203: `useScoreHistogram` launches its population READ only when the server's `solved`
-  answer has persisted `RoundProgress.recorded`, so capped/offline-only play has no row to
-  claim and asks for no standing. A round already marked recorded still reads the
-  population; a later local flag cannot hide a row the server demonstrably holds.
-  **An ADOPTED solve is not a fresh solve** — `Game` claims the
-  solved beats at submit time (`solvedByPlay`), so a second tab finishing the board under
-  this one replays no celebration and fires no second `solve` event. `RoundSyncContext.mode`
+  leaderboard entry of a round that was never full. When it IS full the conversation closes
+  and the ROUND ENDS at `∞` (#214) — the capped state is re-derived on every mount from the
+  log the read carries, so a reload never re-opens a settled round for a guaranteed 409.
+  There is no client score submission since
+  #203: `useScoreHistogram` launches its population READ only on the SERVER's own `solved`,
+  so capped/offline-only play has no row to claim and asks for no standing.
+  **An ADOPTED solve is not a fresh solve** — the beats belong to a solve the server
+  confirmed on a batch THIS device sent (`solvedByAppend`, #214, replacing the submit-time
+  `solvedByPlay` guess), so a second tab finishing the board under this one replays no
+  celebration and fires no second `solve` event. `RoundSyncContext.mode`
   stays TYPED `'sentence'`: Word mode got its OWN conversation (below) rather than a widened
   one, because the two shapes share only the transport.
   A changed revision resets the local board too, while an unstamped pre-deploy round with
@@ -498,20 +557,21 @@ it to the local store — see `packages/backend/AGENTS.md`).
     own travel time lands INSIDE the run — the margin that keeps an honest submission clear
     of the server's wait check. Re-anchoring is a no-op by construction: a re-read must
     never shift a run under the player.
-  - **The MOUNT READ writes nothing** and is what makes the daily one-shot across devices;
-    it also carries a finished day's RECORDED run to a device that never played it
-    (`adoptWordRun`). That adoption only ever lands in an EMPTY local log — a word round's
-    deadline is derived from its log, so adopting a longer one over a run this device
-    played could move a clock that has already stopped. A read that finds a NON-EMPTY log
-    also marks the round submitted: the server demonstrably holds a run for it, so this
-    device owes nothing, and without that a freshly linked device would POST the run it
-    just adopted straight back on every visit.
+  - **The MOUNT READ writes no SERVER state** and is what makes the daily one-shot across
+    devices; it also carries a finished day's RECORDED run to a device that never played
+    it. That log is published into transient `roundLoads`, while `settleWordRun` clears the
+    persisted local outbox and marks the round submitted: the server demonstrably holds a
+    run for it, so this device owes nothing. A non-null deadline becomes
+    `min(localDeadline, now)`: settlement ends a still-live local phase immediately and never
+    reopens one already finished. The server deadline is not adopted; only the authoritative
+    claim count is cached for unloaded summary surfaces.
   - **The run's END asks for the one write.** `beginWordRoundSync(ctx, over)` takes the
     deadline's own fact (a log cannot see a wall clock); the log is truncated to what the
-    route accepts (`submittableLog` — only misses can run away) and the acknowledgement is
-    PERSISTED (`RoundProgress`-style `submitted`), purely so a run that claimed nothing does
-    not re-POST on every mount, since an empty stored log reads exactly like an unsubmitted
-    one. A `too_early` refusal is waited out; every other 4xx closes the conversation.
+    route accepts (`submittableLog` — only misses can run away), then a valid 2xx publishes
+    the server's first-write-wins log and settles the persisted outbox. `submitted` is kept
+    purely so a recorded run that claimed nothing does not re-POST on every mount, since an
+    empty server log otherwise reads exactly like an unsubmitted one. A `too_early` refusal
+    is waited out; every other 4xx closes the conversation.
     **`over` is the RETIRED run's fact once a different word is published**, so a republish
     resets it with everything else the flight knows: carrying it across made the fresh
     round's first act a submission of the empty log the reset had just given it, refused
@@ -1842,19 +1902,23 @@ it to the local store — see `packages/backend/AGENTS.md`).
   The % ITSELF is no longer displayed anywhere during the round — the
   header names the day instead (see the app-header bullet) — so this bar, the emoji row and
   the archive/chooser badges are the only things it now speaks through. It is still computed
-  every guess and still cached on the round by `syncProgress`. **The SHARE CARD draws the SAME
+  every guess. *(It is no longer CACHED anywhere: #214 dropped the persisted round, so it
+  is derived from the play log like everything else, and the archive/chooser read the
+  SERVER's summary instead — #211.)* **The SHARE CARD draws the SAME
   ruler (decided 2026-07-25, superseding the bucketed-squares card):** the share token
-  was bumped to **v2**, carrying the RAW per-try trajectory plus the solve moments
+  was bumped to **v2** — and to **v6** by #214, which added the CAPPED flag and skipped
+  Word mode's ids 3–5 — carrying the RAW per-try trajectory plus the solve moments
   instead of the `bucketMeans` squares, so `renderCardSvg` renders the on-screen ruler
   scaled to the OG image — same `progressHeatColor` cells, same ticks, same sentence
   indices. v1 tokens (bucketed squares) no longer decode: `decodeResult` rejects them
   on the version check, so a pre-bump link can never mis-draw. It is not a dead end
-  though — **every version shares the opening header** (`version | lang | day | scoreLen
-  | score`), so `decodeLegacyShareTarget` recovers a SUPERSEDED token's lang + day and
+  though — **every version shares the opening header** (`version | lang | day`), so
+  `decodeLegacyShareTarget` recovers a SUPERSEDED token's lang + day and
   `/s/<v1token>` **301s to `/<lang>/<date>`**, the archived day it named. That fallback is
-  deliberately restricted to versions **strictly older** than the current one: a
-  corrupted or hand-crafted CURRENT-version token still gets the flat 404, so a forgery
-  can never earn a redirect. `/og/<v1token>.png` stays a 404 (there is no ruler to
+  restricted to a NAMED LIST of retired SENTENCE versions — **1 and 2** — rather than to
+  "strictly older than the current one" (#214, when the sentence version passed Word mode's
+  ids): a corrupted or hand-crafted CURRENT-version token still gets the flat 404, and a
+  retired or malformed WORD token does too, so a forgery can never earn a redirect. `/og/<v1token>.png` stays a 404 (there is no ruler to
   draw). Cell count is
   still DERIVED from the score (one cell per counted try, never stored), and a try that
   did not improve costs ONE bit, which is what keeps a long game's link short. The card
@@ -1982,7 +2046,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   in the day's anonymous population (#169), above the mode's own metrics and SHARE — the
   comparison story that replaced the removed LLM benchmark.
   ONE rule (`hooks/useScoreHistogram`), and since #203 it is a plain READ: a round the
-  SERVER holds — `RoundProgress.recorded` for a sentence round, `submitted` for a word run —
+  SERVER holds — its transient `solved` for a sentence round since #214 dropped the
+  persisted `recorded` mirror, `submitted` for a word run —
   GETs the day's bands and locates itself in them by its own score. Both ends read the same
   log — and the read NAMES the caller (`id`, the PUBLIC id, the /board rule) so the band it
   gets back is THEIRS, not whoever else recorded the same number (corrected on review:
@@ -2002,13 +2067,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   refused and its solve never reached the server.
   **The gate is the SERVER's fact, not the local board's**: `solved` flips a beat before the
   solving append lands, and reading the population then would find nothing and — with no
-  retry left — leave the standing blank for good. `recorded` is written by the sync engine
-  off any round answer that says `solved`, and it is PERSISTED (store **v12** strips the
-  retired `scoreRecorded` from both round maps; **v13** then DROPS every sentence round
-  stored before the published revision existed — the no-back-compat rule, the v7/v11
-  precedent — so a surviving round always carries a revision and `ensureRound` compares two
-  real values), so a reload reads its standing straight away and an older round re-learns the
-  fact from its next mount READ.
+  retry left — leave the standing blank for good. That fact is the SERVER state the
+  sync engine publishes off any round answer that says `solved`, and since #214 it is
+  TRANSIENT (store **v14** drops the sentence rounds map outright, taking the persisted
+  `recorded` with it, exactly as **v12** stripped `scoreRecorded` and **v13** dropped the
+  pre-revision rounds — the standing no-back-compat rule, the v7/v11 precedent). A reload
+  therefore learns the standing from the round it re-reads, which is also what makes it
+  correct on a device that never played the day.
   The completion is keyed to the round that launched it (never whichever round navigation
   made active later), and an in-flight read is shared across real component remounts so
   leaving for the archive/tutorial and returning cannot mint a second request. EVERY

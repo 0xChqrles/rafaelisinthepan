@@ -160,8 +160,9 @@ describe('decodeResult — rejects malformed tokens (returns null)', () => {
     expect(decodeResult(`${encodeResult(sample)}AAAA`)).toBeNull();
   });
 
-  it('rejects an unknown version (leading nibble != 2)', () => {
-    // A v2 token's first 4 bits are 0010, so its first char is in I..L; force version 0.
+  it('rejects an unknown version (a forced leading nibble)', () => {
+    // The sentence version's 4 bits open every token; force version 0, which nothing ever
+    // shipped.
     expect(decodeResult(`A${encodeResult(sample).slice(1)}`)).toBeNull();
   });
 
@@ -169,6 +170,43 @@ describe('decodeResult — rejects malformed tokens (returns null)', () => {
     // A hand-built v1 payload: version 1 | lang 0 | day 0 | scoreLen 0 | 3 squares × 5b.
     // (Its leading nibble is 0001, which the version check refuses.)
     expect(decodeResult('EAAAAAAA')).toBeNull();
+  });
+});
+
+// #214: a round the server refused further appends to, UNSOLVED at ROUND_GUESS_CAP, ends
+// at `∞`. The flag is what every surface reads to say so; the numeric score still travels,
+// because it is the RULER's length — one cell per canonical try, never 500 raw storage
+// entries — and a capped run carries NO solve ticks.
+describe('the CAPPED flag (#214)', () => {
+  const capped: ShareResult = { ...sample, capped: true, solvedAt: [4, null, null] };
+
+  it('round-trips the flag', () => {
+    expect(decodeResult(encodeResult(capped))?.capped).toBe(true);
+  });
+
+  it('leaves an ordinary result explicitly NOT capped', () => {
+    expect(decodeResult(encodeResult(sample))?.capped).toBe(false);
+  });
+
+  it('still carries the score and the whole run — the ruler is unchanged', () => {
+    const d = decodeResult(encodeResult(capped));
+    expect(d?.score).toBe(sample.score);
+    expect(d?.trajectory).toHaveLength(sample.score);
+    d?.trajectory.forEach((pct, i) => {
+      expect(Math.abs(pct - sample.trajectory[i])).toBeLessThanOrEqual(QUANT_STEP / 2);
+    });
+  });
+
+  it('carries NO solve ticks, even when the run dropped a secret', () => {
+    expect(decodeResult(encodeResult(capped))?.solvedAt).toEqual([]);
+  });
+
+  it('is SHORTER than the same run uncapped — the tick section is absent, not empty', () => {
+    expect(encodeResult(capped).length).toBeLessThan(encodeResult(sample).length);
+  });
+
+  it('rejects a capped token with a whole extra byte of trailing data', () => {
+    expect(decodeResult(`${encodeResult(capped)}AAAA`)).toBeNull();
   });
 });
 
@@ -207,7 +245,7 @@ describe('decodeLegacyShareTarget — where an OLD link should still land', () =
   });
 
   it('refuses a CURRENT-version token, so a forged one still gets a flat refusal', () => {
-    // Truncating a real v2 token breaks decodeResult; it must NOT then look "legacy".
+    // Truncating a real token breaks decodeResult; it must NOT then look "legacy".
     const truncated = encodeResult(sample).slice(0, 3);
     expect(decodeResult(truncated)).toBeNull();
     expect(decodeLegacyShareTarget(truncated)).toBeNull();
@@ -219,6 +257,58 @@ describe('decodeLegacyShareTarget — where an OLD link should still land', () =
     expect(decodeLegacyShareTarget('')).toBeNull();
     // Leading nibble 0 is not a version we ever shipped.
     expect(decodeLegacyShareTarget(`A${encodeResult(sample).slice(1)}`)).toBeNull();
+  });
+
+  // #214 bumped the sentence format PAST Word mode's ids (2 -> 6). "Strictly older than
+  // the current version" would then have handed a retired or malformed WORD token the
+  // redirect the codec exists to refuse, so the rule is a NAMED LIST of retired SENTENCE
+  // versions. A valid current Word token is decoded by its own decoder first and never
+  // reaches here at all.
+  it('recognizes ONLY the retired sentence versions 1 and 2', () => {
+    const header = (version: number) => {
+      const bits = [
+        ...version.toString(2).padStart(4, '0').split('').map(Number),
+        ...[0, 1], // lang index 1 -> fr
+        ...(638).toString(2).padStart(15, '0').split('').map(Number),
+        ...Array(15).fill(0), // whatever payload the format has after the header
+      ];
+      const bytes = new Uint8Array(Math.ceil(bits.length / 8));
+      bits.forEach((b, i) => {
+        if (b) bytes[i >> 3] |= 1 << (7 - (i & 7));
+      });
+      const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+      let out = '';
+      for (let i = 0; i < bytes.length; i += 3) {
+        const rem = bytes.length - i;
+        const [b0, b1, b2] = [bytes[i], rem > 1 ? bytes[i + 1] : 0, rem > 2 ? bytes[i + 2] : 0];
+        out += B64[b0 >> 2] + B64[((b0 & 0x03) << 4) | (b1 >> 4)];
+        if (rem > 1) out += B64[((b1 & 0x0f) << 2) | (b2 >> 6)];
+        if (rem > 2) out += B64[b2 & 0x3f];
+      }
+      return out;
+    };
+    for (const version of [1, 2]) {
+      expect(decodeLegacyShareTarget(header(version))).toEqual({
+        version,
+        lang: 'fr',
+        dayNumber: 20638,
+      });
+    }
+    // Word mode's ids — retired (3, 4) and current (5) — are NOT sentence legacy.
+    for (const version of [0, 3, 4, 5, 6, 7]) {
+      expect(decodeLegacyShareTarget(header(version))).toBeNull();
+    }
+  });
+
+  it('refuses a malformed WORD token rather than redirecting it', () => {
+    const truncated = encodeWordResult({
+      lang: 'fr',
+      dayNumber: 20638,
+      counts: [1, 0, 0, 0, 0],
+      word: 'forêt',
+    }).slice(0, 4);
+    expect(decodeWordResult(truncated)).toBeNull();
+    expect(decodeLegacyShareTarget(truncated)).toBeNull();
   });
 });
 

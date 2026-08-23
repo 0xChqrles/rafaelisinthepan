@@ -44,15 +44,16 @@ function firstDayOfWeek(lang: string): number {
 
 // The archive calendar (#55): one month of playable past days at a time. Each cell is a
 // flat key that navigates to that day's game (/<lang>/<date>); days before the first
-// puzzle or after the client's active day are disabled. Per-cell status (solved / in
-// progress / not started) is read from the persisted rounds — device-local, as intended.
+// puzzle or after the client's active day are disabled. A WORD cell's status is read from
+// the persisted word rounds; a SENTENCE cell's SOURCE IS THE SERVER since #214 removed the
+// persisted rounds map, and #211 is the month read that supplies it — the two ship
+// together, so until then every sentence cell reads as not started.
 const NO_SOLVED_DAYS: number[] = [];
 
 // `mode` (#156): each daily has its own archive face — a Word mode cell reads its
 // status from the word rounds and navigates to /<lang>/word/<date>, so the two dailies'
 // histories never blur into one calendar.
 export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; mode?: Mode }) {
-  const rounds = useGameStore((s) => s.rounds);
   const wordRounds = useGameStore((s) => s.wordRounds);
 
   // The live streak — displayed HERE (the player-history screen), above the calendar
@@ -200,7 +201,9 @@ export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; m
                 status={
                   mode === 'word'
                     ? wordStatusOf(wordRounds[roundKeyForDay(dayNumber(date), lang, 'word')])
-                    : statusOf(rounds[roundKeyForDay(dayNumber(date), lang)])
+                    : // The sentence month summary is #211's server read (see the note at
+                      // the top of this file); nothing produces one yet.
+                      statusOf(undefined)
                 }
                 longDate={longDate}
               />

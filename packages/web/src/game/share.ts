@@ -171,7 +171,15 @@ export function emojiRow(trajectory: number[], solvedAt: (number | null)[] = [])
 // reader can date the puzzle, and it is the same string the card draws and the shared link
 // resolves to. `dateForDayNumber` is `dayNumber`'s exact inverse, so this is still the
 // SERVER-owned game day, never the sharer's local date.
-export function shareHeadline(dayNumber: number, score: number, unit: string): string {
+// `score` is a number on every ordinary result and the literal `∞` on a #214 capped
+// sentence round — plain text has no font to be missing the glyph, so the character itself
+// is right here (the CARD and the on-screen result draw the shared path data instead,
+// because Press Start 2P has no such glyph).
+export function shareHeadline(
+  dayNumber: number,
+  score: number | string,
+  unit: string,
+): string {
   return `Whippin AI ${dateForDayNumber(dayNumber)} — ${score} ${unit}`;
 }
 

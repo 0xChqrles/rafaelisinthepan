@@ -436,6 +436,27 @@ describe('share-card /og route — lang passthrough (#59)', () => {
     expect(res.statusCode).toBe(200);
     expect(renderCardPng).toHaveBeenCalledWith(expect.objectContaining({ lang: 'fr' }));
   });
+
+  // The route hands the DECODED result straight to the renderer. It used to re-list the
+  // fields, which silently dropped whatever the codec learned next — #214's `capped` went
+  // that way, drawing a try count on a card whose own share page already said `∞`.
+  it('forwards EVERYTHING the codec decoded, the capped flag included (#214)', async () => {
+    const token = encodeResult({
+      lang: 'en',
+      dayNumber: 20638,
+      score: 500,
+      trajectory: Array.from({ length: 500 }, (_, i) => i / 5),
+      solvedAt: [],
+      capped: true,
+    });
+    const res = await makeHandler()(event({ path: `/og/${token}.png` }));
+    expect(res.statusCode).toBe(200);
+    expect(renderCardPng).toHaveBeenCalledWith(expect.objectContaining({ capped: true }));
+    // And the share PAGE agrees with the card it points at.
+    const page = await makeHandler()(event({ path: `/s/${token}` }));
+    expect(page.body).toContain('∞ tries');
+    expect(page.body).not.toContain('500 tries');
+  });
 });
 
 describe('word-mode share routes (#156)', () => {

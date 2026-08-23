@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
-import type { Source } from '@whippin/shared';
+import { INFINITY_EM_HEIGHT, INFINITY_EM_WIDTH, INFINITY_GLYPH, type Source } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { shareHeadline, shareText, shareUrl } from '../game/share';
 import type { ScorePlacementState } from '../hooks/useScoreHistogram';
@@ -63,6 +63,24 @@ const RANK_LEAD_MS = 260;
 // `.score-slot.in`'s rung-in — keep aligned with the CSS.
 const RANK_IN_MS = 220;
 const SHARE_LEAD_MS = 180;
+
+// The capped round's headline (#214). Press Start 2P has no `∞`, so the glyph is drawn from
+// the shared path data — the same path, at the same fraction of the font size, that the OG
+// card draws, so the screen and the card it shares cannot show two different marks. It
+// stands exactly where `.solved-score-num` would, keeping the unit beside it.
+function InfinityScore() {
+  return (
+    <svg
+      className="solved-score-inf"
+      viewBox={INFINITY_GLYPH.viewBox}
+      style={{ height: `${INFINITY_EM_HEIGHT}em`, width: `${INFINITY_EM_WIDTH}em` }}
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d={INFINITY_GLYPH.path} fill="currentColor" />
+    </svg>
+  );
+}
 
 interface SolvedWordEntry {
   word: string; // the accented secret, as the sentence displayed it
@@ -127,6 +145,7 @@ export default function SolvedScreen({
   words,
   onExplore,
   placement = null,
+  capped = false,
   animate = true,
   start = true,
 }: {
@@ -141,6 +160,11 @@ export default function SolvedScreen({
   // The day's score population (#170): 'pending' while the round trip is in flight
   // (the slot shows RANKING...); null renders the reserved empty slot (silent).
   placement?: ScorePlacementState;
+  // The round hit the server's guess cap unsolved (#214): the HEADLINE becomes `∞` and no
+  // leaderboard entry exists (`placement` is null by construction — a capped round's solve
+  // never reached the server). Everything else is an ordinary result: the answer, the
+  // credit, the ruler at its real length, and SHARE.
+  capped?: boolean;
   // Rehydrated solves render their final result immediately and replay nothing.
   animate?: boolean;
   // Hold the WHOLE choreography at frame zero until the screen is actually the player's to
@@ -309,16 +333,19 @@ export default function SolvedScreen({
       score: guessCount,
       trajectory,
       solvedAt: solvedAt ?? [],
+      capped,
     });
     // This screen owns only its localized UNIT; the line's shape is share.ts's, shared
-    // with Word mode so the two modes' messages cannot drift apart.
-    const unit = t(lang, guessCount === 1 ? 'try' : 'tries').toLowerCase();
-    const headline = shareHeadline(dayNumber, guessCount, unit);
+    // with Word mode so the two modes' messages cannot drift apart. A capped round names
+    // no count — `∞` stands where the number would, exactly as the card draws it — and
+    // the unit stays plural, since there is no "1" to agree with.
+    const unit = t(lang, !capped && guessCount === 1 ? 'try' : 'tries').toLowerCase();
+    const headline = shareHeadline(dayNumber, capped ? '∞' : guessCount, unit);
     // The card (via the token) draws the run in full; the plain-text row is the bounded
     // summary of that SAME run — trajectory and solve moments both — so the link and its
     // fallback can't disagree.
     await share(shareText(headline, trajectory, solvedAt ?? [], url));
-  }, [lang, dayNumber, guessCount, trajectory, solvedAt, share]);
+  }, [lang, dayNumber, guessCount, trajectory, solvedAt, capped, share]);
 
   return (
     <div className={`solved-stage${stageIn ? ' in' : ''}${animate ? '' : ' settled'}`}>
@@ -372,15 +399,25 @@ export default function SolvedScreen({
         />
 
         {/* The primary sentence metric. The hidden final value reserves the count's width
-            so its tally never moves the content below it. */}
+            so its tally never moves the content below it — a capped round has no tally to
+            reserve for, since `∞` is one fixed shape. */}
         <span className="solved-score">
-          <span className="solved-score-num">
-            <span className="solved-score-ghost" aria-hidden="true">
-              {guessCount}
+          {capped ? (
+            <span className="solved-score-num">
+              <InfinityScore />
+              <span className="sr-only">∞</span>
             </span>
-            <span className="solved-score-live">{Math.round(shownScore)}</span>
+          ) : (
+            <span className="solved-score-num">
+              <span className="solved-score-ghost" aria-hidden="true">
+                {guessCount}
+              </span>
+              <span className="solved-score-live">{Math.round(shownScore)}</span>
+            </span>
+          )}
+          <span className="solved-score-unit">
+            {t(lang, !capped && guessCount === 1 ? 'try' : 'tries')}
           </span>
-          <span className="solved-score-unit">{t(lang, guessCount === 1 ? 'try' : 'tries')}</span>
         </span>
 
         {/* The player's own run ruler — the share card draws this same ruler from the v2

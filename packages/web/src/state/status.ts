@@ -1,12 +1,11 @@
-import type { RoundProgress, WordRoundProgress } from './gameStore';
+import type { WordRoundProgress } from './gameStore';
 import { CLAIM_ZONE } from '../game/wordGame';
 import { t } from '../i18n';
 
-// A device-local play status for one (day, lang), read straight from the persisted round
-// map WITHOUT loading the puzzle. Shared by the language selector (today's status per
-// card) and the archive calendar (#55, each day cell's status) so the two speak the same
-// visual language: absent = not started, finished = gold, in progress = a % on the app's
-// one heat ramp. Statuses are local to this device — that is expected and fine.
+// A play status for one (day, lang), read WITHOUT loading the puzzle. Shared by the
+// language selector (today's status per card) and the archive calendar (#55, each day
+// cell's status) so the two speak the same visual language: absent = not started,
+// finished = gold, in progress = a % on the app's one heat ramp.
 //
 // FINISHED has two words for two games (#163): a sentence is SOLVED, a word run whose
 // clock ran out is DONE — it is finished, not solved, and calling it solved would claim
@@ -24,13 +23,29 @@ export function isComplete(status: Status): boolean {
   return status.kind === 'solved' || status.kind === 'done';
 }
 
-// none     -> no round yet, or visited without a counted guess;
-// solved   -> every hole discovered (rank 0);
-// progress -> in progress, carrying the cached reconstruction % (never re-derived here).
-export function statusOf(round: RoundProgress | undefined): Status {
-  if (!round || round.guessCount === 0) return { kind: 'none' };
-  if (round.holes.length > 0 && round.holes.every((h) => h.rank === 0)) return { kind: 'solved' };
-  return { kind: 'progress', pct: Math.round(round.progress) };
+// What a summary surface needs to know about one sentence round, and all it needs: the two
+// values the SERVER derives from the log it stores and writes onto the round row (#203).
+// #211 is the read that supplies them — one Query per month, the calendar's own source —
+// and until it lands nothing produces them, so the archive and the chooser pass `undefined`
+// and every sentence day reads as not started. That is the deliberate seam: #214 removed
+// the persisted materialized view these surfaces used to read, and #211 ships with it. See
+// the Ordering note on both issues — neither reaches production alone.
+export interface RoundSummary {
+  // Reconstruction progress (0–100). A #214 CAPPED round stays UNSOLVED and keeps the
+  // percentage it reached — the cap changes the result's headline, not the day's fill.
+  progress: number;
+  // The server has read this round's log as solved. Only ever true.
+  solved: boolean;
+}
+
+// none     -> nothing known about this day (no round yet, or no summary loaded);
+// solved   -> the server holds this round's solve;
+// progress -> in progress, carrying the reconstruction % (never re-derived here).
+export function statusOf(summary: RoundSummary | undefined): Status {
+  if (!summary) return { kind: 'none' };
+  if (summary.solved) return { kind: 'solved' };
+  if (summary.progress <= 0) return { kind: 'none' };
+  return { kind: 'progress', pct: Math.round(summary.progress) };
 }
 
 // Word mode's status (#156, retimed by #163), same visual grammar off the round's own

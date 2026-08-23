@@ -16,6 +16,10 @@ const STRINGS = {
   loading: { en: 'LOADING…', fr: 'CHARGEMENT…' },
   failedPuzzle: { en: 'FAILED TO LOAD PUZZLE', fr: 'ÉCHEC DU CHARGEMENT DU PUZZLE' },
   failedVocab: { en: 'FAILED TO LOAD VOCABULARY', fr: 'ÉCHEC DU CHARGEMENT DU DICTIONNAIRE' },
+  // The sentence round's own state (#214). The board is a replay of the SERVER's log, so a
+  // read that could not be had is a game that cannot honestly start — loud, with a retry,
+  // rather than a guessed local board the player would then type answers to.
+  failedRound: { en: 'FAILED TO LOAD ROUND', fr: 'ÉCHEC DU CHARGEMENT DE LA PARTIE' },
   // The #188 profile read. Its failure is NOT silent like background round sync: what
   // the server holds is the editor's whole starting point, so a guess could be saved
   // over the real profile — the reader retries instead.

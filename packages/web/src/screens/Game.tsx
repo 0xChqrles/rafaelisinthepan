@@ -7,7 +7,8 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { computeProgress, guessKey } from '../game/scoring';
+import { guessKey, replayHoles } from '../game/scoring';
+import { playLogFor, withoutDeferred } from '../game/playLog';
 import { replayRun, type RunReplay } from '../game/share';
 import { canExtend } from '../game/keyboard';
 import LoadingWave from '../components/LoadingWave';
@@ -15,8 +16,8 @@ import useVocab from '../hooks/useVocab';
 import useScoreHistogram from '../hooks/useScoreHistogram';
 import useRoundSync from '../hooks/useRoundSync';
 import useToday from '../hooks/useToday';
-import { notifyGuess } from '../state/roundSync';
-import { useGameStore, roundKeyForDay, holesMatchPuzzle } from '../state/gameStore';
+import { notifyGuess, retryRoundSync } from '../state/roundSync';
+import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import Phrase from '../components/Phrase';
 import DissolvePhrase from '../components/DissolvePhrase';
 import CellDigits from '../components/CellDigits';
@@ -31,7 +32,7 @@ import LoadError from '../components/LoadError';
 import { buildHistory } from '../game/history';
 import { t, ariaHoleHistory, srHoleResult } from '../i18n';
 import { track } from '../analytics';
-import { fold, dateForDayNumber } from '@whippin/shared';
+import { fold, dateForDayNumber, ROUND_GUESS_CAP } from '@whippin/shared';
 import { prefetchTurnstileToken } from '../turnstile';
 import type {
   HitState,
@@ -55,6 +56,10 @@ const STAGGER_MS = 200;
 export const FLOATING_HIT_INTRO_MS = 320;
 
 const STREAK_AFTER_WORDS_MS = 300;
+
+// One frozen empty log, so a round with nothing to play from does not hand every memo a
+// fresh array on every render.
+const EMPTY_LOG: string[] = [];
 
 // Deadline for the keyboard's solved-exit beat handing the tray back (see its effect):
 // a generous multiple of the real duration, so it only ever fires if the DOM signal
@@ -159,12 +164,10 @@ function Round({
   // Identity of this round: the server day + language.
   const roundKey = useMemo(() => roundKeyForDay(dayNumber, lang), [dayNumber, lang]);
 
-  const ensureRound = useGameStore((s) => s.ensureRound);
-  const recordGuess = useGameStore((s) => s.recordGuess);
+  const ensureOutbox = useGameStore((s) => s.ensureOutbox);
+  const appendOutbox = useGameStore((s) => s.appendOutbox);
   const sentenceRulesSeen = useGameStore((s) => s.sentenceRulesSeen);
   const markSentenceRulesSeen = useGameStore((s) => s.markSentenceRulesSeen);
-  const improveHole = useGameStore((s) => s.improveHole);
-  const syncProgress = useGameStore((s) => s.syncProgress);
   const recordSolve = useGameStore((s) => s.recordSolve);
 
   // The client's active game day (local, DST-correct) — the streak's reference point. May
@@ -172,12 +175,18 @@ function Round({
   // store's recordSolve resolves that flip-edge case (and refuses archive replays).
   const todayDayNumber = useToday();
 
-  // Server-authoritative round state (#201): the guess log syncs from the first guess,
-  // whether or not an account is ever linked — local play stays instant and authoritative
-  // only until the server's next answer, which this engine adopts as truth. Archive days
-  // sync too (the same date-addressed route), so a full history follows the player across
-  // devices.
-  useRoundSync({
+  // Reconcile the OUTBOX before paint (#214): an outbox naming a different published
+  // revision answered a retired question and is dropped. A layout effect commits that
+  // before the browser paints, so a retired round's guesses never reach a render.
+  useLayoutEffect(() => {
+    ensureOutbox(roundKey, revision);
+  }, [ensureOutbox, roundKey, revision]);
+
+  // The server owns this round's log (#201), and since #214 the client waits for it: the
+  // read below is what the board is replayed from, and until it settles there is nothing
+  // to play. Archive days sync exactly like today's (the same date-addressed route), which
+  // is what makes a player's full history follow them to a new device.
+  const load = useRoundSync({
     roundKey,
     lang,
     mode: 'sentence',
@@ -185,49 +194,50 @@ function Round({
     // The round's identity on the wire (#203): the version this puzzle was published as.
     revision,
     ranks,
-    freshHoles,
   });
+  const server = load.status === 'ready' ? load.server : null;
 
-  // Reconcile before paint: a matching key rehydrates the stored progress, a new key
-  // (new day OR new language) resets to freshHoles. useLayoutEffect commits the reset
-  // before the browser paints, so a stale day's holes never flash.
-  useLayoutEffect(() => {
-    ensureRound(roundKey, freshHoles, revision);
-  }, [ensureRound, roundKey, freshHoles, revision]);
+  // The unacknowledged half — the ONLY persisted sentence-round state. Read straight out
+  // of the map and checked against the revision: `ensureOutbox` reconciles in a layout
+  // effect, so the very first render of a re-published round can still see the retired
+  // one's guesses.
+  const stored = useGameStore((s) => s.outbox[roundKey]);
+  const outbox = stored && stored.puzzle === revision ? stored.guesses : EMPTY_LOG;
 
-  // Persisted round state for THIS round, read straight out of the keyed map. Use it
-  // only when its holes still match THIS puzzle: a re-published sentence keeps the
-  // (day, lang) key but changes the holes, and those stale holes carry secrets absent
-  // from `ranks` (scoring would crash). On that frame — as on the pre-reconcile frame
-  // before ensureRound resets the store — fall back to freshHoles / zero.
-  const round = useGameStore((s) => s.rounds[roundKey]);
-  const live = round && holesMatchPuzzle(round.holes, freshHoles) ? round : undefined;
-  const holes = live ? live.holes : freshHoles;
+  // THE PLAY LOG: a pure first-occurrence projection of `server + outbox`, deduped by
+  // canonical identity. Everything the screen shows is derived from it — the board, the
+  // score, the recall history, the run ruler, the solve moments — so there is no second
+  // copy of a round's state anywhere to reconcile against.
+  const playLog = useMemo(
+    () => (server ? playLogFor(ranks, server.guesses, outbox) : EMPTY_LOG),
+    [ranks, server, outbox],
+  );
+
+  // Guess IDENTITIES whose BOARD effect is still animating. The play log is authoritative
+  // the instant a guess lands, but a hole's word/rank swap is deliberately deferred to its
+  // floating hit's fade-out — so the visible board replays the log MINUS what is still in
+  // the air, and each release is one timer removing one entry. The deferral is presentation
+  // only: the score, the history and the ruler all read the full log.
+  const [deferred, setDeferred] = useState<string[]>([]);
+  const holes = useMemo(
+    () => replayHoles(freshHoles, ranks, withoutDeferred(ranks, playLog, deferred)),
+    [freshHoles, ranks, playLog, deferred],
+  );
   // Score = number of unique tries. A try is a submitted word that exists in the
-  // vocabulary, including misses; repeated folded guesses and non-existent words are
-  // not counted (deduping happens in the store's recordGuess).
-  const guessCount = live ? live.guessCount : 0;
+  // vocabulary, including misses; repeats and inflections of an already-played word are
+  // one try (#104), which is exactly what the projection collapsed.
+  const guessCount = playLog.length;
   // Prompt history for Up/Down recall = this round's unique valid guesses in order.
-  // Sourced from the persisted `tried` list, so recall survives a reload (per day+lang).
-  const history = live ? live.tried : [];
+  const history = playLog;
 
   // Hole owns the actual word-replacement animation, so it also owns the reliable finish
   // signal. Keep every resolved hole reported for this round; the round-key dependency on
   // the callback makes already-resolved rehydrated holes report again after navigation.
   const [resolvedHoleIndices, setResolvedHoleIndices] = useState<Set<number>>(() => new Set());
-  // Did the round finish HERE, by a guess typed on this device in this session? The
-  // solved beats — the analytics event, the streak, the celebration — belong to that
-  // transition alone, and `solved` flipping is no longer evidence of it: the #201 sync
-  // adopts the server's log, so a second tab (or a second device) under the same player
-  // key can finish the board under a screen that is merely watching. `submit` sets this
-  // the moment it knows the guess closes every hole; nothing else ever does.
-  const solvedByPlay = useRef<boolean>(false);
   useLayoutEffect(() => {
     setResolvedHoleIndices(new Set());
-    // A different round: whatever this said belonged to the previous one. It runs BEFORE
-    // the solve effect below in the same commit, which is what stops an already-solved
-    // day navigated into from inheriting the last round's fresh solve.
-    solvedByPlay.current = false;
+    // Whatever was still animating belonged to the previous round.
+    setDeferred([]);
   }, [roundKey]);
   const markHoleResolved = useCallback((index: number) => {
     setResolvedHoleIndices((current) => {
@@ -281,20 +291,37 @@ function Round({
     prefetchTurnstileToken();
   }, [roundKey]);
 
-  const solved = holes.every((h) => h.rank === 0); // sentence discovered -> round over
-  const allWordsResolved = solved && resolvedHoleIndices.size === holes.length;
+  // The board as this screen shows it. It is a LOCAL reading — the last hole's swap may
+  // still be in the air, and the guess that closed it is still on its way to the server —
+  // so it owns the prompt's lock and nothing else (#214).
+  const boardComplete = holes.every((h) => h.rank === 0);
+  const allWordsResolved = boardComplete && resolvedHoleIndices.size === holes.length;
+
+  // AUTHORITATIVE solved: the server's own reading of the log it stores (#203). The local
+  // board flips a beat earlier, while the solving append is still in flight, so everything
+  // that must not happen twice or too early — the result, the leaderboard, the streak, the
+  // `solve` event — hangs off this and never off `boardComplete`.
+  const solved = server?.solved === true;
+  // CAPPED (#214): the authoritative state is UNSOLVED with exactly the raw cap stored, so
+  // the server refuses every further append. DERIVED, never a stored flag — the outbox's
+  // own length can never reveal it, since what counts is what was STORED. A legitimate
+  // solve accepted as raw entry 500 is an ordinary solved round: `solved` wins, and the
+  // leaderboard entry it earned stands.
+  const capped = server !== null && !server.solved && server.guesses.length >= ROUND_GUESS_CAP;
+  // The round is over either way — the difference is what the headline says and whether
+  // anything celebrates.
+  const finished = solved || capped;
 
   // The day's score population (#170), READ once the SERVER holds this round (#203). The
   // score is no longer claimed: the append that solves the round is what records the row,
-  // and `recorded` is the server's own answer that it did. Gating on the local `solved`
-  // alone would read a population one round trip before this round joined it — and, with
-  // nothing left to retry, would leave the standing blank for good.
+  // and `solved` is the server's own answer that it did. Gating on the local board alone
+  // would read a population one round trip before this round joined it — and, with nothing
+  // left to retry, would leave the standing blank for good.
   //
   // A CAPPED round simply never gets there: past the server's guess cap its appends are
-  // refused, so its solve never reaches the server and no row exists to stand in. The
-  // client needs no rule of its own for that any more.
+  // refused, so its solve never reaches the server and no row exists to stand in.
   const placement = useScoreHistogram({
-    finished: solved && live?.recorded === true,
+    finished: solved,
     mode: 'sentence',
     lang,
     dayNumber,
@@ -306,7 +333,7 @@ function Round({
   // is mandatory (its START starts the clock); this one exists only for the rules, so it is
   // a persisted seen-once flag and never returns. Derived, not state: a round already in
   // progress (or solved) has nothing left to teach, and PLAY closes it by setting the flag.
-  const gateOpen = !sentenceRulesSeen && !solved && guessCount === 0;
+  const gateOpen = !sentenceRulesSeen && !finished && guessCount === 0;
   // The history-tap rule speaks the input device's own verb — the same coarse-pointer test
   // as the streak hint and the retired tutorial gesture line.
   const coarse = useMemo(
@@ -333,21 +360,14 @@ function Round({
   // just-solved transition below starts the same preload immediately. Both scheduling paths
   // are cleaned up with the round, and a speculative load failure remains retryable.
   useEffect(() => {
-    if (solved || !isActiveDay) return undefined;
+    if (finished || !isActiveDay) return undefined;
     if (typeof window.requestIdleCallback === 'function') {
       const id = window.requestIdleCallback(() => preloadStreakDialog(), { timeout: 4_000 });
       return () => window.cancelIdleCallback(id);
     }
     const id = window.setTimeout(() => preloadStreakDialog(), 1_500);
     return () => window.clearTimeout(id);
-  }, [dayNumber, isActiveDay, roundKey, solved]);
-
-  // Reconstruction progress (0–100): how much of the sentence is rebuilt. NO LONGER SHOWN
-  // during the round (user-decided 2026-08-16 — the header names the day instead); it is
-  // still computed, and still the one number the round is measured by: it is cached on the
-  // persisted round for the archive/chooser badges, and the per-try trajectory below is
-  // what colours the run ruler at the end. Distinct from the guess-count performance number.
-  const progress = useMemo<number>(() => computeProgress(holes, ranks), [holes, ranks]);
+  }, [dayNumber, isActiveDay, roundKey, finished]);
 
   // The header's left slot belongs to TopBar's actual left group, not to the game body. A
   // layout effect fills it before paint and clears it when this round leaves. It holds WHICH
@@ -359,23 +379,23 @@ function Round({
 
   // This round replayed: the per-guess reconstruction-% trajectory (the run ruler's cells,
   // and what the share token carries) plus the solve moments (its ticks), from ONE walk of
-  // the ordered valid guesses. Derived from the persisted `tried` list, so it survives a
-  // reload just like the score.
+  // the ordered valid guesses. Derived from the PLAY LOG, exactly like the score, so one
+  // ruler cell is one canonical try — never one raw storage entry.
   const { trajectory, solvedAt } = useMemo<RunReplay>(
-    () => replayRun(freshHoles, ranks, history),
-    [freshHoles, ranks, history],
+    () => replayRun(freshHoles, ranks, playLog),
+    [freshHoles, ranks, playLog],
   );
 
   // Gate the solved presentation on every Hole reporting its final displayed secret. The
   // playing UI stays up through the real animationend events, so slow/throttled frames and
   // a multi-hole final guess cannot let the streak cover words that are still resolving.
   // An already-solved round on load still reveals immediately.
-  const [showResults, setShowResults] = useState<boolean>(solved);
+  const [showResults, setShowResults] = useState<boolean>(finished);
   // The results component also mounts behind the streak screen. Fresh solves keep it at
   // frame zero until the source finishes; rehydrated solves start at the final frame.
   // A dev streak preview deliberately opts a rehydrated result back into the choreography.
   const [animateResults, setAnimateResults] = useState<boolean>(
-    () => solved && deferResultsAnimation,
+    () => finished && deferResultsAnimation,
   );
   // Player progression gets a separate, one-time celebration. This is deliberately
   // transient rather than persisted: only the live unsolved -> solved transition may open
@@ -389,7 +409,7 @@ function Round({
   // solved stage take the whole screen. `dissolved` is the flag the swap hangs on: false
   // through a live round (a fresh solve earns the dissolve), true from the first frame of
   // a rehydrated solve (a revisit replays nothing, sentence included).
-  const [dissolved, setDissolved] = useState(solved);
+  const [dissolved, setDissolved] = useState(finished);
   // Solved exit choreography (#110, decided 2026-07-24): a LIVE solve doesn't swap the
   // tray instantly — the keyboard slides down out of it (kb-drop) before the sentence
   // dissolves and the stage rises. Rehydrated solves never set this: they mount the final
@@ -410,17 +430,18 @@ function Round({
     const id = window.setTimeout(() => setKeyboardLeaving(false), KB_EXIT_FALLBACK_MS);
     return () => window.clearTimeout(id);
   }, [keyboardLeaving]);
-  const prevSolved = useRef<boolean>(solved);
+  const prevFinished = useRef<boolean>(finished);
   useEffect(() => {
-    // A FRESH solve is a solve this device played (see `solvedByPlay`). An adopted one —
-    // the same player key finishing the board in another tab, or on another device whose
-    // log this round just merged — is a rehydration as far as the beats are concerned:
-    // the board IS solved, and it is shown solved, but nothing celebrates a finish that
-    // already happened somewhere else.
-    const justSolved = solved && !prevSolved.current && solvedByPlay.current;
-    prevSolved.current = solved;
-    if (!solved) {
-      solvedByPlay.current = false;
+    // A FRESH solve is one the SERVER confirmed on a batch THIS device sent
+    // (`solvedByAppend`). An adopted one — read at mount, or learned from a `round_solved`
+    // refusal because the same player key finished the board in another tab or on another
+    // device — is history as far as the beats are concerned: the board IS solved, and it is
+    // shown solved, but nothing celebrates a finish that already happened somewhere else.
+    // A CAPPED round is never fresh: it ends, it does not finish.
+    const justFinished = finished && !prevFinished.current;
+    const freshSolve = solved && server?.solvedByAppend === true;
+    prevFinished.current = finished;
+    if (!finished) {
       setShowResults(false);
       setAnimateResults(false);
       setShowStreakDialog(false);
@@ -431,14 +452,14 @@ function Round({
       setDissolved(false);
       return undefined;
     }
-    if (!justSolved) {
-      setShowResults(true); // already solved on load (rehydrated) -> reveal without waiting
+    if (!justFinished || !freshSolve) {
+      setShowResults(true); // adopted history, or the cap — reveal without waiting
       setAnimateResults(deferResultsAnimation);
       setShowStreakDialog(false);
       setStreakAdvanced(false);
       setAwaitingWordAnimations(false);
       setPromptExiting(false);
-      setDissolved(true); // a revisit replays nothing — the sentence is already gone
+      setDissolved(true); // nothing to replay — the sentence is already gone
       return undefined;
     }
     // The one analytics beat for "did the player finish a puzzle": fired ONLY on the
@@ -459,7 +480,7 @@ function Round({
     setDissolved(false); // a fresh solve earns the sentence's dissolve
     setAwaitingWordAnimations(true);
     return undefined;
-  }, [solved]);
+  }, [finished]);
 
   useEffect(() => {
     if (!awaitingWordAnimations || !allWordsResolved) return;
@@ -515,12 +536,6 @@ function Round({
     setDissolved(true);
   }, []);
 
-  // Cache the progress on the persisted round so the language selector can badge an
-  // in-progress language without re-loading its rank map. No-op when unchanged.
-  useEffect(() => {
-    syncProgress(progress);
-  }, [progress, syncProgress]);
-
   // --- the hole HISTORY modal (2026-08-10, replacing the #117 route map): each hole opens
   // the round's guess log ranked against its own secret. Numbering is by DISTINCT secret in
   // sentence order (1..3) — the same numbers the run ruler's ticks and the share row's
@@ -545,9 +560,9 @@ function Round({
   // gesture must work while the line that teaches it is on screen.
   //
   // `promptExiting` covers the START of those beats: the prompt leaves on the solving
-  // submit while the holes are still resolving, so `solved` — which only follows the last
-  // word's settle — has not turned over yet.
-  const exploreDisabled = promptExiting || solved;
+  // submit while the holes are still resolving, so `boardComplete` — which only follows the
+  // last word's settle — has not turned over yet.
+  const exploreDisabled = promptExiting || boardComplete || finished;
   // Stable for the round: the button wraps the hole for the WHOLE round or not at all, and
   // the gating above only disables it — unwrapping mid-round would remount the word while
   // its scramble is running. These are the buttons' DESCRIPTIONS, not their names: a hole is
@@ -609,7 +624,8 @@ function Round({
   // modal owns the screen while it is open, so the affordance stands down for both — and once
   // the round is over, stillness is what "done" looks like. The rules gate is NOT a veto:
   // the holes are live under it (the gate teaches the tap), so the wave advertises them.
-  const quiet = !solved && !promptExiting && historyHole === null && hits.length === 0;
+  const quiet =
+    !boardComplete && !finished && !promptExiting && historyHole === null && hits.length === 0;
 
   const removeHit = useCallback((id: number) => {
     setHits((prev) => prev.filter((h) => h.id !== id));
@@ -650,7 +666,9 @@ function Round({
 
   const submit = useCallback(
     (raw: string) => {
-      if (solved || promptExiting) return;
+      // A board already complete takes no more guesses, and neither does a round the server
+      // has closed — solved (frozen) or capped.
+      if (boardComplete || finished || promptExiting) return;
       const typed = fold(raw);
       if (!typed) {
         setInput('');
@@ -670,23 +688,26 @@ function Round({
 
       // Know at submit time whether this valid guess closes every remaining hole. Start
       // the prompt exit NOW — in the same React commit as the final hit indicators —
-      // instead of waiting for the delayed store improvements to mark the round solved.
+      // instead of waiting for the deferred board swap, let alone for the server.
       const solvesAll = holes.every((h) => h.rank === 0 || ranks[h.secret][typed]?.rank === 0);
       setInput('');
       setFeedback(null);
-      // This device just finished the board: claim the solved beats for the transition
-      // the store is about to make (see `solvedByPlay`). Set here rather than read off
-      // `solved`, which the sync engine can also flip.
-      if (solvesAll) {
-        solvedByPlay.current = true;
-        setPromptExiting(true);
+      if (solvesAll) setPromptExiting(true);
+      // Counted guess: a unique valid word (misses included). Deduplicated against the PLAY
+      // LOG by canonical identity (guessKey), so repeats, inflections of an already-played
+      // word (#104) and the non-existent words returned above never increase the score. A
+      // NEW guess goes straight into the outbox — the server's copy catches up behind the
+      // board's reaction, and nothing waits for that write.
+      const id = guessKey(ranks, typed);
+      const isNew = !playLog.some((g) => guessKey(ranks, g) === id);
+      if (isNew) {
+        appendOutbox(roundKey, revision, typed);
+        notifyGuess(roundKey);
+        // The board is a REPLAY of the log, so this guess would land on it in the very next
+        // render. Hold it back until its floating hit fades — the deferral is the swap's
+        // choreography, and the release below is what applies it.
+        setDeferred((cur) => [...cur, id]);
       }
-      // Counted guess: a unique valid word (misses included). The store dedupes by
-      // canonical identity (guessKey): repeats, inflections of an already-tried word
-      // (#104), and the non-existent words returned above never increase the score.
-      // A guess that entered the log is owed to the server (#201) — the sync engine
-      // coalesces and flushes it behind the board's reaction.
-      if (recordGuess(typed, (t) => guessKey(ranks, t))) notifyGuess(roundKey);
 
       // EVERY unsolved hole reacts to a valid guess (solved holes are locked out).
       // A hole is WARM when `typed` is in its top-K rank map (`entry` set) and TOO
@@ -715,45 +736,67 @@ function Round({
       // new one).
       const fadeDelayMs = Math.max(0, impacted.length - 1) * STAGGER_MS + FLOATING_HIT_INTRO_MS;
       impacted.forEach(({ index, entry }, step) => {
-        const oldRank = holes[index].rank; // submit-time rank (start_rank on first improve)
-        const improves = entry != null && entry.rank < oldRank;
         const startDelayMs = step * STAGGER_MS;
-
-        const id = (hitId.current += 1);
+        const hit = (hitId.current += 1);
         setHits((prev) => [
           ...prev,
           entry != null
-            ? { holeIndex: index, value: entry.rank, id, startDelayMs, fadeDelayMs }
-            : { holeIndex: index, value: 0, id, startDelayMs, fadeDelayMs, miss: true },
+            ? { holeIndex: index, value: entry.rank, id: hit, startDelayMs, fadeDelayMs }
+            : { holeIndex: index, value: 0, id: hit, startDelayMs, fadeDelayMs, miss: true },
         ]);
+      });
 
-        if (!improves || entry == null) return;
-
-        // IMPROVEMENT: hand the entry's DISPLAY form (accents kept) and lower rank
-        // to the hole as its floating hit starts fading out — Hole decreases the
-        // exponent one rank at a time, then scrambles the old word out and reveals
-        // this new one.
-        const { word, rank } = entry;
+      // RELEASE the guess into the board as its floating hits start fading out: every hole
+      // it improves swaps to the closer accented word and lower rank together, and Hole
+      // stages the rest (decrease the exponent one rank at a time, then scramble out the
+      // old word and reveal the new one). ONE timer for the whole guess — the replay
+      // decides which holes move, so there is nothing per-hole to schedule and nothing to
+      // keep monotonic: two guesses released out of order still land on the same board.
+      if (isNew) {
         const timer = window.setTimeout(() => {
           pendingTimers.current = pendingTimers.current.filter((t) => t !== timer);
-          improveHole(index, word, rank);
+          setDeferred((cur) => cur.filter((entry) => entry !== id));
         }, fadeDelayMs);
         pendingTimers.current.push(timer);
-      });
+      }
     },
     [
       holes,
+      playLog,
       ranks,
-      solved,
+      boardComplete,
+      finished,
       promptExiting,
       vocabSet,
-      recordGuess,
-      improveHole,
+      appendOutbox,
+      revision,
       lang,
       say,
       roundKey,
     ],
   );
+
+  // The game is deliberately NETWORK-DEPENDENT at load (#214): the board is replayed from
+  // the server's own log, so until that read settles there is nothing honest to show and
+  // nothing to type into. A FAILED read is said out loud with a RETRY rather than silently
+  // starting the player on a guessed local mirror — the guesses they would then type would
+  // be answers to a board the server disagrees with.
+  if (load.status === 'failed') {
+    return (
+      <LoadError
+        message={t(lang, 'failedRound')}
+        lang={lang}
+        onRetry={() => retryRoundSync(roundKey)}
+      />
+    );
+  }
+  if (load.status !== 'ready') {
+    return (
+      <p className="status">
+        <LoadingWave text={t(lang, 'loading')} />
+      </p>
+    );
+  }
 
   return (
     <div className="game">
@@ -775,7 +818,10 @@ function Round({
           trajectory={trajectory}
           dayNumber={dayNumber}
           lang={lang}
-          solvedAt={solvedAt}
+          // A capped round has no solve to tick and no count to name: it ends at `∞`
+          // (#214), with the answer and the credit shown like any other finished round.
+          solvedAt={capped ? undefined : solvedAt}
+          capped={capped}
           source={source}
           words={solvedWords}
           onExplore={openHistory}
