@@ -9,13 +9,37 @@
 //      collection that has not arrived celebrates nothing rather than guessing a previous
 //      value.
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { daySummaryStatus, noteSolvedDay, resetPlayerHistory, useHistoryStore } from './history';
-import type { HistoryView } from './history';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import type { PlayerHistory } from '@whippin/shared';
+
+// The transport is stubbed, the READING is not: `parsePlayerHistory` and the whole commit
+// path stay real, because what these tests are about is what an ANSWER does to the store.
+const harness = vi.hoisted(() => ({ answer: { days: [], solvedDays: [] } as PlayerHistory }));
+
+vi.mock('../api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api')>();
+  return {
+    ...actual,
+    historyUrl: () => 'https://test.invalid/history',
+    postHistoryBody: async () =>
+      ({ ok: true, json: async () => harness.answer }) as unknown as Response,
+  };
+});
+
+const { daySummaryStatus, loadPlayerHistory, noteSolvedDay, resetPlayerHistory, useHistoryStore } =
+  await import('./history');
+type HistoryView = import('./history').HistoryView;
 
 beforeEach(() => {
   resetPlayerHistory();
+  harness.answer = { days: [], solvedDays: [] };
 });
+
+// One real read, landing with the server list given.
+async function adoptServerAnswer(lang: string, solvedDays: number[]): Promise<void> {
+  harness.answer = { days: [], solvedDays };
+  await loadPlayerHistory(lang, 'sentence', undefined);
+}
 
 // A view as `usePlayerHistory` would return it, minus the hook.
 function view(days: HistoryView['days'], daysPhase: HistoryView['daysPhase']): HistoryView {
@@ -106,6 +130,25 @@ describe('noteSolvedDay — the streak credit the celebration rides', () => {
     // honest way to guess it — the server records the solve either way.
     expect(noteSolvedDay('fr', 12, 12)).toBe(false);
     expect(held('fr')).toBeUndefined();
+  });
+
+  it('SURVIVES a revalidation that started before it', async () => {
+    // The read was issued against a log the solving append had not reached, so its answer
+    // does not name today — and it lands AFTER the credit. Replacing would take the day
+    // straight back out from under a mounted StreakDialog, which counts its transition off
+    // exactly this array. Within a language the collection only ever grows, so the union is
+    // the honest reconciliation as well as the safe one.
+    loaded('fr', [11]);
+    expect(noteSolvedDay('fr', 12, 12)).toBe(true);
+    await adoptServerAnswer('fr', [11]);
+    expect(held('fr')).toEqual([11, 12]);
+  });
+
+  it('adopts days the server knows that this device does not', async () => {
+    // The union runs both ways: another device's solves arrive through the same answer.
+    loaded('fr', [12]);
+    await adoptServerAnswer('fr', [10, 11]);
+    expect(held('fr')).toEqual([10, 11, 12]);
   });
 
   it('is per-language — an fr solve does not touch en', () => {

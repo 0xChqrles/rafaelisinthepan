@@ -50,7 +50,7 @@
                               (lang, mode) summaries + the language's solved-day collection
       historyStore.ts         solved-day storage contract; the private player#<publicId>
                               partition, history#<lang> sort key
-      dynamoHistoryStore.ts   prod NUMBER-SET credit (idempotent ADD) + the bounded overflow rewrite
+      dynamoHistoryStore.ts   prod NUMBER-SET credit (idempotent ADD) + an ADD/DELETE overflow trim
       memoryHistoryStore.ts   process-local implementation for backend:dev/tests
       friendStore.ts          mutual-edge storage contract; friends#<publicId> partition + FRIENDS_MAX
       dynamoFriendStore.ts    prod one-transaction link/unlink (both directions) + consistent Query
@@ -412,8 +412,16 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   round rows. `dynamoHistoryStore` credits with a NUMBER SET `ADD` under
   `attribute_not_exists(#days) OR size(#days) < :max OR contains(#days, :one)` — condition
   grammar only, the round store's rule — so a re-solve is a silent no-op and only a genuinely
-  FULL collection falls into the read-trim-rewrite path. No new env, no new IAM: the table
-  grant already carried Query, GetItem and UpdateItem.
+  FULL collection needs trimming. **That trim is TWO SET OPERATIONS, never a rewrite**
+  (corrected on review): an unconditional `ADD` returning `ALL_NEW`, then a `DELETE` naming
+  exactly the elements now beyond the cap. A read plus `SET #days = <the whole set>` is a
+  lost update — two credits for different eligible days read the same 800 and each write back
+  a set omitting the other's day — and what it loses is a player's streak. Naming ELEMENTS
+  commutes with a concurrent credit, and the ADD's own returned membership is what the trim
+  is computed from, so no snapshot can go stale between the two. Concurrent credits may drop
+  the same oldest element and leave the collection a day over the cap; the next credit trims
+  again. No new env, no new IAM: the table grant already carried Query, GetItem and
+  UpdateItem.
 - **Word mode's daily artifact (#154/#156):** the ONE puzzle endpoint also serves the
   single-word artifact under `mode=word` (`GET /?lang=&date=&mode=word`; absent/
   `sentence` = the sentence puzzle, anything else = 400) with identical day-addressing,

@@ -240,14 +240,24 @@ export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; m
           )}
         </div>
 
-        {/* A month that could not be read says so, under the grid, with the one thing
-            that can help — asking again. LOUD like the round's own load failure and for
-            the same reason: there is no local history left to quietly fall back to, so a
-            silent failure would show a month of blanks as though nothing had been
-            played. */}
-        {sentence && history.days === null && history.daysPhase === 'failed' && (
+        {/* A read that could not be had says so, under the grid, with the one thing that
+            can help — asking again. LOUD like the round's own load failure and for the same
+            reason: there is no local history left to quietly fall back to.
+            **It speaks whether or not a month is already drawn** (corrected on review): a
+            REVALIDATION deliberately keeps the cached month on screen, so gating the block
+            on there being nothing to show meant that after one good visit every later
+            failure was silent — an offline player reading a stale calendar as the truth.
+            What CHANGES with cached data is the claim, not the presence: nothing loaded is a
+            failure to load, where an older answer still on screen is a failure to REFRESH,
+            and saying the first over a filled calendar would be plainly false. */}
+        {sentence && history.daysPhase === 'failed' && (
           <div className="cal-failed">
-            <p className="status error">{t(lang, 'failedHistory')}</p>
+            {/* Nothing to show is a FAILURE and wears the danger ink; an older month still
+                on screen is a NOTE about it, so it takes the plain status ink rather than
+                painting a working calendar red. */}
+            <p className={history.days === null ? 'status error' : 'status'}>
+              {t(lang, history.days === null ? 'failedHistory' : 'staleHistory')}
+            </p>
             <Button variant="secondary" onClick={history.retry}>
               {t(lang, 'retry')}
             </Button>

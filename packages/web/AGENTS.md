@@ -477,11 +477,25 @@ it to the local store — see `packages/backend/AGENTS.md`).
     (`.archive-streak-pending`, `visibility: hidden`). The returning player this screen is for
     almost always has a streak, so reserving keeps the calendar still for them; drawing
     nothing pulled it up and pushed it back down on every visit. A zero streak collapses the
-    box once the answer lands. A month that FAILED shows `failedHistory` + RETRY under the
-    grid — loud, for the round load's reason: there is no local history left to fall back to.
+    box once the answer lands.
+  - **A FAILED read speaks whether or not a month is already drawn** (corrected on review).
+    A revalidation deliberately keeps its cached month on screen, so gating the block on
+    there being nothing to show made every failure after the first good visit SILENT — an
+    offline player reading a stale calendar as the truth. What changes with cached data is
+    the CLAIM, not the presence: nothing loaded is `failedHistory` in the danger ink, an
+    older answer still on screen is `staleHistory` in the plain status ink, and both carry
+    the same RETRY. Loud either way, for the round load's reason: there is no local history
+    left to fall back to.
   - **`noteSolvedDay` replaced the store's `recordSolve`**, with its rules unchanged (archive
     replays credit nothing, `activeDay - 1` still does, a day already held is not counted
     twice) plus one: a collection that has NOT ARRIVED credits nothing and celebrates nothing.
+    **A landing answer MERGES into the collection rather than replacing it** (corrected on
+    review): a read issued before the solving append can resolve after the credit, and
+    replacing would take the day straight back out from under a mounted `StreakDialog`, which
+    counts its transition off exactly that array. The union is honest as well as safe — the
+    collection is monotonic within a language, and the only day this client ever adds is one
+    the server is recording anyway. `loadPlayerHistory` is exported for the contract test
+    that drives a real answer through the commit path.
     `Game` calls it on the play-solve transition and keeps its own `isActiveDay` gate, which
     is the only signal that tells the 22:00 flip-edge from an archive replay of yesterday; the
     SERVER records the day independently, on the append that confirms the solve.

@@ -990,6 +990,15 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   authority**, which is why crediting it is a logged, non-fatal side effect. **A republish
   does not remove a day already credited**: it was the publisher's error, the streak rewards
   showing up, and solving the corrected revision cannot add the same day twice.
+  **NOTHING ANYWHERE REPLACES THE COLLECTION — both ends only ever ADD (corrected on
+  review).** Within a language it is monotonic, so every write is a set operation on
+  ELEMENTS: the server credits with an idempotent insert and trims by naming the overflow,
+  and the client MERGES a landing answer into what it holds rather than adopting it whole.
+  Replacing loses a solve on either side — a read issued before the solving append lands
+  after the client has credited it, and two concurrent credits at the cap each write back a
+  set omitting the other's day. A lost solved day is the one thing this collection may never
+  do; overshooting `MAX_SOLVED_DAYS` by a day or two while concurrent credits converge is
+  the ordinary bound-not-invariant trade `FRIENDS_MAX` already makes.
 - **The streak WINDOW is `recordSolve`'s own, and the server now applies it**: a solve older
   than YESTERDAY is an archive replay and credits nothing, while `activeDay - 1` still counts
   (the genuine 22:00 flip-edge). The server cannot tell that edge from a deliberate archive

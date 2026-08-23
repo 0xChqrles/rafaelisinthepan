@@ -28,6 +28,10 @@ const STRINGS = {
   // Loud like the round's own: since #214 there is no local history left to fall back to,
   // so a silent failure would draw a month of untouched days over a month that was played.
   failedHistory: { en: 'FAILED TO LOAD HISTORY', fr: "ÉCHEC DU CHARGEMENT DE L'HISTORIQUE" },
+  // The same read failing on a REVALIDATION, where an older answer is still on screen. It
+  // needs its own words: a month is drawn, so "failed to load" would be plainly false, and
+  // the thing the reader has to know is that what they are looking at may be out of date.
+  staleHistory: { en: 'HISTORY MAY BE OUT OF DATE', fr: 'HISTORIQUE PEUT-ÊTRE OBSOLÈTE' },
   // The #189 invite link's write, loud for the same reason: it is the one thing that
   // click existed to do, so losing it silently would leave both players none the wiser.
   failedInvite: { en: 'FAILED TO ADD FRIEND', fr: "ÉCHEC DE L'AJOUT EN AMI" },

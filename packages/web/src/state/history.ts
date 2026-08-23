@@ -80,7 +80,14 @@ function setSolved(lang: string, entry: (previous: SolvedEntry) => SolvedEntry):
   }));
 }
 
-async function load(lang: string, mode: Mode, month: string | undefined): Promise<void> {
+// Exported for the contract test — the one that has to drive a real ANSWER through the
+// commit path rather than restate what it should do (`useScoreHistogram`'s own rule).
+// Callers still use the hook below.
+export async function loadPlayerHistory(
+  lang: string,
+  mode: Mode,
+  month: string | undefined,
+): Promise<void> {
   const key = `${lang}:${mode}:${month ?? ''}`;
   const existing = flights.get(key);
   if (existing) return existing;
@@ -104,10 +111,19 @@ async function load(lang: string, mode: Mode, month: string | undefined): Promis
           history.days.map((day) => [day.date, { progress: day.progress, solved: day.solved }]),
         ),
       }));
-      // Bounded on the way IN as well: the server bounds what it stores and what it
-      // answers, and the streak derivations are pure over any ordering, so normalizing
-      // here costs nothing and keeps one shape everywhere.
-      setSolved(lang, () => ({ phase: 'ready', days: boundSolvedDays(history.solvedDays) }));
+      // **The collection is MERGED, never replaced** (corrected on review). A read started
+      // before a solve can land after `noteSolvedDay` has credited it — the read was issued
+      // against a log the append had not reached — and replacing would then take the day
+      // straight back out from under a mounted `StreakDialog`, which counts its transition
+      // off exactly this array. A union is the honest reconciliation and not merely the safe
+      // one: within a language the collection only ever GROWS (the server never un-credits,
+      // and a republish does not take a day back), and the only value this client ever adds
+      // is a solve the server is recording anyway. `boundSolvedDays` sorts, dedupes and caps
+      // the result, so a union of two bounded sets stays one bounded set.
+      setSolved(lang, (previous) => ({
+        phase: 'ready',
+        days: boundSolvedDays([...(previous.days ?? []), ...history.solvedDays]),
+      }));
     } catch {
       // Offline, a refusal, a malformed body — all the same outcome: the surfaces say the
       // summary could not be had, and offer to ask again. There is no local fallback.
@@ -161,11 +177,11 @@ export function usePlayerHistory({
   // immutable and an earlier visit's answer is not evidence.
   useEffect(() => {
     if (!enabled) return;
-    void load(lang, mode, month);
+    void loadPlayerHistory(lang, mode, month);
   }, [enabled, lang, mode, month]);
 
   const retry = useCallback(() => {
-    if (enabled) void load(lang, mode, month);
+    if (enabled) void loadPlayerHistory(lang, mode, month);
   }, [enabled, lang, mode, month]);
 
   const monthState = monthEntry ?? IDLE_MONTH;

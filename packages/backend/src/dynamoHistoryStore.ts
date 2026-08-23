@@ -67,21 +67,51 @@ export function dynamoHistoryStore(
         if ((error as { name?: string }).name !== 'ConditionalCheckFailedException') throw error;
       }
 
-      // The collection is FULL and does not hold this day: read it, drop the oldest, write
-      // the bounded set back. One extra read and one extra write, on a path a player reaches
-      // after MAX_SOLVED_DAYS solved days in one language — where a plain `ADD` would grow
-      // the item forever. Unconditional, because the value it writes is derived from a
-      // strongly consistent read of a collection that only ever gains a day at a time, and
-      // because this is a rebuildable cache: the round rows remain the authority.
-      const next = boundSolvedDays([...(await read(publicId, lang)), day]);
+      // The condition named three ways this write is legitimate, so its refusal says all
+      // three failed: the collection EXISTS, is at the cap, and does not hold this day.
+      //
+      // **Both remaining writes stay SET OPERATIONS, and that is the whole point** (corrected
+      // on review). A read-then-`SET #days = :whole` is a lost update: two credits for
+      // different eligible days read the same 800 and write back two sets that each omit the
+      // other's day, so one solve disappears — on the one path that is a player's streak.
+      // `ADD` and `DELETE` name ELEMENTS, so they commute with a concurrent credit of a
+      // different day, and no read the caller took can go stale between them.
+      //
+      // The ADD is unconditional (the fast path above already established there is room for
+      // nothing) and returns the MERGED set, which is what the trim is computed from — the
+      // true post-write membership, including whatever landed concurrently, rather than a
+      // snapshot taken before it.
+      const merged = await client.send(
+        new UpdateItemCommand({
+          TableName: tableName,
+          Key: itemKey(publicId, lang),
+          UpdateExpression: 'ADD #days :day',
+          ExpressionAttributeNames: { '#days': 'days' },
+          ExpressionAttributeValues: { ':day': { NS: [String(day)] } },
+          ReturnValues: 'ALL_NEW',
+        }),
+      );
+
+      // Whatever now sits BEYOND the cap, oldest first. Concurrent credits may each drop the
+      // same element — a DELETE of an absent one is a no-op — so the collection can sit a
+      // day or two over the cap until the next credit trims again. That is a BOUND overshot
+      // by simultaneous writes, the shape `FRIENDS_MAX` already has, and it converges; a
+      // lost solved day would not.
+      // Sorted but deliberately NOT bounded — `boundSolvedDays` is what DROPS the overflow,
+      // and this is the one place that needs to see it in order to delete it.
+      const all = (merged.Attributes?.days?.NS ?? [])
+        .map(Number)
+        .filter((value) => Number.isFinite(value))
+        .sort((a, b) => a - b);
+      const drop = all.slice(0, Math.max(0, all.length - MAX_SOLVED_DAYS));
+      if (drop.length === 0) return;
       await client.send(
         new UpdateItemCommand({
           TableName: tableName,
           Key: itemKey(publicId, lang),
-          UpdateExpression: 'SET #days = :days',
+          UpdateExpression: 'DELETE #days :drop',
           ExpressionAttributeNames: { '#days': 'days' },
-          // A number set can never be empty; `next` holds at least the day just added.
-          ExpressionAttributeValues: { ':days': { NS: next.map(String) } },
+          ExpressionAttributeValues: { ':drop': { NS: drop.map(String) } },
         }),
       );
     },
