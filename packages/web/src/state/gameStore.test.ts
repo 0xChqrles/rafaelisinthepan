@@ -98,8 +98,8 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
   const wordRound = () => useGameStore.getState().wordRounds['w:5:fr'];
 
   it('initializes a fresh word round AT THE GATE, separate from sentence rounds', () => {
-    const { ensureOutbox, ensureWordRound } = useGameStore.getState();
-    ensureOutbox('d:5:fr', REV);
+    const { appendOutbox, ensureWordRound } = useGameStore.getState();
+    appendOutbox('d:5:fr', REV, 'bois');
     ensureWordRound('w:5:fr', 'phare');
     const s = useGameStore.getState();
     expect(s.activeWordKey).toBe('w:5:fr');
@@ -112,7 +112,7 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
       claimed: 0,
     });
     // The sentence round is untouched — the two dailies' state never collide.
-    expect(s.outbox['d:5:fr']).toBeDefined();
+    expect(s.outbox['d:5:fr']?.guesses).toEqual(['bois']);
   });
 
   it('anchorWordRun opens the clock at the full run length, and only ONCE', () => {
@@ -409,15 +409,17 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
 // the play log projects them from (server state + outbox), which is why nothing here has to
 // be reconciled with anything.
 describe('ensureOutbox — day/language keying, qualified by the published revision', () => {
-  it('opens an empty outbox for a brand-new key', () => {
+  it('CREATES nothing — an outbox exists only while this device owes something', () => {
+    // Every round between an accepted write and the next guess owes nothing, so persisting
+    // an empty entry for it would put a sentence round back in storage for no reason.
     useGameStore.getState().ensureOutbox('d:5:fr', REV);
-    expect(useGameStore.getState().outbox['d:5:fr']).toEqual({ puzzle: REV, guesses: [] });
+    expect(useGameStore.getState().outbox['d:5:fr']).toBeUndefined();
   });
 
   it('KEEPS an unsent outbox for the SAME key and revision (a mid-round reload)', () => {
     const { ensureOutbox, appendOutbox } = useGameStore.getState();
     ensureOutbox('d:5:fr', REV);
-    appendOutbox('d:5:fr', 'bois');
+    appendOutbox('d:5:fr', REV, 'bois');
     ensureOutbox('d:5:fr', REV);
     expect(useGameStore.getState().outbox['d:5:fr']).toEqual({ puzzle: REV, guesses: ['bois'] });
   });
@@ -427,40 +429,42 @@ describe('ensureOutbox — day/language keying, qualified by the published revis
     // outbox holds are answers to a retired question, and a corrected rank map can move the
     // aliases that decided whether a hole was solved.
     const { ensureOutbox, appendOutbox } = useGameStore.getState();
-    ensureOutbox('d:5:fr', REV);
-    appendOutbox('d:5:fr', 'bois');
+    appendOutbox('d:5:fr', REV, 'bois');
     ensureOutbox('d:5:fr', 'ffffffffffffffff');
-    expect(useGameStore.getState().outbox['d:5:fr']).toEqual({
-      puzzle: 'ffffffffffffffff',
-      guesses: [],
-    });
+    expect(useGameStore.getState().outbox['d:5:fr']).toBeUndefined();
   });
 
   it('KEEPS other days\' outboxes — an archive day left offline still owes its guesses', () => {
     const { ensureOutbox, appendOutbox } = useGameStore.getState();
-    ensureOutbox('d:5:fr', REV);
-    appendOutbox('d:5:fr', 'bois');
+    appendOutbox('d:5:fr', REV, 'bois');
     ensureOutbox('d:6:fr', REV);
     expect(useGameStore.getState().outbox['d:5:fr']?.guesses).toEqual(['bois']);
-    expect(useGameStore.getState().outbox['d:6:fr']?.guesses).toEqual([]);
   });
 
   it('keeps both languages — switching away and back keeps what each still owes', () => {
     const { ensureOutbox, appendOutbox } = useGameStore.getState();
     ensureOutbox('d:5:fr', REV);
-    appendOutbox('d:5:fr', 'bois');
+    appendOutbox('d:5:fr', REV, 'bois');
     ensureOutbox('d:5:en', REV);
-    appendOutbox('d:5:en', 'wood');
+    appendOutbox('d:5:en', REV, 'wood');
     ensureOutbox('d:5:fr', REV);
     expect(useGameStore.getState().outbox['d:5:fr']?.guesses).toEqual(['bois']);
     expect(useGameStore.getState().outbox['d:5:en']?.guesses).toEqual(['wood']);
   });
 
   it('drops a legacy non-day key while keeping the day ones', () => {
-    useGameStore.setState({ outbox: { 'o:legacy:fr': { puzzle: REV, guesses: ['x'] } } }, false);
+    useGameStore.setState(
+      {
+        outbox: {
+          'o:legacy:fr': { puzzle: REV, guesses: ['x'] },
+          'd:4:fr': { puzzle: REV, guesses: ['y'] },
+        },
+      },
+      false,
+    );
     useGameStore.getState().ensureOutbox('d:5:fr', REV);
     expect(useGameStore.getState().outbox['o:legacy:fr']).toBeUndefined();
-    expect(useGameStore.getState().outbox['d:5:fr']).toBeDefined();
+    expect(useGameStore.getState().outbox['d:4:fr']?.guesses).toEqual(['y']);
   });
 
   it('caps the map: beyond MAX_DAY_ROUNDS the oldest days are evicted, the newest kept', () => {
@@ -470,46 +474,63 @@ describe('ensureOutbox — day/language keying, qualified by the published revis
       seeded[`d:${day}:fr`] = { puzzle: REV, guesses: [`g${day}`] };
     }
     useGameStore.setState({ outbox: seeded }, false);
+    // The active key's own guess is what puts it in the map; the cap must never evict it.
+    useGameStore.getState().appendOutbox(`d:${CAP + 1}:fr`, REV, 'new');
     useGameStore.getState().ensureOutbox(`d:${CAP + 1}:fr`, REV);
     const s = useGameStore.getState();
     expect(s.outbox['d:1:fr']).toBeUndefined(); // oldest evicted
     expect(s.outbox['d:2:fr']?.guesses).toEqual(['g2']); // next-oldest survives
-    expect(s.outbox[`d:${CAP + 1}:fr`]).toBeDefined(); // the active key always survives
+    expect(s.outbox[`d:${CAP + 1}:fr`]?.guesses).toEqual(['new']);
   });
 });
 
 describe('appendOutbox — the write buffer behind an instant board', () => {
-  beforeEach(() => useGameStore.getState().ensureOutbox('d:5:fr', REV));
-
-  it('appends in the order typed', () => {
+  it('appends in the order typed, minting the outbox on the first guess', () => {
     const { appendOutbox } = useGameStore.getState();
-    appendOutbox('d:5:fr', 'bois');
-    appendOutbox('d:5:fr', 'foret');
-    expect(useGameStore.getState().outbox['d:5:fr']?.guesses).toEqual(['bois', 'foret']);
+    appendOutbox('d:5:fr', REV, 'bois');
+    appendOutbox('d:5:fr', REV, 'foret');
+    expect(useGameStore.getState().outbox['d:5:fr']).toEqual({
+      puzzle: REV,
+      guesses: ['bois', 'foret'],
+    });
+  });
+
+  it('RECORDS a guess after an accepted write emptied the round\'s outbox', () => {
+    // Found on the real board: an accepted write REMOVES the entry it emptied, so most
+    // guesses of a round arrive with nothing to append into. Refusing there dropped every
+    // guess after the first — the board reverted on the next replay and the server never
+    // heard about them again.
+    const { appendOutbox, setOutbox } = useGameStore.getState();
+    appendOutbox('d:5:fr', REV, 'bois');
+    setOutbox('d:5:fr', REV, []); // the write landed
+    expect(useGameStore.getState().outbox['d:5:fr']).toBeUndefined();
+    appendOutbox('d:5:fr', REV, 'foret');
+    expect(useGameStore.getState().outbox['d:5:fr']).toEqual({ puzzle: REV, guesses: ['foret'] });
+  });
+
+  it('starts over rather than appending onto a RETIRED revision', () => {
+    const { appendOutbox } = useGameStore.getState();
+    appendOutbox('d:5:fr', 'ffffffffffffffff', 'bois');
+    appendOutbox('d:5:fr', REV, 'foret');
+    expect(useGameStore.getState().outbox['d:5:fr']).toEqual({ puzzle: REV, guesses: ['foret'] });
   });
 
   it('does NOT dedupe — the play log owns identity, and the store holds no rank map', () => {
     // Game deduplicates against the play log before calling this; the store must not
     // second-guess it with a raw string comparison that #104's aliases would defeat.
     const { appendOutbox } = useGameStore.getState();
-    appendOutbox('d:5:fr', 'bois');
-    appendOutbox('d:5:fr', 'bois');
+    appendOutbox('d:5:fr', REV, 'bois');
+    appendOutbox('d:5:fr', REV, 'bois');
     expect(useGameStore.getState().outbox['d:5:fr']?.guesses).toEqual(['bois', 'bois']);
   });
 
-  it('writes NOTHING when the key has no outbox — it may never invent a revision', () => {
-    const before = useGameStore.getState().outbox;
-    useGameStore.getState().appendOutbox('d:999:fr', 'bois');
-    expect(useGameStore.getState().outbox).toBe(before);
-  });
 });
 
 describe('setOutbox — what an answer left unacknowledged', () => {
   beforeEach(() => {
-    const { ensureOutbox, appendOutbox } = useGameStore.getState();
-    ensureOutbox('d:5:fr', REV);
-    appendOutbox('d:5:fr', 'bois');
-    appendOutbox('d:5:fr', 'foret');
+    const { appendOutbox } = useGameStore.getState();
+    appendOutbox('d:5:fr', REV, 'bois');
+    appendOutbox('d:5:fr', REV, 'foret');
   });
 
   it('replaces the guesses with what is still owed', () => {
@@ -523,11 +544,11 @@ describe('setOutbox — what an answer left unacknowledged', () => {
   });
 
   it('ignores an answer about a RETIRED revision', () => {
-    // The republish already reset this outbox; resurrecting the old guesses into the round
+    // The republish already dropped this outbox; resurrecting the old guesses into the round
     // that replaced it is the one thing the revision exists to prevent.
     useGameStore.getState().ensureOutbox('d:5:fr', 'ffffffffffffffff');
     useGameStore.getState().setOutbox('d:5:fr', REV, ['bois', 'foret']);
-    expect(useGameStore.getState().outbox['d:5:fr']?.guesses).toEqual([]);
+    expect(useGameStore.getState().outbox['d:5:fr']).toBeUndefined();
   });
 
   it('ignores an unknown key (the round was evicted mid-flight)', () => {
@@ -961,19 +982,17 @@ describe('a republished puzzle resets its round (#203/#214)', () => {
 
   it('drops the unsent guesses when the published VERSION changed', () => {
     const { ensureOutbox, appendOutbox } = useGameStore.getState();
-    ensureOutbox('d:5:fr', REV);
-    appendOutbox('d:5:fr', 'bois');
+    appendOutbox('d:5:fr', REV, 'bois');
     expect(useGameStore.getState().outbox['d:5:fr']?.guesses).toEqual(['bois']);
 
     // Same sentence, same holes — a corrected neighborhood.
-    useGameStore.getState().ensureOutbox('d:5:fr', OTHER);
-    expect(useGameStore.getState().outbox['d:5:fr']).toEqual({ puzzle: OTHER, guesses: [] });
+    ensureOutbox('d:5:fr', OTHER);
+    expect(useGameStore.getState().outbox['d:5:fr']).toBeUndefined();
   });
 
   it('keeps them untouched when the version is the same', () => {
     const { ensureOutbox, appendOutbox } = useGameStore.getState();
-    ensureOutbox('d:5:fr', REV);
-    appendOutbox('d:5:fr', 'bois');
+    appendOutbox('d:5:fr', REV, 'bois');
     ensureOutbox('d:5:fr', REV);
     expect(useGameStore.getState().outbox['d:5:fr']?.guesses).toEqual(['bois']);
   });

@@ -360,7 +360,7 @@ describe('appends — coalescing, pacing and the batch prefix', () => {
     notifyGuess(KEY);
     await settle();
     // The player keeps typing while the request is out.
-    useGameStore.getState().appendOutbox(KEY, 'chemin');
+    useGameStore.getState().appendOutbox(KEY, REVISION, 'chemin');
     release(ok(['bois']));
     await settle();
     expect(outbox()).toEqual(['chemin']);

@@ -410,6 +410,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
     board (`replayHoles`), the score (its length), the prompt's recall history, the run
     ruler's trajectory and the solve moments. There is no persisted holes/count/progress
     mirror left to keep in step with it.
+  - **An outbox exists ONLY while this device owes something.** `ensureOutbox` never
+    creates one — it drops a mismatched revision, prunes legacy keys and caps the map —
+    and `appendOutbox` MINTS it, taking the revision from the caller playing it. That is
+    load-bearing rather than tidy: an accepted write REMOVES the outbox it emptied, so
+    most guesses of a round arrive with nothing to append into. Refusing there (the first
+    cut did) silently dropped every guess after the first — the board reverted on the next
+    replay and the server never heard about them again, which is exactly what a browser
+    run caught and no seeded unit test could.
   - **`useRoundSync` returns WHERE the round's state is** (`RoundLoad`), and `Round` renders
     the game body only once it is `ready`: `loading` shows the wave, `failed` shows
     `failedRound` + RETRY (`retryRoundSync`). A load can only ever FAIL before it has

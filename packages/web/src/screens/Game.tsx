@@ -705,7 +705,7 @@ function Round({
       // board's reaction, and nothing waits for that write.
       const id = guessKey(ranks, typed);
       if (!playLog.some((g) => guessKey(ranks, g) === id)) {
-        appendOutbox(roundKey, typed);
+        appendOutbox(roundKey, revision, typed);
         notifyGuess(roundKey);
         // The board is a REPLAY of the log, so this guess would land on it in the very next
         // render. Hold it back until its floating hit fades — the deferral is the swap's
@@ -771,6 +771,7 @@ function Round({
       promptExiting,
       vocabSet,
       appendOutbox,
+      revision,
       lang,
       say,
       roundKey,

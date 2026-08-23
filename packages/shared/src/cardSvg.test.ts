@@ -17,7 +17,7 @@ import {
   WORD_RARITY_COLORS,
 } from './cardSvg';
 import { dateForDayNumber } from './day';
-import { INFINITY_GLYPH } from './glyphs';
+import { INFINITY_EM_HEIGHT, INFINITY_GLYPH, PIXEL_INK_LIFT_EM } from './glyphs';
 import { progressHeatColor } from './heat';
 import { NAME_MAX_LENGTH } from './name';
 
@@ -152,6 +152,19 @@ describe('renderCardSvg', () => {
       const svg = renderCardSvg(capped);
       const rects = svg.match(/<rect /g) ?? [];
       expect(rects).toHaveLength(1 + data.trajectory.length); // bg + 6 cells, no ticks
+    });
+
+    it('sets the glyph in the TYPE\'s own band, not on the nominal baseline', () => {
+      // Measured off the rasterized card: Press Start 2P reserves descender room under
+      // every glyph, so a shape whose bottom sits ON the baseline reads visibly low and
+      // short beside the word. The glyph is drawn at the face's CAP HEIGHT and lifted by
+      // the same ink offset, which is what put the ∞ and TRIES on one line.
+      const svg = renderCardSvg(capped);
+      const [, ty, scale] = /translate\(-?[\d.]+ ([\d.]+)\) scale\(([\d.]+)\)/.exec(svg)!;
+      const size = 76; // the headline's font size
+      const inkBottom = Number(ty) + INFINITY_GLYPH.height * Number(scale);
+      expect(inkBottom).toBeCloseTo(430 - PIXEL_INK_LIFT_EM * size, 1);
+      expect(INFINITY_GLYPH.height * Number(scale)).toBeCloseTo(INFINITY_EM_HEIGHT * size, 1);
     });
 
     it('keeps the lockup inside the card at both the glyph and the word', () => {

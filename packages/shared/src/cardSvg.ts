@@ -27,7 +27,12 @@ import { anonName, defaultAvatar } from './assigned';
 import { AVATAR_PALETTES, AVATAR_SIZE, decodeAvatar } from './avatar';
 import { avatarOutlinePath } from './avatarOutline';
 import { dateForDayNumber } from './day';
-import { INFINITY_EM_HEIGHT, INFINITY_EM_WIDTH, INFINITY_GLYPH } from './glyphs';
+import {
+  INFINITY_EM_HEIGHT,
+  INFINITY_EM_WIDTH,
+  INFINITY_GLYPH,
+  PIXEL_INK_LIFT_EM,
+} from './glyphs';
 import { progressHeatColor } from './heat';
 import type { ShareResult, WordShareResult } from './shareCard';
 
@@ -264,14 +269,17 @@ function scoreLockup(score: number, capped: boolean, unit: { one: string; many: 
   }
   // A capped round has no count to name, so the unit is always plural. The glyph stands in
   // the digits' own band (cap height, `INFINITY_EM_HEIGHT`) and the space between it and
-  // the word costs the face's one em, exactly as it would in the uncapped string.
+  // the word costs the face's one em, exactly as it would in the uncapped string. Its ink
+  // bottom lands where the FACE's does — `PIXEL_INK_LIFT_EM` above the nominal baseline,
+  // since Press Start 2P reserves descender room under every glyph.
   const glyphW = INFINITY_EM_WIDTH * SCORE_SIZE;
   const glyphH = INFINITY_EM_HEIGHT * SCORE_SIZE;
   const total = glyphW + (1 + unit.many.length) * SCORE_SIZE;
   const x = cx - total / 2;
+  const y = SCORE_BASELINE - PIXEL_INK_LIFT_EM * SCORE_SIZE - glyphH;
   const scale = glyphH / INFINITY_GLYPH.height;
   return (
-    `<g transform="translate(${x.toFixed(2)} ${(SCORE_BASELINE - glyphH).toFixed(2)}) scale(${scale.toFixed(4)})" shape-rendering="crispEdges">` +
+    `<g transform="translate(${x.toFixed(2)} ${y.toFixed(2)}) scale(${scale.toFixed(4)})" shape-rendering="crispEdges">` +
     `<path d="${INFINITY_GLYPH.path}" fill="${FG}"/></g>` +
     `<text x="${(x + glyphW + SCORE_SIZE).toFixed(2)}" y="${SCORE_BASELINE}" font-family="${CARD_FONT}" font-size="${SCORE_SIZE}" fill="${FG}">${unit.many}</text>`
   );

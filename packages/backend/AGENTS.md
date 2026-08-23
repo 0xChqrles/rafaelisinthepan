@@ -11,7 +11,10 @@
 > ordinary HTML in the reader's own fonts) while `renderCardSvg` draws the shared PATH data,
 > because the one font in the Lambda bundle has no such glyph and the rasterizer runs with
 > `loadSystemFonts: false`. No route changed: the version check and the legacy redirect are
-> the codec's.
+> the codec's — but the `/og` route now hands the DECODED result STRAIGHT to the renderer
+> (`CardData` IS `ShareResult`). It used to re-list the fields, which is a second declaration
+> of one shape and silently drops whatever the codec learns next: it did exactly that with
+> `capped`, drawing a try count on a card whose own share page already said `∞`.
 
 ## File map
 

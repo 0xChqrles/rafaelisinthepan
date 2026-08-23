@@ -206,13 +206,12 @@ export function createHandler(deps: HandlerDeps) {
       if (ogMatch) {
         const result = decodeResult(ogMatch[1]);
         if (result) {
-          const buffer = await renderCardPng({
-            lang: result.lang,
-            dayNumber: result.dayNumber,
-            score: result.score,
-            trajectory: result.trajectory,
-            solvedAt: result.solvedAt,
-          });
+          // The DECODED result is handed straight to the renderer: `CardData` IS
+          // `ShareResult`, so re-listing its fields here is a second declaration of the
+          // same shape — and one that silently drops whatever the codec learns next. It
+          // did exactly that with #214's `capped`, drawing a try count on a card whose own
+          // share page already said `∞`.
+          const buffer = await renderCardPng(result);
           return png(200, buffer, {
             'Cache-Control': `public, max-age=${SHARE_MAX_AGE}, immutable`,
           });

@@ -280,16 +280,26 @@ interface GameState extends PersistedState {
   recordSolve: (lang: string, solvedDay: number, activeDay: number) => boolean;
 
   // Reconcile the persisted OUTBOX to `key` playing `puzzle` (#214). An outbox naming a
-  // DIFFERENT published revision is dropped — its guesses answered a retired question —
+  // DIFFERENT published revision is DROPPED — its guesses answered a retired question —
   // and any legacy non-day key goes with it; the map is then bounded by the same
   // most-recent cap the word rounds use. Called before the round's first render, so no
   // read path ever sees an outbox belonging to another puzzle.
+  //
+  // It never CREATES one. An outbox exists only while this device owes the server
+  // something, so a round with nothing pending — which is every round between an accepted
+  // write and the next guess — persists no entry at all.
   ensureOutbox: (key: string, puzzle: string) => void;
 
-  // Append one counted guess to the outbox. The caller has already deduplicated it against
-  // the PLAY LOG (the store holds no rank map and cannot judge identity), and the board has
-  // already reacted: this is only the write buffer, and nothing waits on its flush.
-  appendOutbox: (key: string, typed: string) => void;
+  // Append one counted guess to the outbox, CREATING it if this round owes nothing yet.
+  // The caller has already deduplicated it against the PLAY LOG (the store holds no rank
+  // map and cannot judge identity), and the board has already reacted: this is only the
+  // write buffer, and nothing waits on its flush.
+  //
+  // It carries the `puzzle` because it may be the thing that mints the entry: an accepted
+  // write REMOVES an emptied outbox, so most guesses of a round arrive with nothing to
+  // append into. Taking the revision from the caller — which is playing it — is what keeps
+  // that from either dropping the guess or inventing a version.
+  appendOutbox: (key: string, puzzle: string, typed: string) => void;
 
   // REPLACE the outbox with what is still unacknowledged — the sync engine's own reading of
   // an answer (`game/playLog.ts`). Guarded on `puzzle` so an answer about a retired
@@ -571,6 +581,7 @@ export const useGameStore = create<GameState>()(
       ensureOutbox: (key, puzzle) =>
         set((s) => {
           const existing = s.outbox[key];
+          const kept = { ...s.outbox };
           // A DIFFERENT published revision means the puzzle contained an error and this
           // round starts over (#203), so what the outbox holds is answers to a retired
           // question: dropped, never sent.
@@ -580,25 +591,21 @@ export const useGameStore = create<GameState>()(
           // we shipped a broken puzzle would punish them for it. So the credit stands, and
           // solving the corrected version cannot claim it twice (`recordSolve` already
           // refuses a day it holds), which is the same rule a re-solve has always followed.
-          const kept =
-            existing && existing.puzzle === puzzle
-              ? s.outbox
-              : { ...s.outbox, [key]: { puzzle, guesses: [] } };
+          if (existing && existing.puzzle !== puzzle) delete kept[key];
           // Retention: keep every day-keyed outbox (an archive day left offline still owes
           // its guesses), drop any legacy non-day key, bound the map.
           return { outbox: capDayKeyed(kept, key) };
         }),
 
-      appendOutbox: (key, typed) =>
+      appendOutbox: (key, puzzle, typed) =>
         set((s) => {
           const existing = s.outbox[key];
-          // Nothing to append INTO: the round was reset under this key by a republish, or
-          // this write raced `ensureOutbox`. Materializing one here would have to invent a
-          // revision, which is the one thing an outbox may never guess about.
-          if (!existing) return {};
-          return {
-            outbox: { ...s.outbox, [key]: { ...existing, guesses: [...existing.guesses, typed] } },
-          };
+          // Most guesses arrive with NOTHING to append into: an accepted write removes the
+          // outbox it emptied, so a round that is caught up owes no entry at all. Minting
+          // one here is what makes the buffer work at all — and it takes the revision from
+          // the caller, which is playing it, rather than guessing.
+          const guesses = existing && existing.puzzle === puzzle ? existing.guesses : [];
+          return { outbox: { ...s.outbox, [key]: { puzzle, guesses: [...guesses, typed] } } };
         }),
 
       setOutbox: (key, puzzle, guesses) =>
