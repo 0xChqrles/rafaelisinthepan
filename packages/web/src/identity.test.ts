@@ -51,6 +51,16 @@ function fakeStorage(initial: Record<string, string> = {}): Storage {
 
 let storage: Storage;
 
+// A window stub that is actually a window: this module listens for `storage` events, since
+// localStorage is shared by every TAB of the origin.
+function fakeWindow(store: Storage): Window & typeof globalThis {
+  return {
+    localStorage: store,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  } as unknown as Window & typeof globalThis;
+}
+
 function answer(accountId = ACCOUNT, deviceId = DEVICE): Response {
   return {
     ok: true,
@@ -66,7 +76,7 @@ function stored(): Record<string, unknown> | null {
 
 beforeEach(() => {
   storage = fakeStorage();
-  vi.stubGlobal('window', { localStorage: storage } as unknown as Window & typeof globalThis);
+  vi.stubGlobal('window', fakeWindow(storage));
   resetDeviceIdentity();
   post.mockReset();
   post.mockResolvedValue(answer());
@@ -174,7 +184,8 @@ describe('what a reload finds (#216)', () => {
   it('degrades to a session identity when the localStorage PROPERTY itself throws', async () => {
     // Browsers with storage disabled throw from the `window.localStorage` GETTER, before
     // any of this module's own bodies run.
-    const denied = {} as Window & typeof globalThis;
+    const denied = { addEventListener: () => {}, removeEventListener: () => {} } as unknown as
+      Window & typeof globalThis;
     Object.defineProperty(denied, 'localStorage', {
       get() {
         throw new Error('SecurityError: The operation is insecure.');
@@ -212,18 +223,27 @@ describe('being signed out (#216)', () => {
 
 describe('local state follows the identity that owns it (#216)', () => {
   it('announces an ACCOUNT change and a DEVICE change, and neither for a no-op', async () => {
-    const seen: { accountChanged: boolean; deviceChanged: boolean }[] = [];
+    const seen: { previous: unknown; next: unknown }[] = [];
     const stop = onIdentityChange((change) => seen.push(change));
 
-    await ensureDeviceIdentity();
-    expect(seen).toEqual([{ accountChanged: true, deviceChanged: true }]);
+    const identity = await ensureDeviceIdentity();
+    // The FIRST bootstrap announces `previous: null`, and that distinction is load-bearing:
+    // a bootstrap is triggered BY an act, so a listener that cleared here would destroy the
+    // guess or the run that asked for it (`state/identityScope.ts`).
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({
+      previous: null,
+      next: identity,
+      accountChanged: true,
+      deviceChanged: true,
+    });
 
     // Re-adopting the SAME identity announces nothing: nothing it owns has moved.
     loadDeviceIdentity();
     expect(seen).toHaveLength(1);
 
     markDeviceSignedOut();
-    expect(seen[1]).toEqual({ accountChanged: true, deviceChanged: true });
+    expect(seen[1]).toMatchObject({ previous: identity, next: null, accountChanged: true });
     stop();
   });
 
@@ -234,5 +254,66 @@ describe('local state follows the identity that owns it (#216)', () => {
     // An answer captured under the old epoch can no longer match, which is what stops the
     // identity just left from repopulating the one that replaced it.
     expect(identityEpoch()).toBeNull();
+  });
+});
+
+describe('localStorage is shared by every TAB (#216)', () => {
+  it('adopts an identity another tab bootstrapped instead of minting a second one', async () => {
+    // This tab was opened BEFORE the other one bootstrapped, so its in-memory copy says
+    // "no identity". Minting here would overwrite the shared entry and orphan the account
+    // the other tab is playing on.
+    const theirs = { token: 'c'.repeat(64), accountId: ACCOUNT, deviceId: DEVICE };
+    storage.setItem('whippin-device', JSON.stringify(theirs));
+    await expect(ensureDeviceIdentity()).resolves.toEqual(theirs);
+    expect(post).not.toHaveBeenCalled();
+    expect(stored()).toEqual(theirs);
+  });
+
+  it('converges on ONE account when two tabs bootstrap at once', async () => {
+    // The other tab persisted its PENDING token and is waiting on its answer. Adopting that
+    // token is what makes the server's idempotence reachable: both requests hash to the same
+    // device item, so both tabs resolve to one account.
+    const theirToken = 'd'.repeat(64);
+    storage.setItem('whippin-device', JSON.stringify({ token: theirToken }));
+    await ensureDeviceIdentity();
+    expect(post.mock.calls[0][1].token).toBe(theirToken);
+  });
+
+  it('yields to a tab that won the race to a DIFFERENT token', async () => {
+    const theirs = { token: 'e'.repeat(64), accountId: 'qqqqqqqqqqqqqqqq', deviceId: DEVICE };
+    post.mockImplementationOnce(async () => {
+      // The other tab finished while this request was in the air. Overwriting its entry
+      // would leave two accounts on one device, and orphan the one being played.
+      storage.setItem('whippin-device', JSON.stringify(theirs));
+      return answer();
+    });
+    await expect(ensureDeviceIdentity()).resolves.toEqual(theirs);
+    expect(stored()).toEqual(theirs);
+  });
+
+  it('does NOT delete a newer tab\'s identity when this one signs out', async () => {
+    await ensureDeviceIdentity();
+    const theirs = { token: 'f'.repeat(64), accountId: 'rrrrrrrrrrrrrrrr', deviceId: DEVICE };
+    storage.setItem('whippin-device', JSON.stringify(theirs));
+    markDeviceSignedOut();
+    // This tab shows its screen; the entry it did not write stands.
+    expect(useIdentityStore.getState().signedOut).toBe(true);
+    expect(stored()).toEqual(theirs);
+  });
+
+  it('keeps the session identity when storage cannot be READ at all', async () => {
+    // Unreadable storage says NOTHING about this device's identity — collapsing it into
+    // "there is none" would drop an identity this session is already playing on.
+    const identity = await ensureDeviceIdentity();
+    const denied = { addEventListener: () => {}, removeEventListener: () => {} } as unknown as
+      Window & typeof globalThis;
+    Object.defineProperty(denied, 'localStorage', {
+      get() {
+        throw new Error('SecurityError: The operation is insecure.');
+      },
+    });
+    vi.stubGlobal('window', denied);
+    await expect(ensureDeviceIdentity()).resolves.toEqual(identity);
+    expect(deviceIdentity()).toEqual(identity);
   });
 });

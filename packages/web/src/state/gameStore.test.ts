@@ -849,12 +849,14 @@ describe('migratePersisted — persisted-blob upgrades', () => {
     );
     expect(out).not.toHaveProperty('rounds');
     expect(out.outbox).toEqual({});
-    expect(out.wordRounds).toEqual(wordRounds);
+    // The word rounds survived v14 and were dropped at v16 instead, with the identity they
+    // were played under (#216).
+    expect(out.wordRounds).toEqual({});
   });
 
-  it('keeps a v14 outbox untouched — it holds only what the server has not acknowledged', () => {
+  it('keeps a v16 outbox untouched — it holds only what the server has not acknowledged', () => {
     const outbox = { 'd:5:fr': { puzzle: REV, guesses: ['bois'] } };
-    const out = migratePersisted({ outbox, lastLang: 'fr', onboarded: true }, 14);
+    const out = migratePersisted({ outbox, lastLang: 'fr', onboarded: true }, 16);
     expect(out.outbox).toEqual(outbox);
   });
 
@@ -865,7 +867,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
     expect(migratePersisted({ rounds, lastLang: null }, 12).onboarded).toBe(true);
   });
 
-  it('a v11 blob keeps its server-anchored word rounds untouched', () => {
+  it('a v16 blob keeps its server-anchored word rounds untouched', () => {
     const wordRounds = {
       'w:5:fr': {
         word: 'phare',
@@ -877,8 +879,8 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       },
     };
     const kept = migratePersisted(
-      { rounds: {}, wordRounds, lastLang: 'fr', lastMode: 'word', onboarded: true, solvedDays: {} },
-      11,
+      { wordRounds, lastLang: 'fr', lastMode: 'word', onboarded: true },
+      16,
     );
     expect(kept.wordRounds).toEqual(wordRounds);
     expect(kept.lastMode).toBe('word');
@@ -947,12 +949,34 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       },
       11,
     );
-    // The sentence rounds those flags rode on are gone entirely at v14.
+    // The sentence rounds those flags rode on are gone entirely at v14, and the word rounds
+    // at v16 (#216) — so a v11 blob keeps neither. What the strip itself still guards is a
+    // CURRENT blob carrying the retired field, below.
     expect(out).not.toHaveProperty('rounds');
-    // The word round survives v11 intact APART from the retired value: its own
-    // acknowledgement is what keeps it from re-submitting.
-    expect(out.wordRounds['w:6:fr']).not.toHaveProperty('scoreRecorded');
-    expect(out.wordRounds['w:6:fr'].submitted).toBe(true);
+    expect(out.wordRounds).toEqual({});
+
+    const current = migratePersisted(
+      {
+        wordRounds: {
+          'w:6:fr': {
+            word: 'phare',
+            startedAt: 1,
+            deadline: 2,
+            tried: [],
+            claimed: 0,
+            scoreRecorded: 12,
+            submitted: true,
+          },
+        },
+        lastLang: 'fr',
+        onboarded: true,
+      },
+      16,
+    );
+    // The word round survives intact APART from the retired value: its own acknowledgement
+    // is what keeps it from re-submitting.
+    expect(current.wordRounds['w:6:fr']).not.toHaveProperty('scoreRecorded');
+    expect(current.wordRounds['w:6:fr'].submitted).toBe(true);
   });
 
   // v14 -> v15 (#211): the per-language solved-day sets are DROPPED. The collection lives
@@ -967,7 +991,41 @@ describe('migratePersisted — persisted-blob upgrades', () => {
     );
     expect(out).not.toHaveProperty('solvedDays');
     expect(out).toMatchObject({ lastLang: 'fr', lastMode: 'word', onboarded: true });
-    expect(out.outbox).toEqual(outbox);
+    // The outbox went at v16 with the identity that owed it (#216), below.
+    expect(out.outbox).toEqual({});
+  });
+
+  // v15 -> v16 (#216): the OUTBOX and the WORD ROUNDS are dropped, because both belong to an
+  // identity this device no longer has. Until #216 the identity was a shared secret (#187);
+  // it is now a device token resolving to a SERVER-assigned account, with no mapping between
+  // the two. Left in place, a surviving outbox is worse than stale: the tokenless branch
+  // pumps it on the first page load, which bootstraps a BRAND-NEW account and files the
+  // retired identity's guesses against it.
+  it('v15 -> v16 drops the outbox and the word rounds, and keeps every preference', () => {
+    const out = migratePersisted(
+      {
+        outbox: { 'd:5:fr': { puzzle: REV, guesses: ['bois'] } },
+        wordRounds: {
+          'w:5:fr': { word: 'phare', startedAt: 1, deadline: 2, tried: ['mer'], claimed: 1 },
+        },
+        lastLang: 'fr',
+        lastMode: 'word',
+        onboarded: true,
+        boardTab: 'global',
+        sentenceRulesSeen: true,
+      },
+      15,
+    );
+    expect(out.outbox).toEqual({});
+    expect(out.wordRounds).toEqual({});
+    // A preference belongs to the DEVICE, not to the account it plays under.
+    expect(out).toMatchObject({
+      lastLang: 'fr',
+      lastMode: 'word',
+      onboarded: true,
+      boardTab: 'global',
+      sentenceRulesSeen: true,
+    });
   });
 });
 

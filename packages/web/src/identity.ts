@@ -25,9 +25,18 @@
 // private history routes merely to learn that. `deviceIdentity()` returning null is exactly
 // that signal, and the callers branch on it.
 //
-// Nothing here hashes anything: `crypto.subtle` is absent outside a secure context (the
-// LAN-IP mobile check), which is what forced a leaderboard workaround under #187's derived
-// id. Minting uses `crypto.getRandomValues`, which every context has.
+// Minting uses `crypto.getRandomValues`, which every context has — where #187 derived the
+// account id with `crypto.subtle`, which is absent outside a secure context (the LAN-IP
+// mobile check). That removes the derivation from the ANONYMOUS paths that used to need it:
+// the global board's own-window `id` and the leaderboard's identity strip, which each carried
+// their own try/catch for exactly this. It does NOT make an insecure context playable — every
+// live POST still signs its body with `crypto.subtle` for the OAC contract (`api.ts`
+// `postSignedJson`), so a bootstrap there fails before its fetch. That boundary is older than
+// #216 and unchanged by it.
+//
+// **localStorage is shared by every TAB of this origin**, so this module's copy is a CACHE of
+// it, never the authority: it re-reads before minting, adopts what another tab wrote, and
+// only ever removes the entry it can still recognise as its own.
 
 import { create } from 'zustand';
 import { generateDeviceToken, isValidDeviceToken, PUBLIC_ID_PATTERN } from '@whippin/shared';
@@ -83,39 +92,67 @@ function store(): Storage | null {
   return storage;
 }
 
-function readStored(): { token: string; identity: DeviceIdentity | null } | null {
-  let raw: string | null = null;
+// What the shared key says — and, first, whether it can be read at all. The two are
+// DIFFERENT answers: an unreadable storage (blocked cookies, a private mode that throws)
+// says NOTHING about this device's identity, while a readable empty one says there is none.
+// Collapsing them would let a denied storage drop an identity this session is already
+// playing on.
+type StoredRead =
+  | { available: false }
+  | { available: true; token: string | null; identity: DeviceIdentity | null };
+
+const UNAVAILABLE: StoredRead = { available: false };
+const EMPTY: StoredRead = { available: true, token: null, identity: null };
+
+function readStored(): StoredRead {
+  let raw: string | null;
   try {
-    raw = store()?.getItem(STORAGE_KEY) ?? null;
+    const held = store();
+    if (!held) return UNAVAILABLE;
+    raw = held.getItem(STORAGE_KEY);
   } catch {
-    return null;
+    return UNAVAILABLE;
   }
-  if (!raw) return null;
+  if (!raw) return EMPTY;
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return null;
+    return EMPTY;
   }
-  if (typeof parsed !== 'object' || parsed === null) return null;
+  if (typeof parsed !== 'object' || parsed === null) return EMPTY;
   const { token, accountId, deviceId } = parsed as Record<string, unknown>;
   // A corrupted value is no identity at all — better to mint a fresh one than to send
   // garbage the server would refuse on every call forever.
-  if (!isValidDeviceToken(token)) return null;
+  if (!isValidDeviceToken(token)) return EMPTY;
   const complete =
     typeof accountId === 'string' &&
     PUBLIC_ID_PATTERN.test(accountId) &&
     typeof deviceId === 'string' &&
     PUBLIC_ID_PATTERN.test(deviceId);
-  return { token, identity: complete ? { token, accountId, deviceId } : null };
+  return { available: true, token, identity: complete ? { token, accountId, deviceId } : null };
 }
 
-function write(value: { token: string } | DeviceIdentity | null): void {
+function write(value: { token: string } | DeviceIdentity): void {
   try {
-    if (value === null) store()?.removeItem(STORAGE_KEY);
-    else store()?.setItem(STORAGE_KEY, JSON.stringify(value));
+    store()?.setItem(STORAGE_KEY, JSON.stringify(value));
   } catch {
     // Unwritable storage: the identity simply lives for this session.
+  }
+}
+
+// Remove the shared entry, but only while it is still the one we are leaving. Another TAB
+// may have written a newer identity into it since — and deleting THAT would orphan the
+// account that tab is playing on, which is the one thing a sign-out here may not do.
+function clearStored(expected: string | null): void {
+  try {
+    const stored = readStored();
+    if (expected !== null && stored.available && stored.token !== null && stored.token !== expected) {
+      return;
+    }
+    store()?.removeItem(STORAGE_KEY);
+  } catch {
+    // Unreadable or unwritable storage: nothing to remove.
   }
 }
 
@@ -142,9 +179,19 @@ export function useSignedOut(): boolean {
 }
 
 // What the identity OWNS, cleared whenever it changes. Registered by the modules that hold
-// it (the round engines, the history cache, the board/profile screens) rather than imported
-// here, so this module keeps knowing nothing about the game.
-type Listener = (change: { accountChanged: boolean; deviceChanged: boolean }) => void;
+// it (the round engines, the history cache) rather than imported here, so this module keeps
+// knowing nothing about the game.
+//
+// The change carries its PREVIOUS value, because acquiring a first identity and leaving one
+// are not the same event: a bootstrap is triggered BY an act (a first guess, a word round
+// start), so clearing on it would destroy the very thing that asked for it.
+export interface IdentityChange {
+  previous: DeviceIdentity | null;
+  next: DeviceIdentity | null;
+  accountChanged: boolean;
+  deviceChanged: boolean;
+}
+type Listener = (change: IdentityChange) => void;
 const listeners = new Set<Listener>();
 
 export function onIdentityChange(listener: Listener): () => void {
@@ -161,7 +208,43 @@ function publish(next: DeviceIdentity | null, signedOut = false): void {
   // Clearing storage WITHOUT fencing in-flight answers would let the identity just left
   // repopulate the one that replaced it, which is why every private request captures the
   // epoch above and drops an answer that outlived it.
-  for (const listener of listeners) listener({ accountChanged, deviceChanged });
+  for (const listener of listeners) listener({ previous, next, accountChanged, deviceChanged });
+}
+
+// Re-read the shared key and adopt what it says. Called before every mint and on every
+// `storage` event, because another TAB may have bootstrapped, signed out or started fresh
+// since this module last looked — and this module's copy is a cache of that key, not the
+// authority.
+function syncFromStorage(): DeviceIdentity | null {
+  const stored = readStored();
+  const held = useIdentityStore.getState().identity;
+  // Storage that cannot be READ is not storage that is empty. There, this session's
+  // in-memory identity is all there is, and it stands.
+  if (!stored.available) return held;
+  const found = stored.identity;
+  if (found) {
+    pendingToken = null;
+    const same =
+      held !== null &&
+      held.token === found.token &&
+      held.accountId === found.accountId &&
+      held.deviceId === found.deviceId;
+    // A live identity exists again, so any signed-out screen is stale.
+    if (!same) publish(found);
+    else if (useIdentityStore.getState().signedOut) useIdentityStore.setState({ signedOut: false });
+    return found;
+  }
+  // No complete identity in storage. A PENDING token there is another tab's bootstrap in
+  // progress: adopting it is what makes two tabs converge on ONE account, since the server's
+  // bootstrap is idempotent by token hash. With storage merely EMPTY, a token this session
+  // already minted is still ours to retry — the write simply did not stick.
+  pendingToken = stored.token ?? pendingToken;
+  // We held one and the key no longer does: another tab signed this device out or started
+  // fresh. Drop to "no identity" rather than to the signed-out SCREEN — from storage alone
+  // the two are indistinguishable, and the tab that actually got `unknown_device` is already
+  // showing it.
+  if (held) publish(null);
+  return null;
 }
 
 // ONE bootstrap in the air at a time, module-level (the `activeScoreFlights` pattern): two
@@ -172,7 +255,10 @@ let flight: Promise<DeviceIdentity> | null = null;
 // Create this device's identity, or return the one it already has. Called by the deliberate
 // acts listed at the top of this file, and by nothing else — a read never bootstraps.
 export function ensureDeviceIdentity(): Promise<DeviceIdentity> {
-  const held = useIdentityStore.getState().identity;
+  // The shared key first, then the in-memory copy: a tab opened before another one
+  // bootstrapped would otherwise mint a SECOND token, overwrite the shared entry and orphan
+  // the account the other tab is playing on.
+  const held = syncFromStorage() ?? useIdentityStore.getState().identity;
   if (held) return Promise.resolve(held);
   flight ??= bootstrap().finally(() => {
     flight = null;
@@ -181,15 +267,31 @@ export function ensureDeviceIdentity(): Promise<DeviceIdentity> {
 }
 
 async function bootstrap(): Promise<DeviceIdentity> {
+  // Re-checked INSIDE the flight: it may have been queued behind a challenge fetch while
+  // another tab finished its own bootstrap.
+  const adopted = syncFromStorage();
+  if (adopted) return adopted;
   // PERSIST the token before the request. Bootstrap is idempotent by its hash, so a
   // committed write whose answer was lost is recovered by retrying with the same value —
-  // where a fresh token would silently mint a second identity and orphan the first.
+  // where a fresh token would silently mint a second identity and orphan the first. It is
+  // also what two tabs racing a first bootstrap converge on: whichever writes the pending
+  // token first, the other adopts it above and both resolve to ONE account.
   const token = (pendingToken ??= generateDeviceToken());
   write({ token });
   const challenge = await turnstileToken();
   const response = await postDevicesBody(devicesUrl(), { token, turnstileToken: challenge });
   if (!response.ok) throw new Error(`device bootstrap failed: ${response.status}`);
   const { accountId, deviceId } = parseDeviceIdentity(await response.json());
+  // Last look before the write. A tab that raced this one to a DIFFERENT token has already
+  // stored a complete identity; overwriting it would leave two accounts on one device and
+  // orphan the one that is being played. Ours is brand new and empty, so adopting theirs
+  // costs nothing.
+  const raced = readStored();
+  if (raced.available && raced.identity && raced.identity.token !== token) {
+    pendingToken = null;
+    publish(raced.identity);
+    return raced.identity;
+  }
   const identity: DeviceIdentity = { token, accountId, deviceId };
   write(identity);
   pendingToken = null;
@@ -202,7 +304,7 @@ async function bootstrap(): Promise<DeviceIdentity> {
 // anyone out.
 export function markDeviceSignedOut(): void {
   if (useIdentityStore.getState().signedOut) return;
-  write(null);
+  clearStored(useIdentityStore.getState().identity?.token ?? null);
   pendingToken = null;
   flight = null;
   publish(null, true);
@@ -211,7 +313,7 @@ export function markDeviceSignedOut(): void {
 // SKIP on the signed-out screen: leave the old account behind and start fresh. The new
 // token is minted lazily by the next deliberate act, exactly like a first-ever visit.
 export function startFreshDevice(): void {
-  write(null);
+  clearStored(useIdentityStore.getState().identity?.token ?? pendingToken);
   pendingToken = null;
   flight = null;
   publish(null, false);
@@ -221,19 +323,32 @@ export function startFreshDevice(): void {
 // first paint already knows whether this device has an identity — a private read that fired
 // against a not-yet-loaded identity would ask the server about nobody.
 export function loadDeviceIdentity(): void {
-  const stored = readStored();
-  if (!stored) return;
   // A token with no ids is a bootstrap that never answered. It is not an identity: the
   // account it may have created is empty, because the act it was minted for waits on the
-  // answer. Hold the token so the next act retries onto the SAME identity.
-  pendingToken = stored.identity ? null : stored.token;
-  if (stored.identity) publish(stored.identity);
+  // answer. `syncFromStorage` holds that token so the next act retries onto the SAME one.
+  syncFromStorage();
+  // Another TAB writing the shared key is the only way this device's identity changes
+  // without this tab asking, and it is not rare: two tabs of a game are ordinary. Adopting
+  // it here is what keeps them on one account instead of two.
+  if (typeof window !== 'undefined' && !storageListener) {
+    storageListener = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== STORAGE_KEY) return;
+      syncFromStorage();
+    };
+    window.addEventListener('storage', storageListener);
+  }
 }
+
+let storageListener: ((event: StorageEvent) => void) | null = null;
 
 // Test seam: drop this module's state (it must not leak between tests).
 export function resetDeviceIdentity(): void {
   pendingToken = null;
   flight = null;
   storage = undefined;
+  if (storageListener && typeof window !== 'undefined') {
+    window.removeEventListener('storage', storageListener);
+  }
+  storageListener = null;
   useIdentityStore.setState({ identity: null, signedOut: false });
 }

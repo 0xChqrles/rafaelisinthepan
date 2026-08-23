@@ -54,6 +54,15 @@ const STRINGS = {
     en: 'Your streak, your archive and your friends stay on that account. Starting fresh here leaves them behind.',
     fr: 'Votre série, votre archive et vos amis restent sur ce compte. Repartir de zéro ici les laisse derrière.',
   },
+  // The account's devices, on the profile editor (#216): the surface the whole issue exists
+  // for, since signing a device out has to be possible without holding that device.
+  devicesTitle: { en: 'DEVICES', fr: 'APPAREILS' },
+  deviceCurrent: { en: 'THIS ONE', fr: 'CELUI-CI' },
+  deviceSignOut: { en: 'SIGN OUT', fr: 'DÉCONNECTER' },
+  // The UA parser leaves what it cannot read EMPTY rather than guessing, so the SCREEN names
+  // an unlabelled device.
+  deviceUnknown: { en: 'UNKNOWN DEVICE', fr: 'APPAREIL INCONNU' },
+  failedDevices: { en: 'FAILED TO LOAD DEVICES', fr: 'ÉCHEC DU CHARGEMENT DES APPAREILS' },
   signedOutReconnect: { en: 'RECONNECT', fr: 'SE RECONNECTER' },
   signedOutSkip: { en: 'START FRESH', fr: 'REPARTIR DE ZÉRO' },
   // The missing-puzzle state is ABNORMAL (a publish that did not happen), and the

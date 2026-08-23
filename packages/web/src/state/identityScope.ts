@@ -22,7 +22,20 @@ import { resetRoundSync } from './roundSync';
 import { resetWordRoundSync } from './wordRoundSync';
 
 export function installIdentityScope(): () => void {
-  return onIdentityChange(({ accountChanged, deviceChanged }) => {
+  return onIdentityChange(({ previous, accountChanged, deviceChanged }) => {
+    // **Acquiring a FIRST identity clears nothing.** A bootstrap is triggered BY an act —
+    // the first guess, a word round start — so the state on screen when it lands is the
+    // state that ASKED for it: the guess sitting in the outbox waiting to be sent, the run
+    // whose PLAY is awaiting its answer. Clearing there orphaned the sentence append (later
+    // guesses then never synced) and wiped `wordRounds` out from under the start's own
+    // "is this still the word I asked about?" guard, so a fresh player could not reliably
+    // begin a word round at all.
+    //
+    // Clearing is about LEAVING an identity, and there is nothing to leave when the previous
+    // one was null: whatever local state exists then was typed by this player, on this
+    // device, and is owed to the account they are about to be given.
+    if (previous === null) return;
+
     // Word mode's clock and its unsubmitted log are DEVICE-owned: a run belongs to the
     // device playing it (its bonus-adjusted deadline lives nowhere else until submission),
     // so a new device never inherits one.

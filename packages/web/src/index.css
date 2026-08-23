@@ -5032,6 +5032,84 @@ button * {
   color: var(--danger);
 }
 
+/* The account's DEVICES, and the way to sign one out (#216) — the profile screen's second
+   block, under the editor and inside the same column. Chrome, so: mono, all-caps, one ink
+   with SECONDARY values in `--muted` (the 2026-08-20 rule), and nothing rounder than the
+   4px ceiling. */
+.device-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.device-list-title {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 10px;
+  font-weight: 550;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.device-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--glass);
+  font-family: var(--ui);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+/* The row the reader is ON wears the accent at the board's own whisper strength — the
+   2026-08-20 rule that replaced the inverted box in a column of glass rows. An INSET
+   shadow, never a border-left, so marking a row cannot shift the grid by a pixel. */
+.device-row.current {
+  box-shadow: inset 2px 0 0 0 var(--accent);
+}
+.device-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.device-here {
+  margin-left: 8px;
+  font-weight: 400;
+  color: var(--accent);
+}
+.device-seen {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+.device-signout,
+.device-retry {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: none;
+  font-family: var(--ui);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg);
+  cursor: pointer;
+}
+.device-signout:hover:not(:disabled),
+.device-retry:hover {
+  filter: brightness(1.3);
+}
+.device-signout:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
 /* On a phone the mobile .app is top-anchored (16px), so the column's top padding sets
    where the editor starts: 48px puts it at 64px from the viewport top — exactly where
    the tutorial's coach dialog sits under the full-bleed band. Desktop keeps the

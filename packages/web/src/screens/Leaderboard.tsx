@@ -169,7 +169,18 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
       try {
         const identity = await ensureDeviceIdentity();
         const response = await postFriendsBody(friendsUrl(), { token: identity.token });
-        if (cancelled || !response.ok) return;
+        if (cancelled) return;
+        if (!response.ok) {
+          // Unmarked rows are a fine board, so this read fails silently — EXCEPT for the one
+          // answer that is not about the read at all. A device revoked since the board
+          // mounted can learn it here first, and swallowing it would leave the screen
+          // decorating a board for an account it no longer holds.
+          if (response.status === 401) {
+            const data = (await response.json().catch(() => ({}))) as { error?: unknown };
+            if (data.error === 'unknown_device') markDeviceSignedOut();
+          }
+          return;
+        }
         const ids = parseFriends(await response.json());
         if (!cancelled) setFriendIds(new Set(ids));
       } catch {

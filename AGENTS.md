@@ -380,9 +380,10 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   would be the odd one out (and would break #206's live friends board). The payoff:
   **there is no migration, ever** — a first account link binds to an account the server
   already holds in full.
-- **ONE route, POST-only like /friends** (the secret is the auth and travels in the
-  BODY): `POST /round?lang=&date=&mode=` — `{secret, puzzle}` reads the caller's stored
-  round for that daily (404 = none yet), `{secret, puzzle, guesses: [...]}` appends to its
+- **ONE route, POST-only like /friends** (the auth travels in the BODY — the player secret
+  when this was written, the DEVICE TOKEN since #216):
+  `POST /round?lang=&date=&mode=` — `{token, puzzle}` reads the caller's stored
+  round for that daily (404 = none yet), `{token, puzzle, guesses: [...]}` appends to its
   log. **Every answer carries the full stored state** (`{guesses, createdAt}`) — the
   /friends house style, and **that includes BOTH refusals** — so a write is also a
   reconciliation: the tab computes against stale local state, the server appends to the
@@ -927,7 +928,8 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   `canSubmit` branches. What remains is smaller and explicit: one transient server snapshot,
   one persisted revision-qualified outbox, one pure canonical play-log projection, paced
   prefix writes, and the narrow read-on-unknown recovery. Local storage otherwise retains
-  the player secret, the device preferences and Word mode's clock/outbox. *(The solved-day
+  the device token (#216 — the player secret until then), the device preferences and Word
+  mode's clock/outbox. *(The solved-day
   sets went with them at v15 — #211 moved the collection to the private player row.)*
 - **ORDERING — #214 then #211, and they SHIP TOGETHER.** This issue establishes the client
   state model #211's summary readers consume. Removing the persisted sentence rounds (and,
@@ -948,8 +950,8 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   has never been bootstrapped cannot own server rows, so its calendar, chooser and streak
   are known-empty without a fetch. #211 ships before device tokens and does NOT add that
   tokenless branch.)*
-- **ONE route, POST-only like /friends** (the secret is the auth and travels in the BODY, so
-  nobody can ask for another player's history): `POST /history?lang=&mode=[&month=]` answers
+- **ONE route, POST-only like /friends** (the auth travels in the BODY — the DEVICE TOKEN
+  since #216 — so nobody can ask for another player's history): `POST /history?lang=&mode=[&month=]` answers
   `{ days, solvedDays }`. The body may carry `collection: false` (PR-218 review) to skip
   the solved-day read — the language chooser wants a month strip and never renders the
   streak, so its read must not spend the collection's consistent GetItem; absent means
@@ -1146,6 +1148,12 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   one out is a thing a person may want, and refusing it would be a rule the screen then has to
   explain. The bootstrap is the third behavior wearing the CDN's viewer-request function,
   since a gated write needs a trusted address.
+- **The list and the revocation have a REACHABLE surface** (`web/components/DeviceList.tsx`),
+  on the PROFILE editor — the screen that already IS the identity screen, reached from the
+  leaderboard's EDIT chip. Without it #216's central act would have no way in at all. One row
+  per device (its parsed label, when it was last used, and whether it is the one asking), each
+  with SIGN OUT; every call answers the list as it now stands, so the screen never guesses
+  what a write did.
 
 ### Day-addressed routing & the game day
 
@@ -1301,11 +1309,12 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
 - **Non-unique display name + a 10×10 palette pixel avatar, hung off #187's identity.**
   The ONE handler serves `GET /profile?id=<publicId>` (the public row: name + avatar —
   what a board renders, and what a freshly linked device loads; 404 = never customized)
-  and `POST /profile` with `{ secret, name, avatar }` — an authenticated upsert keyed by
-  the DERIVED publicId, a separate write path from scores. The `/scores` behavior rules
+  and `POST /profile` with `{ token, name, avatar }` (`{ secret, … }` until #216) — an
+  authenticated upsert keyed by the ACCOUNT the caller's device token resolves to, a
+  separate write path from scores. The `/scores` behavior rules
   re-apply: zero-TTL CloudFront behavior, query allowList = exactly the ONE parameter the
   handler reads (`id`), `x-amz-content-sha256` over the exact body bytes on a production
-  POST. No Turnstile and no IP dedup here — the secret is the auth, and an overwritten
+  POST. No Turnstile and no IP dedup here — the device token is the auth, and an overwritten
   own-row is not an attack surface.
 - **The avatar is TWO COLOURS — a background and a foreground, nothing else
   (user-decided 2026-08-19, superseding the 3-ink first cut), and its codec is a
@@ -1413,10 +1422,11 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   so restoring a key restores the friends with it — nothing to migrate. (Its side benefit is
   the pre-launch analytics: edges plus score rows answer how many players arrive by invite,
   whether friended players retain better, and how big groups get.)
-- **ONE route, POST-only: `POST /friends`** — `{secret}` reads your list, `{secret, add}` links,
-  `{secret, remove}` unlinks, and EVERY call answers `{ friends: [publicId] }`, so a client is
-  never left guessing what a write did. Every call is a POST because the secret is the auth and
-  it travels in the BODY, never a query string (#187) — which is also why the READ is a POST:
+- **ONE route, POST-only: `POST /friends`** — `{token}` reads your list, `{token, add}` links,
+  `{token, remove}` unlinks, and EVERY call answers `{ friends: [publicId] }`, so a client is
+  never left guessing what a write did. Every call is a POST because the auth travels in the
+  BODY, never a query string (#187's secret; the DEVICE TOKEN since #216) — which is also why
+  the READ is a POST:
   the server resolves YOUR edges, and there is no way to ask without proving who you are. The
   route reads NO query parameter, and its CloudFront behavior says exactly that with an EMPTY
   allow-list (the three-package contract above — the day it grows one, it has to be named there
@@ -1449,16 +1459,16 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   answers the empty board). Two faces:
   - `GET /board?lang=&date=&mode=[&id=<publicId>]` — the **GLOBAL top 50, anonymous**
     (untrusted by design, #187: decorative, nothing treats it as truth). `id` is the
-    caller's PUBLIC id — never the secret, so it may travel in the query — and widens
+    caller's PUBLIC id — never the token, so it may travel in the query — and widens
     the answer with a below-the-cut window. **Nothing BINDS `id` to the caller, and
     that is deliberate:** anyone holding a publicId can read that player's window
     (score, rank, profile) for any served day. publicIds are broadcast by design —
     an invite link IS one (#189) — and a stranger holding one can already reach the
     same scores by accepting that link, so the read adds no capability the graph did
     not. The TRUSTED surface is the POST.
-  - `POST /board { secret }` (+ the same query) — the **FRIENDS board, the trusted
+  - `POST /board { token }` (+ the same query) — the **FRIENDS board, the trusted
     surface**: the server resolves YOUR edges (#189) plus yourself, so the read proves
-    who is asking — the secret in the BODY, the /friends rule. Production POST needs
+    who is asking — the device token in the BODY, the /friends rule. Production POST needs
     `x-amz-content-sha256` over the exact body bytes (the OAC contract). **A friend
     with no recorded score today is still named** (user-decided 2026-08-20): the
     response's `waiting` list carries them (profile-dressed, no score/rank; sorted by

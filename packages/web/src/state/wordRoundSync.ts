@@ -311,7 +311,13 @@ async function requestStart(ctx: WordRoundContext): Promise<boolean> {
   } catch {
     return false;
   }
-  if (!response.ok) return false;
+  if (!response.ok) {
+    // PLAY is the first private call a fresh visit makes, so a device revoked since the
+    // mount read learns it HERE. Reporting a generic failed start would leave the player
+    // tapping a gate that can never open, with nothing saying why.
+    await noteVerdict(response);
+    return false;
+  }
   let state: RoundState;
   try {
     state = parseRound(await response.json());

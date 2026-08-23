@@ -15,6 +15,7 @@ import { ensureDeviceIdentity, markDeviceSignedOut } from '../identity';
 import { navigate } from '../routing';
 import { pathForBoard, resolveHomeLang } from '../langs';
 import { t } from '../i18n';
+import DeviceList from '../components/DeviceList';
 import Avatar from '../components/Avatar';
 import LoadError from '../components/LoadError';
 import LoadingWave from '../components/LoadingWave';
@@ -481,6 +482,10 @@ export default function Profile() {
               </p>
             )}
           </div>
+          {/* The account's devices, and the way to sign one out (#216). It belongs on this
+              screen because this screen IS the identity screen — and because an account with
+              no devices list leaves the whole point of per-device tokens unreachable. */}
+          <DeviceList lang={lang} />
         </div>
       )}
     </>

@@ -426,6 +426,21 @@ it to the local store — see `packages/backend/AGENTS.md`).
     tokenless for the no-private-fetch rule, and correctly so — the client waits for the
     bootstrap answer before performing the act it bootstrapped FOR, so an account created
     behind a lost answer is empty.
+  - **localStorage is shared by every TAB, so this module's copy is a CACHE of it** (added on
+    review): `ensureDeviceIdentity` re-reads before minting, a `storage` listener adopts what
+    another tab wrote, a pending token found there is adopted rather than replaced (two tabs
+    racing a first bootstrap then converge on ONE account, since the server is idempotent by
+    token hash), and the sign-out paths remove the entry only while it is still theirs.
+    `readStored` distinguishes UNREADABLE storage from EMPTY storage — the first says nothing
+    about this device's identity, and collapsing them dropped one the session was playing on.
+  - **`state/identityScope.ts` clears on LEAVING an identity, never on acquiring one**
+    (corrected on review): a bootstrap is triggered BY an act, so clearing there destroyed the
+    guess in the outbox that asked for it and the `wordRounds` entry the word start's own
+    answer checks itself against. The change carries its PREVIOUS value for exactly that test.
+  - **Persist v16 DROPS the outbox and the word rounds**: both are owed to #187's retired
+    identity, and the tokenless branch would otherwise pump a surviving outbox on the first
+    page load — bootstrapping a brand-new account and filing another identity's guesses
+    against it.
   - **The tokenless branch is an ANSWER, not a loading state.** `roundSync` publishes a
     ready-and-empty authoritative round and `state/history.ts` a ready empty month and
     collection, so nothing breathes behind a request nobody made — the same rule #211's
@@ -439,6 +454,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **`SignedOut` takes its RECONNECT handler as a PROP, and #216 passes none.** The email
     link flow is #204's; a button that does nothing is worse than a screen that only offers
     what it can actually do, so START FRESH is the only action until then.
+  - **`components/DeviceList.tsx` is the REACHABLE surface for signing another device out**,
+    mounted on the PROFILE editor — the screen that already is the identity screen. Every
+    call answers the list as it now stands (the /friends house rule), so a revocation needs no
+    optimistic update, and the route's own correction for the index's lag means the screen
+    compensates for nothing.
+  - **`crypto.subtle` is still required by every live POST** (corrected on review): #216
+    removes it from the paths that need NO identity — the global board's own-window `id` and
+    the identity strip, which each carried a try/catch for the LAN-IP mobile check — but
+    `api.postSignedJson` still signs each body for the OAC contract, so an insecure context
+    cannot bootstrap. That boundary is older than #216 and unchanged by it.
 
 - **Local storage is an OUTBOX; a capped round ends at ∞ (#214).** The product contract —
   the three values, the load order, what the cap means, the share token, what was removed —

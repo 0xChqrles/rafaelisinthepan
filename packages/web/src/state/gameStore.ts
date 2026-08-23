@@ -446,6 +446,15 @@ const storage = createJSONStorage<PersistedState>(() => {
 //     standing no-back-compat rule says an obsolete path is removed, not accommodated. The
 //     cost is that a device whose rounds were never synced loses its streak; every round
 //     that ever flushed is on the server, and #214 already made that the only kind there is.
+//   v16 DROPS the OUTBOX and the WORD ROUNDS (#216), because both belong to an identity this
+//     device no longer has. Until #216 the identity was a shared secret (#187); it is now a
+//     device token resolving to a SERVER-assigned account, and there is no mapping between
+//     the two — the epic wipes the DB before launch and takes no migration. Left in place,
+//     these are worse than stale: the tokenless branch pumps a surviving outbox on the very
+//     first page load, which bootstraps a BRAND-NEW account and then appends the retired
+//     identity's guesses to it. A word round is the same shape of wrong — its clock was
+//     stamped for an account nobody now holds, and its submission would be refused
+//     `not_started` (the v11 precedent). Every preference survives, as at v14 and v15.
 function dropRetiredScoreFields<T>(rounds: Record<string, T>): Record<string, T> {
   return Object.fromEntries(
     Object.entries(rounds).map(([key, round]) => {
@@ -483,14 +492,18 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
   // Word rounds only survive from v11 on: before v7 they were strike runs, and before v11
   // their clock was a local stamp no server ever saw (see the notes above). A v11 one CAN
   // carry `scoreRecorded`, so it is stripped.
-  const wordRounds = version < 11 ? {} : dropRetiredScoreFields(p.wordRounds ?? {});
+  // v16: a word round belongs to the DEVICE that played it, under an identity #216 retired.
+  const wordRounds = version < 16 ? {} : dropRetiredScoreFields(p.wordRounds ?? {});
   const lastMode = p.lastMode === 'word' || p.lastMode === 'sentence' ? p.lastMode : null;
   const sentenceRulesSeen = p.sentenceRulesSeen === true;
   const boardTab = p.boardTab === 'global' ? 'global' : 'friends';
   // The outbox arrives with v14 and holds only UNACKNOWLEDGED guesses, which no older blob
   // can distinguish inside its merged `tried` list (see the v14 note) — so an older one
-  // starts empty rather than re-sending a log the server already holds.
-  const outbox = version < 14 ? {} : p.outbox ?? {};
+  // starts empty rather than re-sending a log the server already holds. v16 raises that
+  // floor again: a pre-#216 outbox is owed to an account this device cannot prove it holds,
+  // and sending it under a freshly bootstrapped one would file another player's guesses
+  // against a brand-new identity.
+  const outbox = version < 16 ? {} : p.outbox ?? {};
   return {
     outbox,
     wordRounds,
@@ -741,7 +754,7 @@ export const useGameStore = create<GameState>()(
     {
       name: 'whippin-round',
       storage,
-      version: 15, // v15: the solved-day sets are the server's now (#211); see migratePersisted
+      version: 16, // v16: the outbox and word rounds belong to #216's retired identity
       migrate: migratePersisted,
       // Persist the sentence OUTBOX, the word rounds, last language/mode and the two
       // one-time flags. Everything a player's HISTORY is made of — the sentence rounds
