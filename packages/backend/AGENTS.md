@@ -108,7 +108,9 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   per distinct recorded score; an empty population is `buckets: []`), with `bucket` always
   `null` — the read carries no identity, and the client locates its own score in the
   ranges. Every response is `no-store`. A POST is a named **405**: the row is written by the
-  ROUND route from the log the server already holds (#203), so this file no longer
+  ROUND route from the log the server already holds (#203) — and only when that round
+  finished ON THE DAY (2026-08-23), so an archive play joins no population and gets
+  `bucket: null` here. This file no longer
   authenticates, verifies Turnstile, validates a range or hashes an address —
   `hashClientIp` stays here beside the store contract, but its caller is `rounds.ts`.
   It still reads the published puzzle, so an unpublished daily 404s rather than getting an
@@ -407,8 +409,10 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   right after finishing a day) and PAGED — and `PlayerHistoryStore.solvedDays`. Every response
   is `no-store`; a player with nothing played answers `{days: [], solvedDays: []}`, which is an
   ANSWER. **The write is the ROUND route's**: the append that CONFIRMS a solve credits the day
-  (`creditSolvedDay`) when the round's day IS the server's active day (`key.date === serverDate`,
-  the whole rule — see the root `AGENTS.md` on why the flip-edge tolerance had to go), and its
+  (`creditSolvedDay`) when the round finished ON THE DAY — `onTime(key.date, instant)`, ONE
+  predicate that `recordScoreRow` wears too, so a late finish earns neither the streak credit
+  nor the leaderboard row (see the root `AGENTS.md` on why the flip-edge tolerance had to go,
+  and on what that narrowed for archive plays). Its
   failures are LOGGED, never surfaced — the collection is a rebuildable cache of the
   round rows. `dynamoHistoryStore` credits with a NUMBER SET `ADD` under
   `attribute_not_exists(#days) OR size(#days) < :max OR contains(#days, :one)` — condition

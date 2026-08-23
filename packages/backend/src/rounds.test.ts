@@ -826,13 +826,15 @@ describe('the derived summary (#203)', () => {
     ]);
   });
 
+  // LATE HAS NO GRADATIONS (user-decided 2026-08-23): a millisecond late is a decade late,
+  // and neither earns the day's rewards — not the streak credit, not the leaderboard row.
   it.each([
     ['an ARCHIVE solve', PAST_DATE],
     // YESTERDAY is the case that used to be tolerated, for the 22:00 flip-edge. It reads
     // here exactly as it reads for a deliberate archive replay of yesterday — which is why
     // the tolerance could never be applied honestly server-side, and why it is gone.
     ['a solve carried past the 22:00 flip', YESTERDAY_DATE],
-  ])('%s never touches the streak', async (_name, date) => {
+  ])('%s earns NOTHING the day gives', async (_name, date) => {
     const handler = makeHandler();
     const late = await handler(
       event({
@@ -840,10 +842,29 @@ describe('the derived summary (#203)', () => {
         body: body({ guesses: ['phare', 'nuit'] }),
       }),
     );
-    // It really solved — what is being pinned is the RULE, not a failed derivation.
+    // It really solved, and the LOG is stored either way — what is being pinned is the
+    // RULE, not a failed derivation or a refused append.
     expect(parsed(late).solved).toBe(true);
+    expect(parsed(late).guesses).toEqual(['phare', 'nuit']);
+
     const me = await publicIdFromSecret(SECRET);
     await expect(handler.historyStore.solvedDays(me, 'fr')).resolves.toEqual([]);
+    // No leaderboard row either: a board is a day's competition, and this finished after
+    // that day ended. The solved screen then draws no standing at all (`bucket: null`).
+    expect(await handler.scoreStore.list({ date, lang: 'fr', mode: 'sentence' })).toEqual([]);
+  });
+
+  it('a late WORD run records no score either — one rule, both dailies', async () => {
+    const handler = makeHandler({ word: WORD_ARTIFACT });
+    const key = { lang: 'fr', date: PAST_DATE, mode: 'word' as const };
+    await handler(wordEvent({ turnstileToken: 'ok' }, key));
+    handler.advance(wordRunFloorMs(1) + 1);
+    const submitted = await handler(wordEvent({ guesses: ['mer'] }, key));
+    // The run was RECORDED — the log is the player's history, and an archive run is still
+    // play. What it does not earn is the day's leaderboard entry.
+    expect(submitted.statusCode).toBe(200);
+    expect(parsed(submitted).submittedAt).toBeTruthy();
+    expect(await handler.scoreStore.list(key)).toEqual([]);
   });
 
   it('solving a CORRECTED revision cannot claim the same day twice', async () => {

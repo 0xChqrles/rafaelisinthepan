@@ -2138,7 +2138,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   made active later), and an in-flight read is shared across real component remounts so
   leaving for the archive/tutorial and returning cannot mint a second request. EVERY
   failure is silent by decision: the solved screen simply shows no standing, never an
-  error. **What it shows is ONE LINE — the player's RANK** (`components/ScoreRank`,
+  error. **An ARCHIVE solve now shows none either** (user-decided 2026-08-23): a leaderboard
+  is a DAY's competition and a late finish is not competing in it, so the server records no
+  row and answers `bucket: null`, which this slot already draws as nothing. The read still
+  fires — the client does not second-guess which days have a population, and that guess is
+  exactly the kind of local rule the same decision removed from the streak. **What it shows is ONE LINE — the player's RANK** (`components/ScoreRank`,
   user-decided 2026-08-15, replacing the brick histogram that replaced the first cut's
   bars: "the histogram is actually ugly" — a field of bars asks to be decoded, where the
   rank is the answer already given):

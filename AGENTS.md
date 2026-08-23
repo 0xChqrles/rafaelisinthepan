@@ -999,10 +999,13 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   set omitting the other's day. A lost solved day is the one thing this collection may never
   do; overshooting `MAX_SOLVED_DAYS` by a day or two while concurrent credits converge is
   the ordinary bound-not-invariant trade `FRIENDS_MAX` already makes.
-- **ON TIME means ON THE DAY (user-decided 2026-08-23), and that is the WHOLE streak rule on
-  both ends**: the round's day must BE the active day. A round carried across the 22:00 flip
-  and finished at 22:00:01 was not finished on time and credits nothing; an archive replay
-  never was on time, at any distance.
+- **ON TIME means ON THE DAY, and LATE HAS NO GRADATIONS (user-decided 2026-08-23): a
+  millisecond late is a decade late.** A round earns the day's rewards — the streak credit
+  AND the leaderboard row — only when the day it is playing IS the day the write lands on.
+  The rule is ONE predicate on the server (`rounds.ts` `onTime`), worn by both, and the
+  streak's client half makes the same comparison. A round carried across the 22:00 flip
+  and finished at 22:00:01 was not finished on time; an archive replay never was on time, at
+  any distance; and the two are treated identically because they ARE the same thing.
   **It REPLACED a window that tolerated `activeDay - 1`** for that flip-edge — an in-flight
   round finished a few minutes past the reset — plus a second gate at the client
   (`isActiveDay`, the route) to tell that edge from a deliberate archive replay of yesterday.
@@ -1094,7 +1097,15 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   puzzle route, **`mode` is required**. **It is READ-ONLY since #203** — a POST is a named
   405. The row is written by the ROUND route, from a log the server already holds: the
   round that finishes writes **ONE row per `(date, lang, mode, publicId)`**, including the
-  published `revision` it was earned on. First write wins WITHIN one revision; solving a
+  published `revision` it was earned on — **and ONLY when it finished ON THE DAY**
+  (user-decided 2026-08-23, the same `onTime` predicate the streak credit uses). A
+  leaderboard is a DAY's competition, so a round finished after that day ended is not
+  competing in it, by a millisecond or by ten years: an archive replay records no row, draws
+  no standing (`/scores` answers `bucket: null` for a caller the population does not hold)
+  and spends no address allowance. It still stores its LOG and still shows its own result —
+  what it does not join is the day's population. **This narrowed an earlier behaviour**: any
+  solve used to record a row whenever it landed, so archive plays joined populations of days
+  they had not played. First write wins WITHIN one revision; solving a
   corrected revision replaces the retired version's row, so the population still contains
   exactly one row for that player. The request's DynamoDB idempotency token includes the
   revision too, or the replacement is discarded as a replay before its condition is read.
