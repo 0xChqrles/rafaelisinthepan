@@ -445,8 +445,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     recorded in the #202 bullet below — PLAY was tappable while that read was in flight, and
     a session that starts a run it cannot see becomes its writer. A recorded answer publishes
     the server log into that transient load; `settleWordRun` then clears the acknowledged
-    persisted outbox, marks the run submitted, preserves its finished deadline and caches the
-    authoritative claim count clamped to `CLAIM_ZONE`, so summary progress cannot exceed 100%.
+    persisted outbox, marks the run submitted, clamps any still-live deadline to now and caches
+    the authoritative claim count clamped to `CLAIM_ZONE`, so neither the prompt nor summary
+    progress can remain live after settlement.
   - **`statusOf` takes a SERVER summary** (`{progress, solved}`) and has no producer yet:
     the archive and the chooser pass `undefined`, so every SENTENCE day reads as not started
     until #211 lands. **#214 and #211 ship together** — see the Ordering note on both issues.
@@ -560,9 +561,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     devices; it also carries a finished day's RECORDED run to a device that never played
     it. That log is published into transient `roundLoads`, while `settleWordRun` clears the
     persisted local outbox and marks the round submitted: the server demonstrably holds a
-    run for it, so this device owes nothing. The existing deadline stays frozen — adopting
-    a longer winning run must never reopen one this device already finished — and only the
-    authoritative claim count is cached for unloaded summary surfaces.
+    run for it, so this device owes nothing. A non-null deadline becomes
+    `min(localDeadline, now)`: settlement ends a still-live local phase immediately and never
+    reopens one already finished. The server deadline is not adopted; only the authoritative
+    claim count is cached for unloaded summary surfaces.
   - **The run's END asks for the one write.** `beginWordRoundSync(ctx, over)` takes the
     deadline's own fact (a log cannot see a wall clock); the log is truncated to what the
     route accepts (`submittableLog` — only misses can run away), then a valid 2xx publishes

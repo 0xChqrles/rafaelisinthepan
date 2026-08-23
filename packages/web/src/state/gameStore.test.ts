@@ -153,17 +153,28 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
     ensureWordRound('w:5:fr', 'phare');
     anchorWordRun('w:5:fr', T0);
     recordWordGuess('mer', priced(3));
-    const deadline = wordRound().deadline;
+    expect(wordRound().deadline).toBeGreaterThan(T0);
 
-    // Another device's first write can contain a different run. Its count wins, but the
-    // local deadline stays frozen so a longer recorded run cannot reopen this one.
+    // Another device's first write can contain a different run. Its count wins, and the
+    // local live phase ends at settlement instead of leaving an input that cannot write.
     settleWordRun('w:5:fr', 2);
     expect(wordRound()).toMatchObject({
       tried: [],
       claimed: 2,
-      deadline,
+      deadline: T0,
       submitted: true,
     });
+  });
+
+  it('settlement never moves an already-ended deadline forward', () => {
+    const { ensureWordRound, anchorWordRun, settleWordRun } = useGameStore.getState();
+    ensureWordRound('w:5:fr', 'phare');
+    anchorWordRun('w:5:fr', T0 - runMs(0) - 1);
+    const deadline = wordRound().deadline;
+
+    settleWordRun('w:5:fr', 0);
+
+    expect(wordRound()).toMatchObject({ deadline, submitted: true });
   });
 
   it('settles a recorded empty run and is idempotent', () => {
@@ -190,6 +201,15 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
     const settled = wordRound();
     settleWordRun('w:5:fr', CLAIM_ZONE + 2);
     expect(wordRound()).toBe(settled); // equal after clamping, so no redundant persist write
+  });
+
+  it('makes a non-finite authoritative count a safe persisted summary', () => {
+    const { ensureWordRound, settleWordRun } = useGameStore.getState();
+    ensureWordRound('w:5:fr', 'phare');
+
+    settleWordRun('w:5:fr', Number.NaN);
+
+    expect(wordRound()).toMatchObject({ tried: [], claimed: 0, submitted: true });
   });
 
   it('takes no guesses after the server has settled the run', () => {

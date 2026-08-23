@@ -145,8 +145,9 @@ function capAllSolvedDays(solvedDays: Record<string, number[]>): Record<string, 
 // While the run is unacknowledged, `deadline` is DERIVED from those two (startedAt + runMs
 // of the log's claimed bonuses) and recomputed on every write, so the clock cannot drift
 // away from the guesses that bought it. Once the server acknowledges the run, the outbox
-// clears and the finished deadline freezes. It is nevertheless PERSISTED, because it is
-// the ONE thing the status surfaces need and the one thing they cannot compute: the archive
+// clears and any still-live deadline clamps to now, then freezes. It is nevertheless
+// PERSISTED, because it is the ONE thing the status surfaces need and the one thing they
+// cannot compute: the archive
 // and the choosers badge a day without loading its rank map, so they cannot replay the log
 // to price it.
 //
@@ -344,8 +345,8 @@ interface GameState extends PersistedState {
 
   // Settle a Word run from the server's authoritative recorded log (#214). Its persisted
   // guesses were an outbox and are now acknowledged, so clear them even when another
-  // device's first-write-wins log differs. Preserve the existing deadline: adopting a
-  // longer winning run must never re-open a run this device already finished.
+  // device's first-write-wins log differs. Clamp a still-live deadline to now: a settled
+  // run must stop accepting input immediately, while an already-finished one never reopens.
   settleWordRun: (key: string, claimed: number) => void;
 
   // Count one Word mode guess (a claim or a near/off-map miss — free guesses never reach
@@ -689,11 +690,15 @@ export const useGameStore = create<GameState>()(
           // map. Keep its own store boundary inside the product's finite claim field even
           // if a malformed/corrupt authoritative log somehow reaches this action; no
           // calendar or chooser may render progress above 100%.
-          const settledClaimed = Math.min(CLAIM_ZONE, Math.max(0, claimed));
+          const finiteClaimed = Number.isFinite(claimed) ? Math.trunc(claimed) : 0;
+          const settledClaimed = Math.min(CLAIM_ZONE, Math.max(0, finiteClaimed));
+          const settledDeadline =
+            round.deadline === null ? null : Math.min(round.deadline, Date.now());
           if (
             round.submitted &&
             round.tried.length === 0 &&
-            round.claimed === settledClaimed
+            round.claimed === settledClaimed &&
+            round.deadline === settledDeadline
           ) {
             return {};
           }
@@ -704,6 +709,7 @@ export const useGameStore = create<GameState>()(
                 ...round,
                 tried: [],
                 claimed: settledClaimed,
+                deadline: settledDeadline,
                 submitted: true,
               },
             },

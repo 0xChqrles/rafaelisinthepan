@@ -589,12 +589,14 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   apply. **A `too_early` refusal is WAITED OUT** (it is an answer about WHEN, and a clock
   disagreeing by a second can hit it); every other 4xx is a VERDICT that closes the
   conversation.
-- **A word round's log is adopted ONLY into an empty local one.** The deadline is DERIVED
-  from the log, so adopting a longer run over one this device actually played could move
-  the clock — and a finished run must never re-open. What that costs is small (two devices
-  playing one daily each keep their own board while the population holds the first
-  submission, which is the score row's own rule); what it buys is that a finished day's
-  recorded run follows the player to a device that never played it, deadline and all.
+- **AMENDED by #214 on 2026-08-23: a recorded Word log settles every local run, not only
+  an empty one.** The server log is published transiently for the post-mortem; it is never
+  copied into persisted `tried`, which is only the acknowledged submission outbox and is
+  cleared. Settlement marks the run submitted, caches the authoritative claim count within
+  `WORD_CLAIM_ZONE`, and sets every non-null deadline to `min(localDeadline, now)`. That
+  immediately ends a still-live prompt without ever reopening an already-finished run. A
+  finished day's recorded log therefore follows a new device through the transient mount
+  answer; its server deadline is deliberately not adopted into local storage.
 - **A device only WRITES the run it PLAYED — the log and the score alike.** A device that
   merely JOINED a run in progress (a second device under the same key, a second tab holding
   a stale copy) anchors the server's `startedAt` with an empty log and no way to learn what

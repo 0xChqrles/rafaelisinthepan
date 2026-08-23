@@ -376,6 +376,34 @@ describe('the mount READ', () => {
     expect(post).toHaveBeenCalledTimes(1);
   });
 
+  it('ends a still-live local phase when the mount read finds a submitted run', async () => {
+    seedRound({
+      startedAt: T0,
+      deadline: T0 + runMs(3),
+      tried: ['mer'],
+      claimed: 1,
+    });
+    post.mockResolvedValueOnce(
+      answer(200, {
+        startedAt: at(0),
+        submittedAt: at(10_000),
+        nowAt: 10_000,
+        guesses: ['ocean'],
+      }),
+    );
+
+    beginWordRoundSync(ctx(), false);
+    await settle();
+
+    expect(round()).toMatchObject({
+      deadline: T0,
+      tried: [],
+      claimed: 1,
+      submitted: true,
+    });
+    expect(serverGuesses()).toEqual(['ocean']);
+  });
+
   // The marker is `submittedAt`, never the log's LENGTH: a run that claimed nothing is
   // recorded as an EMPTY log, which reads exactly like an unsubmitted one. Keyed on the
   // length, such a day would look unrecorded on every visit forever.
