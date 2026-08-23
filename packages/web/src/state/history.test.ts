@@ -99,10 +99,9 @@ describe('noteSolvedDay — the streak credit the celebration rides', () => {
       solved: { ...state.solved, [lang]: { phase: 'ready' as const, days } },
     }));
 
-  it('inserts a solved day and keeps the collection sorted + deduped', () => {
-    loaded('fr', []);
-    expect(noteSolvedDay('fr', 12, 12)).toBe(true); // today
-    expect(noteSolvedDay('fr', 11, 12)).toBe(true); // the flip-edge, sorted back in
+  it('inserts TODAY\'s solve, sorted into what the collection already holds', () => {
+    loaded('fr', [11]);
+    expect(noteSolvedDay('fr', 12, 12)).toBe(true);
     expect(held('fr')).toEqual([11, 12]);
   });
 
@@ -113,15 +112,20 @@ describe('noteSolvedDay — the streak credit the celebration rides', () => {
     expect(held('fr')).toEqual([12]);
   });
 
-  it('an ARCHIVE replay (older than yesterday) credits nothing', () => {
+  it('an ARCHIVE replay credits nothing, at any distance', () => {
     loaded('fr', [12]);
     expect(noteSolvedDay('fr', 5, 12)).toBe(false);
+    expect(noteSolvedDay('fr', 11, 12)).toBe(false); // yesterday is an archive day too
     expect(held('fr')).toEqual([12]);
   });
 
-  it('the activeDay - 1 flip-edge still credits (a round finished just past 22:00)', () => {
-    loaded('fr', []);
-    expect(noteSolvedDay('fr', 11, 12)).toBe(true);
+  // ON TIME means ON THE DAY (user-decided 2026-08-23). A round carried across the 22:00
+  // flip and finished at 22:00:01 was not finished on time — and it is numerically
+  // identical to opening yesterday from the archive, which is exactly why one comparison
+  // now answers both instead of a window plus a route gate.
+  it('a solve carried PAST the 22:00 flip credits nothing', () => {
+    loaded('fr', [11]);
+    expect(noteSolvedDay('fr', 11, 12)).toBe(false);
     expect(held('fr')).toEqual([11]);
   });
 

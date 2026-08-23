@@ -519,20 +519,25 @@ async function settleAppend(
 // already holds, adds the day once — which is also why solving a corrected revision cannot
 // claim a day twice, and why a republish never takes back a day already credited.
 //
-// **The WINDOW is `recordSolve`'s own** (the rule the web applied before this moved to the
-// server): a solve older than YESTERDAY is an archive replay and must not touch the streak,
-// while `activeDay - 1` still counts — that is the genuine flip-edge, an in-flight round
-// finished just past the 22:00 reset. The server cannot tell that edge from a deliberate
-// archive replay of yesterday (both are the same date), exactly as the store could not, so
-// it applies the window and errs toward crediting.
+// **ON TIME means ON THE DAY** (user-decided 2026-08-23): the round's day must BE the
+// server's active day. A round finished at 22:00:01 was not finished on time, so it credits
+// nothing — and neither does an archive replay, at any distance.
+//
+// That single rule replaced a window that tolerated `activeDay - 1` for the 22:00
+// flip-edge — an in-flight round finished a few minutes past the reset. The tolerance had
+// to go: it is NUMERICALLY IDENTICAL to a deliberate archive replay of yesterday, which
+// must never touch the streak, and the only thing that ever told the two apart was WHICH
+// URL the tab was on — knowledge that exists in the browser and nowhere else. So the
+// server could not have applied it honestly, and with the edge itself ruled late there is
+// nothing left to disambiguate: this is the whole rule, on both ends.
 //
 // FAILURE IS SILENT, and that is the point of the collection being a rebuildable cache: the
 // guesses are stored, the solve is durable on the round row, and a streak day that could not
 // be cached is a stat, never a refused append.
 async function creditSolvedDay(round: AppendedRound, deps: RoundHandlerDeps): Promise<void> {
   const { key, publicId, serverDate } = round;
+  if (key.date !== serverDate) return;
   const solvedDay = dayNumber(key.date);
-  if (solvedDay < dayNumber(serverDate) - 1) return;
   try {
     await deps.history.recordSolvedDay({ publicId, lang: key.lang, day: solvedDay });
   } catch (error) {

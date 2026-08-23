@@ -486,9 +486,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
     older answer still on screen is `staleHistory` in the plain status ink, and both carry
     the same RETRY. Loud either way, for the round load's reason: there is no local history
     left to fall back to.
-  - **`noteSolvedDay` replaced the store's `recordSolve`**, with its rules unchanged (archive
-    replays credit nothing, `activeDay - 1` still does, a day already held is not counted
-    twice) plus one: a collection that has NOT ARRIVED credits nothing and celebrates nothing.
+  - **`noteSolvedDay` replaced the store's `recordSolve`**, and since 2026-08-23 it makes ONE
+    comparison: the solved day must BE the active day (root `AGENTS.md`). A day already held
+    is still not counted twice, and one refusal is new — a collection that has NOT ARRIVED
+    credits nothing and celebrates nothing. **`Game`'s own `isActiveDay` gate on the streak
+    went with the old tolerance**, along with the freshness re-check in the
+    word-animations effect: both existed to arbitrate a flip-edge that is now simply late,
+    and `streakAdvanced` — `noteSolvedDay`'s own answer — settles the celebration alone.
     **A landing answer MERGES into the collection rather than replacing it** (corrected on
     review): a read issued before the solving append can resolve after the credit, and
     replacing would take the day straight back out from under a mounted `StreakDialog`, which

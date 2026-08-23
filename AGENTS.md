@@ -999,15 +999,21 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   set omitting the other's day. A lost solved day is the one thing this collection may never
   do; overshooting `MAX_SOLVED_DAYS` by a day or two while concurrent credits converge is
   the ordinary bound-not-invariant trade `FRIENDS_MAX` already makes.
-- **The streak WINDOW is `recordSolve`'s own, and the server now applies it**: a solve older
-  than YESTERDAY is an archive replay and credits nothing, while `activeDay - 1` still counts
-  (the genuine 22:00 flip-edge). The server cannot tell that edge from a deliberate archive
-  replay of yesterday — both are the same date — exactly as the client store could not, so it
-  errs toward crediting. **The CLIENT keeps its own extra gate for the CELEBRATION**
-  (`isActiveDay`, the route), which is the only signal that distinguishes the two; one new
-  refusal joins it: a collection that has NOT ARRIVED credits nothing and celebrates nothing,
-  because the choreography counts the previous value off it and there is no honest way to
-  guess it. The server still records the solve either way.
+- **ON TIME means ON THE DAY (user-decided 2026-08-23), and that is the WHOLE streak rule on
+  both ends**: the round's day must BE the active day. A round carried across the 22:00 flip
+  and finished at 22:00:01 was not finished on time and credits nothing; an archive replay
+  never was on time, at any distance.
+  **It REPLACED a window that tolerated `activeDay - 1`** for that flip-edge — an in-flight
+  round finished a few minutes past the reset — plus a second gate at the client
+  (`isActiveDay`, the route) to tell that edge from a deliberate archive replay of yesterday.
+  The two are NUMERICALLY IDENTICAL, and the only thing that ever separated them was which
+  URL the tab was on: knowledge that exists in the browser and nowhere else, so the server
+  could never have applied the tolerance honestly. Ruling the edge LATE removes the
+  ambiguity instead of arbitrating it — one comparison now answers both, the client's second
+  gate is gone, and the two ends cannot drift.
+  One refusal is the client's alone: a collection that has NOT ARRIVED credits nothing and
+  celebrates nothing, because the choreography counts the previous value off it and there is
+  no honest way to guess it. The server still records the solve either way.
 - **WORD MODE's calendar stays LOCAL.** #214 deliberately retained Word mode's persisted
   clock/outbox, so this issue's release-blocking replacement is the SENTENCE summaries and
   the streak. The linked-device gap for Word remains explicit: a fresh device cannot

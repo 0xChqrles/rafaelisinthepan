@@ -42,6 +42,9 @@ import type { PuzzleStore } from './store';
 const START = new Date('2026-08-21T14:00:00Z');
 const ACTIVE_DATE = '2026-08-21';
 const PAST_DATE = '2026-08-19';
+// The day before the active one — the 22:00 flip-edge's date, and an archive replay of
+// yesterday's date, which are the same thing to a server (#211).
+const YESTERDAY_DATE = '2026-08-20';
 const FUTURE_DATE = '2026-08-23';
 const ORIGIN = 'https://whippin.example';
 const SECRET = generateSecret();
@@ -809,9 +812,11 @@ describe('the derived summary (#203)', () => {
     expect(rows[0].publicId).toBe(await publicIdFromSecret(SECRET));
   });
 
-  // #211: the same append that records the score credits the STREAK's day. The window is
-  // `recordSolve`'s own — an archive replay never touches the streak — and the credit is a
-  // set insert, so a corrected revision solved again cannot claim the day twice.
+  // #211: the same append that records the score credits the STREAK's day. ON TIME means ON
+  // THE DAY (user-decided 2026-08-23) — the round's day must BE the server's active day, so
+  // an archive replay credits nothing at any distance and a round carried past the 22:00
+  // flip credits nothing either. The credit is a set insert, so a corrected revision solved
+  // again cannot claim the day twice.
   it('credits the streak day when the ACTIVE day is solved', async () => {
     const handler = makeHandler();
     expect(parsed(await appendGuesses(handler, ['phare', 'nuit'])).solved).toBe(true);
@@ -821,16 +826,22 @@ describe('the derived summary (#203)', () => {
     ]);
   });
 
-  it('an ARCHIVE solve never touches the streak', async () => {
+  it.each([
+    ['an ARCHIVE solve', PAST_DATE],
+    // YESTERDAY is the case that used to be tolerated, for the 22:00 flip-edge. It reads
+    // here exactly as it reads for a deliberate archive replay of yesterday — which is why
+    // the tolerance could never be applied honestly server-side, and why it is gone.
+    ['a solve carried past the 22:00 flip', YESTERDAY_DATE],
+  ])('%s never touches the streak', async (_name, date) => {
     const handler = makeHandler();
-    const archive = await handler(
+    const late = await handler(
       event({
-        query: { lang: 'fr', date: PAST_DATE, mode: 'sentence' },
+        query: { lang: 'fr', date, mode: 'sentence' },
         body: body({ guesses: ['phare', 'nuit'] }),
       }),
     );
-    // It really solved — what is being pinned is the WINDOW, not a failed derivation.
-    expect(parsed(archive).solved).toBe(true);
+    // It really solved — what is being pinned is the RULE, not a failed derivation.
+    expect(parsed(late).solved).toBe(true);
     const me = await publicIdFromSecret(SECRET);
     await expect(handler.historyStore.solvedDays(me, 'fr')).resolves.toEqual([]);
   });

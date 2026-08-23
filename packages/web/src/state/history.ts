@@ -216,17 +216,20 @@ export function useSolvedDays(lang: string): number[] | null {
 // actually inserted the day, which is the signal the celebration rides: a re-solve, an
 // archive replay and a rehydration must not replay the streak's progression.
 //
-// The rules are `recordSolve`'s, unchanged: a day older than YESTERDAY is an archive play
-// and never touches the streak (the ACTIVE-DAY gate stays at the caller, which is the only
-// side that can tell the 22:00 flip-edge from a deliberate archive replay of yesterday),
-// and a day already held is not inserted twice — which is also why a re-published puzzle
-// cannot claim the same day again.
+// **ON TIME means ON THE DAY** (user-decided 2026-08-23), which is the SAME rule the server
+// credits by: the solved day must BE the active day. A round finished at 22:00:01 was not
+// finished on time, and an archive replay never was — one comparison now says both.
+// It replaced a window that tolerated `activeDay - 1` for the flip-edge, plus an ACTIVE-DAY
+// gate at the caller to tell that edge from an archive replay of yesterday, the two being
+// numerically identical. With the edge ruled late there is nothing to disambiguate, so the
+// caller's gate went with the tolerance.
 //
-// One rule is new: a collection that has NOT LOADED credits nothing and celebrates nothing.
-// The previous value is what the choreography counts from, and there is no honest way to
-// guess it — the server still records the solve either way.
+// A day already held is not inserted twice, which is why a re-published puzzle cannot claim
+// the same day again. And a collection that has NOT LOADED credits nothing and celebrates
+// nothing: the previous value is what the choreography counts from, there is no honest way
+// to guess it, and the server still records the solve either way.
 export function noteSolvedDay(lang: string, solvedDay: number, activeDay: number): boolean {
-  if (solvedDay < activeDay - 1) return false;
+  if (solvedDay !== activeDay) return false;
   const held = useHistoryStore.getState().solved[lang]?.days;
   if (!held || held.includes(solvedDay)) return false;
   setSolved(lang, (previous) => ({

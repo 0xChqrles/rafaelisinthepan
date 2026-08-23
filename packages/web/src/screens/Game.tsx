@@ -170,9 +170,10 @@ function Round({
   const sentenceRulesSeen = useGameStore((s) => s.sentenceRulesSeen);
   const markSentenceRulesSeen = useGameStore((s) => s.markSentenceRulesSeen);
 
-  // The client's active game day (local, DST-correct) — the streak's reference point. May
-  // be dayNumber + 1 when an in-flight round is finished just past the 22:00 flip;
-  // `noteSolvedDay` resolves that flip-edge case (and refuses archive replays).
+  // The client's active game day (local, DST-correct) — the streak's reference point, and
+  // a LIVE one (`useToday` re-fires at the 22:00 reset). A round carried across that flip
+  // therefore finds it one ahead of the day it is playing, which is exactly the solve
+  // `noteSolvedDay` rules late.
   const todayDayNumber = useToday();
 
   // The STREAK's own source since #211: the language's solved-day collection, read from the
@@ -473,20 +474,22 @@ function Round({
     // play-solve transition (never on the rehydration branch above). `archive`
     // distinguishes a replayed past day ('yes', #55) from the live daily puzzle ('no').
     track('solve', { lang, tries: guessCount, day: dayNumber, archive: isActiveDay ? 'no' : 'yes' });
-    // Streak (#56): only an ACTIVE-DAY solve celebrates — archive replays must not replay
-    // the progression. The gate lives HERE, not in `noteSolvedDay`: its activeDay-1
-    // tolerance (the genuine flip-edge — an undated tab finished just past 22:00) is
-    // INDISTINGUISHABLE from deliberately opening /<lang>/<yesterday>, since both have
-    // solvedDay === activeDay - 1. Only the caller knows which route this is — the undated
-    // active route keeps isActiveDay true across the flip, a dated past route is false —
-    // so the flip-edge still celebrates while an archive-yesterday solve does not.
+    // Streak (#56): ON TIME means ON THE DAY (user-decided 2026-08-23), so ONE comparison
+    // covers everything — a solve past the 22:00 flip was late, and an archive replay never
+    // was on time at all. `noteSolvedDay` makes it, and the SERVER credits by the same rule.
+    //
+    // There used to be a second gate here (`isActiveDay`), because the store's `activeDay-1`
+    // tolerance for the flip-edge was numerically indistinguishable from opening
+    // /<lang>/<yesterday>, and only the ROUTE could tell them apart. With the edge ruled
+    // late, the tolerance is gone and this gate has nothing left to decide: an undated tab
+    // across the flip and a dated past day now both fail the one comparison.
     //
     // Since #211 the collection this credits is the SERVER's (the append that confirms the
-    // solve records the day); this is the transient copy the celebration counts from, and
-    // it reports whether the day was genuinely new the same way `recordSolve` did — plus
-    // one new refusal: a collection that never arrived cannot say what the previous streak
-    // was, so it celebrates nothing rather than printing a guess.
-    const didAdvanceStreak = isActiveDay && noteSolvedDay(lang, dayNumber, todayDayNumber);
+    // solve records the day); this is the transient copy the celebration counts from, and it
+    // reports whether the day was genuinely new the same way `recordSolve` did — plus one
+    // new refusal: a collection that never arrived cannot say what the previous streak was,
+    // so it celebrates nothing rather than printing a guess.
+    const didAdvanceStreak = noteSolvedDay(lang, dayNumber, todayDayNumber);
     setAnimateResults(true);
     setStreakAdvanced(didAdvanceStreak);
     if (didAdvanceStreak) preloadStreakDialog();
@@ -497,12 +500,13 @@ function Round({
 
   useEffect(() => {
     if (!awaitingWordAnimations || !allWordsResolved) return;
-    // The archive and rehydration branches never open this dialog. `noteSolvedDay` has
-    // already updated the transient solved-day collection synchronously — and its freshness
-    // tolerance is mirrored here (solvedDay >= activeDay - 1), so a tab left open 2+ days
-    // can't celebrate a solve it just refused to credit.
-    const willShowStreak =
-      streakAdvanced && isActiveDay && dayNumber >= todayDayNumber - 1;
+    // The archive and rehydration branches never open this dialog: `streakAdvanced` IS
+    // `noteSolvedDay`'s answer, and it credited the day synchronously. This used to
+    // re-check the freshness window because that window had slack in it — a tab left open
+    // 2+ days could reach here with a credit the store had refused. On-time now means on
+    // the day, so the credit already settled it, and re-deciding could only ever suppress
+    // the celebration of a day the collection is holding.
+    const willShowStreak = streakAdvanced;
     if (!willShowStreak) {
       setShowResults(true);
       setKeyboardLeaving(true);
@@ -521,14 +525,7 @@ function Round({
       setAwaitingWordAnimations(false);
     }, STREAK_AFTER_WORDS_MS);
     return () => window.clearTimeout(timer);
-  }, [
-    allWordsResolved,
-    awaitingWordAnimations,
-    dayNumber,
-    isActiveDay,
-    streakAdvanced,
-    todayDayNumber,
-  ]);
+  }, [allWordsResolved, awaitingWordAnimations, streakAdvanced]);
 
   const dismissStreakDialog = useCallback(() => {
     // StreakDialog calls this only AFTER its 200ms exit fade. On a streak solve it is

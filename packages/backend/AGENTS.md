@@ -407,8 +407,9 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   right after finishing a day) and PAGED — and `PlayerHistoryStore.solvedDays`. Every response
   is `no-store`; a player with nothing played answers `{days: [], solvedDays: []}`, which is an
   ANSWER. **The write is the ROUND route's**: the append that CONFIRMS a solve credits the day
-  (`creditSolvedDay`), inside `recordSolve`'s own window (`dayNumber(date) >= dayNumber(serverDate) - 1`),
-  and its failures are LOGGED, never surfaced — the collection is a rebuildable cache of the
+  (`creditSolvedDay`) when the round's day IS the server's active day (`key.date === serverDate`,
+  the whole rule — see the root `AGENTS.md` on why the flip-edge tolerance had to go), and its
+  failures are LOGGED, never surfaced — the collection is a rebuildable cache of the
   round rows. `dynamoHistoryStore` credits with a NUMBER SET `ADD` under
   `attribute_not_exists(#days) OR size(#days) < :max OR contains(#days, :one)` — condition
   grammar only, the round store's rule — so a re-solve is a silent no-op and only a genuinely
