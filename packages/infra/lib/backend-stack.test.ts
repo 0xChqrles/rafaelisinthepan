@@ -70,9 +70,10 @@ describe('score production boundary (#169)', () => {
       template.findResources('AWS::CloudFront::OriginRequestPolicy'),
     );
     // The score policy, the profile policy (#188), the friends policy (#189), the
-    // board policy (#190) and the round policy (#201) — each forwards exactly the
-    // queries its handler route reads (the root AGENTS.md allowList contract).
-    expect(policies).toHaveLength(5);
+    // board policy (#190), the round policy (#201) and the history policy (#211) — each
+    // forwards exactly the queries its handler route reads (the root AGENTS.md allowList
+    // contract).
+    expect(policies).toHaveLength(6);
     const scorePolicy = policies.find(
       (policy) =>
         policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinLiveScoresOrigin',
@@ -218,6 +219,38 @@ describe('score production boundary (#169)', () => {
     });
   });
 
+  it('uses a deployable zero-cache history behavior with exact query forwarding (#211)', () => {
+    const distributions = Object.values(template.findResources('AWS::CloudFront::Distribution'));
+    const behaviors = distributions[0].Properties.DistributionConfig.CacheBehaviors as Record<
+      string,
+      unknown
+    >[];
+    const history = behaviors.find(({ PathPattern }) => PathPattern === 'history*');
+    // A player's own history is live AND private: it must never sit at the edge.
+    expect(history?.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
+    // POST-only: the player key authenticates in the body, like /friends and /round.
+    expect(history?.AllowedMethods).toContain('POST');
+
+    const policies = Object.values(
+      template.findResources('AWS::CloudFront::OriginRequestPolicy'),
+    );
+    const historyPolicy = policies.find(
+      (policy) =>
+        policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinPlayerHistoryOrigin',
+    );
+    // `lang`/`mode` name which game and `month` the calendar page — and NOT `date`: this
+    // read is addressed by a MONTH, which is exactly the sort-key prefix #203 reordered
+    // the round key for. An unlisted parameter never reaches the Lambda at all.
+    expect(historyPolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
+      QueryStringBehavior: 'whitelist',
+      QueryStrings: ['lang', 'mode', 'month'],
+    });
+    expect(historyPolicy?.Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
+      HeaderBehavior: 'allExcept',
+      Headers: ['Host'],
+    });
+  });
+
   it('stamps the trusted viewer address onto EVERY route whose handler reads one', () => {
     // `allExcept` forwards viewer headers ONLY — never a CloudFront-GENERATED one — so the
     // policy above cannot deliver CloudFront-Viewer-Address, and a handler that needs a
@@ -253,7 +286,7 @@ describe('score production boundary (#169)', () => {
       expect(associations[0].EventType, pattern).toBe('viewer-request');
     }
     // The routes with no per-address logic stay clean.
-    for (const pattern of ['profile*', 'board*', 'friends*']) {
+    for (const pattern of ['profile*', 'board*', 'friends*', 'history*']) {
       const behavior = behaviors.find(({ PathPattern }) => PathPattern === pattern);
       expect(behavior?.FunctionAssociations, pattern).toBeUndefined();
     }

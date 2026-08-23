@@ -135,7 +135,32 @@ export interface RoundSubmitInput extends RoundKey {
 //                      answered with the log that was recorded.
 export type RoundSubmitOutcome = 'submitted' | 'not_started' | 'too_early' | 'already_submitted';
 
+// One month of one (language, mode) for ONE player — the private calendar read (#211).
+// The month is `YYYY-MM`, which is exactly a prefix of the sort key that #203 reordered
+// for it: `<lang>#<mode>#<month>-` matches that game's days and nothing else.
+export interface RoundMonthKey {
+  lang: string;
+  mode: ScoreMode;
+  month: string;
+}
+
+// What a summary surface is told about one stored round: the two values the server already
+// DERIVED from its log (#203), never the log. A row written before those existed (or one
+// whose first append has not landed) reads as 0 / false — "nothing to show for this day",
+// which is what an empty round is.
+export interface RoundDaySummary {
+  date: string;
+  progress: number;
+  solved: boolean;
+}
+
 export interface RoundStore {
+  // ONE Query over a player's month (#211): the calendar's whole source, projected down to
+  // the summary facts so the raw guess logs never leave the store. The rows are the days
+  // that HAVE a record; a day with none is simply absent, which is how "not started" is
+  // said. Never scoped to a puzzle REVISION: the calendar has no way to know which version
+  // a past day is on, and a corrected round replaces the row on its own first append.
+  listMonth(key: RoundMonthKey, publicId: string): Promise<RoundDaySummary[]>;
   // The caller's stored round, or null when the server holds none FOR THIS PUZZLE.
   //
   // `consistent` defaults to TRUE — the read normally lands right after this player's own
@@ -236,4 +261,11 @@ export function roundPartition(publicId: string): string {
 // before launch and back-compat is not kept.
 export function roundSortKey(key: RoundKey): string {
   return `${key.lang}#${key.mode}#${key.date}`;
+}
+
+// The sort-key PREFIX one player's month sits behind (#211) — the same spelling as the key
+// above, minus the day, which is the whole reason the order is lang#mode#date. The trailing
+// dash is load-bearing: without it `2026-1` would also match `2026-10`.
+export function roundMonthPrefix(key: RoundMonthKey): string {
+  return `${key.lang}#${key.mode}#${key.month}-`;
 }

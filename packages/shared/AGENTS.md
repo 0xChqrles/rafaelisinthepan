@@ -20,6 +20,8 @@
     src/identity.ts           the #187 player key: secret format + publicId derivation (web+backend)
     src/leaderboard.ts        the #190 board rules: competition tie ranks, the plain top-50 cut,
                               own-row window + the Board API types (backend cuts, web renders)
+    src/history.ts            the #211 PRIVATE player history: the month/day summary types,
+                              MAX_SOLVED_DAYS + the bound both ends apply to a solved-day set
     src/avatar.ts             the #188 avatar: {bg, fg} palettes + the 14-byte 1-bit grid codec (web encodes/renders, backend validates)
     src/avatarOutline.ts      its DRAWING: the filled cells as one union-outline path (web SVG + the invite card)
     src/assigned.ts           the identity a player who never customized one wears: anonName + defaultAvatar
@@ -185,6 +187,15 @@
   produced; a fork would let the ranks a board shows drift from the rows the server
   selected. Contract-tested per the issue (`leaderboard.test.ts`); the product rules
   live in the root `AGENTS.md` (Leaderboard reads).
+- `src/history.ts` is the ONE shape of the #211 private player history — the month's
+  per-day `{date, progress, solved}` summary and the per-language solved-day collection —
+  plus `MAX_SOLVED_DAYS` and the `boundSolvedDays` both ends apply. The BACKEND derives the
+  days from the round rows it already writes (#203's `progress`/`solved`) and bounds the
+  collection on write AND read; the WEB renders them and bounds what it adopts. A second
+  spelling would let a calendar fill from numbers the server never meant, or a streak count
+  a day the store stopped keeping. The product rules — the explicit-loading contract, the
+  streak window, why the collection is a rebuildable cache rather than a counter — are in
+  the root `AGENTS.md`.
 - `src/shareCard.ts` is the share-token codec, running byte-identically in the
   browser and the Lambda; the token's product behavior and evolution rules are in the
   solved-result bullet of `packages/web/AGENTS.md`. Its leading VERSION field is a

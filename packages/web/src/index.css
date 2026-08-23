@@ -466,6 +466,15 @@ button * {
   bottom: 0;
   height: 3px;
 }
+/* #211's UNKNOWN strip: the private summary has not arrived, so the card says "not yet"
+   in the app's skeleton dress instead of claiming a status. Full width and unlit — a
+   partial or coloured bar would be a percentage — with `.skeleton` breathing over it while
+   the read is out, and the same bar resting still once it has failed. */
+.chooser-strip-unknown {
+  right: 0;
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+  border-radius: 0;
+}
 
 /* ===================== archive calendar (issue #55) ===================== */
 /* A month of playable past days under the app header (no progress-bar row). Day cells are
@@ -495,6 +504,12 @@ button * {
   margin-bottom: 28px;
   font-family: var(--ui);
   color: var(--fg);
+}
+/* The hero's box while the private collection (#211) has not arrived: laid out, unpainted.
+   `visibility` rather than `opacity` so nothing of it is readable at any moment, and the
+   digit inside keeps the box exactly the height the real count will take. */
+.archive-streak-pending {
+  visibility: hidden;
 }
 .archive-streak-flame {
   display: block;
@@ -612,6 +627,26 @@ button * {
   opacity: 0.26;
   color: var(--muted);
   cursor: default;
+}
+/* #211's UNKNOWN day: the month's private summary has not arrived, so the cell withholds
+   the one claim it cannot make — no fill, no ripple — while keeping its number and its tap
+   (the day is playable whether or not we know what happened on it). It BREATHES while the
+   read is still out (`.cal-day-waiting`, the app's skeleton beat) and rests still once it
+   has failed, which is what tells "not yet" apart from "not started". The global
+   reduced-motion rule collapses the loop to one instant pass, leaving it resting. */
+.cal-day-unknown {
+  color: var(--muted);
+}
+.cal-day-waiting {
+  animation: skeleton-breathe 1.4s ease-in-out infinite;
+}
+/* A month that could not be read, stated under the grid with the one thing that helps. */
+.cal-failed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
 }
 /* The active (today) day, marked with an inset --fg ring. Drawn as a pseudo-element rather
    than `outline` so it paints ABOVE the solved-day ripple — a positioned child (inset: 0)

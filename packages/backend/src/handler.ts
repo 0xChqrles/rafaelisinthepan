@@ -39,6 +39,7 @@ import { isValidDate } from './layout';
 import { handleBoard } from './board';
 import { handleFriends } from './friends';
 import type { FriendStore } from './friendStore';
+import { handleHistory } from './history';
 import { handleProfile } from './profile';
 import type { ProfileRecord, ProfileStore } from './profileStore';
 import { handleRound, type RoundHandlerDeps } from './rounds';
@@ -63,8 +64,9 @@ export interface HandlerDeps {
   friends?: FriendStore;
   // The per-round guess log (#201), Word mode's two writes (#202) and the derived score
   // (#203), same optionality rationale. It carries a Turnstile verifier of its own because
-  // ROUND START is gated in both modes, and the score store because a finished round is
-  // now what records the day's population.
+  // ROUND START is gated in both modes, the score store because a finished round is
+  // now what records the day's population, and the player-history store because a confirmed
+  // solve credits the streak's solved day (#211) — which is also what `/history` reads.
   rounds?: RoundHandlerDeps;
 }
 
@@ -135,8 +137,16 @@ export function createHandler(deps: HandlerDeps) {
     const isBoardRoute = normalizedPath === '/board';
     // The per-round guess log (#201) — POST-only like /friends (the secret is the auth).
     const isRoundRoute = normalizedPath === '/round';
+    // The private player history (#211): the archive calendar's month, the chooser's
+    // status strip and the streak's solved-day list. POST-only for the same reason.
+    const isHistoryRoute = normalizedPath === '/history';
     const isLiveRoute =
-      isScoresRoute || isProfileRoute || isFriendsRoute || isBoardRoute || isRoundRoute;
+      isScoresRoute ||
+      isProfileRoute ||
+      isFriendsRoute ||
+      isBoardRoute ||
+      isRoundRoute ||
+      isHistoryRoute;
     const routeHeaders = isLiveRoute ? { ...cors, 'Cache-Control': 'no-store' } : cors;
 
     // CORS preflight. It carries no data, so `no-store` belongs on the live ROUTES and
@@ -298,6 +308,17 @@ export function createHandler(deps: HandlerDeps) {
         // derivation slice, the full artifact a solve is scored from, and Word mode's
         // end-of-run submission (#202).
         return await handleRound(event, deps.store, deps.rounds, date, instant, cors);
+      }
+
+      if (isHistoryRoute) {
+        // A READ over what the two stores already hold: #203's derived summary on the
+        // round rows, and the solved-day collection the round route credits.
+        if (!deps.rounds) throw new Error('Round state sync is not configured.');
+        return await handleHistory(
+          event,
+          { rounds: deps.rounds.roundStore, history: deps.rounds.history },
+          cors,
+        );
       }
 
       if (rawPath.replace(/\/+$/, '').endsWith('/today')) {

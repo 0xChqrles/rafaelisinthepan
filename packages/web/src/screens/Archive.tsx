@@ -7,10 +7,12 @@ import { navigate } from '../routing';
 import { pathForMode, pathForDay, pathForArchive, type LangCode, type Mode } from '../langs';
 import { FIRST_PUZZLE_DATE } from '../config';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
-import { isComplete, statusOf, wordStatusOf, srStatus, type Status } from '../state/status';
+import { daySummaryStatus, usePlayerHistory } from '../state/history';
+import { isComplete, wordStatusOf, srStatus, type Status } from '../state/status';
 import { currentStreak } from '../game/streak';
 import useToday from '../hooks/useToday';
 import { useDeadlineRefresh } from '../hooks/useCountdown';
+import Button from '../components/Button';
 import streakSmall from '../assets/streak-small.png';
 import { t } from '../i18n';
 import {
@@ -19,6 +21,7 @@ import {
   addMonths,
   clampYearMonth,
   monthGrid,
+  isoMonth,
   type YearMonth,
 } from '../calendar';
 // Inline SVG (vite-plugin-svgr): renders into the DOM and paints with currentColor, so
@@ -46,21 +49,20 @@ function firstDayOfWeek(lang: string): number {
 // flat key that navigates to that day's game (/<lang>/<date>); days before the first
 // puzzle or after the client's active day are disabled. A WORD cell's status is read from
 // the persisted word rounds; a SENTENCE cell's SOURCE IS THE SERVER since #214 removed the
-// persisted rounds map, and #211 is the month read that supplies it — the two ship
-// together, so until then every sentence cell reads as not started.
-const NO_SOLVED_DAYS: number[] = [];
+// persisted rounds map — ONE private Query per (month, language), revalidated whenever a
+// month becomes the view on screen (#211, `state/history.ts`).
+//
+// **Loading is EXPLICIT**: a month whose summary has not arrived paints its cells as
+// UNKNOWN — dimmed and breathing — never as a full calendar of untouched days, which is a
+// claim, and a false one. A month that could not be read says so and offers to ask again;
+// there is no local fallback to fall back to.
 
 // `mode` (#156): each daily has its own archive face — a Word mode cell reads its
 // status from the word rounds and navigates to /<lang>/word/<date>, so the two dailies'
 // histories never blur into one calendar.
 export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; mode?: Mode }) {
   const wordRounds = useGameStore((s) => s.wordRounds);
-
-  // The live streak — displayed HERE (the player-history screen), above the calendar
-  // it is derived from (moved from the header, decided 2026-07-21). Hidden at zero.
   const activeDay = useToday();
-  const solvedDays = useGameStore((s) => s.solvedDays[lang] ?? NO_SOLVED_DAYS);
-  const streak = currentStreak(solvedDays, activeDay);
 
   // The window of playable days: [FIRST_PUZZLE_DATE, the client's active game day]. Both
   // are ISO labels, so cells compare against them by string order (offset-free).
@@ -72,6 +74,24 @@ export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; m
   const [current, setCurrent] = useState<YearMonth>(() =>
     clampYearMonth(activeMonth, firstMonth, activeMonth),
   );
+
+  // The month's summaries and the streak's solved days, both off the ONE private history
+  // read (#211). Word mode is deliberately NOT server-backed: #214 kept its clock/outbox
+  // local, and a server-backed Word month needs its own product contract — so this asks
+  // for nothing at all on that face, and the cells below keep reading `wordRounds`.
+  const sentence = mode === 'sentence';
+  const history = usePlayerHistory({
+    lang,
+    mode,
+    month: isoMonth(current),
+    enabled: sentence,
+  });
+  // The live streak — displayed HERE (the player-history screen), above the calendar it is
+  // derived from (moved from the header, decided 2026-07-21). Hidden at zero, and UNDRAWN
+  // (though its box is held, below) until the collection has ARRIVED: a streak counted off
+  // an unread history announces a broken chain to someone whose chain is intact.
+  const pendingStreak = sentence && history.solvedDays === null;
+  const streak = history.solvedDays === null ? 0 : currentStreak(history.solvedDays, activeDay);
 
   const canPrev = compareYearMonth(current, firstMonth) > 0;
   const canNext = compareYearMonth(current, activeMonth) < 0;
@@ -140,12 +160,20 @@ export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; m
       {/* The streak hero: flame + count above the calendar the streak is made of —
           a stat headline, no label (the flame IS the label). Hidden when zero — and on
           Word mode's archive face, whose runs don't feed the streak (#156, out of
-          scope beyond what the round key gives for free). */}
-      {mode === 'sentence' && streak > 0 && (
-        <div className="archive-streak">
+          scope beyond what the round key gives for free).
+          Since #211 the collection is a server read, so there is a third state: NOT YET
+          KNOWN. It HOLDS THE HERO'S BOX (invisible), because the returning player this
+          screen is for almost always has a streak — reserving keeps the calendar still
+          for them, where drawing nothing would pull it up and then push it back down on
+          every visit. Once the answer lands, a zero streak collapses the box for good. */}
+      {mode === 'sentence' && (pendingStreak || streak > 0) && (
+        <div
+          className={`archive-streak${pendingStreak ? ' archive-streak-pending' : ''}`}
+          aria-hidden={pendingStreak || undefined}
+        >
           <img src={streakSmall} className="archive-streak-flame" alt="" />
-          <span className="sr-only">{t(lang, 'streak')} </span>
-          <span className="archive-streak-count">{streak}</span>
+          {!pendingStreak && <span className="sr-only">{t(lang, 'streak')} </span>}
+          <span className="archive-streak-count">{pendingStreak ? 0 : streak}</span>
         </div>
       )}
 
@@ -198,18 +226,33 @@ export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; m
                 mode={mode}
                 inRange={date >= FIRST_PUZZLE_DATE && date <= today}
                 isToday={date === today}
+                // A day the month does not name has NO round on the server, which is
+                // exactly "not started". A MONTH that has not arrived is a different thing,
+                // and `daySummaryStatus` is where the two stop being the same answer.
                 status={
                   mode === 'word'
                     ? wordStatusOf(wordRounds[roundKeyForDay(dayNumber(date), lang, 'word')])
-                    : // The sentence month summary is #211's server read (see the note at
-                      // the top of this file); nothing produces one yet.
-                      statusOf(undefined)
+                    : daySummaryStatus(history, date)
                 }
                 longDate={longDate}
               />
             ),
           )}
         </div>
+
+        {/* A month that could not be read says so, under the grid, with the one thing
+            that can help — asking again. LOUD like the round's own load failure and for
+            the same reason: there is no local history left to quietly fall back to, so a
+            silent failure would show a month of blanks as though nothing had been
+            played. */}
+        {sentence && history.days === null && history.daysPhase === 'failed' && (
+          <div className="cal-failed">
+            <p className="status error">{t(lang, 'failedHistory')}</p>
+            <Button variant="secondary" onClick={history.retry}>
+              {t(lang, 'retry')}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -241,24 +284,34 @@ function DayCell({
 }) {
   const day = Number(date.slice(8, 10));
   const dateObj = new Date(`${date}T00:00:00Z`);
+  // OUT OF RANGE has no status at all and never waits for one: a day before the first
+  // puzzle or after today could not have been played, so a month still loading must not
+  // set the disabled half of the grid breathing.
+  const shown: Status = inRange ? status : { kind: 'none' };
   // Reconstruction %: a finished day counts as 100, not-started as 0. Only an in-range
   // day with progress is filled; disabled and 0% days keep the neutral surface + number
   // color. A word run finished by its clock (#163) reads as complete here exactly like a
   // solved sentence — the ripple says "done for the day", not "solved".
-  const pct = isComplete(status) ? 100 : status.kind === 'progress' ? status.pct : 0;
-  const filled = inRange && pct > 0;
-  const solved = inRange && isComplete(status);
+  const pct = isComplete(shown) ? 100 : shown.kind === 'progress' ? shown.pct : 0;
+  const filled = pct > 0;
+  const solved = isComplete(shown);
+  // The month's summary has not arrived (#211): the cell keeps its number and its tap —
+  // what is missing is what HAPPENED on the day, never whether it can be played — and
+  // withholds the one claim it cannot make. It breathes while the read is still out.
+  const unknown = shown.kind === 'unknown';
   const className =
     'cal-day' +
     (inRange ? '' : ' cal-day-disabled') +
     (isToday ? ' cal-day-today' : '') +
+    (unknown ? ' cal-day-unknown' : '') +
+    (unknown && shown.loading ? ' cal-day-waiting' : '') +
     (filled ? ' cal-day-filled' : '') +
     (solved ? ' cal-day-solved' : '');
   return (
     <button
       type="button"
       className={className}
-      aria-label={`${longDate.format(dateObj)}${srStatus(lang, status)}`}
+      aria-label={`${longDate.format(dateObj)}${srStatus(lang, shown)}`}
       aria-disabled={!inRange}
       disabled={!inRange}
       onClick={() => inRange && navigate(pathForDay(lang, date, mode))}

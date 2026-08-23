@@ -22,6 +22,12 @@ export function yearMonthOf(date: string): YearMonth {
   return { year, month };
 }
 
+// A year-month as the "YYYY-MM" the private history read is addressed by (#211) — the same
+// spelling every ISO date here uses, so a month label and its days' labels cannot disagree.
+export function isoMonth({ year, month }: YearMonth): string {
+  return `${year}-${pad(month)}`;
+}
+
 // -1 / 0 / 1 ordering of two year-months (earlier first).
 export function compareYearMonth(a: YearMonth, b: YearMonth): number {
   return a.year !== b.year ? a.year - b.year : a.month - b.month;

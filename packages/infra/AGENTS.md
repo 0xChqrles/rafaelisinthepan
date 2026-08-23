@@ -91,7 +91,14 @@
   ALLOW_ALL methods (the route is POST-only; the player key authenticates in the body),
   `allExcept: Host` headers, and an origin-request allow-list of exactly the THREE
   addressing queries (`lang`/`date`/`mode`) — plus, since #203, the viewer-IP function,
-  because this is now the route with per-address logic (see above).
+  because this is now the route with per-address logic (see above). **`/history` (#211)** is
+  the sixth and last on that shape — `CachingDisabled` (a player's own history is live AND
+  private, so it must never sit at the edge), ALLOW_ALL methods (POST-only; the key
+  authenticates in the body), `allExcept: Host` headers, and an allow-list of exactly
+  `lang`/`mode`/`month` — NOT `date`, because this read is addressed by a MONTH, which is the
+  sort-key prefix #203 reordered the round key for; no viewer-IP function, no per-address
+  logic. It adds NO table action: its calendar is a Query over the caller's own round
+  partition and its solved-day collection a GetItem + UpdateItem on the private player row.
   The table grant adds
   `GetItem` for the profile read (the upsert reuses `UpdateItem`) and **`DeleteItem` for
   #189's symmetric friend removal, the only delete on this table**; all are pinned by

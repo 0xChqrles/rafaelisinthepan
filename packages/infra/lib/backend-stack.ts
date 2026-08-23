@@ -180,7 +180,9 @@ export class BackendStack extends Stack {
     // directions. The friends board (#190) adds BatchGetItem: it reads the score rows of
     // a KNOWN key set instead of paging the whole day partition. AWS authorizes
     // transactional actions through their underlying item permissions, so no Scan
-    // surface is needed.
+    // surface is needed. The private history (#211) adds NO action: its calendar is a
+    // Query over the caller's own round partition and its solved-day collection a
+    // GetItem + UpdateItem on the private player row.
     scoreTable.grant(
       fn,
       'dynamodb:Query',
@@ -392,6 +394,17 @@ export class BackendStack extends Stack {
       ['lang', 'date', 'mode'],
     );
 
+    // `/history` (#211) reads THREE — `lang`/`mode` name which game, and `month` the
+    // calendar page. NOT `date`: this read is addressed by a MONTH, which is exactly the
+    // sort-key prefix a player's calendar is one Query over. The player key travels in the
+    // POST body like every other private read.
+    const historyOriginRequestPolicy = liveOriginRequestPolicy(
+      'HistoryOriginRequestPolicy',
+      'WhippinPlayerHistoryOrigin',
+      'Player history: forward the game + month queries and Lambda-URL-safe headers outside cache.',
+      ['lang', 'mode', 'month'],
+    );
+
     // Security response headers for the API. CORS stays owned by the Lambda (it echoes the
     // configured origin + Vary), so this policy adds ONLY transport/sniffing hardening and
     // deliberately sets no CORS/CSP (CSP is a document concern, not a JSON API's).
@@ -483,6 +496,7 @@ export class BackendStack extends Stack {
           functionAssociations: [viewerIpAssociation],
         }),
         'friends*': liveBehavior(friendsOriginRequestPolicy),
+        'history*': liveBehavior(historyOriginRequestPolicy),
       },
     });
 

@@ -38,6 +38,7 @@
 
 import {
   countTries,
+  dayNumber,
   fold,
   publicIdFromSecret,
   ROUND_GUESS_CAP,
@@ -56,6 +57,7 @@ import {
   requireSecret,
   requireTurnstileToken,
 } from './liveRoute';
+import type { PlayerHistoryStore } from './historyStore';
 import { loadPuzzle, loadSlice } from './puzzleReads';
 import { deriveRound, type PuzzleSlice } from './slice';
 import {
@@ -84,6 +86,11 @@ export interface RoundHandlerDeps {
   // mode's explicit START, and the sentence append that CREATES a round. Round creation is
   // available to every unlinked visitor, so it carries more weight than it did.
   turnstile: TurnstileVerifier;
+  // The streak's solved-day collection (#211). A confirmed sentence solve credits its day
+  // here, idempotently, so the private history read can answer the streak without replaying
+  // a year of round rows. It is a rebuildable CACHE of those rows, never a second
+  // authority — which is what makes crediting it a fire-and-log side effect below.
+  history: PlayerHistoryStore;
   // Only the direct local HTTP adapter may trust its socket peer (the /scores rule).
   allowSourceIp?: boolean;
 }
@@ -391,7 +398,7 @@ export async function handleRound(
   // it stored may already describe a log one batch out of date. Verify against the log the
   // append RETURNED before answering (roundStore.ts `RoundSettleInput` states the race).
   return await settleAppend(
-    { key, publicId, puzzle, slice, state },
+    { key, publicId, puzzle, slice, state, serverDate },
     puzzleStore,
     deps,
     event,
@@ -427,6 +434,10 @@ interface AppendedRound {
   puzzle: string;
   slice: PuzzleSlice;
   state: RoundState;
+  // The SERVER's own active game day at the moment of this append — the streak's reference
+  // point (#211). It travels with the round because only the pair (round day, active day)
+  // decides whether a solve credits the streak.
+  serverDate: string;
 }
 
 // What an ACCEPTED append still owes, before it answers.
@@ -496,9 +507,37 @@ async function settleAppend(
   // Recording it is the last thing the append does, so the answer the client adopts is never
   // ahead of the population it is about to read.
   if (truth.solved && solveIsStored) {
+    await creditSolvedDay(round, deps);
     await recordSentenceScore(round, puzzleStore, deps, event, instant);
   }
   return json(200, roundBody(state, instant), headers);
+}
+
+// THE STREAK's own fact (#211): this language's collection of solved game days, credited
+// when the server CONFIRMS a solve. Idempotent by construction (a set insert), so a
+// re-published daily solved again, or a corrective write re-recording a round the store
+// already holds, adds the day once — which is also why solving a corrected revision cannot
+// claim a day twice, and why a republish never takes back a day already credited.
+//
+// **The WINDOW is `recordSolve`'s own** (the rule the web applied before this moved to the
+// server): a solve older than YESTERDAY is an archive replay and must not touch the streak,
+// while `activeDay - 1` still counts — that is the genuine flip-edge, an in-flight round
+// finished just past the 22:00 reset. The server cannot tell that edge from a deliberate
+// archive replay of yesterday (both are the same date), exactly as the store could not, so
+// it applies the window and errs toward crediting.
+//
+// FAILURE IS SILENT, and that is the point of the collection being a rebuildable cache: the
+// guesses are stored, the solve is durable on the round row, and a streak day that could not
+// be cached is a stat, never a refused append.
+async function creditSolvedDay(round: AppendedRound, deps: RoundHandlerDeps): Promise<void> {
+  const { key, publicId, serverDate } = round;
+  const solvedDay = dayNumber(key.date);
+  if (solvedDay < dayNumber(serverDate) - 1) return;
+  try {
+    await deps.history.recordSolvedDay({ publicId, lang: key.lang, day: solvedDay });
+  } catch (error) {
+    console.error(`[round] failed to credit the streak day ${key.date} (${key.lang}):`, error);
+  }
 }
 
 // THE SCORE, derived rather than claimed (#203). It counts UNIQUE tries, and `guessKey`

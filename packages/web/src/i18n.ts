@@ -24,6 +24,10 @@ const STRINGS = {
   // the server holds is the editor's whole starting point, so a guess could be saved
   // over the real profile — the reader retries instead.
   failedProfile: { en: 'FAILED TO LOAD PROFILE', fr: 'ÉCHEC DU CHARGEMENT DU PROFIL' },
+  // The #211 private history read, behind the archive calendar and the chooser strips.
+  // Loud like the round's own: since #214 there is no local history left to fall back to,
+  // so a silent failure would draw a month of untouched days over a month that was played.
+  failedHistory: { en: 'FAILED TO LOAD HISTORY', fr: "ÉCHEC DU CHARGEMENT DE L'HISTORIQUE" },
   // The #189 invite link's write, loud for the same reason: it is the one thing that
   // click existed to do, so losing it silently would leave both players none the wiser.
   failedInvite: { en: 'FAILED TO ADD FRIEND', fr: "ÉCHEC DE L'AJOUT EN AMI" },
@@ -57,6 +61,10 @@ const STRINGS = {
   backToArchive: { en: 'BACK TO ARCHIVE', fr: "RETOUR À L'ARCHIVE" },
   changeLanguage: { en: 'CHANGE LANGUAGE', fr: 'CHANGER DE LANGUE' },
   srLangSolved: { en: 'solved', fr: 'résolu' },
+  // What a calendar cell or a chooser card says when its private summary (#211) has not
+  // arrived. The visual placeholder says "not yet" by breathing; silence would read as
+  // "not started", which is the one thing an unloaded day must never claim.
+  srStatusUnknown: { en: 'status not loaded', fr: 'statut non chargé' },
   notAWord: { en: 'this word does not exist', fr: "ce mot n'existe pas" },
   // The score unit stays NAMED in both languages (lower is better must survive the
   // share card); the share text lowercases these.

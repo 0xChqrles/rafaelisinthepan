@@ -18,6 +18,7 @@ import useRoundSync from '../hooks/useRoundSync';
 import useToday from '../hooks/useToday';
 import { notifyGuess, retryRoundSync } from '../state/roundSync';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
+import { noteSolvedDay, usePlayerHistory } from '../state/history';
 import Phrase from '../components/Phrase';
 import DissolvePhrase from '../components/DissolvePhrase';
 import CellDigits from '../components/CellDigits';
@@ -168,12 +169,18 @@ function Round({
   const appendOutbox = useGameStore((s) => s.appendOutbox);
   const sentenceRulesSeen = useGameStore((s) => s.sentenceRulesSeen);
   const markSentenceRulesSeen = useGameStore((s) => s.markSentenceRulesSeen);
-  const recordSolve = useGameStore((s) => s.recordSolve);
 
   // The client's active game day (local, DST-correct) — the streak's reference point. May
-  // be dayNumber + 1 when an in-flight round is finished just past the 22:00 flip; the
-  // store's recordSolve resolves that flip-edge case (and refuses archive replays).
+  // be dayNumber + 1 when an in-flight round is finished just past the 22:00 flip;
+  // `noteSolvedDay` resolves that flip-edge case (and refuses archive replays).
   const todayDayNumber = useToday();
+
+  // The STREAK's own source since #211: the language's solved-day collection, read from the
+  // server and held transiently. It is loaded HERE, on the active-day route, because the
+  // celebration needs the collection BEFORE the solve — it counts the previous value off it
+  // — and by the time a sentence is solved this read has long landed. An archive route
+  // never asks: an archive solve never touches the streak.
+  usePlayerHistory({ lang, enabled: isActiveDay });
 
   // Reconcile the OUTBOX before paint (#214): an outbox naming a different published
   // revision answered a retired question and is dropped. A layout effect commits that
@@ -466,14 +473,20 @@ function Round({
     // play-solve transition (never on the rehydration branch above). `archive`
     // distinguishes a replayed past day ('yes', #55) from the live daily puzzle ('no').
     track('solve', { lang, tries: guessCount, day: dayNumber, archive: isActiveDay ? 'no' : 'yes' });
-    // Streak (#56): only an ACTIVE-DAY solve counts — archive replays must not touch the
-    // streak. The gate lives HERE, not in the store: recordSolve's activeDay-1 tolerance
-    // (the genuine flip-edge — an undated tab finished just past 22:00) is
+    // Streak (#56): only an ACTIVE-DAY solve celebrates — archive replays must not replay
+    // the progression. The gate lives HERE, not in `noteSolvedDay`: its activeDay-1
+    // tolerance (the genuine flip-edge — an undated tab finished just past 22:00) is
     // INDISTINGUISHABLE from deliberately opening /<lang>/<yesterday>, since both have
     // solvedDay === activeDay - 1. Only the caller knows which route this is — the undated
     // active route keeps isActiveDay true across the flip, a dated past route is false —
-    // so the flip-edge still records while an archive-yesterday solve does not.
-    const didAdvanceStreak = isActiveDay && recordSolve(lang, dayNumber, todayDayNumber);
+    // so the flip-edge still celebrates while an archive-yesterday solve does not.
+    //
+    // Since #211 the collection this credits is the SERVER's (the append that confirms the
+    // solve records the day); this is the transient copy the celebration counts from, and
+    // it reports whether the day was genuinely new the same way `recordSolve` did — plus
+    // one new refusal: a collection that never arrived cannot say what the previous streak
+    // was, so it celebrates nothing rather than printing a guess.
+    const didAdvanceStreak = isActiveDay && noteSolvedDay(lang, dayNumber, todayDayNumber);
     setAnimateResults(true);
     setStreakAdvanced(didAdvanceStreak);
     if (didAdvanceStreak) preloadStreakDialog();
@@ -484,10 +497,10 @@ function Round({
 
   useEffect(() => {
     if (!awaitingWordAnimations || !allWordsResolved) return;
-    // The archive and rehydration branches never open this dialog. recordSolve has
-    // already updated the solved-day set synchronously — and its freshness tolerance is
-    // mirrored here (solvedDay >= activeDay - 1), so a tab left open 2+ days can't
-    // celebrate a solve the store just refused to record.
+    // The archive and rehydration branches never open this dialog. `noteSolvedDay` has
+    // already updated the transient solved-day collection synchronously — and its freshness
+    // tolerance is mirrored here (solvedDay >= activeDay - 1), so a tab left open 2+ days
+    // can't celebrate a solve it just refused to credit.
     const willShowStreak =
       streakAdvanced && isActiveDay && dayNumber >= todayDayNumber - 1;
     if (!willShowStreak) {

@@ -1,13 +1,16 @@
 import {
   GetItemCommand,
+  QueryCommand,
   UpdateItemCommand,
   type AttributeValue,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
 import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
 import {
+  roundMonthPrefix,
   roundPartition,
   roundSortKey,
+  type RoundDaySummary,
   type RoundKey,
   type RoundState,
   type RoundStore,
@@ -72,6 +75,56 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
     Object.fromEntries(attributes.map((attribute) => [NAMES[attribute], attribute]));
 
   return {
+    // The private calendar read (#211): ONE Query over the player's own partition behind a
+    // month prefix, PROJECTED down to the summary attributes. The projection does not lower
+    // what DynamoDB READS (capacity is measured on the whole item), but it is what keeps a
+    // month's raw guess logs — megabytes of slugs — from crossing the wire for a calendar.
+    //
+    // It pages, even though ~31 rows of a few KB sit far inside the 1 MB response limit:
+    // silently rendering a PARTIAL month is the one failure a calendar cannot show.
+    async listMonth(key, publicId) {
+      const rows: RoundDaySummary[] = [];
+      const prefix = roundMonthPrefix(key);
+      let cursor: Record<string, AttributeValue> | undefined;
+      do {
+        const response = await client.send(
+          new QueryCommand({
+            TableName: tableName,
+            KeyConditionExpression: '#pk = :pk AND begins_with(#sk, :prefix)',
+            // `sk` is aliased for the reason every name here is: the reserved-word list is
+            // long and a collision is a ValidationException, never a wrong answer.
+            ExpressionAttributeNames: {
+              '#pk': 'pk',
+              '#sk': 'sk',
+              ...aliases('progress', 'solved'),
+            },
+            ExpressionAttributeValues: {
+              ':pk': { S: roundPartition(publicId) },
+              ':prefix': { S: prefix },
+            },
+            ProjectionExpression: `#sk, ${NAMES.progress}, ${NAMES.solved}`,
+            // Strongly consistent, the score Query's rule: a player opens the archive right
+            // after finishing a day, and a calendar that has not caught up with their own
+            // last guess reads as the game losing it.
+            ConsistentRead: true,
+            ...(cursor ? { ExclusiveStartKey: cursor } : {}),
+          }),
+        );
+        // The DATE is the tail of the sort key the prefix matched — the key is built from
+        // it, so reading it back needs no second attribute on the item.
+        const dateAt = prefix.length - 1 - key.month.length;
+        for (const item of response.Items ?? []) {
+          rows.push({
+            date: (item.sk?.S ?? '').slice(dateAt),
+            progress: numberOf(item.progress) ?? 0,
+            solved: item.solved?.BOOL === true,
+          });
+        }
+        cursor = response.LastEvaluatedKey;
+      } while (cursor);
+      return rows;
+    },
+
     async get(key, publicId, puzzle, opts) {
       const item = await readItem(key, publicId, opts?.consistent !== false);
       // A record naming a DIFFERENT puzzle is an honest "nothing stored for this one":

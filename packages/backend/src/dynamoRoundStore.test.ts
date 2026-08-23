@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   ConditionalCheckFailedException,
   GetItemCommand,
+  QueryCommand,
   UpdateItemCommand,
   type AttributeValue,
   type DynamoDBClient,
@@ -817,5 +818,81 @@ describe('dynamoRoundStore — the corrective write is MONOTONIC (#203)', () => 
     // something at least as true as what this write carried. It still reports FALSE, so a
     // caller can never read "declined" as "landed".
     await expect(store.settle(settle(60, false))).resolves.toBe(false);
+  });
+});
+
+// CONTRACT (#211): the private CALENDAR read — ONE Query over the caller's own partition
+// behind a month prefix, projected down to the summary the server derived, paged so a
+// partial month can never be rendered as a whole one.
+describe('listMonth — the private calendar Query (#211)', () => {
+  const MONTH = { lang: 'fr', mode: 'sentence', month: '2026-08' } as const;
+
+  function row(date: string, progress?: number, solved?: boolean): Record<string, AttributeValue> {
+    return {
+      sk: { S: `fr#sentence#${date}` },
+      ...(progress === undefined ? {} : { progress: { N: String(progress) } }),
+      ...(solved ? { solved: { BOOL: true } } : {}),
+    };
+  }
+
+  it('queries the month PREFIX of this player\'s partition, consistently', async () => {
+    const send = vi.fn(async (_command: unknown) => ({ Items: [] }));
+    const { store } = makeStore(send);
+    await store.listMonth(MONTH, PUBLIC_ID);
+
+    const input = (send.mock.calls[0][0] as QueryCommand).input;
+    expect(input.KeyConditionExpression).toBe('#pk = :pk AND begins_with(#sk, :prefix)');
+    expect(input.ExpressionAttributeValues![':pk']).toEqual({ S: `round#${PUBLIC_ID}` });
+    // The trailing dash is load-bearing: without it `2026-1` would also match `2026-10`.
+    expect(input.ExpressionAttributeValues![':prefix']).toEqual({ S: 'fr#sentence#2026-08-' });
+    expect(input.ConsistentRead).toBe(true);
+  });
+
+  it('PROJECTS the summary only — a calendar never carries the raw guess logs', async () => {
+    const send = vi.fn(async (_command: unknown) => ({ Items: [] }));
+    const { store } = makeStore(send);
+    await store.listMonth(MONTH, PUBLIC_ID);
+
+    const input = (send.mock.calls[0][0] as QueryCommand).input;
+    expect(input.ProjectionExpression).toBe('#sk, #prog, #solved');
+    expect(input.ProjectionExpression).not.toContain('#g');
+  });
+
+  it('reads the DATE off the sort key and the summary off the item', async () => {
+    const send = vi.fn(async (_command: unknown) => ({
+      Items: [row('2026-08-03', 42), row('2026-08-04', 100, true)],
+    }));
+    const { store } = makeStore(send);
+    await expect(store.listMonth(MONTH, PUBLIC_ID)).resolves.toEqual([
+      { date: '2026-08-03', progress: 42, solved: false },
+      { date: '2026-08-04', progress: 100, solved: true },
+    ]);
+  });
+
+  it('reads a row with no derived summary as nothing to show for that day', async () => {
+    // A round whose first append has not landed carries neither attribute; 0 / false is
+    // exactly what an empty round means, and it is what "not started" renders as.
+    const send = vi.fn(async (_command: unknown) => ({ Items: [row('2026-08-03')] }));
+    const { store } = makeStore(send);
+    await expect(store.listMonth(MONTH, PUBLIC_ID)).resolves.toEqual([
+      { date: '2026-08-03', progress: 0, solved: false },
+    ]);
+  });
+
+  it('PAGES: a partial month is the one thing a calendar cannot render', async () => {
+    let page = 0;
+    const send = vi.fn(async (_command: unknown) => {
+      page += 1;
+      return page === 1
+        ? { Items: [row('2026-08-03', 10)], LastEvaluatedKey: { pk: { S: 'x' }, sk: { S: 'y' } } }
+        : { Items: [row('2026-08-04', 20)] };
+    });
+    const { store } = makeStore(send);
+    const days = await store.listMonth(MONTH, PUBLIC_ID);
+    expect(days.map((day) => day.date)).toEqual(['2026-08-03', '2026-08-04']);
+    expect((send.mock.calls[1][0] as QueryCommand).input.ExclusiveStartKey).toEqual({
+      pk: { S: 'x' },
+      sk: { S: 'y' },
+    });
   });
 });

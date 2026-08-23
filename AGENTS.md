@@ -927,14 +927,90 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   `canSubmit` branches. What remains is smaller and explicit: one transient server snapshot,
   one persisted revision-qualified outbox, one pure canonical play-log projection, paced
   prefix writes, and the narrow read-on-unknown recovery. Local storage otherwise retains
-  the player secret, the device preferences, the solved-day sets and Word mode's
-  clock/outbox.
+  the player secret, the device preferences and Word mode's clock/outbox. *(The solved-day
+  sets went with them at v15 — #211 moved the collection to the private player row.)*
 - **ORDERING — #214 then #211, and they SHIP TOGETHER.** This issue establishes the client
   state model #211's summary readers consume. Removing the persisted sentence rounds (and,
   in #211, `solvedDays`) must NOT reach production before #211 supplies the archive
   calendar, the language chooser and the streak with their server-backed sources: until it
   does, `statusOf` has no producer and every SENTENCE day reads as not started. There is no
-  compatibility migration and no local fallback.
+  compatibility migration and no local fallback. *(#211 landed with it — see the next
+  section; `solvedDays` left the persisted blob at v15.)*
+
+### Server-backed player history (#211, decided 2026-08-23)
+
+- **After #214, a summary surface has no local source left, and it must not invent one.**
+  Opening a daily still loads its complete authoritative round, but the archive calendar,
+  the language chooser and the streak cannot open every daily to discover what happened.
+  This is the read they use instead, and it serves EVERY identity, linked or unlinked:
+  after #214 it is the normal source on every device, not a linked-account enhancement.
+  *(Future #216 amendment, decided 2026-08-23: once device tokens exist, an identity that
+  has never been bootstrapped cannot own server rows, so its calendar, chooser and streak
+  are known-empty without a fetch. #211 ships before device tokens and does NOT add that
+  tokenless branch.)*
+- **ONE route, POST-only like /friends** (the secret is the auth and travels in the BODY, so
+  nobody can ask for another player's history): `POST /history?lang=&mode=[&month=]` answers
+  `{ days, solvedDays }`. **`month` is OPTIONAL, and that is the whole shape of the design:**
+  the archive and the chooser want a CALENDAR, while the game screen wants only the
+  collection the streak choreography derives its previous value, next value and week row
+  from — and making that read spend a month Query would cost a whole calendar per game load.
+  **Three packages agree on the query allowList** (the standing contract): the history
+  CloudFront behavior forwards exactly `lang`/`mode`/`month` over the shared
+  zero-TTL/allExcept-Host live shape. NOT `date`: this read is addressed by a MONTH.
+- **The calendar keeps its percentage, and it has NO storage of its own.** #203 already
+  writes `progress` and write-once `solved` beside the raw guess log on the round row
+  (`round#<publicId>` / `<lang>#<mode>#<date>`), derived from the same log the server scores,
+  so #211 adds no second calendar row and no extra per-guess write. **Rejected: a separate
+  `cal#…` summary row** — it would bound calendar-read cost but add a real write whenever
+  progress moves, so it buys a ceiling rather than a saving. Revisit only if measured reads
+  justify it.
+- **The month read is ONE Query per (month, language, mode)** behind the `<lang>#<mode>#<month>-`
+  sort-key prefix #203 reordered the round key for — about 31 rows, safely inside DynamoDB's
+  1 MB response limit. It is PROJECTED down to the summary facts, so a month's raw guess logs
+  never cross the wire (read capacity is still measured on the underlying items), and it PAGES,
+  because silently rendering a partial month is the one failure a calendar cannot show.
+  It is **never scoped to a puzzle REVISION**: the calendar has no way to know which version a
+  past day is on, and a corrected round replaces the row on its own first append.
+- **Archive days are playable, so a past month is NOT immutable.** The client keeps only an
+  IN-MEMORY request cache and REVALIDATES whenever a month becomes the view on screen; nothing
+  is persisted as a second source of truth. The language chooser reads the current month and
+  selects today's row for each language, under the same rule.
+- **LOADING IS EXPLICIT, and it is a THIRD status, not `none`.** A month or a chooser card
+  whose summary has not arrived renders as UNKNOWN — never a collection of "not started"
+  days, which is a claim, and a false one. There is no localStorage fallback: a month that
+  could not be read says so and offers to ask again.
+- **The STREAK stores the per-language SOLVED-DAY COLLECTION on the private player row**
+  (`player#<publicId>` / `history#<lang>`), in the same logical shape the client gives
+  `currentStreak` and `weekView` — never a counter, because `StreakDialog` renders the week
+  row and a raw number cannot say whether a streak has since broken. It is updated
+  IDEMPOTENTLY when the server CONFIRMS a solve (a set insert on the append that already
+  records the score), bounded by `MAX_SOLVED_DAYS`, read only through this private path and
+  never through the public `GET /profile?id=`, and held transiently by the client.
+  It is a **rebuildable CACHE of the authoritative solved round rows, not a second
+  authority**, which is why crediting it is a logged, non-fatal side effect. **A republish
+  does not remove a day already credited**: it was the publisher's error, the streak rewards
+  showing up, and solving the corrected revision cannot add the same day twice.
+- **The streak WINDOW is `recordSolve`'s own, and the server now applies it**: a solve older
+  than YESTERDAY is an archive replay and credits nothing, while `activeDay - 1` still counts
+  (the genuine 22:00 flip-edge). The server cannot tell that edge from a deliberate archive
+  replay of yesterday — both are the same date — exactly as the client store could not, so it
+  errs toward crediting. **The CLIENT keeps its own extra gate for the CELEBRATION**
+  (`isActiveDay`, the route), which is the only signal that distinguishes the two; one new
+  refusal joins it: a collection that has NOT ARRIVED credits nothing and celebrates nothing,
+  because the choreography counts the previous value off it and there is no honest way to
+  guess it. The server still records the solve either way.
+- **WORD MODE's calendar stays LOCAL.** #214 deliberately retained Word mode's persisted
+  clock/outbox, so this issue's release-blocking replacement is the SENTENCE summaries and
+  the streak. The linked-device gap for Word remains explicit: a fresh device cannot
+  reconstruct the Word calendar from local state, because an in-progress run's exact
+  bonus-adjusted deadline lives on the playing client until submission. A server-backed Word
+  month status needs its own product contract and is NOT silently approximated here.
+- **METERING:** this is a private, currently unmetered read whose cost scales with the
+  caller's played rows. Until real traffic shows otherwise, monitor abnormal usage and act on
+  the account rather than add a rate-limiting layer. **Turnstile does not fit a NAVIGATION
+  read** — verification would add another external call to every month or chooser load. The
+  rejected separate-summary-row design above remains the lever if read amplification becomes
+  material.
 
 ### Day-addressed routing & the game day
 

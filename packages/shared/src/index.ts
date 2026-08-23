@@ -12,6 +12,7 @@ export * from './scores';
 export * from './scoring';
 export * from './puzzleTag';
 export * from './leaderboard';
+export * from './history';
 export * from './identity';
 export * from './avatar';
 export * from './avatarOutline';

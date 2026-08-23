@@ -111,23 +111,6 @@ function capDayKeyed<T>(entries: Record<string, T>, activeKey: string): Record<s
   return out;
 }
 
-// Cap for each language's solved-day set (#56), same spirit as MAX_DAY_ROUNDS. The array
-// is kept sorted ascending, so the newest solves are at the tail.
-const MAX_SOLVED_DAYS = 800;
-
-// Bound one language's solved-day array to its most recent MAX_SOLVED_DAYS entries.
-function capSolvedDays(days: number[]): number[] {
-  return days.length > MAX_SOLVED_DAYS ? days.slice(-MAX_SOLVED_DAYS) : days;
-}
-
-// Bound every language's solved-day array (used by partialize so the persisted blob is
-// capped even if a set somehow grew past the limit outside recordSolve).
-function capAllSolvedDays(solvedDays: Record<string, number[]>): Record<string, number[]> {
-  const out: Record<string, number[]> = {};
-  for (const [lang, days] of Object.entries(solvedDays)) out[lang] = capSolvedDays(days);
-  return out;
-}
-
 // One Word mode round (#156, retimed by #163, server-anchored by #202). While a run is
 // live, `tried` is its OUTBOX — the counted guesses this device will submit (folded, in
 // order; free guesses never enter it), from which the whole run replays
@@ -226,12 +209,6 @@ interface PersistedState {
   // gate exists only to state the rules, so it is shown ONCE ever, globally: the rules are
   // the same in both languages and on every day.
   sentenceRulesSeen: boolean;
-  // Per-language SET of solved game days (ascending, deduped dayNumbers). The raw fact,
-  // not the derived stat: the streak counters (current/best) are DERIVED from this at read
-  // time (game/streak.ts), never persisted (#56). The day-set shape is what makes a future
-  // cross-device merge a set union + recompute, so it is purely client-side by decision
-  // (2026-07-07). Bounded to the most recent MAX_SOLVED_DAYS per language.
-  solvedDays: Record<string, number[]>;
 }
 
 interface GameState extends PersistedState {
@@ -280,19 +257,6 @@ interface GameState extends PersistedState {
 
   // Mark the sentence game's one-time instructions gate as passed (its PLAY tap).
   markSentenceRulesSeen: () => void;
-
-  // Record a solved game day for the streak (#56). No-op when `solvedDay` is already in
-  // the set (re-solves / rehydration never double-count) OR when `solvedDay < activeDay -
-  // 1` (days OLDER than yesterday are archive plays (#55) and must NOT touch the streak).
-  // The activeDay-1 case is KEPT because it is the genuine flip-edge — an undated in-flight
-  // round finished just past the 22:00 flip. That case is indistinguishable HERE from an
-  // archive replay of yesterday, so the ACTIVE-DAY gate lives at the caller (Game.tsx);
-  // recordSolve only ever sees active-day solves. Otherwise inserts, keeping the array
-  // sorted + deduped and bounded to MAX_SOLVED_DAYS.
-  // Returns true only when this call actually inserts a new day. The fresh-solve UI uses
-  // that signal to avoid replaying historical streak progression after a same-day re-solve
-  // (for example when a re-published puzzle reset the round but not the solved-day fact).
-  recordSolve: (lang: string, solvedDay: number, activeDay: number) => boolean;
 
   // Reconcile the persisted OUTBOX to `key` playing `puzzle` (#214). An outbox naming a
   // DIFFERENT published revision is DROPPED — its guesses answered a retired question —
@@ -459,9 +423,19 @@ const storage = createJSONStorage<PersistedState>(() => {
 //     cap on duplicates and — near the cap — cost an honest player their leaderboard entry.
 //     The mount READ recovers what the server has, which for anything that ever flushed is
 //     everything; the cost is guesses stranded on a device that has been offline since its
-//     last flush, at most one round's worth. `solvedDays`, the streak, the word rounds and
-//     every preference are untouched (the sentence archive/chooser/streak get their
-//     server-backed source in #211, which ships with this).
+//     last flush, at most one round's worth. The word rounds and every preference are
+//     untouched (the sentence archive/chooser/streak get their server-backed source in #211,
+//     which ships with this — see v15).
+//   v15 DROPS `solvedDays` (#211), the last device-local half of a player's history. The
+//     per-language solved-day collection lives on the private player row now, credited by
+//     the append that CONFIRMS a solve and read back through the private history path, so a
+//     persisted copy would be the same second authority v14 removed for rounds — and one
+//     that cannot follow a player to a second device, which is the gap that made this a
+//     release blocker. STRIPPED rather than migrated: there is nowhere to migrate it TO (the
+//     collection is server-side and rebuilt from the authoritative round rows), and the
+//     standing no-back-compat rule says an obsolete path is removed, not accommodated. The
+//     cost is that a device whose rounds were never synced loses its streak; every round
+//     that ever flushed is on the server, and #214 already made that the only kind there is.
 function dropRetiredScoreFields<T>(rounds: Record<string, T>): Record<string, T> {
   return Object.fromEntries(
     Object.entries(rounds).map(([key, round]) => {
@@ -485,7 +459,6 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
       onboarded: false,
       boardTab: 'friends',
       sentenceRulesSeen: false,
-      solvedDays: {},
     };
   }
   const p = persisted as Partial<PersistedState> & { rounds?: Record<string, unknown> };
@@ -497,7 +470,6 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
     typeof p.onboarded === 'boolean'
       ? p.onboarded
       : Object.keys(p.rounds ?? {}).length > 0 || lastLang != null;
-  const solvedDays = p.solvedDays ?? {};
   // Word rounds only survive from v11 on: before v7 they were strike runs, and before v11
   // their clock was a local stamp no server ever saw (see the notes above). A v11 one CAN
   // carry `scoreRecorded`, so it is stripped.
@@ -517,7 +489,6 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
     onboarded,
     boardTab,
     sentenceRulesSeen,
-    solvedDays,
   };
 }
 
@@ -531,7 +502,6 @@ export const useGameStore = create<GameState>()(
       onboarded: false,
       boardTab: 'friends',
       sentenceRulesSeen: false,
-      solvedDays: {},
       roundLoads: {},
       activeWordKey: null,
       tutorialOpen: null,
@@ -573,22 +543,6 @@ export const useGameStore = create<GameState>()(
         set({ sentenceRulesSeen: true });
       },
 
-      recordSolve: (lang, solvedDay, activeDay) => {
-        // Archive plays (a solve older than yesterday) NEVER touch the streak; an
-        // in-flight round solved just past the 22:00 flip (solvedDay === activeDay - 1)
-        // still counts for its own day.
-        if (solvedDay < activeDay - 1) return false;
-        const state = get();
-        const days = state.solvedDays[lang] ?? [];
-        // Re-solves and rehydration must not double-count — and must not replay the
-        // celebration as though this historical insertion had happened again.
-        if (days.includes(solvedDay)) return false;
-        // Insert keeping the array sorted ascending + deduped, then bound it.
-        const next = capSolvedDays([...days, solvedDay].sort((a, b) => a - b));
-        set({ solvedDays: { ...state.solvedDays, [lang]: next } });
-        return true;
-      },
-
       ensureOutbox: (key, puzzle) =>
         set((s) => {
           const existing = s.outbox[key];
@@ -597,11 +551,12 @@ export const useGameStore = create<GameState>()(
           // round starts over (#203), so what the outbox holds is answers to a retired
           // question: dropped, never sent.
           //
-          // **`solvedDays` is deliberately NOT touched.** A republish is OUR error, not the
-          // player's, and the streak is a reward for showing up — taking a day back because
-          // we shipped a broken puzzle would punish them for it. So the credit stands, and
-          // solving the corrected version cannot claim it twice (`recordSolve` already
-          // refuses a day it holds), which is the same rule a re-solve has always followed.
+          // **The STREAK's solved day is deliberately NOT touched.** A republish is OUR
+          // error, not the player's, and the streak is a reward for showing up — taking a
+          // day back because we shipped a broken puzzle would punish them for it. So the
+          // credit stands (it is the server's since #211, and nothing there removes a day),
+          // and solving the corrected version cannot claim it twice: both the collection's
+          // set insert and `noteSolvedDay` refuse a day already held.
           if (existing && existing.puzzle !== puzzle) delete kept[key];
           // Retention: keep every day-keyed outbox (an archive day left offline still owes
           // its guesses), drop any legacy non-day key, bound the map.
@@ -776,11 +731,12 @@ export const useGameStore = create<GameState>()(
     {
       name: 'whippin-round',
       storage,
-      version: 14, // v14: the sentence rounds map is gone; storage is an OUTBOX (see migratePersisted)
+      version: 15, // v15: the solved-day sets are the server's now (#211); see migratePersisted
       migrate: migratePersisted,
-      // Persist the sentence OUTBOX, the word rounds, last language/mode, the onboarding
-      // flag and the solved-day sets; the round loads, the active word key and the actions
-      // are transient. Each language's solved-day set is capped to MAX_SOLVED_DAYS on write.
+      // Persist the sentence OUTBOX, the word rounds, last language/mode and the two
+      // one-time flags. Everything a player's HISTORY is made of — the sentence rounds
+      // (#214) and the solved-day collection (#211) — is the server's; the round loads, the
+      // active word key and the actions are transient.
       partialize: (s): PersistedState => ({
         outbox: s.outbox,
         wordRounds: s.wordRounds,
@@ -789,7 +745,6 @@ export const useGameStore = create<GameState>()(
         boardTab: s.boardTab,
         onboarded: s.onboarded,
         sentenceRulesSeen: s.sentenceRulesSeen,
-        solvedDays: capAllSolvedDays(s.solvedDays),
       }),
     },
   ),

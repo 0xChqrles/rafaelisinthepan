@@ -1,8 +1,10 @@
 import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
 import {
+  roundMonthPrefix,
   roundPartition,
   roundSortKey,
   type RoundAppendInput,
+  type RoundDaySummary,
   type RoundKey,
   type RoundState,
   type RoundStore,
@@ -55,6 +57,25 @@ export function memoryRoundStore(): RoundStore {
     item && item.puzzle === puzzle ? stateOf(item) : empty();
 
   return {
+    // The private calendar read (#211): the same month prefix the Dynamo Query runs, over
+    // this process's own map. A day with no record is simply absent, which is how "not
+    // started" is said.
+    async listMonth(key, publicId) {
+      const prefix = `${roundPartition(publicId)}/${roundMonthPrefix(key)}`;
+      const rows: RoundDaySummary[] = [];
+      for (const [id, item] of rounds) {
+        if (!id.startsWith(prefix)) continue;
+        rows.push({
+          date: id.slice(prefix.length - 1 - key.month.length),
+          progress: item.progress ?? 0,
+          solved: item.solved === true,
+        });
+      }
+      // Ascending by date, like the Query's own sort-key order — a caller that renders in
+      // order must not depend on which backend answered.
+      return rows.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    },
+
     async get(key, publicId, puzzle) {
       const item = rounds.get(itemKey(key, publicId));
       // A record naming a DIFFERENT puzzle is an honest "nothing stored for this one"

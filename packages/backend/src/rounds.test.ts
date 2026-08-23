@@ -18,6 +18,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  dayNumber,
   generateSecret,
   publicIdFromSecret,
   ROUND_GUESS_CAP,
@@ -28,9 +29,11 @@ import {
   type WordPuzzle,
 } from '@whippin/shared';
 import { createHandler } from './handler';
+import { memoryHistoryStore } from './memoryHistoryStore';
 import { memoryRoundStore } from './memoryRoundStore';
 import { memoryScoreStore } from './memoryScoreStore';
 import { buildSlice } from './slice';
+import type { PlayerHistoryStore } from './historyStore';
 import type { ScoreStore } from './scoreStore';
 import type { RoundStore } from './roundStore';
 import type { FnUrlEvent } from './respond';
@@ -131,10 +134,12 @@ function makeHandler(
     turnstile?: boolean;
     scoreStore?: ScoreStore;
     roundStore?: RoundStore;
+    historyStore?: PlayerHistoryStore;
   } = {},
 ) {
   let current = START.getTime();
   const scoreStore = options.scoreStore ?? memoryScoreStore(() => new Date(current));
+  const historyStore = options.historyStore ?? memoryHistoryStore();
   const sentence = { current: options.sentence === undefined ? SENTENCE : options.sentence };
   const handler = createHandler({
     store: puzzleStore(options.word, sentence),
@@ -145,11 +150,13 @@ function makeHandler(
       scoreStore,
       ipHmacSecret: 'x'.repeat(64),
       turnstile: { async verify() { return options.turnstile !== false; } },
+      history: historyStore,
       allowSourceIp: true,
     },
   });
   return Object.assign(handler, {
     scoreStore,
+    historyStore,
     advance(ms: number) {
       current += ms;
     },
@@ -800,6 +807,49 @@ describe('the derived summary (#203)', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].score).toBe(3);
     expect(rows[0].publicId).toBe(await publicIdFromSecret(SECRET));
+  });
+
+  // #211: the same append that records the score credits the STREAK's day. The window is
+  // `recordSolve`'s own — an archive replay never touches the streak — and the credit is a
+  // set insert, so a corrected revision solved again cannot claim the day twice.
+  it('credits the streak day when the ACTIVE day is solved', async () => {
+    const handler = makeHandler();
+    expect(parsed(await appendGuesses(handler, ['phare', 'nuit'])).solved).toBe(true);
+    const me = await publicIdFromSecret(SECRET);
+    await expect(handler.historyStore.solvedDays(me, 'fr')).resolves.toEqual([
+      dayNumber(ACTIVE_DATE),
+    ]);
+  });
+
+  it('an ARCHIVE solve never touches the streak', async () => {
+    const handler = makeHandler();
+    const archive = await handler(
+      event({
+        query: { lang: 'fr', date: PAST_DATE, mode: 'sentence' },
+        body: body({ guesses: ['phare', 'nuit'] }),
+      }),
+    );
+    // It really solved — what is being pinned is the WINDOW, not a failed derivation.
+    expect(parsed(archive).solved).toBe(true);
+    const me = await publicIdFromSecret(SECRET);
+    await expect(handler.historyStore.solvedDays(me, 'fr')).resolves.toEqual([]);
+  });
+
+  it('solving a CORRECTED revision cannot claim the same day twice', async () => {
+    const handler = makeHandler();
+    await appendGuesses(handler, ['phare', 'nuit']);
+    handler.republish(CORRECTED);
+    handler.advance(ROUND_WRITE_MIN_MS + 1);
+    // The retired round restarts under the same key; the corrected sentence's one hole is
+    // solved by typing its secret.
+    const again = await handler(
+      event({ body: body({ puzzle: CORRECTED_TAG, guesses: ['phare'] }) }),
+    );
+    expect(parsed(again).solved).toBe(true);
+    const me = await publicIdFromSecret(SECRET);
+    await expect(handler.historyStore.solvedDays(me, 'fr')).resolves.toEqual([
+      dayNumber(ACTIVE_DATE),
+    ]);
   });
 
   it('counts UNIQUE tries: two surfaces of one group are one try', async () => {

@@ -15,6 +15,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { useGameStore, roundKeyForDay, migratePersisted, roundLoadFor } from './gameStore';
+import { useHistoryStore } from './history';
 
 // The published VERSION a round is played on (#203). Every call here plays ONE version;
 // what a REPUBLISH does has its own suite below.
@@ -51,7 +52,6 @@ beforeEach(() => {
       onboarded: false,
       boardTab: 'friends',
       sentenceRulesSeen: false,
-      solvedDays: {},
       roundLoads: {},
       activeWordKey: null,
     },
@@ -680,57 +680,6 @@ describe('onboarded — the tutorial flag (#51)', () => {
   });
 });
 
-describe('recordSolve — per-language solved-day set (#56)', () => {
-  const solved = (lang: string) => useGameStore.getState().solvedDays[lang];
-
-  it('inserts a solved day and keeps the array sorted + deduped', () => {
-    const { recordSolve } = useGameStore.getState();
-    expect(recordSolve('fr', 12, 12)).toBe(true); // solved today -> [12]
-    expect(recordSolve('fr', 11, 12)).toBe(true); // flip-edge -> sorted back to [11, 12]
-    expect(solved('fr')).toEqual([11, 12]);
-  });
-
-  it('same-day double call is a no-op (re-solves / rehydration never double-count)', () => {
-    const { recordSolve } = useGameStore.getState();
-    expect(recordSolve('fr', 12, 12)).toBe(true);
-    expect(recordSolve('fr', 12, 12)).toBe(false);
-    expect(solved('fr')).toEqual([12]);
-  });
-
-  it('an older solvedDay (archive replay) is a no-op — never touches the streak', () => {
-    const { recordSolve } = useGameStore.getState();
-    recordSolve('fr', 12, 12);
-    expect(recordSolve('fr', 5, 12)).toBe(false); // archive day (< activeDay - 1)
-    expect(solved('fr')).toEqual([12]);
-  });
-
-  it('the activeDay - 1 flip-edge case inserts (in-flight round finished just past 22:00)', () => {
-    const { recordSolve } = useGameStore.getState();
-    // The round is yesterday's (dayNumber 11) but the active day already flipped to 12.
-    expect(recordSolve('fr', 11, 12)).toBe(true);
-    expect(solved('fr')).toEqual([11]);
-  });
-
-  it('caps each language to MAX_SOLVED_DAYS, dropping the oldest', () => {
-    const CAP = 800;
-    // Seed CAP consecutive solved days directly, then solve one more past the active day.
-    const seeded = Array.from({ length: CAP }, (_, i) => i + 1); // 1..CAP
-    useGameStore.setState({ solvedDays: { fr: seeded } }, false);
-    useGameStore.getState().recordSolve('fr', CAP + 1, CAP + 1);
-    const days = solved('fr');
-    expect(days.length).toBe(CAP); // still capped
-    expect(days[0]).toBe(2); // oldest (day 1) evicted
-    expect(days[days.length - 1]).toBe(CAP + 1); // newest kept
-  });
-
-  it('is per-language — an fr solve does not touch en', () => {
-    const { recordSolve } = useGameStore.getState();
-    recordSolve('fr', 12, 12);
-    expect(solved('fr')).toEqual([12]);
-    expect(solved('en')).toBeUndefined();
-  });
-});
-
 describe('migratePersisted — persisted-blob upgrades', () => {
   it('discards a v0 blob entirely (one-time reset)', () => {
     expect(migratePersisted({ roundKey: 'x', holes: [] }, 0)).toEqual({
@@ -741,7 +690,6 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       onboarded: false,
       boardTab: 'friends',
       sentenceRulesSeen: false,
-      solvedDays: {},
     });
   });
 
@@ -775,13 +723,12 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       onboarded: true,
       boardTab: 'friends',
       sentenceRulesSeen: false,
-      solvedDays: {},
     });
     expect('layout' in out).toBe(false);
     expect('routeSeen' in out).toBe(false);
   });
 
-  it('v2 -> v3 adds an empty solvedDays and preserves lastLang/onboarded', () => {
+  it('v2 -> v3 preserves lastLang/onboarded (its solved-day set is v15\u2019s to drop)', () => {
     // The rounds themselves do NOT survive: any blob older than v13 predates the published
     // revision, so its sentence rounds are dropped (see migratePersisted).
     const rounds = { 'd:5:fr': { holes: freshHoles(), guessCount: 2, tried: ['a', 'b'], progress: 10 } };
@@ -794,7 +741,6 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       onboarded: true,
       boardTab: 'friends',
       sentenceRulesSeen: false,
-      solvedDays: {},
     });
   });
 
@@ -819,7 +765,6 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       onboarded: true,
       boardTab: 'friends',
       sentenceRulesSeen: false,
-      solvedDays,
     });
   });
 
@@ -847,7 +792,9 @@ describe('migratePersisted — persisted-blob upgrades', () => {
     expect(out.wordRounds).toEqual({});
     // The sentence rounds map is gone outright at v14, so nothing survives it either.
     expect(out.outbox).toEqual({});
-    expect(out).toMatchObject({ lastLang: 'fr', lastMode: 'word', onboarded: true, solvedDays });
+    expect(out).toMatchObject({ lastLang: 'fr', lastMode: 'word', onboarded: true });
+    // v15 drops the solved-day set outright: the collection is the server's now (#211).
+    expect(out).not.toHaveProperty('solvedDays');
   });
 
   // v10 -> v11 (#202): a word round's clock is the SERVER's stamp now. A v10 round's is a
@@ -879,7 +826,8 @@ describe('migratePersisted — persisted-blob upgrades', () => {
     expect(out.wordRounds).toEqual({});
     // And the sentence rounds go with them: v14 removed the map they lived in.
     expect(out.outbox).toEqual({});
-    expect(out).toMatchObject({ lastLang: 'fr', lastMode: 'word', solvedDays: { fr: [10] } });
+    expect(out).toMatchObject({ lastLang: 'fr', lastMode: 'word' });
+    expect(out).not.toHaveProperty('solvedDays');
   });
 
   // v13 -> v14 (#214): the sentence `rounds` map is DROPPED outright — local storage is an
@@ -902,7 +850,6 @@ describe('migratePersisted — persisted-blob upgrades', () => {
     expect(out).not.toHaveProperty('rounds');
     expect(out.outbox).toEqual({});
     expect(out.wordRounds).toEqual(wordRounds);
-    expect(out.solvedDays).toEqual(solvedDays);
   });
 
   it('keeps a v14 outbox untouched — it holds only what the server has not acknowledged', () => {
@@ -1008,11 +955,19 @@ describe('migratePersisted — persisted-blob upgrades', () => {
     expect(out.wordRounds['w:6:fr'].submitted).toBe(true);
   });
 
-  it('keeps an existing solvedDays across the upgrade (no backfill, but no data loss)', () => {
-    const solvedDays = { fr: [10, 11], en: [10] };
-    expect(migratePersisted({ rounds: {}, lastLang: 'fr', onboarded: true, solvedDays }, 2).solvedDays).toEqual(
-      solvedDays,
+  // v14 -> v15 (#211): the per-language solved-day sets are DROPPED. The collection lives
+  // on the private player row now, credited by the append that confirms a solve, so a
+  // persisted copy would be the second authority #214 removed for rounds — and one that
+  // cannot follow a player to a second device, which is the gap this issue closes.
+  it('v14 -> v15 drops the solved-day sets and keeps every preference', () => {
+    const outbox = { 'd:5:fr': { puzzle: REV, guesses: ['bois'] } };
+    const out = migratePersisted(
+      { outbox, lastLang: 'fr', lastMode: 'word', onboarded: true, solvedDays: { fr: [10, 11] } },
+      14,
     );
+    expect(out).not.toHaveProperty('solvedDays');
+    expect(out).toMatchObject({ lastLang: 'fr', lastMode: 'word', onboarded: true });
+    expect(out.outbox).toEqual(outbox);
   });
 });
 
@@ -1047,10 +1002,12 @@ describe('a republished puzzle resets its round (#203/#214)', () => {
 
   it('leaves the SOLVED-DAY credit alone — a republish is the publisher\'s error', () => {
     // The streak rewards showing up, and taking a day back because we shipped a broken
-    // puzzle would punish the player for it. `recordSolve` already refuses a day it holds,
-    // so solving the correction cannot claim it twice.
-    useGameStore.setState({ solvedDays: { fr: [5] } }, false);
+    // puzzle would punish the player for it. The credit is the SERVER's since #211, and the
+    // reset knows only about the outbox — so no local path can take a day back on a
+    // republish. (That a corrected version cannot claim the day TWICE is `noteSolvedDay`'s
+    // own rule; see state/history.test.ts.)
+    useHistoryStore.setState({ solved: { fr: { phase: 'ready', days: [5] } } }, false);
     useGameStore.getState().ensureOutbox('d:5:fr', OTHER);
-    expect(useGameStore.getState().solvedDays.fr).toEqual([5]);
+    expect(useHistoryStore.getState().solved.fr?.days).toEqual([5]);
   });
 });
