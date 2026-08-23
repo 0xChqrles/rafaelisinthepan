@@ -263,11 +263,17 @@ export class WebStack extends Stack {
       // revalidate so a redeploy is picked up immediately. Excludes assets/* and vocab/*
       // (handled above). This pass carries the CloudFront invalidation that purges all
       // three sets.
+      // `.DS_Store` is excluded because `prune: false` makes any stray upload PERMANENT:
+      // one break-glass deploy from a laptop (ALLOW_LOCAL_DEPLOY=1) shipped Finder's
+      // `.DS_Store` on 2026-07-26 and it stayed publicly served for a month, since no
+      // later deploy can delete what it does not overwrite. CI checkouts never carry the
+      // file (it is gitignored), so this guards the local path only — which is exactly
+      // the path that has no review in front of it.
       const deployRoot = new s3deploy.BucketDeployment(this, 'DeployRoot', {
         sources: [source],
         destinationBucket: bucket,
         prune: false,
-        exclude: ['assets/*', 'vocab/*'],
+        exclude: ['assets/*', 'vocab/*', '.DS_Store', '*/.DS_Store'],
         cacheControl: [s3deploy.CacheControl.fromString('no-cache')],
         distribution,
         distributionPaths: ['/*'],

@@ -455,6 +455,19 @@ function freshRound(initialHoles: RuntimeHole[], revision: string): RoundProgres
 //     screen silently loses the standing line for good. Backfilling it server-side would be
 //     the compatibility layer this repo does not keep, and the cost is bounded to
 //     pre-launch rounds at most a day old against an archive that is wiped before launch.
+//   v13 DROPS every sentence round stored before the published revision existed (#203).
+//     `ensureRound` briefly ADOPTED one whose holes still matched, on the reasoning that a
+//     deploy must not throw away play in progress — which is a compatibility layer, and the
+//     repo does not keep those (root AGENTS.md: remove obsolete paths, never accommodate
+//     them). It is also not safe on its own terms: a pre-stamp round cannot say WHICH
+//     version it was played against, and since rank 0 is a GROUP, a correction can move the
+//     aliases that decide `solved` without touching a single hole — so the holes matching
+//     proves nothing about the maps. Dropped at the migration rather than lazily on mount,
+//     exactly as v7 dropped the pre-clock strike runs and v11 the pre-#202 word rounds, so
+//     every round that survives carries a revision by construction and no read path needs a
+//     branch for one that does not. Solved days, the streak, the mode preference and the
+//     word rounds are untouched; the cost is device-local sentence play at most a day old,
+//     against an archive wiped before launch.
 function dropRetiredScoreFields<T>(rounds: Record<string, T>): Record<string, T> {
   return Object.fromEntries(
     Object.entries(rounds).map(([key, round]) => {
@@ -482,12 +495,17 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
     };
   }
   const p = persisted as Partial<PersistedState>;
-  const rounds = dropRetiredScoreFields(p.rounds ?? {});
+  // Sentence rounds only survive from v13 on: before it they carry no published revision,
+  // and there is no honest way to invent one (see the note above).
+  const rounds = version < 13 ? {} : dropRetiredScoreFields(p.rounds ?? {});
   const lastLang = p.lastLang ?? null;
+  // Grandfathering asks whether this person has PLAYED before, which the raw blob answers
+  // even when the rounds themselves are dropped above — reading the post-drop map instead
+  // would hand the tutorial back to every veteran whose only signal was their play history.
   const onboarded =
     typeof p.onboarded === 'boolean'
       ? p.onboarded
-      : Object.keys(rounds).length > 0 || lastLang != null;
+      : Object.keys(p.rounds ?? {}).length > 0 || lastLang != null;
   const solvedDays = p.solvedDays ?? {};
   // Word rounds only survive from v11 on: before v7 they were strike runs, and before v11
   // their clock was a local stamp no server ever saw (see the notes above). A v11 one CAN
@@ -598,10 +616,11 @@ export const useGameStore = create<GameState>()(
           // we shipped a broken puzzle would punish them for it. So the credit stands, and
           // solving the corrected version cannot claim it twice (`recordSolve` already
           // refuses a day it holds), which is the same rule a re-solve has always followed.
+          // Every stored round carries a revision (v13 dropped the ones that did not), so
+          // this compares two real values and needs no branch for a missing one.
           const existing = s.rounds[key];
-          const sameVersion = existing?.revision === undefined || existing.revision === revision;
           kept[key] =
-            existing && sameVersion && holesMatchPuzzle(existing.holes, initialHoles)
+            existing && existing.revision === revision && holesMatchPuzzle(existing.holes, initialHoles)
               ? { ...existing, revision }
               : freshRound(initialHoles, revision);
           // Bound the map: evict the oldest day rounds beyond MAX_DAY_ROUNDS.
@@ -820,7 +839,7 @@ export const useGameStore = create<GameState>()(
     {
       name: 'whippin-round',
       storage,
-      version: 12, // v12: the recorded SCORE is retired; the server derives it (#203)
+      version: 13, // v13: pre-revision sentence rounds are dropped (see migratePersisted)
       migrate: migratePersisted,
       // Persist rounds (both modes'), last language/mode, the onboarding flag and the
       // solved-day sets; the active keys and the actions are transient. Each language's

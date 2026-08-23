@@ -417,8 +417,13 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   it covers the rank maps as well as the sentence, while an identical republish keeps the
   same value. The client forwards it and the server only compares it for equality, which is
   the same "stores strings, interprets nothing" rule the log follows. A pre-revision local
-  round is adopted when its holes still match, so introducing the stamp alone does not wipe
-  play already in progress.
+  round is DROPPED, at the persist migration (v13) rather than lazily on mount: it cannot say
+  which version it was played against, and matching holes prove nothing about the maps, since
+  rank 0 is a GROUP and a correction moves aliases without touching a hole. Adopting one was
+  built first and removed as the compatibility layer it is (the standing no-back-compat rule,
+  the v7/v11 precedent); every surviving round therefore carries a revision by construction
+  and no read path branches on a missing one. Solved days and the streak survive, as they did
+  at v7 and v11.
 - **The two bounds are cross-package constants** (`shared/src/scores.ts`, the
   `WORD_CLAIM_ZONE` rule): **`ROUND_GUESS_CAP` = 500 guesses per round**, enforced inside
   the append write's own condition (the RESULT may reach the cap, never pass it, so it
@@ -777,9 +782,11 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     safe.
   - **A MISSING SLICE IS A MISSING PUZZLE** — the same day-addressed 404. There is no
     degraded mode: either publishing failed or the day was never published. **The production
-    backfill completed 2026-08-22:** all 54 existing sentence objects carry their
-    content-derived revision and a matching slice; future publication produces both through
-    the same command. The backend reads the slice straight from the store, not through
+    backfill completed 2026-08-22, and the archive was cut to August the same day**
+    (user-decided): the bucket holds 2026-08-01 onward — 22 sentence objects, each carrying
+    its content-derived revision beside a matching slice, plus 13 word artifacts — and every
+    July day was deleted with the stray 2027 fixture. Future publication produces both objects
+    through the same command. The backend reads the slice straight from the store, not through
     CloudFront, so there is no new route and no cache-policy change.
 - **The sort key is REORDERED**, `<date>#<lang>#<mode>` → `<lang>#<mode>#<date>`. It lands
   here rather than in #211, which is what needs it, because this is the first issue to write

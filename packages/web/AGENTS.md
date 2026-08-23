@@ -2003,9 +2003,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **The gate is the SERVER's fact, not the local board's**: `solved` flips a beat before the
   solving append lands, and reading the population then would find nothing and — with no
   retry left — leave the standing blank for good. `recorded` is written by the sync engine
-  off any round answer that says `solved`, and it is PERSISTED (store **v12**, which strips
-  the retired `scoreRecorded` from both round maps), so a reload reads its standing straight
-  away and an older round re-learns the fact from its next mount READ.
+  off any round answer that says `solved`, and it is PERSISTED (store **v12** strips the
+  retired `scoreRecorded` from both round maps; **v13** then DROPS every sentence round
+  stored before the published revision existed — the no-back-compat rule, the v7/v11
+  precedent — so a surviving round always carries a revision and `ensureRound` compares two
+  real values), so a reload reads its standing straight away and an older round re-learns the
+  fact from its next mount READ.
   The completion is keyed to the round that launched it (never whichever round navigation
   made active later), and an in-flight read is shared across real component remounts so
   leaving for the archive/tutorial and returning cannot mint a second request. EVERY
