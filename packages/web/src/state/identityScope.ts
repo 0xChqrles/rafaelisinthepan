@@ -2,9 +2,10 @@
 //
 // Every value this app keeps is scoped to somebody: a round's outbox, the transient server
 // snapshots, the private history and the streak all belong to an ACCOUNT, while Word mode's
-// clock and its unsubmitted log belong to a DEVICE. When the identity changes — a first
-// bootstrap, a sign-out, a fresh start — whatever the previous one owned has to go, or the
-// new identity inherits a stranger's board.
+// clock and its unsubmitted log belong to a DEVICE. When a held identity is LEFT — a sign-out,
+// a fresh start, an account swap — whatever it owned has to go, or the new identity inherits
+// a stranger's board. The first bootstrap is deliberately different: there is no previous
+// owner, and the local act that triggered it must survive (see the listener below).
 //
 // Clearing storage is only half of it. In-flight private requests capture the identity
 // EPOCH and drop an answer that outlives it (`identityEpoch`, read by the round engines and

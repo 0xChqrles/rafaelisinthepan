@@ -429,14 +429,22 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **localStorage is shared by every TAB, so this module's copy is a CACHE of it** (added on
     review): `ensureDeviceIdentity` re-reads before minting, a `storage` listener adopts what
     another tab wrote, a pending token found there is adopted rather than replaced (two tabs
-    racing a first bootstrap then converge on ONE account, since the server is idempotent by
-    token hash), and the sign-out paths remove the entry only while it is still theirs.
+    retrying a first bootstrap then converges on ONE account, since the server is idempotent by
+    token hash), and the sign-out paths remove the entry only while it is still theirs. The
+    empty/empty race happens earlier than any pending write, so **one origin-wide Web Lock wraps
+    the whole re-read → mint → bootstrap → commit sequence**; a waiter re-reads after entering
+    and adopts the winner, while a browser without Web Locks fails before minting.
     `readStored` distinguishes UNREADABLE storage from EMPTY storage — the first says nothing
     about this device's identity, and collapsing them dropped one the session was playing on.
   - **`state/identityScope.ts` clears on LEAVING an identity, never on acquiring one**
     (corrected on review): a bootstrap is triggered BY an act, so clearing there destroyed the
     guess in the outbox that asked for it and the `wordRounds` entry the word start's own
     answer checks itself against. The change carries its PREVIOUS value for exactly that test.
+    `App` keys every routed surface on the identity's scope revision, so component-local
+    profile fields, board rows, invite outcomes and device rows are remounted too. Every
+    transition except the first-ever acquisition advances it: A → null clears the old mount,
+    and a later null → B remounts B's private reads; first bootstrap leaves it unchanged for
+    the same reason it leaves the stores intact.
   - **Persist v16 DROPS the outbox and the word rounds**: both are owed to #187's retired
     identity, and the tokenless branch would otherwise pump a surviving outbox on the first
     page load — bootstrapping a brand-new account and filing another identity's guesses
@@ -445,20 +453,24 @@ it to the local store — see `packages/backend/AGENTS.md`).
     ready-and-empty authoritative round and `state/history.ts` a ready empty month and
     collection, so nothing breathes behind a request nobody made — the same rule #211's
     explicit-loading bullet states for a month that has not arrived.
-  - **`markDeviceSignedOut` is called on the CODE, never the status.** Every private caller
-    reads the refusal's body and acts only on `401 unknown_device`; a 5xx, a dropped
-    connection or any other 4xx must never take a player's account away.
+  - **`markDeviceSignedOut` requires the request's identity epoch.** Every refusal caller reads
+    the body and acts only on `401 unknown_device`; a 5xx, a dropped connection or any other
+    4xx must never take a player's account away, and a late verdict for A must never remove B.
+    The second authoritative caller is `DeviceList`: a successful self-revocation answer whose
+    post-write list omits the calling row signs this tab out immediately.
   - **`state/identityScope.ts` holds the whole list of what an identity owns**, wired once
     from `main.tsx` rather than as import-time side effects in five modules — so `identity.ts`
     keeps knowing nothing about the game, and the list is one readable block.
   - **`SignedOut` takes its RECONNECT handler as a PROP, and #216 passes none.** The email
     link flow is #204's; a button that does nothing is worse than a screen that only offers
     what it can actually do, so START FRESH is the only action until then.
-  - **`components/DeviceList.tsx` is the REACHABLE surface for signing another device out**,
+  - **`components/DeviceList.tsx` is the REACHABLE surface for signing any device out**,
     mounted on the PROFILE editor — the screen that already is the identity screen. Every
     call answers the list as it now stands (the /friends house rule), so a revocation needs no
     optimistic update, and the route's own correction for the index's lag means the screen
-    compensates for nothing.
+    compensates for nothing. Each row returns an opaque `revokeKey` and sends it back with its
+    `deviceId`, letting the backend address the base item directly; signing out the current row
+    raises `SignedOut` from that same authoritative answer.
   - **`crypto.subtle` is still required by every live POST** (corrected on review): #216
     removes it from the paths that need NO identity — the global board's own-window `id` and
     the identity strip, which each carried a try/catch for the LAN-IP mobile check — but
@@ -691,7 +703,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     and a silent failure leaves the player tapping a gate that never opens. The visible
     clock starts when the ANSWER lands, never on the tap: the store's `startWordRun` is
     gone, replaced by `anchorWordRun(key, startedAt)`, keyed because the answer can land
-    after navigation has moved on.
+    after navigation has moved on. PLAY also reads a 401's error code: `unknown_device`
+    raises the signed-out screen instead of leaving a revoked player retrying a gate that can
+    never open; another refusal remains the ordinary failed-start state.
   - **The anchor is an ELAPSED SPAN** (`anchorFrom`): `Date.now() − (now − startedAt)` off
     the answer's two instants, so a device clock minutes off still runs a 60-second run,
     a device joining a run in progress resumes with the real time left, and the request's
@@ -768,7 +782,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the grid; disabled when already empty) — and SAVE (`.mix-btn`). No brush row (two colours need none) and NO key
   block: the copyable-key/paste-to-link UI was removed with `adoptPlayerSecret` (the
   backup affordance's future surface is an open decision — root `AGENTS.md`). Saving
-  POSTs `{secret, name, avatar}` via the OAC-hashed body (`api.postProfileBody`);
+  POSTs `{token, name, avatar}` via the OAC-hashed body (`api.postProfileBody`);
   server refusals surface as terse statuses (`NAME NOT ALLOWED` / `AVATAR NOT
   ALLOWED` / `SAVE FAILED`). **The editor is GATED on the initial read** (the game
   route's own loading / error / content shape): an editable blank shown while the GET
@@ -897,10 +911,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   good board for a render on every flip back. (App keys the screen on lang:mode so a
   switch resets.) The friends read is the authenticated `POST /board {token}` via the
   OAC-hashed body, the global read the anonymous GET widened with the caller's PUBLIC
-  id for the own window — **derived in its own try**, since the global board needs no
-  identity and `crypto.subtle` is absent outside a secure context (the LAN-IP mobile
-  check `board:seed` exists to support), where a shared failure killed the anonymous
-  tab and disabled INVITE for the whole visit. The screen renders what the API returned (ranks, cut, own window
+  id for the own window when `deviceIdentity()` already holds one. The global board needs no
+  identity and remains an anonymous GET without one; #216 removed the old client-side
+  `crypto.subtle` derivation from that path (live POSTs still require it for OAC). Its lazy
+  `/friends` decoration read checks the refusal body too: only `401 unknown_device` raises the
+  signed-out screen, while an ordinary decoration failure simply leaves rows unmarked. The screen
+  renders what the API returned (ranks, cut, own window
   — the shared leaderboard rules; root AGENTS.md): glass rows of rank + avatar + name
   + score, ranks and scores in the PIXEL face (game numbers), names in mono (identity
   chrome, case kept), the unit caption (TRIES/WORDS) naming which way is better.
@@ -953,7 +969,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **The identity strip on
   top (your mark + name + EDIT → `/profile`) shows NOTHING until its read settles — a
   SKELETON, never a name (user feedback 2026-08-20).** The first cut published the id the
-  moment it derived, which rendered the ASSIGNED identity and swapped it for the real
+  moment the bootstrap resolved it, which rendered the ASSIGNED identity and swapped it for the real
   profile a beat later, so every named player watched a stranger's name flash under their
   own mark on every visit. The placeholder holds the exact boxes the resolved strip takes,
   so nothing moves when the values land, and it breathes (the global reduced-motion rule
@@ -961,8 +977,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   read that FAILS still SETTLES, on the assigned identity — it is what a board row with a
   failed profile read already shows, and a skeleton that never resolves is the one outcome
   worse than the fallback; a 404 is not a failure at all but the answer "never
-  customized", whose display IS that identity. Only a failure to derive the ID ITSELF (no
-  `crypto.subtle` outside a secure context) draws nothing at all. The INVITE device-card
+  customized", whose display IS that identity. A failed identity bootstrap draws nothing at
+  all. The INVITE device-card
   button on the bottom edge waits on the ID alone, never the profile.
   Both are the #188/#189 wiring; both work before ever playing — and the invite
   share is the ONE `useShare` caller that passes `tracked: false`, because the pinned

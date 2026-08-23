@@ -61,12 +61,24 @@ interface IdentityState {
   // The server answered `unknown_device`: this device was signed out from elsewhere. It is
   // a SCREEN, not a retry — see `state/signedOut` in the web AGENTS.
   signedOut: boolean;
+  // Changes on every identity-scope transition except the FIRST acquisition. App keys every
+  // identity-owned screen on it, so component-local caches are discarded on sign-out/account
+  // swap and remounted when a replacement arrives, while the first bootstrap (which is
+  // triggered by the state already on screen) stays mounted.
+  scopeRevision: number;
 }
 
 export const useIdentityStore = create<IdentityState>(() => ({
   identity: null,
   signedOut: false,
+  scopeRevision: 0,
 }));
+
+// One origin-wide critical section around the entire read -> mint -> bootstrap -> commit
+// sequence. localStorage has no compare-and-swap: two tabs can both read EMPTY before
+// either writes its pending token, and would then create two accounts. Web Locks is the
+// browser primitive that makes that sequence exclusive across tabs and workers.
+export const DEVICE_BOOTSTRAP_LOCK = 'whippin-device-bootstrap';
 
 // A token that has been minted but whose bootstrap has not answered. It is persisted BEFORE
 // the request so a committed-but-lost bootstrap can be retried onto the same identity; it is
@@ -145,11 +157,17 @@ function write(value: { token: string } | DeviceIdentity): void {
 // may have written a newer identity into it since — and deleting THAT would orphan the
 // account that tab is playing on, which is the one thing a sign-out here may not do.
 function clearStored(expected: string | null): void {
+  // No token means this tab cannot prove the shared entry is its own. This is especially
+  // important for SKIP after the signed-out screen: `markDeviceSignedOut` already removed
+  // the revoked token conditionally, and another tab may have installed a fresh identity
+  // since. An unconditional second removal would delete that newer account.
+  if (expected === null) return;
   try {
     const stored = readStored();
-    if (expected !== null && stored.available && stored.token !== null && stored.token !== expected) {
-      return;
-    }
+    // If the key cannot be read, it cannot be proved to still name `expected`. A blind
+    // remove here would turn denied storage into permission to delete another tab's B.
+    if (!stored.available) return;
+    if (stored.token !== null && stored.token !== expected) return;
     store()?.removeItem(STORAGE_KEY);
   } catch {
     // Unreadable or unwritable storage: nothing to remove.
@@ -161,7 +179,14 @@ function clearStored(expected: string | null): void {
 // longer ours, and applying it would repopulate the new identity with the old one's state.
 export function identityEpoch(): string | null {
   const identity = useIdentityStore.getState().identity;
-  return identity ? `${identity.accountId}:${identity.deviceId}` : null;
+  return identity ? identityEpochOf(identity) : null;
+}
+
+// Capture the epoch FROM THE IDENTITY USED TO BUILD A REQUEST. Reading the store again
+// after `ensureDeviceIdentity()` would leave a tiny but real race: a storage event could
+// replace A with B between those two lines, causing A's request to be fenced as B's.
+export function identityEpochOf(identity: Pick<DeviceIdentity, 'accountId' | 'deviceId'>): string {
+  return `${identity.accountId}:${identity.deviceId}`;
 }
 
 // The identity this device holds RIGHT NOW, or null when it has none. Synchronous by
@@ -176,6 +201,14 @@ export function useDeviceIdentity(): DeviceIdentity | null {
 
 export function useSignedOut(): boolean {
   return useIdentityStore((state) => state.signedOut);
+}
+
+export function identityScopeRevision(): number {
+  return useIdentityStore.getState().scopeRevision;
+}
+
+export function useIdentityScopeRevision(): number {
+  return useIdentityStore((state) => state.scopeRevision);
 }
 
 // What the identity OWNS, cleared whenever it changes. Registered by the modules that hold
@@ -200,11 +233,23 @@ export function onIdentityChange(listener: Listener): () => void {
 }
 
 function publish(next: DeviceIdentity | null, signedOut = false): void {
-  const previous = useIdentityStore.getState().identity;
+  const current = useIdentityStore.getState();
+  const previous = current.identity;
   const accountChanged = (previous?.accountId ?? null) !== (next?.accountId ?? null);
   const deviceChanged = (previous?.deviceId ?? null) !== (next?.deviceId ?? null);
-  useIdentityStore.setState({ identity: next, signedOut });
-  if (!accountChanged && !deviceChanged) return;
+  const changed = accountChanged || deviceChanged;
+  // A -> null -> B is two real UI scopes. The first transition clears/remounts away from A;
+  // the second must mount B's private reads instead of leaving the tokenless projection that
+  // existed between storage events. Only null -> A at revision zero is the first-bootstrap
+  // exception: the act already on screen must survive it.
+  const firstAcquisition = previous === null && next !== null && current.scopeRevision === 0;
+  useIdentityStore.setState({
+    identity: next,
+    signedOut,
+    scopeRevision:
+      changed && !firstAcquisition ? current.scopeRevision + 1 : current.scopeRevision,
+  });
+  if (!changed) return;
   // Clearing storage WITHOUT fencing in-flight answers would let the identity just left
   // repopulate the one that replaced it, which is why every private request captures the
   // epoch above and drops an answer that outlived it.
@@ -235,8 +280,9 @@ function syncFromStorage(): DeviceIdentity | null {
     return found;
   }
   // No complete identity in storage. A PENDING token there is another tab's bootstrap in
-  // progress: adopting it is what makes two tabs converge on ONE account, since the server's
-  // bootstrap is idempotent by token hash. With storage merely EMPTY, a token this session
+  // progress: adopting it makes retries converge on the same server idempotency key. The
+  // origin-wide lock below closes the earlier EMPTY/EMPTY race, before either tab has had a
+  // chance to publish that pending token. With storage merely EMPTY, a token this session
   // already minted is still ours to retry — the write simply did not stick.
   pendingToken = stored.token ?? pendingToken;
   // We held one and the key no longer does: another tab signed this device out or started
@@ -252,6 +298,17 @@ function syncFromStorage(): DeviceIdentity | null {
 // and each minting its own token would create two accounts for one player.
 let flight: Promise<DeviceIdentity> | null = null;
 
+async function lockedBootstrap(): Promise<DeviceIdentity> {
+  // This module runs in the browser. Keeping the no-window branch makes the pure module
+  // usable in non-DOM tooling, while a real browser without Web Locks fails closed: racing
+  // two account creations is worse than surfacing a bootstrap failure, and localStorage
+  // cannot implement an atomic substitute.
+  if (typeof window === 'undefined') return bootstrap();
+  const locks = typeof navigator === 'undefined' ? undefined : navigator.locks;
+  if (!locks) throw new Error('Device bootstrap requires Web Locks support.');
+  return locks.request(DEVICE_BOOTSTRAP_LOCK, () => bootstrap());
+}
+
 // Create this device's identity, or return the one it already has. Called by the deliberate
 // acts listed at the top of this file, and by nothing else — a read never bootstraps.
 export function ensureDeviceIdentity(): Promise<DeviceIdentity> {
@@ -260,7 +317,7 @@ export function ensureDeviceIdentity(): Promise<DeviceIdentity> {
   // the account the other tab is playing on.
   const held = syncFromStorage() ?? useIdentityStore.getState().identity;
   if (held) return Promise.resolve(held);
-  flight ??= bootstrap().finally(() => {
+  flight ??= lockedBootstrap().finally(() => {
     flight = null;
   });
   return flight;
@@ -273,9 +330,9 @@ async function bootstrap(): Promise<DeviceIdentity> {
   if (adopted) return adopted;
   // PERSIST the token before the request. Bootstrap is idempotent by its hash, so a
   // committed write whose answer was lost is recovered by retrying with the same value —
-  // where a fresh token would silently mint a second identity and orphan the first. It is
-  // also what two tabs racing a first bootstrap converge on: whichever writes the pending
-  // token first, the other adopts it above and both resolve to ONE account.
+  // where a fresh token would silently mint a second identity and orphan the first. It also
+  // lets a waiter or a later session adopt a pending bootstrap that was interrupted after
+  // this write, and resolve through the server's idempotence instead of starting another.
   const token = (pendingToken ??= generateDeviceToken());
   write({ token });
   const challenge = await turnstileToken();
@@ -299,15 +356,18 @@ async function bootstrap(): Promise<DeviceIdentity> {
   return identity;
 }
 
-// The server answered `unknown_device`: this device was signed out from another one. ONLY
-// that explicit answer may call this — a 5xx or a dropped connection must never sign
-// anyone out.
-export function markDeviceSignedOut(): void {
-  if (useIdentityStore.getState().signedOut) return;
+// An authoritative answer says THIS epoch no longer owns the device: either a private call
+// answered `unknown_device`, or /devices confirmed that this device revoked itself. The
+// expected epoch is mandatory. Without it, a late refusal for A can read the now-current B
+// and delete B's localStorage entry — signing out the wrong account.
+export function markDeviceSignedOut(expectedEpoch: string): boolean {
+  if (identityEpoch() !== expectedEpoch) return false;
+  if (useIdentityStore.getState().signedOut) return false;
   clearStored(useIdentityStore.getState().identity?.token ?? null);
   pendingToken = null;
   flight = null;
   publish(null, true);
+  return true;
 }
 
 // SKIP on the signed-out screen: leave the old account behind and start fresh. The new
@@ -350,5 +410,5 @@ export function resetDeviceIdentity(): void {
     window.removeEventListener('storage', storageListener);
   }
   storageListener = null;
-  useIdentityStore.setState({ identity: null, signedOut: false });
+  useIdentityStore.setState({ identity: null, signedOut: false, scopeRevision: 0 });
 }

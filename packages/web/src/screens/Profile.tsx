@@ -11,7 +11,13 @@ import {
   NAME_MAX_LENGTH,
 } from '@whippin/shared';
 import { parseProfile, postProfileBody, profileUrl } from '../api';
-import { ensureDeviceIdentity, markDeviceSignedOut } from '../identity';
+import {
+  deviceIdentity,
+  ensureDeviceIdentity,
+  identityEpoch,
+  identityEpochOf,
+  markDeviceSignedOut,
+} from '../identity';
 import { navigate } from '../routing';
 import { pathForBoard, resolveHomeLang } from '../langs';
 import { t } from '../i18n';
@@ -123,6 +129,7 @@ export default function Profile() {
   // offers RETRY rather than a blank editor that could save over the real profile.
   useEffect(() => {
     let cancelled = false;
+    let epoch: string | null = null;
     setLoad('loading');
     (async () => {
       try {
@@ -131,16 +138,17 @@ export default function Profile() {
         // beat earlier. The wired entry point is the leaderboard, which has already
         // bootstrapped; only a deep link ever mints here.
         const identity = await ensureDeviceIdentity();
-        if (cancelled) return;
+        epoch = identityEpochOf(identity);
+        if (cancelled || identityEpoch() !== epoch) return;
         setToken(identity.token);
         const publicId = identity.accountId;
         setPublicId(publicId);
         const response = await fetch(profileUrl(publicId));
-        if (cancelled) return;
+        if (cancelled || identityEpoch() !== epoch) return;
         if (response.ok) {
           const profile = parseProfile(await response.json());
           const decoded = decodeAvatar(profile.avatar);
-          if (cancelled) return;
+          if (cancelled || identityEpoch() !== epoch) return;
           // Sanitized on the way IN (so the editor can never display a value its own
           // field would refuse — a no-op on anything the server stored, since it
           // enforces the same rule), then the assigned pseudonym stands in for an
@@ -168,7 +176,10 @@ export default function Profile() {
         }
         setLoad('ready');
       } catch {
-        if (!cancelled) setLoad('failed');
+        // App remounts on an identity departure, but the fence is still explicit here:
+        // a late malformed body/fetch failure from A must not turn B's fresh editor into a
+        // failure if the component lifecycle and the answer cross in the same turn.
+        if (!cancelled && (epoch === null || identityEpoch() === epoch)) setLoad('failed');
       }
     })();
     return () => {
@@ -265,6 +276,12 @@ export default function Profile() {
   const dirty = name !== baseline.name || encoded !== baseline.avatar;
 
   const onSave = useCallback(async () => {
+    // The editor's token is component state. A cross-tab account swap can happen between
+    // the click and this callback; refuse to send that stale body, and capture the epoch
+    // from the identity whose token is actually used.
+    const current = deviceIdentity();
+    if (!current || current.token !== token || current.accountId !== publicId) return;
+    const epoch = identityEpochOf(current);
     // The last door the rule stands in: a composition still OPEN when SAVE is tapped
     // would leave `name` holding its raw mirror, so it lands here too. A no-op on every
     // settled value, and the baseline below re-reads it, so a save can never leave the
@@ -284,25 +301,32 @@ export default function Profile() {
     let outcome: SaveRefusal = null;
     try {
       const response = await postProfileBody(profileUrl(), body);
+      if (identityEpoch() !== epoch) return;
       if (response.ok) {
         setBaseline({ name: clean, avatar: body.avatar });
       } else {
         const refusal = (await response.json().catch(() => null)) as { error?: string } | null;
+        if (identityEpoch() !== epoch) return;
         // A device signed out from elsewhere raises the screen that explains it; the save
         // still reports as failed, because it was.
-        if (response.status === 401 && refusal?.error === 'unknown_device') markDeviceSignedOut();
+        if (response.status === 401 && refusal?.error === 'unknown_device') {
+          markDeviceSignedOut(epoch);
+        }
         outcome =
           refusal?.error === 'name_rejected' || refusal?.error === 'avatar_rejected'
             ? refusal.error
             : 'error';
       }
     } catch {
+      if (identityEpoch() !== epoch) return;
       outcome = 'error';
     }
     await sleep(Math.max(0, SAVE_DOTS_MIN_MS - (Date.now() - started)));
+    if (identityEpoch() !== epoch) return;
     setRefused(outcome);
     setPhase('restoring');
     await sleep(SAVE_RESTORE_MS);
+    if (identityEpoch() !== epoch) return;
     setPhase((current) => (current === 'restoring' ? 'idle' : current));
   }, [token, publicId, name, encoded]);
 

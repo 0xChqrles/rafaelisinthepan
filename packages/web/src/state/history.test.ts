@@ -49,6 +49,8 @@ vi.mock('../identity', () => ({
       ? { token: 'f'.repeat(64), accountId: 'a'.repeat(16), deviceId: 'd'.repeat(16) }
       : null,
   identityEpoch: () => (harness.identity ? `${'a'.repeat(16)}:${'d'.repeat(16)}` : null),
+  identityEpochOf: (value: { accountId: string; deviceId: string }) =>
+    `${value.accountId}:${value.deviceId}`,
   markDeviceSignedOut: vi.fn(),
 }));
 

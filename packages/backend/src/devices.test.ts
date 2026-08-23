@@ -55,12 +55,21 @@ interface Listing {
   accountId: string;
   deviceId: string;
   devices: {
+    revokeKey: string;
     deviceId: string;
     device: string;
     os: string;
     browser: string;
+    createdAt: string;
+    lastSeenAt: string;
     current: boolean;
   }[];
+}
+
+function row(listing: Listing, deviceId: string) {
+  const found = listing.devices.find((device) => device.deviceId === deviceId);
+  if (!found) throw new Error(`missing listed device ${deviceId}`);
+  return found;
 }
 
 async function bootstrap(
@@ -82,6 +91,7 @@ describe('device bootstrap (#216)', () => {
     const body = JSON.parse(result.body) as Listing;
     expect(body.accountId).toMatch(PUBLIC_ID_PATTERN);
     expect(body.deviceId).toMatch(DEVICE_ID_PATTERN);
+    expect(row(body, body.deviceId).revokeKey).toMatch(/^[0-9a-f]{64}$/);
     // The client already holds the token; sending it back would put it in a response the
     // CDN, a log or a proxy could see.
     expect(result.body).not.toContain(TOKEN);
@@ -177,7 +187,11 @@ describe('the sign-out screen (#216)', () => {
     const phone = await bootstrap(handler, TOKEN);
     const laptop = await bootstrap(handler, OTHER_TOKEN);
     // Two separate accounts here would defeat the point, so put the laptop on the phone's.
-    await handler.deviceStore.revoke(laptop.accountId, laptop.deviceId);
+    await handler.deviceStore.revoke(
+      laptop.accountId,
+      laptop.deviceId,
+      row(laptop, laptop.deviceId).revokeKey,
+    );
     const shared = await handler.deviceStore.bootstrap({
       tokenHash: deviceTokenHash(OTHER_TOKEN),
       accountId: phone.accountId,
@@ -187,7 +201,15 @@ describe('the sign-out screen (#216)', () => {
     });
 
     const after = JSON.parse(
-      (await handler(post({ token: TOKEN, revoke: shared.device.deviceId }))).body,
+      (
+        await handler(
+          post({
+            token: TOKEN,
+            revoke: shared.device.deviceId,
+            revokeKey: shared.device.revokeKey,
+          }),
+        )
+      ).body,
     ) as Listing;
     expect(after.devices.map((row) => row.deviceId)).toEqual([phone.deviceId]);
 
@@ -202,7 +224,15 @@ describe('the sign-out screen (#216)', () => {
     const handler = makeHandler();
     const phone = await bootstrap(handler, TOKEN);
     const after = JSON.parse(
-      (await handler(post({ token: TOKEN, revoke: phone.deviceId }))).body,
+      (
+        await handler(
+          post({
+            token: TOKEN,
+            revoke: phone.deviceId,
+            revokeKey: row(phone, phone.deviceId).revokeKey,
+          }),
+        )
+      ).body,
     ) as Listing;
     expect(after.devices).toEqual([]);
     expect((await handler(post({ token: TOKEN }))).statusCode).toBe(401);
@@ -212,7 +242,13 @@ describe('the sign-out screen (#216)', () => {
     const handler = makeHandler();
     await bootstrap(handler, TOKEN);
     const stranger = await bootstrap(handler, OTHER_TOKEN);
-    const result = await handler(post({ token: TOKEN, revoke: stranger.deviceId }));
+    const result = await handler(
+      post({
+        token: TOKEN,
+        revoke: stranger.deviceId,
+        revokeKey: row(stranger, stranger.deviceId).revokeKey,
+      }),
+    );
     expect(result.statusCode).toBe(200);
     // Nothing removed, and the stranger's device still authenticates.
     expect((await handler(post({ token: OTHER_TOKEN }))).statusCode).toBe(200);
@@ -220,9 +256,24 @@ describe('the sign-out screen (#216)', () => {
 
   it('refuses a malformed revoke target and a GET', async () => {
     const handler = makeHandler();
-    await bootstrap(handler, TOKEN);
+    const phone = await bootstrap(handler, TOKEN);
     expect((await handler(post({ token: TOKEN, revoke: 'NOPE' }))).statusCode).toBe(400);
     expect((await handler(post({ token: TOKEN, revoke: 42 }))).statusCode).toBe(400);
+    expect((await handler(post({ token: TOKEN, revoke: phone.deviceId }))).statusCode).toBe(400);
+    expect(
+      (
+        await handler(
+          post({ token: TOKEN, revoke: phone.deviceId, revokeKey: 'not-a-handle' }),
+        )
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await handler(
+          post({ token: TOKEN, revokeKey: row(phone, phone.deviceId).revokeKey }),
+        )
+      ).statusCode,
+    ).toBe(400);
     const read = await handler({
       rawPath: '/devices',
       requestContext: { http: { method: 'GET' } },

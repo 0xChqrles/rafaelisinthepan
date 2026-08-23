@@ -29,7 +29,12 @@ import { useCallback, useEffect } from 'react';
 import { create } from 'zustand';
 import { boundSolvedDays } from '@whippin/shared';
 import { historyUrl, parsePlayerHistory, postHistoryBody } from '../api';
-import { deviceIdentity, identityEpoch, markDeviceSignedOut } from '../identity';
+import {
+  deviceIdentity,
+  identityEpoch,
+  identityEpochOf,
+  markDeviceSignedOut,
+} from '../identity';
 import type { Mode } from '../langs';
 import { statusOf, type RoundSummary, type Status } from './status';
 
@@ -124,7 +129,7 @@ export async function loadPlayerHistory(
     }
     return;
   }
-  const epoch = identityEpoch();
+  const epoch = identityEpochOf(identity);
   const flight = (async () => {
     // A REVALIDATION keeps the values it already holds while the fresh read is in flight —
     // stale-but-good beats a skeleton over a month the player was just looking at (the
@@ -143,7 +148,7 @@ export async function loadPlayerHistory(
       if (!response.ok) {
         // The distinct signed-out answer (#216) raises the screen that explains it; every
         // other refusal is the ordinary failure below. A 5xx never signs anyone out.
-        if (response.status === 401) await noteSignedOut(response);
+        if (response.status === 401) await noteSignedOut(response, epoch);
         throw new Error(`history read failed: ${response.status}`);
       }
       const history = parsePlayerHistory(await response.json());
@@ -186,6 +191,9 @@ export async function loadPlayerHistory(
         if (solvedReads.get(lang) === key) solvedReads.delete(lang);
       }
     } catch {
+      // The scope listener has already cleared the old account's cache. A late failure from
+      // it must not recreate FAILED entries in the new account's otherwise-empty store.
+      if (identityEpoch() !== epoch) return;
       // Offline, a refusal, a malformed body — all the same outcome: the surfaces say the
       // summary could not be had, and offer to ask again. There is no local fallback.
       setMonth(monthId, (previous) => ({ phase: 'failed', days: previous.days }));
@@ -321,10 +329,10 @@ export function noteSolvedDay(lang: string, solvedDay: number, credited: boolean
 
 // Read the refusal's own code: only `unknown_device` means signed out, and the status alone
 // would do it for any other 401 this route might ever answer.
-async function noteSignedOut(response: Response): Promise<void> {
+async function noteSignedOut(response: Response, epoch: string): Promise<void> {
   try {
     const data = (await response.json()) as { error?: unknown };
-    if (data.error === 'unknown_device') markDeviceSignedOut();
+    if (data.error === 'unknown_device') markDeviceSignedOut(epoch);
   } catch {
     // A refusal with no readable body says nothing about the device.
   }

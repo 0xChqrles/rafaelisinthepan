@@ -107,12 +107,15 @@
   this table's **ONE secondary index**, `DeviceByAccount` (`gsi1pk`/`gsi1sk`, projecting the
   device row's label fields): authentication is a direct base-table read by the token's hash,
   so the index exists only for the sign-out screen's "which devices does this account have".
+  DynamoDB projects the base primary key automatically; `/devices` returns its digest as the
+  opaque revocation handle, so the subsequent delete addresses the base item directly and
+  never depends on a second eventually-consistent query.
   It adds no table action either — `Table.grant` extends to `<table>/index/*` by itself once
   the table has an index — and `backend-stack.test.ts` pins the index's keys, its projection
   and the behavior's three-package allow-list.
   The table grant adds
   `GetItem` for the profile read (the upsert reuses `UpdateItem`) and **`DeleteItem` for
-  #189's symmetric friend removal, the only delete on this table**; all are pinned by
+  #189's symmetric friend removal and #216's device revocation**; all are pinned by
   `backend-stack.test.ts`. The Lambda
   receives the table name and SSM SecureString PARAMETER NAMES (defaults
   `/whippin/turnstile-secret`, `/whippin/ip-hmac-secret`; override with the matching `-c`

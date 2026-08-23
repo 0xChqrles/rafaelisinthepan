@@ -4,7 +4,12 @@
 // and asks for that date's puzzle in ONE fetch. The server only serves dates within
 // a ±1-day clock-skew window of its own active day.
 
-import { DEVICE_ID_PATTERN, isValidAvatar, PUBLIC_ID_PATTERN } from '@whippin/shared';
+import {
+  DEVICE_ID_PATTERN,
+  isValidAvatar,
+  isValidDeviceToken,
+  PUBLIC_ID_PATTERN,
+} from '@whippin/shared';
 import type {
   Board,
   BoardPlayer,
@@ -257,12 +262,15 @@ export function devicesUrl(base: string = apiBase()): string {
 
 export async function postDevicesBody(
   url: string,
-  body: { token: string; turnstileToken?: string; revoke?: string },
+  body: { token: string; turnstileToken?: string; revoke?: string; revokeKey?: string },
 ): Promise<Response> {
   return postSignedJson(url, body);
 }
 
 export interface DeviceRow {
+  // Opaque SHA-256 handle for the base item. It cannot authenticate, and lets the server
+  // revoke this listed row directly without rediscovering it through a lagging GSI.
+  revokeKey: string;
   deviceId: string;
   device: string;
   os: string;
@@ -297,11 +305,16 @@ export function parseDeviceIdentity(data: unknown): DeviceListing {
     const row = raw as Record<string, unknown>;
     if (
       !isRecord(raw) ||
+      !isValidDeviceToken(row.revokeKey) ||
       typeof row.deviceId !== 'string' ||
       !DEVICE_ID_PATTERN.test(row.deviceId) ||
       typeof row.device !== 'string' ||
       typeof row.os !== 'string' ||
       typeof row.browser !== 'string' ||
+      typeof row.createdAt !== 'string' ||
+      !Number.isFinite(Date.parse(row.createdAt)) ||
+      typeof row.lastSeenAt !== 'string' ||
+      !Number.isFinite(Date.parse(row.lastSeenAt)) ||
       typeof row.current !== 'boolean'
     ) {
       throw new Error('malformed device: bad "devices" row');

@@ -7,8 +7,9 @@
 //                                      rather than minting a second identity. Never echoes
 //                                      the token back: the client already holds it.
 //   { token }                        — LIST the account's devices (the sign-out screen).
-//   { token, revoke: "<deviceId>" }  — SIGN OUT one device by deleting its base item, then
-//                                      answer with the list as it now stands.
+//   { token, revoke: "<deviceId>", revokeKey: "<opaque>" }
+//                                    — SIGN OUT one listed device by deleting its base item
+//                                      directly, then answer with the list as it now stands.
 //
 // POST-only for the /friends reason — the token is the auth and it travels in the BODY,
 // never a query string, so there is no way to ask about an account without proving you hold
@@ -25,7 +26,12 @@
 // canonical token and a verified challenge, may. That is what stops a revoked device from
 // silently becoming a fresh account on its next write.
 
-import { DEVICE_ID_PATTERN, generateDeviceId, generatePublicId } from '@whippin/shared';
+import {
+  DEVICE_ID_PATTERN,
+  generateDeviceId,
+  generatePublicId,
+  isValidDeviceToken,
+} from '@whippin/shared';
 import {
   deviceTokenHash,
   type DeviceRecord,
@@ -58,6 +64,7 @@ export interface DeviceHandlerDeps {
 // this route tells it.
 function describe(device: DeviceRecord, currentDeviceId: string) {
   return {
+    revokeKey: device.revokeKey,
     deviceId: device.deviceId,
     ...device.agent,
     createdAt: device.createdAt,
@@ -116,7 +123,7 @@ export async function handleDevices(
   // bot. A body carrying both a challenge and a revocation is asking for two different
   // things at once.
   if (body.turnstileToken !== undefined) {
-    if (body.revoke !== undefined) {
+    if (body.revoke !== undefined || body.revokeKey !== undefined) {
       return errorResponse(
         400,
         'bad_request',
@@ -152,6 +159,15 @@ export async function handleDevices(
   if (!auth.ok) return auth.response;
   const resolved = auth.value;
 
+  if (body.revoke === undefined && body.revokeKey !== undefined) {
+    return errorResponse(
+      400,
+      'bad_request',
+      'Body field "revokeKey" is only valid with "revoke".',
+      responseHeaders,
+    );
+  }
+
   if (body.revoke !== undefined) {
     const target = body.revoke;
     if (typeof target !== 'string' || !DEVICE_ID_PATTERN.test(target)) {
@@ -162,11 +178,20 @@ export async function handleDevices(
         responseHeaders,
       );
     }
+    const revokeKey = body.revokeKey;
+    if (!isValidDeviceToken(revokeKey)) {
+      return errorResponse(
+        400,
+        'bad_request',
+        'Body field "revokeKey" must be the listed 64-character lowercase handle.',
+        responseHeaders,
+      );
+    }
     // Revoking the CALLING device is allowed — signing this one out is a thing a person may
     // want, and refusing it would be a rule the screen then has to explain. A device id that
     // is not on this account simply removes nothing; the answer is the list either way, so
     // the screen never has to guess what a write did (the /friends house rule).
-    const removed = await devices.revoke(resolved.account.accountId, target);
+    const removed = await devices.revoke(resolved.account.accountId, target, revokeKey);
     return json(200, await listing(devices, resolved, removed ? target : undefined), responseHeaders);
   }
 

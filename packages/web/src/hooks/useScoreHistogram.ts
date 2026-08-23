@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { dateForDayNumber, type ScoreHistogram } from '@whippin/shared';
 import { parseScoreHistogram, scoresUrl } from '../api';
-import { deviceIdentity } from '../identity';
+import {
+  deviceIdentity,
+  identityEpoch,
+  identityEpochOf,
+  identityScopeRevision,
+} from '../identity';
 import type { Mode } from '../langs';
 
 // The solved screen's population data (#170), a plain READ since #203.
@@ -88,9 +93,12 @@ export async function readPopulation(
   // nothing, so there is no standing to read.
   const identity = deviceIdentity();
   if (!identity) return null;
+  const epoch = identityEpochOf(identity);
   const response = await fetch(scoresUrl(lang, date, mode, identity.accountId));
+  if (identityEpoch() !== epoch) return null;
   if (!response.ok) return null;
   const histogram = parseScoreHistogram(await response.json());
+  if (identityEpoch() !== epoch) return null;
   // `bucket` is the server's answer about THIS player, so a population that does not hold
   // them says so with null instead of handing back whoever else recorded the same number.
   return { histogram, bucket: histogram.bucket };
@@ -122,7 +130,10 @@ export default function useScoreHistogram({
       setPlacement(null);
       return undefined;
     }
-    const key = `${mode}:${lang}:${dayNumber}:${score}`;
+    // Scope the module-level flight as well as the component. Otherwise B's freshly
+    // remounted solved screen can subscribe to A's still-running population read when the
+    // round tuple happens to match.
+    const key = `${identityScopeRevision()}:${mode}:${lang}:${dayNumber}:${score}`;
     if (placementKeyRef.current !== key) {
       placementKeyRef.current = key;
       // A direct solved-round -> solved-round navigation must never show the previous

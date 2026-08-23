@@ -7,8 +7,10 @@ import { describe, it, expect } from 'vitest';
 import {
   apiBase,
   boardUrl,
+  devicesUrl,
   friendsUrl,
   parseBoard,
+  parseDeviceIdentity,
   puzzleUrl,
   wordPuzzleUrl,
   puzzleOutcome,
@@ -422,6 +424,43 @@ describe('profileUrl + parseProfile (#188)', () => {
     expect(() => parseProfile({ ...valid, publicId: 'NOPE' })).toThrow(/publicId/);
     expect(() => parseProfile({ ...valid, name: 3 })).toThrow(/name/);
     expect(() => parseProfile({ ...valid, avatar: 'garbage' })).toThrow(/avatar/);
+  });
+});
+
+describe('devicesUrl + parseDeviceIdentity (#216)', () => {
+  const valid = () => ({
+    accountId: 'abcdefghij234567',
+    deviceId: 'zyxwvutsrq765432',
+    devices: [
+      {
+        revokeKey: 'a'.repeat(64),
+        deviceId: 'zyxwvutsrq765432',
+        device: 'iPhone',
+        os: 'iOS 17',
+        browser: 'Safari',
+        createdAt: '2026-08-23T00:00:00.000Z',
+        lastSeenAt: '2026-08-24T00:00:00.000Z',
+        current: true,
+      },
+    ],
+  });
+
+  it('addresses the POST-only route with no query and validates its full listing', () => {
+    expect(devicesUrl('https://api.example')).toBe('https://api.example/devices');
+    const body = valid();
+    expect(parseDeviceIdentity(body)).toBe(body);
+  });
+
+  it('rejects a missing/malformed revocation handle and invalid timestamps', () => {
+    const missing = valid();
+    delete (missing.devices[0] as { revokeKey?: string }).revokeKey;
+    expect(() => parseDeviceIdentity(missing)).toThrow(/devices/);
+    const badHandle = valid();
+    badHandle.devices[0].revokeKey = 'A'.repeat(64);
+    expect(() => parseDeviceIdentity(badHandle)).toThrow(/devices/);
+    const badDate = valid();
+    badDate.devices[0].lastSeenAt = 'yesterday';
+    expect(() => parseDeviceIdentity(badDate)).toThrow(/devices/);
   });
 });
 

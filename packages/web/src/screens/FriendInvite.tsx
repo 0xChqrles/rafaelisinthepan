@@ -4,7 +4,14 @@ import Avatar from '../components/Avatar';
 import LoadingWave from '../components/LoadingWave';
 import LoadError from '../components/LoadError';
 import { friendsUrl, parseProfile, postFriendsBody, profileUrl } from '../api';
-import { ensureDeviceIdentity, markDeviceSignedOut } from '../identity';
+import {
+  deviceIdentity,
+  ensureDeviceIdentity,
+  identityEpoch,
+  identityEpochOf,
+  identityScopeRevision,
+  markDeviceSignedOut,
+} from '../identity';
 import { t } from '../i18n';
 import { navigate } from '../routing';
 
@@ -55,7 +62,17 @@ export function shareInviteFlight(
   publicId: string,
   start: () => Promise<InviteOutcome>,
 ): Promise<InviteOutcome> {
-  const existing = activeInviteFlights.get(publicId);
+  // A component remount after A -> B must not subscribe B to A's still-running write.
+  // The first bootstrap leaves the revision alone, so StrictMode/remount sharing on a
+  // brand-new visit still works exactly as before.
+  const revision = identityScopeRevision();
+  // After A -> null, the replacement bootstrap advances the App scope when B arrives. The
+  // invite flight began in the intervening null scope but already IS the act creating B, so
+  // key it to that forthcoming revision and let B's remount subscribe instead of POSTing the
+  // same invitation twice. A direct A -> B swap still changes 0 -> 1 and cannot share A's work.
+  const flightRevision = deviceIdentity() === null && revision > 0 ? revision + 1 : revision;
+  const key = `${flightRevision}:${publicId}`;
+  const existing = activeInviteFlights.get(key);
   if (existing) return existing;
 
   const flight = (async () => {
@@ -66,9 +83,9 @@ export function shareInviteFlight(
       return 'failed' as const;
     }
   })();
-  activeInviteFlights.set(publicId, flight);
+  activeInviteFlights.set(key, flight);
   void flight.then(() => {
-    if (activeInviteFlights.get(publicId) === flight) activeInviteFlights.delete(publicId);
+    if (activeInviteFlights.get(key) === flight) activeInviteFlights.delete(key);
   });
   return flight;
 }
@@ -78,10 +95,12 @@ export async function sendInvite(publicId: string): Promise<InviteOutcome> {
   // accepter is by definition a brand-new visitor clicking a link. Their identity is minted
   // on this first need, which is what lands the edge before their first game.
   const identity = await ensureDeviceIdentity();
+  const epoch = identityEpochOf(identity);
   const response = await postFriendsBody(friendsUrl(), {
     token: identity.token,
     add: publicId,
   });
+  if (identityEpoch() !== epoch) return 'settled';
   // A 2xx landed the edge (a re-click of an already-accepted link included — you ARE
   // friends, which is exactly what the confirmation says).
   if (response.ok) return 'added';
@@ -90,7 +109,7 @@ export async function sendInvite(publicId: string): Promise<InviteOutcome> {
   // click continues into the game with nothing announced (no edge was added).
   if (response.status === 401) {
     const data = (await response.json().catch(() => ({}))) as { error?: unknown };
-    if (data.error === 'unknown_device') markDeviceSignedOut();
+    if (data.error === 'unknown_device') markDeviceSignedOut(epoch);
   }
   return response.status === 409 ? 'full' : 'settled';
 }

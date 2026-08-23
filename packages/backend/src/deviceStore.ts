@@ -49,6 +49,10 @@ export interface DeviceAgent {
 }
 
 export interface DeviceRecord {
+  // Opaque, non-authenticating handle for the ONE base item. It is SHA-256(token), exposed
+  // only to this account's device list so a later revocation can address the base table
+  // directly instead of trying to rediscover it through an eventually-consistent GSI.
+  revokeKey: string;
   deviceId: string;
   accountId: string;
   agent: DeviceAgent;
@@ -87,10 +91,10 @@ export interface DeviceStore {
   bootstrap(input: BootstrapInput): Promise<ResolvedDevice>;
   // The sign-out screen's list, off the GSI. Eventually consistent by nature.
   list(accountId: string): Promise<DeviceRecord[]>;
-  // REVOCATION: delete the ONE base item. Answers whether a device was actually removed,
-  // so a stale GSI row (or an id belonging to somebody else) is an honest "nothing here"
-  // rather than a silent success.
-  revoke(accountId: string, deviceId: string): Promise<boolean>;
+  // REVOCATION: delete the ONE base item by the opaque key returned in the device list.
+  // The account + display id remain a condition on that direct delete, so a forged or stale
+  // key is an honest "nothing here" and can never remove somebody else's device.
+  revoke(accountId: string, deviceId: string, revokeKey: string): Promise<boolean>;
   // Move `lastSeenAt` forward. Called at most once per device per DAY (see `staleLastSeen`),
   // because this rides every authenticated call and the round route writes once a second.
   touch(tokenHash: string, now: string): Promise<void>;

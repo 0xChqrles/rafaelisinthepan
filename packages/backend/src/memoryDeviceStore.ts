@@ -21,6 +21,7 @@ export function memoryDeviceStore(initial: readonly BootstrapInput[] = []): Devi
   for (const seed of initial) {
     accounts.set(seed.accountId, { accountId: seed.accountId, createdAt: seed.now });
     devices.set(seed.tokenHash, {
+      revokeKey: seed.tokenHash,
       deviceId: seed.deviceId,
       accountId: seed.accountId,
       agent: seed.agent,
@@ -51,6 +52,7 @@ export function memoryDeviceStore(initial: readonly BootstrapInput[] = []): Devi
       if (existing) return existing;
       const account: AccountRecord = { accountId: input.accountId, createdAt: input.now };
       const device: DeviceRecord = {
+        revokeKey: input.tokenHash,
         deviceId: input.deviceId,
         accountId: input.accountId,
         agent: input.agent,
@@ -68,13 +70,11 @@ export function memoryDeviceStore(initial: readonly BootstrapInput[] = []): Devi
         .sort((a, b) => (a.deviceId < b.deviceId ? -1 : a.deviceId > b.deviceId ? 1 : 0));
     },
 
-    async revoke(accountId, deviceId) {
-      for (const [tokenHash, device] of devices) {
-        if (device.accountId !== accountId || device.deviceId !== deviceId) continue;
-        devices.delete(tokenHash);
-        return true;
-      }
-      return false;
+    async revoke(accountId, deviceId, revokeKey) {
+      const device = devices.get(revokeKey);
+      if (!device || device.accountId !== accountId || device.deviceId !== deviceId) return false;
+      devices.delete(revokeKey);
+      return true;
     },
 
     async touch(tokenHash, now) {

@@ -14,8 +14,19 @@
 // revoked is not. Nothing here has to compensate for the lag.
 
 import { useCallback, useEffect, useState } from 'react';
-import { devicesUrl, parseDeviceIdentity, postDevicesBody, type DeviceRow } from '../api';
-import { ensureDeviceIdentity, markDeviceSignedOut } from '../identity';
+import {
+  devicesUrl,
+  parseDeviceIdentity,
+  postDevicesBody,
+  type DeviceListing,
+  type DeviceRow,
+} from '../api';
+import {
+  ensureDeviceIdentity,
+  identityEpoch,
+  identityEpochOf,
+  markDeviceSignedOut,
+} from '../identity';
 import { t } from '../i18n';
 import LoadingWave from './LoadingWave';
 
@@ -35,6 +46,15 @@ function lastUsed(row: DeviceRow, lang: string): string | null {
   return new Intl.DateTimeFormat(lang, { dateStyle: 'medium' }).format(new Date(at));
 }
 
+// The route's answer is authoritative: the top-level deviceId names the caller and the
+// rows are the list after the write. Their conjunction is what distinguishes a confirmed
+// self-revocation from signing out some other row (or a delete that removed nothing).
+export function revokedCallingDevice(listing: DeviceListing, target: string): boolean {
+  return (
+    listing.deviceId === target && !listing.devices.some((row) => row.deviceId === target)
+  );
+}
+
 export default function DeviceList({ lang }: { lang: string }) {
   const [phase, setPhase] = useState<Phase>('loading');
   const [rows, setRows] = useState<DeviceRow[]>([]);
@@ -45,19 +65,29 @@ export default function DeviceList({ lang }: { lang: string }) {
   // ONE call answers both the read and every write: the route always returns the list as it
   // now stands, so the screen never has to guess what a write did (the /friends house rule).
   const talk = useCallback(
-    async (revoke?: string) => {
+    async (revoke?: DeviceRow): Promise<{ listing: DeviceListing; epoch: string } | null> => {
       const identity = await ensureDeviceIdentity();
-      const response = await postDevicesBody(devicesUrl(), { token: identity.token, revoke });
+      const epoch = identityEpochOf(identity);
+      const response = await postDevicesBody(devicesUrl(), {
+        token: identity.token,
+        ...(revoke ? { revoke: revoke.deviceId, revokeKey: revoke.revokeKey } : {}),
+      });
+      if (identityEpoch() !== epoch) return null;
       if (!response.ok) {
-        // Signing out the CALLING device is allowed, and its next call is the one that
-        // learns so. The screen the app raises for that is the whole answer here too.
+        // A different device may have revoked this one before the call. The refusal's CODE
+        // is authoritative, but only for the epoch that sent it.
         if (response.status === 401) {
           const data = (await response.json().catch(() => ({}))) as { error?: unknown };
-          if (data.error === 'unknown_device') markDeviceSignedOut();
+          if (data.error === 'unknown_device') {
+            markDeviceSignedOut(epoch);
+            return null;
+          }
         }
         throw new Error(`devices answered ${response.status}`);
       }
-      return parseDeviceIdentity(await response.json()).devices;
+      const listing = parseDeviceIdentity(await response.json());
+      if (identityEpoch() !== epoch) return null;
+      return { listing, epoch };
     },
     [],
   );
@@ -66,9 +96,9 @@ export default function DeviceList({ lang }: { lang: string }) {
     let cancelled = false;
     setPhase('loading');
     void talk()
-      .then((devices) => {
-        if (!cancelled) {
-          setRows(devices);
+      .then((answer) => {
+        if (!cancelled && answer) {
+          setRows(answer.listing.devices);
           setPhase('ready');
         }
       })
@@ -80,10 +110,21 @@ export default function DeviceList({ lang }: { lang: string }) {
     };
   }, [talk, attempt]);
 
-  const signOut = (deviceId: string) => {
-    setBusy(deviceId);
-    void talk(deviceId)
-      .then((devices) => setRows(devices))
+  const signOut = (row: DeviceRow) => {
+    setBusy(row.deviceId);
+    void talk(row)
+      .then((answer) => {
+        if (!answer || identityEpoch() !== answer.epoch) return;
+        // A successful self-delete cannot wait for "the next 401": there may be no next
+        // private request, and the profile would remain open as a device the server has
+        // already revoked. This successful response is the second authoritative sign-out
+        // signal, alongside `unknown_device`.
+        if (revokedCallingDevice(answer.listing, row.deviceId)) {
+          markDeviceSignedOut(answer.epoch);
+          return;
+        }
+        setRows(answer.listing.devices);
+      })
       // A failed revocation leaves the list as it was; the row is still there to try again.
       .catch(() => {})
       .finally(() => setBusy(null));
@@ -119,7 +160,7 @@ export default function DeviceList({ lang }: { lang: string }) {
                 type="button"
                 className="device-signout"
                 disabled={busy !== null}
-                onClick={() => signOut(row.deviceId)}
+                onClick={() => signOut(row)}
               >
                 {t(lang, 'deviceSignOut')}
               </button>

@@ -37,18 +37,18 @@
                               date) + future-skew guard, the trusted viewer address and the
                               Turnstile-token check the gated writes share
       devices.ts              POST /devices (#216): the Turnstile-gated idempotent bootstrap,
-                              the sign-out screen's list, and revocation by device id
+                              the sign-out screen's list, and revocation by device id + opaque key
       deviceStore.ts          device/account storage contract; device#<tokenHash> base key,
                               the account GSI, SHA-256(token) and the once-a-day lastSeenAt
       dynamoDeviceStore.ts    prod GetItem auth + ONE create-only transaction for the pair,
-                              the index Query and a conditional DeleteItem for revocation
+                              the index Query and direct conditional base-item revocation
       memoryDeviceStore.ts    process-local implementation for backend:dev/tests (seedable)
       userAgent.ts            what a device IS, read server-side from the User-Agent header
       testDevice.ts           TEST-ONLY: one seeded device and the account it acts as
       scoreStore.ts           score storage contract; day/dedup keys + 5/48h constants
       dynamoScoreStore.ts     prod atomic transaction + strongly-consistent day-partition Query
       memoryScoreStore.ts     process-local implementation for backend:dev/tests
-      profile.ts              /profile GET+POST route (#188): auth (derived publicId), name +
+      profile.ts              /profile GET+POST route (#188): device auth -> accountId, name +
                               avatar validation, moderation, upsert
       profileStore.ts         player-row storage contract (player#<publicId> partition)
       dynamoProfileStore.ts   prod GetItem read + UpdateItem upsert (createdAt via if_not_exists)
@@ -269,7 +269,7 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   like /friends (a GET is a named 405); the shared `requireDayParams` guard triple
   applies. Archive days sync like today's. *(This said the route reads NO puzzle store;
   #203 overturned it for the APPEND — see its own bullet below — and the READ still reads
-  none.)* `{secret, puzzle}` reads (404 = none yet, and
+  none.)* `{token, puzzle}` reads (404 = none yet, and
   also "nothing stored for THIS puzzle" — the tag's whole job, root `AGENTS.md`);
   `{token, puzzle, guesses}` appends. Validation is fail-closed BEFORE the store: a
   `PUZZLE_TAG_SHAPE` tag, then a non-empty string array of at most `ROUND_GUESS_CAP`
@@ -449,8 +449,9 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   `POST /devices` — and ONLY POST (a GET is a named 405). The product contract (the token's
   exact shape, why the base item is keyed by its hash, where an account is created, what
   `unknown_device` means) lives in the root `AGENTS.md`. Implementation notes: the route
-  DISPATCHES on the body — `turnstileToken` = BOOTSTRAP, `revoke` = sign that device out,
-  neither = list — and a body carrying both is a 400, the /round rule. BOOTSTRAP verifies one
+  DISPATCHES on the body — `turnstileToken` = BOOTSTRAP, `revoke` + `revokeKey` = sign that
+  listed device out, neither = list — and a body carrying bootstrap and either revoke field is
+  a 400, the /round rule. BOOTSTRAP verifies one
   Siteverify call against the trusted viewer address, then writes the account row and the
   device row in ONE `TransactWriteItems` of two CREATE-ONLY puts: an account with no device is
   unreachable and a device with no account is unauthenticable, so a half-written pair is not a
@@ -462,9 +463,12 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   the account-existence check, both strongly consistent for the profile read's reason: a
   device that just bootstrapped calls immediately with the token it was handed, and an
   eventually-consistent miss there is `unknown_device` — the one answer that signs a player
-  out. `revoke` finds the base key through the GSI and deletes it under a condition naming the
-  account and the device, so a LAGGING index can never delete somebody else's item; a failed
-  condition is an honest "nothing was removed", never an error. `touch` swallows its own
+  out. The list exposes each projected base-key digest as an opaque, non-authenticating
+  `revokeKey`; `revoke` uses it for ONE direct base-table DeleteItem under a condition naming
+  the account and device. It performs no second GSI lookup, so propagation lag cannot turn a
+  valid sign-out into a silent miss. A failed ownership condition is an honest "nothing was
+  removed"; throttling, permission and network failures propagate rather than pretending the
+  delete succeeded. `touch` swallows its own
   failed condition for the same reason: `lastSeenAt` is a label on a screen, and a race with a
   revocation must not turn into an error the player sees. Storage is the score table again —
   `device#<tokenHash>`/`device` with the two `gsi1*` index attributes, and

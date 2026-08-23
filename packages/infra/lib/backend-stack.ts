@@ -197,8 +197,8 @@ export class BackendStack extends Stack {
     // (the player's row); reads are one Query over the day partition. The profile row
     // (#188) adds one GetItem (its read) and reuses UpdateItem (its upsert). The friends
     // graph (#189) reuses Query (a player's edge partition) and UpdateItem (the mutual
-    // link), and is the ONE writer that also needs DeleteItem — removal deletes both
-    // directions. The friends board (#190) adds BatchGetItem: it reads the score rows of
+    // link), and first adds DeleteItem — removal deletes both directions. The friends board
+    // (#190) adds BatchGetItem: it reads the score rows of
     // a KNOWN key set instead of paging the whole day partition. AWS authorizes
     // transactional actions through their underlying item permissions, so no Scan
     // surface is needed. The private history (#211) adds NO action: its calendar is a
@@ -581,7 +581,7 @@ export class BackendStack extends Stack {
         {
           id: 'AwsSolutions-IAM5',
           reason:
-            'S3 read access is scoped to the puzzle bucket/object keys. DynamoDB is scoped to this table with only Query/GetItem/PutItem/UpdateItem/DeleteItem (DeleteItem exists solely for the symmetric friend removal, #189), and SSM GetParameters to the two exact secret-parameter ARNs; no index or parameter wildcard exists.',
+            'S3 read access is scoped to the puzzle bucket/object keys. DynamoDB is scoped to this table with only Query/GetItem/PutItem/UpdateItem/DeleteItem (DeleteItem serves symmetric friend removal and device revocation), and SSM GetParameters to the two exact secret-parameter ARNs; no index or parameter wildcard exists.',
         },
         {
           id: 'AwsSolutions-L1',

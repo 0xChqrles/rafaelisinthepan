@@ -17,7 +17,7 @@
                               guessKey, countTries — the readings BOTH ends now perform
     src/puzzleTag.ts          fnvTag — Word mode's round tag. The SENTENCE daily's is the
                               published puzzle's own `revision` (#203), stamped by publish
-    src/identity.ts           the #187 player key: secret format + publicId derivation (web+backend)
+    src/identity.ts           #216's device-token shape + server-assigned account/device id minting
     src/leaderboard.ts        the #190 board rules: competition tie ranks, the plain top-50 cut,
                               own-row window + the Board API types (backend cuts, web renders)
     src/history.ts            the #211 PRIVATE player history: the month/day summary types,
@@ -105,9 +105,9 @@
   stored and the backend turned into `publicId` via SHA-256): every device on an account held
   that same secret, so nothing was device-specific and nothing could be revoked. What survives
   is the SHAPE of the public id, which `assigned.ts` derives a pseudonym and a mark from. The
-  CLIENT hashes nothing here — `crypto.subtle` is absent outside a secure context — though a
-  live POST still signs its body for the OAC contract, which is `web/api.ts`'s and is
-  unchanged by this.
+  CLIENT hashes nothing to derive identity here. That removes `crypto.subtle` from paths which
+  need no identity; every live POST still hashes its exact body for the OAC contract in
+  `web/api.ts`, so an insecure context still cannot bootstrap.
 - **`src/vocab.generated.json` is the ONE file in this package nobody writes by hand
   (#200).** GENERATION emits it, in the same call that writes the existence set and from
   the same slugs, so what the backend enforces — the sentence score ceiling, and by the

@@ -41,6 +41,7 @@ import {
   deviceIdentity,
   ensureDeviceIdentity,
   identityEpoch,
+  identityEpochOf,
   markDeviceSignedOut,
 } from '../identity';
 import { turnstileToken } from '../turnstile';
@@ -393,7 +394,7 @@ async function readRound(f: RoundFlight, key: string): Promise<void> {
   // `pump` has already taken the tokenless branch, so this can only be a race with a
   // sign-out; treat it as the superseded answer it would become.
   if (!identity) return;
-  const epoch = identityEpoch();
+  const epoch = identityEpochOf(identity);
   let response: Response;
   try {
     response = await postRoundBody(
@@ -445,7 +446,8 @@ async function readRound(f: RoundFlight, key: string): Promise<void> {
     // A device signed out from elsewhere learns it HERE first, since the mount read is the
     // earliest private call a game route makes. The screen it raises is the whole answer;
     // this conversation has nothing left to ask.
-    await noteVerdict(response);
+    await noteVerdict(response, epoch);
+    if (superseded(f, puzzle, epoch)) return;
     failLoad(f, key);
     f.closed = true;
     return;
@@ -460,7 +462,7 @@ async function readRound(f: RoundFlight, key: string): Promise<void> {
 // A 4xx may be the signed-out answer. Reading the body is cheap and it is the only way to
 // tell `unknown_device` from any other verdict — the status alone would sign a player out
 // for a language the server does not serve.
-async function noteVerdict(response: Response): Promise<void> {
+async function noteVerdict(response: Response, epoch: string): Promise<void> {
   let error: string | undefined;
   try {
     const data = (await response.json()) as { error?: unknown };
@@ -468,7 +470,7 @@ async function noteVerdict(response: Response): Promise<void> {
   } catch {
     return;
   }
-  if (isUnknownDevice(response.status, error)) markDeviceSignedOut();
+  if (isUnknownDevice(response.status, error)) markDeviceSignedOut(epoch);
 }
 
 async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promise<void> {
@@ -480,7 +482,7 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
     // the write that needs it. Every later append finds the identity already in hand. A
     // failed bootstrap is an ordinary failed write, retried with the rest.
     const identity = await ensureDeviceIdentity();
-    epoch = identityEpoch();
+    epoch = identityEpochOf(identity);
     // ROUND CREATION carries a Turnstile challenge (#203). It is prefetched while the
     // puzzle loads, so by the first guess it is normally already in hand; a failure here
     // is an ordinary failed write, retried with the rest — the round keeps playing
@@ -573,7 +575,8 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
 
   if (superseded(f, puzzle, epoch)) return;
   if (isVerdict(response.status)) {
-    await noteVerdict(response);
+    await noteVerdict(response, epoch);
+    if (superseded(f, puzzle, epoch)) return;
     f.closed = true;
     return;
   }

@@ -68,6 +68,8 @@ vi.mock('../identity', () => ({
     return identity.value;
   },
   identityEpoch: () => (identity.present ? `${identity.value.accountId}:${identity.value.deviceId}` : null),
+  identityEpochOf: (value: { accountId: string; deviceId: string }) =>
+    `${value.accountId}:${value.deviceId}`,
   markDeviceSignedOut: identity.signedOut,
 }));
 
@@ -806,7 +808,7 @@ describe('no token, no private fetch (#216)', () => {
     expect(load()).toEqual({
       status: 'ready',
       puzzle: REVISION,
-      server: { guesses: [], solved: false, solvedByAppend: false },
+      server: { guesses: [], solved: false, solvedByAppend: false, credited: false },
     });
   });
 

@@ -1,4 +1,5 @@
 import {
+  ConditionalCheckFailedException,
   DeleteItemCommand,
   GetItemCommand,
   QueryCommand,
@@ -41,11 +42,21 @@ function agentOf(item: Record<string, AttributeValue>): DeviceAgent {
   };
 }
 
-function deviceOf(item: Record<string, AttributeValue>): DeviceRecord | null {
+function revokeKeyOf(item: Record<string, AttributeValue>, known?: string): string | null {
+  if (known) return known;
+  const pk = item.pk?.S;
+  if (!pk?.startsWith('device#')) return null;
+  const value = pk.slice('device#'.length);
+  return /^[0-9a-f]{64}$/.test(value) ? value : null;
+}
+
+function deviceOf(item: Record<string, AttributeValue>, knownRevokeKey?: string): DeviceRecord | null {
   const deviceId = item.deviceId?.S;
   const accountId = item.accountId?.S;
-  if (!deviceId || !accountId) return null;
+  const revokeKey = revokeKeyOf(item, knownRevokeKey);
+  if (!deviceId || !accountId || !revokeKey) return null;
   return {
+    revokeKey,
     deviceId,
     accountId,
     agent: agentOf(item),
@@ -75,7 +86,7 @@ export function dynamoDeviceStore(client: DynamoDBClient, tableName: string): De
         ConsistentRead: true,
       }),
     );
-    return response.Item ? deviceOf(response.Item) : null;
+    return response.Item ? deviceOf(response.Item, tokenHash) : null;
   }
 
   async function resolve(tokenHash: string) {
@@ -86,28 +97,6 @@ export function dynamoDeviceStore(client: DynamoDBClient, tableName: string): De
     // whole reason the check is here rather than trusted to the sweep.
     if (!live) return null;
     return { device: found, account: live };
-  }
-
-  // The ONE item to delete, found through the index. The account partition is the caller's
-  // own, so this can only ever surface their devices.
-  async function baseKeyOf(accountId: string, deviceId: string): Promise<string | null> {
-    const response = await client.send(
-      new QueryCommand({
-        TableName: tableName,
-        IndexName: DEVICE_INDEX_NAME,
-        KeyConditionExpression: '#pk = :pk AND #sk = :sk',
-        ExpressionAttributeNames: { '#pk': 'gsi1pk', '#sk': 'gsi1sk' },
-        ExpressionAttributeValues: {
-          ':pk': { S: deviceIndexKey(accountId) },
-          ':sk': { S: deviceIndexSortKey(deviceId) },
-        },
-        // A GSI Query is eventually consistent BY DESIGN — DynamoDB refuses ConsistentRead
-        // on a global index — so a device created moments ago may not be listed yet. That
-        // is the cosmetic lag this index is allowed to have; the delete below is still
-        // conditional, so a STALE row cannot delete anything that no longer matches.
-      }),
-    );
-    return response.Items?.[0]?.pk?.S ?? null;
   }
 
   return {
@@ -187,6 +176,7 @@ export function dynamoDeviceStore(client: DynamoDBClient, tableName: string): De
 
       return {
         device: {
+          revokeKey: input.tokenHash,
           deviceId: input.deviceId,
           accountId: input.accountId,
           agent: input.agent,
@@ -224,18 +214,17 @@ export function dynamoDeviceStore(client: DynamoDBClient, tableName: string): De
       );
     },
 
-    async revoke(accountId, deviceId) {
-      const pk = await baseKeyOf(accountId, deviceId);
-      if (!pk) return false;
+    async revoke(accountId, deviceId, revokeKey) {
       try {
         await client.send(
           new DeleteItemCommand({
             TableName: tableName,
-            Key: { pk: { S: pk }, sk: { S: DEVICE_SORT_KEY } },
-            // The index answer may be STALE — the row may already be gone, or may since
-            // have been re-bootstrapped under another account — so the delete names what it
-            // expects. Without it, a lagging index is a way to delete somebody else's
-            // device item.
+            // Strongly address the ONE base item. The key came from the account's device
+            // listing; using it here means index propagation can delay what the screen
+            // displays, but can never make a revocation silently skip a live item.
+            Key: { pk: { S: deviceKey(revokeKey) }, sk: { S: DEVICE_SORT_KEY } },
+            // A stale or forged handle must never delete an item whose account/display id
+            // no longer matches the row the person selected.
             ConditionExpression: '#accountId = :accountId AND #deviceId = :deviceId',
             ExpressionAttributeNames: { '#accountId': 'accountId', '#deviceId': 'deviceId' },
             ExpressionAttributeValues: {
@@ -245,10 +234,19 @@ export function dynamoDeviceStore(client: DynamoDBClient, tableName: string): De
           }),
         );
         return true;
-      } catch {
+      } catch (error) {
         // A failed condition is an honest "nothing was removed", never an error to surface:
-        // the caller asked to sign out a device that is already gone.
-        return false;
+        // the caller asked to sign out a device that is already gone. Operational failures
+        // (throttling, permissions, network) are NOT that answer and must reach the route.
+        if (
+          error instanceof ConditionalCheckFailedException ||
+          (typeof error === 'object' &&
+            error !== null &&
+            (error as { name?: unknown }).name === 'ConditionalCheckFailedException')
+        ) {
+          return false;
+        }
+        throw error;
       }
     },
 

@@ -348,8 +348,8 @@ describe('per-player score storage (#187)', () => {
       { AttributeName: 'gsi1pk', KeyType: 'HASH' },
       { AttributeName: 'gsi1sk', KeyType: 'RANGE' },
     ]);
-    // Enough to RENDER a device row; the base primary key comes along by construction, so
-    // a listed device still identifies the one item to delete.
+    // Enough to RENDER a device row; the base primary key comes along by construction and
+    // is returned as the opaque handle used for a direct revocation delete.
     expect(indexes[0].Projection).toEqual({
       ProjectionType: 'INCLUDE',
       NonKeyAttributes: ['deviceId', 'accountId', 'agent', 'createdAt', 'lastSeenAt'],

@@ -11,10 +11,11 @@
 // spellings of the token's shape would fork one device into two — or, worse, admit a
 // non-canonical value that keys a different row.
 //
-// The CLIENT never hashes anything any more: `crypto.subtle` is absent outside a secure
-// context, which already forced a leaderboard workaround for LAN-IP testing on a phone.
-// Minting still uses `crypto.getRandomValues`, which every context has, so the entropy is
-// unchanged. Hashing is the server's (`backend/src/deviceStore.ts`).
+// The CLIENT never hashes to derive identity any more: that removes `crypto.subtle` from
+// paths that need no identity, including an anonymous global-board read. Live POSTs still
+// hash their exact body for the OAC contract (`web/src/api.ts`), so an insecure context
+// cannot bootstrap. Token minting uses `crypto.getRandomValues`, which is available there;
+// token hashing is the server's (`backend/src/deviceStore.ts`).
 //
 // `assigned.ts` is untouched: it keeps deriving the pseudonym and the mark from the account
 // id, which is why a server-assigned id keeps the exact shape a derived one had.

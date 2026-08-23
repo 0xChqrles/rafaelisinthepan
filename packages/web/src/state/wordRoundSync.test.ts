@@ -50,6 +50,7 @@ vi.mock('../turnstile', () => ({ turnstileToken: vi.fn() }));
 // This device's IDENTITY (#216). The engine's own tokenless branch — no identity means no
 // private fetch at all — is exercised in `identity.test.ts`; here the device is signed in,
 // which is what every case below is about.
+const signedOut = vi.hoisted(() => vi.fn());
 vi.mock('../identity', () => ({
   deviceIdentity: () => ({ token: 'f'.repeat(64), accountId: 'a'.repeat(16), deviceId: 'd'.repeat(16) }),
   ensureDeviceIdentity: async () => ({
@@ -58,7 +59,9 @@ vi.mock('../identity', () => ({
     deviceId: 'd'.repeat(16),
   }),
   identityEpoch: () => `${'a'.repeat(16)}:${'d'.repeat(16)}`,
-  markDeviceSignedOut: vi.fn(),
+  identityEpochOf: (value: { accountId: string; deviceId: string }) =>
+    `${value.accountId}:${value.deviceId}`,
+  markDeviceSignedOut: signedOut,
 }));
 
 
@@ -155,6 +158,7 @@ beforeEach(() => {
   post.mockReset();
   challenge.mockReset();
   challenge.mockResolvedValue('token');
+  signedOut.mockReset();
   useGameStore.setState(
     { outbox: {}, wordRounds: {}, roundLoads: {}, activeWordKey: null },
     false,
@@ -275,6 +279,18 @@ describe('the round START', () => {
     post.mockResolvedValueOnce(stamped());
     await expect(startWordRound(ctx())).resolves.toBe(true);
     expect(round().startedAt).toBe(T0);
+  });
+
+  it('raises signed-out from PLAY only for the `unknown_device` error code', async () => {
+    seedRound();
+    post.mockResolvedValueOnce(answer(401, { error: 'unknown_device' }));
+    await expect(startWordRound(ctx())).resolves.toBe(false);
+    expect(signedOut).toHaveBeenCalledWith(`${'a'.repeat(16)}:${'d'.repeat(16)}`);
+
+    signedOut.mockReset();
+    post.mockResolvedValueOnce(answer(401, { error: 'not_started' }));
+    await expect(startWordRound(ctx())).resolves.toBe(false);
+    expect(signedOut).not.toHaveBeenCalled();
   });
 
   // A round key is only (day, lang, mode), so a re-published DIFFERENT word reuses it.

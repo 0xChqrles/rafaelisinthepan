@@ -24,7 +24,12 @@ import ModeTabs from '../components/ModeTabs';
 import TopBar from '../components/TopBar';
 import useShare from '../hooks/useShare';
 import useToday from '../hooks/useToday';
-import { ensureDeviceIdentity, markDeviceSignedOut } from '../identity';
+import {
+  ensureDeviceIdentity,
+  identityEpoch,
+  identityEpochOf,
+  markDeviceSignedOut,
+} from '../identity';
 import { useGameStore, type BoardTab } from '../state/gameStore';
 import {
   pathForBoard,
@@ -106,8 +111,8 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
   // than quietly redefining the metric.
   const { share, copied } = useShare({ tracked: false });
 
-  // The identity strip: the id is derived locally (generated on first need, #187 — the
-  // invite link's own rule, since sharing it IS this screen's job), then ONE read
+  // The identity strip: the server-assigned account id is resolved on first need (#216 —
+  // the invite link's own rule, since sharing it IS this screen's job), then ONE read
   // settles what the strip says.
   //
   // Nothing is shown until it does (user feedback 2026-08-20). The first cut published
@@ -124,31 +129,36 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
     let cancelled = false;
     (async () => {
       let publicId: string;
+      let epoch: string;
       try {
         // OPENING THE LEADERBOARD IS A TRIGGER (#216): the friends board is an
         // authenticated read, this strip is the player's own identity, and the INVITE
         // button shares their own link — none of the three exists without an account, so
         // the screen mints one. It is the one deliberate act on this route.
-        publicId = (await ensureDeviceIdentity()).accountId;
+        const identity = await ensureDeviceIdentity();
+        publicId = identity.accountId;
+        epoch = identityEpochOf(identity);
       } catch {
         // The bootstrap did not land (offline, a refused challenge): the strip draws
         // nothing rather than a skeleton with nothing behind it.
         if (!cancelled) setMeSettled(true);
         return;
       }
-      if (cancelled) return;
+      if (cancelled || identityEpoch() !== epoch) return;
       setMeId(publicId);
       let resolved: Me = { publicId, name: '', avatar: null };
       try {
         const response = await fetch(profileUrl(publicId));
+        if (identityEpoch() !== epoch) return;
         if (response.ok) {
           const profile = parseProfile(await response.json());
+          if (identityEpoch() !== epoch) return;
           resolved = { publicId, name: profile.name, avatar: profile.avatar };
         }
       } catch {
         // Keep the assigned identity.
       }
-      if (cancelled) return;
+      if (cancelled || identityEpoch() !== epoch) return;
       setMe(resolved);
       setMeSettled(true);
     })();
@@ -168,8 +178,9 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
     (async () => {
       try {
         const identity = await ensureDeviceIdentity();
+        const epoch = identityEpochOf(identity);
         const response = await postFriendsBody(friendsUrl(), { token: identity.token });
-        if (cancelled) return;
+        if (cancelled || identityEpoch() !== epoch) return;
         if (!response.ok) {
           // Unmarked rows are a fine board, so this read fails silently — EXCEPT for the one
           // answer that is not about the read at all. A device revoked since the board
@@ -177,12 +188,12 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
           // decorating a board for an account it no longer holds.
           if (response.status === 401) {
             const data = (await response.json().catch(() => ({}))) as { error?: unknown };
-            if (data.error === 'unknown_device') markDeviceSignedOut();
+            if (data.error === 'unknown_device') markDeviceSignedOut(epoch);
           }
           return;
         }
         const ids = parseFriends(await response.json());
-        if (!cancelled) setFriendIds(new Set(ids));
+        if (!cancelled && identityEpoch() === epoch) setFriendIds(new Set(ids));
       } catch {
         // Unmarked rows are a fine board.
       }
@@ -204,6 +215,7 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
     // A standing failure turns back into the loading state for this pass.
     setBoards((prev) => (prev[tab] === 'failed' ? { ...prev, [tab]: undefined } : prev));
     (async () => {
+      let epoch: string | null = null;
       try {
         // Opening this screen is the trigger, so both tabs share the ONE bootstrap the
         // identity strip started. The GLOBAL read still needs no identity of its own — the
@@ -211,25 +223,28 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
         // not land degrades it to the plain anonymous read rather than failing a tab that
         // needs nobody.
         const identity = await ensureDeviceIdentity().catch(() => null);
+        epoch = identity ? identityEpochOf(identity) : null;
         if (tab === 'friends' && identity === null) throw new Error('no identity');
         const response =
           tab === 'friends' && identity !== null
             ? await postBoardBody(boardUrl(lang, date, mode), { token: identity.token })
             : await fetch(boardUrl(lang, date, mode, identity?.accountId));
-        if (cancelled) return;
+        if (cancelled || (epoch !== null && identityEpoch() !== epoch)) return;
         if (!response.ok) {
           if (response.status === 401) {
             const data = (await response.json().catch(() => ({}))) as { error?: unknown };
-            if (data.error === 'unknown_device') markDeviceSignedOut();
+            if (data.error === 'unknown_device' && epoch !== null) markDeviceSignedOut(epoch);
           }
           throw new Error(`board answered ${response.status}`);
         }
         const board = parseBoard(await response.json());
-        if (!cancelled) setBoards((prev) => ({ ...prev, [tab]: board }));
+        if (!cancelled && (epoch === null || identityEpoch() === epoch)) {
+          setBoards((prev) => ({ ...prev, [tab]: board }));
+        }
       } catch {
         // FAILED only when there is nothing to show: an error frame over rows already
         // on screen helps nobody — the cached board stands until a refresh succeeds.
-        if (!cancelled) {
+        if (!cancelled && (epoch === null || identityEpoch() === epoch)) {
           setBoards((prev) =>
             prev[tab] && prev[tab] !== 'failed' ? prev : { ...prev, [tab]: 'failed' },
           );

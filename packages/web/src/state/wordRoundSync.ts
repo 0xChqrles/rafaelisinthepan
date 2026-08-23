@@ -39,6 +39,7 @@ import {
   deviceIdentity,
   ensureDeviceIdentity,
   identityEpoch,
+  identityEpochOf,
   markDeviceSignedOut,
 } from '../identity';
 import { turnstileToken } from '../turnstile';
@@ -298,7 +299,7 @@ async function requestStart(ctx: WordRoundContext): Promise<boolean> {
     // before the write that stamps the clock. PLAY already waits on this answer, so the
     // bootstrap sits inside a beat the player is already watching.
     const identity = await ensureDeviceIdentity();
-    epoch = identityEpoch();
+    epoch = identityEpochOf(identity);
     // The invisible challenge (web/turnstile.ts) — every failure rejects quietly, and here
     // that is a start the player is told about rather than a silent one: the run cannot
     // begin without it.
@@ -311,11 +312,12 @@ async function requestStart(ctx: WordRoundContext): Promise<boolean> {
   } catch {
     return false;
   }
+  if (identityEpoch() !== epoch) return false;
   if (!response.ok) {
     // PLAY is the first private call a fresh visit makes, so a device revoked since the
     // mount read learns it HERE. Reporting a generic failed start would leave the player
     // tapping a gate that can never open, with nothing saying why.
-    await noteVerdict(response);
+    await noteVerdict(response, epoch);
     return false;
   }
   let state: RoundState;
@@ -405,7 +407,7 @@ async function readRound(f: WordFlight, key: string): Promise<void> {
   const identity = deviceIdentity();
   // `pump` has already taken the tokenless branch, so this can only race a sign-out.
   if (!identity) return;
-  const epoch = identityEpoch();
+  const epoch = identityEpochOf(identity);
   let response: Response;
   try {
     response = await postRoundBody(roundUrl(f.lang, f.date, 'word'), {
@@ -447,7 +449,8 @@ async function readRound(f: WordFlight, key: string): Promise<void> {
   } else if (isVerdict(response.status)) {
     // A device signed out from elsewhere learns it here, on the mount read. The screen it
     // raises is the whole answer; this conversation has nothing left to ask.
-    await noteVerdict(response);
+    await noteVerdict(response, epoch);
+    if (superseded(f, puzzle, epoch)) return;
     failLoad(f, key);
     f.closed = true;
     return;
@@ -462,11 +465,11 @@ async function readRound(f: WordFlight, key: string): Promise<void> {
 // A 4xx may be the signed-out answer (#216). The CODE decides, never the status: a device
 // must not be signed out for a body this route refused for any other reason, and a 5xx or a
 // dropped connection must never sign anyone out at all.
-async function noteVerdict(response: Response): Promise<void> {
+async function noteVerdict(response: Response, epoch: string): Promise<void> {
   if (response.status !== 401) return;
   try {
     const data = (await response.json()) as { error?: unknown };
-    if (data.error === 'unknown_device') markDeviceSignedOut();
+    if (data.error === 'unknown_device') markDeviceSignedOut(epoch);
   } catch {
     // A refusal with no readable body says nothing about the device.
   }
@@ -481,7 +484,7 @@ async function submitRun(f: WordFlight, key: string, tried: readonly string[]): 
     // submission can also be the first act after a fresh start, so it ensures one rather
     // than assuming it.
     const identity = await ensureDeviceIdentity();
-    epoch = identityEpoch();
+    epoch = identityEpochOf(identity);
     response = await postRoundBody(roundUrl(f.lang, f.date, 'word'), {
       token: identity.token,
       puzzle,
@@ -526,7 +529,7 @@ async function submitRun(f: WordFlight, key: string, tried: readonly string[]): 
   // ever started here; a body this client keeps getting wrong), and retrying it forever
   // would spin one request every 30 seconds for the tab's life.
   if (error !== 'too_early' && isVerdict(response.status)) {
-    if (isVerdictSignedOut(response.status, error)) markDeviceSignedOut();
+    if (isVerdictSignedOut(response.status, error)) markDeviceSignedOut(epoch);
     f.closed = true;
     return;
   }

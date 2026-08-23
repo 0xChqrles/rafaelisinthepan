@@ -3,9 +3,9 @@
 // What is pinned here is what makes the model work rather than the plumbing around it: the
 // identity is created LAZILY (a visit that acts creates one; a visit that does not creates
 // nothing and asks the server nothing), the token is PERSISTED before the bootstrap so a
-// lost answer is retried onto the SAME identity, `unknown_device` and only `unknown_device`
-// signs a device out, and every identity change is announced so the state that identity owns
-// can be cleared before an old answer repopulates a new one.
+// lost answer is retried onto the SAME identity, only authoritative answers (`unknown_device`
+// or a confirmed self-revocation) sign a device out, and every identity change is announced
+// so the state that identity owns can be cleared before an old answer repopulates a new one.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { isValidDeviceToken, PUBLIC_ID_PATTERN } from '@whippin/shared';
@@ -19,9 +19,12 @@ vi.mock('./api', async (importOriginal) => ({
 
 import { postDevicesBody } from './api';
 import {
+  DEVICE_BOOTSTRAP_LOCK,
   deviceIdentity,
   ensureDeviceIdentity,
   identityEpoch,
+  identityEpochOf,
+  identityScopeRevision,
   loadDeviceIdentity,
   markDeviceSignedOut,
   onIdentityChange,
@@ -34,6 +37,9 @@ const post = vi.mocked(postDevicesBody);
 
 const ACCOUNT = 'abcdefghij234567';
 const DEVICE = 'zyxwvutsrq765432';
+
+type LockTask = (lock: Lock | null) => unknown;
+const lockRequest = vi.fn(async (_name: string, task: LockTask) => task(null));
 
 function fakeStorage(initial: Record<string, string> = {}): Storage {
   const values = new Map(Object.entries(initial));
@@ -77,7 +83,10 @@ function stored(): Record<string, unknown> | null {
 beforeEach(() => {
   storage = fakeStorage();
   vi.stubGlobal('window', fakeWindow(storage));
+  vi.stubGlobal('navigator', { locks: { request: lockRequest } });
   resetDeviceIdentity();
+  lockRequest.mockReset();
+  lockRequest.mockImplementation(async (_name: string, task: LockTask) => task(null));
   post.mockReset();
   post.mockResolvedValue(answer());
 });
@@ -137,6 +146,38 @@ describe('the lazy bootstrap (#216)', () => {
     const [a, b] = await Promise.all([ensureDeviceIdentity(), ensureDeviceIdentity()]);
     expect(a).toEqual(b);
     expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('serializes the EMPTY read and re-reads storage after entering the origin lock', async () => {
+    // Simulate this tab waiting behind another tab that already owns the Web Lock. Both
+    // tabs saw EMPTY before either entered; while this one waits, the winner commits its
+    // complete identity. The protected re-read must adopt it without minting/posting.
+    let enter: (() => void) | null = null;
+    lockRequest.mockImplementationOnce(
+      (_name: string, task: LockTask) =>
+        new Promise((resolve, reject) => {
+          enter = () => {
+            Promise.resolve(task(null)).then(resolve, reject);
+          };
+        }),
+    );
+    const waiting = ensureDeviceIdentity();
+    expect(lockRequest).toHaveBeenCalledWith(DEVICE_BOOTSTRAP_LOCK, expect.any(Function));
+
+    const theirs = { token: '9'.repeat(64), accountId: ACCOUNT, deviceId: DEVICE };
+    storage.setItem('whippin-device', JSON.stringify(theirs));
+    expect(enter).not.toBeNull();
+    enter!();
+
+    await expect(waiting).resolves.toEqual(theirs);
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when a browser cannot serialize bootstrap across tabs', async () => {
+    vi.stubGlobal('navigator', {});
+    await expect(ensureDeviceIdentity()).rejects.toThrow(/Web Locks/);
+    expect(post).not.toHaveBeenCalled();
+    expect(stored()).toBeNull();
   });
 
   it('refuses a malformed answer rather than keying every row by garbage', async () => {
@@ -202,8 +243,8 @@ describe('what a reload finds (#216)', () => {
 
 describe('being signed out (#216)', () => {
   it('drops the identity and raises the screen, ONCE', async () => {
-    await ensureDeviceIdentity();
-    markDeviceSignedOut();
+    const identity = await ensureDeviceIdentity();
+    markDeviceSignedOut(identityEpochOf(identity));
     expect(deviceIdentity()).toBeNull();
     expect(stored()).toBeNull();
     expect(useIdentityStore.getState().signedOut).toBe(true);
@@ -211,7 +252,7 @@ describe('being signed out (#216)', () => {
 
   it('SKIP discards the old identity and starts fresh on the next act', async () => {
     const first = await ensureDeviceIdentity();
-    markDeviceSignedOut();
+    markDeviceSignedOut(identityEpochOf(first));
     startFreshDevice();
     expect(useIdentityStore.getState().signedOut).toBe(false);
     post.mockResolvedValue(answer('qqqqqqqqqqqqqqqq', 'rrrrrrrrrrrrrrrr'));
@@ -231,6 +272,7 @@ describe('local state follows the identity that owns it (#216)', () => {
     // a bootstrap is triggered BY an act, so a listener that cleared here would destroy the
     // guess or the run that asked for it (`state/identityScope.ts`).
     expect(seen).toHaveLength(1);
+    expect(identityScopeRevision()).toBe(0);
     expect(seen[0]).toMatchObject({
       previous: null,
       next: identity,
@@ -242,15 +284,16 @@ describe('local state follows the identity that owns it (#216)', () => {
     loadDeviceIdentity();
     expect(seen).toHaveLength(1);
 
-    markDeviceSignedOut();
+    markDeviceSignedOut(identityEpochOf(identity));
     expect(seen[1]).toMatchObject({ previous: identity, next: null, accountChanged: true });
+    expect(identityScopeRevision()).toBe(1);
     stop();
   });
 
   it('gives every private request an epoch to be fenced against', async () => {
     const identity = await ensureDeviceIdentity();
     expect(identityEpoch()).toBe(`${identity.accountId}:${identity.deviceId}`);
-    markDeviceSignedOut();
+    markDeviceSignedOut(identityEpochOf(identity));
     // An answer captured under the old epoch can no longer match, which is what stops the
     // identity just left from repopulating the one that replaced it.
     expect(identityEpoch()).toBeNull();
@@ -269,10 +312,10 @@ describe('localStorage is shared by every TAB (#216)', () => {
     expect(stored()).toEqual(theirs);
   });
 
-  it('converges on ONE account when two tabs bootstrap at once', async () => {
-    // The other tab persisted its PENDING token and is waiting on its answer. Adopting that
-    // token is what makes the server's idempotence reachable: both requests hash to the same
-    // device item, so both tabs resolve to one account.
+  it('retries a PENDING token another tab left instead of replacing it', async () => {
+    // The other tab persisted its token and was interrupted before committing the ids.
+    // Adopting it is what makes the server's idempotence reachable: the retry hashes to the
+    // same device item and recovers that account.
     const theirToken = 'd'.repeat(64);
     storage.setItem('whippin-device', JSON.stringify({ token: theirToken }));
     await ensureDeviceIdentity();
@@ -292,13 +335,40 @@ describe('localStorage is shared by every TAB (#216)', () => {
   });
 
   it('does NOT delete a newer tab\'s identity when this one signs out', async () => {
-    await ensureDeviceIdentity();
+    const identity = await ensureDeviceIdentity();
     const theirs = { token: 'f'.repeat(64), accountId: 'rrrrrrrrrrrrrrrr', deviceId: DEVICE };
     storage.setItem('whippin-device', JSON.stringify(theirs));
-    markDeviceSignedOut();
+    markDeviceSignedOut(identityEpochOf(identity));
     // This tab shows its screen; the entry it did not write stands.
     expect(useIdentityStore.getState().signedOut).toBe(true);
     expect(stored()).toEqual(theirs);
+
+    // SKIP runs after the old identity has already been dropped. With no expected token it
+    // must not turn that conditional removal into an unconditional one a beat later.
+    startFreshDevice();
+    expect(stored()).toEqual(theirs);
+    await expect(ensureDeviceIdentity()).resolves.toEqual(theirs);
+    // A -> null remounted away from the old account, and null -> B remounts the replacement's
+    // private reads. The only acquisition that preserves a mount is the first-ever bootstrap.
+    expect(identityScopeRevision()).toBe(2);
+  });
+
+  it('ignores a stale signed-out verdict instead of deleting the NEW identity', async () => {
+    const old = await ensureDeviceIdentity();
+    const oldEpoch = identityEpochOf(old);
+    const current = {
+      token: '7'.repeat(64),
+      accountId: 'ssssssssssssssss',
+      deviceId: 'tttttttttttttttt',
+    };
+    storage.setItem('whippin-device', JSON.stringify(current));
+    loadDeviceIdentity();
+
+    expect(identityScopeRevision()).toBe(1);
+    expect(markDeviceSignedOut(oldEpoch)).toBe(false);
+    expect(deviceIdentity()).toEqual(current);
+    expect(stored()).toEqual(current);
+    expect(useIdentityStore.getState().signedOut).toBe(false);
   });
 
   it('keeps the session identity when storage cannot be READ at all', async () => {
@@ -315,5 +385,19 @@ describe('localStorage is shared by every TAB (#216)', () => {
     vi.stubGlobal('window', denied);
     await expect(ensureDeviceIdentity()).resolves.toEqual(identity);
     expect(deviceIdentity()).toEqual(identity);
+  });
+
+  it('never removes storage blindly when it cannot verify the token still belongs to this tab', async () => {
+    const identity = await ensureDeviceIdentity();
+    const read = vi.spyOn(storage, 'getItem').mockImplementation(() => {
+      throw new Error('SecurityError: read denied');
+    });
+    const remove = vi.spyOn(storage, 'removeItem');
+
+    markDeviceSignedOut(identityEpochOf(identity));
+    expect(remove).not.toHaveBeenCalled();
+
+    read.mockRestore();
+    expect(stored()).toEqual(identity);
   });
 });
