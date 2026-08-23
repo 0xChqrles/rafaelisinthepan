@@ -1,17 +1,23 @@
-// CONTRACT (#201): the round sync engine. The server owns each round's ordered guess
-// log; local play stays instant and the engine converges the server's copy behind it:
-//   - the mount READ adopts whatever the local device is missing (cross-device history,
-//     archive rounds included), merging server-first under the local log by canonical
-//     identity (#104), and the adopted board carries its cached progress;
+// CONTRACT (#201, reworked by #214): the round sync engine. The server owns each round's
+// ordered guess log, and local storage is an OUTBOX holding only what it has not
+// acknowledged:
+//   - the mount READ is what the board is replayed from, so the engine PUBLISHES where a
+//     round's state is — loading / ready with the server's own state / failed, and a failure
+//     is a state the screen shows rather than permission to start from a guessed mirror;
 //   - counted guesses are COALESCED behind the ~1s pacing, measured from the previous
-//     write's ANSWER (the server times its own receipt instants), and flushed as batches
-//     clamped to what still fits under the cap;
-//   - EVERY answer — a 200 and BOTH refusals — carries the full stored log and is adopted
-//     as truth;
-//   - a write whose outcome is UNKNOWN re-reads before writing again, so an append is
-//     never stored twice; a 4xx VERDICT closes the conversation instead of spinning;
-//   - the cap refusal (409) marks the round capped, and the persisted flag keeps a reload
-//     from re-opening the conversation.
+//     write's ANSWER (the server times its own receipt instants), and each batch is the
+//     oldest prefix of the outbox that still fits under the cap — sized against the RAW
+//     stored log, never the play log's shorter merged length;
+//   - EVERY answer — a 200 and BOTH refusals — carries the full stored state and REPLACES
+//     the snapshot; a 2xx additionally settles the outbox by canonical identity (#104), so
+//     the sent prefix and anything else the server now holds both leave it;
+//   - a 429 keeps the outbox and paces; a 409 BELOW the cap keeps it and re-sizes; a 409
+//     with an unsolved log AT the cap ends the round (nothing that never fit is kept), and
+//     the capped state itself is DERIVED from that stored state, never a stored flag;
+//   - a SOLVED round is frozen: its answer is adopted and the conversation closes, and what
+//     was still pending is dropped for good;
+//   - a write whose outcome is UNKNOWN re-reads before writing again, so an append is never
+//     stored twice; a 4xx VERDICT closes the conversation instead of spinning.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RankMap, RuntimeHole } from '@whippin/shared';
@@ -20,12 +26,12 @@ import { useGameStore, roundKeyForDay } from './gameStore';
 import {
   backoffDelayMs,
   beginRoundSync,
-  mergeLogs,
   notifyGuess,
-  replayHoles,
   resetRoundSync,
+  retryRoundSync,
   writeDelayMs,
 } from './roundSync';
+import { replayHoles } from '../game/scoring';
 import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
 
 // `roundUrl` is mocked with the rest (the house pattern — see useScoreHistogram.test.ts's
@@ -75,15 +81,14 @@ function freshHoles(): RuntimeHole[] {
 const REVISION = 'a1b2c3d4e5f60718';
 const CORRECTED_REVISION = 'b2c3d4e5f6071829';
 
-function ctx(key: string = KEY) {
+function ctx(key: string = KEY, revision: string = REVISION) {
   return {
     roundKey: key,
     lang: 'fr',
     mode: 'sentence',
     date: '2026-08-21',
-    revision: REVISION,
+    revision,
     ranks: SECRET_MAP,
-    freshHoles: freshHoles(),
   } as const;
 }
 
@@ -103,11 +108,11 @@ function ok(guesses: string[], solved = false) {
   } as unknown as Response;
 }
 
-// A refusal is an ANSWER: 409 and 429 carry the UNCHANGED stored log exactly like a 200.
-// A refusal is an ANSWER: it carries the stored state of the puzzle ASKED about. An EMPTY
-// one (no record of this puzzle yet — a rate-refused restart) carries an empty `createdAt`,
-// which is what tells "refused an existing round" from "refused before creating one".
-function refusal(status: number, guesses: string[], error?: string) {
+// A refusal is an ANSWER: 409 and 429 carry the stored state of the puzzle ASKED about,
+// exactly like a 200. An EMPTY one (no record of this puzzle yet — a rate-refused restart)
+// carries an empty `createdAt`, which is what tells "refused an existing round" from
+// "refused before creating one".
+function refusal(status: number, guesses: string[], error?: string, solved = false) {
   return {
     ok: false,
     status,
@@ -115,6 +120,7 @@ function refusal(status: number, guesses: string[], error?: string) {
       error: error ?? (status === 409 ? 'round_full' : 'too_fast'),
       message: 'refused',
       guesses,
+      solved,
       createdAt: guesses.length === 0 ? '' : '2026-08-21T09:00:00.000Z',
       now: '2026-08-21T09:30:00.000Z',
     }),
@@ -125,27 +131,33 @@ function status(code: number) {
   return { ok: false, status: code, json: async () => ({}) } as unknown as Response;
 }
 
-function seedRound(tried: string[] = [], extra: Record<string, unknown> = {}, key: string = KEY) {
+// Seed the OUTBOX — the only persisted sentence state since #214.
+function seedOutbox(guesses: string[] = [], key: string = KEY, puzzle: string = REVISION) {
   useGameStore.setState(
-    (s) => ({
-      rounds: {
-        ...s.rounds,
-        [key]: {
-          holes: freshHoles(),
-          guessCount: tried.length,
-          tried,
-          progress: 0,
-          ...extra,
-        },
-      },
-      activeKey: key,
-    }),
+    (s) => ({ outbox: { ...s.outbox, [key]: { puzzle, guesses } } }),
     false,
   );
 }
 
-function round(key: string = KEY) {
-  return useGameStore.getState().rounds[key];
+function outbox(key: string = KEY): string[] {
+  return useGameStore.getState().outbox[key]?.guesses ?? [];
+}
+
+function load(key: string = KEY) {
+  return useGameStore.getState().roundLoads[key];
+}
+
+// The server state the engine published, or undefined while it has not settled.
+function server(key: string = KEY) {
+  const entry = load(key);
+  return entry?.status === 'ready' ? entry.server : undefined;
+}
+
+// The two facts the SCREEN derives from that state (#214). Restated here rather than
+// imported, because what is pinned is the SHAPE the screen reads, not Game's spelling of it.
+function capped(key: string = KEY): boolean {
+  const s = server(key);
+  return s !== undefined && !s.solved && s.guesses.length >= ROUND_GUESS_CAP;
 }
 
 function bodyOf(call: number): {
@@ -178,37 +190,13 @@ beforeEach(() => {
   resetRoundSync();
   post.mockReset();
   useGameStore.setState(
-    {
-      rounds: {},
-      wordRounds: {},
-      activeKey: null,
-      activeWordKey: null,
-    },
+    { outbox: {}, wordRounds: {}, roundLoads: {}, activeWordKey: null },
     false,
   );
 });
 
 afterEach(() => {
   vi.useRealTimers();
-});
-
-describe('mergeLogs', () => {
-  it('unions server-first, deduping by canonical identity (#104)', () => {
-    // 'foretz' aliases to the same whole outcome as 'foret' in every map — ONE try.
-    const { guesses, acked } = mergeLogs(
-      ['foret'],
-      ['foretz', 'bois'],
-      (t) => (SECRET_MAP.foret[t]?.rank ?? -1) + '|' + (SECRET_MAP.ancienne[t]?.rank ?? -1),
-    );
-    expect(guesses).toEqual(['foret', 'bois']);
-    expect(acked).toBe(1); // only the server entry is acked
-  });
-
-  it('keeps local-only tries behind the acked prefix', () => {
-    const { guesses, acked } = mergeLogs(['a', 'b'], ['b', 'c'], (t) => t);
-    expect(guesses).toEqual(['a', 'b', 'c']);
-    expect(acked).toBe(2);
-  });
 });
 
 describe('replayHoles', () => {
@@ -242,437 +230,539 @@ describe('write pacing', () => {
   });
 });
 
-describe('engine', () => {
-  it('adopts a richer server log on mount — history follows the player to a new device', async () => {
-    seedRound();
-    post.mockResolvedValueOnce(ok(['bois']));
+describe('the mount read — what the screen waits on', () => {
+  it('publishes LOADING the moment the round registers', () => {
+    post.mockReturnValue(new Promise(() => {})); // never settles
+    seedOutbox();
     beginRoundSync(ctx());
-    await settle();
-
-    expect(post).toHaveBeenCalledOnce();
-    // The read carries the player key and the puzzle tag, and asks for nothing else.
-    expect(bodyOf(0).puzzle).toBe(REVISION);
-    expect(bodyOf(0).guesses).toBeUndefined();
-
-    expect(round()?.tried).toEqual(['bois']);
-    expect(round()?.guessCount).toBe(1);
-    expect(round()?.holes[0]).toMatchObject({ word: 'bois', rank: 5 });
-    // The cached progress travels with the board: nothing else refreshes it once this
-    // round stops being the active one.
-    expect(round()?.progress).toBeGreaterThan(0);
+    expect(load()).toEqual({ status: 'loading' });
   });
 
-  it('keeps local-only tries after a 404 read and appends them (creating the record)', async () => {
-    seedRound(['bois']);
-    post.mockResolvedValueOnce(status(404)).mockResolvedValueOnce(ok(['bois']));
+  it('publishes the server\'s state on a 200', async () => {
+    post.mockResolvedValueOnce(ok(['bois', 'chemin']));
+    seedOutbox();
     beginRoundSync(ctx());
     await settle();
-
-    // A READ is not rate-limited server-side, so the first flush does not wait behind it.
-    expect(post).toHaveBeenCalledTimes(2);
-    expect(bodyOf(1).guesses).toEqual(['bois']);
-    expect(round()?.tried).toEqual(['bois']);
-  });
-
-  it('does NOT rewrite the round when the server only echoes what we sent', async () => {
-    seedRound(['bois']);
-    post.mockResolvedValueOnce(status(404)).mockResolvedValueOnce(ok(['bois']));
-    beginRoundSync(ctx());
-    await settle();
-    const settled = round();
-
-    // Adopting an unchanged log would re-serialize the persist blob AND apply every
-    // pending hole improvement on the spot, out from under Game.submit's deferral of
-    // each swap to its floating hit's fade-out — which on a fast connection is every
-    // single guess.
-    await settle(5_000);
-    expect(round()).toBe(settled);
-  });
-
-  it('splits guesses that land while a write is in flight into the next batch', async () => {
-    seedRound();
-    post
-      .mockResolvedValueOnce(status(404)) // read
-      .mockResolvedValueOnce(ok(['bois'])) // first append
-      .mockResolvedValueOnce(ok(['bois', 'foret'])); // second append
-
-    beginRoundSync(ctx());
-    await settle();
-    expect(post).toHaveBeenCalledOnce(); // the read alone: nothing pending yet
-
-    const keyOf = (t: string) =>
-      `${SECRET_MAP.foret[t]?.rank ?? -1}|${SECRET_MAP.ancienne[t]?.rank ?? -1}`;
-    const store = useGameStore.getState();
-
-    // The first guess flushes immediately — nothing has been written yet.
-    store.recordGuess('bois', keyOf);
-    notifyGuess(KEY);
-    await settle();
-    expect(bodyOf(1).guesses).toEqual(['bois']);
-
-    // One typed while THAT write is settling waits out the interval and goes as its own
-    // batch, coalesced rather than racing.
-    store.recordGuess('foret', keyOf);
-    notifyGuess(KEY);
-    await settle();
-    expect(post).toHaveBeenCalledTimes(2);
-
-    await settle(ROUND_WRITE_MIN_MS);
-    expect(post).toHaveBeenCalledTimes(3);
-    expect(bodyOf(2).guesses).toEqual(['foret']);
-    expect(round()?.tried).toEqual(['bois', 'foret']);
-  });
-
-  it('marks the round capped on a 409 whose log really is at the cap, and never writes again', async () => {
-    const full = overCapLog().slice(0, ROUND_GUESS_CAP);
-    seedRound(['bois']);
-    post.mockResolvedValueOnce(status(404)).mockResolvedValueOnce(refusal(409, full));
-    beginRoundSync(ctx());
-    await settle();
-
-    expect(round()?.capped).toBe(true);
-    const writes = post.mock.calls.length;
-
-    useGameStore.getState().recordGuess('foret', (t) => t);
-    notifyGuess(KEY);
-    await settle(60_000);
-    expect(post.mock.calls.length).toBe(writes); // conversation closed
-  });
-
-  it('does NOT cap on a 409 whose log still has room — it re-sizes the batch', async () => {
-    // A batch clamped correctly WHEN SENT can still overshoot: another device under the
-    // same key pushed the stored log forward while this tab was away. The round is not
-    // full, and concluding that it is would suppress the leaderboard entry of a round
-    // that had room — the harshest consequence the design has.
-    const local = overCapLog().slice(0, ROUND_GUESS_CAP);
-    seedRound(local);
-    post
-      .mockResolvedValueOnce(ok(local.slice(0, 100))) // mount read: we believe 100 are stored
-      .mockResolvedValueOnce(refusal(409, local.slice(0, 490))) // meanwhile it reached 490
-      .mockResolvedValueOnce(ok(local));
-    beginRoundSync(ctx());
-    await settle();
-
-    // The first flush was sized against the read: 500 − 100.
-    expect(bodyOf(1).guesses).toHaveLength(ROUND_GUESS_CAP - 100);
-    expect(round()?.capped).toBeUndefined();
-
-    // The refusal carried the truth, so the retry asks for exactly what still fits.
-    await settle(ROUND_WRITE_MIN_MS);
-    expect(post).toHaveBeenCalledTimes(3);
-    expect(bodyOf(2).guesses).toHaveLength(ROUND_GUESS_CAP - 490);
-    expect(round()?.capped).toBeUndefined();
-  });
-
-  it('measures the room left by the RAW stored count, not the deduped one', async () => {
-    // Two devices can each store a guess that resolves to the OTHER's identity (#104),
-    // so the merge collapses them and the acked prefix comes out SHORTER than the log
-    // the server's cap actually counts. Here the server holds a full 500 raw entries of
-    // which two are one identity — 499 merged. Sizing the room by the merged count
-    // leaves an imaginary slot and spends a doomed request to discover it is not there.
-    const stored = [...overCapLog().slice(0, ROUND_GUESS_CAP - 2), 'foret', 'foretz'];
-    expect(stored).toHaveLength(ROUND_GUESS_CAP);
-    seedRound([...stored, 'chemin']); // one local try still pending
-    post.mockResolvedValueOnce(ok(stored));
-    beginRoundSync(ctx());
-    await settle(60_000);
-
-    // The merge keeps 499 identities, but 500 is what the cap counts — so the round is
-    // full, and it is known to be full without asking.
-    expect(round()?.capped).toBe(true);
-    expect(post).toHaveBeenCalledOnce();
-  });
-
-  it('does not re-open a capped round on a later mount', async () => {
-    // `capped` is persisted; without reading it here every reload spends a read and a
-    // guaranteed-409 append, and writes another cap line that is reload noise rather
-    // than a player actually reaching the cap.
-    seedRound(['bois'], { capped: true });
-    beginRoundSync(ctx());
-    await settle(60_000);
-    expect(post).not.toHaveBeenCalled();
-  });
-
-  it('treats a 429 as pacing, not failure: adopts its log and retries one interval later', async () => {
-    seedRound(['bois']);
-    post
-      .mockResolvedValueOnce(status(404))
-      .mockResolvedValueOnce(refusal(429, []))
-      .mockResolvedValueOnce(ok(['bois']));
-    beginRoundSync(ctx());
-    await settle();
-    expect(post).toHaveBeenCalledTimes(2);
-
-    // NOT the doubled backoff a transport failure earns — one plain interval, measured
-    // from the refusal itself.
-    await settle(ROUND_WRITE_MIN_MS - 1);
-    expect(post).toHaveBeenCalledTimes(2);
-    await settle(1);
-    expect(post).toHaveBeenCalledTimes(3);
-    expect(bodyOf(2).guesses).toEqual(['bois']);
-  });
-
-  it('RE-READS after a write whose outcome is unknown, instead of re-sending it', async () => {
-    seedRound(['bois']);
-    post
-      .mockResolvedValueOnce(status(404))
-      .mockResolvedValueOnce(status(500))
-      .mockResolvedValueOnce(ok(['bois'])) // the re-read: the write HAD committed
-      .mockResolvedValueOnce(ok(['bois']));
-
-    beginRoundSync(ctx());
-    await settle();
-    expect(post).toHaveBeenCalledTimes(2); // read + the failed append
-
-    await settle(2 * ROUND_WRITE_MIN_MS);
-    // A 5xx (or a dropped connection) says nothing about whether the append landed.
-    // Re-sending it would `list_append` the same guesses twice and burn the cap on a
-    // duplicate the client's own dedup then hides, so the recovery is a READ.
-    expect(bodyOf(2).guesses).toBeUndefined();
-    expect(round()?.tried).toEqual(['bois']);
-
-    // And with the log now known to be acked, nothing further is pending.
-    await settle(30_000);
-    expect(post).toHaveBeenCalledTimes(3);
-  });
-
-  it('discards an in-flight answer once the daily is RE-PUBLISHED under it', async () => {
-    seedRound();
-    let landOldRead: (response: Response) => void = () => {};
-    post.mockReturnValueOnce(
-      new Promise<Response>((resolve) => {
-        landOldRead = resolve;
-      }),
-    );
-    post.mockResolvedValueOnce(status(404)); // the corrected puzzle's own read
-
-    beginRoundSync(ctx());
-    await settle();
-    expect(post).toHaveBeenCalledOnce();
-
-    // The daily is re-published while that read is still in the air. A flight is MUTATED
-    // in place on re-registration, so without a check the old answer would be applied
-    // using the CORRECTED puzzle's ranks and holes.
-    const corrected: RuntimeHole[] = [
-      { pos: 1, secret: 'foret', word: 'bois', rank: 87, startRank: 87 },
-      { pos: 2, secret: 'antique', word: 'vieux', rank: 12, startRank: 12 },
-    ];
-    beginRoundSync({
-      ...ctx(),
-      revision: CORRECTED_REVISION,
-      freshHoles: corrected,
-      ranks: { ...SECRET_MAP, antique: { antique: { word: 'antique', rank: 0 } } },
+    expect(load()).toEqual({
+      status: 'ready',
+      server: { guesses: ['bois', 'chemin'], solved: false, solvedByAppend: false },
     });
-
-    // The old request lands, carrying the RETIRED sentence's log.
-    landOldRead(ok(['bois', 'chemin']));
-    await settle();
-
-    // None of it reached the round the player is now playing...
-    expect(round()?.tried).toEqual([]);
-    expect(round()?.holes).toEqual(freshHoles());
-    // ...and the corrected puzzle asked the server about ITSELF.
-    expect(post).toHaveBeenCalledTimes(2);
-    expect(bodyOf(1).puzzle).toBe(CORRECTED_REVISION);
+    // A READ never writes: the request carries no guesses.
+    expect(bodyOf(0).guesses).toBeUndefined();
   });
 
-  it('closes on a 4xx VERDICT instead of spinning on it forever', async () => {
-    seedRound(['bois']);
-    post.mockResolvedValue(status(400));
-    beginRoundSync(ctx());
-    await settle(120_000);
-    // A read this client will keep getting wrong stalls every append behind it, so the
-    // guesses would reach the server on no visit ever while one request went out every
-    // 30 seconds for the tab's life.
-    expect(post).toHaveBeenCalledOnce();
-  });
-
-  it('clamps a batch to what still fits under the cap', async () => {
-    const long = overCapLog();
-    seedRound(long);
-    post.mockResolvedValueOnce(status(404)).mockResolvedValueOnce(ok(long.slice(0, ROUND_GUESS_CAP)));
+  it('publishes an EMPTY ready state on a 404 — "nothing yet" is an answer', async () => {
+    post.mockResolvedValueOnce(status(404));
+    seedOutbox();
     beginRoundSync(ctx());
     await settle();
-
-    // An unclamped batch takes a 400 — not the 409 this engine handles — and would be
-    // re-sent every 30s forever while the round was never marked capped at all.
-    expect(bodyOf(1).guesses).toHaveLength(ROUND_GUESS_CAP);
+    expect(load()).toEqual({
+      status: 'ready',
+      server: { guesses: [], solved: false, solvedByAppend: false },
+    });
   });
 
-  it('marks a round capped without spending a doomed request once the log is full', async () => {
-    const long = overCapLog();
-    seedRound(long);
-    post
-      .mockResolvedValueOnce(status(404))
-      .mockResolvedValueOnce(ok(long.slice(0, ROUND_GUESS_CAP)));
+  it('publishes FAILED on a transport error, and RECOVERS on the retry', async () => {
+    post.mockRejectedValueOnce(new Error('offline'));
+    seedOutbox();
+    beginRoundSync(ctx());
+    await settle();
+    expect(load()).toEqual({ status: 'failed' });
+
+    post.mockResolvedValueOnce(ok(['bois']));
+    await settle(2 * ROUND_WRITE_MIN_MS);
+    expect(server()?.guesses).toEqual(['bois']);
+  });
+
+  it('publishes FAILED and CLOSES on a verdict', async () => {
+    post.mockResolvedValueOnce(status(400));
+    seedOutbox(['bois']);
     beginRoundSync(ctx());
     await settle(60_000);
-
-    expect(post).toHaveBeenCalledTimes(2);
-    expect(round()?.capped).toBe(true);
+    expect(load()).toEqual({ status: 'failed' });
+    expect(post).toHaveBeenCalledTimes(1); // no spinning
   });
 
-  it('does NOT cap a round whose log ends exactly at the cap with nothing pending', async () => {
-    // "Capped" means the server has (or would) refuse a guess — its own 409 semantics.
-    // A player who solved on their 500th try is finished, not stopped counting, and
-    // capping them here would silently suppress a legitimate leaderboard entry.
-    const full = overCapLog().slice(0, ROUND_GUESS_CAP);
-    seedRound(full);
-    post.mockResolvedValueOnce(ok(full));
+  it('RETRY re-opens a conversation a verdict closed', async () => {
+    post.mockResolvedValueOnce(status(400));
+    seedOutbox();
     beginRoundSync(ctx());
-    await settle(60_000);
+    await settle();
+    expect(load()).toEqual({ status: 'failed' });
 
-    expect(post).toHaveBeenCalledOnce();
-    expect(round()?.capped).toBeUndefined();
+    post.mockResolvedValueOnce(ok(['bois']));
+    retryRoundSync(KEY);
+    await settle();
+    expect(server()?.guesses).toEqual(['bois']);
   });
 
-  it('bounds the conversation map — every flight pins its puzzle\'s rank map', async () => {
-    post.mockResolvedValue(status(404));
-    // Four rounds registered, no store rounds behind them: nothing is requested, but the
-    // flights are created. Browsing the archive used to keep every one of them (and its
-    // megabytes of ranks) alive for the tab's life.
-    for (const day of [21, 22, 23, 24]) beginRoundSync(ctx(roundKeyForDay(day, 'fr')));
+  it('drops outbox entries the server\'s log already represents, by IDENTITY', async () => {
+    // 'foretz' resolves identically to 'foret' in every map, so the server holding one
+    // acknowledges the other: re-sending it would append a duplicate the play log hides.
+    post.mockResolvedValueOnce(ok(['foret']));
+    seedOutbox(['foretz', 'bois']);
+    beginRoundSync(ctx());
     await settle();
-    expect(post).not.toHaveBeenCalled();
+    expect(outbox()).toEqual(['bois']);
+  });
 
-    // The oldest conversation is gone; dropping it is safe by construction, because
-    // durability lives in the persisted log and the next mount reads.
-    seedRound(['bois'], {}, roundKeyForDay(21, 'fr'));
-    notifyGuess(roundKeyForDay(21, 'fr'));
+  it('keeps the WHOLE outbox on a 404 — the server acknowledged nothing', async () => {
+    post.mockResolvedValueOnce(status(404));
+    seedOutbox(['bois', 'chemin']);
+    beginRoundSync(ctx());
     await settle();
-    expect(post).not.toHaveBeenCalled();
+    expect(outbox()).toEqual(['bois', 'chemin']);
+  });
 
-    // The most recent one is still live.
-    seedRound(['bois'], {}, roundKeyForDay(24, 'fr'));
-    notifyGuess(roundKeyForDay(24, 'fr'));
+  it('a FAILED re-read never pulls an interactive round back to an error state', async () => {
+    post.mockResolvedValueOnce(ok([]));
+    seedOutbox();
+    beginRoundSync(ctx());
     await settle();
-    expect(post).toHaveBeenCalled();
+    expect(load()?.status).toBe('ready');
+
+    // The round is being played now; an append whose outcome is unknown re-reads, and that
+    // read failing is a sync hiccup behind a live board, not a load failure.
+    seedOutbox(['bois']);
+    post.mockRejectedValueOnce(new Error('offline')); // the append
+    post.mockRejectedValueOnce(new Error('offline')); // its recovery read
+    notifyGuess(KEY);
+    await settle(10 * ROUND_WRITE_MIN_MS);
+    expect(load()?.status).toBe('ready');
   });
 });
 
-// CONTRACT (#203): the server derives the solve, and the client adopts that FACT. It is
-// what says the day's score row exists — so the standing is readable — and it is the
-// FREEZE, so the conversation is over.
-describe('the server-held solve (#203)', () => {
-  it('marks the round recorded off an answer that says solved, and stops writing', async () => {
-    seedRound(['bois']);
-    post.mockResolvedValueOnce(status(404)).mockResolvedValueOnce(ok(['bois'], true));
+describe('appends — coalescing, pacing and the batch prefix', () => {
+  async function ready(serverLog: string[] = []) {
+    post.mockResolvedValueOnce(serverLog.length ? ok(serverLog) : status(404));
+    seedOutbox();
     beginRoundSync(ctx());
-    await settle(60_000);
+    await settle();
+    post.mockReset();
+  }
 
-    expect(round()?.recorded).toBe(true);
-    const writes = post.mock.calls.length;
-    // Nothing more is sent, whatever else lands locally.
-    seedRound(['bois', 'chemin']);
+  it('flushes the outbox as ONE batch and settles it against the answer', async () => {
+    await ready();
+    seedOutbox(['bois', 'chemin']);
+    post.mockResolvedValueOnce(ok(['bois', 'chemin']));
+    notifyGuess(KEY);
+    await settle();
+    expect(bodyOf(0).guesses).toEqual(['bois', 'chemin']);
+    expect(outbox()).toEqual([]);
+    expect(server()?.guesses).toEqual(['bois', 'chemin']);
+  });
+
+  it('KEEPS guesses appended while the write was in flight', async () => {
+    await ready();
+    seedOutbox(['bois']);
+    let release: (r: Response) => void = () => {};
+    post.mockReturnValueOnce(new Promise<Response>((resolve) => { release = resolve; }));
+    notifyGuess(KEY);
+    await settle();
+    // The player keeps typing while the request is out.
+    useGameStore.getState().appendOutbox(KEY, 'chemin');
+    release(ok(['bois']));
+    await settle();
+    expect(outbox()).toEqual(['chemin']);
+  });
+
+  it('paces the next append from the previous ANSWER', async () => {
+    await ready();
+    seedOutbox(['bois']);
+    post.mockResolvedValueOnce(ok(['bois']));
+    notifyGuess(KEY);
+    await settle();
+    expect(post).toHaveBeenCalledTimes(1);
+
+    seedOutbox(['chemin']);
+    post.mockResolvedValueOnce(ok(['bois', 'chemin']));
+    notifyGuess(KEY);
+    await settle(ROUND_WRITE_MIN_MS - 1);
+    expect(post).toHaveBeenCalledTimes(1); // still inside the interval
+    await settle(1);
+    expect(post).toHaveBeenCalledTimes(2);
+  });
+
+  it('sends the OLDEST PREFIX that fits, sized against the RAW stored log', async () => {
+    // The play log would be shorter here (the merge dedups), but the cap counts what is
+    // STORED — so the room is measured on the raw log the answer carried.
+    const stored = Array.from({ length: ROUND_GUESS_CAP - 2 }, (_, i) => `s-${i.toString(36)}`);
+    await ready(stored);
+    seedOutbox(['a-one', 'b-two', 'c-three', 'd-four']);
+    post.mockResolvedValueOnce(ok([...stored, 'a-one', 'b-two']));
+    notifyGuess(KEY);
+    await settle();
+    expect(bodyOf(0).guesses).toEqual(['a-one', 'b-two']);
+    expect(outbox()).toEqual(['c-three', 'd-four']);
+  });
+
+  it('never sends a batch the route can only refuse', async () => {
+    await ready();
+    seedOutbox(overCapLog());
+    post.mockResolvedValueOnce(ok(overCapLog().slice(0, ROUND_GUESS_CAP)));
+    notifyGuess(KEY);
+    await settle();
+    expect(bodyOf(0).guesses).toHaveLength(ROUND_GUESS_CAP);
+  });
+});
+
+describe('the round-start challenge (#203)', () => {
+  it('carries a challenge on the append that CREATES the record, and none after', async () => {
+    post.mockResolvedValueOnce(status(404)); // nothing stored yet
+    seedOutbox();
+    beginRoundSync(ctx());
+    await settle();
+
+    seedOutbox(['bois']);
+    post.mockResolvedValueOnce(ok(['bois']));
+    notifyGuess(KEY);
+    await settle();
+    expect(bodyOf(1).turnstileToken).toBe('challenge');
+
+    seedOutbox(['chemin']);
+    post.mockResolvedValueOnce(ok(['bois', 'chemin']));
+    notifyGuess(KEY);
+    await settle(ROUND_WRITE_MIN_MS);
+    expect(bodyOf(2).turnstileToken).toBeUndefined();
+  });
+
+  it('carries none when the READ already found a record', async () => {
+    post.mockResolvedValueOnce(ok(['bois']));
+    seedOutbox(['chemin']);
+    beginRoundSync(ctx());
+    await settle();
+    post.mockResolvedValueOnce(ok(['bois', 'chemin']));
+    await settle(ROUND_WRITE_MIN_MS);
+    expect(bodyOf(1).turnstileToken).toBeUndefined();
+  });
+
+  it('a rate-refused RESTART is NOT creation — the retry still carries a challenge', async () => {
+    // `stateForTag`: a refusal about a puzzle the server holds no record of answers the
+    // EMPTY state. Taking that as creation makes the retry omit the challenge, which is a
+    // 403, which is a verdict — closing a round that was never created.
+    post.mockResolvedValueOnce(status(404));
+    seedOutbox();
+    beginRoundSync(ctx());
+    await settle();
+
+    seedOutbox(['bois']);
+    post.mockResolvedValueOnce(refusal(429, [])); // empty state -> createdAt ''
+    notifyGuess(KEY);
+    await settle();
+    expect(bodyOf(1).turnstileToken).toBe('challenge');
+
+    post.mockResolvedValueOnce(ok(['bois']));
+    await settle(2 * ROUND_WRITE_MIN_MS);
+    expect(bodyOf(2).turnstileToken).toBe('challenge');
+  });
+});
+
+describe('the four refusals', () => {
+  async function ready(serverLog: string[] = []) {
+    post.mockResolvedValueOnce(serverLog.length ? ok(serverLog) : status(404));
+    seedOutbox();
+    beginRoundSync(ctx());
+    await settle();
+    post.mockReset();
+  }
+
+  it('429 too_fast: adopts the snapshot, KEEPS the outbox, paces from this answer', async () => {
+    await ready(['bois']);
+    seedOutbox(['chemin']);
+    post.mockResolvedValueOnce(refusal(429, ['bois', 'vieille']));
+    notifyGuess(KEY);
+    await settle();
+    expect(server()?.guesses).toEqual(['bois', 'vieille']);
+    expect(outbox()).toEqual(['chemin']);
+
+    post.mockResolvedValueOnce(ok(['bois', 'vieille', 'chemin']));
+    await settle(ROUND_WRITE_MIN_MS);
+    expect(bodyOf(1).guesses).toEqual(['chemin']);
+  });
+
+  it('409 round_full BELOW the cap: the batch overshot, the ROUND has room', async () => {
+    // Another device pushed the stored log forward while this tab was away, so a batch
+    // clamped correctly when it was built no longer fits. Concluding "capped" from the
+    // status alone would end a round that was never full.
+    const stored = Array.from({ length: ROUND_GUESS_CAP - 1 }, (_, i) => `s-${i.toString(36)}`);
+    await ready(stored.slice(0, ROUND_GUESS_CAP - 3));
+    seedOutbox(['a-one', 'b-two', 'c-three']);
+    post.mockResolvedValueOnce(refusal(409, stored));
+    notifyGuess(KEY);
+    await settle();
+    expect(capped()).toBe(false);
+    expect(outbox()).toEqual(['a-one', 'b-two', 'c-three']);
+
+    // And the next attempt is sized from the truth the refusal carried: one slot left.
+    post.mockResolvedValueOnce(ok([...stored, 'a-one']));
+    await settle(ROUND_WRITE_MIN_MS);
+    expect(bodyOf(1).guesses).toEqual(['a-one']);
+  });
+
+  it('409 round_full AT the cap, unsolved: the round is capped and closes', async () => {
+    const full = Array.from({ length: ROUND_GUESS_CAP }, (_, i) => `s-${i.toString(36)}`);
+    await ready(full.slice(0, ROUND_GUESS_CAP - 1));
+    seedOutbox(['a-one', 'b-two']);
+    post.mockResolvedValueOnce(refusal(409, full));
     notifyGuess(KEY);
     await settle(60_000);
-    expect(post).toHaveBeenCalledTimes(writes);
+    expect(capped()).toBe(true);
+    // Anything that never fit is discarded — it can never be stored.
+    expect(outbox()).toEqual([]);
+    expect(post).toHaveBeenCalledTimes(1); // the conversation is over
   });
 
-  it('ADOPTS the stored log on the freeze refusal AND closes — it must do both', async () => {
-    // A plain 4xx would close WITHOUT adopting, leaving this tab rendering an unsolved
-    // board with its guesses still on screen; a plain 409 would adopt WITHOUT closing, and
-    // `pump` would resend immediately with the failure count reset — no backoff at all.
-    seedRound(['bois']);
-    post
-      .mockResolvedValueOnce(status(404))
-      .mockResolvedValueOnce(refusal(409, ['bois', 'foret'], 'round_solved'));
+  it('a solve accepted AS raw entry 500 is an ordinary solved round, not capped', async () => {
+    const full = Array.from({ length: ROUND_GUESS_CAP }, (_, i) => `s-${i.toString(36)}`);
+    post.mockResolvedValueOnce(ok(full, true));
+    seedOutbox();
     beginRoundSync(ctx());
-    await settle(60_000);
-
-    expect(round()?.tried).toEqual(['bois', 'foret']);
-    expect(round()?.recorded).toBe(true);
-    // Its unsent guesses are dropped for good — harmless to the score, since fewer tries
-    // is a better one — but the board is the server's, not this tab's stale copy.
-    expect(round()?.holes[0].rank).toBe(0);
-    const writes = post.mock.calls.length;
-    await settle(60_000);
-    expect(post).toHaveBeenCalledTimes(writes);
+    await settle();
+    expect(server()?.solved).toBe(true);
+    expect(capped()).toBe(false);
   });
 
-  it('adopts a solved log SERVER-ONLY — the refused guesses are not kept', async () => {
-    // A frozen round's stored log is final: the batch it refused is never stored, so
-    // merging it back in would leave the screen counting tries the recorded score does not
-    // — a headline permanently disagreeing with the rank printed under it.
-    seedRound(['bois', 'chemin', 'vieille']);
-    post
-      .mockResolvedValueOnce(status(404))
-      .mockResolvedValueOnce(refusal(409, ['bois', 'foret'], 'round_solved'));
-    beginRoundSync(ctx());
+  it('409 round_solved: adopts the frozen state, DISCARDS the outbox, closes', async () => {
+    await ready(['bois']);
+    seedOutbox(['chemin']);
+    post.mockResolvedValueOnce(refusal(409, ['bois', 'foret', 'ancienne'], 'round_solved', true));
+    notifyGuess(KEY);
     await settle(60_000);
-
-    expect(round()?.tried).toEqual(['bois', 'foret']);
-    expect(round()?.guessCount).toBe(2);
-  });
-
-  it('DEDUPS the server log it adopts — the score counts identities, not entries', async () => {
-    // Two devices each sent a different surface of one group, so the stored log holds two
-    // entries the server scores as ONE (`countTries`/#104). Adopting it verbatim put that
-    // raw length in the headline against a recorded score one lower.
-    seedRound([]);
-    post.mockResolvedValueOnce(ok(['foret', 'foretz'], true));
-    beginRoundSync(ctx());
-    await settle(60_000);
-
-    // `foretz` is an alias of `foret` in every map: one counted try.
-    expect(round()?.tried).toEqual(['foret']);
-    expect(round()?.guessCount).toBe(1);
-  });
-
-  it('adopts server-only on a READ that finds the round already frozen', async () => {
-    // A second device opening a day the first one solved: same rule, and it is the path a
-    // reload takes.
-    seedRound(['bois', 'chemin']);
-    post.mockResolvedValueOnce(ok(['bois', 'foret'], true));
-    beginRoundSync(ctx());
-    await settle(60_000);
-
-    expect(round()?.tried).toEqual(['bois', 'foret']);
-    expect(round()?.recorded).toBe(true);
+    expect(server()).toEqual({
+      guesses: ['bois', 'foret', 'ancienne'],
+      solved: true,
+      // Learned from a refusal, not confirmed on this device's batch: adopted history.
+      solvedByAppend: false,
+    });
+    // The guesses it refused are never stored, so keeping them would leave the screen
+    // counting tries the recorded score does not.
+    expect(outbox()).toEqual([]);
     expect(post).toHaveBeenCalledTimes(1);
   });
 
-  it('does not take an EMPTY refusal as proof the round was created', async () => {
-    // A rate-refused RESTART answers the empty state, because no record of THIS puzzle
-    // exists yet. Reading that as creation makes the retry omit the round-start challenge,
-    // which is a 403, which is a verdict — and the conversation closes on a round that was
-    // never created at all.
-    seedRound(['bois']);
-    post
-      .mockResolvedValueOnce(status(404))
-      .mockResolvedValueOnce(refusal(429, [], 'too_fast'))
-      .mockResolvedValue(ok(['bois']));
-    beginRoundSync(ctx());
-    await settle(60_000);
-
-    // The retry still carries the challenge, because nothing has demonstrated a record.
-    expect(bodyOf(2).turnstileToken).toBe('challenge');
-  });
-
-  it('does not re-open a recorded round on a reload — the flag is PERSISTED', async () => {
-    // The round is settled and the server refuses every append: re-opening the
-    // conversation would spend a guaranteed-409 request on every mount.
-    seedRound(['bois'], { recorded: true });
-    beginRoundSync(ctx());
-    await settle(60_000);
-    expect(post).not.toHaveBeenCalled();
-  });
-
-  it('carries the round-start challenge on the CREATING append only', async () => {
-    seedRound(['bois']);
-    post.mockResolvedValueOnce(status(404)).mockResolvedValue(ok(['bois']));
-    beginRoundSync(ctx());
-    await settle(60_000);
-    // The read carries none (a bare token names no write); the append that creates the
-    // record does.
-    expect(bodyOf(0).turnstileToken).toBeUndefined();
-    expect(bodyOf(1).turnstileToken).toBe('challenge');
-
-    seedRound(['bois', 'chemin']);
+  it('a plain 4xx VERDICT closes without spinning', async () => {
+    await ready(['bois']);
+    seedOutbox(['chemin']);
+    post.mockResolvedValueOnce(status(400));
     notifyGuess(KEY);
-    await settle(60_000);
-    // The record exists now: a later append costs no challenge.
+    await settle(120_000);
+    expect(post).toHaveBeenCalledTimes(1);
+    // The outbox stands: the next visit asks once more.
+    expect(outbox()).toEqual(['chemin']);
+  });
+});
+
+describe('unknown write outcomes re-READ before writing again', () => {
+  async function ready() {
+    post.mockResolvedValueOnce(status(404));
+    seedOutbox();
+    beginRoundSync(ctx());
+    await settle();
+    post.mockReset();
+  }
+
+  it('a transport error is followed by a read, and only the REMAINDER is retried', async () => {
+    // The write may have committed. Re-sending it would `list_append` the same guesses a
+    // second time — burning cap slots on duplicates the play log then hides.
+    await ready();
+    seedOutbox(['bois', 'chemin']);
+    post.mockRejectedValueOnce(new Error('gateway timeout'));
+    notifyGuess(KEY);
+    await settle();
+
+    post.mockResolvedValueOnce(ok(['bois'])); // it HAD committed, partially
+    await settle(2 * ROUND_WRITE_MIN_MS);
+    expect(bodyOf(1).guesses).toBeUndefined(); // a READ
+    expect(outbox()).toEqual(['chemin']);
+
+    post.mockResolvedValueOnce(ok(['bois', 'chemin']));
+    await settle(2 * ROUND_WRITE_MIN_MS);
     expect(bodyOf(2).guesses).toEqual(['chemin']);
-    expect(bodyOf(2).turnstileToken).toBeUndefined();
+  });
+
+  it('a 5xx takes the same path', async () => {
+    await ready();
+    seedOutbox(['bois']);
+    post.mockResolvedValueOnce(status(500));
+    notifyGuess(KEY);
+    await settle();
+    post.mockResolvedValueOnce(ok(['bois']));
+    await settle(2 * ROUND_WRITE_MIN_MS);
+    expect(bodyOf(1).guesses).toBeUndefined();
+    expect(outbox()).toEqual([]);
+  });
+
+  it('an unparseable body takes the same path', async () => {
+    await ready();
+    seedOutbox(['bois']);
+    post.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ nonsense: true }),
+    } as unknown as Response);
+    notifyGuess(KEY);
+    await settle();
+    post.mockResolvedValueOnce(ok([]));
+    await settle(2 * ROUND_WRITE_MIN_MS);
+    expect(bodyOf(1).guesses).toBeUndefined();
+  });
+});
+
+describe('the SERVER\'s solve (#203/#214)', () => {
+  it('a 200 append that turns the round solved is a FRESH solve', async () => {
+    post.mockResolvedValueOnce(status(404));
+    seedOutbox();
+    beginRoundSync(ctx());
+    await settle();
+
+    seedOutbox(['foret']);
+    post.mockResolvedValueOnce(ok(['foret'], true));
+    notifyGuess(KEY);
+    await settle();
+    expect(server()).toEqual({ guesses: ['foret'], solved: true, solvedByAppend: true });
+  });
+
+  it('a solve read at MOUNT is adopted history — nothing may celebrate it', async () => {
+    post.mockResolvedValueOnce(ok(['foret', 'ancienne'], true));
+    seedOutbox();
+    beginRoundSync(ctx());
+    await settle();
+    expect(server()?.solved).toBe(true);
+    expect(server()?.solvedByAppend).toBe(false);
+  });
+
+  it('a solved round read at mount FREEZES: nothing is appended, the outbox is dropped', async () => {
+    post.mockResolvedValueOnce(ok(['foret', 'ancienne'], true));
+    seedOutbox(['chemin']);
+    beginRoundSync(ctx());
+    await settle(60_000);
+    expect(outbox()).toEqual([]);
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('a later answer never downgrades a fresh solve to adopted history', async () => {
+    post.mockResolvedValueOnce(status(404));
+    seedOutbox();
+    beginRoundSync(ctx());
+    await settle();
+    seedOutbox(['foret']);
+    post.mockResolvedValueOnce(ok(['foret'], true));
+    notifyGuess(KEY);
+    await settle();
+    // A remount re-registers the same conversation; it is closed, so nothing re-reads —
+    // but the fact this device earned must survive any re-registration.
+    beginRoundSync(ctx());
+    await settle();
+    expect(server()?.solvedByAppend).toBe(true);
+  });
+});
+
+describe('a republish under an open conversation', () => {
+  it('starts the conversation over and re-reads', async () => {
+    post.mockResolvedValueOnce(ok(['bois']));
+    seedOutbox();
+    beginRoundSync(ctx());
+    await settle();
+    expect(server()?.guesses).toEqual(['bois']);
+
+    post.mockResolvedValueOnce(status(404));
+    seedOutbox([], KEY, CORRECTED_REVISION);
+    beginRoundSync(ctx(KEY, CORRECTED_REVISION));
+    await settle();
+    expect(bodyOf(1).puzzle).toBe(CORRECTED_REVISION);
+    expect(server()?.guesses).toEqual([]);
+  });
+
+  it('re-OPENS a conversation the cap had closed — a fresh round is not a capped one', async () => {
+    const full = Array.from({ length: ROUND_GUESS_CAP }, (_, i) => `s-${i.toString(36)}`);
+    post.mockResolvedValueOnce(ok(full));
+    seedOutbox();
+    beginRoundSync(ctx());
+    await settle();
+    expect(capped()).toBe(true);
+
+    post.mockResolvedValueOnce(status(404));
+    seedOutbox([], KEY, CORRECTED_REVISION);
+    beginRoundSync(ctx(KEY, CORRECTED_REVISION));
+    await settle();
+    expect(capped()).toBe(false);
+  });
+
+  it('an answer that lands AFTER the republish writes nothing', async () => {
+    let release: (r: Response) => void = () => {};
+    post.mockReturnValueOnce(new Promise<Response>((resolve) => { release = resolve; }));
+    seedOutbox();
+    beginRoundSync(ctx());
+    await settle();
+
+    // The correction registers while the read is still in the air.
+    post.mockResolvedValueOnce(status(404));
+    seedOutbox([], KEY, CORRECTED_REVISION);
+    beginRoundSync(ctx(KEY, CORRECTED_REVISION));
+    await settle();
+
+    release(ok(['bois', 'chemin'])); // the RETIRED puzzle's log
+    await settle();
+    expect(server()?.guesses).toEqual([]);
+  });
+
+  it('never sends an outbox belonging to a retired revision', async () => {
+    post.mockResolvedValueOnce(status(404));
+    seedOutbox(['bois']); // still stamped with REVISION
+    beginRoundSync(ctx(KEY, CORRECTED_REVISION)); // the round is playing the correction
+    await settle(60_000);
+    // The read went out; nothing else did, because the outbox names another puzzle.
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(bodyOf(0).guesses).toBeUndefined();
+  });
+});
+
+describe('flight eviction', () => {
+  it('FORGETS an evicted round\'s state — its next mount reads again', async () => {
+    const keys = [0, 1, 2, 3].map((i) => roundKeyForDay(30 + i, 'fr'));
+    for (const key of keys) {
+      post.mockResolvedValueOnce(ok(['bois']));
+      seedOutbox([], key);
+      beginRoundSync(ctx(key));
+      await settle();
+    }
+    // MAX_FLIGHTS is 3: the least recently registered conversation is dropped, and its
+    // published state goes with it rather than lingering as a stale "ready".
+    expect(load(keys[0])).toBeUndefined();
+    expect(load(keys[3])?.status).toBe('ready');
+  });
+});
+
+describe('publishing an UNCHANGED state writes nothing', () => {
+  it('keeps the same object when the server echoes back what we just sent', async () => {
+    // The common answer. Handing the round a NEW state object about once a second while a
+    // player types would recompute every derivation downstream — the play log, the board
+    // replay, the run's trajectory — for a value that did not change.
+    post.mockResolvedValueOnce(ok(['bois']));
+    seedOutbox();
+    beginRoundSync(ctx());
+    await settle();
+    const first = load();
+
+    post.mockResolvedValueOnce(ok(['bois'])); // an append whose answer says the same thing
+    seedOutbox(['bois']); // already held by the server, so this settles to nothing
+    notifyGuess(KEY);
+    await settle(2 * ROUND_WRITE_MIN_MS);
+    expect(load()).toBe(first);
+  });
+
+  it('still publishes when the log actually moved', async () => {
+    post.mockResolvedValueOnce(ok(['bois']));
+    seedOutbox();
+    beginRoundSync(ctx());
+    await settle();
+    const first = load();
+
+    seedOutbox(['chemin']);
+    post.mockResolvedValueOnce(ok(['bois', 'chemin']));
+    notifyGuess(KEY);
+    await settle(2 * ROUND_WRITE_MIN_MS);
+    expect(load()).not.toBe(first);
+    expect(server()?.guesses).toEqual(['bois', 'chemin']);
   });
 });

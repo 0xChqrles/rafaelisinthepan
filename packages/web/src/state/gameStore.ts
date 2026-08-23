@@ -9,48 +9,55 @@ import { runMs } from '../game/wordGame';
 // remounts under it without the visit ending — see `boardTab` below.
 export type BoardTab = 'friends' | 'global';
 
-// A round is identified by its `roundKey` = (server day, language). The store keeps a
-// MAP of rounds keyed by this string so progress in one language survives switching to
-// another and back (the selector reads each language's status out of this map). The
-// SAME key rehydrates its stored progress untouched. Day rounds are KEPT across days so
-// the archive can rehydrate a past day's progress (#54); the map is bounded by a
-// most-recent cap (MAX_DAY_ROUNDS). Every key is a day key — any legacy non-day round
-// left in an older persisted blob is dropped on the next ensureRound.
-export interface RoundProgress {
-  holes: RuntimeHole[];
-  // Score = number of unique valid tries.
-  guessCount: number;
-  // The deduped folded slugs already counted, kept as an array so the Set survives
-  // JSON persistence.
-  tried: string[];
-  // Reconstruction progress (0–100), cached so the selector can badge an in-progress
-  // language WITHOUT re-loading its puzzle's rank map. Game recomputes and syncs it;
-  // it is derived UI state, never the source of truth for scoring.
-  progress: number;
-  // The SERVER has this round's solve on record (#203), which is when its score row
-  // exists and a standing becomes readable. It is the server's own reading of the log it
-  // stores — set by the sync engine off any answer that says `solved` — never this
-  // device's board, which flips a beat earlier, before the solving append has landed.
-  //
-  // It replaced the recorded SCORE the round used to persist (#170/#187): there is no
-  // client-claimed score left to reconcile against, so what a finished round needs to know
-  // is only WHETHER the population holds it. Unset means it does not yet — the flush is
-  // still in flight, was refused, or the round is simply unfinished — and the standing
-  // stays blank until it lands. It is also the FREEZE: a solved round accepts no further
-  // appends, so the conversation is over and a reload must not re-open it.
-  recorded?: boolean;
-  // WHICH PUBLISHED VERSION this round was played on (#203, user-decided 2026-08-22). A
-  // republish means the puzzle contained an error, so the round it retires STARTS OVER: its
-  // guesses were answers to a different question, and a corrected rank map can move the very
-  // aliases that decided whether a hole was solved. Absent on a round stored before the stamp
-  // existed, which is adopted rather than reset — the puzzle itself has not changed there.
-  revision?: string;
-  // The server refused further appends at the guess cap (#201): the round keeps playing
-  // locally but has STOPPED COUNTING. It never becomes server-recorded, so no leaderboard
-  // entry can exist for it. Set only by the sync engine on the server's round_full
-  // refusal; never cleared (a capped round stays capped).
-  capped?: boolean;
+// A sentence round is identified by its `roundKey` = (server day, language, mode).
+//
+// **Local storage stopped mirroring a sentence round at #214.** It used to hold a whole
+// materialized view — the holes, the try count, the cached reconstruction %, the counted
+// log, and flags saying what the server had on record — and every one of those was a second
+// answer to a question the server already answers, which is what made reconciliation a
+// permanent problem. What is persisted now is an OUTBOX: the guesses this device has typed
+// and the server has NOT acknowledged, and nothing else. Everything else is either the
+// server's (held transiently, below) or a pure projection of the two (`game/playLog.ts`).
+export interface RoundOutbox {
+  // WHICH PUBLISHED VERSION these guesses answer (#203's `revision`). A republish means
+  // the puzzle contained an error, so a mismatched outbox is DROPPED rather than sent: its
+  // guesses answered a different question, and a corrected rank map can move the very
+  // aliases that decided whether a hole was solved.
+  puzzle: string;
+  // Folded guesses, in the order they were typed. Deduplicated against the play log on the
+  // way in, so an inflection of something already played never enters it.
+  guesses: string[];
 }
+
+// The SERVER's own state for one round, as of its last answer — the authoritative RAW
+// ordered log plus what the server derived from it (#203). Held in MEMORY only: persisting
+// it would recreate exactly the acknowledged-derived-state the outbox model removes.
+export interface RoundServer {
+  // The RAW stored log. Its LENGTH is what the storage cap counts (`ROUND_GUESS_CAP`) —
+  // never the play log's, which the merge can leave shorter.
+  guesses: string[];
+  // Has the server read this log as solved? Only ever written true, so `false` means "not
+  // yet". It is the authority for the round being over: the local board flips a beat
+  // earlier, while the solving append is still in flight.
+  solved: boolean;
+  // Was this solve CONFIRMED by a batch this device just sent, rather than learned from the
+  // mount read or a `round_solved` refusal? A solve this device played earns the normal
+  // beats; an adopted one is history — shown, never celebrated.
+  solvedByAppend: boolean;
+}
+
+// Where a round's authoritative state is, for the ONE screen that has to wait on it. The
+// game is deliberately network-dependent since #214: it may not become interactive from a
+// guessed local mirror, so a failed read is a visible state rather than permission to
+// start. (Word mode uses the STATUS alone — its round lives in `wordRounds`.)
+export type RoundLoad =
+  | { status: 'loading' }
+  | { status: 'failed' }
+  | { status: 'ready'; server: RoundServer };
+
+// The server state a round with no stored record starts from — a 404 is "nothing yet",
+// which is an answer, not a failure.
+export const EMPTY_ROUND_SERVER: RoundServer = { guesses: [], solved: false, solvedByAppend: false };
 
 // The canonical round key: (server day, language, MODE — #156: the two dailies would
 // otherwise collide on one key). Kept here so the game screens (which build it) and the
@@ -70,10 +77,30 @@ function dayNumberOf(key: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
-// Retention cap: keep at most this many day rounds (newest by dayNumber). ~800 ≈ a year
-// of daily play in two languages with headroom; rounds are small (holes + tried list),
-// so the map stays well under localStorage limits.
+// Retention cap: keep at most this many day-keyed entries (newest by dayNumber). ~800 ≈ a
+// year of daily play in two languages with headroom; word rounds are small (a log + a
+// clock) and an outbox is normally empty, so the maps stay well under localStorage limits.
 const MAX_DAY_ROUNDS = 800;
+
+// Bound a day-keyed map: with more than MAX_DAY_ROUNDS entries, drop the oldest (lowest
+// dayNumber), always keeping `activeKey`. Anything that is not a day key (a legacy round
+// left by an older blob) is dropped outright. Written once for both maps — they hold
+// different shapes but the same retention story, and two copies of an eviction rule are
+// two chances to evict differently.
+function capDayKeyed<T>(entries: Record<string, T>, activeKey: string): Record<string, T> {
+  const dayKeys = Object.keys(entries).filter((k) => dayNumberOf(k) !== null);
+  const survivors = new Set(
+    dayKeys.length <= MAX_DAY_ROUNDS
+      ? dayKeys
+      : dayKeys.sort((a, b) => dayNumberOf(b)! - dayNumberOf(a)!).slice(0, MAX_DAY_ROUNDS),
+  );
+  survivors.add(activeKey);
+  const out: Record<string, T> = {};
+  for (const [k, v] of Object.entries(entries)) {
+    if (survivors.has(k)) out[k] = v;
+  }
+  return out;
+}
 
 // Cap for each language's solved-day set (#56), same spirit as MAX_DAY_ROUNDS. The array
 // is kept sorted ascending, so the newest solves are at the tail.
@@ -89,26 +116,6 @@ function capSolvedDays(days: number[]): number[] {
 function capAllSolvedDays(solvedDays: Record<string, number[]>): Record<string, number[]> {
   const out: Record<string, number[]> = {};
   for (const [lang, days] of Object.entries(solvedDays)) out[lang] = capSolvedDays(days);
-  return out;
-}
-
-// Enforce the cap: with more than MAX_DAY_ROUNDS rounds, drop the oldest (lowest
-// dayNumber), always keeping the active key. ensureRound has already filtered the map to
-// day keys, so every entry here is a day round.
-function capDayRounds(
-  rounds: Record<string, RoundProgress>,
-  activeKey: string,
-): Record<string, RoundProgress> {
-  const dayKeys = Object.keys(rounds);
-  if (dayKeys.length <= MAX_DAY_ROUNDS) return rounds;
-  const survivors = new Set(
-    dayKeys.sort((a, b) => dayNumberOf(b)! - dayNumberOf(a)!).slice(0, MAX_DAY_ROUNDS),
-  );
-  survivors.add(activeKey);
-  const out: Record<string, RoundProgress> = {};
-  for (const [k, v] of Object.entries(rounds)) {
-    if (survivors.has(k)) out[k] = v;
-  }
   return out;
 }
 
@@ -169,40 +176,13 @@ interface WordRunCache {
   bonus: number; // seconds the claims bought, summed (game/wordGame.ts replayWordRun)
 }
 
-// Enforce the word-round cap, mirroring capDayRounds below.
-function capWordRounds(
-  rounds: Record<string, WordRoundProgress>,
-  activeKey: string,
-): Record<string, WordRoundProgress> {
-  const keys = Object.keys(rounds);
-  if (keys.length <= MAX_DAY_ROUNDS) return rounds;
-  const survivors = new Set(
-    keys.sort((a, b) => dayNumberOf(b)! - dayNumberOf(a)!).slice(0, MAX_DAY_ROUNDS),
-  );
-  survivors.add(activeKey);
-  const out: Record<string, WordRoundProgress> = {};
-  for (const [k, v] of Object.entries(rounds)) {
-    if (survivors.has(k)) out[k] = v;
-  }
-  return out;
-}
-
-// Do the stored round's holes still describe THIS puzzle? A round key is only
-// (day, lang), so re-publishing a DIFFERENT sentence for the same day+lang keeps the key
-// but changes the holes. Rehydrating the old holes then feeds secrets that are absent
-// from the new `ranks` into scoring (Object.keys(ranks[secret]) -> throws -> black
-// screen). Match by position + secret so a changed sentence is reset, not rehydrated.
-export function holesMatchPuzzle(stored: RuntimeHole[], puzzle: RuntimeHole[]): boolean {
-  return (
-    stored.length === puzzle.length &&
-    puzzle.every((h, i) => stored[i].pos === h.pos && stored[i].secret === h.secret)
-  );
-}
-
 interface PersistedState {
-  // All rounds keyed by roundKey. Day rounds accumulate across days (archive history),
-  // bounded to the MAX_DAY_ROUNDS most recent by ensureRound.
-  rounds: Record<string, RoundProgress>;
+  // Unacknowledged sentence guesses, keyed by roundKey (#214). An entry exists only while
+  // this device owes the server something: an accepted write removes what it acknowledged,
+  // and an emptied entry is dropped, so a device that is caught up persists no rounds at
+  // all. Bounded like the word map, for the archive-day case where several outboxes are
+  // stranded offline at once.
+  outbox: Record<string, RoundOutbox>;
   // Word mode rounds (#156), keyed by roundKeyForDay(day, lang, 'word'). Their own map
   // because the shape differs from a sentence round's; same retention policy.
   wordRounds: Record<string, WordRoundProgress>;
@@ -240,9 +220,12 @@ interface PersistedState {
 }
 
 interface GameState extends PersistedState {
-  // The round currently being played (its key). NOT persisted: ensureRound sets it each
-  // load from the active puzzle's (day, lang). The mutating actions target rounds[activeKey].
-  activeKey: string | null;
+  // Where each round's AUTHORITATIVE state is (#214). NOT persisted, deliberately: the
+  // server owns the log, the client holds its last answer for as long as the tab lives,
+  // and a new visit asks again rather than replaying a mirror that may be stale. Both
+  // modes register here — the sentence game reads the server log out of it, Word mode
+  // only waits for its status.
+  roundLoads: Record<string, RoundLoad>;
 
   // Word mode's twin (#156): the word round being played. NOT persisted; set by
   // ensureWordRound. recordWordGuess targets wordRounds[activeWordKey].
@@ -296,12 +279,29 @@ interface GameState extends PersistedState {
   // (for example when a re-published puzzle reset the round but not the solved-day fact).
   recordSolve: (lang: string, solvedDay: number, activeDay: number) => boolean;
 
-  // Reconcile the persisted rounds to `key`. A matching published revision with matching
-  // holes rehydrates its stored progress; a brand-new key — or the same key under a new
-  // published revision — starts fresh from `initialHoles`. Keeps
-  // every day round (the archive needs history), drops any legacy non-day round, then
-  // bounds the map with the MAX_DAY_ROUNDS most-recent cap.
-  ensureRound: (key: string, initialHoles: RuntimeHole[], revision: string) => void;
+  // Reconcile the persisted OUTBOX to `key` playing `puzzle` (#214). An outbox naming a
+  // DIFFERENT published revision is dropped — its guesses answered a retired question —
+  // and any legacy non-day key goes with it; the map is then bounded by the same
+  // most-recent cap the word rounds use. Called before the round's first render, so no
+  // read path ever sees an outbox belonging to another puzzle.
+  ensureOutbox: (key: string, puzzle: string) => void;
+
+  // Append one counted guess to the outbox. The caller has already deduplicated it against
+  // the PLAY LOG (the store holds no rank map and cannot judge identity), and the board has
+  // already reacted: this is only the write buffer, and nothing waits on its flush.
+  appendOutbox: (key: string, typed: string) => void;
+
+  // REPLACE the outbox with what is still unacknowledged — the sync engine's own reading of
+  // an answer (`game/playLog.ts`). Guarded on `puzzle` so an answer about a retired
+  // revision can never resurrect its guesses into the round that replaced it.
+  setOutbox: (key: string, puzzle: string, guesses: string[]) => void;
+
+  // Where a round's authoritative state is. The sync engine is the only writer: 'loading'
+  // while its read is out, 'ready' with the server's own state, 'failed' when the read
+  // could not be had — which the screen shows rather than starting from a guess. `null`
+  // FORGETS a round, which the engine does when it evicts that round's conversation: the
+  // flight is what owns the state, and the next mount reads it again.
+  setRoundLoad: (key: string, load: RoundLoad | null) => void;
 
   // Reconcile the persisted WORD rounds to `key` (#156): a matching key playing the SAME
   // word rehydrates untouched; a new key — or a republished different word under the same
@@ -322,7 +322,7 @@ interface GameState extends PersistedState {
   // never played it picking up the day's history. Only ever into an EMPTY local log: a
   // word round's deadline is DERIVED from its log, so adopting a longer one over a run
   // this device actually played could move the clock, and a finished run must never
-  // re-open. Handed finished values like `adoptRound`, for the same reason.
+  // re-open. Handed finished values, so the store needs no rank map of its own.
   adoptWordRun: (key: string, run: { tried: string[] } & WordRunCache) => void;
 
   // The server has acknowledged this round's end-of-run log (#202).
@@ -341,42 +341,6 @@ interface GameState extends PersistedState {
   // must agree or the player is told they claimed something the run never took — a float,
   // a `+21s` gain and a spoken "claimed …" for a guess that changed nothing.
   recordWordGuess: (typed: string, replay: (tried: string[]) => WordRunCache) => boolean;
-
-  // Count a valid guess on the active round. Deduped by the caller-supplied canonical
-  // identity (#104: inflections of one word are ONE try — Game passes guessKey over the
-  // puzzle's ranks; defaults to the folded slug itself): a repeat neither re-counts nor
-  // re-appends. `typed` is already folded by the caller. Identity is recomputed from the
-  // persisted `tried` slugs, so the stored shape is unchanged and old rounds just work.
-  //
-  // RETURNS whether the guess actually entered the log, so the caller knows whether the
-  // sync engine has anything new to flush (#201) — a deduped repeat changed nothing.
-  recordGuess: (typed: string, keyOf?: (typed: string) => string) => boolean;
-
-  // Adopt the server's answer as this round's truth (#201): replace `tried` with the
-  // merged log (server entries first, then local-only ones — computed by the sync
-  // engine, which owns the interpretation) and replay the hole states beside it. The
-  // store stays interpretation-free on purpose: like recordWordGuess's replay callback,
-  // it is handed finished values rather than rank maps it must not know — the cached
-  // `progress` included, because `syncProgress` can only ever repair the ACTIVE round
-  // and an adoption routinely lands after the player has navigated away.
-  adoptRound: (key: string, tried: string[], holes: RuntimeHole[], progress: number) => void;
-
-  // Mark the active-keyed round CAPPED (#201): the server refused further appends at
-  // ROUND_GUESS_CAP, so the round stops counting and never becomes server-recorded.
-  markRoundCapped: (key: string) => void;
-
-  // A warm hit improved a hole on the active round: swap in its closer (accented)
-  // word + lower rank.
-  improveHole: (index: number, word: string, rank: number) => void;
-
-  // The SERVER holds THIS keyed round's solve (#203) — read off a round answer's `solved`,
-  // never off the local board. Keyed rather than active-keyed because an answer routinely
-  // lands after navigation has moved on. Idempotent, and only ever set.
-  markRoundRecorded: (key: string) => void;
-
-  // Cache the active round's reconstruction progress (for the selector badge). No-op
-  // when unchanged so it never churns the store.
-  syncProgress: (value: number) => void;
 }
 
 // Persistence is browser-only; in tests / SSR there is no localStorage, so fall back
@@ -387,10 +351,6 @@ const storage = createJSONStorage<PersistedState>(() => {
   }
   return window.localStorage;
 });
-
-function freshRound(initialHoles: RuntimeHole[], revision: string): RoundProgress {
-  return { holes: initialHoles, guessCount: 0, tried: [], progress: 0, revision };
-}
 
 // Version upgrades for the persisted blob (exported for the invariant tests).
 //   v0 was a single top-level round ({ roundKey, holes, ... }); the shape is now a keyed
@@ -468,6 +428,19 @@ function freshRound(initialHoles: RuntimeHole[], revision: string): RoundProgres
 //     branch for one that does not. Solved days, the streak, the mode preference and the
 //     word rounds are untouched; the cost is device-local sentence play at most a day old,
 //     against an archive wiped before launch.
+//   v14 DROPS the sentence `rounds` map OUTRIGHT (#214), and with it every round-shaped
+//     migration this list has accumulated. Local storage is an OUTBOX now: the server owns a
+//     round's log from its first guess, so a persisted holes/progress/count/flags mirror was
+//     a second answer to questions the server already answers — which is what made every
+//     visit a reconciliation. There is nothing to translate: a stored round's UNSENT guesses
+//     were never distinguishable from its acknowledged ones (`tried` is one merged list), so
+//     re-seeding an outbox from it would re-send guesses the server already holds, burn the
+//     cap on duplicates and — near the cap — cost an honest player their leaderboard entry.
+//     The mount READ recovers what the server has, which for anything that ever flushed is
+//     everything; the cost is guesses stranded on a device that has been offline since its
+//     last flush, at most one round's worth. `solvedDays`, the streak, the word rounds and
+//     every preference are untouched (the sentence archive/chooser/streak get their
+//     server-backed source in #211, which ships with this).
 function dropRetiredScoreFields<T>(rounds: Record<string, T>): Record<string, T> {
   return Object.fromEntries(
     Object.entries(rounds).map(([key, round]) => {
@@ -484,7 +457,7 @@ function dropRetiredScoreFields<T>(rounds: Record<string, T>): Record<string, T>
 export function migratePersisted(persisted: unknown, version: number): PersistedState {
   if (version < 1) {
     return {
-      rounds: {},
+      outbox: {},
       wordRounds: {},
       lastLang: null,
       lastMode: null,
@@ -494,14 +467,11 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
       solvedDays: {},
     };
   }
-  const p = persisted as Partial<PersistedState>;
-  // Sentence rounds only survive from v13 on: before it they carry no published revision,
-  // and there is no honest way to invent one (see the note above).
-  const rounds = version < 13 ? {} : dropRetiredScoreFields(p.rounds ?? {});
+  const p = persisted as Partial<PersistedState> & { rounds?: Record<string, unknown> };
   const lastLang = p.lastLang ?? null;
-  // Grandfathering asks whether this person has PLAYED before, which the raw blob answers
-  // even when the rounds themselves are dropped above — reading the post-drop map instead
-  // would hand the tutorial back to every veteran whose only signal was their play history.
+  // Grandfathering asks whether this person has PLAYED before, which the RAW blob answers —
+  // including through the `rounds` map v14 drops, since a veteran whose only signal is their
+  // play history must not be handed the tutorial back.
   const onboarded =
     typeof p.onboarded === 'boolean'
       ? p.onboarded
@@ -509,13 +479,17 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
   const solvedDays = p.solvedDays ?? {};
   // Word rounds only survive from v11 on: before v7 they were strike runs, and before v11
   // their clock was a local stamp no server ever saw (see the notes above). A v11 one CAN
-  // carry `scoreRecorded`, so it is stripped like a sentence round's.
+  // carry `scoreRecorded`, so it is stripped.
   const wordRounds = version < 11 ? {} : dropRetiredScoreFields(p.wordRounds ?? {});
   const lastMode = p.lastMode === 'word' || p.lastMode === 'sentence' ? p.lastMode : null;
   const sentenceRulesSeen = p.sentenceRulesSeen === true;
   const boardTab = p.boardTab === 'global' ? 'global' : 'friends';
+  // The outbox arrives with v14 and holds only UNACKNOWLEDGED guesses, which no older blob
+  // can distinguish inside its merged `tried` list (see the v14 note) — so an older one
+  // starts empty rather than re-sending a log the server already holds.
+  const outbox = version < 14 ? {} : p.outbox ?? {};
   return {
-    rounds,
+    outbox,
     wordRounds,
     lastLang,
     lastMode,
@@ -529,7 +503,7 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
 export const useGameStore = create<GameState>()(
   persist(
     (set, get) => ({
-      rounds: {},
+      outbox: {},
       wordRounds: {},
       lastLang: null,
       lastMode: null,
@@ -537,7 +511,7 @@ export const useGameStore = create<GameState>()(
       boardTab: 'friends',
       sentenceRulesSeen: false,
       solvedDays: {},
-      activeKey: null,
+      roundLoads: {},
       activeWordKey: null,
       tutorialOpen: null,
       profileReturn: null,
@@ -594,53 +568,78 @@ export const useGameStore = create<GameState>()(
         return true;
       },
 
-      ensureRound: (key, initialHoles, revision) =>
+      ensureOutbox: (key, puzzle) =>
         set((s) => {
-          // Retention: keep EVERY day round regardless of its day — the archive rehydrates
-          // a past day's progress, so a new day must not wipe yesterday's (#54). Any legacy
-          // non-day round (an old ?puzzle= override left in persisted storage) is dropped.
-          const kept: Record<string, RoundProgress> = {};
-          for (const [k, v] of Object.entries(s.rounds)) {
-            if (dayNumberOf(k) !== null) kept[k] = v; // day round — always retained
-          }
-          // Same key, same PUBLISHED VERSION, matching holes -> rehydrate untouched. A
-          // brand-new key, a re-published puzzle (#203: any correction is a new version, and
-          // its round starts over), or holes that no longer match -> fresh from initialHoles,
-          // so a retired board never reaches scoring.
-          //
-          // The hole check is kept beside the version as a floor: it is what stops secrets
-          // absent from `ranks` reaching the scoring code, whatever the stamp says.
+          const existing = s.outbox[key];
+          // A DIFFERENT published revision means the puzzle contained an error and this
+          // round starts over (#203), so what the outbox holds is answers to a retired
+          // question: dropped, never sent.
           //
           // **`solvedDays` is deliberately NOT touched.** A republish is OUR error, not the
           // player's, and the streak is a reward for showing up — taking a day back because
           // we shipped a broken puzzle would punish them for it. So the credit stands, and
           // solving the corrected version cannot claim it twice (`recordSolve` already
           // refuses a day it holds), which is the same rule a re-solve has always followed.
-          // Every stored round carries a revision (v13 dropped the ones that did not), so
-          // this compares two real values and needs no branch for a missing one.
-          const existing = s.rounds[key];
-          kept[key] =
-            existing && existing.revision === revision && holesMatchPuzzle(existing.holes, initialHoles)
-              ? { ...existing, revision }
-              : freshRound(initialHoles, revision);
-          // Bound the map: evict the oldest day rounds beyond MAX_DAY_ROUNDS.
-          return { activeKey: key, rounds: capDayRounds(kept, key) };
+          const kept =
+            existing && existing.puzzle === puzzle
+              ? s.outbox
+              : { ...s.outbox, [key]: { puzzle, guesses: [] } };
+          // Retention: keep every day-keyed outbox (an archive day left offline still owes
+          // its guesses), drop any legacy non-day key, bound the map.
+          return { outbox: capDayKeyed(kept, key) };
+        }),
+
+      appendOutbox: (key, typed) =>
+        set((s) => {
+          const existing = s.outbox[key];
+          // Nothing to append INTO: the round was reset under this key by a republish, or
+          // this write raced `ensureOutbox`. Materializing one here would have to invent a
+          // revision, which is the one thing an outbox may never guess about.
+          if (!existing) return {};
+          return {
+            outbox: { ...s.outbox, [key]: { ...existing, guesses: [...existing.guesses, typed] } },
+          };
+        }),
+
+      setOutbox: (key, puzzle, guesses) =>
+        set((s) => {
+          const existing = s.outbox[key];
+          // An answer about a RETIRED revision writes nothing: the flight has already been
+          // reset to read again, and resurrecting its guesses into the round that replaced
+          // it is exactly what the revision exists to prevent.
+          if (!existing || existing.puzzle !== puzzle) return {};
+          // An emptied outbox is REMOVED rather than kept as `[]`: a caught-up device
+          // persists no sentence rounds at all, which is the whole point of the model.
+          if (guesses.length === 0) {
+            const { [key]: _done, ...rest } = s.outbox;
+            return { outbox: rest };
+          }
+          return { outbox: { ...s.outbox, [key]: { puzzle, guesses } } };
+        }),
+
+      setRoundLoad: (key, load) =>
+        set((s) => {
+          if (load === null) {
+            if (!(key in s.roundLoads)) return {};
+            const { [key]: _gone, ...rest } = s.roundLoads;
+            return { roundLoads: rest };
+          }
+          return { roundLoads: { ...s.roundLoads, [key]: load } };
         }),
 
       ensureWordRound: (key, word) =>
         set((s) => {
-          // Same retention story as ensureRound: keep every day-keyed word round (the
+          // Same retention story as the outbox: keep every day-keyed word round (the
           // archive rehydrates past days), drop anything else, bound the map.
-          const kept: Record<string, WordRoundProgress> = {};
-          for (const [k, v] of Object.entries(s.wordRounds)) {
-            if (dayNumberOf(k) !== null) kept[k] = v;
-          }
           const existing = s.wordRounds[key];
-          kept[key] =
-            existing && existing.word === word
-              ? existing
-              : { word, startedAt: null, deadline: null, tried: [], claimed: 0 };
-          return { activeWordKey: key, wordRounds: capWordRounds(kept, key) };
+          const kept = {
+            ...s.wordRounds,
+            [key]:
+              existing && existing.word === word
+                ? existing
+                : { word, startedAt: null, deadline: null, tried: [], claimed: 0 },
+          };
+          return { activeWordKey: key, wordRounds: capDayKeyed(kept, key) };
         }),
 
       anchorWordRun: (key, startedAt) =>
@@ -746,106 +745,17 @@ export const useGameStore = create<GameState>()(
         return true;
       },
 
-      // Reads through `get()` rather than a `set` updater because it has to REPORT what
-      // it did. That is safe for the batched-submissions case the tests pin: zustand
-      // applies `set` synchronously, so a second call in the same tick already sees the
-      // first's log. (The same reasoning recordWordGuess relies on.)
-      recordGuess: (typed, keyOf = (t) => t) => {
-        const s = get();
-        const key = s.activeKey;
-        if (!key) return false;
-        const round = s.rounds[key];
-        if (!round) return false;
-        // Dedupe: unique tries only, compared by canonical identity so an inflection
-        // of an already-tried word never counts (nor enters the recall history).
-        const guessId = keyOf(typed);
-        if (round.tried.some((t) => keyOf(t) === guessId)) return false;
-        set({
-          rounds: {
-            ...s.rounds,
-            [key]: { ...round, tried: [...round.tried, typed], guessCount: round.guessCount + 1 },
-          },
-        });
-        return true;
-      },
-
-      adoptRound: (key, tried, holes, progress) =>
-        set((s) => {
-          // The round can be gone by the time an answer lands — evicted by capDayRounds,
-          // or reset under this key by a republish. There is nothing to adopt INTO, and
-          // materializing one here would create a round with no cached progress, which
-          // the archive then paints as a NaN% cell.
-          const round = s.rounds[key];
-          if (!round) return {};
-          // The score IS the number of unique tries, and the merged log is deduped by
-          // construction — derive the count rather than storing a second answer to it.
-          // `progress` travels WITH the board it describes, for the reason in the type
-          // above: nothing else will refresh it once this round stops being active.
-          return {
-            rounds: {
-              ...s.rounds,
-              [key]: { ...round, tried, holes, guessCount: tried.length, progress },
-            },
-          };
-        }),
-
-      markRoundCapped: (key) =>
-        set((s) => {
-          const round = s.rounds[key];
-          if (!round || round.capped) return {};
-          return { rounds: { ...s.rounds, [key]: { ...round, capped: true } } };
-        }),
-
-      improveHole: (index, word, rank) =>
-        set((s) => {
-          const key = s.activeKey;
-          if (!key) return {};
-          const round = s.rounds[key];
-          if (!round) return {};
-          // Monotonic: Game defers each swap to its floating hit's fade-out, so a second
-          // guess submitted inside that window decided "improves" against a rank that a
-          // pending timer was about to lower. Applying it blindly would REGRESS the hole
-          // (or un-solve a just-solved one) when its timer fires after a better one's.
-          // A swap only ever moves a hole strictly closer.
-          const hole = round.holes[index];
-          if (!hole || rank >= hole.rank) return {};
-          return {
-            rounds: {
-              ...s.rounds,
-              [key]: {
-                ...round,
-                holes: round.holes.map((h, i) => (i === index ? { ...h, word, rank } : h)),
-              },
-            },
-          };
-        }),
-
-      markRoundRecorded: (key) =>
-        set((s) => {
-          const round = s.rounds[key];
-          if (!round || round.recorded) return {};
-          return { rounds: { ...s.rounds, [key]: { ...round, recorded: true } } };
-        }),
-
-      syncProgress: (value) =>
-        set((s) => {
-          const key = s.activeKey;
-          if (!key) return {};
-          const round = s.rounds[key];
-          if (!round || round.progress === value) return {};
-          return { rounds: { ...s.rounds, [key]: { ...round, progress: value } } };
-        }),
     }),
     {
       name: 'whippin-round',
       storage,
-      version: 13, // v13: pre-revision sentence rounds are dropped (see migratePersisted)
+      version: 14, // v14: the sentence rounds map is gone; storage is an OUTBOX (see migratePersisted)
       migrate: migratePersisted,
-      // Persist rounds (both modes'), last language/mode, the onboarding flag and the
-      // solved-day sets; the active keys and the actions are transient. Each language's
-      // solved-day set is capped to MAX_SOLVED_DAYS on write.
+      // Persist the sentence OUTBOX, the word rounds, last language/mode, the onboarding
+      // flag and the solved-day sets; the round loads, the active word key and the actions
+      // are transient. Each language's solved-day set is capped to MAX_SOLVED_DAYS on write.
       partialize: (s): PersistedState => ({
-        rounds: s.rounds,
+        outbox: s.outbox,
         wordRounds: s.wordRounds,
         lastLang: s.lastLang,
         lastMode: s.lastMode,

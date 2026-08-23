@@ -5,6 +5,7 @@ export * from './types';
 export * from './slug';
 export * from './shareCard';
 export * from './heat';
+export * from './glyphs';
 export * from './cardSvg';
 export * from './day';
 export * from './scores';

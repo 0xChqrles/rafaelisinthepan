@@ -135,7 +135,10 @@ beforeEach(() => {
   post.mockReset();
   challenge.mockReset();
   challenge.mockResolvedValue('token');
-  useGameStore.setState({ rounds: {}, wordRounds: {}, activeKey: null, activeWordKey: null }, false);
+  useGameStore.setState(
+    { outbox: {}, wordRounds: {}, roundLoads: {}, activeWordKey: null },
+    false,
+  );
 });
 
 afterEach(() => {

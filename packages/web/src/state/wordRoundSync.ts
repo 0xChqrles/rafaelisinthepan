@@ -34,7 +34,7 @@ import { totalBonus, replayWordRun, rankEntry, CLAIM_ZONE } from '../game/wordGa
 import { ROUND_WRITE_MIN_MS, WORD_MISS_CAP, type WordRanks } from '@whippin/shared';
 import { parseRound, postRoundBody, roundUrl, type RoundState } from '../api';
 import { fnvTag } from './roundSync';
-import { useGameStore } from './gameStore';
+import { EMPTY_ROUND_SERVER, useGameStore } from './gameStore';
 import { playerSecret } from '../identity';
 import { turnstileToken } from '../turnstile';
 
@@ -182,7 +182,22 @@ function pruneFlights(keep: string): void {
     if (key === keep || f.inFlight) continue;
     if (f.timer !== null) clearTimeout(f.timer);
     flights.delete(key);
+    useGameStore.getState().setRoundLoad(key, null);
   }
+}
+
+// Where this round's authoritative state is, for the SCREEN (#214): a reload waits for the
+// mount read before the run UI resumes, exactly as the sentence board does. Word mode reads
+// only the STATUS — its round lives in `wordRounds`, adopted by `adoptState`/`anchorWordRun`
+// — so the ready payload is the empty server state, and what matters is that it arrived.
+//
+// A load can only ever FAIL before it has succeeded once: after that the run is on screen,
+// and a failed retry is a background hiccup rather than a reason to take the clock away.
+function settleLoad(f: WordFlight, key: string, ok: boolean): void {
+  if (f.readDone) return;
+  useGameStore
+    .getState()
+    .setRoundLoad(key, ok ? { status: 'ready', server: EMPTY_ROUND_SERVER } : { status: 'failed' });
 }
 
 // Register a word round's context (WordGame mounts one per round) and drive its
@@ -204,6 +219,7 @@ export function beginWordRoundSync(ctx: WordRoundContext, over: boolean): void {
       existing.readDone = false;
       existing.closed = false;
       existing.failures = 0;
+      useGameStore.getState().setRoundLoad(ctx.roundKey, { status: 'loading' });
     }
     Object.assign(existing, ctx, {
       puzzle,
@@ -227,8 +243,23 @@ export function beginWordRoundSync(ctx: WordRoundContext, over: boolean): void {
     inFlight: null,
     closed: false,
   });
+  useGameStore.getState().setRoundLoad(ctx.roundKey, { status: 'loading' });
   pruneFlights(ctx.roundKey);
   void pump(ctx.roundKey);
+}
+
+// The screen's RETRY on a failed load: spend the backoff now, and re-open a conversation a
+// verdict closed — the player asked.
+export function retryWordRoundSync(roundKey: string): void {
+  const f = flights.get(roundKey);
+  if (!f) return;
+  f.failures = 0;
+  f.lastFailureAt = 0;
+  if (!f.readDone) {
+    f.closed = false;
+    useGameStore.getState().setRoundLoad(roundKey, { status: 'loading' });
+  }
+  void pump(roundKey);
 }
 
 // PLAY: ask the server to stamp this round's clock, and report whether it did. The screen
@@ -323,7 +354,7 @@ async function pump(key: string): Promise<void> {
     // Neither leg is expected to throw — both own their own error paths — but an
     // unexpected one must not escape as an unhandled rejection, and above all must not
     // leave `inFlight` pinned: that wedges this conversation shut for the tab's life.
-    retryLater(f);
+    retryLater(f, key);
   } finally {
     f.inFlight = null;
   }
@@ -347,7 +378,7 @@ async function readRound(f: WordFlight, key: string): Promise<void> {
       puzzle,
     });
   } catch {
-    if (!superseded(f, puzzle)) retryLater(f);
+    if (!superseded(f, puzzle)) retryLater(f, key);
     return;
   }
   if (superseded(f, puzzle)) return;
@@ -356,7 +387,7 @@ async function readRound(f: WordFlight, key: string): Promise<void> {
     try {
       state = parseRound(await response.json());
     } catch {
-      retryLater(f);
+      retryLater(f, key);
       return;
     }
     // Re-checked after the body: reading it is another await, and a republish landing
@@ -378,12 +409,14 @@ async function readRound(f: WordFlight, key: string): Promise<void> {
     // The server holds nothing for THIS word: an unplayed day, or one republished under the
     // same key whose old record is retired. Nothing to resume; PLAY will create it.
   } else if (isVerdict(response.status)) {
+    settleLoad(f, key, false);
     f.closed = true;
     return;
   } else {
-    retryLater(f);
+    retryLater(f, key);
     return;
   }
+  settleLoad(f, key, true);
   f.readDone = true;
   f.failures = 0;
 }
@@ -398,7 +431,7 @@ async function submitRun(f: WordFlight, key: string, tried: readonly string[]): 
       guesses: submittableLog(f.ranks, tried),
     });
   } catch {
-    if (!superseded(f, puzzle)) retryLater(f);
+    if (!superseded(f, puzzle)) retryLater(f, key);
     return;
   }
   if (superseded(f, puzzle)) return;
@@ -434,7 +467,7 @@ async function submitRun(f: WordFlight, key: string, tried: readonly string[]): 
     f.closed = true;
     return;
   }
-  retryLater(f);
+  retryLater(f, key);
 }
 
 // Adopt what the server holds: the RECORDED run, which only ever lands in a log this
@@ -455,9 +488,10 @@ function isVerdict(status: number): boolean {
   return status >= 400 && status < 500;
 }
 
-function retryLater(f: WordFlight): void {
+function retryLater(f: WordFlight, key: string): void {
   f.failures += 1;
   f.lastFailureAt = Date.now();
+  settleLoad(f, key, false);
 }
 
 // Test seam: drop every conversation (module state must not leak between tests).

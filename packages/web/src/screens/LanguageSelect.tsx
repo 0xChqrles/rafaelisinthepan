@@ -15,7 +15,6 @@ import { statusOf, wordStatusOf } from '../state/status';
 // The screen itself is the shared `Chooser` — see it for the shell and the card.
 export default function LanguageSelect() {
   const dayNumber = useToday();
-  const rounds = useGameStore((s) => s.rounds);
   const wordRounds = useGameStore((s) => s.wordRounds);
   const lastLang = useGameStore((s) => s.lastLang);
   // A card lands on the LAST-PLAYED MODE (#156, the same rule as the `/` redirect), so
@@ -43,7 +42,9 @@ export default function LanguageSelect() {
           status={
             mode === 'word'
               ? wordStatusOf(wordRounds[roundKeyForDay(dayNumber, code, 'word')])
-              : statusOf(rounds[roundKeyForDay(dayNumber, code)])
+              : // The sentence status is a SERVER summary since #214 dropped the persisted
+                // rounds map; #211 is the read that supplies it, and the two ship together.
+                statusOf(undefined)
           }
           onClick={() => navigate(pathForMode(code, mode))}
         />

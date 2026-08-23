@@ -27,6 +27,7 @@ import { anonName, defaultAvatar } from './assigned';
 import { AVATAR_PALETTES, AVATAR_SIZE, decodeAvatar } from './avatar';
 import { avatarOutlinePath } from './avatarOutline';
 import { dateForDayNumber } from './day';
+import { INFINITY_EM_HEIGHT, INFINITY_EM_WIDTH, INFINITY_GLYPH } from './glyphs';
 import { progressHeatColor } from './heat';
 import type { ShareResult, WordShareResult } from './shareCard';
 
@@ -248,7 +249,42 @@ export function renderWordCardSvg({ lang, dayNumber, counts, word }: WordCardDat
   ].join('');
 }
 
-export function renderCardSvg({ lang, dayNumber, score, trajectory, solvedAt }: CardData): string {
+// The sentence headline's own band: `<n> TRIES`, or `∞ TRIES` for a #214 capped round.
+// Press Start 2P advances exactly 1em per glyph, so a lockup's width is a SUM OF EMS and a
+// centred one needs no measuring — which is what lets the ∞ (a path, since the face has no
+// such glyph and the rasterizer loads no other font) sit on the line as if it were type.
+const SCORE_BASELINE = 430;
+const SCORE_SIZE = 76;
+
+function scoreLockup(score: number, capped: boolean, unit: { one: string; many: string }): string {
+  const cx = CARD_WIDTH / 2;
+  if (!capped) {
+    const label = `${score} ${score === 1 ? unit.one : unit.many}`;
+    return `<text x="${cx}" y="${SCORE_BASELINE}" text-anchor="middle" font-family="${CARD_FONT}" font-size="${SCORE_SIZE}" fill="${FG}">${label}</text>`;
+  }
+  // A capped round has no count to name, so the unit is always plural. The glyph stands in
+  // the digits' own band (cap height, `INFINITY_EM_HEIGHT`) and the space between it and
+  // the word costs the face's one em, exactly as it would in the uncapped string.
+  const glyphW = INFINITY_EM_WIDTH * SCORE_SIZE;
+  const glyphH = INFINITY_EM_HEIGHT * SCORE_SIZE;
+  const total = glyphW + (1 + unit.many.length) * SCORE_SIZE;
+  const x = cx - total / 2;
+  const scale = glyphH / INFINITY_GLYPH.height;
+  return (
+    `<g transform="translate(${x.toFixed(2)} ${(SCORE_BASELINE - glyphH).toFixed(2)}) scale(${scale.toFixed(4)})" shape-rendering="crispEdges">` +
+    `<path d="${INFINITY_GLYPH.path}" fill="${FG}"/></g>` +
+    `<text x="${(x + glyphW + SCORE_SIZE).toFixed(2)}" y="${SCORE_BASELINE}" font-family="${CARD_FONT}" font-size="${SCORE_SIZE}" fill="${FG}">${unit.many}</text>`
+  );
+}
+
+export function renderCardSvg({
+  lang,
+  dayNumber,
+  score,
+  trajectory,
+  solvedAt,
+  capped = false,
+}: CardData): string {
   const n = Math.max(1, trajectory.length);
 
   // Integer cell boundaries so adjacent cells share an edge EXACTLY — no hairline seams
@@ -303,8 +339,9 @@ export function renderCardSvg({ lang, dayNumber, score, trajectory, solvedAt }: 
     `<g shape-rendering="crispEdges">${cells}</g>`,
     marks,
     // "N TRIES", not "SCORE N": naming the unit is what tells a stranger seeing the
-    // card that lower is better. Localized by the token's lang (#59).
-    `<text x="${cx}" y="430" text-anchor="middle" font-family="${CARD_FONT}" font-size="76" fill="${FG}">${score} ${score === 1 ? unit.one : unit.many}</text>`,
+    // card that lower is better. Localized by the token's lang (#59). A capped round
+    // draws `∞ TRIES` instead — same band, same unit, no number (#214).
+    scoreLockup(score, capped, unit),
     `<text x="${cx}" y="500" text-anchor="middle" font-family="${CARD_FONT}" font-size="30" fill="${MUTED}">${dateForDayNumber(dayNumber)}</text>`,
     `</svg>`,
   ].join('');

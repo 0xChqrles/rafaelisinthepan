@@ -372,6 +372,9 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
 
 - **The server owns game state from the first guess, whether or not an account is ever
   linked.** Local state is a working copy and a write buffer, never the authority — and
+  since #214 it is ONLY the write buffer: the persisted sentence round became an OUTBOX of
+  unacknowledged guesses, and the board is a projection of (server log + outbox). See the
+  #214 section below for the model this bullet's rules now operate inside. —
   authoritative-only-after-link was rejected: scores and friend edges are already
   server-side for unlinked players (#169/#187/#189), so gating the guess log on linking
   would be the odd one out (and would break #206's live friends board). The payoff:
@@ -453,16 +456,20 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   job.
 - **At the cap the server refuses further appends** (409 `round_full`, logged for review
   — a real player reaching 500 means an unreachable secret, puzzle-curation signal
-  available no other way), **the client keeps playing locally, and the round STOPS
-  COUNTING — no leaderboard entry**: the web marks the round capped (persisted) and
-  closes its sync conversation. There is no client score submission since #203: a capped
-  round never acquires the server `solved`/recorded fact that launches the population read.
-  A row the server already demonstrably recorded remains readable; a local flag must not
+  available no other way), and **no leaderboard entry exists for that round**.
+  *(Two halves of this bullet were OVERTURNED by #214, below: the client does NOT keep
+  playing locally — an unsolved round at the cap ENDS, at `∞` — and nothing is "marked
+  capped", since the state is DERIVED from the authoritative log the answer carried. The
+  bullet's remaining rules — how the batch is sized, why a 409 refuses the BATCH and only
+  its carried log says whether it refuses the ROUND, and the curation line — all stand.)*
+  The web closes its sync conversation there. There is no client score submission since #203: a capped
+  round never acquires the server `solved` fact that launches the population read.
+  A row the server already demonstrably recorded remains readable; a local reading must not
   hide what the population itself answered. The cap is also read on the CLIENT side of the
   conversation: the batch is clamped to what still fits, and a round already at the
   cap says so locally instead of spending a doomed request — an over-cap batch takes a
   400, which is not the 409 the engine handles, so it would be re-sent forever while the
-  round was never marked capped at all. **What still fits is measured against the RAW
+  round never reached the capped state at all. **What still fits is measured against the RAW
   stored count, never the merged one** — the two differ whenever the merge collapses two
   devices' guesses into one identity (#104), and the cap counts what is STORED.
   **And a 409 refuses the BATCH: only the log it CARRIES says whether it refuses the
@@ -472,16 +479,17 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   at the cap, and the server writes its curation line only then too (a racing second
   device must not be able to manufacture "unreachable secret" signal, and concluding
   "capped" from the status alone would suppress the leaderboard entry of a round that was
-  never full — the harshest consequence this design has). The persisted flag is checked on every mount, or a
-  reload re-opens a settled round for a read, a guaranteed 409 and another curation line
-  that is reload noise rather than a player hitting the cap. A faster write is 429
+  never full — the harshest consequence this design has). *(#214: the capped state is
+  re-derived on every mount from the log the READ carries, which is what it used to check a
+  persisted flag for — a settled round is never re-opened for a guaranteed 409 and another
+  curation line that is reload noise rather than a player hitting the cap.)* A faster write is 429
   `too_fast` (+`Retry-After: 1`, which CORS must EXPOSE or a browser reads null); nothing
   is ever partially appended.
 - **The guess is still judged locally and instantly** — a submit must never round-trip
   before the board reacts (Word mode cannot survive the latency; the same reasoning that
   split `useCountdown` from `useDeadlinePassed`). Guess lands → board reacts → POST goes
   out → response reconciles. Failed or slow writes queue and flush with capped backoff;
-  durability lives in the persisted local log, not the queue, so a killed tab catches up
+  durability lives in the persisted OUTBOX (#214), not the queue, so a killed tab catches up
   on its next visit's read. **A write whose outcome is UNKNOWN (a transport error, a 5xx,
   an unparseable body) re-READS before writing again** rather than re-sending: appends are
   at-least-once, so a response lost after the write committed would `list_append` the
@@ -822,6 +830,109 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   the Word gate is on screen, so it is in hand before the player acts: in Word mode round
   start IS clock start, and a bot check landing exactly then costs real seconds on a
   60-second game.
+
+### Local storage is an OUTBOX; a capped round ends at ∞ (#214, decided 2026-08-23)
+
+- **The game is NETWORK-DEPENDENT, and it says so.** It already requires the day's puzzle;
+  it may now also wait for the player's ROUND before becoming interactive. After the puzzle
+  supplies its `revision`, the client reads that exact server round: a 404 is a fresh empty
+  round, and a FAILED read is a visible loading/retry state — never permission to start from
+  a guessed local mirror. Once both reads have settled, guesses are judged and rendered
+  locally and instantly, exactly as before: the dependency is on loading AUTHORITATIVE
+  STATE, not on the feel of a keypress. Word mode keeps the same rule at its own cadence —
+  its run UI waits for the mount read too, which also closes the hazard that PLAY was
+  tappable while that read was in flight (a session that starts a run it cannot see becomes
+  its writer, #202).
+- **Three deliberately different values, and keeping them apart is the design.**
+  - **SERVER STATE** — the authoritative RAW ordered log and its `solved` flag, held ONLY in
+    memory after a read or an answer.
+  - **OUTBOX** — the folded guesses the server has not acknowledged, qualified by the puzzle
+    revision. **The only persisted sentence-round state.** A mismatched revision drops it.
+  - **PLAY LOG** — a pure, stable first-occurrence projection of `server guesses + outbox`,
+    deduplicated by the shared `guessKey`.
+  The play log drives EVERY client derivation: holes, progress, the unique score, the prompt
+  history, the trajectory and the solve moments. The RAW server log drives only the storage
+  cap. That distinction stays load-bearing — aliases, another device and the recovery read
+  can each put two raw strings in one playable identity. **The old reconciliation problem
+  disappears because no acknowledged derived state is persisted**: the projection is not an
+  authority or a merge watermark, just a view recomputed from two inputs.
+- **Load and play, in order:** fetch and parse the puzzle → drop any persisted outbox whose
+  revision differs → read `POST /round` for this revision → hold the returned state in
+  memory (404 = empty) → remove outbox entries the server log already represents → derive
+  the play log and replay the board → and only then enable input. A new valid guess is
+  deduplicated against the play log, appended to the persisted outbox, and immediately
+  replayed into the visible board; nothing waits for its write.
+- **The local board may complete while the solving append is in flight, but AUTHORITATIVE
+  SOLVED comes only from the server flag.** The prompt locks on local completion; the
+  result, the leaderboard, the streak and the `solve` event wait for confirmation. A solve
+  confirmed by the batch THIS device just played is a fresh solve and earns the normal
+  beats; a solve learned from the mount read or a `round_solved` refusal is adopted history
+  — shown, never celebrated.
+- **Outbox writes** keep one conversation per round and the existing `ROUND_WRITE_MIN_MS`
+  pacing. Each write snapshots the outbox (guesses appended in flight stay outside it),
+  computes `room = ROUND_GUESS_CAP − serverState.guesses.length`, and POSTs the whole
+  snapshot or — near the cap — only its oldest prefix that fits. An over-cap body is never
+  sent. On 2xx the transient server state is replaced and the outbox keeps only what the new
+  state does NOT represent, BY IDENTITY — which covers the sent prefix and anything else
+  that arrived meanwhile, so there is no sent-prefix bookkeeping to keep honest. The four
+  recoverable answers: **429 `too_fast`** adopts and keeps the outbox, pacing from this
+  answer; **409 `round_full` BELOW the cap** means the batch merely overshot after another
+  device moved the raw log, so it adopts and retries the prefix that now fits; **409
+  `round_solved`** adopts the frozen result, discards the outbox and closes; **409
+  `round_full` with an unsolved raw log AT the cap** enters the capped terminal state,
+  discards anything that never fit and closes.
+- **An UNKNOWN write outcome still READS.** A transport error, a 5xx or a malformed answer
+  may have committed, and an outbox can hold many guesses — so one lost response could
+  duplicate a whole batch, burn many raw cap slots and manufacture a false "unreachable
+  puzzle" signal. Recovery is ONE round read; whatever the returned log represents leaves
+  the outbox and only the remainder is retried. A narrow acknowledgement recovery, not the
+  old persisted-round adoption machinery; server-side request idempotency is deliberately
+  NOT added for a problem one read already solves more simply.
+- **WORD MODE keeps its persisted clock/outbox.** The asymmetry is intentional: losing one
+  sentence flush costs a few guesses, while losing an unsubmitted Word outbox loses the
+  whole run. #214 removes the persisted sentence `rounds` map, not Word's state — its
+  counted guesses accumulate locally for the whole run because Word submits once at the end,
+  and a 2xx submission (new or already submitted) adopts server truth.
+- **THE CAP IS A TERMINAL STATE, AND IT PRINTS `∞`.** A sentence round is CAPPED when the
+  authoritative server state is **unsolved with exactly `ROUND_GUESS_CAP` raw entries** —
+  DERIVED, never a stored flag, because local outbox length can never reveal it. Server
+  `solved: true` WINS over the cap check, so a legitimate solve accepted as raw entry 500
+  stays an ordinary solved round with its leaderboard entry. An unsolved capped round ends
+  immediately: no leaderboard entry, no celebration, no streak advance, no `solve` event;
+  the answer and the source credit are shown; the displayed score is `∞`; the final
+  reconstruction stays an unsolved progress value on summary surfaces; and the result is
+  shareable, still firing the existing `share` event. Internally it keeps its numeric UNIQUE
+  try count and one ruler cell per canonical play-log entry — the capped flag changes the
+  displayed HEADLINE, it does not redefine the ruler as 500 raw storage entries.
+- **The glyph is a SHAPE, not text.** Press Start 2P has no `∞`, and the OG card rasterizes
+  with `loadSystemFonts: false`, so it ships as pixel-art SVG path data in `shared/`
+  (`glyphs.ts`), drawn by both `cardSvg.ts` and the web result in place of
+  `.solved-score-num`. ONE path and ONE view box keep the two surfaces identical; the
+  plain-text headline and the share page's title use the literal character, where a font is
+  not involved.
+- **SHARE TOKEN v6.** Sentence share v2 cannot express capped, and versions 3–5 belong to
+  Word formats, so the next SENTENCE format is **6** — one capped flag, the numeric unique
+  score, the trajectory and the ticks retained. A capped token carries NO solve ticks. With
+  `SHARE_VERSION` at 6, `decodeLegacyShareTarget` recognizes ONLY the retired sentence
+  versions **1 and 2** (a named list, never a range): it must not treat retired or malformed
+  Word versions 3–5 as sentence legacy, valid current Word v5 is still decoded by its own
+  decoder first, and invalid Word tokens stay 404.
+- **What this REMOVES from sentence mode** (the standing no-back-compat rule): the persisted
+  `rounds` materialized-view map and its round-shaped migrations; persisted holes, progress,
+  guess count, `recorded` and `capped`; the `pendingFrom`/`serverCount` watermark
+  bookkeeping; the authority-bearing `mergeLogs` and the `adopt`/`adoptSolved` split;
+  `holesMatchPuzzle` for stored rounds; and the capped-but-still-playing and solved-screen
+  `canSubmit` branches. What remains is smaller and explicit: one transient server snapshot,
+  one persisted revision-qualified outbox, one pure canonical play-log projection, paced
+  prefix writes, and the narrow read-on-unknown recovery. Local storage otherwise retains
+  the player secret, the device preferences, the solved-day sets and Word mode's
+  clock/outbox.
+- **ORDERING — #214 then #211, and they SHIP TOGETHER.** This issue establishes the client
+  state model #211's summary readers consume. Removing the persisted sentence rounds (and,
+  in #211, `solvedDays`) must NOT reach production before #211 supplies the archive
+  calendar, the language chooser and the streak with their server-backed sources: until it
+  does, `statusOf` has no producer and every SENTENCE day reads as not started. There is no
+  compatibility migration and no local fallback.
 
 ### Day-addressed routing & the game day
 

@@ -17,6 +17,7 @@ import {
   WORD_RARITY_COLORS,
 } from './cardSvg';
 import { dateForDayNumber } from './day';
+import { INFINITY_GLYPH } from './glyphs';
 import { progressHeatColor } from './heat';
 import { NAME_MAX_LENGTH } from './name';
 
@@ -126,6 +127,53 @@ describe('renderCardSvg', () => {
     // And it still spans the full bar — collapsing cells must not shorten the run.
     const last = cells[cells.length - 1];
     expect(Number(last[1]) + Number(last[2])).toBe(Number(cells[0][1]) + 1020);
+  });
+
+  // #214: a capped round ends at `∞`. Press Start 2P has no such glyph and the rasterizer
+  // loads no other font, so the card DRAWS it from the shared path data — the same path
+  // the on-screen result draws, which is why it lives in one module.
+  describe('the CAPPED headline', () => {
+    const capped = { ...data, capped: true, solvedAt: [] };
+
+    it('draws the glyph PATH and names no count', () => {
+      const svg = renderCardSvg(capped);
+      expect(svg).toContain(INFINITY_GLYPH.path);
+      expect(svg).toContain('TRIES');
+      expect(svg).not.toContain('6 TRIES');
+    });
+
+    it('keeps the unit PLURAL — there is no count for a "1" to agree with', () => {
+      expect(renderCardSvg({ ...capped, score: 1 })).toContain('TRIES');
+      expect(renderCardSvg({ ...capped, score: 1 })).not.toContain('TRY');
+      expect(renderCardSvg({ ...capped, lang: 'fr' })).toContain('ESSAIS');
+    });
+
+    it('still draws the whole ruler — the cap changes the headline, not the run', () => {
+      const svg = renderCardSvg(capped);
+      const rects = svg.match(/<rect /g) ?? [];
+      expect(rects).toHaveLength(1 + data.trajectory.length); // bg + 6 cells, no ticks
+    });
+
+    it('keeps the lockup inside the card at both the glyph and the word', () => {
+      // The glyph's own box plus the unit is laid out arithmetically (the face advances
+      // 1em per glyph), so an off-by-one in that sum walks the headline off the card.
+      const svg = renderCardSvg({ ...capped, lang: 'fr' });
+      const translate = /translate\((-?[\d.]+) ([\d.]+)\) scale\(([\d.]+)\)/.exec(svg);
+      expect(translate).not.toBeNull();
+      const [, gx, , scale] = translate!;
+      expect(Number(gx)).toBeGreaterThan(0);
+      expect(Number(gx) + INFINITY_GLYPH.width * Number(scale)).toBeLessThan(CARD_WIDTH);
+      const textX = /<text x="([\d.]+)" y="430"/.exec(svg);
+      expect(textX).not.toBeNull();
+      expect(Number(textX![1])).toBeGreaterThan(Number(gx));
+      expect(Number(textX![1])).toBeLessThan(CARD_WIDTH);
+    });
+
+    it('leaves an ordinary result drawing its number', () => {
+      const svg = renderCardSvg(data);
+      expect(svg).toContain('6 TRIES');
+      expect(svg).not.toContain(INFINITY_GLYPH.path);
+    });
   });
 });
 

@@ -7,7 +7,7 @@ import { KB_EXIT_FALLBACK_MS } from './Game';
 import { useDeadlinePassed } from '../hooks/useCountdown';
 import useScoreHistogram from '../hooks/useScoreHistogram';
 import useWordRoundSync from '../hooks/useWordRoundSync';
-import { startWordRound } from '../state/wordRoundSync';
+import { retryWordRoundSync, startWordRound } from '../state/wordRoundSync';
 import { prefetchTurnstileToken } from '../turnstile';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import {
@@ -179,7 +179,7 @@ function WordRound({
     }),
     [roundKey, lang, dayNumber, puzzle.word.slug, ranks, corpusSize],
   );
-  useWordRoundSync(syncContext, ended);
+  const roundLoad = useWordRoundSync(syncContext, ended);
 
   // PLAY: the clock is the SERVER's, so the gate holds until its answer lands and the
   // visible countdown starts on the run the server is actually timing. Starting
@@ -485,6 +485,27 @@ function WordRound({
     // An artifact with no drawable geometry (no dq) cannot be played on this surface at
     // all — surface it as the load failure it is rather than a blank board.
     return <p className="status error">{t(lang, 'failedPuzzle')}</p>;
+  }
+
+  // The run UI waits for the server's round (#214), the sentence board's rule at this
+  // mode's own cadence: the clock is the SERVER's, so a gate offered before the mount read
+  // lands can be tapped by a session that then becomes the writer of a run it cannot see —
+  // and a run already going on another device would restart here as a fresh one.
+  if (roundLoad.status === 'failed') {
+    return (
+      <LoadError
+        message={t(lang, 'failedRound')}
+        lang={lang}
+        onRetry={() => retryWordRoundSync(roundKey)}
+      />
+    );
+  }
+  if (roundLoad.status !== 'ready') {
+    return (
+      <p className="status">
+        <LoadingWave text={t(lang, 'loading')} />
+      </p>
+    );
   }
 
   return (

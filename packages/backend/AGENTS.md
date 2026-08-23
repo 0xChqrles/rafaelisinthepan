@@ -6,7 +6,12 @@
 > caching) — plus the testing policy and the issue/PR workflow. Read it first.
 > The share routes (`/s/<token>`, `/og/<token>.png`) render tokens from the shared
 > `shareCard` codec; their product behavior is described in the solved-result bullet
-> of `packages/web/AGENTS.md`.
+> of `packages/web/AGENTS.md`. Since #214 a SENTENCE token is **v6** and may be CAPPED:
+> `ogCard.renderShareHtml` then titles the result `∞` (the literal character — this page is
+> ordinary HTML in the reader's own fonts) while `renderCardSvg` draws the shared PATH data,
+> because the one font in the Lambda bundle has no such glyph and the rasterizer runs with
+> `loadSystemFonts: false`. No route changed: the version check and the legacy redirect are
+> the codec's.
 
 ## File map
 

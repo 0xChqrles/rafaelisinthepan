@@ -1,20 +1,19 @@
-// CONTRACT: the day-keyed round store (packages/web/src/state/gameStore.ts). Rounds are
-// held in a MAP keyed by roundKey = (dayNumber, language), so:
-//   - day rounds are KEPT across days so the archive can rehydrate a past day's progress
-//     (#54); any legacy non-day round is dropped, and the map is bounded by the
-//     MAX_DAY_ROUNDS most-recent cap (oldest day rounds evicted beyond it);
-//   - switching LANGUAGE keeps BOTH rounds — coming back restores the in-progress one
-//     (drives the language selector's per-language status + no-confirmation switching);
-//   - the SAME key + published revision rehydrates stored progress untouched (mid-round
-//     reload); a new revision resets even when only the rank maps changed, while the hole
-//     check remains a structural safety floor;
-//   - score = number of UNIQUE valid tries, deduped by folded slug;
-//   - an improved hole swaps in the closer word + lower rank; solved holes stay locked;
-//   - progress is cached per round for the selector badge;
+// CONTRACT: the day-keyed round store (packages/web/src/state/gameStore.ts). Since #214 a
+// SENTENCE round persists only an OUTBOX — the guesses the server has not acknowledged,
+// qualified by the published revision — while its authoritative state lives in memory:
+//   - an outbox is KEPT across days so an archive day left offline still owes its guesses;
+//     any legacy non-day key is dropped, and the map is bounded by the MAX_DAY_ROUNDS
+//     most-recent cap (oldest evicted beyond it);
+//   - switching LANGUAGE keeps BOTH outboxes — coming back still owes what it owed;
+//   - the SAME key + published revision keeps the outbox untouched (a mid-round reload); a
+//     new revision DROPS it, since its guesses answered a retired question;
+//   - an emptied outbox is REMOVED — a caught-up device persists no sentence round at all;
+//   - `roundLoads` is transient by construction, never persisted;
+//   - WORD rounds keep their own persisted shape (the clock and the run's log);
 //   - lastLang remembers the last valid language (seeds the `/` redirect).
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { useGameStore, roundKeyForDay, migratePersisted, holesMatchPuzzle } from './gameStore';
+import { useGameStore, roundKeyForDay, migratePersisted } from './gameStore';
 
 // The published VERSION a round is played on (#203). Every call here plays ONE version;
 // what a REPUBLISH does has its own suite below.
@@ -40,17 +39,11 @@ function repeatedSecretHoles(): RuntimeHole[] {
   ];
 }
 
-// The active round (rounds[activeKey]) — what the game screen reads.
-function activeRound() {
-  const s = useGameStore.getState();
-  return s.activeKey ? s.rounds[s.activeKey] : undefined;
-}
-
 beforeEach(() => {
   // Reset to a pristine store between tests (merge, keeping the actions).
   useGameStore.setState(
     {
-      rounds: {},
+      outbox: {},
       wordRounds: {},
       lastLang: null,
       lastMode: null,
@@ -58,7 +51,7 @@ beforeEach(() => {
       boardTab: 'friends',
       sentenceRulesSeen: false,
       solvedDays: {},
-      activeKey: null,
+      roundLoads: {},
       activeWordKey: null,
     },
     false,
@@ -105,8 +98,8 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
   const wordRound = () => useGameStore.getState().wordRounds['w:5:fr'];
 
   it('initializes a fresh word round AT THE GATE, separate from sentence rounds', () => {
-    const { ensureRound, ensureWordRound } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles(), REV);
+    const { ensureOutbox, ensureWordRound } = useGameStore.getState();
+    ensureOutbox('d:5:fr', REV);
     ensureWordRound('w:5:fr', 'phare');
     const s = useGameStore.getState();
     expect(s.activeWordKey).toBe('w:5:fr');
@@ -118,9 +111,8 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
       tried: [],
       claimed: 0,
     });
-    // The sentence round is untouched — the two dailies' progress never collide.
-    expect(s.rounds['d:5:fr']).toBeDefined();
-    expect(s.activeKey).toBe('d:5:fr');
+    // The sentence round is untouched — the two dailies' state never collide.
+    expect(s.outbox['d:5:fr']).toBeDefined();
   });
 
   it('anchorWordRun opens the clock at the full run length, and only ONCE', () => {
@@ -410,372 +402,175 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
   });
 });
 
-describe('ensureRound — day/language keying', () => {
-  it('initializes a fresh round for a brand-new key and makes it active', () => {
-    useGameStore.getState().ensureRound('d:5:fr', freshHoles(), REV);
-    const s = useGameStore.getState();
-    expect(s.activeKey).toBe('d:5:fr');
-    expect(s.rounds['d:5:fr']).toEqual({
-      holes: freshHoles(),
-      guessCount: 0,
-      tried: [],
-      progress: 0,
-      revision: REV,
+// CONTRACT (#214): local storage is an OUTBOX. `ensureOutbox` reconciles it to the puzzle
+// being played, `appendOutbox` buffers a guess the board has already reacted to, and
+// `setOutbox` is how the sync engine writes back what an answer left unacknowledged. There
+// are no holes, no counts, no cached progress and no server-fact flags in storage at all —
+// the play log projects them from (server state + outbox), which is why nothing here has to
+// be reconciled with anything.
+describe('ensureOutbox — day/language keying, qualified by the published revision', () => {
+  it('opens an empty outbox for a brand-new key', () => {
+    useGameStore.getState().ensureOutbox('d:5:fr', REV);
+    expect(useGameStore.getState().outbox['d:5:fr']).toEqual({ puzzle: REV, guesses: [] });
+  });
+
+  it('KEEPS an unsent outbox for the SAME key and revision (a mid-round reload)', () => {
+    const { ensureOutbox, appendOutbox } = useGameStore.getState();
+    ensureOutbox('d:5:fr', REV);
+    appendOutbox('d:5:fr', 'bois');
+    ensureOutbox('d:5:fr', REV);
+    expect(useGameStore.getState().outbox['d:5:fr']).toEqual({ puzzle: REV, guesses: ['bois'] });
+  });
+
+  it('DROPS an outbox naming a different published revision', () => {
+    // A republish means the puzzle contained an error, so the round starts over: what the
+    // outbox holds are answers to a retired question, and a corrected rank map can move the
+    // aliases that decided whether a hole was solved.
+    const { ensureOutbox, appendOutbox } = useGameStore.getState();
+    ensureOutbox('d:5:fr', REV);
+    appendOutbox('d:5:fr', 'bois');
+    ensureOutbox('d:5:fr', 'ffffffffffffffff');
+    expect(useGameStore.getState().outbox['d:5:fr']).toEqual({
+      puzzle: 'ffffffffffffffff',
+      guesses: [],
     });
   });
 
-  it('KEEPS yesterday\'s day round when a new day flips (archive history, #54)', () => {
-    const { ensureRound, recordGuess, improveHole } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles(), REV);
-    recordGuess('bois');
-    improveHole(0, 'forêt', 0); // solved a hole yesterday
-    expect(activeRound()?.guessCount).toBe(1);
-
-    // A new day flips -> a different key -> today starts fresh, but yesterday's round
-    // survives so the archive can rehydrate its progress.
-    ensureRound('d:6:fr', freshHoles(), REV);
-    const s = useGameStore.getState();
-    expect(s.activeKey).toBe('d:6:fr');
-    expect(s.rounds['d:5:fr']?.guessCount).toBe(1); // preserved
-    expect(s.rounds['d:5:fr']?.holes[0].rank).toBe(0);
-    expect(s.rounds['d:6:fr']).toEqual({
-      holes: freshHoles(),
-      guessCount: 0,
-      tried: [],
-      progress: 0,
-      revision: REV,
-    });
+  it('KEEPS other days\' outboxes — an archive day left offline still owes its guesses', () => {
+    const { ensureOutbox, appendOutbox } = useGameStore.getState();
+    ensureOutbox('d:5:fr', REV);
+    appendOutbox('d:5:fr', 'bois');
+    ensureOutbox('d:6:fr', REV);
+    expect(useGameStore.getState().outbox['d:5:fr']?.guesses).toEqual(['bois']);
+    expect(useGameStore.getState().outbox['d:6:fr']?.guesses).toEqual([]);
   });
 
-  it('caps the map: with > MAX_DAY_ROUNDS day rounds the oldest are evicted, the newest kept', () => {
+  it('keeps both languages — switching away and back keeps what each still owes', () => {
+    const { ensureOutbox, appendOutbox } = useGameStore.getState();
+    ensureOutbox('d:5:fr', REV);
+    appendOutbox('d:5:fr', 'bois');
+    ensureOutbox('d:5:en', REV);
+    appendOutbox('d:5:en', 'wood');
+    ensureOutbox('d:5:fr', REV);
+    expect(useGameStore.getState().outbox['d:5:fr']?.guesses).toEqual(['bois']);
+    expect(useGameStore.getState().outbox['d:5:en']?.guesses).toEqual(['wood']);
+  });
+
+  it('drops a legacy non-day key while keeping the day ones', () => {
+    useGameStore.setState({ outbox: { 'o:legacy:fr': { puzzle: REV, guesses: ['x'] } } }, false);
+    useGameStore.getState().ensureOutbox('d:5:fr', REV);
+    expect(useGameStore.getState().outbox['o:legacy:fr']).toBeUndefined();
+    expect(useGameStore.getState().outbox['d:5:fr']).toBeDefined();
+  });
+
+  it('caps the map: beyond MAX_DAY_ROUNDS the oldest days are evicted, the newest kept', () => {
     const CAP = 800;
-    // Seed CAP day rounds (days 1..CAP), each with a distinguishing guessCount, directly
-    // in the store (bypassing ensureRound so the seeding itself never caps).
-    const seeded: Record<string, typeof initial.rounds[string]> = {};
-    for (let day = 1; day <= CAP; day++) {
-      seeded[`d:${day}:fr`] = { holes: freshHoles(), guessCount: day, tried: [], progress: 0 };
+    const seeded: Record<string, { puzzle: string; guesses: string[] }> = {};
+    for (let day = 1; day <= CAP; day += 1) {
+      seeded[`d:${day}:fr`] = { puzzle: REV, guesses: [`g${day}`] };
     }
-    useGameStore.setState({ rounds: seeded, activeKey: null }, false);
-
-    // A brand-new newest day pushes the count over the cap -> the single oldest (day 1) is
-    // evicted; everything newer, including the new active round, is kept.
-    useGameStore.getState().ensureRound(`d:${CAP + 1}:fr`, freshHoles(), REV);
+    useGameStore.setState({ outbox: seeded }, false);
+    useGameStore.getState().ensureOutbox(`d:${CAP + 1}:fr`, REV);
     const s = useGameStore.getState();
-    expect(Object.keys(s.rounds).length).toBe(CAP); // still capped
-    expect(s.rounds['d:1:fr']).toBeUndefined(); // oldest evicted
-    expect(s.rounds['d:2:fr']?.guessCount).toBe(2); // next-oldest survives
-    expect(s.rounds[`d:${CAP + 1}:fr`]).toBeDefined(); // newest kept
-    expect(s.rounds[`d:${CAP}:fr`]?.guessCount).toBe(CAP); // prior newest kept
+    expect(s.outbox['d:1:fr']).toBeUndefined(); // oldest evicted
+    expect(s.outbox['d:2:fr']?.guesses).toEqual(['g2']); // next-oldest survives
+    expect(s.outbox[`d:${CAP + 1}:fr`]).toBeDefined(); // the active key always survives
+  });
+});
+
+describe('appendOutbox — the write buffer behind an instant board', () => {
+  beforeEach(() => useGameStore.getState().ensureOutbox('d:5:fr', REV));
+
+  it('appends in the order typed', () => {
+    const { appendOutbox } = useGameStore.getState();
+    appendOutbox('d:5:fr', 'bois');
+    appendOutbox('d:5:fr', 'foret');
+    expect(useGameStore.getState().outbox['d:5:fr']?.guesses).toEqual(['bois', 'foret']);
   });
 
-  it('switching LANGUAGE keeps both rounds; coming back restores the in-progress one', () => {
-    const { ensureRound, recordGuess, improveHole } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles(), REV);
-    recordGuess('bois');
-    improveHole(0, 'forêt', 12);
-
-    // Switch to the same day's other language: the FR round survives untouched.
-    ensureRound('d:5:en', freshHoles(), REV);
-    expect(activeRound()?.guessCount).toBe(0); // EN is fresh
-    expect(useGameStore.getState().rounds['d:5:fr']).toBeDefined();
-
-    // Come back to FR: its mid-game state is restored, not reset.
-    ensureRound('d:5:fr', freshHoles(), REV);
-    const fr = activeRound();
-    expect(fr?.guessCount).toBe(1);
-    expect(fr?.holes[0].rank).toBe(12);
-    expect(fr?.tried).toEqual(['bois']);
+  it('does NOT dedupe — the play log owns identity, and the store holds no rank map', () => {
+    // Game deduplicates against the play log before calling this; the store must not
+    // second-guess it with a raw string comparison that #104's aliases would defeat.
+    const { appendOutbox } = useGameStore.getState();
+    appendOutbox('d:5:fr', 'bois');
+    appendOutbox('d:5:fr', 'bois');
+    expect(useGameStore.getState().outbox['d:5:fr']?.guesses).toEqual(['bois', 'bois']);
   });
 
-  it('the SAME key is a no-op -> mid-round progress rehydrates untouched', () => {
-    const { ensureRound, recordGuess, improveHole, syncProgress } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles(), REV);
-    recordGuess('bois');
-    improveHole(0, 'forêt', 12);
-    syncProgress(42);
-    const mid = activeRound();
+  it('writes NOTHING when the key has no outbox — it may never invent a revision', () => {
+    const before = useGameStore.getState().outbox;
+    useGameStore.getState().appendOutbox('d:999:fr', 'bois');
+    expect(useGameStore.getState().outbox).toBe(before);
+  });
+});
 
-    // A reload calls ensureRound again with the SAME key + the same fresh holes.
-    ensureRound('d:5:fr', freshHoles(), REV);
-    const after = activeRound();
-    expect(after).toEqual(mid); // NOT reset to freshHoles
-    expect(after?.holes[0].rank).toBe(12);
-    expect(after?.guessCount).toBe(1);
-    expect(after?.tried).toEqual(['bois']);
-    expect(after?.progress).toBe(42);
+describe('setOutbox — what an answer left unacknowledged', () => {
+  beforeEach(() => {
+    const { ensureOutbox, appendOutbox } = useGameStore.getState();
+    ensureOutbox('d:5:fr', REV);
+    appendOutbox('d:5:fr', 'bois');
+    appendOutbox('d:5:fr', 'foret');
   });
 
-  it('drops a legacy non-day round from storage while keeping the day rounds', () => {
-    const { ensureRound, recordGuess } = useGameStore.getState();
-    // Simulate an older persisted blob that still carries a retired ?puzzle= override
-    // round ("o:<nonce>:<lang>") alongside a real day round.
-    ensureRound('d:5:fr', freshHoles(), REV);
-    recordGuess('bois');
-    useGameStore.setState((s) => ({
-      rounds: { ...s.rounds, 'o:legacy:fr': { holes: freshHoles(), guessCount: 3, tried: ['x', 'y', 'z'], progress: 10 } },
-    }));
+  it('replaces the guesses with what is still owed', () => {
+    useGameStore.getState().setOutbox('d:5:fr', REV, ['foret']);
+    expect(useGameStore.getState().outbox['d:5:fr']).toEqual({ puzzle: REV, guesses: ['foret'] });
+  });
 
-    // The next reconcile to any day key purges the legacy round and preserves day history.
-    ensureRound('d:6:en', freshHoles(), REV);
+  it('REMOVES the entry when nothing is left — a caught-up device stores no rounds', () => {
+    useGameStore.getState().setOutbox('d:5:fr', REV, []);
+    expect(useGameStore.getState().outbox['d:5:fr']).toBeUndefined();
+  });
+
+  it('ignores an answer about a RETIRED revision', () => {
+    // The republish already reset this outbox; resurrecting the old guesses into the round
+    // that replaced it is the one thing the revision exists to prevent.
+    useGameStore.getState().ensureOutbox('d:5:fr', 'ffffffffffffffff');
+    useGameStore.getState().setOutbox('d:5:fr', REV, ['bois', 'foret']);
+    expect(useGameStore.getState().outbox['d:5:fr']?.guesses).toEqual([]);
+  });
+
+  it('ignores an unknown key (the round was evicted mid-flight)', () => {
+    const before = useGameStore.getState().outbox;
+    useGameStore.getState().setOutbox('d:999:fr', REV, ['bois']);
+    expect(useGameStore.getState().outbox).toBe(before);
+  });
+});
+
+// CONTRACT (#214): where a round's AUTHORITATIVE state is, held only in memory. The screen
+// waits on it before it becomes interactive, so the three states have to be distinguishable
+// — and it is NEVER persisted, which is what removes the acknowledged-derived state the
+// outbox model exists to be rid of.
+describe('setRoundLoad — the transient server state', () => {
+  const server = { guesses: ['bois'], solved: false, solvedByAppend: false };
+
+  it('holds each round\'s state under its own key', () => {
+    const { setRoundLoad } = useGameStore.getState();
+    setRoundLoad('d:5:fr', { status: 'loading' });
+    setRoundLoad('d:6:fr', { status: 'ready', server });
     const s = useGameStore.getState();
-    expect(s.activeKey).toBe('d:6:en');
-    expect(s.rounds['o:legacy:fr']).toBeUndefined(); // legacy round dropped
-    expect(s.rounds['d:5:fr']?.guessCount).toBe(1); // day round intact
+    expect(s.roundLoads['d:5:fr']).toEqual({ status: 'loading' });
+    expect(s.roundLoads['d:6:fr']).toEqual({ status: 'ready', server });
   });
 
-  it('resets when the same (day, lang) key is re-published with a DIFFERENT sentence', () => {
-    const { ensureRound, recordGuess, improveHole } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles(), REV);
-    recordGuess('bois');
-    improveHole(0, 'forêt', 12);
-
-    // Same key, but the day's puzzle changed: new holes carry secrets absent from the
-    // old round. Rehydrating them would crash scoring, so the round must reset instead.
-    const newHoles: RuntimeHole[] = [
-      { pos: 2, secret: 'chat', word: 'animal', rank: 60, startRank: 60 },
-      { pos: 4, secret: 'noir', word: 'sombre', rank: 30, startRank: 30 },
-    ];
-    ensureRound('d:5:fr', newHoles, REV);
-    expect(activeRound()).toEqual({
-      holes: newHoles,
-      guessCount: 0,
-      tried: [],
-      progress: 0,
-      revision: REV,
-    });
+  it('FORGETS a round on null — the flight that owned the state was evicted', () => {
+    const { setRoundLoad } = useGameStore.getState();
+    setRoundLoad('d:5:fr', { status: 'ready', server });
+    setRoundLoad('d:5:fr', null);
+    expect(useGameStore.getState().roundLoads['d:5:fr']).toBeUndefined();
   });
 
-  it('matches duplicate secret slugs by position without collapsing hole instances', () => {
-    const repeated = repeatedSecretHoles();
-    expect(holesMatchPuzzle(repeated, repeated.map((hole) => ({ ...hole })))).toBe(true);
-    expect(
-      holesMatchPuzzle(repeated, [
-        repeated[0],
-        { ...repeated[1], pos: 4 },
-        repeated[2],
-      ]),
-    ).toBe(false);
-
-    useGameStore.getState().ensureRound('d:5:fr', repeated, REV);
-    useGameStore.getState().improveHole(0, 'chat', 0);
-    useGameStore.getState().ensureRound('d:5:fr', repeated, REV);
-
-    expect(activeRound()?.holes).toHaveLength(3);
-    expect(activeRound()?.holes.map((hole) => hole.pos)).toEqual([1, 3, 5]);
-    expect(activeRound()?.holes.map((hole) => hole.rank)).toEqual([0, 60, 40]);
-  });
-});
-
-describe('recordGuess — score = unique valid tries (on the active round)', () => {
-  beforeEach(() => useGameStore.getState().ensureRound('d:5:fr', freshHoles(), REV));
-
-  it('counts each distinct guess once', () => {
-    const { recordGuess } = useGameStore.getState();
-    recordGuess('bois');
-    recordGuess('vieux');
-    expect(activeRound()?.guessCount).toBe(2);
-    expect(activeRound()?.tried).toEqual(['bois', 'vieux']);
+  it('forgetting an unknown key writes NOTHING', () => {
+    const before = useGameStore.getState().roundLoads;
+    useGameStore.getState().setRoundLoad('d:999:fr', null);
+    expect(useGameStore.getState().roundLoads).toBe(before);
   });
 
-  it('does not re-count a repeated (already folded) guess', () => {
-    const { recordGuess } = useGameStore.getState();
-    recordGuess('bois');
-    recordGuess('bois');
-    expect(activeRound()?.guessCount).toBe(1);
-    expect(activeRound()?.tried).toEqual(['bois']);
-  });
-
-  it('dedupes by the caller-supplied canonical identity: an inflection of an already-tried word never counts (#104)', () => {
-    const { recordGuess } = useGameStore.getState();
-    // The Game passes guessKey over the puzzle ranks; the store only sees the mapping.
-    const keyOf = (t: string) => (t === 'privee' || t === 'prive' ? 'a:2' : t);
-
-    recordGuess('prive', keyOf);
-    recordGuess('privee', keyOf); // same word, different inflection -> ONE try
-    recordGuess('bois', keyOf);
-
-    expect(activeRound()?.guessCount).toBe(2);
-    // The uncounted variant does not enter the recall history either.
-    expect(activeRound()?.tried).toEqual(['prive', 'bois']);
-  });
-
-  it('counts one shared-secret solve once even when it resolves repeated holes', () => {
-    useGameStore.getState().ensureRound('d:5:fr', repeatedSecretHoles(), REV);
-    const { recordGuess, improveHole } = useGameStore.getState();
-
-    recordGuess('chat');
-    recordGuess('chat');
-    improveHole(0, 'chat', 0);
-    improveHole(1, 'chat', 0);
-
-    expect(activeRound()?.guessCount).toBe(1);
-    expect(activeRound()?.tried).toEqual(['chat']);
-    expect(activeRound()?.holes.slice(0, 2).map((hole) => hole.rank)).toEqual([0, 0]);
-  });
-
-  it('reports whether the guess entered the log — the sync engine flushes only counted tries (#201)', () => {
-    const { recordGuess } = useGameStore.getState();
-    expect(recordGuess('bois')).toBe(true);
-    expect(recordGuess('bois')).toBe(false);
-    expect(activeRound()?.tried).toEqual(['bois']);
-  });
-});
-
-describe('adoptRound — the server answer becomes the round truth (#201)', () => {
-  beforeEach(() => useGameStore.getState().ensureRound('d:5:fr', freshHoles(), REV));
-
-  it('replaces tried + holes and derives the count from the merged log', () => {
-    const adopted: RuntimeHole[] = [
-      { pos: 1, secret: 'foret', word: 'sous-bois', rank: 3, startRank: 87 },
-      { pos: 2, secret: 'ancienne', word: 'vieille', rank: 40, startRank: 40 },
-    ];
-    useGameStore.getState().adoptRound('d:5:fr', ['bois', 'chemin'], adopted, 62);
-    const round = activeRound()!;
-    expect(round.tried).toEqual(['bois', 'chemin']);
-    // The score IS the number of unique tries — derived, never a second stored answer.
-    expect(round.guessCount).toBe(2);
-    expect(round.holes).toEqual(adopted);
-  });
-
-  it('refreshes the cached progress with the board it describes', () => {
-    // The archive cell and the language strip read this cached number verbatim, and
-    // `syncProgress` can only ever repair the ACTIVE round — an adoption landing after
-    // the player navigated away would otherwise leave that day painting a stale fill
-    // until they reopened exactly that day.
-    expect(activeRound()?.progress).toBe(0);
-    useGameStore.getState().adoptRound('d:5:fr', ['bois'], freshHoles(), 41.5);
-    expect(activeRound()?.progress).toBe(41.5);
-  });
-
-  it('leaves an unknown key ABSENT (the round was evicted or reset mid-flight)', () => {
-    useGameStore.getState().adoptRound('d:9:en', ['x'], [], 10);
-    // Materializing the round here would create one with no cached progress, which
-    // `statusOf` renders as a NaN% archive cell. The key must simply stay gone.
-    expect(useGameStore.getState().rounds['d:9:en']).toBeUndefined();
-  });
-});
-
-describe('markRoundCapped — the cap stops the round counting (#201)', () => {
-  beforeEach(() => useGameStore.getState().ensureRound('d:5:fr', freshHoles(), REV));
-
-  it('marks the round capped', () => {
-    useGameStore.getState().markRoundCapped('d:5:fr');
-    expect(activeRound()?.capped).toBe(true);
-  });
-
-  it('is idempotent — a second call writes NOTHING', () => {
-    const { markRoundCapped } = useGameStore.getState();
-    markRoundCapped('d:5:fr');
-    const capped = activeRound();
-    markRoundCapped('d:5:fr');
-    // Same object, not merely an equal one: a fresh one re-renders every subscriber and
-    // re-serializes the persist blob for a value that did not change.
-    expect(activeRound()).toBe(capped);
-  });
-
-  it('ignores an unknown key', () => {
-    useGameStore.getState().markRoundCapped('d:9:en');
-    expect(useGameStore.getState().rounds['d:9:en']).toBeUndefined();
-  });
-});
-
-describe('improveHole — closer word + lower rank, others untouched', () => {
-  beforeEach(() => useGameStore.getState().ensureRound('d:5:fr', freshHoles(), REV));
-
-  it('swaps in the improved hole only', () => {
-    useGameStore.getState().improveHole(1, 'antique', 3);
-    const holes = activeRound()!.holes;
-    expect(holes[1]).toEqual({ pos: 2, secret: 'ancienne', word: 'antique', rank: 3, startRank: 40 });
-    expect(holes[0]).toEqual(freshHoles()[0]); // untouched
-  });
-
-  it('rank 0 marks a hole solved (locked)', () => {
-    useGameStore.getState().improveHole(0, 'forêt', 0);
-    expect(activeRound()!.holes[0].rank).toBe(0);
-  });
-
-  it('is monotonic — a worse or equal rank is ignored (a stale deferred swap never regresses a hole)', () => {
-    const { improveHole } = useGameStore.getState();
-    improveHole(1, 'antique', 3);
-    // Game defers swaps to the hit fade-out: a guess submitted inside that window was
-    // judged against the pre-swap rank, so its late timer must not undo the better one.
-    improveHole(1, 'vieillotte', 10); // worse
-    improveHole(1, 'antique', 3); // equal
-    expect(activeRound()!.holes[1]).toMatchObject({ word: 'antique', rank: 3 });
-  });
-
-  it('never un-solves a solved hole', () => {
-    const { improveHole } = useGameStore.getState();
-    improveHole(0, 'forêt', 0); // solved
-    improveHole(0, 'bosquet', 20); // stale timer firing after the solve
-    expect(activeRound()!.holes[0]).toMatchObject({ word: 'forêt', rank: 0 });
-  });
-});
-
-describe('syncProgress — cached per round for the selector badge', () => {
-  beforeEach(() => useGameStore.getState().ensureRound('d:5:fr', freshHoles(), REV));
-
-  it('stores the value on the active round', () => {
-    useGameStore.getState().syncProgress(63);
-    expect(activeRound()?.progress).toBe(63);
-  });
-
-  it('is a no-op when unchanged (same object reference kept)', () => {
-    const { syncProgress } = useGameStore.getState();
-    syncProgress(50);
-    const before = useGameStore.getState().rounds;
-    syncProgress(50);
-    expect(useGameStore.getState().rounds).toBe(before); // no churn
-  });
-});
-
-// CONTRACT (#203): what a finished round persists is `recorded` — the SERVER holds this
-// round's solve, read off a round answer rather than off the local board — which is what
-// makes its score row (and therefore its standing) readable, and what says the round is
-// frozen. It replaced the recorded SCORE, which existed to reconcile a client-claimed one;
-// there is none left to reconcile. It targets the key captured when the request started,
-// even if navigation has made a different round active by the time the answer lands.
-describe('the server-held solve (#203) — markRoundRecorded', () => {
-  it('marks the keyed round, and persists on the round itself', () => {
-    const { ensureRound, markRoundRecorded } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles(), REV);
-    expect(activeRound()?.recorded).toBeUndefined();
-    markRoundRecorded('d:5:fr');
-    expect(activeRound()?.recorded).toBe(true);
-    const before = useGameStore.getState().rounds;
-    markRoundRecorded('d:5:fr');
-    expect(useGameStore.getState().rounds).toBe(before); // idempotent — no churn
-  });
-
-  it('marks the round the answer is about, not the newly active one', () => {
-    const { ensureRound, markRoundRecorded } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles(), REV);
-    ensureRound('d:6:fr', freshHoles(), REV); // the active round has moved on
-    markRoundRecorded('d:5:fr');
-    const s = useGameStore.getState();
-    expect(s.rounds['d:5:fr'].recorded).toBe(true);
-    expect(s.rounds['d:6:fr'].recorded).toBeUndefined();
-  });
-
-  it('survives a rehydration under the same key, and resets with a re-published sentence', () => {
-    const { ensureRound, markRoundRecorded } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles(), REV);
-    markRoundRecorded('d:5:fr');
-    // The same puzzle reconciles again (a reload): the flag survives, so the conversation
-    // is not re-opened for a guaranteed refusal.
-    useGameStore.getState().ensureRound('d:5:fr', freshHoles(), REV);
-    expect(activeRound()?.recorded).toBe(true);
-    // A re-published different sentence resets the round — the server's solve was about
-    // the retired one.
-    const changed = freshHoles().map((h) => ({ ...h, secret: `${h.secret}-x` }));
-    useGameStore.getState().ensureRound('d:5:fr', changed, REV);
-    expect(activeRound()?.recorded).toBeUndefined();
-  });
-
-  it('is a no-op for an unknown key', () => {
-    const before = useGameStore.getState().rounds;
-    useGameStore.getState().markRoundRecorded('d:999:fr');
-    expect(useGameStore.getState().rounds).toBe(before);
+  it('is NOT persisted — the partialize snapshot carries no round loads', () => {
+    useGameStore.getState().setRoundLoad('d:5:fr', { status: 'ready', server });
+    const persisted = useGameStore.persist.getOptions().partialize!(useGameStore.getState());
+    expect(persisted).not.toHaveProperty('roundLoads');
+    expect(persisted).toHaveProperty('outbox');
   });
 });
 
@@ -870,7 +665,7 @@ describe('recordSolve — per-language solved-day set (#56)', () => {
 describe('migratePersisted — persisted-blob upgrades', () => {
   it('discards a v0 blob entirely (one-time reset)', () => {
     expect(migratePersisted({ roundKey: 'x', holes: [] }, 0)).toEqual({
-      rounds: {},
+      outbox: {},
       wordRounds: {},
       lastLang: null,
       lastMode: null,
@@ -904,7 +699,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       1,
     );
     expect(out).toEqual({
-      rounds: {},
+      outbox: {},
       wordRounds: {},
       lastLang: 'en',
       lastMode: null,
@@ -923,7 +718,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
     const rounds = { 'd:5:fr': { holes: freshHoles(), guessCount: 2, tried: ['a', 'b'], progress: 10 } };
     const out = migratePersisted({ rounds, lastLang: 'fr', onboarded: true }, 2);
     expect(out).toEqual({
-      rounds: {},
+      outbox: {},
       wordRounds: {},
       lastLang: 'fr',
       lastMode: null,
@@ -946,8 +741,9 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       4,
     );
     expect(out).toEqual({
-      // Dropped: a pre-v13 blob carries no published revision (see migratePersisted).
-      rounds: {},
+      // Dropped: v14 removed the sentence rounds map, and no older blob can say which of
+      // its guesses were still unsent (see migratePersisted).
+      outbox: {},
       wordRounds: {},
       lastLang: 'fr',
       lastMode: null,
@@ -980,8 +776,8 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       6,
     );
     expect(out.wordRounds).toEqual({});
-    // Sentence rounds go too, for v13's own reason — this blob predates the revision stamp.
-    expect(out.rounds).toEqual({});
+    // The sentence rounds map is gone outright at v14, so nothing survives it either.
+    expect(out.outbox).toEqual({});
     expect(out).toMatchObject({ lastLang: 'fr', lastMode: 'word', onboarded: true, solvedDays });
   });
 
@@ -1012,27 +808,38 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       10,
     );
     expect(out.wordRounds).toEqual({});
-    // And the sentence rounds go with them, for v13's own reason (no published revision).
-    expect(out.rounds).toEqual({});
+    // And the sentence rounds go with them: v14 removed the map they lived in.
+    expect(out.outbox).toEqual({});
     expect(out).toMatchObject({ lastLang: 'fr', lastMode: 'word', solvedDays: { fr: [10] } });
   });
 
-  // v12 -> v13 (#203): a sentence round stored before the published revision existed cannot
-  // say WHICH version it was played against, and matching holes prove nothing about the maps
-  // (rank 0 is a GROUP, so a correction moves aliases without touching a hole). The standing
-  // no-back-compat rule applies, exactly as it did for v7's strike runs and v11's word
-  // rounds — but the STREAK is a separate fact and survives, as it did there.
-  it('v12 -> v13 drops pre-revision sentence rounds and keeps the streak', () => {
-    const rounds = { 'd:5:fr': { holes: freshHoles(), guessCount: 2, tried: ['a', 'b'], progress: 10 } };
+  // v13 -> v14 (#214): the sentence `rounds` map is DROPPED outright — local storage is an
+  // outbox now. There is nothing to translate: a stored round's UNSENT guesses were never
+  // distinguishable from its acknowledged ones inside one merged `tried` list, so seeding an
+  // outbox from it would re-send guesses the server already holds, burn cap slots on
+  // duplicates and — near the cap — cost an honest player their leaderboard entry. The mount
+  // READ recovers what the server has. The streak, the word rounds and every preference
+  // survive, exactly as they did at v7, v11 and v13.
+  it('v13 -> v14 drops the sentence rounds map and starts the outbox empty', () => {
+    const rounds = {
+      'd:5:fr': { holes: [], guessCount: 2, tried: ['a', 'b'], progress: 10, revision: REV },
+    };
     const wordRounds = { 'w:5:fr': { word: 'phare', startedAt: 1, deadline: 2, tried: [], claimed: 0 } };
     const solvedDays = { fr: [10, 11] };
     const out = migratePersisted(
       { rounds, wordRounds, lastLang: 'fr', onboarded: true, solvedDays },
-      12,
+      13,
     );
-    expect(out.rounds).toEqual({});
+    expect(out).not.toHaveProperty('rounds');
+    expect(out.outbox).toEqual({});
     expect(out.wordRounds).toEqual(wordRounds);
     expect(out.solvedDays).toEqual(solvedDays);
+  });
+
+  it('keeps a v14 outbox untouched — it holds only what the server has not acknowledged', () => {
+    const outbox = { 'd:5:fr': { puzzle: REV, guesses: ['bois'] } };
+    const out = migratePersisted({ outbox, lastLang: 'fr', onboarded: true }, 14);
+    expect(out.outbox).toEqual(outbox);
   });
 
   it('grandfathers a veteran off the RAW blob, not the dropped rounds', () => {
@@ -1124,10 +931,8 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       },
       11,
     );
-    for (const round of Object.values(out.rounds)) {
-      expect(round).not.toHaveProperty('scoreRecorded');
-      expect(round).not.toHaveProperty('scoreSubmitted');
-    }
+    // The sentence rounds those flags rode on are gone entirely at v14.
+    expect(out).not.toHaveProperty('rounds');
     // The word round survives v11 intact APART from the retired value: its own
     // acknowledgement is what keeps it from re-submitting.
     expect(out.wordRounds['w:6:fr']).not.toHaveProperty('scoreRecorded');
@@ -1145,52 +950,40 @@ describe('migratePersisted — persisted-blob upgrades', () => {
 // Restore the module's initial state so a later import sees a clean store.
 useGameStore.setState(initial, false);
 
-// CONTRACT (#203, user-decided 2026-08-22): a REPUBLISH means the puzzle contained an
-// error, so the round it retires STARTS OVER. Its guesses were answers to a different
-// question, and a corrected rank map can move the very aliases that decided whether a hole
-// was solved — which the sentence's own shape cannot show, since a correction usually keeps
-// the same holes.
-describe('a republished puzzle resets its round (#203)', () => {
+// CONTRACT (#203, user-decided 2026-08-22; reshaped by #214): a REPUBLISH means the puzzle
+// contained an error, so the round it retires STARTS OVER. Its guesses were answers to a
+// different question, and a corrected rank map can move the very aliases that decided
+// whether a hole was solved — which the sentence's own shape cannot show, since a correction
+// usually keeps the same holes. What starts over locally is now the OUTBOX; the SERVER's log
+// restarts on the same revision comparison.
+describe('a republished puzzle resets its round (#203/#214)', () => {
   const OTHER = 'b2c3d4e5f6071829';
 
-  it('starts over when the published VERSION changed, even with identical holes', () => {
-    const { ensureRound, recordGuess } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles(), REV);
-    recordGuess('bois');
-    expect(useGameStore.getState().rounds['d:5:fr'].tried).toEqual(['bois']);
+  it('drops the unsent guesses when the published VERSION changed', () => {
+    const { ensureOutbox, appendOutbox } = useGameStore.getState();
+    ensureOutbox('d:5:fr', REV);
+    appendOutbox('d:5:fr', 'bois');
+    expect(useGameStore.getState().outbox['d:5:fr']?.guesses).toEqual(['bois']);
 
     // Same sentence, same holes — a corrected neighborhood.
-    useGameStore.getState().ensureRound('d:5:fr', freshHoles(), OTHER);
-    const round = useGameStore.getState().rounds['d:5:fr'];
-    expect(round.tried).toEqual([]);
-    expect(round.guessCount).toBe(0);
-    expect(round.progress).toBe(0);
-    expect(round.revision).toBe(OTHER);
+    useGameStore.getState().ensureOutbox('d:5:fr', OTHER);
+    expect(useGameStore.getState().outbox['d:5:fr']).toEqual({ puzzle: OTHER, guesses: [] });
   });
 
-  it('rehydrates untouched when the version is the same', () => {
-    const { ensureRound, recordGuess } = useGameStore.getState();
-    ensureRound('d:5:fr', freshHoles(), REV);
-    recordGuess('bois');
-    useGameStore.getState().ensureRound('d:5:fr', freshHoles(), REV);
-    expect(useGameStore.getState().rounds['d:5:fr'].tried).toEqual(['bois']);
+  it('keeps them untouched when the version is the same', () => {
+    const { ensureOutbox, appendOutbox } = useGameStore.getState();
+    ensureOutbox('d:5:fr', REV);
+    appendOutbox('d:5:fr', 'bois');
+    ensureOutbox('d:5:fr', REV);
+    expect(useGameStore.getState().outbox['d:5:fr']?.guesses).toEqual(['bois']);
   });
 
-  it('RESETS a round stored with no revision rather than adopting it', () => {
-    // The standing no-back-compat rule: v13 drops these at the migration, so one reaching
-    // ensureRound is not a shape to accommodate. Matching holes prove nothing about the maps
-    // either — rank 0 is a GROUP, so a correction can move the aliases that decide `solved`
-    // without touching a hole.
-    useGameStore.setState((s) => ({
-      rounds: {
-        ...s.rounds,
-        'd:9:fr': { holes: freshHoles(), guessCount: 1, tried: ['bois'], progress: 12 },
-      },
-    }));
-    useGameStore.getState().ensureRound('d:9:fr', freshHoles(), REV);
-    const round = useGameStore.getState().rounds['d:9:fr'];
-    expect(round.tried).toEqual([]);
-    expect(round.guessCount).toBe(0);
-    expect(round.revision).toBe(REV);
+  it('leaves the SOLVED-DAY credit alone — a republish is the publisher\'s error', () => {
+    // The streak rewards showing up, and taking a day back because we shipped a broken
+    // puzzle would punish the player for it. `recordSolve` already refuses a day it holds,
+    // so solving the correction cannot claim it twice.
+    useGameStore.setState({ solvedDays: { fr: [5] } }, false);
+    useGameStore.getState().ensureOutbox('d:5:fr', OTHER);
+    expect(useGameStore.getState().solvedDays.fr).toEqual([5]);
   });
 });

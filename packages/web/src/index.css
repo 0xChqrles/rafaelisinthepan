@@ -1927,6 +1927,17 @@ button * {
   inset: 0;
   text-align: right;
 }
+/* The CAPPED round's headline (#214): `∞` where the count would be. Press Start 2P has no
+   such glyph, so it is DRAWN from the shared path data — the same path the OG card draws,
+   at the same fraction of the font size — and sized in `em` off `.solved-score-num` so it
+   scales with the number it replaces. `crispEdges` keeps the pixel grid hard at any
+   fractional size, the way every sprite here is rendered; the box is inline so the unit
+   below it sits exactly where it sits under a count. */
+.solved-score-inf {
+  display: block;
+  shape-rendering: crispEdges;
+  color: inherit;
+}
 .solved-score-unit {
   font-size: 13px;
   font-weight: 500;

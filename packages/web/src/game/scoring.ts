@@ -29,6 +29,21 @@ export function applyGuessToHoles(holes: RuntimeHole[], ranks: RankMap, typed: s
   }
 }
 
+// A whole log replayed onto fresh holes — the board as the play log describes it. Since
+// #214 this is how the screen HOLDS its board: nothing persists holes any more, so what is
+// on screen is a projection of the log like everything else. The animated swap a live guess
+// earns is a presentation lag over the same function (Game defers the guess itself, not the
+// board's arithmetic), which is why a replay can be authoritative and instant at once.
+export function replayHoles(
+  freshHoles: RuntimeHole[],
+  ranks: RankMap,
+  tried: readonly string[],
+): RuntimeHole[] {
+  const holes = freshHoles.map((h) => ({ ...h }));
+  for (const typed of tried) applyGuessToHoles(holes, ranks, typed);
+  return holes;
+}
+
 export function computeProgress(holes: RuntimeHole[], ranks: RankMap) {
   // A repeated sentence occurrence is still its own rendered/runtime hole, but it is
   // not a second logical target for reconstruction progress. Generation gives all

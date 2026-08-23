@@ -1,33 +1,42 @@
-// The #201 sync engine: the server owns each round's guess log from the first guess,
-// whether or not an account is ever linked. Local state stays the WORKING COPY — the
-// judge of every guess (a submit must never round-trip before the board reacts) and the
-// write buffer — and this engine keeps the server's copy converged behind it.
+// The sentence round's conversation with the server (#201, reworked by #214).
 //
-//   guess lands -> board reacts -> POST goes out -> response reconciles.
+// The server owns each round's guess log from the first guess, whether or not an account is
+// ever linked — and since #214 the client stops keeping a copy of what it owns. There are
+// three deliberately different values (see `game/playLog.ts`): the SERVER STATE, held here
+// in memory and mirrored into the store for the screen; the OUTBOX, the only persisted
+// sentence-round state, holding exactly the guesses the server has not acknowledged; and
+// the PLAY LOG, a pure projection of the two that the screen derives everything from.
+//
+// The game is therefore deliberately NETWORK-DEPENDENT at load: the round is read before
+// the board becomes interactive, and a failed read is a visible state rather than
+// permission to start from a guessed local mirror. Once both reads have settled, play is
+// instant again — a guess is judged locally, the board reacts, the POST goes out behind it.
+//
+//   guess lands -> board reacts -> outbox grows -> POST goes out -> answer replaces truth.
 //
 // Writes are COALESCED (sentence mode streams: fast typing accumulates while the
-// ~ROUND_WRITE_MIN_MS pacing waits, then flushes as one batch) and every answer — a 200
-// and BOTH refusals — carries the FULL stored log, which is adopted as truth. So an open
-// tab reconciles on its own next write, and a second device's tries merge into the same
-// board. Failed or slow writes queue and retry with a capped backoff: the game still
-// works on a bad connection, because durability lives in the persisted `tried` log, not
-// in the queue — a killed tab catches up on the next visit's read, which diffs the server
-// log against localStorage and flushes the difference. That read is also what makes a
-// player's full history follow them to a new device (#201), archive rounds included.
+// ~ROUND_WRITE_MIN_MS pacing waits, then flushes as one batch) and every answer — a 200 and
+// BOTH refusals — carries the FULL stored state, which REPLACES the server snapshot. So an
+// open tab reconciles on its own next write, and a second device's tries merge into the same
+// board through the projection rather than through a merge.
 //
-// At ROUND_GUESS_CAP the server refuses further appends (`round_full`): the round keeps
-// playing locally but has stopped counting — the engine marks it capped and closes the
-// conversation. It never becomes server-recorded, so the solved screen launches no
-// population read; there is no client score submission since #203.
+// The old reconciliation problem is gone because nothing acknowledged is persisted: there is
+// no watermark to keep honest, no `pendingFrom`, and no authority-bearing merge. What is left
+// is an outbox that shrinks by identity as the server's log grows.
 //
-// One conversation per round lives in a MODULE-level map (the activeScoreFlights
-// pattern): a ref would not survive a real unmount, and neither the queue nor the
-// in-flight write may be duplicated by a remount (archive round-trips, StrictMode).
+// At ROUND_GUESS_CAP the server refuses further appends (`round_full`). A round is CAPPED
+// when the authoritative state is UNSOLVED with exactly that many raw entries — a fact the
+// screen derives, never a flag anyone stores — and there the round ends at `∞` (#214).
+//
+// One conversation per round lives in a MODULE-level map (the activeScoreFlights pattern):
+// a ref would not survive a real unmount, and neither the queue nor the in-flight write may
+// be duplicated by a remount (archive round-trips, StrictMode).
 
-import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS, type RankMap, type RuntimeHole } from '@whippin/shared';
+import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS, type RankMap } from '@whippin/shared';
 import { parseRound, postRoundBody, roundUrl, type RoundState } from '../api';
-import { applyGuessToHoles, computeProgress, guessKey } from '../game/scoring';
-import { useGameStore } from './gameStore';
+import { guessKey } from '../game/scoring';
+import { unacknowledged } from '../game/playLog';
+import { EMPTY_ROUND_SERVER, useGameStore, type RoundLoad, type RoundServer } from './gameStore';
 import { playerSecret } from '../identity';
 import { turnstileToken } from '../turnstile';
 
@@ -35,35 +44,37 @@ export interface RoundSyncContext {
   roundKey: string;
   lang: string;
   // Sentence mode only, deliberately. The route, the URL and the stored partition are all
-  // mode-generic, but the STORE is not: a word round lives in its own `wordRounds` map
-  // under a `w:` key, which `adoptRound`/`markRoundCapped` cannot reach and whose log a
-  // hole replay does not describe. Widening this is #202's job, together with the store
-  // actions — until then the type refuses the round rather than leaving a silent no-op
-  // that would look like "my history doesn't follow me" instead of a compile error.
+  // mode-generic, but the two CONVERSATIONS are not: Word mode writes twice where this one
+  // streams, and its round lives in its own map under a `w:` key. It has its own engine
+  // (state/wordRoundSync.ts) rather than a widened one — the type refuses a word round here
+  // rather than leaving a silent no-op that would look like "my history doesn't follow me"
+  // instead of a compile error.
   mode: 'sentence';
   date: string;
   // WHICH PUBLISHED VERSION of this daily is being played — the round's identity everywhere
   // (#203). The hole layout used to play that part and could not tell a corrected puzzle
   // from the one it replaced when the sentence was unchanged.
   revision: string;
+  // Only for the canonical identity (#104's `guessKey`): what "the server already holds
+  // this guess" means when two devices typed two surfaces of one group.
   ranks: RankMap;
-  freshHoles: RuntimeHole[];
 }
 
 interface RoundFlight extends RoundSyncContext {
   // Which published puzzle VERSION this conversation is about.
   puzzle: string;
-  // Prefix of the round's persisted `tried` known to be on the server. Everything from
-  // here on is the pending batch; adoption resets it to the acked prefix length.
-  pendingFrom: number;
-  // How many entries the server's log RAW-ly holds — which is the number its cap counts,
-  // and NOT `pendingFrom`. The two differ whenever the merge dedups the stored log
-  // shorter (two devices each sending a guess that resolves to the other's identity,
-  // #104), so sizing a batch against `pendingFrom` can overshoot the cap. Set from every
-  // answer, since every answer carries the full stored log.
-  serverCount: number;
-  // The initial read has landed (or 404'd): local extras are safe to append from here on.
+  // The last state the server told us about. The RAW log — its length is what the cap
+  // counts, and it is NOT the play log's length whenever the projection dedups two devices'
+  // surfaces of one group.
+  server: RoundServer;
+  // The current read has landed (or 404'd). Cleared by `resync`, which is what makes an
+  // unknown write outcome fall back to a read.
   readDone: boolean;
+  // This round has settled AT LEAST ONCE, so the screen is interactive. It is a separate
+  // fact from `readDone` precisely because `resync` clears that one: a recovery read that
+  // fails is a sync hiccup behind a live board, and pulling the player back to a load
+  // error there would take a played round away from them mid-guess.
+  settled: boolean;
   // Does the server already hold a record for THIS puzzle? Round CREATION is Turnstile-
   // gated since #203 (the challenge moved off the retired score POST to where state is
   // actually minted), so the first append carries a token and every later one does not.
@@ -83,16 +94,16 @@ const flights = new Map<string, RoundFlight>();
 
 // Bound the map. Every flight pins its puzzle's whole rank map — megabytes of heap on a
 // real sentence — and nothing used to remove one, so browsing a month of the archive kept
-// a month of puzzles alive for the tab's life. Evicting is SAFE by construction, which is
-// the design's own claim: durability lives in the persisted `tried` log, so a dropped
-// conversation simply resumes on that round's next mount, with a read.
+// a month of puzzles alive for the tab's life. Evicting is SAFE by construction: the
+// server owns the log, so a dropped conversation simply resumes on that round's next
+// mount, with a read.
 const MAX_FLIGHTS = 3;
 
 // Ceiling on the retry window, so an outage cannot spin a request a second.
 const MAX_BACKOFF_MS = 30_000;
 
 // Word mode still derives its tag from the day's word (`wordRoundSync`); the SENTENCE
-// daily's is the published puzzle's own `revision` (#203), which is what the context below
+// daily's is the published puzzle's own `revision` (#203), which is what the context above
 // carries. Re-exported because `wordRoundSync` names it.
 export { fnvTag } from '@whippin/shared';
 
@@ -119,42 +130,6 @@ export function backoffDelayMs(failures: number, lastFailureAt: number, now: num
   return Math.max(0, lastFailureAt + windowMs - now);
 }
 
-// Merge the server's log with the local one: server entries first (they are the acked
-// truth), then local-only tries in their own order, deduped throughout by canonical
-// identity (#104's guessKey) — the same dedup recordGuess applies, so the merged log
-// replays to exactly one board. Returns how many of the merged entries came from the
-// SERVER: that prefix needs no further writing, and everything after it is the pending
-// batch.
-export function mergeLogs(
-  server: string[],
-  local: string[],
-  keyOf: (typed: string) => string,
-): { guesses: string[]; acked: number } {
-  const seen = new Set<string>();
-  const guesses: string[] = [];
-  const push = (typed: string) => {
-    const id = keyOf(typed);
-    if (seen.has(id)) return;
-    seen.add(id);
-    guesses.push(typed);
-  };
-  for (const g of server) push(g);
-  const acked = guesses.length;
-  for (const g of local) push(g);
-  return { guesses, acked };
-}
-
-// Replay a whole log onto fresh holes — the board as the server's truth sees it.
-export function replayHoles(
-  freshHoles: RuntimeHole[],
-  ranks: RankMap,
-  tried: string[],
-): RuntimeHole[] {
-  const holes = freshHoles.map((h) => ({ ...h }));
-  for (const typed of tried) applyGuessToHoles(holes, ranks, typed);
-  return holes;
-}
-
 function schedule(key: string, delay: number) {
   const f = flights.get(key);
   if (!f || f.closed || f.timer !== null) return;
@@ -167,32 +142,35 @@ function schedule(key: string, delay: number) {
 
 function pruneFlights(keep: string): void {
   // Map iterates in insertion order and `beginRoundSync` re-inserts on every refresh, so
-  // this drops the least recently registered idle conversations first.
+  // this drops the least recently registered idle conversations first. The evicted round's
+  // published state goes with it: the flight is what owns it, and the next mount reads.
   for (const [key, f] of flights) {
     if (flights.size <= MAX_FLIGHTS) return;
     if (key === keep || f.inFlight) continue;
     if (f.timer !== null) clearTimeout(f.timer);
     flights.delete(key);
+    useGameStore.getState().setRoundLoad(key, null);
   }
 }
 
-// Register a round's sync context (Game mounts one per round) and start its
-// conversation: the first registration reads the server's copy and adopts whatever the
-// local device is missing; later registrations only refresh the context.
+// Register a round's sync context (Game mounts one per round) and start its conversation:
+// the first registration reads the server's copy, which is what the screen waits on; later
+// registrations only refresh the context.
 export function beginRoundSync(ctx: RoundSyncContext): void {
   const puzzle = ctx.revision;
   const existing = flights.get(ctx.roundKey);
   if (existing) {
-    // A sentence re-published UNDER an open conversation: the acked prefix describes the
-    // retired log, so the conversation starts over (and re-opens if the old one had hit
-    // the cap — a fresh round is not a capped one).
+    // A sentence re-published UNDER an open conversation: everything the flight knows
+    // describes the retired puzzle, so the conversation starts over — and re-opens if the
+    // old one had closed at the cap or the freeze, since a fresh round is neither.
     if (existing.puzzle !== puzzle) {
-      existing.pendingFrom = 0;
-      existing.serverCount = 0;
+      existing.server = EMPTY_ROUND_SERVER;
       existing.readDone = false;
+      existing.settled = false;
       existing.created = false;
       existing.closed = false;
       existing.failures = 0;
+      useGameStore.getState().setRoundLoad(ctx.roundKey, { status: 'loading' });
     }
     Object.assign(existing, ctx, { puzzle });
     // Re-insert so the LRU sees this round as the most recent.
@@ -205,9 +183,9 @@ export function beginRoundSync(ctx: RoundSyncContext): void {
   flights.set(ctx.roundKey, {
     ...ctx,
     puzzle,
-    pendingFrom: 0,
-    serverCount: 0,
+    server: EMPTY_ROUND_SERVER,
     readDone: false,
+    settled: false,
     created: false,
     lastWriteSettledAt: 0,
     failures: 0,
@@ -216,41 +194,43 @@ export function beginRoundSync(ctx: RoundSyncContext): void {
     inFlight: null,
     closed: false,
   });
+  useGameStore.getState().setRoundLoad(ctx.roundKey, { status: 'loading' });
   pruneFlights(ctx.roundKey);
   void pump(ctx.roundKey);
 }
 
-// A counted guess just entered the local log: something may now be pending.
+// A counted guess just entered the outbox: something is now pending.
 export function notifyGuess(roundKey: string): void {
   if (!flights.has(roundKey)) return;
   void pump(roundKey);
 }
 
+// The screen's RETRY on a failed load: spend the backoff now rather than waiting it out,
+// and re-open a conversation a verdict closed — the player asked, and a verdict this
+// client keeps getting wrong will simply be answered again.
+export function retryRoundSync(roundKey: string): void {
+  const f = flights.get(roundKey);
+  if (!f) return;
+  f.failures = 0;
+  f.lastFailureAt = 0;
+  if (!f.settled) {
+    f.closed = false;
+    useGameStore.getState().setRoundLoad(roundKey, { status: 'loading' });
+  }
+  void pump(roundKey);
+}
+
+// What this round still owes the server: the outbox, but only while it names THIS puzzle.
+// A mismatch means `ensureOutbox` has not reconciled yet (or an eviction removed it), and
+// sending a retired round's guesses is the one thing the revision exists to prevent.
+function pending(f: RoundFlight): string[] {
+  const outbox = useGameStore.getState().outbox[f.roundKey];
+  return outbox && outbox.puzzle === f.puzzle ? outbox.guesses : [];
+}
+
 async function pump(key: string): Promise<void> {
   const f = flights.get(key);
   if (!f || f.closed || f.inFlight) return;
-
-  const round = useGameStore.getState().rounds[key];
-  if (!round) return;
-  // The cap already stopped this round counting, and that flag is PERSISTED. Reading it
-  // here is what keeps a reload from re-opening the conversation for a read, a
-  // guaranteed-409 append and another `round_full` line — reload noise in a signal whose
-  // whole value is that each entry means a real player hit the cap.
-  //
-  // `recorded` is the same rule for the #203 FREEZE: the server has this round's solve on
-  // record and refuses every further append, so a reload must not re-open the conversation
-  // to be told so again.
-  if (round.capped || round.recorded) {
-    f.closed = true;
-    return;
-  }
-  // The local round was reset under this key (a republish, an eviction): the acked prefix
-  // no longer describes this log, so start the conversation over.
-  if (round.tried.length < f.pendingFrom) {
-    f.pendingFrom = 0;
-    f.serverCount = 0;
-    f.readDone = false;
-  }
 
   const now = Date.now();
   const delay = Math.max(
@@ -267,25 +247,27 @@ async function pump(key: string): Promise<void> {
   if (!f.readDone) {
     f.inFlight = readRound(f, key);
   } else {
-    if (round.tried.length <= f.pendingFrom) return; // nothing pending
+    const owed = pending(f);
+    if (owed.length === 0) return; // nothing pending
     // Never send a batch the route can only refuse. The stored log may hold at most
-    // ROUND_GUESS_CAP entries, so the batch is clamped to what still fits — and when a
-    // pending try cannot fit AT ALL, the round has stopped counting and says so locally
-    // rather than spending a doomed request. (An unclamped batch takes a 400, which is
+    // ROUND_GUESS_CAP entries, so the batch is the OLDEST PREFIX that still fits — and
+    // when nothing fits at all, this round is capped: it has stopped counting, and saying
+    // so locally beats spending a doomed request. (An unclamped batch takes a 400, which is
     // not the 409 this engine handles: it would re-send the identical body every 30s
-    // forever and the round would never be marked capped at all.)
+    // forever.)
     //
-    // Order matters: the cap is reached only when there is a guess the server WILL
-    // refuse, exactly as its own 409 means. A round whose acked log sits at exactly the
-    // cap with nothing pending is finished, not capped — marking it here would suppress
-    // the leaderboard entry of someone who solved on their 500th try.
-    const room = ROUND_GUESS_CAP - f.serverCount;
+    // Room is measured against the RAW stored count, never the play log's: the two differ
+    // whenever the projection dedups two devices' surfaces of one group, and the cap counts
+    // what is STORED.
+    const room = ROUND_GUESS_CAP - f.server.guesses.length;
     if (room <= 0) {
-      useGameStore.getState().markRoundCapped(key);
+      // The terminal state is DERIVED from the state already published (unsolved, at the
+      // cap), so there is nothing to mark — only guesses that can never be stored to drop.
+      discardOutbox(f);
       f.closed = true;
       return;
     }
-    f.inFlight = appendBatch(f, key, round.tried.slice(f.pendingFrom, f.pendingFrom + room));
+    f.inFlight = appendBatch(f, key, owed.slice(0, room));
   }
   try {
     await f.inFlight;
@@ -293,60 +275,83 @@ async function pump(key: string): Promise<void> {
     // Neither leg is expected to throw — both own their own error paths — but an
     // unexpected one must not escape as an unhandled rejection, and above all must not
     // leave `inFlight` pinned: that wedges this conversation shut for the tab's life.
-    retryLater(f);
+    retryLater(f, key);
   } finally {
     f.inFlight = null;
   }
-  void pump(key); // reassess: retries, coalesced arrivals, adoption leftovers
+  void pump(key); // reassess: retries, coalesced arrivals, leftovers
 }
 
 function requestBody(f: RoundFlight, guesses?: string[], challenge?: string) {
   return { secret: playerSecret(), puzzle: f.puzzle, guesses, turnstileToken: challenge };
 }
 
-// Adopt what the server DERIVED about this round (#203), which the client cannot read off
-// its own board: the SERVER has it on record as solved. That is when the day's score row
-// exists and a standing becomes readable, and it is also the FREEZE — the round takes no
-// further guesses, so the conversation is over. Only ever true, so this can never un-finish
-// a round.
-//
-// It adopts the SERVER's log alone, where every other answer merges the local one under it
-// (corrected on review). A frozen round's log is final: the guesses this device still had
-// pending were REFUSED and are never stored, so merging them back in leaves the screen
-// counting tries the population's score does not — a headline that disagrees with the
-// leaderboard rank printed beneath it, permanently. #203 says those guesses are dropped for
-// good; this is where that happens.
-//
-// It still goes through `mergeLogs` — against an EMPTY local log — because the server's own
-// log is RAW (corrected again on review). Two devices can each have sent a different surface
-// of one group, so the stored log holds two entries the server scores as ONE
-// (`countTries`/#104). Adopting it verbatim put that raw length in the headline against a
-// recorded score one lower — the same disagreement, reached from the other side. `tried` is
-// deduped by the identity the score uses; `serverCount` stays the RAW length, since the cap
-// counts what is STORED.
-function adoptSolved(f: RoundFlight, key: string, solved: boolean, serverGuesses: string[]): void {
-  if (!solved) return;
-  const round = useGameStore.getState().rounds[key];
-  const { guesses } = mergeLogs(serverGuesses, [], (t) => guessKey(f.ranks, t));
-  if (round && !sameLog(guesses, round.tried)) {
-    const holes = replayHoles(f.freshHoles, f.ranks, guesses);
-    useGameStore.getState().adoptRound(key, guesses, holes, computeProgress(holes, f.ranks));
-  }
-  f.pendingFrom = guesses.length;
-  f.serverCount = serverGuesses.length;
-  useGameStore.getState().markRoundRecorded(key);
-  f.closed = true;
-}
-
 // Is this answer still about the puzzle that asked for it? A flight is MUTATED in place
 // when its round re-registers, so a sentence re-published while a request is in the air
 // leaves that request describing the retired puzzle while `f` already carries the
-// corrected one's ranks and holes. Applying it would replay the old log onto the new
-// board — the very thing the tag exists to prevent, arriving through the back door.
-// Everything a superseded answer would have written is dropped; the flight has already
-// been reset to read again, and `pump` restarts it.
+// corrected one's revision and ranks. Everything a superseded answer would have written is
+// dropped; the flight has already been reset to read again, and `pump` restarts it.
 function superseded(f: RoundFlight, puzzle: string): boolean {
   return f.puzzle !== puzzle;
+}
+
+// Take the server's answer as this round's truth and publish it to the screen. `byAppend`
+// says whether a SOLVE in it was confirmed by a batch this device just sent: that one is a
+// fresh solve and earns the round's beats, where a solve read at mount or refused as
+// `round_solved` is adopted history — shown, never celebrated.
+function adopt(f: RoundFlight, key: string, state: RoundState, byAppend: boolean): void {
+  publish(f, key, {
+    guesses: state.guesses,
+    solved: state.solved,
+    // Only ever true, like the flag itself: a later answer about an already-known solve
+    // must not downgrade the beats this device already earned.
+    solvedByAppend: (f.server.solved && f.server.solvedByAppend) || (state.solved && byAppend),
+  });
+}
+
+function publish(f: RoundFlight, key: string, server: RoundServer): void {
+  const settled = f.settled;
+  f.server = server;
+  f.settled = true;
+  // The overwhelmingly common answer is the server echoing back what we just sent, and the
+  // state it describes is then identical to the one already on screen. Writing it anyway
+  // would hand the round a new object about once a second while a player types, and every
+  // derivation downstream — the play log, the board replay, the run's trajectory — would
+  // recompute for a value that did not change.
+  if (settled && sameServer(useGameStore.getState().roundLoads[key], server)) return;
+  useGameStore.getState().setRoundLoad(key, { status: 'ready', server });
+}
+
+function sameServer(load: RoundLoad | undefined, next: RoundServer): boolean {
+  if (load?.status !== 'ready') return false;
+  const { server } = load;
+  return (
+    server.solved === next.solved &&
+    server.solvedByAppend === next.solvedByAppend &&
+    server.guesses.length === next.guesses.length &&
+    server.guesses.every((entry, i) => entry === next.guesses[i])
+  );
+}
+
+// Drop from the outbox everything the server's log now represents — by canonical identity,
+// since the stored log is RAW and two devices can each have sent a different surface of one
+// group (#104). After an accepted write this covers the batch that was just sent (the
+// server demonstrably holds it) AND anything else that arrived meanwhile, which is why
+// there is no sent-prefix bookkeeping to keep honest.
+function settleOutbox(f: RoundFlight): void {
+  const store = useGameStore.getState();
+  const outbox = store.outbox[f.roundKey];
+  if (!outbox || outbox.puzzle !== f.puzzle) return;
+  const remaining = unacknowledged(outbox.guesses, f.server.guesses, (t) => guessKey(f.ranks, t));
+  if (remaining.length === outbox.guesses.length) return;
+  store.setOutbox(f.roundKey, f.puzzle, remaining);
+}
+
+// The round is over on the server's terms (solved, or capped): what this device still had
+// pending was REFUSED and will never be stored, so it is dropped for good rather than left
+// to count tries the recorded score does not.
+function discardOutbox(f: RoundFlight): void {
+  useGameStore.getState().setOutbox(f.roundKey, f.puzzle, []);
 }
 
 async function readRound(f: RoundFlight, key: string): Promise<void> {
@@ -355,7 +360,7 @@ async function readRound(f: RoundFlight, key: string): Promise<void> {
   try {
     response = await postRoundBody(roundUrl(f.lang, f.date, f.mode), requestBody(f));
   } catch {
-    if (!superseded(f, puzzle)) retryLater(f);
+    if (!superseded(f, puzzle)) retryLater(f, key);
     return;
   }
   if (superseded(f, puzzle)) return;
@@ -364,7 +369,7 @@ async function readRound(f: RoundFlight, key: string): Promise<void> {
     try {
       state = parseRound(await response.json());
     } catch {
-      retryLater(f);
+      retryLater(f, key);
       return;
     }
     // Re-checked after the body: reading it is another await, and a republish landing
@@ -373,25 +378,34 @@ async function readRound(f: RoundFlight, key: string): Promise<void> {
     // The server HAS a record for this puzzle, so no further append mints one and none
     // carries a challenge.
     f.created = true;
-    // A SOLVED round is frozen: its stored log is the whole truth, and merging local extras
-    // under it would keep tries the server refused. Every other answer merges.
+    adopt(f, key, state, false);
+    // A solved round is FROZEN — it accepts no further appends — so anything still pending
+    // was refused before it could be stored. Every other read merely acknowledges.
     if (state.solved) {
-      adoptSolved(f, key, true, state.guesses);
+      discardOutbox(f);
+      f.readDone = true;
+      f.closed = true;
       return;
     }
-    adopt(f, key, state.guesses);
+    // This is also the recovery from an UNKNOWN write outcome: a write that committed but
+    // lost its answer is invisible anywhere except in the log the server hands back, and
+    // re-sending it blindly would `list_append` a whole batch twice — burning cap slots on
+    // duplicates the projection then hides, and manufacturing a false "unreachable puzzle"
+    // signal near the cap.
+    settleOutbox(f);
   } else if (response.status === 404) {
     // The server holds nothing for THIS puzzle: a fresh round, or a daily re-published
-    // under the same key whose old record is retired. Nothing is acked, and the first
-    // append creates (or replaces) the record — carrying the round-start challenge.
-    f.pendingFrom = 0;
-    f.serverCount = 0;
+    // under the same key whose old record is retired. Nothing is acknowledged — the whole
+    // outbox is still owed — and the first append creates (or replaces) the record,
+    // carrying the round-start challenge.
     f.created = false;
+    publish(f, key, EMPTY_ROUND_SERVER);
   } else if (isVerdict(response.status)) {
+    failLoad(f, key);
     f.closed = true;
     return;
   } else {
-    retryLater(f);
+    retryLater(f, key);
     return;
   }
   f.readDone = true;
@@ -414,11 +428,10 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
     );
   } catch {
     // The write never reached an answer — and it may still have COMMITTED (a suspended
-    // tab, a dropped connection, a gateway timeout). Re-sending the same batch would
-    // `list_append` it a second time and burn the cap on a duplicate the client's own
-    // dedup then hides, so the recovery is a RE-READ: only the server can say what it
-    // holds, and the watermark comes from that rather than from a guess.
-    if (!superseded(f, puzzle)) resync(f);
+    // tab, a dropped connection, a gateway timeout). Re-sending would append the same
+    // batch a second time, so the recovery is a RE-READ: only the server can say what it
+    // holds, and the outbox shrinks by what that answer shows.
+    if (!superseded(f, puzzle)) resync(f, key);
     return;
   }
 
@@ -428,7 +441,7 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
   f.lastWriteSettledAt = Date.now();
 
   if (response.ok || response.status === 409 || response.status === 429) {
-    // All three carry the full stored log (the route's own contract), so all three
+    // All three carry the full stored state (the route's own contract), so all three
     // reconcile the same way — which is what makes a refusal useful rather than merely
     // survivable.
     let state: RoundState;
@@ -438,7 +451,7 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
       error = typeof data.error === 'string' ? data.error : undefined;
       state = parseRound(data);
     } catch {
-      if (!superseded(f, puzzle)) resync(f);
+      if (!superseded(f, puzzle)) resync(f, key);
       return;
     }
     // A superseded answer describes the RETIRED puzzle: not its log, not its cap, not
@@ -452,34 +465,43 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
     // conversation closes on a round that was never created. A 200 always created one; a
     // refusal only did if it carried real state, which `createdAt` is the mark of.
     if (response.ok || state.createdAt !== '') f.created = true;
-    // The FREEZE (#203): a solved round accepts nothing more. This is the one answer that
-    // must do BOTH things — ADOPT the stored state, so the tab renders the round solved
-    // instead of an unsolved board with its guesses still on screen, and CLOSE, so `pump`
-    // does not resend immediately (and, with `failures` reset above, with no backoff at
-    // all). The batch it refused is dropped for good, which is why the adoption is
-    // server-ONLY: those tries are not in the score the population recorded.
+    adopt(f, key, state, response.ok);
+
+    // The FREEZE (#203/#214): a solved round accepts nothing more. This answer must do
+    // BOTH things — ADOPT the stored state, so the tab renders the round solved instead of
+    // an unsolved board with its guesses still on screen, and CLOSE, so `pump` does not
+    // resend immediately (and, with `failures` reset above, with no backoff at all). What
+    // it still had pending was refused, and is dropped for good.
     if (state.solved || error === 'round_solved') {
-      adoptSolved(f, key, true, state.guesses);
+      discardOutbox(f);
+      f.closed = true;
       return;
     }
-    adopt(f, key, state.guesses);
-    if (response.status === 409 && f.serverCount >= ROUND_GUESS_CAP) {
-      // The cap: the round stops counting (#201). Mark the round so the score is never
-      // submitted, close the conversation, and let local play continue untouched.
-      //
-      // Gated on the log the refusal CARRIED, not on the refusal itself. A 409 also
-      // answers a batch sized against a STALE watermark — another device pushed the
-      // stored log forward while this tab was away, so a correctly-clamped-when-sent
-      // batch no longer fits — and there the round has room left and simply needs a
-      // smaller batch. Concluding "capped" from the status alone would suppress the
-      // leaderboard entry of a round that was never full, which is the harshest
-      // consequence this design has. The truth the answer carried decides; `pump` sizes
-      // the next batch from it and marks the round capped only when nothing fits at all.
-      useGameStore.getState().markRoundCapped(key);
-      f.closed = true;
+
+    if (response.ok) {
+      settleOutbox(f);
+      return;
     }
-    // A 429 needs nothing more: the write window now holds the next attempt one full
-    // interval past this answer, which is exactly what the server measures against.
+
+    if (response.status === 409) {
+      // Two different 409s wear one status, and only the log the answer CARRIED tells them
+      // apart. A stored log at the cap on an unsolved round is the CAP: this round has
+      // stopped counting, it ends at `∞`, and anything that never fit is dropped. A 409
+      // below the cap merely means the batch OVERSHOT after another device pushed the
+      // stored log forward — there the round has room and simply needs a smaller batch, so
+      // the outbox stands and `pump` re-sizes from the truth this answer brought.
+      //
+      // Concluding "capped" from the status alone would end a round that was never full and
+      // suppress its leaderboard entry, which is the harshest consequence this design has.
+      if (f.server.guesses.length >= ROUND_GUESS_CAP) {
+        discardOutbox(f);
+        f.closed = true;
+      }
+      return;
+    }
+    // A 429 `too_fast` needs nothing more: the outbox stands and the write window now holds
+    // the next attempt one full interval past this ANSWER, which is exactly what the server
+    // measures against.
     return;
   }
 
@@ -488,59 +510,42 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
     f.closed = true;
     return;
   }
-  resync(f);
+  // A 5xx is an unknown outcome like a transport error: it may have committed.
+  resync(f, key);
 }
 
 // A 4xx is a VERDICT — a request this client will keep getting wrong (a language the
 // server does not serve, a date outside its window, a body the route refuses). Retrying
 // it forever spins one request every 30s for the tab's life, and on the READ it also
 // stalls every append behind it, so the guesses reach the server on no visit ever. The
-// conversation closes instead; the log stays in localStorage and the next visit asks once
-// more. (409 and 429 are handled above — they are answers, not verdicts.)
+// conversation closes instead; the outbox stays in localStorage and the next visit asks
+// once more. (409 and 429 are handled above — they are answers, not verdicts.)
 function isVerdict(status: number): boolean {
   return status >= 400 && status < 500;
 }
 
-function retryLater(f: RoundFlight): void {
+// A load can only ever FAIL before it has succeeded once. After that the board is being
+// played, and a failed re-read is an ordinary retry behind it — never a reason to pull an
+// interactive screen back to an error state.
+function failLoad(f: RoundFlight, key: string): void {
+  if (f.settled) return;
+  useGameStore.getState().setRoundLoad(key, { status: 'failed' });
+}
+
+function retryLater(f: RoundFlight, key: string): void {
   f.failures += 1;
   f.lastFailureAt = Date.now();
+  failLoad(f, key);
 }
 
 // The write's outcome is unknown: fall back to the read, which is the only thing that can
 // say what the server actually holds, and count the failure so the backoff widens.
-function resync(f: RoundFlight): void {
+function resync(f: RoundFlight, key: string): void {
   f.readDone = false;
-  retryLater(f);
-}
-
-// Adopt the server's log as this round's truth: merge it under the local log, replay the
-// merged board, and hand it to the store in one write. The acked prefix becomes the new
-// pending watermark.
-function adopt(f: RoundFlight, key: string, serverGuesses: string[]): void {
-  const round = useGameStore.getState().rounds[key];
-  if (!round) return;
-  const { guesses, acked } = mergeLogs(serverGuesses, round.tried, (t) => guessKey(f.ranks, t));
-  // Exactly `acked` entries of the MERGED log are server-held, and that log is what the
-  // round now holds — so the watermark IS that number, never a running maximum. A max
-  // strands local tries whenever the merge dedups the server's own log shorter.
-  f.pendingFrom = acked;
-  f.serverCount = serverGuesses.length;
-  // The overwhelmingly common answer is the server echoing back what we just sent.
-  // Writing the round again for that would re-serialize the whole persist blob AND,
-  // because the holes go with it, apply every pending hole improvement on the spot — out
-  // from under Game.submit's deliberate deferral of each swap to its floating hit's
-  // fade-out, which on a fast connection is every guess.
-  if (sameLog(guesses, round.tried)) return;
-  const holes = replayHoles(f.freshHoles, f.ranks, guesses);
-  // The cached progress goes with the board it describes: `syncProgress` can only ever
-  // repair the ACTIVE round, and an adoption routinely lands after the player has
-  // navigated away, which would leave that day's archive cell painting a stale fill for
-  // good.
-  useGameStore.getState().adoptRound(key, guesses, holes, computeProgress(holes, f.ranks));
-}
-
-function sameLog(a: string[], b: string[]): boolean {
-  return a.length === b.length && a.every((entry, i) => entry === b[i]);
+  f.failures += 1;
+  f.lastFailureAt = Date.now();
+  // Deliberately NOT `failLoad`: the round is already interactive, and an unknown write
+  // outcome is a sync hiccup, not a load failure.
 }
 
 // Test seam: drop every conversation (module state must not leak between tests).

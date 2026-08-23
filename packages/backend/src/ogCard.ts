@@ -88,8 +88,14 @@ export function renderShareHtml(token: string, result: ShareResult, base: string
   // points to maximize when lower is better. The day is its CALENDAR DATE, like the card
   // draws and the click-through below addresses (decided 2026-08-03, replacing "#<index>"):
   // one day, one spelling of it everywhere a reader can see it.
-  const title = `Whippin AI ${dateForDayNumber(result.dayNumber)} — ${result.score} ${
-    result.score === 1 ? L.one : L.many
+  //
+  // A #214 CAPPED round says `∞` where the count would be, exactly as the card draws it.
+  // The literal character is right HERE where the pixel face is not involved — this is
+  // ordinary HTML in the reader's own fonts; the card needs the shared path data because
+  // Press Start 2P has no such glyph and the rasterizer loads nothing else.
+  const count = result.capped ? '∞' : `${result.score}`;
+  const title = `Whippin AI ${dateForDayNumber(result.dayNumber)} — ${count} ${
+    result.capped || result.score !== 1 ? L.many : L.one
   }`;
   // Click-through lands on the SHARED day, not today (#55): the token carries the
   // puzzle's dayNumber, and past days are playable at /<lang>/<YYYY-MM-DD>, so a shared
