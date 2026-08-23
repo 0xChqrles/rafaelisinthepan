@@ -9,8 +9,8 @@
 //     the server's wait check;
 //   - the START is idempotent from the client's side too: one challenge, one write, however
 //     many times PLAY is tapped;
-//   - a run that ended is submitted ONCE, truncated to what the route accepts, and the
-//     acknowledgement is persisted so a revisit does not re-post it;
+//   - a run that ended is submitted ONCE, truncated to what the route accepts; a 2xx
+//     adopts the server's first-write-wins log and clears the persisted local outbox;
 //   - `too_early` is waited out (it is an answer about WHEN); every other 4xx is a VERDICT
 //     that closes the conversation instead of spinning on it.
 //
@@ -61,7 +61,7 @@ const RANKS: WordRanks = {
 };
 
 function ctx() {
-  return { roundKey: KEY, lang: 'fr', date: '2026-08-21', word: WORD, ranks: RANKS, corpusSize: 1_000 };
+  return { roundKey: KEY, lang: 'fr', date: '2026-08-21', word: WORD, ranks: RANKS };
 }
 
 // An instant on the SERVER's clock, `ms` after the fixed reference the answers are built
@@ -114,6 +114,11 @@ function seedRound(extra: Record<string, unknown> = {}) {
 }
 
 const round = () => useGameStore.getState().wordRounds[KEY];
+const load = () => useGameStore.getState().roundLoads[KEY];
+const serverGuesses = () => {
+  const current = load();
+  return current?.status === 'ready' ? current.server.guesses : undefined;
+};
 
 function bodyOf(call: number) {
   return post.mock.calls[call][1] as {
@@ -213,11 +218,11 @@ describe('the round START', () => {
     expect(round()).toMatchObject({ startedAt: T0 - 20_000, deadline: T0 - 20_000 + runMs(0) });
   });
 
-  // PLAY is on screen for as long as the mount read is in flight, so a JOINER can tap it
-  // and be handed the clock somebody else's run is being played on. Marking every accepted
-  // START as "this session runs it" would hand that joiner writer authority, and its short
-  // clock then buries the real run under an empty log at the base deadline. Only a call
-  // that actually STAMPED the clock is the runner, and the answer says which.
+  // A stale caller (or an already-issued request) can still ask START concurrently with a
+  // run elsewhere and be handed that clock. Marking every accepted START as "this session
+  // runs it" would hand the joiner writer authority, and its short clock then buries the
+  // real run under an empty log at the base deadline. Only a call that actually STAMPED the
+  // clock is the runner, and the answer says which.
   it('resuming somebody else’s clock does NOT make this session the runner', async () => {
     seedRound();
     post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 20_000, resumed: true }));
@@ -329,6 +334,13 @@ describe('the round START', () => {
 });
 
 describe('the mount READ', () => {
+  it('publishes a loading state qualified by this word before the read settles', () => {
+    seedRound();
+    post.mockReturnValueOnce(new Promise(() => {}));
+    beginWordRoundSync(ctx(), false);
+    expect(load()).toEqual({ status: 'loading', puzzle: wordTag(WORD) });
+  });
+
   it('resumes a run this device never started', async () => {
     seedRound();
     post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 30_000 }));
@@ -350,9 +362,10 @@ describe('the mount READ', () => {
     );
     beginWordRoundSync(ctx(), false);
     await settle();
-    expect(round()).toMatchObject({ tried: ['mer', 'loin'], claimed: 1 });
-    // The deadline is re-priced off the adopted log and sits in the past: the run this
-    // device is reading about is over.
+    expect(round()).toMatchObject({ tried: [], claimed: 1, submitted: true });
+    expect(serverGuesses()).toEqual(['mer', 'loin']);
+    // Even the bare anchored deadline sits in the past: the run this device is reading
+    // about is over, and settlement never moves that clock forward.
     expect(round().deadline!).toBeLessThan(T0);
     // …and the server demonstrably holds it, so nothing is owed. Without this the device
     // would POST the adopted run straight back on this visit and on every later one.
@@ -412,6 +425,7 @@ describe('the mount READ', () => {
     post.mockReset();
     post.mockResolvedValueOnce(answer(404, { error: 'not_found' }));
     beginWordRoundSync({ ...ctx(), word: 'autre' }, false);
+    expect(load()).toEqual({ status: 'loading', puzzle: wordTag('autre') });
     await settle(120_000);
     // The read, and NOT a submission of the fresh round's empty log.
     expect(post).toHaveBeenCalledTimes(1);
@@ -440,7 +454,8 @@ describe('the end-of-run SUBMISSION', () => {
 
     expect(post).toHaveBeenCalledTimes(2);
     expect(bodyOf(1).guesses).toEqual(['mer', 'loin']);
-    expect(round().submitted).toBe(true);
+    expect(round()).toMatchObject({ submitted: true, tried: [] });
+    expect(serverGuesses()).toEqual(['mer', 'loin']);
 
     // A revisit re-reads (cross-device history) but owes nothing more.
     resetWordRoundSync();
@@ -453,17 +468,18 @@ describe('the end-of-run SUBMISSION', () => {
   });
 
   it('answers "already submitted" the same way: the FIRST run recorded is the one that stands', async () => {
-    seedRound({ startedAt: T0 - 300_000, deadline: T0 - 100_000, tried: ['mer'], claimed: 1 });
+    seedRound({ startedAt: T0 - 300_000, deadline: T0 - 100_000, tried: ['loin'], claimed: 0 });
     post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 300_000 }));
     post.mockResolvedValueOnce(
       answer(200, { startedAt: at(0), nowAt: 300_000, guesses: ['ocean'] }),
     );
     beginWordRoundSync(ctx(), true);
     await settle();
-    expect(round().submitted).toBe(true);
-    // This device played its own run, so the recorded one does NOT overwrite the board it
-    // is looking at — adopting a longer log would move a deadline that has already passed.
-    expect(round().tried).toEqual(['mer']);
+    expect(bodyOf(1).guesses).toEqual(['loin']);
+    expect(round()).toMatchObject({ submitted: true, tried: [], claimed: 1 });
+    // The server's FIRST run replaces what this device displayed; persisted `tried` is
+    // only the acknowledged outbox, and the authoritative log stays transient.
+    expect(serverGuesses()).toEqual(['ocean']);
   });
 
   it('WAITS OUT a too_early refusal — it is an answer about when, not about the request', async () => {

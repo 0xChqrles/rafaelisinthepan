@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { guessKey, replayHoles } from '../game/scoring';
-import { playLogFor } from '../game/playLog';
+import { playLogFor, withoutDeferred } from '../game/playLog';
 import { replayRun, type RunReplay } from '../game/share';
 import { canExtend } from '../game/keyboard';
 import LoadingWave from '../components/LoadingWave';
@@ -213,19 +213,14 @@ function Round({
     [ranks, server, outbox],
   );
 
-  // Guesses whose BOARD effect is still animating. The play log is authoritative the
-  // instant a guess lands, but a hole's word/rank swap is deliberately deferred to its
+  // Guess IDENTITIES whose BOARD effect is still animating. The play log is authoritative
+  // the instant a guess lands, but a hole's word/rank swap is deliberately deferred to its
   // floating hit's fade-out — so the visible board replays the log MINUS what is still in
   // the air, and each release is one timer removing one entry. The deferral is presentation
   // only: the score, the history and the ruler all read the full log.
   const [deferred, setDeferred] = useState<string[]>([]);
   const holes = useMemo(
-    () =>
-      replayHoles(
-        freshHoles,
-        ranks,
-        deferred.length === 0 ? playLog : playLog.filter((g) => !deferred.includes(g)),
-      ),
+    () => replayHoles(freshHoles, ranks, withoutDeferred(ranks, playLog, deferred)),
     [freshHoles, ranks, playLog, deferred],
   );
   // Score = number of unique tries. A try is a submitted word that exists in the
@@ -704,13 +699,14 @@ function Round({
       // NEW guess goes straight into the outbox — the server's copy catches up behind the
       // board's reaction, and nothing waits for that write.
       const id = guessKey(ranks, typed);
-      if (!playLog.some((g) => guessKey(ranks, g) === id)) {
+      const isNew = !playLog.some((g) => guessKey(ranks, g) === id);
+      if (isNew) {
         appendOutbox(roundKey, revision, typed);
         notifyGuess(roundKey);
         // The board is a REPLAY of the log, so this guess would land on it in the very next
         // render. Hold it back until its floating hit fades — the deferral is the swap's
         // choreography, and the release below is what applies it.
-        setDeferred((cur) => [...cur, typed]);
+        setDeferred((cur) => [...cur, id]);
       }
 
       // EVERY unsolved hole reacts to a valid guess (solved holes are locked out).
@@ -756,11 +752,13 @@ function Round({
       // old word and reveal the new one). ONE timer for the whole guess — the replay
       // decides which holes move, so there is nothing per-hole to schedule and nothing to
       // keep monotonic: two guesses released out of order still land on the same board.
-      const timer = window.setTimeout(() => {
-        pendingTimers.current = pendingTimers.current.filter((t) => t !== timer);
-        setDeferred((cur) => cur.filter((g) => g !== typed));
-      }, fadeDelayMs);
-      pendingTimers.current.push(timer);
+      if (isNew) {
+        const timer = window.setTimeout(() => {
+          pendingTimers.current = pendingTimers.current.filter((t) => t !== timer);
+          setDeferred((cur) => cur.filter((entry) => entry !== id));
+        }, fadeDelayMs);
+        pendingTimers.current.push(timer);
+      }
     },
     [
       holes,

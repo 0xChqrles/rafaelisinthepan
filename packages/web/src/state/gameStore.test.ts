@@ -9,11 +9,12 @@
 //     new revision DROPS it, since its guesses answered a retired question;
 //   - an emptied outbox is REMOVED — a caught-up device persists no sentence round at all;
 //   - `roundLoads` is transient by construction, never persisted;
-//   - WORD rounds keep their own persisted shape (the clock and the run's log);
+//   - WORD rounds persist their clock and unacknowledged run log; an accepted server log
+//     clears that outbox and lives in the transient round load;
 //   - lastLang remembers the last valid language (seeds the `/` redirect).
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { useGameStore, roundKeyForDay, migratePersisted } from './gameStore';
+import { useGameStore, roundKeyForDay, migratePersisted, roundLoadFor } from './gameStore';
 
 // The published VERSION a round is played on (#203). Every call here plays ONE version;
 // what a REPUBLISH does has its own suite below.
@@ -143,46 +144,48 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
     expect(useGameStore.getState().wordRounds['w:99:fr']).toBeUndefined();
   });
 
-  // #202: the server's RECORDED run, adopted by a device that never played the day — a
-  // finished day's history following the player. Its deadline is re-priced off the adopted
-  // log, so the post-mortem draws a run that really is over.
-  it('adoptWordRun takes the recorded run and re-prices the clock from it', () => {
-    const { ensureWordRound, anchorWordRun, adoptWordRun } = useGameStore.getState();
+  // #214: the server's RECORDED run is authoritative, while persisted `tried` is only the
+  // submission outbox. A successful answer therefore clears it and keeps the server log
+  // in the transient round load instead.
+  it('settleWordRun clears the acknowledged outbox and takes the authoritative count', () => {
+    const { ensureWordRound, anchorWordRun, recordWordGuess, settleWordRun } =
+      useGameStore.getState();
     ensureWordRound('w:5:fr', 'phare');
-    anchorWordRun('w:5:fr', T0 - 200_000);
-    adoptWordRun('w:5:fr', { tried: ['mer', 'sel'], claimed: 2, bonus: 8 });
+    anchorWordRun('w:5:fr', T0);
+    recordWordGuess('mer', priced(3));
+    const deadline = wordRound().deadline;
+
+    // Another device's first write can contain a different run. Its count wins, but the
+    // local deadline stays frozen so a longer recorded run cannot reopen this one.
+    settleWordRun('w:5:fr', 2);
     expect(wordRound()).toMatchObject({
-      tried: ['mer', 'sel'],
+      tried: [],
       claimed: 2,
-      deadline: T0 - 200_000 + runMs(8),
+      deadline,
+      submitted: true,
     });
   });
 
-  it('never adopts OVER a log this device played, and never before the clock exists', () => {
-    const { ensureWordRound, anchorWordRun, adoptWordRun, recordWordGuess } =
-      useGameStore.getState();
-    ensureWordRound('w:5:fr', 'phare');
-    // No clock yet: there is nothing to price a log against.
-    adoptWordRun('w:5:fr', { tried: ['mer'], claimed: 1, bonus: 4 });
-    expect(wordRound()).toMatchObject({ tried: [], startedAt: null });
-
-    anchorWordRun('w:5:fr', Date.now());
-    recordWordGuess('sel', priced(3));
-    adoptWordRun('w:5:fr', { tried: ['mer', 'autre'], claimed: 2, bonus: 40 });
-    // A word round's deadline is DERIVED from its log, so adopting a longer one over a run
-    // this device actually played could move the clock and re-open a finished run.
-    expect(wordRound()).toMatchObject({ tried: ['sel'], claimed: 1, deadline: T0 + runMs(3) });
-  });
-
-  it('markWordSubmitted records the server’s acknowledgement, idempotently', () => {
-    const { ensureWordRound, markWordSubmitted } = useGameStore.getState();
+  it('settles a recorded empty run and is idempotent', () => {
+    const { ensureWordRound, settleWordRun } = useGameStore.getState();
     ensureWordRound('w:5:fr', 'phare');
     expect(wordRound().submitted).toBeUndefined();
-    markWordSubmitted('w:5:fr');
+    settleWordRun('w:5:fr', 0);
     const after = wordRound();
-    expect(after.submitted).toBe(true);
-    markWordSubmitted('w:5:fr');
+    expect(after).toMatchObject({ tried: [], claimed: 0, submitted: true });
+    settleWordRun('w:5:fr', 0);
     expect(wordRound()).toBe(after); // no second write, so nothing re-serializes
+  });
+
+  it('takes no guesses after the server has settled the run', () => {
+    const { ensureWordRound, anchorWordRun, settleWordRun, recordWordGuess } =
+      useGameStore.getState();
+    ensureWordRound('w:5:fr', 'phare');
+    anchorWordRun('w:5:fr', T0);
+    settleWordRun('w:5:fr', 1);
+
+    expect(recordWordGuess('mer', priced(3))).toBe(false);
+    expect(wordRound()).toMatchObject({ tried: [], claimed: 1, submitted: true });
   });
 
   it('a guess before START never lands — there is no clock to play against', () => {
@@ -564,19 +567,20 @@ describe('setOutbox — what an answer left unacknowledged', () => {
 // outbox model exists to be rid of.
 describe('setRoundLoad — the transient server state', () => {
   const server = { guesses: ['bois'], solved: false, solvedByAppend: false };
+  const puzzle = REV;
 
   it('holds each round\'s state under its own key', () => {
     const { setRoundLoad } = useGameStore.getState();
-    setRoundLoad('d:5:fr', { status: 'loading' });
-    setRoundLoad('d:6:fr', { status: 'ready', server });
+    setRoundLoad('d:5:fr', { status: 'loading', puzzle });
+    setRoundLoad('d:6:fr', { status: 'ready', puzzle, server });
     const s = useGameStore.getState();
-    expect(s.roundLoads['d:5:fr']).toEqual({ status: 'loading' });
-    expect(s.roundLoads['d:6:fr']).toEqual({ status: 'ready', server });
+    expect(s.roundLoads['d:5:fr']).toEqual({ status: 'loading', puzzle });
+    expect(s.roundLoads['d:6:fr']).toEqual({ status: 'ready', puzzle, server });
   });
 
   it('FORGETS a round on null — the flight that owned the state was evicted', () => {
     const { setRoundLoad } = useGameStore.getState();
-    setRoundLoad('d:5:fr', { status: 'ready', server });
+    setRoundLoad('d:5:fr', { status: 'ready', puzzle, server });
     setRoundLoad('d:5:fr', null);
     expect(useGameStore.getState().roundLoads['d:5:fr']).toBeUndefined();
   });
@@ -588,10 +592,19 @@ describe('setRoundLoad — the transient server state', () => {
   });
 
   it('is NOT persisted — the partialize snapshot carries no round loads', () => {
-    useGameStore.getState().setRoundLoad('d:5:fr', { status: 'ready', server });
+    useGameStore.getState().setRoundLoad('d:5:fr', { status: 'ready', puzzle, server });
     const persisted = useGameStore.persist.getOptions().partialize!(useGameStore.getState());
     expect(persisted).not.toHaveProperty('roundLoads');
     expect(persisted).toHaveProperty('outbox');
+  });
+
+  it('treats a cached state for a retired puzzle as loading before effects run', () => {
+    const ready = { status: 'ready', puzzle, server } as const;
+    expect(roundLoadFor(ready, puzzle)).toBe(ready);
+    expect(roundLoadFor(ready, 'ffffffffffffffff')).toEqual({
+      status: 'loading',
+      puzzle: 'ffffffffffffffff',
+    });
   });
 });
 

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useGameStore, type RoundLoad } from '../state/gameStore';
+import { roundLoadFor, useGameStore, type RoundLoad } from '../state/gameStore';
 import { beginRoundSync, type RoundSyncContext } from '../state/roundSync';
 
 // React binding for the round sync engine (state/roundSync.ts): registers the round's
@@ -18,7 +18,6 @@ export default function useRoundSync(ctx: RoundSyncContext): RoundLoad {
   useEffect(() => {
     beginRoundSync({ roundKey, lang, mode, date, revision, ranks });
   }, [roundKey, lang, mode, date, revision, ranks]);
-  return useGameStore((s) => s.roundLoads[roundKey]) ?? LOADING;
+  const load = useGameStore((s) => s.roundLoads[roundKey]);
+  return roundLoadFor(load, revision);
 }
-
-const LOADING: RoundLoad = { status: 'loading' };

@@ -53,6 +53,20 @@ export function playLogFor(
   return projectPlayLog(serverGuesses, outbox, (typed) => guessKey(ranks, typed));
 }
 
+// Presentation-only view for the sentence board while a newly submitted guess's floating
+// hit is still in the air. Deferral is keyed by the SAME canonical identity as the play
+// log: reconciliation can replace this device's surface with another device's spelling,
+// and that spelling must remain held until the animation releases the identity.
+export function withoutDeferred(
+  ranks: RankMap,
+  playLog: readonly string[],
+  deferredIdentities: readonly string[],
+): readonly string[] {
+  if (deferredIdentities.length === 0) return playLog;
+  const deferred = new Set(deferredIdentities);
+  return playLog.filter((typed) => !deferred.has(guessKey(ranks, typed)));
+}
+
 // What of an outbox is still UNACKNOWLEDGED once the server's log is known: every entry
 // whose canonical identity the server does not already hold. Used twice, and for one
 // reason — the server's log is the acknowledgement, and identity is what "already held"

@@ -146,7 +146,7 @@ function WordRound({
 
   const round = useGameStore((s) => s.wordRounds[roundKey]);
   const live = round && round.word === puzzle.word.slug ? round : undefined;
-  const tried = live ? live.tried : [];
+  const pendingTried = live ? live.tried : [];
   const deadline = live ? live.deadline : null;
   const started = live ? live.startedAt !== null : false;
 
@@ -175,11 +175,18 @@ function WordRound({
       date: dateForDayNumber(dayNumber),
       word: puzzle.word.slug,
       ranks,
-      corpusSize,
     }),
-    [roundKey, lang, dayNumber, puzzle.word.slug, ranks, corpusSize],
+    [roundKey, lang, dayNumber, puzzle.word.slug, ranks],
   );
   const roundLoad = useWordRoundSync(syncContext, ended);
+
+  // A live run replays this device's unacknowledged outbox. Once the server accepts a
+  // submission, first-write-wins makes its returned log authoritative — including when
+  // another device got there first — and settlement clears the persisted outbox.
+  const tried =
+    live?.submitted === true && roundLoad.status === 'ready'
+      ? roundLoad.server.guesses
+      : pendingTried;
 
   // PLAY: the clock is the SERVER's, so the gate holds until its answer lands and the
   // visible countdown starts on the run the server is actually timing. Starting

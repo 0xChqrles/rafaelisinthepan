@@ -235,7 +235,7 @@ describe('the mount read — what the screen waits on', () => {
     post.mockReturnValue(new Promise(() => {})); // never settles
     seedOutbox();
     beginRoundSync(ctx());
-    expect(load()).toEqual({ status: 'loading' });
+    expect(load()).toEqual({ status: 'loading', puzzle: REVISION });
   });
 
   it('publishes the server\'s state on a 200', async () => {
@@ -245,6 +245,7 @@ describe('the mount read — what the screen waits on', () => {
     await settle();
     expect(load()).toEqual({
       status: 'ready',
+      puzzle: REVISION,
       server: { guesses: ['bois', 'chemin'], solved: false, solvedByAppend: false },
     });
     // A READ never writes: the request carries no guesses.
@@ -258,6 +259,7 @@ describe('the mount read — what the screen waits on', () => {
     await settle();
     expect(load()).toEqual({
       status: 'ready',
+      puzzle: REVISION,
       server: { guesses: [], solved: false, solvedByAppend: false },
     });
   });
@@ -267,7 +269,7 @@ describe('the mount read — what the screen waits on', () => {
     seedOutbox();
     beginRoundSync(ctx());
     await settle();
-    expect(load()).toEqual({ status: 'failed' });
+    expect(load()).toEqual({ status: 'failed', puzzle: REVISION });
 
     post.mockResolvedValueOnce(ok(['bois']));
     await settle(2 * ROUND_WRITE_MIN_MS);
@@ -279,7 +281,7 @@ describe('the mount read — what the screen waits on', () => {
     seedOutbox(['bois']);
     beginRoundSync(ctx());
     await settle(60_000);
-    expect(load()).toEqual({ status: 'failed' });
+    expect(load()).toEqual({ status: 'failed', puzzle: REVISION });
     expect(post).toHaveBeenCalledTimes(1); // no spinning
   });
 
@@ -288,7 +290,7 @@ describe('the mount read — what the screen waits on', () => {
     seedOutbox();
     beginRoundSync(ctx());
     await settle();
-    expect(load()).toEqual({ status: 'failed' });
+    expect(load()).toEqual({ status: 'failed', puzzle: REVISION });
 
     post.mockResolvedValueOnce(ok(['bois']));
     retryRoundSync(KEY);
@@ -668,6 +670,7 @@ describe('a republish under an open conversation', () => {
     post.mockResolvedValueOnce(status(404));
     seedOutbox([], KEY, CORRECTED_REVISION);
     beginRoundSync(ctx(KEY, CORRECTED_REVISION));
+    expect(load()).toEqual({ status: 'loading', puzzle: CORRECTED_REVISION });
     await settle();
     expect(bodyOf(1).puzzle).toBe(CORRECTED_REVISION);
     expect(server()?.guesses).toEqual([]);

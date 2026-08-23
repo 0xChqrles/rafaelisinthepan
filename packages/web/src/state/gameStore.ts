@@ -49,11 +49,20 @@ export interface RoundServer {
 // Where a round's authoritative state is, for the ONE screen that has to wait on it. The
 // game is deliberately network-dependent since #214: it may not become interactive from a
 // guessed local mirror, so a failed read is a visible state rather than permission to
-// start. (Word mode uses the STATUS alone — its round lives in `wordRounds`.)
+// start. Word mode keeps its live clock/outbox in `wordRounds` and, once submitted, reads
+// the authoritative recorded log from the ready payload here.
 export type RoundLoad =
-  | { status: 'loading' }
-  | { status: 'failed' }
-  | { status: 'ready'; server: RoundServer };
+  | { status: 'loading'; puzzle: string }
+  | { status: 'failed'; puzzle: string }
+  | { status: 'ready'; puzzle: string; server: RoundServer };
+
+// A round key is only (day, language, mode), so a corrected puzzle can reuse it while a
+// passive effect has not yet registered the replacement with the sync engine. Never hand
+// that first render the retired puzzle's cached READY state: until THIS identity settles,
+// its honest state is loading.
+export function roundLoadFor(load: RoundLoad | undefined, puzzle: string): RoundLoad {
+  return load?.puzzle === puzzle ? load : { status: 'loading', puzzle };
+}
 
 // The server state a round with no stored record starts from — a 404 is "nothing yet",
 // which is an answer, not a failure.
@@ -119,10 +128,12 @@ function capAllSolvedDays(solvedDays: Record<string, number[]>): Record<string, 
   return out;
 }
 
-// One Word mode round (#156, retimed by #163, server-anchored by #202). `tried` is the
-// SOURCE OF TRUTH — the counted guesses (folded, in order; free guesses never enter it),
-// from which the whole run replays (game/wordGame.ts replayWordRun) — and `startedAt` is
-// the second one: when the run began.
+// One Word mode round (#156, retimed by #163, server-anchored by #202). While a run is
+// live, `tried` is its OUTBOX — the counted guesses this device will submit (folded, in
+// order; free guesses never enter it), from which the whole run replays
+// (game/wordGame.ts replayWordRun) — and `startedAt` is the second source of truth: when
+// the run began. A successful submission clears that acknowledged log; the authoritative
+// recorded run then lives only in the transient `roundLoads` server snapshot above.
 //
 // Since #202 that instant is the SERVER's, translated into this device's clock: the sync
 // engine reads `startedAt` and the server's own `now` off the round-start answer and
@@ -131,19 +142,22 @@ function capAllSolvedDays(solvedDays: Record<string, number[]>): Record<string, 
 // request's own travel time lands INSIDE the run, which is what keeps an honest submission
 // clear of the server's end-of-run wait check.
 //
-// `deadline` is DERIVED from those two (startedAt + runMs of the log's claimed bonuses)
-// and recomputed on every write, so the clock can never drift away from the guesses that
-// bought it. It is nevertheless PERSISTED, because it is the ONE thing the status
-// surfaces need and the one thing they cannot compute: the archive and the choosers badge
-// a day without loading its rank map, so they cannot replay the log to price it.
+// While the run is unacknowledged, `deadline` is DERIVED from those two (startedAt + runMs
+// of the log's claimed bonuses) and recomputed on every write, so the clock cannot drift
+// away from the guesses that bought it. Once the server acknowledges the run, the outbox
+// clears and the finished deadline freezes. It is nevertheless PERSISTED, because it is
+// the ONE thing the status surfaces need and the one thing they cannot compute: the archive
+// and the choosers badge a day without loading its rank map, so they cannot replay the log
+// to price it.
 //
 // There is NO `ended` field. Whether a run is over is `now > deadline`, wall-clock and
 // always current — a stored boolean would be a second answer to the same question, stale
 // the moment the tab is closed (which is exactly the case the no-pause rule is about).
 // `claimed` stays a cached derived value for those same status surfaces, like
-// RoundProgress.progress; never the source of truth. `word` is the day's word slug: a
-// republished different word under the same (day, lang) key resets the round instead of
-// replaying a stale log against the new map.
+// RoundProgress.progress; never the source of truth. Once acknowledged it records the
+// authoritative run's count while the transient server log supplies the post-mortem.
+// `word` is the day's word slug: a republished different word under the same (day, lang)
+// key resets the round instead of replaying a stale log against the new map.
 export interface WordRoundProgress {
   word: string;
   // null until the SERVER has stamped this round's start (#202): a fetched-but-unplayed
@@ -223,8 +237,8 @@ interface GameState extends PersistedState {
   // Where each round's AUTHORITATIVE state is (#214). NOT persisted, deliberately: the
   // server owns the log, the client holds its last answer for as long as the tab lives,
   // and a new visit asks again rather than replaying a mirror that may be stale. Both
-  // modes register here — the sentence game reads the server log out of it, Word mode
-  // only waits for its status.
+  // modes register here — both read the server log, with Word doing so once its run has
+  // been submitted and its persisted outbox cleared.
   roundLoads: Record<string, RoundLoad>;
 
   // Word mode's twin (#156): the word round being played. NOT persisted; set by
@@ -328,15 +342,11 @@ interface GameState extends PersistedState {
   // rule, and it lives here so no render path can reopen a finished day.
   anchorWordRun: (key: string, startedAt: number) => void;
 
-  // Adopt the RECORDED run the server holds for this word round (#202) — a device that
-  // never played it picking up the day's history. Only ever into an EMPTY local log: a
-  // word round's deadline is DERIVED from its log, so adopting a longer one over a run
-  // this device actually played could move the clock, and a finished run must never
-  // re-open. Handed finished values, so the store needs no rank map of its own.
-  adoptWordRun: (key: string, run: { tried: string[] } & WordRunCache) => void;
-
-  // The server has acknowledged this round's end-of-run log (#202).
-  markWordSubmitted: (key: string) => void;
+  // Settle a Word run from the server's authoritative recorded log (#214). Its persisted
+  // guesses were an outbox and are now acknowledged, so clear them even when another
+  // device's first-write-wins log differs. Preserve the existing deadline: adopting a
+  // longer winning run must never re-open a run this device already finished.
+  settleWordRun: (key: string, claimed: number) => void;
 
   // Count one Word mode guess (a claim or a near/off-map miss — free guesses never reach
   // here) on the active word round: check the guess against the DEADLINE as of now,
@@ -671,31 +681,22 @@ export const useGameStore = create<GameState>()(
           };
         }),
 
-      adoptWordRun: (key, run) =>
+      settleWordRun: (key, claimed) =>
         set((s) => {
           const round = s.wordRounds[key];
-          // Nothing to adopt INTO (the round was evicted or reset under this key), no
-          // clock to price the log against, or a log of this device's own — see the type
-          // above for why the last one is left alone.
-          if (!round || round.startedAt === null || round.tried.length > 0) return {};
+          if (!round) return {};
+          if (round.submitted && round.tried.length === 0 && round.claimed === claimed) return {};
           return {
             wordRounds: {
               ...s.wordRounds,
               [key]: {
                 ...round,
-                tried: run.tried,
-                claimed: run.claimed,
-                deadline: round.startedAt + runMs(run.bonus),
+                tried: [],
+                claimed,
+                submitted: true,
               },
             },
           };
-        }),
-
-      markWordSubmitted: (key) =>
-        set((s) => {
-          const round = s.wordRounds[key];
-          if (!round || round.submitted) return {};
-          return { wordRounds: { ...s.wordRounds, [key]: { ...round, submitted: true } } };
         }),
 
       // Reads through `get()` rather than a `set` updater because it has to REPORT what it
@@ -707,7 +708,9 @@ export const useGameStore = create<GameState>()(
         const key = s.activeWordKey;
         if (!key) return false;
         const round = s.wordRounds[key];
-        if (!round || round.startedAt === null || round.deadline === null) return false;
+        if (!round || round.submitted || round.startedAt === null || round.deadline === null) {
+          return false;
+        }
 
         const startedAt = round.startedAt;
         const price = (cache: WordRunCache) => ({

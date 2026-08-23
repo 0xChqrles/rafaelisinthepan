@@ -6,7 +6,8 @@
 
 import { describe, it, expect } from 'vitest';
 import type { RankMap } from '@whippin/shared';
-import { playLogFor, projectPlayLog, unacknowledged } from './playLog';
+import { playLogFor, projectPlayLog, unacknowledged, withoutDeferred } from './playLog';
+import { guessKey } from './scoring';
 
 // A tiny two-secret puzzle where `prive` and `privees` are ONE ranked group in both maps
 // (#104's alias expansion), so the two surfaces share a canonical identity, while `foret`
@@ -69,6 +70,22 @@ describe('playLogFor — the canonical identity is the puzzle\'s, not the string
 
   it('keeps the LOCAL spelling when the server holds nothing for that identity', () => {
     expect(playLogFor(RANKS, [], ['privees'])).toEqual(['privees']);
+  });
+});
+
+describe('withoutDeferred — animation holds canonical identities', () => {
+  it('keeps a reconciled server spelling deferred with the local alias that started it', () => {
+    const localIdentity = guessKey(RANKS, 'privees');
+
+    // The local spelling entered the animation, then reconciliation made the server's
+    // first spelling win the projected log. Raw-string deferral would release `prive`
+    // early even though both spellings are one playable identity.
+    expect(withoutDeferred(RANKS, ['prive', 'bois'], [localIdentity])).toEqual(['bois']);
+  });
+
+  it('returns the existing log when nothing is deferred', () => {
+    const log = ['prive', 'bois'];
+    expect(withoutDeferred(RANKS, log, [])).toBe(log);
   });
 });
 

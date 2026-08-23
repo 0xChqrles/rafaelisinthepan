@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
-import { useGameStore, type RoundLoad } from '../state/gameStore';
-import { beginWordRoundSync, type WordRoundContext } from '../state/wordRoundSync';
+import { roundLoadFor, useGameStore, type RoundLoad } from '../state/gameStore';
+import { beginWordRoundSync, wordTag, type WordRoundContext } from '../state/wordRoundSync';
 
 // React binding for Word mode's round conversation (#202, state/wordRoundSync.ts):
 // registers the round's context on mount, refreshes it if the artifact changes, and tells
@@ -16,11 +16,10 @@ import { beginWordRoundSync, type WordRoundContext } from '../state/wordRoundSyn
 // what stops PLAY being tappable while that read is still in flight, since a session that
 // starts a run it cannot see becomes its writer.
 export default function useWordRoundSync(ctx: WordRoundContext, over: boolean): RoundLoad {
-  const { roundKey, lang, date, word, ranks, corpusSize } = ctx;
+  const { roundKey, lang, date, word, ranks } = ctx;
   useEffect(() => {
-    beginWordRoundSync({ roundKey, lang, date, word, ranks, corpusSize }, over);
-  }, [roundKey, lang, date, word, ranks, corpusSize, over]);
-  return useGameStore((s) => s.roundLoads[roundKey]) ?? LOADING;
+    beginWordRoundSync({ roundKey, lang, date, word, ranks }, over);
+  }, [roundKey, lang, date, word, ranks, over]);
+  const load = useGameStore((s) => s.roundLoads[roundKey]);
+  return roundLoadFor(load, wordTag(word));
 }
-
-const LOADING: RoundLoad = { status: 'loading' };

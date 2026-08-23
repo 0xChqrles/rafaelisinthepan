@@ -170,7 +170,7 @@ export function beginRoundSync(ctx: RoundSyncContext): void {
       existing.created = false;
       existing.closed = false;
       existing.failures = 0;
-      useGameStore.getState().setRoundLoad(ctx.roundKey, { status: 'loading' });
+      useGameStore.getState().setRoundLoad(ctx.roundKey, { status: 'loading', puzzle });
     }
     Object.assign(existing, ctx, { puzzle });
     // Re-insert so the LRU sees this round as the most recent.
@@ -194,7 +194,7 @@ export function beginRoundSync(ctx: RoundSyncContext): void {
     inFlight: null,
     closed: false,
   });
-  useGameStore.getState().setRoundLoad(ctx.roundKey, { status: 'loading' });
+  useGameStore.getState().setRoundLoad(ctx.roundKey, { status: 'loading', puzzle });
   pruneFlights(ctx.roundKey);
   void pump(ctx.roundKey);
 }
@@ -215,7 +215,7 @@ export function retryRoundSync(roundKey: string): void {
   f.lastFailureAt = 0;
   if (!f.settled) {
     f.closed = false;
-    useGameStore.getState().setRoundLoad(roundKey, { status: 'loading' });
+    useGameStore.getState().setRoundLoad(roundKey, { status: 'loading', puzzle: f.puzzle });
   }
   void pump(roundKey);
 }
@@ -318,12 +318,12 @@ function publish(f: RoundFlight, key: string, server: RoundServer): void {
   // would hand the round a new object about once a second while a player types, and every
   // derivation downstream — the play log, the board replay, the run's trajectory — would
   // recompute for a value that did not change.
-  if (settled && sameServer(useGameStore.getState().roundLoads[key], server)) return;
-  useGameStore.getState().setRoundLoad(key, { status: 'ready', server });
+  if (settled && sameServer(useGameStore.getState().roundLoads[key], f.puzzle, server)) return;
+  useGameStore.getState().setRoundLoad(key, { status: 'ready', puzzle: f.puzzle, server });
 }
 
-function sameServer(load: RoundLoad | undefined, next: RoundServer): boolean {
-  if (load?.status !== 'ready') return false;
+function sameServer(load: RoundLoad | undefined, puzzle: string, next: RoundServer): boolean {
+  if (load?.status !== 'ready' || load.puzzle !== puzzle) return false;
   const { server } = load;
   return (
     server.solved === next.solved &&
@@ -369,7 +369,7 @@ async function readRound(f: RoundFlight, key: string): Promise<void> {
     try {
       state = parseRound(await response.json());
     } catch {
-      retryLater(f, key);
+      if (!superseded(f, puzzle)) retryLater(f, key);
       return;
     }
     // Re-checked after the body: reading it is another await, and a republish landing
@@ -529,7 +529,7 @@ function isVerdict(status: number): boolean {
 // interactive screen back to an error state.
 function failLoad(f: RoundFlight, key: string): void {
   if (f.settled) return;
-  useGameStore.getState().setRoundLoad(key, { status: 'failed' });
+  useGameStore.getState().setRoundLoad(key, { status: 'failed', puzzle: f.puzzle });
 }
 
 function retryLater(f: RoundFlight, key: string): void {
