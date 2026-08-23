@@ -140,24 +140,27 @@ export function requireTurnstileToken(
   return { ok: true, value: token };
 }
 
-export interface DayParams {
+export interface GameParams {
   lang: string;
   mode: ScoreMode;
+}
+
+export interface DayParams extends GameParams {
   date: string;
 }
 
-// The protocol guards the day-addressed live routes share (/scores, /board): a
-// supported language, an explicit mode, a real date no further than one day ahead of
-// the server's own active day. A supported language is one the pipeline has built a
-// vocabulary for (#200's generated metadata), which is the same set the score ceiling
-// is read from. `Object.hasOwn` and not an index read — a bare `map[lang] === undefined`
-// walks the prototype chain, so `constructor`/`toString` would pass as "supported
-// languages" and reach the store key.
-export function requireDayParams(
+// WHICH GAME a live route is being asked about: a supported language and an explicit mode.
+// A supported language is one the pipeline has built a vocabulary for (#200's generated
+// metadata), which is the same set the score ceiling is read from. `Object.hasOwn` and not
+// an index read — a bare `map[lang] === undefined` walks the prototype chain, so
+// `constructor`/`toString` would pass as "supported languages" and reach the store key.
+//
+// Split out from the day-addressed triple below with #211: the private history read is
+// addressed by a MONTH rather than a day, so it needs these two and not the third.
+export function requireGameParams(
   event: FnUrlEvent,
-  serverDate: string,
   headers: Record<string, string>,
-): Guarded<DayParams> {
+): Guarded<GameParams> {
   const lang = event.queryStringParameters?.lang;
   if (!lang || !Object.hasOwn(VOCAB_BUILDS, lang)) {
     return refuse(
@@ -184,6 +187,19 @@ export function requireDayParams(
       ),
     );
   }
+  return { ok: true, value: { lang, mode } };
+}
+
+// The protocol guards the day-addressed live routes share (/scores, /board, /round): which
+// game, plus a real date no further than one day ahead of the server's own active day.
+export function requireDayParams(
+  event: FnUrlEvent,
+  serverDate: string,
+  headers: Record<string, string>,
+): Guarded<DayParams> {
+  const game = requireGameParams(event, headers);
+  if (!game.ok) return game;
+  const { lang, mode } = game.value;
   const date = event.queryStringParameters?.date;
   if (!date || !isValidDate(date)) {
     return refuse(

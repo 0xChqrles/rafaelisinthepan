@@ -37,7 +37,9 @@
 // already read the artifact (#202); it is simply no longer the only path that does.
 
 import {
+  activeDate,
   countTries,
+  dayNumber,
   fold,
   publicIdFromSecret,
   ROUND_GUESS_CAP,
@@ -56,6 +58,7 @@ import {
   requireSecret,
   requireTurnstileToken,
 } from './liveRoute';
+import type { PlayerHistoryStore } from './historyStore';
 import { loadPuzzle, loadSlice } from './puzzleReads';
 import { deriveRound, type PuzzleSlice } from './slice';
 import {
@@ -84,6 +87,11 @@ export interface RoundHandlerDeps {
   // mode's explicit START, and the sentence append that CREATES a round. Round creation is
   // available to every unlinked visitor, so it carries more weight than it did.
   turnstile: TurnstileVerifier;
+  // The streak's solved-day collection (#211). A confirmed sentence solve credits its day
+  // here, idempotently, so the private history read can answer the streak without replaying
+  // a year of round rows. It is a rebuildable CACHE of those rows, never a second
+  // authority — which is what makes crediting it a fire-and-log side effect below.
+  history: PlayerHistoryStore;
   // Only the direct local HTTP adapter may trust its socket peer (the /scores rule).
   allowSourceIp?: boolean;
 }
@@ -496,9 +504,55 @@ async function settleAppend(
   // Recording it is the last thing the append does, so the answer the client adopts is never
   // ahead of the population it is about to read.
   if (truth.solved && solveIsStored) {
+    await creditSolvedDay(round, deps, instant);
     await recordSentenceScore(round, puzzleStore, deps, event, instant);
   }
   return json(200, roundBody(state, instant), headers);
+}
+
+// **ON TIME MEANS ON THE DAY, and LATE HAS NO GRADATIONS** (user-decided 2026-08-23): a
+// millisecond late is a decade late. A round only earns the day's rewards — the streak
+// credit AND the leaderboard row — when the day it is playing IS the day this write lands
+// on. A round carried across the 22:00 flip and finished at 22:00:01 was not finished on
+// time; an archive replay never was on time at all; and the two are the same thing.
+//
+// That single rule replaced a window tolerating `activeDay - 1` for the flip-edge, plus a
+// second gate in the CLIENT (the route) to tell that edge from a deliberate archive replay
+// of yesterday. The two are NUMERICALLY IDENTICAL, and the only thing that ever separated
+// them was which URL the tab was on — knowledge that exists in the browser and nowhere
+// else, so the server could never have applied the tolerance honestly. Ruling the edge late
+// removes the ambiguity rather than arbitrating it, which is why one predicate can now
+// serve every reward the day has.
+//
+// `activeDate(instant)` IS the `serverDate` the handler guards with — the same function on
+// the same instant — so this asks the day question rather than being told the answer.
+function onTime(date: string, instant: Date): boolean {
+  return date === activeDate(instant);
+}
+
+// THE STREAK's own fact (#211): this language's collection of solved game days, credited
+// when the server CONFIRMS a solve, and only when that solve was ON TIME (above).
+// Idempotent by construction (a set insert), so a re-published daily solved again, or a
+// corrective write re-recording a round the store already holds, adds the day once — which
+// is also why solving a corrected revision cannot claim a day twice, and why a republish
+// never takes back a day already credited.
+//
+// FAILURE IS SILENT, and that is the point of the collection being a rebuildable cache: the
+// guesses are stored, the solve is durable on the round row, and a streak day that could not
+// be cached is a stat, never a refused append.
+async function creditSolvedDay(
+  round: AppendedRound,
+  deps: RoundHandlerDeps,
+  instant: Date,
+): Promise<void> {
+  const { key, publicId } = round;
+  if (!onTime(key.date, instant)) return;
+  const solvedDay = dayNumber(key.date);
+  try {
+    await deps.history.recordSolvedDay({ publicId, lang: key.lang, day: solvedDay });
+  } catch (error) {
+    console.error(`[round] failed to credit the streak day ${key.date} (${key.lang}):`, error);
+  }
 }
 
 // THE SCORE, derived rather than claimed (#203). It counts UNIQUE tries, and `guessKey`
@@ -537,6 +591,14 @@ async function recordSentenceScore(
 // One recorded score per player per daily (#187), written by the SERVER now that the log
 // is (#203) — the shape both modes share, since only what the score COUNTS differs.
 //
+// **A LATE finish records NOTHING** (user-decided 2026-08-23). The gate lives here rather
+// than at the two call sites precisely because it is one rule about the whole day's rewards:
+// a leaderboard is a day's competition, so finishing after that day has ended is not
+// competing in it, whether by a millisecond or by ten years. An archive replay therefore
+// records no row and draws no standing — `/scores` answers `bucket: null` for a caller the
+// population does not hold, and the solved screen simply shows no rank line. It also stops
+// spending a #169 address allowance on a day nobody is competing in.
+//
 // Every failure here is SILENT to the caller. The guesses are stored and the answer is
 // about the LOG; a population that could not be written is a missing standing, never a
 // refused write.
@@ -550,6 +612,7 @@ async function recordScoreRow(
   event: FnUrlEvent,
   instant: Date,
 ): Promise<void> {
+  if (!onTime(key.date, instant)) return;
   try {
     // The #169 volume floor, unchanged in shape: the address is HMACed and only the digest
     // reaches the store. A caller with no trusted address cannot be metered, so its score

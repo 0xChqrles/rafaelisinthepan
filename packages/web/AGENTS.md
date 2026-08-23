@@ -20,6 +20,9 @@
                             challenge (one module-level conversation per round)
       game/playLog.ts         #214's pure projection: (server log + outbox) -> the play log
                               every client derivation reads, and the outbox remainder
+      state/history.ts        #211's PRIVATE history: the in-memory month/solved-day cache,
+                              its one-flight-per-key reads, the explicit-loading status and
+                              the streak credit a fresh solve rides
       hooks/useRoundSync.ts   its React binding: registers the round's context on mount and
                               reports WHERE its authoritative state is (the load gate)
       state/wordRoundSync.ts  Word mode's #202 conversation: the Turnstile-gated round start,
@@ -448,10 +451,73 @@ it to the local store — see `packages/backend/AGENTS.md`).
     persisted outbox, marks the run submitted, clamps any still-live deadline to now and caches
     the authoritative claim count clamped to `CLAIM_ZONE`, so neither the prompt nor summary
     progress can remain live after settlement.
-  - **`statusOf` takes a SERVER summary** (`{progress, solved}`) and has no producer yet:
-    the archive and the chooser pass `undefined`, so every SENTENCE day reads as not started
-    until #211 lands. **#214 and #211 ship together** — see the Ordering note on both issues.
+  - **`statusOf` takes a SERVER summary** (`{progress, solved}`), and #211 is its producer —
+    the two shipped together, as the Ordering note on both issues required.
 
+- **Server-backed player history (#211).** The product contract — why the summary surfaces
+  have no local source after #214, the explicit-loading rule, the streak window, the metering
+  stance — lives in the root `AGENTS.md`. What is this package's:
+  - **`state/history.ts` is the whole client half**: a transient zustand store of months
+    (keyed `lang:mode:month`) and per-language solved-day collections, ONE flight per request
+    key (the `activeScoreFlights` pattern — the chooser mounts two languages at once and
+    React's development effect replay fires every effect twice), and `usePlayerHistory`, whose
+    effect REVALIDATES whenever a (language, mode, month) becomes the view on screen. Nothing
+    is persisted: an archive day is playable, so a past month is not immutable and an earlier
+    visit's answer is not evidence.
+  - **A month that has not arrived is `days: null`, never an empty Map** — an empty Map is the
+    claim "none of these days was started". `daySummaryStatus` is the ONE place the difference
+    is turned into something a surface can draw: a missing DAY is `{kind:'none'}`, a missing
+    MONTH is `{kind:'unknown', loading}` — the third `Status` kind, whose `loading` half only
+    decides whether the placeholder BREATHES. **It is read off the phase being `loading`, never
+    off "not failed"** (corrected on review): breathing PROMISES an answer is coming, so a read
+    that failed and a surface that never asked both rest still. Idle is unreachable today (Word
+    mode is the only `enabled: false` caller and it reads `wordStatusOf`), but a placeholder
+    breathing forever with no request behind it is the same false claim the explicit-loading
+    rule exists to prevent. The calendar draws unknown as a muted, unfilled, un-rippled cell
+    that keeps its number
+    and its tap (the day is playable whether or not we know what happened on it); the chooser
+    draws the app's skeleton strip; `srStatus` says `srStatusUnknown`, because silence there
+    reads as "not started".
+  - **The ARCHIVE holds its streak hero's BOX while an answer is still COMING**
+    (`.archive-streak-pending`, `visibility: hidden`). The returning player this screen is for
+    almost always has a streak, so reserving keeps the calendar still for them; drawing
+    nothing pulled it up and pushed it back down on every visit. A zero streak collapses the
+    box once the answer lands — and so does a read that FAILED (corrected on review), for the
+    cells' own reason: reserving is a promise, and after a failure nothing is coming to keep
+    it. The failure is not swallowed by that, because the block under the grid says it in
+    words and its RETRY reloads the collection with the month.
+  - **A FAILED read speaks whether or not a month is already drawn** (corrected on review).
+    A revalidation deliberately keeps its cached month on screen, so gating the block on
+    there being nothing to show made every failure after the first good visit SILENT — an
+    offline player reading a stale calendar as the truth. What changes with cached data is
+    the CLAIM, not the presence: nothing loaded is `failedHistory` in the danger ink, an
+    older answer still on screen is `staleHistory` in the plain status ink, and both carry
+    the same RETRY. Loud either way, for the round load's reason: there is no local history
+    left to fall back to.
+  - **`noteSolvedDay` replaced the store's `recordSolve`**, and since 2026-08-23 it makes ONE
+    comparison: the solved day must BE the active day (root `AGENTS.md`). A day already held
+    is still not counted twice, and one refusal is new — a collection that has NOT ARRIVED
+    credits nothing and celebrates nothing. **`Game`'s own `isActiveDay` gate on the streak
+    went with the old tolerance**, along with the freshness re-check in the
+    word-animations effect: both existed to arbitrate a flip-edge that is now simply late,
+    and `streakAdvanced` — `noteSolvedDay`'s own answer — settles the celebration alone.
+    **A landing answer MERGES into the collection rather than replacing it** (corrected on
+    review): a read issued before the solving append can resolve after the credit, and
+    replacing would take the day straight back out from under a mounted `StreakDialog`, which
+    counts its transition off exactly that array. The union is honest as well as safe — the
+    collection is monotonic within a language, and the only day this client ever adds is one
+    the server is recording anyway. `loadPlayerHistory` is exported for the contract test
+    that drives a real answer through the commit path.
+    `Game` calls it on the play-solve transition and keeps its own `isActiveDay` gate, which
+    is the only signal that tells the 22:00 flip-edge from an archive replay of yesterday; the
+    SERVER records the day independently, on the append that confirms the solve.
+  - **The GAME screen loads the collection with NO month** (`usePlayerHistory({lang, enabled:
+    isActiveDay})`): the celebration counts the PREVIOUS streak off it, so it has to be in
+    hand before the solve — and asking for a month there would spend a whole calendar's Query
+    on every game load. `StreakDialog` only READS it (`useSolvedDays`), since the screen it
+    mounts inside has already loaded it.
+  - **Persist v15 DROPS `solvedDays`** — the last device-local half of a player's history, and
+    the one that could not follow them to a second device.
 - **Round guess-log sync (#201).** *(RESHAPED by #214, above: the persisted `tried` log,
   `mergeLogs`, the `pendingFrom`/`serverCount` watermarks, `adoptRound`, the persisted
   `capped`/`recorded` flags and `holesMatchPuzzle` are all GONE — what this bullet describes
@@ -1720,9 +1786,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   tolerance (`/<lang>/xyz` → today's game). `parseRoute` takes the range bounds as an
   injected arg (App passes the client `activeDate`) so parsing stays pure/testable.
   `usePuzzle(lang, date?)` fetches the given date, else the active day (unchanged); the
-  404→`noPuzzle` path is reused as-is. The calendar reads each day's status from the
-  **persisted rounds** (device-local) via the extracted `state/status.ts` `statusOf`
-  (shared with the language selector). **Cell coloring (decided 2026-07-08):** a day with
+  404→`noPuzzle` path is reused as-is. The calendar reads each SENTENCE day's status
+  from the **private server summary** (#211's month read, `state/history.ts`) through
+  `state/status.ts` `statusOf` — shared with the language selector, and with Word mode, whose
+  cells still read the persisted word rounds (`wordStatusOf`). It was the persisted rounds
+  until #214 removed them. **Cell coloring (decided 2026-07-08):** a day with
   any reconstruction (>0%) is FILLED with its `progressHeatColor(pct)` (solved counts as
   **100%** — the calm cobalt ramp top), and its number is drawn in `--bg`
   so it reads on the fill; disabled and not-started/0% days keep the neutral surface +
@@ -2078,7 +2146,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   made active later), and an in-flight read is shared across real component remounts so
   leaving for the archive/tutorial and returning cannot mint a second request. EVERY
   failure is silent by decision: the solved screen simply shows no standing, never an
-  error. **What it shows is ONE LINE — the player's RANK** (`components/ScoreRank`,
+  error. **An ARCHIVE solve now shows none either** (user-decided 2026-08-23): a leaderboard
+  is a DAY's competition and a late finish is not competing in it, so the server records no
+  row and answers `bucket: null`, which this slot already draws as nothing. The read still
+  fires — the client does not second-guess which days have a population, and that guess is
+  exactly the kind of local rule the same decision removed from the streak. **What it shows is ONE LINE — the player's RANK** (`components/ScoreRank`,
   user-decided 2026-08-15, replacing the brick histogram that replaced the first cut's
   bars: "the histogram is actually ugly" — a field of bars asks to be decoded, where the
   rank is the answer already given):

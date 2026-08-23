@@ -46,6 +46,12 @@
       friends.ts              POST /friends (#189): auth, list/add/remove, self-add + cap refusals
       board.ts                GET|POST /board (#190): global top-50 read + authenticated friends
                               board — shared leaderboard rules over score rows + profiles + edges
+      history.ts              POST /history (#211): the PRIVATE player history — one month of
+                              (lang, mode) summaries + the language's solved-day collection
+      historyStore.ts         solved-day storage contract; the private player#<publicId>
+                              partition, history#<lang> sort key
+      dynamoHistoryStore.ts   prod NUMBER-SET credit (idempotent ADD) + an ADD/DELETE overflow trim
+      memoryHistoryStore.ts   process-local implementation for backend:dev/tests
       friendStore.ts          mutual-edge storage contract; friends#<publicId> partition + FRIENDS_MAX
       dynamoFriendStore.ts    prod one-transaction link/unlink (both directions) + consistent Query
       memoryFriendStore.ts    process-local implementation for backend:dev/tests
@@ -57,7 +63,8 @@
       roundStore.ts           round storage contract; round#<publicId> partition, sort key
                               <lang>#<mode>#<date> (#203); the published-version tag +
                               ROUND_GUESS_CAP / ROUND_WRITE_MIN_MS semantics, Word mode's
-                              startedAt / first-write-wins log, and #203's stored summary
+                              startedAt / first-write-wins log, #203's stored summary and
+                              #211's month prefix + projected day summary
       dynamoRoundStore.ts     prod ONE conditional UpdateItem (both bounds in the condition) +
                               consistent classification read on a refusal; the word start's own
                               conditional stamp and the submit's read-then-conditional-write
@@ -84,7 +91,7 @@
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output). Sentence puzzles AND #154 word artifacts (#156): the artifact type is detected from the file's SHAPE and routed to its own key.
 pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--mode sentence|word] [--ci]  # publish-buffer coverage (#61); --mode word probes the #156 word-artifact buffer; reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
-pnpm backend:dev                # local server (puzzles + /scores + /profile + /friends + /board + /round + /today) on :8787; FS puzzles, in-memory scores/profiles/friends/rounds, local Turnstile accept-all
+pnpm backend:dev                # local server (puzzles + /scores + /profile + /friends + /board + /round + /history + /today) on :8787; FS puzzles, in-memory scores/profiles/friends/rounds/history, local Turnstile accept-all
 pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server with a #190 board population (in-memory — re-run after a restart)
 ```
 
@@ -101,7 +108,9 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   per distinct recorded score; an empty population is `buckets: []`), with `bucket` always
   `null` — the read carries no identity, and the client locates its own score in the
   ranges. Every response is `no-store`. A POST is a named **405**: the row is written by the
-  ROUND route from the log the server already holds (#203), so this file no longer
+  ROUND route from the log the server already holds (#203) — and only when that round
+  finished ON THE DAY (2026-08-23), so an archive play joins no population and gets
+  `bucket: null` here. This file no longer
   authenticates, verifies Turnstile, validates a range or hashes an address —
   `hashClientIp` stays here beside the store contract, but its caller is `rounds.ts`.
   It still reads the published puzzle, so an unpublished daily 404s rather than getting an
@@ -386,6 +395,38 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   carrying the puzzle's secrets plus enough distinct misses to land on the score it wants
   (`playthrough`), which is also why it reads the day's puzzle and copies a slice forward
   with it.
+- **Server-backed player history (#211):** the ONE handler also serves `POST /history?lang=&mode=[&month=]`
+  — the product contract (why it exists after #214, the explicit-loading rule, the streak
+  window, the metering stance) lives in the root `AGENTS.md`. Implementation notes: POST-only
+  like /friends (a GET is a named 405), the `{secret}` body check and the `lang`/`mode` guard
+  are the SHARED `liveRoute.ts` (`requireGameParams`, split out of `requireDayParams` because
+  this read is addressed by a MONTH rather than a day); `month` is validated against the
+  shared `HISTORY_MONTH_PATTERN` and is OPTIONAL, and there is deliberately NO future guard —
+  a month past the active day simply holds no rows. The two reads go out CONCURRENTLY (the
+  /round rule): `RoundStore.listMonth` — one Query over the caller's own partition behind the
+  `<lang>#<mode>#<YYYY-MM>-` prefix, `ProjectionExpression`-limited to `sk`/`progress`/`solved`
+  so the raw guess logs never leave the store, strongly consistent (a player opens the archive
+  right after finishing a day) and PAGED — and `PlayerHistoryStore.solvedDays`. Every response
+  is `no-store`; a player with nothing played answers `{days: [], solvedDays: []}`, which is an
+  ANSWER. **The write is the ROUND route's**: the append that CONFIRMS a solve credits the day
+  (`creditSolvedDay`) when the round finished ON THE DAY — `onTime(key.date, instant)`, ONE
+  predicate that `recordScoreRow` wears too, so a late finish earns neither the streak credit
+  nor the leaderboard row (see the root `AGENTS.md` on why the flip-edge tolerance had to go,
+  and on what that narrowed for archive plays). Its
+  failures are LOGGED, never surfaced — the collection is a rebuildable cache of the
+  round rows. `dynamoHistoryStore` credits with a NUMBER SET `ADD` under
+  `attribute_not_exists(#days) OR size(#days) < :max OR contains(#days, :one)` — condition
+  grammar only, the round store's rule — so a re-solve is a silent no-op and only a genuinely
+  FULL collection needs trimming. **That trim is TWO SET OPERATIONS, never a rewrite**
+  (corrected on review): an unconditional `ADD` returning `ALL_NEW`, then a `DELETE` naming
+  exactly the elements now beyond the cap. A read plus `SET #days = <the whole set>` is a
+  lost update — two credits for different eligible days read the same 800 and each write back
+  a set omitting the other's day — and what it loses is a player's streak. Naming ELEMENTS
+  commutes with a concurrent credit, and the ADD's own returned membership is what the trim
+  is computed from, so no snapshot can go stale between the two. Concurrent credits may drop
+  the same oldest element and leave the collection a day over the cap; the next credit trims
+  again. No new env, no new IAM: the table grant already carried Query, GetItem and
+  UpdateItem.
 - **Word mode's daily artifact (#154/#156):** the ONE puzzle endpoint also serves the
   single-word artifact under `mode=word` (`GET /?lang=&date=&mode=word`; absent/
   `sentence` = the sentence puzzle, anything else = 400) with identical day-addressing,

@@ -9,6 +9,7 @@ import type {
   Board,
   BoardPlayer,
   BoardRow,
+  PlayerHistory,
   PlayerProfile,
   Puzzle,
   ScoreHistogram,
@@ -330,6 +331,58 @@ export function parseRound(data: unknown): RoundState {
     // one still being played.
     solved: solved === true,
   };
+}
+
+// The PRIVATE player history (#211): the archive calendar's month, the chooser's status
+// strip and the streak's solved-day list, all off what the server already derives from the
+// guess log (#203). POST-only like /friends — the player key authenticates in the BODY, so
+// there is no way to ask for someone else's history. `month` is OPTIONAL: the streak needs
+// the solved-day collection alone, and making that read spend a month Query would cost a
+// whole calendar per game load. All three queries are in the history CloudFront behavior's
+// allowList (the root AGENTS.md three-package contract).
+export function historyUrl(
+  lang: string,
+  mode: Mode,
+  month?: string,
+  base: string = apiBase(),
+): string {
+  const root = `${requireApiBase(base)}/history?lang=${encodeURIComponent(
+    lang,
+  )}&mode=${encodeURIComponent(mode)}`;
+  return month ? `${root}&month=${encodeURIComponent(month)}` : root;
+}
+
+export async function postHistoryBody(url: string, body: { secret: string }): Promise<Response> {
+  return postSignedJson(url, body);
+}
+
+// Runtime shape check for the history response — the parsePuzzle contract: a wrong-shaped
+// body surfaces as the calendar's failure state, never as a month of NaN fills or a streak
+// counted off garbage. Both numbers are checked as REAL values, since one feeds a heat-ramp
+// colour and the other the streak arithmetic.
+export function parsePlayerHistory(data: unknown): PlayerHistory {
+  if (!isRecord(data)) throw new Error('malformed history: not an object');
+  const { days, solvedDays } = data;
+  if (!Array.isArray(days)) throw new Error('malformed history: "days" must be an array');
+  for (const raw of days) {
+    const day = raw as Record<string, unknown>;
+    if (
+      !isRecord(raw) ||
+      typeof day.date !== 'string' ||
+      typeof day.progress !== 'number' ||
+      !Number.isFinite(day.progress) ||
+      typeof day.solved !== 'boolean'
+    ) {
+      throw new Error('malformed history: bad "days" entry');
+    }
+  }
+  if (
+    !Array.isArray(solvedDays) ||
+    !solvedDays.every((day) => typeof day === 'number' && Number.isInteger(day))
+  ) {
+    throw new Error('malformed history: "solvedDays" must be an array of game days');
+  }
+  return data as unknown as PlayerHistory;
 }
 
 // The #188 player profile: GET reads the public row by publicId (what a board renders,

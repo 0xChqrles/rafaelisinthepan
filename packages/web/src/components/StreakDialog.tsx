@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { ComponentPropsWithRef, ComponentType } from 'react';
 import { animated, to, useReducedMotion, useSpring, useSprings } from '@react-spring/web';
 import { easeOutCubic } from '../hooks/useAnimatedNumber';
-import { useGameStore } from '../state/gameStore';
+import { useSolvedDays } from '../state/history';
 import { streakTransition, weekView } from '../game/streak';
 import { streakDigitDelays, streakDigitSlots } from '../game/streakDigits';
 import { t } from '../i18n';
@@ -102,7 +102,11 @@ export default function StreakDialog({
   const titleId = useId();
   const reducedMotion = useReducedMotion();
 
-  const solvedDays = useGameStore((state) => state.solvedDays[lang] ?? NO_SOLVED_DAYS);
+  // The language's solved days, held transiently since #211 (the collection is the
+  // server's, loaded by the game screen this dialog mounts inside). It is never null here
+  // by construction: `Game` only opens the celebration when `noteSolvedDay` INSERTED this
+  // day, which it refuses to do on a collection that has not arrived.
+  const solvedDays = useSolvedDays(lang) ?? NO_SOLVED_DAYS;
   const previewDays = useMemo(() => {
     if (previewPreviousStreak == null) return null;
     const previewLength = Math.min(previewPreviousStreak + 1, 7);

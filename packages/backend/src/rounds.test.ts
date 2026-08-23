@@ -18,6 +18,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  dayNumber,
   generateSecret,
   publicIdFromSecret,
   ROUND_GUESS_CAP,
@@ -28,9 +29,11 @@ import {
   type WordPuzzle,
 } from '@whippin/shared';
 import { createHandler } from './handler';
+import { memoryHistoryStore } from './memoryHistoryStore';
 import { memoryRoundStore } from './memoryRoundStore';
 import { memoryScoreStore } from './memoryScoreStore';
 import { buildSlice } from './slice';
+import type { PlayerHistoryStore } from './historyStore';
 import type { ScoreStore } from './scoreStore';
 import type { RoundStore } from './roundStore';
 import type { FnUrlEvent } from './respond';
@@ -39,6 +42,9 @@ import type { PuzzleStore } from './store';
 const START = new Date('2026-08-21T14:00:00Z');
 const ACTIVE_DATE = '2026-08-21';
 const PAST_DATE = '2026-08-19';
+// The day before the active one — the 22:00 flip-edge's date, and an archive replay of
+// yesterday's date, which are the same thing to a server (#211).
+const YESTERDAY_DATE = '2026-08-20';
 const FUTURE_DATE = '2026-08-23';
 const ORIGIN = 'https://whippin.example';
 const SECRET = generateSecret();
@@ -131,10 +137,12 @@ function makeHandler(
     turnstile?: boolean;
     scoreStore?: ScoreStore;
     roundStore?: RoundStore;
+    historyStore?: PlayerHistoryStore;
   } = {},
 ) {
   let current = START.getTime();
   const scoreStore = options.scoreStore ?? memoryScoreStore(() => new Date(current));
+  const historyStore = options.historyStore ?? memoryHistoryStore();
   const sentence = { current: options.sentence === undefined ? SENTENCE : options.sentence };
   const handler = createHandler({
     store: puzzleStore(options.word, sentence),
@@ -145,11 +153,13 @@ function makeHandler(
       scoreStore,
       ipHmacSecret: 'x'.repeat(64),
       turnstile: { async verify() { return options.turnstile !== false; } },
+      history: historyStore,
       allowSourceIp: true,
     },
   });
   return Object.assign(handler, {
     scoreStore,
+    historyStore,
     advance(ms: number) {
       current += ms;
     },
@@ -800,6 +810,78 @@ describe('the derived summary (#203)', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].score).toBe(3);
     expect(rows[0].publicId).toBe(await publicIdFromSecret(SECRET));
+  });
+
+  // #211: the same append that records the score credits the STREAK's day. ON TIME means ON
+  // THE DAY (user-decided 2026-08-23) — the round's day must BE the server's active day, so
+  // an archive replay credits nothing at any distance and a round carried past the 22:00
+  // flip credits nothing either. The credit is a set insert, so a corrected revision solved
+  // again cannot claim the day twice.
+  it('credits the streak day when the ACTIVE day is solved', async () => {
+    const handler = makeHandler();
+    expect(parsed(await appendGuesses(handler, ['phare', 'nuit'])).solved).toBe(true);
+    const me = await publicIdFromSecret(SECRET);
+    await expect(handler.historyStore.solvedDays(me, 'fr')).resolves.toEqual([
+      dayNumber(ACTIVE_DATE),
+    ]);
+  });
+
+  // LATE HAS NO GRADATIONS (user-decided 2026-08-23): a millisecond late is a decade late,
+  // and neither earns the day's rewards — not the streak credit, not the leaderboard row.
+  it.each([
+    ['an ARCHIVE solve', PAST_DATE],
+    // YESTERDAY is the case that used to be tolerated, for the 22:00 flip-edge. It reads
+    // here exactly as it reads for a deliberate archive replay of yesterday — which is why
+    // the tolerance could never be applied honestly server-side, and why it is gone.
+    ['a solve carried past the 22:00 flip', YESTERDAY_DATE],
+  ])('%s earns NOTHING the day gives', async (_name, date) => {
+    const handler = makeHandler();
+    const late = await handler(
+      event({
+        query: { lang: 'fr', date, mode: 'sentence' },
+        body: body({ guesses: ['phare', 'nuit'] }),
+      }),
+    );
+    // It really solved, and the LOG is stored either way — what is being pinned is the
+    // RULE, not a failed derivation or a refused append.
+    expect(parsed(late).solved).toBe(true);
+    expect(parsed(late).guesses).toEqual(['phare', 'nuit']);
+
+    const me = await publicIdFromSecret(SECRET);
+    await expect(handler.historyStore.solvedDays(me, 'fr')).resolves.toEqual([]);
+    // No leaderboard row either: a board is a day's competition, and this finished after
+    // that day ended. The solved screen then draws no standing at all (`bucket: null`).
+    expect(await handler.scoreStore.list({ date, lang: 'fr', mode: 'sentence' })).toEqual([]);
+  });
+
+  it('a late WORD run records no score either — one rule, both dailies', async () => {
+    const handler = makeHandler({ word: WORD_ARTIFACT });
+    const key = { lang: 'fr', date: PAST_DATE, mode: 'word' as const };
+    await handler(wordEvent({ turnstileToken: 'ok' }, key));
+    handler.advance(wordRunFloorMs(1) + 1);
+    const submitted = await handler(wordEvent({ guesses: ['mer'] }, key));
+    // The run was RECORDED — the log is the player's history, and an archive run is still
+    // play. What it does not earn is the day's leaderboard entry.
+    expect(submitted.statusCode).toBe(200);
+    expect(parsed(submitted).submittedAt).toBeTruthy();
+    expect(await handler.scoreStore.list(key)).toEqual([]);
+  });
+
+  it('solving a CORRECTED revision cannot claim the same day twice', async () => {
+    const handler = makeHandler();
+    await appendGuesses(handler, ['phare', 'nuit']);
+    handler.republish(CORRECTED);
+    handler.advance(ROUND_WRITE_MIN_MS + 1);
+    // The retired round restarts under the same key; the corrected sentence's one hole is
+    // solved by typing its secret.
+    const again = await handler(
+      event({ body: body({ puzzle: CORRECTED_TAG, guesses: ['phare'] }) }),
+    );
+    expect(parsed(again).solved).toBe(true);
+    const me = await publicIdFromSecret(SECRET);
+    await expect(handler.historyStore.solvedDays(me, 'fr')).resolves.toEqual([
+      dayNumber(ACTIVE_DATE),
+    ]);
   });
 
   it('counts UNIQUE tries: two surfaces of one group are one try', async () => {

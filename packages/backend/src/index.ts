@@ -7,6 +7,7 @@ import { createHandler } from './handler';
 import { s3Store } from './s3Store';
 import { loadConfig, loadScoreSecrets } from './config';
 import { dynamoFriendStore } from './dynamoFriendStore';
+import { dynamoHistoryStore } from './dynamoHistoryStore';
 import { dynamoProfileStore } from './dynamoProfileStore';
 import { dynamoRoundStore } from './dynamoRoundStore';
 import { dynamoScoreStore } from './dynamoScoreStore';
@@ -45,6 +46,8 @@ function initializeHandler(): Promise<ProductionHandler> {
           // ROUND START is Turnstile-gated in both modes (#202/#203) — the one Siteverify
           // left, now that the score POST it used to share is retired.
           turnstile: turnstileVerifier(secrets.turnstileSecret),
+          // A confirmed solve credits the streak's day (#211); `/history` reads it back.
+          history: dynamoHistoryStore(dynamo, config.scoreTable),
         },
       });
     })

@@ -12,6 +12,7 @@ import { createHandler } from './handler';
 import { fsStore } from './fsStore';
 import { defaultLocalStoreRoot } from './layout';
 import { memoryFriendStore } from './memoryFriendStore';
+import { memoryHistoryStore } from './memoryHistoryStore';
 import { memoryProfileStore } from './memoryProfileStore';
 import { memoryRoundStore } from './memoryRoundStore';
 import { memoryScoreStore } from './memoryScoreStore';
@@ -55,6 +56,9 @@ const handler = createHandler({
     // ROUND START is gated in both modes (#202/#203) by the accept-all local verifier.
     // Explicitly local-only: the production entrypoint always wires real Siteverify.
     turnstile: localTurnstileVerifier,
+    // A confirmed solve credits the streak's day (#211); `/history` reads it back. In
+    // memory here, so a restart resets the streak with the rounds it is a cache of.
+    history: memoryHistoryStore(),
     allowSourceIp: true,
   },
 });
@@ -101,6 +105,7 @@ server.listen(PORT, () => {
   console.log(`[backend]   GET /?lang=<xx>&date=<YYYY-MM-DD>[&mode=word]  GET /scores?lang=&date=&mode=`);
   console.log(`[backend]   GET /profile?id=<publicId>  POST /profile  POST /friends`);
   console.log(`[backend]   GET|POST /board?lang=&date=&mode=[&id=]  POST /round?lang=&date=&mode=`);
+  console.log(`[backend]   POST /history?lang=&mode=[&month=YYYY-MM]`);
   console.log(`[backend]   GET /today  GET /s/<token>  GET /og/<token>.png`);
   console.log(`[backend] point the front at it: VITE_API_BASE_URL=http://localhost:${PORT}`);
 });

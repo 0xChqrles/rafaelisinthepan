@@ -1,7 +1,8 @@
-// Streak derivation (issue #56). The persisted FACT is the per-language SET of solved
-// game days (see gameStore's `solvedDays`); the streak counters are DERIVED from it here,
-// never stored. That shape is deliberate: a future cross-device merge is a set UNION +
-// recompute, not an impossible counter reconciliation — so these helpers stay correct
+// Streak derivation (issue #56). The FACT is the per-language SET of solved game days —
+// the SERVER's since #211 (`state/history.ts` holds it transiently; v15 dropped the
+// persisted copy) — and the streak counters are DERIVED from it here, never stored. That
+// shape is what made the collection portable across devices at all: reconciling it is a set
+// UNION + recompute, not an impossible counter reconciliation. So these helpers stay correct
 // under any union/ordering (the property the day-set exists for), and they defensively
 // sort + dedupe their input so a raw union is a valid argument.
 

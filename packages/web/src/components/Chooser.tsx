@@ -26,6 +26,18 @@ import Logo from '../assets/logo.svg?react';
 // readers.
 function StatusStrip({ status }: { status: CardStatus }) {
   if (status.kind === 'none') return null;
+  // #211's UNKNOWN: the private summary has not arrived, so the strip says "not yet"
+  // instead of a status — the app's own skeleton dress, breathing while the read is still
+  // out and resting still once it has failed. Drawing NOTHING here would be the false
+  // "not started" the explicit-loading rule exists to prevent.
+  if (status.kind === 'unknown') {
+    return (
+      <span
+        className={`chooser-strip chooser-strip-unknown${status.loading ? ' skeleton' : ''}`}
+        aria-hidden="true"
+      />
+    );
+  }
   const complete = isComplete(status);
   const pct = status.kind === 'progress' ? status.pct : 100;
   return (
