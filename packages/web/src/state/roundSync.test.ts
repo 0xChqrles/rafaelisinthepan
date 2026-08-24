@@ -26,6 +26,7 @@ import { useGameStore, roundKeyForDay } from './gameStore';
 import {
   backoffDelayMs,
   beginRoundSync,
+  kickRoundSync,
   notifyGuess,
   rearmRoundSync,
   resetRoundSync,
@@ -50,26 +51,34 @@ vi.mock('../api', async (importOriginal) => ({
 
 // ROUND CREATION is Turnstile-gated (#203): the engine mints a challenge for the append
 // that creates the record. The real module throws without VITE_TURNSTILE_SITE_KEY (the
-// `roundUrl` reason above) and would turn every creating append into a failed write.
-vi.mock('../turnstile', () => ({ turnstileToken: async () => 'challenge' }));
+// `roundUrl` reason above) and would turn every creating append into a failed write. The
+// hook lets a test swap the identity ACROSS the challenge await — the one await left
+// between resolving the identity and the POST, now that the append never bootstraps.
+vi.mock('../turnstile', () => ({
+  turnstileToken: async () => {
+    identity.beforeChallenge?.();
+    return 'challenge';
+  },
+}));
 
-// This device's IDENTITY (#216). Every case below is signed in except the tokenless one at
-// the end, which flips the flag: no identity means no private fetch at all, and the FIRST
-// GUESS is what mints one.
+// This device's IDENTITY (#216, reworked 2026-08-24). Every case below is signed in except
+// the tokenless ones, which flip the flag: no identity means no private fetch AND no
+// write — the append never mints one any more; the PLAY gate's deploy does, which the
+// tests stand in for by flipping the flag and kicking the engine.
 const identity = vi.hoisted(() => ({
   present: true,
   value: { token: 'f'.repeat(64), accountId: 'a'.repeat(16), deviceId: 'd'.repeat(16) },
-  beforeEnsure: null as (() => void) | null,
+  beforeChallenge: null as (() => void) | null,
   signedOut: vi.fn(),
 }));
 
 vi.mock('../identity', () => ({
   deviceIdentity: () => (identity.present ? identity.value : null),
-  ensureRequestIdentity: async (expected: string | null) => {
-    identity.beforeEnsure?.();
-    identity.present = true;
+  currentRequestIdentity: (expected: string | null = null) => {
+    if (!identity.present) return null;
     const epoch = `${identity.value.accountId}:${identity.value.deviceId}`;
-    return expected !== null && expected !== epoch ? null : { identity: identity.value, epoch };
+    if (expected !== null && expected !== epoch) return null;
+    return { identity: identity.value, epoch };
   },
   identityEpoch: () => (identity.present ? `${identity.value.accountId}:${identity.value.deviceId}` : null),
   identityEpochOf: (value: { accountId: string; deviceId: string }) =>
@@ -221,7 +230,7 @@ beforeEach(() => {
     accountId: 'a'.repeat(16),
     deviceId: 'd'.repeat(16),
   };
-  identity.beforeEnsure = null;
+  identity.beforeChallenge = null;
   identity.signedOut.mockReset();
   useGameStore.setState(
     { outbox: {}, wordRounds: {}, roundLoads: {}, activeWordKey: null },
@@ -388,10 +397,17 @@ describe('appends — coalescing, pacing and the batch prefix', () => {
     expect(server()?.guesses).toEqual(['bois', 'chemin']);
   });
 
-  it('never posts A\'s captured outbox with B after ensure adopts a replacement identity', async () => {
-    await ready();
+  it('never posts A\'s captured outbox as B when the identity changes across the challenge', async () => {
+    // The append resolves its identity SYNCHRONOUSLY now (#216 rework: it never
+    // bootstraps), so the one await left before the POST is the round-start challenge —
+    // and an identity swap landing inside it must still refuse to authenticate A's batch
+    // as B.
+    post.mockResolvedValueOnce(status(404));
+    beginRoundSync(ctx());
+    await settle();
+    post.mockClear();
     seedOutbox(['bois']);
-    identity.beforeEnsure = () => {
+    identity.beforeChallenge = () => {
       identity.value = {
         token: '8'.repeat(64),
         accountId: 'b'.repeat(16),
@@ -860,14 +876,21 @@ describe('no token, no private fetch (#216)', () => {
     expect(server()?.guesses).toEqual(['bois']);
   });
 
-  it('mints the identity on the FIRST GUESS and appends with the token it was handed', async () => {
+  it('HOLDS a tokenless outbox until the deploy lands, then appends with the token', async () => {
+    // The append never mints (#216 rework): guesses waiting behind the PLAY gate — the
+    // pending-bootstrap recovery — stay owed until the gate's deploy creates the account,
+    // whose identity listener then kicks every conversation.
     identity.present = false;
     beginRoundSync(ctx());
     await settle();
-
-    post.mockResolvedValueOnce(ok(['bois']));
     seedOutbox(['bois']);
     notifyGuess(KEY);
+    await settle();
+    expect(post).not.toHaveBeenCalled();
+
+    identity.present = true;
+    post.mockResolvedValueOnce(ok(['bois']));
+    kickRoundSync();
     await settle();
     expect(post).toHaveBeenCalledTimes(1);
     expect(bodyOf(0)).toMatchObject({ token: 'f'.repeat(64), guesses: ['bois'] });

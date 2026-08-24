@@ -35,6 +35,7 @@ import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import WordEndScreen from '../components/WordEndScreen';
 import LoadError from '../components/LoadError';
+import ErrorSheet from '../components/ErrorSheet';
 import CoachText from '../tutorial/CoachText';
 import { t, tn, srWordClaim, srWordMiss, srWordTimeUp } from '../i18n';
 import { prefersReducedMotion } from '../hooks/useScramble';
@@ -209,7 +210,11 @@ function WordRound({
     void startWordRound(syncContext).then((ok) => {
       setStarting(false);
       // The ROUND's own state flips the phase (the engine anchors the clock); this only
-      // releases the gate's control, and says so when nothing was started.
+      // releases the gate's control — and a failed start is LOUD, on the app's error
+      // surface (#216 trigger rework): the clock is the server's, so nothing began, and
+      // saying nothing would leave the player tapping a gate that never opens. For a
+      // brand-new player this one tap is also the account's deploy, which the same
+      // surface reports the same way.
       if (!ok) setStartFailed(true);
     });
   }, [starting, syncContext]);
@@ -580,6 +585,16 @@ function WordRound({
           fills the flexible space while Share stays on the keyboard tray's bottom edge.
           Keeping the retired play controls underneath prevents any state from resizing
           the surface above. */}
+      {startFailed && (
+        <ErrorSheet
+          lang={lang}
+          title={t(lang, 'failedStart')}
+          note={t(lang, 'failedStartNote')}
+          onRetry={handlePlay}
+          onClose={() => setStartFailed(false)}
+        />
+      )}
+
       <div className="word-footer">
         <div className="word-footer-play">
           {!started ? (
@@ -594,11 +609,6 @@ function WordRound({
                 <div className="coach-rules" aria-hidden="true">
                   <CoachText copy={gateRules} />
                 </div>
-                {/* A failed start is LOUD, unlike sentence mode's background sync: the
-                    clock is the server's, so nothing began — and saying nothing would
-                    leave the player tapping a gate that never opens. PLAY itself is the
-                    retry. */}
-                {startFailed && <p className="status error">{t(lang, 'failedStart')}</p>}
                 <button
                   type="button"
                   className="mix-btn"

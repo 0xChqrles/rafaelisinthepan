@@ -1095,43 +1095,51 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   recognises their own phone, no product rule reads it, and what actually matters is the ORDER
   of its checks, since every Chromium browser impersonates the others. No rename affordance:
   "iPhone / Chrome" is enough.
-- **AN ACCOUNT IS CREATED LAZILY, ON FIRST NEED — never on page open.** Creating on load turns
-  account creation into an unauthenticated write that every crawler and every bot triggers. A
-  visit that performs none of the acts below creates neither a token nor a server row. The
-  triggers, all deliberate: **the first guess** (sentence or word) · **starting a word round**
-  · **tapping INVITE on the leaderboard** · **accepting an invite** · **opening the profile
-  editor** (which is where "saving a profile" resolves — see below).
-  **"Opening the leaderboard" LEFT this list (user-decided 2026-08-24, on the PR-219
-  follow-up review):** a NAVIGATION must not create server state — a signed-out or
-  brand-new visitor merely browsing the board would silently spawn an account — so the
-  board route now renders its private faces tokenless under the no-private-fetch rule
-  below (the friends board is the known-empty ghost + INVITE without a request, the
-  identity strip draws nothing, the global read stays genuinely anonymous), and the
-  INVITE tap — the first thing on that screen that cannot exist without an account — is
-  the act that mints. Invites are gated on NEITHER side:
-  accepting cannot be gated (the accepter is by definition a brand-new visitor clicking a
-  link, and that is the entire invite funnel, #189), and if accepting is not gated, sending is
-  not either. The identity EDITOR (`/profile`) resolves an identity when it opens rather than
-  when it saves — it cannot show a player their identity without one; since the leaderboard
-  no longer mints, reaching it from the EDIT chip mints there exactly as a deep link does.
+- **AN ACCOUNT IS CREATED ON THE DEPLOY BUTTONS ALONE — never on a page load, never as a
+  side effect** (user-decided 2026-08-24, NARROWING the original lazy-on-first-need list:
+  the first guess, opening the leaderboard and opening the profile editor are no longer
+  triggers). Creating on load turns account creation into an unauthenticated write every
+  crawler triggers; creating inside an engine made it a side effect nobody saw. The five
+  triggers, each a PRIMARY BUTTON: **the sentence gate's PLAY** · **Word mode's PLAY** ·
+  **accepting an invite** (its button — the landing no longer auto-adds on load) ·
+  **sending an invite link** · **saving a profile** (the SAVE tap, never the editor
+  opening). Each is a SINGLE tap that chains its real action behind the bootstrap, shows a
+  clear loading state on the button, and reports failure on the app's ERROR SURFACE — a
+  popup on desktop, a bottom sheet on a phone (`web/components/ErrorSheet.tsx`) — saying
+  what happened, with TRY AGAIN when retrying can help. Consequences, all deliberate:
+  - **The sentence game shows the FULL RULES GATE whenever the device has no account**
+    (archive days included), whatever `sentenceRulesSeen` says: its PLAY is the only
+    trigger on that screen, and the server owns the log from the first guess, so no guess
+    may land before the account exists. The engines never mint — the append and the word
+    submission resolve the identity they hold or stand down (`currentRequestIdentity`).
+  - **The leaderboard and the profile editor render a LOCAL PLACEHOLDER identity** for a
+    tokenless device — a persisted random seed (`gameStore.localSeed`, publicId-shaped)
+    that `anonName`/`defaultAvatar` derive the name and mark from. Display-only, never
+    sent anywhere; when the account deploys, the server-assigned id takes over and the
+    derived face changes once (the server picks the id, so no local value can match). The
+    tokenless friends board is the honest empty board without a request.
+  - Invites remain gated on NEITHER side (the accepter is by definition a brand-new
+    visitor clicking a link — the invite funnel, #189); what changed is WHEN: the tap, not
+    the load.
 - **NO TOKEN MEANS NO PRIVATE GAME-STATE FETCH.** A puzzle, a calendar or a language summary
   with no local device token KNOWS the player's server state is empty and must not call
   `/round` or the private history routes merely to learn that. It is an ANSWER, not a loading
   state: the round publishes a ready-and-empty authoritative state and the history publishes a
   ready empty month and collection, so no surface breathes behind a request nobody made. The
-  first state-creating action bootstraps the identity and performs its intended mutation;
-  later mounts, now holding a token, read authoritative state normally. This is #216
+  first deploy button bootstraps the identity and performs its intended mutation; later
+  mounts, now holding a token, read authoritative state normally. This is #216
   implementation work at #214's round boundary and #211's history boundary.
 - **TURNSTILE SITS ON THE REQUEST THAT CREATES STATE** — account/device creation, and round
   creation as it already does (#203). The token is generated and stored immediately before the
   bootstrap, and **bootstrap is IDEMPOTENT by token hash**: if the first answer is lost after
   commit, retrying returns the device/account already created rather than minting another
-  identity. **A brand-new player's first guess therefore spends TWO challenges** — one for the
-  bootstrap, one for the round creation #203 gates — where the issue asked for one. Folding
+  identity. **A brand-new player's first PLAY therefore spends TWO challenges** — one for
+  the bootstrap the tap performs, one for the round creation #203 gates (Word mode's START,
+  or the sentence append that creates the record) — where the issue asked for one. Folding
   them into a single request would mean an ordinary authenticated write could mint an
   identity, which is exactly what the next rule forbids; both tokens are invisible and
   prefetched into a two-slot, single-use queue, so the cost is one extra Siteverify call on
-  the first guess of a new player's life.
+  the first PLAY of a new player's life.
 - **FIRST BOOTSTRAP IS ONE ORIGIN-WIDE CRITICAL SECTION.** `localStorage` is shared by tabs
   but has no compare-and-swap, so re-reading before minting alone still permits two tabs to
   read empty and create two accounts. A Web Lock covers the entire **re-read → mint/persist
@@ -1153,7 +1161,8 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   `unknown_device`, and a successful `/devices` self-revocation response whose post-write list
   no longer contains the calling device. The client
   shows a screen with **RECONNECT** (into #204's link flow) and a secondary **SKIP** that
-  discards the old token, generates a new one and starts fresh. Only on those explicit answers
+  discards the old token and starts fresh (the next deploy button mints the new one).
+  Only on those explicit answers
   — a 5xx or a dropped connection must never sign anyone out, which is why every refusal path
   reads the error CODE rather than the status alone. Every sign-out call carries the epoch of
   the identity that made the request; a late verdict from A must never remove current identity

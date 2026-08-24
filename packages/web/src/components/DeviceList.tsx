@@ -22,7 +22,7 @@ import {
   type DeviceRow,
 } from '../api';
 import {
-  ensureRequestIdentity,
+  currentRequestIdentity,
   identityEpoch,
   markDeviceSignedOut,
 } from '../identity';
@@ -65,7 +65,10 @@ export default function DeviceList({ lang }: { lang: string }) {
   // now stands, so the screen never has to guess what a write did (the /friends house rule).
   const talk = useCallback(
     async (revoke?: DeviceRow): Promise<{ listing: DeviceListing; epoch: string } | null> => {
-      const request = await ensureRequestIdentity();
+      // Never a bootstrap (#216 trigger rework): this list is mounted only when an account
+      // exists (the profile editor gates it), and a device list is nothing an account
+      // should be created FOR.
+      const request = currentRequestIdentity();
       if (!request) return null;
       const { identity, epoch } = request;
       const response = await postDevicesBody(devicesUrl(), {

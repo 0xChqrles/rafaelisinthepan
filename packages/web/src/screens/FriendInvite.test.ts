@@ -1,17 +1,16 @@
-// CONTRACT (#189): one click on an invite link starts ONE conversation, and the click
-// never dead-ends. React may replay the landing's effect (development StrictMode) or
-// remount it, and neither may mint a second request. A SUCCESS is confirmed on screen
-// before continuing (user feedback 2026-08-20 — 'added'); the profile read that DRESSES
-// that confirmation is best-effort AND bounded (a 6s abort), since this landing renders
-// no controls until the confirmation mounts and a stalled read would otherwise leave the
-// clicker with only a reload — which re-fires the POST. A non-cap 4xx is a verdict the
-// player cannot argue with and continues silently; only the backend failing is worth
-// retrying. TWO answers are said out loud as blockers — the failure, and the cap, which
-// is a verdict the player CAN act on and would otherwise leave a full player clicking
-// invitations forever, each one appearing to work.
+// CONTRACT (#189, reworked by the #216 triggers, user-decided 2026-08-24): accepting an
+// invite is a BUTTON, never a page load — the tap deploys the clicker's identity if they
+// have none, records the mutual edge, and never dead-ends. A SUCCESS is confirmed on
+// screen before continuing (user feedback 2026-08-20 — 'added'). A non-cap 4xx is a
+// verdict the player cannot argue with and continues silently; only the backend failing
+// is worth retrying, on the error surface. TWO answers are said out loud as blockers —
+// the failure, and the cap, which is a verdict the player CAN act on and would otherwise
+// leave a full player clicking invitations forever, each one appearing to work.
+// (The old `shareInviteFlight` one-conversation map is GONE with the auto-add: the
+// effect-replay hazard it guarded no longer exists once the POST rides a click.)
 
 import { describe, expect, it, vi } from 'vitest';
-import { sendInvite, shareInviteFlight } from './FriendInvite';
+import { sendInvite } from './FriendInvite';
 
 const postFriendsBody = vi.hoisted(() => vi.fn());
 const identityState = vi.hoisted(() => ({ present: true, revision: 0 }));
@@ -46,64 +45,6 @@ vi.mock('../identity', () => ({
 }));
 
 const INVITER = 'zwjxqk37xfkvtxqu';
-
-describe('shareInviteFlight — one conversation per invite', () => {
-  it('shares pending work across mounts and releases it after settlement', async () => {
-    const resolves: Array<(value: 'settled' | 'failed') => void> = [];
-    const start = vi.fn(
-      () =>
-        new Promise<'settled' | 'failed'>((resolve) => {
-          resolves.push(resolve);
-        }),
-    );
-
-    const first = shareInviteFlight(INVITER, start);
-    const replay = shareInviteFlight(INVITER, start);
-    expect(replay).toBe(first);
-    expect(start).toHaveBeenCalledTimes(1);
-
-    resolves[0]('settled');
-    await first;
-
-    // Settled work is dropped, so RETRY is a fresh attempt rather than the old answer.
-    const retry = shareInviteFlight(INVITER, start);
-    expect(retry).not.toBe(first);
-    expect(start).toHaveBeenCalledTimes(2);
-    resolves[1]('settled');
-    await retry;
-  });
-
-  it('turns a thrown request into the retryable failure', async () => {
-    const start = vi
-      .fn<() => Promise<'settled' | 'failed'>>()
-      .mockRejectedValueOnce(new Error('offline'));
-    await expect(shareInviteFlight('qosuq3j3qtvdak2i', start)).resolves.toBe('failed');
-  });
-
-  it('shares the act that bootstraps a replacement identity with its remount', async () => {
-    let resolve!: (value: 'settled') => void;
-    const start = vi.fn(
-      () =>
-        new Promise<'settled'>((done) => {
-          resolve = done;
-        }),
-    );
-    identityState.present = false;
-    identityState.revision = 1; // A has left; this landing is creating B.
-    const beforeBootstrap = shareInviteFlight(INVITER, start);
-
-    identityState.present = true;
-    identityState.revision = 2; // B arrived and App remounted the landing.
-    const afterBootstrap = shareInviteFlight(INVITER, start);
-    expect(afterBootstrap).toBe(beforeBootstrap);
-    expect(start).toHaveBeenCalledTimes(1);
-
-    resolve('settled');
-    await beforeBootstrap;
-    identityState.present = true;
-    identityState.revision = 0;
-  });
-});
 
 describe('sendInvite — the click carries the CLICKER key and the SENDER id', () => {
   const answer = async (status: number) => {

@@ -699,6 +699,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       onboarded: false,
       boardTab: 'friends',
       sentenceRulesSeen: false,
+      localSeed: null,
     });
   });
 
@@ -733,6 +734,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       onboarded: true,
       boardTab: 'friends',
       sentenceRulesSeen: false,
+      localSeed: null,
     });
     expect('layout' in out).toBe(false);
     expect('routeSeen' in out).toBe(false);
@@ -752,6 +754,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       onboarded: true,
       boardTab: 'friends',
       sentenceRulesSeen: false,
+      localSeed: null,
     });
   });
 
@@ -777,6 +780,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       onboarded: true,
       boardTab: 'friends',
       sentenceRulesSeen: false,
+      localSeed: null,
     });
   });
 

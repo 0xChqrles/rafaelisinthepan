@@ -13,11 +13,14 @@ import {
 import { parseProfile, postProfileBody, profileUrl } from '../api';
 import {
   deviceIdentity,
-  ensureRequestIdentity,
+  ensureDeviceIdentity,
   identityEpoch,
   identityEpochOf,
   markDeviceSignedOut,
+  useDeviceIdentity,
 } from '../identity';
+import { prefetchTurnstileTokens } from '../turnstile';
+import ErrorSheet from '../components/ErrorSheet';
 import { navigate } from '../routing';
 import { pathForBoard, resolveHomeLang } from '../langs';
 import { t } from '../i18n';
@@ -84,7 +87,9 @@ const nameForStore = (edited: string, publicId: string) =>
 // the bottom) and whether the server REFUSED the write (the line under the button).
 // The label itself always reads SAVE — the button animates, it never renames itself.
 type SavePhase = 'idle' | 'saving' | 'restoring';
-type SaveRefusal = 'name_rejected' | 'avatar_rejected' | 'error' | null;
+// `account` is the DEPLOY failing (#216 rework: a tokenless SAVE creates the account
+// first); nothing was created and nothing was saved, and TRY AGAIN re-runs the whole tap.
+type SaveRefusal = 'name_rejected' | 'avatar_rejected' | 'account' | 'error' | null;
 
 // The loader holds at least this long even on an instant answer — a flash of dots
 // reads as a glitch — and the restore beat covers the label's roll-back animation.
@@ -102,12 +107,16 @@ export default function Profile() {
   // No puzzle to take a language from: same resolution as the `/` redirect.
   const lang = resolveHomeLang(lastLang, navigator.language);
 
-  // This device's token, resolved once by the load effect below (#216) — the editor is
-  // gated on that read, so every path that needs it runs only after it is set.
-  const [token, setToken] = useState('');
-  // Resolved once by the load effect; the editor is gated on that read, so every path
-  // that needs it (the save body's name rule) runs only after it is set.
-  const [publicId, setPublicId] = useState('');
+  // OPENING THE EDITOR DEPLOYS NOTHING (#216 trigger rework, user-decided 2026-08-24):
+  // the identity is whatever the device holds, and SAVE is the deploy button. Reactive so
+  // the devices list below appears the moment an account exists.
+  const identity = useDeviceIdentity();
+  const ensureLocalSeed = useGameStore((s) => s.ensureLocalSeed);
+  // The id the editor's DISPLAY baseline derives from — the account when one exists, the
+  // persisted local seed otherwise (the leaderboard strip's own placeholder). It is what
+  // the save body's name rule compares against: a name still equal to the pseudonym THE
+  // PLAYER WAS SHOWN was never typed, whichever id derived it.
+  const [assignedFrom, setAssignedFrom] = useState('');
   const [name, setName] = useState('');
   const [palette, setPalette] = useState(0);
   const [cells, setCells] = useState<number[]>(() => new Array<number>(AVATAR_CELLS).fill(0));
@@ -127,24 +136,37 @@ export default function Profile() {
   // (see LoadState). A 404 is the answer "never customized" and lands READY on the
   // blank start; anything else — transport, 5xx, a malformed body — is FAILED, which
   // offers RETRY rather than a blank editor that could save over the real profile.
+  //
+  // A TOKENLESS editor opens WITHOUT any request (#216 trigger rework): the placeholder
+  // identity the local seed derives IS the answer — the same face the leaderboard strip
+  // wears — and those values are the baseline, so SAVE stays dark until something is
+  // actually changed. Deliberately keyed on [attempt] alone: an identity arriving under
+  // an OPEN editor (a deploy elsewhere, another tab) must not reload the fields out from
+  // under an edit in progress — the save path resolves the identity live.
   useEffect(() => {
     let cancelled = false;
     let epoch: string | null = null;
     setLoad('loading');
     (async () => {
       try {
-        // The identity EDITOR cannot show a player their identity without one, so opening
-        // it mints one (#216) — the same act as "saving a profile" in the trigger list, one
-        // beat earlier. The wired entry point is the leaderboard, which has already
-        // bootstrapped; only a deep link ever mints here.
-        const request = await ensureRequestIdentity();
-        if (!request) return;
-        const { identity, epoch: requestEpoch } = request;
-        epoch = requestEpoch;
-        if (cancelled || identityEpoch() !== epoch) return;
-        setToken(identity.token);
-        const publicId = identity.accountId;
-        setPublicId(publicId);
+        const held = deviceIdentity();
+        if (held === null) {
+          const seed = ensureLocalSeed();
+          if (cancelled) return;
+          const name = nameForEditor('', seed);
+          const generated = defaultAvatar(seed);
+          const decoded = decodeAvatar(generated);
+          setAssignedFrom(seed);
+          setName(name);
+          setPalette(decoded.palette);
+          setCells(decoded.cells);
+          setBaseline({ name, avatar: generated });
+          setLoad('ready');
+          return;
+        }
+        epoch = identityEpochOf(held);
+        const publicId = held.accountId;
+        setAssignedFrom(publicId);
         const response = await fetch(profileUrl(publicId));
         if (cancelled || identityEpoch() !== epoch) return;
         if (response.ok) {
@@ -187,7 +209,11 @@ export default function Profile() {
     return () => {
       cancelled = true;
     };
-  }, [attempt]);
+  }, [attempt, ensureLocalSeed]);
+  // The one challenge a tokenless SAVE will spend on its deploy, in hand before the tap.
+  useEffect(() => {
+    if (identity === null) prefetchTurnstileTokens(1);
+  }, [identity]);
 
   // ---- the name field. Sanitizing a CONTROLLED input's value makes React reassign
   // `node.value`, and assigning `.value` collapses the text cursor to the END of the
@@ -278,12 +304,6 @@ export default function Profile() {
   const dirty = name !== baseline.name || encoded !== baseline.avatar;
 
   const onSave = useCallback(async () => {
-    // The editor's token is component state. A cross-tab account swap can happen between
-    // the click and this callback; refuse to send that stale body, and capture the epoch
-    // from the identity whose token is actually used.
-    const current = deviceIdentity();
-    if (!current || current.token !== token || current.accountId !== publicId) return;
-    const epoch = identityEpochOf(current);
     // The last door the rule stands in: a composition still OPEN when SAVE is tapped
     // would leave `name` holding its raw mirror, so it lands here too. A no-op on every
     // settled value, and the baseline below re-reads it, so a save can never leave the
@@ -293,53 +313,78 @@ export default function Profile() {
     setPhase('saving');
     setRefused(null);
     const started = Date.now();
-    // The body is STORAGE space: an untouched assigned pseudonym stores as the empty
-    // name every surface derives it from (nameForStore's WRITE half). The baseline
-    // below re-reads the DISPLAY value, so a save can never leave the editor differing
-    // from what it just stored.
-    const body = { token, name: nameForStore(clean, publicId), avatar: encoded };
     // The outcome is decided while the dots run; the phases below only pace how the
-    // button tells it.
+    // button tells it — then the error surface says it (#216 rework), where a refusal
+    // used to be an inline line.
     let outcome: SaveRefusal = null;
-    try {
-      const response = await postProfileBody(profileUrl(), body);
-      if (identityEpoch() !== epoch) return;
-      if (response.ok) {
-        setBaseline({ name: clean, avatar: body.avatar });
-      } else {
-        const refusal = (await response.json().catch(() => null)) as { error?: string } | null;
-        if (identityEpoch() !== epoch) return;
-        // A device signed out from elsewhere raises the screen that explains it; the save
-        // still reports as failed, because it was.
-        if (response.status === 401 && refusal?.error === 'unknown_device') {
-          markDeviceSignedOut(epoch);
-        }
-        outcome =
-          refusal?.error === 'name_rejected' || refusal?.error === 'avatar_rejected'
-            ? refusal.error
-            : 'error';
+    let epoch: string | null = null;
+    // SAVING IS A DEPLOY BUTTON (#216 trigger rework, user-decided 2026-08-24): a
+    // tokenless editor creates the account on this very tap, then saves into it — one
+    // tap, the button's own dots for both legs. A deploy that fails saves nothing and
+    // created nothing; TRY AGAIN re-runs the whole tap.
+    let current = deviceIdentity();
+    if (current === null) {
+      try {
+        current = await ensureDeviceIdentity();
+      } catch {
+        current = null;
+        outcome = 'account';
       }
-    } catch {
-      if (identityEpoch() !== epoch) return;
-      outcome = 'error';
+    }
+    if (current !== null) {
+      epoch = identityEpochOf(current);
+      // The body is STORAGE space: an untouched assigned pseudonym stores as the empty
+      // name every surface derives it from (nameForStore's WRITE half) — compared against
+      // the pseudonym the player was actually SHOWN (`assignedFrom`: the account's, or the
+      // local seed's on a tokenless open). The baseline below re-reads the DISPLAY value,
+      // so a save can never leave the editor differing from what it just stored.
+      const body = { token: current.token, name: nameForStore(clean, assignedFrom), avatar: encoded };
+      try {
+        const response = await postProfileBody(profileUrl(), body);
+        if (identityEpoch() !== epoch) return;
+        if (response.ok) {
+          setBaseline({ name: clean, avatar: body.avatar });
+        } else {
+          const refusal = (await response.json().catch(() => null)) as { error?: string } | null;
+          if (identityEpoch() !== epoch) return;
+          // A device signed out from elsewhere raises the screen that explains it; the save
+          // still reports as failed, because it was.
+          if (response.status === 401 && refusal?.error === 'unknown_device') {
+            markDeviceSignedOut(epoch);
+          }
+          outcome =
+            refusal?.error === 'name_rejected' || refusal?.error === 'avatar_rejected'
+              ? refusal.error
+              : 'error';
+        }
+      } catch {
+        if (identityEpoch() !== epoch) return;
+        outcome = 'error';
+      }
     }
     await sleep(Math.max(0, SAVE_DOTS_MIN_MS - (Date.now() - started)));
-    if (identityEpoch() !== epoch) return;
+    if (epoch !== null && identityEpoch() !== epoch) return;
     setRefused(outcome);
     setPhase('restoring');
     await sleep(SAVE_RESTORE_MS);
-    if (identityEpoch() !== epoch) return;
-    setPhase((current) => (current === 'restoring' ? 'idle' : current));
-  }, [token, publicId, name, encoded]);
+    if (epoch !== null && identityEpoch() !== epoch) return;
+    setPhase((held) => (held === 'restoring' ? 'idle' : held));
+  }, [name, encoded, assignedFrom]);
 
+  // What the error surface says for each outcome (#216 rework, replacing the inline
+  // status line): the moderation refusals explain themselves and offer no retry — asking
+  // again with the same value cannot help — while a transport failure and a failed deploy
+  // both carry TRY AGAIN, which re-runs the whole single-tap save.
   const saveError =
     refused === 'name_rejected'
-      ? t(lang, 'profileNameRejected')
+      ? { title: t(lang, 'profileNameRejected'), note: t(lang, 'profileNameRejectedNote') }
       : refused === 'avatar_rejected'
-        ? t(lang, 'profileAvatarRejected')
-        : refused === 'error'
-          ? t(lang, 'profileSaveFailed')
-          : null;
+        ? { title: t(lang, 'profileAvatarRejected'), note: t(lang, 'profileAvatarRejectedNote') }
+        : refused === 'account'
+          ? { title: t(lang, 'failedAccount'), note: t(lang, 'failedAccountNote'), retry: true }
+          : refused === 'error'
+            ? { title: t(lang, 'profileSaveFailed'), note: t(lang, 'failedSaveNote'), retry: true }
+            : null;
 
   return (
     <>
@@ -500,18 +545,23 @@ export default function Profile() {
                 </span>
               )}
             </button>
-            {/* The save-refusal line — mounted only when a save was refused/failed, so
-                an idle editor carries no empty slot. */}
+            {/* The save's failure, on the app's error surface (#216 rework). */}
             {saveError && (
-              <p className="profile-status" role="status">
-                {saveError}
-              </p>
+              <ErrorSheet
+                lang={lang}
+                title={saveError.title}
+                note={saveError.note}
+                onRetry={saveError.retry ? () => void onSave() : undefined}
+                onClose={() => setRefused(null)}
+              />
             )}
           </div>
           {/* The account's devices, and the way to sign one out (#216). It belongs on this
-              screen because this screen IS the identity screen — and because an account with
-              no devices list leaves the whole point of per-device tokens unreachable. */}
-          <DeviceList lang={lang} />
+              screen because this screen IS the identity screen — and only when an account
+              EXISTS: a tokenless editor has no device rows to list, and asking would be a
+              private read on a visit that never acted (the list appears the moment SAVE's
+              deploy lands, since the identity above is reactive). */}
+          {identity !== null && <DeviceList lang={lang} />}
         </div>
       )}
     </>

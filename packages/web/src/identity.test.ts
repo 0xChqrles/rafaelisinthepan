@@ -59,13 +59,29 @@ function fakeStorage(initial: Record<string, string> = {}): Storage {
 let storage: Storage;
 
 // A window stub that is actually a window: this module listens for `storage` events, since
-// localStorage is shared by every TAB of the origin.
+// localStorage is shared by every TAB of the origin. The listeners are CAPTURED so a test
+// can deliver another tab's write through the REAL channel (the P1 finding: poking
+// `syncFromStorage` alone never proves the listener is wired).
+const storageListeners: Array<(event: StorageEvent) => void> = [];
 function fakeWindow(store: Storage): Window & typeof globalThis {
   return {
     localStorage: store,
-    addEventListener: () => {},
-    removeEventListener: () => {},
+    addEventListener: (type: string, listener: (event: StorageEvent) => void) => {
+      if (type === 'storage') storageListeners.push(listener);
+    },
+    removeEventListener: (type: string, listener: (event: StorageEvent) => void) => {
+      const index = storageListeners.indexOf(listener);
+      if (index >= 0) storageListeners.splice(index, 1);
+    },
   } as unknown as Window & typeof globalThis;
+}
+
+// Another tab wrote the shared key: the browser delivers a storage event to every OTHER
+// tab — the one signal that crosses them.
+function otherTabWrote(): void {
+  for (const listener of [...storageListeners]) {
+    listener({ key: 'whippin-device' } as StorageEvent);
+  }
 }
 
 function answer(accountId = ACCOUNT, deviceId = DEVICE): Response {
@@ -82,6 +98,7 @@ function stored(): Record<string, unknown> | null {
 }
 
 beforeEach(() => {
+  storageListeners.length = 0;
   storage = fakeStorage();
   vi.stubGlobal('window', fakeWindow(storage));
   vi.stubGlobal('navigator', { locks: { request: lockRequest } });
@@ -314,8 +331,11 @@ describe('being signed out (#216)', () => {
 
   it('reaches a SIBLING TAB as the signed-out screen, never as ordinary identity loss', async () => {
     // This tab holds the identity; another tab replaces the shared entry with the
-    // tombstone. The storage sync must raise the screen here too — a bare removal used to
-    // read as identity loss, and this tab's next act then minted a fresh account.
+    // tombstone. Delivered through the REAL storage-event listener `loadDeviceIdentity`
+    // installed — not by poking the sync directly — so the test proves the wiring (the P1
+    // finding). A bare removal used to read as identity loss, and this tab's next act then
+    // minted a fresh account.
+    loadDeviceIdentity(); // installs this tab's storage listener
     const identity = await ensureDeviceIdentity();
     storage.setItem(
       'whippin-device',
@@ -325,11 +345,24 @@ describe('being signed out (#216)', () => {
         deviceId: identity.deviceId,
       }),
     );
-    loadDeviceIdentity(); // drives syncFromStorage the way the storage event does
+    otherTabWrote();
     expect(deviceIdentity()).toBeNull();
     expect(useIdentityStore.getState().signedOut).toBe(true);
     await expect(ensureDeviceIdentity()).rejects.toThrow();
     expect(post).toHaveBeenCalledTimes(1);
+
+    // And a plain REMOVAL (another tab starting fresh) through the same channel stays
+    // ordinary identity loss — no screen.
+    resetDeviceIdentity();
+    vi.stubGlobal('window', fakeWindow(storage));
+    storage.clear();
+    loadDeviceIdentity();
+    post.mockResolvedValue(answer());
+    await ensureDeviceIdentity();
+    storage.removeItem('whippin-device');
+    otherTabWrote();
+    expect(deviceIdentity()).toBeNull();
+    expect(useIdentityStore.getState().signedOut).toBe(false);
   });
 
   it('a tombstone naming ANOTHER identity does not sign this one out', async () => {

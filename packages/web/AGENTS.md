@@ -811,8 +811,23 @@ it to the local store — see `packages/backend/AGENTS.md`).
   block: the copyable-key/paste-to-link UI was removed with `adoptPlayerSecret` (the
   backup affordance's future surface is an open decision — root `AGENTS.md`). Saving
   POSTs `{token, name, avatar}` via the OAC-hashed body (`api.postProfileBody`);
-  server refusals surface as terse statuses (`NAME NOT ALLOWED` / `AVATAR NOT
-  ALLOWED` / `SAVE FAILED`). **The editor is GATED on the initial read** (the game
+  server refusals surface on the app's `ErrorSheet` (#216 trigger rework — title +
+  explanatory note; the moderation refusals offer no retry, a transport failure and a
+  failed deploy carry TRY AGAIN, which re-runs the whole single-tap save).
+  **OPENING THE EDITOR DEPLOYS NOTHING and SAVING deploys (user-decided 2026-08-24):**
+  a tokenless editor opens WITHOUT any request, prefilled from the LOCAL placeholder
+  identity (the persisted `gameStore.localSeed`, the leaderboard strip's own face) with
+  those values as the baseline — so SAVE stays dark until something actually changes —
+  and the SAVE tap bootstraps the account first, then saves into it: one tap, the
+  button's own dots for both legs, a prefetched challenge so the deploy is fast. The
+  name rule's WRITE half compares against the pseudonym the player was actually SHOWN
+  (`assignedFrom`: the account's, or the seed's on a tokenless open). The load effect is
+  deliberately keyed on [attempt] alone: an identity arriving under an OPEN editor (a
+  deploy elsewhere, another tab) must not reload the fields out from under an edit in
+  progress — the save path resolves the identity live. The devices list renders only
+  when an account EXISTS (a tokenless device has no rows to list) and appears the
+  moment SAVE's deploy lands, since the identity is read reactively.
+  **The editor is GATED on the initial read** (the game
   route's own loading / error / content shape): an editable blank shown while the GET
   is in flight would be edited into and then overwritten by the response, and a FAILED
   read leaves the stored profile unknown — an editor started from that guess would save
@@ -875,14 +890,19 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `additionalBehaviors`, and `changeOrigin`/`xfwd` are pinned OFF (Vite's string shorthand
   does not leave them off) so the backend, which has no `siteOrigin` locally, reads the
   BROWSER's Host and bounces to the app rather than to itself.
-  The landing POSTs `{token, add}` with this device's token
-  (`identity.ts`, generated on this first need, which is what lands the edge before a
-  brand-new visitor's first game) and **a SUCCESSFUL add is CONFIRMED on screen**
-  (user-decided 2026-08-20, superseding the silent continue-into-the-game beat — the
-  clicker was left unsure anything had happened): the INVITER's avatar and name over
-  `FRIEND ADDED` (`.invite-done`), dressed by a best-effort profile read that falls back
-  to the assigned pseudonym + mark (`anonName`/`defaultAvatar`) — never to an error,
-  since the edge is already landed — with PLAY handing the destination to App's own
+  **ACCEPTING IS A BUTTON, for everyone** (#216 trigger rework, user-decided 2026-08-24,
+  superseding the auto-add on page load): the landing shows the INVITER's mark and name
+  (a best-effort bounded profile read, the assigned identity as fallback) over ONE primary
+  ADD FRIEND button; the tap POSTs `{token, add}` with this device's token — minted by
+  that same tap for a brand-new visitor, which is what lands the edge before their first
+  game — with a loading wave in the button and the `ErrorSheet` (TRY AGAIN) for a
+  transport/5xx failure. The `shareInviteFlight` one-conversation map went with the
+  auto-add: the effect-replay hazard it guarded no longer exists once the POST rides a
+  click. **A SUCCESSFUL add is still CONFIRMED on screen**
+  (user-decided 2026-08-20 — the
+  clicker was left unsure anything had happened): the same inviter identity over
+  `FRIEND ADDED` (`.invite-done`),
+  with PLAY handing the destination to App's own
   home redirect via
   `navigate('/', { replace: true })`, replacing this landing in history so a back tap
   leaves the game instead of re-firing the invite.
@@ -946,17 +966,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the leaderboard mints an account" — the root AGENTS trigger list moved with it):** a
   navigation must not create server state, so a tokenless visitor's FRIENDS board is the
   KNOWN-EMPTY answer (the ghost + INVITE, no request — the #216 no-private-fetch rule),
-  the identity strip settles empty, the `/friends` decoration read is skipped, and the
-  INVITE tap is the screen's account-creating act — **in TWO EXPLICIT PHASES (PR-219
-  follow-up review)**: the tokenless tap ONLY bootstraps (LoadingWave in the button, the
-  Word gate's PLAY shape; a failure says `failedInviteLink` with the button itself as the
-  retry) and then ASKS for a fresh tap (`inviteReadyTap`/`Click`, the input device's own
-  verb), because Turnstile + /devices can outlive the browser's transient user activation
-  and past it BOTH deliveries reject — navigator.share by spec, the async clipboard on
-  WebKit — so a share fired after the mint could create the account and deliver nothing,
-  silently. The second tap shares inside its own activation; `useShare.share` now REPORTS
-  delivery (a dismissed sheet counts as delivered), and a share where neither channel
-  worked says `failedShare` instead of being swallowed. The TOKENLESS answers are derived
+  the identity strip shows the LOCAL placeholder (below), the `/friends` decoration read
+  is skipped, and the INVITE tap is the screen's account-creating act — **and it is ONE
+  TAP (user-decided 2026-08-24, superseding the same day's two-phase mint-then-ask: the
+  deploy buttons are single taps)**: a tokenless tap bootstraps (LoadingWave in the
+  button, the Word gate's PLAY shape; a failed deploy raises the `ErrorSheet` with
+  `failedAccount` + TRY AGAIN, nothing created) and then delivers in the same gesture.
+  The physics the two-phase design guarded against still exist — Turnstile + /devices can
+  outlive the transient user activation, and past it navigator.share rejects by spec and
+  the async clipboard does on WebKit — so `useShare.share` REPORTS delivery (a dismissed
+  sheet counts as delivered), and a share neither channel could make raises the
+  `ErrorSheet` (`failedShare`/`failedShareNote`) instead of being swallowed: its TRY
+  AGAIN shares inside its own fresh activation, identity now in hand, which is exactly
+  the delivery the first tap could not make. Desktop and an already-deployed account
+  never hit that path. The TOKENLESS answers are derived
   SYNCHRONOUSLY (state initializers + the render-time scope reset, never an effect), so a
   direct tokenless visit paints no skeleton and no LOADING flash; and every cache on this
   screen — both tabs' boards, the friend marks, the strip — is IDENTITY-SCOPED, dropped
@@ -1030,10 +1053,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   read that FAILS still SETTLES, on the assigned identity — it is what a board row with a
   failed profile read already shows, and a skeleton that never resolves is the one outcome
   worse than the fallback; a 404 is not a failure at all but the answer "never
-  customized", whose display IS that identity. A device with NO identity settles the strip
-  empty and draws nothing — there is no identity to show, and nothing here mints one. The
-  INVITE device-card button on the bottom edge is always live: with an identity it shares
-  at once; without one the tap mints first (above), never waiting on the profile.
+  customized", whose display IS that identity. **A device with NO account shows the LOCAL
+  placeholder at once** (#216 trigger rework, user-decided 2026-08-24): the persisted seed
+  (`gameStore.localSeed`) derives an assigned name and mark exactly as a board row would —
+  an ANSWER, not a pending read, so no skeleton — and nothing on this screen mints an
+  account any more (opening the leaderboard is no longer a trigger; the tokenless friends
+  board is the honest empty one without a request, and the strip's profile read re-runs
+  when an account arrives). The INVITE device-card button on the bottom edge is always
+  live: with an account it shares at once; without one the tap IS the deploy button — it
+  bootstraps (loading wave in the button, `ErrorSheet` on failure, a prefetched challenge
+  so the tap is fast) and then shares. The single tap accepts one degradation:
+  `navigator.share` wants a fresh gesture, so a browser refusing the native sheet after
+  the bootstrap round trip falls back to useShare's clipboard path (COPIED).
   Both are the #188/#189 wiring; both work before ever playing — and the invite
   share is the ONE `useShare` caller that passes `tracked: false`, because the pinned
   `share` analytics event means "a RESULT left the app" (the three-event invariant) and
@@ -2408,7 +2439,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `.score-legend` CSS — and the N-adaptive copy line with it (`histogramCopy`,
   `beatenCount`, `scoreFirst`/`scoreOther`/`scoreOthers`/`scoreBeat`): `TOP x%` and "you
   beat x%" are the same claim inverted, and the rank says it once.
-- **The sentence game's one-time PLAY gate (user-decided 2026-08-11):** each mode explains
+- **The sentence game's PLAY gate (user-decided 2026-08-11; DEPLOY duty added by the #216
+  trigger rework, user-decided 2026-08-24):** each mode explains
   ITS OWN rules before the first round, once — the tutorial teaches only the shared core
   concepts (semantic distance, word rarity). Word mode already had this by construction:
   its GATE is mandatory because PLAY starts the clock (the button wears the sentence
@@ -2434,10 +2466,22 @@ it to the local store — see `packages/backend/AGENTS.md`).
   input device's own verb — the streak hint's coarse-pointer test): the goal and the
   history tap. The famous-AI line was CUT on the same user review (and the standings
   lineup it referred to was removed outright on 2026-08-12 with the benchmark display).
-  The gate is DERIVED, not state: `!sentenceRulesSeen && !solved &&
-  guessCount === 0`, so a round already in progress (or solved, or rehydrated mid-play)
-  never shows it, and an unset flag re-offers it until PLAY is actually tapped. No
+  The gate is DERIVED, not state:
+  `identity === null || (!sentenceRulesSeen && !finished && guessCount === 0)`, so a round
+  already in progress (or solved, or rehydrated mid-play) never shows it for the rules
+  alone, and an unset flag re-offers it until PLAY is actually tapped. No
   analytics event — the three-event invariant stands.
+  **Since the #216 trigger rework the gate is also the sentence game's DEPLOY BUTTON**: a
+  device with NO account shows the FULL rules gate on every sentence day (archive days and
+  post-sign-out included), whatever the flag says, because its PLAY is the only trigger on
+  the screen — the tap bootstraps the account (loading wave in the button, `ErrorSheet`
+  with TRY AGAIN on failure, nothing created on a failure) and then marks the rules seen.
+  An account-holding player who has read the rules never sees the gate again; the flag
+  still keeps them from seeing the rules twice when their account arrived through another
+  door (Word PLAY, an invite). The round engine's append NEVER mints an identity any more
+  (`currentRequestIdentity`): a tokenless outbox — the pending-bootstrap recovery — waits
+  behind the gate, and the deploy's identity listener kicks every conversation loose
+  (`kickRoundSync`).
 - **Onboarding tutorial (#51, redesigned 2026-07-06):** the tutorial **never starts
   without an action**. A first visit (persisted `onboarded` unset) lands on an
   **invitation** (`tutorial/Invite.tsx`, standing in for the loading screen: "New to

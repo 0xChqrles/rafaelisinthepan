@@ -52,17 +52,29 @@ vi.mock('../turnstile', () => ({ turnstileToken: vi.fn() }));
 // which is what every case below is about.
 const signedOut = vi.hoisted(() => vi.fn());
 const identity = vi.hoisted(() => ({
+  present: true,
   value: { token: 'f'.repeat(64), accountId: 'a'.repeat(16), deviceId: 'd'.repeat(16) },
   beforeEnsure: null as (() => void) | null,
 }));
 vi.mock('../identity', () => ({
-  deviceIdentity: () => identity.value,
+  deviceIdentity: () => (identity.present ? identity.value : null),
+  // The START's own resolver — the one word path that may MINT (#216 rework: PLAY is a
+  // deploy button), which the mint here mimics by flipping `present` on.
   ensureRequestIdentity: async (expected: string | null) => {
     identity.beforeEnsure?.();
+    identity.present = true;
     const epoch = `${identity.value.accountId}:${identity.value.deviceId}`;
     return expected !== null && expected !== epoch ? null : { identity: identity.value, epoch };
   },
-  identityEpoch: () => `${identity.value.accountId}:${identity.value.deviceId}`,
+  // The SUBMISSION's resolver — never mints (#216 rework).
+  currentRequestIdentity: (expected: string | null = null) => {
+    if (!identity.present) return null;
+    const epoch = `${identity.value.accountId}:${identity.value.deviceId}`;
+    if (expected !== null && expected !== epoch) return null;
+    return { identity: identity.value, epoch };
+  },
+  identityEpoch: () =>
+    identity.present ? `${identity.value.accountId}:${identity.value.deviceId}` : null,
   identityEpochOf: (value: { accountId: string; deviceId: string }) =>
     `${value.accountId}:${value.deviceId}`,
   markDeviceSignedOut: signedOut,
@@ -169,6 +181,7 @@ beforeEach(() => {
     deviceId: 'd'.repeat(16),
   };
   identity.beforeEnsure = null;
+  identity.present = true;
   useGameStore.setState(
     { outbox: {}, wordRounds: {}, roundLoads: {}, activeWordKey: null },
     false,
@@ -529,27 +542,23 @@ describe('the mount READ', () => {
 });
 
 describe('the end-of-run SUBMISSION', () => {
-  it('does not submit A\'s run log as B when identity changes after the read', async () => {
+  it('a TOKENLESS submission stands down — only the deploy buttons mint (#216 rework)', async () => {
+    // A run this identity cannot own: the persisted log exists but the device holds no
+    // account (the pending-bootstrap edge). The submission never mints one — the mount
+    // read publishes ready-and-empty without a request, and the write stands down, so
+    // nothing here ever reaches the server. (The old mid-ensure identity-swap hazard is
+    // structurally gone: the submission resolves its identity synchronously now.)
     seedRound({
       startedAt: T0 - 300_000,
       deadline: T0 - 100_000,
       tried: ['mer'],
       claimed: 1,
     });
-    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 300_000 }));
-    identity.beforeEnsure = () => {
-      identity.value = {
-        token: '8'.repeat(64),
-        accountId: 'b'.repeat(16),
-        deviceId: 'e'.repeat(16),
-      };
-    };
-
+    identity.present = false;
     beginWordRoundSync(ctx(), true);
     await settle();
 
-    expect(post).toHaveBeenCalledTimes(1);
-    expect(bodyOf(0).guesses).toBeUndefined();
+    expect(post).not.toHaveBeenCalled();
     expect(round().tried).toEqual(['mer']);
   });
 

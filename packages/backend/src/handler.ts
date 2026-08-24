@@ -140,7 +140,7 @@ export function createHandler(deps: HandlerDeps) {
     // The leaderboard reads (#190): the same live shape once more — GET is the global
     // top 50, POST the authenticated friends board.
     const isBoardRoute = normalizedPath === '/board';
-    // The per-round guess log (#201) — POST-only like /friends (the secret is the auth).
+    // The per-round guess log (#201) — POST-only like /friends (the device token is the auth).
     const isRoundRoute = normalizedPath === '/round';
     // The private player history (#211): the archive calendar's month, the chooser's
     // status strip and the streak's solved-day list. POST-only for the same reason.

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import {
   anonName,
   dateForDayNumber,
@@ -25,12 +25,15 @@ import TopBar from '../components/TopBar';
 import useShare from '../hooks/useShare';
 import useToday from '../hooks/useToday';
 import {
+  deviceIdentity,
   ensureRequestIdentity,
   identityEpoch,
   identityEpochOf,
   markDeviceSignedOut,
   useDeviceIdentity,
 } from '../identity';
+import { prefetchTurnstileTokens } from '../turnstile';
+import ErrorSheet from '../components/ErrorSheet';
 import { useGameStore, type BoardTab } from '../state/gameStore';
 import {
   pathForBoard,
@@ -62,12 +65,15 @@ import CloseIcon from '../assets/icons/close.svg?react';
 // the leaderboard mints an account").** A navigation must not create server state: a
 // signed-out or brand-new visitor browsing here would otherwise silently spawn an
 // account. Tokenless, every private face is the KNOWN-EMPTY answer (#216's rule): the
-// friends board is the ghost + INVITE without a request, the identity strip draws
-// nothing (there is no identity to show), and the global read stays genuinely anonymous.
-// The deliberate act that mints is the INVITE tap — the one thing on this screen that
-// cannot exist without an account — and every identity-reading effect keys on the live
-// identity, so a mint (or a cross-tab adoption) populates the strip and the boards
-// without a remount.
+// friends board is the ghost + INVITE without a request, the identity strip shows the
+// LOCAL PLACEHOLDER — the persisted seed's assigned name and mark (`gameStore.localSeed`,
+// user-decided 2026-08-24: the player still sees an avatar and a username, generated
+// locally) — and the global read stays genuinely anonymous. The deliberate act that
+// mints is the INVITE tap — the one thing on this screen that cannot exist without an
+// account — and every identity-reading effect keys on the live identity, so a mint (or
+// a cross-tab adoption) populates the strip and the boards without a remount. When the
+// account deploys, the server-assigned id replaces the seed and the derived face
+// changes once — unavoidable, since the server picks the id.
 type Tab = BoardTab;
 
 // What the strip shows for the player. The publicId is derived locally and is available
@@ -106,6 +112,14 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
   // LOADING wave for requests nobody makes.
   const identity = useDeviceIdentity();
   const epoch = identity ? identityEpochOf(identity) : null;
+
+  // The PRE-ACCOUNT placeholder seed (user-decided 2026-08-24): persisted so the
+  // placeholder face is stable across visits and tabs; display-only, never sent anywhere.
+  const localSeed = useGameStore((s) => s.localSeed);
+  const ensureLocalSeed = useGameStore((s) => s.ensureLocalSeed);
+  useEffect(() => {
+    if (localSeed === null) ensureLocalSeed();
+  }, [localSeed, ensureLocalSeed]);
 
   const [me, setMe] = useState<Me | null>(null);
   // The id alone, available as soon as the identity is: it is what the own-row marker
@@ -162,6 +176,11 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
   // invariant); an invite link is not a result, so its delivery is untracked rather
   // than quietly redefining the metric.
   const { share, copied } = useShare({ tracked: false });
+  // The one challenge a tokenless INVITE tap will spend on its deploy, in hand before the
+  // tap — the less the mint waits on, the more often the same gesture can still deliver.
+  useEffect(() => {
+    if (identity === null) prefetchTurnstileTokens(1);
+  }, [identity]);
 
   // The identity strip: ONE read settles what it says — for the identity the device
   // already holds. With none there is nothing to resolve and nothing to show: settled
@@ -299,62 +318,63 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
   const entry = boards[tab];
   const board = entry === 'failed' ? undefined : entry;
 
-  // The INVITE tap's own state: its bootstrap in flight, and what the line above the
-  // button says. LOUD on every outcome that is not the share sheet itself, the Word
-  // gate's rule: the tap exists to deliver a link, and saying nothing leaves the player
-  // tapping a button that appears to do nothing. The button itself is always the retry.
+  // The INVITE tap's own state: its bootstrap in flight, and which failure the error
+  // surface reports. The tap exists to deliver a link, and saying nothing leaves the
+  // player tapping a button that appears to do nothing.
   const [inviting, setInviting] = useState(false);
-  const [inviteNotice, setInviteNotice] = useState<
-    'minted' | 'mintFailed' | 'shareFailed' | null
-  >(null);
-  // The fresh-tap ask speaks the input device's own verb (the streak hint's coarse-pointer
-  // test, the history-tap rule's own pattern).
-  const coarse = useMemo(
-    () =>
-      typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(pointer: coarse)').matches,
-    [],
-  );
+  const [inviteFailed, setInviteFailed] = useState<'account' | 'share' | null>(null);
 
   // The invite link is both "add me" and "come play" (#189): one line of copy, then the
   // URL. Delivery (native sheet -> clipboard + COPIED) is useShare's, like every result.
   //
-  // **THE INVITE TAP IS THE TRIGGER (#216, user-decided 2026-08-24)** — and minting and
-  // sharing are TWO EXPLICIT PHASES (PR-219 follow-up review). Turnstile plus /devices
-  // can outlive the browser's transient user activation, and past it BOTH deliveries
-  // reject — navigator.share by spec, the async clipboard on WebKit — so a first tap that
-  // shared after its own mint could create the account and then deliver nothing, silently.
-  // Instead the tokenless tap ONLY bootstraps and then asks for a fresh tap in so many
-  // words; that second tap shares inside its own activation, exactly like every result
-  // screen's. A delivery that still fails (insecure context, denied clipboard) is said
-  // (`failedShare`) rather than swallowed.
+  // **THE INVITE TAP IS THE TRIGGER (#216), AND IT IS ONE TAP** (user-decided 2026-08-24,
+  // superseding the two-phase mint-then-ask: "always a single tap"): a tokenless tap
+  // bootstraps and then delivers in the same gesture. The physics the two-phase design
+  // guarded against still exist — Turnstile + /devices can outlive the transient user
+  // activation, and past it navigator.share rejects by spec and the async clipboard does
+  // on WebKit — so `useShare.share` REPORTS delivery, and a share neither channel could
+  // make raises the error surface (`failedShare`) instead of being swallowed: its TRY
+  // AGAIN runs inside its own fresh activation, with the identity now in hand, which is
+  // exactly the delivery the first tap could not make. Desktop and an already-deployed
+  // account never hit that path — the common case stays one tap, one sheet.
   const invite = async () => {
     if (inviting) return;
-    setInviteNotice(null);
-    if (!identity) {
-      // PHASE ONE — the deliberate act that creates the account. No share on this
-      // activation, however fast the mint lands: one rule, no timing-dependent branch.
+    setInviteFailed(null);
+    let held = identity;
+    if (held === null) {
+      // The deliberate act that creates the account (LoadingWave in the button, the Word
+      // gate's PLAY shape; a failure created nothing and says so).
       setInviting(true);
       try {
         const request = await ensureRequestIdentity(null);
         // A cross-tab replacement landed mid-mint: the screen is already re-keying on the
-        // adopted identity, and the fresh-tap ask below still leads to ITS link.
-        if (request) setInviteNotice('minted');
+        // adopted identity — share ITS link, the one the button now stands for.
+        held = request?.identity ?? deviceIdentity();
+        if (held === null) return;
       } catch {
-        setInviteNotice('mintFailed');
+        setInviteFailed('account');
+        return;
       } finally {
         setInviting(false);
       }
-      return;
     }
-    // PHASE TWO — an identity in hand, a live activation: deliver, and say so if neither
-    // channel could.
     const delivered = await share(
-      `${t(lang, 'boardInviteText')}\n${window.location.origin}${pathForInvite(identity.accountId)}`,
+      `${t(lang, 'boardInviteText')}\n${window.location.origin}${pathForInvite(held.accountId)}`,
     );
-    if (!delivered) setInviteNotice('shareFailed');
+    if (!delivered) setInviteFailed('share');
   };
+
+  // What the strip shows. With an account: the settled profile read (skeleton until it
+  // lands). Without one: the LOCAL placeholder — an ANSWER derived from the persisted
+  // seed, not a pending read, so no skeleton (its one-frame absence while the seed mints
+  // renders the settled empty boxes, never a breathing promise).
+  const shown: Me | null =
+    identity === null
+      ? localSeed === null
+        ? null
+        : { publicId: localSeed, name: '', avatar: null }
+      : me;
+  const shownSettled = identity === null ? localSeed !== null : meSettled;
 
   return (
     <div className="board-screen">
@@ -387,21 +407,21 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
             player a stranger's name under their own mark (user feedback 2026-08-20).
             The skeleton holds the exact layout the real strip takes, so nothing moves
             when it resolves. */}
-        {me ? (
-          <Avatar avatar={me.avatar ?? defaultAvatar(me.publicId)} size={40} />
+        {shown ? (
+          <Avatar avatar={shown.avatar ?? defaultAvatar(shown.publicId)} size={40} />
         ) : (
           <span
-            className={`board-me-slot${meSettled ? '' : ' skeleton'}`}
+            className={`board-me-slot${shownSettled ? '' : ' skeleton'}`}
             aria-hidden="true"
           />
         )}
-        {me ? (
-          <span className={`board-me-name${me.name ? '' : ' anon'}`}>
-            {me.name || anonName(me.publicId)}
+        {shown ? (
+          <span className={`board-me-name${shown.name ? '' : ' anon'}`}>
+            {shown.name || anonName(shown.publicId)}
           </span>
         ) : (
           <span className="board-me-name" aria-hidden="true">
-            {!meSettled && <span className="skeleton skeleton-name" />}
+            {!shownSettled && <span className="skeleton skeleton-name" />}
           </span>
         )}
         {/* `/profile` is a GLOBAL route, so the board that opened it leaves the URL —
@@ -467,15 +487,6 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
           (the Word gate's PLAY shape). The line above it carries the tap's outcome: the
           fresh-tap ask after a mint, or the loud failure whose retry is the button itself.
           The label swaps to COPIED on the clipboard path, the share button's own gesture. */}
-      {inviteNotice === 'minted' && (
-        <p className="status">{t(lang, coarse ? 'inviteReadyTap' : 'inviteReadyClick')}</p>
-      )}
-      {inviteNotice === 'mintFailed' && (
-        <p className="status error">{t(lang, 'failedInviteLink')}</p>
-      )}
-      {inviteNotice === 'shareFailed' && (
-        <p className="status error">{t(lang, 'failedShare')}</p>
-      )}
       <button
         type="button"
         className="mix-btn board-invite"
@@ -490,6 +501,19 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
           t(lang, 'boardInvite')
         )}
       </button>
+
+      {/* The tap's failure, on the app's error surface (#216 rework): the deploy failing
+          created nothing; a delivery failing has the account in hand, and TRY AGAIN
+          shares inside its own fresh activation. */}
+      {inviteFailed !== null && (
+        <ErrorSheet
+          lang={lang}
+          title={t(lang, inviteFailed === 'account' ? 'failedAccount' : 'failedShare')}
+          note={t(lang, inviteFailed === 'account' ? 'failedAccountNote' : 'failedShareNote')}
+          onRetry={() => void invite()}
+          onClose={() => setInviteFailed(null)}
+        />
+      )}
     </div>
   );
 }

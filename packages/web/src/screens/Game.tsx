@@ -34,7 +34,8 @@ import { t, ariaHoleHistory, srHoleResult } from '../i18n';
 import { track } from '../analytics';
 import { fold, dateForDayNumber, ROUND_GUESS_CAP } from '@whippin/shared';
 import { prefetchTurnstileTokens } from '../turnstile';
-import { deviceIdentity } from '../identity';
+import { deviceIdentity, ensureDeviceIdentity, useDeviceIdentity } from '../identity';
+import ErrorSheet from '../components/ErrorSheet';
 import type {
   HitState,
   Hole,
@@ -175,6 +176,9 @@ function Round({
   const appendOutbox = useGameStore((s) => s.appendOutbox);
   const sentenceRulesSeen = useGameStore((s) => s.sentenceRulesSeen);
   const markSentenceRulesSeen = useGameStore((s) => s.markSentenceRulesSeen);
+  // Whether this device holds an account — REACTIVE, so the gate below closes on its own
+  // when another tab deploys one (the storage adoption) and reopens after a sign-out.
+  const identity = useDeviceIdentity();
 
   // The STREAK's own source since #211: the language's solved-day collection, read from the
   // server and held transiently. It is loaded HERE, on the active-day route, because the
@@ -358,13 +362,35 @@ function Round({
     dayNumber,
     score: guessCount,
   });
-  // The one-time instructions GATE (2026-08-11): the mode's own rules, stated ONCE ever
-  // before the first sentence round — the phrase is on screen, but the keyboard and the
-  // prompt hold back behind the instructions and PLAY. Word mode's gate
-  // is mandatory (its START starts the clock); this one exists only for the rules, so it is
-  // a persisted seen-once flag and never returns. Derived, not state: a round already in
-  // progress (or solved) has nothing left to teach, and PLAY closes it by setting the flag.
-  const gateOpen = !sentenceRulesSeen && !finished && guessCount === 0;
+  // The instructions GATE (2026-08-11; reworked with the #216 triggers, user-decided
+  // 2026-08-24). Two reasons to hold the round back, one dialog:
+  //   - the RULES, stated once ever (the persisted flag) — an account-holding player who
+  //     has read them never sees the gate again;
+  //   - the ACCOUNT: a device with NO identity shows the full gate on EVERY sentence day
+  //     (archive included), whatever the flag says, because its PLAY is the deploy button —
+  //     the server owns the log from the first guess, so no guess may land before the
+  //     account exists, and there is no other trigger on this screen.
+  // Derived, not state. A tokenless device can hold a non-empty outbox only in the
+  // pending-bootstrap recovery, and the gate deliberately shows over it: PLAY resumes the
+  // interrupted deploy and the waiting guesses flush behind it.
+  const gateOpen = identity === null || (!sentenceRulesSeen && !finished && guessCount === 0);
+  // PLAY, when it is the deploy button: a single tap that creates the account and opens
+  // the round — a clear loading state while the bootstrap runs, and the app's error
+  // surface when it fails (nothing was created; TRY AGAIN re-runs it).
+  const [deploying, setDeploying] = useState(false);
+  const [deployFailed, setDeployFailed] = useState(false);
+  const handleGatePlay = useCallback(() => {
+    if (identity !== null) {
+      markSentenceRulesSeen();
+      return;
+    }
+    if (deploying) return;
+    setDeploying(true);
+    ensureDeviceIdentity()
+      .then(() => markSentenceRulesSeen())
+      .catch(() => setDeployFailed(true))
+      .finally(() => setDeploying(false));
+  }, [identity, deploying, markSentenceRulesSeen]);
   // The history-tap rule speaks the input device's own verb — the same coarse-pointer test
   // as the streak hint and the retired tutorial gesture line.
   const coarse = useMemo(
@@ -953,8 +979,13 @@ function Round({
                 <div className="coach-rules" aria-hidden="true">
                   <CoachText copy={gateRules} />
                 </div>
-                <button type="button" className="mix-btn" onClick={markSentenceRulesSeen}>
-                  {t(lang, 'gatePlay')}
+                <button
+                  type="button"
+                  className="mix-btn"
+                  onClick={handleGatePlay}
+                  disabled={deploying}
+                >
+                  {deploying ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'gatePlay')}
                 </button>
               </div>
             ) : resultsUp ? null : (
@@ -979,6 +1010,18 @@ function Round({
             )}
           </div>
         </>
+      )}
+
+      {/* The deploy's failure, on the app's error surface: what happened, and TRY AGAIN
+          re-runs the same single-tap chain. */}
+      {deployFailed && (
+        <ErrorSheet
+          lang={lang}
+          title={t(lang, 'failedAccount')}
+          note={t(lang, 'failedAccountNote')}
+          onRetry={handleGatePlay}
+          onClose={() => setDeployFailed(false)}
+        />
       )}
 
       {showStreakDialog && (

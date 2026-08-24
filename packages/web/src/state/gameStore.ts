@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { PUBLIC_ID_PATTERN, type RuntimeHole } from '@whippin/shared';
+import { generatePublicId, PUBLIC_ID_PATTERN, type RuntimeHole } from '@whippin/shared';
 import { isLang, type Mode } from '../langs';
 import { CLAIM_ZONE, runMs } from '../game/wordGame';
 
@@ -228,8 +228,19 @@ interface PersistedState {
   // The sentence game's one-time instructions gate has been passed (2026-08-11). Unlike
   // Word mode's gate — whose START is mandatory because it starts the clock — the sentence
   // gate exists only to state the rules, so it is shown ONCE ever, globally: the rules are
-  // the same in both languages and on every day.
+  // the same in both languages and on every day. *(Amended by the #216 trigger rework,
+  // user-decided 2026-08-24: a device with NO account shows the full rules gate again
+  // whatever this flag says — its PLAY is what deploys the account. This flag still keeps
+  // an account-holding player from ever seeing the rules twice.)*
   sentenceRulesSeen: boolean;
+  // The PRE-ACCOUNT identity seed (#216 trigger rework, user-decided 2026-08-24): a
+  // publicId-shaped random value the leaderboard strip and the profile editor derive the
+  // placeholder name and mark from (`anonName`/`defaultAvatar`) while the device has no
+  // account — those surfaces no longer deploy one merely by being opened. Persisted so the
+  // placeholder is stable across visits and tabs; a DISPLAY value only, never sent to the
+  // server. When the account deploys, the server-assigned id takes over and the derived
+  // face changes once — unavoidable, since the server picks the id.
+  localSeed: string | null;
 }
 
 interface GameState extends PersistedState {
@@ -275,6 +286,11 @@ interface GameState extends PersistedState {
 
   // Mark the onboarding tutorial as seen (finish AND skip both count — never re-nag).
   setOnboarded: () => void;
+
+  // The pre-account identity seed, minted on first need by a surface that shows a
+  // placeholder identity (the leaderboard strip, the profile editor). Never a trigger:
+  // generating a local random value contacts no server and creates no account.
+  ensureLocalSeed: () => string;
 
   // Mark the sentence game's one-time instructions gate as passed (its PLAY tap).
   markSentenceRulesSeen: () => void;
@@ -495,6 +511,7 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
       onboarded: false,
       boardTab: 'friends',
       sentenceRulesSeen: false,
+      localSeed: null,
     };
   }
   const p = persisted as Partial<PersistedState> & { rounds?: Record<string, unknown> };
@@ -508,6 +525,9 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
       : Object.keys(p.rounds ?? {}).length > 0 || lastLang != null;
   const lastMode = p.lastMode === 'word' || p.lastMode === 'sentence' ? p.lastMode : null;
   const sentenceRulesSeen = p.sentenceRulesSeen === true;
+  // The pre-account seed is display-only, so a malformed one simply re-mints on next need.
+  const localSeed =
+    typeof p.localSeed === 'string' && PUBLIC_ID_PATTERN.test(p.localSeed) ? p.localSeed : null;
   const boardTab = p.boardTab === 'global' ? 'global' : 'friends';
   const parsedOwner = version < 17 ? null : parseIdentityOwner(p.identityOwner);
   // `undefined` means a current-version blob claimed an owner but did not carry a valid
@@ -530,6 +550,7 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
     onboarded,
     boardTab,
     sentenceRulesSeen,
+    localSeed,
   };
 }
 
@@ -559,6 +580,7 @@ export const useGameStore = create<GameState>()(
       onboarded: false,
       boardTab: 'friends',
       sentenceRulesSeen: false,
+      localSeed: null,
       roundLoads: {},
       activeWordKey: null,
       tutorialOpen: null,
@@ -598,6 +620,14 @@ export const useGameStore = create<GameState>()(
       markSentenceRulesSeen: () => {
         if (get().sentenceRulesSeen) return;
         set({ sentenceRulesSeen: true });
+      },
+
+      ensureLocalSeed: () => {
+        const held = get().localSeed;
+        if (held !== null) return held;
+        const seed = generatePublicId();
+        set({ localSeed: seed });
+        return seed;
       },
 
       ensureOutbox: (key, puzzle) =>
@@ -803,6 +833,7 @@ export const useGameStore = create<GameState>()(
         boardTab: s.boardTab,
         onboarded: s.onboarded,
         sentenceRulesSeen: s.sentenceRulesSeen,
+        localSeed: s.localSeed,
       }),
     },
   ),

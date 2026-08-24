@@ -107,7 +107,7 @@ function maxGuesses(mode: ScoreMode): number {
 }
 
 // …at most that many slugs of at most the longest language's maxSlugLength (#200) plus JSON
-// framing (`"…",`), with slack for the secret, the puzzle tag, a Turnstile token and the
+// framing (`"…",`), with slack for the device token, the puzzle tag, a Turnstile token and the
 // field names. DERIVED rather than hand-picked, so a longer vocabulary cannot silently
 // outgrow it — still small, since the point is bounding JSON.parse rather than serving
 // uploads.

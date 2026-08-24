@@ -69,7 +69,7 @@ export async function handleScores(
   if (!params.ok) return params.response;
   const { lang, mode, date } = params.value;
 
-  // The caller's PUBLIC id, never the secret — so it may travel in the query. It is what
+  // The caller's PUBLIC id, never the device token — so it may travel in the query. It is what
   // makes the answer's `bucket` AUTHORITATIVE (added on review): without it a client can
   // only match its own count against the bands, which says "somebody scored this" and not
   // "you are in here". A round whose row the IP cap refused, or a Word daily the other

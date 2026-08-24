@@ -36,6 +36,7 @@ import { parseRound, postRoundBody, roundUrl, type RoundState } from '../api';
 import { fnvTag } from './roundSync';
 import { EMPTY_ROUND_SERVER, useGameStore, type RoundServer } from './gameStore';
 import {
+  currentRequestIdentity,
   deviceIdentity,
   ensureRequestIdentity,
   identityEpoch,
@@ -481,20 +482,18 @@ async function noteVerdict(response: Response, epoch: string): Promise<void> {
 
 async function submitRun(f: WordFlight, key: string, tried: readonly string[]): Promise<void> {
   const puzzle = f.puzzle;
-  const expectedEpoch = identityEpoch();
-  let epoch = expectedEpoch;
+  // A run this device PLAYED always has an identity — the START minted one — and since the
+  // #216 trigger rework the submission never mints its own: only the deploy buttons do. A
+  // tokenless submission describes a run this identity cannot own, so it stands down.
+  const request = currentRequestIdentity();
+  if (!request) {
+    f.closed = true;
+    return;
+  }
+  const { identity } = request;
+  const epoch: string = request.epoch;
   let response: Response;
   try {
-    // A run this device PLAYED always has an identity — the START minted one — but a
-    // submission can also be the first act after a fresh start, so it ensures one rather
-    // than assuming it.
-    const request = await ensureRequestIdentity(expectedEpoch);
-    if (!request) {
-      f.closed = true;
-      return;
-    }
-    const { identity } = request;
-    epoch = request.epoch;
     response = await postRoundBody(roundUrl(f.lang, f.date, 'word'), {
       token: identity.token,
       puzzle,

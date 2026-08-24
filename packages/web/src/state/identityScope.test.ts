@@ -10,8 +10,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const resets = vi.hoisted(() => ({ round: vi.fn(), word: vi.fn(), history: vi.fn() }));
 const rearms = vi.hoisted(() => ({ round: vi.fn(), word: vi.fn(), history: vi.fn() }));
+const kicks = vi.hoisted(() => ({ round: vi.fn() }));
 
-vi.mock('./roundSync', () => ({ resetRoundSync: resets.round, rearmRoundSync: rearms.round }));
+vi.mock('./roundSync', () => ({
+  resetRoundSync: resets.round,
+  rearmRoundSync: rearms.round,
+  kickRoundSync: kicks.round,
+}));
 vi.mock('./wordRoundSync', () => ({
   resetWordRoundSync: resets.word,
   rearmWordRoundSync: rearms.word,
@@ -75,6 +80,7 @@ beforeEach(() => {
   rearms.round.mockReset();
   rearms.word.mockReset();
   rearms.history.mockReset();
+  kicks.round.mockReset();
   useGameStore.setState(
     { ...seeded(), identityOwner: null, roundLoads: {}, activeWordKey: null },
     false,
@@ -102,6 +108,10 @@ describe('acquiring a FIRST identity (#216)', () => {
     expect(rearms.round).not.toHaveBeenCalled();
     expect(rearms.word).not.toHaveBeenCalled();
     expect(rearms.history).not.toHaveBeenCalled();
+    // …but it KICKS the round conversations: an outbox that was waiting behind the PLAY
+    // gate (the pending-bootstrap recovery) is owed the moment the identity exists, and
+    // since the trigger rework the append never mints its own.
+    expect(kicks.round).toHaveBeenCalledTimes(1);
   });
 
   it('an ADOPTED first identity re-reads the tokenless projections without clearing', () => {

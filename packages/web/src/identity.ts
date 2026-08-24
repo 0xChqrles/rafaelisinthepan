@@ -7,15 +7,20 @@
 // A device now holds its own token; the server can delete that token's row without this
 // device being present, and the account survives.
 //
-// **The identity is created LAZILY, on first need — never on page open.** Creating on load
-// would make account creation an unauthenticated write that every crawler and every bot
-// triggers. A visit that performs none of the deliberate acts below mints no token and no
-// server row:
+// **The identity is created on the DEPLOY BUTTONS alone — never on a page load, never as
+// a side effect** (#216 trigger rework, user-decided 2026-08-24, narrowing the original
+// lazy-on-first-need list). Creating on load would make account creation an
+// unauthenticated write that every crawler triggers; creating inside an engine made it a
+// side effect nobody saw. A visit that taps none of these primary buttons mints no token
+// and no server row:
 //
-//   the first guess (sentence or word) · starting a word round · tapping INVITE on the
-//   leaderboard (user-decided 2026-08-24, replacing "opening the leaderboard": a
-//   navigation must not mint an account) · accepting an invite · opening the profile
-//   editor (it cannot show an identity without one)
+//   the sentence gate's PLAY · Word mode's PLAY · accepting an invite (its button) ·
+//   sending an invite link · saving a profile
+//
+// Each is a SINGLE tap that chains its real action behind the bootstrap, shows a loading
+// state on the button, and reports failure on the app's error surface (ErrorSheet).
+// Surfaces that used to mint by being opened — the leaderboard, the profile editor — show
+// the LOCAL placeholder identity instead (the persisted seed in the game store).
 //
 // Turnstile gates the bootstrap, because that is the request that CREATES state. The token
 // is generated and PERSISTED immediately before it, so a lost answer is recovered by
@@ -486,6 +491,23 @@ export async function ensureRequestIdentity(
   const identity = await ensureDeviceIdentity();
   const epoch = identityEpochOf(identity);
   if (identityEpoch() !== epoch) return null;
+  if (expectedEpoch !== null && expectedEpoch !== epoch) return null;
+  return { identity, epoch };
+}
+
+// Resolve the identity a private request should travel as WITHOUT ever creating one
+// (#216 trigger rework, user-decided 2026-08-24: the account deploys on the primary
+// buttons alone — the two PLAY gates, the invite accept, the invite send, the profile
+// save — so everything else resolves what exists and stands down when nothing does).
+// Null when the device holds no identity, or when the one it holds no longer matches the
+// epoch the request's inputs were captured under — `ensureRequestIdentity`'s own fence,
+// minus the bootstrap.
+export function currentRequestIdentity(
+  expectedEpoch: string | null = identityEpoch(),
+): RequestIdentity | null {
+  const identity = deviceIdentity();
+  if (!identity) return null;
+  const epoch = identityEpochOf(identity);
   if (expectedEpoch !== null && expectedEpoch !== epoch) return null;
   return { identity, epoch };
 }

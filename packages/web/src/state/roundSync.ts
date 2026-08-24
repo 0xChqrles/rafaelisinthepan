@@ -38,8 +38,8 @@ import { guessKey } from '../game/scoring';
 import { unacknowledged } from '../game/playLog';
 import { EMPTY_ROUND_SERVER, useGameStore, type RoundLoad, type RoundServer } from './gameStore';
 import {
+  currentRequestIdentity,
   deviceIdentity,
-  ensureRequestIdentity,
   identityEpoch,
   identityEpochOf,
   markDeviceSignedOut,
@@ -259,8 +259,9 @@ async function pump(key: string): Promise<void> {
       f.created = false;
       f.readDone = true;
       publish(f, key, EMPTY_ROUND_SERVER);
-      // Reassess straight away: a persisted outbox from an earlier visit is owed to the
-      // server the moment an identity exists, and the append is what mints one.
+      // Reassess straight away, for the race where an identity arrived while this branch
+      // ran. A persisted outbox with no identity simply keeps waiting: since the trigger
+      // rework the append never mints, and the gate's deploy is what kicks it loose.
       void pump(key);
       return;
     }
@@ -268,6 +269,11 @@ async function pump(key: string): Promise<void> {
   } else {
     const owed = pending(f);
     if (owed.length === 0) return; // nothing pending
+    // NO IDENTITY, NO WRITE (#216 trigger rework): guesses cannot be typed behind the PLAY
+    // gate, so an owed outbox with no identity is the pending-bootstrap recovery case. It
+    // waits here — the append never mints — and the identity listener pumps every
+    // conversation when the gate's deploy lands (`kickRoundSync`).
+    if (deviceIdentity() === null) return;
     // Never send a batch the route can only refuse. The stored log may hold at most
     // ROUND_GUESS_CAP entries, so the batch is the OLDEST PREFIX that still fits — and
     // when nothing fits at all, this round is capped: it has stopped counting, and saying
@@ -476,22 +482,15 @@ async function noteVerdict(response: Response, epoch: string): Promise<void> {
 async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promise<void> {
   const puzzle = f.puzzle;
   let response: Response;
-  const expectedEpoch = identityEpoch();
-  let epoch = expectedEpoch;
+  // THE APPEND NEVER MINTS (#216 trigger rework, user-decided 2026-08-24): the account
+  // deploys on the sentence gate's PLAY, so by the time a guess can be typed the identity
+  // is in hand. A tokenless append is the pending-bootstrap recovery edge — the outbox
+  // stands, and the identity listener pumps every conversation when the deploy lands.
+  const request = currentRequestIdentity();
+  if (!request) return;
+  const { identity } = request;
+  const epoch: string = request.epoch;
   try {
-    // THE FIRST GUESS IS A TRIGGER (#216): a device with no identity mints one here, before
-    // the write that needs it. Every later append finds the identity already in hand. A
-    // failed bootstrap is an ordinary failed write, retried with the rest.
-    const request = await ensureRequestIdentity(expectedEpoch);
-    if (!request) {
-      // Identity adoption already tells the installed scope owner to discard this
-      // conversation. Close this reference too, so it cannot loop once more and
-      // authenticate the captured batch as the replacement identity.
-      f.closed = true;
-      return;
-    }
-    const { identity } = request;
-    epoch = request.epoch;
     // ROUND CREATION carries a Turnstile challenge (#203). It is prefetched while the
     // puzzle loads, so by the first guess it is normally already in hand; a failure here
     // is an ordinary failed write, retried with the rest — the round keeps playing
@@ -652,6 +651,15 @@ export function rearmRoundSync(): void {
     useGameStore.getState().setRoundLoad(key, { status: 'loading', puzzle: f.puzzle });
     void pump(key);
   }
+}
+
+// A first identity ARRIVED — minted by a deploy button, or adopted from another tab: pump
+// every open conversation, so an outbox that was waiting behind the PLAY gate flushes
+// without waiting for the next guess. The minted case re-reads nothing (the account is
+// empty by construction); the adopted case has already been re-armed (`rearmRoundSync`),
+// whose own pumps this repeats harmlessly.
+export function kickRoundSync(): void {
+  for (const key of flights.keys()) void pump(key);
 }
 
 // Test seam: drop every conversation (module state must not leak between tests).

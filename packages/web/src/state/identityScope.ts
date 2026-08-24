@@ -19,7 +19,7 @@
 import { onIdentityChange } from '../identity';
 import { reconcileGameStateIdentity } from './gameStore';
 import { rearmPlayerHistory, resetPlayerHistory } from './history';
-import { rearmRoundSync, resetRoundSync } from './roundSync';
+import { kickRoundSync, rearmRoundSync, resetRoundSync } from './roundSync';
 import { rearmWordRoundSync, resetWordRoundSync } from './wordRoundSync';
 
 export function installIdentityScope(): () => void {
@@ -49,6 +49,12 @@ export function installIdentityScope(): () => void {
           rearmRoundSync();
           rearmWordRoundSync();
           rearmPlayerHistory();
+        } else {
+          // MINTED by a deploy button: nothing to re-read (the account is empty by
+          // construction), but an outbox that was waiting behind the PLAY gate — the
+          // pending-bootstrap recovery — is owed the moment the identity exists, and the
+          // append never mints its own any more (#216 trigger rework).
+          kickRoundSync();
         }
       }
       return;
