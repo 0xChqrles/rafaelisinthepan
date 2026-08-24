@@ -335,6 +335,9 @@ describe('local state follows the identity that owns it (#216)', () => {
       next: identity,
       accountChanged: true,
       deviceChanged: true,
+      // MINTED by this tab's own bootstrap: the account is empty by construction, so the
+      // scope listener must not re-read the tokenless projections for it.
+      adopted: false,
     });
 
     // Re-adopting the SAME identity announces nothing: nothing it owns has moved.
@@ -381,9 +384,16 @@ describe('localStorage is shared by every TAB (#216)', () => {
     // the other tab is playing on.
     const theirs = { token: 'c'.repeat(64), accountId: ACCOUNT, deviceId: DEVICE };
     storage.setItem('whippin-device', JSON.stringify(theirs));
+    const seen: { adopted: boolean }[] = [];
+    const stop = onIdentityChange((change) => seen.push(change));
     await expect(ensureDeviceIdentity()).resolves.toEqual(theirs);
     expect(post).not.toHaveBeenCalled();
     expect(stored()).toEqual(theirs);
+    // An ADOPTED first identity: the other tab may already be playing on this account, so
+    // the scope listener re-reads the projections this tab published as known-empty.
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ previous: null, next: theirs, adopted: true });
+    stop();
   });
 
   it('retries a PENDING token another tab left instead of replacing it', async () => {
@@ -404,8 +414,15 @@ describe('localStorage is shared by every TAB (#216)', () => {
       storage.setItem('whippin-device', JSON.stringify(theirs));
       return answer();
     });
+    const seen: { adopted: boolean }[] = [];
+    const stop = onIdentityChange((change) => seen.push(change));
     await expect(ensureDeviceIdentity()).resolves.toEqual(theirs);
     expect(stored()).toEqual(theirs);
+    // The raced adoption is an ADOPTION too — the winning tab may already be playing on
+    // that account — so it does not announce as minted-empty.
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ next: theirs, adopted: true });
+    stop();
   });
 
   it('does NOT delete a newer tab\'s identity when this one signs out', async () => {

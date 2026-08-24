@@ -8,7 +8,7 @@
 // ONE item per device supports both access patterns:
 //
 //   base key  `device#<tokenHash>` / `device`   — token -> device -> account, every call
-//   GSI       `account#<accountId>` / `device#<deviceId>` — the account's devices, for the
+//   GSI       `player#<accountId>` / `device#<deviceId>` — the account's devices, for the
 //                                                           sign-out screen
 //
 // The security-sensitive path is the BASE item: `resolve` reads it directly and then

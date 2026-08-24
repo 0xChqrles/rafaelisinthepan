@@ -54,8 +54,14 @@ vi.mock('../identity', () => ({
   markDeviceSignedOut: vi.fn(),
 }));
 
-const { daySummaryStatus, loadPlayerHistory, noteSolvedDay, resetPlayerHistory, useHistoryStore } =
-  await import('./history');
+const {
+  daySummaryStatus,
+  loadPlayerHistory,
+  noteSolvedDay,
+  rearmPlayerHistory,
+  resetPlayerHistory,
+  useHistoryStore,
+} = await import('./history');
 type HistoryView = import('./history').HistoryView;
 
 beforeEach(() => {
@@ -279,6 +285,34 @@ describe('no token, no fetch (#216)', () => {
     expect(month?.days?.size).toBe(0);
     expect(state.solved.fr).toEqual({ phase: 'ready', days: [] });
     expect(harness.requests).toEqual([]);
+  });
+
+  it('replays the tokenless answers when a first identity is ADOPTED', async () => {
+    // The known-empty answers were about a device with no account. An identity ADOPTED from
+    // another tab may own the rows they claimed absent, and a mounted surface's effect
+    // never refires for it — so the scope owner replays exactly the reads the tokenless
+    // branch answered, now with the token.
+    harness.identity = false;
+    await loadPlayerHistory('fr', 'sentence', '2026-08');
+    await loadPlayerHistory('fr', 'sentence', undefined);
+    expect(harness.requests).toEqual([]);
+
+    harness.identity = true;
+    harness.answer = {
+      days: [{ date: '2026-08-03', progress: 42, solved: true }],
+      solvedDays: [20_669],
+    };
+    rearmPlayerHistory();
+    expect(harness.requests).toHaveLength(2);
+    await vi.waitFor(() => {
+      const state = useHistoryStore.getState();
+      expect(state.months['fr:sentence:2026-08']?.days?.size).toBe(1);
+      expect(state.solved.fr?.days).toEqual([20_669]);
+    });
+    // Consumed: a second adoption cannot happen, and a re-arm must not replay stale keys
+    // forever.
+    rearmPlayerHistory();
+    expect(harness.requests).toHaveLength(2);
   });
 
   it('reads normally once the device HAS an identity', async () => {

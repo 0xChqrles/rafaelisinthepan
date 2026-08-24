@@ -571,6 +571,23 @@ function retryLater(f: WordFlight, key: string): void {
   failLoad(f, key);
 }
 
+// A FIRST identity ADOPTED from another tab (#216): the tokenless mount answer published a
+// ready-and-empty round, but the adopted account may hold a live or recorded run this tab
+// has never seen — and leaving the projection standing offers PLAY for a one-shot daily the
+// account already spent. Re-read every open conversation under the new token (the
+// roundSync rule); the persisted clock/outbox and the runner-authority maps stand — they
+// describe what THIS device played, which adoption does not change. A MINTED first identity
+// never comes through here (identityScope calls this only on `adopted`).
+export function rearmWordRoundSync(): void {
+  for (const [key, f] of flights) {
+    f.readDone = false;
+    f.closed = false;
+    f.failures = 0;
+    useGameStore.getState().setRoundLoad(key, { status: 'loading', puzzle: f.puzzle });
+    void pump(key);
+  }
+}
+
 // Test seam: drop every conversation (module state must not leak between tests).
 export function resetWordRoundSync(): void {
   for (const f of flights.values()) if (f.timer !== null) clearTimeout(f.timer);

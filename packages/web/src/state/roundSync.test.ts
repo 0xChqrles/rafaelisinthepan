@@ -27,6 +27,7 @@ import {
   backoffDelayMs,
   beginRoundSync,
   notifyGuess,
+  rearmRoundSync,
   resetRoundSync,
   retryRoundSync,
   writeDelayMs,
@@ -837,6 +838,26 @@ describe('no token, no private fetch (#216)', () => {
       puzzle: REVISION,
       server: { guesses: [], solved: false, solvedByAppend: false, credited: false },
     });
+  });
+
+  it('re-reads an ADOPTED identity\'s round instead of trusting the tokenless answer', async () => {
+    // The empty projection was published for a device with NO account. When this tab then
+    // ADOPTS an identity another tab created (a storage event), that account may hold rows
+    // this tab has never seen — so the scope owner re-arms the conversation and the round
+    // starts over with a read under the new token. The outbox is untouched by design.
+    identity.present = false;
+    beginRoundSync(ctx());
+    await settle();
+    expect(post).not.toHaveBeenCalled();
+
+    identity.present = true;
+    post.mockResolvedValueOnce(ok(['bois']));
+    rearmRoundSync();
+    await settle();
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(bodyOf(0)).toMatchObject({ token: 'f'.repeat(64) });
+    expect(load()).toMatchObject({ status: 'ready', puzzle: REVISION });
+    expect(server()?.guesses).toEqual(['bois']);
   });
 
   it('mints the identity on the FIRST GUESS and appends with the token it was handed', async () => {

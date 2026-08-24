@@ -864,6 +864,26 @@ describe('the derived summary (#203)', () => {
     ]);
   });
 
+  // `credited` is the credit's OUTCOME, not merely the on-time verdict: the client
+  // celebrates the streak and transiently holds the day off this flag, so an on-time solve
+  // whose collection write FAILED must answer false — a day held on a write that failed is
+  // a phantom the union merge can never remove, and the freeze means no later append will
+  // ever re-ask. The solve itself, the log and the score row are unaffected: the collection
+  // is a rebuildable cache, and its failure is silent to the append.
+  it('answers credited: false when the streak credit could not be recorded', async () => {
+    const failing = memoryHistoryStore();
+    failing.recordSolvedDay = async () => {
+      throw new Error('provisioned throughput exceeded');
+    };
+    const handler = makeHandler({ historyStore: failing });
+    const answer = parsed(await appendGuesses(handler, ['phare', 'nuit']));
+    expect(answer.solved).toBe(true);
+    expect(answer.credited).toBe(false);
+    // The score row is INDEPENDENT of the credit and still records: a missing standing is
+    // its own silent failure mode, never a reason to withhold the day's leaderboard entry.
+    await expect(handler.scoreStore.list(solvedKey)).resolves.toHaveLength(1);
+  });
+
   // LATE HAS NO GRADATIONS (user-decided 2026-08-23): a millisecond late is a decade late,
   // and neither earns the day's rewards — not the streak credit, not the leaderboard row.
   it.each([

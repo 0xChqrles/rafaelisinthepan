@@ -18,12 +18,12 @@
 
 import { onIdentityChange } from '../identity';
 import { reconcileGameStateIdentity } from './gameStore';
-import { resetPlayerHistory } from './history';
-import { resetRoundSync } from './roundSync';
-import { resetWordRoundSync } from './wordRoundSync';
+import { rearmPlayerHistory, resetPlayerHistory } from './history';
+import { rearmRoundSync, resetRoundSync } from './roundSync';
+import { rearmWordRoundSync, resetWordRoundSync } from './wordRoundSync';
 
 export function installIdentityScope(): () => void {
-  return onIdentityChange(({ previous, next, accountChanged, deviceChanged }) => {
+  return onIdentityChange(({ previous, next, accountChanged, deviceChanged, adopted }) => {
     // **Acquiring a FIRST identity clears nothing.** A bootstrap is triggered BY an act —
     // the first guess, a word round start — so the state on screen when it lands is the
     // state that ASKED for it: the guess sitting in the outbox waiting to be sent, the run
@@ -36,7 +36,21 @@ export function installIdentityScope(): () => void {
     // one was null: whatever local state exists then was typed by this player, on this
     // device, and is owed to the account they are about to be given.
     if (previous === null) {
-      if (next !== null) reconcileGameStateIdentity(next);
+      if (next !== null) {
+        reconcileGameStateIdentity(next);
+        // An identity ADOPTED from another tab is not the minted-empty bootstrap: the
+        // tokenless projections published while this tab had no token — the ready-and-empty
+        // round, the empty months and collection — may be wrong about the account it now
+        // acts as, and nothing else re-reads them (no scope bump on a first acquisition, so
+        // no remount; the flights and the caches survive remounts anyway). RE-ARM the
+        // reads, never clear: the outbox and the word clock still hold what THIS device
+        // played, and it is owed to the adopted account.
+        if (adopted) {
+          rearmRoundSync();
+          rearmWordRoundSync();
+          rearmPlayerHistory();
+        }
+      }
       return;
     }
 

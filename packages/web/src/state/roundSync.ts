@@ -633,6 +633,27 @@ function resync(f: RoundFlight, key: string): void {
   // outcome is a sync hiccup, not a load failure.
 }
 
+// A FIRST identity ADOPTED from another tab (#216) invalidates the tokenless projection:
+// the ready-and-empty state this engine published without asking was about a device with no
+// account, and the adopted account may hold rows this tab has never seen — another tab's
+// guesses, a solved board. Every open conversation therefore starts over with a read under
+// the new token, exactly as a republish restarts one; the OUTBOX stands, because the guesses
+// in it were typed on this device and are owed to the account it now holds. A MINTED first
+// identity never comes through here — that account is empty by construction, so the
+// tokenless answer stays true (identityScope calls this only on `adopted`).
+export function rearmRoundSync(): void {
+  for (const [key, f] of flights) {
+    f.server = EMPTY_ROUND_SERVER;
+    f.readDone = false;
+    f.settled = false;
+    f.created = false;
+    f.closed = false;
+    f.failures = 0;
+    useGameStore.getState().setRoundLoad(key, { status: 'loading', puzzle: f.puzzle });
+    void pump(key);
+  }
+}
+
 // Test seam: drop every conversation (module state must not leak between tests).
 export function resetRoundSync(): void {
   for (const f of flights.values()) if (f.timer !== null) clearTimeout(f.timer);

@@ -32,7 +32,7 @@ open http://localhost:5199/en
   the client will fetch. Re-publishing the same day overwrites it.
 - A first visit shows the tutorial invitation. Skip it by pre-seeding storage in
   the browser context before load:
-  `localStorage.setItem('whippin-round', JSON.stringify({ version: 15, state: { onboarded: true } }))`
+  `localStorage.setItem('whippin-round', JSON.stringify({ version: 17, state: { onboarded: true } }))`
   (`version` must match the store's current one — grep `version:` in
   `src/state/gameStore.ts`'s persist options; a mismatch just runs `migratePersisted`,
   which also fills every missing field, so `onboarded` is all the seed needs — the

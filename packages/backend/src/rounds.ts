@@ -512,12 +512,13 @@ async function settleAppend(
     // 22:00 flip) must not load the multi-megabyte scoring artifact only for
     // `recordScoreRow` to discard the work at its own gate — archive days are explicitly
     // playable, so that is a live path, not a corner.
-    const credited = onTime(key.date, instant);
-    if (credited) {
+    const earned = onTime(key.date, instant);
+    let credited = false;
+    if (earned) {
       // The two rewards are INDEPENDENT — neither reads the other, and each swallows its
       // own failures — so they share the round trip instead of queuing on it: this is the
       // one response the solving device's celebration is waiting on.
-      await Promise.all([
+      [credited] = await Promise.all([
         creditSolvedDay(round, deps),
         recordSentenceScore(round, puzzleStore, deps, event, instant),
       ]);
@@ -526,7 +527,11 @@ async function settleAppend(
     // credit and the leaderboard row wear one predicate). The client's celebration rides
     // this flag rather than re-making the comparison on its own clock: a device inside the
     // +1-day skew window would otherwise celebrate a streak day the server refused, and
-    // the transient collection can never take a phantom day back out.
+    // the transient collection can never take a phantom day back out. For the same reason
+    // it reports the credit's OUTCOME, not merely the on-time verdict: a collection write
+    // that failed answers false, or the client celebrates and transiently holds a day the
+    // server's collection lost — the exact phantom the flag exists to prevent. The score
+    // row stays independent and silent: a missing standing, never a withheld celebration.
     return json(200, { ...roundBody(state, instant), credited }, headers);
   }
   return json(200, roundBody(state, instant), headers);
@@ -563,16 +568,21 @@ function onTime(date: string, instant: Date): boolean {
 // is also why solving a corrected revision cannot claim a day twice, and why a republish
 // never takes back a day already credited.
 //
-// FAILURE IS SILENT, and that is the point of the collection being a rebuildable cache: the
-// guesses are stored, the solve is durable on the round row, and a streak day that could not
-// be cached is a stat, never a refused append.
-async function creditSolvedDay(round: AppendedRound, deps: RoundHandlerDeps): Promise<void> {
+// FAILURE IS SILENT to the append, and that is the point of the collection being a
+// rebuildable cache: the guesses are stored, the solve is durable on the round row, and a
+// streak day that could not be cached is a stat, never a refused append. It is NOT silent
+// to `credited`, though — the return says whether the credit actually LANDED, because the
+// client's celebration and its transient day ride that flag, and a day held on a write
+// that failed is a phantom the union merge can never remove.
+async function creditSolvedDay(round: AppendedRound, deps: RoundHandlerDeps): Promise<boolean> {
   const { key, publicId } = round;
   const solvedDay = dayNumber(key.date);
   try {
     await deps.history.recordSolvedDay({ publicId, lang: key.lang, day: solvedDay });
+    return true;
   } catch (error) {
     console.error(`[round] failed to credit the streak day ${key.date} (${key.lang}):`, error);
+    return false;
   }
 }
 

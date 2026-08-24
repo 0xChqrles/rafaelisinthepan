@@ -239,6 +239,13 @@ export interface IdentityChange {
   next: DeviceIdentity | null;
   accountChanged: boolean;
   deviceChanged: boolean;
+  // A FIRST acquisition that ADOPTED an identity another tab created (a storage event, the
+  // pre-mint re-read, losing the bootstrap race), as opposed to committing one this tab's
+  // own bootstrap just minted. The minted account is empty BY CONSTRUCTION, so everything
+  // published as known-empty while tokenless stays true; an adopted one may already hold
+  // rounds and history, so those tokenless projections must be re-read (identityScope's
+  // re-arm) — without clearing anything, since there was no previous owner to leave.
+  adopted: boolean;
 }
 type Listener = (change: IdentityChange) => void;
 const listeners = new Set<Listener>();
@@ -248,12 +255,15 @@ export function onIdentityChange(listener: Listener): () => void {
   return () => listeners.delete(listener);
 }
 
-function publish(next: DeviceIdentity | null, signedOut = false): void {
+function publish(next: DeviceIdentity | null, signedOut = false, minted = false): void {
   const current = useIdentityStore.getState();
   const previous = current.identity;
   const accountChanged = (previous?.accountId ?? null) !== (next?.accountId ?? null);
   const deviceChanged = (previous?.deviceId ?? null) !== (next?.deviceId ?? null);
   const changed = accountChanged || deviceChanged;
+  // Only the bootstrap's own commit passes `minted`; every other null -> identity publish
+  // is an ADOPTION of an account that may already hold server state (see IdentityChange).
+  const adopted = previous === null && next !== null && !minted;
   // A -> null -> B is two real UI scopes. The first transition clears/remounts away from A;
   // the second must mount B's private reads instead of leaving the tokenless projection that
   // existed between storage events. Only null -> A at revision zero is the first-bootstrap
@@ -269,7 +279,8 @@ function publish(next: DeviceIdentity | null, signedOut = false): void {
   // Clearing storage WITHOUT fencing in-flight answers would let the identity just left
   // repopulate the one that replaced it, which is why every private request captures the
   // epoch above and drops an answer that outlived it.
-  for (const listener of listeners) listener({ previous, next, accountChanged, deviceChanged });
+  for (const listener of listeners)
+    listener({ previous, next, accountChanged, deviceChanged, adopted });
 }
 
 // Re-read the shared key and adopt what it says. Called before every mint and on every
@@ -409,7 +420,10 @@ async function bootstrap(): Promise<DeviceIdentity> {
   sessionOnly = !write(identity);
   if (!sessionOnly) departedTokens.clear();
   pendingToken = null;
-  publish(identity);
+  // MINTED here, by this tab's own bootstrap: the account is empty by construction, so
+  // nothing published while tokenless needs re-reading. (The raced adoption above does NOT
+  // say `minted` — the tab that won may already be playing on that account.)
+  publish(identity, false, true);
   return identity;
 }
 

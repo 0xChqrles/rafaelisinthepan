@@ -87,6 +87,13 @@ const flights = new Map<string, Promise<void>>();
 // successful answer (data is data); only the phase is driver-only.
 const solvedReads = new Map<string, string>();
 
+// The reads answered KNOWN-EMPTY because this device held no identity, kept so an identity
+// ADOPTED from another tab (#216) can replay exactly them: those answers were about a
+// device with no account, and the adopted account may hold the rows they claimed absent.
+// A MINTED first identity never replays them — that account is empty by construction, so
+// the tokenless answers stay true.
+const answeredTokenless = new Map<string, [string, Mode, string | undefined, boolean]>();
+
 function setMonth(key: string | null, entry: (previous: MonthEntry) => MonthEntry): void {
   if (key === null) return;
   useHistoryStore.setState((state) => ({
@@ -122,7 +129,9 @@ export async function loadPlayerHistory(
   if (!identity) {
     // Known empty, and said as an ANSWER — `ready` with real values, never `idle` or a
     // pending null, or every surface would breathe forever behind a request nobody made.
-    // A collection-less flight still leaves the solved entry entirely alone.
+    // A collection-less flight still leaves the solved entry entirely alone. The request
+    // is remembered so a later ADOPTED identity can replay it (`rearmPlayerHistory`).
+    answeredTokenless.set(key, [lang, mode, month, collection]);
     setMonth(monthId, (previous) => ({ phase: 'ready', days: previous.days ?? new Map() }));
     if (collection) {
       setSolved(lang, (previous) => ({ phase: 'ready', days: previous.days ?? [] }));
@@ -338,10 +347,25 @@ async function noteSignedOut(response: Response, epoch: string): Promise<void> {
   }
 }
 
+// A FIRST identity ADOPTED from another tab (#216): replay every read the tokenless branch
+// answered as known-empty, now under the token — the adopted account may hold the months
+// and the collection those answers claimed absent, and the hooks' own effects will not
+// refire for an identity arriving under a mounted surface. The stale ready-empty entries
+// are kept on screen while the real answers load (the revalidation rule). identityScope
+// calls this only on `adopted` — a minted account is empty and its answers stay true.
+export function rearmPlayerHistory(): void {
+  const replay = [...answeredTokenless.values()];
+  answeredTokenless.clear();
+  for (const [lang, mode, month, collection] of replay) {
+    void loadPlayerHistory(lang, mode, month, collection);
+  }
+}
+
 // Test seam: drop every cached summary and conversation (module state must not leak
 // between tests).
 export function resetPlayerHistory(): void {
   flights.clear();
   solvedReads.clear();
+  answeredTokenless.clear();
   useHistoryStore.setState({ months: {}, solved: {} }, true);
 }

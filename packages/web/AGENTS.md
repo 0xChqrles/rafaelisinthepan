@@ -464,6 +464,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
     ready-and-empty authoritative round and `state/history.ts` a ready empty month and
     collection, so nothing breathes behind a request nobody made — the same rule #211's
     explicit-loading bullet states for a month that has not arrived.
+    **An ADOPTED first identity RE-ARMS those answers** (PR-219 review): the tokenless
+    projections were about a device with no account, and an identity adopted from another
+    tab (`IdentityChange.adopted` — a storage event, the pre-mint re-read, losing the
+    bootstrap race; never the tab's own minted-empty bootstrap) may already own rounds and
+    history — while a first acquisition bumps no scope revision, so nothing else would ever
+    re-read them. `identityScope` calls `rearmRoundSync`/`rearmWordRoundSync` (the open
+    conversations start over with a read, the republish reset's shape) and
+    `rearmPlayerHistory` (replays exactly the reads the tokenless branch answered). A
+    RE-ARM, never a clear: the outbox and the word clock hold what THIS device played, owed
+    to the adopted account.
   - **`markDeviceSignedOut` requires the request's identity epoch.** Every refusal caller reads
     the body and acts only on `401 unknown_device`; a 5xx, a dropped connection or any other
     4xx must never take a player's account away, and a late verdict for A must never remove B.

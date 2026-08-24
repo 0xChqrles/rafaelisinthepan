@@ -9,10 +9,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const resets = vi.hoisted(() => ({ round: vi.fn(), word: vi.fn(), history: vi.fn() }));
+const rearms = vi.hoisted(() => ({ round: vi.fn(), word: vi.fn(), history: vi.fn() }));
 
-vi.mock('./roundSync', () => ({ resetRoundSync: resets.round }));
-vi.mock('./wordRoundSync', () => ({ resetWordRoundSync: resets.word }));
-vi.mock('./history', () => ({ resetPlayerHistory: resets.history }));
+vi.mock('./roundSync', () => ({ resetRoundSync: resets.round, rearmRoundSync: rearms.round }));
+vi.mock('./wordRoundSync', () => ({
+  resetWordRoundSync: resets.word,
+  rearmWordRoundSync: rearms.word,
+}));
+vi.mock('./history', () => ({
+  resetPlayerHistory: resets.history,
+  rearmPlayerHistory: rearms.history,
+}));
 
 import { useGameStore } from './gameStore';
 import { installIdentityScope } from './identityScope';
@@ -22,12 +29,19 @@ const A: DeviceIdentity = { token: 'a'.repeat(64), accountId: 'a'.repeat(16), de
 const B: DeviceIdentity = { token: 'b'.repeat(64), accountId: 'b'.repeat(16), deviceId: 'e'.repeat(16) };
 
 // Drive the listener the way `identity.publish` does, without going through storage.
-function announce(previous: DeviceIdentity | null, next: DeviceIdentity | null): void {
+// `adopted` mirrors publish's own derivation: a null -> identity acquisition is an adoption
+// unless the tab's own bootstrap minted it, which the caller says explicitly.
+function announce(
+  previous: DeviceIdentity | null,
+  next: DeviceIdentity | null,
+  minted = true,
+): void {
   const change = {
     previous,
     next,
     accountChanged: (previous?.accountId ?? null) !== (next?.accountId ?? null),
     deviceChanged: (previous?.deviceId ?? null) !== (next?.deviceId ?? null),
+    adopted: previous === null && next !== null && !minted,
   };
   // `installIdentityScope` registers the only listener under test; calling it through the
   // real registry is what keeps this a test of the WIRING rather than of a copy of it.
@@ -58,6 +72,9 @@ beforeEach(() => {
   resets.round.mockReset();
   resets.word.mockReset();
   resets.history.mockReset();
+  rearms.round.mockReset();
+  rearms.word.mockReset();
+  rearms.history.mockReset();
   useGameStore.setState(
     { ...seeded(), identityOwner: null, roundLoads: {}, activeWordKey: null },
     false,
@@ -78,6 +95,30 @@ describe('acquiring a FIRST identity (#216)', () => {
       accountId: A.accountId,
       deviceId: A.deviceId,
     });
+  });
+
+  it('a MINTED first identity re-arms nothing — the account is empty by construction', () => {
+    announce(null, A);
+    expect(rearms.round).not.toHaveBeenCalled();
+    expect(rearms.word).not.toHaveBeenCalled();
+    expect(rearms.history).not.toHaveBeenCalled();
+  });
+
+  it('an ADOPTED first identity re-reads the tokenless projections without clearing', () => {
+    // Another tab bootstrapped and this one adopted its identity from storage. The
+    // ready-and-empty round and the empty history this tab published while tokenless may
+    // be wrong about the adopted account — another tab's guesses, a live word run — and no
+    // scope bump fires on a first acquisition, so nothing else would ever re-read them.
+    announce(null, A, false);
+    expect(rearms.round).toHaveBeenCalledTimes(1);
+    expect(rearms.word).toHaveBeenCalledTimes(1);
+    expect(rearms.history).toHaveBeenCalledTimes(1);
+    // Still a RE-ARM, never a clear: what this device typed is owed to the adopted account.
+    expect(resets.round).not.toHaveBeenCalled();
+    expect(resets.word).not.toHaveBeenCalled();
+    expect(resets.history).not.toHaveBeenCalled();
+    expect(useGameStore.getState().outbox).toEqual(seeded().outbox);
+    expect(useGameStore.getState().wordRounds).toEqual(seeded().wordRounds);
   });
 });
 
