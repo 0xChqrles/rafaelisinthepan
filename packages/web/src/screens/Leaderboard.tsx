@@ -53,7 +53,7 @@ import CloseIcon from '../assets/icons/close.svg?react';
 // the GLOBAL top 50 as the second tab, explicitly the fun/untrusted view. This screen
 // is also where a player customizes their profile (#188 — the EDIT chip onto /profile)
 // and shares their invite link (#189 — the INVITE button), neither of which requires
-// having played, which is why the header icon reaches it before a first guess.
+// having played, which is why the header icon reaches it before a first round.
 //
 // The rows come ranked from the server (competition ties, the plain top-50 cut, the
 // own-row window — @whippin/shared's leaderboard rules); this screen only draws what

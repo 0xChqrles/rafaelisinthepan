@@ -365,6 +365,10 @@ interface GameState extends PersistedState {
   recordWordGuess: (typed: string, replay: (tried: string[]) => WordRunCache) => boolean;
 }
 
+// The persisted blob's one shared key — named once, because the cross-tab sync below and
+// the persist config must agree on it or a sibling tab's write is never adopted.
+export const GAME_PERSIST_KEY = 'whippin-round';
+
 // Persistence is browser-only; in tests / SSR there is no localStorage, so fall back
 // to a no-op store (no warnings, no persistence) instead of throwing.
 const storage = createJSONStorage<PersistedState>(() => {
@@ -816,7 +820,7 @@ export const useGameStore = create<GameState>()(
 
     }),
     {
-      name: 'whippin-round',
+      name: GAME_PERSIST_KEY,
       storage,
       version: 17, // v17: persisted game state names the #216 identity that owns it
       migrate: migratePersisted,
@@ -838,6 +842,28 @@ export const useGameStore = create<GameState>()(
     },
   ),
 );
+
+// LOCALSTORAGE IS SHARED BY EVERY TAB, and persist writes the WHOLE partialized snapshot
+// on every set — so a tab whose in-memory copy has fallen behind the shared blob would, on
+// its next set of ANY persisted field (an identity adoption's owner tag, a preference),
+// overwrite the active tab's freshly persisted outbox or unsent Word run with its own
+// stale maps (PR-219 review, P1: play continues in memory, and a reload then loses the
+// overwritten guesses). The identity module already re-reads ITS key for exactly this
+// reason; this is the game blob's half: adopt a sibling tab's write the moment it lands,
+// so this tab's next own write starts from the latest shared state. Every set persists
+// synchronously (localStorage), so a rehydrate never discards un-persisted local changes —
+// the only thing it can replace is what another tab demonstrably wrote later.
+export function installGameStoreSync(): () => void {
+  if (typeof window === 'undefined') return () => {};
+  const listener = (event: StorageEvent) => {
+    // `key === null` is storage.clear(): re-read there too rather than keep a copy of a
+    // blob that no longer exists.
+    if (event.key !== null && event.key !== GAME_PERSIST_KEY) return;
+    void useGameStore.persist.rehydrate();
+  };
+  window.addEventListener('storage', listener);
+  return () => window.removeEventListener('storage', listener);
+}
 
 // Bind the persisted maps to the identity that may send them. This runs once after the
 // device key is loaded and again on every live identity transition. Preferences are never

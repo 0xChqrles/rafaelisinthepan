@@ -1446,10 +1446,13 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   nobody is forgotten, with zero request/accept friction (the link holder consented by
   sharing it, the clicker by clicking).
 - **The link is `<site>/i/<publicId>`**, and since 2026-08-20 it is TWO paths doing one job
-  (`shared/src/invite.ts`; `web/src/screens/FriendInvite.tsx` is the landing). Opening it
-  records the edge with the CLICKER's key and continues into the game, so ONE link is both
-  "add me" and "come play". A brand-new visitor's key is generated on that first need (#187),
-  so the edge lands before their first game — this is also the invite funnel. The id is
+  (`shared/src/invite.ts`; `web/src/screens/FriendInvite.tsx` is the landing). The landing
+  shows WHO invited over ONE primary ADD FRIEND button, and the TAP records the edge and
+  continues into the game (user-decided 2026-08-24, superseding the auto-add on open: a
+  page load must not create server state), so ONE link is still both "add me" and "come
+  play". A brand-new visitor's device identity is deployed by that same tap (#216's
+  trigger rework), so the edge lands before their first game — this is also the invite
+  funnel. The id is
   validated wherever it is READ, so a broken link is an unknown path rather than a request.
   **The RESULT share link
   (`/s/<token>`) is deliberately NOT the carrier:** it is CDN-cached for a year on a cache key

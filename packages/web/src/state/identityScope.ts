@@ -24,8 +24,8 @@ import { rearmWordRoundSync, resetWordRoundSync } from './wordRoundSync';
 
 export function installIdentityScope(): () => void {
   return onIdentityChange(({ previous, next, accountChanged, deviceChanged, adopted }) => {
-    // **Acquiring a FIRST identity clears nothing.** A bootstrap is triggered BY an act —
-    // the first guess, a word round start — so the state on screen when it lands is the
+    // **Acquiring a FIRST identity clears nothing.** A bootstrap is triggered BY a deploy
+    // button — a PLAY, an invite, a save — so the state on screen when it lands is the
     // state that ASKED for it: the guess sitting in the outbox waiting to be sent, the run
     // whose PLAY is awaiting its answer. Clearing there orphaned the sentence append (later
     // guesses then never synced) and wiped `wordRounds` out from under the start's own
@@ -38,13 +38,15 @@ export function installIdentityScope(): () => void {
     if (previous === null) {
       if (next !== null) {
         reconcileGameStateIdentity(next);
-        // An identity ADOPTED from another tab is not the minted-empty bootstrap: the
-        // tokenless projections published while this tab had no token — the ready-and-empty
-        // round, the empty months and collection — may be wrong about the account it now
-        // acts as, and nothing else re-reads them (no scope bump on a first acquisition, so
-        // no remount; the flights and the caches survive remounts anyway). RE-ARM the
-        // reads, never clear: the outbox and the word clock still hold what THIS device
-        // played, and it is owed to the adopted account.
+        // An ADOPTED identity is not the minted-empty bootstrap — another tab's account,
+        // or a pending bootstrap RECOVERED from storage, whose original acts may have run
+        // before its identity write failed (PR-219 round-2 review). The tokenless
+        // projections published while this tab had no token — the ready-and-empty round,
+        // the empty months and collection — may be wrong about the account it now acts
+        // as, and nothing else re-reads them (no scope bump on a first acquisition, so no
+        // remount; the flights and the caches survive remounts anyway). RE-ARM the reads,
+        // never clear: the outbox and the word clock still hold what THIS device played,
+        // and it is owed to the adopted account.
         if (adopted) {
           rearmRoundSync();
           rearmWordRoundSync();

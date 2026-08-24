@@ -82,6 +82,19 @@ const nameForEditor = (stored: string, publicId: string) =>
 const nameForStore = (edited: string, publicId: string) =>
   edited === anonName(publicId) ? '' : edited;
 
+// THE ASSIGNED MARK IS A DISPLAY VALUE TOO — the name rule's other half (PR-219 round-2
+// review): a drawing still equal to the assigned mark the editor OPENED ON was never
+// drawn, so the body carries the EMPTY avatar ('' — "no custom mark", which every reader
+// already dresses as the account-derived face). Without this half, saving a name alone
+// froze the placeholder grid into the row for good — on a tokenless open, the local
+// SEED's grid, a face the account never had.
+//   READ  — a null stored avatar opens on the assigned mark, exactly as a board row shows it.
+//   WRITE — an avatar still equal to that assigned mark stores as the empty one.
+const avatarForEditor = (stored: string | null, publicId: string) =>
+  stored ?? defaultAvatar(publicId);
+const avatarForStore = (encoded: string, publicId: string) =>
+  encoded === defaultAvatar(publicId) ? '' : encoded;
+
 // The SAVE button's two orthogonal facts: its visual PHASE (the label rolls down and
 // out, the dot loader drops in from the top, holds, then the label rolls back up from
 // the bottom) and whether the server REFUSED the write (the line under the button).
@@ -171,19 +184,19 @@ export default function Profile() {
         if (cancelled || identityEpoch() !== epoch) return;
         if (response.ok) {
           const profile = parseProfile(await response.json());
-          const decoded = decodeAvatar(profile.avatar);
+          // Both READ halves: the assigned pseudonym stands in for an empty stored name,
+          // the assigned mark for a null stored avatar. The name is also sanitized on the
+          // way in (a no-op on anything the server stored, since it enforces the same
+          // rule). The BASELINE is those same display values, or a value the editor
+          // cannot reproduce would light SAVE up with nothing edited.
+          const shownAvatar = avatarForEditor(profile.avatar, publicId);
+          const decoded = decodeAvatar(shownAvatar);
           if (cancelled || identityEpoch() !== epoch) return;
-          // Sanitized on the way IN (so the editor can never display a value its own
-          // field would refuse — a no-op on anything the server stored, since it
-          // enforces the same rule), then the assigned pseudonym stands in for an
-          // empty stored name: nameForEditor's READ half. The baseline is that same
-          // display value, or a name the editor cannot reproduce would light SAVE up
-          // with nothing edited.
           const name = nameForEditor(profile.name, publicId);
           setName(name);
           setPalette(decoded.palette);
           setCells(decoded.cells);
-          setBaseline({ name, avatar: profile.avatar });
+          setBaseline({ name, avatar: shownAvatar });
         } else if (response.status === 404) {
           // Never customized: open on the assigned identity the boards already show
           // (see the gating note above) — the same READ half, over an empty name.
@@ -338,12 +351,18 @@ export default function Profile() {
       // the pseudonym the player was actually SHOWN (`assignedFrom`: the account's, or the
       // local seed's on a tokenless open). The baseline below re-reads the DISPLAY value,
       // so a save can never leave the editor differing from what it just stored.
-      const body = { token: current.token, name: nameForStore(clean, assignedFrom), avatar: encoded };
+      const body = {
+        token: current.token,
+        name: nameForStore(clean, assignedFrom),
+        avatar: avatarForStore(encoded, assignedFrom),
+      };
       try {
         const response = await postProfileBody(profileUrl(), body);
         if (identityEpoch() !== epoch) return;
         if (response.ok) {
-          setBaseline({ name: clean, avatar: body.avatar });
+          // DISPLAY space, like the name half: the body may have stored the empty avatar,
+          // but what the editor holds — and must compare against — is the drawing shown.
+          setBaseline({ name: clean, avatar: encoded });
         } else {
           const refusal = (await response.json().catch(() => null)) as { error?: string } | null;
           if (identityEpoch() !== epoch) return;

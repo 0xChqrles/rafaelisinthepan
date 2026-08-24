@@ -92,14 +92,21 @@ export async function handleProfile(
   if (typeof body.avatar !== 'string') {
     return errorResponse(400, 'bad_request', 'Body field "avatar" must be a string.', responseHeaders);
   }
-  let cells: number[];
-  try {
-    cells = decodeAvatar(body.avatar).cells;
-  } catch {
-    return errorResponse(400, 'bad_request', 'Body field "avatar" is not a valid avatar.', responseHeaders);
-  }
-  if (containsSwastika(cells)) {
-    return errorResponse(400, 'avatar_rejected', 'This avatar is not allowed.', responseHeaders);
+  // The EMPTY avatar is "no custom mark" (PR-219 round-2 review): the editor stores ''
+  // when the drawing is still the ASSIGNED mark it opened on — the name rule's own shape,
+  // display-only in both directions — so every surface keeps DERIVING the face from the
+  // account id instead of freezing a generated grid into the row. Nothing to decode and
+  // nothing to moderate; the board and preview readers already dress '' as null.
+  if (body.avatar !== '') {
+    let cells: number[];
+    try {
+      cells = decodeAvatar(body.avatar).cells;
+    } catch {
+      return errorResponse(400, 'bad_request', 'Body field "avatar" is not a valid avatar.', responseHeaders);
+    }
+    if (containsSwastika(cells)) {
+      return errorResponse(400, 'avatar_rejected', 'This avatar is not allowed.', responseHeaders);
+    }
   }
 
   const publicId = auth.value.account.accountId;

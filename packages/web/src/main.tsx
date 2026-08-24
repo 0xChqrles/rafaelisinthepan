@@ -4,7 +4,7 @@ import App from './App';
 import { initAnalytics } from './analytics';
 import { installButtonFocusGuard } from './buttonFocus';
 import { loadDeviceIdentity } from './identity';
-import { reconcileGameStateIdentity } from './state/gameStore';
+import { installGameStoreSync, reconcileGameStateIdentity } from './state/gameStore';
 import { installIdentityScope } from './state/identityScope';
 import { installVersionCheck } from './versionCheck';
 import './index.css';
@@ -23,6 +23,11 @@ const loadedIdentity = loadDeviceIdentity();
 reconcileGameStateIdentity(loadedIdentity.identity, loadedIdentity.pending);
 const removeIdentityScope = installIdentityScope();
 if (import.meta.hot) import.meta.hot.dispose(removeIdentityScope);
+// The game blob's cross-tab half (PR-219 review, P1): adopt a sibling tab's persisted
+// write before this tab's next own one, or a stale tab's next set — the identity
+// adoption's owner tag included — overwrites the active tab's unsent guesses.
+const removeGameStoreSync = installGameStoreSync();
+if (import.meta.hot) import.meta.hot.dispose(removeGameStoreSync);
 
 // Env-gated (VITE_PLAUSIBLE_DOMAIN): a no-op unless the production deploy configured it.
 initAnalytics();

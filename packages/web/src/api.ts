@@ -602,6 +602,10 @@ export function parseProfile(data: unknown): PlayerProfile {
     throw new Error('malformed profile: bad "publicId"');
   }
   if (typeof name !== 'string') throw new Error('malformed profile: bad "name"');
+  // The stored EMPTY avatar means "no custom mark" (PR-219 round-2 review): normalized to
+  // null here, the board rows' own convention, so every consumer keeps ONE fallback rule
+  // (`?? defaultAvatar`) and none can feed '' into a decoder.
+  if (avatar === '' || avatar === null) return { publicId, name, avatar: null };
   if (!isValidAvatar(avatar)) throw new Error('malformed profile: bad "avatar"');
   return { publicId, name, avatar };
 }

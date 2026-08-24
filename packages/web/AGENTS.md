@@ -418,16 +418,22 @@ it to the local store — see `packages/backend/AGENTS.md`).
     function: the signed-out screen and the leaderboard's identity strip both re-render on it.
     `deviceIdentity()` is the SYNCHRONOUS "should I even ask the server?" test every private
     read makes; `ensureDeviceIdentity()` is the ONE bootstrap flight (the `activeScoreFlights`
-    pattern — a first guess while the leaderboard is mounting must not mint two accounts);
+    pattern — two deploy taps landing in one tick, a PLAY while an invite accept is still
+    in flight, must not mint two accounts);
     `ensureRequestIdentity(expectedEpoch)` is the private-request boundary — if resolving
     identity adopts B while the closure owns A's inputs, it returns nothing and no POST is
     made; `identityEpoch()` also fences every answer after its request is sent.
   - **The token is PERSISTED before the bootstrap request, and a token with no ids is NOT an
     identity.** That intermediate state is what makes a lost answer recoverable: the retry
     sends the SAME token, which is what the server's idempotence is keyed by. It reads as
-    tokenless for the no-private-fetch rule, and correctly so — the client waits for the
-    bootstrap answer before performing the act it bootstrapped FOR, so an account created
-    behind a lost answer is empty.
+    tokenless for the no-private-fetch rule.
+    **A RECOVERED pending bootstrap is not assumed empty** (PR-219 round-2 review): only a
+    token THIS session minted fronts an account that is empty by construction (the act
+    waits on the answer). A bare `{token}` read back from storage may be the residue of a
+    bootstrap whose answer arrived and whose acts ran, with only the completed identity's
+    write failing behind it — so its retry publishes the acquisition as an ADOPTION
+    (`pendingFromStorage`), and the scope owner re-reads the tokenless projections instead
+    of trusting ready-and-empty answers over real state.
   - **localStorage is shared by every TAB, so this module's copy is a CACHE of it** (added on
     review): `ensureDeviceIdentity` re-reads before minting, a `storage` listener adopts what
     another tab wrote, a pending token found there is adopted rather than replaced (two tabs
@@ -467,8 +473,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     **An ADOPTED first identity RE-ARMS those answers** (PR-219 review): the tokenless
     projections were about a device with no account, and an identity adopted from another
     tab (`IdentityChange.adopted` — a storage event, the pre-mint re-read, losing the
-    bootstrap race; never the tab's own minted-empty bootstrap) may already own rounds and
-    history — while a first acquisition bumps no scope revision, so nothing else would ever
+    bootstrap race, or a pending bootstrap RECOVERED from storage; never a token this
+    session itself minted, whose account is empty by construction) may already own rounds
+    and history — while a first acquisition bumps no scope revision, so nothing else would ever
     re-read them. `identityScope` calls `rearmRoundSync`/`rearmWordRoundSync` (the open
     conversations start over with a read, the republish reset's shape) and
     `rearmPlayerHistory` (replays exactly the reads the tokenless branch answered). A

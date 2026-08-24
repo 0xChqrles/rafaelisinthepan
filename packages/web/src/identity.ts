@@ -90,9 +90,19 @@ export const DEVICE_BOOTSTRAP_LOCK = 'whippin-device-bootstrap';
 // A token that has been minted but whose bootstrap has not answered. It is persisted BEFORE
 // the request so a committed-but-lost bootstrap can be retried onto the same identity; it is
 // deliberately NOT an identity, because until the answer lands this device does not know
-// which account it holds — and, since the client waits for that answer before performing the
-// act it bootstrapped for, an account created behind a lost answer is empty.
+// which account it holds. An account behind a lost answer is empty only while the token is
+// THIS session's own mint (the act waits on the answer) — which is what `pendingFromStorage`
+// below tracks, since a recovered token proves no such thing.
 let pendingToken: string | null = null;
+
+// WHERE the pending token came from (PR-219 round-2 review). A token this session MINTED
+// fronts an account that is empty by construction — the act that asked for it waits on the
+// answer. A token adopted from STORAGE proves no such thing: it may be the residue of a
+// bootstrap whose ANSWER arrived and whose acts ran, with only the completed identity's
+// write failing behind it (a session-only identity leaves exactly this). The recovery must
+// therefore publish a storage-recovered token's bootstrap as an ADOPTION — the scope owner
+// re-reads the projections — never as a fresh mint whose emptiness it cannot prove.
+let pendingFromStorage = false;
 
 // The completed identity could not be persisted. A later readable EMPTY value cannot then
 // mean "another tab removed it": it may simply be the result of our own failed write. Keep
@@ -312,8 +322,8 @@ export function useIdentityScopeRevision(): number {
 // knowing nothing about the game.
 //
 // The change carries its PREVIOUS value, because acquiring a first identity and leaving one
-// are not the same event: a bootstrap is triggered BY an act (a first guess, a word round
-// start), so clearing on it would destroy the very thing that asked for it.
+// are not the same event: a bootstrap is triggered BY a deploy button (a PLAY, an invite,
+// a save), so clearing on it would destroy the very thing that asked for it.
 export interface IdentityChange {
   previous: DeviceIdentity | null;
   next: DeviceIdentity | null;
@@ -398,6 +408,7 @@ function syncFromStorage(): DeviceIdentity | null {
       if (held !== null) departedTokens.add(held.token);
       sessionOnly = false;
       pendingToken = null;
+      pendingFromStorage = false;
       flight = null;
       publish(null, true);
       return null;
@@ -416,6 +427,7 @@ function syncFromStorage(): DeviceIdentity | null {
     departedTokens.clear();
     dismissedTombstone = null;
     pendingToken = null;
+    pendingFromStorage = false;
     const same =
       held !== null &&
       held.token === found.token &&
@@ -437,7 +449,12 @@ function syncFromStorage(): DeviceIdentity | null {
   // origin-wide lock below closes the earlier EMPTY/EMPTY race, before either tab has had a
   // chance to publish that pending token. With storage merely EMPTY, a token this session
   // already minted is still ours to retry — the write simply did not stick.
-  pendingToken = ignored ? pendingToken : (stored.token ?? pendingToken);
+  if (!ignored && stored.token !== null && stored.token !== pendingToken) {
+    pendingToken = stored.token;
+    // Not ours-fresh: another tab's bootstrap in progress, or a prior session's residue —
+    // either way, an account whose emptiness this session cannot vouch for.
+    pendingFromStorage = true;
+  }
   // We held one and the key no longer does: another tab started fresh (a sign-out now
   // leaves the TOMBSTONE above, so plain emptiness no longer ambiguously means one).
   // Ordinary identity loss, not the signed-out screen.
@@ -446,8 +463,8 @@ function syncFromStorage(): DeviceIdentity | null {
 }
 
 // ONE bootstrap in the air at a time, module-level (the `activeScoreFlights` pattern): two
-// triggers can fire in the same tick — a first guess while the leaderboard is mounting —
-// and each minting its own token would create two accounts for one player.
+// deploy taps can land in the same tick — a PLAY while an invite accept is still in
+// flight — and each minting its own token would create two accounts for one player.
 let flight: Promise<DeviceIdentity> | null = null;
 
 async function lockedBootstrap(): Promise<DeviceIdentity> {
@@ -530,7 +547,12 @@ async function bootstrap(): Promise<DeviceIdentity> {
   // where a fresh token would silently mint a second identity and orphan the first. It also
   // lets a waiter or a later session adopt a pending bootstrap that was interrupted after
   // this write, and resolve through the server's idempotence instead of starting another.
-  const token = (pendingToken ??= generateDeviceToken());
+  let token = pendingToken;
+  if (token === null) {
+    token = generateDeviceToken();
+    pendingToken = token;
+    pendingFromStorage = false;
+  }
   write({ token });
   const challenge = await turnstileToken();
   const response = await postDevicesBody(devicesUrl(), { token, turnstileToken: challenge });
@@ -550,17 +572,24 @@ async function bootstrap(): Promise<DeviceIdentity> {
     sessionOnly = false;
     departedTokens.clear();
     pendingToken = null;
+    pendingFromStorage = false;
     publish(raced.identity);
     return raced.identity;
   }
   const identity: DeviceIdentity = { token, accountId, deviceId };
   sessionOnly = !write(identity);
   if (!sessionOnly) departedTokens.clear();
+  const recovered = pendingFromStorage;
   pendingToken = null;
-  // MINTED here, by this tab's own bootstrap: the account is empty by construction, so
-  // nothing published while tokenless needs re-reading. (The raced adoption above does NOT
-  // say `minted` — the tab that won may already be playing on that account.)
-  publish(identity, false, true);
+  pendingFromStorage = false;
+  // MINTED here only when the TOKEN was ours-fresh: that account is empty by construction
+  // (the act that asked waits on this very answer), so nothing published while tokenless
+  // needs re-reading. A token RECOVERED from storage proves no emptiness — the original
+  // bootstrap's answer may have arrived and its acts run, with only the identity's write
+  // failing behind it — so its bootstrap publishes as an ADOPTION and the scope owner
+  // re-reads the tokenless projections (PR-219 round-2 review). (The raced adoption above
+  // does not say `minted` either — the tab that won may already be playing.)
+  publish(identity, false, !recovered);
   return identity;
 }
 
@@ -588,6 +617,7 @@ export function markDeviceSignedOut(expectedEpoch: string): boolean {
   dismissedTombstone = null;
   sessionOnly = false;
   pendingToken = null;
+  pendingFromStorage = false;
   flight = null;
   publish(null, true);
   return true;
@@ -613,6 +643,7 @@ export function startFreshDevice(): void {
   removeTombstone();
   sessionOnly = false;
   pendingToken = null;
+  pendingFromStorage = false;
   flight = null;
   publish(null, false);
 }
@@ -653,6 +684,7 @@ export function resetDeviceIdentity(): void {
   departedTokens.clear();
   dismissedTombstone = null;
   pendingToken = null;
+  pendingFromStorage = false;
   flight = null;
   storage = undefined;
   if (storageListener && typeof window !== 'undefined') {

@@ -499,6 +499,42 @@ describe('localStorage is shared by every TAB (#216)', () => {
     expect(post.mock.calls[0][1].token).toBe(theirToken);
   });
 
+  it('publishes a STORAGE-RECOVERED pending bootstrap as an ADOPTION, never a fresh mint', async () => {
+    // A bare {token} in storage does NOT prove an empty account (PR-219 round-2 review):
+    // the original session's bootstrap may have ANSWERED and its acts run — a profile
+    // saved, a friend added, a word round started — with only the completed identity's
+    // write failing behind it. Recovering the token through the server's idempotence
+    // returns that very account, so the acquisition must announce `adopted` and let the
+    // scope owner re-read the tokenless projections, or the real state stays hidden
+    // behind ready-and-empty answers — and could be overwritten.
+    const priorToken = 'd'.repeat(64);
+    storage.setItem('whippin-device', JSON.stringify({ token: priorToken }));
+    loadDeviceIdentity();
+    const seen: { adopted: boolean }[] = [];
+    const stop = onIdentityChange((change) => seen.push(change));
+    await ensureDeviceIdentity();
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ adopted: true });
+    stop();
+  });
+
+  it('a token minted THIS session still publishes as minted after its own failed retry', async () => {
+    // The contrast case: ours-fresh, the act waits on the answer, so the account really is
+    // empty — even when the first request failed and a later one succeeds on the SAME
+    // persisted token.
+    post.mockRejectedValueOnce(new Error('offline'));
+    await expect(ensureDeviceIdentity()).rejects.toThrow();
+    const seen: { adopted: boolean }[] = [];
+    const stop = onIdentityChange((change) => seen.push(change));
+    post.mockResolvedValue(answer());
+    await ensureDeviceIdentity();
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ adopted: false });
+    // And it really was the SAME token both times (the idempotence key).
+    expect(post.mock.calls[1][1].token).toBe(post.mock.calls[0][1].token);
+    stop();
+  });
+
   it('yields to a tab that won the race to a DIFFERENT token', async () => {
     const theirs = { token: 'e'.repeat(64), accountId: 'qqqqqqqqqqqqqqqq', deviceId: DEVICE };
     post.mockImplementationOnce(async () => {

@@ -254,7 +254,8 @@ async function pump(key: string): Promise<void> {
     // **No token means no private fetch** (#216). A device with no identity holds no server
     // rows by construction, so the round's authoritative state is KNOWN empty — asking would
     // be a request whose only possible answer we already have, and it would bootstrap an
-    // account for a visit that has not acted. The first guess creates both.
+    // account for a visit that has not acted. The PLAY gate's deploy creates both (the
+    // trigger rework: the append below never mints).
     if (deviceIdentity() === null) {
       f.created = false;
       f.readDone = true;

@@ -424,6 +424,11 @@ describe('profileUrl + parseProfile (#188)', () => {
     expect(() => parseProfile({ ...valid, publicId: 'NOPE' })).toThrow(/publicId/);
     expect(() => parseProfile({ ...valid, name: 3 })).toThrow(/name/);
     expect(() => parseProfile({ ...valid, avatar: 'garbage' })).toThrow(/avatar/);
+    // The stored EMPTY avatar is "no custom mark" (PR-219 round-2 review), normalized to
+    // null — the board rows' convention — so ONE fallback rule serves every consumer and
+    // '' can never reach a decoder.
+    expect(parseProfile({ ...valid, avatar: '' })).toEqual({ ...valid, avatar: null });
+    expect(parseProfile({ ...valid, avatar: null })).toEqual({ ...valid, avatar: null });
   });
 });
 

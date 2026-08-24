@@ -80,6 +80,21 @@ describe('profile route (#188)', () => {
     expect(JSON.parse(read.body)).toEqual({ publicId, name: 'Chqrles', avatar });
   });
 
+  it("accepts the EMPTY avatar as \"no custom mark\" and stores it verbatim", async () => {
+    // The editor's WRITE half (PR-219 round-2 review): a drawing still equal to the
+    // assigned mark it opened on stores as '' — never a generated grid frozen into the
+    // row — so every reader keeps deriving the face from the account id (the board and
+    // the invite preview already dress '' as null). Nothing to decode, nothing to
+    // moderate.
+    const { handler, me } = await makeHandler();
+    const posted = await handler(post({ token: me.token, name: 'Chqrles', avatar: '' }));
+    expect(posted.statusCode).toBe(200);
+    const publicId = me.accountId;
+    expect(JSON.parse(posted.body)).toEqual({ publicId, name: 'Chqrles', avatar: '' });
+    const read = await handler(get(publicId));
+    expect(JSON.parse(read.body)).toEqual({ publicId, name: 'Chqrles', avatar: '' });
+  });
+
   it('upserts: a second write replaces name and avatar for the same identity', async () => {
     const { handler, me } = await makeHandler();
     await handler(post({ token: me.token, name: 'First', avatar: blankAvatar(0) }));
