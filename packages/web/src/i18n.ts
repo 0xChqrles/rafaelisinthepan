@@ -39,6 +39,15 @@ const STRINGS = {
   // leaderboard route's account-creating act), loud for the invite write's reason — the
   // link is the one thing the tap existed to share, and INVITE itself is the retry.
   failedInviteLink: { en: 'FAILED TO INVITE', fr: "ÉCHEC DE L'INVITATION" },
+  // The fresh-tap ask between the INVITE tap's two phases (PR-219 review): the mint can
+  // outlive the browser's transient activation, so the share belongs to a SECOND tap —
+  // and the screen says so in the input device's own verb, or the first tap reads as a
+  // button that did nothing.
+  inviteReadyTap: { en: 'READY — TAP AGAIN TO SHARE', fr: 'PRÊT — TOUCHEZ POUR PARTAGER' },
+  inviteReadyClick: { en: 'READY — CLICK AGAIN TO SHARE', fr: 'PRÊT — CLIQUEZ POUR PARTAGER' },
+  // Neither the native sheet nor the clipboard could deliver (insecure context, denied
+  // clipboard, a spent activation): the one share whose silence reads as a dead button.
+  failedShare: { en: 'SHARE FAILED', fr: 'ÉCHEC DU PARTAGE' },
   // Word mode's round start (#202), loud for that same reason and one more: the SERVER
   // stamps the clock, so a failed start is a run that has not begun. Saying nothing would
   // leave the player tapping PLAY at a gate that never opens.

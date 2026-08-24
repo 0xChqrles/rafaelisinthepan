@@ -1162,6 +1162,19 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   caused them. **RECONNECT is NOT WIRED in #216**: the email link flow is #204's, so the
   screen takes the handler as a prop and offers SKIP alone until then — a button that does
   nothing is worse than a screen that only offers what it can do.
+  **THE VERDICT IS DURABLE AND BROADCAST — a persisted TOMBSTONE (user-decided 2026-08-24,
+  on the PR-219 follow-up review).** A sign-out REPLACES the stored identity with a
+  non-authenticating `{signedOut, accountId, deviceId}` value — the two PUBLIC ids, never a
+  token — instead of merely removing it: bare removal read as ordinary identity loss, so a
+  reload lost the explanation and treated the player as brand new, and a sibling tab's next
+  act could silently mint a replacement account. The tombstone survives reloads (the
+  startup read raises the screen), reaches sibling tabs through the same storage channel
+  (a tab holding the NAMED identity drops to the screen and fences its token; one holding a
+  DIFFERENT identity ignores it), and **fails the bootstrap CLOSED while it stands**: no
+  ordinary act may mint through it — leaving the account behind is the player's explicit
+  choice. START FRESH removes it, origin-wide (#204's reconnect will too); a tombstone that
+  cannot be removed (unwritable storage) is dismissed in memory for the session, so SKIP
+  can never loop. A tombstone naming an identity this tab does not hold changes nothing.
 - **LOCAL STATE FOLLOWS THE IDENTITY THAT OWNS IT** (`web/state/identityScope.ts`, installed
   once from `main.tsx`): acquiring the **first** identity clears nothing, because the guess or
   Word run that triggered bootstrap already exists on screen. When a non-null identity is

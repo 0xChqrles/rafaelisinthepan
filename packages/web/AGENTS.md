@@ -479,6 +479,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
     4xx must never take a player's account away, and a late verdict for A must never remove B.
     The second authoritative caller is `DeviceList`: a successful self-revocation answer whose
     post-write list omits the calling row signs this tab out immediately.
+    **It leaves the persisted TOMBSTONE** (user-decided 2026-08-24 — the durable/broadcast
+    contract is the root `AGENTS.md`'s): the stored identity is replaced with
+    `{signedOut, accountId, deviceId}`, `readStored` reads it as the third stored state,
+    `syncFromStorage` raises the screen from it (matching identity or none; a mismatched one
+    stands), `bootstrap` throws while `signedOut` is true, and `startFreshDevice` removes it —
+    with an in-memory `dismissedTombstone` fence for the unwritable-storage case, the
+    `departedTokens` shape for the tombstone.
   - **`state/identityScope.ts` holds the whole list of what an identity owns**, wired once
     from `main.tsx` rather than as import-time side effects in five modules — so `identity.ts`
     keeps knowing nothing about the game, and the list is one readable block.
@@ -940,9 +947,23 @@ it to the local store — see `packages/backend/AGENTS.md`).
   navigation must not create server state, so a tokenless visitor's FRIENDS board is the
   KNOWN-EMPTY answer (the ghost + INVITE, no request — the #216 no-private-fetch rule),
   the identity strip settles empty, the `/friends` decoration read is skipped, and the
-  INVITE tap is the screen's account-creating act: it bootstraps (LoadingWave in the
-  button, the Word gate's PLAY shape; a failure says `failedInviteLink` with the button
-  itself as the retry) and then shares. Every identity-reading effect keys on the LIVE
+  INVITE tap is the screen's account-creating act — **in TWO EXPLICIT PHASES (PR-219
+  follow-up review)**: the tokenless tap ONLY bootstraps (LoadingWave in the button, the
+  Word gate's PLAY shape; a failure says `failedInviteLink` with the button itself as the
+  retry) and then ASKS for a fresh tap (`inviteReadyTap`/`Click`, the input device's own
+  verb), because Turnstile + /devices can outlive the browser's transient user activation
+  and past it BOTH deliveries reject — navigator.share by spec, the async clipboard on
+  WebKit — so a share fired after the mint could create the account and deliver nothing,
+  silently. The second tap shares inside its own activation; `useShare.share` now REPORTS
+  delivery (a dismissed sheet counts as delivered), and a share where neither channel
+  worked says `failedShare` instead of being swallowed. The TOKENLESS answers are derived
+  SYNCHRONOUSLY (state initializers + the render-time scope reset, never an effect), so a
+  direct tokenless visit paints no skeleton and no LOADING flash; and every cache on this
+  screen — both tabs' boards, the friend marks, the strip — is IDENTITY-SCOPED, dropped
+  during render when the epoch changes exactly as a new day drops the boards: the
+  stale-but-good rule keeps a cached board over a failed refresh, so a kept
+  tokenless-empty board would suppress both the adopted account's real data and the retry
+  UI. Every identity-reading effect keys on the LIVE
   identity (`useDeviceIdentity`), so the mint — or a cross-tab adoption — populates the
   strip, both boards and the friend marks without a remount (a run-once strip effect used
   to leave them blank until navigation). Its lazy

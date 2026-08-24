@@ -102,6 +102,12 @@ let sessionOnly = false;
 // identity whose own completed write had to fall back to `sessionOnly`.
 const departedTokens = new Set<string>();
 
+// A tombstone this tab deliberately DISMISSED (START FRESH) but could not remove —
+// unwritable storage. Without this fence the next sync would re-adopt the verdict it can
+// still read and SKIP would loop forever; with it, the still-readable tombstone reads as
+// emptiness for this session (the departedTokens shape, for the tombstone).
+let dismissedTombstone: SignedOutTombstone | null = null;
+
 function defaultStorage(): Storage | null {
   // The `localStorage` PROPERTY itself throws a SecurityError when storage is disabled
   // (blocked cookies, some private modes), so the read needs its own catch or every
@@ -119,17 +125,46 @@ function store(): Storage | null {
   return storage;
 }
 
+// The persisted SIGNED-OUT verdict (#216, user-decided 2026-08-24 on the PR-219
+// follow-up review): the shared key holds this TOMBSTONE instead of the removed identity,
+// so the verdict survives a reload and reaches sibling tabs through the same storage
+// channel everything else does. It names WHICH identity was signed out — the two PUBLIC
+// ids, never a token, so it authenticates nothing — which is what lets a tab holding a
+// DIFFERENT identity ignore it. It stands until the player chooses: START FRESH removes
+// it (a #204 reconnect will too), and until then no ordinary act may mint a replacement
+// account through it (`bootstrap` fails closed on `signedOut`).
+interface SignedOutTombstone {
+  accountId: string;
+  deviceId: string;
+}
+
 // What the shared key says — and, first, whether it can be read at all. The two are
 // DIFFERENT answers: an unreadable storage (blocked cookies, a private mode that throws)
 // says NOTHING about this device's identity, while a readable empty one says there is none.
 // Collapsing them would let a denied storage drop an identity this session is already
-// playing on.
+// playing on. `signedOut` is the third readable state: not an identity and not emptiness,
+// but the recorded verdict that one was signed out (exclusive with the other two fields).
 type StoredRead =
   | { available: false }
-  | { available: true; token: string | null; identity: DeviceIdentity | null };
+  | {
+      available: true;
+      token: string | null;
+      identity: DeviceIdentity | null;
+      signedOut: SignedOutTombstone | null;
+    };
 
 const UNAVAILABLE: StoredRead = { available: false };
-const EMPTY: StoredRead = { available: true, token: null, identity: null };
+const EMPTY: StoredRead = { available: true, token: null, identity: null, signedOut: null };
+
+function publicIdPair(value: Record<string, unknown>): SignedOutTombstone | null {
+  const { accountId, deviceId } = value;
+  const complete =
+    typeof accountId === 'string' &&
+    PUBLIC_ID_PATTERN.test(accountId) &&
+    typeof deviceId === 'string' &&
+    PUBLIC_ID_PATTERN.test(deviceId);
+  return complete ? { accountId: accountId as string, deviceId: deviceId as string } : null;
+}
 
 function readStored(): StoredRead {
   let raw: string | null;
@@ -148,19 +183,29 @@ function readStored(): StoredRead {
     return EMPTY;
   }
   if (typeof parsed !== 'object' || parsed === null) return EMPTY;
-  const { token, accountId, deviceId } = parsed as Record<string, unknown>;
+  const value = parsed as Record<string, unknown>;
+  if (value.signedOut === true) {
+    // The tombstone. A malformed one follows the corrupted-value rule below: it can fence
+    // nothing it cannot name, so it reads as no value at all.
+    const tombstone = publicIdPair(value);
+    return tombstone ? { available: true, token: null, identity: null, signedOut: tombstone } : EMPTY;
+  }
+  const { token } = value;
   // A corrupted value is no identity at all — better to mint a fresh one than to send
   // garbage the server would refuse on every call forever.
   if (!isValidDeviceToken(token)) return EMPTY;
-  const complete =
-    typeof accountId === 'string' &&
-    PUBLIC_ID_PATTERN.test(accountId) &&
-    typeof deviceId === 'string' &&
-    PUBLIC_ID_PATTERN.test(deviceId);
-  return { available: true, token, identity: complete ? { token, accountId, deviceId } : null };
+  const ids = publicIdPair(value);
+  return {
+    available: true,
+    token,
+    identity: ids ? { token, ...ids } : null,
+    signedOut: null,
+  };
 }
 
-function write(value: { token: string } | DeviceIdentity): boolean {
+function write(
+  value: { token: string } | DeviceIdentity | ({ signedOut: true } & SignedOutTombstone),
+): boolean {
   try {
     const held = store();
     if (!held) return false;
@@ -176,7 +221,7 @@ function write(value: { token: string } | DeviceIdentity): boolean {
 // account that tab is playing on, which is the one thing a sign-out here may not do.
 function clearStored(expected: string | null): void {
   // No token means this tab cannot prove the shared entry is its own. This is especially
-  // important for SKIP after the signed-out screen: `markDeviceSignedOut` already removed
+  // important for SKIP after the signed-out screen: `markDeviceSignedOut` already replaced
   // the revoked token conditionally, and another tab may have installed a fresh identity
   // since. An unconditional second removal would delete that newer account.
   if (expected === null) return;
@@ -189,6 +234,34 @@ function clearStored(expected: string | null): void {
     store()?.removeItem(STORAGE_KEY);
   } catch {
     // Unreadable or unwritable storage: nothing to remove.
+  }
+}
+
+// Replace the stored identity with its signed-out TOMBSTONE — under the same proof of
+// ownership as `clearStored`: only while the shared key still holds the token being signed
+// out (an existing tombstone, which holds none, may be replaced — both say "signed out").
+// A write that cannot happen leaves the verdict in-memory only, exactly as before.
+function installTombstone(expected: string, identity: SignedOutTombstone): void {
+  try {
+    const stored = readStored();
+    if (!stored.available) return;
+    if (stored.token !== null && stored.token !== expected) return;
+    write({ signedOut: true, accountId: identity.accountId, deviceId: identity.deviceId });
+  } catch {
+    // Unreadable or unwritable storage: the in-memory fence still stands for this tab.
+  }
+}
+
+// START FRESH's other half: the tombstone holds no token, so `clearStored`'s proof of
+// ownership can never remove it. Removing it unconditionally is safe BECAUSE it
+// authenticates nothing — and START FRESH is exactly the choice it exists to wait for.
+function removeTombstone(): void {
+  try {
+    const stored = readStored();
+    if (!stored.available || stored.signedOut === null) return;
+    store()?.removeItem(STORAGE_KEY);
+  } catch {
+    // Unwritable storage: the next load reads the tombstone again, and SKIP re-offers.
   }
 }
 
@@ -295,6 +368,38 @@ function syncFromStorage(): DeviceIdentity | null {
   // Storage that cannot be READ is not storage that is empty. There, this session's
   // in-memory identity is all there is, and it stands.
   if (!stored.available) return held;
+  // The persisted signed-out verdict, from another tab or an earlier session of this one.
+  // It names the identity it fences by PUBLIC ids, so a tab holding a DIFFERENT identity
+  // ignores it (that identity may overwrite it when it next persists); a tab holding the
+  // named one — or none at all — adopts the signed-out SCREEN, never ordinary emptiness:
+  // the whole point of the tombstone is that reloading, and every sibling tab, keep the
+  // explanation instead of silently becoming a brand-new visitor.
+  if (stored.signedOut !== null) {
+    const tombstone = stored.signedOut;
+    const dismissed =
+      dismissedTombstone !== null &&
+      dismissedTombstone.accountId === tombstone.accountId &&
+      dismissedTombstone.deviceId === tombstone.deviceId;
+    if (!dismissed) {
+      if (
+        held !== null &&
+        (held.accountId !== tombstone.accountId || held.deviceId !== tombstone.deviceId)
+      ) {
+        return held;
+      }
+      // Fence the held token too: the server's verdict reached this tab through storage
+      // rather than through its own refused call, and re-adopting that token later would
+      // resurrect an identity the server already rejected.
+      if (held !== null) departedTokens.add(held.token);
+      sessionOnly = false;
+      pendingToken = null;
+      flight = null;
+      publish(null, true);
+      return null;
+    }
+    // Dismissed and unremovable: this tab already chose START FRESH, so the verdict it
+    // can still read counts as emptiness for the rest of this session.
+  }
   // A failed remove may leave the revoked token perfectly readable. It is no longer an
   // identity merely because localStorage still says so: the authoritative server answer
   // that fenced the token wins. A DIFFERENT token is a real cross-tab replacement and
@@ -304,6 +409,7 @@ function syncFromStorage(): DeviceIdentity | null {
   if (found) {
     sessionOnly = false;
     departedTokens.clear();
+    dismissedTombstone = null;
     pendingToken = null;
     const same =
       held !== null &&
@@ -327,10 +433,9 @@ function syncFromStorage(): DeviceIdentity | null {
   // chance to publish that pending token. With storage merely EMPTY, a token this session
   // already minted is still ours to retry — the write simply did not stick.
   pendingToken = ignored ? pendingToken : (stored.token ?? pendingToken);
-  // We held one and the key no longer does: another tab signed this device out or started
-  // fresh. Drop to "no identity" rather than to the signed-out SCREEN — from storage alone
-  // the two are indistinguishable, and the tab that actually got `unknown_device` is already
-  // showing it.
+  // We held one and the key no longer does: another tab started fresh (a sign-out now
+  // leaves the TOMBSTONE above, so plain emptiness no longer ambiguously means one).
+  // Ordinary identity loss, not the signed-out screen.
   if (held) publish(null);
   return null;
 }
@@ -390,6 +495,14 @@ async function bootstrap(): Promise<DeviceIdentity> {
   // another tab finished its own bootstrap.
   const adopted = syncFromStorage();
   if (adopted) return adopted;
+  // THE SIGNED-OUT VERDICT FAILS THE MINT CLOSED (user-decided 2026-08-24): while the
+  // tombstone stands — read from storage just above, or held in memory when storage could
+  // not be written — no ordinary act may create a replacement account. Leaving the old one
+  // behind is the player's explicit choice (START FRESH clears the tombstone; #204's
+  // reconnect will too), never a side effect of the next guess or tap. The signed-out
+  // SCREEN is over the app wherever this flag is true, so this throw is the backstop for
+  // anything that asks without a screen.
+  if (useIdentityStore.getState().signedOut) throw new Error('This device is signed out.');
   // PERSIST the token before the request. Bootstrap is idempotent by its hash, so a
   // committed write whose answer was lost is recovered by retrying with the same value —
   // where a fresh token would silently mint a second identity and orphan the first. It also
@@ -436,11 +549,21 @@ async function bootstrap(): Promise<DeviceIdentity> {
 export function markDeviceSignedOut(expectedEpoch: string): boolean {
   if (identityEpoch() !== expectedEpoch) return false;
   if (useIdentityStore.getState().signedOut) return false;
-  const token = useIdentityStore.getState().identity?.token ?? null;
-  // Fence first: even if removeItem throws, a later ensure may not turn the storage
-  // failure into permission to resurrect the token the server just rejected.
+  const identity = useIdentityStore.getState().identity;
+  const token = identity?.token ?? null;
+  // Fence first: even if the storage write throws, a later ensure may not turn the
+  // storage failure into permission to resurrect the token the server just rejected.
   if (token !== null) departedTokens.add(token);
-  clearStored(token);
+  // The stored identity is REPLACED with its signed-out tombstone rather than removed
+  // (user-decided 2026-08-24): removal read as ordinary identity loss, so a reload lost
+  // the explanation and a sibling tab could mint a fresh account on its next act. The
+  // tombstone keeps the verdict durable and broadcast until START FRESH clears it.
+  if (token !== null && identity !== null) {
+    installTombstone(token, { accountId: identity.accountId, deviceId: identity.deviceId });
+  }
+  // A NEW verdict re-arms the fence: whatever tombstone this tab once dismissed, this one
+  // is fresh and stands until the player chooses again.
+  dismissedTombstone = null;
   sessionOnly = false;
   pendingToken = null;
   flight = null;
@@ -450,6 +573,8 @@ export function markDeviceSignedOut(expectedEpoch: string): boolean {
 
 // SKIP on the signed-out screen: leave the old account behind and start fresh. The new
 // token is minted lazily by the next deliberate act, exactly like a first-ever visit.
+// This is also what lifts the signed-out TOMBSTONE — the one gesture the fenced state
+// waits for — so the next act may mint again, origin-wide.
 export function startFreshDevice(): void {
   const stored = readStored();
   const departedStored =
@@ -458,7 +583,12 @@ export function startFreshDevice(): void {
       : null;
   const token = useIdentityStore.getState().identity?.token ?? pendingToken ?? departedStored;
   if (token !== null) departedTokens.add(token);
+  // DISMISS the stored tombstone before attempting its removal: if the removal cannot
+  // stick (unwritable storage), the fence keeps the still-readable verdict from being
+  // re-adopted, or SKIP would loop this tab back onto the screen forever.
+  if (stored.available && stored.signedOut !== null) dismissedTombstone = stored.signedOut;
   clearStored(token);
+  removeTombstone();
   sessionOnly = false;
   pendingToken = null;
   flight = null;
@@ -499,6 +629,7 @@ let storageListener: ((event: StorageEvent) => void) | null = null;
 export function resetDeviceIdentity(): void {
   sessionOnly = false;
   departedTokens.clear();
+  dismissedTombstone = null;
   pendingToken = null;
   flight = null;
   storage = undefined;

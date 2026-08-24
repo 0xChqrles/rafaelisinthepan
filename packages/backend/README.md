@@ -33,14 +33,22 @@ that provisions Lambda + Function URL + CloudFront + the bucket is issue #3.)
   Ranges are inclusive — one exact band per distinct recorded score, ascending — and an
   empty population is honestly `"buckets": []`. `bucket` is `null` when the population
   holds no row for `id` (or none was sent). Score responses are `no-store`.
-- The LIVE routes — `POST /devices` (#216: the Turnstile-gated identity bootstrap, the
-  device list, revocation), `POST /round` (#201/#202/#203: the per-round guess log, Word
-  mode's start/submit, the derived score), `POST /history` (#211), `POST /friends`
-  (#189), `GET|POST /board` (#190) and `GET|POST /profile` (#188) — authenticate with the
-  **DEVICE TOKEN in the body** (`{ "token": "<64-hex>" }`, #216); the server resolves it
-  to the account. There is no client-side secret and no client-claimed score any more.
-  Their contracts live in the root and per-package `AGENTS.md`; Turnstile gates the
-  requests that CREATE state (the identity bootstrap, round creation, Word round start).
+- The LIVE routes split three ways (contracts in the root and per-package `AGENTS.md`;
+  there is no client-side secret and no client-claimed score any more):
+  - **Public GETs, anonymous by design**: `GET /board?lang=&date=&mode=[&id=<publicId>]`
+    (the global top 50; the optional `id` is a PUBLIC id that widens the answer with that
+    player's own window) and `GET /profile?id=<publicId>` (a public profile row). Nothing
+    in them authenticates.
+  - **Authenticated POSTs**: `POST /round` (#201/#202/#203: the per-round guess log, Word
+    mode's start/submit, the derived score), `POST /history` (#211), `POST /friends`
+    (#189), `POST /board` (the friends face, #190), `POST /profile` (the own-row upsert,
+    #188), and `POST /devices` for the device list and revocation — each carries the
+    **DEVICE TOKEN in the body** (`{ "token": "<64-hex>" }`, #216), which the server
+    resolves to the account.
+  - **`POST /devices` bootstrap** is CREATION, not authentication: the Turnstile-gated
+    request that mints the device row and its account. Turnstile gates exactly the
+    requests that CREATE state — this bootstrap, sentence round creation, and the Word
+    round start.
 
   In production, every live POST serializes its body once, hashes those exact UTF-8
   bytes, and sends the digest as lowercase hexadecimal in `x-amz-content-sha256` —

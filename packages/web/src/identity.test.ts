@@ -283,19 +283,79 @@ describe('what a reload finds (#216)', () => {
 });
 
 describe('being signed out (#216)', () => {
-  it('drops the identity and raises the screen, ONCE', async () => {
+  it('drops the identity, raises the screen ONCE, and leaves the TOMBSTONE', async () => {
     const identity = await ensureDeviceIdentity();
     markDeviceSignedOut(identityEpochOf(identity));
     expect(deviceIdentity()).toBeNull();
-    expect(stored()).toBeNull();
+    // The stored identity is REPLACED with the non-authenticating verdict, never merely
+    // removed (user-decided 2026-08-24): removal read as ordinary identity loss.
+    expect(stored()).toEqual({
+      signedOut: true,
+      accountId: identity.accountId,
+      deviceId: identity.deviceId,
+    });
     expect(useIdentityStore.getState().signedOut).toBe(true);
   });
 
-  it('SKIP discards the old identity and starts fresh on the next act', async () => {
+  it('keeps the verdict across a RELOAD', async () => {
+    const identity = await ensureDeviceIdentity();
+    markDeviceSignedOut(identityEpochOf(identity));
+    // A new session: module state resets, the shared key stands — exactly a reload.
+    resetDeviceIdentity();
+    const loaded = loadDeviceIdentity();
+    expect(loaded.identity).toBeNull();
+    expect(loaded.pending).toBe(false);
+    expect(useIdentityStore.getState().signedOut).toBe(true);
+    // And the standing verdict FAILS THE MINT CLOSED: no ordinary act may create a
+    // replacement account — leaving the old one behind is START FRESH's choice alone.
+    await expect(ensureDeviceIdentity()).rejects.toThrow();
+    expect(post).toHaveBeenCalledTimes(1); // only the original bootstrap
+  });
+
+  it('reaches a SIBLING TAB as the signed-out screen, never as ordinary identity loss', async () => {
+    // This tab holds the identity; another tab replaces the shared entry with the
+    // tombstone. The storage sync must raise the screen here too — a bare removal used to
+    // read as identity loss, and this tab's next act then minted a fresh account.
+    const identity = await ensureDeviceIdentity();
+    storage.setItem(
+      'whippin-device',
+      JSON.stringify({
+        signedOut: true,
+        accountId: identity.accountId,
+        deviceId: identity.deviceId,
+      }),
+    );
+    loadDeviceIdentity(); // drives syncFromStorage the way the storage event does
+    expect(deviceIdentity()).toBeNull();
+    expect(useIdentityStore.getState().signedOut).toBe(true);
+    await expect(ensureDeviceIdentity()).rejects.toThrow();
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('a tombstone naming ANOTHER identity does not sign this one out', async () => {
+    const identity = await ensureDeviceIdentity();
+    storage.setItem(
+      'whippin-device',
+      JSON.stringify({
+        signedOut: true,
+        accountId: 'qqqqqqqqqqqqqqqq',
+        deviceId: 'rrrrrrrrrrrrrrrr',
+      }),
+    );
+    loadDeviceIdentity();
+    // The tombstone names the identity it fences by PUBLIC ids; this is not it.
+    expect(deviceIdentity()).toEqual(identity);
+    expect(useIdentityStore.getState().signedOut).toBe(false);
+  });
+
+  it('SKIP discards the old identity, lifts the tombstone, and starts fresh on the next act', async () => {
     const first = await ensureDeviceIdentity();
     markDeviceSignedOut(identityEpochOf(first));
+    expect(stored()).toMatchObject({ signedOut: true });
     startFreshDevice();
     expect(useIdentityStore.getState().signedOut).toBe(false);
+    // The tombstone leaves storage with the choice: the whole origin may mint again.
+    expect(stored()).toBeNull();
     post.mockResolvedValue(answer('qqqqqqqqqqqqqqqq', 'rrrrrrrrrrrrrrrr'));
     const second = await ensureDeviceIdentity();
     expect(second.token).not.toBe(first.token);
