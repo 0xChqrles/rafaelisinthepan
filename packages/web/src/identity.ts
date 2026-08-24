@@ -90,19 +90,25 @@ export const DEVICE_BOOTSTRAP_LOCK = 'whippin-device-bootstrap';
 // A token that has been minted but whose bootstrap has not answered. It is persisted BEFORE
 // the request so a committed-but-lost bootstrap can be retried onto the same identity; it is
 // deliberately NOT an identity, because until the answer lands this device does not know
-// which account it holds. An account behind a lost answer is empty only while the token is
-// THIS session's own mint (the act waits on the answer) — which is what `pendingFromStorage`
-// below tracks, since a recovered token proves no such thing.
+// which account it holds. An account behind that token is provably empty only while it is
+// THIS session's own mint AND no attempt for it has failed out of this tab's hands — the
+// `pendingUnproven` rule below; a recovered or once-released token proves nothing.
 let pendingToken: string | null = null;
 
-// WHERE the pending token came from (PR-219 round-2 review). A token this session MINTED
-// fronts an account that is empty by construction — the act that asked for it waits on the
-// answer. A token adopted from STORAGE proves no such thing: it may be the residue of a
-// bootstrap whose ANSWER arrived and whose acts ran, with only the completed identity's
-// write failing behind it (a session-only identity leaves exactly this). The recovery must
-// therefore publish a storage-recovered token's bootstrap as an ADOPTION — the scope owner
-// re-reads the projections — never as a fresh mint whose emptiness it cannot prove.
-let pendingFromStorage = false;
+// Whether the pending token's account can still be PROVEN EMPTY (PR-219 round-2 and
+// round-3 reviews). A token this session minted, whose bootstrap has not yet been let out
+// of this tab's hands, fronts an empty account by construction — the act that asked waits
+// on the answer. The proof dies two ways:
+//   - the token was ADOPTED from storage: it may be the residue of a bootstrap whose
+//     ANSWER arrived and whose acts ran, with only the completed identity's write failing
+//     behind it (a session-only identity leaves exactly this);
+//   - a bootstrap ATTEMPT for it FAILED after the token was persisted: the flight and the
+//     Web Lock release, and another tab or session can recover the SAME token, complete
+//     the bootstrap and act on the account before this tab's retry.
+// An unproven token's eventual bootstrap publishes as an ADOPTION — the scope owner
+// re-reads the tokenless projections — never as a fresh mint. Conservative on purpose: a
+// truly empty account merely re-reads empty answers.
+let pendingUnproven = false;
 
 // The completed identity could not be persisted. A later readable EMPTY value cannot then
 // mean "another tab removed it": it may simply be the result of our own failed write. Keep
@@ -408,7 +414,7 @@ function syncFromStorage(): DeviceIdentity | null {
       if (held !== null) departedTokens.add(held.token);
       sessionOnly = false;
       pendingToken = null;
-      pendingFromStorage = false;
+      pendingUnproven = false;
       flight = null;
       publish(null, true);
       return null;
@@ -427,7 +433,7 @@ function syncFromStorage(): DeviceIdentity | null {
     departedTokens.clear();
     dismissedTombstone = null;
     pendingToken = null;
-    pendingFromStorage = false;
+    pendingUnproven = false;
     const same =
       held !== null &&
       held.token === found.token &&
@@ -453,7 +459,7 @@ function syncFromStorage(): DeviceIdentity | null {
     pendingToken = stored.token;
     // Not ours-fresh: another tab's bootstrap in progress, or a prior session's residue —
     // either way, an account whose emptiness this session cannot vouch for.
-    pendingFromStorage = true;
+    pendingUnproven = true;
   }
   // We held one and the key no longer does: another tab started fresh (a sign-out now
   // leaves the TOMBSTONE above, so plain emptiness no longer ambiguously means one).
@@ -551,13 +557,25 @@ async function bootstrap(): Promise<DeviceIdentity> {
   if (token === null) {
     token = generateDeviceToken();
     pendingToken = token;
-    pendingFromStorage = false;
+    pendingUnproven = false;
   }
   write({ token });
-  const challenge = await turnstileToken();
-  const response = await postDevicesBody(devicesUrl(), { token, turnstileToken: challenge });
-  if (!response.ok) throw new Error(`device bootstrap failed: ${response.status}`);
-  const { accountId, deviceId } = parseDeviceIdentity(await response.json());
+  let accountId: string;
+  let deviceId: string;
+  try {
+    const challenge = await turnstileToken();
+    const response = await postDevicesBody(devicesUrl(), { token, turnstileToken: challenge });
+    if (!response.ok) throw new Error(`device bootstrap failed: ${response.status}`);
+    ({ accountId, deviceId } = parseDeviceIdentity(await response.json()));
+  } catch (error) {
+    // The token is persisted and this flight (and its Web Lock) is about to release:
+    // another tab or a later session can recover the SAME token, complete the bootstrap
+    // and ACT on the account before this tab retries. Whatever this attempt could have
+    // proven about emptiness is gone with it (PR-219 round-3 review) — the retry, wherever
+    // it succeeds, must publish as an adoption.
+    pendingUnproven = true;
+    throw error;
+  }
   // Last look before the write. A tab that raced this one to a DIFFERENT token has already
   // stored a complete identity; overwriting it would leave two accounts on one device and
   // orphan the one that is being played. Ours is brand new and empty, so adopting theirs
@@ -572,24 +590,23 @@ async function bootstrap(): Promise<DeviceIdentity> {
     sessionOnly = false;
     departedTokens.clear();
     pendingToken = null;
-    pendingFromStorage = false;
+    pendingUnproven = false;
     publish(raced.identity);
     return raced.identity;
   }
   const identity: DeviceIdentity = { token, accountId, deviceId };
   sessionOnly = !write(identity);
   if (!sessionOnly) departedTokens.clear();
-  const recovered = pendingFromStorage;
+  const unproven = pendingUnproven;
   pendingToken = null;
-  pendingFromStorage = false;
-  // MINTED here only when the TOKEN was ours-fresh: that account is empty by construction
-  // (the act that asked waits on this very answer), so nothing published while tokenless
-  // needs re-reading. A token RECOVERED from storage proves no emptiness — the original
-  // bootstrap's answer may have arrived and its acts run, with only the identity's write
-  // failing behind it — so its bootstrap publishes as an ADOPTION and the scope owner
-  // re-reads the tokenless projections (PR-219 round-2 review). (The raced adoption above
-  // does not say `minted` either — the tab that won may already be playing.)
-  publish(identity, false, !recovered);
+  pendingUnproven = false;
+  // MINTED here only while the token's emptiness is still PROVEN — ours-fresh, and no
+  // failed attempt has let it out of this tab's hands (see `pendingUnproven`): then
+  // nothing published while tokenless needs re-reading. Otherwise the bootstrap publishes
+  // as an ADOPTION and the scope owner re-reads the tokenless projections (PR-219 round-2
+  // and round-3 reviews). (The raced adoption above never says `minted` — the tab that
+  // won may already be playing.)
+  publish(identity, false, !unproven);
   return identity;
 }
 
@@ -617,7 +634,7 @@ export function markDeviceSignedOut(expectedEpoch: string): boolean {
   dismissedTombstone = null;
   sessionOnly = false;
   pendingToken = null;
-  pendingFromStorage = false;
+  pendingUnproven = false;
   flight = null;
   publish(null, true);
   return true;
@@ -643,7 +660,7 @@ export function startFreshDevice(): void {
   removeTombstone();
   sessionOnly = false;
   pendingToken = null;
-  pendingFromStorage = false;
+  pendingUnproven = false;
   flight = null;
   publish(null, false);
 }
@@ -659,9 +676,11 @@ export interface LoadedDeviceIdentity {
 }
 
 export function loadDeviceIdentity(): LoadedDeviceIdentity {
-  // A token with no ids is a bootstrap that never answered. It is not an identity: the
-  // account it may have created is empty, because the act it was minted for waits on the
-  // answer. `syncFromStorage` holds that token so the next act retries onto the SAME one.
+  // A token with no ids is a bootstrap that never answered THIS storage. It is not an
+  // identity — but its account is NOT assumed empty (the `pendingUnproven` rule): the
+  // original session's answer may have arrived and its acts run, with only the identity's
+  // write failing behind it. `syncFromStorage` holds that token so the next deploy retries
+  // onto the SAME one, and that retry publishes as an adoption.
   const identity = syncFromStorage();
   // Another TAB writing the shared key is the only way this device's identity changes
   // without this tab asking, and it is not rare: two tabs of a game are ordinary. Adopting
@@ -684,7 +703,7 @@ export function resetDeviceIdentity(): void {
   departedTokens.clear();
   dismissedTombstone = null;
   pendingToken = null;
-  pendingFromStorage = false;
+  pendingUnproven = false;
   flight = null;
   storage = undefined;
   if (storageListener && typeof window !== 'undefined') {

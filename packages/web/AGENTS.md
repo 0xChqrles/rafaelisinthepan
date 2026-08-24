@@ -427,13 +427,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
     identity.** That intermediate state is what makes a lost answer recoverable: the retry
     sends the SAME token, which is what the server's idempotence is keyed by. It reads as
     tokenless for the no-private-fetch rule.
-    **A RECOVERED pending bootstrap is not assumed empty** (PR-219 round-2 review): only a
-    token THIS session minted fronts an account that is empty by construction (the act
-    waits on the answer). A bare `{token}` read back from storage may be the residue of a
-    bootstrap whose answer arrived and whose acts ran, with only the completed identity's
-    write failing behind it — so its retry publishes the acquisition as an ADOPTION
-    (`pendingFromStorage`), and the scope owner re-reads the tokenless projections instead
-    of trusting ready-and-empty answers over real state.
+    **A pending token is assumed empty only while its emptiness is PROVABLE** (PR-219
+    round-2 and round-3 reviews): a token THIS session minted, with no attempt yet failed
+    out of this tab's hands. A bare `{token}` read back from storage may be the residue of
+    a bootstrap whose answer arrived and whose acts ran (only the completed identity's
+    write failing behind it) — and a bootstrap attempt that FAILS releases the Web Lock
+    with the token persisted, so another tab or session can recover it, complete it and
+    act before the retry. Either way the proof is gone (`pendingUnproven`), and the
+    eventual bootstrap publishes as an ADOPTION: the scope owner re-reads the tokenless
+    projections instead of trusting ready-and-empty answers over real state. A SAVE into
+    an account the profile editor did not load is guarded the same way — see the profile
+    bullet.
   - **localStorage is shared by every TAB, so this module's copy is a CACHE of it** (added on
     review): `ensureDeviceIdentity` re-reads before minting, a `storage` listener adopts what
     another tab wrote, a pending token found there is adopted rather than replaced (two tabs
@@ -481,6 +485,21 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `rearmPlayerHistory` (replays exactly the reads the tokenless branch answered). A
     RE-ARM, never a clear: the outbox and the word clock hold what THIS device played, owed
     to the adopted account.
+  - **The persisted game blob is CROSS-TAB SAFE in two halves** (PR-219 rounds 2–3, P1).
+    localStorage is shared by every tab and zustand persist writes the WHOLE partialized
+    snapshot on every set, so a tab whose memory lagged the shared blob would flatten a
+    sibling's freshly persisted outbox or unsent Word run with its own stale maps — the
+    identity adoption's owner-tag write guaranteed exactly that set in every tab. The
+    WRITE-TIME half (`mergePersistedWrite`, inside the persist storage): every write
+    merges over the blob as stored at that very moment — this tab's value for map keys
+    its own actions TOUCHED (an absent touched key is a deliberate deletion), the stored
+    value for every other key, one-time flags OR-merged, fill-once values kept — because
+    the storage EVENT is queued asynchronously by spec and any set landing before it
+    would clobber. The READ-TIME half (`installGameStoreSync`, wired in `main.tsx`):
+    the storage event rehydrates, so this tab's memory tracks the shared blob. What the
+    residual OS-level interleaving sliver could still lose is an unsent batch the engines
+    re-send or self-heal (the outbox prunes against the server log on the next read; a
+    resurrected word round settles against `submittedAt`).
   - **`markDeviceSignedOut` requires the request's identity epoch.** Every refusal caller reads
     the body and acts only on `401 unknown_device`; a 5xx, a dropped connection or any other
     4xx must never take a player's account away, and a late verdict for A must never remove B.
@@ -828,7 +847,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
   and the SAVE tap bootstraps the account first, then saves into it: one tap, the
   button's own dots for both legs, a prefetched challenge so the deploy is fast. The
   name rule's WRITE half compares against the pseudonym the player was actually SHOWN
-  (`assignedFrom`: the account's, or the seed's on a tokenless open). The load effect is
+  (`assignedFrom`: the account's, or the seed's on a tokenless open).
+  **A save into an account the editor did NOT load is GUARDED** (PR-219 round-3 review):
+  the resolved account can be a RECOVERED or ADOPTED one that already holds a profile,
+  and the editor's baseline there was a placeholder — a whole-profile upsert built from
+  it would wipe the stored name or mark through the '' an untouched field sends. So when
+  `loadedFor` mismatches, the save FETCHES the account's stored profile first and carries
+  every untouched field forward verbatim (`guardedSaveBody`, contract-tested); only a
+  field the player actually changed from the placeholder speaks, a fetch that fails
+  refuses the save rather than risk the wipe, and a successful guarded save re-binds the
+  editor to the account's merged truth. The load effect is
   deliberately keyed on [attempt] alone: an identity arriving under an OPEN editor (a
   deploy elsewhere, another tab) must not reload the fields out from under an edit in
   progress — the save path resolves the identity live. The devices list renders only

@@ -518,10 +518,12 @@ describe('localStorage is shared by every TAB (#216)', () => {
     stop();
   });
 
-  it('a token minted THIS session still publishes as minted after its own failed retry', async () => {
-    // The contrast case: ours-fresh, the act waits on the answer, so the account really is
-    // empty — even when the first request failed and a later one succeeds on the SAME
-    // persisted token.
+  it('a FAILED attempt kills the emptiness proof — the retry publishes as ADOPTED', async () => {
+    // Conservative on purpose (PR-219 round-3 review): the failed flight released its Web
+    // Lock with the token already persisted, so another tab or session could recover the
+    // SAME token, complete the bootstrap and ACT on the account before this retry. The
+    // retry therefore announces an adoption — the scope owner re-reads the tokenless
+    // projections, which for a truly empty account merely re-reads empty answers.
     post.mockRejectedValueOnce(new Error('offline'));
     await expect(ensureDeviceIdentity()).rejects.toThrow();
     const seen: { adopted: boolean }[] = [];
@@ -529,7 +531,7 @@ describe('localStorage is shared by every TAB (#216)', () => {
     post.mockResolvedValue(answer());
     await ensureDeviceIdentity();
     expect(seen).toHaveLength(1);
-    expect(seen[0]).toMatchObject({ adopted: false });
+    expect(seen[0]).toMatchObject({ adopted: true });
     // And it really was the SAME token both times (the idempotence key).
     expect(post.mock.calls[1][1].token).toBe(post.mock.calls[0][1].token);
     stop();

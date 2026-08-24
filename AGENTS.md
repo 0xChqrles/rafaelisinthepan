@@ -1185,8 +1185,9 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   cannot be removed (unwritable storage) is dismissed in memory for the session, so SKIP
   can never loop. A tombstone naming an identity this tab does not hold changes nothing.
 - **LOCAL STATE FOLLOWS THE IDENTITY THAT OWNS IT** (`web/state/identityScope.ts`, installed
-  once from `main.tsx`): acquiring the **first** identity clears nothing, because the guess or
-  Word run that triggered bootstrap already exists on screen. When a non-null identity is
+  once from `main.tsx`): acquiring the **first** identity clears nothing, because the state
+  on screen — the guesses waiting behind the PLAY gate's deploy, the run whose PLAY is
+  awaiting its answer — is the very thing the deploy button was tapped for. When a non-null identity is
   left and `accountId` changes or becomes unknown, clear the sentence
   outbox, the transient round loads, the private history/streak summaries and every other
   account-scoped cache; when only `deviceId` changes, clear device-owned state such as the

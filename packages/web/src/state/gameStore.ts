@@ -365,17 +365,110 @@ interface GameState extends PersistedState {
   recordWordGuess: (typed: string, replay: (tried: string[]) => WordRunCache) => boolean;
 }
 
-// The persisted blob's one shared key — named once, because the cross-tab sync below and
-// the persist config must agree on it or a sibling tab's write is never adopted.
+// The persisted blob's one shared key — named once, because the cross-tab machinery below
+// and the persist config must agree on it or a sibling tab's write is never adopted.
 export const GAME_PERSIST_KEY = 'whippin-round';
 
+// The round/word entries THIS TAB's own actions have written or deleted since load. The
+// write-time merge below takes this tab's value for exactly these keys and the SHARED
+// blob's for every other, which is what makes a set from a lagging tab unable to flatten a
+// sibling's freshly persisted entries (PR-219 round-3 review, P1): the storage EVENT is
+// queued asynchronously by spec, so rehydrating on it alone leaves a window — any set
+// landing before the event snapshots this tab's stale maps over the sibling's write.
+// Session-lived and only ever grows: a key this tab genuinely wrote stays its own (the
+// event-driven rehydrate keeps refreshing this tab's copy of it, so the claim converges).
+const touchedRounds = new Set<string>();
+const touchedWordRounds = new Set<string>();
+const touchRound = (key: string) => void touchedRounds.add(key);
+const touchWordRound = (key: string) => void touchedWordRounds.add(key);
+
+// Merge THIS tab's outgoing snapshot over the blob as currently stored, field by field —
+// the write-time half of the cross-tab story (the event-driven rehydrate below is the
+// read-time half). Web Storage has no cross-tab locking, so a read-modify-write can still
+// interleave with another process's at the OS level; this shrinks the loss window from the
+// event queue's latency to that sliver, and everything the sliver could lose is an unsent
+// batch the engines re-send or self-heal (the outbox prunes against the server's log on
+// the next read; a resurrected word round settles against `submittedAt`).
+//
+// Field rules, each from the field's own semantics:
+//   - the MAPS merge per entry: this tab's value for keys its own actions touched
+//     (an absent touched key is a deliberate deletion and stays deleted), the stored
+//     value for every other;
+//   - one-time flags (`onboarded`, `sentenceRulesSeen`) are monotonic: OR;
+//   - fill-once values (`lastLang`, `lastMode`, `localSeed`) keep ours, else stored;
+//   - `identityOwner` and `boardTab` are ours: every tab derives the owner from the same
+//     device key, and the tab that wrote last IS the current visit.
+// A stored blob of another VERSION is not merged — migrations own that transition.
+export function mergePersistedWrite(
+  storedRaw: string | null,
+  oursRaw: string,
+  touched: { rounds: ReadonlySet<string>; words: ReadonlySet<string> },
+): string {
+  if (storedRaw === null) return oursRaw;
+  let stored: { state: Record<string, unknown>; version?: number };
+  let ours: { state: Record<string, unknown>; version?: number };
+  try {
+    stored = JSON.parse(storedRaw);
+    ours = JSON.parse(oursRaw);
+  } catch {
+    return oursRaw;
+  }
+  if (!stored?.state || !ours?.state || stored.version !== ours.version) return oursRaw;
+
+  const mergeMap = (
+    storedMap: unknown,
+    oursMap: unknown,
+    keys: ReadonlySet<string>,
+  ): Record<string, unknown> => {
+    const from = (value: unknown) =>
+      typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
+    const theirs = from(storedMap);
+    const mine = from(oursMap);
+    const out: Record<string, unknown> = {};
+    for (const key of new Set([...Object.keys(theirs), ...Object.keys(mine)])) {
+      const value = keys.has(key) ? mine[key] : (theirs[key] ?? mine[key]);
+      if (value !== undefined) out[key] = value;
+    }
+    return out;
+  };
+
+  return JSON.stringify({
+    ...ours,
+    state: {
+      ...ours.state,
+      outbox: mergeMap(stored.state.outbox, ours.state.outbox, touched.rounds),
+      wordRounds: mergeMap(stored.state.wordRounds, ours.state.wordRounds, touched.words),
+      onboarded: ours.state.onboarded === true || stored.state.onboarded === true,
+      sentenceRulesSeen:
+        ours.state.sentenceRulesSeen === true || stored.state.sentenceRulesSeen === true,
+      lastLang: ours.state.lastLang ?? stored.state.lastLang ?? null,
+      lastMode: ours.state.lastMode ?? stored.state.lastMode ?? null,
+      localSeed: ours.state.localSeed ?? stored.state.localSeed ?? null,
+    },
+  });
+}
+
 // Persistence is browser-only; in tests / SSR there is no localStorage, so fall back
-// to a no-op store (no warnings, no persistence) instead of throwing.
+// to a no-op store (no warnings, no persistence) instead of throwing. In a browser every
+// WRITE goes through the merge above — reading the shared blob synchronously at the moment
+// of writing, which no queued event can be late for.
 const storage = createJSONStorage<PersistedState>(() => {
   if (typeof window === 'undefined') {
     return { getItem: () => null, setItem: () => {}, removeItem: () => {} };
   }
-  return window.localStorage;
+  return {
+    getItem: (name: string) => window.localStorage.getItem(name),
+    setItem: (name: string, value: string) => {
+      window.localStorage.setItem(
+        name,
+        mergePersistedWrite(window.localStorage.getItem(name), value, {
+          rounds: touchedRounds,
+          words: touchedWordRounds,
+        }),
+      );
+    },
+    removeItem: (name: string) => window.localStorage.removeItem(name),
+  };
 });
 
 // Version upgrades for the persisted blob (exported for the invariant tests).
@@ -648,7 +741,10 @@ export const useGameStore = create<GameState>()(
           // credit stands (it is the server's since #211, and nothing there removes a day),
           // and solving the corrected version cannot claim it twice: both the collection's
           // set insert and `noteSolvedDay` refuse a day already held.
-          if (existing && existing.puzzle !== puzzle) delete kept[key];
+          if (existing && existing.puzzle !== puzzle) {
+            delete kept[key];
+            touchRound(key);
+          }
           // Retention: keep every day-keyed outbox (an archive day left offline still owes
           // its guesses), drop any legacy non-day key, bound the map.
           return { outbox: capDayKeyed(kept, key) };
@@ -662,6 +758,7 @@ export const useGameStore = create<GameState>()(
           // one here is what makes the buffer work at all — and it takes the revision from
           // the caller, which is playing it, rather than guessing.
           const guesses = existing && existing.puzzle === puzzle ? existing.guesses : [];
+          touchRound(key);
           return { outbox: { ...s.outbox, [key]: { puzzle, guesses: [...guesses, typed] } } };
         }),
 
@@ -672,6 +769,7 @@ export const useGameStore = create<GameState>()(
           // reset to read again, and resurrecting its guesses into the round that replaced
           // it is exactly what the revision exists to prevent.
           if (!existing || existing.puzzle !== puzzle) return {};
+          touchRound(key);
           // An emptied outbox is REMOVED rather than kept as `[]`: a caught-up device
           // persists no sentence rounds at all, which is the whole point of the model.
           if (guesses.length === 0) {
@@ -696,6 +794,10 @@ export const useGameStore = create<GameState>()(
           // Same retention story as the outbox: keep every day-keyed word round (the
           // archive rehydrates past days), drop anything else, bound the map.
           const existing = s.wordRounds[key];
+          // Only a CREATED or RESET entry is this tab's own write — merely mounting a round
+          // another tab plays must not claim its entry for the merge (touched keys win the
+          // write-time merge, and a claim without a write is a clobber license).
+          if (!(existing && existing.word === word)) touchWordRound(key);
           const kept = {
             ...s.wordRounds,
             [key]:
@@ -712,6 +814,7 @@ export const useGameStore = create<GameState>()(
           // Already running (or already run out): the clock is stamped once and never
           // re-stamped — a re-read must not shift a run under the player.
           if (!round || round.startedAt !== null) return {};
+          touchWordRound(key);
           // A round with no start has no log (a guess can only land while running), so the
           // deadline opens at the bare START_SECONDS. On a device JOINING a run already in
           // progress the anchor is that far in the past already — but only the base sixty
@@ -748,6 +851,7 @@ export const useGameStore = create<GameState>()(
           ) {
             return {};
           }
+          touchWordRound(key);
           return {
             wordRounds: {
               ...s.wordRounds,
@@ -798,6 +902,7 @@ export const useGameStore = create<GameState>()(
         const current = price(replay(round.tried));
         if (now > current.deadline) {
           if (round.claimed !== current.claimed || round.deadline !== current.deadline) {
+            touchWordRound(key);
             set({ wordRounds: { ...s.wordRounds, [key]: { ...round, ...current } } });
           }
           return false;
@@ -807,11 +912,13 @@ export const useGameStore = create<GameState>()(
           // have changed what the SAME log is worth — repair the cached half rather than
           // leaving it describing an older rank map.
           if (round.claimed !== current.claimed || round.deadline !== current.deadline) {
+            touchWordRound(key);
             set({ wordRounds: { ...s.wordRounds, [key]: { ...round, ...current } } });
           }
           return false;
         }
         const tried = [...round.tried, typed];
+        touchWordRound(key);
         set({
           wordRounds: { ...s.wordRounds, [key]: { ...round, tried, ...price(replay(tried)) } },
         });
@@ -853,6 +960,12 @@ export const useGameStore = create<GameState>()(
 // so this tab's next own write starts from the latest shared state. Every set persists
 // synchronously (localStorage), so a rehydrate never discards un-persisted local changes —
 // the only thing it can replace is what another tab demonstrably wrote later.
+// Test seam: the touched sets are module state and must not leak between tests.
+export function resetTouchedKeys(): void {
+  touchedRounds.clear();
+  touchedWordRounds.clear();
+}
+
 export function installGameStoreSync(): () => void {
   if (typeof window === 'undefined') return () => {};
   const listener = (event: StorageEvent) => {
@@ -888,6 +1001,12 @@ export function reconcileGameStateIdentity(
     ) {
       return;
     }
+    // The clear must SURVIVE the write-time merge: claim every cleared key, or the merge
+    // would take the stored copy back for keys this tab never touched. (A key only the
+    // SHARED blob holds can linger as a zombie under the wrong owner — the next load's
+    // ownership reconcile drops it.)
+    for (const key of Object.keys(state.outbox)) touchRound(key);
+    for (const key of Object.keys(state.wordRounds)) touchWordRound(key);
     useGameStore.setState({
       identityOwner: null,
       outbox: {},
@@ -916,6 +1035,9 @@ export function reconcileGameStateIdentity(
   const deviceChanged = owner.deviceId !== identity.deviceId;
   if (!accountChanged && !deviceChanged) return;
 
+  // Same rule as the null-identity clear above: a cleared key is a deliberate write.
+  if (deviceChanged) for (const key of Object.keys(state.wordRounds)) touchWordRound(key);
+  if (accountChanged) for (const key of Object.keys(state.outbox)) touchRound(key);
   useGameStore.setState({
     identityOwner: nextOwner,
     ...(deviceChanged ? { wordRounds: {}, activeWordKey: null } : {}),

@@ -1,8 +1,13 @@
-// CONTRACT (PR-219 review, P1): localStorage is shared by every tab and persist writes the
-// WHOLE partialized snapshot on every set — so a tab must adopt a sibling tab's persisted
-// write BEFORE its next own one, or a stale tab's next set of any persisted field (an
-// identity adoption's owner tag, a preference) overwrites the active tab's freshly
-// persisted outbox or unsent Word run, and a reload then loses the overwritten guesses.
+// CONTRACT (PR-219 reviews, P1): localStorage is shared by every tab and persist writes
+// the WHOLE partialized snapshot on every set. TWO halves keep a lagging tab from
+// flattening a sibling's freshly persisted entries:
+//   - WRITE-TIME: every persisted write merges over the blob as stored RIGHT THEN —
+//     this tab's value for keys its own actions touched, the stored value for every
+//     other — because the storage EVENT is queued asynchronously by spec, so any set
+//     landing before the event would otherwise snapshot stale maps over the sibling's
+//     write (the round-3 finding);
+//   - READ-TIME: the storage event still rehydrates, so this tab's memory tracks the
+//     shared blob and its own UI can show what a sibling played.
 //
 // This suite binds the store to a REAL (fake) localStorage before importing it — the
 // shared gameStore.test.ts runs without one on purpose — and delivers the sibling tab's
@@ -38,20 +43,31 @@ vi.stubGlobal('window', {
   },
 });
 
-const { GAME_PERSIST_KEY, installGameStoreSync, useGameStore } = await import('./gameStore');
+const { GAME_PERSIST_KEY, installGameStoreSync, resetTouchedKeys, useGameStore } =
+  await import('./gameStore');
 
-// Another tab persisted its snapshot: rewrite the shared blob the way zustand would, then
-// deliver the storage event every OTHER tab receives.
-function otherTabPersists(patch: Record<string, unknown>): void {
+// Another tab persisted its snapshot: rewrite the shared blob the way zustand would. The
+// EVENT is deliberately separate — the browser queues it, and the round-3 finding is
+// precisely a set landing in that gap.
+function otherTabWrites(patch: Record<string, unknown>): void {
   const raw = localStorage.getItem(GAME_PERSIST_KEY);
   const blob = raw
     ? (JSON.parse(raw) as { state: Record<string, unknown>; version: number })
     : { state: {}, version: 17 };
   blob.state = { ...blob.state, ...patch };
   localStorage.setItem(GAME_PERSIST_KEY, JSON.stringify(blob));
+}
+
+function otherTabPersists(patch: Record<string, unknown>): void {
+  otherTabWrites(patch);
   for (const listener of [...storageListeners]) {
     listener({ key: GAME_PERSIST_KEY } as StorageEvent);
   }
+}
+
+function persistedField(field: string): unknown {
+  const raw = localStorage.getItem(GAME_PERSIST_KEY);
+  return raw ? (JSON.parse(raw) as { state: Record<string, unknown> }).state[field] : undefined;
 }
 
 function persistedOutbox(): unknown {
@@ -62,6 +78,7 @@ function persistedOutbox(): unknown {
 beforeEach(() => {
   storageListeners.length = 0;
   localStorage.clear();
+  resetTouchedKeys();
   useGameStore.setState({
     identityOwner: null,
     outbox: {},
@@ -84,27 +101,42 @@ describe('cross-tab game-blob sync (PR-219 review, P1)', () => {
     stop();
   });
 
-  it('a set AFTER the adoption cannot erase the sibling tab’s guesses', async () => {
-    // The hazard itself: the active tab persisted an outbox; this (stale) tab then sets an
-    // unrelated persisted field. Without the sync, persist snapshots THIS tab's empty maps
-    // over the shared blob — exactly what an identity adoption's owner-tag write did.
-    const stop = installGameStoreSync();
-    otherTabPersists({ outbox: { 'd:5:fr': { puzzle: 'rev', guesses: ['bois'] } } });
-    await vi.waitFor(() =>
-      expect(Object.keys(useGameStore.getState().outbox)).toHaveLength(1),
-    );
-
-    useGameStore.getState().setLastLang('fr');
+  it('a set BEFORE the event arrives cannot flatten the sibling tab’s entry', () => {
+    // THE round-3 scenario: the sibling persisted a guess, the browser has not delivered
+    // the storage event yet (it is queued asynchronously by spec), and this tab performs a
+    // set. The WRITE-TIME merge reads the blob as stored right then, so the sibling's
+    // entry survives a snapshot this tab's stale memory knows nothing about. No event is
+    // fired here on purpose.
+    otherTabWrites({ outbox: { 'd:5:fr': { puzzle: 'rev', guesses: ['bois'] } } });
+    useGameStore.getState().setLastLang('en');
     expect(persistedOutbox()).toEqual({ 'd:5:fr': { puzzle: 'rev', guesses: ['bois'] } });
-    stop();
+    // …and the scalar this tab actually set still landed.
+    expect(persistedField('lastLang')).toBe('en');
   });
 
-  it('without the listener the stale set really does clobber (the guarded hazard)', () => {
-    // Pin WHY the sync exists: this is the write pattern the listener defuses. If zustand
-    // ever stops snapshotting the whole partialized state per set, this test says the
-    // listener may go.
-    otherTabPersists({ outbox: { 'd:5:fr': { puzzle: 'rev', guesses: ['bois'] } } });
-    useGameStore.getState().setLastLang('en');
+  it('this tab’s OWN key wins the merge — its guess is what persists', () => {
+    // A key this tab's actions touched is its own to write: the merge must not let a
+    // sibling's older copy of the SAME round overwrite the guess just typed here.
+    otherTabWrites({ outbox: { 'd:5:fr': { puzzle: 'rev', guesses: ['mer'] } } });
+    useGameStore.setState({ outbox: { 'd:5:fr': { puzzle: 'rev', guesses: ['mer'] } } });
+    useGameStore.getState().appendOutbox('d:5:fr', 'rev', 'bois');
+    expect(persistedOutbox()).toEqual({ 'd:5:fr': { puzzle: 'rev', guesses: ['mer', 'bois'] } });
+  });
+
+  it('a deliberate DELETION of a touched key sticks', () => {
+    // An acknowledged outbox is removed by this tab's own action; the merge must not
+    // resurrect the stored copy (an absent touched key is a deletion, not ignorance).
+    useGameStore.getState().appendOutbox('d:5:fr', 'rev', 'bois');
+    otherTabWrites({ outbox: { 'd:5:fr': { puzzle: 'rev', guesses: ['bois'] } } });
+    useGameStore.getState().setOutbox('d:5:fr', 'rev', []);
     expect(persistedOutbox()).toEqual({});
+  });
+
+  it('one-time flags merge monotonically — a stale false never unsets a true', () => {
+    otherTabWrites({ sentenceRulesSeen: true });
+    useGameStore.getState().setLastLang('fr');
+    const raw = localStorage.getItem(GAME_PERSIST_KEY);
+    expect((JSON.parse(raw as string) as { state: { sentenceRulesSeen: boolean } }).state
+      .sentenceRulesSeen).toBe(true);
   });
 });
