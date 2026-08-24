@@ -11,7 +11,12 @@ import { describe, expect, it } from 'vitest';
 import { DEVICE_ID_PATTERN, PUBLIC_ID_PATTERN } from '@whippin/shared';
 import { createHandler } from './handler';
 import { memoryDeviceStore } from './memoryDeviceStore';
-import { deviceTokenHash, staleLastSeen, type DeviceStore } from './deviceStore';
+import {
+  deviceTokenHash,
+  staleLastSeen,
+  type DeviceRecord,
+  type DeviceStore,
+} from './deviceStore';
 import { parseUserAgent } from './userAgent';
 import type { FnUrlEvent } from './respond';
 import type { PuzzleStore } from './store';
@@ -236,6 +241,41 @@ describe('the sign-out screen (#216)', () => {
     ) as Listing;
     expect(after.devices).toEqual([]);
     expect((await handler(post({ token: TOKEN }))).statusCode).toBe(401);
+  });
+
+  it('does not let a concurrent self-revocation reappear through a stale GSI row', async () => {
+    const base = memoryDeviceStore();
+    let staleRows: DeviceRecord[] | null = null;
+    const concurrent: DeviceStore = {
+      ...base,
+      async list(accountId) {
+        return staleRows ?? base.list(accountId);
+      },
+      async revoke(accountId, deviceId, revokeKey) {
+        // The other request wins after this request authenticated but before its delete.
+        // Dynamo's lagging index can still return the row it removed.
+        staleRows = await base.list(accountId);
+        await base.revoke(accountId, deviceId, revokeKey);
+        return 'absent';
+      },
+    };
+    const handler = makeHandler({ devices: concurrent });
+    const phone = await bootstrap(handler, TOKEN);
+
+    const after = JSON.parse(
+      (
+        await handler(
+          post({
+            token: TOKEN,
+            revoke: phone.deviceId,
+            revokeKey: row(phone, phone.deviceId).revokeKey,
+          }),
+        )
+      ).body,
+    ) as Listing;
+
+    expect(after.devices).toEqual([]);
+    await expect(base.resolve(deviceTokenHash(TOKEN))).resolves.toBeNull();
   });
 
   it('cannot revoke a device on somebody else\'s account', async () => {

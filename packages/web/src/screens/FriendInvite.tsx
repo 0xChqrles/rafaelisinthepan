@@ -6,9 +6,8 @@ import LoadError from '../components/LoadError';
 import { friendsUrl, parseProfile, postFriendsBody, profileUrl } from '../api';
 import {
   deviceIdentity,
-  ensureDeviceIdentity,
+  ensureRequestIdentity,
   identityEpoch,
-  identityEpochOf,
   identityScopeRevision,
   markDeviceSignedOut,
 } from '../identity';
@@ -94,8 +93,9 @@ export async function sendInvite(publicId: string): Promise<InviteOutcome> {
   // ACCEPTING AN INVITE IS A TRIGGER (#216) — and the one that cannot be gated, because the
   // accepter is by definition a brand-new visitor clicking a link. Their identity is minted
   // on this first need, which is what lands the edge before their first game.
-  const identity = await ensureDeviceIdentity();
-  const epoch = identityEpochOf(identity);
+  const request = await ensureRequestIdentity();
+  if (!request) return 'settled';
+  const { identity, epoch } = request;
   const response = await postFriendsBody(friendsUrl(), {
     token: identity.token,
     add: publicId,

@@ -83,6 +83,11 @@ export interface BootstrapInput {
   now: string;
 }
 
+// A failed conditional delete has two materially different meanings. `absent` is a
+// successful idempotent sign-out whose row may still be visible through the lagging GSI;
+// `mismatch` is a forged/stale handle that must not hide the live row it actually names.
+export type RevokeResult = 'removed' | 'absent' | 'mismatch';
+
 export interface DeviceStore {
   // AUTHENTICATION. One direct read of the base item, then the account-existence check.
   resolve(tokenHash: string): Promise<ResolvedDevice | null>;
@@ -93,8 +98,9 @@ export interface DeviceStore {
   list(accountId: string): Promise<DeviceRecord[]>;
   // REVOCATION: delete the ONE base item by the opaque key returned in the device list.
   // The account + display id remain a condition on that direct delete, so a forged or stale
-  // key is an honest "nothing here" and can never remove somebody else's device.
-  revoke(accountId: string, deviceId: string, revokeKey: string): Promise<boolean>;
+  // key can never remove somebody else's device. The result distinguishes an already-gone
+  // target from an ownership mismatch so the route can correct eventual GSI lag safely.
+  revoke(accountId: string, deviceId: string, revokeKey: string): Promise<RevokeResult>;
   // Move `lastSeenAt` forward. Called at most once per device per DAY (see `staleLastSeen`),
   // because this rides every authenticated call and the round route writes once a second.
   touch(tokenHash: string, now: string): Promise<void>;

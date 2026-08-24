@@ -94,3 +94,39 @@ describe('turnstileToken — lazy script load', () => {
     }
   });
 });
+
+describe('prefetched challenge queue (#216)', () => {
+  it('holds two distinct single-use tokens for bootstrap followed by round creation', async () => {
+    vi.useFakeTimers();
+    const callbacks: Array<(token: string) => void> = [];
+    const remove = vi.fn();
+    const render = vi.fn(
+      (_container: HTMLElement, params: { callback: (token: string) => void }) => {
+        callbacks.push(params.callback);
+        return `widget-${callbacks.length}`;
+      },
+    );
+    vi.stubGlobal('window', {
+      turnstile: { render, remove },
+      setTimeout: globalThis.setTimeout,
+      clearTimeout: globalThis.clearTimeout,
+    });
+    vi.stubGlobal('document', {
+      createElement: () => ({ style: {}, remove: vi.fn() }),
+      body: { appendChild: vi.fn() },
+    });
+
+    const { prefetchTurnstileTokens, turnstileToken } = await import('./turnstile');
+    prefetchTurnstileTokens(2, 'site-key');
+    // Both mint paths first await the already-loaded API.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(render).toHaveBeenCalledTimes(2);
+
+    callbacks[0]('bootstrap-token');
+    callbacks[1]('round-token');
+    await expect(turnstileToken('site-key')).resolves.toBe('bootstrap-token');
+    await expect(turnstileToken('site-key')).resolves.toBe('round-token');
+    expect(remove).toHaveBeenCalledTimes(2);
+  });
+});

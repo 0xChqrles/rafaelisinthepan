@@ -22,9 +22,8 @@ import {
   type DeviceRow,
 } from '../api';
 import {
-  ensureDeviceIdentity,
+  ensureRequestIdentity,
   identityEpoch,
-  identityEpochOf,
   markDeviceSignedOut,
 } from '../identity';
 import { t } from '../i18n';
@@ -66,8 +65,9 @@ export default function DeviceList({ lang }: { lang: string }) {
   // now stands, so the screen never has to guess what a write did (the /friends house rule).
   const talk = useCallback(
     async (revoke?: DeviceRow): Promise<{ listing: DeviceListing; epoch: string } | null> => {
-      const identity = await ensureDeviceIdentity();
-      const epoch = identityEpochOf(identity);
+      const request = await ensureRequestIdentity();
+      if (!request) return null;
+      const { identity, epoch } = request;
       const response = await postDevicesBody(devicesUrl(), {
         token: identity.token,
         ...(revoke ? { revoke: revoke.deviceId, revokeKey: revoke.revokeKey } : {}),

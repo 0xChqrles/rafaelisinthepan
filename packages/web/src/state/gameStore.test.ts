@@ -14,12 +14,19 @@
 //   - lastLang remembers the last valid language (seeds the `/` redirect).
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { useGameStore, roundKeyForDay, migratePersisted, roundLoadFor } from './gameStore';
+import {
+  useGameStore,
+  roundKeyForDay,
+  migratePersisted,
+  reconcileGameStateIdentity,
+  roundLoadFor,
+} from './gameStore';
 import { useHistoryStore } from './history';
 
 // The published VERSION a round is played on (#203). Every call here plays ONE version;
 // what a REPUBLISH does has its own suite below.
 const REV = 'a1b2c3d4e5f60718';
+const OWNER = { accountId: 'a'.repeat(16), deviceId: 'd'.repeat(16) };
 import { CLAIM_ZONE, runMs } from '../game/wordGame';
 import type { RuntimeHole } from '@whippin/shared';
 
@@ -45,6 +52,7 @@ beforeEach(() => {
   // Reset to a pristine store between tests (merge, keeping the actions).
   useGameStore.setState(
     {
+      identityOwner: null,
       outbox: {},
       wordRounds: {},
       lastLang: null,
@@ -683,6 +691,7 @@ describe('onboarded — the tutorial flag (#51)', () => {
 describe('migratePersisted — persisted-blob upgrades', () => {
   it('discards a v0 blob entirely (one-time reset)', () => {
     expect(migratePersisted({ roundKey: 'x', holes: [] }, 0)).toEqual({
+      identityOwner: null,
       outbox: {},
       wordRounds: {},
       lastLang: null,
@@ -716,6 +725,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       1,
     );
     expect(out).toEqual({
+      identityOwner: null,
       outbox: {},
       wordRounds: {},
       lastLang: 'en',
@@ -734,6 +744,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
     const rounds = { 'd:5:fr': { holes: freshHoles(), guessCount: 2, tried: ['a', 'b'], progress: 10 } };
     const out = migratePersisted({ rounds, lastLang: 'fr', onboarded: true }, 2);
     expect(out).toEqual({
+      identityOwner: null,
       outbox: {},
       wordRounds: {},
       lastLang: 'fr',
@@ -756,6 +767,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       4,
     );
     expect(out).toEqual({
+      identityOwner: null,
       // Dropped: v14 removed the sentence rounds map, and no older blob can say which of
       // its guesses were still unsent (see migratePersisted).
       outbox: {},
@@ -854,10 +866,21 @@ describe('migratePersisted — persisted-blob upgrades', () => {
     expect(out.wordRounds).toEqual({});
   });
 
-  it('keeps a v16 outbox untouched — it holds only what the server has not acknowledged', () => {
+  it('v16 -> v17 drops an outbox that cannot name the identity that owns it', () => {
     const outbox = { 'd:5:fr': { puzzle: REV, guesses: ['bois'] } };
     const out = migratePersisted({ outbox, lastLang: 'fr', onboarded: true }, 16);
+    expect(out.outbox).toEqual({});
+    expect(out.identityOwner).toBeNull();
+  });
+
+  it('keeps a v17 owner-tagged outbox untouched', () => {
+    const outbox = { 'd:5:fr': { puzzle: REV, guesses: ['bois'] } };
+    const out = migratePersisted(
+      { identityOwner: OWNER, outbox, lastLang: 'fr', onboarded: true },
+      17,
+    );
     expect(out.outbox).toEqual(outbox);
+    expect(out.identityOwner).toEqual(OWNER);
   });
 
   it('grandfathers a veteran off the RAW blob, not the dropped rounds', () => {
@@ -867,7 +890,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
     expect(migratePersisted({ rounds, lastLang: null }, 12).onboarded).toBe(true);
   });
 
-  it('a v16 blob keeps its server-anchored word rounds untouched', () => {
+  it('a v17 blob keeps its owner-tagged server-anchored word rounds untouched', () => {
     const wordRounds = {
       'w:5:fr': {
         word: 'phare',
@@ -879,8 +902,8 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       },
     };
     const kept = migratePersisted(
-      { wordRounds, lastLang: 'fr', lastMode: 'word', onboarded: true },
-      16,
+      { identityOwner: OWNER, wordRounds, lastLang: 'fr', lastMode: 'word', onboarded: true },
+      17,
     );
     expect(kept.wordRounds).toEqual(wordRounds);
     expect(kept.lastMode).toBe('word');
@@ -943,6 +966,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
             submitted: true,
           },
         },
+        identityOwner: OWNER,
         lastLang: 'fr',
         onboarded: true,
         solvedDays: {},
@@ -957,6 +981,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
 
     const current = migratePersisted(
       {
+        identityOwner: OWNER,
         wordRounds: {
           'w:6:fr': {
             word: 'phare',
@@ -971,7 +996,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
         lastLang: 'fr',
         onboarded: true,
       },
-      16,
+      17,
     );
     // The word round survives intact APART from the retired value: its own acknowledgement
     // is what keeps it from re-submitting.
@@ -1026,6 +1051,51 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       boardTab: 'global',
       sentenceRulesSeen: true,
     });
+  });
+});
+
+describe('persisted state ownership (#216)', () => {
+  const outbox = { 'd:5:fr': { puzzle: REV, guesses: ['bois'] } };
+  const wordRounds = {
+    'w:5:fr': { word: 'phare', startedAt: 1, deadline: 2, tried: ['mer'], claimed: 1 },
+  };
+
+  it('drops tagged state when the device key is missing instead of bootstrapping a new owner', () => {
+    useGameStore.setState({ identityOwner: OWNER, outbox, wordRounds });
+    reconcileGameStateIdentity(null, false);
+    expect(useGameStore.getState()).toMatchObject({
+      identityOwner: null,
+      outbox: {},
+      wordRounds: {},
+    });
+  });
+
+  it('keeps ownerless state only behind the pending token minted by its deliberate act', () => {
+    useGameStore.setState({ identityOwner: null, outbox, wordRounds });
+    reconcileGameStateIdentity(null, true);
+    expect(useGameStore.getState().outbox).toEqual(outbox);
+    expect(useGameStore.getState().wordRounds).toEqual(wordRounds);
+
+    reconcileGameStateIdentity(null, false);
+    expect(useGameStore.getState().outbox).toEqual({});
+    expect(useGameStore.getState().wordRounds).toEqual({});
+  });
+
+  it('binds a recovered ownerless first act to the identity its bootstrap returned', () => {
+    useGameStore.setState({ identityOwner: null, outbox, wordRounds });
+    reconcileGameStateIdentity(OWNER);
+    expect(useGameStore.getState().identityOwner).toEqual(OWNER);
+    expect(useGameStore.getState().outbox).toEqual(outbox);
+    expect(useGameStore.getState().wordRounds).toEqual(wordRounds);
+  });
+
+  it('keeps account state but drops device state when only the device changed', () => {
+    useGameStore.setState({ identityOwner: OWNER, outbox, wordRounds });
+    const replacement = { ...OWNER, deviceId: 'q'.repeat(16) };
+    reconcileGameStateIdentity(replacement);
+    expect(useGameStore.getState().identityOwner).toEqual(replacement);
+    expect(useGameStore.getState().outbox).toEqual(outbox);
+    expect(useGameStore.getState().wordRounds).toEqual({});
   });
 });
 

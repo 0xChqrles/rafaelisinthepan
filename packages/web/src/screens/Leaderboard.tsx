@@ -25,9 +25,8 @@ import TopBar from '../components/TopBar';
 import useShare from '../hooks/useShare';
 import useToday from '../hooks/useToday';
 import {
-  ensureDeviceIdentity,
+  ensureRequestIdentity,
   identityEpoch,
-  identityEpochOf,
   markDeviceSignedOut,
 } from '../identity';
 import { useGameStore, type BoardTab } from '../state/gameStore';
@@ -135,9 +134,11 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
         // authenticated read, this strip is the player's own identity, and the INVITE
         // button shares their own link — none of the three exists without an account, so
         // the screen mints one. It is the one deliberate act on this route.
-        const identity = await ensureDeviceIdentity();
+        const request = await ensureRequestIdentity();
+        if (!request) return;
+        const { identity, epoch: requestEpoch } = request;
         publicId = identity.accountId;
-        epoch = identityEpochOf(identity);
+        epoch = requestEpoch;
       } catch {
         // The bootstrap did not land (offline, a refused challenge): the strip draws
         // nothing rather than a skeleton with nothing behind it.
@@ -177,8 +178,9 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
     let cancelled = false;
     (async () => {
       try {
-        const identity = await ensureDeviceIdentity();
-        const epoch = identityEpochOf(identity);
+        const request = await ensureRequestIdentity();
+        if (!request) return;
+        const { identity, epoch } = request;
         const response = await postFriendsBody(friendsUrl(), { token: identity.token });
         if (cancelled || identityEpoch() !== epoch) return;
         if (!response.ok) {
@@ -222,8 +224,17 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
         // caller's public id only widens it with their own window — so a bootstrap that did
         // not land degrades it to the plain anonymous read rather than failing a tab that
         // needs nobody.
-        const identity = await ensureDeviceIdentity().catch(() => null);
-        epoch = identity ? identityEpochOf(identity) : null;
+        let identity = null;
+        try {
+          const request = await ensureRequestIdentity();
+          if (!request) return;
+          identity = request.identity;
+          epoch = request.epoch;
+        } catch (error) {
+          // The GLOBAL board remains a genuinely anonymous read when bootstrap is
+          // unavailable. FRIENDS has no anonymous meaning and follows the failure path.
+          if (tab === 'friends') throw error;
+        }
         if (tab === 'friends' && identity === null) throw new Error('no identity');
         const response =
           tab === 'friends' && identity !== null

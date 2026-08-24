@@ -233,18 +233,21 @@ export function dynamoDeviceStore(client: DynamoDBClient, tableName: string): De
             },
           }),
         );
-        return true;
+        return 'removed';
       } catch (error) {
-        // A failed condition is an honest "nothing was removed", never an error to surface:
-        // the caller asked to sign out a device that is already gone. Operational failures
-        // (throttling, permissions, network) are NOT that answer and must reach the route.
+        // A condition failure is either an idempotent delete (another request already
+        // removed this exact row) OR an ownership mismatch. The route must distinguish
+        // them: a lagging GSI may still show the first and must never hide the second.
+        // Dynamo's failed delete does not answer which, so read the addressed BASE item
+        // strongly — this extra read exists only on the exceptional path.
         if (
           error instanceof ConditionalCheckFailedException ||
           (typeof error === 'object' &&
             error !== null &&
             (error as { name?: unknown }).name === 'ConditionalCheckFailedException')
         ) {
-          return false;
+          const found = await device(revokeKey);
+          return found === null ? 'absent' : 'mismatch';
         }
         throw error;
       }

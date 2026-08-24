@@ -87,6 +87,19 @@ export const DEVICE_BOOTSTRAP_LOCK = 'whippin-device-bootstrap';
 // act it bootstrapped for, an account created behind a lost answer is empty.
 let pendingToken: string | null = null;
 
+// The completed identity could not be persisted. A later readable EMPTY value cannot then
+// mean "another tab removed it": it may simply be the result of our own failed write. Keep
+// the live identity until this tab deliberately leaves it. This knowingly gives up the
+// cross-tab removal signal for that session-only identity.
+let sessionOnly = false;
+
+// A token this tab has AUTHORITATIVELY left. Conditional removal can fail (blocked or
+// throwing storage), but that must not make the next `ensure` re-adopt the revoked value
+// that is still readable from the shared key. Keep the fence in memory until a different
+// stored identity proves that the origin has moved on. It also protects a replacement
+// identity whose own completed write had to fall back to `sessionOnly`.
+const departedTokens = new Set<string>();
+
 function defaultStorage(): Storage | null {
   // The `localStorage` PROPERTY itself throws a SecurityError when storage is disabled
   // (blocked cookies, some private modes), so the read needs its own catch or every
@@ -145,11 +158,14 @@ function readStored(): StoredRead {
   return { available: true, token, identity: complete ? { token, accountId, deviceId } : null };
 }
 
-function write(value: { token: string } | DeviceIdentity): void {
+function write(value: { token: string } | DeviceIdentity): boolean {
   try {
-    store()?.setItem(STORAGE_KEY, JSON.stringify(value));
+    const held = store();
+    if (!held) return false;
+    held.setItem(STORAGE_KEY, JSON.stringify(value));
+    return true;
   } catch {
-    // Unwritable storage: the identity simply lives for this session.
+    return false;
   }
 }
 
@@ -266,8 +282,15 @@ function syncFromStorage(): DeviceIdentity | null {
   // Storage that cannot be READ is not storage that is empty. There, this session's
   // in-memory identity is all there is, and it stands.
   if (!stored.available) return held;
-  const found = stored.identity;
+  // A failed remove may leave the revoked token perfectly readable. It is no longer an
+  // identity merely because localStorage still says so: the authoritative server answer
+  // that fenced the token wins. A DIFFERENT token is a real cross-tab replacement and
+  // may be adopted normally.
+  const ignored = stored.token !== null && departedTokens.has(stored.token);
+  const found = ignored ? null : stored.identity;
   if (found) {
+    sessionOnly = false;
+    departedTokens.clear();
     pendingToken = null;
     const same =
       held !== null &&
@@ -279,12 +302,18 @@ function syncFromStorage(): DeviceIdentity | null {
     else if (useIdentityStore.getState().signedOut) useIdentityStore.setState({ signedOut: false });
     return found;
   }
+  // Our completed write failed, so EMPTY — or the same pending token that was successfully
+  // written just before it — does not disprove the identity this tab already holds. A
+  // different pending token remains a real cross-tab signal and follows the adoption path.
+  if (held && sessionOnly && (stored.token === null || stored.token === held.token || ignored)) {
+    return held;
+  }
   // No complete identity in storage. A PENDING token there is another tab's bootstrap in
   // progress: adopting it makes retries converge on the same server idempotency key. The
   // origin-wide lock below closes the earlier EMPTY/EMPTY race, before either tab has had a
   // chance to publish that pending token. With storage merely EMPTY, a token this session
   // already minted is still ours to retry — the write simply did not stick.
-  pendingToken = stored.token ?? pendingToken;
+  pendingToken = ignored ? pendingToken : (stored.token ?? pendingToken);
   // We held one and the key no longer does: another tab signed this device out or started
   // fresh. Drop to "no identity" rather than to the signed-out SCREEN — from storage alone
   // the two are indistinguishable, and the tab that actually got `unknown_device` is already
@@ -323,6 +352,26 @@ export function ensureDeviceIdentity(): Promise<DeviceIdentity> {
   return flight;
 }
 
+// Resolve the identity for a REQUEST whose inputs were captured in `expectedEpoch`.
+// `ensureDeviceIdentity` may synchronously adopt another tab's B while a closure still
+// holds A's outbox/profile/invite inputs. Returning B there would authenticate A's body as
+// B. This boundary permits the deliberate null -> first-identity transition, but refuses
+// every transition away from an identity that already owned the request.
+export interface RequestIdentity {
+  identity: DeviceIdentity;
+  epoch: string;
+}
+
+export async function ensureRequestIdentity(
+  expectedEpoch: string | null = identityEpoch(),
+): Promise<RequestIdentity | null> {
+  const identity = await ensureDeviceIdentity();
+  const epoch = identityEpochOf(identity);
+  if (identityEpoch() !== epoch) return null;
+  if (expectedEpoch !== null && expectedEpoch !== epoch) return null;
+  return { identity, epoch };
+}
+
 async function bootstrap(): Promise<DeviceIdentity> {
   // Re-checked INSIDE the flight: it may have been queued behind a challenge fetch while
   // another tab finished its own bootstrap.
@@ -344,13 +393,21 @@ async function bootstrap(): Promise<DeviceIdentity> {
   // orphan the one that is being played. Ours is brand new and empty, so adopting theirs
   // costs nothing.
   const raced = readStored();
-  if (raced.available && raced.identity && raced.identity.token !== token) {
+  if (
+    raced.available &&
+    raced.identity &&
+    raced.identity.token !== token &&
+    !departedTokens.has(raced.identity.token)
+  ) {
+    sessionOnly = false;
+    departedTokens.clear();
     pendingToken = null;
     publish(raced.identity);
     return raced.identity;
   }
   const identity: DeviceIdentity = { token, accountId, deviceId };
-  write(identity);
+  sessionOnly = !write(identity);
+  if (!sessionOnly) departedTokens.clear();
   pendingToken = null;
   publish(identity);
   return identity;
@@ -363,7 +420,12 @@ async function bootstrap(): Promise<DeviceIdentity> {
 export function markDeviceSignedOut(expectedEpoch: string): boolean {
   if (identityEpoch() !== expectedEpoch) return false;
   if (useIdentityStore.getState().signedOut) return false;
-  clearStored(useIdentityStore.getState().identity?.token ?? null);
+  const token = useIdentityStore.getState().identity?.token ?? null;
+  // Fence first: even if removeItem throws, a later ensure may not turn the storage
+  // failure into permission to resurrect the token the server just rejected.
+  if (token !== null) departedTokens.add(token);
+  clearStored(token);
+  sessionOnly = false;
   pendingToken = null;
   flight = null;
   publish(null, true);
@@ -373,7 +435,15 @@ export function markDeviceSignedOut(expectedEpoch: string): boolean {
 // SKIP on the signed-out screen: leave the old account behind and start fresh. The new
 // token is minted lazily by the next deliberate act, exactly like a first-ever visit.
 export function startFreshDevice(): void {
-  clearStored(useIdentityStore.getState().identity?.token ?? pendingToken);
+  const stored = readStored();
+  const departedStored =
+    stored.available && stored.token !== null && departedTokens.has(stored.token)
+      ? stored.token
+      : null;
+  const token = useIdentityStore.getState().identity?.token ?? pendingToken ?? departedStored;
+  if (token !== null) departedTokens.add(token);
+  clearStored(token);
+  sessionOnly = false;
   pendingToken = null;
   flight = null;
   publish(null, false);
@@ -382,11 +452,18 @@ export function startFreshDevice(): void {
 // Adopt what localStorage holds. Called once from `main.tsx`, before React renders, so the
 // first paint already knows whether this device has an identity — a private read that fired
 // against a not-yet-loaded identity would ask the server about nobody.
-export function loadDeviceIdentity(): void {
+export interface LoadedDeviceIdentity {
+  identity: DeviceIdentity | null;
+  // A persisted token without server ids is a lost bootstrap, and therefore proof that
+  // ownerless local state came from the deliberate act that began that bootstrap.
+  pending: boolean;
+}
+
+export function loadDeviceIdentity(): LoadedDeviceIdentity {
   // A token with no ids is a bootstrap that never answered. It is not an identity: the
   // account it may have created is empty, because the act it was minted for waits on the
   // answer. `syncFromStorage` holds that token so the next act retries onto the SAME one.
-  syncFromStorage();
+  const identity = syncFromStorage();
   // Another TAB writing the shared key is the only way this device's identity changes
   // without this tab asking, and it is not rare: two tabs of a game are ordinary. Adopting
   // it here is what keeps them on one account instead of two.
@@ -397,12 +474,15 @@ export function loadDeviceIdentity(): void {
     };
     window.addEventListener('storage', storageListener);
   }
+  return { identity, pending: identity === null && pendingToken !== null };
 }
 
 let storageListener: ((event: StorageEvent) => void) | null = null;
 
 // Test seam: drop this module's state (it must not leak between tests).
 export function resetDeviceIdentity(): void {
+  sessionOnly = false;
+  departedTokens.clear();
   pendingToken = null;
   flight = null;
   storage = undefined;

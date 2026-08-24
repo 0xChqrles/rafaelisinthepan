@@ -22,6 +22,7 @@ import {
   DEVICE_BOOTSTRAP_LOCK,
   deviceIdentity,
   ensureDeviceIdentity,
+  ensureRequestIdentity,
   identityEpoch,
   identityEpochOf,
   identityScopeRevision,
@@ -197,7 +198,10 @@ describe('what a reload finds (#216)', () => {
       'whippin-device',
       JSON.stringify({ token: 'a'.repeat(64), accountId: ACCOUNT, deviceId: DEVICE }),
     );
-    loadDeviceIdentity();
+    expect(loadDeviceIdentity()).toEqual({
+      identity: { token: 'a'.repeat(64), accountId: ACCOUNT, deviceId: DEVICE },
+      pending: false,
+    });
     expect(deviceIdentity()).toEqual({ token: 'a'.repeat(64), accountId: ACCOUNT, deviceId: DEVICE });
     expect(post).not.toHaveBeenCalled();
   });
@@ -208,7 +212,7 @@ describe('what a reload finds (#216)', () => {
     // next act retries onto the same token rather than minting a second identity.
     const token = 'b'.repeat(64);
     storage.setItem('whippin-device', JSON.stringify({ token }));
-    loadDeviceIdentity();
+    expect(loadDeviceIdentity()).toEqual({ identity: null, pending: true });
     expect(deviceIdentity()).toBeNull();
     await ensureDeviceIdentity();
     expect(post.mock.calls[0][1].token).toBe(token);
@@ -239,6 +243,43 @@ describe('what a reload finds (#216)', () => {
     // Same identity for the rest of the session; it simply does not survive a reload.
     await expect(ensureDeviceIdentity()).resolves.toEqual(identity);
   });
+
+  it('keeps the session identity when storage reads work but writes throw', async () => {
+    // Quota exhaustion and some private modes expose localStorage normally but reject every
+    // write. Reading EMPTY back cannot disprove the identity whose own write just failed.
+    const setItem = vi.fn(() => {
+      throw new Error('QuotaExceededError');
+    });
+    storage.setItem = setItem;
+    vi.stubGlobal('window', fakeWindow(storage));
+    resetDeviceIdentity();
+
+    const identity = await ensureDeviceIdentity();
+    expect(stored()).toBeNull();
+    await expect(ensureDeviceIdentity()).resolves.toEqual(identity);
+    expect(deviceIdentity()).toEqual(identity);
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(lockRequest).toHaveBeenCalledTimes(1);
+    expect(setItem).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the session identity when only the completed write exceeds storage', async () => {
+    // The pending-token JSON is smaller than the completed identity. If only the latter
+    // exceeds quota, the readable value is not EMPTY but still belongs to this bootstrap.
+    const persist = storage.setItem.bind(storage);
+    const setItem = vi.fn((key: string, value: string) => {
+      if (setItem.mock.calls.length === 1) persist(key, value);
+      else throw new Error('QuotaExceededError');
+    });
+    storage.setItem = setItem;
+    vi.stubGlobal('window', fakeWindow(storage));
+    resetDeviceIdentity();
+
+    const identity = await ensureDeviceIdentity();
+    expect(stored()).toEqual({ token: identity.token });
+    await expect(ensureDeviceIdentity()).resolves.toEqual(identity);
+    expect(post).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('being signed out (#216)', () => {
@@ -259,6 +300,22 @@ describe('being signed out (#216)', () => {
     const second = await ensureDeviceIdentity();
     expect(second.token).not.toBe(first.token);
     expect(second.accountId).not.toBe(first.accountId);
+  });
+
+  it('does not resurrect a revoked token when conditional storage removal throws', async () => {
+    const first = await ensureDeviceIdentity();
+    storage.removeItem = vi.fn(() => {
+      throw new Error('SecurityError: removal denied');
+    });
+
+    markDeviceSignedOut(identityEpochOf(first));
+    startFreshDevice();
+    post.mockResolvedValue(answer('qqqqqqqqqqqqqqqq', 'rrrrrrrrrrrrrrrr'));
+    const replacement = await ensureDeviceIdentity();
+
+    expect(replacement.token).not.toBe(first.token);
+    expect(replacement.accountId).toBe('qqqqqqqqqqqqqqqq');
+    expect(deviceIdentity()).toEqual(replacement);
   });
 });
 
@@ -301,6 +358,23 @@ describe('local state follows the identity that owns it (#216)', () => {
 });
 
 describe('localStorage is shared by every TAB (#216)', () => {
+  it('refuses to authenticate A-owned inputs when ensure adopts B', async () => {
+    const old = await ensureDeviceIdentity();
+    const expectedEpoch = identityEpochOf(old);
+    const replacement = {
+      token: '8'.repeat(64),
+      accountId: 'qqqqqqqqqqqqqqqq',
+      deviceId: 'rrrrrrrrrrrrrrrr',
+    };
+    storage.setItem('whippin-device', JSON.stringify(replacement));
+
+    await expect(ensureRequestIdentity(expectedEpoch)).resolves.toBeNull();
+    expect(deviceIdentity()).toEqual(replacement);
+    // Only A's original bootstrap was posted. The request boundary does not return B to
+    // the closure that captured A's inputs.
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
   it('adopts an identity another tab bootstrapped instead of minting a second one', async () => {
     // This tab was opened BEFORE the other one bootstrapped, so its in-memory copy says
     // "no identity". Minting here would overwrite the shared entry and orphan the account

@@ -466,9 +466,11 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   out. The list exposes each projected base-key digest as an opaque, non-authenticating
   `revokeKey`; `revoke` uses it for ONE direct base-table DeleteItem under a condition naming
   the account and device. It performs no second GSI lookup, so propagation lag cannot turn a
-  valid sign-out into a silent miss. A failed ownership condition is an honest "nothing was
-  removed"; throttling, permission and network failures propagate rather than pretending the
-  delete succeeded. `touch` swallows its own
+  valid sign-out into a silent miss. A failed condition performs one strongly-consistent BASE
+  read and returns `absent` or `mismatch`: the route filters an exact `revokeKey` after
+  `removed`/`absent` (including a concurrent self-revocation still visible in the GSI), and
+  filters nothing after `mismatch`. Throttling, permission and network failures propagate
+  rather than pretending the delete succeeded. `touch` swallows its own
   failed condition for the same reason: `lastSeenAt` is a label on a screen, and a race with a
   revocation must not turn into an error the player sees. Storage is the score table again —
   `device#<tokenHash>`/`device` with the two `gsi1*` index attributes, and

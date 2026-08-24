@@ -72,9 +72,10 @@ export function memoryDeviceStore(initial: readonly BootstrapInput[] = []): Devi
 
     async revoke(accountId, deviceId, revokeKey) {
       const device = devices.get(revokeKey);
-      if (!device || device.accountId !== accountId || device.deviceId !== deviceId) return false;
+      if (!device) return 'absent';
+      if (device.accountId !== accountId || device.deviceId !== deviceId) return 'mismatch';
       devices.delete(revokeKey);
-      return true;
+      return 'removed';
     },
 
     async touch(tokenHash, now) {

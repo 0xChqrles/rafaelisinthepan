@@ -17,13 +17,13 @@
 // of what an identity owns is one readable block instead of five registrations to find.
 
 import { onIdentityChange } from '../identity';
-import { useGameStore } from './gameStore';
+import { reconcileGameStateIdentity } from './gameStore';
 import { resetPlayerHistory } from './history';
 import { resetRoundSync } from './roundSync';
 import { resetWordRoundSync } from './wordRoundSync';
 
 export function installIdentityScope(): () => void {
-  return onIdentityChange(({ previous, accountChanged, deviceChanged }) => {
+  return onIdentityChange(({ previous, next, accountChanged, deviceChanged }) => {
     // **Acquiring a FIRST identity clears nothing.** A bootstrap is triggered BY an act —
     // the first guess, a word round start — so the state on screen when it lands is the
     // state that ASKED for it: the guess sitting in the outbox waiting to be sent, the run
@@ -35,21 +35,26 @@ export function installIdentityScope(): () => void {
     // Clearing is about LEAVING an identity, and there is nothing to leave when the previous
     // one was null: whatever local state exists then was typed by this player, on this
     // device, and is owed to the account they are about to be given.
-    if (previous === null) return;
+    if (previous === null) {
+      if (next !== null) reconcileGameStateIdentity(next);
+      return;
+    }
 
     // Word mode's clock and its unsubmitted log are DEVICE-owned: a run belongs to the
     // device playing it (its bonus-adjusted deadline lives nowhere else until submission),
     // so a new device never inherits one.
     if (deviceChanged) {
       resetWordRoundSync();
-      useGameStore.setState({ wordRounds: {}, activeWordKey: null });
     }
-    if (!accountChanged) return;
-    // ACCOUNT-owned: the sentence outbox (guesses owed to a server row keyed by the
-    // account), the transient round snapshots read off it, and the private summaries the
-    // archive, the chooser and the streak draw.
-    resetRoundSync();
-    resetPlayerHistory();
-    useGameStore.setState({ outbox: {}, roundLoads: {} });
+    if (accountChanged) {
+      // ACCOUNT-owned: the sentence outbox (guesses owed to a server row keyed by the
+      // account), the transient round snapshots read off it, and the private summaries the
+      // archive, the chooser and the streak draw.
+      resetRoundSync();
+      resetPlayerHistory();
+    }
+    // One state write owns the persisted owner tag and the selective map clearing. It is
+    // also the first-acquisition bind above, where the triggering act must survive.
+    reconcileGameStateIdentity(next);
   });
 }

@@ -33,7 +33,8 @@ import { buildHistory } from '../game/history';
 import { t, ariaHoleHistory, srHoleResult } from '../i18n';
 import { track } from '../analytics';
 import { fold, dateForDayNumber, ROUND_GUESS_CAP } from '@whippin/shared';
-import { prefetchTurnstileToken } from '../turnstile';
+import { prefetchTurnstileTokens } from '../turnstile';
+import { deviceIdentity } from '../identity';
 import type {
   HitState,
   Hole,
@@ -318,7 +319,7 @@ function Round({
   // the first guess needs it rather than sitting in front of that write. Fire-and-forget:
   // the sync engine mints a fresh one if this never arrives.
   useEffect(() => {
-    prefetchTurnstileToken();
+    prefetchTurnstileTokens(deviceIdentity() === null ? 2 : 1);
   }, [roundKey]);
 
   // The board as this screen shows it. It is a LOCAL reading — the last hole's swap may

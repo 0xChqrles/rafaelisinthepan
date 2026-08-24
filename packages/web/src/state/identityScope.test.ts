@@ -58,7 +58,10 @@ beforeEach(() => {
   resets.round.mockReset();
   resets.word.mockReset();
   resets.history.mockReset();
-  useGameStore.setState({ ...seeded(), roundLoads: {}, activeWordKey: null }, false);
+  useGameStore.setState(
+    { ...seeded(), identityOwner: null, roundLoads: {}, activeWordKey: null },
+    false,
+  );
   installIdentityScope();
 });
 
@@ -71,10 +74,18 @@ describe('acquiring a FIRST identity (#216)', () => {
     // The guess that triggered the bootstrap is still owed to the account it just got.
     expect(useGameStore.getState().outbox).toEqual(seeded().outbox);
     expect(useGameStore.getState().wordRounds).toEqual(seeded().wordRounds);
+    expect(useGameStore.getState().identityOwner).toEqual({
+      accountId: A.accountId,
+      deviceId: A.deviceId,
+    });
   });
 });
 
 describe('leaving an identity (#216)', () => {
+  beforeEach(() => {
+    useGameStore.setState({ identityOwner: { accountId: A.accountId, deviceId: A.deviceId } });
+  });
+
   it('clears the account-owned state AND the device-owned state on a sign-out', () => {
     announce(A, null);
     expect(resets.round).toHaveBeenCalledTimes(1);
@@ -82,6 +93,7 @@ describe('leaving an identity (#216)', () => {
     expect(resets.history).toHaveBeenCalledTimes(1);
     expect(useGameStore.getState().outbox).toEqual({});
     expect(useGameStore.getState().wordRounds).toEqual({});
+    expect(useGameStore.getState().identityOwner).toBeNull();
   });
 
   it('clears both again when one identity replaces another', () => {
@@ -89,6 +101,10 @@ describe('leaving an identity (#216)', () => {
     expect(resets.round).toHaveBeenCalledTimes(1);
     expect(useGameStore.getState().outbox).toEqual({});
     expect(useGameStore.getState().wordRounds).toEqual({});
+    expect(useGameStore.getState().identityOwner).toEqual({
+      accountId: B.accountId,
+      deviceId: B.deviceId,
+    });
   });
 
   it('clears only the DEVICE-owned state when the account is unchanged', () => {
@@ -100,5 +116,6 @@ describe('leaving an identity (#216)', () => {
     expect(resets.round).not.toHaveBeenCalled();
     expect(useGameStore.getState().wordRounds).toEqual({});
     expect(useGameStore.getState().outbox).toEqual(seeded().outbox);
+    expect(useGameStore.getState().identityOwner?.deviceId).toBe('q'.repeat(16));
   });
 });

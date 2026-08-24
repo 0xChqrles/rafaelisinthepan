@@ -51,14 +51,18 @@ vi.mock('../turnstile', () => ({ turnstileToken: vi.fn() }));
 // private fetch at all — is exercised in `identity.test.ts`; here the device is signed in,
 // which is what every case below is about.
 const signedOut = vi.hoisted(() => vi.fn());
+const identity = vi.hoisted(() => ({
+  value: { token: 'f'.repeat(64), accountId: 'a'.repeat(16), deviceId: 'd'.repeat(16) },
+  beforeEnsure: null as (() => void) | null,
+}));
 vi.mock('../identity', () => ({
-  deviceIdentity: () => ({ token: 'f'.repeat(64), accountId: 'a'.repeat(16), deviceId: 'd'.repeat(16) }),
-  ensureDeviceIdentity: async () => ({
-    token: 'f'.repeat(64),
-    accountId: 'a'.repeat(16),
-    deviceId: 'd'.repeat(16),
-  }),
-  identityEpoch: () => `${'a'.repeat(16)}:${'d'.repeat(16)}`,
+  deviceIdentity: () => identity.value,
+  ensureRequestIdentity: async (expected: string | null) => {
+    identity.beforeEnsure?.();
+    const epoch = `${identity.value.accountId}:${identity.value.deviceId}`;
+    return expected !== null && expected !== epoch ? null : { identity: identity.value, epoch };
+  },
+  identityEpoch: () => `${identity.value.accountId}:${identity.value.deviceId}`,
   identityEpochOf: (value: { accountId: string; deviceId: string }) =>
     `${value.accountId}:${value.deviceId}`,
   markDeviceSignedOut: signedOut,
@@ -159,6 +163,12 @@ beforeEach(() => {
   challenge.mockReset();
   challenge.mockResolvedValue('token');
   signedOut.mockReset();
+  identity.value = {
+    token: 'f'.repeat(64),
+    accountId: 'a'.repeat(16),
+    deviceId: 'd'.repeat(16),
+  };
+  identity.beforeEnsure = null;
   useGameStore.setState(
     { outbox: {}, wordRounds: {}, roundLoads: {}, activeWordKey: null },
     false,
@@ -218,6 +228,22 @@ describe('submittableLog — what the route will store', () => {
 });
 
 describe('the round START', () => {
+  it('does not start A\'s captured round as B when ensure adopts a replacement identity', async () => {
+    seedRound();
+    identity.beforeEnsure = () => {
+      identity.value = {
+        token: '8'.repeat(64),
+        accountId: 'b'.repeat(16),
+        deviceId: 'e'.repeat(16),
+      };
+    };
+
+    await expect(startWordRound(ctx())).resolves.toBe(false);
+    expect(challenge).not.toHaveBeenCalled();
+    expect(post).not.toHaveBeenCalled();
+    expect(round()).toMatchObject({ startedAt: null, tried: [] });
+  });
+
   it('asks for a challenge and anchors the clock the SERVER stamped', async () => {
     seedRound();
     const started = startWordRound(ctx());
@@ -503,6 +529,30 @@ describe('the mount READ', () => {
 });
 
 describe('the end-of-run SUBMISSION', () => {
+  it('does not submit A\'s run log as B when identity changes after the read', async () => {
+    seedRound({
+      startedAt: T0 - 300_000,
+      deadline: T0 - 100_000,
+      tried: ['mer'],
+      claimed: 1,
+    });
+    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 300_000 }));
+    identity.beforeEnsure = () => {
+      identity.value = {
+        token: '8'.repeat(64),
+        accountId: 'b'.repeat(16),
+        deviceId: 'e'.repeat(16),
+      };
+    };
+
+    beginWordRoundSync(ctx(), true);
+    await settle();
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(bodyOf(0).guesses).toBeUndefined();
+    expect(round().tried).toEqual(['mer']);
+  });
+
   it('sends the whole log ONCE, after the read, and persists the acknowledgement', async () => {
     seedRound({ startedAt: T0 - 300_000, deadline: T0 - 100_000, tried: ['mer', 'loin'], claimed: 1 });
     post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 300_000 }));

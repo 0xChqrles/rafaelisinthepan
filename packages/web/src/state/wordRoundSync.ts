@@ -37,7 +37,7 @@ import { fnvTag } from './roundSync';
 import { EMPTY_ROUND_SERVER, useGameStore, type RoundServer } from './gameStore';
 import {
   deviceIdentity,
-  ensureDeviceIdentity,
+  ensureRequestIdentity,
   identityEpoch,
   identityEpochOf,
   markDeviceSignedOut,
@@ -292,18 +292,22 @@ export function startWordRound(ctx: WordRoundContext): Promise<boolean> {
 
 async function requestStart(ctx: WordRoundContext): Promise<boolean> {
   const puzzle = wordTag(ctx.word);
-  let epoch = identityEpoch();
+  const expectedEpoch = identityEpoch();
+  let epoch = expectedEpoch;
   let response: Response;
   try {
     // STARTING A WORD ROUND IS A TRIGGER (#216): a device with no identity mints one here,
     // before the write that stamps the clock. PLAY already waits on this answer, so the
     // bootstrap sits inside a beat the player is already watching.
-    const identity = await ensureDeviceIdentity();
-    epoch = identityEpochOf(identity);
+    const request = await ensureRequestIdentity(expectedEpoch);
+    if (!request) return false;
+    const { identity } = request;
+    epoch = request.epoch;
     // The invisible challenge (web/turnstile.ts) — every failure rejects quietly, and here
     // that is a start the player is told about rather than a silent one: the run cannot
     // begin without it.
     const token = await turnstileToken();
+    if (identityEpoch() !== epoch) return false;
     response = await postRoundBody(roundUrl(ctx.lang, ctx.date, 'word'), {
       token: identity.token,
       puzzle,
@@ -477,14 +481,20 @@ async function noteVerdict(response: Response, epoch: string): Promise<void> {
 
 async function submitRun(f: WordFlight, key: string, tried: readonly string[]): Promise<void> {
   const puzzle = f.puzzle;
-  let epoch = identityEpoch();
+  const expectedEpoch = identityEpoch();
+  let epoch = expectedEpoch;
   let response: Response;
   try {
     // A run this device PLAYED always has an identity — the START minted one — but a
     // submission can also be the first act after a fresh start, so it ensures one rather
     // than assuming it.
-    const identity = await ensureDeviceIdentity();
-    epoch = identityEpochOf(identity);
+    const request = await ensureRequestIdentity(expectedEpoch);
+    if (!request) {
+      f.closed = true;
+      return;
+    }
+    const { identity } = request;
+    epoch = request.epoch;
     response = await postRoundBody(roundUrl(f.lang, f.date, 'word'), {
       token: identity.token,
       puzzle,

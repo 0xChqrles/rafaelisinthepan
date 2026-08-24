@@ -58,14 +58,17 @@ vi.mock('../turnstile', () => ({ turnstileToken: async () => 'challenge' }));
 const identity = vi.hoisted(() => ({
   present: true,
   value: { token: 'f'.repeat(64), accountId: 'a'.repeat(16), deviceId: 'd'.repeat(16) },
+  beforeEnsure: null as (() => void) | null,
   signedOut: vi.fn(),
 }));
 
 vi.mock('../identity', () => ({
   deviceIdentity: () => (identity.present ? identity.value : null),
-  ensureDeviceIdentity: async () => {
+  ensureRequestIdentity: async (expected: string | null) => {
+    identity.beforeEnsure?.();
     identity.present = true;
-    return identity.value;
+    const epoch = `${identity.value.accountId}:${identity.value.deviceId}`;
+    return expected !== null && expected !== epoch ? null : { identity: identity.value, epoch };
   },
   identityEpoch: () => (identity.present ? `${identity.value.accountId}:${identity.value.deviceId}` : null),
   identityEpochOf: (value: { accountId: string; deviceId: string }) =>
@@ -212,6 +215,12 @@ beforeEach(() => {
   resetRoundSync();
   post.mockReset();
   identity.present = true;
+  identity.value = {
+    token: 'f'.repeat(64),
+    accountId: 'a'.repeat(16),
+    deviceId: 'd'.repeat(16),
+  };
+  identity.beforeEnsure = null;
   identity.signedOut.mockReset();
   useGameStore.setState(
     { outbox: {}, wordRounds: {}, roundLoads: {}, activeWordKey: null },
@@ -376,6 +385,24 @@ describe('appends — coalescing, pacing and the batch prefix', () => {
     expect(bodyOf(0).guesses).toEqual(['bois', 'chemin']);
     expect(outbox()).toEqual([]);
     expect(server()?.guesses).toEqual(['bois', 'chemin']);
+  });
+
+  it('never posts A\'s captured outbox with B after ensure adopts a replacement identity', async () => {
+    await ready();
+    seedOutbox(['bois']);
+    identity.beforeEnsure = () => {
+      identity.value = {
+        token: '8'.repeat(64),
+        accountId: 'b'.repeat(16),
+        deviceId: 'e'.repeat(16),
+      };
+    };
+
+    notifyGuess(KEY);
+    await settle();
+
+    expect(post).not.toHaveBeenCalled();
+    expect(outbox()).toEqual(['bois']);
   });
 
   it('KEEPS guesses appended while the write was in flight', async () => {

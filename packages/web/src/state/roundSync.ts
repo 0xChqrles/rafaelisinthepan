@@ -39,7 +39,7 @@ import { unacknowledged } from '../game/playLog';
 import { EMPTY_ROUND_SERVER, useGameStore, type RoundLoad, type RoundServer } from './gameStore';
 import {
   deviceIdentity,
-  ensureDeviceIdentity,
+  ensureRequestIdentity,
   identityEpoch,
   identityEpochOf,
   markDeviceSignedOut,
@@ -476,19 +476,34 @@ async function noteVerdict(response: Response, epoch: string): Promise<void> {
 async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promise<void> {
   const puzzle = f.puzzle;
   let response: Response;
-  let epoch = identityEpoch();
+  const expectedEpoch = identityEpoch();
+  let epoch = expectedEpoch;
   try {
     // THE FIRST GUESS IS A TRIGGER (#216): a device with no identity mints one here, before
     // the write that needs it. Every later append finds the identity already in hand. A
     // failed bootstrap is an ordinary failed write, retried with the rest.
-    const identity = await ensureDeviceIdentity();
-    epoch = identityEpochOf(identity);
+    const request = await ensureRequestIdentity(expectedEpoch);
+    if (!request) {
+      // Identity adoption already tells the installed scope owner to discard this
+      // conversation. Close this reference too, so it cannot loop once more and
+      // authenticate the captured batch as the replacement identity.
+      f.closed = true;
+      return;
+    }
+    const { identity } = request;
+    epoch = request.epoch;
     // ROUND CREATION carries a Turnstile challenge (#203). It is prefetched while the
     // puzzle loads, so by the first guess it is normally already in hand; a failure here
     // is an ordinary failed write, retried with the rest — the round keeps playing
     // locally either way, which is why nothing is said on screen (Word mode's PLAY is the
     // one write that speaks, because nothing begins without it).
     const challenge = f.created ? undefined : await turnstileToken();
+    // Challenge acquisition is another await. If A left during it, consuming the token is
+    // harmless; authenticating A's captured batch as B is not.
+    if (identityEpoch() !== epoch) {
+      f.closed = true;
+      return;
+    }
     response = await postRoundBody(
       roundUrl(f.lang, f.date, f.mode),
       requestBody(f, identity.token, batch, challenge),

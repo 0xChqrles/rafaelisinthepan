@@ -30,10 +30,13 @@ vi.mock('../identity', () => ({
           deviceId: 'd'.repeat(16),
         }
       : null,
-  ensureDeviceIdentity: async () => ({
-    token: 'f'.repeat(64),
-    accountId: 'lfd5pqz5pa7zjm5u',
-    deviceId: 'd'.repeat(16),
+  ensureRequestIdentity: async () => ({
+    identity: {
+      token: 'f'.repeat(64),
+      accountId: 'lfd5pqz5pa7zjm5u',
+      deviceId: 'd'.repeat(16),
+    },
+    epoch: `lfd5pqz5pa7zjm5u:${'d'.repeat(16)}`,
   }),
   identityEpoch: () => `lfd5pqz5pa7zjm5u:${'d'.repeat(16)}`,
   identityEpochOf: (value: { accountId: string; deviceId: string }) =>

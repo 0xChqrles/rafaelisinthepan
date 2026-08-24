@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { RuntimeHole } from '@whippin/shared';
+import { PUBLIC_ID_PATTERN, type RuntimeHole } from '@whippin/shared';
 import { isLang, type Mode } from '../langs';
 import { CLAIM_ZONE, runMs } from '../game/wordGame';
 
@@ -184,7 +184,18 @@ interface WordRunCache {
   bonus: number; // seconds the claims bought, summed (game/wordGame.ts replayWordRun)
 }
 
+export interface IdentityOwner {
+  accountId: string;
+  deviceId: string;
+}
+
 interface PersistedState {
+  // The proof that lets persisted game state cross a reload. The sentence outbox belongs
+  // to the ACCOUNT; a Word run belongs to the DEVICE. A missing/corrupt device key can no
+  // longer turn an ownerless blob into a first act for a newly bootstrapped account.
+  // `null` is valid only while a deliberate first act has begun a bootstrap that has not
+  // answered yet; startup reconciliation checks the pending-token record before keeping it.
+  identityOwner: IdentityOwner | null;
   // Unacknowledged sentence guesses, keyed by roundKey (#214). An entry exists only while
   // this device owes the server something: an accepted write removes what it acknowledged,
   // and an emptied entry is dropped, so a device that is caught up persists no rounds at
@@ -455,6 +466,11 @@ const storage = createJSONStorage<PersistedState>(() => {
 //     identity's guesses to it. A word round is the same shape of wrong — its clock was
 //     stamped for an account nobody now holds, and its submission would be refused
 //     `not_started` (the v11 precedent). Every preference survives, as at v14 and v15.
+//   v17 BINDS both maps to their #216 owner. A v16 blob can carry state but cannot prove
+//     which device/account produced it, so it is dropped under the same no-back-compat rule
+//     as v16's retired-secret state. New ownerless state survives only while the device key
+//     carries the pending token minted by the act that created it; startup reconciliation
+//     drops it when the key is missing or corrupt instead of bootstrapping a stranger.
 function dropRetiredScoreFields<T>(rounds: Record<string, T>): Record<string, T> {
   return Object.fromEntries(
     Object.entries(rounds).map(([key, round]) => {
@@ -471,6 +487,7 @@ function dropRetiredScoreFields<T>(rounds: Record<string, T>): Record<string, T>
 export function migratePersisted(persisted: unknown, version: number): PersistedState {
   if (version < 1) {
     return {
+      identityOwner: null,
       outbox: {},
       wordRounds: {},
       lastLang: null,
@@ -489,24 +506,25 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
     typeof p.onboarded === 'boolean'
       ? p.onboarded
       : Object.keys(p.rounds ?? {}).length > 0 || lastLang != null;
-  // Word rounds only survive from v11 on: before v7 they were strike runs, and before v11
-  // their clock was a local stamp no server ever saw (see the notes above). A v11 one CAN
-  // carry `scoreRecorded`, so it is stripped.
-  // v16: a word round belongs to the DEVICE that played it, under an identity #216 retired.
-  const wordRounds = version < 16 ? {} : dropRetiredScoreFields(p.wordRounds ?? {});
   const lastMode = p.lastMode === 'word' || p.lastMode === 'sentence' ? p.lastMode : null;
   const sentenceRulesSeen = p.sentenceRulesSeen === true;
   const boardTab = p.boardTab === 'global' ? 'global' : 'friends';
+  const parsedOwner = version < 17 ? null : parseIdentityOwner(p.identityOwner);
+  // `undefined` means a current-version blob claimed an owner but did not carry a valid
+  // one. Fail closed: neither map may survive malformed ownership metadata.
+  const stateHasOwnerContract = version >= 17 && parsedOwner !== undefined;
   // The outbox arrives with v14 and holds only UNACKNOWLEDGED guesses, which no older blob
   // can distinguish inside its merged `tried` list (see the v14 note) — so an older one
-  // starts empty rather than re-sending a log the server already holds. v16 raises that
-  // floor again: a pre-#216 outbox is owed to an account this device cannot prove it holds,
-  // and sending it under a freshly bootstrapped one would file another player's guesses
-  // against a brand-new identity.
-  const outbox = version < 16 ? {} : p.outbox ?? {};
+  // starts empty rather than re-sending a log the server already holds. v16 raised that
+  // floor for the retired secret; v17 raises it again for ownerless device-token state.
+  const outbox = stateHasOwnerContract ? (p.outbox ?? {}) : {};
+  const wordRoundsWithOwner = stateHasOwnerContract
+    ? dropRetiredScoreFields(p.wordRounds ?? {})
+    : {};
   return {
+    identityOwner: parsedOwner ?? null,
     outbox,
-    wordRounds,
+    wordRounds: wordRoundsWithOwner,
     lastLang,
     lastMode,
     onboarded,
@@ -515,9 +533,25 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
   };
 }
 
+function parseIdentityOwner(value: unknown): IdentityOwner | null | undefined {
+  if (value === null) return null;
+  if (typeof value !== 'object' || value === null) return undefined;
+  const { accountId, deviceId } = value as Record<string, unknown>;
+  if (
+    typeof accountId !== 'string' ||
+    !PUBLIC_ID_PATTERN.test(accountId) ||
+    typeof deviceId !== 'string' ||
+    !PUBLIC_ID_PATTERN.test(deviceId)
+  ) {
+    return undefined;
+  }
+  return { accountId, deviceId };
+}
+
 export const useGameStore = create<GameState>()(
   persist(
     (set, get) => ({
+      identityOwner: null,
       outbox: {},
       wordRounds: {},
       lastLang: null,
@@ -754,13 +788,14 @@ export const useGameStore = create<GameState>()(
     {
       name: 'whippin-round',
       storage,
-      version: 16, // v16: the outbox and word rounds belong to #216's retired identity
+      version: 17, // v17: persisted game state names the #216 identity that owns it
       migrate: migratePersisted,
       // Persist the sentence OUTBOX, the word rounds, last language/mode and the two
       // one-time flags. Everything a player's HISTORY is made of — the sentence rounds
       // (#214) and the solved-day collection (#211) — is the server's; the round loads, the
       // active word key and the actions are transient.
       partialize: (s): PersistedState => ({
+        identityOwner: s.identityOwner,
         outbox: s.outbox,
         wordRounds: s.wordRounds,
         lastLang: s.lastLang,
@@ -772,3 +807,61 @@ export const useGameStore = create<GameState>()(
     },
   ),
 );
+
+// Bind the persisted maps to the identity that may send them. This runs once after the
+// device key is loaded and again on every live identity transition. Preferences are never
+// identity-owned and therefore never appear in these patches.
+export function reconcileGameStateIdentity(
+  identity: IdentityOwner | null,
+  pendingBootstrap = false,
+): void {
+  const state = useGameStore.getState();
+  const owner = state.identityOwner;
+
+  if (identity === null) {
+    // The sole honest ownerless state is the act waiting behind its persisted pending
+    // bootstrap token. With no such token, no identity means no proof and both maps go.
+    if (pendingBootstrap && owner === null) return;
+    if (
+      owner === null &&
+      Object.keys(state.outbox).length === 0 &&
+      Object.keys(state.wordRounds).length === 0 &&
+      Object.keys(state.roundLoads).length === 0 &&
+      state.activeWordKey === null
+    ) {
+      return;
+    }
+    useGameStore.setState({
+      identityOwner: null,
+      outbox: {},
+      wordRounds: {},
+      roundLoads: {},
+      activeWordKey: null,
+    });
+    return;
+  }
+
+  // Callers pass the full DeviceIdentity structurally. Pick the two public ids explicitly:
+  // spreading it would copy the raw authentication token into the game-state blob.
+  const nextOwner: IdentityOwner = {
+    accountId: identity.accountId,
+    deviceId: identity.deviceId,
+  };
+
+  // An ownerless first act is now owned by the identity its bootstrap returned. The same
+  // recovery covers a completed device write landing just before the state-owner write.
+  if (owner === null) {
+    useGameStore.setState({ identityOwner: nextOwner });
+    return;
+  }
+
+  const accountChanged = owner.accountId !== identity.accountId;
+  const deviceChanged = owner.deviceId !== identity.deviceId;
+  if (!accountChanged && !deviceChanged) return;
+
+  useGameStore.setState({
+    identityOwner: nextOwner,
+    ...(deviceChanged ? { wordRounds: {}, activeWordKey: null } : {}),
+    ...(accountChanged ? { outbox: {}, roundLoads: {} } : {}),
+  });
+}

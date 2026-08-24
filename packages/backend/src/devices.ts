@@ -82,13 +82,14 @@ function describe(device: DeviceRecord, currentDeviceId: string) {
 async function listing(
   devices: DeviceStore,
   resolved: ResolvedDevice,
-  removed?: string,
+  removedKey?: string,
 ): Promise<Record<string, unknown>> {
   const rows = (await devices.list(resolved.account.accountId)).filter(
-    (row) => row.deviceId !== removed,
+    (row) => row.revokeKey !== removedKey,
   );
   const listed = rows.some((row) => row.deviceId === resolved.device.deviceId);
-  const all = listed || removed === resolved.device.deviceId ? rows : [resolved.device, ...rows];
+  const currentRemoved = removedKey === resolved.device.revokeKey;
+  const all = listed || currentRemoved ? rows : [resolved.device, ...rows];
   return {
     accountId: resolved.account.accountId,
     deviceId: resolved.device.deviceId,
@@ -191,8 +192,12 @@ export async function handleDevices(
     // want, and refusing it would be a rule the screen then has to explain. A device id that
     // is not on this account simply removes nothing; the answer is the list either way, so
     // the screen never has to guess what a write did (the /friends house rule).
-    const removed = await devices.revoke(resolved.account.accountId, target, revokeKey);
-    return json(200, await listing(devices, resolved, removed ? target : undefined), responseHeaders);
+    const outcome = await devices.revoke(resolved.account.accountId, target, revokeKey);
+    // `absent` is idempotent success: another concurrent request removed the BASE item, and
+    // the eventually-consistent GSI is precisely where its stale row may remain. A mismatch
+    // proves nothing about the selected row and therefore filters nothing.
+    const removedKey = outcome === 'mismatch' ? undefined : revokeKey;
+    return json(200, await listing(devices, resolved, removedKey), responseHeaders);
   }
 
   return json(200, await listing(devices, resolved), responseHeaders);

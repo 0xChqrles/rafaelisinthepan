@@ -8,7 +8,8 @@ import { useDeadlinePassed } from '../hooks/useCountdown';
 import useScoreHistogram from '../hooks/useScoreHistogram';
 import useWordRoundSync from '../hooks/useWordRoundSync';
 import { retryWordRoundSync, startWordRound } from '../state/wordRoundSync';
-import { prefetchTurnstileToken } from '../turnstile';
+import { prefetchTurnstileTokens } from '../turnstile';
+import { deviceIdentity } from '../identity';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import {
   bonusSeconds,
@@ -199,7 +200,7 @@ function WordRound({
   // round start IS clock start, so a bot check landing exactly then costs real seconds on a
   // 60-second game; asking while the player reads the rules puts it in hand beforehand.
   useEffect(() => {
-    if (!started) prefetchTurnstileToken();
+    if (!started) prefetchTurnstileTokens(deviceIdentity() === null ? 2 : 1);
   }, [started, roundKey]);
   const handlePlay = useCallback(() => {
     if (starting) return;

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   ConditionalCheckFailedException,
   DeleteItemCommand,
+  GetItemCommand,
   QueryCommand,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
@@ -16,7 +17,7 @@ describe('dynamoDeviceStore revocation (#216)', () => {
     const send = vi.fn(async (_command: unknown) => ({}));
     const store = dynamoDeviceStore({ send } as unknown as DynamoDBClient, 'scores');
 
-    await expect(store.revoke(ACCOUNT, DEVICE, REVOKE_KEY)).resolves.toBe(true);
+    await expect(store.revoke(ACCOUNT, DEVICE, REVOKE_KEY)).resolves.toBe('removed');
     expect(send).toHaveBeenCalledTimes(1);
     const command = send.mock.calls[0][0] as DeleteItemCommand;
     expect(command).toBeInstanceOf(DeleteItemCommand);
@@ -32,13 +33,40 @@ describe('dynamoDeviceStore revocation (#216)', () => {
     });
   });
 
-  it('maps only a failed ownership condition to "nothing removed"', async () => {
-    const send = vi.fn(async () => {
-      throw new ConditionalCheckFailedException({ $metadata: {}, message: 'stale handle' });
+  it('strongly distinguishes an already-absent row after a failed delete condition', async () => {
+    const send = vi.fn(async (command: unknown) => {
+      if (command instanceof DeleteItemCommand) {
+        throw new ConditionalCheckFailedException({ $metadata: {}, message: 'already gone' });
+      }
+      return {};
     });
     const store = dynamoDeviceStore({ send } as unknown as DynamoDBClient, 'scores');
 
-    await expect(store.revoke(ACCOUNT, DEVICE, REVOKE_KEY)).resolves.toBe(false);
+    await expect(store.revoke(ACCOUNT, DEVICE, REVOKE_KEY)).resolves.toBe('absent');
+    expect(send).toHaveBeenCalledTimes(2);
+    const read = send.mock.calls[1][0] as GetItemCommand;
+    expect(read).toBeInstanceOf(GetItemCommand);
+    expect(read.input).toMatchObject({
+      Key: { pk: { S: `device#${REVOKE_KEY}` }, sk: { S: 'device' } },
+      ConsistentRead: true,
+    });
+  });
+
+  it('reports an ownership mismatch when the addressed row still exists', async () => {
+    const send = vi.fn(async (command: unknown) => {
+      if (command instanceof DeleteItemCommand) {
+        throw new ConditionalCheckFailedException({ $metadata: {}, message: 'stale handle' });
+      }
+      return {
+        Item: {
+          deviceId: { S: 'q'.repeat(16) },
+          accountId: { S: ACCOUNT },
+        },
+      };
+    });
+    const store = dynamoDeviceStore({ send } as unknown as DynamoDBClient, 'scores');
+
+    await expect(store.revoke(ACCOUNT, DEVICE, REVOKE_KEY)).resolves.toBe('mismatch');
   });
 
   it('propagates operational failures instead of claiming the device was removed', async () => {

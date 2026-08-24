@@ -419,7 +419,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `deviceIdentity()` is the SYNCHRONOUS "should I even ask the server?" test every private
     read makes; `ensureDeviceIdentity()` is the ONE bootstrap flight (the `activeScoreFlights`
     pattern — a first guess while the leaderboard is mounting must not mint two accounts);
-    `identityEpoch()` is what an in-flight request captures and its answer is checked against.
+    `ensureRequestIdentity(expectedEpoch)` is the private-request boundary — if resolving
+    identity adopts B while the closure owns A's inputs, it returns nothing and no POST is
+    made; `identityEpoch()` also fences every answer after its request is sent.
   - **The token is PERSISTED before the bootstrap request, and a token with no ids is NOT an
     identity.** That intermediate state is what makes a lost answer recoverable: the retry
     sends the SAME token, which is what the server's idempotence is keyed by. It reads as
@@ -436,6 +438,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     and adopts the winner, while a browser without Web Locks fails before minting.
     `readStored` distinguishes UNREADABLE storage from EMPTY storage — the first says nothing
     about this device's identity, and collapsing them dropped one the session was playing on.
+    A failed completed-identity write marks that identity SESSION-ONLY: a later readable empty
+    value (or its own pending token) cannot dislodge it, knowingly sacrificing cross-tab removal
+    for that identity until this tab leaves it. A token this tab authoritatively leaves is
+    fenced in memory as well: even if conditional `removeItem` throws, START FRESH cannot
+    re-adopt the stale revoked value it can still read.
   - **`state/identityScope.ts` clears on LEAVING an identity, never on acquiring one**
     (corrected on review): a bootstrap is triggered BY an act, so clearing there destroyed the
     guess in the outbox that asked for it and the `wordRounds` entry the word start's own
@@ -448,7 +455,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **Persist v16 DROPS the outbox and the word rounds**: both are owed to #187's retired
     identity, and the tokenless branch would otherwise pump a surviving outbox on the first
     page load — bootstrapping a brand-new account and filing another identity's guesses
-    against it.
+    against it. **Persist v17 adds `identityOwner`** and `main.tsx` reconciles it against the
+    loaded device before rendering: exact ownership keeps both maps, a same-account new device
+    keeps only the account-owned outbox, and no proof drops them. An ownerless first act is kept
+    only when `whippin-device` holds its pending bootstrap token, then bound to the returned
+    identity; a missing/corrupt device key never turns old state into a new account's first act.
   - **The tokenless branch is an ANSWER, not a loading state.** `roundSync` publishes a
     ready-and-empty authoritative round and `state/history.ts` a ready empty month and
     collection, so nothing breathes behind a request nobody made — the same rule #211's
@@ -2215,9 +2226,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   answers `bucket: null` and no standing is drawn; `bucketIndexOf` retired with the guess.
   **What #203 RETIRED here** (no-back-compat): the score POST, the invisible Turnstile token
   it carried (`turnstile.ts` serves ROUND START instead, and gained
-  `prefetchTurnstileToken` — asked for while the puzzle loads and while the Word gate is on
-  screen, so the challenge is in hand before the player acts; a prefetched token is consumed
-  EXACTLY ONCE, since a real one is single-use), the OAC-hashed `api.postScoreBody`, the
+  `prefetchTurnstileTokens` — asked for while the puzzle loads and while the Word gate is on
+  screen, so the challenges are in hand before the player acts; a device with no identity
+  fills TWO slots (bootstrap then round creation), while an existing identity fills one, and
+  each prefetched token is consumed EXACTLY ONCE), the OAC-hashed `api.postScoreBody`, the
   persisted `scoreRecorded` VALUE and the whole ask-until-recorded state machine of
   2026-08-20, plus `game/scores.ts`'s `shouldSubmitScore`/`shouldAskPopulation` and the
   `canSubmit` cap gate. The server derives the score from the log it already holds and

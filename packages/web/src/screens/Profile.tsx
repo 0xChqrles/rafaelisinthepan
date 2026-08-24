@@ -13,7 +13,7 @@ import {
 import { parseProfile, postProfileBody, profileUrl } from '../api';
 import {
   deviceIdentity,
-  ensureDeviceIdentity,
+  ensureRequestIdentity,
   identityEpoch,
   identityEpochOf,
   markDeviceSignedOut,
@@ -137,8 +137,10 @@ export default function Profile() {
         // it mints one (#216) — the same act as "saving a profile" in the trigger list, one
         // beat earlier. The wired entry point is the leaderboard, which has already
         // bootstrapped; only a deep link ever mints here.
-        const identity = await ensureDeviceIdentity();
-        epoch = identityEpochOf(identity);
+        const request = await ensureRequestIdentity();
+        if (!request) return;
+        const { identity, epoch: requestEpoch } = request;
+        epoch = requestEpoch;
         if (cancelled || identityEpoch() !== epoch) return;
         setToken(identity.token);
         const publicId = identity.accountId;

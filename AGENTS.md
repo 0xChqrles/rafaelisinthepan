@@ -1076,7 +1076,11 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   briefly lag a create or a delete — a cosmetic device-list delay only. Each listed row returns
   the base primary key's digest as an opaque, non-authenticating `revokeKey`; revocation uses it
   for one conditional base-table delete and performs **no GSI lookup**, so index lag can never
-  turn a requested sign-out into a silent no-op or keep a token authenticable. The account
+  turn a requested sign-out into a silent no-op or keep a token authenticable. A failed delete
+  condition is resolved by one strongly-consistent BASE read into **`absent` versus
+  `mismatch`**: removed/already-absent rows are filtered from the returned GSI list by their
+  exact `revokeKey`, while a mismatch filters nothing. Thus a concurrent self-revocation
+  cannot reappear through a stale index row. The account
   check is the backstop for the reverse, rejecting a device item an eventually-consistent
   enumeration missed. **`lastSeenAt` moves at most once a DAY per device** — it rides
   every authenticated call, and `/round` writes about once a second while a player types.
@@ -1118,8 +1122,8 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   bootstrap, one for the round creation #203 gates — where the issue asked for one. Folding
   them into a single request would mean an ordinary authenticated write could mint an
   identity, which is exactly what the next rule forbids; both tokens are invisible and
-  prefetched, so the cost is one extra Siteverify call on the first guess of a new player's
-  life.
+  prefetched into a two-slot, single-use queue, so the cost is one extra Siteverify call on
+  the first guess of a new player's life.
 - **FIRST BOOTSTRAP IS ONE ORIGIN-WIDE CRITICAL SECTION.** `localStorage` is shared by tabs
   but has no compare-and-swap, so re-reading before minting alone still permits two tabs to
   read empty and create two accounts. A Web Lock covers the entire **re-read → mint/persist
@@ -1129,6 +1133,9 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   browser without Web Locks fails before minting; an unreadable storage is distinct from an
   empty one and keeps the session identity already in memory. Storage events adopt account
   changes, and removal is conditional on the token still being the one this tab is leaving.
+  If that conditional removal throws, the departed token remains fenced in memory so its
+  stale stored value cannot be re-adopted; a completed identity that cannot be persisted is
+  likewise session-only until this tab deliberately leaves it.
 - **AN ARBITRARY UNKNOWN TOKEN NEVER CREATES AN IDENTITY.** Only the explicit bootstrap
   request, with a canonical token and Turnstile proof, may do that. A malformed token is an
   input error (**400 `bad_request`**); a well-formed token missing from the base table on an
@@ -1157,11 +1164,16 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   nothing. App also remounts its routed surface on each scope transition except the first-ever
   acquisition, so component-local profile, board, invite and device-list state cannot survive
   A → null/B and B's private reads restart when it arrives. Persist v16 drops every
-  pre-#216 outbox and Word round: either belongs to an identity the new token cannot prove it
-  owns, and pumping one would file the retired identity's play against a new account.
-  **Every in-flight private request captures the `(accountId, deviceId)`
-  epoch and its answer is ignored after that tuple changes** — clearing storage without
-  fencing old responses would let the identity just left repopulate the new one's state.
+  pre-#216 outbox and Word round. **Persist v17 then tags both maps with their
+  `{accountId, deviceId}` owner**: startup keeps a matching owner's state, keeps account-only
+  state across a same-account device replacement, and otherwise drops what cannot be proved.
+  Ownerless state survives only behind the persisted pending token minted by the deliberate
+  first act that created it; a missing/corrupt device record never pumps that state into a
+  newly bootstrapped account. **Every in-flight private request captures the
+  `(accountId, deviceId)` epoch before resolving its identity and before sending; if resolution
+  adopts B for a closure that captured A, the POST is aborted. Its answer is ignored after
+  that tuple changes too** — clearing storage without fencing either side would let the
+  identity just left write into or repopulate the new one's state.
 - **ONE route, POST-only like /friends** (the token is the auth and travels in the BODY, so
   its CloudFront behavior's query allow-list is EMPTY — the standing three-package contract):
   `POST /devices`. `{token, turnstileToken}` bootstraps, `{token}` lists the account's
