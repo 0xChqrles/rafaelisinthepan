@@ -12,8 +12,10 @@
 // triggers. A visit that performs none of the deliberate acts below mints no token and no
 // server row:
 //
-//   the first guess (sentence or word) · starting a word round · opening the leaderboard ·
-//   sending an invite link · accepting one · saving a profile
+//   the first guess (sentence or word) · starting a word round · tapping INVITE on the
+//   leaderboard (user-decided 2026-08-24, replacing "opening the leaderboard": a
+//   navigation must not mint an account) · accepting an invite · opening the profile
+//   editor (it cannot show an identity without one)
 //
 // Turnstile gates the bootstrap, because that is the request that CREATES state. The token
 // is generated and PERSISTED immediately before it, so a lost answer is recovered by

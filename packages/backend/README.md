@@ -11,14 +11,13 @@ that provisions Lambda + Function URL + CloudFront + the bucket is issue #3.)
   [`Puzzle`](../shared/src/types.ts) / [`WordPuzzle`](../shared/src/types.ts) shape.
   `404` (clean JSON error) when the day is unpublished or still in the future; `400` on a
   missing/malformed `date`, `lang` or `mode`.
-- `GET /scores?lang=<en|fr>&date=<YYYY-MM-DD>&mode=<sentence|word>` → the published
-  daily's live score histogram, derived from its per-player rows (#187): one exact band
-  per distinct recorded score. `POST` to the same URL with
-  `{ "secret": "<32-hex player key>", "score": 12, "turnstileToken": "..." }` verifies
-  Turnstile, validates the possible score range, applies the five-per-HMAC-IP cap, and
-  writes one first-write-wins row keyed by the publicId derived from the secret; the
-  response is the updated histogram with the caller's recorded band. `mode` is required
-  here.
+- `GET /scores?lang=<en|fr>&date=<YYYY-MM-DD>&mode=<sentence|word>[&id=<publicId>]` →
+  the published daily's live score histogram, derived at read time from its per-player
+  rows (#187): one exact band per distinct recorded score. **READ-ONLY since #203** — a
+  POST is a named `405`. The row itself is written by the `/round` route, from the guess
+  log the server already holds, and only for a round played ON its day; `id` is the
+  caller's PUBLIC id, which is what makes the answer's `bucket` theirs. `mode` is
+  required here.
 
   ```json
   {
@@ -32,18 +31,23 @@ that provisions Lambda + Function URL + CloudFront + the bucket is issue #3.)
   ```
 
   Ranges are inclusive — one exact band per distinct recorded score, ascending — and an
-  empty population is honestly `"buckets": []`. `bucket` is the caller's recorded band on
-  POST (after a first-write-wins duplicate, the STORED row's) and `null` on GET. Score
-  responses are `no-store`. Missing/malformed player key → 400; missing/invalid Turnstile
-  → 403; impossible score → 400; sixth player for the same `(date, lang, mode, ipHash)` →
-  429 without writing anything.
+  empty population is honestly `"buckets": []`. `bucket` is `null` when the population
+  holds no row for `id` (or none was sent). Score responses are `no-store`.
+- The LIVE routes — `POST /devices` (#216: the Turnstile-gated identity bootstrap, the
+  device list, revocation), `POST /round` (#201/#202/#203: the per-round guess log, Word
+  mode's start/submit, the derived score), `POST /history` (#211), `POST /friends`
+  (#189), `GET|POST /board` (#190) and `GET|POST /profile` (#188) — authenticate with the
+  **DEVICE TOKEN in the body** (`{ "token": "<64-hex>" }`, #216); the server resolves it
+  to the account. There is no client-side secret and no client-claimed score any more.
+  Their contracts live in the root and per-package `AGENTS.md`; Turnstile gates the
+  requests that CREATE state (the identity bootstrap, round creation, Word round start).
 
-  In production, serialize the body once, hash those exact UTF-8 bytes, and send the digest
-  as lowercase hexadecimal in `x-amz-content-sha256`. CloudFront's Lambda-URL OAC requires
-  this header before the handler can run:
+  In production, every live POST serializes its body once, hashes those exact UTF-8
+  bytes, and sends the digest as lowercase hexadecimal in `x-amz-content-sha256` —
+  CloudFront's Lambda-URL OAC requires this header before the handler can run:
 
   ```ts
-  const body = JSON.stringify({ secret, score, turnstileToken });
+  const body = JSON.stringify({ token });
   const bytes = new TextEncoder().encode(body);
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   const payloadHash = [...new Uint8Array(digest)]
@@ -104,9 +108,9 @@ S3 cannot drift apart.
 
 Run the **same `createHandler`** locally, swapping the S3 store for a filesystem store
 (`src/fsStore.ts`) and DynamoDB for an in-memory score store. The day boundary,
-404-no-puzzle, CORS, score validation/capping, and puzzle shapes are therefore identical
-to production — only Turnstile is an explicit local accept-all and score data resets when
-the process restarts. `src/serve.ts` remains a thin Function-URL ⇄ HTTP adapter.
+404-no-puzzle, CORS, the live-route validation and puzzle shapes are therefore identical
+to production — only Turnstile is an explicit local accept-all, and the in-memory stores
+(scores, rounds, devices, friends, profiles, history) reset when the process restarts. `src/serve.ts` remains a thin Function-URL ⇄ HTTP adapter.
 
 ```bash
 # 1. Generate a puzzle (writes it under its source: packages/generation/output/word/
@@ -149,9 +153,10 @@ no listing — and listable by a date prefix. The store root defaults to
 | `ALLOWED_ORIGIN`| `*`                    | CORS origin                               |
 | `SITE_ORIGIN`  | request origin          | apex used for the share card's absolute URLs |
 
-The local score store and accept-all Turnstile require no additional environment variables.
-POST still requires a nonempty `turnstileToken` field so the request contract stays real.
-The local server has no CloudFront OAC, so it does not require `x-amz-content-sha256`.
+The local in-memory stores and accept-all Turnstile require no additional environment
+variables. The gated writes (identity bootstrap, round creation, Word round start) still
+require a nonempty `turnstileToken` field so the request contract stays real. The local
+server has no CloudFront OAC, so it does not require `x-amz-content-sha256`.
 
 ## Dev
 

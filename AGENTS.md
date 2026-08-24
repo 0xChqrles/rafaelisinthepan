@@ -1099,13 +1099,21 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   account creation into an unauthenticated write that every crawler and every bot triggers. A
   visit that performs none of the acts below creates neither a token nor a server row. The
   triggers, all deliberate: **the first guess** (sentence or word) · **starting a word round**
-  · **opening the leaderboard** (the friends board read is authenticated) · **sending an
-  invite link** · **accepting one** · **saving a profile**. Invites are gated on NEITHER side:
+  · **tapping INVITE on the leaderboard** · **accepting an invite** · **opening the profile
+  editor** (which is where "saving a profile" resolves — see below).
+  **"Opening the leaderboard" LEFT this list (user-decided 2026-08-24, on the PR-219
+  follow-up review):** a NAVIGATION must not create server state — a signed-out or
+  brand-new visitor merely browsing the board would silently spawn an account — so the
+  board route now renders its private faces tokenless under the no-private-fetch rule
+  below (the friends board is the known-empty ghost + INVITE without a request, the
+  identity strip draws nothing, the global read stays genuinely anonymous), and the
+  INVITE tap — the first thing on that screen that cannot exist without an account — is
+  the act that mints. Invites are gated on NEITHER side:
   accepting cannot be gated (the accepter is by definition a brand-new visitor clicking a
   link, and that is the entire invite funnel, #189), and if accepting is not gated, sending is
   not either. The identity EDITOR (`/profile`) resolves an identity when it opens rather than
-  when it saves — it cannot show a player their identity without one, and its wired entry
-  point (the leaderboard) has already minted one, so only a deep link ever mints there.
+  when it saves — it cannot show a player their identity without one; since the leaderboard
+  no longer mints, reaching it from the EDIT chip mints there exactly as a deep link does.
 - **NO TOKEN MEANS NO PRIVATE GAME-STATE FETCH.** A puzzle, a calendar or a language summary
   with no local device token KNOWS the player's server state is empty and must not call
   `/round` or the private history routes merely to learn that. It is an ANSWER, not a loading

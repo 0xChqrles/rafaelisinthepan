@@ -35,6 +35,10 @@ const STRINGS = {
   // The #189 invite link's write, loud for the same reason: it is the one thing that
   // click existed to do, so losing it silently would leave both players none the wiser.
   failedInvite: { en: 'FAILED TO ADD FRIEND', fr: "ÉCHEC DE L'AJOUT EN AMI" },
+  // The INVITE tap's own bootstrap (#216, user-decided 2026-08-24: the tap is the
+  // leaderboard route's account-creating act), loud for the invite write's reason — the
+  // link is the one thing the tap existed to share, and INVITE itself is the retry.
+  failedInviteLink: { en: 'FAILED TO INVITE', fr: "ÉCHEC DE L'INVITATION" },
   // Word mode's round start (#202), loud for that same reason and one more: the SERVER
   // stamps the clock, so a failed start is a run that has not begun. Saying nothing would
   // leave the player tapping PLAY at a gate that never opens.

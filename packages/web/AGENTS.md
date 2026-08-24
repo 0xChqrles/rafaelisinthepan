@@ -934,7 +934,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   OAC-hashed body, the global read the anonymous GET widened with the caller's PUBLIC
   id for the own window when `deviceIdentity()` already holds one. The global board needs no
   identity and remains an anonymous GET without one; #216 removed the old client-side
-  `crypto.subtle` derivation from that path (live POSTs still require it for OAC). Its lazy
+  `crypto.subtle` derivation from that path (live POSTs still require it for OAC).
+  **OPENING THIS SCREEN IS NOT A TRIGGER (user-decided 2026-08-24, superseding "opening
+  the leaderboard mints an account" — the root AGENTS trigger list moved with it):** a
+  navigation must not create server state, so a tokenless visitor's FRIENDS board is the
+  KNOWN-EMPTY answer (the ghost + INVITE, no request — the #216 no-private-fetch rule),
+  the identity strip settles empty, the `/friends` decoration read is skipped, and the
+  INVITE tap is the screen's account-creating act: it bootstraps (LoadingWave in the
+  button, the Word gate's PLAY shape; a failure says `failedInviteLink` with the button
+  itself as the retry) and then shares. Every identity-reading effect keys on the LIVE
+  identity (`useDeviceIdentity`), so the mint — or a cross-tab adoption — populates the
+  strip, both boards and the friend marks without a remount (a run-once strip effect used
+  to leave them blank until navigation). Its lazy
   `/friends` decoration read checks the refusal body too: only `401 unknown_device` raises the
   signed-out screen, while an ordinary decoration failure simply leaves rows unmarked. The screen
   renders what the API returned (ranks, cut, own window
@@ -998,9 +1009,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   read that FAILS still SETTLES, on the assigned identity — it is what a board row with a
   failed profile read already shows, and a skeleton that never resolves is the one outcome
   worse than the fallback; a 404 is not a failure at all but the answer "never
-  customized", whose display IS that identity. A failed identity bootstrap draws nothing at
-  all. The INVITE device-card
-  button on the bottom edge waits on the ID alone, never the profile.
+  customized", whose display IS that identity. A device with NO identity settles the strip
+  empty and draws nothing — there is no identity to show, and nothing here mints one. The
+  INVITE device-card button on the bottom edge is always live: with an identity it shares
+  at once; without one the tap mints first (above), never waiting on the profile.
   Both are the #188/#189 wiring; both work before ever playing — and the invite
   share is the ONE `useShare` caller that passes `tracked: false`, because the pinned
   `share` analytics event means "a RESULT left the app" (the three-event invariant) and

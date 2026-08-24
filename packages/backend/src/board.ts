@@ -3,25 +3,27 @@
 //
 //   GET  /board?lang=&date=&mode=[&id=<publicId>] — the GLOBAL top 50, anonymous: the
 //     population is public by design (and untrusted by design, #187 — nothing treats it
-//     as truth). `id` is the caller's PUBLIC id — never the secret, so it may travel in
-//     the query — and widens the answer with their own below-the-cut window.
+//     as truth). `id` is the caller's PUBLIC id — never the device token, so it may
+//     travel in the query — and widens the answer with their own below-the-cut window.
 //     A DELIBERATE exposure to know about: nothing binds `id` to the caller, so anyone
 //     holding a publicId can read that player's window (score + rank + profile) for any
 //     served day. Consistent with the design: publicIds are broadcast by invite links
 //     (#189), and a stranger holding your id could already read your scores by
 //     friending you through that same link — the trusted surface stays the POST.
-//   POST /board  { secret }  (+ the same query) — the FRIENDS board, the trusted
-//     surface: the server resolves YOUR edges (#189), so the read must prove who is
-//     asking — the secret authenticates in the BODY, the /friends rule.
+//   POST /board  { token }  (+ the same query) — the FRIENDS board, the trusted
+//     surface: the server resolves the account the caller's DEVICE TOKEN (#216) maps to,
+//     then their edges (#189), so the read proves who is asking — the token
+//     authenticates in the BODY, the /friends rule.
 //
 // Both answers are rows a board can draw directly: rank (competition ties), score, and
 // the public profile (#188) — name and avatar — attached per row. The ranking, the
 // plain top-50 cut and the own-row window are the shared pure rules in
 // @whippin/shared/leaderboard.ts.
 //
-// No puzzle-store read: a population only ever exists for a published daily (the score
-// POST enforces it), so an unpublished day honestly answers the empty board. The
-// malformed-param 400s and the future +1-day guard still apply (shared liveRoute.ts).
+// No puzzle-store read: a population only ever exists for a published daily (the round
+// route's guards enforce it — it is what writes the score rows since #203), so an
+// unpublished day honestly answers the empty board. The malformed-param 400s and the
+// future +1-day guard still apply (shared liveRoute.ts).
 
 import {
   boardOwnRows,
