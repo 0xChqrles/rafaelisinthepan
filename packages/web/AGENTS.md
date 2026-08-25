@@ -17,6 +17,7 @@
                               first deliberate act, the server-assigned account it resolves
                               to, the signed-out flag and the identity epoch
       state/identityScope.ts  what an identity OWNS, cleared when it changes (wired in main)
+      state/gamePersistence.ts  the atomic IndexedDB boundary for cross-tab game-state writes
       screens/SignedOut.tsx   the `unknown_device` screen: what is left behind + START FRESH
       state/roundSync.ts      the #201 sync engine, reworked by #214: coalesced prefix writes,
                             the transient server snapshot it publishes for the screen, the
@@ -470,6 +471,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     keeps only the account-owned outbox, and no proof drops them. An ownerless first act is kept
     only when `whippin-device` holds its pending bootstrap token, then bound to the returned
     identity; a missing/corrupt device key never turns old state into a new account's first act.
+    **Persist v18 moves the same state into IndexedDB**; the retired v17 localStorage blob is
+    a one-time import source when the database is empty, so its preferences survive while the
+    v16/v17 ownership migrations still drop anything unprovable. `main.tsx` awaits hydration
+    and the initial ownership transaction before mounting any private reader.
   - **The tokenless branch is an ANSWER, not a loading state.** `roundSync` publishes a
     ready-and-empty authoritative round and `state/history.ts` a ready empty month and
     collection, so nothing breathes behind a request nobody made — the same rule #211's
@@ -485,21 +490,26 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `rearmPlayerHistory` (replays exactly the reads the tokenless branch answered). A
     RE-ARM, never a clear: the outbox and the word clock hold what THIS device played, owed
     to the adopted account.
-  - **The persisted game blob is CROSS-TAB SAFE in two halves** (PR-219 rounds 2–3, P1).
-    localStorage is shared by every tab and zustand persist writes the WHOLE partialized
-    snapshot on every set, so a tab whose memory lagged the shared blob would flatten a
-    sibling's freshly persisted outbox or unsent Word run with its own stale maps — the
-    identity adoption's owner-tag write guaranteed exactly that set in every tab. The
-    WRITE-TIME half (`mergePersistedWrite`, inside the persist storage): every write
-    merges over the blob as stored at that very moment — this tab's value for map keys
-    its own actions TOUCHED (an absent touched key is a deliberate deletion), the stored
-    value for every other key, one-time flags OR-merged, fill-once values kept — because
-    the storage EVENT is queued asynchronously by spec and any set landing before it
-    would clobber. The READ-TIME half (`installGameStoreSync`, wired in `main.tsx`):
-    the storage event rehydrates, so this tab's memory tracks the shared blob. What the
-    residual OS-level interleaving sliver could still lose is an unsent batch the engines
-    re-send or self-heal (the outbox prunes against the server log on the next read; a
-    resurrected word round settles against `submittedAt`).
+  - **Persisted game state is TRANSACTIONAL across tabs** (PR-219 final review, replacing
+    rounds 2–3's snapshot merge). Zustand is now only the synchronous UI cache. Every
+    persisted action emits an explicit domain mutation — append/acknowledge/discard one
+    outbox, start/settle/record one Word run, change one preference, reconcile one owner —
+    and `state/gamePersistence.ts` applies it to the latest committed state inside ONE
+    IndexedDB readwrite transaction. Overlapping transactions serialize origin-wide, so
+    there is no get/merge/set gap, no lifetime “touched key” guess, and no stale full-state
+    snapshot to clobber a sibling. Acknowledgement removes only the request snapshot and
+    preserves concurrently appended guesses; terminal discard is a separate mutation;
+    retention and ownership clears run against the complete committed maps; every
+    account/device-owned mutation carries its expected owner, so a delayed write from A
+    cannot enter B, and a Word mutation also names its word so an answer for a republished
+    daily cannot settle or extend the replacement. A permanently failed transaction moves
+    the whole session to memory-only persistence: later writes are not allowed to commit a
+    suffix past the missing mutation and then roll the live cache backward.
+    `installGameStoreSync` uses BroadcastChannel (storage-event fallback)
+    only to refresh each tab's cache after commit — correctness never depends on delivery,
+    because the next mutation re-reads inside the transaction. The adversarial suite uses
+    two independent database connections and pins same-key writes, owner transitions,
+    acknowledgement races, eviction, first-write seed and Word-run convergence.
   - **`markDeviceSignedOut` requires the request's identity epoch.** Every refusal caller reads
     the body and acts only on `401 unknown_device`; a 5xx, a dropped connection or any other
     4xx must never take a player's account away, and a late verdict for A must never remove B.
@@ -953,10 +963,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the same `LoadError` surface with the button relabelled `gatePlay` (its `actionLabel`
   prop) — a state gets a way ONWARD where a hiccup gets a RETRY — and the copy is neutral
   about WHOSE list is full, because the cap binds either side of the pair and the answer does
-  not say which. One conversation
-  per invite lives in a module-level flight map (`shareInviteFlight`, `useScoreHistogram`'s
-  own pattern), so neither React's development effect replay nor a real remount mints a
-  second request. The SENDING surface is the leaderboard screen's INVITE button (#190),
+  not say which. The button's in-flight state prevents a second tap while its request runs;
+  no effect or module-level conversation exists now that accepting is a deliberate click.
+  The SENDING surface is the leaderboard screen's INVITE button (#190),
   which shares `boardInviteText` + the link via `useShare`; this route receives them.
 
 - **Leaderboard screen (#190):** `/<lang>/board` and `/<lang>/word/board`

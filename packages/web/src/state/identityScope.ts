@@ -62,10 +62,10 @@ export function installIdentityScope(): () => void {
       return;
     }
 
-    // Word mode's clock and its unsubmitted log are DEVICE-owned: a run belongs to the
-    // device playing it (its bonus-adjusted deadline lives nowhere else until submission),
-    // so a new device never inherits one.
-    if (deviceChanged) {
+    // Word mode's clock and its unsubmitted log belong to this (account, device) start: a
+    // new device cannot inherit its local deadline, and a device re-parented to another
+    // account cannot submit a start the old account owns.
+    if (accountChanged || deviceChanged) {
       resetWordRoundSync();
     }
     if (accountChanged) {

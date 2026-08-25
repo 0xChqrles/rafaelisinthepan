@@ -11,7 +11,7 @@
 // past month is not immutable — playing an old daily changes it, and another device can do
 // the same — which is why a month REVALIDATES whenever it becomes the view on screen (the
 // hook's own effect) rather than being trusted from an earlier visit. Nothing is written to
-// localStorage: a second source of truth for a day's progress is exactly what #214 removed.
+// persistent storage: a second source of truth for a day's progress is exactly what #214 removed.
 //
 // **Loading is EXPLICIT.** A month that has not arrived is `days: null`, never an empty map:
 // an empty map is the claim "none of these days was started", and a false one paints a whole

@@ -1,8 +1,11 @@
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
-import { generatePublicId, PUBLIC_ID_PATTERN, type RuntimeHole } from '@whippin/shared';
+import { generatePublicId, PUBLIC_ID_PATTERN } from '@whippin/shared';
 import { isLang, type Mode } from '../langs';
 import { CLAIM_ZONE, runMs } from '../game/wordGame';
+import {
+  GameStateDatabase,
+  type StoredGameState,
+} from './gamePersistence';
 
 // Which crowd the #190 leaderboard is showing: the friends graph (the trusted default)
 // or the global top 50. It lives here rather than in the screen because the screen
@@ -98,7 +101,7 @@ function dayNumberOf(key: string): number | null {
 
 // Retention cap: keep at most this many day-keyed entries (newest by dayNumber). ~800 ≈ a
 // year of daily play in two languages with headroom; word rounds are small (a log + a
-// clock) and an outbox is normally empty, so the maps stay well under localStorage limits.
+// clock) and an outbox is normally empty, so transaction clone/read cost stays bounded.
 const MAX_DAY_ROUNDS = 800;
 
 // Bound a day-keyed map: with more than MAX_DAY_ROUNDS entries, drop the oldest (lowest
@@ -108,12 +111,15 @@ const MAX_DAY_ROUNDS = 800;
 // two chances to evict differently.
 function capDayKeyed<T>(entries: Record<string, T>, activeKey: string): Record<string, T> {
   const dayKeys = Object.keys(entries).filter((k) => dayNumberOf(k) !== null);
-  const survivors = new Set(
-    dayKeys.length <= MAX_DAY_ROUNDS
-      ? dayKeys
-      : dayKeys.sort((a, b) => dayNumberOf(b)! - dayNumberOf(a)!).slice(0, MAX_DAY_ROUNDS),
-  );
-  survivors.add(activeKey);
+  const survivors = new Set<string>();
+  // Reserve one of the bounded slots for the active round, even when an archive player is
+  // reopening the oldest retained day. Adding it after slicing could otherwise make the
+  // supposed 800-entry cap hold 801 entries.
+  if (dayNumberOf(activeKey) !== null && activeKey in entries) survivors.add(activeKey);
+  for (const key of dayKeys.sort((a, b) => dayNumberOf(b)! - dayNumberOf(a)!)) {
+    if (survivors.size >= MAX_DAY_ROUNDS) break;
+    survivors.add(key);
+  }
   const out: Record<string, T> = {};
   for (const [k, v] of Object.entries(entries)) {
     if (survivors.has(k)) out[k] = v;
@@ -189,7 +195,7 @@ export interface IdentityOwner {
   deviceId: string;
 }
 
-interface PersistedState {
+export interface PersistedState {
   // The proof that lets persisted game state cross a reload. The sentence outbox belongs
   // to the ACCOUNT; a Word run belongs to the DEVICE. A missing/corrupt device key can no
   // longer turn an ownerless blob into a first act for a newly bootstrapped account.
@@ -287,8 +293,9 @@ interface GameState extends PersistedState {
   // Mark the onboarding tutorial as seen (finish AND skip both count — never re-nag).
   setOnboarded: () => void;
 
-  // The pre-account identity seed, minted on first need by a surface that shows a
-  // placeholder identity (the leaderboard strip, the profile editor). Never a trigger:
+  // The pre-account identity seed. Hydration establishes it transactionally before paint
+  // so two fresh tabs cannot show different placeholders; this method is the synchronous
+  // accessor/fallback for non-browser tests or unavailable persistence. Never a trigger:
   // generating a local random value contacts no server and creates no account.
   ensureLocalSeed: () => string;
 
@@ -321,6 +328,11 @@ interface GameState extends PersistedState {
   // an answer (`game/playLog.ts`). Guarded on `puzzle` so an answer about a retired
   // revision can never resurrect its guesses into the round that replaced it.
   setOutbox: (key: string, puzzle: string, guesses: string[]) => void;
+
+  // The server has closed the round (solved or capped), so every pending guess is refused.
+  // This is deliberately distinct from a normal acknowledgement that happens to leave an
+  // empty remainder: the latter must preserve a sibling tab's concurrently appended guess.
+  discardOutbox: (key: string, puzzle: string) => void;
 
   // Where a round's authoritative state is. The sync engine is the only writer: 'loading'
   // while its read is out, 'ready' with the server's own state, 'failed' when the read
@@ -365,111 +377,11 @@ interface GameState extends PersistedState {
   recordWordGuess: (typed: string, replay: (tried: string[]) => WordRunCache) => boolean;
 }
 
-// The persisted blob's one shared key — named once, because the cross-tab machinery below
-// and the persist config must agree on it or a sibling tab's write is never adopted.
+// The retired localStorage blob is read exactly once when the transactional database is
+// empty. Keeping the name here lets v18 preserve preferences from v17 while the existing
+// v16/v17 migration rules still discard state that cannot prove its #216 owner.
 export const GAME_PERSIST_KEY = 'whippin-round';
-
-// The round/word entries THIS TAB's own actions have written or deleted since load. The
-// write-time merge below takes this tab's value for exactly these keys and the SHARED
-// blob's for every other, which is what makes a set from a lagging tab unable to flatten a
-// sibling's freshly persisted entries (PR-219 round-3 review, P1): the storage EVENT is
-// queued asynchronously by spec, so rehydrating on it alone leaves a window — any set
-// landing before the event snapshots this tab's stale maps over the sibling's write.
-// Session-lived and only ever grows: a key this tab genuinely wrote stays its own (the
-// event-driven rehydrate keeps refreshing this tab's copy of it, so the claim converges).
-const touchedRounds = new Set<string>();
-const touchedWordRounds = new Set<string>();
-const touchRound = (key: string) => void touchedRounds.add(key);
-const touchWordRound = (key: string) => void touchedWordRounds.add(key);
-
-// Merge THIS tab's outgoing snapshot over the blob as currently stored, field by field —
-// the write-time half of the cross-tab story (the event-driven rehydrate below is the
-// read-time half). Web Storage has no cross-tab locking, so a read-modify-write can still
-// interleave with another process's at the OS level; this shrinks the loss window from the
-// event queue's latency to that sliver, and everything the sliver could lose is an unsent
-// batch the engines re-send or self-heal (the outbox prunes against the server's log on
-// the next read; a resurrected word round settles against `submittedAt`).
-//
-// Field rules, each from the field's own semantics:
-//   - the MAPS merge per entry: this tab's value for keys its own actions touched
-//     (an absent touched key is a deliberate deletion and stays deleted), the stored
-//     value for every other;
-//   - one-time flags (`onboarded`, `sentenceRulesSeen`) are monotonic: OR;
-//   - fill-once values (`lastLang`, `lastMode`, `localSeed`) keep ours, else stored;
-//   - `identityOwner` and `boardTab` are ours: every tab derives the owner from the same
-//     device key, and the tab that wrote last IS the current visit.
-// A stored blob of another VERSION is not merged — migrations own that transition.
-export function mergePersistedWrite(
-  storedRaw: string | null,
-  oursRaw: string,
-  touched: { rounds: ReadonlySet<string>; words: ReadonlySet<string> },
-): string {
-  if (storedRaw === null) return oursRaw;
-  let stored: { state: Record<string, unknown>; version?: number };
-  let ours: { state: Record<string, unknown>; version?: number };
-  try {
-    stored = JSON.parse(storedRaw);
-    ours = JSON.parse(oursRaw);
-  } catch {
-    return oursRaw;
-  }
-  if (!stored?.state || !ours?.state || stored.version !== ours.version) return oursRaw;
-
-  const mergeMap = (
-    storedMap: unknown,
-    oursMap: unknown,
-    keys: ReadonlySet<string>,
-  ): Record<string, unknown> => {
-    const from = (value: unknown) =>
-      typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
-    const theirs = from(storedMap);
-    const mine = from(oursMap);
-    const out: Record<string, unknown> = {};
-    for (const key of new Set([...Object.keys(theirs), ...Object.keys(mine)])) {
-      const value = keys.has(key) ? mine[key] : (theirs[key] ?? mine[key]);
-      if (value !== undefined) out[key] = value;
-    }
-    return out;
-  };
-
-  return JSON.stringify({
-    ...ours,
-    state: {
-      ...ours.state,
-      outbox: mergeMap(stored.state.outbox, ours.state.outbox, touched.rounds),
-      wordRounds: mergeMap(stored.state.wordRounds, ours.state.wordRounds, touched.words),
-      onboarded: ours.state.onboarded === true || stored.state.onboarded === true,
-      sentenceRulesSeen:
-        ours.state.sentenceRulesSeen === true || stored.state.sentenceRulesSeen === true,
-      lastLang: ours.state.lastLang ?? stored.state.lastLang ?? null,
-      lastMode: ours.state.lastMode ?? stored.state.lastMode ?? null,
-      localSeed: ours.state.localSeed ?? stored.state.localSeed ?? null,
-    },
-  });
-}
-
-// Persistence is browser-only; in tests / SSR there is no localStorage, so fall back
-// to a no-op store (no warnings, no persistence) instead of throwing. In a browser every
-// WRITE goes through the merge above — reading the shared blob synchronously at the moment
-// of writing, which no queued event can be late for.
-const storage = createJSONStorage<PersistedState>(() => {
-  if (typeof window === 'undefined') {
-    return { getItem: () => null, setItem: () => {}, removeItem: () => {} };
-  }
-  return {
-    getItem: (name: string) => window.localStorage.getItem(name),
-    setItem: (name: string, value: string) => {
-      window.localStorage.setItem(
-        name,
-        mergePersistedWrite(window.localStorage.getItem(name), value, {
-          rounds: touchedRounds,
-          words: touchedWordRounds,
-        }),
-      );
-    },
-    removeItem: (name: string) => window.localStorage.removeItem(name),
-  };
-});
+export const GAME_PERSIST_VERSION = 18;
 
 // Version upgrades for the persisted blob (exported for the invariant tests).
 //   v0 was a single top-level round ({ roundKey, holes, ... }); the shape is now a keyed
@@ -584,17 +496,58 @@ const storage = createJSONStorage<PersistedState>(() => {
 //     as v16's retired-secret state. New ownerless state survives only while the device key
 //     carries the pending token minted by the act that created it; startup reconciliation
 //     drops it when the key is missing or corrupt instead of bootstrapping a stranger.
-function dropRetiredScoreFields<T>(rounds: Record<string, T>): Record<string, T> {
-  return Object.fromEntries(
-    Object.entries(rounds).map(([key, round]) => {
-      const {
-        scoreSubmitted: _submitted,
-        scoreRecorded: _recorded,
-        ...rest
-      } = round as T & { scoreSubmitted?: boolean; scoreRecorded?: number };
-      return [key, rest as T];
-    }),
-  );
+//   v18 changes the STORAGE boundary, not this content shape: the v17 localStorage value is
+//     imported once into the transactional IndexedDB record. The import still runs every
+//     migration above, preserving preferences while keeping the v16/v17 ownership drops.
+function storedRecord(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function parseOutbox(value: unknown): Record<string, RoundOutbox> {
+  const outbox: Record<string, RoundOutbox> = {};
+  for (const [key, candidate] of Object.entries(storedRecord(value))) {
+    const entry = storedRecord(candidate);
+    if (
+      typeof entry.puzzle === 'string' &&
+      Array.isArray(entry.guesses) &&
+      entry.guesses.every((guess) => typeof guess === 'string')
+    ) {
+      outbox[key] = { puzzle: entry.puzzle, guesses: entry.guesses };
+    }
+  }
+  return outbox;
+}
+
+function parseWordRounds(value: unknown): Record<string, WordRoundProgress> {
+  const rounds: Record<string, WordRoundProgress> = {};
+  for (const [key, candidate] of Object.entries(storedRecord(value))) {
+    const entry = storedRecord(candidate);
+    const startedAt = entry.startedAt;
+    const deadline = entry.deadline;
+    if (
+      typeof entry.word !== 'string' ||
+      !(startedAt === null || (typeof startedAt === 'number' && Number.isFinite(startedAt))) ||
+      !(deadline === null || (typeof deadline === 'number' && Number.isFinite(deadline))) ||
+      !Array.isArray(entry.tried) ||
+      !entry.tried.every((guess) => typeof guess === 'string') ||
+      typeof entry.claimed !== 'number' ||
+      !Number.isFinite(entry.claimed) ||
+      (entry.submitted !== undefined && entry.submitted !== true)
+    ) {
+      continue;
+    }
+    rounds[key] = {
+      word: entry.word,
+      startedAt,
+      deadline,
+      tried: entry.tried,
+      claimed: Math.min(CLAIM_ZONE, Math.max(0, Math.trunc(entry.claimed))),
+      ...(entry.submitted === true ? { submitted: true } : {}),
+    };
+  }
+  return rounds;
 }
 
 export function migratePersisted(persisted: unknown, version: number): PersistedState {
@@ -611,15 +564,18 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
       localSeed: null,
     };
   }
-  const p = persisted as Partial<PersistedState> & { rounds?: Record<string, unknown> };
-  const lastLang = p.lastLang ?? null;
+  const p = (
+    typeof persisted === 'object' && persisted !== null ? persisted : {}
+  ) as Partial<PersistedState> & { rounds?: Record<string, unknown> };
+  const legacyRounds = storedRecord(p.rounds);
+  const lastLang = typeof p.lastLang === 'string' && isLang(p.lastLang) ? p.lastLang : null;
   // Grandfathering asks whether this person has PLAYED before, which the RAW blob answers —
   // including through the `rounds` map v14 drops, since a veteran whose only signal is their
   // play history must not be handed the tutorial back.
   const onboarded =
     typeof p.onboarded === 'boolean'
       ? p.onboarded
-      : Object.keys(p.rounds ?? {}).length > 0 || lastLang != null;
+      : Object.keys(legacyRounds).length > 0 || lastLang != null;
   const lastMode = p.lastMode === 'word' || p.lastMode === 'sentence' ? p.lastMode : null;
   const sentenceRulesSeen = p.sentenceRulesSeen === true;
   // The pre-account seed is display-only, so a malformed one simply re-mints on next need.
@@ -634,10 +590,8 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
   // can distinguish inside its merged `tried` list (see the v14 note) — so an older one
   // starts empty rather than re-sending a log the server already holds. v16 raised that
   // floor for the retired secret; v17 raises it again for ownerless device-token state.
-  const outbox = stateHasOwnerContract ? (p.outbox ?? {}) : {};
-  const wordRoundsWithOwner = stateHasOwnerContract
-    ? dropRetiredScoreFields(p.wordRounds ?? {})
-    : {};
+  const outbox = stateHasOwnerContract ? parseOutbox(p.outbox) : {};
+  const wordRoundsWithOwner = stateHasOwnerContract ? parseWordRounds(p.wordRounds) : {};
   return {
     identityOwner: parsedOwner ?? null,
     outbox,
@@ -666,316 +620,729 @@ function parseIdentityOwner(value: unknown): IdentityOwner | null | undefined {
   return { accountId, deviceId };
 }
 
-export const useGameStore = create<GameState>()(
-  persist(
-    (set, get) => ({
-      identityOwner: null,
-      outbox: {},
-      wordRounds: {},
-      lastLang: null,
-      lastMode: null,
-      onboarded: false,
-      boardTab: 'friends',
-      sentenceRulesSeen: false,
-      localSeed: null,
-      roundLoads: {},
-      activeWordKey: null,
-      tutorialOpen: null,
-      profileReturn: null,
-
-      openTutorial: (kind) => set({ tutorialOpen: kind }),
-      closeTutorial: () => set({ tutorialOpen: null }),
-      setProfileReturn: (path) => set({ profileReturn: path }),
-
-      setLastLang: (lang) => {
-        if (!isLang(lang) || get().lastLang === lang) return;
-        set({ lastLang: lang });
-      },
-
-      setLastMode: (mode) => {
-        if (get().lastMode === mode) return;
-        set({ lastMode: mode });
-      },
-
-      setBoardTab: (tab) => {
-        if (get().boardTab === tab) return;
-        set({ boardTab: tab });
-      },
-
-      // Leaving the leaderboard ends the visit. Guarded like every other setter, so the
-      // non-board routes this fires on do not each rewrite the persisted blob.
-      resetBoardTab: () => {
-        if (get().boardTab === 'friends') return;
-        set({ boardTab: 'friends' });
-      },
-
-      setOnboarded: () => {
-        if (get().onboarded) return;
-        set({ onboarded: true });
-      },
-
-      markSentenceRulesSeen: () => {
-        if (get().sentenceRulesSeen) return;
-        set({ sentenceRulesSeen: true });
-      },
-
-      ensureLocalSeed: () => {
-        const held = get().localSeed;
-        if (held !== null) return held;
-        const seed = generatePublicId();
-        set({ localSeed: seed });
-        return seed;
-      },
-
-      ensureOutbox: (key, puzzle) =>
-        set((s) => {
-          const existing = s.outbox[key];
-          const kept = { ...s.outbox };
-          // A DIFFERENT published revision means the puzzle contained an error and this
-          // round starts over (#203), so what the outbox holds is answers to a retired
-          // question: dropped, never sent.
-          //
-          // **The STREAK's solved day is deliberately NOT touched.** A republish is OUR
-          // error, not the player's, and the streak is a reward for showing up — taking a
-          // day back because we shipped a broken puzzle would punish them for it. So the
-          // credit stands (it is the server's since #211, and nothing there removes a day),
-          // and solving the corrected version cannot claim it twice: both the collection's
-          // set insert and `noteSolvedDay` refuse a day already held.
-          if (existing && existing.puzzle !== puzzle) {
-            delete kept[key];
-            touchRound(key);
-          }
-          // Retention: keep every day-keyed outbox (an archive day left offline still owes
-          // its guesses), drop any legacy non-day key, bound the map.
-          return { outbox: capDayKeyed(kept, key) };
-        }),
-
-      appendOutbox: (key, puzzle, typed) =>
-        set((s) => {
-          const existing = s.outbox[key];
-          // Most guesses arrive with NOTHING to append into: an accepted write removes the
-          // outbox it emptied, so a round that is caught up owes no entry at all. Minting
-          // one here is what makes the buffer work at all — and it takes the revision from
-          // the caller, which is playing it, rather than guessing.
-          const guesses = existing && existing.puzzle === puzzle ? existing.guesses : [];
-          touchRound(key);
-          return { outbox: { ...s.outbox, [key]: { puzzle, guesses: [...guesses, typed] } } };
-        }),
-
-      setOutbox: (key, puzzle, guesses) =>
-        set((s) => {
-          const existing = s.outbox[key];
-          // An answer about a RETIRED revision writes nothing: the flight has already been
-          // reset to read again, and resurrecting its guesses into the round that replaced
-          // it is exactly what the revision exists to prevent.
-          if (!existing || existing.puzzle !== puzzle) return {};
-          touchRound(key);
-          // An emptied outbox is REMOVED rather than kept as `[]`: a caught-up device
-          // persists no sentence rounds at all, which is the whole point of the model.
-          if (guesses.length === 0) {
-            const { [key]: _done, ...rest } = s.outbox;
-            return { outbox: rest };
-          }
-          return { outbox: { ...s.outbox, [key]: { puzzle, guesses } } };
-        }),
-
-      setRoundLoad: (key, load) =>
-        set((s) => {
-          if (load === null) {
-            if (!(key in s.roundLoads)) return {};
-            const { [key]: _gone, ...rest } = s.roundLoads;
-            return { roundLoads: rest };
-          }
-          return { roundLoads: { ...s.roundLoads, [key]: load } };
-        }),
-
-      ensureWordRound: (key, word) =>
-        set((s) => {
-          // Same retention story as the outbox: keep every day-keyed word round (the
-          // archive rehydrates past days), drop anything else, bound the map.
-          const existing = s.wordRounds[key];
-          // Only a CREATED or RESET entry is this tab's own write — merely mounting a round
-          // another tab plays must not claim its entry for the merge (touched keys win the
-          // write-time merge, and a claim without a write is a clobber license).
-          if (!(existing && existing.word === word)) touchWordRound(key);
-          const kept = {
-            ...s.wordRounds,
-            [key]:
-              existing && existing.word === word
-                ? existing
-                : { word, startedAt: null, deadline: null, tried: [], claimed: 0 },
-          };
-          return { activeWordKey: key, wordRounds: capDayKeyed(kept, key) };
-        }),
-
-      anchorWordRun: (key, startedAt) =>
-        set((s) => {
-          const round = s.wordRounds[key];
-          // Already running (or already run out): the clock is stamped once and never
-          // re-stamped — a re-read must not shift a run under the player.
-          if (!round || round.startedAt !== null) return {};
-          touchWordRound(key);
-          // A round with no start has no log (a guess can only land while running), so the
-          // deadline opens at the bare START_SECONDS. On a device JOINING a run already in
-          // progress the anchor is that far in the past already — but only the base sixty
-          // seconds are known here: the bonuses the real run has claimed live in the other
-          // device's log until it submits, so this clock runs SHORT and can call a live run
-          // finished. Word mode streams nothing, so there is no way to price it better, and
-          // the answer is that a joiner never WRITES (state/wordRoundSync.ts `mayWrite`)
-          // rather than that its clock is right.
-          return {
-            wordRounds: {
-              ...s.wordRounds,
-              [key]: { ...round, startedAt, deadline: startedAt + runMs(0) },
-            },
-          };
-        }),
-
-      settleWordRun: (key, claimed) =>
-        set((s) => {
-          const round = s.wordRounds[key];
-          if (!round) return {};
-          // `claimed` is a persisted SUMMARY read by surfaces that do not load the rank
-          // map. Keep its own store boundary inside the product's finite claim field even
-          // if a malformed/corrupt authoritative log somehow reaches this action; no
-          // calendar or chooser may render progress above 100%.
-          const finiteClaimed = Number.isFinite(claimed) ? Math.trunc(claimed) : 0;
-          const settledClaimed = Math.min(CLAIM_ZONE, Math.max(0, finiteClaimed));
-          const settledDeadline =
-            round.deadline === null ? null : Math.min(round.deadline, Date.now());
-          if (
-            round.submitted &&
-            round.tried.length === 0 &&
-            round.claimed === settledClaimed &&
-            round.deadline === settledDeadline
-          ) {
-            return {};
-          }
-          touchWordRound(key);
-          return {
-            wordRounds: {
-              ...s.wordRounds,
-              [key]: {
-                ...round,
-                tried: [],
-                claimed: settledClaimed,
-                deadline: settledDeadline,
-                submitted: true,
-              },
-            },
-          };
-        }),
-
-      // Reads through `get()` rather than a `set` updater because it has to REPORT what it
-      // did. That is safe for the batched-submissions case the tests pin: zustand applies
-      // `set` synchronously, so a second call in the same tick already sees the first's
-      // log.
-      recordWordGuess: (typed, replay) => {
-        const s = get();
-        const key = s.activeWordKey;
-        if (!key) return false;
-        const round = s.wordRounds[key];
-        if (!round || round.submitted || round.startedAt === null || round.deadline === null) {
-          return false;
-        }
-
-        const startedAt = round.startedAt;
-        const price = (cache: WordRunCache) => ({
-          claimed: cache.claimed,
-          deadline: startedAt + runMs(cache.bonus),
-        });
-
-        // The guess is judged against the deadline AS OF NOW — a guess in flight when the
-        // clock dies is dead — and against the deadline BEFORE this claim, so a claim
-        // cannot pay for the moment it arrived in. A deadline already spent in the stored
-        // round is FROZEN, repairs included: re-pricing it could move it later and bring a
-        // finished run back to life.
-        const now = Date.now();
-        if (now > round.deadline) return false;
-
-        // A same-word republish keeps the authoritative log but can change what its claims
-        // are worth. Check the deadline implied by the CURRENT map before appending: the
-        // stored deadline may still be live while the re-priced one is already spent, and
-        // a new claim must not buy its way back across that gap. This repair is safe here
-        // because the stored round was live at the start of the write; the guard above still
-        // prevents a genuinely finished persisted round from being revived.
-        const current = price(replay(round.tried));
-        if (now > current.deadline) {
-          if (round.claimed !== current.claimed || round.deadline !== current.deadline) {
-            touchWordRound(key);
-            set({ wordRounds: { ...s.wordRounds, [key]: { ...round, ...current } } });
-          }
-          return false;
-        }
-        if (round.tried.includes(typed)) {
-          // Nothing to append, but `tried` is authoritative and a same-word republish can
-          // have changed what the SAME log is worth — repair the cached half rather than
-          // leaving it describing an older rank map.
-          if (round.claimed !== current.claimed || round.deadline !== current.deadline) {
-            touchWordRound(key);
-            set({ wordRounds: { ...s.wordRounds, [key]: { ...round, ...current } } });
-          }
-          return false;
-        }
-        const tried = [...round.tried, typed];
-        touchWordRound(key);
-        set({
-          wordRounds: { ...s.wordRounds, [key]: { ...round, tried, ...price(replay(tried)) } },
-        });
-        return true;
-      },
-
-    }),
-    {
-      name: GAME_PERSIST_KEY,
-      storage,
-      version: 17, // v17: persisted game state names the #216 identity that owns it
-      migrate: migratePersisted,
-      // Persist the sentence OUTBOX, the word rounds, last language/mode and the two
-      // one-time flags. Everything a player's HISTORY is made of — the sentence rounds
-      // (#214) and the solved-day collection (#211) — is the server's; the round loads, the
-      // active word key and the actions are transient.
-      partialize: (s): PersistedState => ({
-        identityOwner: s.identityOwner,
-        outbox: s.outbox,
-        wordRounds: s.wordRounds,
-        lastLang: s.lastLang,
-        lastMode: s.lastMode,
-        boardTab: s.boardTab,
-        onboarded: s.onboarded,
-        sentenceRulesSeen: s.sentenceRulesSeen,
-        localSeed: s.localSeed,
-      }),
-    },
-  ),
-);
-
-// LOCALSTORAGE IS SHARED BY EVERY TAB, and persist writes the WHOLE partialized snapshot
-// on every set — so a tab whose in-memory copy has fallen behind the shared blob would, on
-// its next set of ANY persisted field (an identity adoption's owner tag, a preference),
-// overwrite the active tab's freshly persisted outbox or unsent Word run with its own
-// stale maps (PR-219 review, P1: play continues in memory, and a reload then loses the
-// overwritten guesses). The identity module already re-reads ITS key for exactly this
-// reason; this is the game blob's half: adopt a sibling tab's write the moment it lands,
-// so this tab's next own write starts from the latest shared state. Every set persists
-// synchronously (localStorage), so a rehydrate never discards un-persisted local changes —
-// the only thing it can replace is what another tab demonstrably wrote later.
-// Test seam: the touched sets are module state and must not leak between tests.
-export function resetTouchedKeys(): void {
-  touchedRounds.clear();
-  touchedWordRounds.clear();
+export function initialPersistedState(): PersistedState {
+  return {
+    identityOwner: null,
+    outbox: {},
+    wordRounds: {},
+    lastLang: null,
+    lastMode: null,
+    onboarded: false,
+    boardTab: 'friends',
+    sentenceRulesSeen: false,
+    localSeed: null,
+  };
 }
 
+type OwnedGameMutation = { expectedOwner: IdentityOwner | null };
+
+export type GameMutation =
+  | { type: 'setLastLang'; lang: string }
+  | { type: 'setLastMode'; mode: Mode }
+  | { type: 'setBoardTab'; tab: BoardTab }
+  | { type: 'setOnboarded' }
+  | { type: 'setSentenceRulesSeen' }
+  | { type: 'ensureLocalSeed'; seed: string }
+  | ({ type: 'ensureOutbox'; key: string; puzzle: string } & OwnedGameMutation)
+  | ({ type: 'appendOutbox'; key: string; puzzle: string; typed: string } & OwnedGameMutation)
+  | ({
+      type: 'settleOutbox';
+      key: string;
+      puzzle: string;
+      before: string[];
+      after: string[];
+    } & OwnedGameMutation)
+  | ({ type: 'discardOutbox'; key: string; puzzle: string } & OwnedGameMutation)
+  | ({ type: 'ensureWordRound'; key: string; word: string } & OwnedGameMutation)
+  | ({ type: 'anchorWordRun'; key: string; word: string; startedAt: number } & OwnedGameMutation)
+  | ({ type: 'settleWordRun'; key: string; word: string; claimed: number; now: number } & OwnedGameMutation)
+  | ({
+      type: 'recordWordGuess';
+      key: string;
+      word: string;
+      typed: string;
+      now: number;
+      replay: (tried: string[]) => WordRunCache;
+    } & OwnedGameMutation)
+  | {
+      type: 'reconcileIdentity';
+      expectedOwner: IdentityOwner | null;
+      identity: IdentityOwner | null;
+      pendingBootstrap: boolean;
+    };
+
+export interface GameMutationResult {
+  state: PersistedState;
+  changed: boolean;
+  landed?: boolean;
+}
+
+function sameOwner(a: IdentityOwner | null, b: IdentityOwner | null): boolean {
+  return (
+    a === b ||
+    (a !== null && b !== null && a.accountId === b.accountId && a.deviceId === b.deviceId)
+  );
+}
+
+function changed(state: PersistedState, next: PersistedState, landed?: boolean): GameMutationResult {
+  return { state: next, changed: next !== state, ...(landed === undefined ? {} : { landed }) };
+}
+
+function removeAcknowledged(current: string[], before: string[], after: string[]): string[] {
+  // `after` is a stable-order subset of `before`. Count only what that answer removed and
+  // apply those removals to the latest committed list; guesses a sibling appended after the
+  // request snapshot are therefore preserved. Equal duplicate strings are interchangeable:
+  // removing either occurrence leaves the same debt and the same ordering among survivors.
+  const removed = new Map<string, number>();
+  for (const guess of before) removed.set(guess, (removed.get(guess) ?? 0) + 1);
+  for (const guess of after) {
+    const count = removed.get(guess) ?? 0;
+    if (count <= 1) removed.delete(guess);
+    else removed.set(guess, count - 1);
+  }
+  if (removed.size === 0) return current;
+  let didRemove = false;
+  const next = current.filter((guess) => {
+    const count = removed.get(guess) ?? 0;
+    if (count === 0) return true;
+    didRemove = true;
+    if (count === 1) removed.delete(guess);
+    else removed.set(guess, count - 1);
+    return false;
+  });
+  return didRemove ? next : current;
+}
+
+function freshWordRound(word: string): WordRoundProgress {
+  return { word, startedAt: null, deadline: null, tried: [], claimed: 0 };
+}
+
+// One pure interpreter is used twice: immediately against the tab's cache (the synchronous
+// UI contract), then inside one IndexedDB readwrite transaction against the latest committed
+// value (the durability/cross-tab contract). The mutation states intent; no stale snapshot is
+// ever asked to infer which field or map key changed.
+export function applyGameMutation(
+  state: PersistedState,
+  mutation: GameMutation,
+): GameMutationResult {
+  if ('expectedOwner' in mutation && mutation.type !== 'reconcileIdentity') {
+    if (!sameOwner(state.identityOwner, mutation.expectedOwner)) return changed(state, state, false);
+  }
+
+  switch (mutation.type) {
+    case 'setLastLang':
+      return state.lastLang === mutation.lang
+        ? changed(state, state)
+        : changed(state, { ...state, lastLang: mutation.lang });
+    case 'setLastMode':
+      return state.lastMode === mutation.mode
+        ? changed(state, state)
+        : changed(state, { ...state, lastMode: mutation.mode });
+    case 'setBoardTab':
+      return state.boardTab === mutation.tab
+        ? changed(state, state)
+        : changed(state, { ...state, boardTab: mutation.tab });
+    case 'setOnboarded':
+      return state.onboarded ? changed(state, state) : changed(state, { ...state, onboarded: true });
+    case 'setSentenceRulesSeen':
+      return state.sentenceRulesSeen
+        ? changed(state, state)
+        : changed(state, { ...state, sentenceRulesSeen: true });
+    case 'ensureLocalSeed':
+      return state.localSeed !== null
+        ? changed(state, state)
+        : changed(state, { ...state, localSeed: mutation.seed });
+    case 'ensureOutbox': {
+      const kept = { ...state.outbox };
+      const existing = kept[mutation.key];
+      if (existing && existing.puzzle !== mutation.puzzle) delete kept[mutation.key];
+      const outbox = capDayKeyed(kept, mutation.key);
+      const same =
+        Object.keys(outbox).length === Object.keys(state.outbox).length &&
+        Object.entries(outbox).every(([key, value]) => state.outbox[key] === value);
+      return same ? changed(state, state) : changed(state, { ...state, outbox });
+    }
+    case 'appendOutbox': {
+      const existing = state.outbox[mutation.key];
+      const guesses = existing?.puzzle === mutation.puzzle ? existing.guesses : [];
+      const outbox = capDayKeyed(
+        {
+          ...state.outbox,
+          [mutation.key]: { puzzle: mutation.puzzle, guesses: [...guesses, mutation.typed] },
+        },
+        mutation.key,
+      );
+      return changed(state, { ...state, outbox });
+    }
+    case 'settleOutbox': {
+      const existing = state.outbox[mutation.key];
+      if (!existing || existing.puzzle !== mutation.puzzle) return changed(state, state);
+      const guesses = removeAcknowledged(existing.guesses, mutation.before, mutation.after);
+      if (guesses === existing.guesses) return changed(state, state);
+      if (guesses.length === 0) {
+        const { [mutation.key]: _settled, ...outbox } = state.outbox;
+        return changed(state, { ...state, outbox });
+      }
+      return changed(state, {
+        ...state,
+        outbox: { ...state.outbox, [mutation.key]: { ...existing, guesses } },
+      });
+    }
+    case 'discardOutbox': {
+      const existing = state.outbox[mutation.key];
+      if (!existing || existing.puzzle !== mutation.puzzle) return changed(state, state);
+      const { [mutation.key]: _discarded, ...outbox } = state.outbox;
+      return changed(state, { ...state, outbox });
+    }
+    case 'ensureWordRound': {
+      const existing = state.wordRounds[mutation.key];
+      const wordRounds = capDayKeyed(
+        {
+          ...state.wordRounds,
+          [mutation.key]: existing?.word === mutation.word ? existing : freshWordRound(mutation.word),
+        },
+        mutation.key,
+      );
+      const same =
+        Object.keys(wordRounds).length === Object.keys(state.wordRounds).length &&
+        Object.entries(wordRounds).every(([key, value]) => state.wordRounds[key] === value);
+      return same ? changed(state, state) : changed(state, { ...state, wordRounds });
+    }
+    case 'anchorWordRun': {
+      const existing = state.wordRounds[mutation.key];
+      if (existing && existing.word !== mutation.word) return changed(state, state);
+      const round = existing ?? freshWordRound(mutation.word);
+      if (round.startedAt !== null) return changed(state, state);
+      return changed(state, {
+        ...state,
+        wordRounds: capDayKeyed(
+          {
+            ...state.wordRounds,
+            [mutation.key]: {
+              ...round,
+              startedAt: mutation.startedAt,
+              deadline: mutation.startedAt + runMs(0),
+            },
+          },
+          mutation.key,
+        ),
+      });
+    }
+    case 'settleWordRun': {
+      const round = state.wordRounds[mutation.key];
+      if (!round || round.word !== mutation.word) return changed(state, state);
+      const finiteClaimed = Number.isFinite(mutation.claimed) ? Math.trunc(mutation.claimed) : 0;
+      const claimed = Math.min(CLAIM_ZONE, Math.max(0, finiteClaimed));
+      const deadline = round.deadline === null ? null : Math.min(round.deadline, mutation.now);
+      if (
+        round.submitted &&
+        round.tried.length === 0 &&
+        round.claimed === claimed &&
+        round.deadline === deadline
+      ) {
+        return changed(state, state);
+      }
+      return changed(state, {
+        ...state,
+        wordRounds: {
+          ...state.wordRounds,
+          [mutation.key]: { ...round, tried: [], claimed, deadline, submitted: true },
+        },
+      });
+    }
+    case 'recordWordGuess': {
+      const round = state.wordRounds[mutation.key];
+      if (
+        !round ||
+        round.word !== mutation.word ||
+        round.submitted ||
+        round.startedAt === null ||
+        round.deadline === null ||
+        mutation.now > round.deadline
+      ) {
+        return changed(state, state, false);
+      }
+      const price = (cache: WordRunCache) => ({
+        claimed: cache.claimed,
+        deadline: round.startedAt! + runMs(cache.bonus),
+      });
+      const current = price(mutation.replay(round.tried));
+      if (mutation.now > current.deadline || round.tried.includes(mutation.typed)) {
+        if (round.claimed === current.claimed && round.deadline === current.deadline) {
+          return changed(state, state, false);
+        }
+        return changed(
+          state,
+          {
+            ...state,
+            wordRounds: {
+              ...state.wordRounds,
+              [mutation.key]: { ...round, ...current },
+            },
+          },
+          false,
+        );
+      }
+      const tried = [...round.tried, mutation.typed];
+      return changed(
+        state,
+        {
+          ...state,
+          wordRounds: {
+            ...state.wordRounds,
+            [mutation.key]: { ...round, tried, ...price(mutation.replay(tried)) },
+          },
+        },
+        true,
+      );
+    }
+    case 'reconcileIdentity': {
+      // A late transition from A must not clear a state already rebound to B by a sibling.
+      // If the target is already committed, the mutation is simply idempotent.
+      if (!sameOwner(state.identityOwner, mutation.expectedOwner)) {
+        return changed(state, state);
+      }
+      if (mutation.identity === null) {
+        if (mutation.pendingBootstrap && state.identityOwner === null) return changed(state, state);
+        if (
+          state.identityOwner === null &&
+          Object.keys(state.outbox).length === 0 &&
+          Object.keys(state.wordRounds).length === 0
+        ) {
+          return changed(state, state);
+        }
+        return changed(state, { ...state, identityOwner: null, outbox: {}, wordRounds: {} });
+      }
+      if (state.identityOwner === null) {
+        return changed(state, { ...state, identityOwner: mutation.identity });
+      }
+      const accountChanged = state.identityOwner.accountId !== mutation.identity.accountId;
+      const deviceChanged = state.identityOwner.deviceId !== mutation.identity.deviceId;
+      if (!accountChanged && !deviceChanged) return changed(state, state);
+      return changed(state, {
+        ...state,
+        identityOwner: mutation.identity,
+        ...(accountChanged || deviceChanged ? { wordRounds: {} } : {}),
+        ...(accountChanged ? { outbox: {} } : {}),
+      });
+    }
+  }
+}
+
+export function persistedStateOf(state: GameState): PersistedState {
+  return {
+    identityOwner: state.identityOwner,
+    outbox: state.outbox,
+    wordRounds: state.wordRounds,
+    lastLang: state.lastLang,
+    lastMode: state.lastMode,
+    onboarded: state.onboarded,
+    boardTab: state.boardTab,
+    sentenceRulesSeen: state.sentenceRulesSeen,
+    localSeed: state.localSeed,
+  };
+}
+
+export const useGameStore = create<GameState>((set, get) => {
+  const commit = (mutation: GameMutation): GameMutationResult => {
+    const result = applyGameMutation(persistedStateOf(get()), mutation);
+    if (result.changed) set(result.state);
+    enqueueGameMutation(mutation);
+    return result;
+  };
+
+  return {
+    ...initialPersistedState(),
+    roundLoads: {},
+    activeWordKey: null,
+    tutorialOpen: null,
+    profileReturn: null,
+
+    openTutorial: (kind) => set({ tutorialOpen: kind }),
+    closeTutorial: () => set({ tutorialOpen: null }),
+    setProfileReturn: (path) => set({ profileReturn: path }),
+
+    // Do not short-circuit persisted intent merely because this tab's cache already holds
+    // the value: a sibling may have committed a different one while its notification is
+    // still queued. The transaction is where equality is authoritative.
+    setLastLang: (lang) => {
+      if (!isLang(lang)) return;
+      commit({ type: 'setLastLang', lang });
+    },
+    setLastMode: (mode) => {
+      commit({ type: 'setLastMode', mode });
+    },
+    setBoardTab: (tab) => {
+      commit({ type: 'setBoardTab', tab });
+    },
+    resetBoardTab: () => {
+      commit({ type: 'setBoardTab', tab: 'friends' });
+    },
+    setOnboarded: () => {
+      commit({ type: 'setOnboarded' });
+    },
+    markSentenceRulesSeen: () => {
+      commit({ type: 'setSentenceRulesSeen' });
+    },
+    ensureLocalSeed: () => {
+      const held = get().localSeed;
+      if (held !== null) return held;
+      const seed = generatePublicId();
+      return commit({ type: 'ensureLocalSeed', seed }).state.localSeed ?? seed;
+    },
+
+    ensureOutbox: (key, puzzle) => {
+      commit({ type: 'ensureOutbox', key, puzzle, expectedOwner: get().identityOwner });
+    },
+    appendOutbox: (key, puzzle, typed) => {
+      commit({ type: 'appendOutbox', key, puzzle, typed, expectedOwner: get().identityOwner });
+    },
+    setOutbox: (key, puzzle, guesses) => {
+      const existing = get().outbox[key];
+      if (!existing || existing.puzzle !== puzzle) return;
+      commit({
+        type: 'settleOutbox',
+        key,
+        puzzle,
+        before: existing.guesses,
+        after: guesses,
+        expectedOwner: get().identityOwner,
+      });
+    },
+    discardOutbox: (key, puzzle) => {
+      commit({ type: 'discardOutbox', key, puzzle, expectedOwner: get().identityOwner });
+    },
+
+    setRoundLoad: (key, load) =>
+      set((state) => {
+        if (load === null) {
+          if (!(key in state.roundLoads)) return {};
+          const { [key]: _gone, ...roundLoads } = state.roundLoads;
+          return { roundLoads };
+        }
+        return { roundLoads: { ...state.roundLoads, [key]: load } };
+      }),
+
+    ensureWordRound: (key, word) => {
+      const expectedOwner = get().identityOwner;
+      set({ activeWordKey: key });
+      commit({ type: 'ensureWordRound', key, word, expectedOwner });
+    },
+    anchorWordRun: (key, startedAt) => {
+      const round = get().wordRounds[key];
+      if (!round) return;
+      commit({
+        type: 'anchorWordRun',
+        key,
+        word: round.word,
+        startedAt,
+        expectedOwner: get().identityOwner,
+      });
+    },
+    settleWordRun: (key, claimed) => {
+      const round = get().wordRounds[key];
+      if (!round) return;
+      commit({
+        type: 'settleWordRun',
+        key,
+        word: round.word,
+        claimed,
+        now: Date.now(),
+        expectedOwner: get().identityOwner,
+      });
+    },
+    recordWordGuess: (typed, replay) => {
+      const state = get();
+      const key = state.activeWordKey;
+      const round = key === null ? undefined : state.wordRounds[key];
+      if (!key || !round) return false;
+      return (
+        commit({
+          type: 'recordWordGuess',
+          key,
+          word: round.word,
+          typed,
+          now: Date.now(),
+          replay,
+          expectedOwner: state.identityOwner,
+        }).landed === true
+      );
+    },
+  };
+});
+
+const GAME_SYNC_CHANNEL = 'whippin-game-sync';
+const GAME_SYNC_SIGNAL = 'whippin-game-sync-signal';
+
+let gameDatabase: GameStateDatabase<PersistedState> | null = null;
+let persistenceReady = false;
+let writeTail: Promise<void> = Promise.resolve();
+let queuedWrites = 0;
+let mutationGeneration = 0;
+let refreshWanted = false;
+let refreshFlight: Promise<void> | null = null;
+let syncChannel: BroadcastChannel | null = null;
+const syncSource = generatePublicId();
+let syncSequence = 0;
+
+function normalizedEnvelope(
+  stored: StoredGameState<PersistedState> | null,
+  fallback: StoredGameState<PersistedState> | null = null,
+): StoredGameState<PersistedState> {
+  const source = stored ?? fallback;
+  if (!source) return { version: GAME_PERSIST_VERSION, state: initialPersistedState() };
+  const sourceVersion =
+    typeof source.version === 'number' &&
+    Number.isInteger(source.version) &&
+    source.version >= 0
+      ? source.version
+      : 0;
+  if (sourceVersion > GAME_PERSIST_VERSION) {
+    throw new Error(`game state version ${sourceVersion} is newer than this build`);
+  }
+  return {
+    version: GAME_PERSIST_VERSION,
+    state: migratePersisted(source.state, sourceVersion),
+  };
+}
+
+function legacyEnvelope(): StoredGameState<PersistedState> | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(GAME_PERSIST_KEY);
+    if (raw === null) return null;
+    const parsed = JSON.parse(raw) as { state?: unknown; version?: unknown };
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    if (!('state' in parsed)) return null;
+    const version =
+      typeof parsed.version === 'number' &&
+      Number.isInteger(parsed.version) &&
+      parsed.version >= 0
+        ? parsed.version
+        : 0;
+    return { version, state: parsed.state as PersistedState };
+  } catch {
+    return null;
+  }
+}
+
+function applyCommittedState(state: PersistedState, forceOwner = false): void {
+  const current = useGameStore.getState();
+  const ownerMatches = sameOwner(current.identityOwner, state.identityOwner);
+  const adoptOwned = forceOwner || ownerMatches;
+  useGameStore.setState({
+    lastLang: state.lastLang,
+    lastMode: state.lastMode,
+    boardTab: state.boardTab,
+    onboarded: state.onboarded,
+    sentenceRulesSeen: state.sentenceRulesSeen,
+    localSeed: state.localSeed,
+    ...(adoptOwned
+      ? {
+          identityOwner: state.identityOwner,
+          outbox: state.outbox,
+          wordRounds: state.wordRounds,
+          activeWordKey:
+            current.activeWordKey !== null && current.activeWordKey in state.wordRounds
+              ? current.activeWordKey
+              : null,
+        }
+      : {}),
+  });
+}
+
+function announceCommittedChange(): void {
+  if (syncChannel !== null) {
+    try {
+      syncChannel.postMessage(null);
+      return;
+    } catch {
+      // A channel can close between a queued commit and this notification (notably under
+      // HMR). The commit already succeeded; fall back to the storage signal rather than
+      // misreporting a notification failure as a persistence failure.
+    }
+  }
+  if (typeof window === 'undefined') return;
+  try {
+    syncSequence += 1;
+    // Web Storage emits no event when the value is unchanged. Include this tab's random
+    // source as well as its sequence so two fallback-only tabs committing in the same
+    // millisecond cannot accidentally suppress the second invalidation.
+    window.localStorage.setItem(GAME_SYNC_SIGNAL, `${syncSource}:${syncSequence}`);
+  } catch {
+    // IndexedDB remains authoritative. A tab whose fallback signal cannot be written still
+    // reads the latest state before its own next mutation; only its passive view is stale.
+  }
+}
+
+function enqueueGameMutation(mutation: GameMutation): void {
+  if (!persistenceReady || gameDatabase === null) return;
+  mutationGeneration += 1;
+  queuedWrites += 1;
+  const database = gameDatabase;
+  const task = writeTail.then(async () => {
+    // One permanent failure switches the session to the same memory-only mode used when
+    // IndexedDB cannot open at startup. Do not commit a later suffix while an earlier
+    // mutation exists only in memory: preserving order is more important than a partial
+    // persisted history that would roll the UI back on refresh.
+    if (!persistenceReady || gameDatabase !== database) return;
+    let didChange = false;
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        await database.update((stored) => {
+          const current = normalizedEnvelope(stored);
+          const result = applyGameMutation(current.state, mutation);
+          didChange = result.changed;
+          return result.changed ? { version: GAME_PERSIST_VERSION, state: result.state } : current;
+        });
+        lastError = undefined;
+        break;
+      } catch (error) {
+        // `tx.done` rejects only when the readwrite transaction aborted, so retrying the
+        // semantic mutation cannot duplicate a commit. A permanent failure falls through
+        // after three attempts and, importantly, does not poison the following writes.
+        lastError = error;
+      }
+    }
+    if (lastError !== undefined) throw lastError;
+    if (didChange) announceCommittedChange();
+  });
+  writeTail = task
+    .catch((error: unknown) => {
+      // The cache stays usable and the engine still talks to the server. Fall back as one
+      // unit: later mutations remain in memory too, so a failed prefix cannot be skipped
+      // and then erased by refreshing a partially committed suffix.
+      console.error('Failed to persist game state', error);
+      if (gameDatabase === database) {
+        gameDatabase = null;
+        persistenceReady = false;
+        void database.close().catch(() => {});
+      }
+    })
+    .finally(() => {
+      queuedWrites -= 1;
+      if (persistenceReady) {
+        refreshWanted = true;
+        if (queuedWrites === 0) void refreshCommittedState();
+      }
+    });
+}
+
+async function refreshCommittedState(): Promise<void> {
+  if (!persistenceReady || gameDatabase === null) return;
+  refreshWanted = true;
+  if (queuedWrites > 0 || refreshFlight !== null) return refreshFlight ?? undefined;
+  const database = gameDatabase;
+  refreshFlight = (async () => {
+    while (refreshWanted && queuedWrites === 0) {
+      refreshWanted = false;
+      const generation = mutationGeneration;
+      const stored = await database.read();
+      if (queuedWrites > 0 || generation !== mutationGeneration) {
+        refreshWanted = true;
+        break;
+      }
+      if (stored !== null) applyCommittedState(normalizedEnvelope(stored).state);
+    }
+  })()
+    .catch((error: unknown) => {
+      console.error('Failed to refresh game state', error);
+    })
+    .finally(() => {
+      refreshFlight = null;
+      if (refreshWanted && queuedWrites === 0) void refreshCommittedState();
+    });
+  return refreshFlight;
+}
+
+// Hydrate before React mounts. The v17 localStorage record is only an import source: the
+// first IndexedDB transaction wins across simultaneously opening tabs, migrates it once,
+// and establishes the placeholder seed in that same atomic state before either tab paints.
+export async function hydrateGameStore(): Promise<void> {
+  if (persistenceReady) return;
+  if (typeof indexedDB === 'undefined') {
+    const fallback = normalizedEnvelope(null, legacyEnvelope()).state;
+    const seeded =
+      fallback.localSeed === null
+        ? applyGameMutation(fallback, { type: 'ensureLocalSeed', seed: generatePublicId() }).state
+        : fallback;
+    applyCommittedState(seeded, true);
+    return;
+  }
+
+  let database: GameStateDatabase<PersistedState> | null = null;
+  try {
+    database = new GameStateDatabase<PersistedState>();
+    const legacy = legacyEnvelope();
+    const seed = generatePublicId();
+    const stored = await database.update((current) => {
+      const normalized = normalizedEnvelope(current, legacy);
+      const seeded = applyGameMutation(normalized.state, { type: 'ensureLocalSeed', seed }).state;
+      return { version: GAME_PERSIST_VERSION, state: seeded };
+    });
+    gameDatabase = database;
+    persistenceReady = true;
+    applyCommittedState(stored.state, true);
+    try {
+      window.localStorage.removeItem(GAME_PERSIST_KEY);
+    } catch {
+      // The committed database is already authoritative; a retired import source that
+      // cannot be removed is harmless and will never be read while the database exists.
+    }
+  } catch (error) {
+    if (database !== null) {
+      try {
+        await database.close();
+      } catch {
+        // Opening itself may be what failed; there is then no connection to close.
+      }
+    }
+    console.error('Failed to initialize game persistence', error);
+    const fallback = normalizedEnvelope(null, legacyEnvelope()).state;
+    const seeded =
+      fallback.localSeed === null
+        ? applyGameMutation(fallback, { type: 'ensureLocalSeed', seed: generatePublicId() }).state
+        : fallback;
+    applyCommittedState(seeded, true);
+  }
+}
+
+export async function flushGameStorePersistence(): Promise<void> {
+  while (queuedWrites > 0) await writeTail;
+  await refreshCommittedState();
+}
+
+// IndexedDB supplies atomic writes; this channel is only cache invalidation. A notification
+// may be delayed, duplicated or missed without endangering persistence: every mutation reads
+// the latest committed state again inside its transaction.
 export function installGameStoreSync(): () => void {
   if (typeof window === 'undefined') return () => {};
-  const listener = (event: StorageEvent) => {
-    // `key === null` is storage.clear(): re-read there too rather than keep a copy of a
-    // blob that no longer exists.
-    if (event.key !== null && event.key !== GAME_PERSIST_KEY) return;
-    void useGameStore.persist.rehydrate();
+  const storageListener = (event: StorageEvent) => {
+    if (event.key === GAME_SYNC_SIGNAL || event.key === null) void refreshCommittedState();
   };
-  window.addEventListener('storage', listener);
-  return () => window.removeEventListener('storage', listener);
+  window.addEventListener('storage', storageListener);
+
+  let channel: BroadcastChannel | null = null;
+  if (typeof BroadcastChannel !== 'undefined') {
+    try {
+      channel = new BroadcastChannel(GAME_SYNC_CHANNEL);
+      channel.addEventListener('message', refreshCommittedState);
+      syncChannel = channel;
+    } catch {
+      // Some restricted contexts expose the constructor but reject opening a channel.
+      // The storage-event signal remains available, and correctness needs neither one.
+      channel = null;
+    }
+  }
+  return () => {
+    window.removeEventListener('storage', storageListener);
+    if (channel !== null) {
+      channel.removeEventListener('message', refreshCommittedState);
+      channel.close();
+      if (syncChannel === channel) syncChannel = null;
+    }
+  };
 }
 
 // Bind the persisted maps to the identity that may send them. This runs once after the
@@ -987,60 +1354,30 @@ export function reconcileGameStateIdentity(
 ): void {
   const state = useGameStore.getState();
   const owner = state.identityOwner;
-
-  if (identity === null) {
-    // The sole honest ownerless state is the act waiting behind its persisted pending
-    // bootstrap token. With no such token, no identity means no proof and both maps go.
-    if (pendingBootstrap && owner === null) return;
-    if (
-      owner === null &&
-      Object.keys(state.outbox).length === 0 &&
-      Object.keys(state.wordRounds).length === 0 &&
-      Object.keys(state.roundLoads).length === 0 &&
-      state.activeWordKey === null
-    ) {
-      return;
-    }
-    // The clear must SURVIVE the write-time merge: claim every cleared key, or the merge
-    // would take the stored copy back for keys this tab never touched. (A key only the
-    // SHARED blob holds can linger as a zombie under the wrong owner — the next load's
-    // ownership reconcile drops it.)
-    for (const key of Object.keys(state.outbox)) touchRound(key);
-    for (const key of Object.keys(state.wordRounds)) touchWordRound(key);
-    useGameStore.setState({
-      identityOwner: null,
-      outbox: {},
-      wordRounds: {},
-      roundLoads: {},
-      activeWordKey: null,
-    });
-    return;
-  }
-
-  // Callers pass the full DeviceIdentity structurally. Pick the two public ids explicitly:
-  // spreading it would copy the raw authentication token into the game-state blob.
-  const nextOwner: IdentityOwner = {
-    accountId: identity.accountId,
-    deviceId: identity.deviceId,
+  // Pick the two public ids explicitly: callers pass DeviceIdentity structurally, and
+  // spreading it would copy the raw authentication token into the game-state database.
+  const nextOwner: IdentityOwner | null =
+    identity === null ? null : { accountId: identity.accountId, deviceId: identity.deviceId };
+  const mutation: GameMutation = {
+    type: 'reconcileIdentity',
+    expectedOwner: owner,
+    identity: nextOwner,
+    pendingBootstrap,
   };
+  const result = applyGameMutation(persistedStateOf(state), mutation);
 
-  // An ownerless first act is now owned by the identity its bootstrap returned. The same
-  // recovery covers a completed device write landing just before the state-owner write.
-  if (owner === null) {
-    useGameStore.setState({ identityOwner: nextOwner });
-    return;
-  }
-
-  const accountChanged = owner.accountId !== identity.accountId;
-  const deviceChanged = owner.deviceId !== identity.deviceId;
-  if (!accountChanged && !deviceChanged) return;
-
-  // Same rule as the null-identity clear above: a cleared key is a deliberate write.
-  if (deviceChanged) for (const key of Object.keys(state.wordRounds)) touchWordRound(key);
-  if (accountChanged) for (const key of Object.keys(state.outbox)) touchRound(key);
+  const accountChanged =
+    owner !== null && (nextOwner === null || owner.accountId !== nextOwner.accountId);
+  const deviceChanged =
+    owner !== null &&
+    (nextOwner === null ||
+      owner.accountId !== nextOwner.accountId ||
+      owner.deviceId !== nextOwner.deviceId);
+  const clearOwnerless = nextOwner === null && !(pendingBootstrap && owner === null);
   useGameStore.setState({
-    identityOwner: nextOwner,
-    ...(deviceChanged ? { wordRounds: {}, activeWordKey: null } : {}),
-    ...(accountChanged ? { outbox: {}, roundLoads: {} } : {}),
+    ...result.state,
+    ...(deviceChanged || clearOwnerless ? { activeWordKey: null } : {}),
+    ...(accountChanged || clearOwnerless ? { roundLoads: {} } : {}),
   });
+  enqueueGameMutation(mutation);
 }

@@ -1,10 +1,10 @@
 // CONTRACT (#216): local state follows the identity that owns it — and ACQUIRING a first
 // identity is not the same event as LEAVING one.
 //
-// A bootstrap is triggered BY an act: the first guess, a word round start. The state on
-// screen when it lands is therefore the state that ASKED for it, and clearing there destroys
-// exactly that — the guess waiting in the outbox to be sent, and the `wordRounds` entry the
-// start's own answer checks itself against. Clearing is for leaving an identity behind.
+// A bootstrap is triggered BY a deploy button: Sentence PLAY, Word PLAY, an invite or
+// Profile SAVE. The state on screen when it lands is therefore the state that ASKED for it,
+// including a recovered pending bootstrap's outbox and the `wordRounds` entry the Word start
+// answer checks itself against. Clearing is for leaving an identity behind.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -156,6 +156,18 @@ describe('leaving an identity (#216)', () => {
       accountId: B.accountId,
       deviceId: B.deviceId,
     });
+  });
+
+  it('clears the Word run when the same device moves to a different account', () => {
+    // #204 can re-parent one device row from its temporary account to the linked account.
+    // The device id survives, but the old server-side Word start belongs to the account it
+    // left, so carrying its local run forward would submit against the wrong account.
+    const linked = { ...A, accountId: B.accountId };
+    announce(A, linked);
+    expect(resets.round).toHaveBeenCalledTimes(1);
+    expect(resets.word).toHaveBeenCalledTimes(1);
+    expect(useGameStore.getState().outbox).toEqual({});
+    expect(useGameStore.getState().wordRounds).toEqual({});
   });
 
   it('clears only the DEVICE-owned state when the account is unchanged', () => {

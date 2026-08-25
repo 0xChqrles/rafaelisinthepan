@@ -1,142 +1,416 @@
-// CONTRACT (PR-219 reviews, P1): localStorage is shared by every tab and persist writes
-// the WHOLE partialized snapshot on every set. TWO halves keep a lagging tab from
-// flattening a sibling's freshly persisted entries:
-//   - WRITE-TIME: every persisted write merges over the blob as stored RIGHT THEN —
-//     this tab's value for keys its own actions touched, the stored value for every
-//     other — because the storage EVENT is queued asynchronously by spec, so any set
-//     landing before the event would otherwise snapshot stale maps over the sibling's
-//     write (the round-3 finding);
-//   - READ-TIME: the storage event still rehydrates, so this tab's memory tracks the
-//     shared blob and its own UI can show what a sibling played.
-//
-// This suite binds the store to a REAL (fake) localStorage before importing it — the
-// shared gameStore.test.ts runs without one on purpose — and delivers the sibling tab's
-// write through the captured storage listener, the browser's actual cross-tab channel.
+// CONTRACT (PR-219 final review, P1): every persisted change is a semantic mutation
+// executed inside ONE IndexedDB readwrite transaction. Transactions touching the state
+// store serialize origin-wide, so each mutation reads the latest committed value — never a
+// tab's lagging Zustand snapshot. These tests use two independent database connections, the
+// same topology as two tabs, and pin the races the retired localStorage merge could not fix.
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import 'fake-indexeddb/auto';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { deleteDB } from 'idb';
+import {
+  GAME_DATABASE_NAME,
+  GameStateDatabase,
+  type StoredGameState,
+} from './gamePersistence';
+import {
+  applyGameMutation,
+  GAME_PERSIST_VERSION,
+  initialPersistedState,
+  type GameMutation,
+  type IdentityOwner,
+  type PersistedState,
+} from './gameStore';
+import { runMs } from '../game/wordGame';
 
-const storageListeners: Array<(event: StorageEvent) => void> = [];
+const A: IdentityOwner = { accountId: 'a'.repeat(16), deviceId: 'd'.repeat(16) };
+const B: IdentityOwner = { accountId: 'b'.repeat(16), deviceId: 'e'.repeat(16) };
+const REV = 'a1b2c3d4e5f60718';
+const T0 = 1_700_000_000_000;
 
-function fakeStorage(): Storage {
-  const values = new Map<string, string>();
-  return {
-    get length() {
-      return values.size;
-    },
-    clear: () => values.clear(),
-    getItem: (key: string) => values.get(key) ?? null,
-    key: () => null,
-    removeItem: (key: string) => void values.delete(key),
-    setItem: (key: string, value: string) => void values.set(key, value),
-  };
+let serial = 0;
+let databaseName = '';
+let databases: GameStateDatabase<PersistedState>[] = [];
+
+function tab(): GameStateDatabase<PersistedState> {
+  const database = new GameStateDatabase<PersistedState>(databaseName);
+  databases.push(database);
+  return database;
 }
 
-const localStorage = fakeStorage();
-vi.stubGlobal('window', {
-  localStorage,
-  addEventListener: (type: string, listener: (event: StorageEvent) => void) => {
-    if (type === 'storage') storageListeners.push(listener);
-  },
-  removeEventListener: (type: string, listener: (event: StorageEvent) => void) => {
-    const index = storageListeners.indexOf(listener);
-    if (index >= 0) storageListeners.splice(index, 1);
-  },
-});
-
-const { GAME_PERSIST_KEY, installGameStoreSync, resetTouchedKeys, useGameStore } =
-  await import('./gameStore');
-
-// Another tab persisted its snapshot: rewrite the shared blob the way zustand would. The
-// EVENT is deliberately separate — the browser queues it, and the round-3 finding is
-// precisely a set landing in that gap.
-function otherTabWrites(patch: Record<string, unknown>): void {
-  const raw = localStorage.getItem(GAME_PERSIST_KEY);
-  const blob = raw
-    ? (JSON.parse(raw) as { state: Record<string, unknown>; version: number })
-    : { state: {}, version: 17 };
-  blob.state = { ...blob.state, ...patch };
-  localStorage.setItem(GAME_PERSIST_KEY, JSON.stringify(blob));
+async function mutate(
+  database: GameStateDatabase<PersistedState>,
+  mutation: GameMutation,
+): Promise<PersistedState> {
+  const stored = await database.update((current) => ({
+    version: GAME_PERSIST_VERSION,
+    state: applyGameMutation(current?.state ?? initialPersistedState(), mutation).state,
+  }));
+  return stored.state;
 }
 
-function otherTabPersists(patch: Record<string, unknown>): void {
-  otherTabWrites(patch);
-  for (const listener of [...storageListeners]) {
-    listener({ key: GAME_PERSIST_KEY } as StorageEvent);
-  }
+async function seed(
+  database: GameStateDatabase<PersistedState>,
+  state: PersistedState,
+): Promise<void> {
+  await database.update(() => ({ version: GAME_PERSIST_VERSION, state }));
 }
 
-function persistedField(field: string): unknown {
-  const raw = localStorage.getItem(GAME_PERSIST_KEY);
-  return raw ? (JSON.parse(raw) as { state: Record<string, unknown> }).state[field] : undefined;
-}
-
-function persistedOutbox(): unknown {
-  const raw = localStorage.getItem(GAME_PERSIST_KEY);
-  return raw ? (JSON.parse(raw) as { state: { outbox: unknown } }).state.outbox : undefined;
+async function read(database: GameStateDatabase<PersistedState>): Promise<PersistedState> {
+  return ((await database.read()) as StoredGameState<PersistedState>).state;
 }
 
 beforeEach(() => {
-  storageListeners.length = 0;
-  localStorage.clear();
-  resetTouchedKeys();
-  useGameStore.setState({
-    identityOwner: null,
-    outbox: {},
-    wordRounds: {},
-    roundLoads: {},
-    activeWordKey: null,
-    lastLang: null,
+  serial += 1;
+  databaseName = `whippin-game-test-${serial}`;
+  databases = [];
+});
+
+afterEach(async () => {
+  await Promise.all(databases.map((database) => database.close()));
+  await deleteDB(databaseName);
+});
+
+describe('transactional cross-tab game persistence', () => {
+  it('serializes simultaneous writes from independent tabs without losing either key', async () => {
+    const first = tab();
+    const second = tab();
+    await seed(first, { ...initialPersistedState(), identityOwner: A });
+
+    await Promise.all([
+      mutate(first, {
+        type: 'appendOutbox', key: 'd:5:fr', puzzle: REV, typed: 'bois', expectedOwner: A,
+      }),
+      mutate(second, {
+        type: 'appendOutbox', key: 'd:6:fr', puzzle: REV, typed: 'mer', expectedOwner: A,
+      }),
+    ]);
+
+    expect((await read(first)).outbox).toEqual({
+      'd:5:fr': { puzzle: REV, guesses: ['bois'] },
+      'd:6:fr': { puzzle: REV, guesses: ['mer'] },
+    });
+  });
+
+  it('serializes simultaneous appends to the SAME sentence round', async () => {
+    const first = tab();
+    const second = tab();
+    await seed(first, { ...initialPersistedState(), identityOwner: A });
+
+    await Promise.all([
+      mutate(first, {
+        type: 'appendOutbox', key: 'd:5:fr', puzzle: REV, typed: 'bois', expectedOwner: A,
+      }),
+      mutate(second, {
+        type: 'appendOutbox', key: 'd:5:fr', puzzle: REV, typed: 'foret', expectedOwner: A,
+      }),
+    ]);
+
+    expect([...(await read(second)).outbox['d:5:fr']!.guesses].sort()).toEqual(['bois', 'foret']);
+  });
+
+  it('an old writer’s unrelated preference change cannot revert a sibling’s later guess', async () => {
+    const staleTab = tab();
+    const activeTab = tab();
+    await seed(staleTab, { ...initialPersistedState(), identityOwner: A });
+    await mutate(staleTab, {
+      type: 'appendOutbox', key: 'd:5:fr', puzzle: REV, typed: 'old', expectedOwner: A,
+    });
+    await mutate(activeTab, {
+      type: 'appendOutbox', key: 'd:5:fr', puzzle: REV, typed: 'fresh', expectedOwner: A,
+    });
+
+    await mutate(staleTab, { type: 'setLastLang', lang: 'en' });
+
+    const state = await read(activeTab);
+    expect(state.outbox['d:5:fr']?.guesses).toEqual(['old', 'fresh']);
+    expect(state.lastLang).toBe('en');
+  });
+
+  it('an owner transition clears sibling-only state from the latest committed snapshot', async () => {
+    const staleTab = tab();
+    const activeTab = tab();
+    await seed(staleTab, { ...initialPersistedState(), identityOwner: A });
+    await mutate(activeTab, {
+      type: 'appendOutbox', key: 'd:5:fr', puzzle: REV, typed: 'private-a', expectedOwner: A,
+    });
+    await mutate(activeTab, {
+      type: 'ensureWordRound', key: 'w:5:fr', word: 'phare', expectedOwner: A,
+    });
+
+    await mutate(staleTab, {
+      type: 'reconcileIdentity',
+      expectedOwner: A,
+      identity: B,
+      pendingBootstrap: false,
+    });
+
+    expect(await read(activeTab)).toMatchObject({ identityOwner: B, outbox: {}, wordRounds: {} });
+  });
+
+  it('an old identity’s delayed mutation cannot write into the replacement identity', async () => {
+    const staleTab = tab();
+    const activeTab = tab();
+    await seed(staleTab, { ...initialPersistedState(), identityOwner: A });
+    await mutate(activeTab, {
+      type: 'reconcileIdentity',
+      expectedOwner: A,
+      identity: B,
+      pendingBootstrap: false,
+    });
+
+    await mutate(staleTab, {
+      type: 'appendOutbox', key: 'd:5:fr', puzzle: REV, typed: 'late-a', expectedOwner: A,
+    });
+
+    expect(await read(activeTab)).toMatchObject({ identityOwner: B, outbox: {} });
+  });
+
+  it('an acknowledgement removes its snapshot while preserving a concurrent append', async () => {
+    const writer = tab();
+    const sibling = tab();
+    await seed(writer, {
+      ...initialPersistedState(),
+      identityOwner: A,
+      outbox: { 'd:5:fr': { puzzle: REV, guesses: ['sent'] } },
+    });
+
+    await Promise.all([
+      mutate(writer, {
+        type: 'settleOutbox',
+        key: 'd:5:fr',
+        puzzle: REV,
+        before: ['sent'],
+        after: [],
+        expectedOwner: A,
+      }),
+      mutate(sibling, {
+        type: 'appendOutbox', key: 'd:5:fr', puzzle: REV, typed: 'new', expectedOwner: A,
+      }),
+    ]);
+
+    expect((await read(writer)).outbox['d:5:fr']?.guesses).toEqual(['new']);
+  });
+
+  it('retention deletions are committed against the full shared map and stay deleted', async () => {
+    const writer = tab();
+    const sibling = tab();
+    const outbox: PersistedState['outbox'] = {};
+    for (let day = 1; day <= 800; day += 1) {
+      outbox[`d:${day}:fr`] = { puzzle: REV, guesses: [`g${day}`] };
+    }
+    await seed(writer, { ...initialPersistedState(), identityOwner: A, outbox });
+
+    await mutate(sibling, {
+      type: 'appendOutbox', key: 'd:801:fr', puzzle: REV, typed: 'new', expectedOwner: A,
+    });
+    await mutate(writer, { type: 'setLastLang', lang: 'fr' });
+
+    const committed = await read(writer);
+    expect(Object.keys(committed.outbox)).toHaveLength(800);
+    expect(committed.outbox['d:1:fr']).toBeUndefined();
+    expect(committed.outbox['d:801:fr']).toBeDefined();
+  });
+
+  it('the placeholder seed is first-write-wins across simultaneous tabs', async () => {
+    const first = tab();
+    const second = tab();
+
+    await Promise.all([
+      mutate(first, { type: 'ensureLocalSeed', seed: 'a'.repeat(16) }),
+      mutate(second, { type: 'ensureLocalSeed', seed: 'b'.repeat(16) }),
+    ]);
+
+    const established = (await read(first)).localSeed;
+    expect(established === 'a'.repeat(16) || established === 'b'.repeat(16)).toBe(true);
+    await mutate(first, { type: 'ensureLocalSeed', seed: 'c'.repeat(16) });
+    expect((await read(second)).localSeed).toBe(established);
+  });
+
+  it('serializes same-run Word guesses and recomputes the cache from the committed log', async () => {
+    const first = tab();
+    const second = tab();
+    await seed(first, {
+      ...initialPersistedState(),
+      identityOwner: A,
+      wordRounds: {
+        'w:5:fr': {
+          word: 'phare',
+          startedAt: T0,
+          deadline: T0 + runMs(0),
+          tried: [],
+          claimed: 0,
+        },
+      },
+    });
+    const replay = (tried: string[]) => ({ claimed: tried.length, bonus: tried.length * 3 });
+
+    await Promise.all([
+      mutate(first, {
+        type: 'recordWordGuess',
+        key: 'w:5:fr',
+        word: 'phare',
+        typed: 'mer',
+        now: T0,
+        replay,
+        expectedOwner: A,
+      }),
+      mutate(second, {
+        type: 'recordWordGuess',
+        key: 'w:5:fr',
+        word: 'phare',
+        typed: 'sel',
+        now: T0,
+        replay,
+        expectedOwner: A,
+      }),
+    ]);
+
+    const round = (await read(first)).wordRounds['w:5:fr'];
+    expect(round).toMatchObject({
+      claimed: 2,
+      deadline: T0 + runMs(6),
+    });
+    expect([...(round?.tried ?? [])].sort()).toEqual(['mer', 'sel']);
+  });
+
+  it('rejects delayed Word writes for a word a sibling already replaced', async () => {
+    const staleTab = tab();
+    const activeTab = tab();
+    await seed(staleTab, {
+      ...initialPersistedState(),
+      identityOwner: A,
+      wordRounds: {
+        'w:5:fr': {
+          word: 'phare',
+          startedAt: T0,
+          deadline: T0 + runMs(0),
+          tried: [],
+          claimed: 0,
+        },
+      },
+    });
+    await mutate(activeTab, {
+      type: 'ensureWordRound', key: 'w:5:fr', word: 'ocean', expectedOwner: A,
+    });
+
+    await mutate(staleTab, {
+      type: 'recordWordGuess',
+      key: 'w:5:fr',
+      word: 'phare',
+      typed: 'mer',
+      now: T0,
+      replay: (tried) => ({ claimed: tried.length, bonus: 0 }),
+      expectedOwner: A,
+    });
+    await mutate(staleTab, {
+      type: 'settleWordRun',
+      key: 'w:5:fr',
+      word: 'phare',
+      claimed: 7,
+      now: T0,
+      expectedOwner: A,
+    });
+
+    expect((await read(activeTab)).wordRounds['w:5:fr']).toEqual({
+      word: 'ocean',
+      startedAt: null,
+      deadline: null,
+      tried: [],
+      claimed: 0,
+    });
   });
 });
 
-describe('cross-tab game-blob sync (PR-219 review, P1)', () => {
-  it('adopts a sibling tab’s persisted write through the storage event', async () => {
-    const stop = installGameStoreSync();
-    otherTabPersists({ outbox: { 'd:5:fr': { puzzle: 'rev', guesses: ['bois'] } } });
-    await vi.waitFor(() =>
-      expect(useGameStore.getState().outbox).toEqual({
-        'd:5:fr': { puzzle: 'rev', guesses: ['bois'] },
-      }),
-    );
-    stop();
-  });
+describe('live store wiring', () => {
+  it('commits against sibling state before a queued notification and later refreshes the cache', async () => {
+    await deleteDB(GAME_DATABASE_NAME);
+    const listeners = new Set<(event: StorageEvent) => void>();
+    const values = new Map<string, string>();
+    let deliverSignals = true;
+    const emit = (key: string) => {
+      for (const listener of [...listeners]) listener({ key } as StorageEvent);
+    };
+    const localStorage = {
+      get length() {
+        return values.size;
+      },
+      clear: () => values.clear(),
+      getItem: (key: string) => values.get(key) ?? null,
+      key: () => null,
+      removeItem: (key: string) => void values.delete(key),
+      setItem: (key: string, value: string) => {
+        values.set(key, value);
+        if (deliverSignals) queueMicrotask(() => emit(key));
+      },
+    } satisfies Storage;
+    vi.stubGlobal('window', {
+      localStorage,
+      addEventListener: (type: string, listener: (event: StorageEvent) => void) => {
+        if (type === 'storage') listeners.add(listener);
+      },
+      removeEventListener: (type: string, listener: (event: StorageEvent) => void) => {
+        if (type === 'storage') listeners.delete(listener);
+      },
+    });
+    // Exercise the fallback too: it has the same queued-event semantics as the browser's
+    // identity storage channel and must remain only a cache invalidation mechanism.
+    vi.stubGlobal('BroadcastChannel', undefined);
 
-  it('a set BEFORE the event arrives cannot flatten the sibling tab’s entry', () => {
-    // THE round-3 scenario: the sibling persisted a guess, the browser has not delivered
-    // the storage event yet (it is queued asynchronously by spec), and this tab performs a
-    // set. The WRITE-TIME merge reads the blob as stored right then, so the sibling's
-    // entry survives a snapshot this tab's stale memory knows nothing about. No event is
-    // fired here on purpose.
-    otherTabWrites({ outbox: { 'd:5:fr': { puzzle: 'rev', guesses: ['bois'] } } });
-    useGameStore.getState().setLastLang('en');
-    expect(persistedOutbox()).toEqual({ 'd:5:fr': { puzzle: 'rev', guesses: ['bois'] } });
-    // …and the scalar this tab actually set still landed.
-    expect(persistedField('lastLang')).toBe('en');
-  });
+    let stopFirst = () => {};
+    let stopSecond = () => {};
+    try {
+      vi.resetModules();
+      const first = await import('./gameStore');
+      await first.hydrateGameStore();
+      first.reconcileGameStateIdentity(A);
+      await first.flushGameStorePersistence();
+      stopFirst = first.installGameStoreSync();
 
-  it('this tab’s OWN key wins the merge — its guess is what persists', () => {
-    // A key this tab's actions touched is its own to write: the merge must not let a
-    // sibling's older copy of the SAME round overwrite the guess just typed here.
-    otherTabWrites({ outbox: { 'd:5:fr': { puzzle: 'rev', guesses: ['mer'] } } });
-    useGameStore.setState({ outbox: { 'd:5:fr': { puzzle: 'rev', guesses: ['mer'] } } });
-    useGameStore.getState().appendOutbox('d:5:fr', 'rev', 'bois');
-    expect(persistedOutbox()).toEqual({ 'd:5:fr': { puzzle: 'rev', guesses: ['mer', 'bois'] } });
-  });
+      vi.resetModules();
+      const second = await import('./gameStore');
+      await second.hydrateGameStore();
+      second.reconcileGameStateIdentity(A);
+      await second.flushGameStorePersistence();
+      stopSecond = second.installGameStoreSync();
 
-  it('a deliberate DELETION of a touched key sticks', () => {
-    // An acknowledged outbox is removed by this tab's own action; the merge must not
-    // resurrect the stored copy (an absent touched key is a deletion, not ignorance).
-    useGameStore.getState().appendOutbox('d:5:fr', 'rev', 'bois');
-    otherTabWrites({ outbox: { 'd:5:fr': { puzzle: 'rev', guesses: ['bois'] } } });
-    useGameStore.getState().setOutbox('d:5:fr', 'rev', []);
-    expect(persistedOutbox()).toEqual({});
-  });
+      second.useGameStore.getState().setLastLang('fr');
+      await second.flushGameStorePersistence();
+      await vi.waitFor(() => expect(first.useGameStore.getState().lastLang).toBe('fr'));
 
-  it('one-time flags merge monotonically — a stale false never unsets a true', () => {
-    otherTabWrites({ sentenceRulesSeen: true });
-    useGameStore.getState().setLastLang('fr');
-    const raw = localStorage.getItem(GAME_PERSIST_KEY);
-    expect((JSON.parse(raw as string) as { state: { sentenceRulesSeen: boolean } }).state
-      .sentenceRulesSeen).toBe(true);
+      // Hold back the event exactly as the Web Storage spec permits. `second` now has a
+      // genuinely stale cache when its next actions run.
+      deliverSignals = false;
+      first.useGameStore.getState().appendOutbox('d:5:fr', REV, 'bois');
+      first.useGameStore.getState().setLastLang('en');
+      await first.flushGameStorePersistence();
+      expect(second.useGameStore.getState()).toMatchObject({ outbox: {}, lastLang: 'fr' });
+
+      // This is an explicit `fr` intent even though the stale cache already says `fr`.
+      // Its transaction must read `en`, restore `fr`, and preserve the sibling outbox.
+      second.useGameStore.getState().setLastLang('fr');
+      await second.flushGameStorePersistence();
+      const probe = new GameStateDatabase<PersistedState>(GAME_DATABASE_NAME);
+      const committed = await probe.read();
+      await probe.close();
+      expect(committed?.state).toMatchObject({
+        identityOwner: A,
+        lastLang: 'fr',
+        outbox: { 'd:5:fr': { puzzle: REV, guesses: ['bois'] } },
+      });
+      deliverSignals = true;
+      emit('whippin-game-sync-signal');
+
+      await vi.waitFor(() => {
+        expect(first.useGameStore.getState().lastLang).toBe('fr');
+        expect(second.useGameStore.getState().outbox).toEqual({
+          'd:5:fr': { puzzle: REV, guesses: ['bois'] },
+        });
+      });
+    } finally {
+      stopSecond();
+      stopFirst();
+      vi.unstubAllGlobals();
+      await deleteDB(GAME_DATABASE_NAME);
+    }
   });
 });

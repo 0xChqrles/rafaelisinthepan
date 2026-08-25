@@ -1,5 +1,5 @@
 // CONTRACT (#201, reworked by #214): the round sync engine. The server owns each round's
-// ordered guess log, and local storage is an OUTBOX holding only what it has not
+// ordered guess log, and persistent storage is an OUTBOX holding only what it has not
 // acknowledged:
 //   - the mount READ is what the board is replayed from, so the engine PUBLISHES where a
 //     round's state is — loading / ready with the server's own state / failed, and a failure

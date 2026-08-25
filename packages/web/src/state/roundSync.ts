@@ -392,7 +392,7 @@ function settleOutbox(f: RoundFlight): void {
 // pending was REFUSED and will never be stored, so it is dropped for good rather than left
 // to count tries the recorded score does not.
 function discardOutbox(f: RoundFlight): void {
-  useGameStore.getState().setOutbox(f.roundKey, f.puzzle, []);
+  useGameStore.getState().discardOutbox(f.roundKey, f.puzzle);
 }
 
 async function readRound(f: RoundFlight, key: string): Promise<void> {
@@ -603,7 +603,7 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
 // server does not serve, a date outside its window, a body the route refuses). Retrying
 // it forever spins one request every 30s for the tab's life, and on the READ it also
 // stalls every append behind it, so the guesses reach the server on no visit ever. The
-// conversation closes instead; the outbox stays in localStorage and the next visit asks
+// conversation closes instead; the outbox stays in persistent storage and the next visit asks
 // once more. (409 and 429 are handled above — they are answers, not verdicts.)
 function isVerdict(status: number): boolean {
   return status >= 400 && status < 500;

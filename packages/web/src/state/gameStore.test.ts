@@ -20,6 +20,8 @@ import {
   migratePersisted,
   reconcileGameStateIdentity,
   roundLoadFor,
+  persistedStateOf,
+  initialPersistedState,
 } from './gameStore';
 import { useHistoryStore } from './history';
 
@@ -448,7 +450,7 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
   });
 });
 
-// CONTRACT (#214): local storage is an OUTBOX. `ensureOutbox` reconciles it to the puzzle
+// CONTRACT (#214): persistent storage is an OUTBOX. `ensureOutbox` reconciles it to the puzzle
 // being played, `appendOutbox` buffers a guess the board has already reacted to, and
 // `setOutbox` is how the sync engine writes back what an answer left unacknowledged. There
 // are no holes, no counts, no cached progress and no server-fact flags in storage at all —
@@ -527,6 +529,23 @@ describe('ensureOutbox — day/language keying, qualified by the published revis
     expect(s.outbox['d:1:fr']).toBeUndefined(); // oldest evicted
     expect(s.outbox['d:2:fr']?.guesses).toEqual(['g2']); // next-oldest survives
     expect(s.outbox[`d:${CAP + 1}:fr`]?.guesses).toEqual(['new']);
+  });
+
+  it('keeps an old active archive round inside the cap rather than growing to 801', () => {
+    const CAP = 800;
+    const seeded: Record<string, { puzzle: string; guesses: string[] }> = {};
+    for (let day = 2; day <= CAP + 1; day += 1) {
+      seeded[`d:${day}:fr`] = { puzzle: REV, guesses: [`g${day}`] };
+    }
+    useGameStore.setState({ outbox: seeded }, false);
+
+    useGameStore.getState().appendOutbox('d:1:fr', REV, 'archive');
+
+    const outbox = useGameStore.getState().outbox;
+    expect(Object.keys(outbox)).toHaveLength(CAP);
+    expect(outbox['d:1:fr']?.guesses).toEqual(['archive']);
+    expect(outbox['d:2:fr']).toBeUndefined();
+    expect(outbox[`d:${CAP + 1}:fr`]).toBeDefined();
   });
 });
 
@@ -634,9 +653,9 @@ describe('setRoundLoad — the transient server state', () => {
     expect(useGameStore.getState().roundLoads).toBe(before);
   });
 
-  it('is NOT persisted — the partialize snapshot carries no round loads', () => {
+  it('is NOT persisted — the persisted projection carries no round loads', () => {
     useGameStore.getState().setRoundLoad('d:5:fr', { status: 'ready', puzzle, server });
-    const persisted = useGameStore.persist.getOptions().partialize!(useGameStore.getState());
+    const persisted = persistedStateOf(useGameStore.getState());
     expect(persisted).not.toHaveProperty('roundLoads');
     expect(persisted).toHaveProperty('outbox');
   });
@@ -701,6 +720,20 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       sentenceRulesSeen: false,
       localSeed: null,
     });
+  });
+
+  it('fails closed on a corrupt current-version record instead of crashing hydration', () => {
+    expect(migratePersisted(null, 18)).toEqual(initialPersistedState());
+    const out = migratePersisted(
+      {
+        identityOwner: OWNER,
+        outbox: { 'd:5:fr': { puzzle: REV, guesses: 'not-an-array' } },
+        wordRounds: { 'w:5:fr': { word: 'phare', tried: [], claimed: Number.NaN } },
+        lastLang: 'de',
+      },
+      18,
+    );
+    expect(out).toMatchObject({ identityOwner: OWNER, outbox: {}, wordRounds: {}, lastLang: null });
   });
 
   it('grandfathers a v1 blob with prior play state — a veteran never sees the tutorial', () => {
@@ -846,7 +879,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
     expect(out).not.toHaveProperty('solvedDays');
   });
 
-  // v13 -> v14 (#214): the sentence `rounds` map is DROPPED outright — local storage is an
+  // v13 -> v14 (#214): the sentence `rounds` map is DROPPED outright — persistent storage is an
   // outbox now. There is nothing to translate: a stored round's UNSENT guesses were never
   // distinguishable from its acknowledged ones inside one merged `tried` list, so seeding an
   // outbox from it would re-send guesses the server already holds, burn cap slots on
