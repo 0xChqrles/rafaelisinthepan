@@ -202,6 +202,20 @@ function failLoad(f: WordFlight, key: string): void {
   useGameStore.getState().setRoundLoad(key, { status: 'failed', puzzle: f.puzzle });
 }
 
+// THE RUN THIS DEVICE HELD IS GONE — restarted on another device, or never held by this
+// account at all. The local husk goes (the language chooser and the archive read a Word
+// day's status off exactly that clock and count), and the SUBMISSION armed for it goes with
+// it: the discard empties the outbox, so a `wantSubmit` surviving one makes this
+// conversation's next act a post of an EMPTY log for a run nobody played. The server
+// refuses that today — the two states that cause a discard are the very ones it answers
+// `not_started` / `started_elsewhere` for — but a client must not lean on the server to
+// decline what it should never have asked, and a refused empty log is also a VERDICT, which
+// closes the conversation for the tab's life.
+function dropRun(f: WordFlight, key: string): void {
+  f.wantSubmit = false;
+  useGameStore.getState().discardWordRun(key);
+}
+
 // Register a word round's context (WordGame mounts one per round) and drive its
 // conversation. `over` is the run's own end — a wall-clock fact this engine cannot see for
 // itself — and it is what asks for the one end-of-run write.
@@ -485,14 +499,14 @@ async function readRound(f: WordFlight, key: string): Promise<void> {
       // replaced while this tab was away, even when no submission stayed open long enough
       // to receive `started_elsewhere`. Its persisted clock/count would otherwise keep the
       // chooser and archive badged from a run the server no longer holds.
-      useGameStore.getState().discardWordRun(key);
+      dropRun(f, key);
     }
     publishLoad(f, key, state);
   } else if (response.status === 404) {
     // The server holds nothing for THIS word: an unplayed day, or one republished under the
     // same key whose old record is retired. Any local run is therefore a retired husk too;
     // clear its status before PLAY creates the replacement.
-    useGameStore.getState().discardWordRun(key);
+    dropRun(f, key);
     publishLoad(f, key);
   } else if (isVerdict(response.status)) {
     // A device signed out from elsewhere learns it here, on the mount read. The screen it
@@ -578,7 +592,7 @@ async function submitRun(f: WordFlight, key: string, tried: readonly string[]): 
     // the day's status from — so keeping it would badge the day DONE, with a score, for a
     // run that no longer exists, beside a game screen offering to start over.
     if (error === 'started_elsewhere' || error === 'not_started') {
-      useGameStore.getState().discardWordRun(key);
+      dropRun(f, key);
     }
     // The body was already read for `error`, so the shared PREDICATE decides directly.
     if (isUnknownDeviceAnswer(response.status, error)) markDeviceSignedOut(epoch);
@@ -612,9 +626,12 @@ function retryLater(f: WordFlight, key: string): void {
 // ready-and-empty round, but the adopted account may hold a live or recorded run this tab
 // has never seen — and leaving the projection standing offers PLAY for a one-shot daily the
 // account already spent. Re-read every open conversation under the new token (the
-// roundSync rule); the persisted clock/outbox and the runner-authority maps stand — they
-// describe what THIS device played, which adoption does not change. A MINTED first identity
-// never comes through here (identityScope calls this only on `adopted`).
+// roundSync rule); the persisted clock/outbox stands — it describes what THIS device
+// played, which adoption does not change, and #217 left no local memory of WHOSE run it is
+// for the adopted account to contradict: the server's stamp answers that, and this re-read
+// is what asks it. An armed submission stands too — the read disarms it if what comes back
+// says this device holds no run to report (`dropRun`). A MINTED first identity never comes
+// through here (identityScope calls this only on `adopted`).
 export function rearmWordRoundSync(): void {
   for (const [key, f] of flights) {
     f.readDone = false;

@@ -681,9 +681,11 @@ describe('the end-of-run SUBMISSION', () => {
     expect(round().submitted).toBe(true);
   });
 
-  it('CLOSES on a verdict — a run the server never started can never accept this log', async () => {
+  it('CLOSES on a verdict — a run the server no longer holds can never accept this log', async () => {
     seedRound({ startedAt: T0 - 300_000, deadline: T0 - 100_000, tried: ['mer'], claimed: 1 });
-    post.mockResolvedValueOnce(answer(404, { error: 'not_found' }));
+    // The read finds this device's OWN live run, so the log is offered; by the time it
+    // lands the server holds no run of this word at all.
+    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 300_000 }));
     post.mockResolvedValueOnce(answer(409, { error: 'not_started' }));
     runOver();
     await settle();
@@ -693,6 +695,21 @@ describe('the end-of-run SUBMISSION', () => {
     await settle(120_000);
     expect(post).toHaveBeenCalledTimes(2);
     expect(round().submitted).toBeUndefined();
+  });
+
+  // …and a run the READ already discarded is never OFFERED at all. A discard empties the
+  // outbox along with the clock, so a submission left armed across one posts an EMPTY log
+  // for a run nobody played: refused — and refused as a VERDICT, which closes the
+  // conversation for the tab's life. Only the server stands between the two otherwise, and
+  // the client owes itself the guard.
+  it('never offers a log for a run the read has already discarded', async () => {
+    seedRound({ startedAt: T0 - 300_000, deadline: T0 - 100_000, tried: ['mer'], claimed: 1 });
+    post.mockResolvedValueOnce(answer(404, { error: 'not_found' }));
+    runOver();
+    await settle(120_000);
+    // The read, and nothing else: there is no run left to report.
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(round()).toMatchObject({ startedAt: null, deadline: null, tried: [], claimed: 0 });
   });
 
   it('retries a transport failure behind a widening backoff', async () => {
@@ -764,7 +781,7 @@ describe('the end-of-run SUBMISSION', () => {
 
   it('discards the local run for a `not_started` verdict too — there is nothing to submit', async () => {
     seedRound({ startedAt: T0 - 300_000, deadline: T0 - 100_000, tried: ['mer'], claimed: 1 });
-    post.mockResolvedValueOnce(answer(404, { error: 'not_found' }));
+    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 300_000 }));
     post.mockResolvedValueOnce(answer(409, { error: 'not_started' }));
     runOver();
     await settle();

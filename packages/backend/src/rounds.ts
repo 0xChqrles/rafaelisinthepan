@@ -230,7 +230,7 @@ export async function handleRound(
     // clock somebody else is playing" only by remembering that its own start stamped it —
     // and a joiner that got that wrong buried a real run under an empty log. Now the answer
     // simply says whose run it is.
-    const { state } = await rounds.start({
+    const { outcome, state } = await rounds.start({
       date,
       lang,
       mode,
@@ -239,6 +239,16 @@ export async function handleRound(
       runner: { deviceId: auth.value.device.deviceId, ...auth.value.device.agent },
       now: instant,
     });
+    // …and that refusal IS the run the answer carries: there is no error code for it, so
+    // the caller reads it off `submittedAt`. An `already_submitted` carrying NO recorded run
+    // therefore says nothing at all, and a 200 would read as a start that silently did
+    // nothing — the one failure this route must never fake. It happens when a republish
+    // lands between the condition failing and the strongly consistent read that classifies
+    // it: the record has moved on to the word that replaced this one, so the server
+    // genuinely holds no round for the puzzle asked about. That is the READ's own answer.
+    if (outcome === 'already_submitted' && state.submittedAt === undefined) {
+      return errorResponse(404, 'not_found', 'No round recorded.', responseHeaders);
+    }
     return answer(state);
   }
 

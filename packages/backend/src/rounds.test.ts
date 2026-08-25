@@ -638,6 +638,30 @@ describe('word mode: the round start (#202)', () => {
     expect(parsed(again).submittedAt).toBeTruthy();
   });
 
+  // …and that refusal IS the run the answer carries: it has no error code of its own, so a
+  // caller reads it off `submittedAt`. An `already_submitted` with nothing to carry
+  // therefore says nothing at all. The store reaches it when a republish lands between the
+  // condition failing and the read that classifies it — the record now names the word that
+  // replaced this one, and no caller is handed a retired round's state for a puzzle it did
+  // not ask about.
+  it('never answers a refusal it has no recorded run to carry (added on review)', async () => {
+    const store = memoryRoundStore();
+    const handler = makeHandler({
+      roundStore: {
+        ...store,
+        async start() {
+          return { outcome: 'already_submitted' as const, state: { guesses: [], createdAt: '' } };
+        },
+      },
+    });
+
+    const response = await handler(wordEvent({ turnstileToken: 'ok' }));
+    // The READ's own answer for a tag the server holds nothing under — not a 200 whose
+    // empty state reads as a start that silently did nothing.
+    expect(response.statusCode).toBe(404);
+    expect(parsed(response).error).toBe('not_found');
+  });
+
   it('restarts the round when a DIFFERENT word is published under the same key', async () => {
     const handler = makeHandler();
     await handler(wordEvent({ turnstileToken: 'ok' }));
