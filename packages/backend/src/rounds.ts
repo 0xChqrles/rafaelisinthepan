@@ -46,6 +46,7 @@ import {
   WORD_CLAIM_ZONE,
   WORD_MISS_CAP,
   wordRunFloorMs,
+  type Puzzle,
   type WordRanks,
 } from '@whippin/shared';
 import { createHash } from 'node:crypto';
@@ -603,7 +604,20 @@ async function recordSentenceScore(
   instant: Date,
 ): Promise<void> {
   const { key, publicId, state } = round;
-  const puzzle = await loadPuzzle(puzzleStore, key.date, key.lang, round.puzzle);
+  // The load is guarded too, not just the write: the store only swallows NotFound, so a
+  // throttle or a transient S3 5xx THROWS — and a throw escaping here would 500 an append
+  // that already committed and froze the round, losing the score row for good (the freeze
+  // means no later append ever retries it).
+  let puzzle: Puzzle | null;
+  try {
+    puzzle = await loadPuzzle(puzzleStore, key.date, key.lang, round.puzzle);
+  } catch (error) {
+    console.error(
+      `[round] failed to load the puzzle to score ${key.date} ${key.lang} for ${publicId}:`,
+      error,
+    );
+    return;
+  }
   if (!puzzle) {
     console.error(`[round] no puzzle to score ${key.date} ${key.lang} for ${publicId}.`);
     return;

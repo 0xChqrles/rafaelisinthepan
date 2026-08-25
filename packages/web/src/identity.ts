@@ -576,6 +576,12 @@ async function bootstrap(): Promise<DeviceIdentity> {
     pendingUnproven = true;
     throw error;
   }
+  // Re-checked AFTER the network legs too: a sign-out verdict can land while the request
+  // is in flight — both verdict paths null `flight` but cannot cancel this one, and each
+  // sets the store flag synchronously — and committing the mint would overwrite the
+  // tombstone and clear `signedOut`. The verdict wins: the mint fails CLOSED here exactly
+  // as it does before the flight.
+  if (useIdentityStore.getState().signedOut) throw new Error('This device is signed out.');
   // Last look before the write. A tab that raced this one to a DIFFERENT token has already
   // stored a complete identity; overwriting it would leave two accounts on one device and
   // orphan the one that is being played. Ours is brand new and empty, so adopting theirs
@@ -673,6 +679,12 @@ export interface LoadedDeviceIdentity {
   // A persisted token without server ids is a lost bootstrap, and therefore proof that
   // ownerless local state came from the deliberate act that began that bootstrap.
   pending: boolean;
+  // Whether the shared key could be READ at all. `false` says NOTHING about this device's
+  // identity (`StoredRead`'s own rule): the caller must not treat the null above as
+  // proven emptiness — startup's reconciliation would otherwise clear identity-owned
+  // state (the outbox, the Word rounds) off a denied localStorage read while the game
+  // database and the account are both intact.
+  readable: boolean;
 }
 
 export function loadDeviceIdentity(): LoadedDeviceIdentity {
@@ -692,7 +704,11 @@ export function loadDeviceIdentity(): LoadedDeviceIdentity {
     };
     window.addEventListener('storage', storageListener);
   }
-  return { identity, pending: identity === null && pendingToken !== null };
+  return {
+    identity,
+    pending: identity === null && pendingToken !== null,
+    readable: readStored().available,
+  };
 }
 
 let storageListener: ((event: StorageEvent) => void) | null = null;

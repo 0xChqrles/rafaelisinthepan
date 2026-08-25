@@ -116,9 +116,15 @@ const CORRECTED_TAG = CORRECTED.revision;
 // `undefined` = the artifact must never be read on this path; `null` = the daily was never
 // published. The SLICE is derived from the same puzzle, exactly as `puzzle:publish` does,
 // and `sentence` is a HOLDER so a test can republish under a live handler.
-function puzzleStore(word: WordPuzzle | null | undefined, sentence: { current: Puzzle | null }): PuzzleStore {
+function puzzleStore(
+  word: WordPuzzle | null | undefined,
+  sentence: { current: Puzzle | null },
+  fullReadFails = false,
+): PuzzleStore {
   return {
     async getPuzzle() {
+      // The store contract swallows only NotFound — a throttle or a transient 5xx THROWS.
+      if (fullReadFails) throw new Error('S3 throttled');
       return sentence.current;
     },
     async getWordPuzzle() {
@@ -141,6 +147,7 @@ function makeHandler(
     scoreStore?: ScoreStore;
     roundStore?: RoundStore;
     historyStore?: PlayerHistoryStore;
+    fullReadFails?: boolean;
   } = {},
 ) {
   let current = START.getTime();
@@ -149,7 +156,7 @@ function makeHandler(
   const historyStore = options.historyStore ?? memoryHistoryStore();
   const sentence = { current: options.sentence === undefined ? SENTENCE : options.sentence };
   const handler = createHandler({
-    store: puzzleStore(options.word, sentence),
+    store: puzzleStore(options.word, sentence, options.fullReadFails),
     now: () => new Date(current),
     allowedOrigin: ORIGIN,
     devices: {
@@ -882,6 +889,20 @@ describe('the derived summary (#203)', () => {
     // The score row is INDEPENDENT of the credit and still records: a missing standing is
     // its own silent failure mode, never a reason to withhold the day's leaderboard entry.
     await expect(handler.scoreStore.list(solvedKey)).resolves.toHaveLength(1);
+  });
+
+  // The score's artifact read is the one line in the solve's rewards that can THROW (the
+  // store only swallows NotFound — a throttle or a transient S3 5xx rethrows). By then the
+  // append has already committed and FROZEN the round, so an escaping throw would 500 a
+  // solve that stands — and the freeze means no later append would ever retry the row.
+  it('still answers the solve when the scoring artifact cannot be READ', async () => {
+    const handler = makeHandler({ fullReadFails: true });
+    const answer = parsed(await appendGuesses(handler, ['phare', 'nuit']));
+    expect(answer.solved).toBe(true);
+    // The two rewards are independent: the streak credit still lands...
+    expect(answer.credited).toBe(true);
+    // ...while the population is simply missing this standing — the silent failure mode.
+    await expect(handler.scoreStore.list(solvedKey)).resolves.toHaveLength(0);
   });
 
   // LATE HAS NO GRADATIONS (user-decided 2026-08-23): a millisecond late is a decade late,

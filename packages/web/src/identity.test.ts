@@ -218,6 +218,7 @@ describe('what a reload finds (#216)', () => {
     expect(loadDeviceIdentity()).toEqual({
       identity: { token: 'a'.repeat(64), accountId: ACCOUNT, deviceId: DEVICE },
       pending: false,
+      readable: true,
     });
     expect(deviceIdentity()).toEqual({ token: 'a'.repeat(64), accountId: ACCOUNT, deviceId: DEVICE });
     expect(post).not.toHaveBeenCalled();
@@ -229,10 +230,26 @@ describe('what a reload finds (#216)', () => {
     // next act retries onto the same token rather than minting a second identity.
     const token = 'b'.repeat(64);
     storage.setItem('whippin-device', JSON.stringify({ token }));
-    expect(loadDeviceIdentity()).toEqual({ identity: null, pending: true });
+    expect(loadDeviceIdentity()).toEqual({ identity: null, pending: true, readable: true });
     expect(deviceIdentity()).toBeNull();
     await ensureDeviceIdentity();
     expect(post.mock.calls[0][1].token).toBe(token);
+  });
+
+  it('reports an UNREADABLE storage as unknown, never as emptiness', () => {
+    // Blocked site data / a private mode whose `localStorage` PROPERTY throws. The null
+    // identity is then UNPROVEN — `readable: false` is what tells startup not to treat it
+    // as a fresh device and clear identity-owned state (the outbox, the Word rounds) out
+    // of an intact game database.
+    const denied = fakeWindow(storage);
+    Object.defineProperty(denied, 'localStorage', {
+      get() {
+        throw new Error('SecurityError');
+      },
+    });
+    vi.stubGlobal('window', denied);
+    resetDeviceIdentity();
+    expect(loadDeviceIdentity()).toEqual({ identity: null, pending: false, readable: false });
   });
 
   it('replaces a corrupted stored value rather than sending garbage forever', async () => {
@@ -311,6 +328,20 @@ describe('being signed out (#216)', () => {
       accountId: identity.accountId,
       deviceId: identity.deviceId,
     });
+    expect(useIdentityStore.getState().signedOut).toBe(true);
+  });
+
+  it('fails the mint CLOSED when the verdict lands while the bootstrap is IN FLIGHT', async () => {
+    // The pre-flight check cannot see a verdict that arrives during the network legs —
+    // the sign-out paths null `flight` but cannot cancel a running one — so the bootstrap
+    // re-checks after them: committing the mint would overwrite the tombstone and clear
+    // the screen the verdict raised.
+    post.mockImplementationOnce(async () => {
+      useIdentityStore.setState({ ...useIdentityStore.getState(), signedOut: true });
+      return answer();
+    });
+    await expect(ensureDeviceIdentity()).rejects.toThrow(/signed out/);
+    expect(deviceIdentity()).toBeNull();
     expect(useIdentityStore.getState().signedOut).toBe(true);
   });
 

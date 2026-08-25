@@ -33,8 +33,15 @@ async function mount(): Promise<void> {
   if (import.meta.hot) import.meta.hot.dispose(removeIdentityScope);
   const loadedIdentity = loadDeviceIdentity();
   // Reconcile the identity against the LATEST committed state, then wait for that ownership
-  // mutation before a route can see or send an outbox.
-  reconcileGameStateIdentity(loadedIdentity.identity, loadedIdentity.pending);
+  // mutation before a route can see or send an outbox. UNLESS the shared key could not be
+  // read at all: an unreadable storage says nothing about this device's identity
+  // (identity.ts's own rule), so its null is not proven emptiness — reconciling it would
+  // wipe the outbox and the Word rounds out of an intact database. Skipping leaves the
+  // committed owner standing; every live transition still reconciles through the scope
+  // listener above, off identities it actually proved.
+  if (loadedIdentity.readable) {
+    reconcileGameStateIdentity(loadedIdentity.identity, loadedIdentity.pending);
+  }
   await flushGameStorePersistence();
 
   const removeGameStoreSync = installGameStoreSync();
@@ -53,4 +60,19 @@ async function mount(): Promise<void> {
   );
 }
 
-void mount();
+mount().catch((error: unknown) => {
+  // A startup that died must SAY so: `mount` is asynchronous, so an uncaught rejection
+  // anywhere in it (a persistence blob a newer build wrote, an IndexedDB fallback that
+  // itself failed) is otherwise a permanently blank page with nothing in the console's
+  // place. Plain DOM, because React never mounted — and unlocalized, because the language
+  // preference lives behind the very store that may be what failed. Reloading is the one
+  // action that can help.
+  console.error('Failed to start the app', error);
+  const root = document.getElementById('root');
+  if (root !== null && root.childElementCount === 0) {
+    const message = document.createElement('p');
+    message.textContent = 'SOMETHING WENT WRONG — RELOAD TO TRY AGAIN';
+    message.setAttribute('style', 'margin: 40vh auto 0; padding: 0 24px; text-align: center;');
+    root.append(message);
+  }
+});

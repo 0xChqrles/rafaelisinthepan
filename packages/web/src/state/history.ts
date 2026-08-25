@@ -83,8 +83,10 @@ const flights = new Map<string, Promise<void>>();
 // collection. The entry is keyed by language while several (lang, mode, month) flights can
 // be in the air at once — paging the archive quickly does exactly that — and letting every
 // settle write the phase is a last-writer-wins race: a failing OLD month read landing last
-// stamps `failed` onto a collection that loaded fine. The DAYS still merge off every
-// successful answer (data is data); only the phase is driver-only.
+// stamps `failed` onto a collection that loaded fine. Only the FAILURE is driver-gated,
+// though: every successful answer carries the FULL collection, so its `ready` is true
+// whichever flight lands it — stale-but-complete beating `failed` is the point — and its
+// days merge in regardless (data is data).
 const solvedReads = new Map<string, string>();
 
 // The reads answered KNOWN-EMPTY because this device held no identity, kept so an identity
