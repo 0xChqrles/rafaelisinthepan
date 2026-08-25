@@ -69,6 +69,17 @@ function deviceOf(item: Record<string, AttributeValue>, knownRevokeKey?: string)
   };
 }
 
+// The AWS SDK sometimes surfaces a condition failure as a plain object carrying only the
+// name (a transaction cancellation path), so both spellings are recognised.
+function isConditionFailure(error: unknown): boolean {
+  return (
+    error instanceof ConditionalCheckFailedException ||
+    (typeof error === 'object' &&
+      error !== null &&
+      (error as { name?: unknown }).name === 'ConditionalCheckFailedException')
+  );
+}
+
 export function dynamoDeviceStore(client: DynamoDBClient, tableName: string): DeviceStore {
   async function account(accountId: string): Promise<AccountRecord | null> {
     const response = await client.send(
@@ -262,12 +273,7 @@ export function dynamoDeviceStore(client: DynamoDBClient, tableName: string): De
         // strongly — this extra read exists only on the exceptional path. It asks only
         // whether the ITEM exists, never whether it parses: an existing-but-unparseable
         // row read as `absent` would filter a live device out of the list.
-        if (
-          error instanceof ConditionalCheckFailedException ||
-          (typeof error === 'object' &&
-            error !== null &&
-            (error as { name?: unknown }).name === 'ConditionalCheckFailedException')
-        ) {
+        if (isConditionFailure(error)) {
           const found = await client.send(
             new GetItemCommand({
               TableName: tableName,
@@ -295,11 +301,17 @@ export function dynamoDeviceStore(client: DynamoDBClient, tableName: string): De
             ExpressionAttributeValues: { ':now': { S: now } },
           }),
         );
-      } catch {
-        // The device was revoked between this request's authentication and its stamp. That
-        // is not a failure of the call the player made: `lastSeenAt` is a label on a
-        // sign-out screen, and refusing the whole request over it would turn a race into an
-        // error the player sees.
+      } catch (error) {
+        // NOTHING here may fail the player's call: `lastSeenAt` is a label on a sign-out
+        // screen, and this rides an authenticated request that already succeeded. A failed
+        // CONDITION is the expected race — the device was revoked between this request's
+        // authentication and its stamp — and stays silent. Anything ELSE (a throttle, a
+        // permissions misconfiguration, a network failure) is swallowed too, but LOGGED:
+        // silently eaten, a broken touch freezes every device's label with no signal
+        // anywhere that it is broken.
+        if (!isConditionFailure(error)) {
+          console.warn('[devices] lastSeenAt touch failed:', error);
+        }
       }
     },
   };
