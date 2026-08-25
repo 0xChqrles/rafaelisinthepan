@@ -927,10 +927,12 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   `holesMatchPuzzle` for stored rounds; and the capped-but-still-playing and solved-screen
   `canSubmit` branches. What remains is smaller and explicit: one transient server snapshot,
   one persisted revision-qualified outbox, one pure canonical play-log projection, paced
-  prefix writes, and the narrow read-on-unknown recovery. Local storage otherwise retains
-  the device token (#216 — the player secret until then), the device preferences and Word
-  mode's clock/outbox. *(The solved-day
-  sets went with them at v15 — #211 moved the collection to the private player row.)*
+  prefix writes, and the narrow read-on-unknown recovery. Persisted GAME state — the
+  outbox, Word mode's clock/outbox and the device preferences — lives behind ONE
+  transactional IndexedDB record since persist v18 (`web/state/gamePersistence.ts`);
+  localStorage otherwise retains only the device token (#216 — the player secret until
+  then). *(The solved-day
+  sets went with the rounds at v15 — #211 moved the collection to the private player row.)*
 - **ORDERING — #214 then #211, and they SHIP TOGETHER.** This issue establishes the client
   state model #211's summary readers consume. Removing the persisted sentence rounds (and,
   in #211, `solvedDays`) must NOT reach production before #211 supplies the archive
@@ -1086,8 +1088,10 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   every authenticated call, and `/round` writes about once a second while a player types.
 - **Authenticated calls carry the DEVICE TOKEN where they carried the player secret.** Every
   private route (`/profile` POST, `/friends`, `/board` POST, `/round`, `/history`) takes
-  `{ token }` in the BODY and resolves it to an account. It costs one extra direct read on
-  every authenticated call, `/round`'s hot path included. The **user-agent is a structured
+  `{ token }` in the BODY and resolves it to an account. It costs TWO extra direct reads
+  on every authenticated call — the device item, then the account row it names (corrected
+  2026-08-25: this said "one"); `/round`'s hot sentence append starts its slice fetch
+  BEFORE authentication so the S3 GET hides inside those round trips. The **user-agent is a structured
   object** (device family, OS, browser) parsed **server-side** from the `User-Agent` header —
   the client can lie and the server sees the header anyway — and stored as FIELDS rather than
   a formatted string, so the UI can render icons and change its wording without a migration.
@@ -1200,7 +1204,10 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   state across a same-account device replacement, and otherwise drops what cannot be proved.
   Ownerless state survives only behind the persisted pending token minted by the deliberate
   first act that created it; a missing/corrupt device record never pumps that state into a
-  newly bootstrapped account. **Every in-flight private request captures the
+  newly bootstrapped account. **Persist v18 moves the blob behind the transactional
+  IndexedDB record** (`web/state/gamePersistence.ts` — the storage boundary, not the
+  content shape); the retired localStorage value is NOT read (the standing no-back-compat
+  rule), so an existing device starts from the initial state once. **Every in-flight private request captures the
   `(accountId, deviceId)` epoch before resolving its identity and before sending; if resolution
   adopts B for a closure that captured A, the POST is aborted. Its answer is ignored after
   that tuple changes too** — clearing storage without fencing either side would let the

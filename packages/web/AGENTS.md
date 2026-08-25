@@ -18,7 +18,11 @@
                               to, the signed-out flag and the identity epoch
       state/identityScope.ts  what an identity OWNS, cleared when it changes (wired in main)
       state/gamePersistence.ts  the atomic IndexedDB boundary for cross-tab game-state writes
+      state/signedOutVerdict.ts  the ONE spelling of the sign-out resolution every private
+                              route client shares (401 + `unknown_device` code)
       screens/SignedOut.tsx   the `unknown_device` screen: what is left behind + START FRESH
+      components/DeviceList.tsx  the account's devices + SIGN OUT rows (#216), on the profile editor
+      components/ErrorSheet.tsx  the app's error surface: a popup on desktop, a bottom sheet on a phone
       state/roundSync.ts      the #201 sync engine, reworked by #214: coalesced prefix writes,
                             the transient server snapshot it publishes for the screen, the
                             outbox it settles by identity, cap + freeze, #203's round-start
@@ -471,10 +475,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
     keeps only the account-owned outbox, and no proof drops them. An ownerless first act is kept
     only when `whippin-device` holds its pending bootstrap token, then bound to the returned
     identity; a missing/corrupt device key never turns old state into a new account's first act.
-    **Persist v18 moves the same state into IndexedDB**; the retired v17 localStorage blob is
-    a one-time import source when the database is empty, so its preferences survive while the
-    v16/v17 ownership migrations still drop anything unprovable. `main.tsx` awaits hydration
-    and the initial ownership transaction before mounting any private reader.
+    **Persist v18 moves the same state into IndexedDB**; the retired v17 localStorage blob
+    is NOT read (the standing no-back-compat rule — the brief import shipped with the first
+    cut was removed on the PR review as the compatibility layer it is), so an existing
+    device starts from the initial state once. `main.tsx` awaits hydration
+    and the initial ownership transaction before mounting any private reader, under a
+    startup DEADLINE that turns a stalled IndexedDB open into the visible startup failure
+    rather than a permanently blank page.
   - **The tokenless branch is an ANSWER, not a loading state.** `roundSync` publishes a
     ready-and-empty authoritative round and `state/history.ts` a ready empty month and
     collection, so nothing breathes behind a request nobody made — the same rule #211's

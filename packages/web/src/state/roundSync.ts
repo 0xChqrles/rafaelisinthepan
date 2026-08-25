@@ -42,8 +42,8 @@ import {
   deviceIdentity,
   identityEpoch,
   identityEpochOf,
-  markDeviceSignedOut,
 } from '../identity';
+import { adoptSignedOutVerdict } from './signedOutVerdict';
 import { turnstileToken } from '../turnstile';
 
 export interface RoundSyncContext {
@@ -325,13 +325,6 @@ function superseded(f: RoundFlight, puzzle: string, epoch: string | null): boole
   return f.puzzle !== puzzle || epoch !== identityEpoch();
 }
 
-// The distinct answer that signs a device out (#216) — and ONLY that one. A 5xx or a
-// dropped connection must never sign anyone out, which is why this reads the error CODE and
-// not merely the status.
-function isUnknownDevice(status: number, error: string | undefined): boolean {
-  return status === 401 && error === 'unknown_device';
-}
-
 // Take the server's answer as this round's truth and publish it to the screen. `byAppend`
 // says whether a SOLVE in it was confirmed by a batch this device just sent: that one is a
 // fresh solve and earns the round's beats, where a solve read at mount or refused as
@@ -452,8 +445,9 @@ async function readRound(f: RoundFlight, key: string): Promise<void> {
   } else if (isVerdict(response.status)) {
     // A device signed out from elsewhere learns it HERE first, since the mount read is the
     // earliest private call a game route makes. The screen it raises is the whole answer;
-    // this conversation has nothing left to ask.
-    await noteVerdict(response, epoch);
+    // this conversation has nothing left to ask. (`adoptSignedOutVerdict` is the ONE
+    // spelling of that resolution — the CODE decides, never the status.)
+    await adoptSignedOutVerdict(response, epoch);
     if (superseded(f, puzzle, epoch)) return;
     failLoad(f, key);
     f.closed = true;
@@ -464,20 +458,6 @@ async function readRound(f: RoundFlight, key: string): Promise<void> {
   }
   f.readDone = true;
   f.failures = 0;
-}
-
-// A 4xx may be the signed-out answer. Reading the body is cheap and it is the only way to
-// tell `unknown_device` from any other verdict — the status alone would sign a player out
-// for a language the server does not serve.
-async function noteVerdict(response: Response, epoch: string): Promise<void> {
-  let error: string | undefined;
-  try {
-    const data = (await response.json()) as { error?: unknown };
-    error = typeof data.error === 'string' ? data.error : undefined;
-  } catch {
-    return;
-  }
-  if (isUnknownDevice(response.status, error)) markDeviceSignedOut(epoch);
 }
 
 async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promise<void> {
@@ -499,11 +479,12 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
     // one write that speaks, because nothing begins without it).
     const challenge = f.created ? undefined : await turnstileToken();
     // Challenge acquisition is another await. If A left during it, consuming the token is
-    // harmless; authenticating A's captured batch as B is not.
-    if (identityEpoch() !== epoch) {
-      f.closed = true;
-      return;
-    }
+    // harmless; authenticating A's captured batch as B is not — so this attempt stands
+    // down WITHOUT closing (the tokenless append's own shape): an account change resets
+    // this engine anyway (identityScope), while a device-only change leaves a round that
+    // is still this account's, and closing here wedged its outbox for the tab's life —
+    // `retryRoundSync` cannot reopen a settled flight, and nothing else does.
+    if (identityEpoch() !== epoch) return;
     response = await postRoundBody(
       roundUrl(f.lang, f.date, f.mode),
       requestBody(f, identity.token, batch, challenge),
@@ -590,7 +571,7 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
 
   if (superseded(f, puzzle, epoch)) return;
   if (isVerdict(response.status)) {
-    await noteVerdict(response, epoch);
+    await adoptSignedOutVerdict(response, epoch);
     if (superseded(f, puzzle, epoch)) return;
     f.closed = true;
     return;

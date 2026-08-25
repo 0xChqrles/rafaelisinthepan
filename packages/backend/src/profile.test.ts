@@ -20,8 +20,8 @@ async function makeHandler(profiles = memoryProfileStore()) {
     handler: createHandler({
       store: emptyStore,
       profiles,
+      deviceStore: devices,
       devices: {
-        deviceStore: devices,
         turnstile: { verify: async () => true },
         allowSourceIp: true,
       },

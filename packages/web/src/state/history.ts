@@ -33,8 +33,8 @@ import {
   deviceIdentity,
   identityEpoch,
   identityEpochOf,
-  markDeviceSignedOut,
 } from '../identity';
+import { adoptSignedOutVerdict } from './signedOutVerdict';
 import type { Mode } from '../langs';
 import { statusOf, type RoundSummary, type Status } from './status';
 
@@ -158,8 +158,9 @@ export async function loadPlayerHistory(
       });
       if (!response.ok) {
         // The distinct signed-out answer (#216) raises the screen that explains it; every
-        // other refusal is the ordinary failure below. A 5xx never signs anyone out.
-        if (response.status === 401) await noteSignedOut(response, epoch);
+        // other refusal is the ordinary failure below. A 5xx never signs anyone out
+        // (`adoptSignedOutVerdict` — the one spelling: the CODE decides, never the status).
+        await adoptSignedOutVerdict(response, epoch);
         throw new Error(`history read failed: ${response.status}`);
       }
       const history = parsePlayerHistory(await response.json());
@@ -199,7 +200,12 @@ export async function loadPlayerHistory(
               : merged;
           return { phase: 'ready', days };
         });
-        if (solvedReads.get(lang) === key) solvedReads.delete(lang);
+        // ANY success retires the driver, not only the driving flight's own: every
+        // successful answer carries the FULL collection, so once one has landed a LATER
+        // driver's failure must not stamp `failed` over a complete collection — the exact
+        // inversion the driver gate exists to prevent (and, on the game screen, three
+        // bounded streak retries re-fetching a value already correct in memory).
+        solvedReads.delete(lang);
       }
     } catch {
       // The scope listener has already cleared the old account's cache. A late failure from
@@ -338,17 +344,6 @@ export function noteSolvedDay(lang: string, solvedDay: number, credited: boolean
   return true;
 }
 
-// Read the refusal's own code: only `unknown_device` means signed out, and the status alone
-// would do it for any other 401 this route might ever answer.
-async function noteSignedOut(response: Response, epoch: string): Promise<void> {
-  try {
-    const data = (await response.json()) as { error?: unknown };
-    if (data.error === 'unknown_device') markDeviceSignedOut(epoch);
-  } catch {
-    // A refusal with no readable body says nothing about the device.
-  }
-}
-
 // A FIRST identity ADOPTED from another tab (#216): replay every read the tokenless branch
 // answered as known-empty, now under the token — the adopted account may hold the months
 // and the collection those answers claimed absent, and the hooks' own effects will not
@@ -358,9 +353,16 @@ async function noteSignedOut(response: Response, epoch: string): Promise<void> {
 export function rearmPlayerHistory(): void {
   const replay = [...answeredTokenless.values()];
   answeredTokenless.clear();
-  for (const [lang, mode, month, collection] of replay) {
-    void loadPlayerHistory(lang, mode, month, collection);
-  }
+  // SEQUENTIALLY, deliberately: a long tokenless archive session can record dozens of
+  // months, and replaying them as one concurrent burst fires that many private Queries in
+  // a single tick. Each flight settles before the next starts (loadPlayerHistory never
+  // rejects — its failures are its own phase), and the months a surface is actually
+  // looking at revalidate through their own hooks anyway.
+  void (async () => {
+    for (const [lang, mode, month, collection] of replay) {
+      await loadPlayerHistory(lang, mode, month, collection);
+    }
+  })();
 }
 
 // Test seam: drop every cached summary and conversation (module state must not leak

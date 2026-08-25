@@ -10,7 +10,7 @@ import {
   sanitizeName,
   NAME_MAX_LENGTH,
 } from '@whippin/shared';
-import { parseProfile, postProfileBody, profileUrl } from '../api';
+import { isUnknownDeviceAnswer, parseProfile, postProfileBody, profileUrl } from '../api';
 import {
   deviceIdentity,
   ensureDeviceIdentity,
@@ -343,6 +343,11 @@ export default function Profile() {
   }, []);
 
   const colors = AVATAR_PALETTES[palette];
+  // The editor is FROZEN while a save runs (its two round trips can take real time on a
+  // phone, and the GUARDED success path re-binds every field to the merged server truth):
+  // an edit made mid-save would be silently replayed over when the answer lands — the grid
+  // visibly snapping back, SAVE greying out as though the change had been stored.
+  const saving = phase !== 'idle';
   // One encode per render, shared by the preview, the dirty check and the save body.
   const encoded = encodeAvatar(palette, cells);
   // No trim on either side: the rule has no room for whitespace at all (it sanitizes
@@ -454,8 +459,9 @@ export default function Profile() {
             const refusal = (await response.json().catch(() => null)) as { error?: string } | null;
             if (identityEpoch() !== epoch) return;
             // A device signed out from elsewhere raises the screen that explains it; the
-            // save still reports as failed, because it was.
-            if (response.status === 401 && refusal?.error === 'unknown_device') {
+            // save still reports as failed, because it was. (The body was already read
+            // for the moderation codes, so the shared PREDICATE decides directly.)
+            if (isUnknownDeviceAnswer(response.status, refusal?.error)) {
               markDeviceSignedOut(epoch);
             }
             outcome =
@@ -542,6 +548,7 @@ export default function Profile() {
                 className="profile-name"
                 type="text"
                 value={name}
+                readOnly={saving}
                 maxLength={NAME_MAX_LENGTH}
                 placeholder={t(lang, 'profileNamePlaceholder')}
                 aria-label={t(lang, 'profileNamePlaceholder')}
@@ -572,8 +579,8 @@ export default function Profile() {
               style={{ '--cell-bg': colors.bg } as React.CSSProperties}
               role="img"
               aria-label={t(lang, 'ariaAvatarEditor')}
-              onPointerDown={onPointerDown}
-              onPointerMove={onPointerMove}
+              onPointerDown={saving ? undefined : onPointerDown}
+              onPointerMove={saving ? undefined : onPointerMove}
               onPointerUp={endStroke}
               onPointerCancel={endStroke}
             >
@@ -603,6 +610,7 @@ export default function Profile() {
                     style={{ background: option.bg }}
                     aria-label={`${t(lang, 'ariaPalette')} ${option.name}`}
                     aria-pressed={palette === index}
+                    disabled={saving}
                     onClick={() => {
                       setPalette(index);
                       setRefused(null);
@@ -613,7 +621,7 @@ export default function Profile() {
               <button
                 type="button"
                 className="profile-clear"
-                disabled={cells.every((value) => value === 0)}
+                disabled={saving || cells.every((value) => value === 0)}
                 onClick={() => {
                   setCells(new Array<number>(AVATAR_CELLS).fill(0));
                   setRefused(null);

@@ -9,8 +9,12 @@ import {
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
 import {
-  ACCOUNT_SORT_KEY,
   DEVICE_INDEX_NAME,
+  DEVICE_INDEX_PARTITION_KEY,
+  DEVICE_INDEX_SORT_KEY,
+} from '@whippin/shared';
+import {
+  ACCOUNT_SORT_KEY,
   DEVICE_SORT_KEY,
   accountKey,
   deviceIndexKey,
@@ -105,24 +109,32 @@ export function dynamoDeviceStore(client: DynamoDBClient, tableName: string): De
     async bootstrap(input) {
       // Idempotent by token hash: a lost answer after a committed write must return what
       // was created rather than mint a second identity. The read comes first because that
-      // is the common retry, and because a device whose ACCOUNT is gone must answer as the
-      // unknown device it is rather than quietly acquire a fresh account.
+      // is the common retry.
+      //
+      // A device item whose ACCOUNT row is gone is ORPHANED, and bootstrap RE-PARENTS it
+      // onto the fresh identity below — the memory store's behaviour, and the contract's:
+      // bootstrap is the ONE request allowed to create an identity (canonical token +
+      // Turnstile proof), and a revoked token whose base item is gone already re-mints
+      // here. Throwing instead (as this used to) made the retry a deterministic 500
+      // forever — the client re-sends the SAME persisted token by design, and a 500 never
+      // reaches the signed-out screen whose START FRESH is the only way to a new token.
+      // The device Put is CONDITIONED on the dead account still being the parent, so a
+      // racing re-parent of the same token falls into the adopt path below rather than
+      // overwriting the identity that won.
       const existing = await device(input.tokenHash);
       if (existing) {
         const live = await account(existing.accountId);
-        if (!live) {
-          throw new Error('bootstrap: the device exists but its account is gone.');
-        }
-        return { device: existing, account: live };
+        if (live) return { device: existing, account: live };
       }
+      const orphanedAccountId = existing?.accountId;
 
       const item: Record<string, AttributeValue> = {
         pk: { S: deviceKey(input.tokenHash) },
         sk: { S: DEVICE_SORT_KEY },
         // The index keys are ordinary attributes; only items carrying BOTH are in the
         // sparse index, which is every device row and nothing else on this table.
-        gsi1pk: { S: deviceIndexKey(input.accountId) },
-        gsi1sk: { S: deviceIndexSortKey(input.deviceId) },
+        [DEVICE_INDEX_PARTITION_KEY]: { S: deviceIndexKey(input.accountId) },
+        [DEVICE_INDEX_SORT_KEY]: { S: deviceIndexSortKey(input.deviceId) },
         deviceId: { S: input.deviceId },
         accountId: { S: input.accountId },
         agent: {
@@ -159,7 +171,15 @@ export function dynamoDeviceStore(client: DynamoDBClient, tableName: string): De
                 Put: {
                   TableName: tableName,
                   Item: item,
-                  ConditionExpression: 'attribute_not_exists(pk)',
+                  ...(orphanedAccountId === undefined
+                    ? { ConditionExpression: 'attribute_not_exists(pk)' }
+                    : {
+                        // Re-parenting overwrites the orphaned item, but only while it
+                        // still names the dead account it was read with.
+                        ConditionExpression: '#accountId = :orphaned',
+                        ExpressionAttributeNames: { '#accountId': 'accountId' },
+                        ExpressionAttributeValues: { ':orphaned': { S: orphanedAccountId } },
+                      }),
                 },
               },
             ],
@@ -196,7 +216,7 @@ export function dynamoDeviceStore(client: DynamoDBClient, tableName: string): De
             TableName: tableName,
             IndexName: DEVICE_INDEX_NAME,
             KeyConditionExpression: '#pk = :pk',
-            ExpressionAttributeNames: { '#pk': 'gsi1pk' },
+            ExpressionAttributeNames: { '#pk': DEVICE_INDEX_PARTITION_KEY },
             ExpressionAttributeValues: { ':pk': { S: deviceIndexKey(accountId) } },
             ...(cursor ? { ExclusiveStartKey: cursor } : {}),
           }),
@@ -239,15 +259,23 @@ export function dynamoDeviceStore(client: DynamoDBClient, tableName: string): De
         // removed this exact row) OR an ownership mismatch. The route must distinguish
         // them: a lagging GSI may still show the first and must never hide the second.
         // Dynamo's failed delete does not answer which, so read the addressed BASE item
-        // strongly — this extra read exists only on the exceptional path.
+        // strongly — this extra read exists only on the exceptional path. It asks only
+        // whether the ITEM exists, never whether it parses: an existing-but-unparseable
+        // row read as `absent` would filter a live device out of the list.
         if (
           error instanceof ConditionalCheckFailedException ||
           (typeof error === 'object' &&
             error !== null &&
             (error as { name?: unknown }).name === 'ConditionalCheckFailedException')
         ) {
-          const found = await device(revokeKey);
-          return found === null ? 'absent' : 'mismatch';
+          const found = await client.send(
+            new GetItemCommand({
+              TableName: tableName,
+              Key: { pk: { S: deviceKey(revokeKey) }, sk: { S: DEVICE_SORT_KEY } },
+              ConsistentRead: true,
+            }),
+          );
+          return found.Item === undefined ? 'absent' : 'mismatch';
         }
         throw error;
       }

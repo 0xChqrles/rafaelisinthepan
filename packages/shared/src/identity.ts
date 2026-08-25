@@ -88,3 +88,12 @@ export function generatePublicId(): string {
 export function generateDeviceId(): string {
   return randomId();
 }
+
+// The `DeviceByAccount` GSI's name and key attributes — a cross-package contract like
+// VIEWER_IP_HEADER: INFRA declares the index with these names and the BACKEND queries and
+// writes them. A drift is a production-only ValidationException on the sign-out screen —
+// the one surface #216 exists for — that no memory store and no local run can reproduce,
+// which is why the spelling lives here rather than as a literal on each side.
+export const DEVICE_INDEX_NAME = 'DeviceByAccount';
+export const DEVICE_INDEX_PARTITION_KEY = 'gsi1pk';
+export const DEVICE_INDEX_SORT_KEY = 'gsi1sk';

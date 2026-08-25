@@ -21,7 +21,8 @@ async function makeHandler(friends: FriendStore = memoryFriendStore()) {
   const handler = createHandler({
     store: emptyStore,
     friends,
-    devices: { deviceStore: devices, turnstile: { verify: async () => true }, allowSourceIp: true },
+    deviceStore: devices,
+    devices: { turnstile: { verify: async () => true }, allowSourceIp: true },
   });
   const me = await seedDevice(devices);
   const them = await seedDevice(devices);

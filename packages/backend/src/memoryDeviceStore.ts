@@ -47,7 +47,9 @@ export function memoryDeviceStore(initial: readonly BootstrapInput[] = []): Devi
 
     async bootstrap(input) {
       // Idempotent by token hash: a lost answer after a committed write returns what was
-      // already created rather than minting a second identity.
+      // already created rather than minting a second identity. A device item whose account
+      // is GONE resolves null and falls through — bootstrap re-parents the orphaned token
+      // onto the fresh identity, the Dynamo store's documented behaviour.
       const existing = resolved(input.tokenHash);
       if (existing) return existing;
       const account: AccountRecord = { accountId: input.accountId, createdAt: input.now };

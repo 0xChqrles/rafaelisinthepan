@@ -1,6 +1,7 @@
 // Shared plumbing of the LIVE routes (/scores, /profile, /friends, /board, /round): the
-// no-store header, the JSON-body reader with its size cap, the #187 secret check, the
-// Turnstile token check the gated writes share, and the (lang, mode, date) query guard
+// no-store header, the JSON-body reader with its size cap, the #216 device-token
+// authentication (`requireDevice`, which replaced the #187 secret check), the Turnstile
+// token check the gated writes share, and the (lang, mode, date) query guard
 // triple the day-addressed reads share. Each of these existed as a byte-identical copy
 // per route (four by the time /board landed) — one spelling here is what keeps a guard
 // from quietly drifting between routes.

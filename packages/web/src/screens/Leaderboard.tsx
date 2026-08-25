@@ -29,9 +29,9 @@ import {
   ensureRequestIdentity,
   identityEpoch,
   identityEpochOf,
-  markDeviceSignedOut,
   useDeviceIdentity,
 } from '../identity';
+import { adoptSignedOutVerdict } from '../state/signedOutVerdict';
 import { prefetchTurnstileTokens } from '../turnstile';
 import ErrorSheet from '../components/ErrorSheet';
 import { useGameStore, type BoardTab } from '../state/gameStore';
@@ -246,10 +246,7 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
           // answer that is not about the read at all. A device revoked since the board
           // mounted can learn it here first, and swallowing it would leave the screen
           // decorating a board for an account it no longer holds.
-          if (response.status === 401) {
-            const data = (await response.json().catch(() => ({}))) as { error?: unknown };
-            if (data.error === 'unknown_device') markDeviceSignedOut(epoch);
-          }
+          await adoptSignedOutVerdict(response, epoch);
           return;
         }
         const ids = parseFriends(await response.json());
@@ -290,10 +287,8 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
             : await fetch(boardUrl(lang, date, mode, identity?.accountId));
         if (cancelled || (epoch !== null && identityEpoch() !== epoch)) return;
         if (!response.ok) {
-          if (response.status === 401) {
-            const data = (await response.json().catch(() => ({}))) as { error?: unknown };
-            if (data.error === 'unknown_device' && epoch !== null) markDeviceSignedOut(epoch);
-          }
+          // The anonymous GLOBAL read carries no epoch and can sign nobody out.
+          if (epoch !== null) await adoptSignedOutVerdict(response, epoch);
           throw new Error(`board answered ${response.status}`);
         }
         const board = parseBoard(await response.json());

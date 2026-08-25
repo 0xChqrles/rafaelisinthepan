@@ -132,9 +132,11 @@ export function accountKey(accountId: string): string {
 
 export const ACCOUNT_SORT_KEY = 'account';
 
-// The name of the sparse index the device rows carry. Only items holding BOTH index keys
-// are in it, which is every device row and nothing else on this table.
-export const DEVICE_INDEX_NAME = 'DeviceByAccount';
+// The sparse index the device rows carry — only items holding BOTH index keys are in it,
+// which is every device row and nothing else on this table. Its name and key attributes
+// are the SHARED contract (`@whippin/shared` identity.ts): infra declares them, this
+// package writes and queries them, and a drift is a production-only ValidationException.
+export { DEVICE_INDEX_NAME } from '@whippin/shared';
 
 // Is this device's `lastSeenAt` from an earlier DAY than now? `lastSeenAt` is what makes
 // the sign-out screen legible ("this one, last used yesterday"), and it rides EVERY

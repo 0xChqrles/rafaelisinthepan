@@ -377,10 +377,6 @@ interface GameState extends PersistedState {
   recordWordGuess: (typed: string, replay: (tried: string[]) => WordRunCache) => boolean;
 }
 
-// The retired localStorage blob is read exactly once when the transactional database is
-// empty. Keeping the name here lets v18 preserve preferences from v17 while the existing
-// v16/v17 migration rules still discard state that cannot prove its #216 owner.
-export const GAME_PERSIST_KEY = 'whippin-round';
 export const GAME_PERSIST_VERSION = 18;
 
 // Version upgrades for the persisted blob (exported for the invariant tests).
@@ -496,9 +492,11 @@ export const GAME_PERSIST_VERSION = 18;
 //     as v16's retired-secret state. New ownerless state survives only while the device key
 //     carries the pending token minted by the act that created it; startup reconciliation
 //     drops it when the key is missing or corrupt instead of bootstrapping a stranger.
-//   v18 changes the STORAGE boundary, not this content shape: the v17 localStorage value is
-//     imported once into the transactional IndexedDB record. The import still runs every
-//     migration above, preserving preferences while keeping the v16/v17 ownership drops.
+//   v18 changes the STORAGE boundary, not this content shape: the state lives behind the
+//     transactional IndexedDB record (gamePersistence.ts). The retired v17 localStorage
+//     blob is NOT read — the standing no-back-compat rule (v7/v11/v14 precedent): an
+//     empty database starts from the initial state, and the one-time cost is pre-launch
+//     preferences on existing devices.
 function storedRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -1087,9 +1085,8 @@ let syncSequence = 0;
 
 function normalizedEnvelope(
   stored: StoredGameState<PersistedState> | null,
-  fallback: StoredGameState<PersistedState> | null = null,
 ): StoredGameState<PersistedState> {
-  const source = stored ?? fallback;
+  const source = stored;
   if (!source) return { version: GAME_PERSIST_VERSION, state: initialPersistedState() };
   const sourceVersion =
     typeof source.version === 'number' &&
@@ -1106,25 +1103,45 @@ function normalizedEnvelope(
   };
 }
 
-function legacyEnvelope(): StoredGameState<PersistedState> | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = window.localStorage.getItem(GAME_PERSIST_KEY);
-    if (raw === null) return null;
-    const parsed = JSON.parse(raw) as { state?: unknown; version?: unknown };
-    if (typeof parsed !== 'object' || parsed === null) return null;
-    if (!('state' in parsed)) return null;
-    const version =
-      typeof parsed.version === 'number' &&
-      Number.isInteger(parsed.version) &&
-      parsed.version >= 0
-        ? parsed.version
-        : 0;
-    return { version, state: parsed.state as PersistedState };
-  } catch {
-    return null;
+// Reuse the tab's CURRENT object identities wherever the committed value is structurally
+// equal. Every committed envelope is rebuilt from the stored record inside its
+// transaction, so without this each applied commit would hand the screens fresh
+// `outbox`/`wordRounds` objects about once a second while a player types — and every
+// derivation downstream (the play log, the board replay, the run's trajectory) would
+// recompute for values that did not change (the roundSync `sameServer` rule).
+function stableEntries<T>(
+  next: Record<string, T>,
+  current: Record<string, T>,
+  same: (a: T, b: T) => boolean,
+): Record<string, T> {
+  const keys = Object.keys(next);
+  let reusedAll = keys.length === Object.keys(current).length;
+  const out: Record<string, T> = {};
+  for (const key of keys) {
+    const held = current[key];
+    if (held !== undefined && same(held, next[key])) {
+      out[key] = held;
+    } else {
+      out[key] = next[key];
+      reusedAll = false;
+    }
   }
+  return reusedAll ? current : out;
 }
+
+const sameLog = (a: readonly string[], b: readonly string[]) =>
+  a === b || (a.length === b.length && a.every((guess, index) => guess === b[index]));
+
+const sameOutboxEntry = (a: RoundOutbox, b: RoundOutbox) =>
+  a.puzzle === b.puzzle && sameLog(a.guesses, b.guesses);
+
+const sameWordRound = (a: WordRoundProgress, b: WordRoundProgress) =>
+  a.word === b.word &&
+  a.startedAt === b.startedAt &&
+  a.deadline === b.deadline &&
+  a.claimed === b.claimed &&
+  a.submitted === b.submitted &&
+  sameLog(a.tried, b.tried);
 
 function applyCommittedState(state: PersistedState, forceOwner = false): void {
   const current = useGameStore.getState();
@@ -1139,9 +1156,9 @@ function applyCommittedState(state: PersistedState, forceOwner = false): void {
     localSeed: state.localSeed,
     ...(adoptOwned
       ? {
-          identityOwner: state.identityOwner,
-          outbox: state.outbox,
-          wordRounds: state.wordRounds,
+          identityOwner: ownerMatches ? current.identityOwner : state.identityOwner,
+          outbox: stableEntries(state.outbox, current.outbox, sameOutboxEntry),
+          wordRounds: stableEntries(state.wordRounds, current.wordRounds, sameWordRound),
           activeWordKey:
             current.activeWordKey !== null && current.activeWordKey in state.wordRounds
               ? current.activeWordKey
@@ -1178,6 +1195,7 @@ function announceCommittedChange(): void {
 function enqueueGameMutation(mutation: GameMutation): void {
   if (!persistenceReady || gameDatabase === null) return;
   mutationGeneration += 1;
+  const generation = mutationGeneration;
   queuedWrites += 1;
   const database = gameDatabase;
   const task = writeTail.then(async () => {
@@ -1186,11 +1204,12 @@ function enqueueGameMutation(mutation: GameMutation): void {
     // mutation exists only in memory: preserving order is more important than a partial
     // persisted history that would roll the UI back on refresh.
     if (!persistenceReady || gameDatabase !== database) return;
+    let committed: StoredGameState<PersistedState> | null = null;
     let didChange = false;
     let lastError: unknown;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
-        await database.update((stored) => {
+        committed = await database.update((stored) => {
           const current = normalizedEnvelope(stored);
           const result = applyGameMutation(current.state, mutation);
           didChange = result.changed;
@@ -1206,6 +1225,17 @@ function enqueueGameMutation(mutation: GameMutation): void {
       }
     }
     if (lastError !== undefined) throw lastError;
+    // The transaction just computed the exact committed envelope — the latest committed
+    // state (sibling tabs' writes included, since it read them inside the transaction)
+    // plus this mutation — so apply IT rather than reading the whole record back and
+    // re-running the migrations per guess, which is what the old per-write refresh cost.
+    // Only while this is still the NEWEST enqueued mutation, though: applying an older
+    // envelope over in-memory state that already holds later mutations would make later
+    // guesses vanish from the screen until their own commits land. A skipped apply is
+    // safe — a later task (or a sibling's announced invalidation) carries newer truth.
+    if (committed !== null && mutationGeneration === generation) {
+      applyCommittedState(committed.state);
+    }
     if (didChange) announceCommittedChange();
   });
   writeTail = task
@@ -1222,10 +1252,11 @@ function enqueueGameMutation(mutation: GameMutation): void {
     })
     .finally(() => {
       queuedWrites -= 1;
-      if (persistenceReady) {
-        refreshWanted = true;
-        if (queuedWrites === 0) void refreshCommittedState();
-      }
+      // Serve a cross-tab invalidation that arrived WHILE this tab's writes were queued:
+      // `refreshCommittedState` parks itself behind the queue (`refreshWanted`), and the
+      // drain is what lets it run. This tab's OWN commit no longer schedules one — the
+      // transaction's returned envelope was applied directly above.
+      if (persistenceReady && refreshWanted && queuedWrites === 0) void refreshCommittedState();
     });
 }
 
@@ -1256,17 +1287,18 @@ async function refreshCommittedState(): Promise<void> {
   return refreshFlight;
 }
 
-// Hydrate before React mounts. The v17 localStorage record is only an import source: the
-// first IndexedDB transaction wins across simultaneously opening tabs, migrates it once,
-// and establishes the placeholder seed in that same atomic state before either tab paints.
+// Hydrate before React mounts: the first IndexedDB transaction wins across simultaneously
+// opening tabs and establishes the placeholder seed in that same atomic state before
+// either tab paints. (The retired v17 localStorage blob is NOT imported — see the v18
+// migration note.)
 export async function hydrateGameStore(): Promise<void> {
   if (persistenceReady) return;
   if (typeof indexedDB === 'undefined') {
-    const fallback = normalizedEnvelope(null, legacyEnvelope()).state;
-    const seeded =
-      fallback.localSeed === null
-        ? applyGameMutation(fallback, { type: 'ensureLocalSeed', seed: generatePublicId() }).state
-        : fallback;
+    const fallback = initialPersistedState();
+    const seeded = applyGameMutation(fallback, {
+      type: 'ensureLocalSeed',
+      seed: generatePublicId(),
+    }).state;
     applyCommittedState(seeded, true);
     return;
   }
@@ -1274,22 +1306,15 @@ export async function hydrateGameStore(): Promise<void> {
   let database: GameStateDatabase<PersistedState> | null = null;
   try {
     database = new GameStateDatabase<PersistedState>();
-    const legacy = legacyEnvelope();
     const seed = generatePublicId();
     const stored = await database.update((current) => {
-      const normalized = normalizedEnvelope(current, legacy);
+      const normalized = normalizedEnvelope(current);
       const seeded = applyGameMutation(normalized.state, { type: 'ensureLocalSeed', seed }).state;
       return { version: GAME_PERSIST_VERSION, state: seeded };
     });
     gameDatabase = database;
     persistenceReady = true;
     applyCommittedState(stored.state, true);
-    try {
-      window.localStorage.removeItem(GAME_PERSIST_KEY);
-    } catch {
-      // The committed database is already authoritative; a retired import source that
-      // cannot be removed is harmless and will never be read while the database exists.
-    }
   } catch (error) {
     if (database !== null) {
       try {
@@ -1299,11 +1324,11 @@ export async function hydrateGameStore(): Promise<void> {
       }
     }
     console.error('Failed to initialize game persistence', error);
-    const fallback = normalizedEnvelope(null, legacyEnvelope()).state;
-    const seeded =
-      fallback.localSeed === null
-        ? applyGameMutation(fallback, { type: 'ensureLocalSeed', seed: generatePublicId() }).state
-        : fallback;
+    const fallback = initialPersistedState();
+    const seeded = applyGameMutation(fallback, {
+      type: 'ensureLocalSeed',
+      seed: generatePublicId(),
+    }).state;
     applyCommittedState(seeded, true);
   }
 }

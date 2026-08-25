@@ -207,16 +207,24 @@ function WordRound({
     if (starting) return;
     setStarting(true);
     setStartFailed(false);
-    void startWordRound(syncContext).then((ok) => {
-      setStarting(false);
-      // The ROUND's own state flips the phase (the engine anchors the clock); this only
-      // releases the gate's control — and a failed start is LOUD, on the app's error
-      // surface (#216 trigger rework): the clock is the server's, so nothing began, and
-      // saying nothing would leave the player tapping a gate that never opens. For a
-      // brand-new player this one tap is also the account's deploy, which the same
-      // surface reports the same way.
-      if (!ok) setStartFailed(true);
-    });
+    // The ROUND's own state flips the phase (the engine anchors the clock); this only
+    // releases the gate's control — and a failed start is LOUD, on the app's error
+    // surface (#216 trigger rework): the clock is the server's, so nothing began, and
+    // saying nothing would leave the player tapping a gate that never opens. For a
+    // brand-new player this one tap is also the account's deploy, which the same
+    // surface reports the same way.
+    //
+    // `.catch` + `.finally`, the other deploy buttons' exact shape: `startWordRound`'s
+    // network legs own their errors, but its tail (the store guard, the anchor, a
+    // server-supplied log's replay) can throw — and with `setStarting(false)` only in a
+    // fulfilled handler, that throw froze PLAY on its LoadingWave forever, with no
+    // ErrorSheet, on a one-shot daily whose only escape was a reload.
+    void startWordRound(syncContext)
+      .then((ok) => {
+        if (!ok) setStartFailed(true);
+      })
+      .catch(() => setStartFailed(true))
+      .finally(() => setStarting(false));
   }, [starting, syncContext]);
 
   // What the log MEANS — the claims, and the board's rows. Pure, so a reload reproduces

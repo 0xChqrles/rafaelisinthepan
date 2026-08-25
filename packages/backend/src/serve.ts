@@ -52,8 +52,9 @@ const handler = createHandler({
   scores: { scoreStore: localScoreStore },
   profiles: memoryProfileStore(),
   friends: memoryFriendStore(),
+  // The ONE store every authenticated route resolves its caller through (#216).
+  deviceStore: localDeviceStore,
   devices: {
-    deviceStore: localDeviceStore,
     // The bootstrap is Turnstile-gated (#216) by the accept-all local verifier, exactly
     // like a round start.
     turnstile: localTurnstileVerifier,
@@ -61,7 +62,6 @@ const handler = createHandler({
   },
   rounds: {
     roundStore: memoryRoundStore(),
-    deviceStore: localDeviceStore,
     // A finished round records its own score row (#203), off the same in-memory store the
     // /scores read serves from.
     scoreStore: localScoreStore,

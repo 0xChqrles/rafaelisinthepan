@@ -397,11 +397,13 @@ describe('appends — coalescing, pacing and the batch prefix', () => {
     expect(server()?.guesses).toEqual(['bois', 'chemin']);
   });
 
-  it('never posts A\'s captured outbox as B when the identity changes across the challenge', async () => {
+  it('never posts A\'s captured outbox as B when the account changes across the challenge', async () => {
     // The append resolves its identity SYNCHRONOUSLY now (#216 rework: it never
     // bootstraps), so the one await left before the POST is the round-start challenge —
     // and an identity swap landing inside it must still refuse to authenticate A's batch
-    // as B.
+    // as B. An ACCOUNT change also resets this engine (identityScope's listener runs
+    // synchronously inside the identity publish), which the swap stands in for here — it
+    // is what keeps the stood-down attempt from retrying under the stranger's account.
     post.mockResolvedValueOnce(status(404));
     beginRoundSync(ctx());
     await settle();
@@ -413,6 +415,7 @@ describe('appends — coalescing, pacing and the batch prefix', () => {
         accountId: 'b'.repeat(16),
         deviceId: 'e'.repeat(16),
       };
+      resetRoundSync();
     };
 
     notifyGuess(KEY);
@@ -420,6 +423,35 @@ describe('appends — coalescing, pacing and the batch prefix', () => {
 
     expect(post).not.toHaveBeenCalled();
     expect(outbox()).toEqual(['bois']);
+  });
+
+  it('a DEVICE-only change across the challenge stands the attempt down without wedging the round', async () => {
+    // Same account, new device — the shape #204's reconnect produces. Nothing resets the
+    // engine for it (the round is still this account's), so the attempt must stand down
+    // WITHOUT closing: closing here left the flight settled+closed, which `retryRoundSync`
+    // cannot reopen, and the outbox never reached the server again for the tab's life.
+    // The re-pumped attempt authenticates the SAME account under the replacement token.
+    post.mockResolvedValueOnce(status(404));
+    beginRoundSync(ctx());
+    await settle();
+    post.mockClear();
+    seedOutbox(['bois']);
+    let swapped = false;
+    identity.beforeChallenge = () => {
+      if (swapped) return;
+      swapped = true;
+      identity.value = { ...identity.value, token: '8'.repeat(64), deviceId: 'e'.repeat(16) };
+    };
+    post.mockResolvedValueOnce(ok(['bois']));
+
+    notifyGuess(KEY);
+    await settle();
+
+    expect(post).toHaveBeenCalledTimes(1);
+    const body = post.mock.calls[0][1] as { token: string; guesses?: string[] };
+    expect(body.token).toBe('8'.repeat(64));
+    expect(body.guesses).toEqual(['bois']);
+    expect(outbox()).toEqual([]);
   });
 
   it('KEEPS guesses appended while the write was in flight', async () => {

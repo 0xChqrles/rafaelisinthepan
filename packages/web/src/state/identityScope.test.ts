@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const resets = vi.hoisted(() => ({ round: vi.fn(), word: vi.fn(), history: vi.fn() }));
 const rearms = vi.hoisted(() => ({ round: vi.fn(), word: vi.fn(), history: vi.fn() }));
-const kicks = vi.hoisted(() => ({ round: vi.fn() }));
+const kicks = vi.hoisted(() => ({ round: vi.fn(), word: vi.fn() }));
 
 vi.mock('./roundSync', () => ({
   resetRoundSync: resets.round,
@@ -20,6 +20,7 @@ vi.mock('./roundSync', () => ({
 vi.mock('./wordRoundSync', () => ({
   resetWordRoundSync: resets.word,
   rearmWordRoundSync: rearms.word,
+  kickWordRoundSync: kicks.word,
 }));
 vi.mock('./history', () => ({
   resetPlayerHistory: resets.history,
@@ -81,6 +82,7 @@ beforeEach(() => {
   rearms.word.mockReset();
   rearms.history.mockReset();
   kicks.round.mockReset();
+  kicks.word.mockReset();
   useGameStore.setState(
     { ...seeded(), identityOwner: null, roundLoads: {}, activeWordKey: null },
     false,
@@ -108,10 +110,12 @@ describe('acquiring a FIRST identity (#216)', () => {
     expect(rearms.round).not.toHaveBeenCalled();
     expect(rearms.word).not.toHaveBeenCalled();
     expect(rearms.history).not.toHaveBeenCalled();
-    // …but it KICKS the round conversations: an outbox that was waiting behind the PLAY
-    // gate (the pending-bootstrap recovery) is owed the moment the identity exists, and
-    // since the trigger rework the append never mints its own.
+    // …but it KICKS both engines' conversations: what was WAITING for an identity is owed
+    // the moment one exists, and neither engine mints its own since the trigger rework —
+    // the sentence outbox parked behind the PLAY gate, and an ended word run's
+    // unsubmitted log (whose flight used to close for good on a tokenless submit).
     expect(kicks.round).toHaveBeenCalledTimes(1);
+    expect(kicks.word).toHaveBeenCalledTimes(1);
   });
 
   it('an ADOPTED first identity re-reads the tokenless projections without clearing', () => {

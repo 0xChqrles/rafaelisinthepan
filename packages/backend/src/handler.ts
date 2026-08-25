@@ -38,6 +38,7 @@ import {
 import { isValidDate } from './layout';
 import { handleBoard } from './board';
 import { handleDevices, type DeviceHandlerDeps } from './devices';
+import type { DeviceStore } from './deviceStore';
 import { handleFriends } from './friends';
 import type { FriendStore } from './friendStore';
 import { handleHistory } from './history';
@@ -63,9 +64,14 @@ export interface HandlerDeps {
   profiles?: ProfileStore;
   // The friends graph (#189), same optionality rationale.
   friends?: FriendStore;
-  // Devices and the accounts they belong to (#216) — the lazy Turnstile-gated bootstrap,
-  // the sign-out screen's list and its revocation. EVERY authenticated route resolves its
-  // caller through this store, so a deployment that serves any of them provides it.
+  // Devices and the accounts they belong to (#216). EVERY authenticated route (/devices,
+  // /profile, /friends, /board, /round, /history) resolves its caller through this ONE
+  // top-level store — deliberately not a field of a route bundle, so two routes can never
+  // be wired to two different stores, with half the private surface authenticating a
+  // token the other half answers 401 `unknown_device` for.
+  deviceStore?: DeviceStore;
+  // The device ROUTE's own extras (#216): the Turnstile verifier its bootstrap is gated
+  // by, and the local-adapter address trust flag.
   devices?: DeviceHandlerDeps;
   // The per-round guess log (#201), Word mode's two writes (#202) and the derived score
   // (#203), same optionality rationale. It carries a Turnstile verifier of its own because
@@ -288,26 +294,28 @@ export function createHandler(deps: HandlerDeps) {
       }
 
       if (isDevicesRoute) {
-        if (!deps.devices) throw new Error('Device identity is not configured.');
-        return await handleDevices(event, deps.devices, instant, cors);
+        if (!deps.devices || !deps.deviceStore) {
+          throw new Error('Device identity is not configured.');
+        }
+        return await handleDevices(event, deps.deviceStore, deps.devices, instant, cors);
       }
 
       if (isProfileRoute) {
         if (!deps.profiles) throw new Error('Player profiles are not configured.');
-        if (!deps.devices) throw new Error('Device identity is not configured.');
-        return await handleProfile(event, deps.profiles, deps.devices.deviceStore, instant, cors);
+        if (!deps.deviceStore) throw new Error('Device identity is not configured.');
+        return await handleProfile(event, deps.profiles, deps.deviceStore, instant, cors);
       }
 
       if (isFriendsRoute) {
         if (!deps.friends) throw new Error('The friends graph is not configured.');
-        if (!deps.devices) throw new Error('Device identity is not configured.');
-        return await handleFriends(event, deps.friends, deps.devices.deviceStore, instant, cors);
+        if (!deps.deviceStore) throw new Error('Device identity is not configured.');
+        return await handleFriends(event, deps.friends, deps.deviceStore, instant, cors);
       }
 
       if (isBoardRoute) {
         // The board is a READ over what the three stores already hold — score rows for
         // the population, edges for the trusted tab, profiles to dress the rows.
-        if (!deps.scores || !deps.profiles || !deps.friends || !deps.devices) {
+        if (!deps.scores || !deps.profiles || !deps.friends || !deps.deviceStore) {
           throw new Error('The leaderboard is not configured.');
         }
         return await handleBoard(
@@ -316,7 +324,7 @@ export function createHandler(deps: HandlerDeps) {
             scores: deps.scores.scoreStore,
             profiles: deps.profiles,
             friends: deps.friends,
-            devices: deps.devices.deviceStore,
+            devices: deps.deviceStore,
           },
           date,
           instant,
@@ -326,22 +334,24 @@ export function createHandler(deps: HandlerDeps) {
 
       if (isRoundRoute) {
         if (!deps.rounds) throw new Error('Round state sync is not configured.');
+        if (!deps.deviceStore) throw new Error('Device identity is not configured.');
         // The puzzle store is read on THREE paths here since #203 — the sentence append's
         // derivation slice, the full artifact a solve is scored from, and Word mode's
         // end-of-run submission (#202).
-        return await handleRound(event, deps.store, deps.rounds, date, instant, cors);
+        return await handleRound(event, deps.store, deps.deviceStore, deps.rounds, date, instant, cors);
       }
 
       if (isHistoryRoute) {
         // A READ over what the two stores already hold: #203's derived summary on the
         // round rows, and the solved-day collection the round route credits.
         if (!deps.rounds) throw new Error('Round state sync is not configured.');
+        if (!deps.deviceStore) throw new Error('Device identity is not configured.');
         return await handleHistory(
           event,
           {
             rounds: deps.rounds.roundStore,
             history: deps.rounds.history,
-            devices: deps.rounds.deviceStore,
+            devices: deps.deviceStore,
           },
           instant,
           cors,

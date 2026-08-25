@@ -42,12 +42,12 @@ function initializeHandler(): Promise<ProductionHandler> {
         scores: { scoreStore },
         profiles: dynamoProfileStore(dynamo, config.scoreTable),
         friends: dynamoFriendStore(dynamo, config.scoreTable),
-        // Devices and their accounts (#216): the identity every authenticated route
+        // Devices and their accounts (#216): the ONE store every authenticated route
         // resolves its caller through, and the Turnstile-gated bootstrap that mints one.
-        devices: { deviceStore, turnstile },
+        deviceStore,
+        devices: { turnstile },
         rounds: {
           roundStore: dynamoRoundStore(dynamo, config.scoreTable),
-          deviceStore,
           // A finished round records its own score row (#203), so the round route holds
           // the same store the /scores read does — and the address secret that meters it.
           scoreStore,

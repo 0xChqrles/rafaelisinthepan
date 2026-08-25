@@ -32,7 +32,13 @@
 
 import { replayWordRun, rankEntry, CLAIM_ZONE } from '../game/wordGame';
 import { ROUND_WRITE_MIN_MS, WORD_MISS_CAP, type WordRanks } from '@whippin/shared';
-import { parseRound, postRoundBody, roundUrl, type RoundState } from '../api';
+import {
+  isUnknownDeviceAnswer,
+  parseRound,
+  postRoundBody,
+  roundUrl,
+  type RoundState,
+} from '../api';
 import { fnvTag } from './roundSync';
 import { EMPTY_ROUND_SERVER, useGameStore, type RoundServer } from './gameStore';
 import {
@@ -43,6 +49,7 @@ import {
   identityEpochOf,
   markDeviceSignedOut,
 } from '../identity';
+import { adoptSignedOutVerdict } from './signedOutVerdict';
 import { turnstileToken } from '../turnstile';
 
 export interface WordRoundContext {
@@ -321,8 +328,9 @@ async function requestStart(ctx: WordRoundContext): Promise<boolean> {
   if (!response.ok) {
     // PLAY is the first private call a fresh visit makes, so a device revoked since the
     // mount read learns it HERE. Reporting a generic failed start would leave the player
-    // tapping a gate that can never open, with nothing saying why.
-    await noteVerdict(response, epoch);
+    // tapping a gate that can never open, with nothing saying why. The epoch can be null
+    // here only before the bootstrap resolved, where there is no identity to sign out.
+    if (epoch !== null) await adoptSignedOutVerdict(response, epoch);
     return false;
   }
   let state: RoundState;
@@ -385,6 +393,13 @@ async function pump(key: string): Promise<void> {
     void pump(key);
     return;
   }
+  // NO IDENTITY, NO WRITE (#216 trigger rework, the sentence engine's own rule): an ended
+  // run's unsubmitted log with no identity is the pending-bootstrap recovery case. It
+  // waits HERE — the submission never mints — and the identity listener pumps every
+  // conversation when a deploy button lands (`kickWordRoundSync`). Closing instead (the
+  // first cut, inside `submitRun`) was permanent: nothing reopened the conversation, and
+  // the run's log was never submitted — no score row, no standing — for the tab's life.
+  if (f.readDone && deviceIdentity() === null) return;
   f.inFlight = f.readDone ? submitRun(f, key, round.tried) : readRound(f, key);
   try {
     await f.inFlight;
@@ -454,7 +469,7 @@ async function readRound(f: WordFlight, key: string): Promise<void> {
   } else if (isVerdict(response.status)) {
     // A device signed out from elsewhere learns it here, on the mount read. The screen it
     // raises is the whole answer; this conversation has nothing left to ask.
-    await noteVerdict(response, epoch);
+    await adoptSignedOutVerdict(response, epoch);
     if (superseded(f, puzzle, epoch)) return;
     failLoad(f, key);
     f.closed = true;
@@ -467,29 +482,13 @@ async function readRound(f: WordFlight, key: string): Promise<void> {
   f.failures = 0;
 }
 
-// A 4xx may be the signed-out answer (#216). The CODE decides, never the status: a device
-// must not be signed out for a body this route refused for any other reason, and a 5xx or a
-// dropped connection must never sign anyone out at all.
-async function noteVerdict(response: Response, epoch: string): Promise<void> {
-  if (response.status !== 401) return;
-  try {
-    const data = (await response.json()) as { error?: unknown };
-    if (data.error === 'unknown_device') markDeviceSignedOut(epoch);
-  } catch {
-    // A refusal with no readable body says nothing about the device.
-  }
-}
-
 async function submitRun(f: WordFlight, key: string, tried: readonly string[]): Promise<void> {
   const puzzle = f.puzzle;
-  // A run this device PLAYED always has an identity — the START minted one — and since the
-  // #216 trigger rework the submission never mints its own: only the deploy buttons do. A
-  // tokenless submission describes a run this identity cannot own, so it stands down.
+  // `pump` has already stood down tokenless (the submission never mints — only the deploy
+  // buttons do), so this can only race a sign-out; stand down WITHOUT closing, exactly as
+  // the read treats it, and the account-change reset clears the flight anyway.
   const request = currentRequestIdentity();
-  if (!request) {
-    f.closed = true;
-    return;
-  }
+  if (!request) return;
   const { identity } = request;
   const epoch: string = request.epoch;
   let response: Response;
@@ -538,7 +537,8 @@ async function submitRun(f: WordFlight, key: string, tried: readonly string[]): 
   // ever started here; a body this client keeps getting wrong), and retrying it forever
   // would spin one request every 30 seconds for the tab's life.
   if (error !== 'too_early' && isVerdict(response.status)) {
-    if (isVerdictSignedOut(response.status, error)) markDeviceSignedOut(epoch);
+    // The body was already read for `error`, so the shared PREDICATE decides directly.
+    if (isUnknownDeviceAnswer(response.status, error)) markDeviceSignedOut(epoch);
     f.closed = true;
     return;
   }
@@ -551,11 +551,6 @@ async function submitRun(f: WordFlight, key: string, tried: readonly string[]): 
 function settleAuthoritative(ctx: WordRoundContext, state: RoundState): void {
   const run = replayWordRun(ctx.ranks, state.guesses);
   useGameStore.getState().settleWordRun(ctx.roundKey, run.claimed.length);
-}
-
-// The submission path has already read the refusal's body, so it names the code directly.
-function isVerdictSignedOut(status: number, error: string | undefined): boolean {
-  return status === 401 && error === 'unknown_device';
 }
 
 // A 4xx is a VERDICT — a request this client will keep getting wrong. (409 `too_early` is
@@ -585,6 +580,15 @@ export function rearmWordRoundSync(): void {
     useGameStore.getState().setRoundLoad(key, { status: 'loading', puzzle: f.puzzle });
     void pump(key);
   }
+}
+
+// A first identity ARRIVED — minted by a deploy button, or adopted from another tab: pump
+// every open conversation, so an ended run's unsubmitted log flushes without waiting for a
+// remount (the sentence engine's `kickRoundSync`). The minted case re-reads nothing (the
+// account is empty by construction); the adopted case has already been re-armed
+// (`rearmWordRoundSync`), whose own pumps this repeats harmlessly.
+export function kickWordRoundSync(): void {
+  for (const key of flights.keys()) void pump(key);
 }
 
 // Test seam: drop every conversation (module state must not leak between tests).

@@ -17,6 +17,27 @@ import './index.css';
 const removeButtonFocusGuard = installButtonFocusGuard();
 if (import.meta.hot) import.meta.hot.dispose(removeButtonFocusGuard);
 
+// First paint is gated on IndexedDB, and an `indexedDB.open()` can STALL rather than
+// reject — a future schema upgrade blocked by a frozen background tab whose `blocking`
+// handler never runs, a WebKit stall after a bfcache restore. `mount().catch` only fires
+// on REJECTION, so without a deadline a stall is a permanently blank page with nothing in
+// the console. The timeout turns it into the visible failure below; generous, because it
+// only ever fires on a startup that was never going to finish.
+const STARTUP_STEP_TIMEOUT_MS = 10_000;
+function withStartupDeadline<T>(work: Promise<T>, step: string): Promise<T> {
+  return Promise.race([
+    work,
+    new Promise<never>((_, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`Startup timed out: ${step}.`)),
+        STARTUP_STEP_TIMEOUT_MS,
+      );
+      // The race won normally: do not keep a timer holding the process (tests) alive.
+      work.finally(() => clearTimeout(timer)).catch(() => {});
+    }),
+  ]);
+}
+
 async function mount(): Promise<void> {
   // This device's identity (#216), adopted BEFORE React renders: every private read branches
   // on whether one exists, and a read that fired against a not-yet-loaded identity would ask
@@ -25,7 +46,7 @@ async function mount(): Promise<void> {
   loadDeviceIdentity();
   // Hydration is asynchronous now because the game state lives behind IndexedDB's atomic
   // transaction boundary. No route mounts between defaults and the committed state.
-  await hydrateGameStore();
+  await withStartupDeadline(hydrateGameStore(), 'game state hydration');
   // Hydration yields to the event loop. Install the live scope before re-reading the shared
   // identity key, so an account transition during that wait cannot fall between startup's
   // one reconciliation and the listener that owns every later one.
@@ -42,7 +63,7 @@ async function mount(): Promise<void> {
   if (loadedIdentity.readable) {
     reconcileGameStateIdentity(loadedIdentity.identity, loadedIdentity.pending);
   }
-  await flushGameStorePersistence();
+  await withStartupDeadline(flushGameStorePersistence(), 'persisting the game state');
 
   const removeGameStoreSync = installGameStoreSync();
   if (import.meta.hot) import.meta.hot.dispose(removeGameStoreSync);

@@ -44,6 +44,13 @@ export class GameStateDatabase<T> {
       blocking() {
         connection?.close();
       },
+      // The reverse: OUR open is blocked by an old tab whose `blocking` handler never ran
+      // (frozen, suspended). Nothing here can force that tab's connection closed — log so
+      // the stall is diagnosable, and main.tsx's startup deadline turns it into the
+      // visible failure instead of a permanently blank page.
+      blocked() {
+        console.error('Game database open is blocked by another tab holding an older version.');
+      },
     }).then((database) => {
       connection = database;
       return database;

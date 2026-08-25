@@ -348,8 +348,12 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   device-clock skew. `too_early`/`not_started` are 409s, an over-cap or unclaimable log is
   a 400, a missing artifact the day-addressed 404, a rejected challenge a 403
   `turnstile_rejected` (the shared `requireTurnstileToken`, extracted from /scores when
-  this became the second gated write). `HandlerDeps.rounds` is a `RoundHandlerDeps`
-  (`{roundStore, turnstile, allowSourceIp?}`) for that gate — the /scores deps' shape.
+  this became the second gated write). `HandlerDeps.rounds` is a `RoundHandlerDeps` for that
+  gate — the /scores deps' shape — and since the PR-219 review it carries NO DeviceStore:
+  every authenticated route resolves its caller through the ONE top-level
+  `HandlerDeps.deviceStore`, so two routes can never be wired to two different stores
+  (half the private surface answering 401 `unknown_device` for a token the other half
+  authenticates).
   **The CORS PREFLIGHT is cached** (`PREFLIGHT_MAX_AGE_SECONDS`, applied on the OPTIONS
   branch and deliberately WITHOUT the live routes' `no-store` — a preflight carries no
   data, and what governs its reuse is `Access-Control-Max-Age`). /round is the first route
@@ -476,7 +480,12 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   `device#<tokenHash>`/`device` with the two `gsi1*` index attributes, and
   `player#<accountId>`/`account` beside the #188 profile row. No new env; the table grant
   needed no new action, and the index ARN comes along with `Table.grant` once the table has an
-  index. Local serve swaps in `memoryDeviceStore` (seedable, which is what lets a route test
+  index. The store is the ONE top-level
+  `HandlerDeps.deviceStore` every authenticated route reads (PR-219 review), and BOOTSTRAP
+  RE-PARENTS an orphaned device item — base item present, account row gone — onto the
+  fresh identity (the memory store's behaviour; the client re-sends the same persisted
+  token by design, so a deterministic failure there was an account that could never be
+  created again on that device). Local serve swaps in `memoryDeviceStore` (seedable, which is what lets a route test
   name its caller at module level) and the accept-all verifier; restarting signs every local
   device out, exactly as a wiped table would.
 - **Word mode's daily artifact (#154/#156):** the ONE puzzle endpoint also serves the

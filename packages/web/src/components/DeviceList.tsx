@@ -26,6 +26,7 @@ import {
   identityEpoch,
   markDeviceSignedOut,
 } from '../identity';
+import { adoptSignedOutVerdict } from '../state/signedOutVerdict';
 import { t } from '../i18n';
 import LoadingWave from './LoadingWave';
 
@@ -78,14 +79,9 @@ export default function DeviceList({ lang }: { lang: string }) {
       if (identityEpoch() !== epoch) return null;
       if (!response.ok) {
         // A different device may have revoked this one before the call. The refusal's CODE
-        // is authoritative, but only for the epoch that sent it.
-        if (response.status === 401) {
-          const data = (await response.json().catch(() => ({}))) as { error?: unknown };
-          if (data.error === 'unknown_device') {
-            markDeviceSignedOut(epoch);
-            return null;
-          }
-        }
+        // is authoritative (`adoptSignedOutVerdict` — the one spelling), but only for the
+        // epoch that sent it.
+        if (await adoptSignedOutVerdict(response, epoch)) return null;
         throw new Error(`devices answered ${response.status}`);
       }
       const listing = parseDeviceIdentity(await response.json());
@@ -100,9 +96,17 @@ export default function DeviceList({ lang }: { lang: string }) {
     setPhase('loading');
     void talk()
       .then((answer) => {
-        if (!cancelled && answer) {
+        if (cancelled) return;
+        if (answer) {
           setRows(answer.listing.devices);
           setPhase('ready');
+        } else {
+          // `talk` resolves null when the identity was dropped or replaced under the
+          // call (a sibling tab's START FRESH in the same tick, a sign-out mid-flight).
+          // Usually another surface takes over — the signed-out screen, a scope
+          // remount — but a load left on its wave FOREVER is the one outcome worse than
+          // a retry the player never needs: say FAILED, and keep the retry.
+          setPhase('failed');
         }
       })
       .catch(() => {

@@ -211,7 +211,9 @@ async function mintToken(siteKey: string): Promise<string> {
   }
 }
 
-// Test seam: a held challenge must not leak between tests.
+// Test seam: a held challenge — and the cached script attempt — must not leak between
+// tests (a rejected `scriptPromise` left behind would fail every later test's solve).
 export function resetTurnstilePrefetch(): void {
   prefetched = [];
+  scriptPromise = null;
 }

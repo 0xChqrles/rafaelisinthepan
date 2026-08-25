@@ -44,8 +44,8 @@ async function makeHandler(rows: ScoreRow[]) {
     scores: { scoreStore: fixedScores(rows) },
     profiles,
     friends,
+    deviceStore: devices,
     devices: {
-      deviceStore: devices,
       turnstile: { verify: async () => true },
       allowSourceIp: true,
     },
@@ -196,8 +196,8 @@ describe('board route (#190)', () => {
       },
       profiles: flaky,
       friends: memoryFriendStore(),
+      deviceStore: memoryDeviceStore(),
       devices: {
-        deviceStore: memoryDeviceStore(),
         turnstile: { verify: async () => true },
         allowSourceIp: true,
       },

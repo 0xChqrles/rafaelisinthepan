@@ -237,7 +237,7 @@ export function parseScoreHistogram(data: unknown): ScoreHistogram {
 // unsigned body: the request must carry `x-amz-content-sha256`, the lowercase hex SHA-256
 // of the EXACT UTF-8 body bytes. Hash and send the same byte array — never reserialize
 // after hashing (the root AGENTS.md records this as a hard contract).
-async function postSignedJson(url: string, body: unknown): Promise<Response> {
+async function postSignedJson(url: string, body: unknown, signal?: AbortSignal): Promise<Response> {
   const bytes = new TextEncoder().encode(JSON.stringify(body));
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   const hex = Array.from(new Uint8Array(digest))
@@ -247,7 +247,16 @@ async function postSignedJson(url: string, body: unknown): Promise<Response> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-amz-content-sha256': hex },
     body: bytes,
+    ...(signal ? { signal } : {}),
   });
+}
+
+// The one refusal that signs a device out (#216): 401 whose body CODE is `unknown_device`.
+// One spelling for every caller — the status alone must never do it (a language the server
+// does not serve also answers 4xx), and a 5xx or a dropped connection must never sign
+// anyone out at all.
+export function isUnknownDeviceAnswer(status: number, error: unknown): boolean {
+  return status === 401 && error === 'unknown_device';
 }
 
 // The device route (#216): the lazy Turnstile-gated bootstrap that MINTS this device's
@@ -260,11 +269,17 @@ export function devicesUrl(base: string = apiBase()): string {
   return `${requireApiBase(base)}/devices`;
 }
 
+// Every /devices call is BOUNDED (the FriendInvite/turnstile rule, sized for a cold
+// Lambda + a server-side Siteverify): the bootstrap runs inside the origin-wide Web Lock
+// behind a module-level flight, so a request that never settled used to wedge account
+// creation for every tab — no error, no retry, PLAY disabled forever.
+const DEVICES_TIMEOUT_MS = 15_000;
+
 export async function postDevicesBody(
   url: string,
   body: { token: string; turnstileToken?: string; revoke?: string; revokeKey?: string },
 ): Promise<Response> {
-  return postSignedJson(url, body);
+  return postSignedJson(url, body, AbortSignal.timeout(DEVICES_TIMEOUT_MS));
 }
 
 export interface DeviceRow {
@@ -288,18 +303,32 @@ export interface DeviceListing {
   devices: DeviceRow[];
 }
 
-// Runtime shape check for the bootstrap/list answer — the parsePuzzle contract: a
-// wrong-shaped body must surface as a failed bootstrap, never as an identity of `undefined`
-// keyed into every stored row from here on.
-export function parseDeviceIdentity(data: unknown): DeviceListing {
+// The two ASSIGNED ids alone — what the BOOTSTRAP consumes. It deliberately does not
+// touch the devices list riding the same answer: identity acquisition must never fail on
+// a row only the sign-out SCREEN would render — that screen has its own failed state and
+// RETRY, where a bootstrap that keeps rejecting retries the same persisted token forever
+// while the server has already created the account.
+export function parseAssignedIdentity(data: unknown): { accountId: string; deviceId: string } {
   if (!isRecord(data)) throw new Error('malformed device: not an object');
-  const { accountId, deviceId, devices } = data;
+  const { accountId, deviceId } = data;
   if (typeof accountId !== 'string' || !PUBLIC_ID_PATTERN.test(accountId)) {
     throw new Error('malformed device: bad "accountId"');
   }
   if (typeof deviceId !== 'string' || !DEVICE_ID_PATTERN.test(deviceId)) {
     throw new Error('malformed device: bad "deviceId"');
   }
+  return { accountId, deviceId };
+}
+
+// Runtime shape check for the full list answer — the parsePuzzle contract: a wrong-shaped
+// body surfaces as the device screen's failure state, never as rows whose SIGN OUT posts
+// `undefined`. The timestamps are checked as strings but NOT as parseable instants: the
+// server's own row reader defaults an absent attribute to '', and the screen already
+// renders an unparseable date as no date — refusing the whole list over a label would
+// hide every OTHER device behind one damaged row.
+export function parseDeviceIdentity(data: unknown): DeviceListing {
+  parseAssignedIdentity(data);
+  const { devices } = data as Record<string, unknown>;
   if (!Array.isArray(devices)) throw new Error('malformed device: "devices" must be an array');
   for (const raw of devices) {
     const row = raw as Record<string, unknown>;
@@ -312,9 +341,7 @@ export function parseDeviceIdentity(data: unknown): DeviceListing {
       typeof row.os !== 'string' ||
       typeof row.browser !== 'string' ||
       typeof row.createdAt !== 'string' ||
-      !Number.isFinite(Date.parse(row.createdAt)) ||
       typeof row.lastSeenAt !== 'string' ||
-      !Number.isFinite(Date.parse(row.lastSeenAt)) ||
       typeof row.current !== 'boolean'
     ) {
       throw new Error('malformed device: bad "devices" row');

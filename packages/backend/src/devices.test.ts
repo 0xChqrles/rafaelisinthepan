@@ -35,8 +35,8 @@ function makeHandler(options: { turnstile?: boolean; devices?: DeviceStore } = {
   const deviceStore = options.devices ?? memoryDeviceStore();
   const handler = createHandler({
     store: emptyStore,
+    deviceStore,
     devices: {
-      deviceStore,
       turnstile: { async verify() { return options.turnstile !== false; } },
       allowSourceIp: true,
     },

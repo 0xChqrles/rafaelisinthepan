@@ -396,6 +396,48 @@ describe('being signed out (#216)', () => {
     expect(useIdentityStore.getState().signedOut).toBe(false);
   });
 
+  it("follows another tab's START FRESH off the signed-out screen", async () => {
+    // This tab adopted the tombstone through the storage channel and shows the screen.
+    // Another tab taps START FRESH, removing the tombstone origin-wide: the shared verdict
+    // is LIFTED, and this tab follows it back to plain emptiness instead of parking on
+    // SIGNED OUT until some tab completes a whole new bootstrap.
+    loadDeviceIdentity(); // installs this tab's storage listener
+    const identity = await ensureDeviceIdentity();
+    storage.setItem(
+      'whippin-device',
+      JSON.stringify({
+        signedOut: true,
+        accountId: identity.accountId,
+        deviceId: identity.deviceId,
+      }),
+    );
+    otherTabWrote();
+    expect(useIdentityStore.getState().signedOut).toBe(true);
+
+    storage.removeItem('whippin-device');
+    otherTabWrote();
+    expect(useIdentityStore.getState().signedOut).toBe(false);
+    expect(deviceIdentity()).toBeNull();
+  });
+
+  it('an empty key does NOT lift a verdict that never reached storage', async () => {
+    // The tombstone write failed (unwritable storage), so the verdict lives only in this
+    // tab's memory: the shared key being empty proves nothing about it, and the mint stays
+    // closed for the session — only this tab's own START FRESH lifts it.
+    loadDeviceIdentity();
+    const identity = await ensureDeviceIdentity();
+    storage.setItem = vi.fn(() => {
+      throw new Error('QuotaExceededError');
+    });
+    markDeviceSignedOut(identityEpochOf(identity));
+    expect(useIdentityStore.getState().signedOut).toBe(true);
+
+    storage.removeItem('whippin-device');
+    otherTabWrote();
+    expect(useIdentityStore.getState().signedOut).toBe(true);
+    await expect(ensureDeviceIdentity()).rejects.toThrow(/signed out/);
+  });
+
   it('a tombstone naming ANOTHER identity does not sign this one out', async () => {
     const identity = await ensureDeviceIdentity();
     storage.setItem(

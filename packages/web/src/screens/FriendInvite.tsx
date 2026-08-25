@@ -9,8 +9,8 @@ import {
   deviceIdentity,
   ensureRequestIdentity,
   identityEpoch,
-  markDeviceSignedOut,
 } from '../identity';
+import { adoptSignedOutVerdict } from '../state/signedOutVerdict';
 import { prefetchTurnstileTokens } from '../turnstile';
 import { t } from '../i18n';
 import { navigate } from '../routing';
@@ -67,10 +67,7 @@ export async function sendInvite(publicId: string): Promise<InviteOutcome> {
   if (response.status >= 500) return 'failed';
   // A device signed out from elsewhere: the screen that explains it takes over, and the
   // click continues into the game with nothing announced (no edge was added).
-  if (response.status === 401) {
-    const data = (await response.json().catch(() => ({}))) as { error?: unknown };
-    if (data.error === 'unknown_device') markDeviceSignedOut(epoch);
-  }
+  await adoptSignedOutVerdict(response, epoch);
   return response.status === 409 ? 'full' : 'settled';
 }
 

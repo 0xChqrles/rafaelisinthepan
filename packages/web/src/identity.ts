@@ -47,7 +47,7 @@
 
 import { create } from 'zustand';
 import { generateDeviceToken, isValidDeviceToken, PUBLIC_ID_PATTERN } from '@whippin/shared';
-import { devicesUrl, parseDeviceIdentity, postDevicesBody } from './api';
+import { devicesUrl, parseAssignedIdentity, postDevicesBody } from './api';
 import { turnstileToken } from './turnstile';
 
 export interface DeviceIdentity {
@@ -128,6 +128,15 @@ const departedTokens = new Set<string>();
 // still read and SKIP would loop forever; with it, the still-readable tombstone reads as
 // emptiness for this session (the departedTokens shape, for the tombstone).
 let dismissedTombstone: SignedOutTombstone | null = null;
+
+// Whether the signed-out verdict this tab shows is BACKED BY THE SHARED KEY — read from a
+// stored tombstone, or successfully written as one. Only then does the key's later
+// emptiness mean anything: another tab's START FRESH removed the tombstone, and this tab's
+// screen must follow it back to plain emptiness instead of parking on SIGNED OUT until a
+// whole new bootstrap completes. A verdict that only ever lived in memory (the tombstone
+// write failed) is NOT lifted by an empty key — it still fails the mint closed for this
+// session, exactly as before.
+let tombstoneShared = false;
 
 function defaultStorage(): Storage | null {
   // The `localStorage` PROPERTY itself throws a SecurityError when storage is disabled
@@ -262,14 +271,15 @@ function clearStored(expected: string | null): void {
 // ownership as `clearStored`: only while the shared key still holds the token being signed
 // out (an existing tombstone, which holds none, may be replaced — both say "signed out").
 // A write that cannot happen leaves the verdict in-memory only, exactly as before.
-function installTombstone(expected: string, identity: SignedOutTombstone): void {
+function installTombstone(expected: string, identity: SignedOutTombstone): boolean {
   try {
     const stored = readStored();
-    if (!stored.available) return;
-    if (stored.token !== null && stored.token !== expected) return;
-    write({ signedOut: true, accountId: identity.accountId, deviceId: identity.deviceId });
+    if (!stored.available) return false;
+    if (stored.token !== null && stored.token !== expected) return false;
+    return write({ signedOut: true, accountId: identity.accountId, deviceId: identity.deviceId });
   } catch {
     // Unreadable or unwritable storage: the in-memory fence still stands for this tab.
+    return false;
   }
 }
 
@@ -412,6 +422,8 @@ function syncFromStorage(): DeviceIdentity | null {
       // rather than through its own refused call, and re-adopting that token later would
       // resurrect an identity the server already rejected.
       if (held !== null) departedTokens.add(held.token);
+      // Read FROM the shared key, so its later removal is a real signal (see the flag).
+      tombstoneShared = true;
       sessionOnly = false;
       pendingToken = null;
       pendingUnproven = false;
@@ -421,6 +433,16 @@ function syncFromStorage(): DeviceIdentity | null {
     }
     // Dismissed and unremovable: this tab already chose START FRESH, so the verdict it
     // can still read counts as emptiness for the rest of this session.
+  }
+  // The shared key holds NO standing tombstone here. If the verdict this tab shows was
+  // backed by one (read from the key, or successfully written to it), its absence means
+  // another tab lifted it — START FRESH — and this tab's screen follows it back to plain
+  // emptiness instead of parking on SIGNED OUT until a whole new bootstrap completes. A
+  // verdict that only ever lived in memory (the tombstone write failed) proves nothing by
+  // an empty key and stands.
+  if (tombstoneShared) {
+    tombstoneShared = false;
+    if (useIdentityStore.getState().signedOut) useIdentityStore.setState({ signedOut: false });
   }
   // A failed remove may leave the revoked token perfectly readable. It is no longer an
   // identity merely because localStorage still says so: the authoritative server answer
@@ -566,7 +588,11 @@ async function bootstrap(): Promise<DeviceIdentity> {
     const challenge = await turnstileToken();
     const response = await postDevicesBody(devicesUrl(), { token, turnstileToken: challenge });
     if (!response.ok) throw new Error(`device bootstrap failed: ${response.status}`);
-    ({ accountId, deviceId } = parseDeviceIdentity(await response.json()));
+    // Only the two assigned ids — deliberately NOT the full-list parse: acquisition must
+    // not fail on a device row only the sign-out screen would render (api.ts states the
+    // rule), or one damaged row makes every retry of this persisted token reject forever
+    // over an account the server has already created.
+    ({ accountId, deviceId } = parseAssignedIdentity(await response.json()));
   } catch (error) {
     // The token is persisted and this flight (and its Web Lock) is about to release:
     // another tab or a later session can recover the SAME token, complete the bootstrap
@@ -632,9 +658,10 @@ export function markDeviceSignedOut(expectedEpoch: string): boolean {
   // (user-decided 2026-08-24): removal read as ordinary identity loss, so a reload lost
   // the explanation and a sibling tab could mint a fresh account on its next act. The
   // tombstone keeps the verdict durable and broadcast until START FRESH clears it.
-  if (token !== null && identity !== null) {
+  tombstoneShared =
+    token !== null &&
+    identity !== null &&
     installTombstone(token, { accountId: identity.accountId, deviceId: identity.deviceId });
-  }
   // A NEW verdict re-arms the fence: whatever tombstone this tab once dismissed, this one
   // is fresh and stands until the player chooses again.
   dismissedTombstone = null;
@@ -664,6 +691,7 @@ export function startFreshDevice(): void {
   if (stored.available && stored.signedOut !== null) dismissedTombstone = stored.signedOut;
   clearStored(token);
   removeTombstone();
+  tombstoneShared = false;
   sessionOnly = false;
   pendingToken = null;
   pendingUnproven = false;
@@ -718,6 +746,7 @@ export function resetDeviceIdentity(): void {
   sessionOnly = false;
   departedTokens.clear();
   dismissedTombstone = null;
+  tombstoneShared = false;
   pendingToken = null;
   pendingUnproven = false;
   flight = null;

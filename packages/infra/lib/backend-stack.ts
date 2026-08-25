@@ -10,7 +10,12 @@ import {
   ArnFormat,
 } from 'aws-cdk-lib';
 import type { Construct } from 'constructs';
-import { VIEWER_IP_HEADER } from '@whippin/shared';
+import {
+  DEVICE_INDEX_NAME,
+  DEVICE_INDEX_PARTITION_KEY,
+  DEVICE_INDEX_SORT_KEY,
+  VIEWER_IP_HEADER,
+} from '@whippin/shared';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -116,10 +121,13 @@ export class BackendStack extends Stack {
     // be; neither can keep a revoked token authenticable, because revocation deletes the
     // token's own base item. The base primary key is projected automatically, which is what
     // lets a listed device name the one item to delete.
+    // Name and key attributes come from the SHARED contract (the VIEWER_IP_HEADER rule):
+    // the backend queries and writes exactly these spellings, and a drift is a
+    // production-only ValidationException no local run can reproduce.
     scoreTable.addGlobalSecondaryIndex({
-      indexName: 'DeviceByAccount',
-      partitionKey: { name: 'gsi1pk', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'gsi1sk', type: dynamodb.AttributeType.STRING },
+      indexName: DEVICE_INDEX_NAME,
+      partitionKey: { name: DEVICE_INDEX_PARTITION_KEY, type: dynamodb.AttributeType.STRING },
+      sortKey: { name: DEVICE_INDEX_SORT_KEY, type: dynamodb.AttributeType.STRING },
       // The label the screen renders, and nothing else: a device row carries no secret, but
       // projecting ALL would copy every future attribute into a second copy of the item.
       projectionType: dynamodb.ProjectionType.INCLUDE,
@@ -581,7 +589,7 @@ export class BackendStack extends Stack {
         {
           id: 'AwsSolutions-IAM5',
           reason:
-            'S3 read access is scoped to the puzzle bucket/object keys. DynamoDB is scoped to this table with only Query/GetItem/PutItem/UpdateItem/DeleteItem (DeleteItem serves symmetric friend removal and device revocation), and SSM GetParameters to the two exact secret-parameter ARNs; no index or parameter wildcard exists.',
+            'S3 read access is scoped to the puzzle bucket/object keys. DynamoDB is scoped to this table and its indexes — the grant\'s <table>/index/* resource covers exactly the one DeviceByAccount GSI (#216) — with only Query/GetItem/PutItem/UpdateItem/DeleteItem (DeleteItem serves symmetric friend removal and device revocation), and SSM GetParameters to the two exact secret-parameter ARNs; no parameter wildcard exists.',
         },
         {
           id: 'AwsSolutions-L1',

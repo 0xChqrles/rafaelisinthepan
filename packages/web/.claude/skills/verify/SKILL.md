@@ -30,15 +30,30 @@ open http://localhost:5199/en
 - The publish echoes the store file it wrote
   (`packages/backend/.local-store/<date>.<lang>.json`) — that (date, lang) is what
   the client will fetch. Re-publishing the same day overwrites it.
-- A first visit shows the tutorial invitation. Skip it by pre-seeding storage in
-  the browser context before load:
-  `localStorage.setItem('whippin-round', JSON.stringify({ version: 17, state: { onboarded: true } }))`
-  (`version` must match the store's current one — grep `version:` in
-  `src/state/gameStore.ts`'s persist options; a mismatch just runs `migratePersisted`,
-  which also fills every missing field, so `onboarded` is all the seed needs — the
-  persisted rounds map and `solvedDays` no longer exist, #214/#211).
-- Rounds PERSIST per day in localStorage — clear that key (or use a fresh browser
-  context) to restart a round.
+- A first visit shows the tutorial invitation — just drive its SKIP button, or
+  pre-seed the game database (IndexedDB since v18 — `state/gamePersistence.ts`;
+  localStorage no longer holds game state) in the browser context before load:
+
+  ```js
+  await page.evaluate(() => new Promise((resolve, reject) => {
+    const open = indexedDB.open('whippin-game', 1);
+    open.onupgradeneeded = () => open.result.createObjectStore('state');
+    open.onsuccess = () => {
+      const tx = open.result.transaction('state', 'readwrite');
+      // version must match GAME_PERSIST_VERSION (src/state/gameStore.ts); a mismatch
+      // just runs migratePersisted, which fills every missing field, so `onboarded`
+      // is all the seed needs.
+      tx.objectStore('state').put({ version: 18, state: { onboarded: true } }, 'game');
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    };
+  }));
+  ```
+- The SERVER owns a sentence round's log since #214 — what persists locally is only
+  the unacknowledged OUTBOX (and Word mode's clock/outbox). To restart a round,
+  restart `pnpm backend:dev` (its in-memory rounds AND devices reset — the app then
+  shows START FRESH, exactly like a wiped production table) or use a fresh browser
+  context.
 - Every guess you type must exist in the committed vocab
   (`public/vocab/<lang>.json`) or it is rejected as INVALID. Check first:
   `node -e "console.log(new Set(require('./public/vocab/en.json')).has('word'))"`.
@@ -56,8 +71,9 @@ Playwright works headless with the cached Chromium; install it in the scratchpad
 Useful hooks:
 
 - Live count / score watermark: `.progress-background` text.
-- Persisted round state: `localStorage['whippin-round']` →
-  `.state.rounds[<activeKey>].tried` / `.guessCount`.
+- Persisted state: IndexedDB `whippin-game` → object store `state`, key `game` →
+  `.state.outbox` (unacknowledged sentence guesses) / `.state.wordRounds` (the #214
+  rounds map and `solvedDays` no longer exist).
 - SR live region: `.sr-only[role="status"]` text.
 - Reduced motion: `page.emulateMedia({ reducedMotion: 'reduce' })` (global CSS
   collapses durations, never removes animations; standalone infinite decorations

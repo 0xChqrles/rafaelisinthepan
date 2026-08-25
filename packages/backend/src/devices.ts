@@ -50,8 +50,11 @@ import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respon
 import type { TurnstileVerifier } from './turnstile';
 import { parseUserAgent } from './userAgent';
 
+// The DeviceStore itself is NOT here: every authenticated route resolves its caller
+// through the ONE top-level `HandlerDeps.deviceStore`, so two routes can never be wired
+// to two different stores — half the private surface authenticating against one while the
+// other half answers 401 `unknown_device` from another.
 export interface DeviceHandlerDeps {
-  deviceStore: DeviceStore;
   // Bootstrap is Turnstile-gated, so this route needs a verifier and a trusted address
   // exactly like the round route's START.
   turnstile: TurnstileVerifier;
@@ -99,12 +102,12 @@ async function listing(
 
 export async function handleDevices(
   event: FnUrlEvent,
+  devices: DeviceStore,
   deps: DeviceHandlerDeps,
   instant: Date,
   cors: Record<string, string>,
 ): Promise<FnUrlResult> {
   const responseHeaders = { ...cors, ...LIVE_HEADERS };
-  const devices = deps.deviceStore;
   const method = event.requestContext?.http?.method ?? 'GET';
   if (method !== 'POST') {
     return errorResponse(

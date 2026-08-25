@@ -20,7 +20,7 @@ import { onIdentityChange } from '../identity';
 import { reconcileGameStateIdentity } from './gameStore';
 import { rearmPlayerHistory, resetPlayerHistory } from './history';
 import { kickRoundSync, rearmRoundSync, resetRoundSync } from './roundSync';
-import { rearmWordRoundSync, resetWordRoundSync } from './wordRoundSync';
+import { kickWordRoundSync, rearmWordRoundSync, resetWordRoundSync } from './wordRoundSync';
 
 export function installIdentityScope(): () => void {
   return onIdentityChange(({ previous, next, accountChanged, deviceChanged, adopted }) => {
@@ -53,10 +53,12 @@ export function installIdentityScope(): () => void {
           rearmPlayerHistory();
         } else {
           // MINTED by a deploy button: nothing to re-read (the account is empty by
-          // construction), but an outbox that was waiting behind the PLAY gate — the
-          // pending-bootstrap recovery — is owed the moment the identity exists, and the
-          // append never mints its own any more (#216 trigger rework).
+          // construction), but what was WAITING for an identity is owed the moment one
+          // exists, and neither engine mints its own any more (#216 trigger rework): the
+          // sentence outbox parked behind the PLAY gate, and an ended word run's
+          // unsubmitted log — the pending-bootstrap recovery in both engines.
           kickRoundSync();
+          kickWordRoundSync();
         }
       }
       return;

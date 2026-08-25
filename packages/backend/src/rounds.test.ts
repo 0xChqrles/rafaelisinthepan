@@ -159,14 +159,13 @@ function makeHandler(
     store: puzzleStore(options.word, sentence, options.fullReadFails),
     now: () => new Date(current),
     allowedOrigin: ORIGIN,
+    deviceStore: devices,
     devices: {
-      deviceStore: devices,
       turnstile: { async verify() { return options.turnstile !== false; } },
       allowSourceIp: true,
     },
     rounds: {
       roundStore: options.roundStore ?? memoryRoundStore(),
-      deviceStore: devices,
       scoreStore,
       ipHmacSecret: 'x'.repeat(64),
       turnstile: { async verify() { return options.turnstile !== false; } },

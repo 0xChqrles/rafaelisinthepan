@@ -4,6 +4,7 @@ import {
   DeleteItemCommand,
   GetItemCommand,
   QueryCommand,
+  TransactWriteItemsCommand,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
 import { dynamoDeviceStore } from './dynamoDeviceStore';
@@ -50,6 +51,20 @@ describe('dynamoDeviceStore revocation (#216)', () => {
       Key: { pk: { S: `device#${REVOKE_KEY}` }, sk: { S: 'device' } },
       ConsistentRead: true,
     });
+  });
+
+  it('reports a mismatch for a row that EXISTS but does not parse — never absent', async () => {
+    // An existing-but-unparseable item read as `absent` would filter a live device out of
+    // the returned list: the classification asks only whether the ITEM exists.
+    const send = vi.fn(async (command: unknown) => {
+      if (command instanceof DeleteItemCommand) {
+        throw new ConditionalCheckFailedException({ $metadata: {}, message: 'stale handle' });
+      }
+      return { Item: { pk: { S: `device#${REVOKE_KEY}` } } };
+    });
+    const store = dynamoDeviceStore({ send } as unknown as DynamoDBClient, 'scores');
+
+    await expect(store.revoke(ACCOUNT, DEVICE, REVOKE_KEY)).resolves.toBe('mismatch');
   });
 
   it('reports an ownership mismatch when the addressed row still exists', async () => {
@@ -112,5 +127,73 @@ describe('dynamoDeviceStore revocation (#216)', () => {
         lastSeenAt: '2026-08-24T00:00:00.000Z',
       },
     ]);
+  });
+});
+
+describe('dynamoDeviceStore bootstrap (#216)', () => {
+  const TOKEN_HASH = 'c'.repeat(64);
+  const INPUT = {
+    tokenHash: TOKEN_HASH,
+    accountId: 'n'.repeat(16),
+    deviceId: 'm'.repeat(16),
+    agent: { device: 'iPhone', os: 'iOS', browser: 'Safari' },
+    now: '2026-08-25T00:00:00.000Z',
+  };
+
+  it('re-parents an ORPHANED device item (account row gone) instead of throwing', async () => {
+    // The memory store's documented behaviour, and the client's only recovery: the
+    // persisted token is re-sent on every retry, so a deterministic failure here is an
+    // account creation that can never succeed on that device again.
+    const send = vi.fn(async (command: unknown) => {
+      if (command instanceof GetItemCommand) {
+        const pk = (command.input.Key?.pk as { S: string }).S;
+        if (pk === `device#${TOKEN_HASH}`) {
+          return {
+            Item: {
+              pk: { S: `device#${TOKEN_HASH}` },
+              deviceId: { S: 'o'.repeat(16) },
+              accountId: { S: 'g'.repeat(16) }, // the dead account
+              createdAt: { S: '2026-08-20T00:00:00.000Z' },
+              lastSeenAt: { S: '2026-08-20T00:00:00.000Z' },
+            },
+          };
+        }
+        return {}; // the account row is gone
+      }
+      expect(command).toBeInstanceOf(TransactWriteItemsCommand);
+      return {};
+    });
+    const store = dynamoDeviceStore({ send } as unknown as DynamoDBClient, 'scores');
+
+    const resolved = await store.bootstrap(INPUT);
+    expect(resolved.account.accountId).toBe(INPUT.accountId);
+    expect(resolved.device.deviceId).toBe(INPUT.deviceId);
+
+    const write = send.mock.calls.find(
+      ([command]) => command instanceof TransactWriteItemsCommand,
+    )?.[0] as TransactWriteItemsCommand;
+    const devicePut = write.input.TransactItems?.[1]?.Put;
+    // Overwrites the orphaned item — but only while it still names the dead account it
+    // was read with, so a racing re-parent fails into the adopt path.
+    expect(devicePut?.ConditionExpression).toBe('#accountId = :orphaned');
+    expect(devicePut?.ExpressionAttributeValues).toMatchObject({
+      ':orphaned': { S: 'g'.repeat(16) },
+    });
+  });
+
+  it('creates fresh identities with create-only puts when no device item exists', async () => {
+    const send = vi.fn(async (command: unknown) => {
+      if (command instanceof GetItemCommand) return {};
+      return {};
+    });
+    const store = dynamoDeviceStore({ send } as unknown as DynamoDBClient, 'scores');
+
+    await store.bootstrap(INPUT);
+    const write = send.mock.calls.find(
+      ([command]) => command instanceof TransactWriteItemsCommand,
+    )?.[0] as TransactWriteItemsCommand;
+    for (const item of write.input.TransactItems ?? []) {
+      expect(item.Put?.ConditionExpression).toBe('attribute_not_exists(pk)');
+    }
   });
 });

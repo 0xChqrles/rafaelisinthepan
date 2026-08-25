@@ -265,6 +265,35 @@ describe('loadPlayerHistory — the collection opt-out and the phase driver', ()
     expect(solvedOf('fr')?.phase).toBe('ready');
     expect(solvedOf('fr')?.days).toEqual([20_000]);
   });
+
+  it('a LATER driver failure cannot stamp FAILED over a collection an earlier read delivered', async () => {
+    // The inversion of the case above: the ARCHIVE flight (the older driver) SUCCEEDS
+    // first, then the game screen's read — the CURRENT driver — hits a blip. Every
+    // successful answer carries the FULL collection, so its landing retires the driver:
+    // a later failure has nothing left to fail (and the game screen's bounded streak
+    // retries are not spent re-fetching a value already correct in memory).
+    harness.script.push(async () =>
+      ({ ok: true, json: async () => ({ days: [], solvedDays: [20_000] }) }) as unknown as Response,
+    );
+    let releaseGame!: () => void;
+    const gameGate = new Promise<void>((resolve) => {
+      releaseGame = resolve;
+    });
+    harness.script.push(async () => {
+      await gameGate;
+      return { ok: false, status: 500 } as unknown as Response;
+    });
+
+    const archiveFlight = loadPlayerHistory('fr', 'sentence', '2026-07');
+    const gameFlight = loadPlayerHistory('fr', 'sentence', undefined);
+    await archiveFlight;
+    expect(solvedOf('fr')).toEqual({ phase: 'ready', days: [20_000] });
+
+    releaseGame();
+    await gameFlight;
+    expect(solvedOf('fr')?.phase).toBe('ready');
+    expect(solvedOf('fr')?.days).toEqual([20_000]);
+  });
 });
 
 describe('no token, no fetch (#216)', () => {
@@ -303,7 +332,9 @@ describe('no token, no fetch (#216)', () => {
       solvedDays: [20_669],
     };
     rearmPlayerHistory();
-    expect(harness.requests).toHaveLength(2);
+    // The replay is SEQUENTIAL (one flight settles before the next starts), so the reads
+    // arrive over a few microtasks rather than as one synchronous burst.
+    await vi.waitFor(() => expect(harness.requests).toHaveLength(2));
     await vi.waitFor(() => {
       const state = useHistoryStore.getState();
       expect(state.months['fr:sentence:2026-08']?.days?.size).toBe(1);
@@ -312,6 +343,7 @@ describe('no token, no fetch (#216)', () => {
     // Consumed: a second adoption cannot happen, and a re-arm must not replay stale keys
     // forever.
     rearmPlayerHistory();
+    await Promise.resolve();
     expect(harness.requests).toHaveLength(2);
   });
 

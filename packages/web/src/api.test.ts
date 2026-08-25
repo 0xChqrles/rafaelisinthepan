@@ -456,16 +456,22 @@ describe('devicesUrl + parseDeviceIdentity (#216)', () => {
     expect(parseDeviceIdentity(body)).toBe(body);
   });
 
-  it('rejects a missing/malformed revocation handle and invalid timestamps', () => {
+  it('rejects a missing/malformed revocation handle, but tolerates unparseable timestamps', () => {
     const missing = valid();
     delete (missing.devices[0] as { revokeKey?: string }).revokeKey;
     expect(() => parseDeviceIdentity(missing)).toThrow(/devices/);
     const badHandle = valid();
     badHandle.devices[0].revokeKey = 'A'.repeat(64);
     expect(() => parseDeviceIdentity(badHandle)).toThrow(/devices/);
+    // The server's own row reader DEFAULTS an absent timestamp to '' — a legitimate
+    // answer, and the screen renders an unparseable date as no date. Refusing the whole
+    // list over a label would hide every other device behind one damaged row.
     const badDate = valid();
     badDate.devices[0].lastSeenAt = 'yesterday';
-    expect(() => parseDeviceIdentity(badDate)).toThrow(/devices/);
+    expect(() => parseDeviceIdentity(badDate)).not.toThrow();
+    const emptyDate = valid();
+    emptyDate.devices[0].createdAt = '';
+    expect(() => parseDeviceIdentity(emptyDate)).not.toThrow();
   });
 });
 

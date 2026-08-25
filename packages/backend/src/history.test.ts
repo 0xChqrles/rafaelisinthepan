@@ -34,14 +34,13 @@ async function makeHandler(
   const devices = memoryDeviceStore();
   const handler = createHandler({
     store: emptyStore,
+    deviceStore: devices,
     devices: {
-      deviceStore: devices,
       turnstile: { async verify() { return true; } },
       allowSourceIp: true,
     },
     rounds: {
       roundStore,
-      deviceStore: devices,
       scoreStore: memoryScoreStore(),
       ipHmacSecret: 'x'.repeat(64),
       turnstile: { async verify() { return true; } },

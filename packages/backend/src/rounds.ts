@@ -77,9 +77,9 @@ import type { TurnstileVerifier } from './turnstile';
 
 export interface RoundHandlerDeps {
   roundStore: RoundStore;
-  // Every path here is authenticated: the caller's device token resolves to the ACCOUNT
-  // every round row, score row and solved day is keyed by (#216).
-  deviceStore: DeviceStore;
+  // No DeviceStore here: every path is authenticated (#216), but the caller resolves
+  // through the ONE top-level `HandlerDeps.deviceStore` — the handler passes it in, so
+  // this route can never authenticate against a different store than its siblings.
   // Since #203 a finished round records its OWN score row — there is no score POST left to
   // do it (the client-claimed score and its range validation are retired), so the day's
   // population is written from here.
@@ -120,6 +120,7 @@ function bodyMaxBytes(mode: ScoreMode): number {
 export async function handleRound(
   event: FnUrlEvent,
   puzzleStore: PuzzleStore,
+  devices: DeviceStore,
   deps: RoundHandlerDeps,
   serverDate: string,
   instant: Date,
@@ -145,10 +146,9 @@ export async function handleRound(
   const parsed = readJsonObject(event, 'Round', responseHeaders, bodyMaxBytes(mode));
   if (!parsed.ok) return parsed.response;
   const body = parsed.value;
-  const auth = await requireDevice(body, responseHeaders, deps.deviceStore, instant);
-  if (!auth.ok) return auth.response;
-  const publicId = auth.value.account.accountId;
 
+  // Validated BEFORE authentication: it costs no I/O, and knowing the tag is what lets
+  // the hot sentence append start its slice fetch beside the auth reads below.
   const puzzle = body.puzzle;
   if (typeof puzzle !== 'string' || !PUZZLE_TAG_SHAPE.test(puzzle)) {
     return errorResponse(
@@ -158,6 +158,26 @@ export async function handleRound(
       responseHeaders,
     );
   }
+
+  // The game's hottest write pays latency directly: the web paces its flushes from the
+  // previous write's ANSWER, so every serial round trip here cuts the sustained sync rate.
+  // Authentication is two sequential DynamoDB reads since #216 (the device row, then its
+  // account row); the sentence append's derivation slice (#203) depends on neither, so its
+  // S3 GET starts FIRST and hides inside them — the same overlap #203 built against the
+  // round read. The word paths and the plain read still await auth alone: everything they
+  // fetch needs the resolved account.
+  const slicePromise =
+    mode !== 'word' && body.guesses !== undefined
+      ? loadSlice(puzzleStore, date, lang, puzzle)
+      : null;
+  // A path that returns before awaiting it (a refused auth, a malformed batch) must not
+  // leave the rejection unhandled; the append path awaits the ORIGINAL promise, so a real
+  // failure still surfaces there.
+  slicePromise?.catch(() => {});
+
+  const auth = await requireDevice(body, responseHeaders, devices, instant);
+  if (!auth.ok) return auth.response;
+  const publicId = auth.value.account.accountId;
 
   const answer = (state: RoundState) => json(200, roundBody(state, instant), responseHeaders);
 
@@ -289,13 +309,13 @@ export async function handleRound(
 
   const key: RoundKey = { date, lang, mode };
   // The two reads the derivation needs, CONCURRENTLY: neither depends on the other, so the
-  // slice's GET hides inside a round trip already being paid for. The round read is
-  // EVENTUALLY consistent (roundStore.ts states why that is enough here).
+  // slice's GET — started above, before authentication — hides inside round trips already
+  // being paid for. The round read is EVENTUALLY consistent (roundStore.ts states why that
+  // is enough here). The slice is the revision the CALLER is playing: an artifact
+  // describing another one is refused rather than derived against (puzzleReads.ts).
   const [seen, slice] = await Promise.all([
     rounds.get(key, publicId, puzzle, { consistent: false }),
-    // The revision the CALLER is playing: an artifact describing another one is refused
-    // rather than derived against (puzzleReads.ts).
-    loadSlice(puzzleStore, date, lang, puzzle),
+    slicePromise ?? loadSlice(puzzleStore, date, lang, puzzle),
   ]);
   if (!slice) {
     // A missing slice IS a missing puzzle — there is no degraded mode: either publishing
@@ -670,8 +690,12 @@ async function recordScoreRow(
   // server-stamped start for a word run.
   earnedAt: Date = instant,
 ): Promise<void> {
-  if (!onTime(key.date, earnedAt)) return;
   try {
+    // Inside the try like every other step here: `activeDate` THROWS on an Invalid Date
+    // (Intl refuses one), and `earnedAt` comes from a stored `startedAt` on the word
+    // path — a throw escaping this function would 500 a submission that already
+    // committed, and the `already_submitted` retry then never records the row at all.
+    if (!onTime(key.date, earnedAt)) return;
     // The #169 volume floor, unchanged in shape: the address is HMACed and only the digest
     // reaches the store. A caller with no trusted address cannot be metered, so its score
     // is not recorded — the same stance the retired score POST took.
@@ -823,7 +847,11 @@ async function submitWordRound(
   // `recordScoreRow`): the submission is deferred by the wait check and by #202's own
   // revisit shape, so a run played on its day must not lose its row to when the log landed.
   if (outcome === 'submitted') {
-    const earnedAt = state.startedAt ? new Date(state.startedAt) : instant;
+    // Parse-checked: a stored start that does not parse cannot say when the run happened,
+    // and an Invalid Date handed onward would make `onTime` throw. The write's arrival is
+    // the honest — and always valid — fallback instant.
+    const startedMs = state.startedAt == null ? Number.NaN : Date.parse(state.startedAt);
+    const earnedAt = Number.isFinite(startedMs) ? new Date(startedMs) : instant;
     await recordScoreRow(
       { date, lang, mode },
       publicId,
