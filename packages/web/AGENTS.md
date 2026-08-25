@@ -656,10 +656,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
     silently suppress the streak celebration of a solve made twenty minutes later while
     the server credited the day. `StreakDialog` only READS it (`useSolvedDays`), since the
     screen it mounts inside has already loaded it.
-  - **Reads gate on `hasPlayerIdentity` and skip what they don't draw** (PR-218 review):
-    a visitor with no stored key cannot own server rows, so `loadPlayerHistory` publishes a
-    ready-and-EMPTY history without a request — and without MINTING a key, restoring
-    identity.ts's "a visit that never opens a game route never makes one". The language
+  - **Reads gate on the DEVICE IDENTITY (`deviceIdentity()`) and skip what they don't
+    draw** (PR-218 review; the gate read `hasPlayerIdentity` until #216 replaced the
+    player secret with the device token): a visitor with no token cannot own server rows,
+    so `loadPlayerHistory` publishes a ready-and-EMPTY history without a request — and
+    without MINTING one, keeping identity.ts's "a visit that performs none of the
+    deliberate acts creates nothing". The language
     chooser passes `collection: false` (the body says so), so its month strip does not
     spend the solved-day collection's consistent GetItem on an answer it never renders.
     And `solved[lang]`'s PHASE is driven only by the most recently started collection
