@@ -256,9 +256,12 @@ export async function handleRound(
   if (rawGuesses === undefined) {
     // READ: the caller's stored round FOR THIS PUZZLE. A 404 is the honest "nothing
     // yet" — a fresh round (or a re-published daily whose old log is retired), local
-    // state authoritative until the first write lands. For a word round it is also what
-    // makes the daily one-shot ACROSS DEVICES: the answer carries the server's start, so
-    // a second device resumes the run instead of beginning a fresh one.
+    // state authoritative until the first write lands. For a word round it is what says
+    // WHOSE run the daily holds (#217): the answer carries the start and the device it was
+    // stamped for, and the caller turns that into a phase — resume, submit, or start over.
+    // *(It used to be what made the daily one-shot across devices, by handing a second
+    // device the clock to resume; #217 replaced that with an honest restart, since the
+    // run's claims live in the playing device's storage until it submits.)*
     const state = await rounds.get({ date, lang, mode }, publicId, puzzle);
     if (!state) {
       return errorResponse(404, 'not_found', 'No round recorded.', responseHeaders);

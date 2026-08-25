@@ -563,6 +563,15 @@ async function submitRun(f: WordFlight, key: string, tried: readonly string[]): 
     // screen off a finished run it may no longer report and onto the offer to start over.
     // Refusing to adopt would leave it showing a result the server will never record.
     if (state) publishLoad(f, key, state);
+    // …and the run it refuses is GONE, so the local husk goes with it (found on review).
+    // `started_elsewhere` says another device's start destroyed it; `not_started` says the
+    // server holds no run of this word at all. Either way this device can never submit the
+    // clock it still has, and that clock is what the language chooser and the archive read
+    // the day's status from — so keeping it would badge the day DONE, with a score, for a
+    // run that no longer exists, beside a game screen offering to start over.
+    if (error === 'started_elsewhere' || error === 'not_started') {
+      useGameStore.getState().discardWordRun(key);
+    }
     // The body was already read for `error`, so the shared PREDICATE decides directly.
     if (isUnknownDeviceAnswer(response.status, error)) markDeviceSignedOut(epoch);
     f.closed = true;

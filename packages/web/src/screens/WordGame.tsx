@@ -304,9 +304,29 @@ function WordRound({
   const [animateResults, setAnimateResults] = useState(false);
   const previousEnded = useRef(finished);
   useEffect(() => {
-    const justEnded = finished && !previousEnded.current;
+    const was = previousEnded.current;
     previousEnded.current = finished;
-    if (!justEnded) return undefined;
+    if (was === finished) return undefined;
+    if (!finished) {
+      // **A FINISHED RUN CAN STOP BEING THIS SCREEN'S (#217), and its presentation has to
+      // go with it.** `finished` was monotonic within a mount while it meant "the clock
+      // died"; now a `started_elsewhere` refusal — which typically lands DURING these very
+      // beats, one round trip after the deadline — takes the run away and sends the screen
+      // back to the gate. The result tray is a SIBLING of the gate rather than the branch
+      // it replaces, and the revealed board is drawn in the window above it, so leaving
+      // either standing puts the rejected run's post-mortem over the offer to start over.
+      setPostMortem(false);
+      setPromptExiting(false);
+      setShowResults(false);
+      setAnimateResults(false);
+      setKeyboardLeaving(false);
+      // The typed guess, the strike in the air and the seconds it bought belong to that run
+      // too: a fresh run must open on an empty prompt, not on the dead one's last word.
+      setInput('');
+      setHit(null);
+      setGain(null);
+      return undefined;
+    }
 
     setAnimateResults(true);
     // Reduced motion collapses the beats to their state changes — these are JS timers, so
@@ -390,7 +410,13 @@ function WordRound({
   // nothing (its result is on screen to be read, not news).
   const announcedEnd = useRef(finished);
   useEffect(() => {
-    if (!finished || announcedEnd.current) return;
+    if (!finished) {
+      // Losing the run re-arms it (#217): the announcement is about a run ENDING, and the
+      // next one to end here is a different run entirely.
+      announcedEnd.current = false;
+      return;
+    }
+    if (announcedEnd.current) return;
     announcedEnd.current = true;
     say(srWordTimeUp(lang, score));
   }, [finished, lang, say, score]);

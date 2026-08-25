@@ -175,8 +175,9 @@ export interface WordRoundProgress {
   word: string;
   // null until the SERVER has stamped this round's start (#202): a fetched-but-unplayed
   // day sits at the rules gate, and the clock has not begun. PLAY asks the server and the
-  // visible clock starts when the answer lands — which is also what makes the daily
-  // one-shot across devices, since the start the second device resumes is the first one.
+  // visible clock starts when the answer lands. Since #217 that answer is also the ONLY
+  // thing that writes this: a mount read anchors nothing, because a clock stamped for
+  // another device times a log this one can never report.
   startedAt: number | null;
   deadline: number | null;
   tried: string[];
@@ -376,6 +377,15 @@ interface GameState extends PersistedState {
   // device's first-write-wins log differs. Clamp a still-live deadline to now: a settled
   // run must stop accepting input immediately, while an already-finished one never reopens.
   settleWordRun: (key: string, claimed: number) => void;
+
+  // DISCARD a Word run the server has told us is gone (#217): its stamp names another
+  // device now, or the record holds no run of this word at all. The local husk is not
+  // merely unsubmittable — its clock and claim count are what the language chooser and the
+  // archive READ a Word day's status from (`wordStatusOf`), so leaving it would badge the
+  // day DONE, with a score, for a run the server destroyed, while the game itself offers
+  // START OVER. Keeps the round's entry (its word still names the daily on screen) and
+  // empties everything the retired run put in it.
+  discardWordRun: (key: string) => void;
 
   // Count one Word mode guess (a claim or a near/off-map miss — free guesses never reach
   // here) on the active word round: check the guess against the DEADLINE as of now,
@@ -669,6 +679,7 @@ export type GameMutation =
   | ({ type: 'ensureWordRound'; key: string; word: string } & OwnedGameMutation)
   | ({ type: 'openWordRun'; key: string; word: string; startedAt: number } & OwnedGameMutation)
   | ({ type: 'settleWordRun'; key: string; word: string; claimed: number; now: number } & OwnedGameMutation)
+  | ({ type: 'discardWordRun'; key: string; word: string } & OwnedGameMutation)
   | ({
       type: 'recordWordGuess';
       key: string;
@@ -862,6 +873,24 @@ export function applyGameMutation(
           ...state.wordRounds,
           [mutation.key]: { ...round, tried: [], claimed, deadline, submitted: true },
         },
+      });
+    }
+    case 'discardWordRun': {
+      const round = state.wordRounds[mutation.key];
+      // Word-qualified like every other Word mutation: a verdict about the retired daily
+      // must not empty the round a republish has already replaced it with.
+      if (!round || round.word !== mutation.word) return changed(state, state);
+      const fresh = freshWordRound(mutation.word);
+      const already =
+        round.startedAt === null &&
+        round.deadline === null &&
+        round.tried.length === 0 &&
+        round.claimed === 0 &&
+        round.submitted === undefined;
+      if (already) return changed(state, state);
+      return changed(state, {
+        ...state,
+        wordRounds: { ...state.wordRounds, [mutation.key]: fresh },
       });
     }
     case 'recordWordGuess': {
@@ -1062,6 +1091,16 @@ export const useGameStore = create<GameState>((set, get) => {
         word: round.word,
         claimed,
         now: Date.now(),
+        expectedOwner: get().identityOwner,
+      });
+    },
+    discardWordRun: (key) => {
+      const round = get().wordRounds[key];
+      if (!round) return;
+      commit({
+        type: 'discardWordRun',
+        key,
+        word: round.word,
         expectedOwner: get().identityOwner,
       });
     },

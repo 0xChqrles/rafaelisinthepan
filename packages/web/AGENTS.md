@@ -801,11 +801,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the three label FIELDS rather than a `DeviceRow`, so the run's stamp and the device list
     read as one thing.
   - **The anchor is an ELAPSED SPAN** (`anchorFrom`): `Date.now() − (now − startedAt)` off
-    the answer's two instants, so a device clock minutes off still runs a 60-second run,
-    a device joining a run in progress resumes with the real time left, and the request's
-    own travel time lands INSIDE the run — the margin that keeps an honest submission clear
-    of the server's wait check. Re-anchoring is a no-op by construction: a re-read must
-    never shift a run under the player.
+    the answer's two instants, so a device clock minutes off still runs a 60-second run and
+    the request's own travel time lands INSIDE the run — the margin that keeps an honest
+    submission clear of the server's wait check. Only a START writes it (#217): the span it
+    translates is the one the answer's own write just stamped, and a re-read never shifts a
+    run under the player because a read anchors nothing at all. *(Until #217 the span also
+    let a device JOIN a run in progress with the real time left, and re-anchoring had to be
+    a no-op for that reason.)*
   - **The MOUNT READ writes no SERVER state, and since #217 ANCHORS NOTHING either** — it
     reports WHOSE run the daily holds (it used to resume any clock it found, which is what
     made the daily one-shot across devices); it also carries a finished day's RECORDED run
@@ -1266,8 +1268,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   is dead; past the deadline the round is FROZEN, re-pricing included (re-pricing a finished
   run could hand it a later deadline and revive it). A reload rehydrates from the log +
   deadline: time left resumes with the real remaining time, none renders ended. The daily is
-  one-shot — `startWordRun` stamps `startedAt` once and is idempotent, so no render path can
-  reopen a finished day. Verified end to end at 320/430: reload mid-run resumes, a
+  one-shot — no render path can reopen a finished day, since only an accepted START writes
+  the clock (`openWordRun`; `startWordRun` stamped it locally and idempotently until #202
+  made the instant the SERVER's, and #217 made every accepted start a RESTART that the
+  server refuses once a run is recorded). Verified end to end at 320/430: reload mid-run resumes, a
   ten-minute background jump lands on the finished screen, and a guess typed before the
   deadline but entered after it never enters the log.
   **Two hooks, one deadline, for a REASON** (`hooks/useCountdown.ts`): `useCountdown`

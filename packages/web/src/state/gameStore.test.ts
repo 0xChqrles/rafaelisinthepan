@@ -171,6 +171,36 @@ describe('word rounds (#163) — ensureWordRound / openWordRun / recordWordGuess
   // #214: the server's RECORDED run is authoritative, while persisted `tried` is only the
   // submission outbox. A successful answer therefore clears it and keeps the server log
   // in the transient round load instead.
+  // #217: a run the server has taken away (its stamp names another device) leaves a husk
+  // the STATUS surfaces would read as a finished day — the archive and the chooser price a
+  // Word day off exactly this clock and count.
+  it('discardWordRun empties a retired run, keeping the day it names', () => {
+    const { ensureWordRound, openWordRun, recordWordGuess, discardWordRun } = useGameStore.getState();
+    ensureWordRound('w:5:fr', 'phare');
+    openWordRun('w:5:fr', T0);
+    recordWordGuess('mer', () => ({ claimed: 1, bonus: 4 }));
+    expect(wordRound()).toMatchObject({ tried: ['mer'], claimed: 1 });
+
+    discardWordRun('w:5:fr');
+    expect(wordRound()).toEqual({
+      word: 'phare',
+      startedAt: null,
+      deadline: null,
+      tried: [],
+      claimed: 0,
+    });
+  });
+
+  it('discards nothing for a round that is not there, or already empty', () => {
+    const { ensureWordRound, discardWordRun } = useGameStore.getState();
+    discardWordRun('w:99:fr');
+    expect(useGameStore.getState().wordRounds['w:99:fr']).toBeUndefined();
+    ensureWordRound('w:5:fr', 'phare');
+    const before = wordRound();
+    discardWordRun('w:5:fr');
+    expect(wordRound()).toBe(before);
+  });
+
   it('settleWordRun clears the acknowledged outbox and takes the authoritative count', () => {
     const { ensureWordRound, openWordRun, recordWordGuess, settleWordRun } =
       useGameStore.getState();

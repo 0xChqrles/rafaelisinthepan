@@ -709,9 +709,22 @@ describe('the end-of-run SUBMISSION', () => {
     const current = load();
     expect(current?.status === 'ready' && current.server.startedBy).toEqual(OTHER);
     expect(round().submitted).toBeUndefined();
+    // The refused run is GONE, so its local husk goes too: the chooser and the archive read
+    // a Word day's status off exactly this clock and count, and keeping them would badge the
+    // day DONE for a run the server destroyed.
+    expect(round()).toMatchObject({ startedAt: null, deadline: null, tried: [], claimed: 0 });
     // Nothing spins: the conversation is closed on the verdict.
     await settle(120_000);
     expect(post).toHaveBeenCalledTimes(2);
+  });
+
+  it('discards the local run for a `not_started` verdict too — there is nothing to submit', async () => {
+    seedRound({ startedAt: T0 - 300_000, deadline: T0 - 100_000, tried: ['mer'], claimed: 1 });
+    post.mockResolvedValueOnce(answer(404, { error: 'not_found' }));
+    post.mockResolvedValueOnce(answer(409, { error: 'not_started' }));
+    runOver();
+    await settle();
+    expect(round()).toMatchObject({ startedAt: null, deadline: null, tried: [], claimed: 0 });
   });
 
   // …and the restart that refusal SENDS THE PLAYER TO reopens it. A verdict closes the
