@@ -562,11 +562,10 @@ describe('roundUrl + parseRound (#201/#202)', () => {
     expect(parseRound(valid())).toEqual({
       ...valid(),
       startedAt: null,
+      // Word mode's run OWNER (#217) — null exactly when the clock is, since one write
+      // stamps both, and always null on a sentence round.
+      startedBy: null,
       submittedAt: null,
-      // Only a START says `resumed`, and the safe reading of an answer that did not say is
-      // that this client did NOT stamp the clock — so it never gains writer authority by
-      // an omission.
-      resumed: true,
       // The server's own reading of the log it stores (#203); absent means "not yet",
       // never "no longer", since it is only ever written true.
       solved: false,
@@ -581,10 +580,27 @@ describe('roundUrl + parseRound (#201/#202)', () => {
     expect(() => parseRound({ ...valid(), solved: 'yes' })).toThrow(/solved/);
   });
 
-  it("carries Word mode's server-stamped clock, and what it did", () => {
-    const started = { ...valid(), startedAt: '2026-08-21T09:10:00.000Z', resumed: false };
+  it("carries Word mode's server-stamped clock and the DEVICE it belongs to", () => {
+    // The id is what the screen reads against its own device; the parsed user-agent fields
+    // are how it NAMES that device before offering to end its run (#217).
+    const runner = { deviceId: 'd'.repeat(16), device: 'iPhone', os: 'iOS 17', browser: 'Safari' };
+    const started = { ...valid(), startedAt: '2026-08-21T09:10:00.000Z', startedBy: runner };
     expect(parseRound(started).startedAt).toBe('2026-08-21T09:10:00.000Z');
-    expect(parseRound(started).resumed).toBe(false);
+    expect(parseRound(started).startedBy).toEqual(runner);
+  });
+
+  it('REFUSES a half-shaped run owner rather than guessing at a device', () => {
+    // The phase this decides is whether the player may keep playing, so a stamp that does
+    // not name a device is a malformed answer — the parse failure the sync engine treats as
+    // a failed read, never a run silently attributed to nobody.
+    const runner = { deviceId: 'd'.repeat(16), device: 'iPhone', os: 'iOS 17', browser: 'Safari' };
+    expect(() => parseRound({ ...valid(), startedBy: { ...runner, deviceId: '' } })).toThrow(
+      /startedBy/,
+    );
+    expect(() => parseRound({ ...valid(), startedBy: { deviceId: 'd'.repeat(16) } })).toThrow(
+      /startedBy/,
+    );
+    expect(() => parseRound({ ...valid(), startedBy: 'iPhone' })).toThrow(/startedBy/);
   });
 
   it('carries the SUBMISSION\'s own marker, which a 0-claim run needs', () => {
@@ -605,6 +621,5 @@ describe('roundUrl + parseRound (#201/#202)', () => {
     expect(() => parseRound({ ...valid(), now: 'whenever' })).toThrow(/now/);
     expect(() => parseRound({ ...valid(), startedAt: 'whenever' })).toThrow(/startedAt/);
     expect(() => parseRound({ ...valid(), submittedAt: 'whenever' })).toThrow(/submittedAt/);
-    expect(() => parseRound({ ...valid(), resumed: 'no' })).toThrow(/resumed/);
   });
 });

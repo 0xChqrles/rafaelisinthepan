@@ -835,6 +835,20 @@ button * {
      PLAY 40px narrower than the tutorial's own button (measured before the fix). */
   padding: 0 0 10px;
 }
+/* What the gate's tap will DESTROY (#217): the run this daily already holds on another
+   device. Coach copy's voice — a sentence, not a label, so it keeps sentence case out of
+   the all-caps chrome rule — in the danger ink, because it is the one line on this screen
+   that warns rather than teaches. It sits between the rules and the button, inside the
+   gate's own gap, so it moves nothing when it is absent. */
+.gate-warning {
+  margin: 0;
+  width: min(680px, 100%);
+  font-size: 13px;
+  font-weight: 350;
+  line-height: 1.5;
+  text-transform: none;
+  color: var(--danger);
+}
 /* The rules can outgrow the keyboard's footprint on a phone, so the gate anchors to the
    tray's BOTTOM and lets the extra height rise upward — into the sentence game's open
    play area, or word mode's open window — never below the screen, where it put the

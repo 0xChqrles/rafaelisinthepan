@@ -374,12 +374,26 @@ export async function postRoundBody(
   return postSignedJson(url, body);
 }
 
+// WHICH DEVICE a word run belongs to (#217): the id the server's own two conditions
+// compare, plus the device's parsed user-agent fields — a snapshot taken when the run was
+// stamped, so a screen offering to end that run can NAME it without a second lookup.
+export interface RoundRunner {
+  deviceId: string;
+  device: string;
+  os: string;
+  browser: string;
+}
+
 export interface RoundState {
   guesses: string[];
   createdAt: string;
   // Word mode's SERVER-stamped clock (#202); null on a sentence round and on a word round
   // nobody has started.
   startedAt: string | null;
+  // WHO holds that clock (#217) — null exactly when `startedAt` is, since one write stamps
+  // both. It is half of what the Word screen picks its phase from: a run this device does
+  // not own is one it may neither play nor submit, only start over.
+  startedBy: RoundRunner | null;
   // When the word round's end-of-run log was RECORDED; null while it has not been. It is
   // the submission's own marker because an empty stored log — a run that claimed nothing —
   // reads exactly like an unsubmitted one.
@@ -388,10 +402,6 @@ export interface RoundState {
   // to `now - startedAt` — an ELAPSED span, which both ends agree on — rather than to the
   // instant itself, which a skewed device clock would misread.
   now: string;
-  // START only: did THIS call stamp the clock, or join one already running? A resumed
-  // clock belongs to another device (or another tab), and this one cannot know what that
-  // run has claimed — so it must never write for it.
-  resumed: boolean;
   // Sentence mode: has the SERVER read this round's log as solved (#203)? It is the server
   // deriving what it stores, and it is what says the day's score row is recorded — which is
   // when a standing becomes readable. Only ever written true, so `false` means "not yet",
@@ -416,16 +426,31 @@ function requireInstant(value: unknown, field: string): string {
   return value;
 }
 
+// The run's owner, as strict as the two instants beside it: the phase this decides is
+// whether a player may keep playing, so a half-shaped stamp is a malformed answer rather
+// than a device to guess at.
+function requireRunner(value: unknown): RoundRunner | null {
+  if (value === undefined) return null;
+  if (
+    !isRecord(value) ||
+    typeof value.deviceId !== 'string' ||
+    value.deviceId.length === 0 ||
+    typeof value.device !== 'string' ||
+    typeof value.os !== 'string' ||
+    typeof value.browser !== 'string'
+  ) {
+    throw new Error('malformed round: bad "startedBy"');
+  }
+  return { deviceId: value.deviceId, device: value.device, os: value.os, browser: value.browser };
+}
+
 export function parseRound(data: unknown): RoundState {
   if (!isRecord(data)) throw new Error('malformed round: not an object');
-  const { guesses, createdAt, startedAt, submittedAt, resumed, solved, credited } = data;
+  const { guesses, createdAt, startedAt, submittedAt, solved, credited } = data;
   if (!Array.isArray(guesses) || !guesses.every((g) => typeof g === 'string')) {
     throw new Error('malformed round: "guesses" must be an array of strings');
   }
   if (typeof createdAt !== 'string') throw new Error('malformed round: bad "createdAt"');
-  if (resumed !== undefined && typeof resumed !== 'boolean') {
-    throw new Error('malformed round: bad "resumed"');
-  }
   if (solved !== undefined && typeof solved !== 'boolean') {
     throw new Error('malformed round: bad "solved"');
   }
@@ -436,11 +461,9 @@ export function parseRound(data: unknown): RoundState {
     guesses: guesses as string[],
     createdAt,
     startedAt: startedAt === undefined ? null : requireInstant(startedAt, 'startedAt'),
+    startedBy: requireRunner(data.startedBy),
     submittedAt: submittedAt === undefined ? null : requireInstant(submittedAt, 'submittedAt'),
     now: requireInstant(data.now, 'now'),
-    // Only a START answers it. Absent means "not a start", and the safe reading of an
-    // answer that did not say is that this client did NOT stamp the clock.
-    resumed: resumed !== false,
     // Absent means the server holds no solve for this round — a word round, or a sentence
     // one still being played.
     solved: solved === true,

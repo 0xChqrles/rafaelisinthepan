@@ -88,7 +88,7 @@ describe('roundKeyForDay', () => {
 // guesses that paid for it. Nothing stores "ended": that is `now > deadline`, asked
 // fresh, which is exactly what makes the no-pause rule enforceable (there is no remaining
 // value to freeze by closing the tab).
-describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGuess', () => {
+describe('word rounds (#163) — ensureWordRound / openWordRun / recordWordGuess', () => {
   // A replay stub: `n` claims worth `bonus` seconds each. The store must never look
   // inside it — it is the pure model closed over a rank map the store cannot see.
   const priced = (bonusEach: number) => (log: string[]) => ({
@@ -126,42 +126,86 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
     expect(s.outbox['d:5:fr']?.guesses).toEqual(['bois']);
   });
 
-  it('anchorWordRun opens the clock at the full run length, and only ONCE', () => {
-    const { ensureWordRound, anchorWordRun } = useGameStore.getState();
+  it('openWordRun opens the clock at the full run length', () => {
+    const { ensureWordRound, openWordRun } = useGameStore.getState();
     ensureWordRound('w:5:fr', 'phare');
-    anchorWordRun('w:5:fr', Date.now());
-    expect(wordRound()).toMatchObject({ startedAt: T0, deadline: T0 + runMs(0) });
-
-    // A re-render, a double tap, a re-read or a rehydration must never restart a run:
-    // there is no retry, and re-stamping would hand back a fresh minute mid-game.
-    vi.setSystemTime(T0 + 5_000);
-    anchorWordRun('w:5:fr', Date.now());
+    openWordRun('w:5:fr', Date.now());
     expect(wordRound()).toMatchObject({ startedAt: T0, deadline: T0 + runMs(0) });
   });
 
-  // #202: the anchor is a translated SERVER instant, so a device joining a run already in
-  // progress lands its anchor that far in the PAST and its countdown resumes with the real
-  // time left — the daily stays one-shot across devices.
-  it('anchors a run already in progress to the elapsed time, not to now', () => {
-    const { ensureWordRound, anchorWordRun } = useGameStore.getState();
+  // #217: a start is a RESTART — the server accepts one for any run it has not recorded and
+  // wipes what it replaces, so the local run starts over with it. (#202 made this idempotent
+  // instead, back when a second tap resumed the one clock.)
+  it('RESTARTS the run it replaces, log and clock alike', () => {
+    const { ensureWordRound, openWordRun, recordWordGuess } = useGameStore.getState();
     ensureWordRound('w:5:fr', 'phare');
-    anchorWordRun('w:5:fr', T0 - 20_000);
+    openWordRun('w:5:fr', T0);
+    recordWordGuess('mer', () => ({ claimed: 1, bonus: 4 }));
+    expect(wordRound()).toMatchObject({ tried: ['mer'], claimed: 1 });
+
+    vi.setSystemTime(T0 + 5_000);
+    openWordRun('w:5:fr', Date.now());
+    expect(wordRound()).toMatchObject({
+      startedAt: T0 + 5_000,
+      deadline: T0 + 5_000 + runMs(0),
+      tried: [],
+      claimed: 0,
+    });
+  });
+
+  // #202: the anchor is a translated SERVER instant, so a start whose answer took time to
+  // arrive lands that far in the PAST and the countdown runs the time the server is
+  // measuring, not a fresh minute.
+  it('anchors the clock to the elapsed time, not to now', () => {
+    const { ensureWordRound, openWordRun } = useGameStore.getState();
+    ensureWordRound('w:5:fr', 'phare');
+    openWordRun('w:5:fr', T0 - 20_000);
     expect(wordRound()).toMatchObject({ startedAt: T0 - 20_000, deadline: T0 - 20_000 + runMs(0) });
   });
 
-  it('anchors nothing for a round that is not there (an answer landing after eviction)', () => {
-    useGameStore.getState().anchorWordRun('w:99:fr', T0);
+  it('opens nothing for a round that is not there (an answer landing after eviction)', () => {
+    useGameStore.getState().openWordRun('w:99:fr', T0);
     expect(useGameStore.getState().wordRounds['w:99:fr']).toBeUndefined();
   });
 
   // #214: the server's RECORDED run is authoritative, while persisted `tried` is only the
   // submission outbox. A successful answer therefore clears it and keeps the server log
   // in the transient round load instead.
+  // #217: a run the server has taken away (its stamp names another device) leaves a husk
+  // the STATUS surfaces would read as a finished day — the archive and the chooser price a
+  // Word day off exactly this clock and count.
+  it('discardWordRun empties a retired run, keeping the day it names', () => {
+    const { ensureWordRound, openWordRun, recordWordGuess, discardWordRun } = useGameStore.getState();
+    ensureWordRound('w:5:fr', 'phare');
+    openWordRun('w:5:fr', T0);
+    recordWordGuess('mer', () => ({ claimed: 1, bonus: 4 }));
+    expect(wordRound()).toMatchObject({ tried: ['mer'], claimed: 1 });
+
+    discardWordRun('w:5:fr');
+    expect(wordRound()).toEqual({
+      word: 'phare',
+      startedAt: null,
+      deadline: null,
+      tried: [],
+      claimed: 0,
+    });
+  });
+
+  it('discards nothing for a round that is not there, or already empty', () => {
+    const { ensureWordRound, discardWordRun } = useGameStore.getState();
+    discardWordRun('w:99:fr');
+    expect(useGameStore.getState().wordRounds['w:99:fr']).toBeUndefined();
+    ensureWordRound('w:5:fr', 'phare');
+    const before = wordRound();
+    discardWordRun('w:5:fr');
+    expect(wordRound()).toBe(before);
+  });
+
   it('settleWordRun clears the acknowledged outbox and takes the authoritative count', () => {
-    const { ensureWordRound, anchorWordRun, recordWordGuess, settleWordRun } =
+    const { ensureWordRound, openWordRun, recordWordGuess, settleWordRun } =
       useGameStore.getState();
     ensureWordRound('w:5:fr', 'phare');
-    anchorWordRun('w:5:fr', T0);
+    openWordRun('w:5:fr', T0);
     recordWordGuess('mer', priced(3));
     expect(wordRound().deadline).toBeGreaterThan(T0);
 
@@ -177,9 +221,9 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
   });
 
   it('settlement never moves an already-ended deadline forward', () => {
-    const { ensureWordRound, anchorWordRun, settleWordRun } = useGameStore.getState();
+    const { ensureWordRound, openWordRun, settleWordRun } = useGameStore.getState();
     ensureWordRound('w:5:fr', 'phare');
-    anchorWordRun('w:5:fr', T0 - runMs(0) - 1);
+    openWordRun('w:5:fr', T0 - runMs(0) - 1);
     const deadline = wordRound().deadline;
 
     settleWordRun('w:5:fr', 0);
@@ -223,10 +267,10 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
   });
 
   it('takes no guesses after the server has settled the run', () => {
-    const { ensureWordRound, anchorWordRun, settleWordRun, recordWordGuess } =
+    const { ensureWordRound, openWordRun, settleWordRun, recordWordGuess } =
       useGameStore.getState();
     ensureWordRound('w:5:fr', 'phare');
-    anchorWordRun('w:5:fr', T0);
+    openWordRun('w:5:fr', T0);
     settleWordRun('w:5:fr', 1);
 
     expect(recordWordGuess('mer', priced(3))).toBe(false);
@@ -241,9 +285,9 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
   });
 
   it('a claim EXTENDS the deadline by what the whole log is worth', () => {
-    const { ensureWordRound, anchorWordRun, recordWordGuess } = useGameStore.getState();
+    const { ensureWordRound, openWordRun, recordWordGuess } = useGameStore.getState();
     ensureWordRound('w:5:fr', 'phare');
-    anchorWordRun('w:5:fr', Date.now());
+    openWordRun('w:5:fr', Date.now());
     const pays3 = priced(3);
     recordWordGuess('mer', pays3);
     expect(wordRound()).toEqual({
@@ -260,9 +304,9 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
   });
 
   it('anchors the deadline to startedAt, never to the moment the claim landed', () => {
-    const { ensureWordRound, anchorWordRun, recordWordGuess } = useGameStore.getState();
+    const { ensureWordRound, openWordRun, recordWordGuess } = useGameStore.getState();
     ensureWordRound('w:5:fr', 'phare');
-    anchorWordRun('w:5:fr', Date.now());
+    openWordRun('w:5:fr', Date.now());
     // Mid-run — where a rolling-window regression (deadline = NOW + runMs) and the rule
     // (deadline = STARTEDAT + runMs) disagree. Every other landing-guess test claims with
     // the clock still at T0, where the two are the same number, so this is the one that
@@ -274,9 +318,9 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
   });
 
   it('the deadline millisecond itself is still play — over means STRICTLY after', () => {
-    const { ensureWordRound, anchorWordRun, recordWordGuess } = useGameStore.getState();
+    const { ensureWordRound, openWordRun, recordWordGuess } = useGameStore.getState();
     ensureWordRound('w:5:fr', 'phare');
-    anchorWordRun('w:5:fr', Date.now());
+    openWordRun('w:5:fr', Date.now());
     // Exactly AT the deadline: not over. One boundary, shared by this check,
     // `wordStatusOf` and `useDeadlinePassed`, so no surface can disagree about the
     // deadline's own millisecond.
@@ -286,9 +330,9 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
   });
 
   it('a guess landing past the deadline is dead, however much time it would have bought', () => {
-    const { ensureWordRound, anchorWordRun, recordWordGuess } = useGameStore.getState();
+    const { ensureWordRound, openWordRun, recordWordGuess } = useGameStore.getState();
     ensureWordRound('w:5:fr', 'phare');
-    anchorWordRun('w:5:fr', Date.now());
+    openWordRun('w:5:fr', Date.now());
     recordWordGuess('mer', openRun);
     vi.setSystemTime(T0 + runMs(0) + 1); // one millisecond past the end
     recordWordGuess('tard', priced(5));
@@ -308,10 +352,10 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
   // it, a guess entered in that window floats a rarity grade, pays a `+21s` clock gain and
   // announces a claim the run never took.
   it('REPORTS whether the guess landed, so the screen cannot celebrate a refused one', () => {
-    const { ensureWordRound, anchorWordRun, recordWordGuess } = useGameStore.getState();
+    const { ensureWordRound, openWordRun, recordWordGuess } = useGameStore.getState();
     ensureWordRound('w:5:fr', 'phare');
     expect(recordWordGuess('mer', openRun), 'before START').toBe(false);
-    anchorWordRun('w:5:fr', Date.now());
+    openWordRun('w:5:fr', Date.now());
     expect(recordWordGuess('mer', openRun), 'a counted guess').toBe(true);
     expect(recordWordGuess('mer', openRun), 'a repeat appends nothing').toBe(false);
     vi.setSystemTime(T0 + runMs(0) + 1);
@@ -319,9 +363,9 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
   });
 
   it('backgrounding the tab does not pause the clock — the deadline is wall-clock', () => {
-    const { ensureWordRound, anchorWordRun, recordWordGuess } = useGameStore.getState();
+    const { ensureWordRound, openWordRun, recordWordGuess } = useGameStore.getState();
     ensureWordRound('w:5:fr', 'phare');
-    anchorWordRun('w:5:fr', Date.now());
+    openWordRun('w:5:fr', Date.now());
     // An hour away with the tab closed. Nothing ran, nothing ticked, and the run is over
     // all the same: an interrupted run is a ruined run, by decision.
     vi.setSystemTime(T0 + 3_600_000);
@@ -330,9 +374,9 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
   });
 
   it('re-prices the log after a same-word republish instead of trusting the stored clock', () => {
-    const { ensureWordRound, anchorWordRun, recordWordGuess } = useGameStore.getState();
+    const { ensureWordRound, openWordRun, recordWordGuess } = useGameStore.getState();
     ensureWordRound('w:5:fr', 'phare');
-    anchorWordRun('w:5:fr', Date.now());
+    openWordRun('w:5:fr', Date.now());
     recordWordGuess('mer', priced(3));
     expect(wordRound()).toMatchObject({ deadline: T0 + runMs(3) });
 
@@ -350,9 +394,9 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
   });
 
   it('rejects a guess when a same-word republish shrinks the live deadline into the past', () => {
-    const { ensureWordRound, anchorWordRun, recordWordGuess } = useGameStore.getState();
+    const { ensureWordRound, openWordRun, recordWordGuess } = useGameStore.getState();
     ensureWordRound('w:5:fr', 'phare');
-    anchorWordRun('w:5:fr', Date.now());
+    openWordRun('w:5:fr', Date.now());
     recordWordGuess('mer', priced(30));
     expect(wordRound()).toMatchObject({ deadline: T0 + runMs(30), tried: ['mer'] });
 
@@ -373,9 +417,9 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
   });
 
   it('repairs the cached half even when the submission itself cannot land', () => {
-    const { ensureWordRound, anchorWordRun, recordWordGuess } = useGameStore.getState();
+    const { ensureWordRound, openWordRun, recordWordGuess } = useGameStore.getState();
     ensureWordRound('w:5:fr', 'phare');
-    anchorWordRun('w:5:fr', Date.now());
+    openWordRun('w:5:fr', Date.now());
     recordWordGuess('mer', priced(3));
     // A REPEAT: nothing to append, but the republished map still says the stored log is
     // worth something else, and the status surfaces read that cache without a rank map.
@@ -388,9 +432,9 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
   // tick both close over the same pre-render `tried`, so a caller computing the numbers
   // itself would have the second overwrite the first's count with a replay blind to it.
   it('recomputes claimed/deadline from the STORE\'s log, not the caller\'s snapshot', () => {
-    const { ensureWordRound, anchorWordRun, recordWordGuess } = useGameStore.getState();
+    const { ensureWordRound, openWordRun, recordWordGuess } = useGameStore.getState();
     ensureWordRound('w:5:fr', 'phare');
-    anchorWordRun('w:5:fr', Date.now());
+    openWordRun('w:5:fr', Date.now());
     const pays2 = priced(2);
     recordWordGuess('mer', pays2);
     recordWordGuess('sel', pays2); // same tick — the caller never re-rendered
@@ -402,9 +446,9 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
   });
 
   it('a republished DIFFERENT word resets the round back to its gate', () => {
-    const { ensureWordRound, anchorWordRun, recordWordGuess } = useGameStore.getState();
+    const { ensureWordRound, openWordRun, recordWordGuess } = useGameStore.getState();
     ensureWordRound('w:5:fr', 'phare');
-    anchorWordRun('w:5:fr', Date.now());
+    openWordRun('w:5:fr', Date.now());
     recordWordGuess('mer', openRun);
     ensureWordRound('w:5:fr', 'ocean');
     expect(wordRound()).toEqual({
@@ -417,9 +461,9 @@ describe('word rounds (#163) — ensureWordRound / anchorWordRun / recordWordGue
   });
 
   it('keeps past days\' word rounds when a new day flips (archive history)', () => {
-    const { ensureWordRound, anchorWordRun, recordWordGuess } = useGameStore.getState();
+    const { ensureWordRound, openWordRun, recordWordGuess } = useGameStore.getState();
     ensureWordRound('w:5:fr', 'phare');
-    anchorWordRun('w:5:fr', Date.now());
+    openWordRun('w:5:fr', Date.now());
     recordWordGuess('mer', openRun);
     ensureWordRound('w:6:fr', 'foret');
     const s = useGameStore.getState();
@@ -628,7 +672,14 @@ describe('setOutbox — what an answer left unacknowledged', () => {
 // — and it is NEVER persisted, which is what removes the acknowledged-derived state the
 // outbox model exists to be rid of.
 describe('setRoundLoad — the transient server state', () => {
-  const server = { guesses: ['bois'], solved: false, solvedByAppend: false, credited: false };
+  const server = {
+    guesses: ['bois'],
+    solved: false,
+    solvedByAppend: false,
+    credited: false,
+    // Word mode's own (#217): a sentence round has no clock, so it has no owning device.
+    startedBy: null,
+  };
   const puzzle = REV;
 
   it('holds each round\'s state under its own key', () => {

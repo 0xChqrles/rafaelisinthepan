@@ -8,12 +8,14 @@
 // game benefits least: what syncing buys is the live friends board, and a 60-second run is
 // over before anyone opens it.
 //   { token, puzzle, turnstileToken } — START: stamp this round's clock from the SERVER's
-//                                       own clock, onto the same record. Its answer adds
-//                                       `resumed`: false when THIS call stamped it, true
-//                                       when it joined a clock already running;
-//   { token, puzzle, guesses: [...] } — SUBMIT the whole log, once, at the end of the run.
+//                                       own clock, onto the same record, FOR THE CALLING
+//                                       DEVICE (#217). A run that is not yet recorded is
+//                                       replaced — this is a restart as much as a start;
+//   { token, puzzle, guesses: [...] } — SUBMIT the whole log, once, at the end of the run,
+//                                       and only from the device the stamp names.
 //
-// Every call answers with the FULL stored state `{ guesses, createdAt, startedAt?, now }` —
+// Every call answers with the FULL stored state
+// `{ guesses, createdAt, startedAt?, startedBy?, now }` —
 // a 200 and EVERY refusal — so a write is also a reconciliation: the caller computes
 // against stale local state, the server answers with truth, and the tab re-renders correct.
 // `now` is the server's own clock at the moment it answered, which is what lets a client
@@ -217,27 +219,37 @@ export async function handleRound(
         responseHeaders,
       );
     }
-    // `running` is not a refusal: the ORIGINAL start stands and is what the answer
-    // carries, so a double tap, a retry and a second device all resume the one clock.
+    // A START is a RESTART as much as a first start (#217): an unsubmitted run is replaced
+    // — this device's, another device's, or a retired word's — and the new stamp names the
+    // CALLER. The one thing that refuses it is a run already RECORDED, which is answered
+    // with that final run rather than as an error: the daily is one-shot once its log is
+    // stored, and the caller adopts what stands instead of wiping it.
     //
-    // But WHICH of the two happened is the caller's business, so the answer says it. A
-    // client that merely RESUMED someone else's clock cannot know what that run has
-    // claimed — Word mode stores nothing until the end — so its own clock runs short and
-    // would call a live run finished. Telling it apart from the session that actually
-    // stamped the clock is what stops a joiner from writing an empty run over a real one.
+    // The device stamp is what replaced #202's `resumed` flag and every inference the
+    // client hung off it. A device could tell "I am running this" from "I merely joined a
+    // clock somebody else is playing" only by remembering that its own start stamped it —
+    // and a joiner that got that wrong buried a real run under an empty log. Now the answer
+    // simply says whose run it is.
     const { outcome, state } = await rounds.start({
       date,
       lang,
       mode,
       publicId,
       puzzle,
+      runner: { deviceId: auth.value.device.deviceId, ...auth.value.device.agent },
       now: instant,
     });
-    return json(
-      200,
-      { ...roundBody(state, instant), resumed: outcome === 'running' },
-      responseHeaders,
-    );
+    // …and that refusal IS the run the answer carries: there is no error code for it, so
+    // the caller reads it off `submittedAt`. An `already_submitted` carrying NO recorded run
+    // therefore says nothing at all, and a 200 would read as a start that silently did
+    // nothing — the one failure this route must never fake. It happens when a republish
+    // lands between the condition failing and the strongly consistent read that classifies
+    // it: the record has moved on to the word that replaced this one, so the server
+    // genuinely holds no round for the puzzle asked about. That is the READ's own answer.
+    if (outcome === 'already_submitted' && state.submittedAt === undefined) {
+      return errorResponse(404, 'not_found', 'No round recorded.', responseHeaders);
+    }
+    return answer(state);
   }
 
   const rawGuesses = body.guesses;
@@ -254,9 +266,12 @@ export async function handleRound(
   if (rawGuesses === undefined) {
     // READ: the caller's stored round FOR THIS PUZZLE. A 404 is the honest "nothing
     // yet" — a fresh round (or a re-published daily whose old log is retired), local
-    // state authoritative until the first write lands. For a word round it is also what
-    // makes the daily one-shot ACROSS DEVICES: the answer carries the server's start, so
-    // a second device resumes the run instead of beginning a fresh one.
+    // state authoritative until the first write lands. For a word round it is what says
+    // WHOSE run the daily holds (#217): the answer carries the start and the device it was
+    // stamped for, and the caller turns that into a phase — resume, submit, or start over.
+    // *(It used to be what made the daily one-shot across devices, by handing a second
+    // device the clock to resume; #217 replaced that with an honest restart, since the
+    // run's claims live in the playing device's storage until it submits.)*
     const state = await rounds.get({ date, lang, mode }, publicId, puzzle);
     if (!state) {
       return errorResponse(404, 'not_found', 'No round recorded.', responseHeaders);
@@ -298,7 +313,7 @@ export async function handleRound(
 
   if (mode === 'word') {
     return await submitWordRound(
-      { date, lang, mode, publicId, puzzle, guesses },
+      { date, lang, mode, publicId, deviceId: auth.value.device.deviceId, puzzle, guesses },
       puzzleStore,
       deps,
       event,
@@ -757,6 +772,9 @@ interface WordSubmission {
   lang: string;
   mode: ScoreMode;
   publicId: string;
+  // The device offering the log (#217): a run belongs to the device that started it, and
+  // only that device may end it.
+  deviceId: string;
   puzzle: string;
   guesses: string[];
 }
@@ -773,7 +791,7 @@ async function submitWordRound(
   instant: Date,
   headers: Record<string, string>,
 ): Promise<FnUrlResult> {
-  const { date, lang, mode, publicId, puzzle, guesses } = input;
+  const { date, lang, mode, publicId, deviceId, puzzle, guesses } = input;
   const rounds = deps.roundStore;
   const artifact = await puzzleStore.getWordPuzzle(date, lang);
   if (!artifact) {
@@ -805,6 +823,7 @@ async function submitWordRound(
     lang,
     mode,
     publicId,
+    deviceId,
     puzzle,
     guesses,
     // The game's OWN FLOOR, not a tuning knob: Word mode has no early finish, so a run
@@ -823,6 +842,20 @@ async function submitWordRound(
       409,
       'not_started',
       'No run of this word has been started on this server.',
+      state,
+      instant,
+      headers,
+    );
+  }
+  if (outcome === 'started_elsewhere') {
+    // This device played a run the server no longer holds: another device restarted the
+    // daily while it was away (#217). The answer carries the stamp that stands, so the
+    // screen learns whose run it is now — and offers to start over rather than reporting a
+    // failure the player can do nothing about.
+    return refusal(
+      409,
+      'started_elsewhere',
+      'This run was restarted on another device.',
       state,
       instant,
       headers,

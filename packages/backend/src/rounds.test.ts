@@ -224,12 +224,14 @@ interface RoundResponse {
   guesses: string[];
   createdAt: string;
   startedAt?: string;
+  // WHICH device the word run belongs to (#217) — the id its two conditions compare, plus
+  // the label the screen names that device with.
+  startedBy?: { deviceId: string; device: string; os: string; browser: string };
   submittedAt?: string;
   progress?: number;
   solved?: boolean;
   credited?: boolean;
   now: string;
-  resumed?: boolean;
   error?: string;
 }
 
@@ -587,14 +589,77 @@ describe('word mode: the round start (#202)', () => {
     expect(state.guesses).toEqual([]);
   });
 
-  it('is IDEMPOTENT per word — a second tap resumes the one clock, never a fresh minute', async () => {
+  it('stamps the DEVICE the run belongs to, by its own label (#217)', async () => {
+    const handler = makeHandler();
+    const response = await handler(wordEvent({ turnstileToken: 'ok' }));
+    // The id is what the submission is checked against; the parsed user-agent fields are
+    // what lets another device name this one before ending its run.
+    expect(parsed(response).startedBy).toEqual({
+      deviceId: ME.deviceId,
+      device: 'Test',
+      os: 'Test',
+      browser: 'Test',
+    });
+  });
+
+  it('RESTARTS: every start mints a fresh clock while the run is unsubmitted (#217)', async () => {
     const handler = makeHandler();
     await handler(wordEvent({ turnstileToken: 'ok' }));
     handler.advance(5_000);
     const again = await handler(wordEvent({ turnstileToken: 'ok' }));
     expect(again.statusCode).toBe(200);
-    expect(parsed(again).startedAt).toBe(START.toISOString());
-    expect(parsed(again).now).toBe(new Date(START.getTime() + 5_000).toISOString());
+    // #202 answered the ORIGINAL stamp here. A run is no longer resumable across a tap:
+    // its claims live in the playing device's local storage, so what a second tap can
+    // honestly offer is a fresh run, not a clock whose log is unreachable.
+    expect(parsed(again).startedAt).toBe(new Date(START.getTime() + 5_000).toISOString());
+  });
+
+  it('a RESTART wipes the run it replaces — log and all', async () => {
+    const handler = makeHandler({ word: WORD_ARTIFACT });
+    await handler(wordEvent({ turnstileToken: 'ok' }));
+    handler.advance(wordRunFloorMs(1));
+    // A restart on the SAME device: the old clock and everything it was about are gone.
+    const restarted = await handler(wordEvent({ turnstileToken: 'ok' }));
+    expect(parsed(restarted).guesses).toEqual([]);
+    expect(parsed(restarted).submittedAt).toBeUndefined();
+  });
+
+  it('refuses to restart a RECORDED run, answering with the final one (#217)', async () => {
+    const handler = makeHandler({ word: WORD_ARTIFACT });
+    await handler(wordEvent({ turnstileToken: 'ok' }));
+    handler.advance(wordRunFloorMs(1));
+    await handler(wordEvent({ guesses: ['mer'] }));
+
+    const again = await handler(wordEvent({ turnstileToken: 'ok' }));
+    // Once a log is stored the daily is over: the caller adopts the run that stands rather
+    // than starting one the recorded score could never belong to.
+    expect(again.statusCode).toBe(200);
+    expect(parsed(again).guesses).toEqual(['mer']);
+    expect(parsed(again).submittedAt).toBeTruthy();
+  });
+
+  // …and that refusal IS the run the answer carries: it has no error code of its own, so a
+  // caller reads it off `submittedAt`. An `already_submitted` with nothing to carry
+  // therefore says nothing at all. The store reaches it when a republish lands between the
+  // condition failing and the read that classifies it — the record now names the word that
+  // replaced this one, and no caller is handed a retired round's state for a puzzle it did
+  // not ask about.
+  it('never answers a refusal it has no recorded run to carry (added on review)', async () => {
+    const store = memoryRoundStore();
+    const handler = makeHandler({
+      roundStore: {
+        ...store,
+        async start() {
+          return { outcome: 'already_submitted' as const, state: { guesses: [], createdAt: '' } };
+        },
+      },
+    });
+
+    const response = await handler(wordEvent({ turnstileToken: 'ok' }));
+    // The READ's own answer for a tag the server holds nothing under — not a 200 whose
+    // empty state reads as a start that silently did nothing.
+    expect(response.statusCode).toBe(404);
+    expect(parsed(response).error).toBe('not_found');
   });
 
   it('restarts the round when a DIFFERENT word is published under the same key', async () => {
@@ -647,15 +712,100 @@ describe('word mode: the round start (#202)', () => {
     expect(response.statusCode).toBe(400);
   });
 
-  it('is what a second device RESUMES: the read carries the same start', async () => {
+  it('the READ carries the stamp, so a second device can see WHOSE run it is', async () => {
     const handler = makeHandler();
     await handler(wordEvent({ turnstileToken: 'ok' }));
     handler.advance(20_000);
-    const read = await handler(wordEvent());
+    const laptop = await seedDevice(handler.devices, { accountId: ME.accountId });
+    const read = await handler(
+      event({ query: WORD_QUERY, body: { token: laptop.token, puzzle: WORD_TAG } }),
+    );
     expect(read.statusCode).toBe(200);
     expect(parsed(read).startedAt).toBe(START.toISOString());
-    // 20s elapsed on the server's own clock, whatever the second device's says.
+    // The read WRITES nothing: it says the run is the other device's, and the screen picks
+    // its phase from that — PLAY, offering to restart, never a clock it cannot see the log
+    // of. 20s elapsed on the server's own clock, whatever the second device's says.
+    expect(parsed(read).startedBy?.deviceId).toBe(ME.deviceId);
     expect(Date.parse(parsed(read).now) - Date.parse(parsed(read).startedAt!)).toBe(20_000);
+  });
+});
+
+// CONTRACT (#217): the run belongs to the DEVICE that started it. Two conditions carry the
+// whole model — a start is accepted only while the run is unsubmitted (and then always
+// mints a fresh stamp), a submission only while the run is unsubmitted AND the stamp names
+// the caller. Concurrent devices are deliberately last-commit-wins inside those two.
+describe('word mode: the run belongs to a device (#217)', () => {
+  async function twoDevices() {
+    const handler = makeHandler({ word: WORD_ARTIFACT });
+    const laptop = await seedDevice(handler.devices, { accountId: ME.accountId });
+    const asLaptop = (extra: Record<string, unknown> = {}) =>
+      event({ query: WORD_QUERY, body: { token: laptop.token, puzzle: WORD_TAG, ...extra } });
+    return { handler, laptop, asLaptop };
+  }
+
+  it('a second device STARTING takes the run, and the first device can no longer submit it', async () => {
+    const { handler, laptop, asLaptop } = await twoDevices();
+    await handler(wordEvent({ turnstileToken: 'ok' }));
+    handler.advance(1_000);
+    const stolen = await handler(asLaptop({ turnstileToken: 'ok' }));
+    expect(parsed(stolen).startedBy?.deviceId).toBe(laptop.deviceId);
+
+    handler.advance(wordRunFloorMs(1));
+    const refused = await handler(wordEvent({ guesses: ['mer'] }));
+    // The phone's log describes a clock the server no longer holds. Recording it would bury
+    // the run the laptop is playing — permanently, since the submission is first-write-wins.
+    expect(refused.statusCode).toBe(409);
+    expect(parsed(refused).error).toBe('started_elsewhere');
+    // The refusal is a reconciliation like every other answer: it names who holds the run
+    // now, which is what sends that screen back to PLAY.
+    expect(parsed(refused).startedBy?.deviceId).toBe(laptop.deviceId);
+    expect(parsed(refused).guesses).toEqual([]);
+  });
+
+  it('records nothing for a run the caller does not own — not even a score row', async () => {
+    const { handler, asLaptop } = await twoDevices();
+    await handler(wordEvent({ turnstileToken: 'ok' }));
+    await handler(asLaptop({ turnstileToken: 'ok' }));
+    handler.advance(wordRunFloorMs(1));
+    await handler(wordEvent({ guesses: ['mer'] }));
+    expect(
+      await handler.scoreStore.list({ date: ACTIVE_DATE, lang: 'fr', mode: 'word' }),
+    ).toEqual([]);
+  });
+
+  it('but the device that DID start it still submits normally', async () => {
+    const { handler, asLaptop } = await twoDevices();
+    await handler(wordEvent({ turnstileToken: 'ok' }));
+    await handler(asLaptop({ turnstileToken: 'ok' }));
+    handler.advance(wordRunFloorMs(1));
+    const recorded = await handler(asLaptop({ guesses: ['mer'] }));
+    expect(recorded.statusCode).toBe(200);
+    expect(parsed(recorded).guesses).toEqual(['mer']);
+  });
+
+  it('and once a run is SUBMITTED, the other device cannot restart the day', async () => {
+    const { handler, asLaptop } = await twoDevices();
+    await handler(wordEvent({ turnstileToken: 'ok' }));
+    handler.advance(wordRunFloorMs(2));
+    const recorded = await handler(wordEvent({ guesses: ['mer', 'ocean'] }));
+    expect(recorded.statusCode).toBe(200);
+
+    const laptopStart = await handler(asLaptop({ turnstileToken: 'ok' }));
+    // If a submission won the race, the restart fails and the caller adopts the final run.
+    expect(laptopStart.statusCode).toBe(200);
+    expect(parsed(laptopStart).guesses).toEqual(['mer', 'ocean']);
+    expect(parsed(laptopStart).submittedAt).toBeTruthy();
+  });
+
+  it('a device on ANOTHER account is not a second device at all', async () => {
+    const handler = makeHandler({ word: WORD_ARTIFACT });
+    await handler(wordEvent({ turnstileToken: 'ok' }));
+    const stranger = await seedDevice(handler.devices);
+    const theirs = await handler(
+      event({ query: WORD_QUERY, body: { token: stranger.token, puzzle: WORD_TAG } }),
+    );
+    // Rounds are keyed by ACCOUNT: nothing this device does can touch that run.
+    expect(theirs.statusCode).toBe(404);
   });
 });
 
@@ -795,15 +945,14 @@ describe('word mode: a run that claimed nothing (#202)', () => {
     expect(parsed(read).submittedAt).toBeTruthy();
   });
 
-  it('says a run was RESUMED rather than started, so a joiner cannot claim it', async () => {
-    const handler = makeHandler();
-    const first = await handler(wordEvent({ turnstileToken: 'ok' }));
-    expect(parsed(first).resumed).toBe(false);
-    handler.advance(5_000);
-    // The same player on a second device: the clock is somebody's already.
-    const joined = await handler(wordEvent({ turnstileToken: 'ok' }));
-    expect(parsed(joined).resumed).toBe(true);
-    expect(parsed(joined).startedAt).toBe(START.toISOString());
+  it('cannot be restarted away once recorded — an empty log is still a stored run', async () => {
+    const handler = await startedRound();
+    await handler(wordEvent({ guesses: [] }));
+    const again = await handler(wordEvent({ turnstileToken: 'ok' }));
+    // The marker is the attribute, so a 0-claim run ends the daily exactly like any other
+    // (#217): the start is refused and the recorded run is what comes back.
+    expect(parsed(again).submittedAt).toBeTruthy();
+    expect(parsed(again).guesses).toEqual([]);
   });
 });
 

@@ -175,6 +175,25 @@ const STRINGS = {
     en: 'Every find adds time. Rarer words add more.',
     fr: 'Chaque mot ajoute du temps. Plus il est rare, plus il en donne.',
   },
+  // A word run belongs to the DEVICE that started it (#217), and a device that does not
+  // hold this day's run can only start it OVER. The gate says what that costs before the
+  // tap. Another device is NAMED — two open tabs is enough to lose a live run by accident,
+  // and the label is exactly what makes the loss legible. This device gets its own wording:
+  // repeating its Mac / Chrome label as though it were elsewhere is accurate but confusing.
+  // `{device}` is the table's second placeholder (see `tDevice`), for the reason `{n}` is
+  // its first: the fragment is a name, and a name belongs inside its sentence rather than
+  // concatenated onto one.
+  wordRestartNote: {
+    en: 'Started on {device}. Starting here ends that run.',
+    fr: 'Commencé sur {device}. Recommencer ici met fin à cette partie.',
+  },
+  wordRestartHereNote: {
+    en: 'A run was already started on this device. Starting over replaces it.',
+    fr: 'Une partie a déjà commencé sur cet appareil. Recommencer la remplace.',
+  },
+  // …and the button says so, rather than wearing PLAY over new copy: the tap is a
+  // deliberate act, so it takes a control of its own.
+  gateRestart: { en: 'START OVER', fr: 'RECOMMENCER' },
   // A word run's day is FINISHED, never "solved" (decided 2026-08-08): the clock ran out,
   // which is not an achievement the way a reconstructed sentence is. Visually it is the
   // same gold as a solve; this is the distinction the reader hears.
@@ -444,6 +463,21 @@ export function sourceKind(lang: string, kind: string): string {
 // compile-time obligation the way it does every other string.
 export function tn(lang: string, key: UiKey, n: number): string {
   return t(lang, key).replace('{n}', String(n));
+}
+
+// The other placeholder: a DEVICE named inside its own sentence (#217 — "Started on
+// iPhone / Chrome."). The label is a name, so it takes a placeholder rather than being
+// concatenated onto a fragment — the two languages are free to put it where they want it.
+export function tDevice(lang: string, key: UiKey, device: string): string {
+  return t(lang, key).replace('{device}', device);
+}
+
+// Restarting always replaces a server-held Word run, but the owner changes how that cost
+// should be said: name a genuinely different device; call the device in hand "this device".
+export function wordRestartNote(lang: string, device: string, sameDevice: boolean): string {
+  return sameDevice
+    ? t(lang, 'wordRestartHereNote')
+    : tDevice(lang, 'wordRestartNote', device);
 }
 
 // Screen-reader feedback for one hole's reaction to a guess (the visual equivalent is

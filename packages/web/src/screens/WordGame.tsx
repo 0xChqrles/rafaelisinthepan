@@ -7,9 +7,10 @@ import { KB_EXIT_FALLBACK_MS } from './Game';
 import { useDeadlinePassed } from '../hooks/useCountdown';
 import useScoreHistogram from '../hooks/useScoreHistogram';
 import useWordRoundSync from '../hooks/useWordRoundSync';
-import { retryWordRoundSync, startWordRound } from '../state/wordRoundSync';
+import { finishWordRound, retryWordRoundSync, startWordRound } from '../state/wordRoundSync';
 import { prefetchTurnstileTokens } from '../turnstile';
-import { deviceIdentity } from '../identity';
+import { deviceIdentity, useDeviceIdentity } from '../identity';
+import { deviceLabel } from '../components/DeviceList';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import {
   bonusSeconds,
@@ -37,7 +38,7 @@ import WordEndScreen from '../components/WordEndScreen';
 import LoadError from '../components/LoadError';
 import ErrorSheet from '../components/ErrorSheet';
 import CoachText from '../tutorial/CoachText';
-import { t, tn, srWordClaim, srWordMiss, srWordTimeUp } from '../i18n';
+import { t, tn, wordRestartNote, srWordClaim, srWordMiss, srWordTimeUp } from '../i18n';
 import { prefersReducedMotion } from '../hooks/useScramble';
 
 // Word mode (#156, retimed by #163): the second daily on the same mechanic, inverted —
@@ -150,7 +151,9 @@ function WordRound({
   const live = round && round.word === puzzle.word.slug ? round : undefined;
   const pendingTried = live ? live.tried : [];
   const deadline = live ? live.deadline : null;
-  const started = live ? live.startedAt !== null : false;
+  // The server HOLDS a recorded run for this word — whoever played it. A stored log ends
+  // the daily, so this alone puts the screen on the final result (#217).
+  const settled = live?.submitted === true;
 
   // The clock, asked only what this screen has to know: has it run out? The seconds
   // themselves belong to the HUD, which subscribes to them itself — so the prompt and the
@@ -158,7 +161,6 @@ function WordRound({
   // and never counted down, so a reload mid-run resumes with the REAL remaining time and
   // a tab backgrounded past the end comes back to a finished round.
   const ended = useDeadlinePassed(deadline);
-  const playing = started && !ended;
 
   // The player's whole vocabulary — and the scale rarity is measured against (#163): a
   // group's `freq` is a position in this list, so what counts as RARE is a fraction of it.
@@ -166,10 +168,9 @@ function WordRound({
   // as the economy's denominator at all.
   const corpusSize = vocabSet.size;
 
-  // The server's copy of this round (#202): the mount READ resumes a run started on another
-  // device (or in a tab that died) and carries a finished day's recorded run to a device
-  // that never played it; the run's END is what asks for the one write that follows. PLAY
-  // is not here — see `handlePlay`.
+  // The server's copy of this round (#202): the mount READ says WHOSE run this daily holds
+  // and carries a finished day's recorded run to a device that never played it. It anchors
+  // no clock — only a START does that (#217). PLAY is not here either — see `handlePlay`.
   const syncContext = useMemo(
     () => ({
       roundKey,
@@ -180,15 +181,53 @@ function WordRound({
     }),
     [roundKey, lang, dayNumber, puzzle.word.slug, ranks],
   );
-  const roundLoad = useWordRoundSync(syncContext, ended);
+  const roundLoad = useWordRoundSync(syncContext);
+  const server = roundLoad.status === 'ready' ? roundLoad.server : null;
+
+  // **THE PHASE COMES FROM TWO FACTS (#217): the server's answer, and whether THIS device
+  // holds the round's deadline.** A run is the device's that started it — its claims live
+  // in that device's own storage until it submits, because Word mode streams nothing — so a
+  // clock stamped elsewhere is one this screen can neither play nor report. Everything else
+  // is offered a RESTART, which mints a new clock on both ends and wipes what it replaces.
+  const myDevice = useDeviceIdentity()?.deviceId ?? null;
+  const mine =
+    server !== null &&
+    server.startedBy !== null &&
+    myDevice !== null &&
+    server.startedBy.deviceId === myDevice &&
+    deadline !== null;
+  // A recorded run is the final screen whoever played it; otherwise the post-mortem is this
+  // device's own run, ended. Both are the same surface, and neither is reachable from a
+  // stale local deadline alone — which is exactly what the gate would otherwise render the
+  // revealed board behind.
+  const finished = settled || (mine && ended);
+  const playing = mine && !finished;
+  // What the FOOTER holds: the gate, or the prompt and keys the other two phases share.
+  const underway = playing || finished;
+
+  // The run's END asks for the one write, and only from the device that holds it (#217).
+  useEffect(() => {
+    if (mine && ended && !settled) finishWordRound(syncContext);
+  }, [mine, ended, settled, syncContext]);
+
+  // What PLAY will DESTROY (#217): a run the server holds for this word that this screen is
+  // not the one playing — another device's, or this device's own with the local clock gone.
+  // Restarting is the only thing left to offer there, so the gate says what it costs before
+  // the single tap that spends it; a remote owner is named, this device is said as such. A
+  // recorded run is never restartable, so a finished day carries no warning.
+  const restartOwner = !finished && !mine ? server?.startedBy ?? null : null;
+  const restartNote = restartOwner
+    ? wordRestartNote(
+        lang,
+        deviceLabel(restartOwner, lang),
+        restartOwner.deviceId === myDevice,
+      )
+    : null;
 
   // A live run replays this device's unacknowledged outbox. Once the server accepts a
   // submission, first-write-wins makes its returned log authoritative — including when
   // another device got there first — and settlement clears the persisted outbox.
-  const tried =
-    live?.submitted === true && roundLoad.status === 'ready'
-      ? roundLoad.server.guesses
-      : pendingTried;
+  const tried = settled && server ? server.guesses : pendingTried;
 
   // PLAY: the clock is the SERVER's, so the gate holds until its answer lands and the
   // visible countdown starts on the run the server is actually timing. Starting
@@ -201,8 +240,8 @@ function WordRound({
   // round start IS clock start, so a bot check landing exactly then costs real seconds on a
   // 60-second game; asking while the player reads the rules puts it in hand beforehand.
   useEffect(() => {
-    if (!started) prefetchTurnstileTokens(deviceIdentity() === null ? 2 : 1);
-  }, [started, roundKey]);
+    if (!underway) prefetchTurnstileTokens(deviceIdentity() === null ? 2 : 1);
+  }, [underway, roundKey]);
   const handlePlay = useCallback(() => {
     if (starting) return;
     setStarting(true);
@@ -236,12 +275,12 @@ function WordRound({
   // The day's score population (#170), READ once the SERVER holds this run (#203). The
   // claim count is no longer POSTed: the end-of-run SUBMISSION is what records the row, so
   // the standing is readable exactly when that write has been acknowledged — which
-  // `submitted` already says, whether this device wrote the run or merely read that another
-  // one had. It also answers, for free, the thing this gate used to spell out itself: a
-  // device that only JOINED a run in progress never writes (`mayWrite`), so it has nothing
-  // to stand on until the real run's submission lands. Renders on the post-mortem only.
+  // `settled` already says, whether this device wrote the run or merely read that another
+  // one had. A run this device merely watched therefore draws no standing until the device
+  // playing it submits, which is the same one fact rather than a rule of its own. Renders
+  // on the post-mortem only.
   const placement = useScoreHistogram({
-    finished: ended && live?.submitted === true,
+    finished: settled,
     mode: 'word',
     lang,
     dayNumber,
@@ -260,18 +299,38 @@ function WordRound({
   // End presentation is transient, not persisted. A live run lets the clock's last moment
   // play out, then the field arrives and the prompt leaves, then the keyboard drops and
   // the results rise. A rehydrated ended run initializes directly at the final frame.
-  const [promptExiting, setPromptExiting] = useState(ended);
+  const [promptExiting, setPromptExiting] = useState(finished);
   const [keyboardLeaving, setKeyboardLeaving] = useState(false);
   // The post-mortem is its OWN BEAT: `ended` is the clock's fact, this is when the board
   // gets to arrive and say what the field held.
-  const [postMortem, setPostMortem] = useState(ended);
-  const [showResults, setShowResults] = useState(ended);
+  const [postMortem, setPostMortem] = useState(finished);
+  const [showResults, setShowResults] = useState(finished);
   const [animateResults, setAnimateResults] = useState(false);
-  const previousEnded = useRef(ended);
+  const previousEnded = useRef(finished);
   useEffect(() => {
-    const justEnded = ended && !previousEnded.current;
-    previousEnded.current = ended;
-    if (!justEnded) return undefined;
+    const was = previousEnded.current;
+    previousEnded.current = finished;
+    if (was === finished) return undefined;
+    if (!finished) {
+      // **A FINISHED RUN CAN STOP BEING THIS SCREEN'S (#217), and its presentation has to
+      // go with it.** `finished` was monotonic within a mount while it meant "the clock
+      // died"; now a `started_elsewhere` refusal — which typically lands DURING these very
+      // beats, one round trip after the deadline — takes the run away and sends the screen
+      // back to the gate. The result tray is a SIBLING of the gate rather than the branch
+      // it replaces, and the revealed board is drawn in the window above it, so leaving
+      // either standing puts the rejected run's post-mortem over the offer to start over.
+      setPostMortem(false);
+      setPromptExiting(false);
+      setShowResults(false);
+      setAnimateResults(false);
+      setKeyboardLeaving(false);
+      // The typed guess, the strike in the air and the seconds it bought belong to that run
+      // too: a fresh run must open on an empty prompt, not on the dead one's last word.
+      setInput('');
+      setHit(null);
+      setGain(null);
+      return undefined;
+    }
 
     setAnimateResults(true);
     // Reduced motion collapses the beats to their state changes — these are JS timers, so
@@ -289,7 +348,7 @@ function WordRound({
       window.clearTimeout(reveal);
       window.clearTimeout(kb);
     };
-  }, [ended]);
+  }, [finished]);
 
   const finishKeyboardExit = useCallback(() => {
     setKeyboardLeaving(false);
@@ -353,12 +412,18 @@ function WordRound({
   // the timer itself is deliberately not a live region. Announced on the TRANSITION only
   // — the ref is seeded with the mount value, so opening an already-finished day states
   // nothing (its result is on screen to be read, not news).
-  const announcedEnd = useRef(ended);
+  const announcedEnd = useRef(finished);
   useEffect(() => {
-    if (!ended || announcedEnd.current) return;
+    if (!finished) {
+      // Losing the run re-arms it (#217): the announcement is about a run ENDING, and the
+      // next one to end here is a different run entirely.
+      announcedEnd.current = false;
+      return;
+    }
+    if (announcedEnd.current) return;
     announcedEnd.current = true;
     say(srWordTimeUp(lang, score));
-  }, [ended, lang, say, score]);
+  }, [finished, lang, say, score]);
 
   // The post-mortem's scroller. It arrives parked at the bottom, where the line runs into
   // the pinned terminus word below it — the line is read up from that end, like the route
@@ -605,25 +670,41 @@ function WordRound({
 
       <div className="word-footer">
         <div className="word-footer-play">
-          {!started ? (
+          {!underway ? (
             /* The GATE — the sentence gate's EXACT layout (user-decided 2026-08-11):
                the rules in the shared `.coach-rules` dialog and a full-width PLAY,
                stacked in `.rules-gate` on the tray's bottom edge, extra height rising
                upward (`.tray.tray-gate`). What to do, and what buys more time to do it
-               in; tapping PLAY swaps the tray's contents for the prompt and keys. */
+               in; tapping PLAY swaps the tray's contents for the prompt and keys.
+
+               On a day the server already holds an unsubmitted run for, the gate also
+               says WHAT THE TAP WILL DESTROY (#217): it names a different device (two open
+               tabs are enough to lose a live run by accident), while a lost local clock is
+               called THIS device instead of repeating its own label as though it were
+               remote. The button says START OVER there, so the tap is a deliberate act on
+               a differently-labelled control rather than the same PLAY under new copy. */
             <div className="tray tray-gate">
               <div className="rules-gate">
-                <p className="sr-only">{gateRules}</p>
+                <p className="sr-only">{gateRules}{restartNote ? `\n${restartNote}` : ''}</p>
                 <div className="coach-rules" aria-hidden="true">
                   <CoachText copy={gateRules} />
                 </div>
+                {restartNote && (
+                  <p className="gate-warning" aria-hidden="true">
+                    {restartNote}
+                  </p>
+                )}
                 <button
                   type="button"
                   className="mix-btn"
                   onClick={handlePlay}
                   disabled={starting}
                 >
-                  {starting ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'gatePlay')}
+                  {starting ? (
+                    <LoadingWave text={t(lang, 'loading')} />
+                  ) : (
+                    t(lang, restartNote ? 'gateRestart' : 'gatePlay')
+                  )}
                 </button>
               </div>
             </div>

@@ -289,7 +289,14 @@ describe('the mount read — what the screen waits on', () => {
     expect(load()).toEqual({
       status: 'ready',
       puzzle: REVISION,
-      server: { guesses: ['bois', 'chemin'], solved: false, solvedByAppend: false, credited: false },
+      server: {
+        guesses: ['bois', 'chemin'],
+        solved: false,
+        solvedByAppend: false,
+        credited: false,
+        // Word mode's own (#217): a sentence round has no clock, so it names no device.
+        startedBy: null,
+      },
     });
     // A READ never writes: the request carries no guesses.
     expect(bodyOf(0).guesses).toBeUndefined();
@@ -303,7 +310,7 @@ describe('the mount read — what the screen waits on', () => {
     expect(load()).toEqual({
       status: 'ready',
       puzzle: REVISION,
-      server: { guesses: [], solved: false, solvedByAppend: false, credited: false },
+      server: { guesses: [], solved: false, solvedByAppend: false, credited: false, startedBy: null },
     });
   });
 
@@ -636,6 +643,7 @@ describe('the four refusals', () => {
       // Learned from a refusal, not confirmed on this device's batch: adopted history.
       solvedByAppend: false,
       credited: false,
+      startedBy: null,
     });
     // The guesses it refused are never stored, so keeping them would leave the screen
     // counting tries the recorded score does not.
@@ -722,7 +730,13 @@ describe('the SERVER\'s solve (#203/#214)', () => {
     post.mockResolvedValueOnce(ok(['foret'], true));
     notifyGuess(KEY);
     await settle();
-    expect(server()).toEqual({ guesses: ['foret'], solved: true, solvedByAppend: true, credited: false });
+    expect(server()).toEqual({
+      guesses: ['foret'],
+      solved: true,
+      solvedByAppend: true,
+      credited: false,
+      startedBy: null,
+    });
   });
 
   it('a solve read at MOUNT is adopted history — nothing may celebrate it', async () => {
@@ -884,7 +898,7 @@ describe('no token, no private fetch (#216)', () => {
     expect(load()).toEqual({
       status: 'ready',
       puzzle: REVISION,
-      server: { guesses: [], solved: false, solvedByAppend: false, credited: false },
+      server: { guesses: [], solved: false, solvedByAppend: false, credited: false, startedBy: null },
     });
   });
 

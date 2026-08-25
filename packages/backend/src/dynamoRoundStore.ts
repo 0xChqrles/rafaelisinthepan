@@ -13,6 +13,7 @@ import {
   roundSortKey,
   type RoundDaySummary,
   type RoundKey,
+  type RoundRunner,
   type RoundState,
   type RoundStore,
 } from './roundStore';
@@ -66,6 +67,7 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
     lastWriteAt: '#last',
     createdAt: '#created',
     startedAt: '#started',
+    startedBy: '#by',
     submittedAt: '#sub',
     progress: '#prog',
     solved: '#solved',
@@ -332,14 +334,16 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
       }
     },
 
-    // WORD mode's first write (#202): stamp the round's start from THIS server's clock.
+    // WORD mode's first write (#202): stamp the round's start from THIS server's clock —
+    // and, since #217, the DEVICE it belongs to.
     //
-    // One conditional UpdateItem does both branches the operation has. `attribute_not_exists
-    // (#started) OR #p <> :puzzle` passes for a record that does not exist (the first
-    // clause — a missing attribute makes the comparison in the second FALSE, never true),
-    // and for one naming a RETIRED word (the round restarts, so its log is REMOVEd with the
-    // old start). It fails for exactly the case that must not move: this puzzle's clock is
-    // already stamped, which the classification read below answers with.
+    // ONE conditional UpdateItem, and the condition is the whole ownership model:
+    // `attribute_not_exists(#sub) OR #p <> :puzzle` passes for a record that does not exist
+    // (the first clause — a missing attribute makes the comparison in the second FALSE,
+    // never true), for an unsubmitted run whoever started it, and for one naming a RETIRED
+    // word. It fails for exactly the state that ends a daily: this puzzle's log is already
+    // RECORDED, which the classification read below answers with. Everything it passes for
+    // is REPLACED, atomically, so nothing can observe a clock without its owner.
     async start(input) {
       const stampedAt = input.now.toISOString();
       try {
@@ -347,14 +351,15 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
           new UpdateItemCommand({
             TableName: tableName,
             Key: itemKey(input, input.publicId),
-            // A RESTART takes the retired word's whole run with it — its log AND the mark
-            // saying that log was recorded, or the fresh round would read as already
-            // submitted and never write.
+            // A RESTART takes the run it replaces with it — its LOG, and the mark saying
+            // that log was recorded (a retired word's), or the fresh round would read as
+            // already submitted and never write.
             UpdateExpression:
-              'SET #started = :now, #p = :puzzle, #created = :now REMOVE #g, #sub',
-            ConditionExpression: 'attribute_not_exists(#started) OR #p <> :puzzle',
+              'SET #started = :now, #by = :runner, #p = :puzzle, #created = :now REMOVE #g, #sub',
+            ConditionExpression: 'attribute_not_exists(#sub) OR #p <> :puzzle',
             ExpressionAttributeNames: aliases(
               'startedAt',
+              'startedBy',
               'puzzle',
               'createdAt',
               'guesses',
@@ -363,6 +368,7 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
             ExpressionAttributeValues: {
               ':puzzle': { S: input.puzzle },
               ':now': { S: stampedAt },
+              ':runner': runnerValue(input.runner),
             },
             ReturnValues: 'ALL_NEW',
           }),
@@ -371,23 +377,24 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
       } catch (error) {
         if ((error as { name?: string }).name !== 'ConditionalCheckFailedException') throw error;
       }
-      // Already running: the ORIGINAL start stands, and the answer carries it so a second
-      // tap, a retry or a second device all resume the one clock. `stateForTag` is belt and
-      // braces — the condition only fails for this puzzle's own record.
+      // A submission won the race: the recorded run is what stands, and the answer carries
+      // it so the caller adopts the final run instead of wiping it. `stateForTag` is belt
+      // and braces — the condition only fails for this puzzle's own record.
       return {
-        outcome: 'running',
+        outcome: 'already_submitted',
         state: stateForTag(await readItem(input, input.publicId), input.puzzle),
       };
     },
 
-    // WORD mode's second and last write (#202): the whole log, once.
+    // WORD mode's second and last write (#202): the whole log, once, from the device that
+    // played it (#217).
     //
     // It reads BEFORE writing, unlike the streaming append, because the two refusals it owes
     // the caller are not expressible as conditions: the wait check compares instants
     // arithmetically (DynamoDB's condition grammar has none) and the caller has to be told
-    // WHICH bound refused it. Neither is racy — `startedAt` is stamped once and never moves,
-    // and the write itself still carries `attribute_not_exists(#g)`, so first-write-wins is
-    // decided by the store rather than by the read that preceded it.
+    // WHICH bound refused it. Neither is racy — the write itself carries the ownership and
+    // the first-write-wins clauses, so both verdicts are decided by the store rather than by
+    // the read that preceded it.
     async submit(input) {
       const stored = stateForTag(await readItem(input, input.publicId), input.puzzle);
       if (!stored.startedAt) return { outcome: 'not_started', state: empty() };
@@ -395,6 +402,11 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
       // log, and reading that back as "nothing recorded" is what let a second submission
       // overwrite it (roundStore.ts).
       if (stored.submittedAt) return { outcome: 'already_submitted', state: stored };
+      // The stamp names another device: this run was restarted while its player was away,
+      // so the log offered here belongs to a clock that no longer exists (#217).
+      if (stored.startedBy?.deviceId !== input.deviceId) {
+        return { outcome: 'started_elsewhere', state: stored };
+      }
       if (input.now.getTime() - Date.parse(stored.startedAt) < input.minElapsedMs) {
         return { outcome: 'too_early', state: stored };
       }
@@ -406,12 +418,18 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
             Key: itemKey(input, input.publicId),
             UpdateExpression: 'SET #g = :log, #sub = :now',
             // Path-only condition syntax, the append's rule: the record must still be this
-            // puzzle's, still started, and still unsubmitted.
+            // puzzle's, still stamped for THIS device, and still unsubmitted. The device
+            // clause is what makes ownership a store decision rather than a read's opinion —
+            // a restart can land between the read above and this write.
             ConditionExpression:
-              '#p = :puzzle AND attribute_exists(#started) AND attribute_not_exists(#sub)',
-            ExpressionAttributeNames: aliases('guesses', 'submittedAt', 'puzzle', 'startedAt'),
+              '#p = :puzzle AND #by.#dev = :device AND attribute_not_exists(#sub)',
+            ExpressionAttributeNames: {
+              ...aliases('guesses', 'submittedAt', 'puzzle', 'startedBy'),
+              '#dev': 'deviceId',
+            },
             ExpressionAttributeValues: {
               ':puzzle': { S: input.puzzle },
+              ':device': { S: input.deviceId },
               ':log': { L: input.guesses.map((guess) => ({ S: guess })) },
               ':now': { S: input.now.toISOString() },
             },
@@ -423,12 +441,14 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
         if ((error as { name?: string }).name !== 'ConditionalCheckFailedException') throw error;
       }
       // Lost the race. Re-read and let what STANDS say which race it was: another device's
-      // submission landing first, or the daily being re-published under us — where this log
-      // describes a retired word and the round has restarted without it.
+      // submission landing first, another device's RESTART taking the clock, or the daily
+      // being re-published under us — where this log describes a retired word and the round
+      // has restarted without it.
       const now = stateForTag(await readItem(input, input.publicId), input.puzzle);
-      return now.submittedAt
-        ? { outcome: 'already_submitted', state: now }
-        : { outcome: 'not_started', state: now };
+      if (now.submittedAt) return { outcome: 'already_submitted', state: now };
+      return now.startedBy === undefined
+        ? { outcome: 'not_started', state: now }
+        : { outcome: 'started_elsewhere', state: now };
     },
   };
 }
@@ -448,9 +468,39 @@ function stateForTag(item: Item, puzzle: string): RoundState {
 
 type Item = Record<string, AttributeValue> | undefined;
 
+// The run's OWNER as one attribute (#217): the device id the submission's condition
+// compares, plus the parsed user-agent fields the screen names that device with. ONE map
+// rather than four top-level attributes, so the stamp is written, replaced and read as the
+// single fact it is.
+function runnerValue(runner: RoundRunner): AttributeValue {
+  return {
+    M: {
+      deviceId: { S: runner.deviceId },
+      device: { S: runner.device },
+      os: { S: runner.os },
+      browser: { S: runner.browser },
+    },
+  };
+}
+
+// …and back. A stamp with no device id is not a stamp — the two are written together, and
+// half of one says nothing about who is running the round.
+function runnerOf(item: Item): RoundRunner | undefined {
+  const map = item?.startedBy?.M;
+  const deviceId = map?.deviceId?.S;
+  if (!deviceId) return undefined;
+  return {
+    deviceId,
+    device: map?.device?.S ?? '',
+    os: map?.os?.S ?? '',
+    browser: map?.browser?.S ?? '',
+  };
+}
+
 function itemToState(item: Item): RoundState | null {
   if (!item) return null;
   const startedAt = item.startedAt?.S;
+  const startedBy = runnerOf(item);
   const submittedAt = item.submittedAt?.S;
   const progress = numberOf(item.progress);
   return {
@@ -464,8 +514,10 @@ function itemToState(item: Item): RoundState | null {
     // ABSENT rather than empty when unstamped (a sentence round, an unstarted word one):
     // the word submit's "is there a run to end?" test reads exactly this, and `''` would
     // pass a truthiness check into `Date.parse` and answer NaN. `submittedAt` is the
-    // submission's own marker and follows the same rule.
+    // submission's own marker and follows the same rule, and so does the run's OWNER
+    // (#217), which the same write stamps.
     ...(startedAt === undefined ? {} : { startedAt }),
+    ...(startedBy === undefined ? {} : { startedBy }),
     ...(submittedAt === undefined ? {} : { submittedAt }),
     // The derived summary (#203). ABSENT rather than 0/false on a round that has none —
     // a word round, or a sentence round written before its first append — for the
