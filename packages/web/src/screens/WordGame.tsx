@@ -8,7 +8,8 @@ import { useDeadlinePassed } from '../hooks/useCountdown';
 import useScoreHistogram from '../hooks/useScoreHistogram';
 import useWordRoundSync from '../hooks/useWordRoundSync';
 import { retryWordRoundSync, startWordRound } from '../state/wordRoundSync';
-import { prefetchTurnstileToken } from '../turnstile';
+import { prefetchTurnstileTokens } from '../turnstile';
+import { deviceIdentity } from '../identity';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import {
   bonusSeconds,
@@ -34,6 +35,7 @@ import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import WordEndScreen from '../components/WordEndScreen';
 import LoadError from '../components/LoadError';
+import ErrorSheet from '../components/ErrorSheet';
 import CoachText from '../tutorial/CoachText';
 import { t, tn, srWordClaim, srWordMiss, srWordTimeUp } from '../i18n';
 import { prefersReducedMotion } from '../hooks/useScramble';
@@ -199,18 +201,30 @@ function WordRound({
   // round start IS clock start, so a bot check landing exactly then costs real seconds on a
   // 60-second game; asking while the player reads the rules puts it in hand beforehand.
   useEffect(() => {
-    if (!started) prefetchTurnstileToken();
+    if (!started) prefetchTurnstileTokens(deviceIdentity() === null ? 2 : 1);
   }, [started, roundKey]);
   const handlePlay = useCallback(() => {
     if (starting) return;
     setStarting(true);
     setStartFailed(false);
-    void startWordRound(syncContext).then((ok) => {
-      setStarting(false);
-      // The ROUND's own state flips the phase (the engine anchors the clock); this only
-      // releases the gate's control, and says so when nothing was started.
-      if (!ok) setStartFailed(true);
-    });
+    // The ROUND's own state flips the phase (the engine anchors the clock); this only
+    // releases the gate's control — and a failed start is LOUD, on the app's error
+    // surface (#216 trigger rework): the clock is the server's, so nothing began, and
+    // saying nothing would leave the player tapping a gate that never opens. For a
+    // brand-new player this one tap is also the account's deploy, which the same
+    // surface reports the same way.
+    //
+    // `.catch` + `.finally`, the other deploy buttons' exact shape: `startWordRound`'s
+    // network legs own their errors, but its tail (the store guard, the anchor, a
+    // server-supplied log's replay) can throw — and with `setStarting(false)` only in a
+    // fulfilled handler, that throw froze PLAY on its LoadingWave forever, with no
+    // ErrorSheet, on a one-shot daily whose only escape was a reload.
+    void startWordRound(syncContext)
+      .then((ok) => {
+        if (!ok) setStartFailed(true);
+      })
+      .catch(() => setStartFailed(true))
+      .finally(() => setStarting(false));
   }, [starting, syncContext]);
 
   // What the log MEANS — the claims, and the board's rows. Pure, so a reload reproduces
@@ -579,6 +593,16 @@ function WordRound({
           fills the flexible space while Share stays on the keyboard tray's bottom edge.
           Keeping the retired play controls underneath prevents any state from resizing
           the surface above. */}
+      {startFailed && (
+        <ErrorSheet
+          lang={lang}
+          title={t(lang, 'failedStart')}
+          note={t(lang, 'failedStartNote')}
+          onRetry={handlePlay}
+          onClose={() => setStartFailed(false)}
+        />
+      )}
+
       <div className="word-footer">
         <div className="word-footer-play">
           {!started ? (
@@ -593,11 +617,6 @@ function WordRound({
                 <div className="coach-rules" aria-hidden="true">
                   <CoachText copy={gateRules} />
                 </div>
-                {/* A failed start is LOUD, unlike sentence mode's background sync: the
-                    clock is the server's, so nothing began — and saying nothing would
-                    leave the player tapping a gate that never opens. PLAY itself is the
-                    retry. */}
-                {startFailed && <p className="status error">{t(lang, 'failedStart')}</p>}
                 <button
                   type="button"
                   className="mix-btn"

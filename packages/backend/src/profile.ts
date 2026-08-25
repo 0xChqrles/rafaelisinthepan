@@ -3,9 +3,10 @@
 //   GET  /profile?id=<publicId>          — the public profile (name + avatar): what a
 //                                          board renders, and what a freshly linked
 //                                          device loads. 404 when never customized.
-//   POST /profile { secret, name, avatar } — authenticated upsert, keyed by the
-//                                          publicId DERIVED from the secret (#187).
-//                                          A separate write path from scores.
+//   POST /profile { token, name, avatar } — authenticated upsert, keyed by the ACCOUNT the
+//                                          caller's device token resolves to (#216; it was
+//                                          a publicId derived from a shared secret until
+//                                          then). A separate write path from scores.
 //
 // Moderation happens here, on write: the banned-strings name filter and the avatar's
 // best-effort swastika check — both reject with a named 400.
@@ -14,15 +15,10 @@
 // the CloudFront profile behavior's allowList (root AGENTS.md contract), and a
 // production POST must carry `x-amz-content-sha256` over the exact body bytes (OAC).
 
-import {
-  decodeAvatar,
-  isValidName,
-  publicIdFromSecret,
-  NAME_MAX_LENGTH,
-  PUBLIC_ID_PATTERN,
-} from '@whippin/shared';
+import { decodeAvatar, isValidName, NAME_MAX_LENGTH, PUBLIC_ID_PATTERN } from '@whippin/shared';
 import { containsSwastika } from './avatarModeration';
-import { LIVE_HEADERS, readJsonObject, requireSecret } from './liveRoute';
+import type { DeviceStore } from './deviceStore';
+import { LIVE_HEADERS, readJsonObject, requireDevice } from './liveRoute';
 import { isNameAllowed } from './nameFilter';
 import type { ProfileStore } from './profileStore';
 import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respond';
@@ -46,6 +42,7 @@ export function validateName(raw: unknown): string | null {
 export async function handleProfile(
   event: FnUrlEvent,
   profiles: ProfileStore,
+  devices: DeviceStore,
   instant: Date,
   cors: Record<string, string>,
 ): Promise<FnUrlResult> {
@@ -73,10 +70,11 @@ export async function handleProfile(
   if (!parsed.ok) return parsed.response;
   const body = parsed.value;
 
-  // Authentication without accounts (#187): the row is keyed by the identity DERIVED
-  // from the secret, and nothing secret is ever stored.
-  const secret = requireSecret(body, responseHeaders);
-  if (!secret.ok) return secret.response;
+  // Authentication (#216): the caller's device token resolves to the ACCOUNT this row
+  // belongs to, so the only profile a caller can write is their own — and a signed-out
+  // device is told so rather than writing under a stale identity.
+  const auth = await requireDevice(body, responseHeaders, devices, instant);
+  if (!auth.ok) return auth.response;
 
   const name = validateName(body.name);
   if (name === null) {
@@ -94,17 +92,24 @@ export async function handleProfile(
   if (typeof body.avatar !== 'string') {
     return errorResponse(400, 'bad_request', 'Body field "avatar" must be a string.', responseHeaders);
   }
-  let cells: number[];
-  try {
-    cells = decodeAvatar(body.avatar).cells;
-  } catch {
-    return errorResponse(400, 'bad_request', 'Body field "avatar" is not a valid avatar.', responseHeaders);
-  }
-  if (containsSwastika(cells)) {
-    return errorResponse(400, 'avatar_rejected', 'This avatar is not allowed.', responseHeaders);
+  // The EMPTY avatar is "no custom mark" (PR-219 round-2 review): the editor stores ''
+  // when the drawing is still the ASSIGNED mark it opened on — the name rule's own shape,
+  // display-only in both directions — so every surface keeps DERIVING the face from the
+  // account id instead of freezing a generated grid into the row. Nothing to decode and
+  // nothing to moderate; the board and preview readers already dress '' as null.
+  if (body.avatar !== '') {
+    let cells: number[];
+    try {
+      cells = decodeAvatar(body.avatar).cells;
+    } catch {
+      return errorResponse(400, 'bad_request', 'Body field "avatar" is not a valid avatar.', responseHeaders);
+    }
+    if (containsSwastika(cells)) {
+      return errorResponse(400, 'avatar_rejected', 'This avatar is not allowed.', responseHeaders);
+    }
   }
 
-  const publicId = await publicIdFromSecret(secret.value);
+  const publicId = auth.value.account.accountId;
   await profiles.upsert({
     publicId,
     name,

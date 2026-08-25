@@ -11,18 +11,30 @@
 // past month is not immutable — playing an old daily changes it, and another device can do
 // the same — which is why a month REVALIDATES whenever it becomes the view on screen (the
 // hook's own effect) rather than being trusted from an earlier visit. Nothing is written to
-// localStorage: a second source of truth for a day's progress is exactly what #214 removed.
+// persistent storage: a second source of truth for a day's progress is exactly what #214 removed.
 //
 // **Loading is EXPLICIT.** A month that has not arrived is `days: null`, never an empty map:
 // an empty map is the claim "none of these days was started", and a false one paints a whole
 // calendar as untouched. The screens render a loading state off that null. There is no local
 // fallback.
+//
+// **No token, no fetch** (#216). An identity that has never been bootstrapped cannot own
+// server rows, so its calendar, chooser and streak are known-empty WITHOUT a request — and
+// asking would be a private read on a visit that has performed none of the deliberate acts
+// that create an identity. That is an ANSWER, not a loading state: the surfaces render an
+// unplayed month and a zero streak, exactly as they would for a player who has played
+// nothing.
 
 import { useCallback, useEffect } from 'react';
 import { create } from 'zustand';
 import { boundSolvedDays } from '@whippin/shared';
 import { historyUrl, parsePlayerHistory, postHistoryBody } from '../api';
-import { hasPlayerIdentity, playerSecret } from '../identity';
+import {
+  deviceIdentity,
+  identityEpoch,
+  identityEpochOf,
+} from '../identity';
+import { adoptSignedOutVerdict } from './signedOutVerdict';
 import type { Mode } from '../langs';
 import { statusOf, type RoundSummary, type Status } from './status';
 
@@ -71,9 +83,18 @@ const flights = new Map<string, Promise<void>>();
 // collection. The entry is keyed by language while several (lang, mode, month) flights can
 // be in the air at once — paging the archive quickly does exactly that — and letting every
 // settle write the phase is a last-writer-wins race: a failing OLD month read landing last
-// stamps `failed` onto a collection that loaded fine. The DAYS still merge off every
-// successful answer (data is data); only the phase is driver-only.
+// stamps `failed` onto a collection that loaded fine. Only the FAILURE is driver-gated,
+// though: every successful answer carries the FULL collection, so its `ready` is true
+// whichever flight lands it — stale-but-complete beating `failed` is the point — and its
+// days merge in regardless (data is data).
 const solvedReads = new Map<string, string>();
+
+// The reads answered KNOWN-EMPTY because this device held no identity, kept so an identity
+// ADOPTED from another tab (#216) can replay exactly them: those answers were about a
+// device with no account, and the adopted account may hold the rows they claimed absent.
+// A MINTED first identity never replays them — that account is empty by construction, so
+// the tokenless answers stay true.
+const answeredTokenless = new Map<string, [string, Mode, string | undefined, boolean]>();
 
 function setMonth(key: string | null, entry: (previous: MonthEntry) => MonthEntry): void {
   if (key === null) return;
@@ -106,21 +127,20 @@ export async function loadPlayerHistory(
   if (existing) return existing;
 
   const monthId = month === undefined ? null : monthKey(lang, mode, month);
-
-  // A visitor with NO identity cannot own server rows, so their history is KNOWN-empty —
-  // an ANSWER, not a loading state. Asking the server would also be the act that MINTS a
-  // key (identity.ts's first-need rule): a deep-linked /select visit must not persist an
-  // identity for someone who never played, and a brand-new visitor's chooser and game
-  // screen must not spend network on a question whose answer is already known. The first
-  // state-creating act (a guess) mints the key; later mounts read normally.
-  if (!hasPlayerIdentity()) {
+  const identity = deviceIdentity();
+  if (!identity) {
+    // Known empty, and said as an ANSWER — `ready` with real values, never `idle` or a
+    // pending null, or every surface would breathe forever behind a request nobody made.
+    // A collection-less flight still leaves the solved entry entirely alone. The request
+    // is remembered so a later ADOPTED identity can replay it (`rearmPlayerHistory`).
+    answeredTokenless.set(key, [lang, mode, month, collection]);
     setMonth(monthId, (previous) => ({ phase: 'ready', days: previous.days ?? new Map() }));
     if (collection) {
       setSolved(lang, (previous) => ({ phase: 'ready', days: previous.days ?? [] }));
     }
     return;
   }
-
+  const epoch = identityEpochOf(identity);
   const flight = (async () => {
     // A REVALIDATION keeps the values it already holds while the fresh read is in flight —
     // stale-but-good beats a skeleton over a month the player was just looking at (the
@@ -133,11 +153,21 @@ export async function loadPlayerHistory(
     }
     try {
       const response = await postHistoryBody(historyUrl(lang, mode, month), {
-        secret: playerSecret(),
+        token: identity.token,
         ...(collection ? {} : { collection: false }),
       });
-      if (!response.ok) throw new Error(`history read failed: ${response.status}`);
+      if (!response.ok) {
+        // The distinct signed-out answer (#216) raises the screen that explains it; every
+        // other refusal is the ordinary failure below. A 5xx never signs anyone out
+        // (`adoptSignedOutVerdict` — the one spelling: the CODE decides, never the status).
+        await adoptSignedOutVerdict(response, epoch);
+        throw new Error(`history read failed: ${response.status}`);
+      }
       const history = parsePlayerHistory(await response.json());
+      // An answer that outlived the identity that asked for it describes an account this
+      // device no longer acts as; committing it would walk that account's history into the
+      // new one's surfaces.
+      if (identityEpoch() !== epoch) return;
       setMonth(monthId, () => ({
         phase: 'ready',
         days: new Map(
@@ -170,9 +200,17 @@ export async function loadPlayerHistory(
               : merged;
           return { phase: 'ready', days };
         });
-        if (solvedReads.get(lang) === key) solvedReads.delete(lang);
+        // ANY success retires the driver, not only the driving flight's own: every
+        // successful answer carries the FULL collection, so once one has landed a LATER
+        // driver's failure must not stamp `failed` over a complete collection — the exact
+        // inversion the driver gate exists to prevent (and, on the game screen, three
+        // bounded streak retries re-fetching a value already correct in memory).
+        solvedReads.delete(lang);
       }
     } catch {
+      // The scope listener has already cleared the old account's cache. A late failure from
+      // it must not recreate FAILED entries in the new account's otherwise-empty store.
+      if (identityEpoch() !== epoch) return;
       // Offline, a refusal, a malformed body — all the same outcome: the surfaces say the
       // summary could not be had, and offer to ask again. There is no local fallback.
       setMonth(monthId, (previous) => ({ phase: 'failed', days: previous.days }));
@@ -306,10 +344,32 @@ export function noteSolvedDay(lang: string, solvedDay: number, credited: boolean
   return true;
 }
 
+// A FIRST identity ADOPTED from another tab (#216): replay every read the tokenless branch
+// answered as known-empty, now under the token — the adopted account may hold the months
+// and the collection those answers claimed absent, and the hooks' own effects will not
+// refire for an identity arriving under a mounted surface. The stale ready-empty entries
+// are kept on screen while the real answers load (the revalidation rule). identityScope
+// calls this only on `adopted` — a minted account is empty and its answers stay true.
+export function rearmPlayerHistory(): void {
+  const replay = [...answeredTokenless.values()];
+  answeredTokenless.clear();
+  // SEQUENTIALLY, deliberately: a long tokenless archive session can record dozens of
+  // months, and replaying them as one concurrent burst fires that many private Queries in
+  // a single tick. Each flight settles before the next starts (loadPlayerHistory never
+  // rejects — its failures are its own phase), and the months a surface is actually
+  // looking at revalidate through their own hooks anyway.
+  void (async () => {
+    for (const [lang, mode, month, collection] of replay) {
+      await loadPlayerHistory(lang, mode, month, collection);
+    }
+  })();
+}
+
 // Test seam: drop every cached summary and conversation (module state must not leak
 // between tests).
 export function resetPlayerHistory(): void {
   flights.clear();
   solvedReads.clear();
+  answeredTokenless.clear();
   useHistoryStore.setState({ months: {}, solved: {} }, true);
 }

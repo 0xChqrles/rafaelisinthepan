@@ -13,7 +13,16 @@
       hooks/useVocab.ts       fetch+cache the per-language existence Set (once per session)
       hooks/usePuzzle.ts      fetch the client-computed day's puzzle from the backend
       api.ts                  backend client: puzzleUrl/wordPuzzleUrl, 404->NO PUZZLE
-      identity.ts             the #187 player key: localStorage secret, generated on first need
+      identity.ts             the #216 DEVICE identity: a localStorage token minted on the
+                              first deliberate act, the server-assigned account it resolves
+                              to, the signed-out flag and the identity epoch
+      state/identityScope.ts  what an identity OWNS, cleared when it changes (wired in main)
+      state/gamePersistence.ts  the atomic IndexedDB boundary for cross-tab game-state writes
+      state/signedOutVerdict.ts  the ONE spelling of the sign-out resolution every private
+                              route client shares (401 + `unknown_device` code)
+      screens/SignedOut.tsx   the `unknown_device` screen: what is left behind + START FRESH
+      components/DeviceList.tsx  the account's devices + SIGN OUT rows (#216), on the profile editor
+      components/ErrorSheet.tsx  the app's error surface: a popup on desktop, a bottom sheet on a phone
       state/roundSync.ts      the #201 sync engine, reworked by #214: coalesced prefix writes,
                             the transient server snapshot it publishes for the screen, the
                             outbox it settles by identity, cap + freeze, #203's round-start
@@ -31,7 +40,7 @@
       screens/Profile.tsx     the #188 profile editor (/profile): name, tap-to-paint 10×10 grid,
                               ground-swatch palette picker (#190 wires the entry point)
       screens/FriendInvite.tsx  the #189 invite link's landing (/join/<publicId>): POST the mutual
-                              edge with the player key, then continue into the game. The link
+                              edge with this device's token, then continue into the game. The link
                               players SHARE is /i/<publicId>, served by the backend for its preview
       screens/Leaderboard.tsx the #190 leaderboard (/<lang>[/word]/board): friends board first,
                               global top 50; identity strip (EDIT -> /profile) + INVITE share
@@ -406,6 +415,139 @@ it to the local store — see `packages/backend/AGENTS.md`).
 
 *(Safe to update without touching the invariants above.)*
 
+- **Devices: per-device tokens, revocation, and where an account is created (#216).** The
+  product contract — the token's exact shape, why an account is created lazily, what
+  `unknown_device` means, what local state an identity owns — lives in the root `AGENTS.md`.
+  What is this package's:
+  - **`identity.ts` is the whole client half**, and it is a zustand store rather than a
+    function: the signed-out screen and the leaderboard's identity strip both re-render on it.
+    `deviceIdentity()` is the SYNCHRONOUS "should I even ask the server?" test every private
+    read makes; `ensureDeviceIdentity()` is the ONE bootstrap flight (the `activeScoreFlights`
+    pattern — two deploy taps landing in one tick, a PLAY while an invite accept is still
+    in flight, must not mint two accounts);
+    `ensureRequestIdentity(expectedEpoch)` is the private-request boundary — if resolving
+    identity adopts B while the closure owns A's inputs, it returns nothing and no POST is
+    made; `identityEpoch()` also fences every answer after its request is sent.
+  - **The token is PERSISTED before the bootstrap request, and a token with no ids is NOT an
+    identity.** That intermediate state is what makes a lost answer recoverable: the retry
+    sends the SAME token, which is what the server's idempotence is keyed by. It reads as
+    tokenless for the no-private-fetch rule.
+    **A pending token is assumed empty only while its emptiness is PROVABLE** (PR-219
+    round-2 and round-3 reviews): a token THIS session minted, with no attempt yet failed
+    out of this tab's hands. A bare `{token}` read back from storage may be the residue of
+    a bootstrap whose answer arrived and whose acts ran (only the completed identity's
+    write failing behind it) — and a bootstrap attempt that FAILS releases the Web Lock
+    with the token persisted, so another tab or session can recover it, complete it and
+    act before the retry. Either way the proof is gone (`pendingUnproven`), and the
+    eventual bootstrap publishes as an ADOPTION: the scope owner re-reads the tokenless
+    projections instead of trusting ready-and-empty answers over real state. A SAVE into
+    an account the profile editor did not load is guarded the same way — see the profile
+    bullet.
+  - **localStorage is shared by every TAB, so this module's copy is a CACHE of it** (added on
+    review): `ensureDeviceIdentity` re-reads before minting, a `storage` listener adopts what
+    another tab wrote, a pending token found there is adopted rather than replaced (two tabs
+    retrying a first bootstrap then converges on ONE account, since the server is idempotent by
+    token hash), and the sign-out paths remove the entry only while it is still theirs. The
+    empty/empty race happens earlier than any pending write, so **one origin-wide Web Lock wraps
+    the whole re-read → mint → bootstrap → commit sequence**; a waiter re-reads after entering
+    and adopts the winner, while a browser without Web Locks fails before minting.
+    `readStored` distinguishes UNREADABLE storage from EMPTY storage — the first says nothing
+    about this device's identity, and collapsing them dropped one the session was playing on.
+    A failed completed-identity write marks that identity SESSION-ONLY: a later readable empty
+    value (or its own pending token) cannot dislodge it, knowingly sacrificing cross-tab removal
+    for that identity until this tab leaves it. A token this tab authoritatively leaves is
+    fenced in memory as well: even if conditional `removeItem` throws, START FRESH cannot
+    re-adopt the stale revoked value it can still read.
+  - **`state/identityScope.ts` clears on LEAVING an identity, never on acquiring one**
+    (corrected on review): a bootstrap is triggered BY an act, so clearing there destroyed the
+    guess in the outbox that asked for it and the `wordRounds` entry the word start's own
+    answer checks itself against. The change carries its PREVIOUS value for exactly that test.
+    `App` keys every routed surface on the identity's scope revision, so component-local
+    profile fields, board rows, invite outcomes and device rows are remounted too. Every
+    transition except the first-ever acquisition advances it: A → null clears the old mount,
+    and a later null → B remounts B's private reads; first bootstrap leaves it unchanged for
+    the same reason it leaves the stores intact.
+  - **Persist v16 DROPS the outbox and the word rounds**: both are owed to #187's retired
+    identity, and the tokenless branch would otherwise pump a surviving outbox on the first
+    page load — bootstrapping a brand-new account and filing another identity's guesses
+    against it. **Persist v17 adds `identityOwner`** and `main.tsx` reconciles it against the
+    loaded device before rendering: exact ownership keeps both maps, a same-account new device
+    keeps only the account-owned outbox, and no proof drops them. An ownerless first act is kept
+    only when `whippin-device` holds its pending bootstrap token, then bound to the returned
+    identity; a missing/corrupt device key never turns old state into a new account's first act.
+    **Persist v18 moves the same state into IndexedDB**; the retired v17 localStorage blob
+    is NOT read (the standing no-back-compat rule — the brief import shipped with the first
+    cut was removed on the PR review as the compatibility layer it is), so an existing
+    device starts from the initial state once. `main.tsx` awaits hydration
+    and the initial ownership transaction before mounting any private reader, under a
+    startup DEADLINE that turns a stalled IndexedDB open into the visible startup failure
+    rather than a permanently blank page.
+  - **The tokenless branch is an ANSWER, not a loading state.** `roundSync` publishes a
+    ready-and-empty authoritative round and `state/history.ts` a ready empty month and
+    collection, so nothing breathes behind a request nobody made — the same rule #211's
+    explicit-loading bullet states for a month that has not arrived.
+    **An ADOPTED first identity RE-ARMS those answers** (PR-219 review): the tokenless
+    projections were about a device with no account, and an identity adopted from another
+    tab (`IdentityChange.adopted` — a storage event, the pre-mint re-read, losing the
+    bootstrap race, or a pending bootstrap RECOVERED from storage; never a token this
+    session itself minted, whose account is empty by construction) may already own rounds
+    and history — while a first acquisition bumps no scope revision, so nothing else would ever
+    re-read them. `identityScope` calls `rearmRoundSync`/`rearmWordRoundSync` (the open
+    conversations start over with a read, the republish reset's shape) and
+    `rearmPlayerHistory` (replays exactly the reads the tokenless branch answered). A
+    RE-ARM, never a clear: the outbox and the word clock hold what THIS device played, owed
+    to the adopted account.
+  - **Persisted game state is TRANSACTIONAL across tabs** (PR-219 final review, replacing
+    rounds 2–3's snapshot merge). Zustand is now only the synchronous UI cache. Every
+    persisted action emits an explicit domain mutation — append/acknowledge/discard one
+    outbox, start/settle/record one Word run, change one preference, reconcile one owner —
+    and `state/gamePersistence.ts` applies it to the latest committed state inside ONE
+    IndexedDB readwrite transaction. Overlapping transactions serialize origin-wide, so
+    there is no get/merge/set gap, no lifetime “touched key” guess, and no stale full-state
+    snapshot to clobber a sibling. Acknowledgement removes only the request snapshot and
+    preserves concurrently appended guesses; terminal discard is a separate mutation;
+    retention and ownership clears run against the complete committed maps; every
+    account/device-owned mutation carries its expected owner, so a delayed write from A
+    cannot enter B, and a Word mutation also names its word so an answer for a republished
+    daily cannot settle or extend the replacement. A permanently failed transaction moves
+    the whole session to memory-only persistence: later writes are not allowed to commit a
+    suffix past the missing mutation and then roll the live cache backward.
+    `installGameStoreSync` uses BroadcastChannel (storage-event fallback)
+    only to refresh each tab's cache after commit — correctness never depends on delivery,
+    because the next mutation re-reads inside the transaction. The adversarial suite uses
+    two independent database connections and pins same-key writes, owner transitions,
+    acknowledgement races, eviction, first-write seed and Word-run convergence.
+  - **`markDeviceSignedOut` requires the request's identity epoch.** Every refusal caller reads
+    the body and acts only on `401 unknown_device`; a 5xx, a dropped connection or any other
+    4xx must never take a player's account away, and a late verdict for A must never remove B.
+    The second authoritative caller is `DeviceList`: a successful self-revocation answer whose
+    post-write list omits the calling row signs this tab out immediately.
+    **It leaves the persisted TOMBSTONE** (user-decided 2026-08-24 — the durable/broadcast
+    contract is the root `AGENTS.md`'s): the stored identity is replaced with
+    `{signedOut, accountId, deviceId}`, `readStored` reads it as the third stored state,
+    `syncFromStorage` raises the screen from it (matching identity or none; a mismatched one
+    stands), `bootstrap` throws while `signedOut` is true, and `startFreshDevice` removes it —
+    with an in-memory `dismissedTombstone` fence for the unwritable-storage case, the
+    `departedTokens` shape for the tombstone.
+  - **`state/identityScope.ts` holds the whole list of what an identity owns**, wired once
+    from `main.tsx` rather than as import-time side effects in five modules — so `identity.ts`
+    keeps knowing nothing about the game, and the list is one readable block.
+  - **`SignedOut` takes its RECONNECT handler as a PROP, and #216 passes none.** The email
+    link flow is #204's; a button that does nothing is worse than a screen that only offers
+    what it can actually do, so START FRESH is the only action until then.
+  - **`components/DeviceList.tsx` is the REACHABLE surface for signing any device out**,
+    mounted on the PROFILE editor — the screen that already is the identity screen. Every
+    call answers the list as it now stands (the /friends house rule), so a revocation needs no
+    optimistic update, and the route's own correction for the index's lag means the screen
+    compensates for nothing. Each row returns an opaque `revokeKey` and sends it back with its
+    `deviceId`, letting the backend address the base item directly; signing out the current row
+    raises `SignedOut` from that same authoritative answer.
+  - **`crypto.subtle` is still required by every live POST** (corrected on review): #216
+    removes it from the paths that need NO identity — the global board's own-window `id` and
+    the identity strip, which each carried a try/catch for the LAN-IP mobile check — but
+    `api.postSignedJson` still signs each body for the OAC contract, so an insecure context
+    cannot bootstrap. That boundary is older than #216 and unchanged by it.
+
 - **Local storage is an OUTBOX; a capped round ends at ∞ (#214).** The product contract —
   the three values, the load order, what the cap means, the share token, what was removed —
   lives in the root `AGENTS.md`. What is this package's:
@@ -521,10 +663,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
     silently suppress the streak celebration of a solve made twenty minutes later while
     the server credited the day. `StreakDialog` only READS it (`useSolvedDays`), since the
     screen it mounts inside has already loaded it.
-  - **Reads gate on `hasPlayerIdentity` and skip what they don't draw** (PR-218 review):
-    a visitor with no stored key cannot own server rows, so `loadPlayerHistory` publishes a
-    ready-and-EMPTY history without a request — and without MINTING a key, restoring
-    identity.ts's "a visit that never opens a game route never makes one". The language
+  - **Reads gate on the DEVICE IDENTITY (`deviceIdentity()`) and skip what they don't
+    draw** (PR-218 review; the gate read `hasPlayerIdentity` until #216 replaced the
+    player secret with the device token): a visitor with no token cannot own server rows,
+    so `loadPlayerHistory` publishes a ready-and-EMPTY history without a request — and
+    without MINTING one, keeping identity.ts's "a visit that performs none of the
+    deliberate acts creates nothing". The language
     chooser passes `collection: false` (the body says so), so its month strip does not
     spend the solved-day collection's consistent GetItem on an answer it never renders.
     And `solved[lang]`'s PHASE is driven only by the most recently started collection
@@ -632,7 +776,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     and a silent failure leaves the player tapping a gate that never opens. The visible
     clock starts when the ANSWER lands, never on the tap: the store's `startWordRun` is
     gone, replaced by `anchorWordRun(key, startedAt)`, keyed because the answer can land
-    after navigation has moved on.
+    after navigation has moved on. PLAY also reads a 401's error code: `unknown_device`
+    raises the signed-out screen instead of leaving a revoked player retrying a gate that can
+    never open; another refusal remains the ordinary failed-start state.
   - **The anchor is an ELAPSED SPAN** (`anchorFrom`): `Date.now() − (now − startedAt)` off
     the answer's two instants, so a device clock minutes off still runs a 60-second run,
     a device joining a run in progress resumes with the real time left, and the request's
@@ -709,9 +855,33 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the grid; disabled when already empty) — and SAVE (`.mix-btn`). No brush row (two colours need none) and NO key
   block: the copyable-key/paste-to-link UI was removed with `adoptPlayerSecret` (the
   backup affordance's future surface is an open decision — root `AGENTS.md`). Saving
-  POSTs `{secret, name, avatar}` via the OAC-hashed body (`api.postProfileBody`);
-  server refusals surface as terse statuses (`NAME NOT ALLOWED` / `AVATAR NOT
-  ALLOWED` / `SAVE FAILED`). **The editor is GATED on the initial read** (the game
+  POSTs `{token, name, avatar}` via the OAC-hashed body (`api.postProfileBody`);
+  server refusals surface on the app's `ErrorSheet` (#216 trigger rework — title +
+  explanatory note; the moderation refusals offer no retry, a transport failure and a
+  failed deploy carry TRY AGAIN, which re-runs the whole single-tap save).
+  **OPENING THE EDITOR DEPLOYS NOTHING and SAVING deploys (user-decided 2026-08-24):**
+  a tokenless editor opens WITHOUT any request, prefilled from the LOCAL placeholder
+  identity (the persisted `gameStore.localSeed`, the leaderboard strip's own face) with
+  those values as the baseline — so SAVE stays dark until something actually changes —
+  and the SAVE tap bootstraps the account first, then saves into it: one tap, the
+  button's own dots for both legs, a prefetched challenge so the deploy is fast. The
+  name rule's WRITE half compares against the pseudonym the player was actually SHOWN
+  (`assignedFrom`: the account's, or the seed's on a tokenless open).
+  **A save into an account the editor did NOT load is GUARDED** (PR-219 round-3 review):
+  the resolved account can be a RECOVERED or ADOPTED one that already holds a profile,
+  and the editor's baseline there was a placeholder — a whole-profile upsert built from
+  it would wipe the stored name or mark through the '' an untouched field sends. So when
+  `loadedFor` mismatches, the save FETCHES the account's stored profile first and carries
+  every untouched field forward verbatim (`guardedSaveBody`, contract-tested); only a
+  field the player actually changed from the placeholder speaks, a fetch that fails
+  refuses the save rather than risk the wipe, and a successful guarded save re-binds the
+  editor to the account's merged truth. The load effect is
+  deliberately keyed on [attempt] alone: an identity arriving under an OPEN editor (a
+  deploy elsewhere, another tab) must not reload the fields out from under an edit in
+  progress — the save path resolves the identity live. The devices list renders only
+  when an account EXISTS (a tokenless device has no rows to list) and appears the
+  moment SAVE's deploy lands, since the identity is read reactively.
+  **The editor is GATED on the initial read** (the game
   route's own loading / error / content shape): an editable blank shown while the GET
   is in flight would be edited into and then overwritten by the response, and a FAILED
   read leaves the stored profile unknown — an editor started from that guess would save
@@ -774,14 +944,19 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `additionalBehaviors`, and `changeOrigin`/`xfwd` are pinned OFF (Vite's string shorthand
   does not leave them off) so the backend, which has no `siteOrigin` locally, reads the
   BROWSER's Host and bounces to the app rather than to itself.
-  The landing POSTs `{secret, add}` with the player key
-  (`identity.ts`, generated on this first need, which is what lands the edge before a
-  brand-new visitor's first game) and **a SUCCESSFUL add is CONFIRMED on screen**
-  (user-decided 2026-08-20, superseding the silent continue-into-the-game beat — the
-  clicker was left unsure anything had happened): the INVITER's avatar and name over
-  `FRIEND ADDED` (`.invite-done`), dressed by a best-effort profile read that falls back
-  to the assigned pseudonym + mark (`anonName`/`defaultAvatar`) — never to an error,
-  since the edge is already landed — with PLAY handing the destination to App's own
+  **ACCEPTING IS A BUTTON, for everyone** (#216 trigger rework, user-decided 2026-08-24,
+  superseding the auto-add on page load): the landing shows the INVITER's mark and name
+  (a best-effort bounded profile read, the assigned identity as fallback) over ONE primary
+  ADD FRIEND button; the tap POSTs `{token, add}` with this device's token — minted by
+  that same tap for a brand-new visitor, which is what lands the edge before their first
+  game — with a loading wave in the button and the `ErrorSheet` (TRY AGAIN) for a
+  transport/5xx failure. The `shareInviteFlight` one-conversation map went with the
+  auto-add: the effect-replay hazard it guarded no longer exists once the POST rides a
+  click. **A SUCCESSFUL add is still CONFIRMED on screen**
+  (user-decided 2026-08-20 — the
+  clicker was left unsure anything had happened): the same inviter identity over
+  `FRIEND ADDED` (`.invite-done`),
+  with PLAY handing the destination to App's own
   home redirect via
   `navigate('/', { replace: true })`, replacing this landing in history so a back tap
   leaves the game instead of re-firing the invite.
@@ -797,10 +972,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the same `LoadError` surface with the button relabelled `gatePlay` (its `actionLabel`
   prop) — a state gets a way ONWARD where a hiccup gets a RETRY — and the copy is neutral
   about WHOSE list is full, because the cap binds either side of the pair and the answer does
-  not say which. One conversation
-  per invite lives in a module-level flight map (`shareInviteFlight`, `useScoreHistogram`'s
-  own pattern), so neither React's development effect replay nor a real remount mints a
-  second request. The SENDING surface is the leaderboard screen's INVITE button (#190),
+  not say which. The button's in-flight state prevents a second tap while its request runs;
+  no effect or module-level conversation exists now that accepting is a deliberate click.
+  The SENDING surface is the leaderboard screen's INVITE button (#190),
   which shares `boardInviteText` + the link via `useShare`; this route receives them.
 
 - **Leaderboard screen (#190):** `/<lang>/board` and `/<lang>/word/board`
@@ -836,12 +1010,42 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (stale-but-good beats a spinner) and FAILED shown only when there is nothing to draw.
   A screen-global failure flag painted an error frame over the OTHER tab's perfectly
   good board for a render on every flip back. (App keys the screen on lang:mode so a
-  switch resets.) The friends read is the authenticated `POST /board {secret}` via the
+  switch resets.) The friends read is the authenticated `POST /board {token}` via the
   OAC-hashed body, the global read the anonymous GET widened with the caller's PUBLIC
-  id for the own window — **derived in its own try**, since the global board needs no
-  identity and `crypto.subtle` is absent outside a secure context (the LAN-IP mobile
-  check `board:seed` exists to support), where a shared failure killed the anonymous
-  tab and disabled INVITE for the whole visit. The screen renders what the API returned (ranks, cut, own window
+  id for the own window when `deviceIdentity()` already holds one. The global board needs no
+  identity and remains an anonymous GET without one; #216 removed the old client-side
+  `crypto.subtle` derivation from that path (live POSTs still require it for OAC).
+  **OPENING THIS SCREEN IS NOT A TRIGGER (user-decided 2026-08-24, superseding "opening
+  the leaderboard mints an account" — the root AGENTS trigger list moved with it):** a
+  navigation must not create server state, so a tokenless visitor's FRIENDS board is the
+  KNOWN-EMPTY answer (the ghost + INVITE, no request — the #216 no-private-fetch rule),
+  the identity strip shows the LOCAL placeholder (below), the `/friends` decoration read
+  is skipped, and the INVITE tap is the screen's account-creating act — **and it is ONE
+  TAP (user-decided 2026-08-24, superseding the same day's two-phase mint-then-ask: the
+  deploy buttons are single taps)**: a tokenless tap bootstraps (LoadingWave in the
+  button, the Word gate's PLAY shape; a failed deploy raises the `ErrorSheet` with
+  `failedAccount` + TRY AGAIN, nothing created) and then delivers in the same gesture.
+  The physics the two-phase design guarded against still exist — Turnstile + /devices can
+  outlive the transient user activation, and past it navigator.share rejects by spec and
+  the async clipboard does on WebKit — so `useShare.share` REPORTS delivery (a dismissed
+  sheet counts as delivered), and a share neither channel could make raises the
+  `ErrorSheet` (`failedShare`/`failedShareNote`) instead of being swallowed: its TRY
+  AGAIN shares inside its own fresh activation, identity now in hand, which is exactly
+  the delivery the first tap could not make. Desktop and an already-deployed account
+  never hit that path. The TOKENLESS answers are derived
+  SYNCHRONOUSLY (state initializers + the render-time scope reset, never an effect), so a
+  direct tokenless visit paints no skeleton and no LOADING flash; and every cache on this
+  screen — both tabs' boards, the friend marks, the strip — is IDENTITY-SCOPED, dropped
+  during render when the epoch changes exactly as a new day drops the boards: the
+  stale-but-good rule keeps a cached board over a failed refresh, so a kept
+  tokenless-empty board would suppress both the adopted account's real data and the retry
+  UI. Every identity-reading effect keys on the LIVE
+  identity (`useDeviceIdentity`), so the mint — or a cross-tab adoption — populates the
+  strip, both boards and the friend marks without a remount (a run-once strip effect used
+  to leave them blank until navigation). Its lazy
+  `/friends` decoration read checks the refusal body too: only `401 unknown_device` raises the
+  signed-out screen, while an ordinary decoration failure simply leaves rows unmarked. The screen
+  renders what the API returned (ranks, cut, own window
   — the shared leaderboard rules; root AGENTS.md): glass rows of rank + avatar + name
   + score, ranks and scores in the PIXEL face (game numbers), names in mono (identity
   chrome, case kept), the unit caption (TRIES/WORDS) naming which way is better.
@@ -894,7 +1098,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **The identity strip on
   top (your mark + name + EDIT → `/profile`) shows NOTHING until its read settles — a
   SKELETON, never a name (user feedback 2026-08-20).** The first cut published the id the
-  moment it derived, which rendered the ASSIGNED identity and swapped it for the real
+  moment the bootstrap resolved it, which rendered the ASSIGNED identity and swapped it for the real
   profile a beat later, so every named player watched a stranger's name flash under their
   own mark on every visit. The placeholder holds the exact boxes the resolved strip takes,
   so nothing moves when the values land, and it breathes (the global reduced-motion rule
@@ -902,9 +1106,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   read that FAILS still SETTLES, on the assigned identity — it is what a board row with a
   failed profile read already shows, and a skeleton that never resolves is the one outcome
   worse than the fallback; a 404 is not a failure at all but the answer "never
-  customized", whose display IS that identity. Only a failure to derive the ID ITSELF (no
-  `crypto.subtle` outside a secure context) draws nothing at all. The INVITE device-card
-  button on the bottom edge waits on the ID alone, never the profile.
+  customized", whose display IS that identity. **A device with NO account shows the LOCAL
+  placeholder at once** (#216 trigger rework, user-decided 2026-08-24): the persisted seed
+  (`gameStore.localSeed`) derives an assigned name and mark exactly as a board row would —
+  an ANSWER, not a pending read, so no skeleton — and nothing on this screen mints an
+  account any more (opening the leaderboard is no longer a trigger; the tokenless friends
+  board is the honest empty one without a request, and the strip's profile read re-runs
+  when an account arrives). The INVITE device-card button on the bottom edge is always
+  live: with an account it shares at once; without one the tap IS the deploy button — it
+  bootstraps (loading wave in the button, `ErrorSheet` on failure, a prefetched challenge
+  so the tap is fast) and then shares. The single tap accepts one degradation:
+  `navigator.share` wants a fresh gesture, so a browser refusing the native sheet after
+  the bootstrap round trip falls back to useShare's clipboard path (COPIED).
   Both are the #188/#189 wiring; both work before ever playing — and the invite
   share is the ONE `useShare` caller that passes `tracked: false`, because the pinned
   `share` analytics event means "a RESULT left the app" (the three-event invariant) and
@@ -2140,9 +2353,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   answers `bucket: null` and no standing is drawn; `bucketIndexOf` retired with the guess.
   **What #203 RETIRED here** (no-back-compat): the score POST, the invisible Turnstile token
   it carried (`turnstile.ts` serves ROUND START instead, and gained
-  `prefetchTurnstileToken` — asked for while the puzzle loads and while the Word gate is on
-  screen, so the challenge is in hand before the player acts; a prefetched token is consumed
-  EXACTLY ONCE, since a real one is single-use), the OAC-hashed `api.postScoreBody`, the
+  `prefetchTurnstileTokens` — asked for while the puzzle loads and while the Word gate is on
+  screen, so the challenges are in hand before the player acts; a device with no identity
+  fills TWO slots (bootstrap then round creation), while an existing identity fills one, and
+  each prefetched token is consumed EXACTLY ONCE), the OAC-hashed `api.postScoreBody`, the
   persisted `scoreRecorded` VALUE and the whole ask-until-recorded state machine of
   2026-08-20, plus `game/scores.ts`'s `shouldSubmitScore`/`shouldAskPopulation` and the
   `canSubmit` cap gate. The server derives the score from the log it already holds and
@@ -2278,7 +2492,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `.score-legend` CSS — and the N-adaptive copy line with it (`histogramCopy`,
   `beatenCount`, `scoreFirst`/`scoreOther`/`scoreOthers`/`scoreBeat`): `TOP x%` and "you
   beat x%" are the same claim inverted, and the rank says it once.
-- **The sentence game's one-time PLAY gate (user-decided 2026-08-11):** each mode explains
+- **The sentence game's PLAY gate (user-decided 2026-08-11; DEPLOY duty added by the #216
+  trigger rework, user-decided 2026-08-24):** each mode explains
   ITS OWN rules before the first round, once — the tutorial teaches only the shared core
   concepts (semantic distance, word rarity). Word mode already had this by construction:
   its GATE is mandatory because PLAY starts the clock (the button wears the sentence
@@ -2304,10 +2519,22 @@ it to the local store — see `packages/backend/AGENTS.md`).
   input device's own verb — the streak hint's coarse-pointer test): the goal and the
   history tap. The famous-AI line was CUT on the same user review (and the standings
   lineup it referred to was removed outright on 2026-08-12 with the benchmark display).
-  The gate is DERIVED, not state: `!sentenceRulesSeen && !solved &&
-  guessCount === 0`, so a round already in progress (or solved, or rehydrated mid-play)
-  never shows it, and an unset flag re-offers it until PLAY is actually tapped. No
+  The gate is DERIVED, not state:
+  `identity === null || (!sentenceRulesSeen && !finished && guessCount === 0)`, so a round
+  already in progress (or solved, or rehydrated mid-play) never shows it for the rules
+  alone, and an unset flag re-offers it until PLAY is actually tapped. No
   analytics event — the three-event invariant stands.
+  **Since the #216 trigger rework the gate is also the sentence game's DEPLOY BUTTON**: a
+  device with NO account shows the FULL rules gate on every sentence day (archive days and
+  post-sign-out included), whatever the flag says, because its PLAY is the only trigger on
+  the screen — the tap bootstraps the account (loading wave in the button, `ErrorSheet`
+  with TRY AGAIN on failure, nothing created on a failure) and then marks the rules seen.
+  An account-holding player who has read the rules never sees the gate again; the flag
+  still keeps them from seeing the rules twice when their account arrived through another
+  door (Word PLAY, an invite). The round engine's append NEVER mints an identity any more
+  (`currentRequestIdentity`): a tokenless outbox — the pending-bootstrap recovery — waits
+  behind the gate, and the deploy's identity listener kicks every conversation loose
+  (`kickRoundSync`).
 - **Onboarding tutorial (#51, redesigned 2026-07-06):** the tutorial **never starts
   without an action**. A first visit (persisted `onboarded` unset) lands on an
   **invitation** (`tutorial/Invite.tsx`, standing in for the loading screen: "New to

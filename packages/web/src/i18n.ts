@@ -35,6 +35,16 @@ const STRINGS = {
   // The #189 invite link's write, loud for the same reason: it is the one thing that
   // click existed to do, so losing it silently would leave both players none the wiser.
   failedInvite: { en: 'FAILED TO ADD FRIEND', fr: "ÉCHEC DE L'AJOUT EN AMI" },
+  // Neither the native sheet nor the clipboard could deliver (insecure context, denied
+  // clipboard, a spent activation): the one share whose silence reads as a dead button.
+  // On the error surface, whose TRY AGAIN shares inside its own fresh activation — which
+  // is what makes the single-tap INVITE honest (user-decided 2026-08-24: one tap, and the
+  // rare stale-activation failure is SAID, with the retry that cures it).
+  failedShare: { en: 'SHARE FAILED', fr: 'ÉCHEC DU PARTAGE' },
+  failedShareNote: {
+    en: 'The link could not be shared or copied. Try again — the next tap shares directly.',
+    fr: "Le lien n'a pas pu être partagé ni copié. Réessayez — le prochain appui partage directement.",
+  },
   // Word mode's round start (#202), loud for that same reason and one more: the SERVER
   // stamps the clock, so a failed start is a run that has not begun. Saying nothing would
   // leave the player tapping PLAY at a gate that never opens.
@@ -45,6 +55,58 @@ const STRINGS = {
   // side of the pair, and the clicker cannot tell which.
   friendListFull: { en: 'FRIEND LIST FULL', fr: "LISTE D'AMIS PLEINE" },
   retry: { en: 'RETRY', fr: 'RÉESSAYER' },
+  // The error surface's action (#216 trigger rework): a failed primary act offers to run
+  // again where retrying can help. RETRY above stays the load screens' label.
+  tryAgain: { en: 'TRY AGAIN', fr: 'RÉESSAYER' },
+  // The five deploy buttons' failures, on the error popup/sheet: the TITLE says what
+  // failed in the chrome voice, the NOTE explains it in a sentence (the coach-copy
+  // exemption from the all-caps rule). Account creation failing is its own story —
+  // nothing else happened behind it, so the note can honestly say "nothing was lost".
+  failedAccount: { en: 'ACCOUNT SETUP FAILED', fr: 'ÉCHEC DE LA CRÉATION DU COMPTE' },
+  failedAccountNote: {
+    en: 'Your account could not be set up, so nothing was saved. Check your connection and try again.',
+    fr: "Votre compte n'a pas pu être créé, rien n'a été enregistré. Vérifiez votre connexion et réessayez.",
+  },
+  failedStartNote: {
+    en: 'The round did not start — the clock is not running. Check your connection and try again.',
+    fr: "La partie n'a pas démarré — le chrono ne tourne pas. Vérifiez votre connexion et réessayez.",
+  },
+  failedInviteNote: {
+    en: 'The friend was not added. Check your connection and try again.',
+    fr: "L'ami n'a pas été ajouté. Vérifiez votre connexion et réessayez.",
+  },
+  failedSaveNote: {
+    en: 'Your profile was not saved. Check your connection and try again.',
+    fr: "Votre profil n'a pas été enregistré. Vérifiez votre connexion et réessayez.",
+  },
+  profileNameRejectedNote: {
+    en: 'This name is not allowed. Pick another one and save again.',
+    fr: "Ce nom n'est pas autorisé. Choisissez-en un autre et réenregistrez.",
+  },
+  profileAvatarRejectedNote: {
+    en: 'This drawing is not allowed. Change it and save again.',
+    fr: "Ce dessin n'est pas autorisé. Modifiez-le et réenregistrez.",
+  },
+  // Signed out from another device (#216). It is a SCREEN, not an error line: the account
+  // is intact and reachable, this device simply no longer holds it.
+  signedOut: { en: 'THIS DEVICE IS SIGNED OUT', fr: 'CET APPAREIL EST DÉCONNECTÉ' },
+  // The copy has to say what is being left behind, or a vanished streak and an empty
+  // friends list read as a bug rather than as the sign-out that caused them.
+  signedOutNote: {
+    en: 'Your streak, your archive and your friends stay on that account. Starting fresh here leaves them behind.',
+    fr: 'Votre série, votre archive et vos amis restent sur ce compte. Repartir de zéro ici les laisse derrière.',
+  },
+  // The account's devices, on the profile editor (#216): the surface the whole issue exists
+  // for, since signing a device out has to be possible without holding that device.
+  devicesTitle: { en: 'DEVICES', fr: 'APPAREILS' },
+  deviceCurrent: { en: 'THIS ONE', fr: 'CELUI-CI' },
+  deviceSignOut: { en: 'SIGN OUT', fr: 'DÉCONNECTER' },
+  // The UA parser leaves what it cannot read EMPTY rather than guessing, so the SCREEN names
+  // an unlabelled device.
+  deviceUnknown: { en: 'UNKNOWN DEVICE', fr: 'APPAREIL INCONNU' },
+  failedDevices: { en: 'FAILED TO LOAD DEVICES', fr: 'ÉCHEC DU CHARGEMENT DES APPAREILS' },
+  signedOutReconnect: { en: 'RECONNECT', fr: 'SE RECONNECTER' },
+  signedOutSkip: { en: 'START FRESH', fr: 'REPARTIR DE ZÉRO' },
   // The missing-puzzle state is ABNORMAL (a publish that did not happen), and the
   // wording says so — it must not read like a scheduled day off.
   noPuzzle: { en: "TODAY'S PUZZLE IS MISSING", fr: 'LE PUZZLE DU JOUR EST INTROUVABLE' },
@@ -341,6 +403,10 @@ const STRINGS = {
   // to continue into the game without a word, leaving the clicker unsure anything
   // happened): the inviter's mark + name above this line, PLAY below it.
   inviteAdded: { en: 'FRIEND ADDED', fr: 'AMI AJOUTÉ' },
+  // The landing's one primary button (#216 trigger rework): accepting is a TAP, never a
+  // page load — the tap deploys the clicker's account if they have none, then records the
+  // mutual edge.
+  inviteAccept: { en: 'ADD FRIEND', fr: 'AJOUTER EN AMI' },
   failedBoard: { en: 'FAILED TO LOAD LEADERBOARD', fr: 'ÉCHEC DU CHARGEMENT DU CLASSEMENT' },
   ariaLeaderboard: { en: 'Leaderboard', fr: 'Classement' },
 } satisfies Record<string, Record<UiLang, string>>;

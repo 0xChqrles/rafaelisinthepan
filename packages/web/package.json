@@ -14,6 +14,7 @@
     "@plausible-analytics/tracker": "^0.4.5",
     "@react-spring/web": "^9.7.5",
     "@whippin/shared": "workspace:*",
+    "idb": "^8.0.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zustand": "^5.0.14"
@@ -22,6 +23,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.3.4",
+    "fake-indexeddb": "^6.2.5",
     "typescript": "^6.0.3",
     "vite": "^5.4.11",
     "vite-plugin-svgr": "^5.2.0"

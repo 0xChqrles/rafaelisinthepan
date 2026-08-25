@@ -16,9 +16,10 @@ import type { PlayerHistory } from '@whippin/shared';
 // path stay real, because what these tests are about is what an ANSWER does to the store.
 const harness = vi.hoisted(() => ({
   answer: { days: [], solvedDays: [] } as PlayerHistory,
-  // What the identity module answers: most tests are ABOUT a player who has one; the
-  // identity-gate tests flip it off.
-  identified: true,
+  // Whether THIS DEVICE has an identity (#216). With none, a private read is skipped
+  // outright: an identity that was never bootstrapped owns no server rows, so its calendar
+  // and streak are known-empty and asking would be a request on a visit that never acted.
+  identity: true as boolean,
   // Every body the transport saw, so the collection opt-out is asserted on the wire shape.
   requests: [] as Array<Record<string, unknown>>,
   fail: false,
@@ -42,23 +43,31 @@ vi.mock('../api', async (importOriginal) => {
   };
 });
 
-vi.mock('../identity', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../identity')>();
-  return {
-    ...actual,
-    hasPlayerIdentity: () => harness.identified,
-    playerSecret: () => 'a'.repeat(32),
-  };
-});
+vi.mock('../identity', () => ({
+  deviceIdentity: () =>
+    harness.identity
+      ? { token: 'f'.repeat(64), accountId: 'a'.repeat(16), deviceId: 'd'.repeat(16) }
+      : null,
+  identityEpoch: () => (harness.identity ? `${'a'.repeat(16)}:${'d'.repeat(16)}` : null),
+  identityEpochOf: (value: { accountId: string; deviceId: string }) =>
+    `${value.accountId}:${value.deviceId}`,
+  markDeviceSignedOut: vi.fn(),
+}));
 
-const { daySummaryStatus, loadPlayerHistory, noteSolvedDay, resetPlayerHistory, useHistoryStore } =
-  await import('./history');
+const {
+  daySummaryStatus,
+  loadPlayerHistory,
+  noteSolvedDay,
+  rearmPlayerHistory,
+  resetPlayerHistory,
+  useHistoryStore,
+} = await import('./history');
 type HistoryView = import('./history').HistoryView;
 
 beforeEach(() => {
   resetPlayerHistory();
   harness.answer = { days: [], solvedDays: [] };
-  harness.identified = true;
+  harness.identity = true;
   harness.requests = [];
   harness.fail = false;
   harness.script = [];
@@ -217,26 +226,12 @@ describe('noteSolvedDay — the streak credit the celebration rides', () => {
   });
 });
 
-describe('loadPlayerHistory — the identity gate, the collection opt-out, the phase driver', () => {
+describe('loadPlayerHistory — the collection opt-out and the phase driver', () => {
   const solvedOf = (lang: string) => useHistoryStore.getState().solved[lang];
-
-  it('a visitor with NO identity gets a ready-and-EMPTY history without a request', async () => {
-    // No server rows can exist for an identity that does not, so the answer is known — and
-    // asking would be the act that MINTS a key, on a navigation screen (identity.ts's
-    // first-need rule).
-    harness.identified = false;
-    await loadPlayerHistory('fr', 'sentence', '2026-08');
-    expect(harness.requests).toEqual([]);
-    expect(solvedOf('fr')).toEqual({ phase: 'ready', days: [] });
-    expect(useHistoryStore.getState().months['fr:sentence:2026-08']).toEqual({
-      phase: 'ready',
-      days: new Map(),
-    });
-  });
 
   it('collection: false skips the solved-day read and says so on the wire', async () => {
     await loadPlayerHistory('fr', 'sentence', '2026-08', false);
-    expect(harness.requests).toEqual([{ secret: 'a'.repeat(32), collection: false }]);
+    expect(harness.requests).toEqual([{ token: 'f'.repeat(64), collection: false }]);
     // The flight leaves the solved entry entirely alone — phase included.
     expect(solvedOf('fr')).toBeUndefined();
     expect(useHistoryStore.getState().months['fr:sentence:2026-08']?.phase).toBe('ready');
@@ -244,7 +239,7 @@ describe('loadPlayerHistory — the identity gate, the collection opt-out, the p
 
   it('a collection-reading flight omits the flag — the old body shape keeps its meaning', async () => {
     await loadPlayerHistory('fr', 'sentence', undefined);
-    expect(harness.requests).toEqual([{ secret: 'a'.repeat(32) }]);
+    expect(harness.requests).toEqual([{ token: 'f'.repeat(64) }]);
   });
 
   it('a stale flight\'s failure cannot stamp FAILED over a collection another read drives', async () => {
@@ -269,5 +264,93 @@ describe('loadPlayerHistory — the identity gate, the collection opt-out, the p
     expect(useHistoryStore.getState().months['fr:sentence:2026-07']?.phase).toBe('failed');
     expect(solvedOf('fr')?.phase).toBe('ready');
     expect(solvedOf('fr')?.days).toEqual([20_000]);
+  });
+
+  it('a LATER driver failure cannot stamp FAILED over a collection an earlier read delivered', async () => {
+    // The inversion of the case above: the ARCHIVE flight (the older driver) SUCCEEDS
+    // first, then the game screen's read — the CURRENT driver — hits a blip. Every
+    // successful answer carries the FULL collection, so its landing retires the driver:
+    // a later failure has nothing left to fail (and the game screen's bounded streak
+    // retries are not spent re-fetching a value already correct in memory).
+    harness.script.push(async () =>
+      ({ ok: true, json: async () => ({ days: [], solvedDays: [20_000] }) }) as unknown as Response,
+    );
+    let releaseGame!: () => void;
+    const gameGate = new Promise<void>((resolve) => {
+      releaseGame = resolve;
+    });
+    harness.script.push(async () => {
+      await gameGate;
+      return { ok: false, status: 500 } as unknown as Response;
+    });
+
+    const archiveFlight = loadPlayerHistory('fr', 'sentence', '2026-07');
+    const gameFlight = loadPlayerHistory('fr', 'sentence', undefined);
+    await archiveFlight;
+    expect(solvedOf('fr')).toEqual({ phase: 'ready', days: [20_000] });
+
+    releaseGame();
+    await gameFlight;
+    expect(solvedOf('fr')?.phase).toBe('ready');
+    expect(solvedOf('fr')?.days).toEqual([20_000]);
+  });
+});
+
+describe('no token, no fetch (#216)', () => {
+  it('answers a tokenless device known-EMPTY without asking the server', async () => {
+    // An identity that was never bootstrapped owns no server rows, so its calendar and its
+    // streak are answers this client already has. Asking would be a private read on a visit
+    // that has performed none of the deliberate acts that create an identity.
+    harness.identity = false;
+    harness.answer = { days: [{ date: '2026-08-03', progress: 42, solved: false }], solvedDays: [7] };
+    await loadPlayerHistory('fr', 'sentence', '2026-08');
+
+    const state = useHistoryStore.getState();
+    const month = state.months['fr:sentence:2026-08'];
+    // READY with real values, never `idle` or a pending null: an unarrived month BREATHES,
+    // and a placeholder breathing forever behind a request nobody made is the exact false
+    // promise the explicit-loading rule exists to prevent.
+    expect(month?.phase).toBe('ready');
+    expect(month?.days?.size).toBe(0);
+    expect(state.solved.fr).toEqual({ phase: 'ready', days: [] });
+    expect(harness.requests).toEqual([]);
+  });
+
+  it('replays the tokenless answers when a first identity is ADOPTED', async () => {
+    // The known-empty answers were about a device with no account. An identity ADOPTED from
+    // another tab may own the rows they claimed absent, and a mounted surface's effect
+    // never refires for it — so the scope owner replays exactly the reads the tokenless
+    // branch answered, now with the token.
+    harness.identity = false;
+    await loadPlayerHistory('fr', 'sentence', '2026-08');
+    await loadPlayerHistory('fr', 'sentence', undefined);
+    expect(harness.requests).toEqual([]);
+
+    harness.identity = true;
+    harness.answer = {
+      days: [{ date: '2026-08-03', progress: 42, solved: true }],
+      solvedDays: [20_669],
+    };
+    rearmPlayerHistory();
+    // The replay is SEQUENTIAL (one flight settles before the next starts), so the reads
+    // arrive over a few microtasks rather than as one synchronous burst.
+    await vi.waitFor(() => expect(harness.requests).toHaveLength(2));
+    await vi.waitFor(() => {
+      const state = useHistoryStore.getState();
+      expect(state.months['fr:sentence:2026-08']?.days?.size).toBe(1);
+      expect(state.solved.fr?.days).toEqual([20_669]);
+    });
+    // Consumed: a second adoption cannot happen, and a re-arm must not replay stale keys
+    // forever.
+    rearmPlayerHistory();
+    await Promise.resolve();
+    expect(harness.requests).toHaveLength(2);
+  });
+
+  it('reads normally once the device HAS an identity', async () => {
+    harness.identity = true;
+    harness.answer = { days: [{ date: '2026-08-03', progress: 42, solved: false }], solvedDays: [7] };
+    await loadPlayerHistory('fr', 'sentence', '2026-08');
+    expect(useHistoryStore.getState().months['fr:sentence:2026-08']?.days?.size).toBe(1);
   });
 });

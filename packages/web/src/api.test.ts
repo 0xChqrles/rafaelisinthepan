@@ -7,8 +7,10 @@ import { describe, it, expect } from 'vitest';
 import {
   apiBase,
   boardUrl,
+  devicesUrl,
   friendsUrl,
   parseBoard,
+  parseDeviceIdentity,
   puzzleUrl,
   wordPuzzleUrl,
   puzzleOutcome,
@@ -422,6 +424,54 @@ describe('profileUrl + parseProfile (#188)', () => {
     expect(() => parseProfile({ ...valid, publicId: 'NOPE' })).toThrow(/publicId/);
     expect(() => parseProfile({ ...valid, name: 3 })).toThrow(/name/);
     expect(() => parseProfile({ ...valid, avatar: 'garbage' })).toThrow(/avatar/);
+    // The stored EMPTY avatar is "no custom mark" (PR-219 round-2 review), normalized to
+    // null — the board rows' convention — so ONE fallback rule serves every consumer and
+    // '' can never reach a decoder.
+    expect(parseProfile({ ...valid, avatar: '' })).toEqual({ ...valid, avatar: null });
+    expect(parseProfile({ ...valid, avatar: null })).toEqual({ ...valid, avatar: null });
+  });
+});
+
+describe('devicesUrl + parseDeviceIdentity (#216)', () => {
+  const valid = () => ({
+    accountId: 'abcdefghij234567',
+    deviceId: 'zyxwvutsrq765432',
+    devices: [
+      {
+        revokeKey: 'a'.repeat(64),
+        deviceId: 'zyxwvutsrq765432',
+        device: 'iPhone',
+        os: 'iOS 17',
+        browser: 'Safari',
+        createdAt: '2026-08-23T00:00:00.000Z',
+        lastSeenAt: '2026-08-24T00:00:00.000Z',
+        current: true,
+      },
+    ],
+  });
+
+  it('addresses the POST-only route with no query and validates its full listing', () => {
+    expect(devicesUrl('https://api.example')).toBe('https://api.example/devices');
+    const body = valid();
+    expect(parseDeviceIdentity(body)).toBe(body);
+  });
+
+  it('rejects a missing/malformed revocation handle, but tolerates unparseable timestamps', () => {
+    const missing = valid();
+    delete (missing.devices[0] as { revokeKey?: string }).revokeKey;
+    expect(() => parseDeviceIdentity(missing)).toThrow(/devices/);
+    const badHandle = valid();
+    badHandle.devices[0].revokeKey = 'A'.repeat(64);
+    expect(() => parseDeviceIdentity(badHandle)).toThrow(/devices/);
+    // The server's own row reader DEFAULTS an absent timestamp to '' — a legitimate
+    // answer, and the screen renders an unparseable date as no date. Refusing the whole
+    // list over a label would hide every other device behind one damaged row.
+    const badDate = valid();
+    badDate.devices[0].lastSeenAt = 'yesterday';
+    expect(() => parseDeviceIdentity(badDate)).not.toThrow();
+    const emptyDate = valid();
+    emptyDate.devices[0].createdAt = '';
+    expect(() => parseDeviceIdentity(emptyDate)).not.toThrow();
   });
 });
 

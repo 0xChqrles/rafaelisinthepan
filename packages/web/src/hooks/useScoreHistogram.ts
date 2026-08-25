@@ -1,13 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import { dateForDayNumber, publicIdFromSecret, type ScoreHistogram } from '@whippin/shared';
+import { dateForDayNumber, type ScoreHistogram } from '@whippin/shared';
 import { parseScoreHistogram, scoresUrl } from '../api';
-import { playerSecret } from '../identity';
+import {
+  deviceIdentity,
+  identityEpoch,
+  identityEpochOf,
+  identityScopeRevision,
+} from '../identity';
 import type { Mode } from '../langs';
 
 // The solved screen's population data (#170), a plain READ since #203.
 //
 // It used to be a round trip with a state machine behind it: a finished round POSTed its
-// own score — carrying an invisible Turnstile token and the player key — and persisted
+// own score — carrying an invisible Turnstile token and the player's key — and persisted
 // whatever band the server answered with, so a revisit could GET instead, and a REFUSED
 // submission left the round asking again on the next visit. All of that is retired. The
 // server now derives the score from the guess log it already holds (#201) and records the
@@ -81,18 +86,19 @@ export async function readPopulation(
   lang: string,
   date: string,
 ): Promise<ScorePlacement | null> {
-  // Derived in its OWN try, the leaderboard's rule: `crypto.subtle` is absent outside a
-  // secure context (the LAN-IP mobile check), and there the honest answer is no standing
-  // rather than a guessed one.
-  let id: string | undefined;
-  try {
-    id = await publicIdFromSecret(playerSecret());
-  } catch {
-    return null;
-  }
-  const response = await fetch(scoresUrl(lang, date, mode, id));
+  // The caller's PUBLIC id, which is what makes the returned band THEIRS. Since #216 it is
+  // the SERVER-assigned account id this device already holds, so there is nothing to derive
+  // and no `crypto.subtle` to be missing outside a secure context (the LAN-IP mobile check
+  // that used to need its own try/catch here). A device with no identity has recorded
+  // nothing, so there is no standing to read.
+  const identity = deviceIdentity();
+  if (!identity) return null;
+  const epoch = identityEpochOf(identity);
+  const response = await fetch(scoresUrl(lang, date, mode, identity.accountId));
+  if (identityEpoch() !== epoch) return null;
   if (!response.ok) return null;
   const histogram = parseScoreHistogram(await response.json());
+  if (identityEpoch() !== epoch) return null;
   // `bucket` is the server's answer about THIS player, so a population that does not hold
   // them says so with null instead of handing back whoever else recorded the same number.
   return { histogram, bucket: histogram.bucket };
@@ -124,7 +130,10 @@ export default function useScoreHistogram({
       setPlacement(null);
       return undefined;
     }
-    const key = `${mode}:${lang}:${dayNumber}:${score}`;
+    // Scope the module-level flight as well as the component. Otherwise B's freshly
+    // remounted solved screen can subscribe to A's still-running population read when the
+    // round tuple happens to match.
+    const key = `${identityScopeRevision()}:${mode}:${lang}:${dayNumber}:${score}`;
     if (placementKeyRef.current !== key) {
       placementKeyRef.current = key;
       // A direct solved-round -> solved-round navigation must never show the previous

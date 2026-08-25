@@ -1,9 +1,10 @@
 // Invisible Cloudflare Turnstile (#170): the ONLY module that knows Turnstile exists —
-// the analytics.ts pattern. Creating a sentence or Word round needs one fresh token,
-// verified server-side; the widget is invisible, so there is nothing to render. The script
-// is prefetched while the puzzle/rules gate loads, never at app startup. A sentence-round
-// failure retries silently with its sync queue; Word mode reports a failed PLAY because no
-// server clock was started.
+// the analytics.ts pattern. Creating an IDENTITY and creating a sentence/Word round each
+// need their own fresh token, verified server-side; the widget is invisible, so there is
+// nothing to render. A brand-new player's first action therefore consumes TWO single-use
+// tokens back-to-back. Both are prefetched while the puzzle/rules gate loads, never at app
+// startup. A sentence-round failure retries silently with its sync queue; Word mode reports
+// a failed PLAY because no server clock was started.
 //
 // **The site key MUST be provisioned as an INVISIBLE widget** — Cloudflare's default is
 // "Managed", which is not a stricter version of the same thing but a different widget: it
@@ -102,25 +103,48 @@ function loadTurnstile(): Promise<TurnstileApi> {
 // a screen appeared is still valid when the player finally acts.
 const PREFETCH_MAX_AGE_MS = 120_000;
 
-let prefetched: { at: number; token: Promise<string> } | null = null;
+interface PrefetchedToken {
+  at: number;
+  token: Promise<string>;
+}
 
-// Start a challenge NOW, so it is in hand before the player acts (#203). Both places that
-// need one are moments the player is reading rather than playing — the sentence puzzle
+const MAX_PREFETCHED_TOKENS = 2;
+let prefetched: PrefetchedToken[] = [];
+
+function discardStalePrefetches(now = Date.now()): void {
+  prefetched = prefetched.filter((held) => now - held.at < PREFETCH_MAX_AGE_MS);
+}
+
+// Start challenges NOW, so they are in hand before the player acts (#203/#216). Both places
+// that need one are moments the player is reading rather than playing — the sentence puzzle
 // loading, and Word mode's rules gate — and in Word mode round start IS clock start, so a
 // bot check landing exactly then costs real seconds on a 60-second game.
 //
 // Fire-and-forget by design: a failure here is not a failure of anything, because the
 // caller that actually needs a token mints a fresh one when the held one is stale or
-// rejected. Cheap to call repeatedly — a live prefetch is left alone.
-export function prefetchTurnstileToken(siteKey: string = turnstileSiteKey()): void {
-  if (!siteKey || (prefetched && Date.now() - prefetched.at < PREFETCH_MAX_AGE_MS)) return;
-  const held = { at: Date.now(), token: mintToken(siteKey) };
-  prefetched = held;
-  // Nothing awaits this until a caller asks, and an unawaited rejection would surface as
-  // an unhandled promise rejection in the console.
-  void held.token.catch(() => {
-    if (prefetched === held) prefetched = null;
-  });
+// rejected. Cheap to call repeatedly — live prefetches are left alone.
+//
+// Fill the held-token queue to `count`. A first action with no device identity asks for
+// two: bootstrap consumes one, then round creation/start consumes the next. Repeated screen
+// effects only top up the queue, and the cap keeps a programming error from spawning an
+// arbitrary number of invisible widgets.
+export function prefetchTurnstileTokens(
+  count: number,
+  siteKey: string = turnstileSiteKey(),
+): void {
+  if (!siteKey) return;
+  discardStalePrefetches();
+  const target = Math.min(MAX_PREFETCHED_TOKENS, Math.max(0, Math.trunc(count)));
+  while (prefetched.length < target) {
+    const held: PrefetchedToken = { at: Date.now(), token: mintToken(siteKey) };
+    prefetched.push(held);
+    // Nothing awaits this until a caller asks, and an unawaited rejection would surface as
+    // an unhandled promise rejection in the console. Remove only THIS failed slot: the
+    // sibling challenge remains valid.
+    void held.token.catch(() => {
+      prefetched = prefetched.filter((entry) => entry !== held);
+    });
+  }
 }
 
 // One fresh token for one write. Rejects when unconfigured, blocked, errored or timed out —
@@ -131,9 +155,9 @@ export function prefetchTurnstileToken(siteKey: string = turnstileSiteKey()): vo
 // single-use, so handing the same one to two writes would have the second refused 403 by
 // Siteverify. A stale or rejected prefetch simply falls through to a fresh mint.
 export async function turnstileToken(siteKey: string = turnstileSiteKey()): Promise<string> {
-  const held = prefetched;
-  if (held && Date.now() - held.at < PREFETCH_MAX_AGE_MS) {
-    prefetched = null;
+  discardStalePrefetches();
+  while (prefetched.length > 0) {
+    const held = prefetched.shift()!;
     try {
       return await held.token;
     } catch {
@@ -187,7 +211,9 @@ async function mintToken(siteKey: string): Promise<string> {
   }
 }
 
-// Test seam: a held challenge must not leak between tests.
+// Test seam: a held challenge — and the cached script attempt — must not leak between
+// tests (a rejected `scriptPromise` left behind would fail every later test's solve).
 export function resetTurnstilePrefetch(): void {
-  prefetched = null;
+  prefetched = [];
+  scriptPromise = null;
 }

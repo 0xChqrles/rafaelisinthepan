@@ -3,7 +3,6 @@ import {
   anonName,
   dateForDayNumber,
   defaultAvatar,
-  publicIdFromSecret,
   type Board,
   type BoardPlayer,
   type BoardRow,
@@ -25,7 +24,16 @@ import ModeTabs from '../components/ModeTabs';
 import TopBar from '../components/TopBar';
 import useShare from '../hooks/useShare';
 import useToday from '../hooks/useToday';
-import { playerSecret } from '../identity';
+import {
+  deviceIdentity,
+  ensureRequestIdentity,
+  identityEpoch,
+  identityEpochOf,
+  useDeviceIdentity,
+} from '../identity';
+import { adoptSignedOutVerdict } from '../state/signedOutVerdict';
+import { prefetchTurnstileTokens } from '../turnstile';
+import ErrorSheet from '../components/ErrorSheet';
 import { useGameStore, type BoardTab } from '../state/gameStore';
 import {
   pathForBoard,
@@ -45,13 +53,27 @@ import CloseIcon from '../assets/icons/close.svg?react';
 // the GLOBAL top 50 as the second tab, explicitly the fun/untrusted view. This screen
 // is also where a player customizes their profile (#188 — the EDIT chip onto /profile)
 // and shares their invite link (#189 — the INVITE button), neither of which requires
-// having played, which is why the header icon reaches it before a first guess.
+// having played, which is why the header icon reaches it before a first round.
 //
 // The rows come ranked from the server (competition ties, the plain top-50 cut, the
 // own-row window — @whippin/shared's leaderboard rules); this screen only draws what
 // the API returned. Rows CONNECTED to the reader are marked in the accent — the app's
 // "you are here" colour: a quiet left edge on a friend, that edge plus a tint on your
 // own row (user-decided 2026-08-20, see the CSS).
+//
+// **OPENING THIS SCREEN IS NOT A TRIGGER (user-decided 2026-08-24, superseding "opening
+// the leaderboard mints an account").** A navigation must not create server state: a
+// signed-out or brand-new visitor browsing here would otherwise silently spawn an
+// account. Tokenless, every private face is the KNOWN-EMPTY answer (#216's rule): the
+// friends board is the ghost + INVITE without a request, the identity strip shows the
+// LOCAL PLACEHOLDER — the persisted seed's assigned name and mark (`gameStore.localSeed`,
+// user-decided 2026-08-24: the player still sees an avatar and a username, generated
+// locally) — and the global read stays genuinely anonymous. The deliberate act that
+// mints is the INVITE tap — the one thing on this screen that cannot exist without an
+// account — and every identity-reading effect keys on the live identity, so a mint (or
+// a cross-tab adoption) populates the strip and the boards without a remount. When the
+// account deploys, the server-assigned id replaces the seed and the derived face
+// changes once — unavoidable, since the server picks the id.
 type Tab = BoardTab;
 
 // What the strip shows for the player. The publicId is derived locally and is available
@@ -62,6 +84,14 @@ interface Me {
   avatar: string | null;
 }
 
+// The tokenless FRIENDS board: a device with no account holds no edges and no rows, so
+// this is the KNOWN-EMPTY answer (#216), installed synchronously — at first render and at
+// every identity-scope reset — so a tokenless visit never flashes a LOADING frame for a
+// request nobody makes.
+const EMPTY_FRIENDS_BOARD: Board = { rows: [], own: null, waiting: [] };
+const boardsFor = (identity: unknown): Partial<Record<Tab, Board | 'failed'>> =>
+  identity ? {} : { friends: EMPTY_FRIENDS_BOARD };
+
 export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode }) {
   // The tab belongs to the VISIT, and it lives in the store because this screen remounts
   // without the visit ending — a header mode switch (App keys it on lang:mode) and a page
@@ -70,20 +100,45 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
   // reset (user feedback 2026-08-20).
   const tab = useGameStore((s) => s.boardTab);
   const setTab = useGameStore((s) => s.setBoardTab);
+
+  // The device's live identity (#216). Opening this screen is NOT a trigger (user-decided
+  // 2026-08-24): the strip, the boards and the friend marks all READ whatever identity the
+  // device holds, and only the INVITE tap below ever creates one. Keying the effects on
+  // this value is what populates the screen when an identity ARRIVES under it — the invite
+  // tap's own mint, or an adoption from another tab — where a run-once effect left the
+  // strip blank and the invite dead until a remount (review finding). It leads the state
+  // below because the TOKENLESS answers are derived from it SYNCHRONOUSLY: known-empty is
+  // an initializer's value, never an effect's, or the first paint flashes a skeleton and a
+  // LOADING wave for requests nobody makes.
+  const identity = useDeviceIdentity();
+  const epoch = identity ? identityEpochOf(identity) : null;
+
+  // The PRE-ACCOUNT placeholder seed (user-decided 2026-08-24): persisted so the
+  // placeholder face is stable across visits and tabs; display-only, never sent anywhere.
+  const localSeed = useGameStore((s) => s.localSeed);
+  const ensureLocalSeed = useGameStore((s) => s.ensureLocalSeed);
+  useEffect(() => {
+    if (localSeed === null) ensureLocalSeed();
+  }, [localSeed, ensureLocalSeed]);
+
   const [me, setMe] = useState<Me | null>(null);
-  // The id alone, available as soon as it derives: it is what the INVITE link and the
-  // own-row marker need, neither of which waits on a profile.
-  const [meId, setMeId] = useState<string | null>(null);
+  // The id alone, available as soon as the identity is: it is what the own-row marker
+  // needs, which never waits on a profile. Pure derivation — state here would only ever
+  // mirror the identity, one sync hazard for nothing.
+  const meId = identity?.accountId ?? null;
   // Whether the identity READ is over (however it ended). The strip holds a skeleton
-  // until it is — never a name (user feedback 2026-08-20).
-  const [meSettled, setMeSettled] = useState(false);
+  // until it is — never a name (user feedback 2026-08-20). Tokenless there is nothing to
+  // read: settled empty from the first frame.
+  const [meSettled, setMeSettled] = useState(() => identity === null);
   // The reader's edges, for marking friends among the global rows. Decoration, fetched
   // lazily and only for the tab that needs it.
   const [friendIds, setFriendIds] = useState<ReadonlySet<string> | null>(null);
   // ONE outcome slot per tab — a board, or that tab's own failure. Screen-global
   // failure state painted a FAILED frame over the other tab's perfectly good board for
   // a render when flipping back (review finding, 2026-08-20).
-  const [boards, setBoards] = useState<Partial<Record<Tab, Board | 'failed'>>>({});
+  const [boards, setBoards] = useState<Partial<Record<Tab, Board | 'failed'>>>(() =>
+    boardsFor(identity),
+  );
   const [attempt, setAttempt] = useState(0);
   const setProfileReturn = useGameStore((s) => s.setProfileReturn);
 
@@ -100,59 +155,75 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
   const [cachedDate, setCachedDate] = useState(date);
   if (cachedDate !== date) {
     setCachedDate(date);
-    setBoards({});
+    setBoards(boardsFor(identity));
+  }
+  // AND THE CACHES ARE IDENTITY-SCOPED (PR-219 follow-up review): a board cached tokenless
+  // — or under a previous identity — is not the current account's answer, and the
+  // stale-but-good rule below deliberately keeps a cached board over a FAILED refresh, so
+  // a kept tokenless-empty board would suppress both the adopted account's real data and
+  // the retry UI. A scope change therefore drops both tabs, the friend marks and the strip
+  // during render, exactly as a new day does; what replaces them is the new scope's own
+  // synchronous answer.
+  const [cachedEpoch, setCachedEpoch] = useState(epoch);
+  if (cachedEpoch !== epoch) {
+    setCachedEpoch(epoch);
+    setBoards(boardsFor(identity));
+    setFriendIds(null);
+    setMe(null);
+    setMeSettled(identity === null);
   }
   // The pinned `share` analytics event means "a RESULT left the app" (the three-event
   // invariant); an invite link is not a result, so its delivery is untracked rather
   // than quietly redefining the metric.
   const { share, copied } = useShare({ tracked: false });
+  // The one challenge a tokenless INVITE tap will spend on its deploy, in hand before the
+  // tap — the less the mint waits on, the more often the same gesture can still deliver.
+  useEffect(() => {
+    if (identity === null) prefetchTurnstileTokens(1);
+  }, [identity]);
 
-  // The identity strip: the id is derived locally (generated on first need, #187 — the
-  // invite link's own rule, since sharing it IS this screen's job), then ONE read
-  // settles what the strip says.
+  // The identity strip: ONE read settles what it says — for the identity the device
+  // already holds. With none there is nothing to resolve and nothing to show: settled
+  // empty, an ANSWER, never a skeleton with no request behind it.
   //
-  // Nothing is shown until it does (user feedback 2026-08-20). The first cut published
-  // the id the moment it derived, which rendered the ASSIGNED identity — the pseudonym
-  // and the generated mark — and then swapped it for the real profile a beat later: a
-  // player with a name watched someone else's name flash under their own avatar on
-  // every visit. A skeleton says "not yet"; a name says something false.
+  // Nothing is shown until the read settles (user feedback 2026-08-20). The first cut
+  // published the id the moment it derived, which rendered the ASSIGNED identity — the
+  // pseudonym and the generated mark — and then swapped it for the real profile a beat
+  // later: a player with a name watched someone else's name flash under their own avatar
+  // on every visit. A skeleton says "not yet"; a name says something false.
   //
   // A read that FAILS still settles, on the assigned identity: it is what a board row
   // whose profile read failed already shows, and a skeleton that never resolves is the
   // one outcome worse than the fallback. A 404 is not a failure at all — it is the
   // answer "never customized", whose display IS the assigned identity.
   useEffect(() => {
+    // Tokenless is already the settled-empty answer, derived synchronously above — there
+    // is nothing to read and nothing to show.
+    if (!identity) return;
     let cancelled = false;
+    const publicId = identity.accountId;
+    const epoch = identityEpochOf(identity);
     (async () => {
-      let publicId: string;
-      try {
-        publicId = await publicIdFromSecret(playerSecret());
-      } catch {
-        // No identity at all (crypto.subtle outside a secure context): the strip draws
-        // nothing rather than a skeleton with nothing behind it.
-        if (!cancelled) setMeSettled(true);
-        return;
-      }
-      if (cancelled) return;
-      setMeId(publicId);
       let resolved: Me = { publicId, name: '', avatar: null };
       try {
         const response = await fetch(profileUrl(publicId));
+        if (identityEpoch() !== epoch) return;
         if (response.ok) {
           const profile = parseProfile(await response.json());
+          if (identityEpoch() !== epoch) return;
           resolved = { publicId, name: profile.name, avatar: profile.avatar };
         }
       } catch {
         // Keep the assigned identity.
       }
-      if (cancelled) return;
+      if (cancelled || identityEpoch() !== epoch) return;
       setMe(resolved);
       setMeSettled(true);
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [identity]);
 
   // The reader's OWN EDGES, for marking friends among the global rows (user-asked,
   // 2026-08-20). Fetched only when the GLOBAL tab is actually shown and only once per
@@ -161,13 +232,25 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
   // Decoration — a failure simply leaves the rows unmarked, never an error.
   useEffect(() => {
     if (tab !== 'global' || friendIds) return;
+    // No identity means no edges: unmarked rows are the honest board, and asking would
+    // bootstrap an account for a navigation (#216 — reads never mint).
+    if (!identity) return;
     let cancelled = false;
     (async () => {
       try {
-        const response = await postFriendsBody(friendsUrl(), { secret: playerSecret() });
-        if (cancelled || !response.ok) return;
+        const epoch = identityEpochOf(identity);
+        const response = await postFriendsBody(friendsUrl(), { token: identity.token });
+        if (cancelled || identityEpoch() !== epoch) return;
+        if (!response.ok) {
+          // Unmarked rows are a fine board, so this read fails silently — EXCEPT for the one
+          // answer that is not about the read at all. A device revoked since the board
+          // mounted can learn it here first, and swallowing it would leave the screen
+          // decorating a board for an account it no longer holds.
+          await adoptSignedOutVerdict(response, epoch);
+          return;
+        }
         const ids = parseFriends(await response.json());
-        if (!cancelled) setFriendIds(new Set(ids));
+        if (!cancelled && identityEpoch() === epoch) setFriendIds(new Set(ids));
       } catch {
         // Unmarked rows are a fine board.
       }
@@ -175,47 +258,47 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
     return () => {
       cancelled = true;
     };
-  }, [tab, friendIds]);
+  }, [tab, friendIds, identity]);
 
   // One fetch per tab ACTIVATION — the route is a zero-TTL live read, so a tab flip
   // re-reads rather than trusting a snapshot from minutes ago; the cached board holds
   // the screen while the fresh one is in flight (stale-but-good beats a spinner), and
   // RETRY refetches. FRIENDS is the authenticated POST — the server resolves YOUR
-  // edges, so the read has to prove who is asking (#187: the secret in the body, never
-  // a query string). GLOBAL is the anonymous GET, widened with the caller's own window
-  // via their PUBLIC id.
+  // edges, so the read has to prove who is asking (#216: the device token in the body,
+  // never a query string). GLOBAL is the anonymous GET, widened with the caller's own
+  // window via their PUBLIC id.
   useEffect(() => {
     let cancelled = false;
     // A standing failure turns back into the loading state for this pass.
     setBoards((prev) => (prev[tab] === 'failed' ? { ...prev, [tab]: undefined } : prev));
+    // **No token, no private fetch (#216)** — and no MINT for a navigation (user-decided
+    // 2026-08-24): the tokenless FRIENDS board is the KNOWN-EMPTY answer, already
+    // installed synchronously (`boardsFor`) — the ghost and the INVITE button, exactly
+    // what a brand-new visitor should see, with no request behind it. The GLOBAL read
+    // below needs no identity: the caller's public id only ever widens it with their own
+    // window.
+    if (tab === 'friends' && !identity) return;
     (async () => {
+      const epoch = identity ? identityEpochOf(identity) : null;
       try {
-        const secret = playerSecret();
-        // The global read needs NO identity — the caller's public id only widens it
-        // with their own window, and deriving it can genuinely fail (crypto.subtle is
-        // absent outside a secure context, e.g. the LAN-IP mobile check `board:seed`
-        // exists to support). A failed derivation degrades to the plain anonymous
-        // read; it must never kill a tab that needs no identity.
-        let id: string | undefined;
-        if (tab === 'global') {
-          try {
-            id = await publicIdFromSecret(secret);
-          } catch {
-            id = undefined;
-          }
-        }
         const response =
-          tab === 'friends'
-            ? await postBoardBody(boardUrl(lang, date, mode), { secret })
-            : await fetch(boardUrl(lang, date, mode, id));
-        if (cancelled) return;
-        if (!response.ok) throw new Error(`board answered ${response.status}`);
+          tab === 'friends' && identity !== null
+            ? await postBoardBody(boardUrl(lang, date, mode), { token: identity.token })
+            : await fetch(boardUrl(lang, date, mode, identity?.accountId));
+        if (cancelled || (epoch !== null && identityEpoch() !== epoch)) return;
+        if (!response.ok) {
+          // The anonymous GLOBAL read carries no epoch and can sign nobody out.
+          if (epoch !== null) await adoptSignedOutVerdict(response, epoch);
+          throw new Error(`board answered ${response.status}`);
+        }
         const board = parseBoard(await response.json());
-        if (!cancelled) setBoards((prev) => ({ ...prev, [tab]: board }));
+        if (!cancelled && (epoch === null || identityEpoch() === epoch)) {
+          setBoards((prev) => ({ ...prev, [tab]: board }));
+        }
       } catch {
         // FAILED only when there is nothing to show: an error frame over rows already
         // on screen helps nobody — the cached board stands until a refresh succeeds.
-        if (!cancelled) {
+        if (!cancelled && (epoch === null || identityEpoch() === epoch)) {
           setBoards((prev) =>
             prev[tab] && prev[tab] !== 'failed' ? prev : { ...prev, [tab]: 'failed' },
           );
@@ -225,17 +308,68 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
     return () => {
       cancelled = true;
     };
-  }, [tab, lang, mode, date, attempt]);
+  }, [tab, lang, mode, date, attempt, identity]);
 
   const entry = boards[tab];
   const board = entry === 'failed' ? undefined : entry;
 
+  // The INVITE tap's own state: its bootstrap in flight, and which failure the error
+  // surface reports. The tap exists to deliver a link, and saying nothing leaves the
+  // player tapping a button that appears to do nothing.
+  const [inviting, setInviting] = useState(false);
+  const [inviteFailed, setInviteFailed] = useState<'account' | 'share' | null>(null);
+
   // The invite link is both "add me" and "come play" (#189): one line of copy, then the
   // URL. Delivery (native sheet -> clipboard + COPIED) is useShare's, like every result.
-  const invite = () => {
-    if (!meId) return;
-    void share(`${t(lang, 'boardInviteText')}\n${window.location.origin}${pathForInvite(meId)}`);
+  //
+  // **THE INVITE TAP IS THE TRIGGER (#216), AND IT IS ONE TAP** (user-decided 2026-08-24,
+  // superseding the two-phase mint-then-ask: "always a single tap"): a tokenless tap
+  // bootstraps and then delivers in the same gesture. The physics the two-phase design
+  // guarded against still exist — Turnstile + /devices can outlive the transient user
+  // activation, and past it navigator.share rejects by spec and the async clipboard does
+  // on WebKit — so `useShare.share` REPORTS delivery, and a share neither channel could
+  // make raises the error surface (`failedShare`) instead of being swallowed: its TRY
+  // AGAIN runs inside its own fresh activation, with the identity now in hand, which is
+  // exactly the delivery the first tap could not make. Desktop and an already-deployed
+  // account never hit that path — the common case stays one tap, one sheet.
+  const invite = async () => {
+    if (inviting) return;
+    setInviteFailed(null);
+    let held = identity;
+    if (held === null) {
+      // The deliberate act that creates the account (LoadingWave in the button, the Word
+      // gate's PLAY shape; a failure created nothing and says so).
+      setInviting(true);
+      try {
+        const request = await ensureRequestIdentity(null);
+        // A cross-tab replacement landed mid-mint: the screen is already re-keying on the
+        // adopted identity — share ITS link, the one the button now stands for.
+        held = request?.identity ?? deviceIdentity();
+        if (held === null) return;
+      } catch {
+        setInviteFailed('account');
+        return;
+      } finally {
+        setInviting(false);
+      }
+    }
+    const delivered = await share(
+      `${t(lang, 'boardInviteText')}\n${window.location.origin}${pathForInvite(held.accountId)}`,
+    );
+    if (!delivered) setInviteFailed('share');
   };
+
+  // What the strip shows. With an account: the settled profile read (skeleton until it
+  // lands). Without one: the LOCAL placeholder — an ANSWER derived from the persisted
+  // seed, not a pending read, so no skeleton (its one-frame absence while the seed mints
+  // renders the settled empty boxes, never a breathing promise).
+  const shown: Me | null =
+    identity === null
+      ? localSeed === null
+        ? null
+        : { publicId: localSeed, name: '', avatar: null }
+      : me;
+  const shownSettled = identity === null ? localSeed !== null : meSettled;
 
   return (
     <div className="board-screen">
@@ -268,21 +402,21 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
             player a stranger's name under their own mark (user feedback 2026-08-20).
             The skeleton holds the exact layout the real strip takes, so nothing moves
             when it resolves. */}
-        {me ? (
-          <Avatar avatar={me.avatar ?? defaultAvatar(me.publicId)} size={40} />
+        {shown ? (
+          <Avatar avatar={shown.avatar ?? defaultAvatar(shown.publicId)} size={40} />
         ) : (
           <span
-            className={`board-me-slot${meSettled ? '' : ' skeleton'}`}
+            className={`board-me-slot${shownSettled ? '' : ' skeleton'}`}
             aria-hidden="true"
           />
         )}
-        {me ? (
-          <span className={`board-me-name${me.name ? '' : ' anon'}`}>
-            {me.name || anonName(me.publicId)}
+        {shown ? (
+          <span className={`board-me-name${shown.name ? '' : ' anon'}`}>
+            {shown.name || anonName(shown.publicId)}
           </span>
         ) : (
           <span className="board-me-name" aria-hidden="true">
-            {!meSettled && <span className="skeleton skeleton-name" />}
+            {!shownSettled && <span className="skeleton skeleton-name" />}
           </span>
         )}
         {/* `/profile` is a GLOBAL route, so the board that opened it leaves the URL —
@@ -342,11 +476,39 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
         )}
       </div>
 
-      {/* The invite link's sending surface (#189): the screen's one big action. The
-          label swaps to COPIED on the clipboard path, the share button's own gesture. */}
-      <button type="button" className="mix-btn board-invite" disabled={!meId} onClick={invite}>
-        {copied ? t(lang, 'copied') : t(lang, 'boardInvite')}
+      {/* The invite link's sending surface (#189): the screen's one big action — and the
+          route's account-creating trigger (#216, user-decided 2026-08-24), so it is live
+          for a brand-new visitor and holds a LoadingWave while its own mint is in flight
+          (the Word gate's PLAY shape). The line above it carries the tap's outcome: the
+          fresh-tap ask after a mint, or the loud failure whose retry is the button itself.
+          The label swaps to COPIED on the clipboard path, the share button's own gesture. */}
+      <button
+        type="button"
+        className="mix-btn board-invite"
+        disabled={inviting}
+        onClick={() => void invite()}
+      >
+        {inviting ? (
+          <LoadingWave text={t(lang, 'loading')} />
+        ) : copied ? (
+          t(lang, 'copied')
+        ) : (
+          t(lang, 'boardInvite')
+        )}
       </button>
+
+      {/* The tap's failure, on the app's error surface (#216 rework): the deploy failing
+          created nothing; a delivery failing has the account in hand, and TRY AGAIN
+          shares inside its own fresh activation. */}
+      {inviteFailed !== null && (
+        <ErrorSheet
+          lang={lang}
+          title={t(lang, inviteFailed === 'account' ? 'failedAccount' : 'failedShare')}
+          note={t(lang, inviteFailed === 'account' ? 'failedAccountNote' : 'failedShareNote')}
+          onRetry={() => void invite()}
+          onClose={() => setInviteFailed(null)}
+        />
+      )}
     </div>
   );
 }

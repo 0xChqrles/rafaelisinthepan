@@ -1,6 +1,6 @@
 // The PRIVATE player-history route on the ONE handler: POST /history?lang=&mode=[&month=].
 //
-//   { secret }  — everything a summary surface may know about days it is not opening:
+//   { token }  — everything a summary surface may know about days it is not opening:
 //                 the asked-for MONTH of that (language, mode), and the language's
 //                 SOLVED-DAY collection.
 //
@@ -10,8 +10,8 @@
 // identity, linked or unlinked: after #214 it is the normal source on every device, not a
 // linked-account enhancement.
 //
-// POST-only for the /friends reason — the secret is the auth (#187) and it travels in the
-// BODY, never a query string, so there is no way to ask for someone else's history. The
+// POST-only for the /friends reason — the device token is the auth (#216) and it travels in
+// the BODY, never a query string, so there is no way to ask for someone else's history. The
 // two things it reads are already stored:
 //
 //   the MONTH  — ONE Query over the caller's own round partition behind the
@@ -32,8 +32,9 @@
 // rate-limiting layer. Turnstile does not fit a NAVIGATION read — verification would add
 // another external call to every month or chooser load.
 
-import { HISTORY_MONTH_PATTERN, publicIdFromSecret } from '@whippin/shared';
-import { LIVE_HEADERS, readJsonObject, requireGameParams, requireSecret } from './liveRoute';
+import { HISTORY_MONTH_PATTERN } from '@whippin/shared';
+import type { DeviceStore } from './deviceStore';
+import { LIVE_HEADERS, readJsonObject, requireDevice, requireGameParams } from './liveRoute';
 import type { PlayerHistoryStore } from './historyStore';
 import type { RoundStore } from './roundStore';
 import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respond';
@@ -43,11 +44,14 @@ export interface HistoryDeps {
   // for them, only this read over what #203 already writes.
   rounds: RoundStore;
   history: PlayerHistoryStore;
+  // Every read here is PRIVATE, so every read authenticates the caller's device (#216).
+  devices: DeviceStore;
 }
 
 export async function handleHistory(
   event: FnUrlEvent,
   deps: HistoryDeps,
+  instant: Date,
   cors: Record<string, string>,
 ): Promise<FnUrlResult> {
   const responseHeaders = { ...cors, ...LIVE_HEADERS };
@@ -56,7 +60,7 @@ export async function handleHistory(
     return errorResponse(
       405,
       'method_not_allowed',
-      'The history route is POST-only: the player key authenticates in the body.',
+      'The history route is POST-only: the device token authenticates in the body.',
       responseHeaders,
     );
   }
@@ -80,9 +84,9 @@ export async function handleHistory(
 
   const parsed = readJsonObject(event, 'History', responseHeaders);
   if (!parsed.ok) return parsed.response;
-  const secret = requireSecret(parsed.value, responseHeaders);
-  if (!secret.ok) return secret.response;
-  const publicId = await publicIdFromSecret(secret.value);
+  const auth = await requireDevice(parsed.value, responseHeaders, deps.devices, instant);
+  if (!auth.ok) return auth.response;
+  const publicId = auth.value.account.accountId;
 
   // `collection: false` in the body opts OUT of the solved-day read: the language chooser
   // wants a month strip and never renders the streak, and the collection's consistent

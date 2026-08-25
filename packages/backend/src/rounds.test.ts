@@ -1,4 +1,4 @@
-// CONTRACT (#201): /round is the server-authoritative guess log — POST-only (the secret
+// CONTRACT (#201): /round is the server-authoritative guess log — POST-only (the token
 // is the auth and travels in the body), addressed per (date, lang, mode) by the shared
 // guard triple, storing the RAW ordered log as strings with no interpretation. The read
 // answers the stored round (404 = none yet); the append validates every guess (folded
@@ -19,8 +19,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   dayNumber,
-  generateSecret,
-  publicIdFromSecret,
   ROUND_GUESS_CAP,
   ROUND_WRITE_MIN_MS,
   WORD_MISS_CAP,
@@ -30,6 +28,7 @@ import {
 } from '@whippin/shared';
 import { createHandler } from './handler';
 import { memoryHistoryStore } from './memoryHistoryStore';
+import { memoryDeviceStore } from './memoryDeviceStore';
 import { memoryRoundStore } from './memoryRoundStore';
 import { memoryScoreStore } from './memoryScoreStore';
 import { buildSlice } from './slice';
@@ -38,6 +37,7 @@ import type { ScoreStore } from './scoreStore';
 import type { RoundStore } from './roundStore';
 import type { FnUrlEvent } from './respond';
 import type { PuzzleStore } from './store';
+import { deviceSeed, newTestDevice, seedDevice } from './testDevice';
 
 const START = new Date('2026-08-21T14:00:00Z');
 const ACTIVE_DATE = '2026-08-21';
@@ -47,7 +47,10 @@ const PAST_DATE = '2026-08-19';
 const YESTERDAY_DATE = '2026-08-20';
 const FUTURE_DATE = '2026-08-23';
 const ORIGIN = 'https://whippin.example';
-const SECRET = generateSecret();
+// The caller's identity is a STORED pair since #216: one device on one account, seeded
+// into the memory store every handler here is built over.
+const ME = newTestDevice();
+const TOKEN = ME.token;
 
 // The day's word artifact, for the ONE path that reads a puzzle store (#202's end-of-run
 // submission). Three claimable groups inside the zone plus one far outside it, so the
@@ -113,9 +116,15 @@ const CORRECTED_TAG = CORRECTED.revision;
 // `undefined` = the artifact must never be read on this path; `null` = the daily was never
 // published. The SLICE is derived from the same puzzle, exactly as `puzzle:publish` does,
 // and `sentence` is a HOLDER so a test can republish under a live handler.
-function puzzleStore(word: WordPuzzle | null | undefined, sentence: { current: Puzzle | null }): PuzzleStore {
+function puzzleStore(
+  word: WordPuzzle | null | undefined,
+  sentence: { current: Puzzle | null },
+  fullReadFails = false,
+): PuzzleStore {
   return {
     async getPuzzle() {
+      // The store contract swallows only NotFound — a throttle or a transient 5xx THROWS.
+      if (fullReadFails) throw new Error('S3 throttled');
       return sentence.current;
     },
     async getWordPuzzle() {
@@ -138,16 +147,23 @@ function makeHandler(
     scoreStore?: ScoreStore;
     roundStore?: RoundStore;
     historyStore?: PlayerHistoryStore;
+    fullReadFails?: boolean;
   } = {},
 ) {
   let current = START.getTime();
+  const devices = memoryDeviceStore([deviceSeed(ME)]);
   const scoreStore = options.scoreStore ?? memoryScoreStore(() => new Date(current));
   const historyStore = options.historyStore ?? memoryHistoryStore();
   const sentence = { current: options.sentence === undefined ? SENTENCE : options.sentence };
   const handler = createHandler({
-    store: puzzleStore(options.word, sentence),
+    store: puzzleStore(options.word, sentence, options.fullReadFails),
     now: () => new Date(current),
     allowedOrigin: ORIGIN,
+    deviceStore: devices,
+    devices: {
+      turnstile: { async verify() { return options.turnstile !== false; } },
+      allowSourceIp: true,
+    },
     rounds: {
       roundStore: options.roundStore ?? memoryRoundStore(),
       scoreStore,
@@ -160,6 +176,7 @@ function makeHandler(
   return Object.assign(handler, {
     scoreStore,
     historyStore,
+    devices,
     advance(ms: number) {
       current += ms;
     },
@@ -176,7 +193,7 @@ const WORD_QUERY = { lang: 'fr', date: ACTIVE_DATE, mode: 'word' };
 const WORD_TAG = 'w0rd';
 
 function wordEvent(extra: Record<string, unknown> = {}, query = WORD_QUERY): FnUrlEvent {
-  return event({ query, body: { secret: SECRET, puzzle: WORD_TAG, ...extra } });
+  return event({ query, body: { token: TOKEN, puzzle: WORD_TAG, ...extra } });
 }
 
 // Every call carries the player key AND the tag naming which puzzle the log belongs to.
@@ -185,7 +202,7 @@ function wordEvent(extra: Record<string, unknown> = {}, query = WORD_QUERY): FnU
 // A READ must NOT carry one — a bare token names no write and is refused.
 function body(extra: Record<string, unknown> = {}): Record<string, unknown> {
   const writing = Object.hasOwn(extra, 'guesses');
-  return { secret: SECRET, puzzle: PUZZLE, ...(writing ? { turnstileToken: 'tok' } : {}), ...extra };
+  return { token: TOKEN, puzzle: PUZZLE, ...(writing ? { turnstileToken: 'tok' } : {}), ...extra };
 }
 
 function event(options: {
@@ -256,7 +273,7 @@ describe('protocol', () => {
   });
 
   it('refuses a malformed player key', async () => {
-    const response = await makeHandler()(event({ body: { secret: 'nope', puzzle: PUZZLE } }));
+    const response = await makeHandler()(event({ body: { token: 'nope', puzzle: PUZZLE } }));
     expect(response.statusCode).toBe(400);
   });
 
@@ -266,7 +283,7 @@ describe('protocol', () => {
     ['NOT-A-TAG', 'wrong charset'],
     ['a'.repeat(33), 'over-long'],
   ] as [unknown, string][])('refuses a %s puzzle tag (%s)', async (puzzle) => {
-    const response = await makeHandler()(event({ body: { secret: SECRET, puzzle } }));
+    const response = await makeHandler()(event({ body: { token: TOKEN, puzzle } }));
     expect(response.statusCode).toBe(400);
   });
 
@@ -362,7 +379,7 @@ describe('a re-published daily restarts the log (#201)', () => {
 
     // The same (date, lang, mode) key, a different sentence under it. The client reset
     // its local round on exactly this change; handing back the old log would undo that.
-    const read = await handler(event({ body: { secret: SECRET, puzzle: 'deadbeef' } }));
+    const read = await handler(event({ body: { token: TOKEN, puzzle: 'deadbeef' } }));
     expect(read.statusCode).toBe(404);
   });
 
@@ -373,14 +390,14 @@ describe('a re-published daily restarts the log (#201)', () => {
 
     handler.republish(CORRECTED);
     const restarted = await handler(
-      event({ body: { secret: SECRET, puzzle: CORRECTED_TAG, guesses: ['mer'], turnstileToken: 'tok' } }),
+      event({ body: { token: TOKEN, puzzle: CORRECTED_TAG, guesses: ['mer'], turnstileToken: 'tok' } }),
     );
     expect(restarted.statusCode).toBe(200);
     expect(parsed(restarted).guesses).toEqual(['mer']);
 
     // And the new tag is what the record now answers to.
     handler.advance(ROUND_WRITE_MIN_MS + 1);
-    const read = await handler(event({ body: { secret: SECRET, puzzle: CORRECTED_TAG } }));
+    const read = await handler(event({ body: { token: TOKEN, puzzle: CORRECTED_TAG } }));
     expect(parsed(read).guesses).toEqual(['mer']);
   });
 
@@ -394,7 +411,7 @@ describe('a re-published daily restarts the log (#201)', () => {
     // exists to exclude.
     handler.republish(CORRECTED);
     const refused = await handler(
-      event({ body: { secret: SECRET, puzzle: CORRECTED_TAG, guesses: ['mer'], turnstileToken: 'tok' } }),
+      event({ body: { token: TOKEN, puzzle: CORRECTED_TAG, guesses: ['mer'], turnstileToken: 'tok' } }),
     );
     expect(refused.statusCode).toBe(429);
     expect(parsed(refused).guesses).toEqual([]);
@@ -517,12 +534,35 @@ describe('preflight', () => {
   });
 });
 
-describe('identity', () => {
-  it('keys rounds by the DERIVED publicId — another key reads another round', async () => {
+describe('identity (#216)', () => {
+  it('keys rounds by the ACCOUNT a device resolves to — another account is another round', async () => {
     const handler = makeHandler();
     await handler(event({ body: body({ guesses: ['bois'] }) }));
-    const other = await handler(event({ body: { secret: generateSecret(), puzzle: PUZZLE } }));
+    const stranger = await seedDevice(handler.devices);
+    const other = await handler(event({ body: { token: stranger.token, puzzle: PUZZLE } }));
     expect(other.statusCode).toBe(404);
+  });
+
+  it('two DEVICES on one account play the SAME round — that is the whole point', async () => {
+    const handler = makeHandler();
+    await handler(event({ body: body({ guesses: ['bois'] }) }));
+    // A second device signed into the same account: the round is the account's, so the
+    // laptop reads what the phone typed.
+    const laptop = await seedDevice(handler.devices, { accountId: ME.accountId });
+    const read = await handler(event({ body: { token: laptop.token, puzzle: PUZZLE } }));
+    expect(read.statusCode).toBe(200);
+    expect(JSON.parse(read.body).guesses).toEqual(['bois']);
+  });
+
+  it('answers a well-formed token nobody holds with unknown_device, never a fresh round', async () => {
+    const handler = makeHandler();
+    // The distinct, unambiguous answer the client turns into its signed-out screen — and
+    // NEVER a silent new identity, which is what would let a revoked device play on.
+    const response = await handler(
+      event({ body: { token: 'f'.repeat(64), puzzle: PUZZLE, guesses: ['bois'], turnstileToken: 'tok' } }),
+    );
+    expect(response.statusCode).toBe(401);
+    expect(JSON.parse(response.body).error).toBe('unknown_device');
   });
 });
 
@@ -562,7 +602,7 @@ describe('word mode: the round start (#202)', () => {
     await handler(wordEvent({ turnstileToken: 'ok' }));
     handler.advance(5_000);
     const restarted = await handler(
-      event({ query: WORD_QUERY, body: { secret: SECRET, puzzle: 'other', turnstileToken: 'ok' } }),
+      event({ query: WORD_QUERY, body: { token: TOKEN, puzzle: 'other', turnstileToken: 'ok' } }),
     );
     expect(parsed(restarted).startedAt).toBe(new Date(START.getTime() + 5_000).toISOString());
     // …and the retired word's round is gone, not merely renamed.
@@ -813,7 +853,7 @@ describe('the derived summary (#203)', () => {
     const rows = await handler.scoreStore.list(solvedKey);
     expect(rows).toHaveLength(1);
     expect(rows[0].score).toBe(3);
-    expect(rows[0].publicId).toBe(await publicIdFromSecret(SECRET));
+    expect(rows[0].publicId).toBe(ME.accountId);
   });
 
   // #211: the same append that records the score credits the STREAK's day. ON TIME means ON
@@ -824,10 +864,44 @@ describe('the derived summary (#203)', () => {
   it('credits the streak day when the ACTIVE day is solved', async () => {
     const handler = makeHandler();
     expect(parsed(await appendGuesses(handler, ['phare', 'nuit'])).solved).toBe(true);
-    const me = await publicIdFromSecret(SECRET);
+    const me = ME.accountId;
     await expect(handler.historyStore.solvedDays(me, 'fr')).resolves.toEqual([
       dayNumber(ACTIVE_DATE),
     ]);
+  });
+
+  // `credited` is the credit's OUTCOME, not merely the on-time verdict: the client
+  // celebrates the streak and transiently holds the day off this flag, so an on-time solve
+  // whose collection write FAILED must answer false — a day held on a write that failed is
+  // a phantom the union merge can never remove, and the freeze means no later append will
+  // ever re-ask. The solve itself, the log and the score row are unaffected: the collection
+  // is a rebuildable cache, and its failure is silent to the append.
+  it('answers credited: false when the streak credit could not be recorded', async () => {
+    const failing = memoryHistoryStore();
+    failing.recordSolvedDay = async () => {
+      throw new Error('provisioned throughput exceeded');
+    };
+    const handler = makeHandler({ historyStore: failing });
+    const answer = parsed(await appendGuesses(handler, ['phare', 'nuit']));
+    expect(answer.solved).toBe(true);
+    expect(answer.credited).toBe(false);
+    // The score row is INDEPENDENT of the credit and still records: a missing standing is
+    // its own silent failure mode, never a reason to withhold the day's leaderboard entry.
+    await expect(handler.scoreStore.list(solvedKey)).resolves.toHaveLength(1);
+  });
+
+  // The score's artifact read is the one line in the solve's rewards that can THROW (the
+  // store only swallows NotFound — a throttle or a transient S3 5xx rethrows). By then the
+  // append has already committed and FROZEN the round, so an escaping throw would 500 a
+  // solve that stands — and the freeze means no later append would ever retry the row.
+  it('still answers the solve when the scoring artifact cannot be READ', async () => {
+    const handler = makeHandler({ fullReadFails: true });
+    const answer = parsed(await appendGuesses(handler, ['phare', 'nuit']));
+    expect(answer.solved).toBe(true);
+    // The two rewards are independent: the streak credit still lands...
+    expect(answer.credited).toBe(true);
+    // ...while the population is simply missing this standing — the silent failure mode.
+    await expect(handler.scoreStore.list(solvedKey)).resolves.toHaveLength(0);
   });
 
   // LATE HAS NO GRADATIONS (user-decided 2026-08-23): a millisecond late is a decade late,
@@ -854,7 +928,7 @@ describe('the derived summary (#203)', () => {
     // refused off its own faster clock.
     expect(parsed(late).credited).toBe(false);
 
-    const me = await publicIdFromSecret(SECRET);
+    const me = ME.accountId;
     await expect(handler.historyStore.solvedDays(me, 'fr')).resolves.toEqual([]);
     // No leaderboard row either: a board is a day's competition, and this finished after
     // that day ended. The solved screen then draws no standing at all (`bucket: null`).
@@ -905,7 +979,7 @@ describe('the derived summary (#203)', () => {
       event({ body: body({ puzzle: CORRECTED_TAG, guesses: ['phare'] }) }),
     );
     expect(parsed(again).solved).toBe(true);
-    const me = await publicIdFromSecret(SECRET);
+    const me = ME.accountId;
     await expect(handler.historyStore.solvedDays(me, 'fr')).resolves.toEqual([
       dayNumber(ACTIVE_DATE),
     ]);
@@ -958,7 +1032,7 @@ describe('the derived summary (#203)', () => {
     // unplayable for everyone who had solved the retired one.
     handler.republish(CORRECTED);
     const restarted = await handler(
-      event({ body: { secret: SECRET, puzzle: CORRECTED_TAG, guesses: ['mer'], turnstileToken: 'tok' } }),
+      event({ body: { token: TOKEN, puzzle: CORRECTED_TAG, guesses: ['mer'], turnstileToken: 'tok' } }),
     );
     expect(restarted.statusCode).toBe(200);
     expect(parsed(restarted).solved).toBeUndefined();
@@ -988,7 +1062,7 @@ describe('the round-start challenge (#203)', () => {
   it('refuses to CREATE a sentence round without a challenge', async () => {
     const handler = makeHandler();
     const response = await handler(
-      event({ body: { secret: SECRET, puzzle: PUZZLE, guesses: ['mer'] } }),
+      event({ body: { token: TOKEN, puzzle: PUZZLE, guesses: ['mer'] } }),
     );
     expect(response.statusCode).toBe(403);
     expect(JSON.parse(response.body).error).toBe('turnstile_rejected');
@@ -1009,7 +1083,7 @@ describe('the round-start challenge (#203)', () => {
     expect((await handler(event({ body: body({ guesses: ['mer'] }) }))).statusCode).toBe(200);
     handler.advance(ROUND_WRITE_MIN_MS + 1);
     const second = await handler(
-      event({ body: { secret: SECRET, puzzle: PUZZLE, guesses: ['quai'] } }),
+      event({ body: { token: TOKEN, puzzle: PUZZLE, guesses: ['quai'] } }),
     );
     expect(second.statusCode).toBe(200);
     expect(parsed(second).guesses).toEqual(['mer', 'quai']);
@@ -1018,7 +1092,7 @@ describe('the round-start challenge (#203)', () => {
   it('refuses a bare token on a sentence round — it names no write', async () => {
     const handler = makeHandler();
     const response = await handler(
-      event({ body: { secret: SECRET, puzzle: PUZZLE, turnstileToken: 'tok' } }),
+      event({ body: { token: TOKEN, puzzle: PUZZLE, turnstileToken: 'tok' } }),
     );
     expect(response.statusCode).toBe(400);
     expect(JSON.parse(response.body).error).toBe('bad_request');
@@ -1054,7 +1128,7 @@ describe('the word run\'s recorded score (#203)', () => {
     handler.advance(wordRunFloorMs(0) + 1);
     await handler(wordEvent({ guesses: [] }));
     expect(await handler.scoreStore.list(wordKey)).toEqual([
-      { publicId: await publicIdFromSecret(SECRET), score: 0 },
+      { publicId: ME.accountId, score: 0 },
     ]);
   });
 
@@ -1128,7 +1202,7 @@ describe('what the answer is allowed to claim (#203)', () => {
     handler.advance(ROUND_WRITE_MIN_MS + 1);
     // The client believes the round exists and sends no challenge — correctly.
     const second = await handler(
-      event({ body: { secret: SECRET, puzzle: PUZZLE, guesses: ['quai'] } }),
+      event({ body: { token: TOKEN, puzzle: PUZZLE, guesses: ['quai'] } }),
     );
     expect(second.statusCode).toBe(200);
     expect(parsed(second).guesses).toEqual(['mer', 'quai']);

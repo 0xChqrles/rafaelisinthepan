@@ -47,6 +47,40 @@ vi.mock('../api', async (importOriginal) => ({
 // The invisible challenge is the one thing this engine cannot exercise for real.
 vi.mock('../turnstile', () => ({ turnstileToken: vi.fn() }));
 
+// This device's IDENTITY (#216). The engine's own tokenless branch — no identity means no
+// private fetch at all — is exercised in `identity.test.ts`; here the device is signed in,
+// which is what every case below is about.
+const signedOut = vi.hoisted(() => vi.fn());
+const identity = vi.hoisted(() => ({
+  present: true,
+  value: { token: 'f'.repeat(64), accountId: 'a'.repeat(16), deviceId: 'd'.repeat(16) },
+  beforeEnsure: null as (() => void) | null,
+}));
+vi.mock('../identity', () => ({
+  deviceIdentity: () => (identity.present ? identity.value : null),
+  // The START's own resolver — the one word path that may MINT (#216 rework: PLAY is a
+  // deploy button), which the mint here mimics by flipping `present` on.
+  ensureRequestIdentity: async (expected: string | null) => {
+    identity.beforeEnsure?.();
+    identity.present = true;
+    const epoch = `${identity.value.accountId}:${identity.value.deviceId}`;
+    return expected !== null && expected !== epoch ? null : { identity: identity.value, epoch };
+  },
+  // The SUBMISSION's resolver — never mints (#216 rework).
+  currentRequestIdentity: (expected: string | null = null) => {
+    if (!identity.present) return null;
+    const epoch = `${identity.value.accountId}:${identity.value.deviceId}`;
+    if (expected !== null && expected !== epoch) return null;
+    return { identity: identity.value, epoch };
+  },
+  identityEpoch: () =>
+    identity.present ? `${identity.value.accountId}:${identity.value.deviceId}` : null,
+  identityEpochOf: (value: { accountId: string; deviceId: string }) =>
+    `${value.accountId}:${value.deviceId}`,
+  markDeviceSignedOut: signedOut,
+}));
+
+
 const post = vi.mocked(postRoundBody);
 const challenge = vi.mocked(turnstileToken);
 
@@ -122,7 +156,7 @@ const serverGuesses = () => {
 
 function bodyOf(call: number) {
   return post.mock.calls[call][1] as {
-    secret: string;
+    token: string;
     puzzle: string;
     guesses?: string[];
     turnstileToken?: string;
@@ -140,6 +174,14 @@ beforeEach(() => {
   post.mockReset();
   challenge.mockReset();
   challenge.mockResolvedValue('token');
+  signedOut.mockReset();
+  identity.value = {
+    token: 'f'.repeat(64),
+    accountId: 'a'.repeat(16),
+    deviceId: 'd'.repeat(16),
+  };
+  identity.beforeEnsure = null;
+  identity.present = true;
   useGameStore.setState(
     { outbox: {}, wordRounds: {}, roundLoads: {}, activeWordKey: null },
     false,
@@ -199,6 +241,22 @@ describe('submittableLog — what the route will store', () => {
 });
 
 describe('the round START', () => {
+  it('does not start A\'s captured round as B when ensure adopts a replacement identity', async () => {
+    seedRound();
+    identity.beforeEnsure = () => {
+      identity.value = {
+        token: '8'.repeat(64),
+        accountId: 'b'.repeat(16),
+        deviceId: 'e'.repeat(16),
+      };
+    };
+
+    await expect(startWordRound(ctx())).resolves.toBe(false);
+    expect(challenge).not.toHaveBeenCalled();
+    expect(post).not.toHaveBeenCalled();
+    expect(round()).toMatchObject({ startedAt: null, tried: [] });
+  });
+
   it('asks for a challenge and anchors the clock the SERVER stamped', async () => {
     seedRound();
     const started = startWordRound(ctx());
@@ -260,6 +318,18 @@ describe('the round START', () => {
     post.mockResolvedValueOnce(stamped());
     await expect(startWordRound(ctx())).resolves.toBe(true);
     expect(round().startedAt).toBe(T0);
+  });
+
+  it('raises signed-out from PLAY only for the `unknown_device` error code', async () => {
+    seedRound();
+    post.mockResolvedValueOnce(answer(401, { error: 'unknown_device' }));
+    await expect(startWordRound(ctx())).resolves.toBe(false);
+    expect(signedOut).toHaveBeenCalledWith(`${'a'.repeat(16)}:${'d'.repeat(16)}`);
+
+    signedOut.mockReset();
+    post.mockResolvedValueOnce(answer(401, { error: 'not_started' }));
+    await expect(startWordRound(ctx())).resolves.toBe(false);
+    expect(signedOut).not.toHaveBeenCalled();
   });
 
   // A round key is only (day, lang, mode), so a re-published DIFFERENT word reuses it.
@@ -472,6 +542,26 @@ describe('the mount READ', () => {
 });
 
 describe('the end-of-run SUBMISSION', () => {
+  it('a TOKENLESS submission stands down — only the deploy buttons mint (#216 rework)', async () => {
+    // A run this identity cannot own: the persisted log exists but the device holds no
+    // account (the pending-bootstrap edge). The submission never mints one — the mount
+    // read publishes ready-and-empty without a request, and the write stands down, so
+    // nothing here ever reaches the server. (The old mid-ensure identity-swap hazard is
+    // structurally gone: the submission resolves its identity synchronously now.)
+    seedRound({
+      startedAt: T0 - 300_000,
+      deadline: T0 - 100_000,
+      tried: ['mer'],
+      claimed: 1,
+    });
+    identity.present = false;
+    beginWordRoundSync(ctx(), true);
+    await settle();
+
+    expect(post).not.toHaveBeenCalled();
+    expect(round().tried).toEqual(['mer']);
+  });
+
   it('sends the whole log ONCE, after the read, and persists the acknowledgement', async () => {
     seedRound({ startedAt: T0 - 300_000, deadline: T0 - 100_000, tried: ['mer', 'loin'], claimed: 1 });
     post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 300_000 }));

@@ -1,55 +1,53 @@
-// CONTRACT (#187): the secret key IS the account. The web generates and stores it, the
-// backend derives the publicId every score row is keyed by — so the format and the
-// derivation are asserted against the spec, including a pinned vector: a silent change
-// here would silently fork every player into a new identity.
+// CONTRACT (#216): a device holds a REVOCABLE token and the server assigns the account id.
+// The token's wire format is what the web mints and the backend keys its one device item
+// by, so a looser or non-canonical spelling would fork one device into two rows — or let a
+// revoked token key a different one. The ids keep the shape `assigned.ts` reads.
 
 import { describe, expect, it } from 'vitest';
 import {
+  DEVICE_ID_PATTERN,
   PUBLIC_ID_PATTERN,
-  generateSecret,
-  isValidSecret,
-  publicIdFromSecret,
+  generateDeviceId,
+  generateDeviceToken,
+  generatePublicId,
+  isValidDeviceToken,
 } from './identity';
 
-describe('the player secret (#187)', () => {
-  it('generates 128 bits as 32 lowercase hex characters, freshly each time', () => {
-    const first = generateSecret();
-    const second = generateSecret();
-    expect(isValidSecret(first)).toBe(true);
-    expect(isValidSecret(second)).toBe(true);
+describe('the device token (#216)', () => {
+  it('generates 256 bits as 64 lowercase hex characters, freshly each time', () => {
+    const first = generateDeviceToken();
+    const second = generateDeviceToken();
+    expect(isValidDeviceToken(first)).toBe(true);
+    expect(isValidDeviceToken(second)).toBe(true);
     expect(first).not.toBe(second);
   });
 
-  it('accepts exactly the wire format and nothing looser', () => {
-    expect(isValidSecret('00112233445566778899aabbccddeeff')).toBe(true);
-    expect(isValidSecret('00112233445566778899AABBCCDDEEFF')).toBe(false); // uppercase
-    expect(isValidSecret('00112233445566778899aabbccddeef')).toBe(false); // 31 chars
-    expect(isValidSecret('00112233445566778899aabbccddeeff0')).toBe(false); // 33 chars
-    expect(isValidSecret('g0112233445566778899aabbccddeeff')).toBe(false); // non-hex
-    expect(isValidSecret(42)).toBe(false);
-    expect(isValidSecret(null)).toBe(false);
+  it('accepts exactly the canonical wire format and nothing looser', () => {
+    const canonical = '0'.repeat(64);
+    expect(isValidDeviceToken(canonical)).toBe(true);
+    // Never normalized: an uppercase spelling hashes differently, so admitting it would
+    // key a second row for one device.
+    expect(isValidDeviceToken('A'.repeat(64))).toBe(false);
+    expect(isValidDeviceToken('0'.repeat(63))).toBe(false);
+    expect(isValidDeviceToken('0'.repeat(65))).toBe(false);
+    expect(isValidDeviceToken(`g${'0'.repeat(63)}`)).toBe(false);
+    // The retired #187 secret was 32 hex characters — it is not a device token.
+    expect(isValidDeviceToken('00112233445566778899aabbccddeeff')).toBe(false);
+    expect(isValidDeviceToken(42)).toBe(false);
+    expect(isValidDeviceToken(null)).toBe(false);
   });
 });
 
-describe('publicId derivation (#187)', () => {
-  it('is the pinned truncated-SHA-256 base32 form — 80 bits in 16 characters', async () => {
-    // Pinned vector: sha256("00112233445566778899aabbccddeeff") starts 5947d7c33d78…;
-    // its first 10 bytes base32-encode to exactly this. Moving it forks identities.
-    await expect(publicIdFromSecret('00112233445566778899aabbccddeeff')).resolves.toBe(
-      'lfd5pqz5pa7zjm5u',
-    );
+describe('server-assigned ids (#216)', () => {
+  it('mints account ids in the shape every display surface already reads', () => {
+    const id = generatePublicId();
+    expect(id).toMatch(PUBLIC_ID_PATTERN);
+    expect(generatePublicId()).not.toBe(id);
   });
 
-  it('is deterministic per secret and distinct across secrets', async () => {
-    const a = generateSecret();
-    const b = generateSecret();
-    const idA = await publicIdFromSecret(a);
-    expect(idA).toMatch(PUBLIC_ID_PATTERN);
-    await expect(publicIdFromSecret(a)).resolves.toBe(idA);
-    await expect(publicIdFromSecret(b)).resolves.not.toBe(idA);
-  });
-
-  it('refuses to derive anything from a malformed secret', async () => {
-    await expect(publicIdFromSecret('not-a-secret')).rejects.toThrow(/malformed/);
+  it('mints device ids in that same shape', () => {
+    const id = generateDeviceId();
+    expect(id).toMatch(DEVICE_ID_PATTERN);
+    expect(generateDeviceId()).not.toBe(id);
   });
 });

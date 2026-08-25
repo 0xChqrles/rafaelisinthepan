@@ -380,9 +380,10 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   would be the odd one out (and would break #206's live friends board). The payoff:
   **there is no migration, ever** — a first account link binds to an account the server
   already holds in full.
-- **ONE route, POST-only like /friends** (the secret is the auth and travels in the
-  BODY): `POST /round?lang=&date=&mode=` — `{secret, puzzle}` reads the caller's stored
-  round for that daily (404 = none yet), `{secret, puzzle, guesses: [...]}` appends to its
+- **ONE route, POST-only like /friends** (the auth travels in the BODY — the player secret
+  when this was written, the DEVICE TOKEN since #216):
+  `POST /round?lang=&date=&mode=` — `{token, puzzle}` reads the caller's stored
+  round for that daily (404 = none yet), `{token, puzzle, guesses: [...]}` appends to its
   log. **Every answer carries the full stored state** (`{guesses, createdAt}`) — the
   /friends house style, and **that includes BOTH refusals** — so a write is also a
   reconciliation: the tab computes against stale local state, the server appends to the
@@ -926,9 +927,12 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   `holesMatchPuzzle` for stored rounds; and the capped-but-still-playing and solved-screen
   `canSubmit` branches. What remains is smaller and explicit: one transient server snapshot,
   one persisted revision-qualified outbox, one pure canonical play-log projection, paced
-  prefix writes, and the narrow read-on-unknown recovery. Local storage otherwise retains
-  the player secret, the device preferences and Word mode's clock/outbox. *(The solved-day
-  sets went with them at v15 — #211 moved the collection to the private player row.)*
+  prefix writes, and the narrow read-on-unknown recovery. Persisted GAME state — the
+  outbox, Word mode's clock/outbox and the device preferences — lives behind ONE
+  transactional IndexedDB record since persist v18 (`web/state/gamePersistence.ts`);
+  localStorage otherwise retains only the device token (#216 — the player secret until
+  then). *(The solved-day
+  sets went with the rounds at v15 — #211 moved the collection to the private player row.)*
 - **ORDERING — #214 then #211, and they SHIP TOGETHER.** This issue establishes the client
   state model #211's summary readers consume. Removing the persisted sentence rounds (and,
   in #211, `solvedDays`) must NOT reach production before #211 supplies the archive
@@ -948,8 +952,8 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   has never been bootstrapped cannot own server rows, so its calendar, chooser and streak
   are known-empty without a fetch. #211 ships before device tokens and does NOT add that
   tokenless branch.)*
-- **ONE route, POST-only like /friends** (the secret is the auth and travels in the BODY, so
-  nobody can ask for another player's history): `POST /history?lang=&mode=[&month=]` answers
+- **ONE route, POST-only like /friends** (the auth travels in the BODY — the DEVICE TOKEN
+  since #216 — so nobody can ask for another player's history): `POST /history?lang=&mode=[&month=]` answers
   `{ days, solvedDays }`. The body may carry `collection: false` (PR-218 review) to skip
   the solved-day read — the language chooser wants a month strip and never renders the
   streak, so its read must not spend the collection's consistent GetItem; absent means
@@ -1043,6 +1047,189 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   rejected separate-summary-row design above remains the lever if read amplification becomes
   material.
 
+### Devices: per-device tokens, revocation, and where an account is created (#216, decided 2026-08-23)
+
+- **A device holds a REVOCABLE token; the SERVER assigns the account.** #187's identity was a
+  128-bit secret in localStorage, and every device that reached an account held that same
+  secret — so there was nothing device-specific to revoke: the only remedy for a leaked
+  account was to abandon it, losing the archive, the streak and every friend. **Signing a
+  device out has to be possible WITHOUT holding that device**, which requires the device to
+  stop holding the account credential and hold a revocable one instead. What is gone:
+  `shared/src/identity.ts`'s client-side account derivation (random secret → SHA-256 → public
+  id). That removes `crypto.subtle` from paths that need no identity, including an anonymous
+  global-board read; it does **not** make an insecure context playable, because every live POST
+  still hashes its exact body with `crypto.subtle` for OAC and bootstrap is one of those POSTs.
+  `shared/src/assigned.ts` is untouched and keeps deriving the pseudonym and the mark from the
+  server-assigned account id. **No back-compat and no migration** — the DB is wiped before
+  launch, the standing rule for this epic.
+- **THE TOKEN CONTRACT IS EXACT** (`shared/src/identity.ts`): the client generates 32 random
+  bytes with `crypto.getRandomValues`, encodes them as **exactly 64 lowercase hexadecimal
+  characters**, and PERSISTS that value before sending the first request. The server accepts
+  only `^[0-9a-f]{64}$`; it rejects a malformed or non-canonical value **before hashing,
+  logging or reading DynamoDB**, it **never normalizes uppercase**, and the raw token is never
+  logged. The client never HASHES anything — it mints and sends, and hashing is the server's.
+- **ONE DynamoDB item per device**, keyed by `SHA-256(token)` and never by the token itself:
+  the hash is deterministic, so authentication is one direct base-table read, and the server
+  stores nothing that can authenticate. The one item serves both access patterns — **base key
+  `device#<tokenHash>` → device → account** on every authenticated call, and a **GSI
+  (`DeviceByAccount`, `player#<accountId>` / `device#<deviceId>`)** for the sign-out screen.
+  The security-sensitive path is the BASE item: authentication reads it directly and then
+  requires **its account row still to exist** (`player#<accountId>` / `account`). The GSI may
+  briefly lag a create or a delete — a cosmetic device-list delay only. Each listed row returns
+  the base primary key's digest as an opaque, non-authenticating `revokeKey`; revocation uses it
+  for one conditional base-table delete and performs **no GSI lookup**, so index lag can never
+  turn a requested sign-out into a silent no-op or keep a token authenticable. A failed delete
+  condition is resolved by one strongly-consistent BASE read into **`absent` versus
+  `mismatch`**: removed/already-absent rows are filtered from the returned GSI list by their
+  exact `revokeKey`, while a mismatch filters nothing. Thus a concurrent self-revocation
+  cannot reappear through a stale index row. The account
+  check is the backstop for the reverse, rejecting a device item an eventually-consistent
+  enumeration missed. **`lastSeenAt` moves at most once a DAY per device** — it rides
+  every authenticated call, and `/round` writes about once a second while a player types.
+- **Authenticated calls carry the DEVICE TOKEN where they carried the player secret.** Every
+  private route (`/profile` POST, `/friends`, `/board` POST, `/round`, `/history`) takes
+  `{ token }` in the BODY and resolves it to an account. It costs TWO extra direct reads
+  on every authenticated call — the device item, then the account row it names (corrected
+  2026-08-25: this said "one"); `/round`'s hot sentence append starts its slice fetch
+  BEFORE authentication so the S3 GET hides inside those round trips. The **user-agent is a structured
+  object** (device family, OS, browser) parsed **server-side** from the `User-Agent` header —
+  the client can lie and the server sees the header anyway — and stored as FIELDS rather than
+  a formatted string, so the UI can render icons and change its wording without a migration.
+  It is deliberately COARSE (`backend/src/userAgent.ts`): the label exists so a person
+  recognises their own phone, no product rule reads it, and what actually matters is the ORDER
+  of its checks, since every Chromium browser impersonates the others. No rename affordance:
+  "iPhone / Chrome" is enough.
+- **AN ACCOUNT IS CREATED ON THE DEPLOY BUTTONS ALONE — never on a page load, never as a
+  side effect** (user-decided 2026-08-24, NARROWING the original lazy-on-first-need list:
+  the first guess, opening the leaderboard and opening the profile editor are no longer
+  triggers). Creating on load turns account creation into an unauthenticated write every
+  crawler triggers; creating inside an engine made it a side effect nobody saw. The five
+  triggers, each a PRIMARY BUTTON: **the sentence gate's PLAY** · **Word mode's PLAY** ·
+  **accepting an invite** (its button — the landing no longer auto-adds on load) ·
+  **sending an invite link** · **saving a profile** (the SAVE tap, never the editor
+  opening). Each is a SINGLE tap that chains its real action behind the bootstrap, shows a
+  clear loading state on the button, and reports failure on the app's ERROR SURFACE — a
+  popup on desktop, a bottom sheet on a phone (`web/components/ErrorSheet.tsx`) — saying
+  what happened, with TRY AGAIN when retrying can help. Consequences, all deliberate:
+  - **The sentence game shows the FULL RULES GATE whenever the device has no account**
+    (archive days included), whatever `sentenceRulesSeen` says: its PLAY is the only
+    trigger on that screen, and the server owns the log from the first guess, so no guess
+    may land before the account exists. The engines never mint — the append and the word
+    submission resolve the identity they hold or stand down (`currentRequestIdentity`).
+  - **The leaderboard and the profile editor render a LOCAL PLACEHOLDER identity** for a
+    tokenless device — a persisted random seed (`gameStore.localSeed`, publicId-shaped)
+    that `anonName`/`defaultAvatar` derive the name and mark from. Display-only, never
+    sent anywhere; when the account deploys, the server-assigned id takes over and the
+    derived face changes once (the server picks the id, so no local value can match). The
+    tokenless friends board is the honest empty board without a request.
+  - Invites remain gated on NEITHER side (the accepter is by definition a brand-new
+    visitor clicking a link — the invite funnel, #189); what changed is WHEN: the tap, not
+    the load.
+- **NO TOKEN MEANS NO PRIVATE GAME-STATE FETCH.** A puzzle, a calendar or a language summary
+  with no local device token KNOWS the player's server state is empty and must not call
+  `/round` or the private history routes merely to learn that. It is an ANSWER, not a loading
+  state: the round publishes a ready-and-empty authoritative state and the history publishes a
+  ready empty month and collection, so no surface breathes behind a request nobody made. The
+  first deploy button bootstraps the identity and performs its intended mutation; later
+  mounts, now holding a token, read authoritative state normally. This is #216
+  implementation work at #214's round boundary and #211's history boundary.
+- **TURNSTILE SITS ON THE REQUEST THAT CREATES STATE** — account/device creation, and round
+  creation as it already does (#203). The token is generated and stored immediately before the
+  bootstrap, and **bootstrap is IDEMPOTENT by token hash**: if the first answer is lost after
+  commit, retrying returns the device/account already created rather than minting another
+  identity. **A brand-new player's first PLAY therefore spends TWO challenges** — one for
+  the bootstrap the tap performs, one for the round creation #203 gates (Word mode's START,
+  or the sentence append that creates the record) — where the issue asked for one. Folding
+  them into a single request would mean an ordinary authenticated write could mint an
+  identity, which is exactly what the next rule forbids; both tokens are invisible and
+  prefetched into a two-slot, single-use queue, so the cost is one extra Siteverify call on
+  the first PLAY of a new player's life.
+- **FIRST BOOTSTRAP IS ONE ORIGIN-WIDE CRITICAL SECTION.** `localStorage` is shared by tabs
+  but has no compare-and-swap, so re-reading before minting alone still permits two tabs to
+  read empty and create two accounts. A Web Lock covers the entire **re-read → mint/persist
+  pending token → bootstrap → commit identity** sequence; the waiter re-reads after entering
+  and adopts the winner. A pending token already in storage is retried rather than replaced,
+  so a lost answer and an interrupted bootstrap converge through the server's idempotence. A
+  browser without Web Locks fails before minting; an unreadable storage is distinct from an
+  empty one and keeps the session identity already in memory. Storage events adopt account
+  changes, and removal is conditional on the token still being the one this tab is leaving.
+  If that conditional removal throws, the departed token remains fenced in memory so its
+  stale stored value cannot be re-adopted; a completed identity that cannot be persisted is
+  likewise session-only until this tab deliberately leaves it.
+- **AN ARBITRARY UNKNOWN TOKEN NEVER CREATES AN IDENTITY.** Only the explicit bootstrap
+  request, with a canonical token and Turnstile proof, may do that. A malformed token is an
+  input error (**400 `bad_request`**); a well-formed token missing from the base table on an
+  ordinary authenticated request is **401 `unknown_device`**. That distinction is what stops a
+  revoked device from silently becoming a fresh account on its next write.
+- **SIGNED OUT HAS TWO AUTHORITATIVE ANSWERS:** a private call's distinct, unambiguous
+  `unknown_device`, and a successful `/devices` self-revocation response whose post-write list
+  no longer contains the calling device. The client
+  shows a screen with **RECONNECT** (into #204's link flow) and a secondary **SKIP** that
+  discards the old token and starts fresh (the next deploy button mints the new one).
+  Only on those explicit answers
+  — a 5xx or a dropped connection must never sign anyone out, which is why every refusal path
+  reads the error CODE rather than the status alone. Every sign-out call carries the epoch of
+  the identity that made the request; a late verdict from A must never remove current identity
+  B. The copy says what is being left behind, or a
+  vanished streak and an empty friends list read as a bug rather than as the sign-out that
+  caused them. **RECONNECT is NOT WIRED in #216**: the email link flow is #204's, so the
+  screen takes the handler as a prop and offers SKIP alone until then — a button that does
+  nothing is worse than a screen that only offers what it can do.
+  **THE VERDICT IS DURABLE AND BROADCAST — a persisted TOMBSTONE (user-decided 2026-08-24,
+  on the PR-219 follow-up review).** A sign-out REPLACES the stored identity with a
+  non-authenticating `{signedOut, accountId, deviceId}` value — the two PUBLIC ids, never a
+  token — instead of merely removing it: bare removal read as ordinary identity loss, so a
+  reload lost the explanation and treated the player as brand new, and a sibling tab's next
+  act could silently mint a replacement account. The tombstone survives reloads (the
+  startup read raises the screen), reaches sibling tabs through the same storage channel
+  (a tab holding the NAMED identity drops to the screen and fences its token; one holding a
+  DIFFERENT identity ignores it), and **fails the bootstrap CLOSED while it stands**: no
+  ordinary act may mint through it — leaving the account behind is the player's explicit
+  choice. START FRESH removes it, origin-wide (#204's reconnect will too); a tombstone that
+  cannot be removed (unwritable storage) is dismissed in memory for the session, so SKIP
+  can never loop. A tombstone naming an identity this tab does not hold changes nothing.
+- **LOCAL STATE FOLLOWS THE IDENTITY THAT OWNS IT** (`web/state/identityScope.ts`, installed
+  once from `main.tsx`): acquiring the **first** identity clears nothing, because the state
+  on screen — the guesses waiting behind the PLAY gate's deploy, the run whose PLAY is
+  awaiting its answer — is the very thing the deploy button was tapped for. When a non-null identity is
+  left and `accountId` changes or becomes unknown, clear the sentence
+  outbox, the transient round loads, the private history/streak summaries and every other
+  account-scoped cache; when only `deviceId` changes, clear device-owned state such as the
+  Word round; merely binding an email to the same account changes neither identity and clears
+  nothing. App also remounts its routed surface on each scope transition except the first-ever
+  acquisition, so component-local profile, board, invite and device-list state cannot survive
+  A → null/B and B's private reads restart when it arrives. Persist v16 drops every
+  pre-#216 outbox and Word round. **Persist v17 then tags both maps with their
+  `{accountId, deviceId}` owner**: startup keeps a matching owner's state, keeps account-only
+  state across a same-account device replacement, and otherwise drops what cannot be proved.
+  Ownerless state survives only behind the persisted pending token minted by the deliberate
+  first act that created it; a missing/corrupt device record never pumps that state into a
+  newly bootstrapped account. **Persist v18 moves the blob behind the transactional
+  IndexedDB record** (`web/state/gamePersistence.ts` — the storage boundary, not the
+  content shape); the retired localStorage value is NOT read (the standing no-back-compat
+  rule), so an existing device starts from the initial state once. **Every in-flight private request captures the
+  `(accountId, deviceId)` epoch before resolving its identity and before sending; if resolution
+  adopts B for a closure that captured A, the POST is aborted. Its answer is ignored after
+  that tuple changes too** — clearing storage without fencing either side would let the
+  identity just left write into or repopulate the new one's state.
+- **ONE route, POST-only like /friends** (the token is the auth and travels in the BODY, so
+  its CloudFront behavior's query allow-list is EMPTY — the standing three-package contract):
+  `POST /devices`. `{token, turnstileToken}` bootstraps, `{token}` lists the account's
+  devices, `{token, revoke: "<deviceId>", revokeKey: "<opaque>"}` deletes that one base item;
+  every answer carries
+  `{accountId, deviceId, devices}` so a client never has to guess what a write did, and **no
+  answer ever carries the token back**. Revoking the CALLING device is allowed — signing this
+  one out is a thing a person may want, and refusing it would be a rule the screen then has to
+  explain. The bootstrap is the third behavior wearing the CDN's viewer-request function,
+  since a gated write needs a trusted address.
+- **The list and the revocation have a REACHABLE surface** (`web/components/DeviceList.tsx`),
+  on the PROFILE editor — the screen that already IS the identity screen, reached from the
+  leaderboard's EDIT chip. Without it #216's central act would have no way in at all. One row
+  per device (its parsed label, when it was last used, and whether it is the one asking), each
+  with SIGN OUT; every call answers the list as it now stands, so the screen never guesses
+  what a write did. Signing out the current row raises the signed-out screen immediately from
+  that answer; it does not wait for a later private call to discover the deletion.
+
 ### Day-addressed routing & the game day
 
 - **Routing (#6), date-addressed (decided 2026-07-05, replacing the #42 version-in-URL
@@ -1091,20 +1278,16 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
 
 ### Live score collection (#169, decided 2026-08-13; per-player rows + identity #187, decided 2026-08-18)
 
-- **Player identity is a secret key, no accounts (#187):** the client generates a random
-  128-bit secret on first authenticated live request, keeps it in localStorage
-  (`web/src/identity.ts`), and sends it in the POST body — it is simultaneously the ID
-  and the password. The server derives `publicId` = first 10 bytes of
-  SHA-256(secret), base32 (16 chars) on every authenticated call and **stores nothing
-  secret** — no registration, no stored credentials. The derivation lives in
-  **`shared/src/identity.ts`** because it is a cross-package contract: the web generates
-  and sends the secret, the backend keys every stored row by the derived publicId, and a
-  drift forks one key into two identities. No unique usernames (a lost key would freeze
-  the name forever); losing localStorage loses the identity — accepted, the remedy is
-  the copyable-key backup (#188), which doubles as device linking. Anti-cheat stance:
-  **assume heavy cheating and design so it doesn't matter** — global rankings are
-  untrusted by design, trust comes from the friends graph (#189), and the percentile is
-  the one public stat that survives faking.
+- **Player identity is a DEVICE TOKEN and a server-assigned ACCOUNT (#216, decided
+  2026-08-23; it REPLACED #187's shared secret — see the devices section below for the
+  whole model).** Until then the identity WAS a random 128-bit secret in localStorage that
+  every device on an account held, and `publicId` was `SHA-256(secret)` derived on the
+  client — so nothing was device-specific and nothing could be revoked. What survives from
+  #187 is the SHAPE of the public id (`[a-z2-7]{16}`, what `assigned.ts` derives a
+  pseudonym and a mark from) and the STANCE: no unique usernames, no registration, and
+  **assume heavy cheating and design so it doesn't matter** — global rankings are untrusted
+  by design, trust comes from the friends graph (#189), and the percentile is the one
+  public stat that survives faking.
 - The ONE backend handler also owns the daily score population:
   `GET /scores?lang=<lang>&date=<YYYY-MM-DD>&mode=<sentence|word>`; unlike the
   puzzle route, **`mode` is required**. **It is READ-ONLY since #203** — a POST is a named
@@ -1126,7 +1309,8 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   revision too, or the replacement is discarded as a replay before its condition is read.
   The puzzle route's malformed-param and future +1-day guards apply; a population is never
   created for an unpublished puzzle.
-  *(What #203 retired here: the POST itself, the `{ secret, score, turnstileToken }` body,
+  *(What #203 retired here: the POST itself, its pre-#216 player credential + score +
+  Turnstile body,
   the server-side Turnstile verification, the range validation against the daily, and the
   client-side ask-until-recorded rule of 2026-08-20 that leaned on the write's idempotence.
   The `x-amz-content-sha256` OAC contract still governs every OTHER live POST — /profile,
@@ -1158,7 +1342,7 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   not spend another allowance: it adds no player to the population, and uses a separate
   one-item conditional transaction. What is retained is the score row — `(date, lang,
   mode)` partition, `publicId` sort key, `score` + `submittedAt` + `revision` — keyed by the
-  derived publicId, no personal data. **Since #203 it is the ROUND route that spends the
+  server-assigned account id, no personal data. **Since #203 it is the ROUND route that spends the
   allowance**, on the write that first records a finished round.
 - **Population reads intentionally do not filter rows by the current revision**
   (user-accepted 2026-08-22). A player who solved the retired version and never returns may
@@ -1201,11 +1385,13 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
 - **Non-unique display name + a 10×10 palette pixel avatar, hung off #187's identity.**
   The ONE handler serves `GET /profile?id=<publicId>` (the public row: name + avatar —
   what a board renders, and what a freshly linked device loads; 404 = never customized)
-  and `POST /profile` with `{ secret, name, avatar }` — an authenticated upsert keyed by
-  the DERIVED publicId, a separate write path from scores. The `/scores` behavior rules
+  and `POST /profile` with `{ token, name, avatar }` (the pre-#216 body carried the shared
+  player credential instead) — an
+  authenticated upsert keyed by the ACCOUNT the caller's device token resolves to, a
+  separate write path from scores. The `/scores` behavior rules
   re-apply: zero-TTL CloudFront behavior, query allowList = exactly the ONE parameter the
   handler reads (`id`), `x-amz-content-sha256` over the exact body bytes on a production
-  POST. No Turnstile and no IP dedup here — the secret is the auth, and an overwritten
+  POST. No Turnstile and no IP dedup here — the device token is the auth, and an overwritten
   own-row is not an attack surface.
 - **The avatar is TWO COLOURS — a background and a foreground, nothing else
   (user-decided 2026-08-19, superseding the 3-ink first cut), and its codec is a
@@ -1268,10 +1454,13 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   nobody is forgotten, with zero request/accept friction (the link holder consented by
   sharing it, the clicker by clicking).
 - **The link is `<site>/i/<publicId>`**, and since 2026-08-20 it is TWO paths doing one job
-  (`shared/src/invite.ts`; `web/src/screens/FriendInvite.tsx` is the landing). Opening it
-  records the edge with the CLICKER's key and continues into the game, so ONE link is both
-  "add me" and "come play". A brand-new visitor's key is generated on that first need (#187),
-  so the edge lands before their first game — this is also the invite funnel. The id is
+  (`shared/src/invite.ts`; `web/src/screens/FriendInvite.tsx` is the landing). The landing
+  shows WHO invited over ONE primary ADD FRIEND button, and the TAP records the edge and
+  continues into the game (user-decided 2026-08-24, superseding the auto-add on open: a
+  page load must not create server state), so ONE link is still both "add me" and "come
+  play". A brand-new visitor's device identity is deployed by that same tap (#216's
+  trigger rework), so the edge lands before their first game — this is also the invite
+  funnel. The id is
   validated wherever it is READ, so a broken link is an unknown path rather than a request.
   **The RESULT share link
   (`/s/<token>`) is deliberately NOT the carrier:** it is CDN-cached for a year on a cache key
@@ -1313,10 +1502,11 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   so restoring a key restores the friends with it — nothing to migrate. (Its side benefit is
   the pre-launch analytics: edges plus score rows answer how many players arrive by invite,
   whether friended players retain better, and how big groups get.)
-- **ONE route, POST-only: `POST /friends`** — `{secret}` reads your list, `{secret, add}` links,
-  `{secret, remove}` unlinks, and EVERY call answers `{ friends: [publicId] }`, so a client is
-  never left guessing what a write did. Every call is a POST because the secret is the auth and
-  it travels in the BODY, never a query string (#187) — which is also why the READ is a POST:
+- **ONE route, POST-only: `POST /friends`** — `{token}` reads your list, `{token, add}` links,
+  `{token, remove}` unlinks, and EVERY call answers `{ friends: [publicId] }`, so a client is
+  never left guessing what a write did. Every call is a POST because the auth travels in the
+  BODY, never a query string (#187's secret; the DEVICE TOKEN since #216) — which is also why
+  the READ is a POST:
   the server resolves YOUR edges, and there is no way to ask without proving who you are. The
   route reads NO query parameter, and its CloudFront behavior says exactly that with an EMPTY
   allow-list (the three-package contract above — the day it grows one, it has to be named there
@@ -1349,16 +1539,16 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   answers the empty board). Two faces:
   - `GET /board?lang=&date=&mode=[&id=<publicId>]` — the **GLOBAL top 50, anonymous**
     (untrusted by design, #187: decorative, nothing treats it as truth). `id` is the
-    caller's PUBLIC id — never the secret, so it may travel in the query — and widens
+    caller's PUBLIC id — never the token, so it may travel in the query — and widens
     the answer with a below-the-cut window. **Nothing BINDS `id` to the caller, and
     that is deliberate:** anyone holding a publicId can read that player's window
     (score, rank, profile) for any served day. publicIds are broadcast by design —
     an invite link IS one (#189) — and a stranger holding one can already reach the
     same scores by accepting that link, so the read adds no capability the graph did
     not. The TRUSTED surface is the POST.
-  - `POST /board { secret }` (+ the same query) — the **FRIENDS board, the trusted
+  - `POST /board { token }` (+ the same query) — the **FRIENDS board, the trusted
     surface**: the server resolves YOUR edges (#189) plus yourself, so the read proves
-    who is asking — the secret in the BODY, the /friends rule. Production POST needs
+    who is asking — the device token in the BODY, the /friends rule. Production POST needs
     `x-amz-content-sha256` over the exact body bytes (the OAC contract). **A friend
     with no recorded score today is still named** (user-decided 2026-08-20): the
     response's `waiting` list carries them (profile-dressed, no score/rank; sorted by

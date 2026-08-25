@@ -1,60 +1,50 @@
-// CONTRACT (#189): one click on an invite link starts ONE conversation, and the click
-// never dead-ends. React may replay the landing's effect (development StrictMode) or
-// remount it, and neither may mint a second request. A SUCCESS is confirmed on screen
-// before continuing (user feedback 2026-08-20 — 'added'); the profile read that DRESSES
-// that confirmation is best-effort AND bounded (a 6s abort), since this landing renders
-// no controls until the confirmation mounts and a stalled read would otherwise leave the
-// clicker with only a reload — which re-fires the POST. A non-cap 4xx is a verdict the
-// player cannot argue with and continues silently; only the backend failing is worth
-// retrying. TWO answers are said out loud as blockers — the failure, and the cap, which
-// is a verdict the player CAN act on and would otherwise leave a full player clicking
-// invitations forever, each one appearing to work.
+// CONTRACT (#189, reworked by the #216 triggers, user-decided 2026-08-24): accepting an
+// invite is a BUTTON, never a page load — the tap deploys the clicker's identity if they
+// have none, records the mutual edge, and never dead-ends. A SUCCESS is confirmed on
+// screen before continuing (user feedback 2026-08-20 — 'added'). A non-cap 4xx is a
+// verdict the player cannot argue with and continues silently; only the backend failing
+// is worth retrying, on the error surface. TWO answers are said out loud as blockers —
+// the failure, and the cap, which is a verdict the player CAN act on and would otherwise
+// leave a full player clicking invitations forever, each one appearing to work.
+// (The old `shareInviteFlight` one-conversation map is GONE with the auto-add: the
+// effect-replay hazard it guarded no longer exists once the POST rides a click.)
 
 import { describe, expect, it, vi } from 'vitest';
-import { sendInvite, shareInviteFlight } from './FriendInvite';
+import { sendInvite } from './FriendInvite';
 
 const postFriendsBody = vi.hoisted(() => vi.fn());
+const identityState = vi.hoisted(() => ({ present: true, revision: 0 }));
 vi.mock('../api', () => ({
   postFriendsBody,
   friendsUrl: () => 'https://api.test/friends',
 }));
-vi.mock('../identity', () => ({ playerSecret: () => '00112233445566778899aabbccddeeff' }));
+// Accepting an invite is a TRIGGER (#216): the clicker is a brand-new visitor, and their
+// identity is minted on this first need so the edge lands before their first game.
+vi.mock('../identity', () => ({
+  deviceIdentity: () =>
+    identityState.present
+      ? {
+          token: 'f'.repeat(64),
+          accountId: 'lfd5pqz5pa7zjm5u',
+          deviceId: 'd'.repeat(16),
+        }
+      : null,
+  ensureRequestIdentity: async () => ({
+    identity: {
+      token: 'f'.repeat(64),
+      accountId: 'lfd5pqz5pa7zjm5u',
+      deviceId: 'd'.repeat(16),
+    },
+    epoch: `lfd5pqz5pa7zjm5u:${'d'.repeat(16)}`,
+  }),
+  identityEpoch: () => `lfd5pqz5pa7zjm5u:${'d'.repeat(16)}`,
+  identityEpochOf: (value: { accountId: string; deviceId: string }) =>
+    `${value.accountId}:${value.deviceId}`,
+  identityScopeRevision: () => identityState.revision,
+  markDeviceSignedOut: vi.fn(),
+}));
 
 const INVITER = 'zwjxqk37xfkvtxqu';
-
-describe('shareInviteFlight — one conversation per invite', () => {
-  it('shares pending work across mounts and releases it after settlement', async () => {
-    const resolves: Array<(value: 'settled' | 'failed') => void> = [];
-    const start = vi.fn(
-      () =>
-        new Promise<'settled' | 'failed'>((resolve) => {
-          resolves.push(resolve);
-        }),
-    );
-
-    const first = shareInviteFlight(INVITER, start);
-    const replay = shareInviteFlight(INVITER, start);
-    expect(replay).toBe(first);
-    expect(start).toHaveBeenCalledTimes(1);
-
-    resolves[0]('settled');
-    await first;
-
-    // Settled work is dropped, so RETRY is a fresh attempt rather than the old answer.
-    const retry = shareInviteFlight(INVITER, start);
-    expect(retry).not.toBe(first);
-    expect(start).toHaveBeenCalledTimes(2);
-    resolves[1]('settled');
-    await retry;
-  });
-
-  it('turns a thrown request into the retryable failure', async () => {
-    const start = vi
-      .fn<() => Promise<'settled' | 'failed'>>()
-      .mockRejectedValueOnce(new Error('offline'));
-    await expect(shareInviteFlight('qosuq3j3qtvdak2i', start)).resolves.toBe('failed');
-  });
-});
 
 describe('sendInvite — the click carries the CLICKER key and the SENDER id', () => {
   const answer = async (status: number) => {
@@ -62,10 +52,10 @@ describe('sendInvite — the click carries the CLICKER key and the SENDER id', (
     return sendInvite(INVITER);
   };
 
-  it('records the mutual edge with the player key, and a 2xx is the confirmable ADD', async () => {
+  it('records the mutual edge with this device\'s token, and a 2xx is the confirmable ADD', async () => {
     await expect(answer(200)).resolves.toBe('added');
     expect(postFriendsBody).toHaveBeenCalledWith('https://api.test/friends', {
-      secret: '00112233445566778899aabbccddeeff',
+      token: 'f'.repeat(64),
       add: INVITER,
     });
   });
