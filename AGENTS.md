@@ -1107,10 +1107,20 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     submission resolve the identity they hold or stand down (`currentRequestIdentity`).
   - **The leaderboard and the profile editor render a LOCAL PLACEHOLDER identity** for a
     tokenless device — a persisted random seed (`gameStore.localSeed`, publicId-shaped)
-    that `anonName`/`defaultAvatar` derive the name and mark from. Display-only, never
-    sent anywhere; when the account deploys, the server-assigned id takes over and the
-    derived face changes once (the server picks the id, so no local value can match). The
-    tokenless friends board is the honest empty board without a request.
+    that `anonName`/`defaultAvatar` derive the name and mark from. The tokenless friends
+    board is the honest empty board without a request.
+    **THE USERNAME IS DECIDED LOCALLY, THEN DEPLOYED WHEN NEEDED (user-decided
+    2026-08-26, superseding the display-only-in-both-directions half of #188's
+    assigned-name rule of 2026-08-20):** when the device ACQUIRES an account, the client
+    stores the placeholder it has been showing — the seed's assigned name + mark — as the
+    account's profile, so the face no longer changes at deployment. Only a 404-empty row
+    is deployed into (even an empty-looking stored row is somebody's deliberate
+    avatar-only save), the profile editor's own SAVE deploy is exempt (it carries the
+    player's typed fields and must not be raced), and a failed deployment retries bounded,
+    then falls back silently to today's behavior. What remains DISPLAY-only is the
+    fallback derived from the SERVER-assigned id (`assigned.ts`), worn by any account with
+    no stored row. Implementation: `web/src/state/localIdentityDeploy.ts`, wired beside
+    the identity scope.
   - Invites remain gated on NEITHER side (the accepter is by definition a brand-new
     visitor clicking a link — the invite funnel, #189); what changed is WHEN: the tap, not
     the load.
@@ -1778,7 +1788,9 @@ publish/inventory/backend:dev (backend), dev/build (web), cdk synth/diff/deploy
   (`pnpm@11.9.0`). `pnpm-workspace.yaml` lists the workspaces and uses `allowBuilds`
   to approve `esbuild`'s postinstall (its native binary), which pnpm blocks by default.
 - **CI/CD (#33):** two GitHub Actions workflows under `.github/workflows/`
-  (docs in `.github/workflows/README.md`). `ci.yml` — on PR→`main` and push to `main`,
+  (docs in `.github/workflows/README.md`). `ci.yml` — on PRs into `main` or `dev` and pushes to both (the `dev`
+  integration branch joined 2026-08-26 — a PR retargeted onto it was silently getting no
+  test gate),
   sets up pnpm/Node 22/uv+Python 3.12 and runs `pnpm -r --if-present run typecheck` +
   `pnpm test` (intended as a **required status check**; branch protection on `main` is a
   manual repo-admin step). `deploy.yml` — on push to `main` and `workflow_dispatch`,
