@@ -88,16 +88,18 @@ const STRINGS = {
     fr: "Ce dessin n'est pas autorisé. Modifiez-le et réenregistrez.",
   },
   // Signed out from another device (#216). It is a SCREEN, not an error line: the account
-  // is intact and reachable, this device simply no longer holds it. Since 2026-08-26 the
-  // screen shows the ACCOUNT's mark and name above this caption (the invite landing's
-  // shape — user feedback: the sentence alone was hard to understand), so the line reads
-  // under WHO it is about.
-  signedOut: { en: 'SIGNED OUT FROM THIS DEVICE', fr: 'DÉCONNECTÉ DE CET APPAREIL' },
-  // The copy has to say what is being left behind — or a vanished streak and an empty
-  // friends list read as a bug — and what START FRESH actually mints.
+  // is intact and reachable, this device simply no longer holds it. The screen shows the
+  // ACCOUNT's mark and name above this caption (the invite landing's shape), so the line
+  // reads under WHO it is about — which is why it no longer says "from this device".
+  signedOut: { en: 'SIGNED OUT', fr: 'DÉCONNECTÉ' },
+  // TWO SHORT SENTENCES, and they are about the BUTTON (user-decided 2026-08-26,
+  // superseding a paragraph that listed what the account holds): the one thing the reader
+  // must understand is what PLAY does to them — it starts over on a new account, and the
+  // one named above is left. Naming the streak, the archive and the friends explained the
+  // stakes to someone who was already lost; naming the CONSEQUENCE explains the screen.
   signedOutNote: {
-    en: 'Your streak, your archive and your friends are safe on this account — it just no longer lives on this device. Starting fresh makes a new, empty account without them.',
-    fr: "Votre série, votre archive et vos amis sont en sécurité sur ce compte — il n'est simplement plus sur cet appareil. Repartir de zéro crée un nouveau compte vide, sans eux.",
+    en: 'Play starts a new account. You leave this one behind.',
+    fr: 'Jouer crée un nouveau compte. Vous quittez celui-ci.',
   },
   // The account's devices, on the profile editor (#216): the surface the whole issue exists
   // for, since signing a device out has to be possible without holding that device.
@@ -109,7 +111,6 @@ const STRINGS = {
   deviceUnknown: { en: 'UNKNOWN DEVICE', fr: 'APPAREIL INCONNU' },
   failedDevices: { en: 'FAILED TO LOAD DEVICES', fr: 'ÉCHEC DU CHARGEMENT DES APPAREILS' },
   signedOutReconnect: { en: 'RECONNECT', fr: 'SE RECONNECTER' },
-  signedOutSkip: { en: 'START FRESH', fr: 'REPARTIR DE ZÉRO' },
   // The missing-puzzle state is ABNORMAL (a publish that did not happen), and the
   // wording says so — it must not read like a scheduled day off.
   noPuzzle: { en: "TODAY'S PUZZLE IS MISSING", fr: 'LE PUZZLE DU JOUR EST INTROUVABLE' },

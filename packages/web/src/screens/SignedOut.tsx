@@ -12,12 +12,22 @@
 // recognizes the account they are being asked to leave before choosing. The face is the
 // public profile read (the invite landing's exact pattern: held behind a LoadingWave
 // until it settles, assigned identity as the fallback — a name must never flash and then
-// correct itself, the leaderboard strip's rule). The copy still says what is being left
-// behind, and now also what START FRESH actually mints.
+// correct itself, the leaderboard strip's rule).
+//
+// **THE ACTION IS `PLAY`, AND THE COPY IS ABOUT IT** (user-decided 2026-08-26, superseding
+// START FRESH and its paragraph of stakes). The reader has one decision here, so the screen
+// says the one thing they need before making it — this tap starts over on a new account,
+// and the one named above is left — in two short sentences, in the shared `gatePlay` label
+// both game gates already wear. The tap then has to BE that: it lifts the verdict and hands
+// the destination to App's home redirect (`FriendInvite`'s own `continueToGame`), because a
+// button that says PLAY on a leaderboard route must not leave the player on the leaderboard.
+// The new account itself is minted by the game's own PLAY gate, the #216 trigger it lands on.
 //
 // RECONNECT — signing back into the account by email — is #204's flow, and it does not
 // exist yet. The prop is how it arrives: one wire, no stub button in the meantime. A button
-// that does nothing is worse than a screen that only offers what it can actually do.
+// that does nothing is worse than a screen that only offers what it can actually do. When it
+// DOES land, this screen has two actions and #204 owns which one is primary — today PLAY is,
+// because it is the only one.
 
 import { useEffect, useState } from 'react';
 import { anonName, defaultAvatar } from '@whippin/shared';
@@ -27,6 +37,15 @@ import Button from '../components/Button';
 import LoadingWave from '../components/LoadingWave';
 import { startFreshDevice, useSignedOutAccount } from '../identity';
 import { t } from '../i18n';
+import { navigate } from '../routing';
+
+// Leave the account behind and go play: the verdict is lifted (which is also what removes
+// the persisted tombstone, origin-wide), then App's home redirect resolves the last-played
+// game route — `FriendInvite`'s exact hand-off.
+const playFresh = () => {
+  startFreshDevice();
+  navigate('/', { replace: true });
+};
 
 interface Face {
   name: string;
@@ -38,7 +57,7 @@ export default function SignedOut({
   onReconnect,
 }: {
   lang: string;
-  // #204's email link flow, when it lands. Absent today, so only SKIP is offered.
+  // #204's email link flow, when it lands. Absent today, so PLAY is the only way off.
   onReconnect?: () => void;
 }) {
   const account = useSignedOutAccount();
@@ -99,8 +118,8 @@ export default function SignedOut({
           {t(lang, 'signedOutReconnect')}
         </Button>
       )}
-      <Button variant="secondary" onClick={startFreshDevice}>
-        {t(lang, 'signedOutSkip')}
+      <Button variant="primary" onClick={playFresh}>
+        {t(lang, 'gatePlay')}
       </Button>
     </div>
   );
