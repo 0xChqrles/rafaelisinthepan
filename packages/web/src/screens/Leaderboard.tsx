@@ -636,15 +636,11 @@ function PlayingRowItem({
     <li
       className={`board-row playing${me ? ' me' : ''}`}
       // The row's heat is its progress read straight on the app's ONE ramp (heat.ts:
-      // "every progress surface") — one custom property feeds the % ink and the
-      // filament, so the two can never disagree about a row's colour.
-      style={
-        {
-          '--i': index,
-          '--play-heat': progressHeatColor(row.progress),
-          '--play-pct': row.progress / 100,
-        } as CSSProperties
-      }
+      // "every progress surface"), feeding the % ink. The ink ALONE carries it (user
+      // feedback 2026-08-26, dropping the first cut's bottom filament: too much colour
+      // pressed against the avatars, and it fattened the playing rows against their
+      // ranked neighbors).
+      style={{ '--i': index, '--play-heat': progressHeatColor(row.progress) } as CSSProperties}
       aria-current={me || undefined}
     >
       {/* No rank — the waiting rows' centered tick: an order is not a rank claim. */}
@@ -657,8 +653,6 @@ function PlayingRowItem({
           ink — then the live try count under the unit caption's column. */}
       <span className="board-progress">{Math.round(row.progress)}%</span>
       <span className="board-score">{row.tries}</span>
-      {/* The chooser card's progress filament, restated along the row's bottom edge. */}
-      <span className="board-playbar" aria-hidden="true" />
     </li>
   );
 }
