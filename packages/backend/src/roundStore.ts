@@ -179,6 +179,19 @@ export type RoundSubmitOutcome =
   | 'too_early'
   | 'already_submitted';
 
+// What the friends board reads of one stored round (#206): the RAW ordered log (the
+// route dedups it against the day's full artifact for the exact try count), the puzzle
+// tag that says which published revision the log answers, and the derived summary the
+// same row already carries (#203) — the stored `progress` is the one number the
+// calendar shows for this day, so the board showing any other spelling of it would let
+// the two disagree over the same log.
+export interface RoundBoardRow {
+  publicId: string;
+  puzzle: string;
+  guesses: string[];
+  progress: number;
+}
+
 // One month of one (language, mode) for ONE player — the private calendar read (#211).
 // The month is `YYYY-MM`, which is exactly a prefix of the sort key that #203 reordered
 // for it: `<lang>#<mode>#<month>-` matches that game's days and nothing else.
@@ -205,6 +218,12 @@ export interface RoundStore {
   // said. Never scoped to a puzzle REVISION: the calendar has no way to know which version
   // a past day is on, and a corrected round replaces the row on its own first append.
   listMonth(key: RoundMonthKey, publicId: string): Promise<RoundDaySummary[]>;
+  // The stored rounds of a KNOWN set of players for one daily — the friends board's
+  // read (#206), the exact shape the per-player partition was designed for: the caller
+  // resolves its edges into row keys and fetches THOSE (BatchGetItem), never a read
+  // across players. A player with no stored round simply has no row. Bounded by
+  // FRIENDS_MAX + 1 callers per read.
+  getMany(key: RoundKey, publicIds: readonly string[]): Promise<RoundBoardRow[]>;
   // The caller's stored round, or null when the server holds none FOR THIS PUZZLE.
   //
   // `consistent` defaults to TRUE — the read normally lands right after this player's own

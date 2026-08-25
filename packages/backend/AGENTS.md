@@ -55,7 +55,9 @@
       memoryProfileStore.ts   process-local implementation for backend:dev/tests
       friends.ts              POST /friends (#189): auth, list/add/remove, self-add + cap refusals
       board.ts                GET|POST /board (#190): global top-50 read + authenticated friends
-                              board — shared leaderboard rules over score rows + profiles + edges
+                              board — shared leaderboard rules over score rows + profiles + edges;
+                              since #206 the friends POST also answers `playing` (round rows
+                              deduped against the day's full artifact)
       history.ts              POST /history (#211): the PRIVATE player history — one month of
                               (lang, mode) summaries + the language's solved-day collection
       historyStore.ts         solved-day storage contract; the private player#<publicId>
@@ -212,9 +214,10 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
 - **Leaderboard reads (#190):** the ONE handler also serves `/board` — the product
   contract (the two faces, the shared ranking rules, the four-query allowList) lives in
   the root `AGENTS.md`. Implementation notes: `handleBoard` reuses the /scores param
-  guards (supported lang, required mode, valid date, +1-day future guard) but reads NO
-  puzzle store — a population only exists for a published daily, so an unpublished day
-  answers the empty board; GET's optional `id` is validated against
+  guards (supported lang, required mode, valid date, +1-day future guard). *(This said the
+  route reads NO puzzle store; #206 overturned it for the FRIENDS POST — see below. The
+  GLOBAL GET still reads none:* a population only exists for a published daily, so an
+  unpublished day answers the empty board.*)* GET's optional `id` is validated against
   `PUBLIC_ID_PATTERN` (400 malformed); POST authenticates `{token}` exactly like /friends.
   The param guards, the JSON-body reader and the secret check are the SHARED
   `liveRoute.ts` (below), not a fourth copy. The GLOBAL face reads the day partition
@@ -231,15 +234,24 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   `@whippin/shared`'s leaderboard functions, then dressed with profiles — one
   `ProfileStore.get` per DISTINCT id shown, in parallel (bounded: top 50 + a 5-row
   window, or FRIENDS_MAX rows). The friends face also
-  answers `waiting`: the caller's edges with no score row today, profile-dressed and
+  answers `playing` (#206) and `waiting`: a friend with a stored round for the current
+  revision but no score row is IN PROGRESS — `loadPlaying` reads `RoundStore.getMany`
+  (BatchGetItem over the exact keys, EVENTUALLY consistent — the method's comment holds
+  the reasoning) CONCURRENTLY with the score `getMany` and the full artifact
+  (`getPuzzle`, fresh — the one puzzle-store read on this route), dedups each raw log
+  with `countTries` for the exact try count, carries the STORED derived `progress`, and
+  orders with the shared `orderPlaying`; a failure there fails the POST rather than
+  letting `waiting` claim "not played yet" over a friend mid-game (root `AGENTS.md`,
+  #206). `waiting` keeps the caller's edges with NEITHER row, profile-dressed and
   publicId-sorted (root `AGENTS.md`). Every response is
   `no-store`; a missing profile dresses as `name: ''` / `avatar: null` — **and so does
   one whose READ FAILED** (a per-id `catch`, never `Promise.all`'s fail-fast): the name
   and mark are decoration over rows that already answered, so one throttled `GetItem`
   must not 500 a whole board. An EMPTY stored avatar dresses as `null` for the same
   reason — `''` is not a decodable avatar, and the client's fallback is keyed on null.
-  No new store: the route is a pure READ over the score rows, the friend edges and the
-  profile rows.
+  No new store: the route is a pure READ over the score rows, the friend edges, the
+  profile rows — and, since #206, the friends' round rows and the day's published
+  artifact.
   **The LIVE routes share their plumbing** (`liveRoute.ts`, extracted 2026-08-20 when
   `/board` became the FOURTH byte-identical copy): the `no-store` header, the body
   reader with its 4 KB cap, the `{token}` device resolution, and the `(lang, mode, date)` guard

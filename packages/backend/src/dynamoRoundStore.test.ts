@@ -5,6 +5,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import {
+  BatchGetItemCommand,
   ConditionalCheckFailedException,
   GetItemCommand,
   QueryCommand,
@@ -953,5 +954,87 @@ describe('listMonth — the private calendar Query (#211)', () => {
       pk: { S: 'x' },
       sk: { S: 'y' },
     });
+  });
+});
+
+// The friends board's read (#206): BatchGetItem over the exact row keys, chunked at the
+// service's 100-key limit, UnprocessedKeys retried behind the jittered schedule, and
+// EVENTUALLY consistent (a playing row is a mid-flight snapshot; the reasoning is on the
+// method). The alias rule holds here too: the projection names exactly what it declares.
+describe('dynamoRoundStore.getMany — the board read (#206)', () => {
+  const item = (publicId: string, guesses: string[], progress: number) => ({
+    pk: { S: `round#${publicId}` },
+    guesses: { L: guesses.map((g) => ({ S: g })) },
+    puzzle: { S: PUZZLE },
+    progress: { N: String(progress) },
+  });
+
+  it('fetches the named keys in one batch and reads the publicId back off the pk', async () => {
+    const send = vi.fn(async (command: unknown) => {
+      const input = (command as BatchGetItemCommand).input;
+      const request = input.RequestItems!.scores;
+      // Exact row keys — the caller's edges plus themselves, never a read across players.
+      expect(request.Keys).toEqual([
+        { pk: { S: `round#${PUBLIC_ID}` }, sk: { S: 'fr#sentence#2026-08-21' } },
+        { pk: { S: 'round#aaaaaaaaaaaaaaaa' }, sk: { S: 'fr#sentence#2026-08-21' } },
+      ]);
+      // EVENTUALLY consistent, deliberately (see the store method's comment).
+      expect(request.ConsistentRead).toBeUndefined();
+      // Every alias the projection names is declared, and none is declared unused —
+      // the ValidationException rule every command in this store lives under.
+      const declared = Object.keys(request.ExpressionAttributeNames ?? {});
+      const used = [...new Set(request.ProjectionExpression!.match(/#[A-Za-z0-9_]+/g) ?? [])];
+      expect(declared.sort()).toEqual(used.sort());
+      return {
+        Responses: {
+          scores: [item(PUBLIC_ID, ['mer', 'mers'], 62.5), item('aaaaaaaaaaaaaaaa', ['quai'], 10)],
+        },
+      };
+    });
+    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores');
+
+    const rows = await store.getMany(KEY, [PUBLIC_ID, 'aaaaaaaaaaaaaaaa']);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(rows).toEqual([
+      { publicId: PUBLIC_ID, puzzle: PUZZLE, guesses: ['mer', 'mers'], progress: 62.5 },
+      { publicId: 'aaaaaaaaaaaaaaaa', puzzle: PUZZLE, guesses: ['quai'], progress: 10 },
+    ]);
+  });
+
+  it('retries UnprocessedKeys behind the jittered wait instead of dropping a friend', async () => {
+    const key = { pk: { S: `round#${PUBLIC_ID}` }, sk: { S: 'fr#sentence#2026-08-21' } };
+    let calls = 0;
+    const send = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) {
+        return { Responses: { scores: [] }, UnprocessedKeys: { scores: { Keys: [key] } } };
+      }
+      return { Responses: { scores: [item(PUBLIC_ID, ['bois'], 40)] } };
+    });
+    const waits: number[] = [];
+    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores', {
+      wait: async (ms) => {
+        waits.push(ms);
+      },
+    });
+
+    const rows = await store.getMany(KEY, [PUBLIC_ID]);
+    expect(rows).toEqual([{ publicId: PUBLIC_ID, puzzle: PUZZLE, guesses: ['bois'], progress: 40 }]);
+    // Only BETWEEN attempts, never before the first read.
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(waits).toHaveLength(1);
+  });
+
+  it('fails loudly when the retry budget leaves keys unprocessed — a dropped key is a missing friend', async () => {
+    const key = { pk: { S: `round#${PUBLIC_ID}` }, sk: { S: 'fr#sentence#2026-08-21' } };
+    const send = vi.fn(async () => ({
+      Responses: { scores: [] },
+      UnprocessedKeys: { scores: { Keys: [key] } },
+    }));
+    const store = dynamoRoundStore({ send } as unknown as DynamoDBClient, 'scores', {
+      wait: async () => {},
+    });
+
+    await expect(store.getMany(KEY, [PUBLIC_ID])).rejects.toThrow(/unprocessed/i);
   });
 });

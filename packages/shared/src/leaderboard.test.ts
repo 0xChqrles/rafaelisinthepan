@@ -4,8 +4,10 @@ import {
   boardOwnRows,
   boardWindow,
   cutBoard,
+  orderPlaying,
   rankBoard,
   type BoardScore,
+  type PlayingScore,
 } from './leaderboard';
 
 // The #190 board rules, asserted against the decided spec: competition-style tie
@@ -131,5 +133,48 @@ describe('boardWindow / boardOwnRows', () => {
     const own = boardOwnRows(tied, cut, outside);
     expect(own).not.toBeNull();
     expect(own?.some((r) => r.publicId === outside)).toBe(true);
+  });
+});
+
+// The #206 in-progress rows' order: closest to done first, fewer tries breaking the
+// tie, publicId last — an ORDER, never a rank claim (the rows carry no rank number).
+describe('orderPlaying (#206)', () => {
+  const playing = (publicId: string, progress: number, tries: number): PlayingScore => ({
+    publicId,
+    tries,
+    progress,
+  });
+
+  it('orders by progress down, then tries up, then publicId', () => {
+    const shuffled = [
+      playing('cccccccccccccccc', 40, 1),
+      playing('bbbbbbbbbbbbbbbb', 80, 5),
+      playing('dddddddddddddddd', 80, 3),
+      playing('aaaaaaaaaaaaaaaa', 80, 5),
+    ];
+    expect(orderPlaying(shuffled).map((row) => row.publicId)).toEqual([
+      'dddddddddddddddd', // furthest along with the fewest tries
+      'aaaaaaaaaaaaaaaa', // tied with b on both numbers: id decides, deterministically
+      'bbbbbbbbbbbbbbbb',
+      'cccccccccccccccc',
+    ]);
+  });
+
+  it('is a pure reordering: the input array is left alone', () => {
+    const input = [playing('bbbbbbbbbbbbbbbb', 10, 1), playing('aaaaaaaaaaaaaaaa', 90, 1)];
+    const before = [...input];
+    orderPlaying(input);
+    expect(input).toEqual(before);
+  });
+
+  it('progress dominates tries: a 90% row with many tries leads a 10% row with one', () => {
+    const ordered = orderPlaying([
+      playing('aaaaaaaaaaaaaaaa', 10, 1),
+      playing('bbbbbbbbbbbbbbbb', 90, 400),
+    ]);
+    expect(ordered.map((row) => row.publicId)).toEqual([
+      'bbbbbbbbbbbbbbbb',
+      'aaaaaaaaaaaaaaaa',
+    ]);
   });
 });

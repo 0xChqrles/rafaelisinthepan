@@ -6,6 +6,7 @@ import {
   type Board,
   type BoardPlayer,
   type BoardRow,
+  type PlayingRow,
 } from '@whippin/shared';
 import {
   boardUrl,
@@ -88,7 +89,7 @@ interface Me {
 // this is the KNOWN-EMPTY answer (#216), installed synchronously — at first render and at
 // every identity-scope reset — so a tokenless visit never flashes a LOADING frame for a
 // request nobody makes.
-const EMPTY_FRIENDS_BOARD: Board = { rows: [], own: null, waiting: [] };
+const EMPTY_FRIENDS_BOARD: Board = { rows: [], own: null, playing: [], waiting: [] };
 const boardsFor = (identity: unknown): Partial<Record<Tab, Board | 'failed'>> =>
   identity ? {} : { friends: EMPTY_FRIENDS_BOARD };
 
@@ -535,8 +536,11 @@ function BoardList({
   // the ghost says and the INVITE button below remedies (user-decided 2026-08-20; a
   // friend who merely has not played is a waiting row, never empty).
   const others = board.rows.filter((row) => row.publicId !== meId);
+  const playingOthers = board.playing.filter((row) => row.publicId !== meId);
   const empty =
-    (tab === 'friends' ? others.length === 0 : board.rows.length === 0) &&
+    (tab === 'friends'
+      ? others.length === 0 && playingOthers.length === 0
+      : board.rows.length === 0) &&
     (board.own?.length ?? 0) === 0 &&
     board.waiting.length === 0;
   if (empty) {
@@ -564,9 +568,10 @@ function BoardList({
     <>
       {/* The unit column caption: which way is better is the mode's, and naming the
           unit is how the list says it (the score headline's own rule). Only over
-          actual scores — a board of nothing but waiting friends has no score column
-          to caption (user feedback 2026-08-20). */}
-      {board.rows.length > 0 && (
+          actual numbers — a board of nothing but waiting friends has no score column
+          to caption (user feedback 2026-08-20); the in-progress rows' try counts sit
+          in the same column, so they earn it too. */}
+      {(board.rows.length > 0 || board.playing.length > 0) && (
         <div className="board-unit" aria-hidden="true">
           {t(lang, mode === 'word' ? 'words' : 'tries')}
         </div>
@@ -581,6 +586,16 @@ function BoardList({
             {board.own.map(item)}
           </>
         )}
+        {/* Friends STILL PLAYING today (#206, friends board only), below every finished
+            row: the live try count and reconstruction percentage, in the server's own
+            order (`orderPlaying`), each with the no-rank tick — a mid-round position is
+            never a rank claim. ONE section caption, the waiting group's rule. */}
+        {board.playing.length > 0 && (
+          <li className="board-section">{t(lang, 'boardPlaying')}</li>
+        )}
+        {board.playing.map((row) => (
+          <PlayingRowItem key={row.publicId} row={row} me={row.publicId === meId} index={index++} />
+        ))}
         {/* Friends with no score today (friends board only): named, never dropped.
             ONE section caption says why for all of them (user feedback 2026-08-20 —
             the per-row label read as a stutter); each row keeps the dashed "not yet"
@@ -593,6 +608,35 @@ function BoardList({
         ))}
       </ol>
     </>
+  );
+}
+
+function PlayingRowItem({
+  row,
+  me,
+  index,
+}: {
+  row: PlayingRow;
+  me: boolean;
+  index: number;
+}) {
+  return (
+    <li
+      className={`board-row playing${me ? ' me' : ''}`}
+      style={{ '--i': index } as CSSProperties}
+      aria-current={me || undefined}
+    >
+      {/* No rank — the waiting rows' centered tick: an order is not a rank claim. */}
+      <span className="board-norank" aria-hidden="true" />
+      <Avatar avatar={row.avatar ?? defaultAvatar(row.publicId)} size={28} />
+      <span className={`board-name${row.name ? '' : ' anon'}`}>
+        {row.name || anonName(row.publicId)}
+      </span>
+      {/* The reconstruction percentage in the secondary ink, then the live try count
+          under the unit caption's column — the number the final score will land near. */}
+      <span className="board-progress">{Math.round(row.progress)}%</span>
+      <span className="board-score">{row.tries}</span>
+    </li>
   );
 }
 

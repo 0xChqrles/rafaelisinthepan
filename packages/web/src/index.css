@@ -5498,6 +5498,22 @@ button * {
   font-weight: 700;
 }
 
+/* A FRIEND STILL PLAYING (#206, friends board only): a glass row like the ranked ones
+   — it carries live numbers, not a promise — with the waiting rows' no-rank tick and
+   one extra cell: the reconstruction percentage in the secondary ink, just before the
+   try count under the unit caption's column. */
+.board-row.playing {
+  grid-template-columns: 42px 28px minmax(0, 1fr) auto auto;
+}
+.board-progress {
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 /* A FRIEND with no score today (friends board only, user-decided 2026-08-20): the row
    stays — an edge is a person you chose — wearing the app's dashed "not yet" frame
    with no glass fill. WHY they have no score is said ONCE, by the section caption

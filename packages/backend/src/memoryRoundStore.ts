@@ -5,6 +5,7 @@ import {
   roundSortKeyDate,
   roundSortKey,
   type RoundAppendInput,
+  type RoundBoardRow,
   type RoundDaySummary,
   type RoundKey,
   type RoundRunner,
@@ -83,6 +84,23 @@ export function memoryRoundStore(): RoundStore {
       // Ascending by date, like the Query's own sort-key order — a caller that renders in
       // order must not depend on which backend answered.
       return rows.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    },
+
+    // The friends board's read (#206): the named players' stored rounds for one daily.
+    // A player with no record simply has no row, which is how "not started" is said.
+    async getMany(key, publicIds) {
+      const rows: RoundBoardRow[] = [];
+      for (const publicId of [...new Set(publicIds)]) {
+        const item = rounds.get(itemKey(key, publicId));
+        if (!item) continue;
+        rows.push({
+          publicId,
+          puzzle: item.puzzle,
+          guesses: [...item.guesses],
+          progress: item.progress ?? 0,
+        });
+      }
+      return rows;
     },
 
     async get(key, publicId, puzzle) {

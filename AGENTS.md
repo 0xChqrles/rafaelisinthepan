@@ -1599,7 +1599,9 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
 - **ONE route `/board`, addressed per `(day, lang, mode)` like everything else** (the
   puzzle route's malformed-param 400s and future +1-day guard apply; no puzzle-store
   read — a population only exists for a published daily, so an unpublished day honestly
-  answers the empty board). Two faces:
+  answers the empty board). *(#206 amended the puzzle-store half for the FRIENDS POST
+  alone — its in-progress rows dedup raw logs against the day's full artifact; see its
+  section below. The GLOBAL GET still reads none.)* Two faces:
   - `GET /board?lang=&date=&mode=[&id=<publicId>]` — the **GLOBAL top 50, anonymous**
     (untrusted by design, #187: decorative, nothing treats it as truth). `id` is the
     caller's PUBLIC id — never the token, so it may travel in the query — and widens
@@ -1617,7 +1619,8 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     response's `waiting` list carries them (profile-dressed, no score/rank; sorted by
     publicId; never the caller themselves, and always empty on the global board) and
     the web draws them under ONE "not played yet" section caption — an edge is a
-    person the caller chose, never a row to silently drop.
+    person the caller chose, never a row to silently drop. *(#206 narrowed WHO waits:
+    a friend with a stored round for the current revision is IN PROGRESS instead.)*
 - **The ranking rules are shared pure functions** (`shared/src/leaderboard.ts`,
   contract-tested): competition-style tie ranks (equal ranks, never a fake ordering —
   ties ordered by publicId only for deterministic ROW order), the PLAIN top-50 cut
@@ -1643,6 +1646,54 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   ACTIVE day's routes only: a board is the active day's, so offering it from an
   archive replay would swap the day under the player and its exit would land them on
   today, ending the archive session.
+
+### Live friends board: in-progress rows (#206, decided 2026-08-25)
+
+- **The friends board has THREE states, and it is alive mid-day**: not started · **in
+  progress** — the exact deduped try count and the reconstruction percentage, ordered
+  among themselves — · finished — score and rank, above everyone still playing. It
+  narrows the `waiting` / "NOT PLAYED YET" section rather than replacing the shape: a
+  friend with a stored round for the current revision but no recorded score is a
+  `playing` row; `waiting` keeps only friends with neither. **FRIENDS ONLY, never the
+  global board** — mutual edges are consented by construction; strangers watching you
+  play is not the same thing — so `playing` is always empty on the GET. It leaks
+  nothing about the puzzle: a percentage and a try count say nothing about which words
+  are involved. **Sentence mode only**: a Word run's log reaches the server at its
+  end-of-run submission (#202), so mid-run there is honestly nothing to read — the
+  issue's own observation that a 60-second run is over before anyone looks.
+- **The try count is the EXACT deduped score, never the stored log's length.** They
+  differ: `guessKey` counts inflections of one word as one try, and the stored log can
+  hold one identity twice whenever two devices merge (the server appends, it does not
+  dedup) — a friend must not watch 40 all afternoon and see the final score land at 38.
+  Exactness needs the day's FULL artifact, so **the friends POST is the one board read
+  that touches the puzzle store** — read FRESH like every artifact read (the issue
+  predated the cache removal and assumed #203's active-day cache; fresh is the standing
+  rule, and a board open is a person tapping a screen, not the per-guess hot path the
+  slice exists for), concurrent with the round read. A FAILED playing read fails the
+  board POST rather than degrading: an in-progress friend surfacing under "not played
+  yet" is a claim, and a false one (#211's loading rule), while a failed board keeps
+  the client's cached rows on screen. An UNPUBLISHED day is not a failure — no artifact
+  means no round ever existed, so the empty section is the honest answer.
+- **The source is the round rows (#201/#203), read exactly as `roundStore.ts`
+  predicted**: `RoundStore.getMany` — BatchGetItem over the exact keys the caller's
+  edges resolve to, never a read across players; EVENTUALLY consistent, unlike the
+  score `getMany` (a playing row is a mid-flight snapshot by nature, and round items
+  carry whole logs, the table's biggest items). The percentage shown is the STORED
+  derived `progress` — the calendar's own source (#211), so the two surfaces cannot
+  disagree over one log. **Only rounds naming the artifact's own revision qualify**: a
+  retired revision's log answers a different puzzle (its tries would dedup against maps
+  it was never played on), and that round restarts on its player's next append anyway,
+  so for THIS puzzle they honestly have not started. **A member the score population
+  ranks is FINISHED, whatever their round row says** — which also keeps a solved round
+  whose row the day already holds out of `playing`.
+- **The caller's own mid-round row IS shown** — unlike `waiting`, which never carries
+  them: a live row with numbers is where they stand among friends mid-day, where a
+  bare "not played yet" row under their own identity strip is noise.
+- **The order is a shared pure rule, and it is an ORDER, never a rank claim**
+  (`orderPlaying`, contract-tested beside the #190 rules): progress descending, tries
+  ascending, publicId last — a mid-round position moves with every guess, so the rows
+  carry NO rank number and render with the waiting rows' no-rank tick, below every
+  finished row and above the waiting group, under one "IN PROGRESS" section caption.
 
 ---
 

@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { activeDate, generatePublicId, type Board } from '@whippin/shared';
+import { activeDate, generatePublicId, type Board, type Puzzle } from '@whippin/shared';
 import { createHandler } from './handler';
 import { memoryDeviceStore } from './memoryDeviceStore';
 import { memoryFriendStore } from './memoryFriendStore';
+import { memoryHistoryStore } from './memoryHistoryStore';
 import { memoryProfileStore } from './memoryProfileStore';
+import { memoryRoundStore } from './memoryRoundStore';
 import type { FnUrlEvent } from './respond';
+import type { RoundStore } from './roundStore';
 import type { ScoreRow, ScoreStore } from './scoreStore';
 import type { PuzzleStore } from './store';
 import { seedDevice } from './testDevice';
@@ -12,7 +15,10 @@ import { seedDevice } from './testDevice';
 // The /board route (#190): the GLOBAL top-50 read (anonymous GET) and the FRIENDS board
 // (authenticated POST). The ranking rules themselves are contract-tested in
 // @whippin/shared/leaderboard.test.ts; what this asserts is the ROUTE — params, auth,
-// and the response carrying ranks + profiles the way a board renders them.
+// and the response carrying ranks + profiles the way a board renders them — plus the
+// #206 in-progress rows: a friend with a stored round but no recorded score is PLAYING,
+// with the EXACT deduped try count (against the day's full artifact) and the stored
+// derived percentage, on the friends POST only.
 
 const NOW = new Date('2026-08-19T12:00:00Z');
 const DATE = activeDate(NOW);
@@ -34,12 +40,15 @@ function fixedScores(rows: ScoreRow[]): ScoreStore {
   };
 }
 
-async function makeHandler(rows: ScoreRow[]) {
+async function makeHandler(
+  rows: ScoreRow[],
+  opts: { store?: PuzzleStore; rounds?: RoundStore } = {},
+) {
   const profiles = memoryProfileStore();
   const friends = memoryFriendStore();
   const devices = memoryDeviceStore();
   const handler = createHandler({
-    store: emptyStore,
+    store: opts.store ?? emptyStore,
     now: () => NOW,
     scores: { scoreStore: fixedScores(rows) },
     profiles,
@@ -49,6 +58,19 @@ async function makeHandler(rows: ScoreRow[]) {
       turnstile: { verify: async () => true },
       allowSourceIp: true,
     },
+    // The #206 playing rows read the friends' stored rounds through the round route's
+    // own dep bundle; only `roundStore` is ever touched by the board.
+    ...(opts.rounds
+      ? {
+          rounds: {
+            roundStore: opts.rounds,
+            scoreStore: fixedScores(rows),
+            ipHmacSecret: 'secret',
+            turnstile: { verify: async () => true },
+            history: memoryHistoryStore(),
+          },
+        }
+      : {}),
   });
   return { handler, profiles, friends, devices };
 }
@@ -258,9 +280,183 @@ describe('board route (#190)', () => {
   it('answers an empty day honestly on both faces', async () => {
     const { handler, devices } = await makeHandler([]);
     const global = JSON.parse((await handler(get(QUERY))).body) as Board;
-    expect(global).toEqual({ rows: [], own: null, waiting: [] });
+    expect(global).toEqual({ rows: [], own: null, playing: [], waiting: [] });
     const caller = await seedDevice(devices);
     const mine = JSON.parse((await handler(post(QUERY, { token: caller.token }))).body) as Board;
-    expect(mine).toEqual({ rows: [], own: null, waiting: [] });
+    expect(mine).toEqual({ rows: [], own: null, playing: [], waiting: [] });
+  });
+});
+
+// CONTRACT (#206): the friends board is alive mid-day. A friend with a stored round for
+// the CURRENT published revision but no recorded score is IN PROGRESS — their row carries
+// the EXACT deduped try count (`countTries` over the raw log against the day's full
+// artifact, never the stored log's length) and the server-derived percentage, ordered by
+// `orderPlaying` below every finished row. Friends only: the global board never carries a
+// playing row. Sentence mode only: a Word run's log reaches the server at submission.
+describe('board in-progress rows (#206)', () => {
+  // Two holes whose maps share one surface family: `mer` and `mers` alias to ONE group in
+  // the phare map and are unknown to the nuit map, so both resolve to the same guessKey
+  // ("1|-1") and count as ONE try — the raw stored log length would say two.
+  const ARTIFACT: Puzzle = {
+    lang: 'fr',
+    revision: 'f0e1d2c3b4a59687',
+    words: ['le', 'phare', 'la', 'nuit'],
+    holes: [
+      { pos: 1, secret: { word: 'phare', slug: 'phare' }, start: { word: 'quai', slug: 'quai' }, start_rank: 2 },
+      { pos: 3, secret: { word: 'nuit', slug: 'nuit' }, start: { word: 'soir', slug: 'soir' }, start_rank: 2 },
+    ],
+    ranks: {
+      phare: {
+        phare: { word: 'phare', rank: 0 },
+        mer: { word: 'mer', rank: 1, dq: 255 },
+        mers: { word: 'mer', rank: 1, dq: 255 },
+        quai: { word: 'quai', rank: 2, dq: 128 },
+      },
+      nuit: {
+        nuit: { word: 'nuit', rank: 0 },
+        lune: { word: 'lune', rank: 1, dq: 255 },
+        soir: { word: 'soir', rank: 2, dq: 128 },
+      },
+    },
+  };
+  const artifactStore: PuzzleStore = {
+    getPuzzle: async (date, lang) => (date === DATE && lang === 'fr' ? ARTIFACT : null),
+    getWordPuzzle: async () => null,
+    getSlice: async () => null,
+  };
+
+  // Seed one player's stored round the way the round route writes it: the raw log plus
+  // the derived summary, tagged with the revision it was played against.
+  const seedRound = (
+    rounds: RoundStore,
+    publicId: string,
+    guesses: string[],
+    progress: number,
+    over: { puzzle?: string; mode?: 'sentence' | 'word' } = {},
+  ) =>
+    rounds.append({
+      date: DATE,
+      lang: 'fr',
+      mode: over.mode ?? 'sentence',
+      publicId,
+      guesses,
+      puzzle: over.puzzle ?? ARTIFACT.revision,
+      progress,
+      solved: false,
+      now: NOW,
+    });
+
+  it('names mid-round friends in `playing` with the EXACT deduped try count', async () => {
+    const me = generatePublicId();
+    const finished = generatePublicId();
+    const midRound = generatePublicId();
+    const notYet = generatePublicId();
+    const rounds = memoryRoundStore();
+    const { handler, friends, profiles, devices } = await makeHandler(
+      [{ publicId: finished, score: 4 }],
+      { store: artifactStore, rounds },
+    );
+    for (const id of [finished, midRound, notYet]) {
+      await friends.link({ publicId: me, friendId: id, createdAt: NOW.toISOString() });
+    }
+    // The finished friend's round row stays: the recorded score is the day's final word.
+    await seedRound(rounds, finished, ['mer', 'lune', 'nuit', 'phare'], 100);
+    // Three raw guesses, TWO tries: `mers` is `mer`'s own group in every map that knows
+    // either, so the pair is one identity — the number the final score will land on.
+    await seedRound(rounds, midRound, ['mer', 'mers', 'lune'], 62.5);
+    // The caller's own live row shows too — it is where they stand among friends mid-day.
+    await seedRound(rounds, me, ['quai'], 10);
+    await profiles.upsert({ publicId: midRound, name: 'Zoe', avatar: 'A'.repeat(19), now: NOW.toISOString() });
+    const caller = await callerOn(devices, me);
+
+    const board = JSON.parse((await handler(post(QUERY, { token: caller.token }))).body) as Board;
+    expect(board.rows.map((row) => row.publicId)).toEqual([finished]);
+    expect(board.playing).toEqual([
+      { publicId: midRound, tries: 2, progress: 62.5, name: 'Zoe', avatar: 'A'.repeat(19) },
+      { publicId: me, tries: 1, progress: 10, name: '', avatar: null },
+    ]);
+    // A playing friend is never ALSO "not played yet".
+    expect(board.waiting.map((row) => row.publicId)).toEqual([notYet]);
+  });
+
+  it("orders playing rows by the shared rule: progress down, tries up, id last", async () => {
+    const me = generatePublicId();
+    const ids = ['aaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbb', 'cccccccccccccccc'];
+    const rounds = memoryRoundStore();
+    const { handler, friends, devices } = await makeHandler([], {
+      store: artifactStore,
+      rounds,
+    });
+    for (const id of ids) {
+      await friends.link({ publicId: me, friendId: id, createdAt: NOW.toISOString() });
+    }
+    await seedRound(rounds, ids[0], ['quai'], 40); // behind on progress
+    await seedRound(rounds, ids[1], ['mer', 'lune'], 80); // same progress, more tries
+    await seedRound(rounds, ids[2], ['soir'], 80);
+    const caller = await callerOn(devices, me);
+
+    const board = JSON.parse((await handler(post(QUERY, { token: caller.token }))).body) as Board;
+    expect(board.playing.map((row) => [row.publicId, row.progress, row.tries])).toEqual([
+      [ids[2], 80, 1],
+      [ids[1], 80, 2],
+      [ids[0], 40, 1],
+    ]);
+  });
+
+  it('reads a round for a RETIRED revision as not started for THIS puzzle', async () => {
+    const me = generatePublicId();
+    const friend = generatePublicId();
+    const rounds = memoryRoundStore();
+    const { handler, friends, devices } = await makeHandler([], {
+      store: artifactStore,
+      rounds,
+    });
+    await friends.link({ publicId: me, friendId: friend, createdAt: NOW.toISOString() });
+    // A log played against a republished-away version: its tries would dedup against
+    // maps it was never played on, and the round restarts on its player's next append.
+    await seedRound(rounds, friend, ['mer'], 50, { puzzle: 'deadbeefdeadbeef' });
+    const caller = await callerOn(devices, me);
+
+    const board = JSON.parse((await handler(post(QUERY, { token: caller.token }))).body) as Board;
+    expect(board.playing).toEqual([]);
+    expect(board.waiting.map((row) => row.publicId)).toEqual([friend]);
+  });
+
+  it('carries no playing section in Word mode or on the global board', async () => {
+    const me = generatePublicId();
+    const friend = generatePublicId();
+    const rounds = memoryRoundStore();
+    const { handler, friends, devices } = await makeHandler([{ publicId: me, score: 3 }], {
+      store: artifactStore,
+      rounds,
+    });
+    await friends.link({ publicId: me, friendId: friend, createdAt: NOW.toISOString() });
+    await seedRound(rounds, friend, ['mer'], 50);
+    await seedRound(rounds, friend, ['mer'], 50, { mode: 'word' });
+    const caller = await callerOn(devices, me);
+
+    // Word mode: a run's log reaches the server only at submission — nothing to read.
+    const word = JSON.parse(
+      (await handler(post({ ...QUERY, mode: 'word' }, { token: caller.token }))).body,
+    ) as Board;
+    expect(word.playing).toEqual([]);
+    expect(word.waiting.map((row) => row.publicId)).toEqual([friend]);
+
+    // The global board never watches anyone play — friends only, by consent.
+    const global = JSON.parse((await handler(get({ ...QUERY, id: me }))).body) as Board;
+    expect(global.playing).toEqual([]);
+  });
+
+  it('answers an UNPUBLISHED day with no playing section (no artifact, no rounds)', async () => {
+    const me = generatePublicId();
+    const friend = generatePublicId();
+    const rounds = memoryRoundStore();
+    const { handler, friends, devices } = await makeHandler([], { rounds });
+    await friends.link({ publicId: me, friendId: friend, createdAt: NOW.toISOString() });
+    const caller = await callerOn(devices, me);
+
+    const board = JSON.parse((await handler(post(QUERY, { token: caller.token }))).body) as Board;
+    expect(board.playing).toEqual([]);
+    expect(board.waiting.map((row) => row.publicId)).toEqual([friend]);
   });
 });

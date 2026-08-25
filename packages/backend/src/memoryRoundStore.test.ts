@@ -102,3 +102,40 @@ describe('roundSortKeyDate — the sort-key formatters\' inverse', () => {
     expect(roundSortKeyDate(sortKey, monthKey)).toBe('2026-12-05');
   });
 });
+
+// The friends board's read (#206): the named players' stored rounds for one daily —
+// nothing else, and nobody else's.
+describe('memoryRoundStore.getMany — the board read (#206)', () => {
+  it('answers only the named players holding a round for THIS daily', async () => {
+    const store = await seeded(40);
+    const other = 'aaaaaaaaaaaaaaaa';
+    await store.append({
+      ...KEY,
+      publicId: other,
+      guesses: ['mer', 'lune'],
+      puzzle: 'ffffffffffffffff',
+      progress: 10,
+      solved: false,
+      now: NOW,
+    });
+    // A round on ANOTHER daily under the same player never answers this day's read.
+    await store.append({
+      ...KEY,
+      date: '2026-08-20',
+      publicId: PUBLIC_ID,
+      guesses: ['hier'],
+      puzzle: PUZZLE,
+      progress: 5,
+      solved: false,
+      now: NOW,
+    });
+
+    const rows = await store.getMany(KEY, [PUBLIC_ID, other, 'bbbbbbbbbbbbbbbb']);
+    expect(rows).toEqual([
+      // The raw log and the tag travel VERBATIM — the board is what interprets them
+      // (revision match, dedup); a player with no record simply has no row.
+      { publicId: PUBLIC_ID, puzzle: PUZZLE, guesses: ['bois'], progress: 40 },
+      { publicId: other, puzzle: 'ffffffffffffffff', guesses: ['mer', 'lune'], progress: 10 },
+    ]);
+  });
+});

@@ -409,6 +409,7 @@ const STRINGS = {
   // A friend on the board who has no recorded score today (user-decided 2026-08-20):
   // the row stays — an edge is a person you chose — and this label sits where their
   // score would.
+  boardPlaying: { en: 'IN PROGRESS', fr: 'EN COURS' },
   boardNotPlayed: { en: 'NOT PLAYED YET', fr: 'PAS ENCORE JOUÉ' },
   // The line above the invite link when it leaves the app (#189). Lowercase and plain —
   // it travels in a chat between friends, so it reads like something a person would
