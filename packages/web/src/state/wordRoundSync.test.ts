@@ -433,6 +433,30 @@ describe('the mount READ', () => {
     expect(current?.status === 'ready' && current.server.startedBy).toEqual(OTHER);
   });
 
+  it('discards a local run when the read says another device replaced it', async () => {
+    seedRound({
+      startedAt: T0 - 300_000,
+      deadline: T0 - 100_000,
+      tried: ['mer'],
+      claimed: 1,
+    });
+    post.mockResolvedValueOnce(
+      answer(200, { startedAt: at(200_000), startedBy: OTHER, nowAt: 300_000 }),
+    );
+    mount();
+    await settle();
+
+    expect(round()).toEqual({
+      word: WORD,
+      startedAt: null,
+      deadline: null,
+      tried: [],
+      claimed: 0,
+    });
+    const current = load();
+    expect(current?.status === 'ready' && current.server.startedBy).toEqual(OTHER);
+  });
+
   // The same rule for a stamp naming THIS device: the local clock is the only place a run's
   // claims exist, so a device whose storage no longer holds one is offered a restart rather
   // than a countdown over a log it cannot see. (The screen reads exactly that pair.)
@@ -518,6 +542,26 @@ describe('the mount READ', () => {
     mount();
     await settle();
     expect(round()).toMatchObject({ startedAt: null, tried: [] });
+  });
+
+  it('discards a stale local run when a 404 says the server holds none', async () => {
+    seedRound({
+      startedAt: T0 - 300_000,
+      deadline: T0 - 100_000,
+      tried: ['mer'],
+      claimed: 1,
+    });
+    post.mockResolvedValueOnce(answer(404, { error: 'not_found' }));
+    mount();
+    await settle();
+
+    expect(round()).toEqual({
+      word: WORD,
+      startedAt: null,
+      deadline: null,
+      tried: [],
+      claimed: 0,
+    });
   });
 
   // A republished WORD restarts the round on both ends. Everything the flight knew describes

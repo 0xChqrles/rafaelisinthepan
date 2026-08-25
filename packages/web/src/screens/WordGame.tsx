@@ -38,7 +38,7 @@ import WordEndScreen from '../components/WordEndScreen';
 import LoadError from '../components/LoadError';
 import ErrorSheet from '../components/ErrorSheet';
 import CoachText from '../tutorial/CoachText';
-import { t, tDevice, tn, srWordClaim, srWordMiss, srWordTimeUp } from '../i18n';
+import { t, tn, wordRestartNote, srWordClaim, srWordMiss, srWordTimeUp } from '../i18n';
 import { prefersReducedMotion } from '../hooks/useScramble';
 
 // Word mode (#156, retimed by #163): the second daily on the same mechanic, inverted —
@@ -210,15 +210,19 @@ function WordRound({
     if (mine && ended && !settled) finishWordRound(syncContext);
   }, [mine, ended, settled, syncContext]);
 
-  // What PLAY will DESTROY, named (#217): a run the server holds for this word that this
-  // screen is not the one playing — another device's, or this device's own with the local
-  // clock gone. Restarting is the only thing left to offer there, so the gate says what it
-  // costs before the single tap that spends it. A recorded run is never restartable, so a
-  // finished day carries no warning.
-  const restartNote =
-    !finished && !mine && server?.startedBy
-      ? tDevice(lang, 'wordRestartNote', deviceLabel(server.startedBy, lang))
-      : null;
+  // What PLAY will DESTROY (#217): a run the server holds for this word that this screen is
+  // not the one playing — another device's, or this device's own with the local clock gone.
+  // Restarting is the only thing left to offer there, so the gate says what it costs before
+  // the single tap that spends it; a remote owner is named, this device is said as such. A
+  // recorded run is never restartable, so a finished day carries no warning.
+  const restartOwner = !finished && !mine ? server?.startedBy ?? null : null;
+  const restartNote = restartOwner
+    ? wordRestartNote(
+        lang,
+        deviceLabel(restartOwner, lang),
+        restartOwner.deviceId === myDevice,
+      )
+    : null;
 
   // A live run replays this device's unacknowledged outbox. Once the server accepts a
   // submission, first-write-wins makes its returned log authoritative — including when
@@ -674,11 +678,11 @@ function WordRound({
                in; tapping PLAY swaps the tray's contents for the prompt and keys.
 
                On a day the server already holds an unsubmitted run for, the gate also
-               says WHAT THE TAP WILL DESTROY, naming its device (#217): two open tabs is
-               enough to lose a live run by accident, and the device label is exactly what
-               makes that legible. The button says START OVER there, so the tap is a
-               deliberate act on a differently-labelled control rather than the same PLAY
-               under new copy. */
+               says WHAT THE TAP WILL DESTROY (#217): it names a different device (two open
+               tabs are enough to lose a live run by accident), while a lost local clock is
+               called THIS device instead of repeating its own label as though it were
+               remote. The button says START OVER there, so the tap is a deliberate act on
+               a differently-labelled control rather than the same PLAY under new copy. */
             <div className="tray tray-gate">
               <div className="rules-gate">
                 <p className="sr-only">{gateRules}{restartNote ? `\n${restartNote}` : ''}</p>

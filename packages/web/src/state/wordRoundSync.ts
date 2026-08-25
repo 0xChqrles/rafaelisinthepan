@@ -480,11 +480,19 @@ async function readRound(f: WordFlight, key: string): Promise<void> {
       // Keyed on `submittedAt` and not on the log's length, or a recorded 0-claim run —
       // an EMPTY stored log — would read as unrecorded on every visit forever.
       settleAuthoritative(f, state);
+    } else if (state.startedBy?.deviceId !== identity.deviceId) {
+      // The read is a reconciliation too: another device's stamp says the local run was
+      // replaced while this tab was away, even when no submission stayed open long enough
+      // to receive `started_elsewhere`. Its persisted clock/count would otherwise keep the
+      // chooser and archive badged from a run the server no longer holds.
+      useGameStore.getState().discardWordRun(key);
     }
     publishLoad(f, key, state);
   } else if (response.status === 404) {
     // The server holds nothing for THIS word: an unplayed day, or one republished under the
-    // same key whose old record is retired. Nothing to resume; PLAY will create it.
+    // same key whose old record is retired. Any local run is therefore a retired husk too;
+    // clear its status before PLAY creates the replacement.
+    useGameStore.getState().discardWordRun(key);
     publishLoad(f, key);
   } else if (isVerdict(response.status)) {
     // A device signed out from elsewhere learns it here, on the mount read. The screen it
