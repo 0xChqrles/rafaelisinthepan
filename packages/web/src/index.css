@@ -3287,6 +3287,13 @@ button * {
   border-radius: var(--r-lg);
   text-shadow: none;
   transition: filter 0.08s linear, border-color 0.12s linear;
+  /* A FLOOR under the app's one big action (user-decided 2026-08-26): sized to its label
+     alone, a short word ("PLAY") drew a small card in the middle of a wide column and read
+     as a minor control. Every screen that hands this button a column already stretches it
+     to 100% (the tutorial invitation, the invite landing, this screen), so this only ever
+     bites where a primary is dropped with no width of its own — and `min()` is what keeps
+     the floor from overflowing a column narrower than it. */
+  min-width: min(240px, 100%);
 }
 .btn-primary::before {
   content: '';
@@ -5655,8 +5662,12 @@ button * {
   text-transform: uppercase;
   color: var(--muted);
 }
-/* The first button keeps the invite CTA's breathing room off the note above it. */
+/* The action is the column's, exactly like the invite landing's (`.invite-done .mix-btn`)
+   and every other big action in the app — the first cut sized it to its label and read as
+   too narrow (user feedback 2026-08-26). The first one keeps the invite CTA's breathing
+   room off the note above it. */
 .signed-out .btn {
+  width: 100%;
   margin-top: 12px;
 }
 .signed-out .btn + .btn {

@@ -92,14 +92,18 @@ const STRINGS = {
   // ACCOUNT's mark and name above this caption (the invite landing's shape), so the line
   // reads under WHO it is about — which is why it no longer says "from this device".
   signedOut: { en: 'SIGNED OUT', fr: 'DÉCONNECTÉ' },
-  // TWO SHORT SENTENCES, and they are about the BUTTON (user-decided 2026-08-26,
-  // superseding a paragraph that listed what the account holds): the one thing the reader
-  // must understand is what PLAY does to them — it starts over on a new account, and the
-  // one named above is left. Naming the streak, the archive and the friends explained the
-  // stakes to someone who was already lost; naming the CONSEQUENCE explains the screen.
+  // ONE REASSURING SENTENCE about the BUTTON (user-decided 2026-08-26, in two passes:
+  // first superseding a paragraph that listed what the account holds, then given the
+  // TONE — "pas de panique, un nouveau compte a été créé pour que vous puissiez continuer
+  // à jouer"). Being signed out is alarming, so the line opens by saying it is fine, then
+  // says the two things the tap does: a new account, and starting from scratch. The
+  // reason to keep playing is the BUTTON's own word, so the sentence does not restate it.
+  // Written in the FUTURE the tap opens, never the past — the account is minted by the
+  // game's own PLAY gate the tap lands on, so "has been created" would be a screen
+  // claiming something that has not happened yet.
   signedOutNote: {
-    en: 'Play starts a new account. You leave this one behind.',
-    fr: 'Jouer crée un nouveau compte. Vous quittez celui-ci.',
+    en: "Don't worry, playing creates a new account and you start from scratch.",
+    fr: 'Pas de panique, jouer crée un nouveau compte et vous repartez de zéro.',
   },
   // The account's devices, on the profile editor (#216): the surface the whole issue exists
   // for, since signing a device out has to be possible without holding that device.
