@@ -88,13 +88,16 @@ const STRINGS = {
     fr: "Ce dessin n'est pas autorisé. Modifiez-le et réenregistrez.",
   },
   // Signed out from another device (#216). It is a SCREEN, not an error line: the account
-  // is intact and reachable, this device simply no longer holds it.
-  signedOut: { en: 'THIS DEVICE IS SIGNED OUT', fr: 'CET APPAREIL EST DÉCONNECTÉ' },
-  // The copy has to say what is being left behind, or a vanished streak and an empty
-  // friends list read as a bug rather than as the sign-out that caused them.
+  // is intact and reachable, this device simply no longer holds it. Since 2026-08-26 the
+  // screen shows the ACCOUNT's mark and name above this caption (the invite landing's
+  // shape — user feedback: the sentence alone was hard to understand), so the line reads
+  // under WHO it is about.
+  signedOut: { en: 'SIGNED OUT FROM THIS DEVICE', fr: 'DÉCONNECTÉ DE CET APPAREIL' },
+  // The copy has to say what is being left behind — or a vanished streak and an empty
+  // friends list read as a bug — and what START FRESH actually mints.
   signedOutNote: {
-    en: 'Your streak, your archive and your friends stay on that account. Starting fresh here leaves them behind.',
-    fr: 'Votre série, votre archive et vos amis restent sur ce compte. Repartir de zéro ici les laisse derrière.',
+    en: 'Your streak, your archive and your friends are safe on this account — it just no longer lives on this device. Starting fresh makes a new, empty account without them.',
+    fr: "Votre série, votre archive et vos amis sont en sécurité sur ce compte — il n'est simplement plus sur cet appareil. Repartir de zéro crée un nouveau compte vide, sans eux.",
   },
   // The account's devices, on the profile editor (#216): the surface the whole issue exists
   // for, since signing a device out has to be possible without holding that device.

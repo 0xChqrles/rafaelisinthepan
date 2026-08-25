@@ -5540,12 +5540,14 @@ button * {
   grid-column: 3 / -1;
 }
 /* The caption between the ranked rows and the waiting group: a small centered title
-   on a hairline — NOT PLAYED YET, once for everyone under it. */
+   on a hairline — NOT PLAYED YET, once for everyone under it. The wide margins set
+   each caption off as its own section break (the rows themselves stay 6px apart). */
 .board-section {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 6px;
+  margin-top: 18px;
+  margin-bottom: 10px;
   font-family: var(--ui);
   font-size: 10px;
   font-weight: 500;
@@ -5618,6 +5620,47 @@ button * {
 .invite-done .mix-btn {
   width: 100%;
   margin-top: 12px;
+}
+
+/* ---- The signed-out screen (#216, reshaped 2026-08-26 on user feedback: the
+   sentence-only frame was hard to understand). The invite landing's own shape — the
+   ACCOUNT's mark and name over what happened — so the player sees WHO they are being
+   asked to leave before choosing. Same dress, its own names: the two screens mirror
+   each other on purpose, they are not one component. ---- */
+.signed-out {
+  width: min(340px, 100%);
+  margin: auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+}
+.signed-out .avatar {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+.signed-out-name {
+  font-family: var(--ui);
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+}
+.signed-out-line {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* The first button keeps the invite CTA's breathing room off the note above it. */
+.signed-out .btn {
+  margin-top: 12px;
+}
+.signed-out .btn + .btn {
+  margin-top: 0;
 }
 
 /* ---------------------------------------------------------------------------
