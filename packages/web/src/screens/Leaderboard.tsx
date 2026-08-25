@@ -3,6 +3,7 @@ import {
   anonName,
   dateForDayNumber,
   defaultAvatar,
+  progressHeatColor,
   type Board,
   type BoardPlayer,
   type BoardRow,
@@ -168,7 +169,18 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
   const [cachedEpoch, setCachedEpoch] = useState(epoch);
   if (cachedEpoch !== epoch) {
     setCachedEpoch(epoch);
-    setBoards(boardsFor(identity));
+    // A TOKENLESS tab acquiring its FIRST identity keeps the known-empty friends board
+    // (user feedback 2026-08-26: the INVITE tap's mint made the ghost blink into a
+    // loading frame — the loading belongs on the button alone). The only identity that
+    // can arrive under a tokenless tab today is a freshly MINTED account — this tab's
+    // own deploy tap, or a sibling tab's (#216: reconnect is not wired) — whose edge set
+    // is empty by construction, so known-empty is still the true answer, not a stale
+    // guess; the fetch below still fires and the stale-but-good rule swaps in the
+    // server's answer when it lands. Every OTHER scope change (A → B, A → signed out)
+    // keeps the PR-219 rule: drop everything to the new scope's own synchronous answer.
+    setBoards(
+      cachedEpoch === null && identity ? { friends: EMPTY_FRIENDS_BOARD } : boardsFor(identity),
+    );
     setFriendIds(null);
     setMe(null);
     setMeSettled(identity === null);
@@ -623,7 +635,16 @@ function PlayingRowItem({
   return (
     <li
       className={`board-row playing${me ? ' me' : ''}`}
-      style={{ '--i': index } as CSSProperties}
+      // The row's heat is its progress read straight on the app's ONE ramp (heat.ts:
+      // "every progress surface") — one custom property feeds the % ink and the
+      // filament, so the two can never disagree about a row's colour.
+      style={
+        {
+          '--i': index,
+          '--play-heat': progressHeatColor(row.progress),
+          '--play-pct': row.progress / 100,
+        } as CSSProperties
+      }
       aria-current={me || undefined}
     >
       {/* No rank — the waiting rows' centered tick: an order is not a rank claim. */}
@@ -632,10 +653,12 @@ function PlayingRowItem({
       <span className={`board-name${row.name ? '' : ' anon'}`}>
         {row.name || anonName(row.publicId)}
       </span>
-      {/* The reconstruction percentage in the secondary ink, then the live try count
-          under the unit caption's column — the number the final score will land near. */}
+      {/* The reconstruction % in the game's own progress dress — pixel face, heat-ramp
+          ink — then the live try count under the unit caption's column. */}
       <span className="board-progress">{Math.round(row.progress)}%</span>
       <span className="board-score">{row.tries}</span>
+      {/* The chooser card's progress filament, restated along the row's bottom edge. */}
+      <span className="board-playbar" aria-hidden="true" />
     </li>
   );
 }

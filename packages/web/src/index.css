@@ -5403,8 +5403,10 @@ button * {
   border-radius: var(--r-sm);
 }
 /* The rank is the game's own number — pixel face, quiet: the row is about the player,
-   so the number wears the secondary ink. */
+   so the number wears the secondary ink. CENTERED in its column like the no-rank tick
+   (user feedback 2026-08-26), so ranked and unranked rows share one axis. */
 .board-rank {
+  justify-self: center;
   font-family: var(--pixel-font);
   font-size: 9px;
   color: var(--muted);
@@ -5499,19 +5501,42 @@ button * {
 }
 
 /* A FRIEND STILL PLAYING (#206, friends board only): a glass row like the ranked ones
-   — it carries live numbers, not a promise — with the waiting rows' no-rank tick and
-   one extra cell: the reconstruction percentage in the secondary ink, just before the
-   try count under the unit caption's column. */
+   — it carries live numbers, not a promise — with the waiting rows' no-rank tick, the
+   live try count under the unit caption's column, and the reconstruction % spoken in
+   the app's OWN progress vocabulary (user feedback 2026-08-26): the % wears the pixel
+   face in the heat ramp's ink for its value — the exponents' dress, a progress %
+   reading straight as the scale — and the row carries the chooser card's progress
+   filament along its bottom edge, so a column of playing rows compares at a glance.
+   Both read `--play-heat` / `--play-pct`, set once per row inline. */
 .board-row.playing {
+  position: relative;
   grid-template-columns: 42px 28px minmax(0, 1fr) auto auto;
 }
+/* The tries cell is pinned at three pixel-face digits (the 500 cap's width) and
+   right-aligned, so the % column's right edge cannot wander with the count's digit
+   count from row to row (user feedback 2026-08-26 — the misaligned first cut). */
+.board-row.playing .board-score {
+  min-width: 39px;
+  text-align: right;
+}
 .board-progress {
-  font-family: var(--ui);
+  font-family: var(--pixel-font);
   font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
+  color: var(--play-heat);
+  /* The exponents' glow, quieter: enough for the ink to register as signal. */
+  text-shadow: 0 0 6px color-mix(in srgb, var(--play-heat) 45%, transparent);
+  translate: 0 1px;
+}
+/* The chooser strip restated on a row: inset to the row's own padding so the rounded
+   glass corner never clips it; width and colour are the row's progress. */
+.board-playbar {
+  position: absolute;
+  left: 12px;
+  bottom: 0;
+  height: 3px;
+  width: calc((100% - 24px) * var(--play-pct));
+  border-radius: 2px 2px 0 0;
+  background: var(--play-heat);
 }
 
 /* A FRIEND with no score today (friends board only, user-decided 2026-08-20): the row
