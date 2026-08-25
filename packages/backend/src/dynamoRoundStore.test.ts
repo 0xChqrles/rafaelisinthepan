@@ -403,30 +403,60 @@ describe('dynamoRoundStore (#201)', () => {
   });
 });
 
-// CONTRACT (#202): Word mode's two writes land on the SAME item. START is one conditional
-// UpdateItem stamping `startedAt` — idempotent for this word, restarting for a retired one.
-// SUBMIT reads once (the wait check is arithmetic, which a condition cannot express, and
-// the caller has to be told WHICH bound refused it) and then writes first-write-wins.
-describe('dynamoRoundStore — word mode (#202)', () => {
+// CONTRACT (#202, owned by a DEVICE since #217): Word mode's two writes land on the SAME
+// item. START is one conditional UpdateItem stamping `startedAt` AND the device it belongs
+// to — accepted for any run that is not yet RECORDED, which makes it a restart as much as a
+// start. SUBMIT reads once (the wait check is arithmetic, which a condition cannot express,
+// and the caller has to be told WHICH bound refused it) and then writes first-write-wins,
+// under a condition that still names the calling device.
+describe('dynamoRoundStore — word mode (#202/#217)', () => {
   const WORD_KEY = { date: '2026-08-21', lang: 'fr', mode: 'word' } as const;
-  const START_INPUT = { ...WORD_KEY, publicId: PUBLIC_ID, puzzle: PUZZLE, now: NOW };
+  const PHONE = { deviceId: 'phone000000000000', device: 'iPhone', os: 'iOS 17', browser: 'Safari' };
+  const LAPTOP = { deviceId: 'laptop00000000000', device: 'Mac', os: 'macOS', browser: 'Chrome' };
+  const START_INPUT = {
+    ...WORD_KEY,
+    publicId: PUBLIC_ID,
+    puzzle: PUZZLE,
+    runner: PHONE,
+    now: NOW,
+  };
+  const submitInput = (extra: Partial<{ deviceId: string; guesses: string[]; minElapsedMs: number }>) => ({
+    ...WORD_KEY,
+    publicId: PUBLIC_ID,
+    puzzle: PUZZLE,
+    deviceId: PHONE.deviceId,
+    guesses: [] as string[],
+    minElapsedMs: 64_000,
+    now: NOW,
+    ...extra,
+  });
 
   // A submitted round carries BOTH its log and `submittedAt`: the marker is the attribute,
-  // never the log's length, or a recorded 0-claim run reads as unsubmitted.
+  // never the log's length, or a recorded 0-claim run reads as unsubmitted. The RUNNER is
+  // stamped by the same write as the clock, so the two travel together.
   function startedItem(
     startedAt: string,
     guesses?: string[],
     puzzle: string = PUZZLE,
+    runner = PHONE,
   ): Record<string, AttributeValue> {
     return {
       ...(guesses ? { guesses: { L: guesses.map((g) => ({ S: g })) }, submittedAt: { S: startedAt } } : {}),
       puzzle: { S: puzzle },
       createdAt: { S: startedAt },
       startedAt: { S: startedAt },
+      startedBy: {
+        M: {
+          deviceId: { S: runner.deviceId },
+          device: { S: runner.device },
+          os: { S: runner.os },
+          browser: { S: runner.browser },
+        },
+      },
     };
   }
 
-  it('stamps the clock in ONE conditional write, from the SERVER\'s own instant', async () => {
+  it('stamps the clock AND its device in ONE conditional write, from the SERVER\'s own instant', async () => {
     const send = vi.fn(async (_command: unknown) => ({
       Attributes: startedItem(NOW.toISOString()),
     }));
@@ -437,6 +467,9 @@ describe('dynamoRoundStore — word mode (#202)', () => {
     // A STRING, like createdAt: the Number spelling is reserved for the one attribute a
     // condition compares arithmetically.
     expect(result.state.startedAt).toBe(NOW.toISOString());
+    // The run's owner rides with it — the id the submission is checked against, plus the
+    // label the screen names that device with.
+    expect(result.state.startedBy).toEqual(PHONE);
 
     const command = send.mock.calls[0][0] as UpdateItemCommand;
     expect(command.input).toMatchObject({
@@ -444,23 +477,39 @@ describe('dynamoRoundStore — word mode (#202)', () => {
       ReturnValues: 'ALL_NEW',
     });
     expectConditionSyntax(command.input.ConditionExpression);
-    // Fresh record OR a retired word's — and never this word's own running clock.
-    expect(command.input.ConditionExpression).toContain('attribute_not_exists(#started)');
+    // Anything not yet RECORDED may be replaced — a fresh record, this device's own run,
+    // another device's, or a retired word's. Only a stored submission stops it.
+    expect(command.input.ConditionExpression).toContain('attribute_not_exists(#sub)');
     expect(command.input.ConditionExpression).toContain('#p <> :puzzle');
-    // A restart takes the retired word's log with it.
+    // A restart takes the run it replaces with it.
     expect(command.input.UpdateExpression).toContain('REMOVE #g');
+    expect(command.input.UpdateExpression).toContain('#by = :runner');
   });
 
-  it('resumes the ORIGINAL clock when this word is already running', async () => {
+  it('RESTARTS a run another device left unsubmitted, and the stamp moves', async () => {
+    const send = vi.fn(async (_command: unknown) => ({
+      Attributes: startedItem(NOW.toISOString(), undefined, PUZZLE, LAPTOP),
+    }));
+    const { store } = makeStore(send);
+
+    const result = await store.start({ ...START_INPUT, runner: LAPTOP });
+    // No refusal to classify: an unsubmitted run is replaced by the write itself.
+    expect(result.outcome).toBe('started');
+    expect(result.state.startedBy).toEqual(LAPTOP);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses to restart a RECORDED run, and answers with the final one', async () => {
     const stamped = '2026-08-21T13:59:00.000Z';
-    const send = refuseOnce(startedItem(stamped));
+    const send = refuseOnce(startedItem(stamped, ['mer']));
     const { store } = makeStore(send);
 
     const result = await store.start(START_INPUT);
-    // The daily is one-shot: a double tap, a retry and a second device all get the one
-    // start, never a fresh minute.
-    expect(result.outcome).toBe('running');
-    expect(result.state.startedAt).toBe(stamped);
+    // The daily is one-shot once its log is stored: the caller adopts the run that stands
+    // rather than wiping it.
+    expect(result.outcome).toBe('already_submitted');
+    expect(result.state.guesses).toEqual(['mer']);
+    expect(result.state.submittedAt).toBe(stamped);
   });
 
   it('records the whole log once the run could be over, first write wins', async () => {
@@ -473,24 +522,18 @@ describe('dynamoRoundStore — word mode (#202)', () => {
     });
     const { store } = makeStore(send);
 
-    const result = await store.submit({
-      ...WORD_KEY,
-      publicId: PUBLIC_ID,
-      puzzle: PUZZLE,
-      guesses: ['mer', 'loin'],
-      minElapsedMs: 64_000,
-      now: NOW,
-    });
+    const result = await store.submit(submitInput({ guesses: ['mer', 'loin'] }));
     expect(result.outcome).toBe('submitted');
     expect(result.state.guesses).toEqual(['mer', 'loin']);
 
     const write = send.mock.calls.find(([c]) => c instanceof UpdateItemCommand)![0] as UpdateItemCommand;
     expectConditionSyntax(write.input.ConditionExpression);
-    // Still this word's, still started, still unsubmitted — first-write-wins is decided by
-    // the STORE, not by the read that preceded it.
+    // Still this word's, still stamped for THIS device, still unsubmitted — both verdicts
+    // are decided by the STORE, not by the read that preceded it.
     expect(write.input.ConditionExpression).toContain('attribute_not_exists(#sub)');
-    expect(write.input.ConditionExpression).toContain('attribute_exists(#started)');
+    expect(write.input.ConditionExpression).toContain('#by.#dev = :device');
     expect(write.input.ConditionExpression).toContain('#p = :puzzle');
+    expect(write.input.ExpressionAttributeValues![':device']).toEqual({ S: PHONE.deviceId });
   });
 
   it('refuses a submission that arrives before the run can be over — and writes nothing', async () => {
@@ -498,14 +541,7 @@ describe('dynamoRoundStore — word mode (#202)', () => {
     const send = vi.fn(async (_command: unknown) => ({ Item: startedItem(stamped) }));
     const { store } = makeStore(send);
 
-    const refused = await store.submit({
-      ...WORD_KEY,
-      publicId: PUBLIC_ID,
-      puzzle: PUZZLE,
-      guesses: ['mer'],
-      minElapsedMs: 64_000,
-      now: NOW,
-    });
+    const refused = await store.submit(submitInput({ guesses: ['mer'] }));
     expect(refused.outcome).toBe('too_early');
     expect(refused.state.startedAt).toBe(stamped);
     expect(send.mock.calls.every(([c]) => !(c instanceof UpdateItemCommand))).toBe(true);
@@ -514,16 +550,42 @@ describe('dynamoRoundStore — word mode (#202)', () => {
   it('refuses a submission for a run nobody started here', async () => {
     const send = vi.fn(async (_command: unknown) => ({}));
     const { store } = makeStore(send);
-    await expect(
-      store.submit({
-        ...WORD_KEY,
-        publicId: PUBLIC_ID,
-        puzzle: PUZZLE,
-        guesses: [],
-        minElapsedMs: 60_000,
-        now: NOW,
-      }),
-    ).resolves.toMatchObject({ outcome: 'not_started' });
+    await expect(store.submit(submitInput({ minElapsedMs: 60_000 }))).resolves.toMatchObject({
+      outcome: 'not_started',
+    });
+  });
+
+  it('refuses a submission for a run the stamp gives to ANOTHER device, writing nothing', async () => {
+    const stamped = '2026-08-21T13:00:00.000Z';
+    const send = vi.fn(async (_command: unknown) => ({
+      Item: startedItem(stamped, undefined, PUZZLE, LAPTOP),
+    }));
+    const { store } = makeStore(send);
+
+    const refused = await store.submit(submitInput({ guesses: ['mer'] }));
+    // The phone's log describes a clock the server no longer holds; recording it would bury
+    // the run the laptop is playing, permanently, since the write is first-write-wins.
+    expect(refused.outcome).toBe('started_elsewhere');
+    expect(refused.state.startedBy).toEqual(LAPTOP);
+    expect(send.mock.calls.every(([c]) => !(c instanceof UpdateItemCommand))).toBe(true);
+  });
+
+  it('classifies a LOST race by what stands: a restart that landed after the read', async () => {
+    const stamped = '2026-08-21T13:00:00.000Z';
+    let reads = 0;
+    const send = vi.fn(async (command: unknown) => {
+      if (command instanceof UpdateItemCommand) {
+        throw new ConditionalCheckFailedException({ message: 'refused', $metadata: {} });
+      }
+      reads += 1;
+      // The first read sees this device's own run; by the re-read the laptop has taken it.
+      return { Item: startedItem(stamped, undefined, PUZZLE, reads === 1 ? PHONE : LAPTOP) };
+    });
+    const { store } = makeStore(send);
+
+    const refused = await store.submit(submitInput({ guesses: ['mer'] }));
+    expect(refused.outcome).toBe('started_elsewhere');
+    expect(refused.state.startedBy).toEqual(LAPTOP);
   });
 
   it('answers a SECOND submission with the run that was recorded', async () => {
@@ -533,14 +595,7 @@ describe('dynamoRoundStore — word mode (#202)', () => {
     }));
     const { store } = makeStore(send);
 
-    const again = await store.submit({
-      ...WORD_KEY,
-      publicId: PUBLIC_ID,
-      puzzle: PUZZLE,
-      guesses: ['mer', 'ocean'],
-      minElapsedMs: 64_000,
-      now: NOW,
-    });
+    const again = await store.submit(submitInput({ guesses: ['mer', 'ocean'] }));
     expect(again.outcome).toBe('already_submitted');
     expect(again.state.guesses).toEqual(['mer']);
   });
@@ -550,19 +605,13 @@ describe('dynamoRoundStore — word mode (#202)', () => {
       Item: startedItem('2026-08-21T13:00:00.000Z', ['ancien'], 'deadbeef'),
     }));
     const { store } = makeStore(send);
-    const refused = await store.submit({
-      ...WORD_KEY,
-      publicId: PUBLIC_ID,
-      puzzle: PUZZLE,
-      guesses: ['mer'],
-      minElapsedMs: 64_000,
-      now: NOW,
-    });
+    const refused = await store.submit(submitInput({ guesses: ['mer'] }));
     // The record names a word this submission knows nothing about: there is no run of THIS
     // one to end, and the retired one's log must not travel back to the client.
     expect(refused.outcome).toBe('not_started');
     expect(refused.state.guesses).toEqual([]);
     expect(refused.state.startedAt).toBeUndefined();
+    expect(refused.state.startedBy).toBeUndefined();
   });
 });
 
@@ -574,10 +623,12 @@ describe('dynamoRoundStore — word mode (#202)', () => {
 describe('a recorded 0-claim run (#202)', () => {
   const WORD_KEY = { date: '2026-08-21', lang: 'fr', mode: 'word' } as const;
   const STAMP = '2026-08-21T13:00:00.000Z';
+  const RUNNER = { deviceId: 'phone000000000000', device: 'iPhone', os: 'iOS 17', browser: 'Safari' };
   const submitInput = (guesses: string[]) => ({
     ...WORD_KEY,
     publicId: PUBLIC_ID,
     puzzle: PUZZLE,
+    deviceId: RUNNER.deviceId,
     guesses,
     minElapsedMs: 60_000,
     now: NOW,
@@ -588,6 +639,14 @@ describe('a recorded 0-claim run (#202)', () => {
       puzzle: { S: PUZZLE },
       createdAt: { S: STAMP },
       startedAt: { S: STAMP },
+      startedBy: {
+        M: {
+          deviceId: { S: RUNNER.deviceId },
+          device: { S: RUNNER.device },
+          os: { S: RUNNER.os },
+          browser: { S: RUNNER.browser },
+        },
+      },
       ...extra,
     };
   }

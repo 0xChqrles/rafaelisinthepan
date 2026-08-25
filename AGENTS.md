@@ -551,7 +551,10 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     start, closing the tab mid-run and opening another device shows no round for today and
     begins a fresh one. The write is IDEMPOTENT per puzzle (a second tap, a retry and a
     second device all resume the ONE clock); a record naming a RETIRED word restarts,
-    taking its log with it.
+    taking its log with it. *(AMENDED by #217, below: the start is no longer idempotent —
+    it stamps a fresh clock FOR THE CALLING DEVICE and wipes any run that is not yet
+    RECORDED, so the cross-device benefit named here became cross-device RESTART. The
+    server-stamped clock and the reason for it are unchanged.)*
   - **SUBMIT — ONE post carrying the whole log**, first-write-wins like a score row (the
     daily is one-shot and cannot be replayed, so a repeat is answered 200 with the log that
     WAS recorded, which is what makes a retry after a lost response safe).
@@ -598,34 +601,18 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   immediately ends a still-live prompt without ever reopening an already-finished run. A
   finished day's recorded log therefore follows a new device through the transient mount
   answer; its server deadline is deliberately not adopted into local storage.
-- **A device only WRITES the run it PLAYED — the log and the score alike.** A device that
-  merely JOINED a run in progress (a second device under the same key, a second tab holding
-  a stale copy) anchors the server's `startedAt` with an empty log and no way to learn what
-  the real run has claimed, because the bonuses live in the other device's log until it
-  submits and Word mode streams nothing. Its clock therefore dies at the bare
-  `START_SECONDS` and it calls a live run finished. Both writes are first-write-wins, so
-  letting it speak would record an EMPTY run and a score of 0 that the real run can then
-  never replace — the harshest outcome this design has, and reachable from two open tabs.
-  The rule is one predicate (`web/state/wordRoundSync.ts` `mayWrite`): a non-empty local
-  log, or the SESSION that started the run. Session-scoped and not persisted, deliberately
-  — it says "I am the one playing this right now", and a reload has no claim to that. What
-  it costs is one honest case: a run that claimed NOTHING and whose tab died before the
-  deadline records no log. There is no way to price a joiner's clock correctly, so the
-  answer is that it does not write, not that its clock is right.
-  **Which is why the START answers `resumed`.** PLAY is on screen for as long as the mount
-  read is in flight, so a joiner can tap it and be handed the running clock — and treating
-  every accepted start as "this session runs it" would hand that joiner writer authority
-  over a run it cannot see. Only a call that actually STAMPED the clock makes a session the
-  runner, and the server is the only side that knows which happened. (A start whose ANSWER
-  was lost and is re-sent comes back `resumed`, so that session is not the runner either;
-  it still writes any run it plays, and only a 0-claim one is left unrecorded there.)
-  **Authority is held per (round, WORD), never per round.** A round key is only
-  (day, lang, mode), so a re-published different word REUSES it — and keyed by the round
-  alone, the session that started the RETIRED word still counted as the runner of the
-  replacement, which is the joiner hazard again on a word it never played. The in-flight
-  start map is qualified the same way (its promise would otherwise answer a call about one
-  word with another's outcome), and a START whose answer lands after a republish is
-  DROPPED rather than anchoring the retired word's clock into the fresh round.
+- **RETIRED by #217 (below): "a device only WRITES the run it PLAYED", the `resumed` flag,
+  the session-scoped `mayWrite`/`startedHere` authority and the per-(round, word)
+  qualification of it.** All of it was a workaround for a start stamp that said only THAT a
+  clock was running, never WHOSE: a joining device anchored that clock with an empty log,
+  died at the bare `START_SECONDS` and would have buried a real run under a first-write-wins
+  empty one. The stamp names its device now, so the client asks instead of inferring. What
+  survives from that reasoning, because it is what made the whole hazard real: **a joiner's
+  clock cannot be priced** — the bonuses live in the playing device's own log until it
+  submits, and Word mode streams nothing — which is exactly why a run is not resumable
+  across devices and why the honest offer is a restart. The in-flight start map is still
+  qualified per (round, WORD), for its own reason: a start still in the air for a retired
+  daily must not answer a call about the word that replaced it.
 - **The submission's marker is `submittedAt`, never the log's LENGTH.** A run that claimed
   nothing records an EMPTY log, which by length alone is indistinguishable from an
   unsubmitted round: a second submission overwrote it, a retry of it classified as
@@ -845,7 +832,9 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   STATE, not on the feel of a keypress. Word mode keeps the same rule at its own cadence —
   its run UI waits for the mount read too, which also closes the hazard that PLAY was
   tappable while that read was in flight (a session that starts a run it cannot see becomes
-  its writer, #202).
+  its writer, #202). *(Since #217 that wait earns its keep differently: the read is where the
+  screen learns WHOSE run the daily holds, and PLAY on a day started elsewhere is a RESTART
+  the gate has to be able to warn about.)*
 - **Three deliberately different values, and keeping them apart is the design.**
   - **SERVER STATE** — the authoritative RAW ordered log and its `solved` flag, held ONLY in
     memory after a read or an answer.
@@ -1229,6 +1218,80 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   with SIGN OUT; every call answers the list as it now stands, so the screen never guesses
   what a write did. Signing out the current row raises the signed-out screen immediately from
   that answer; it does not wait for a later private call to discover the deletion.
+
+### Word mode: the round belongs to a device (#217, decided 2026-08-23)
+
+- **The start stamp NAMES the device that made it, and two server conditions carry the whole
+  model.** Start/restart is accepted only while `submittedAt` is absent; submission only
+  while `submittedAt` is absent AND the stamp's device id equals the caller's. Everything
+  else follows from those two. It SUPERSEDES #202's start rules and depends on #216: before
+  device identities there was nothing device-specific to name, so the stamp could say only
+  THAT a clock was running.
+- **What it DELETES is inference.** `startedHere`, `mayWrite`, `resumed` as a source of
+  authority, and the joiner-clock reasoning in `web/state/wordRoundSync.ts` and the root
+  `AGENTS.md`. A device could tell "I am running this" from "I merely joined a clock
+  somebody else is playing" only by remembering that its own start had stamped it — a
+  session-scoped memory a reload lost, which is why a real 0-claim run whose tab died went
+  unrecorded. Only the device holding the run can play it or submit it, and the server says
+  which device that is.
+- **THE SCREEN PICKS ITS PHASE FROM TWO FACTS: the server's answer, and whether THIS device
+  holds the round's deadline** (`web/screens/WordGame.tsx`):
+  - server holds a **submitted** run → the **final screen**;
+  - **no run started** → **PLAY**;
+  - started by **this device** and this device holds the deadline → **resume** before the
+    deadline, **submit it** past the deadline;
+  - **anything else** — started by another device, or no local deadline — → **PLAY**, whose
+    tap atomically mints a new `startedAt` + device stamp and wipes the previous unsubmitted
+    start and log.
+  That last case covers "started here but my storage is gone", "started elsewhere and I have
+  nothing" and "started elsewhere and I somehow still hold a deadline", with no special
+  inference for any of them. If a submission won the race, the restart condition fails and
+  the client ADOPTS the final run instead of wiping it (the START answers 200 with the
+  recorded run, not an error — the daily is one-shot once its log is stored).
+  **The MOUNT READ therefore anchors NOTHING** (it did under #202): a clock this device does
+  not hold is a run whose claims live in the playing device's storage until it submits, so a
+  countdown opened for it would time a log that can never be reported.
+- **RESTART IS CONFIRMED, NOT SILENT.** The gate on a day started elsewhere shows what the
+  tap will destroy, NAMING the device — *Started on iPhone / Chrome. Starting here ends that
+  run.* — and its button says START OVER rather than PLAY, so the tap is a deliberate act on
+  a differently-labelled control. Two open tabs is enough to lose a live run by accident, and
+  this is exactly what the device label is for. The stamp carries the starting device's
+  parsed user-agent FIELDS beside its id — a SNAPSHOT taken at the start, so the warning
+  needs no second lookup and still names a device that has since been signed out; the label
+  is `deviceLabel`, the one the sign-out screen already prints.
+- **What it TRADES, all deliberate:**
+  - **Cross-device RESUME becomes cross-device RESTART.** #202 listed resuming the same clock
+    on a second device as a benefit; it will now offer a fresh run instead. Resuming a run
+    whose claims live in another device's local storage was never really resuming it.
+  - **The daily stops being one-shot until a run is SUBMITTED.** Any device on the account
+    may restart as often as it likes before submission, so in effect the player can retry the
+    day until they get a run they want to keep. Accepted: the day's `word.json` is public and
+    cheating is not defended against here (#199). Once a run is submitted the final screen is
+    the only outcome and there is nothing to restart. Each restart does spend a Turnstile
+    challenge, since a start creates state (#203's rule, unchanged).
+  - **Concurrent devices are LAST-COMMIT-WINS inside those two conditions.** If device 3
+    restarts before device 2 submits, the stamp moves and device 2's submission is refused
+    (`started_elsewhere`, a 409 carrying the stamp that stands — the client adopts it, which
+    is what sends that screen back to PLAY, and closes the conversation). If device 2 submits
+    first, device 3's restart is refused and device 3 adopts the final run. No run generation,
+    observed-start compare-and-swap token or other machinery is added for people deliberately
+    playing one account simultaneously: the device ownership and the final-submission
+    condition are the whole contract.
+  - **Known same-device edge, accepted:** the same device restarting itself while another of
+    its own tabs still holds a live in-memory run can submit that old run into the new stamp,
+    because the device still matches. Self-inflicted, and it costs only that player's own run.
+- **Store shape:** the round item's stamp gains `startedBy` — ONE Map attribute holding the
+  device id plus its `device`/`os`/`browser` fields, written by the same mutation as
+  `startedAt` so nothing can observe a clock without its owner. The START's condition becomes
+  `attribute_not_exists(#sub) OR #p <> :puzzle` (it was `attribute_not_exists(#started) OR …`)
+  and its SET writes the runner; the SUBMIT's becomes
+  `#p = :puzzle AND #by.#dev = :device AND attribute_not_exists(#sub)`. No persist bump and
+  no migration: the local shape is unchanged, and a local clock whose server stamp names
+  another device simply reads as "not mine" — the gate, with the warning.
+- **It also makes #214's "a settled round's local clock is still running" state
+  UNREACHABLE**: a submitted day always lands on the final screen. #214's interim fix for
+  that (a settled run ends immediately) stays — it is what settles the clock — but nothing
+  now depends on it to avoid an interactive prompt over a recorded run.
 
 ### Day-addressed routing & the game day
 

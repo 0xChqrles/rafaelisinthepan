@@ -316,21 +316,29 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   a browser reads null for a header only curl and `backend:dev` ever see. Local serve swaps
   in `memoryRoundStore`; no new env or IAM (the table grant already carried GetItem +
   UpdateItem).
-- **Word mode's two round writes (#202):** the same route, `mode=word`. The product
-  contract (why the fast game syncs least, the server-stamped clock, the wait check, the
-  caps, what is deliberately NOT validated) lives in the root `AGENTS.md`. Implementation
+- **Word mode's two round writes (#202), owned by a DEVICE since #217:** the same route,
+  `mode=word`. The product contract (why the fast game syncs least, the server-stamped clock,
+  the wait check, the caps, what is deliberately NOT validated, and #217's two conditions)
+  lives in the root `AGENTS.md`. Implementation
   notes: the route DISPATCHES on the body — `turnstileToken` = START (a 400 on a sentence
   round, which has no clock), `guesses` = append or submit by mode, neither = read. START
-  is one conditional UpdateItem (`attribute_not_exists(#started) OR #p <> :puzzle`, with
-  `REMOVE #g` so a retired word's log leaves with its clock); a failed condition means this
-  word is already running and the ORIGINAL stamp is read back and answered. SUBMIT is the
+  is one conditional UpdateItem stamping `startedAt` AND `startedBy` (the caller's device id
+  plus its parsed user-agent fields, ONE Map attribute) under
+  `attribute_not_exists(#sub) OR #p <> :puzzle`, with `REMOVE #g, #sub` so the run it
+  replaces leaves with its clock; everything the condition passes for is REPLACED, so a
+  start is a RESTART and only a RECORDED run refuses one (`already_submitted`, answered 200
+  with the run that stands). *(#202's condition was `attribute_not_exists(#started) OR …`,
+  which made the start idempotent instead.)* SUBMIT is the
   one path here that READS A PUZZLE STORE (`getWordPuzzle`) — only the artifact can tell a
   claim from a miss, and both the claim ceiling (`wordScoreMaximum`, distinct ranks) and
   the wait check are priced from that count. The store reads once, consistently, then
-  writes under `#p = :puzzle AND attribute_exists(#started) AND attribute_not_exists(#sub)`:
+  writes under `#p = :puzzle AND #by.#dev = :device AND attribute_not_exists(#sub)`:
   the wait check is arithmetic (which DynamoDB's condition grammar has none of) and the
-  caller has to be told WHICH bound refused it, but first-write-wins is still decided by
-  the write's own condition rather than by the read before it. `startedAt` and
+  caller has to be told WHICH bound refused it, but first-write-wins AND the ownership check
+  are still decided by the write's own condition rather than by the read before it — a
+  restart can land between them, and a lost race is re-read and classified by what STANDS
+  (`already_submitted`, or `started_elsewhere` when the stamp names another device: a 409
+  carrying that stamp, which the client adopts on its way out). `startedAt` and
   `submittedAt` are STRINGS like
   `createdAt`, and no word path touches `lastWriteAt` (the streaming interval's attribute).
   **Every command's `ExpressionAttributeNames` holds exactly the aliases ITS OWN
@@ -340,15 +348,17 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   against a mocked client (it shipped that way once). `dynamoRoundStore.test.ts` runs the
   correspondence check on every command any test issues, in both directions and for values
   too, so a new write path is covered by the tests that already exist.
-  **The START answers `resumed`** — false when THAT call stamped the clock, true when it
-  joined one already running — because the client cannot otherwise tell whether it is the
-  session running the round, and the root `AGENTS.md` records what turns on that.
+  **The START's answer NAMES the run's device** (#217, replacing #202's `resumed` flag):
+  every answer on this route carries `startedBy` when a clock is stamped, so the client asks
+  whose run it is instead of remembering whether its own start was the one that opened it.
+  The root `AGENTS.md` records what turns on that, and what it retired.
   **Every answer, refusals included, carries the server's own `now`** — the client anchors
   `now − startedAt`, an elapsed span, which is what makes the visible clock immune to
   device-clock skew. `too_early`/`not_started` are 409s, an over-cap or unclaimable log is
   a 400, a missing artifact the day-addressed 404, a rejected challenge a 403
   `turnstile_rejected` (the shared `requireTurnstileToken`, extracted from /scores when
-  this became the second gated write). `HandlerDeps.rounds` is a `RoundHandlerDeps` for that
+  this became the second gated write), and a submission for a run the stamp gives to another
+  device a 409 `started_elsewhere`. `HandlerDeps.rounds` is a `RoundHandlerDeps` for that
   gate — the /scores deps' shape — and since the PR-219 review it carries NO DeviceStore:
   every authenticated route resolves its caller through the ONE top-level
   `HandlerDeps.deviceStore`, so two routes can never be wired to two different stores

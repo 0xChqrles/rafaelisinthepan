@@ -6,6 +6,7 @@ import {
   GameStateDatabase,
   type StoredGameState,
 } from './gamePersistence';
+import type { RoundRunner } from '../api';
 
 // Which crowd the #190 leaderboard is showing: the friends graph (the trusted default)
 // or the global top 50. It lives here rather than in the screen because the screen
@@ -52,6 +53,11 @@ export interface RoundServer {
   // celebration reads this instead of comparing days on the device clock, which the
   // route's skew window lets disagree with the server's by a day.
   credited: boolean;
+  // WORD mode (#217): the device the server says this round's run belongs to, or null when
+  // nothing is stamped for this word. A sentence round has no clock and no owner, so it is
+  // always null there. It is what the Word screen picks its phase from, together with
+  // whether THIS device still holds the run's deadline.
+  startedBy: RoundRunner | null;
 }
 
 // Where a round's authoritative state is, for the ONE screen that has to wait on it. The
@@ -79,6 +85,7 @@ export const EMPTY_ROUND_SERVER: RoundServer = {
   solved: false,
   solvedByAppend: false,
   credited: false,
+  startedBy: null,
 };
 
 // The canonical round key: (server day, language, MODE — #156: the two dailies would
@@ -140,6 +147,12 @@ function capDayKeyed<T>(entries: Record<string, T>, activeKey: string): Record<s
 // instant, so a device whose clock is minutes off still runs a 60-second run — and the
 // request's own travel time lands INSIDE the run, which is what keeps an honest submission
 // clear of the server's end-of-run wait check.
+//
+// **Since #217 only a START writes that clock, and only for the device that owns the run.**
+// The mount read anchors nothing: the server's stamp names a device, and a clock this
+// device does not hold is a run whose claims it cannot see — Word mode streams nothing, so
+// they live in the playing device's own storage until it submits. What such a device is
+// offered is a RESTART, which mints a new clock here and on the server together.
 //
 // While the run is unacknowledged, `deadline` is DERIVED from those two (startedAt + runMs
 // of the log's claimed bonuses) and recomputed on every write, so the clock cannot drift
@@ -346,15 +359,17 @@ interface GameState extends PersistedState {
   // (day, lang) — starts fresh. Same retention/cap policy as ensureRound.
   ensureWordRound: (key: string, word: string) => void;
 
-  // ANCHOR a word round's clock (#163, server-stamped since #202): the sync engine has an
-  // answer carrying the SERVER's `startedAt`, translated into this device's clock, and
-  // stamps it here — opening the deadline at the full START_SECONDS. Keyed rather than
-  // active-keyed, because the answer can land after navigation has moved on.
+  // OPEN a word round's run (#163, server-stamped since #202, restarting since #217): the
+  // START's answer carries the SERVER's `startedAt`, translated into this device's clock,
+  // and stamps it here — opening the deadline at the full START_SECONDS with an empty log.
+  // Keyed rather than active-keyed, because the answer can land after navigation has moved
+  // on.
   //
-  // Idempotent — a round already anchored keeps its clock, so a re-render, a double tap, a
-  // re-read and a rehydration can never restart or shift a run. That is the whole no-retry
-  // rule, and it lives here so no render path can reopen a finished day.
-  anchorWordRun: (key: string, startedAt: number) => void;
+  // It REPLACES whatever the round held, because that is what the write it reports did: a
+  // start is accepted for any run the server has not recorded, so the clock it just minted
+  // is the only run this daily has. Only a START calls it — the mount read anchors nothing,
+  // since a clock this device does not own is one it must not play (#217).
+  openWordRun: (key: string, startedAt: number) => void;
 
   // Settle a Word run from the server's authoritative recorded log (#214). Its persisted
   // guesses were an outbox and are now acknowledged, so clear them even when another
@@ -652,7 +667,7 @@ export type GameMutation =
     } & OwnedGameMutation)
   | ({ type: 'discardOutbox'; key: string; puzzle: string } & OwnedGameMutation)
   | ({ type: 'ensureWordRound'; key: string; word: string } & OwnedGameMutation)
-  | ({ type: 'anchorWordRun'; key: string; word: string; startedAt: number } & OwnedGameMutation)
+  | ({ type: 'openWordRun'; key: string; word: string; startedAt: number } & OwnedGameMutation)
   | ({ type: 'settleWordRun'; key: string; word: string; claimed: number; now: number } & OwnedGameMutation)
   | ({
       type: 'recordWordGuess';
@@ -806,18 +821,19 @@ export function applyGameMutation(
         Object.entries(wordRounds).every(([key, value]) => state.wordRounds[key] === value);
       return same ? changed(state, state) : changed(state, { ...state, wordRounds });
     }
-    case 'anchorWordRun': {
+    case 'openWordRun': {
       const existing = state.wordRounds[mutation.key];
       if (existing && existing.word !== mutation.word) return changed(state, state);
-      const round = existing ?? freshWordRound(mutation.word);
-      if (round.startedAt !== null) return changed(state, state);
+      // A FRESH run every time (#217), never a merge into what was here: the server write
+      // this reports wiped its own record, so an outbox or a claim count left over would
+      // describe a run that no longer exists on either end.
       return changed(state, {
         ...state,
         wordRounds: capDayKeyed(
           {
             ...state.wordRounds,
             [mutation.key]: {
-              ...round,
+              ...freshWordRound(mutation.word),
               startedAt: mutation.startedAt,
               deadline: mutation.startedAt + runMs(0),
             },
@@ -1026,11 +1042,11 @@ export const useGameStore = create<GameState>((set, get) => {
       set({ activeWordKey: key });
       commit({ type: 'ensureWordRound', key, word, expectedOwner });
     },
-    anchorWordRun: (key, startedAt) => {
+    openWordRun: (key, startedAt) => {
       const round = get().wordRounds[key];
       if (!round) return;
       commit({
-        type: 'anchorWordRun',
+        type: 'openWordRun',
         key,
         word: round.word,
         startedAt,

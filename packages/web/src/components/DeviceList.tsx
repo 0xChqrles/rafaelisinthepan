@@ -35,7 +35,12 @@ type Phase = 'loading' | 'ready' | 'failed';
 // "iPhone / Safari". Every field may be empty — the parser leaves what it cannot read blank
 // rather than guessing — so the label is whatever the server DID recognise, and a device it
 // recognised nothing about is named as such instead of rendering an empty row.
-export function deviceLabel(row: DeviceRow, lang: string): string {
+//
+// It takes the three FIELDS rather than a `DeviceRow`, because the row is not the only
+// thing carrying them: a word run's stamp names its device the same way (#217), and the one
+// spelling of the label is what keeps the run's warning reading like the device list it
+// refers to.
+export function deviceLabel(row: { device: string; os: string; browser: string }, lang: string): string {
   const parts = [row.device || row.os, row.browser].filter(Boolean);
   return parts.length > 0 ? parts.join(' / ') : t(lang, 'deviceUnknown');
 }

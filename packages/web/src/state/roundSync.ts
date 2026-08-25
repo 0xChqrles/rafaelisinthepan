@@ -339,6 +339,8 @@ function adopt(f: RoundFlight, key: string, state: RoundState, byAppend: boolean
     // Same shape: only the CONFIRMING append's answer carries it, and later answers about
     // the same solve must not take it back.
     credited: (f.server.solved && f.server.credited) || (state.solved && state.credited),
+    // Word mode's own (#217): a sentence round has no clock, so it has no owning device.
+    startedBy: null,
   });
 }
 

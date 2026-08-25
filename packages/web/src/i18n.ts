@@ -175,6 +175,19 @@ const STRINGS = {
     en: 'Every find adds time. Rarer words add more.',
     fr: 'Chaque mot ajoute du temps. Plus il est rare, plus il en donne.',
   },
+  // A word run belongs to the DEVICE that started it (#217), and a device that does not
+  // hold this day's run can only start it OVER. The gate says what that costs before the
+  // tap, naming the device — two open tabs is enough to lose a live run by accident, and
+  // the label is exactly what makes the loss legible. `{device}` is the table's second
+  // placeholder (see `tDevice`), for the reason `{n}` is its first: the fragment is a name,
+  // and a name belongs inside its sentence rather than concatenated onto one.
+  wordRestartNote: {
+    en: 'Started on {device}. Starting here ends that run.',
+    fr: 'Commencé sur {device}. Recommencer ici met fin à cette partie.',
+  },
+  // …and the button says so, rather than wearing PLAY over new copy: the tap is a
+  // deliberate act, so it takes a control of its own.
+  gateRestart: { en: 'START OVER', fr: 'RECOMMENCER' },
   // A word run's day is FINISHED, never "solved" (decided 2026-08-08): the clock ran out,
   // which is not an achievement the way a reconstructed sentence is. Visually it is the
   // same gold as a solve; this is the distinction the reader hears.
@@ -444,6 +457,13 @@ export function sourceKind(lang: string, kind: string): string {
 // compile-time obligation the way it does every other string.
 export function tn(lang: string, key: UiKey, n: number): string {
   return t(lang, key).replace('{n}', String(n));
+}
+
+// The other placeholder: a DEVICE named inside its own sentence (#217 — "Started on
+// iPhone / Chrome."). The label is a name, so it takes a placeholder rather than being
+// concatenated onto a fragment — the two languages are free to put it where they want it.
+export function tDevice(lang: string, key: UiKey, device: string): string {
+  return t(lang, key).replace('{device}', device);
 }
 
 // Screen-reader feedback for one hole's reaction to a guess (the visual equivalent is

@@ -1,10 +1,10 @@
-// Word mode's conversation with the server (#202). The mode writes exactly TWICE, where
-// sentence mode streams (state/roundSync.ts):
+// Word mode's conversation with the server (#202; the run belongs to a DEVICE since #217).
+// The mode writes exactly TWICE, where sentence mode streams (state/roundSync.ts):
 //
 //   PLAY  -> START:  a Turnstile-gated write that stamps this round's clock from the
-//                    SERVER's own clock. The visible countdown does not begin until the
-//                    reply lands, so what the player watches and what the server measures
-//                    are the same run.
+//                    SERVER's own clock, FOR THIS DEVICE. The visible countdown does not
+//                    begin until the reply lands, so what the player watches and what the
+//                    server measures are the same run.
 //   clock -> SUBMIT: ONE post carrying the whole log, at the end of the run — including a
 //            dies    run whose tab died mid-clock, which submits on the revisit that finds
 //                    it over.
@@ -21,10 +21,18 @@
 // (`anchorFrom`), never the server's instant, so a device whose clock is minutes off still
 // runs a 60-second run.
 //
-// The mount READ is the third message and it writes nothing: it is what makes the daily
-// one-shot ACROSS DEVICES (closing the tab mid-run and opening another device resumes the
-// same clock instead of starting a fresh run) and what carries a finished day's recorded
-// run to a device that never played it.
+// The mount READ is the third message and it writes nothing. Since #217 it also ANCHORS
+// nothing: the server's stamp names a device, and a clock this device does not hold is a
+// run whose claims it cannot see — Word mode streams nothing, so they live in the playing
+// device's own storage until it submits. So the read reports WHOSE run this is, the screen
+// picks its phase from that plus its own deadline, and a device holding neither is offered
+// a RESTART. What the read still carries is a finished day's recorded run, to a device that
+// never played it.
+//
+// That device stamp is what replaced #202's `resumed` flag and the whole `startedHere` /
+// `mayWrite` inference this file used to run: a device could tell "I am running this" from
+// "I merely joined somebody else's clock" only by remembering that its own start stamped
+// it, and everything downstream hung off that memory.
 //
 // One conversation per round lives in a MODULE-level map, the sentence engine's own
 // pattern: a ref would not survive a real unmount, and neither the queue nor the in-flight
@@ -78,47 +86,17 @@ interface WordFlight extends WordRoundContext {
 const flights = new Map<string, WordFlight>();
 
 // One start per round at a time: a double tap on PLAY, or React replaying an effect, must
-// not mint two challenges and two writes. The server's start is idempotent per puzzle
-// anyway — this is what keeps the CLIENT from asking twice.
+// not mint two challenges and two writes. It matters MORE since #217 than it did under
+// #202's idempotent start: every accepted start now mints a FRESH clock, so a second write
+// would silently restart the run the first one just opened.
 const starts = new Map<string, Promise<boolean>>();
 
-// Which RUNS this session started (PLAY was tapped here and the server stamped a clock).
-// It is what tells a run this device PLAYED from one it merely joined: a second device — or
-// a second tab holding a stale copy — anchors the server's `startedAt` with an empty log and
-// no way to know what the real run has claimed, so its clock dies at the bare START_SECONDS
-// and it declares a run OVER that is still being played elsewhere. Writing there would
-// record an EMPTY run over the real one, permanently, since both the round log and the score
-// row are first-write-wins.
-//
-// Session-scoped rather than persisted, deliberately: the flag exists to say "I am the one
-// playing this right now", and a reload has no claim to that. What it costs is one honest
-// case — a run that claimed NOTHING and whose tab died before the deadline records no log —
-// against a joining device silently destroying a real run's score, which is the worse
-// outcome by a distance. Kept here rather than on the flight so an eviction by
-// `pruneFlights` (an archive detour mid-run) does not lose it.
-const startedHere = new Set<string>();
-
-// The identity authority is granted for — a round key AND the puzzle it was granted on. A
-// round key is only (day, lang, mode), so a re-published different word REUSES it: keyed by
-// the round alone, the session that started the RETIRED word would still count as the runner
-// of the replacement, and could bury a real player's run under an empty log on a word it
-// never played. The same qualification bounds the in-flight `starts` map, whose promise
-// otherwise answers a call about one word with the outcome of a call about another.
+// What the in-flight `starts` map is keyed by — a round key AND the puzzle. A round key is
+// only (day, lang, mode), so a re-published different word REUSES it, and the pending
+// promise would otherwise answer a call about one word with the outcome of a call about
+// another.
 function runKey(roundKey: string, word: string): string {
   return `${roundKey}#${wordTag(word)}`;
-}
-
-// Did this session start THIS word's run? Read by the SCREEN too: the same rule gates the
-// day's score submission, which is first-write-wins in exactly the same way.
-export function startedRunHere(roundKey: string, word: string): boolean {
-  return startedHere.has(runKey(roundKey, word));
-}
-
-// May this device write a run it is about to call finished? Yes when it has a log of its
-// own — that is a run somebody played here — and yes for the session that started the run,
-// which is what lets a real 0-claim run record. Never for a joiner holding nothing.
-function mayWrite(ctx: WordRoundContext, tried: readonly string[]): boolean {
-  return tried.length > 0 || startedRunHere(ctx.roundKey, ctx.word);
 }
 
 // Bound the map, the sentence engine's rule: every flight pins its artifact's whole rank
@@ -202,9 +180,17 @@ function pruneFlights(keep: string): void {
 // mount read before the run UI resumes, exactly as the sentence board does. The payload is
 // also the recorded Word log once the server has accepted one; persisted `tried` is only
 // the unacknowledged submission outbox and is cleared on that acknowledgement.
+// It also carries WHOSE run the server holds (#217) — the fact the screen's phase turns on,
+// since a run stamped for another device is one this one may neither play nor submit.
 function publishLoad(f: WordFlight, key: string, state?: RoundState): void {
   const server: RoundServer = state
-    ? { guesses: state.guesses, solved: false, solvedByAppend: false, credited: false }
+    ? {
+        guesses: state.guesses,
+        solved: false,
+        solvedByAppend: false,
+        credited: false,
+        startedBy: state.startedBy,
+      }
     : EMPTY_ROUND_SERVER;
   useGameStore.getState().setRoundLoad(key, { status: 'ready', puzzle: f.puzzle, server });
 }
@@ -219,7 +205,7 @@ function failLoad(f: WordFlight, key: string): void {
 // Register a word round's context (WordGame mounts one per round) and drive its
 // conversation. `over` is the run's own end — a wall-clock fact this engine cannot see for
 // itself — and it is what asks for the one end-of-run write.
-export function beginWordRoundSync(ctx: WordRoundContext, over: boolean): void {
+export function beginWordRoundSync(ctx: WordRoundContext): void {
   const puzzle = wordTag(ctx.word);
   const existing = flights.get(ctx.roundKey);
   if (existing) {
@@ -227,20 +213,18 @@ export function beginWordRoundSync(ctx: WordRoundContext, over: boolean): void {
     // describes the retired one, so the conversation starts over — `wantSubmit` INCLUDED.
     // It is a fact about the RETIRED run ("it ended and its log is unsent"), and carrying
     // it across would make the fresh round's first act a submission of the empty log the
-    // reset just gave it: refused `not_started`, treated as the verdict it would be for a
-    // round nobody started, and the conversation closed for the session — so the word the
-    // player then actually plays never syncs at all.
+    // reset just gave it: refused, treated as the verdict it would be for a round nobody
+    // started, and the conversation closed for the session — so the word the player then
+    // actually plays never syncs at all.
     const restarted = existing.puzzle !== puzzle;
     if (restarted) {
       existing.readDone = false;
       existing.closed = false;
       existing.failures = 0;
+      existing.wantSubmit = false;
       useGameStore.getState().setRoundLoad(ctx.roundKey, { status: 'loading', puzzle });
     }
-    Object.assign(existing, ctx, {
-      puzzle,
-      wantSubmit: restarted ? over : existing.wantSubmit || over,
-    });
+    Object.assign(existing, ctx, { puzzle });
     // Re-insert so the LRU sees this round as the most recent.
     flights.delete(ctx.roundKey);
     flights.set(ctx.roundKey, existing);
@@ -252,7 +236,7 @@ export function beginWordRoundSync(ctx: WordRoundContext, over: boolean): void {
     ...ctx,
     puzzle,
     readDone: false,
-    wantSubmit: over,
+    wantSubmit: false,
     failures: 0,
     lastFailureAt: 0,
     timer: null,
@@ -261,6 +245,20 @@ export function beginWordRoundSync(ctx: WordRoundContext, over: boolean): void {
   });
   useGameStore.getState().setRoundLoad(ctx.roundKey, { status: 'loading', puzzle });
   pruneFlights(ctx.roundKey);
+  void pump(ctx.roundKey);
+}
+
+// THE RUN THIS DEVICE HOLDS IS OVER: ask for the one end-of-run write. It is the screen's
+// call and nothing else's (#217) — the deadline is a wall-clock fact this engine cannot see,
+// and WHOSE run it is comes from the server's stamp against this device's id, which the
+// screen already reads to pick its phase. A device that merely watched somebody else's run
+// never says this, which is what retired the `mayWrite` predicate the joiner hazard needed.
+export function finishWordRound(ctx: WordRoundContext): void {
+  const f = flights.get(ctx.roundKey);
+  // The word is the guard the flight's own `puzzle` already is elsewhere: a report about a
+  // retired daily must not arm the replacement's submission.
+  if (!f || f.puzzle !== wordTag(ctx.word)) return;
+  f.wantSubmit = true;
   void pump(ctx.roundKey);
 }
 
@@ -340,31 +338,31 @@ async function requestStart(ctx: WordRoundContext): Promise<boolean> {
     return false;
   }
   const startedAt = anchorFrom(state);
-  if (startedAt === null) return false;
   // Is this answer still about the word that asked for it? The daily can be re-published
   // while the request is in the air, and the store has already reset the round to the new
-  // word — anchoring the RETIRED word's clock into it (and adopting its log) would start
+  // word — opening the RETIRED word's clock into it (and adopting its log) would start
   // the replacement on a run nobody played. The reader's own round is the check, since a
   // start owns no flight; a superseded start reports failure, and PLAY retries against the
   // word now on screen. The identity half is the same rule (#216): a clock stamped for an
-  // account this device has since left must not be anchored into the one that replaced it.
+  // account this device has since left must not be opened into the one that replaced it.
   if (useGameStore.getState().wordRounds[ctx.roundKey]?.word !== ctx.word) return false;
   if (identityEpoch() !== epoch) return false;
-  // `running` is answered 200 too: a second tap, a retry or another device resumes the ONE
-  // clock the server already stamped, and the store's anchor is idempotent besides. But
-  // only a call that actually STAMPED it makes this session the runner — the answer says
-  // which (`resumed`). Tapping PLAY while the mount read is still in flight is otherwise
-  // enough for a JOINER to claim writer authority over a run it cannot see, and then bury
-  // it under an empty log at the base deadline.
-  //
-  // The narrow cost: a start whose ANSWER was lost and is re-sent comes back `resumed`, so
-  // that session is not the runner either. It still writes any run it plays — `mayWrite`
-  // takes a non-empty log too — and only a 0-claim run is left unrecorded there.
-  if (!state.resumed) startedHere.add(runKey(ctx.roundKey, ctx.word));
-  useGameStore.getState().anchorWordRun(ctx.roundKey, startedAt);
   const current = flights.get(ctx.roundKey);
   if (current?.puzzle === puzzle) publishLoad(current, ctx.roundKey, state);
-  if (state.submittedAt !== null) settleAuthoritative(ctx, state);
+  if (state.submittedAt !== null) {
+    // A submission won the race, so the start was REFUSED (#217): the daily is one-shot
+    // once its log is stored, and what the answer carries is the run that stands. Adopt it
+    // — the gate is released onto the final screen — rather than opening a clock for a day
+    // that is already over.
+    settleAuthoritative(ctx, state);
+    return true;
+  }
+  if (startedAt === null) return false;
+  // The write MINTED this clock, for this device, wiping whatever unsubmitted run it
+  // replaced (#217) — so the local run starts over with it. There is no idempotent
+  // "resumed" branch left: a start is a restart, and its answer is always about a run this
+  // device now owns.
+  useGameStore.getState().openWordRun(ctx.roundKey, startedAt);
   return true;
 }
 
@@ -375,7 +373,11 @@ async function pump(key: string): Promise<void> {
   const round = useGameStore.getState().wordRounds[key];
   if (!round) return;
 
-  const wantsWrite = f.wantSubmit && !round.submitted && mayWrite(f, round.tried);
+  // The SCREEN decides whether this device holds the run at all (#217) — the server's
+  // stamp against this device's id, plus its own deadline — and says so by calling the run
+  // over. So there is no `mayWrite` predicate here any more: a run this device does not own
+  // never reports one.
+  const wantsWrite = f.wantSubmit && !round.submitted;
   if (f.readDone && !wantsWrite) return; // nothing left to say
 
   const now = Date.now();
@@ -450,8 +452,10 @@ async function readRound(f: WordFlight, key: string): Promise<void> {
     // Re-checked after the body: reading it is another await, and a republish landing
     // inside it would leave this state describing the retired word.
     if (superseded(f, puzzle, epoch)) return;
-    const startedAt = anchorFrom(state);
-    if (startedAt !== null) useGameStore.getState().anchorWordRun(key, startedAt);
+    // The read ANCHORS NOTHING (#217). A clock this device does not hold is a run whose
+    // claims it cannot see — they live in the playing device's storage until it submits —
+    // so adopting one would run a countdown for a log that can never be reported. What the
+    // answer does is name the run's owner, and the screen picks its phase from that.
     if (state.submittedAt !== null) {
       // The server demonstrably HOLDS a run for this round, so this device owes it
       // nothing — whether the log is its own or the one another device recorded first
@@ -534,9 +538,15 @@ async function submitRun(f: WordFlight, key: string, tried: readonly string[]): 
   // `too_early` is the one refusal worth waiting out: the wait check is the game's own
   // floor, so honest play cannot hit it, but a clock that disagrees by a second or two
   // can — and retrying a moment later succeeds. Every other 4xx is a VERDICT (no run was
-  // ever started here; a body this client keeps getting wrong), and retrying it forever
-  // would spin one request every 30 seconds for the tab's life.
+  // ever started here; the run was restarted elsewhere; a body this client keeps getting
+  // wrong), and retrying it forever would spin one request every 30 seconds for the tab's
+  // life.
   if (error !== 'too_early' && isVerdict(response.status)) {
+    // A verdict is ALSO a reconciliation when it carries state (#217): `started_elsewhere`
+    // names the device that holds the run now, and publishing that is what moves this
+    // screen off a finished run it may no longer report and onto the offer to start over.
+    // Refusing to adopt would leave it showing a result the server will never record.
+    if (state) publishLoad(f, key, state);
     // The body was already read for `error`, so the shared PREDICATE decides directly.
     if (isUnknownDeviceAnswer(response.status, error)) markDeviceSignedOut(epoch);
     f.closed = true;
@@ -596,5 +606,4 @@ export function resetWordRoundSync(): void {
   for (const f of flights.values()) if (f.timer !== null) clearTimeout(f.timer);
   flights.clear();
   starts.clear();
-  startedHere.clear();
 }

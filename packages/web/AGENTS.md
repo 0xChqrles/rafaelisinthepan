@@ -34,9 +34,11 @@
                               the streak credit a fresh solve rides
       hooks/useRoundSync.ts   its React binding: registers the round's context on mount and
                               reports WHERE its authoritative state is (the load gate)
-      state/wordRoundSync.ts  Word mode's #202 conversation: the Turnstile-gated round start,
-                              the clock anchor, ONE end-of-run submission
-      hooks/useWordRoundSync.ts  its React binding (the mount read + the run's end)
+      state/wordRoundSync.ts  Word mode's #202 conversation: the Turnstile-gated round start
+                              (a RESTART owned by this device since #217), the clock it opens,
+                              ONE end-of-run submission
+      hooks/useWordRoundSync.ts  its React binding (the mount read; the run's END is the
+                              screen's own `finishWordRound`, #217)
       screens/Profile.tsx     the #188 profile editor (/profile): name, tap-to-paint 10×10 grid,
                               ground-swatch palette picker (#190 wires the entry point)
       screens/FriendInvite.tsx  the #189 invite link's landing (/join/<publicId>): POST the mutual
@@ -586,9 +588,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     replaces) with an `sr-only` `∞` beside it; the unit stays PLURAL, since there is no count
     for a "1" to agree with. `SolvedScreen` takes `capped` and shares a v6 capped token.
   - **WORD mode gained the same load gate** (`useWordRoundSync` returns a `RoundLoad`, the
-    engine publishes it): its run UI waits for the mount read, which also closes the hazard
+    engine publishes it): its run UI waits for the mount read, which also closed the hazard
     recorded in the #202 bullet below — PLAY was tappable while that read was in flight, and
-    a session that starts a run it cannot see becomes its writer. A recorded answer publishes
+    a session that starts a run it cannot see becomes its writer. Since #217 the wait earns
+    its keep differently: that read is where the screen learns WHOSE run the daily holds, and
+    a PLAY on a day started elsewhere is a RESTART the gate has to be able to warn about. A recorded answer publishes
     the server log into that transient load; `settleWordRun` then clears the acknowledged
     persisted outbox, marks the run submitted, clamps any still-live deadline to now and caches
     the authoritative claim count clamped to `CLAIM_ZONE`, so neither the prompt nor summary
@@ -765,58 +769,73 @@ it to the local store — see `packages/backend/AGENTS.md`).
   and taking that as creation makes the retry omit the challenge — a 403, which is a verdict,
   closing the conversation on a round that was never created.
 
-- **Word mode's round start and end-of-run submission (#202):** `state/wordRoundSync.ts`,
+- **Word mode's round start and end-of-run submission (#202; the run belongs to a DEVICE
+  since #217):** `state/wordRoundSync.ts`,
   bound by `hooks/useWordRoundSync`. The product contract — why the fast game syncs LEAST,
-  the server-stamped clock, the wait check, the caps — is in the root `AGENTS.md`. What is
-  this package's:
+  the server-stamped clock, the wait check, the caps, and #217's two server conditions — is
+  in the root `AGENTS.md`. What is this package's:
   - **PLAY is an ACT the gate WAITS ON.** `WordGame.handlePlay` awaits `startWordRound`,
     which fetches an invisible Turnstile token and POSTs the start; the button holds a
     `LoadingWave` and is disabled meanwhile, and a failure shows `failedStart` with PLAY
     itself as the retry — LOUD, unlike a score submission's silence, because nothing began
     and a silent failure leaves the player tapping a gate that never opens. The visible
-    clock starts when the ANSWER lands, never on the tap: the store's `startWordRun` is
-    gone, replaced by `anchorWordRun(key, startedAt)`, keyed because the answer can land
+    clock starts when the ANSWER lands, never on the tap: the store's mutation is
+    `openWordRun(key, startedAt)` (`anchorWordRun` until #217 made a start a RESTART — it
+    now REPLACES the round it lands on, log and count included, because that is what the
+    write it reports did), keyed because the answer can land
     after navigation has moved on. PLAY also reads a 401's error code: `unknown_device`
     raises the signed-out screen instead of leaving a revoked player retrying a gate that can
     never open; another refusal remains the ordinary failed-start state.
+  - **THE SCREEN PICKS THE PHASE, from the server's answer and its own deadline** (#217,
+    `screens/WordGame.tsx`): `settled` (the server holds a recorded run) is the final screen;
+    `mine` — the answer's `startedBy.deviceId` is THIS device's and the local deadline is
+    here — is the run; everything else is the gate, whose PLAY restarts. Two consequences
+    worth naming. The post-mortem is keyed on `finished` rather than on the raw `ended`, or a
+    stale local deadline would draw the revealed board behind a gate. And the run's END is
+    reported to the engine by the screen (`finishWordRound`) instead of riding
+    `beginWordRoundSync(ctx, over)`: whose run it is and whether its clock has died are the
+    same two facts the phase comes from, so the report belongs where that decision is made.
+  - **The gate NAMES what a restart destroys** — `wordRestartNote` through `tDevice` (the
+    STRINGS table's second placeholder, `{device}`), over `deviceLabel`, the same label the
+    sign-out screen prints; the button swaps to `gateRestart`. `deviceLabel` therefore takes
+    the three label FIELDS rather than a `DeviceRow`, so the run's stamp and the device list
+    read as one thing.
   - **The anchor is an ELAPSED SPAN** (`anchorFrom`): `Date.now() − (now − startedAt)` off
     the answer's two instants, so a device clock minutes off still runs a 60-second run,
     a device joining a run in progress resumes with the real time left, and the request's
     own travel time lands INSIDE the run — the margin that keeps an honest submission clear
     of the server's wait check. Re-anchoring is a no-op by construction: a re-read must
     never shift a run under the player.
-  - **The MOUNT READ writes no SERVER state** and is what makes the daily one-shot across
-    devices; it also carries a finished day's RECORDED run to a device that never played
-    it. That log is published into transient `roundLoads`, while `settleWordRun` clears the
+  - **The MOUNT READ writes no SERVER state, and since #217 ANCHORS NOTHING either** — it
+    reports WHOSE run the daily holds (it used to resume any clock it found, which is what
+    made the daily one-shot across devices); it also carries a finished day's RECORDED run
+    to a device that never played it. That log is published into transient `roundLoads`, while `settleWordRun` clears the
     persisted local outbox and marks the round submitted: the server demonstrably holds a
     run for it, so this device owes nothing. A non-null deadline becomes
     `min(localDeadline, now)`: settlement ends a still-live local phase immediately and never
     reopens one already finished. The server deadline is not adopted; only the authoritative
     claim count is cached for unloaded summary surfaces.
-  - **The run's END asks for the one write.** `beginWordRoundSync(ctx, over)` takes the
-    deadline's own fact (a log cannot see a wall clock); the log is truncated to what the
+  - **The run's END asks for the one write.** `finishWordRound(ctx)` carries the deadline's
+    own fact (a log cannot see a wall clock); the log is truncated to what the
     route accepts (`submittableLog` — only misses can run away), then a valid 2xx publishes
     the server's first-write-wins log and settles the persisted outbox. `submitted` is kept
     purely so a recorded run that claimed nothing does not re-POST on every mount, since an
     empty server log otherwise reads exactly like an unsubmitted one. A `too_early` refusal
-    is waited out; every other 4xx closes the conversation.
-    **`over` is the RETIRED run's fact once a different word is published**, so a republish
-    resets it with everything else the flight knows: carrying it across made the fresh
-    round's first act a submission of the empty log the reset had just given it, refused
-    `not_started`, taken as a verdict, and the conversation closed for the session — so the
-    word the player then actually played never synced at all.
-  - **Only the run this device PLAYED is written** (`mayWrite`, and the same predicate gates
-    the score submission in `WordGame`): a non-empty local log, or the session that started
-    the run — which is the START answer's `resumed: false`, never merely a successful start,
-    since PLAY is tappable while the mount read is in flight and a joiner would otherwise
-    claim authority over a run it cannot see. That authority is held per (round, WORD) —
-    a republished daily reuses the round key, so keying it by the round alone let the
-    starter of the retired word write over the replacement's real player — and a START
-    answer that lands after a republish is dropped rather than anchored.
-    The round is marked submitted off the server's
+    is waited out; every other 4xx closes the conversation — and one that CARRIES state
+    (`started_elsewhere`) is adopted on the way out, so the screen learns who holds the run
+    now instead of showing a result the server will never record.
+    **A pending submission is the RETIRED run's fact once a different word is published**,
+    so a republish resets it with everything else the flight knows: carrying it across made
+    the fresh round's first act a submission of the empty log the reset had just given it,
+    refused, taken as the verdict it would be for a round nobody started, and the
+    conversation closed for the session — so the word the player then actually played never
+    synced at all.
+  - **Only the run this device HOLDS is written**, and the SCREEN is what says so (#217):
+    the engine writes when the phase above reports the run over, so there is no `mayWrite`
+    predicate and no session-scoped `startedHere` set left — the server's stamp answers what
+    they inferred. The round is marked submitted off the server's
     `submittedAt`, not off the log's length, or a recorded 0-claim run reads as unrecorded
-    forever. The root `AGENTS.md` records why a joiner's clock cannot be priced and what
-    the rule costs.
+    forever.
   - **Persist v11 DROPS every pre-#202 word round** (the v7 strike-run precedent): their
     clock was a local stamp no server ever saw.
   - `rankEntry` (`game/wordGame.ts`) is what every rank-map lookup goes through now — a
