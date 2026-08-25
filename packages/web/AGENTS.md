@@ -824,6 +824,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
     is waited out; every other 4xx closes the conversation — and one that CARRIES state
     (`started_elsewhere`) is adopted on the way out, so the screen learns who holds the run
     now instead of showing a result the server will never record.
+    **An accepted START reopens the conversation** (`closed`, `failures`, `wantSubmit` —
+    the republish reset's shape, found on review): a verdict CLOSES a flight, and
+    `started_elsewhere` is the verdict #217 put on the happy path, so without this the run
+    the player restarts from that gate reaches its deadline against an engine that has
+    stopped listening — no submission, no score row, no standing, until a reload. Clearing
+    `wantSubmit` with it is not tidiness: carried across, the fresh round's first act is a
+    submission of the empty log the restart just gave it, refused `too_early` and retried
+    behind the backoff until it records the run MID-PLAY, first-write-wins.
     **A pending submission is the RETIRED run's fact once a different word is published**,
     so a republish resets it with everything else the flight knows: carrying it across made
     the fresh round's first act a submission of the empty log the reset had just given it,

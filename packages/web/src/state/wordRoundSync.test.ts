@@ -714,6 +714,42 @@ describe('the end-of-run SUBMISSION', () => {
     expect(post).toHaveBeenCalledTimes(2);
   });
 
+  // …and the restart that refusal SENDS THE PLAYER TO reopens it. A verdict closes the
+  // conversation, and nothing else would: the run the player then plays would reach its
+  // deadline against an engine that had stopped listening — no submission, no score row, no
+  // standing, until a reload. The accepted START is the event that starts it over.
+  it('REOPENS a verdict-closed conversation for the run a restart mints', async () => {
+    seedRound({ startedAt: T0 - 300_000, deadline: T0 - 100_000, tried: ['mer'], claimed: 1 });
+    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 300_000 }));
+    post.mockResolvedValueOnce(
+      answer(409, { startedAt: at(200_000), startedBy: OTHER, error: 'started_elsewhere' }),
+    );
+    runOver();
+    await settle();
+    expect(post).toHaveBeenCalledTimes(2); // the read, then the refused submission
+
+    // START OVER: the server mints a fresh clock for THIS device.
+    post.mockResolvedValueOnce(stamped());
+    await expect(startWordRound(ctx())).resolves.toBe(true);
+    expect(round()).toMatchObject({ startedAt: T0, deadline: T0 + runMs(0), tried: [] });
+
+    // The retired run's "its log is unsent" does NOT survive the restart: a submission
+    // fired here would be refused `too_early`, retried behind the backoff, and would
+    // eventually record the fresh run mid-play — first-write-wins, the day ended early.
+    mount();
+    await settle(30_000);
+    expect(post).toHaveBeenCalledTimes(3);
+
+    // …and when the fresh run's own clock dies, it is submitted.
+    vi.setSystemTime(T0 + runMs(0) + 1);
+    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 60_000 }));
+    runOver();
+    await settle();
+    expect(post).toHaveBeenCalledTimes(4);
+    expect(bodyOf(3).guesses).toEqual([]);
+    expect(round().submitted).toBe(true);
+  });
+
   it('says nothing at all while the run is still on', async () => {
     seedRound({ startedAt: T0, deadline: T0 + runMs(0), tried: ['mer'], claimed: 1 });
     post.mockResolvedValueOnce(answer(200, { startedAt: at(0) }));

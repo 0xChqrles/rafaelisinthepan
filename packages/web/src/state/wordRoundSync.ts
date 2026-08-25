@@ -362,6 +362,22 @@ async function requestStart(ctx: WordRoundContext): Promise<boolean> {
   // replaced (#217) — so the local run starts over with it. There is no idempotent
   // "resumed" branch left: a start is a restart, and its answer is always about a run this
   // device now owns.
+  //
+  // Which means the CONVERSATION starts over too — the republish reset's shape, for the
+  // same reason. A verdict CLOSES a flight (`started_elsewhere` is the one this issue put
+  // on the happy path: the refusal is what sends the screen back to the gate), and nothing
+  // else reopens it, so the run the player then restarts would reach its deadline against a
+  // conversation that has stopped listening — no submission, no score row, no standing,
+  // until a reload. `wantSubmit` goes with it, and that half is not tidiness: carried
+  // across, the fresh round's first act is a submission of the empty log the reset just
+  // gave it, refused `too_early` and retried behind a backoff — which would eventually
+  // record the run mid-play, first-write-wins, and end the day early.
+  if (current?.puzzle === puzzle) {
+    current.closed = false;
+    current.wantSubmit = false;
+    current.failures = 0;
+    current.lastFailureAt = 0;
+  }
   useGameStore.getState().openWordRun(ctx.roundKey, startedAt);
   return true;
 }
