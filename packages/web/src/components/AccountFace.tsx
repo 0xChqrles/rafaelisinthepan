@@ -16,6 +16,8 @@
 import { useEffect, useState } from 'react';
 import { anonName } from '@whippin/shared';
 import { parseProfile, profileUrl } from '../api';
+import { useDeviceIdentity } from '../identity';
+import { useGameStore } from '../state/gameStore';
 
 // How long a decorative read may hold a screen before its fallback stands in.
 const FACE_TIMEOUT_MS = 6_000;
@@ -68,4 +70,25 @@ export function useAccountFace(publicId: string | null, local = false): Face | n
   // Never a face belonging to a PREVIOUS account: a caller that is not remounted would
   // otherwise render the wrong person for as long as the new read takes.
   return face?.publicId === publicId ? face : null;
+}
+
+// THE FACE THIS DEVICE WEARS, whether or not it has an account yet — and the reason the
+// account screens cannot tell you which (user-decided 2026-08-26). A deployed device reads
+// its account's public profile; a tokenless one derives the SAME pair from the persisted
+// local seed (`gameStore.localSeed`), which is exactly what `localIdentityDeploy` stores as
+// the account's first profile the moment one is created. So the face before deployment and
+// the face after it are the same face, and no screen has to branch on a status the player
+// should never be shown.
+export function useOwnFace(): Face | null {
+  const identity = useDeviceIdentity();
+  const localSeed = useGameStore((s) => s.localSeed);
+  const ensureLocalSeed = useGameStore((s) => s.ensureLocalSeed);
+
+  // The placeholder the leaderboard strip already shows, minted on first need so the two
+  // surfaces can never show one visitor two faces.
+  useEffect(() => {
+    if (identity === null && localSeed === null) ensureLocalSeed();
+  }, [identity, localSeed, ensureLocalSeed]);
+
+  return useAccountFace(identity?.accountId ?? localSeed, identity === null);
 }

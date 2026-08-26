@@ -6,6 +6,7 @@ import useWordPuzzle from './hooks/useWordPuzzle';
 import LanguageSelect from './screens/LanguageSelect';
 import Account from './screens/Account';
 import AccountEmail from './screens/AccountEmail';
+import AccountManage from './screens/AccountManage';
 import Profile from './screens/Profile';
 import FriendInvite from './screens/FriendInvite';
 import Archive from './screens/Archive';
@@ -115,6 +116,7 @@ export default function App() {
             account itself, the editor, and the email flow. One purpose per screen. */}
         {!signedOut && route.view === 'account' && <Account />}
         {!signedOut && route.view === 'accountEmail' && <AccountEmail />}
+        {!signedOut && route.view === 'accountManage' && <AccountManage />}
         {!signedOut && route.view === 'profile' && <Profile />}
         {/* The invite link (#189) is a beat, not a screen: it lands the mutual edge and
             hands over to the home redirect above. */}

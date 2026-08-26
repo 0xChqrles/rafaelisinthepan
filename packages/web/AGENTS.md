@@ -26,8 +26,10 @@
                               route client shares (401 + `unknown_device` code)
       screens/SignedOut.tsx   the `unknown_device` screen: what is left behind, RECONNECT (#204)
                               onto the email step, and PLAY (start over on a new account)
-      screens/Account.tsx     `/account` (#204): who this account is, whether it is SAVED,
-                              and which devices hold it — the area's one door
+      screens/Account.tsx     `/account` (#204): who this account is (the hero) and the ONE
+                              thing to do with it — save it, or manage it. The area's one door
+      screens/AccountManage.tsx  `/account/manage`: where a SAVED account is signed in
+                              (#216's devices), and later the way to delete it
       screens/AccountEmail.tsx  `/account/email`: address -> code -> bind/adopt, one purpose
                               per step, with the erase confirmation and the face-led endings
       components/CodeInput.tsx  the six-digit prompt: six drawn cells over ONE real input,
@@ -588,13 +590,29 @@ it to the local store — see `packages/backend/AGENTS.md`).
   product contract — the one flow and its three endings, the three screens and why, the code
   prompt's shape, the copy rule, when the account being left is deleted, the transfers —
   lives in the root `AGENTS.md`. What is this package's:
-  - **THREE routes, three screens.** `screens/Account.tsx` (`/account`) is the area's one
-    door: the identity summary with EDIT out to the editor, the email state, and
-    `DeviceList` moved in from the editor. `screens/AccountEmail.tsx` (`/account/email`) is
-    the flow, one purpose per step. `screens/Profile.tsx` is the editor ALONE — its email
-    section and device list are gone, and its CLOSE now goes UP to `/account` rather than
-    guessing a board from `profileReturn` (the account screen is its only door, so there is
-    nothing left to guess).
+  - **FOUR routes, four screens** (the fourth added on the third polish pass).
+    `screens/Account.tsx` (`/account`) is the area's one door, in TWO ZONES: the account
+    shown off at the top (the hero + EDIT), and the one thing to DO on the bottom edge —
+    SAVE WITH EMAIL, or the saved address with MANAGE. `screens/AccountManage.tsx`
+    (`/account/manage`) holds the DEVICES, one door deeper, because where you are signed
+    in is a LIST to act on rather than a statement to read, asked far less often than
+    "is this safe?" — and #207's delete will land beside it. `screens/AccountEmail.tsx`
+    (`/account/email`) is the flow, one purpose per step. `screens/Profile.tsx` is the
+    editor ALONE.
+  - **NOTHING IN THE AREA REVEALS WHETHER THE ACCOUNT EXISTS ON THE SERVER YET**
+    (user-decided 2026-08-26). The pseudonym and the mark are derived locally from the
+    persisted seed before deployment and stored as the account's first profile AT it
+    (`localIdentityDeploy`), so `useOwnFace` — the ONE hook every screen of the area leads
+    with — answers the same face either way. What used to leak it is gone: the devices and
+    the account's AGE moved behind MANAGE, which only a SAVED account reaches; the email
+    flow's address step led with the app MARK for a tokenless device and now leads with
+    that same face; and the account screen's action holds a SKELETON while the summary is
+    out rather than offering SAVE before it knows (#211's explicit-loading rule — a guessed
+    empty answer is a false claim, and it also stopped SAVE flashing before the address
+    landed on every linked player's first visit).
+  - **MANAGE, never CHANGE.** An account carries at most ONE address and the server refuses
+    a second (`account_linked`), so a CHANGE chip promised something the route would break.
+    What there is to do with a saved account is manage it.
   - **`components/CodeInput.tsx` is the prompt**, and its own header holds the reasoning:
     ONE real input under six drawn cells (paste, `one-time-code` autofill and screen readers
     all need a single field), `onComplete` carrying the VALUE because state has not flushed
@@ -640,14 +658,25 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **The account is a HERO, not a strip (user feedback 2026-08-26, second polish pass):
     `/account` wears the signed-out screen's own dress** — the 64px mark centered, the
     20/650 name under it, the since-line quiet, EDIT as the one chip — because the
-    signed-out screen was showing the account off better than its own home. The whole
-    column is vertically CENTERED on mobile too (`margin: auto 0`, the `.chooser-screen`
-    precedent — auto margins beat the mobile `.app`'s start alignment), collapsing to a
-    scroll when the device list outgrows the viewport; the flow's INPUT steps keep their
-    upper-third instead (`.link-step` pins `margin: 0`), since a centered input loses to
-    the soft keyboard. The flow's endings and the erase confirmation wear the same hero
-    classes (`.account-hero-name`, the 64px mark), so the account looks the same on its
-    home, in its endings, at its deletion, and on the signed-out screen.
+    signed-out screen was showing the account off better than its own home. EVERY screen of
+    the area leads with it — the home, the manage screen, the flow's address step, its
+    endings, the erase confirmation — so the account looks the same wherever it is spoken
+    about, including on the signed-out screen it borrowed the dress from. **Its geometry
+    splits by width, deliberately:** `.account-page` is `align-self: stretch` so the action
+    has a bottom edge to sit on, but the base `margin: auto 0` beats stretch by the
+    flexbox auto-margin rule and the mobile block drops that margin — so a DESKTOP reads as
+    one compact centred card (flinging the button 700px down an 800px window is void for
+    its own sake) and a PHONE gets the two-zone layout with the action under the thumb.
+  - **`publish`'s ACQUISITION rule is `minted || revision === 0`, not `revision === 0`
+    alone** (`identity.ts`, fixed 2026-08-26 from a browser repro). A mint is triggered BY
+    a deploy button, so the state on screen is the state that ASKED for it, and the minted
+    account is empty by construction — remounting the routed surface there destroys the
+    act. The `revision === 0` proxy recognised that only for a session's FIRST acquisition,
+    so after any earlier scope transition the mint bumped the revision and App remounted:
+    #204's email flow lost the address the player had typed and its in-flight send,
+    SILENTLY, which is exactly what the RECONNECT path does (a sign-out has already bumped
+    it). An ADOPTED acquisition still bumps — that account may already hold rounds and
+    history.
   - **The area STARTS HIGH, on ONE line (third polish pass, user feedback 2026-08-26:
     the centred column "feels like the screen starts at the middle").** On a phone every
     screen of the area — the account page, the flow's steps, the endings — opens at the

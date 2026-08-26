@@ -411,9 +411,24 @@ function publish(
   const adopted = previous === null && next !== null && !minted;
   // A -> null -> B is two real UI scopes. The first transition clears/remounts away from A;
   // the second must mount B's private reads instead of leaving the tokenless projection that
-  // existed between storage events. Only null -> A at revision zero is the first-bootstrap
-  // exception: the act already on screen must survive it.
-  const firstAcquisition = previous === null && next !== null && current.scopeRevision === 0;
+  // existed between storage events. An ACQUISITION is the exception — the act already on
+  // screen must survive it — and it is exactly TWO cases:
+  //
+  //   - one this tab MINTED. A mint is triggered BY a deploy button, so the state on screen
+  //     is the state that asked for it, and the account is empty BY CONSTRUCTION, so nothing
+  //     published while tokenless needs re-reading. Remounting there destroys the very act:
+  //     #204's email flow lost the address the player had typed and its in-flight send,
+  //     silently, on every deploy after the FIRST scope transition of a session (found in a
+  //     browser 2026-08-26 — the RECONNECT path, where a sign-out has already bumped the
+  //     revision, so the `revision === 0` proxy below no longer recognised the mint).
+  //   - `revision === 0`: the first-ever acquisition of a session, minted or ADOPTED. An
+  //     adoption at revision zero bumps nothing today and `identityScope` re-arms the
+  //     tokenless projections instead; keeping the clause preserves that exactly.
+  //
+  // An ADOPTED acquisition LATER in a session still bumps: that account may already hold
+  // rounds and history, and its screens have to remount to read them.
+  const firstAcquisition =
+    previous === null && next !== null && (minted || current.scopeRevision === 0);
   useIdentityStore.setState({
     identity: next,
     signedOut,

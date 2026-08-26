@@ -5090,6 +5090,37 @@ button * {
   flex-direction: column;
   gap: 14px;
 }
+
+/* THE ACCOUNT PAGE IS TWO ZONES (user-decided 2026-08-26): the account shown off at the
+   top, the one thing to DO on the bottom edge — the board screen's own shape, and the
+   app's everywhere (content floats, actions sit on an edge).
+   `align-self: stretch` gives the column a bottom for the action to sit on — but ONLY on
+   a phone, and that is deliberate: the base rule's `margin: auto 0` (the desktop
+   centring) beats `stretch` by the flexbox auto-margin rule, and the mobile block below
+   drops that margin. So a desktop reads as ONE compact centred card, where flinging the
+   button 700px down a 1280×800 window would be void for its own sake, and a phone gets
+   the full-height two-zone layout with the action under the thumb. Two behaviours, one
+   declaration each — do not "fix" either into the other. */
+.account-page {
+  align-self: stretch;
+  gap: 0;
+}
+.account-action {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* Clears the bottom edge by the same margin the column keeps at its sides. */
+  padding-top: 32px;
+}
+/* Held while the summary is out: the action's own box, so the screen does not resize when
+   the answer lands — and, more importantly, does not CLAIM "unsaved" before it knows
+   (#211's explicit-loading rule). */
+.account-action-slot {
+  height: 52px;
+  border-radius: var(--r-md);
+}
+
 /* The email flow's steps hold ONE thing each — `.app` already centres the column, so a
    step needs no centring of its own, only room to breathe. It sets the GAP alone: this
    class is worn BESIDE `.account-screen`, so a `padding` here would win the cascade and
@@ -5110,6 +5141,8 @@ button * {
   gap: 12px;
   text-align: center;
   padding: 4px 0;
+  /* Never squeezed by the free space the page hands to the gap between the zones. */
+  flex: none;
 }
 .account-hero .avatar {
   border: 1px solid var(--line);
@@ -5356,13 +5389,10 @@ button * {
   background: rgba(255, 61, 46, 0.06);
 }
 
-/* The address step's LEAD: who is being saved (or the app mark on a device with no
-   account — the reconnect case). A touch of air between it and the input it introduces. */
+/* The address step's LEAD: WHO is being saved. A touch of air between it and the input it
+   introduces. */
 .link-lead {
   margin-bottom: 4px;
-}
-.link-logo {
-  margin: 4px auto 8px;
 }
 
 /* The centered FACE STACK: both endings and the erase confirmation — an account's mark

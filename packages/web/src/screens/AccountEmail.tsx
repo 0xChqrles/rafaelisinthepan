@@ -40,7 +40,7 @@ import {
   postLinkBody,
   type LinkErasePrompt,
 } from '../api';
-import { useAccountFace } from '../components/AccountFace';
+import { useAccountFace, useOwnFace } from '../components/AccountFace';
 import Avatar from '../components/Avatar';
 import Button from '../components/Button';
 import CodeInput from '../components/CodeInput';
@@ -62,7 +62,6 @@ import { loadAccountSummary, noteAccountEmail } from '../state/account';
 import { useGameStore } from '../state/gameStore';
 import { prefetchTurnstileTokens, turnstileToken } from '../turnstile';
 import CloseIcon from '../assets/icons/close.svg?react';
-import Logo from '../assets/logo.svg?react';
 
 type Step = 'address' | 'code' | 'confirm' | 'done';
 type LinkOutcome = 'bound' | 'adopted' | 'already_bound';
@@ -278,12 +277,13 @@ export default function AccountEmail() {
   // The erase confirmation draws the account about to be DELETED — the signed-out screen's
   // own move: numbers state the stakes, a face makes them somebody's.
   const eraseFace = useAccountFace(step === 'confirm' ? (prompt?.accountId ?? null) : null);
-  // The address step leads with WHO is being saved. A bare input floating on a screen was
-  // the "does not use its space" finding (user feedback 2026-08-26); the face is also the
-  // honest statement of what the button will do. A device with NO account leads with the
-  // app mark instead — the reconnect case, where there is no local face to show and the
-  // chooser's own hero is the app's voice.
-  const savingFace = useAccountFace(step === 'address' ? (identity?.accountId ?? null) : null);
+  const ownFace = useOwnFace();
+  // The address step leads with WHO is being saved — a bare input floating on a screen was
+  // the "does not use its space" finding, and the face is the honest statement of what the
+  // button will do. It is `useOwnFace`, so a device with NO account shows the SAME
+  // pseudonym and mark it will carry into the account this tap creates: the app mark that
+  // stood here announced "you have no account yet", which is the one thing these screens
+  // may never say (user-decided 2026-08-26).
 
   return (
     <>
@@ -304,16 +304,14 @@ export default function AccountEmail() {
       <div className="account-screen link-step">
         {step === 'address' && (
           <>
-            <div className="link-stack link-lead" aria-hidden={identity !== null}>
-              {identity === null ? (
-                <Logo className="chooser-logo link-logo" role="img" aria-label="Whippin AI" />
-              ) : savingFace ? (
+            <div className="link-stack link-lead" aria-hidden="true">
+              {ownFace ? (
                 <>
                   <Avatar
-                    avatar={savingFace.avatar ?? defaultAvatar(identity.accountId)}
+                    avatar={ownFace.avatar ?? defaultAvatar(ownFace.publicId)}
                     size={64}
                   />
-                  <span className="account-hero-name">{savingFace.name}</span>
+                  <span className="account-hero-name">{ownFace.name}</span>
                 </>
               ) : (
                 <span className="account-hero-mark skeleton" />
