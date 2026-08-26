@@ -25,6 +25,14 @@ export const PERCENT_MIN_TOTAL = 10;
 // and the percentage is what carries the standing. So the badge starts at rank 10.
 export const PERCENT_MIN_RANK = 10;
 
+// And the badge only ever CONSOLES someone it has something to console them about (#176,
+// user-decided 2026-08-16): the word TOP inside the line's one framed stamp is a claim, and
+// the last player of a 60-player day reading `RANK #60 OF 60  TOP 99.17%` is that claim
+// turned against them. So the percentage is drawn only ABOVE THE MEDIAN, which makes 50 the
+// largest number the badge can print — inclusive, because a player standing exactly at the
+// median is in the top half of the field they are being measured against.
+export const PERCENT_MAX = 50;
+
 // `bucketIndexOf` is GONE (#203, on review). It located a score in the returned ranges,
 // which answers "somebody recorded this number" and not "this row is YOURS": a round the
 // population does not hold — one the IP cap refused, or a Word daily another device
@@ -44,8 +52,9 @@ export interface ScoreStanding {
   total: number;
   // Standard percentile-rank treatment for a tie: `(strictly ahead + half the shared
   // bucket) / total`, as a percentage. NULL when the bucket is empty, when the population
-  // is at or below `PERCENT_MIN_TOTAL` and a percentage would be false precision, or when
-  // the rank is a single digit and has already said it (`PERCENT_MIN_RANK`).
+  // is at or below `PERCENT_MIN_TOTAL` and a percentage would be false precision, when
+  // the rank is a single digit and has already said it (`PERCENT_MIN_RANK`), or when it
+  // falls below the median and has nothing to claim (`PERCENT_MAX`).
   topPct: number | null;
 }
 
@@ -65,12 +74,17 @@ export function scoreStanding(
   const bucketCount = buckets[bucket]?.count ?? 0;
   const rank = Math.min(total, aheadCount + 1);
   const midpoint = Math.min(total, aheadCount + bucketCount / 2);
-  // The two floors overlap (a rank of 10 already implies nine players ahead) but they gate
-  // different claims: one asks whether there is a field, the other whether the percentage
-  // adds anything to the rank beside it.
+  // The percentile itself is untouched by any of this — the gates below decide only whether
+  // it is SAID, so the rank line alone is what the silenced cases render.
+  const pct = (100 * midpoint) / total;
+  // The three floors overlap but gate different claims: whether there is a field at all,
+  // whether the percentage adds anything to the rank beside it, and whether it has
+  // anything to claim. Rank 10 already implies nine players ahead, so the smallest field
+  // that can reach the median is 19 — which leaves the population floor implied by the
+  // other two today. It stays because it says its own thing (#176).
   const topPct =
-    total > PERCENT_MIN_TOTAL && rank >= PERCENT_MIN_RANK && bucketCount > 0
-      ? (100 * midpoint) / total
+    total > PERCENT_MIN_TOTAL && rank >= PERCENT_MIN_RANK && bucketCount > 0 && pct <= PERCENT_MAX
+      ? pct
       : null;
   return { rank, total, topPct };
 }
