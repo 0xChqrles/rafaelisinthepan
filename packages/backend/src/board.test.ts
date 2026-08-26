@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { activeDate, generatePublicId, type Board, type Puzzle } from '@whippin/shared';
+import {
+  activeDate,
+  generatePublicId,
+  ROUND_GUESS_CAP,
+  type Board,
+  type Puzzle,
+} from '@whippin/shared';
 import { createHandler } from './handler';
 import { memoryDeviceStore } from './memoryDeviceStore';
 import { memoryFriendStore } from './memoryFriendStore';
@@ -332,7 +338,7 @@ describe('board in-progress rows (#206)', () => {
     publicId: string,
     guesses: string[],
     progress: number,
-    over: { puzzle?: string; mode?: 'sentence' | 'word' } = {},
+    over: { puzzle?: string; mode?: 'sentence' | 'word'; solved?: boolean } = {},
   ) =>
     rounds.append({
       date: DATE,
@@ -342,7 +348,7 @@ describe('board in-progress rows (#206)', () => {
       guesses,
       puzzle: over.puzzle ?? ARTIFACT.revision,
       progress,
-      solved: false,
+      solved: over.solved ?? false,
       now: NOW,
     });
 
@@ -420,6 +426,42 @@ describe('board in-progress rows (#206)', () => {
     const board = JSON.parse((await handler(post(QUERY, { token: caller.token }))).body) as Board;
     expect(board.playing).toEqual([]);
     expect(board.waiting.map((row) => row.publicId)).toEqual([friend]);
+  });
+
+  // ACCEPTED (user-decided 2026-08-26, on review; the fourth state is #224): what the
+  // route subtracts is the players the population RANKS, which is not the players who are
+  // DONE. A round can END with no score row three ways — capped at ROUND_GUESS_CAP (#214),
+  // solved past the 22:00 flip (#211's `onTime`), or solved with its row refused by the
+  // #169 IP allowance — and all three keep their derived summary on the round item, so the
+  // board carries them under IN PROGRESS for the rest of the day. Pinned because it looks
+  // like a bug and is not one: the numbers on the row are the player's real ones, where
+  // the cheap fix would file a 500-guess round or an actual solve under "not played yet".
+  it('keeps a round that ENDED with no recorded score in `playing` (#224)', async () => {
+    const me = generatePublicId();
+    const solvedUnranked = generatePublicId();
+    const capped = generatePublicId();
+    const rounds = memoryRoundStore();
+    const { handler, friends, devices } = await makeHandler([], { store: artifactStore, rounds });
+    for (const id of [solvedUnranked, capped]) {
+      await friends.link({ publicId: me, friendId: id, createdAt: NOW.toISOString() });
+    }
+    // SOLVED, but the population holds no row for them — the IP allowance refused it, or
+    // the solve landed past the flip. `recordScoreRow` swallows both silently by design.
+    await seedRound(rounds, solvedUnranked, ['phare', 'nuit'], 100, { solved: true });
+    // CAPPED: ROUND_GUESS_CAP raw misses, unsolved, terminal at infinity. Every miss keys
+    // as itself, so the exact try count is the whole cap.
+    const misses = Array.from({ length: ROUND_GUESS_CAP }, (_, i) => `rate${i}`);
+    await seedRound(rounds, capped, misses, 25);
+    const caller = await callerOn(devices, me);
+
+    const board = JSON.parse((await handler(post(QUERY, { token: caller.token }))).body) as Board;
+    expect(board.rows).toEqual([]);
+    expect(board.playing.map((row) => [row.publicId, row.progress, row.tries])).toEqual([
+      [solvedUnranked, 100, 2],
+      [capped, 25, ROUND_GUESS_CAP],
+    ]);
+    // And neither is ever ALSO "not played yet" — the one claim this section refuses.
+    expect(board.waiting).toEqual([]);
   });
 
   it('carries no playing section in Word mode or on the global board', async () => {

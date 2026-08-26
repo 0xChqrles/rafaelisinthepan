@@ -222,6 +222,16 @@ export async function handleBoard(
   const scored = new Set(rows.map((row) => row.publicId));
   // A member the population already ranks is FINISHED, whatever their round row says —
   // the recorded score is the day's final word on them.
+  //
+  // What this subtracts is the RANKED, which is not the DONE (user-decided 2026-08-26, on
+  // review — the reasoning is in the root AGENTS.md #206 section, the fourth state is
+  // #224). A capped round ends at infinity and records no row (#214), a solve past the
+  // 22:00 flip is late and earns none (#211's `onTime`), and one whose row the #169 IP
+  // allowance refused records none either — all three keep their derived summary here and
+  // read as IN PROGRESS for the rest of the day. ACCEPTED: the numbers on the row are the
+  // player's real ones and only the caption over-claims, where the cheap fix would file a
+  // 500-guess round or an actual solve under "not played yet" — the false claim this whole
+  // section exists to refuse.
   const playing = orderPlaying(candidates.filter((row) => !scored.has(row.publicId)));
   const playingIds = new Set(playing.map((row) => row.publicId));
   // Sorted for a stable board between reads; publicId is the only order every waiting

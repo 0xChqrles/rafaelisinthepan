@@ -242,7 +242,10 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   with `countTries` for the exact try count, carries the STORED derived `progress`, and
   orders with the shared `orderPlaying`; a failure there fails the POST rather than
   letting `waiting` claim "not played yet" over a friend mid-game (root `AGENTS.md`,
-  #206). `waiting` keeps the caller's edges with NEITHER row, profile-dressed and
+  #206). The subtraction is the RANKED players, not the DONE ones, so a round that ENDED
+  with no score row — capped, late, or refused by the #169 IP allowance — stays in that
+  section: accepted and reasoned in the root `AGENTS.md`, with the fourth state at #224.
+  `waiting` keeps the caller's edges with NEITHER row, profile-dressed and
   publicId-sorted (root `AGENTS.md`). Every response is
   `no-store`; a missing profile dresses as `name: ''` / `avatar: null` — **and so does
   one whose READ FAILED** (a per-id `catch`, never `Promise.all`'s fail-fast): the name

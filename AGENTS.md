@@ -1686,6 +1686,22 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   so for THIS puzzle they honestly have not started. **A member the score population
   ranks is FINISHED, whatever their round row says** — which also keeps a solved round
   whose row the day already holds out of `playing`.
+- **A round that ENDED without a recorded score still reads as IN PROGRESS, and that is
+  ACCEPTED (user-decided 2026-08-26, on review; the fourth state is #224).** The
+  subtraction above removes the players the population RANKS, which is not the same set as
+  the players who are DONE: a capped round ends at `∞` and records no row (#214), a solve
+  landing past the 22:00 flip is late and earns none (#211's `onTime`), and a solve whose
+  row the #169 IP allowance refused — a household or a café sharing one address, swallowed
+  silently by design — records none either. All three keep `progress`/`solved` on the round
+  row, so the board carries them under IN PROGRESS for the rest of the day. What the row
+  SHOWS is true — the try count and the percentage are the player's real ones — and only
+  the section caption over-claims; the cheap alternative drops them into `waiting`, and
+  telling a friend's friends that somebody who typed 500 guesses, or who actually solved
+  the puzzle, has NOT PLAYED YET is the worse lie, the one this section exists to refuse.
+  Saying it properly needs a FOURTH state — finished, but not in the day's population: the
+  capped player's row printing the `∞` their own result already prints, the unranked
+  solver's printing a real score with no rank — which is product design of its own and is
+  deliberately NOT in #206.
 - **The caller's own mid-round row IS shown** — unlike `waiting`, which never carries
   them: a live row with numbers is where they stand among friends mid-day, where a
   bare "not played yet" row under their own identity strip is noise.
