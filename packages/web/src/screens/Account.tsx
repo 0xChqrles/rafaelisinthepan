@@ -89,22 +89,26 @@ export default function Account() {
         }
       />
       <div className="account-screen">
-        {/* WHO. The face holds its boxes until the read settles rather than flashing a
-            pseudonym it may be about to correct (the leaderboard strip's finding). */}
-        <div className="account-id">
+        {/* WHO — a HERO, not a strip (user feedback 2026-08-26: the signed-out screen was
+            showing the account off better than its own home). The mark centered at the
+            signed-out screen's own size, the name under it at its weight, the account's age
+            as the quiet line, EDIT as the one chip. The face holds its boxes until the read
+            settles rather than flashing a pseudonym it may be about to correct (the
+            leaderboard strip's finding). */}
+        <div className="account-hero">
           {face && publicId ? (
-            <Avatar avatar={face.avatar ?? defaultAvatar(publicId)} size={44} />
+            <Avatar avatar={face.avatar ?? defaultAvatar(publicId)} size={64} />
           ) : (
-            <span className="account-id-mark skeleton" aria-hidden="true" />
+            <span className="account-hero-mark skeleton" aria-hidden="true" />
           )}
-          <span className="account-id-text">
+          <span className="account-hero-id">
             {face ? (
-              <span className="account-id-name">{face.name}</span>
+              <span className="account-hero-name">{face.name}</span>
             ) : (
               <span className="skeleton skeleton-name" aria-hidden="true" />
             )}
             {since && (
-              <span className="account-id-since">{`${t(lang, 'accountSince')} ${since}`}</span>
+              <span className="account-hero-since">{`${t(lang, 'accountSince')} ${since}`}</span>
             )}
           </span>
           <button

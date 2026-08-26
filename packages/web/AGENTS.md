@@ -637,6 +637,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `/account/email` DIRECTLY: a player who has just been signed out has exactly one
     intention, and every screen between them and the address field is one they have to read
     past. Abandoning the flow costs exactly what SKIP already cost.
+  - **The account is a HERO, not a strip (user feedback 2026-08-26, second polish pass):
+    `/account` wears the signed-out screen's own dress** — the 64px mark centered, the
+    20/650 name under it, the since-line quiet, EDIT as the one chip — because the
+    signed-out screen was showing the account off better than its own home. The whole
+    column is vertically CENTERED on mobile too (`margin: auto 0`, the `.chooser-screen`
+    precedent — auto margins beat the mobile `.app`'s start alignment), collapsing to a
+    scroll when the device list outgrows the viewport; the flow's INPUT steps keep their
+    upper-third instead (`.link-step` pins `margin: 0`), since a centered input loses to
+    the soft keyboard. The flow's endings and the erase confirmation wear the same hero
+    classes (`.account-hero-name`, the 64px mark), so the account looks the same on its
+    home, in its endings, at its deletion, and on the signed-out screen.
   - **The 2026-08-26 POLISH pass, all current-state:** on a phone the flow steps sit in
     the UPPER THIRD (`.account-screen.link-step` gets `max(48px, 14vh)` top padding in the
     mobile block — mobile `.app` is start-aligned, so a lone input otherwise hugged the

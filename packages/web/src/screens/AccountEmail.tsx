@@ -384,11 +384,11 @@ export default function AccountEmail() {
                 is the only thing standing between a tap and a month of play. */}
             {eraseFace ? (
               <>
-                <Avatar avatar={eraseFace.avatar ?? defaultAvatar(prompt.accountId)} size={48} />
-                <span className="account-id-name">{eraseFace.name}</span>
+                <Avatar avatar={eraseFace.avatar ?? defaultAvatar(prompt.accountId)} size={64} />
+                <span className="account-hero-name">{eraseFace.name}</span>
               </>
             ) : (
-              <span className="account-id-mark skeleton" aria-hidden="true" />
+              <span className="account-hero-mark skeleton" aria-hidden="true" />
             )}
             <p className="account-note account-note-center" role="status">
               {t(lang, 'linkEraseWarn')}
@@ -424,10 +424,10 @@ export default function AccountEmail() {
             {face && endingId ? (
               <>
                 <Avatar avatar={face.avatar ?? defaultAvatar(endingId)} size={64} />
-                <span className="account-id-name">{face.name}</span>
+                <span className="account-hero-name">{face.name}</span>
               </>
             ) : (
-              <span className="account-id-mark skeleton" aria-hidden="true" />
+              <span className="account-hero-mark skeleton" aria-hidden="true" />
             )}
             <p className="account-note account-note-center" role="status">
               {outcome === 'adopted' ? t(lang, 'linkRestored') : t(lang, 'linkSaved')}
