@@ -274,6 +274,9 @@ export default function AccountEmail() {
   // one, and its face is the claim "we found your account" actually makes.
   const endingId = identity?.accountId ?? null;
   const face = useAccountFace(step === 'done' ? endingId : null);
+  // The erase confirmation draws the account about to be DELETED — the signed-out screen's
+  // own move: numbers state the stakes, a face makes them somebody's.
+  const eraseFace = useAccountFace(step === 'confirm' ? (prompt?.accountId ?? null) : null);
 
   return (
     <>
@@ -302,6 +305,9 @@ export default function AccountEmail() {
               autoCorrect="off"
               autoCapitalize="off"
               spellCheck={false}
+              // The screen holds ONE input, and typing into it is the whole purpose —
+              // the caret is already there, like the code step's.
+              autoFocus
               placeholder={t(lang, 'linkAddressPlaceholder')}
               aria-label={t(lang, 'linkAddressPlaceholder')}
               value={address}
@@ -330,7 +336,10 @@ export default function AccountEmail() {
                 if (wrong !== null) setWrong(null);
               }}
               onComplete={(typed) => void verify(typed)}
-              invalid={wrong !== null}
+              // Red only while the refused code is still on screen: once the cells clear
+              // for the retype, the row returns to rest and the tries-left LINE carries
+              // the message — six empty red boxes read as a broken input, not a verdict.
+              invalid={wrong !== null && code !== ''}
               disabled={busy}
               label={t(lang, 'linkCodeLabel')}
             />
@@ -368,10 +377,19 @@ export default function AccountEmail() {
         )}
 
         {step === 'confirm' && prompt !== null && (
-          <>
-            {/* NAMES what is about to be destroyed before asking. The server refuses to
-                erase without being told which account, so this screen is the only thing
-                standing between a tap and a month of play. */}
+          <div className="link-stack">
+            {/* NAMES what is about to be destroyed before asking — and SHOWS it: the mark
+                and name the player has been wearing, over the numbers they cost. The
+                server refuses to erase without being told which account, so this screen
+                is the only thing standing between a tap and a month of play. */}
+            {eraseFace ? (
+              <>
+                <Avatar avatar={eraseFace.avatar ?? defaultAvatar(prompt.accountId)} size={48} />
+                <span className="account-id-name">{eraseFace.name}</span>
+              </>
+            ) : (
+              <span className="account-id-mark skeleton" aria-hidden="true" />
+            )}
             <p className="account-note account-note-center" role="status">
               {t(lang, 'linkEraseWarn')}
             </p>
@@ -398,11 +416,11 @@ export default function AccountEmail() {
             <button type="button" className="link-quiet-btn" disabled={busy} onClick={leave}>
               {t(lang, 'linkCancel')}
             </button>
-          </>
+          </div>
         )}
 
         {step === 'done' && (
-          <div className="link-done">
+          <div className="link-stack">
             {face && endingId ? (
               <>
                 <Avatar avatar={face.avatar ?? defaultAvatar(endingId)} size={64} />
@@ -414,18 +432,32 @@ export default function AccountEmail() {
             <p className="account-note account-note-center" role="status">
               {outcome === 'adopted' ? t(lang, 'linkRestored') : t(lang, 'linkSaved')}
             </p>
-            <Button
-              variant="primary"
-              onClick={() => {
-                // Refresh what the account screen shows, then hand the destination to App's
-                // own home redirect — a player who has just recovered an account wants to
-                // play, not to read a settings screen.
-                loadAccountSummary(true);
-                navigate('/', { replace: true });
-              }}
-            >
-              {t(lang, 'gatePlay')}
-            </Button>
+            {/* TWO endings, two returns. An ADOPT is a reconnect — the player wants their
+                game back, so PLAY hands them to App's home redirect. A BIND was a settings
+                errand started on /account, and teleporting a person who was managing their
+                account into the game reads as losing their place: OK returns them to the
+                screen that now shows the address they just saved. */}
+            {outcome === 'adopted' ? (
+              <Button
+                variant="primary"
+                onClick={() => {
+                  loadAccountSummary(true);
+                  navigate('/', { replace: true });
+                }}
+              >
+                {t(lang, 'gatePlay')}
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                onClick={() => {
+                  loadAccountSummary(true);
+                  leave();
+                }}
+              >
+                {t(lang, 'linkDone')}
+              </Button>
+            )}
           </div>
         )}
       </div>

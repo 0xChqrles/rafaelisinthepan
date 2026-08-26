@@ -5171,6 +5171,11 @@ button * {
   margin: 0;
   text-align: center;
 }
+/* The caption UNDER a full-width button: pulled toward what it explains, centered on it. */
+.account-note.caption {
+  margin-top: -4px;
+  text-align: center;
+}
 .account-note.danger {
   color: var(--danger);
   font-weight: 500;
@@ -5232,7 +5237,9 @@ button * {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--line-strong);
+  /* QUIET at rest, brighter once filled: six strong empty frames shouted; a row that
+     lights up cell by cell says how far along the code is without a counter. */
+  border: 1px solid var(--line);
   border-radius: var(--r-md);
   background: rgba(0, 0, 0, 0.28);
   /* A number the player TYPES — keyboard territory, so the game's own pixel face. */
@@ -5240,6 +5247,9 @@ button * {
   font-size: 18px;
   color: var(--fg);
   transition: border-color 120ms, color 120ms;
+}
+.code-cell.filled {
+  border-color: var(--line-strong);
 }
 /* Where the next digit lands. The accent, not the solve blue: this is chrome pointing at
    an input, not a word being resolved. */
@@ -5274,13 +5284,19 @@ button * {
   color: var(--muted);
 }
 .link-quiet-btn {
-  padding: 4px 2px;
+  /* Generous padding around small type: the visible word stays quiet while the tap
+     target stays a finger's. */
+  padding: 8px 6px;
   border: 0;
   background: none;
   color: var(--muted);
-  font: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
+  /* Its OWN dress, not `inherit`: the erase step mounts one of these alone (CANCEL),
+     outside the `.link-quiet` row that used to supply the typography. */
+  font-family: var(--ui);
+  font-size: 10px;
+  font-weight: 550;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   cursor: pointer;
   transition: color 120ms;
 }
@@ -5322,20 +5338,23 @@ button * {
 }
 .link-danger:hover:not(:disabled) {
   border-color: var(--danger);
+  background: rgba(255, 61, 46, 0.06);
 }
 
-/* The ending: the account's own FACE over the one sentence, then PLAY. */
-.link-done {
+/* The centered FACE STACK: both endings and the erase confirmation — an account's mark
+   and name over the one thing being said about it, then the actions. One class, because
+   the three moments must read as one voice: this screen is always about WHO. */
+.link-stack {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 14px;
 }
-.link-done .avatar {
+.link-stack .avatar {
   border: 1px solid var(--line);
   border-radius: var(--r-md);
 }
-.link-done .btn {
+.link-stack .btn {
   width: 100%;
 }
 
@@ -5361,7 +5380,7 @@ button * {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 9px 12px;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   background: var(--glass);
@@ -5370,6 +5389,30 @@ button * {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
+/* TWO LINES per row (#204's polish pass): the label, then one quiet fact under it. A
+   label + a marker + a date + a chip is four things, and on a 390px phone the single
+   line truncated its own current marker. */
+.device-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.device-sub {
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The row the reader is ON says so in the accent — the same ink as its inset edge, so the
+   two read as one statement. */
+.device-sub.current {
+  color: var(--accent);
+}
 /* The row the reader is ON wears the accent at the board's own whisper strength — the
    2026-08-20 rule that replaced the inverted box in a column of glass rows. An INSET
    shadow, never a border-left, so marking a row cannot shift the grid by a pixel. */
@@ -5377,21 +5420,10 @@ button * {
   box-shadow: inset 2px 0 0 0 var(--accent);
 }
 .device-name {
-  flex: 1 1 auto;
-  min-width: 0;
   font-weight: 550;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.device-here {
-  margin-left: 8px;
-  font-weight: 400;
-  color: var(--accent);
-}
-.device-seen {
-  flex: 0 0 auto;
-  color: var(--muted);
 }
 .device-signout,
 .device-retry {
@@ -5428,6 +5460,15 @@ button * {
 @media (max-width: 640px) {
   .profile-screen {
     padding: 48px 2px 0;
+  }
+  /* The email flow's steps sit in the UPPER THIRD on a phone (#204's polish pass): the
+     mobile `.app` is start-aligned, so without this a lone input hugged the bar over a
+     screen of void — and full centring is worse, because the soft keyboard eats the
+     bottom half and would cover a centred input. `vh` is the LAYOUT viewport, so the
+     step does not jump when the keyboard resizes the visual one. Desktop keeps the
+     centring `.app` already does. */
+  .account-screen.link-step {
+    padding-top: max(48px, 14vh);
   }
 }
 

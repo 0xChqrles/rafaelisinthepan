@@ -633,8 +633,24 @@ it to the local store — see `packages/backend/AGENTS.md`).
     epoch the flow started under, like every other authoritative answer, and persisted BEFORE
     it publishes so a sibling tab cannot keep authenticating as the account this device left.
   - **`SignedOut`'s RECONNECT is wired and PRIMARY** (PLAY became secondary): it lifts the
-    verdict — the one gesture that removes the tombstone origin-wide — and navigates to
-    `/profile`. Abandoning the flow costs exactly what SKIP already cost.
+    verdict — the one gesture that removes the tombstone origin-wide — and lands on
+    `/account/email` DIRECTLY: a player who has just been signed out has exactly one
+    intention, and every screen between them and the address field is one they have to read
+    past. Abandoning the flow costs exactly what SKIP already cost.
+  - **The 2026-08-26 POLISH pass, all current-state:** on a phone the flow steps sit in
+    the UPPER THIRD (`.account-screen.link-step` gets `max(48px, 14vh)` top padding in the
+    mobile block — mobile `.app` is start-aligned, so a lone input otherwise hugged the
+    bar; full centring loses to the soft keyboard, and `vh` is the LAYOUT viewport so the
+    step holds still when the keyboard resizes the visual one). The code cells rest QUIET
+    (`--line`) and brighten as they fill (`.filled` → `--line-strong`, the next cell in the
+    accent); a refusal is red only while the wrong code is on screen — once the cells clear
+    for the retype the row returns to rest and the tries-left LINE carries the message.
+    Device rows are TWO LINES (label over THIS ONE in the accent, or the last-seen
+    day-month — the single line truncated its own current marker on a phone). The erase
+    confirmation SHOWS the account being deleted (mark + name over the stakes, the
+    signed-out screen's own move), and the two endings return differently: an ADOPT offers
+    PLAY into the game, a BIND offers OK back to `/account` — a settings errand ends where
+    it began, and `.link-stack` is the one centered face-stack all three moments wear.
   - **`FriendInvite` gained an EXPIRED state**: `unknown_player` is neither a hiccup nor the
     cap, so it takes the cap's own surface (a state with a way ONWARD rather than a retry) —
     retrying cannot bring an account back, and continuing silently would tell the clicker they

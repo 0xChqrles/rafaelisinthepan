@@ -151,6 +151,10 @@ const STRINGS = {
   // cells that just shook.
   linkWrongCode: { en: 'Wrong code — {n} left', fr: 'Code incorrect — {n} restants' },
   linkCancel: { en: 'CANCEL', fr: 'ANNULER' },
+  // The BIND ending's way back to the account screen: a settings errand ends where it
+  // began, and OK is the one word that is chrome in both languages. The ADOPT ending keeps
+  // PLAY — a recovered player wants their game, not a settings screen.
+  linkDone: { en: 'OK', fr: 'OK' },
   // The erase confirmation. It NAMES what the tap destroys — the server refuses to erase
   // without being told which account, and this screen is the only thing between that tap
   // and a month of play.

@@ -141,7 +141,7 @@ export default function Account() {
             </Button>
             {/* The ONE line that earns its place: why a game wants an email is genuinely
                 not obvious, and it is said once, where the decision is made. */}
-            <p className="account-note">{t(lang, 'accountSaveNote')}</p>
+            <p className="account-note caption">{t(lang, 'accountSaveNote')}</p>
           </>
         )}
 
