@@ -2471,8 +2471,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     for ties. It deliberately does NOT derive from the competition rank: with 15 ahead and
     20 in the player's bucket out of 100, the honest claims are `RANK #16 OF 100` and
     `TOP 25%`. An empty bucket carries no badge, and a stale inconsistent snapshot is
-    capped at 100%. (The midpoint's own all-tied answer, 50%, is no longer reachable on
-    screen: an all-tied field ranks everyone #1, which the rank gate below silences.)
+    capped at 100% — where the median gate below now silences it outright, since the
+    clamp only ever bites at the very bottom of the field. (The midpoint's own all-tied
+    answer, 50%, is the largest number the badge can print, and it is unreachable from an
+    all-tied field anyway: that field ranks everyone #1, which the rank gate silences.)
   - **The RANK NUMBER is the headline**: 24px against the 12px words around it, in the
     global ACCENT — the game's own word colour. The words are `--muted`, and
     the whole phrase hangs off ONE baseline (`.score-rank-text`), since centring the small
@@ -2533,9 +2535,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     type sharing a baseline with much smaller type sits visibly HIGH against it. Whole
     pixels only, via `translate` rather than a margin: a fractional offset resamples pixel
     type (the sprites' integer-scale rule), and nothing may MOVE because of it.
-  - **The badge is gated TWICE, and both gates only ever silence it** — the rank line
-    itself is honest at every size and always drawn, so the only player of the day reads
-    `RANK #1 OF 1` and nothing more. The line is SHORTER without the badge, which the
+  - **The badge is gated THREE times, and every gate only ever silences it** — the rank
+    line itself is honest at every size and always drawn, so the only player of the day
+    reads `RANK #1 OF 1` and nothing more. The line is SHORTER without the badge, which the
     length estimate above reads off the badge actually drawn rather than assuming one.
     - **above `PERCENT_MIN_TOTAL` (10) recorded scores** (user-decided 2026-08-15,
       reinstating a floor after a day without one — the first cut of the line had gated it
@@ -2545,9 +2547,19 @@ it to the local store — see `packages/backend/AGENTS.md`).
       (user-decided 2026-08-17): `RANK #6 OF 60` names an exact position a reader takes in
       at a glance, and a percentage beside it restates in blur what the number already
       said outright. From two digits on the rank stops being that legible and the
-      percentage is what carries the standing. The two floors overlap (rank 10 already
-      implies nine players ahead) but gate different claims: one asks whether there is a
-      field, the other whether the percentage adds anything to the rank beside it.
+      percentage is what carries the standing;
+    - **at or above the MEDIAN — `PERCENT_MAX` (50) is the largest number it prints**
+      (#176, user-decided 2026-08-16): TOP is a claim, and the last player of a 60-player
+      day reading `RANK #60 OF 60  TOP 99.17%` is that claim turned against the one
+      standing it cannot flatter. The boundary is INCLUSIVE — a player exactly at the
+      median is in the top half of the field being measured. Below it the rank line
+      stands alone, exactly as a small-population day already renders it.
+    The three floors OVERLAP, and gate different claims: whether there is a field at all,
+    whether the percentage adds anything to the rank beside it, and whether it has
+    anything to claim. Since rank 10 already implies nine players ahead, the smallest
+    field that can still reach the median is 19 — so the population floor is currently
+    implied by the other two. It stays because it states its own claim (user-decided in
+    #176), not because it is load-bearing arithmetic.
   - `formatTopPct` prints at most ONE decimal with the trailing zero stripped (`8.5`,
     `12.5`, `50`) — user-decided 2026-08-17, from two. On a real population the first
     decimal still carries a claim; the second is precision nobody reads, and `50.0` reads

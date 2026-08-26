@@ -21,11 +21,13 @@ import LoadingWave from './LoadingWave';
 //
 // The RANK NUMBER is the line's headline — bigger than the words around it and in the
 // accent gold — and the TOP badge is an outlined stamp beside it, the page's own
-// foreground drawn as a 1px rule around foreground type. The badge is gated TWICE
+// foreground drawn as a 1px rule around foreground type. The badge is gated THREE times
 // (`scoreStanding`): above `PERCENT_MIN_TOTAL` recorded scores (user-decided 2026-08-15),
-// because a percentage of a handful of players is false precision — and from
+// because a percentage of a handful of players is false precision — from
 // `PERCENT_MIN_RANK` on (user-decided 2026-08-17), because a single-digit rank has already
-// said the same thing outright and better.
+// said the same thing outright and better — and no farther down than `PERCENT_MAX`, the
+// median (#176, user-decided 2026-08-16), because TOP is a claim and `RANK #60 OF 60
+// TOP 99.17%` is that claim turned against the player wearing it.
 //
 // The component ALWAYS renders its fixed-height slot (the `.word-rarities` rule: hold the
 // layout space while invisible), so the line arriving — or never arriving, on a silent
@@ -68,9 +70,9 @@ export default function ScoreRank({
 
   const rankLabel = t(lang, 'scoreRank');
   const ofLabel = tn(lang, 'scoreOf', standing.total);
-  // Empty on a population too small for a percentage, or on a rank that already says it —
-  // which also shortens the line, so the length estimate below reads the badge that is
-  // actually drawn.
+  // Empty on a population too small for a percentage, on a rank that already says it, or
+  // on a standing below the median with nothing to claim — which also shortens the line,
+  // so the length estimate below reads the badge that is actually drawn.
   const topLabel =
     standing.topPct === null ? '' : `${t(lang, 'scoreTop')} ${formatTopPct(standing.topPct)}%`;
   // A long standing steps the whole line down one size rather than running off a phone's
