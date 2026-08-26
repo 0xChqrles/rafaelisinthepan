@@ -87,8 +87,11 @@
   moved here from the web the same day and for the same reason: "identical on every
   surface" became a cross-package claim once the invite card drew a player server-side,
   and two implementations would hand one person two faces depending on who was looking.
-  DISPLAY-only in both directions — an assigned name is never STORED (a board gates its
-  placeholder ink on the stored name being empty).
+  The pair derived from the SERVER-assigned id remains DISPLAY-only — never written by
+  anything here or in the backend. (Amended 2026-08-26, user-decided: the WEB now stores
+  the SEED-derived pair as a newly acquired account's first profile, so the locally shown
+  face survives deployment — `packages/web/src/state/localIdentityDeploy.ts`; the
+  accountId-derived fallback stays display-only, worn by any account with no stored row.)
 - `src/invite.ts` is the ONE spelling of the #189 invite link's paths — the shared
   `/i/<publicId>`, the SPA landing `/join/<publicId>` its preview bounces to, and the
   card at `/og/i/<publicId>.png`. INFRA routes the first to the API origin, the BACKEND

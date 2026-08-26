@@ -20,6 +20,7 @@ import {
   useDeviceIdentity,
 } from '../identity';
 import { prefetchTurnstileTokens } from '../turnstile';
+import { withoutLocalIdentityDeploy } from '../state/localIdentityDeploy';
 import ErrorSheet from '../components/ErrorSheet';
 import { navigate } from '../routing';
 import { pathForBoard, resolveHomeLang } from '../langs';
@@ -378,7 +379,10 @@ export default function Profile() {
     let current = deviceIdentity();
     if (current === null) {
       try {
-        current = await ensureDeviceIdentity();
+        // The ONE acquisition the locally-decided username must NOT deploy into: this tap
+        // carries the player's OWN typed fields a beat later, so letting the placeholder
+        // race it would either lose the save or store a name nobody chose.
+        current = await withoutLocalIdentityDeploy(() => ensureDeviceIdentity());
       } catch {
         current = null;
         outcome = 'account';
