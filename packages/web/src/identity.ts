@@ -79,6 +79,17 @@ interface IdentityState {
   // swap and remounted when a replacement arrives, while the first bootstrap (which is
   // triggered by the state already on screen) stays mounted.
   scopeRevision: number;
+  // HOW the identity now held ARRIVED — true ONLY for this tab's own bootstrap commit over a
+  // token whose emptiness was still proven. Every other null -> identity publish is an
+  // ADOPTION (a sibling tab's account, a pending token recovered from storage, a raced
+  // bootstrap the other tab won), and an adopted account MAY ALREADY HOLD SERVER STATE.
+  //
+  // Published because a reader cannot tell the two apart from the transition alone, and the
+  // difference decides whether "brand new, therefore empty" is a fact or a guess: the
+  // leaderboard keeps its known-empty friends board across a MINT (nothing to fetch could
+  // contradict it) and must drop it on an adoption, where a failed refresh would otherwise
+  // park a false "no friends" under the stale-but-good rule with no retry offered.
+  mintedHere: boolean;
 }
 
 export const useIdentityStore = create<IdentityState>(() => ({
@@ -86,6 +97,7 @@ export const useIdentityStore = create<IdentityState>(() => ({
   signedOut: false,
   signedOutAs: null,
   scopeRevision: 0,
+  mintedHere: false,
 }));
 
 // One origin-wide critical section around the entire read -> mint -> bootstrap -> commit
@@ -339,6 +351,13 @@ export function useSignedOutAccount(): SignedOutTombstone | null {
   return useIdentityStore((state) => state.signedOutAs);
 }
 
+// Whether the identity this device holds was MINTED here rather than adopted (see
+// `mintedHere`). Read by anything that would otherwise infer "brand new, therefore empty"
+// from a tokenless -> identity transition, which an adoption does not license.
+export function useIdentityMintedHere(): boolean {
+  return useIdentityStore((state) => state.mintedHere);
+}
+
 export function identityScopeRevision(): number {
   return useIdentityStore.getState().scopeRevision;
 }
@@ -401,6 +420,9 @@ function publish(
     signedOutAs: signedOut ? signedOutAs : null,
     scopeRevision:
       changed && !firstAcquisition ? current.scopeRevision + 1 : current.scopeRevision,
+    // Exactly the negation of `adopted` for an acquisition, and false whenever no identity
+    // is held: leaving one mints nothing, so nothing downstream may read emptiness off it.
+    mintedHere: next !== null && minted,
   });
   if (!changed) return;
   // Clearing storage WITHOUT fencing in-flight answers would let the identity just left

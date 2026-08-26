@@ -47,7 +47,15 @@ const playFresh = () => {
   navigate('/', { replace: true });
 };
 
+// The face is TAGGED WITH THE ACCOUNT IT BELONGS TO (review finding). A tab sitting on
+// this screen holds no identity, so a tombstone arriving from a sibling tab for a DIFFERENT
+// account is adopted rather than ignored (identity.ts's storage sync) — and `account` then
+// changes under a component that is not remounted. Without the tag the previously loaded
+// name and mark keep rendering over the new account until the next read lands, which is up
+// to the 6-second timeout on a bad connection: the wrong person's face on the one screen
+// whose whole job is naming who you are about to leave.
 interface Face {
+  publicId: string;
   name: string;
   avatar: string | null;
 }
@@ -71,14 +79,14 @@ export default function SignedOut({
     let mounted = true;
     const publicId = account.accountId;
     (async () => {
-      let shown: Face = { name: anonName(publicId), avatar: null };
+      let shown: Face = { publicId, name: anonName(publicId), avatar: null };
       try {
         const response = await fetch(profileUrl(publicId), {
           signal: AbortSignal.timeout(6_000),
         });
         if (response.ok) {
           const profile = parseProfile(await response.json());
-          shown = { name: profile.name || anonName(publicId), avatar: profile.avatar };
+          shown = { publicId, name: profile.name || anonName(publicId), avatar: profile.avatar };
         }
       } catch {
         // Keep the fallback.
@@ -90,10 +98,11 @@ export default function SignedOut({
     };
   }, [account]);
 
-  // The face read is in flight: hold the frame rather than flashing a name that may be
-  // about to change. A verdict that carried no identity (theoretical) skips straight to
-  // the faceless copy below.
-  if (account !== null && face === null) {
+  // The face read is in flight — or the one in hand belongs to a PREVIOUS account: hold the
+  // frame rather than flashing a name that may be about to change, or one that was never
+  // this account's. A verdict that carried no identity (theoretical) skips straight to the
+  // faceless copy below.
+  if (account !== null && face?.publicId !== account.accountId) {
     return (
       <p className="status">
         <LoadingWave text={t(lang, 'loading')} />

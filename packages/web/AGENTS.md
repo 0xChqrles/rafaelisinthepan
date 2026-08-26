@@ -1091,7 +1091,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   during render when the epoch changes exactly as a new day drops the boards: the
   stale-but-good rule keeps a cached board over a failed refresh, so a kept
   tokenless-empty board would suppress both the adopted account's real data and the retry
-  UI. Every identity-reading effect keys on the LIVE
+  UI. **The ONE exception is a PROVEN MINT** (2026-08-26; corrected on review the same day
+  after it was first written as "any first acquisition"): a tokenless tab whose own
+  bootstrap commits keeps the known-empty friends board, because a freshly minted account
+  has no edges BY CONSTRUCTION — that is a fact, not a stale guess, and it stops the INVITE
+  tap's mint blinking the ghost into a loading frame the button is already showing. It
+  turns on `useIdentityMintedHere()`, never on the transition, because `identity.ts`'s own
+  rule is that every OTHER null → identity publish is an ADOPTION of an account that may
+  already hold server state — a sibling tab's, a storage-recovered pending token, a raced
+  bootstrap another tab won. An accepted invite is the reachable case: its tap mints AND
+  links in one gesture, so a sibling tab adopting that identity has friends the instant it
+  arrives, and a failed refresh would freeze a false ghost with no retry offered.
+  Every identity-reading effect keys on the LIVE
   identity (`useDeviceIdentity`), so the mint — or a cross-tab adoption — populates the
   strip, both boards and the friend marks without a remount (a run-once strip effect used
   to leave them blank until navigation). Its lazy

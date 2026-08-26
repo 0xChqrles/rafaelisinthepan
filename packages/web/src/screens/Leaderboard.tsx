@@ -32,6 +32,7 @@ import {
   identityEpoch,
   identityEpochOf,
   useDeviceIdentity,
+  useIdentityMintedHere,
 } from '../identity';
 import { adoptSignedOutVerdict } from '../state/signedOutVerdict';
 import { prefetchTurnstileTokens } from '../turnstile';
@@ -114,6 +115,9 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
   // LOADING wave for requests nobody makes.
   const identity = useDeviceIdentity();
   const epoch = identity ? identityEpochOf(identity) : null;
+  // Whether that identity was MINTED here or ADOPTED — the known-empty rule below turns on
+  // it, and the transition alone cannot say.
+  const mintedHere = useIdentityMintedHere();
 
   // The PRE-ACCOUNT placeholder seed (user-decided 2026-08-24): persisted so the
   // placeholder face is stable across visits and tabs; display-only, never sent anywhere.
@@ -169,17 +173,27 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
   const [cachedEpoch, setCachedEpoch] = useState(epoch);
   if (cachedEpoch !== epoch) {
     setCachedEpoch(epoch);
-    // A TOKENLESS tab acquiring its FIRST identity keeps the known-empty friends board
-    // (user feedback 2026-08-26: the INVITE tap's mint made the ghost blink into a
-    // loading frame — the loading belongs on the button alone). The only identity that
-    // can arrive under a tokenless tab today is a freshly MINTED account — this tab's
-    // own deploy tap, or a sibling tab's (#216: reconnect is not wired) — whose edge set
-    // is empty by construction, so known-empty is still the true answer, not a stale
-    // guess; the fetch below still fires and the stale-but-good rule swaps in the
-    // server's answer when it lands. Every OTHER scope change (A → B, A → signed out)
-    // keeps the PR-219 rule: drop everything to the new scope's own synchronous answer.
+    // A TOKENLESS tab whose own MINT lands keeps the known-empty friends board (user
+    // feedback 2026-08-26: the INVITE tap's mint made the ghost blink into a loading
+    // frame — the loading belongs on the button alone). A freshly minted account has no
+    // edges by construction, so known-empty is a FACT there, not a stale guess; the fetch
+    // below still fires and the stale-but-good rule swaps in the server's answer.
+    //
+    // **It must be a MINT, not merely an acquisition** (review finding): `identity.ts`'s
+    // own rule is that every other null → identity publish is an ADOPTION of an account
+    // that MAY ALREADY HOLD SERVER STATE — a sibling tab's account, a pending token
+    // recovered from storage, a raced bootstrap another tab won. An accepted invite is the
+    // reachable case: its tap mints AND links in one gesture, so a sibling tab adopting
+    // that identity has friends the instant it arrives. Keeping known-empty there is a
+    // guess, and a failed refresh would freeze it — the stale-but-good rule keeps a cached
+    // board over a failure, so the account's real edges AND the retry UI would both be
+    // suppressed behind a false ghost. Every OTHER scope change (an adoption, A → B,
+    // A → signed out) keeps the PR-219 rule: drop everything to the new scope's own
+    // synchronous answer.
     setBoards(
-      cachedEpoch === null && identity ? { friends: EMPTY_FRIENDS_BOARD } : boardsFor(identity),
+      cachedEpoch === null && identity && mintedHere
+        ? { friends: EMPTY_FRIENDS_BOARD }
+        : boardsFor(identity),
     );
     setFriendIds(null);
     setMe(null);
