@@ -50,6 +50,20 @@ import Button from './Button';
 import ErrorSheet from './ErrorSheet';
 
 type Phase = 'address' | 'code' | 'confirm' | 'done';
+type LinkOutcome = 'bound' | 'adopted' | 'already_bound';
+
+// THE ENDING HAS TO SURVIVE ITS OWN SUCCESS. An ADOPT changes the account this device acts
+// as, which bumps the identity SCOPE — and App keys every routed surface on it, so this
+// component is unmounted and remounted in the same tick the link lands. Without this the one
+// sentence the whole flow exists to say ("we found your account") would be set on a component
+// that no longer exists, and the fresh one would open on the address field as though nothing
+// had happened.
+//
+// Module-level, because the module is exactly what survives a remount, and NAMED by the
+// account it is about, so it can never be read by a different one. Consumed ONCE — in an
+// effect rather than in the state initializer, since React double-invokes initializers in
+// development and clearing there would lose it on the second call.
+let justLinked: { accountId: string; outcome: LinkOutcome } | null = null;
 
 // How hard the client chases a friend merge the server has not finished. Bounded and
 // backed off: the identity change has already committed, so this is housekeeping the player
@@ -71,15 +85,24 @@ export default function AccountLink({ lang }: { lang: string }) {
   // learn that (#216). A read that fails simply leaves the offer standing — the flow itself
   // is what answers the question authoritatively.
   const [bound, setBound] = useState<string | null>(null);
-  const [phase, setPhase] = useState<Phase>('address');
+  // A link that landed a beat ago, through the remount it caused (see `justLinked`).
+  const landed = useDeviceIdentity();
+  const carried = landed !== null && justLinked?.accountId === landed.accountId ? justLinked : null;
+  const [phase, setPhase] = useState<Phase>(carried ? 'done' : 'address');
   const [address, setAddress] = useState('');
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [attemptsLeft, setAttemptsLeft] = useState<number | null>(null);
   const [prompt, setPrompt] = useState<LinkErasePrompt | null>(null);
-  const [outcome, setOutcome] = useState<'bound' | 'adopted' | 'already_bound' | null>(null);
+  const [outcome, setOutcome] = useState<LinkOutcome | null>(carried?.outcome ?? null);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
-  const identity = useDeviceIdentity();
+  const identity = landed;
+
+  // Consumed once, so a later visit to this screen opens on the offer rather than on a
+  // confirmation of something that happened days ago.
+  useEffect(() => {
+    if (carried) justLinked = null;
+  }, [carried]);
 
   // The READ — and, because it is the same message, the DRAIN: a friend merge an
   // interrupted link left queued is finished by the account's own next call here. It runs
@@ -206,15 +229,18 @@ export default function AccountLink({ lang }: { lang: string }) {
           // The device now acts as the account the address reaches. Adopting it clears
           // every account-scoped cache through the identity scope, which is exactly right:
           // none of it belongs to the account just adopted.
+          setOutcome(result.outcome);
+          setBound(result.email);
+          setPhase('done');
           if (result.accountId !== resolved.identity.accountId) {
+            // Recorded BEFORE the adoption, because the adoption is what unmounts this
+            // component: the remounted one reads it and opens on the ending.
+            justLinked = { accountId: result.accountId, outcome: result.outcome };
             adoptLinkedAccount(resolved.epoch, {
               accountId: result.accountId,
               deviceId: result.deviceId,
             });
           }
-          setOutcome(result.outcome);
-          setBound(result.email);
-          setPhase('done');
           return;
         }
         const error = body.error;
