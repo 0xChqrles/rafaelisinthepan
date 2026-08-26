@@ -1,5 +1,6 @@
 import { dateForDayNumber } from '@whippin/shared';
 import { navigate } from '../routing';
+import ChevronDownIcon from '../assets/icons/chevron-down.svg?react';
 import { pathForArchive, type Mode } from '../langs';
 import { t } from '../i18n';
 
@@ -30,7 +31,7 @@ export default function PuzzleDate({
     >
       <time dateTime={date}>{date}</time>
       <span className="pd-tick" aria-hidden="true">
-        ▾
+        <ChevronDownIcon />
       </span>
     </button>
   );

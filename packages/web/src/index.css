@@ -1216,9 +1216,11 @@ button * {
   background: rgba(244, 241, 232, 0.06);
 }
 .pd-tick {
-  font-size: 8px;
-  opacity: 0.65;
-  translate: 0 -1px;
+  display: inline-flex;
+  opacity: 0.7;
+}
+.pd-tick svg {
+  display: block;
 }
 /* --- giant score watermark, always behind the play content --- */
 .progress-background {
@@ -5071,11 +5073,11 @@ button * {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  /* Vertically CENTERED, the HUD-less screens' own rule (auto margins beat align-items —
-     the `.chooser-screen` precedent): the mobile `.app` is start-aligned for the game
-     layouts, and a settings column parked at the top read as a form abandoned over a
-     screen of void. When the device list outgrows the viewport the auto margins collapse
-     and the column scrolls, exactly as before. */
+  /* Vertically centered on DESKTOP only (`.app` is start-aligned on a phone, where the
+     mobile block below pins the area to ONE high start line instead — a page reads
+     top-down, and centring made it "start at the middle", user feedback 2026-08-26).
+     When the device list outgrows the viewport the auto margins collapse and the column
+     scrolls, exactly as before. */
   margin: auto 0;
   /* 48px is the bar's own height — `.profile-screen`'s exact clearance, and the reason it
      is a literal: `--hud-height` lives on `.topbar` and naming it in a `calc()` out here
@@ -5354,6 +5356,15 @@ button * {
   background: rgba(255, 61, 46, 0.06);
 }
 
+/* The address step's LEAD: who is being saved (or the app mark on a device with no
+   account — the reconnect case). A touch of air between it and the input it introduces. */
+.link-lead {
+  margin-bottom: 4px;
+}
+.link-logo {
+  margin: 4px auto 8px;
+}
+
 /* The centered FACE STACK: both endings and the erase confirmation — an account's mark
    and name over the one thing being said about it, then the actions. One class, because
    the three moments must read as one voice: this screen is always about WHO. */
@@ -5441,7 +5452,7 @@ button * {
 .device-signout,
 .device-retry {
   flex: 0 0 auto;
-  padding: 4px 8px;
+  padding: 7px 10px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-sm);
   background: none;
@@ -5474,14 +5485,18 @@ button * {
   .profile-screen {
     padding: 48px 2px 0;
   }
-  /* The email flow's steps sit in the UPPER THIRD on a phone (#204's polish pass): the
-     mobile `.app` is start-aligned, so without this a lone input hugged the bar over a
-     screen of void — and full centring is worse, because the soft keyboard eats the
-     bottom half and would cover a centred input. `vh` is the LAYOUT viewport, so the
-     step does not jump when the keyboard resizes the visual one. Desktop keeps the
-     centring `.app` already does. */
+  /* THE ACCOUNT AREA STARTS HIGH, on ONE line (#204's third pass, user feedback: the
+     centred column "feels like the screen starts at the middle" — a PAGE reads top-down,
+     so the free space belongs at the BOTTOM). Every screen of the area — the account
+     page, the flow's steps, the endings — opens at the same height, which is what makes
+     them read as one place; and it is an UPPER-third line rather than a centre because
+     the soft keyboard eats the bottom half of the flow's input steps. `vh` is the LAYOUT
+     viewport, so nothing jumps when the keyboard resizes the visual one. Desktop keeps
+     the centring `.app` already does. */
+  .account-screen,
   .account-screen.link-step {
-    padding-top: max(48px, 14vh);
+    margin: 0;
+    padding-top: clamp(76px, 13vh, 128px);
   }
 }
 
@@ -5636,15 +5651,17 @@ button * {
   background: var(--glass);
   border-color: var(--line);
 }
-/* A chevron at the trailing edge: the row LEADS somewhere, said the way the date chip's
-   own tick says it. */
-.board-me::after {
-  content: '›';
+/* A chevron at the trailing edge: the row LEADS somewhere. DRAWN in the chrome icon
+   dress rather than a text glyph — the 8px `›` read as debris, and the affordance of the
+   whole account area was hanging on it (user feedback 2026-08-26). */
+.board-me-chev {
   margin-left: auto;
-  padding-left: 8px;
+  flex: none;
   color: var(--muted);
-  font-size: 18px;
-  line-height: 1;
+  transition: color 120ms;
+}
+.board-me:hover .board-me-chev {
+  color: var(--fg);
 }
 .board-me .avatar {
   flex: none;

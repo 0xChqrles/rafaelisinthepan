@@ -648,6 +648,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the soft keyboard. The flow's endings and the erase confirmation wear the same hero
     classes (`.account-hero-name`, the 64px mark), so the account looks the same on its
     home, in its endings, at its deletion, and on the signed-out screen.
+  - **The area STARTS HIGH, on ONE line (third polish pass, user feedback 2026-08-26:
+    the centred column "feels like the screen starts at the middle").** On a phone every
+    screen of the area — the account page, the flow's steps, the endings — opens at the
+    same `clamp(76px, 13vh, 128px)` start line, free space accumulating at the BOTTOM the
+    way a page reads; desktop keeps `.app`'s centring. The ADDRESS step leads with WHO is
+    being saved — the account's face, or the chooser's glowing app mark on a device with
+    none (the reconnect case) — because a bare input floating on a screen was the "does
+    not use its space" finding. And the two flagged corner-affordances became DRAWN
+    chevrons in the chrome icon dress (`assets/icons/chevron-right.svg` on the board's
+    identity strip, `chevron-down.svg` in the date chip's tick, replacing an 8px `▾`);
+    the 320px header budget was re-measured with the wider tick — the right group's last
+    chip ends at 318 of 320.
   - **The 2026-08-26 POLISH pass, all current-state:** on a phone the flow steps sit in
     the UPPER THIRD (`.account-screen.link-step` gets `max(48px, 14vh)` top padding in the
     mobile block — mobile `.app` is start-aligned, so a lone input otherwise hugged the

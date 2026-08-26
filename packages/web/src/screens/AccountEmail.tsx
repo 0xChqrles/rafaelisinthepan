@@ -62,6 +62,7 @@ import { loadAccountSummary, noteAccountEmail } from '../state/account';
 import { useGameStore } from '../state/gameStore';
 import { prefetchTurnstileTokens, turnstileToken } from '../turnstile';
 import CloseIcon from '../assets/icons/close.svg?react';
+import Logo from '../assets/logo.svg?react';
 
 type Step = 'address' | 'code' | 'confirm' | 'done';
 type LinkOutcome = 'bound' | 'adopted' | 'already_bound';
@@ -277,6 +278,12 @@ export default function AccountEmail() {
   // The erase confirmation draws the account about to be DELETED — the signed-out screen's
   // own move: numbers state the stakes, a face makes them somebody's.
   const eraseFace = useAccountFace(step === 'confirm' ? (prompt?.accountId ?? null) : null);
+  // The address step leads with WHO is being saved. A bare input floating on a screen was
+  // the "does not use its space" finding (user feedback 2026-08-26); the face is also the
+  // honest statement of what the button will do. A device with NO account leads with the
+  // app mark instead — the reconnect case, where there is no local face to show and the
+  // chooser's own hero is the app's voice.
+  const savingFace = useAccountFace(step === 'address' ? (identity?.accountId ?? null) : null);
 
   return (
     <>
@@ -297,6 +304,21 @@ export default function AccountEmail() {
       <div className="account-screen link-step">
         {step === 'address' && (
           <>
+            <div className="link-stack link-lead" aria-hidden={identity !== null}>
+              {identity === null ? (
+                <Logo className="chooser-logo link-logo" role="img" aria-label="Whippin AI" />
+              ) : savingFace ? (
+                <>
+                  <Avatar
+                    avatar={savingFace.avatar ?? defaultAvatar(identity.accountId)}
+                    size={64}
+                  />
+                  <span className="account-hero-name">{savingFace.name}</span>
+                </>
+              ) : (
+                <span className="account-hero-mark skeleton" />
+              )}
+            </div>
             <input
               className="account-input"
               type="email"

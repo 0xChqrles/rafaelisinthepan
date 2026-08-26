@@ -49,6 +49,7 @@ import {
 import { navigate } from '../routing';
 import { t } from '../i18n';
 import CloseIcon from '../assets/icons/close.svg?react';
+import ChevronRightIcon from '../assets/icons/chevron-right.svg?react';
 
 // The #190 leaderboard screen: the day's boards per (day, lang, mode), for the active
 // day. FRIENDS is the DEFAULT and the trusted surface — the whole point of the design
@@ -461,6 +462,10 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
             {!shownSettled && <span className="skeleton skeleton-name" />}
           </span>
         )}
+        {/* The chevron is DRAWN, in the chrome icon dress, at a size a thumb reads — the
+            8px text tick it replaces was the "small thing in a corner" the whole strip's
+            affordance was hanging on (user feedback 2026-08-26). */}
+        <ChevronRightIcon className="board-me-chev" aria-hidden />
       </button>
 
       {/* FRIENDS first — the trusted default; GLOBAL is the fun view. The segmented
