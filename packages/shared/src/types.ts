@@ -125,7 +125,10 @@ export interface ScoreHistogram {
 export interface PlayerProfile {
   publicId: string;
   name: string;
-  avatar: string;
+  // Null = no CUSTOM mark: the surfaces derive the assigned face from the publicId, the
+  // same convention every board row already follows. The wire may carry '' (the stored
+  // empty), which the web's parse normalizes to null.
+  avatar: string | null;
 }
 
 export interface RuntimeHole {

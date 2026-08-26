@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { activeDate } from '@whippin/shared';
 import LoadingWave from './components/LoadingWave';
 import usePuzzle from './hooks/usePuzzle';
@@ -8,6 +8,8 @@ import Profile from './screens/Profile';
 import FriendInvite from './screens/FriendInvite';
 import Archive from './screens/Archive';
 import Leaderboard from './screens/Leaderboard';
+import SignedOut from './screens/SignedOut';
+import { useIdentityScopeRevision, useSignedOut } from './identity';
 import Game from './screens/Game';
 import WordGame from './screens/WordGame';
 import TopBar from './components/TopBar';
@@ -88,27 +90,43 @@ export default function App() {
   // screen is up (an archived day's date already reads in the header's date chip).
   const editionDay = useToday();
 
+  // Signed out from another device (#216). It takes the whole screen because it is not one
+  // surface's problem: every private read on every route answers `unknown_device` from here
+  // on, so there is nothing under it worth rendering, and a player who reads a vanished
+  // streak as a bug is exactly what the copy exists to prevent.
+  const signedOut = useSignedOut();
+  // Component-local caches (profile fields, board rows, device lists, invite outcomes)
+  // belong to the identity that mounted them. A scope change remounts the whole routed
+  // surface synchronously, including when a replacement arrives after an intervening null;
+  // DeviceFrame is decorative and deliberately remains outside.
+  const identityScope = useIdentityScopeRevision();
+
   return (
     <div className="app">
       {/* The viewport's own furniture (decorative, desktop-only) — under every screen. */}
       <DeviceFrame serial={editionDay} />
-      {/* The living backdrop — every screen (game, archive, select, tutorial) sits on it. */}
-      {route.view === 'select' && <LanguageSelect />}
-      {route.view === 'profile' && <Profile />}
-      {/* The invite link (#189) is a beat, not a screen: it lands the mutual edge and
-          hands over to the home redirect above. */}
-      {route.view === 'invite' && <FriendInvite publicId={route.publicId} lang={homeLang} />}
-      {route.view === 'archive' && <Archive lang={route.lang} mode={route.mode} />}
-      {/* The leaderboard screen (#190) — keyed so switching daily/language drops the
-          cached reads for that board's own. The TAB is deliberately outside the key: a
-          mode switch is still the same visit (see the reset effect above). */}
-      {route.view === 'board' && (
-        <Leaderboard key={`${route.lang}:${route.mode}`} lang={route.lang} mode={route.mode} />
-      )}
-      {route.view === 'game' && (
-        <GameRoute lang={route.lang} mode={route.mode} date={route.date} />
-      )}
-      {/* home: redirecting on the next tick — render nothing. */}
+      <Fragment key={identityScope}>
+        {/* The living backdrop — every screen (game, archive, select, tutorial) sits on it. */}
+        {signedOut && <SignedOut lang={homeLang} />}
+        {!signedOut && route.view === 'select' && <LanguageSelect />}
+        {!signedOut && route.view === 'profile' && <Profile />}
+        {/* The invite link (#189) is a beat, not a screen: it lands the mutual edge and
+            hands over to the home redirect above. */}
+        {!signedOut && route.view === 'invite' && (
+          <FriendInvite publicId={route.publicId} lang={homeLang} />
+        )}
+        {!signedOut && route.view === 'archive' && <Archive lang={route.lang} mode={route.mode} />}
+        {/* The leaderboard screen (#190) — keyed so switching daily/language drops the
+            cached reads for that board's own. The TAB is deliberately outside the key: a
+            mode switch is still the same visit (see the reset effect above). */}
+        {!signedOut && route.view === 'board' && (
+          <Leaderboard key={`${route.lang}:${route.mode}`} lang={route.lang} mode={route.mode} />
+        )}
+        {!signedOut && route.view === 'game' && (
+          <GameRoute lang={route.lang} mode={route.mode} date={route.date} />
+        )}
+        {/* home: redirecting on the next tick — render nothing. */}
+      </Fragment>
     </div>
   );
 }

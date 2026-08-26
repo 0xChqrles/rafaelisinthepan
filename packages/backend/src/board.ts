@@ -3,30 +3,31 @@
 //
 //   GET  /board?lang=&date=&mode=[&id=<publicId>] — the GLOBAL top 50, anonymous: the
 //     population is public by design (and untrusted by design, #187 — nothing treats it
-//     as truth). `id` is the caller's PUBLIC id — never the secret, so it may travel in
-//     the query — and widens the answer with their own below-the-cut window.
+//     as truth). `id` is the caller's PUBLIC id — never the device token, so it may
+//     travel in the query — and widens the answer with their own below-the-cut window.
 //     A DELIBERATE exposure to know about: nothing binds `id` to the caller, so anyone
 //     holding a publicId can read that player's window (score + rank + profile) for any
 //     served day. Consistent with the design: publicIds are broadcast by invite links
 //     (#189), and a stranger holding your id could already read your scores by
 //     friending you through that same link — the trusted surface stays the POST.
-//   POST /board  { secret }  (+ the same query) — the FRIENDS board, the trusted
-//     surface: the server resolves YOUR edges (#189), so the read must prove who is
-//     asking — the secret authenticates in the BODY, the /friends rule.
+//   POST /board  { token }  (+ the same query) — the FRIENDS board, the trusted
+//     surface: the server resolves the account the caller's DEVICE TOKEN (#216) maps to,
+//     then their edges (#189), so the read proves who is asking — the token
+//     authenticates in the BODY, the /friends rule.
 //
 // Both answers are rows a board can draw directly: rank (competition ties), score, and
 // the public profile (#188) — name and avatar — attached per row. The ranking, the
 // plain top-50 cut and the own-row window are the shared pure rules in
 // @whippin/shared/leaderboard.ts.
 //
-// No puzzle-store read: a population only ever exists for a published daily (the score
-// POST enforces it), so an unpublished day honestly answers the empty board. The
-// malformed-param 400s and the future +1-day guard still apply (shared liveRoute.ts).
+// No puzzle-store read: a population only ever exists for a published daily (the round
+// route's guards enforce it — it is what writes the score rows since #203), so an
+// unpublished day honestly answers the empty board. The malformed-param 400s and the
+// future +1-day guard still apply (shared liveRoute.ts).
 
 import {
   boardOwnRows,
   cutBoard,
-  publicIdFromSecret,
   rankBoard,
   PUBLIC_ID_PATTERN,
   type Board,
@@ -34,8 +35,9 @@ import {
   type BoardRow,
   type RankedScore,
 } from '@whippin/shared';
+import type { DeviceStore } from './deviceStore';
 import type { FriendStore } from './friendStore';
-import { LIVE_HEADERS, readJsonObject, requireDayParams, requireSecret } from './liveRoute';
+import { LIVE_HEADERS, readJsonObject, requireDayParams, requireDevice } from './liveRoute';
 import type { ProfileStore } from './profileStore';
 import type { ScoreKey, ScoreStore } from './scoreStore';
 import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respond';
@@ -44,6 +46,8 @@ export interface BoardHandlerDeps {
   scores: ScoreStore;
   profiles: ProfileStore;
   friends: FriendStore;
+  // The trusted face authenticates its caller's device (#216); the anonymous GET does not.
+  devices: DeviceStore;
 }
 
 // How a player with NO public profile is dressed — and the ONE fallback this route
@@ -85,6 +89,7 @@ export async function handleBoard(
   event: FnUrlEvent,
   deps: BoardHandlerDeps,
   serverDate: string,
+  instant: Date,
   cors: Record<string, string>,
 ): Promise<FnUrlResult> {
   const responseHeaders = { ...cors, ...LIVE_HEADERS };
@@ -124,10 +129,10 @@ export async function handleBoard(
   // POST — the friends board. The body carries only the proof of identity.
   const body = readJsonObject(event, 'Board', responseHeaders);
   if (!body.ok) return body.response;
-  const secret = requireSecret(body.value, responseHeaders);
-  if (!secret.ok) return secret.response;
+  const auth = await requireDevice(body.value, responseHeaders, deps.devices, instant);
+  if (!auth.ok) return auth.response;
 
-  const publicId = await publicIdFromSecret(secret.value);
+  const publicId = auth.value.account.accountId;
   const friends = await deps.friends.list(publicId);
   // The trusted board is the caller's edges plus themselves — and the caller already
   // holds the exact row keys, so the store fetches THOSE (batch-shaped, constant in the

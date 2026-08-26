@@ -4,7 +4,12 @@
 // and asks for that date's puzzle in ONE fetch. The server only serves dates within
 // a ±1-day clock-skew window of its own active day.
 
-import { isValidAvatar, PUBLIC_ID_PATTERN } from '@whippin/shared';
+import {
+  DEVICE_ID_PATTERN,
+  isValidAvatar,
+  isValidDeviceToken,
+  PUBLIC_ID_PATTERN,
+} from '@whippin/shared';
 import type {
   Board,
   BoardPlayer,
@@ -232,7 +237,7 @@ export function parseScoreHistogram(data: unknown): ScoreHistogram {
 // unsigned body: the request must carry `x-amz-content-sha256`, the lowercase hex SHA-256
 // of the EXACT UTF-8 body bytes. Hash and send the same byte array — never reserialize
 // after hashing (the root AGENTS.md records this as a hard contract).
-async function postSignedJson(url: string, body: unknown): Promise<Response> {
+async function postSignedJson(url: string, body: unknown, signal?: AbortSignal): Promise<Response> {
   const bytes = new TextEncoder().encode(JSON.stringify(body));
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   const hex = Array.from(new Uint8Array(digest))
@@ -242,15 +247,115 @@ async function postSignedJson(url: string, body: unknown): Promise<Response> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-amz-content-sha256': hex },
     body: bytes,
+    ...(signal ? { signal } : {}),
   });
 }
 
+// The one refusal that signs a device out (#216): 401 whose body CODE is `unknown_device`.
+// One spelling for every caller — the status alone must never do it (a language the server
+// does not serve also answers 4xx), and a 5xx or a dropped connection must never sign
+// anyone out at all.
+export function isUnknownDeviceAnswer(status: number, error: unknown): boolean {
+  return status === 401 && error === 'unknown_device';
+}
+
+// The device route (#216): the lazy Turnstile-gated bootstrap that MINTS this device's
+// identity, and the sign-out screen's list + revocation. POST-only like /friends — the
+// device token is the auth and it travels in the BODY, never a query string, so the route
+// reads no query at all (its CloudFront behavior's allow-list is EMPTY, the same
+// three-package contract). The answer never carries the token back: the client already
+// holds it, and echoing it would put it somewhere a proxy or a log could see.
+export function devicesUrl(base: string = apiBase()): string {
+  return `${requireApiBase(base)}/devices`;
+}
+
+// Every /devices call is BOUNDED (the FriendInvite/turnstile rule, sized for a cold
+// Lambda + a server-side Siteverify): the bootstrap runs inside the origin-wide Web Lock
+// behind a module-level flight, so a request that never settled used to wedge account
+// creation for every tab — no error, no retry, PLAY disabled forever.
+const DEVICES_TIMEOUT_MS = 15_000;
+
+export async function postDevicesBody(
+  url: string,
+  body: { token: string; turnstileToken?: string; revoke?: string; revokeKey?: string },
+): Promise<Response> {
+  return postSignedJson(url, body, AbortSignal.timeout(DEVICES_TIMEOUT_MS));
+}
+
+export interface DeviceRow {
+  // Opaque SHA-256 handle for the base item. It cannot authenticate, and lets the server
+  // revoke this listed row directly without rediscovering it through a lagging GSI.
+  revokeKey: string;
+  deviceId: string;
+  device: string;
+  os: string;
+  browser: string;
+  createdAt: string;
+  lastSeenAt: string;
+  // Is this the device asking? It holds a token, never a device id, so only the server can
+  // say which row is its own.
+  current: boolean;
+}
+
+export interface DeviceListing {
+  accountId: string;
+  deviceId: string;
+  devices: DeviceRow[];
+}
+
+// The two ASSIGNED ids alone — what the BOOTSTRAP consumes. It deliberately does not
+// touch the devices list riding the same answer: identity acquisition must never fail on
+// a row only the sign-out SCREEN would render — that screen has its own failed state and
+// RETRY, where a bootstrap that keeps rejecting retries the same persisted token forever
+// while the server has already created the account.
+export function parseAssignedIdentity(data: unknown): { accountId: string; deviceId: string } {
+  if (!isRecord(data)) throw new Error('malformed device: not an object');
+  const { accountId, deviceId } = data;
+  if (typeof accountId !== 'string' || !PUBLIC_ID_PATTERN.test(accountId)) {
+    throw new Error('malformed device: bad "accountId"');
+  }
+  if (typeof deviceId !== 'string' || !DEVICE_ID_PATTERN.test(deviceId)) {
+    throw new Error('malformed device: bad "deviceId"');
+  }
+  return { accountId, deviceId };
+}
+
+// Runtime shape check for the full list answer — the parsePuzzle contract: a wrong-shaped
+// body surfaces as the device screen's failure state, never as rows whose SIGN OUT posts
+// `undefined`. The timestamps are checked as strings but NOT as parseable instants: the
+// server's own row reader defaults an absent attribute to '', and the screen already
+// renders an unparseable date as no date — refusing the whole list over a label would
+// hide every OTHER device behind one damaged row.
+export function parseDeviceIdentity(data: unknown): DeviceListing {
+  parseAssignedIdentity(data);
+  const { devices } = data as Record<string, unknown>;
+  if (!Array.isArray(devices)) throw new Error('malformed device: "devices" must be an array');
+  for (const raw of devices) {
+    const row = raw as Record<string, unknown>;
+    if (
+      !isRecord(raw) ||
+      !isValidDeviceToken(row.revokeKey) ||
+      typeof row.deviceId !== 'string' ||
+      !DEVICE_ID_PATTERN.test(row.deviceId) ||
+      typeof row.device !== 'string' ||
+      typeof row.os !== 'string' ||
+      typeof row.browser !== 'string' ||
+      typeof row.createdAt !== 'string' ||
+      typeof row.lastSeenAt !== 'string' ||
+      typeof row.current !== 'boolean'
+    ) {
+      throw new Error('malformed device: bad "devices" row');
+    }
+  }
+  return data as unknown as DeviceListing;
+}
+
 // The round route (#201/#202/#203): the server-authoritative state of one player's play on
-// one daily, one item per (date, lang, mode, publicId). POST-only like /friends —
-// `{secret, puzzle}` reads the stored round (404 = none yet); SENTENCE mode streams into it
-// with `{secret, puzzle, guesses}`, carrying a `turnstileToken` on the append that CREATES
-// the round, while WORD mode writes twice, `{secret, puzzle, turnstileToken}` to START its
-// server-stamped clock and one `{secret, puzzle, guesses}` carrying the whole log at the
+// one daily, one item per (date, lang, mode, account). POST-only like /friends —
+// `{token, puzzle}` reads the stored round (404 = none yet); SENTENCE mode streams into it
+// with `{token, puzzle, guesses}`, carrying a `turnstileToken` on the append that CREATES
+// the round, while WORD mode writes twice, `{token, puzzle, turnstileToken}` to START its
+// server-stamped clock and one `{token, puzzle, guesses}` carrying the whole log at the
 // end. EVERY answer, refusals included, carries the full state, so a write is also a
 // reconciliation. In sentence mode `puzzle` is the published revision naming WHICH puzzle
 // the state belongs to, which is how a corrected daily restarts instead of inheriting the
@@ -264,9 +369,19 @@ export function roundUrl(lang: string, date: string, mode: Mode, base: string = 
 
 export async function postRoundBody(
   url: string,
-  body: { secret: string; puzzle: string; guesses?: string[]; turnstileToken?: string },
+  body: { token: string; puzzle: string; guesses?: string[]; turnstileToken?: string },
 ): Promise<Response> {
   return postSignedJson(url, body);
+}
+
+// WHICH DEVICE a word run belongs to (#217): the id the server's own two conditions
+// compare, plus the device's parsed user-agent fields — a snapshot taken when the run was
+// stamped, so a screen offering to end that run can NAME it without a second lookup.
+export interface RoundRunner {
+  deviceId: string;
+  device: string;
+  os: string;
+  browser: string;
 }
 
 export interface RoundState {
@@ -275,6 +390,10 @@ export interface RoundState {
   // Word mode's SERVER-stamped clock (#202); null on a sentence round and on a word round
   // nobody has started.
   startedAt: string | null;
+  // WHO holds that clock (#217) — null exactly when `startedAt` is, since one write stamps
+  // both. It is half of what the Word screen picks its phase from: a run this device does
+  // not own is one it may neither play nor submit, only start over.
+  startedBy: RoundRunner | null;
   // When the word round's end-of-run log was RECORDED; null while it has not been. It is
   // the submission's own marker because an empty stored log — a run that claimed nothing —
   // reads exactly like an unsubmitted one.
@@ -283,10 +402,6 @@ export interface RoundState {
   // to `now - startedAt` — an ELAPSED span, which both ends agree on — rather than to the
   // instant itself, which a skewed device clock would misread.
   now: string;
-  // START only: did THIS call stamp the clock, or join one already running? A resumed
-  // clock belongs to another device (or another tab), and this one cannot know what that
-  // run has claimed — so it must never write for it.
-  resumed: boolean;
   // Sentence mode: has the SERVER read this round's log as solved (#203)? It is the server
   // deriving what it stores, and it is what says the day's score row is recorded — which is
   // when a standing becomes readable. Only ever written true, so `false` means "not yet",
@@ -311,16 +426,31 @@ function requireInstant(value: unknown, field: string): string {
   return value;
 }
 
+// The run's owner, as strict as the two instants beside it: the phase this decides is
+// whether a player may keep playing, so a half-shaped stamp is a malformed answer rather
+// than a device to guess at.
+function requireRunner(value: unknown): RoundRunner | null {
+  if (value === undefined) return null;
+  if (
+    !isRecord(value) ||
+    typeof value.deviceId !== 'string' ||
+    value.deviceId.length === 0 ||
+    typeof value.device !== 'string' ||
+    typeof value.os !== 'string' ||
+    typeof value.browser !== 'string'
+  ) {
+    throw new Error('malformed round: bad "startedBy"');
+  }
+  return { deviceId: value.deviceId, device: value.device, os: value.os, browser: value.browser };
+}
+
 export function parseRound(data: unknown): RoundState {
   if (!isRecord(data)) throw new Error('malformed round: not an object');
-  const { guesses, createdAt, startedAt, submittedAt, resumed, solved, credited } = data;
+  const { guesses, createdAt, startedAt, submittedAt, solved, credited } = data;
   if (!Array.isArray(guesses) || !guesses.every((g) => typeof g === 'string')) {
     throw new Error('malformed round: "guesses" must be an array of strings');
   }
   if (typeof createdAt !== 'string') throw new Error('malformed round: bad "createdAt"');
-  if (resumed !== undefined && typeof resumed !== 'boolean') {
-    throw new Error('malformed round: bad "resumed"');
-  }
   if (solved !== undefined && typeof solved !== 'boolean') {
     throw new Error('malformed round: bad "solved"');
   }
@@ -331,11 +461,9 @@ export function parseRound(data: unknown): RoundState {
     guesses: guesses as string[],
     createdAt,
     startedAt: startedAt === undefined ? null : requireInstant(startedAt, 'startedAt'),
+    startedBy: requireRunner(data.startedBy),
     submittedAt: submittedAt === undefined ? null : requireInstant(submittedAt, 'submittedAt'),
     now: requireInstant(data.now, 'now'),
-    // Only a START answers it. Absent means "not a start", and the safe reading of an
-    // answer that did not say is that this client did NOT stamp the clock.
-    resumed: resumed !== false,
     // Absent means the server holds no solve for this round — a word round, or a sentence
     // one still being played.
     solved: solved === true,
@@ -346,7 +474,7 @@ export function parseRound(data: unknown): RoundState {
 
 // The PRIVATE player history (#211): the archive calendar's month, the chooser's status
 // strip and the streak's solved-day list, all off what the server already derives from the
-// guess log (#203). POST-only like /friends — the player key authenticates in the BODY, so
+// guess log (#203). POST-only like /friends — the device token authenticates in the BODY, so
 // there is no way to ask for someone else's history. `month` is OPTIONAL: the streak needs
 // the solved-day collection alone, and making that read spend a month Query would cost a
 // whole calendar per game load. All three queries are in the history CloudFront behavior's
@@ -367,7 +495,7 @@ export async function postHistoryBody(
   url: string,
   // `collection: false` opts out of the solved-day read (the chooser never renders the
   // streak); omitted means true, so the original body shape keeps its meaning.
-  body: { secret: string; collection?: boolean },
+  body: { token: string; collection?: boolean },
 ): Promise<Response> {
   return postSignedJson(url, body);
 }
@@ -412,15 +540,15 @@ export function profileUrl(publicId?: string, base: string = apiBase()): string 
 
 export async function postProfileBody(
   url: string,
-  body: { secret: string; name: string; avatar: string },
+  body: { token: string; name: string; avatar: string },
 ): Promise<Response> {
   return postSignedJson(url, body);
 }
 
-// The #189 friends graph: ONE route, POST-only — the player key authenticates in the body
-// (#187) and there is no query to ask with, so a caller can only ever read or change their
-// own edges. `{secret}` reads the list, `{secret, add}` records the mutual edge an invite
-// link's click makes, `{secret, remove}` deletes both sides. Every call answers with the
+// The #189 friends graph: ONE route, POST-only — the device token authenticates in the body
+// (#216) and there is no query to ask with, so a caller can only ever read or change their
+// own edges. `{token}` reads the list, `{token, add}` records the mutual edge an invite
+// link's click makes, `{token, remove}` deletes both sides. Every call answers with the
 // caller's current list.
 export function friendsUrl(base: string = apiBase()): string {
   return `${requireApiBase(base)}/friends`;
@@ -428,7 +556,7 @@ export function friendsUrl(base: string = apiBase()): string {
 
 export async function postFriendsBody(
   url: string,
-  body: { secret: string; add?: string; remove?: string },
+  body: { token: string; add?: string; remove?: string },
 ): Promise<Response> {
   return postSignedJson(url, body);
 }
@@ -445,8 +573,8 @@ export function parseFriends(data: unknown): string[] {
 }
 
 // The #190 leaderboard: GET is the anonymous GLOBAL top 50 (`id` — the caller's PUBLIC
-// id, never the secret — widens it with their own below-the-cut window); POST with
-// `{secret}` is the authenticated FRIENDS board, the trusted surface. Addressed per
+// id, never the token — widens it with their own below-the-cut window); POST with
+// `{token}` is the authenticated FRIENDS board, the trusted surface. Addressed per
 // (day, lang, mode) like everything else; all four query parameters are in the board
 // CloudFront behavior's allowList (the root AGENTS.md three-package contract).
 export function boardUrl(
@@ -462,7 +590,7 @@ export function boardUrl(
   return id ? `${root}&id=${encodeURIComponent(id)}` : root;
 }
 
-export async function postBoardBody(url: string, body: { secret: string }): Promise<Response> {
+export async function postBoardBody(url: string, body: { token: string }): Promise<Response> {
   return postSignedJson(url, body);
 }
 
@@ -524,6 +652,10 @@ export function parseProfile(data: unknown): PlayerProfile {
     throw new Error('malformed profile: bad "publicId"');
   }
   if (typeof name !== 'string') throw new Error('malformed profile: bad "name"');
+  // The stored EMPTY avatar means "no custom mark" (PR-219 round-2 review): normalized to
+  // null here, the board rows' own convention, so every consumer keeps ONE fallback rule
+  // (`?? defaultAvatar`) and none can feed '' into a decoder.
+  if (avatar === '' || avatar === null) return { publicId, name, avatar: null };
   if (!isValidAvatar(avatar)) throw new Error('malformed profile: bad "avatar"');
   return { publicId, name, avatar };
 }

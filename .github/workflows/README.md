@@ -73,13 +73,15 @@ this stack is human-deployed rather than run by CI). In short, the stack creates
 shipped bundle. Web deploys read two repo **variables**:
 
 - `VITE_TURNSTILE_SITE_KEY` is **required** (#170): the public site key for the production
-  invisible Turnstile widget paired with the backend's `/whippin/turnstile-secret`.
-  `vite.config.ts` refuses every production build when it is unset, so production cannot
-  silently ship score collection disabled. Configure it with
+  invisible Turnstile widget paired with the backend's `/whippin/turnstile-secret`. The
+  widget gates the state-CREATING requests (#216/#203: identity bootstrap, round creation,
+  Word round start). `vite.config.ts` refuses every production build when it is unset, so
+  production cannot silently ship with those writes disabled. Configure it with
   `gh variable set VITE_TURNSTILE_SITE_KEY --body '<site-key>'`.
   **The widget must be created with type INVISIBLE**, not Cloudflare's default "Managed":
   the client renders it into a hidden container, so a Managed key that escalates to an
-  interactive challenge can never be completed — it times out and silently drops the score.
+  interactive challenge can never be completed — it times out and silently shuts out
+  exactly the players Cloudflare doubts (no identity, no round, no sync).
   Nothing in code or CI can detect the widget type, so it is checked when the key is issued.
 - `VITE_PLAUSIBLE_DOMAIN` is optional (#60): unset means analytics stay inert.
 

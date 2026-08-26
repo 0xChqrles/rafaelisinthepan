@@ -7,6 +7,7 @@ import {
   type RoundAppendInput,
   type RoundDaySummary,
   type RoundKey,
+  type RoundRunner,
   type RoundState,
   type RoundStore,
 } from './roundStore';
@@ -18,6 +19,8 @@ interface RoundItem {
   lastWriteAt: number;
   // Word mode's server-stamped clock (#202); absent on a sentence round.
   startedAt?: string;
+  // The DEVICE that clock belongs to (#217), stamped by the same write.
+  startedBy?: RoundRunner;
   // When the end-of-run log was RECORDED — the submission's own marker, never the log's
   // length (roundStore.ts: a 0-claim run records an empty log).
   submittedAt?: string;
@@ -42,8 +45,9 @@ export function memoryRoundStore(): RoundStore {
     createdAt: item.createdAt,
     // ABSENT rather than empty when unstamped, the Dynamo store's rule: the submit's "is
     // there a run to end?" test reads exactly this, and `submittedAt` is what says the run
-    // was recorded.
+    // was recorded. The runner (#217) is stamped by the same write and travels with it.
     ...(item.startedAt === undefined ? {} : { startedAt: item.startedAt }),
+    ...(item.startedBy === undefined ? {} : { startedBy: { ...item.startedBy } }),
     ...(item.submittedAt === undefined ? {} : { submittedAt: item.submittedAt }),
     ...(item.progress === undefined ? {} : { progress: item.progress }),
     ...(item.solved === true ? { solved: true } : {}),
@@ -154,15 +158,19 @@ export function memoryRoundStore(): RoundStore {
       return true;
     },
 
-    // Word mode's round START (#202): stamp the server clock, once per puzzle. A record
-    // naming a RETIRED word restarts — its log goes with its old clock — and one already
-    // stamped for THIS word keeps its original start, so a double tap, a retry and a second
-    // device all resume the one run.
+    // Word mode's round START (#202, owned by a DEVICE since #217): stamp the server clock
+    // and the device it belongs to. The ONE thing that refuses it is a run already
+    // RECORDED for this puzzle — everything else is replaced, log and all, whether it was
+    // this device's clock, another device's, or the retired word's.
     async start(input) {
       const id = itemKey(input, input.publicId);
       const existing = rounds.get(id);
-      if (existing && existing.puzzle === input.puzzle && existing.startedAt !== undefined) {
-        return { outcome: 'running' as const, state: stateOf(existing) };
+      if (
+        existing &&
+        existing.puzzle === input.puzzle &&
+        existing.submittedAt !== undefined
+      ) {
+        return { outcome: 'already_submitted' as const, state: stateOf(existing) };
       }
       const stampedAt = input.now.toISOString();
       const item: RoundItem = {
@@ -172,13 +180,14 @@ export function memoryRoundStore(): RoundStore {
         // Word paths leave the streaming interval alone (roundStore.ts).
         lastWriteAt: existing?.lastWriteAt ?? 0,
         startedAt: stampedAt,
+        startedBy: { ...input.runner },
       };
       rounds.set(id, item);
       return { outcome: 'started' as const, state: stateOf(item) };
     },
 
     // Word mode's end-of-run SUBMIT (#202): the whole log, first write wins, never before
-    // the run's own floor.
+    // the run's own floor — and only from the device the stamp names (#217).
     async submit(input) {
       const existing = rounds.get(itemKey(input, input.publicId));
       const stored = existing && existing.puzzle === input.puzzle ? existing : undefined;
@@ -190,6 +199,11 @@ export function memoryRoundStore(): RoundStore {
       // overwrite it — first-write-wins broken for exactly the rounds with least to say.
       if (stored.submittedAt !== undefined) {
         return { outcome: 'already_submitted' as const, state: stateOf(stored) };
+      }
+      // The stamp moved: another device restarted this daily, so the log offered here
+      // describes a clock the server no longer holds (#217).
+      if (stored.startedBy?.deviceId !== input.deviceId) {
+        return { outcome: 'started_elsewhere' as const, state: stateOf(stored) };
       }
       if (input.now.getTime() - Date.parse(stored.startedAt) < input.minElapsedMs) {
         return { outcome: 'too_early' as const, state: stateOf(stored) };

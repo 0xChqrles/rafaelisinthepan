@@ -37,6 +37,8 @@ import {
 } from './ogCard';
 import { isValidDate } from './layout';
 import { handleBoard } from './board';
+import { handleDevices, type DeviceHandlerDeps } from './devices';
+import type { DeviceStore } from './deviceStore';
 import { handleFriends } from './friends';
 import type { FriendStore } from './friendStore';
 import { handleHistory } from './history';
@@ -62,6 +64,15 @@ export interface HandlerDeps {
   profiles?: ProfileStore;
   // The friends graph (#189), same optionality rationale.
   friends?: FriendStore;
+  // Devices and the accounts they belong to (#216). EVERY authenticated route (/devices,
+  // /profile, /friends, /board, /round, /history) resolves its caller through this ONE
+  // top-level store — deliberately not a field of a route bundle, so two routes can never
+  // be wired to two different stores, with half the private surface authenticating a
+  // token the other half answers 401 `unknown_device` for.
+  deviceStore?: DeviceStore;
+  // The device ROUTE's own extras (#216): the Turnstile verifier its bootstrap is gated
+  // by, and the local-adapter address trust flag.
+  devices?: DeviceHandlerDeps;
   // The per-round guess log (#201), Word mode's two writes (#202) and the derived score
   // (#203), same optionality rationale. It carries a Turnstile verifier of its own because
   // ROUND START is gated in both modes, the score store because a finished round is
@@ -135,18 +146,22 @@ export function createHandler(deps: HandlerDeps) {
     // The leaderboard reads (#190): the same live shape once more — GET is the global
     // top 50, POST the authenticated friends board.
     const isBoardRoute = normalizedPath === '/board';
-    // The per-round guess log (#201) — POST-only like /friends (the secret is the auth).
+    // The per-round guess log (#201) — POST-only like /friends (the device token is the auth).
     const isRoundRoute = normalizedPath === '/round';
     // The private player history (#211): the archive calendar's month, the chooser's
     // status strip and the streak's solved-day list. POST-only for the same reason.
     const isHistoryRoute = normalizedPath === '/history';
+    // Devices (#216): the lazy bootstrap that mints an identity, and the sign-out screen's
+    // list + revocation. POST-only for the same reason — the token is the auth.
+    const isDevicesRoute = normalizedPath === '/devices';
     const isLiveRoute =
       isScoresRoute ||
       isProfileRoute ||
       isFriendsRoute ||
       isBoardRoute ||
       isRoundRoute ||
-      isHistoryRoute;
+      isHistoryRoute ||
+      isDevicesRoute;
     const routeHeaders = isLiveRoute ? { ...cors, 'Cache-Control': 'no-store' } : cors;
 
     // CORS preflight. It carries no data, so `no-store` belongs on the live ROUTES and
@@ -278,45 +293,67 @@ export function createHandler(deps: HandlerDeps) {
         return await handleScores(event, deps.store, deps.scores, date, cors);
       }
 
+      if (isDevicesRoute) {
+        if (!deps.devices || !deps.deviceStore) {
+          throw new Error('Device identity is not configured.');
+        }
+        return await handleDevices(event, deps.deviceStore, deps.devices, instant, cors);
+      }
+
       if (isProfileRoute) {
         if (!deps.profiles) throw new Error('Player profiles are not configured.');
-        return await handleProfile(event, deps.profiles, instant, cors);
+        if (!deps.deviceStore) throw new Error('Device identity is not configured.');
+        return await handleProfile(event, deps.profiles, deps.deviceStore, instant, cors);
       }
 
       if (isFriendsRoute) {
         if (!deps.friends) throw new Error('The friends graph is not configured.');
-        return await handleFriends(event, deps.friends, instant, cors);
+        if (!deps.deviceStore) throw new Error('Device identity is not configured.');
+        return await handleFriends(event, deps.friends, deps.deviceStore, instant, cors);
       }
 
       if (isBoardRoute) {
         // The board is a READ over what the three stores already hold — score rows for
         // the population, edges for the trusted tab, profiles to dress the rows.
-        if (!deps.scores || !deps.profiles || !deps.friends) {
+        if (!deps.scores || !deps.profiles || !deps.friends || !deps.deviceStore) {
           throw new Error('The leaderboard is not configured.');
         }
         return await handleBoard(
           event,
-          { scores: deps.scores.scoreStore, profiles: deps.profiles, friends: deps.friends },
+          {
+            scores: deps.scores.scoreStore,
+            profiles: deps.profiles,
+            friends: deps.friends,
+            devices: deps.deviceStore,
+          },
           date,
+          instant,
           cors,
         );
       }
 
       if (isRoundRoute) {
         if (!deps.rounds) throw new Error('Round state sync is not configured.');
+        if (!deps.deviceStore) throw new Error('Device identity is not configured.');
         // The puzzle store is read on THREE paths here since #203 — the sentence append's
         // derivation slice, the full artifact a solve is scored from, and Word mode's
         // end-of-run submission (#202).
-        return await handleRound(event, deps.store, deps.rounds, date, instant, cors);
+        return await handleRound(event, deps.store, deps.deviceStore, deps.rounds, date, instant, cors);
       }
 
       if (isHistoryRoute) {
         // A READ over what the two stores already hold: #203's derived summary on the
         // round rows, and the solved-day collection the round route credits.
         if (!deps.rounds) throw new Error('Round state sync is not configured.');
+        if (!deps.deviceStore) throw new Error('Device identity is not configured.');
         return await handleHistory(
           event,
-          { rounds: deps.rounds.roundStore, history: deps.rounds.history },
+          {
+            rounds: deps.rounds.roundStore,
+            history: deps.rounds.history,
+            devices: deps.deviceStore,
+          },
+          instant,
           cors,
         );
       }

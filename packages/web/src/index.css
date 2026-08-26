@@ -835,6 +835,20 @@ button * {
      PLAY 40px narrower than the tutorial's own button (measured before the fix). */
   padding: 0 0 10px;
 }
+/* What the gate's tap will DESTROY (#217): the run this daily already holds on another
+   device. Coach copy's voice — a sentence, not a label, so it keeps sentence case out of
+   the all-caps chrome rule — in the danger ink, because it is the one line on this screen
+   that warns rather than teaches. It sits between the rules and the button, inside the
+   gate's own gap, so it moves nothing when it is absent. */
+.gate-warning {
+  margin: 0;
+  width: min(680px, 100%);
+  font-size: 13px;
+  font-weight: 350;
+  line-height: 1.5;
+  text-transform: none;
+  color: var(--danger);
+}
 /* The rules can outgrow the keyboard's footprint on a phone, so the gate anchors to the
    tray's BOTTOM and lets the extra height rise upward — into the sentence game's open
    play area, or word mode's open window — never below the screen, where it put the
@@ -5032,6 +5046,84 @@ button * {
   color: var(--danger);
 }
 
+/* The account's DEVICES, and the way to sign one out (#216) — the profile screen's second
+   block, under the editor and inside the same column. Chrome, so: mono, all-caps, one ink
+   with SECONDARY values in `--muted` (the 2026-08-20 rule), and nothing rounder than the
+   4px ceiling. */
+.device-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.device-list-title {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 10px;
+  font-weight: 550;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.device-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--glass);
+  font-family: var(--ui);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+/* The row the reader is ON wears the accent at the board's own whisper strength — the
+   2026-08-20 rule that replaced the inverted box in a column of glass rows. An INSET
+   shadow, never a border-left, so marking a row cannot shift the grid by a pixel. */
+.device-row.current {
+  box-shadow: inset 2px 0 0 0 var(--accent);
+}
+.device-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.device-here {
+  margin-left: 8px;
+  font-weight: 400;
+  color: var(--accent);
+}
+.device-seen {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+.device-signout,
+.device-retry {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: none;
+  font-family: var(--ui);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg);
+  cursor: pointer;
+}
+.device-signout:hover:not(:disabled),
+.device-retry:hover {
+  filter: brightness(1.3);
+}
+.device-signout:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
 /* On a phone the mobile .app is top-anchored (16px), so the column's top padding sets
    where the editor starts: 48px puts it at 64px from the viewport top — exactly where
    the tutorial's coach dialog sits under the full-bleed band. Desktop keeps the
@@ -5497,4 +5589,105 @@ button * {
 .invite-done .mix-btn {
   width: 100%;
   margin-top: 12px;
+}
+
+/* ---------------------------------------------------------------------------
+   THE ERROR SURFACE (#216 trigger rework, user-decided 2026-08-24): where a
+   PRIMARY ACTION reports that it failed — the two PLAY gates, the invite accept,
+   the invite send, the profile save. A centered popup on desktop, a bottom SHEET
+   on a phone (the app's ≤640px step). It wears the dialog boxes' own dress — the
+   coach glass and the corner brackets — with the brackets in the DANGER ink,
+   since this box is the one that says something went wrong. */
+.error-dialog {
+  /* The coach-rules stack restated with the danger brackets: eight corner strips
+     over the glass fill (the .coach rule's own technique — kept separate because
+     that rule also sets layout this dialog does not want). */
+  --corner-c: color-mix(in srgb, var(--danger) 90%, transparent);
+  margin: auto;
+  width: min(420px, calc(100vw - 40px));
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  background:
+    linear-gradient(var(--corner-c), var(--corner-c)) 0 0 / 14px 2px,
+    linear-gradient(var(--corner-c), var(--corner-c)) 0 0 / 2px 14px,
+    linear-gradient(var(--corner-c), var(--corner-c)) 100% 0 / 14px 2px,
+    linear-gradient(var(--corner-c), var(--corner-c)) 100% 0 / 2px 14px,
+    linear-gradient(var(--corner-c), var(--corner-c)) 0 100% / 14px 2px,
+    linear-gradient(var(--corner-c), var(--corner-c)) 0 100% / 2px 14px,
+    linear-gradient(var(--corner-c), var(--corner-c)) 100% 100% / 14px 2px,
+    linear-gradient(var(--corner-c), var(--corner-c)) 100% 100% / 2px 14px,
+    var(--bg);
+  background-repeat: no-repeat;
+  color: var(--fg);
+  padding: 20px;
+  outline: 0;
+}
+.error-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+.error-dialog[open] {
+  animation: error-in 160ms ease-out;
+}
+.error-dialog[open].closing {
+  animation: error-out 140ms ease-in forwards;
+  pointer-events: none;
+}
+@keyframes error-in {
+  from {
+    transform: translateY(14px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@keyframes error-out {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(14px);
+    opacity: 0;
+  }
+}
+.error-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+.error-title {
+  margin: 4px 36px 0 0;
+  font-weight: 650;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--danger);
+}
+.error-note {
+  /* Coach copy voice: sentence case, resting weight — the one mono surface the
+     all-caps chrome rule exempts, because it explains rather than labels. */
+  margin: 10px 0 0;
+  font-size: 14px;
+  font-weight: 350;
+  line-height: 1.5;
+  text-transform: none;
+}
+.error-retry {
+  width: 100%;
+  margin-top: 16px;
+}
+/* On a phone the popup becomes a SHEET on the bottom edge: full-bleed, riding the
+   safe area, the same slide the exit animation already plays. */
+@media (max-width: 640px) {
+  .error-dialog {
+    margin: auto 0 0;
+    width: 100vw;
+    max-width: 100vw;
+    padding: 20px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+    border-left: 0;
+    border-right: 0;
+    border-bottom: 0;
+  }
 }

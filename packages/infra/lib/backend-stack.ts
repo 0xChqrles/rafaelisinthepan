@@ -10,7 +10,12 @@ import {
   ArnFormat,
 } from 'aws-cdk-lib';
 import type { Construct } from 'constructs';
-import { VIEWER_IP_HEADER } from '@whippin/shared';
+import {
+  DEVICE_INDEX_NAME,
+  DEVICE_INDEX_PARTITION_KEY,
+  DEVICE_INDEX_SORT_KEY,
+  VIEWER_IP_HEADER,
+} from '@whippin/shared';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -105,6 +110,30 @@ export class BackendStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN,
     });
 
+    // ── The ONE index on this table: an account's devices (#216) ─────────────
+    // A device item is keyed by SHA-256(its token), so AUTHENTICATION is a direct base-table
+    // read and needs no index at all. The sign-out screen asks the opposite question — which
+    // devices does THIS account have — and that is what this answers. It is SPARSE: only the
+    // device rows carry the two index attributes, so nothing else on the table is in it.
+    //
+    // It is deliberately OFF the security-sensitive path. A GSI is eventually consistent, so
+    // a just-created device may not be listed for a moment and a just-deleted one may still
+    // be; neither can keep a revoked token authenticable, because revocation deletes the
+    // token's own base item. The base primary key is projected automatically, which is what
+    // lets a listed device name the one item to delete.
+    // Name and key attributes come from the SHARED contract (the VIEWER_IP_HEADER rule):
+    // the backend queries and writes exactly these spellings, and a drift is a
+    // production-only ValidationException no local run can reproduce.
+    scoreTable.addGlobalSecondaryIndex({
+      indexName: DEVICE_INDEX_NAME,
+      partitionKey: { name: DEVICE_INDEX_PARTITION_KEY, type: dynamodb.AttributeType.STRING },
+      sortKey: { name: DEVICE_INDEX_SORT_KEY, type: dynamodb.AttributeType.STRING },
+      // The label the screen renders, and nothing else: a device row carries no secret, but
+      // projecting ALL would copy every future attribute into a second copy of the item.
+      projectionType: dynamodb.ProjectionType.INCLUDE,
+      nonKeyAttributes: ['deviceId', 'accountId', 'agent', 'createdAt', 'lastSeenAt'],
+    });
+
     // Explicit log group so CloudWatch logs don't accumulate forever (the implicit
     // `/aws/lambda/*` group never expires). DESTROY so teardown is clean; the name is
     // CFN-generated and the function is pointed at it via `logGroup` below.
@@ -176,13 +205,17 @@ export class BackendStack extends Stack {
     // (the player's row); reads are one Query over the day partition. The profile row
     // (#188) adds one GetItem (its read) and reuses UpdateItem (its upsert). The friends
     // graph (#189) reuses Query (a player's edge partition) and UpdateItem (the mutual
-    // link), and is the ONE writer that also needs DeleteItem — removal deletes both
-    // directions. The friends board (#190) adds BatchGetItem: it reads the score rows of
+    // link), and first adds DeleteItem — removal deletes both directions. The friends board
+    // (#190) adds BatchGetItem: it reads the score rows of
     // a KNOWN key set instead of paging the whole day partition. AWS authorizes
     // transactional actions through their underlying item permissions, so no Scan
     // surface is needed. The private history (#211) adds NO action: its calendar is a
     // Query over the caller's own round partition and its solved-day collection a
-    // GetItem + UpdateItem on the private player row.
+    // GetItem + UpdateItem on the private player row. Devices (#216) add no action either
+    // — authentication is a GetItem, the bootstrap a transaction of two create-only Puts,
+    // the sign-out list a Query and revocation a DeleteItem — and no explicit index ARN:
+    // a Query against a secondary index is authorized on `<table>/index/*`, which `grant`
+    // adds by itself once the table HAS an index (the GSI declared above is the one).
     scoreTable.grant(
       fn,
       'dynamodb:Query',
@@ -362,7 +395,7 @@ export class BackendStack extends Stack {
       ['id'],
     );
 
-    // `/friends` (#189) reads NO query parameter at all — the player key authenticates in
+    // `/friends` (#189) reads NO query parameter at all — the device token authenticates in
     // the body, so every call is a POST and there is nothing to forward but the headers
     // carrying the OAC-signed body hash. An EMPTY allow-list is the honest statement of
     // that: the day this route grows a query, it has to be named here or CloudFront will
@@ -385,7 +418,7 @@ export class BackendStack extends Stack {
     );
 
     // `/round` (#201) reads THREE — the same day-addressing triple as /scores, since the
-    // guess log is one item per (date, lang, mode, publicId). The player key travels in
+    // guess log is one item per (date, lang, mode, account). The device token travels in
     // the POST body, never in a query.
     const roundOriginRequestPolicy = liveOriginRequestPolicy(
       'RoundOriginRequestPolicy',
@@ -394,9 +427,19 @@ export class BackendStack extends Stack {
       ['lang', 'date', 'mode'],
     );
 
+    // `/devices` (#216) reads NO query at all — the device token is the auth and it travels
+    // in the body, exactly like `/friends`. Same empty-allow-list rule: the day it reads one,
+    // it has to be named here or CloudFront will strip it before the handler sees it.
+    const devicesOriginRequestPolicy = liveOriginRequestPolicy(
+      'DevicesOriginRequestPolicy',
+      'WhippinDevicesOrigin',
+      'Devices: no query strings, Lambda-URL-safe headers outside cache.',
+      [],
+    );
+
     // `/history` (#211) reads THREE — `lang`/`mode` name which game, and `month` the
     // calendar page. NOT `date`: this read is addressed by a MONTH, which is exactly the
-    // sort-key prefix a player's calendar is one Query over. The player key travels in the
+    // sort-key prefix a player's calendar is one Query over. The device token travels in the
     // POST body like every other private read.
     const historyOriginRequestPolicy = liveOriginRequestPolicy(
       'HistoryOriginRequestPolicy',
@@ -497,6 +540,12 @@ export class BackendStack extends Stack {
         }),
         'friends*': liveBehavior(friendsOriginRequestPolicy),
         'history*': liveBehavior(historyOriginRequestPolicy),
+        // The device BOOTSTRAP is Turnstile-gated (#216), so this route needs a trusted
+        // client address exactly as the round start does — the third behavior wearing the
+        // viewer-request function.
+        'devices*': liveBehavior(devicesOriginRequestPolicy, {
+          functionAssociations: [viewerIpAssociation],
+        }),
       },
     });
 
@@ -540,7 +589,7 @@ export class BackendStack extends Stack {
         {
           id: 'AwsSolutions-IAM5',
           reason:
-            'S3 read access is scoped to the puzzle bucket/object keys. DynamoDB is scoped to this table with only Query/GetItem/PutItem/UpdateItem/DeleteItem (DeleteItem exists solely for the symmetric friend removal, #189), and SSM GetParameters to the two exact secret-parameter ARNs; no index or parameter wildcard exists.',
+            'S3 read access is scoped to the puzzle bucket/object keys. DynamoDB is scoped to this table and its indexes — the grant\'s <table>/index/* resource covers exactly the one DeviceByAccount GSI (#216) — with only Query/GetItem/PutItem/UpdateItem/DeleteItem (DeleteItem serves symmetric friend removal and device revocation), and SSM GetParameters to the two exact secret-parameter ARNs; no parameter wildcard exists.',
         },
         {
           id: 'AwsSolutions-L1',

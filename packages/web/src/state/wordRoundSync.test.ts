@@ -1,18 +1,22 @@
-// CONTRACT (#202): Word mode's conversation with the server. The mode writes exactly
-// TWICE — a Turnstile-gated START that stamps the round's clock from the SERVER's own
-// clock, and ONE end-of-run submission carrying the whole log — with a mount READ that
-// writes nothing and makes the daily one-shot across devices.
+// CONTRACT (#202, owned by a DEVICE since #217): Word mode's conversation with the server.
+// The mode writes exactly TWICE — a Turnstile-gated START that stamps the round's clock
+// from the SERVER's own clock FOR THIS DEVICE, and ONE end-of-run submission carrying the
+// whole log — with a mount READ that writes nothing and says WHOSE run the daily holds.
 //
 //   - the visible clock is anchored to `now - startedAt`, an ELAPSED SPAN, so a skewed
 //     device clock cannot shorten or lengthen a run — and the request's own travel time
 //     lands INSIDE the run, which is the margin that keeps an honest submission clear of
 //     the server's wait check;
-//   - the START is idempotent from the client's side too: one challenge, one write, however
-//     many times PLAY is tapped;
+//   - a START is a RESTART: it mints a fresh clock and the local run starts over with it,
+//     and the client still asks ONCE however many times PLAY is tapped;
+//   - the READ anchors NOTHING — a clock this device does not hold is a run whose claims it
+//     cannot see — so it only reports the run's owner, which the SCREEN turns into a phase;
 //   - a run that ended is submitted ONCE, truncated to what the route accepts; a 2xx
 //     adopts the server's first-write-wins log and clears the persisted local outbox;
 //   - `too_early` is waited out (it is an answer about WHEN); every other 4xx is a VERDICT
-//     that closes the conversation instead of spinning on it.
+//     that closes the conversation instead of spinning on it — and one that carries state
+//     (`started_elsewhere`) is ADOPTED on the way out, so the screen learns who holds the
+//     run now.
 //
 // Asserted against the spec, not the implementation.
 
@@ -26,9 +30,9 @@ import { runMs } from '../game/wordGame';
 import {
   anchorFrom,
   beginWordRoundSync,
+  finishWordRound,
   resetWordRoundSync,
   startWordRound,
-  startedRunHere,
   submittableLog,
   wordTag,
 } from './wordRoundSync';
@@ -46,6 +50,40 @@ vi.mock('../api', async (importOriginal) => ({
 
 // The invisible challenge is the one thing this engine cannot exercise for real.
 vi.mock('../turnstile', () => ({ turnstileToken: vi.fn() }));
+
+// This device's IDENTITY (#216). The engine's own tokenless branch — no identity means no
+// private fetch at all — is exercised in `identity.test.ts`; here the device is signed in,
+// which is what every case below is about.
+const signedOut = vi.hoisted(() => vi.fn());
+const identity = vi.hoisted(() => ({
+  present: true,
+  value: { token: 'f'.repeat(64), accountId: 'a'.repeat(16), deviceId: 'd'.repeat(16) },
+  beforeEnsure: null as (() => void) | null,
+}));
+vi.mock('../identity', () => ({
+  deviceIdentity: () => (identity.present ? identity.value : null),
+  // The START's own resolver — the one word path that may MINT (#216 rework: PLAY is a
+  // deploy button), which the mint here mimics by flipping `present` on.
+  ensureRequestIdentity: async (expected: string | null) => {
+    identity.beforeEnsure?.();
+    identity.present = true;
+    const epoch = `${identity.value.accountId}:${identity.value.deviceId}`;
+    return expected !== null && expected !== epoch ? null : { identity: identity.value, epoch };
+  },
+  // The SUBMISSION's resolver — never mints (#216 rework).
+  currentRequestIdentity: (expected: string | null = null) => {
+    if (!identity.present) return null;
+    const epoch = `${identity.value.accountId}:${identity.value.deviceId}`;
+    if (expected !== null && expected !== epoch) return null;
+    return { identity: identity.value, epoch };
+  },
+  identityEpoch: () =>
+    identity.present ? `${identity.value.accountId}:${identity.value.deviceId}` : null,
+  identityEpochOf: (value: { accountId: string; deviceId: string }) =>
+    `${value.accountId}:${value.deviceId}`,
+  markDeviceSignedOut: signedOut,
+}));
+
 
 const post = vi.mocked(postRoundBody);
 const challenge = vi.mocked(turnstileToken);
@@ -69,16 +107,21 @@ function ctx() {
 const SERVER_T0 = Date.parse('2026-08-21T14:00:00.000Z');
 const at = (ms: number) => new Date(SERVER_T0 + ms).toISOString();
 
+// The two devices every ownership case is told apart by: this one (the identity mock's own
+// id) and another of the same account.
+const ME = { deviceId: 'd'.repeat(16), device: 'Test', os: 'Test', browser: 'Test' };
+const OTHER = { deviceId: 'e'.repeat(16), device: 'iPhone', os: 'iOS 17', browser: 'Safari' };
+
 function answer(
   status: number,
   body: {
     guesses?: string[];
     startedAt?: string;
+    // WHO the server says holds the run (#217). A stamped clock always names a device.
+    startedBy?: { deviceId: string; device: string; os: string; browser: string };
     submittedAt?: string;
     nowAt?: number;
     error?: string;
-    // Only a START says it, and only `false` means "this call stamped the clock".
-    resumed?: boolean;
   },
 ) {
   const { nowAt = 0, ...rest } = body;
@@ -88,17 +131,16 @@ function answer(
     json: async () => ({
       guesses: rest.guesses ?? [],
       createdAt: at(0),
-      ...(rest.startedAt ? { startedAt: rest.startedAt } : {}),
+      ...(rest.startedAt ? { startedAt: rest.startedAt, startedBy: rest.startedBy ?? ME } : {}),
       ...(rest.submittedAt ? { submittedAt: rest.submittedAt } : {}),
       now: at(nowAt),
-      ...(rest.resumed === undefined ? {} : { resumed: rest.resumed }),
       ...(rest.error ? { error: rest.error, message: 'refused' } : {}),
     }),
   } as unknown as Response;
 }
 
-// A START that actually stamped the clock — what PLAY gets on a round nobody had begun.
-const stamped = (nowAt = 0) => answer(200, { startedAt: at(0), nowAt, resumed: false });
+// A START that stamped the clock for THIS device — what PLAY gets back.
+const stamped = (nowAt = 0) => answer(200, { startedAt: at(0), nowAt });
 
 function seedRound(extra: Record<string, unknown> = {}) {
   useGameStore.setState(
@@ -113,6 +155,18 @@ function seedRound(extra: Record<string, unknown> = {}) {
   );
 }
 
+// The SCREEN's two calls (#217, replacing #202's `beginWordRoundSync(ctx, over)` flag):
+// register the round, and — when the run THIS device holds has ended — report it. Whose run
+// it is comes from the server's stamp read against this device's id, which is the screen's
+// own decision to make.
+function mount(context = ctx()): void {
+  beginWordRoundSync(context);
+}
+function runOver(context = ctx()): void {
+  beginWordRoundSync(context);
+  finishWordRound(context);
+}
+
 const round = () => useGameStore.getState().wordRounds[KEY];
 const load = () => useGameStore.getState().roundLoads[KEY];
 const serverGuesses = () => {
@@ -122,7 +176,7 @@ const serverGuesses = () => {
 
 function bodyOf(call: number) {
   return post.mock.calls[call][1] as {
-    secret: string;
+    token: string;
     puzzle: string;
     guesses?: string[];
     turnstileToken?: string;
@@ -140,6 +194,14 @@ beforeEach(() => {
   post.mockReset();
   challenge.mockReset();
   challenge.mockResolvedValue('token');
+  signedOut.mockReset();
+  identity.value = {
+    token: 'f'.repeat(64),
+    accountId: 'a'.repeat(16),
+    deviceId: 'd'.repeat(16),
+  };
+  identity.beforeEnsure = null;
+  identity.present = true;
   useGameStore.setState(
     { outbox: {}, wordRounds: {}, roundLoads: {}, activeWordKey: null },
     false,
@@ -162,9 +224,9 @@ describe('anchorFrom — the run’s clock, translated', () => {
     guesses: [],
     createdAt: at(0),
     startedAt,
+    startedBy: startedAt === null ? null : ME,
     submittedAt: null,
     now: at(nowAt),
-    resumed: false,
     solved: false,
     credited: false,
   });
@@ -199,6 +261,22 @@ describe('submittableLog — what the route will store', () => {
 });
 
 describe('the round START', () => {
+  it('does not start A\'s captured round as B when ensure adopts a replacement identity', async () => {
+    seedRound();
+    identity.beforeEnsure = () => {
+      identity.value = {
+        token: '8'.repeat(64),
+        accountId: 'b'.repeat(16),
+        deviceId: 'e'.repeat(16),
+      };
+    };
+
+    await expect(startWordRound(ctx())).resolves.toBe(false);
+    expect(challenge).not.toHaveBeenCalled();
+    expect(post).not.toHaveBeenCalled();
+    expect(round()).toMatchObject({ startedAt: null, tried: [] });
+  });
+
   it('asks for a challenge and anchors the clock the SERVER stamped', async () => {
     seedRound();
     const started = startWordRound(ctx());
@@ -211,34 +289,59 @@ describe('the round START', () => {
     expect(round()).toMatchObject({ startedAt: T0, deadline: T0 + runMs(0) });
   });
 
-  it('RESUMES a run already in progress — the daily is one-shot across devices', async () => {
-    seedRound();
-    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 20_000, resumed: true }));
+  // #202 RESUMED here; #217 restarts instead. Resuming a run whose claims live in another
+  // device's storage was never really resuming it — Word mode streams nothing, so they are
+  // unreachable until that device submits — so what a second device can honestly offer is a
+  // fresh run, and the answer's clock is the one the server just minted.
+  it('RESTARTS: the answer opens a fresh run, wiping the local one it replaces', async () => {
+    seedRound({ startedAt: T0 - 40_000, deadline: T0 - 40_000 + runMs(1), tried: ['mer'], claimed: 1 });
+    post.mockResolvedValueOnce(stamped());
     await startWordRound(ctx());
-    // 20 seconds gone on the server's clock: this device joins with 40 left, not 60.
-    expect(round()).toMatchObject({ startedAt: T0 - 20_000, deadline: T0 - 20_000 + runMs(0) });
+    expect(round()).toMatchObject({
+      startedAt: T0,
+      deadline: T0 + runMs(0),
+      tried: [],
+      claimed: 0,
+    });
   });
 
-  // A stale caller (or an already-issued request) can still ask START concurrently with a
-  // run elsewhere and be handed that clock. Marking every accepted START as "this session
-  // runs it" would hand the joiner writer authority, and its short clock then buries the
-  // real run under an empty log at the base deadline. Only a call that actually STAMPED the
-  // clock is the runner, and the answer says which.
-  it('resuming somebody else’s clock does NOT make this session the runner', async () => {
+  // The start ANSWER carries the run's owner, which is what the screen reads its phase
+  // from — including the case that used to need a session-scoped "I started this" flag.
+  it('publishes the DEVICE the server stamped the run for', async () => {
     seedRound();
-    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 20_000, resumed: true }));
-    await expect(startWordRound(ctx())).resolves.toBe(true);
-    expect(startedRunHere(KEY, WORD)).toBe(false);
+    post.mockResolvedValueOnce(answer(404, { error: 'not_found' })); // nobody had started it
+    mount();
+    await settle();
 
-    // Its clock dies at the base deadline while the real run is still going — and all it
-    // ever does is read.
-    vi.setSystemTime(T0 + runMs(0));
-    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 60_000 }));
-    beginWordRoundSync(ctx(), true);
-    await settle(120_000);
-    expect(post).toHaveBeenCalledTimes(2); // the start it resumed, then the read
-    expect(bodyOf(1).guesses).toBeUndefined();
-    expect(round().submitted).toBeUndefined();
+    post.mockResolvedValueOnce(stamped());
+    await startWordRound(ctx());
+    const current = load();
+    expect(current?.status === 'ready' && current.server.startedBy).toEqual(ME);
+  });
+
+  // The one thing a start cannot do: reopen a day whose log is stored. The server refuses
+  // it and answers with the run that stands, so the gate is released onto the final screen
+  // instead of a clock the recorded score could never belong to.
+  it('ADOPTS a recorded run instead of opening a clock over it', async () => {
+    seedRound();
+    // The read found nothing; between it and the tap, another device finished the day.
+    post.mockResolvedValueOnce(answer(404, { error: 'not_found' }));
+    mount();
+    await settle();
+
+    post.mockResolvedValueOnce(
+      answer(200, {
+        startedAt: at(0),
+        startedBy: OTHER,
+        submittedAt: at(90_000),
+        nowAt: 120_000,
+        guesses: ['mer'],
+      }),
+    );
+    await expect(startWordRound(ctx())).resolves.toBe(true);
+    expect(round()).toMatchObject({ submitted: true, tried: [], claimed: 1 });
+    expect(round().startedAt).toBeNull();
+    expect(serverGuesses()).toEqual(['mer']);
   });
 
   it('is ONE challenge and ONE write however many times PLAY is tapped', async () => {
@@ -262,46 +365,21 @@ describe('the round START', () => {
     expect(round().startedAt).toBe(T0);
   });
 
-  // A round key is only (day, lang, mode), so a re-published DIFFERENT word reuses it.
-  // Authority is granted per (round, WORD) for that reason: the session that started the
-  // retired word must not count as the runner of the replacement, or it can bury the real
-  // player's run under an empty log on a word it never played.
-  it('does not carry starter authority across a re-published word', async () => {
+  it('raises signed-out from PLAY only for the `unknown_device` error code', async () => {
     seedRound();
-    post.mockResolvedValueOnce(stamped());
-    await startWordRound(ctx());
-    expect(startedRunHere(KEY, WORD)).toBe(true);
-    // …and it is authority over THAT word alone.
-    expect(startedRunHere(KEY, 'autre')).toBe(false);
+    post.mockResolvedValueOnce(answer(401, { error: 'unknown_device' }));
+    await expect(startWordRound(ctx())).resolves.toBe(false);
+    expect(signedOut).toHaveBeenCalledWith(`${'a'.repeat(16)}:${'d'.repeat(16)}`);
 
-    // The daily is re-published: the store resets the round to the new word, and this
-    // session — which never tapped PLAY on it — is an ordinary joiner there.
-    const fresh = { ...ctx(), word: 'autre' };
-    useGameStore.setState(
-      (state) => ({
-        wordRounds: {
-          ...state.wordRounds,
-          [KEY]: { word: 'autre', startedAt: null, deadline: null, tried: [], claimed: 0 },
-        },
-      }),
-      false,
-    );
-    post.mockReset();
-    // Somebody else is already running the new word, and their clock is spent as far as
-    // this device can tell.
-    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 120_000 }));
-    beginWordRoundSync(fresh, false);
-    await settle();
-    beginWordRoundSync(fresh, true);
-    await settle(120_000);
-    // The read, and NOT an empty log over the run somebody else is playing.
-    expect(post).toHaveBeenCalledTimes(1);
-    expect(round().submitted).toBeUndefined();
+    signedOut.mockReset();
+    post.mockResolvedValueOnce(answer(401, { error: 'not_started' }));
+    await expect(startWordRound(ctx())).resolves.toBe(false);
+    expect(signedOut).not.toHaveBeenCalled();
   });
 
   // The same key reuse makes the in-flight map ambiguous: a start still in the air for the
   // retired word would otherwise answer a call about the replacement with ITS outcome, and
-  // anchor the retired word's clock into the fresh round.
+  // open the retired word's clock into the fresh round.
   it('drops a START answer for a word the round no longer plays', async () => {
     seedRound();
     let settleStart: (value: Response) => void = () => {};
@@ -320,10 +398,8 @@ describe('the round START', () => {
     );
     settleStart(stamped());
     await expect(inFlight).resolves.toBe(false);
-    // The retired word's clock never reaches the round now on screen, and no authority
-    // is granted for it either.
+    // The retired word's clock never reaches the round now on screen.
     expect(round()).toMatchObject({ word: 'autre', startedAt: null, deadline: null });
-    expect(startedRunHere(KEY, 'autre')).toBe(false);
   });
 
   it('reports failure when the challenge itself never lands', async () => {
@@ -338,17 +414,58 @@ describe('the mount READ', () => {
   it('publishes a loading state qualified by this word before the read settles', () => {
     seedRound();
     post.mockReturnValueOnce(new Promise(() => {}));
-    beginWordRoundSync(ctx(), false);
+    mount();
     expect(load()).toEqual({ status: 'loading', puzzle: wordTag(WORD) });
   });
 
-  it('resumes a run this device never started', async () => {
+  // #202 anchored the server's clock here, which is what made the daily one-shot across
+  // devices. #217 stops: a run this device does not hold is one whose claims live in the
+  // playing device's storage, so a countdown opened for it would time a log that can never
+  // be reported. What the read does instead is NAME the owner.
+  it('ANCHORS NOTHING, and reports whose run the daily holds', async () => {
     seedRound();
-    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 30_000 }));
-    beginWordRoundSync(ctx(), false);
+    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), startedBy: OTHER, nowAt: 30_000 }));
+    mount();
     await settle();
     expect(bodyOf(0).guesses).toBeUndefined();
-    expect(round()).toMatchObject({ startedAt: T0 - 30_000 });
+    expect(round()).toMatchObject({ startedAt: null, deadline: null });
+    const current = load();
+    expect(current?.status === 'ready' && current.server.startedBy).toEqual(OTHER);
+  });
+
+  it('discards a local run when the read says another device replaced it', async () => {
+    seedRound({
+      startedAt: T0 - 300_000,
+      deadline: T0 - 100_000,
+      tried: ['mer'],
+      claimed: 1,
+    });
+    post.mockResolvedValueOnce(
+      answer(200, { startedAt: at(200_000), startedBy: OTHER, nowAt: 300_000 }),
+    );
+    mount();
+    await settle();
+
+    expect(round()).toEqual({
+      word: WORD,
+      startedAt: null,
+      deadline: null,
+      tried: [],
+      claimed: 0,
+    });
+    const current = load();
+    expect(current?.status === 'ready' && current.server.startedBy).toEqual(OTHER);
+  });
+
+  // The same rule for a stamp naming THIS device: the local clock is the only place a run's
+  // claims exist, so a device whose storage no longer holds one is offered a restart rather
+  // than a countdown over a log it cannot see. (The screen reads exactly that pair.)
+  it('opens no clock even when the stamp names this device', async () => {
+    seedRound();
+    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 30_000 }));
+    mount();
+    await settle();
+    expect(round()).toMatchObject({ startedAt: null, deadline: null });
   });
 
   it('carries a finished day’s RECORDED run to a device that never played it', async () => {
@@ -361,18 +478,18 @@ describe('the mount READ', () => {
         guesses: ['mer', 'loin'],
       }),
     );
-    beginWordRoundSync(ctx(), false);
+    mount();
     await settle();
     expect(round()).toMatchObject({ tried: [], claimed: 1, submitted: true });
     expect(serverGuesses()).toEqual(['mer', 'loin']);
-    // Even the bare anchored deadline sits in the past: the run this device is reading
-    // about is over, and settlement never moves that clock forward.
-    expect(round().deadline!).toBeLessThan(T0);
+    // No clock is opened for it (#217): the run is recorded, and `submitted` is the whole
+    // fact the screen needs to draw the final result.
+    expect(round().deadline).toBeNull();
     // …and the server demonstrably holds it, so nothing is owed. Without this the device
     // would POST the adopted run straight back on this visit and on every later one.
     expect(round().submitted).toBe(true);
 
-    beginWordRoundSync(ctx(), true);
+    runOver();
     await settle(60_000);
     expect(post).toHaveBeenCalledTimes(1);
   });
@@ -393,7 +510,7 @@ describe('the mount READ', () => {
       }),
     );
 
-    beginWordRoundSync(ctx(), false);
+    mount();
     await settle();
 
     expect(round()).toMatchObject({
@@ -413,7 +530,7 @@ describe('the mount READ', () => {
     post.mockResolvedValueOnce(
       answer(200, { startedAt: at(0), submittedAt: at(90_000), nowAt: 300_000 }),
     );
-    beginWordRoundSync(ctx(), true);
+    runOver();
     await settle(120_000);
     expect(round().submitted).toBe(true);
     expect(post).toHaveBeenCalledTimes(1);
@@ -422,9 +539,29 @@ describe('the mount READ', () => {
   it('leaves an unplayed day alone on a 404 — PLAY is what creates the record', async () => {
     seedRound();
     post.mockResolvedValueOnce(answer(404, { error: 'not_found' }));
-    beginWordRoundSync(ctx(), false);
+    mount();
     await settle();
     expect(round()).toMatchObject({ startedAt: null, tried: [] });
+  });
+
+  it('discards a stale local run when a 404 says the server holds none', async () => {
+    seedRound({
+      startedAt: T0 - 300_000,
+      deadline: T0 - 100_000,
+      tried: ['mer'],
+      claimed: 1,
+    });
+    post.mockResolvedValueOnce(answer(404, { error: 'not_found' }));
+    mount();
+    await settle();
+
+    expect(round()).toEqual({
+      word: WORD,
+      startedAt: null,
+      deadline: null,
+      tried: [],
+      claimed: 0,
+    });
   });
 
   // A republished WORD restarts the round on both ends. Everything the flight knew describes
@@ -436,7 +573,7 @@ describe('the mount READ', () => {
     seedRound({ startedAt: T0 - 300_000, deadline: T0 - 100_000, tried: ['mer'], claimed: 1 });
     post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 300_000 }));
     post.mockRejectedValueOnce(new Error('offline')); // the retired run's log never lands
-    beginWordRoundSync(ctx(), true);
+    runOver();
     await settle();
     expect(round().submitted).toBeUndefined();
 
@@ -453,7 +590,7 @@ describe('the mount READ', () => {
     );
     post.mockReset();
     post.mockResolvedValueOnce(answer(404, { error: 'not_found' }));
-    beginWordRoundSync({ ...ctx(), word: 'autre' }, false);
+    mount({ ...ctx(), word: 'autre' });
     expect(load()).toEqual({ status: 'loading', puzzle: wordTag('autre') });
     await settle(120_000);
     // The read, and NOT a submission of the fresh round's empty log.
@@ -461,24 +598,44 @@ describe('the mount READ', () => {
     expect(bodyOf(0).guesses).toBeUndefined();
   });
 
-  it('never re-anchors a clock this device is already running', async () => {
+  it('never shifts a clock this device is already running', async () => {
     seedRound({ startedAt: T0 - 5_000, deadline: T0 - 5_000 + runMs(0) });
     post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 40_000 }));
-    beginWordRoundSync(ctx(), false);
+    mount();
     await settle();
-    // A re-read must not shift a run under the player.
-    expect(round()).toMatchObject({ startedAt: T0 - 5_000 });
+    // A re-read must not shift a run under the player — only a START ever writes the clock.
+    expect(round()).toMatchObject({ startedAt: T0 - 5_000, deadline: T0 - 5_000 + runMs(0) });
   });
 });
 
 describe('the end-of-run SUBMISSION', () => {
+  it('a TOKENLESS submission stands down — only the deploy buttons mint (#216 rework)', async () => {
+    // A run this identity cannot own: the persisted log exists but the device holds no
+    // account (the pending-bootstrap edge). The submission never mints one — the mount
+    // read publishes ready-and-empty without a request, and the write stands down, so
+    // nothing here ever reaches the server. (The old mid-ensure identity-swap hazard is
+    // structurally gone: the submission resolves its identity synchronously now.)
+    seedRound({
+      startedAt: T0 - 300_000,
+      deadline: T0 - 100_000,
+      tried: ['mer'],
+      claimed: 1,
+    });
+    identity.present = false;
+    runOver();
+    await settle();
+
+    expect(post).not.toHaveBeenCalled();
+    expect(round().tried).toEqual(['mer']);
+  });
+
   it('sends the whole log ONCE, after the read, and persists the acknowledgement', async () => {
     seedRound({ startedAt: T0 - 300_000, deadline: T0 - 100_000, tried: ['mer', 'loin'], claimed: 1 });
     post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 300_000 }));
     post.mockResolvedValueOnce(
       answer(200, { startedAt: at(0), nowAt: 300_000, guesses: ['mer', 'loin'] }),
     );
-    beginWordRoundSync(ctx(), true);
+    runOver();
     await settle();
 
     expect(post).toHaveBeenCalledTimes(2);
@@ -491,7 +648,7 @@ describe('the end-of-run SUBMISSION', () => {
     post.mockResolvedValueOnce(
       answer(200, { startedAt: at(0), nowAt: 600_000, guesses: ['mer', 'loin'] }),
     );
-    beginWordRoundSync(ctx(), true);
+    runOver();
     await settle();
     expect(post).toHaveBeenCalledTimes(3);
   });
@@ -502,7 +659,7 @@ describe('the end-of-run SUBMISSION', () => {
     post.mockResolvedValueOnce(
       answer(200, { startedAt: at(0), nowAt: 300_000, guesses: ['ocean'] }),
     );
-    beginWordRoundSync(ctx(), true);
+    runOver();
     await settle();
     expect(bodyOf(1).guesses).toEqual(['loin']);
     expect(round()).toMatchObject({ submitted: true, tried: [], claimed: 1 });
@@ -515,7 +672,7 @@ describe('the end-of-run SUBMISSION', () => {
     seedRound({ startedAt: T0 - 300_000, deadline: T0 - 100_000, tried: ['mer'], claimed: 1 });
     post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 300_000 }));
     post.mockResolvedValueOnce(answer(409, { startedAt: at(0), error: 'too_early' }));
-    beginWordRoundSync(ctx(), true);
+    runOver();
     await settle();
     expect(round().submitted).toBeUndefined();
 
@@ -524,11 +681,13 @@ describe('the end-of-run SUBMISSION', () => {
     expect(round().submitted).toBe(true);
   });
 
-  it('CLOSES on a verdict — a run the server never started can never accept this log', async () => {
+  it('CLOSES on a verdict — a run the server no longer holds can never accept this log', async () => {
     seedRound({ startedAt: T0 - 300_000, deadline: T0 - 100_000, tried: ['mer'], claimed: 1 });
-    post.mockResolvedValueOnce(answer(404, { error: 'not_found' }));
+    // The read finds this device's OWN live run, so the log is offered; by the time it
+    // lands the server holds no run of this word at all.
+    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 300_000 }));
     post.mockResolvedValueOnce(answer(409, { error: 'not_started' }));
-    beginWordRoundSync(ctx(), true);
+    runOver();
     await settle();
     expect(post).toHaveBeenCalledTimes(2);
     // Nothing spins: a request this client keeps getting wrong is not retried for the
@@ -538,11 +697,26 @@ describe('the end-of-run SUBMISSION', () => {
     expect(round().submitted).toBeUndefined();
   });
 
+  // …and a run the READ already discarded is never OFFERED at all. A discard empties the
+  // outbox along with the clock, so a submission left armed across one posts an EMPTY log
+  // for a run nobody played: refused — and refused as a VERDICT, which closes the
+  // conversation for the tab's life. Only the server stands between the two otherwise, and
+  // the client owes itself the guard.
+  it('never offers a log for a run the read has already discarded', async () => {
+    seedRound({ startedAt: T0 - 300_000, deadline: T0 - 100_000, tried: ['mer'], claimed: 1 });
+    post.mockResolvedValueOnce(answer(404, { error: 'not_found' }));
+    runOver();
+    await settle(120_000);
+    // The read, and nothing else: there is no run left to report.
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(round()).toMatchObject({ startedAt: null, deadline: null, tried: [], claimed: 0 });
+  });
+
   it('retries a transport failure behind a widening backoff', async () => {
     seedRound({ startedAt: T0 - 300_000, deadline: T0 - 100_000, tried: ['mer'], claimed: 1 });
     post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 300_000 }));
     post.mockRejectedValueOnce(new Error('offline'));
-    beginWordRoundSync(ctx(), true);
+    runOver();
     await settle();
     expect(post).toHaveBeenCalledTimes(2);
     expect(round().submitted).toBeUndefined();
@@ -552,46 +726,108 @@ describe('the end-of-run SUBMISSION', () => {
     expect(round().submitted).toBe(true);
   });
 
-  // A device that JOINED a run — a second device under the same key, or a second tab
-  // holding a stale copy — anchors the server's start with an empty log and cannot know
-  // what the real run has claimed, so its clock dies at the bare START_SECONDS while the
-  // run is still being played. Both writes are first-write-wins, so an empty submission
-  // there would record an empty run (and a score of 0) that the real one can never replace.
-  it('a JOINER writes nothing: it has no run of its own to report', async () => {
+  // A run that claimed NOTHING is still a run somebody played, and it records. #202 needed a
+  // session flag to allow it (an empty local log looked exactly like a joiner's); #217 needs
+  // none, because a device only ever reports the run its own screen was holding.
+  it('reports an EMPTY run — playing nothing is a result, not an absence', async () => {
     seedRound();
-    // The server's start is 2 minutes old and holds no log: the run is live elsewhere.
-    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 120_000 }));
-    beginWordRoundSync(ctx(), false);
+    post.mockResolvedValueOnce(stamped());
+    await startWordRound(ctx()); // PLAY was tapped HERE
+    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 60_000 }));
+    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 60_000 }));
+    runOver();
     await settle();
-    // Its clock is already spent — that is what the screen will read as "over".
-    expect(round().deadline!).toBeLessThan(T0);
+    expect(bodyOf(2).guesses).toEqual([]);
+    expect(round().submitted).toBe(true);
+  });
 
-    beginWordRoundSync(ctx(), true);
+  // The screen reports the run it HOLDS, and only that: a device that never started this
+  // day, or one whose run was restarted elsewhere, is on the gate and says nothing. Nothing
+  // in the engine has to infer it any more.
+  it('says nothing for a run the screen never reports over', async () => {
+    seedRound();
+    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), startedBy: OTHER, nowAt: 120_000 }));
+    mount();
     await settle(120_000);
     expect(post).toHaveBeenCalledTimes(1); // the read, and nothing else
     expect(round().submitted).toBeUndefined();
   });
 
-  it('…but the session that STARTED the run may report an empty one', async () => {
-    seedRound();
-    post.mockResolvedValueOnce(stamped());
-    await startWordRound(ctx()); // PLAY was tapped HERE
-    expect(startedRunHere(KEY, WORD)).toBe(true);
-
-    // Played nothing, waited out the clock: a real 0-claim run, and it still counts as
-    // played.
-    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 60_000 }));
-    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 60_000 }));
-    beginWordRoundSync(ctx(), true);
+  // Last-commit-wins between concurrent devices (#217): device B restarted the day while
+  // this one was away, so the log offered here belongs to a clock the server no longer
+  // holds. The refusal is a VERDICT — retrying cannot make it accept — but it also carries
+  // the stamp that STANDS, and adopting that is what moves this screen off a finished run
+  // it may never report and onto the offer to start over.
+  it('ADOPTS a `started_elsewhere` refusal on the way out, and stops asking', async () => {
+    seedRound({ startedAt: T0 - 300_000, deadline: T0 - 100_000, tried: ['mer'], claimed: 1 });
+    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 300_000 }));
+    post.mockResolvedValueOnce(
+      answer(409, { startedAt: at(200_000), startedBy: OTHER, error: 'started_elsewhere' }),
+    );
+    runOver();
     await settle();
-    expect(bodyOf(2).guesses).toEqual([]);
+
+    const current = load();
+    expect(current?.status === 'ready' && current.server.startedBy).toEqual(OTHER);
+    expect(round().submitted).toBeUndefined();
+    // The refused run is GONE, so its local husk goes too: the chooser and the archive read
+    // a Word day's status off exactly this clock and count, and keeping them would badge the
+    // day DONE for a run the server destroyed.
+    expect(round()).toMatchObject({ startedAt: null, deadline: null, tried: [], claimed: 0 });
+    // Nothing spins: the conversation is closed on the verdict.
+    await settle(120_000);
+    expect(post).toHaveBeenCalledTimes(2);
+  });
+
+  it('discards the local run for a `not_started` verdict too — there is nothing to submit', async () => {
+    seedRound({ startedAt: T0 - 300_000, deadline: T0 - 100_000, tried: ['mer'], claimed: 1 });
+    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 300_000 }));
+    post.mockResolvedValueOnce(answer(409, { error: 'not_started' }));
+    runOver();
+    await settle();
+    expect(round()).toMatchObject({ startedAt: null, deadline: null, tried: [], claimed: 0 });
+  });
+
+  // …and the restart that refusal SENDS THE PLAYER TO reopens it. A verdict closes the
+  // conversation, and nothing else would: the run the player then plays would reach its
+  // deadline against an engine that had stopped listening — no submission, no score row, no
+  // standing, until a reload. The accepted START is the event that starts it over.
+  it('REOPENS a verdict-closed conversation for the run a restart mints', async () => {
+    seedRound({ startedAt: T0 - 300_000, deadline: T0 - 100_000, tried: ['mer'], claimed: 1 });
+    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 300_000 }));
+    post.mockResolvedValueOnce(
+      answer(409, { startedAt: at(200_000), startedBy: OTHER, error: 'started_elsewhere' }),
+    );
+    runOver();
+    await settle();
+    expect(post).toHaveBeenCalledTimes(2); // the read, then the refused submission
+
+    // START OVER: the server mints a fresh clock for THIS device.
+    post.mockResolvedValueOnce(stamped());
+    await expect(startWordRound(ctx())).resolves.toBe(true);
+    expect(round()).toMatchObject({ startedAt: T0, deadline: T0 + runMs(0), tried: [] });
+
+    // The retired run's "its log is unsent" does NOT survive the restart: a submission
+    // fired here would be refused `too_early`, retried behind the backoff, and would
+    // eventually record the fresh run mid-play — first-write-wins, the day ended early.
+    mount();
+    await settle(30_000);
+    expect(post).toHaveBeenCalledTimes(3);
+
+    // …and when the fresh run's own clock dies, it is submitted.
+    vi.setSystemTime(T0 + runMs(0) + 1);
+    post.mockResolvedValueOnce(answer(200, { startedAt: at(0), nowAt: 60_000 }));
+    runOver();
+    await settle();
+    expect(post).toHaveBeenCalledTimes(4);
+    expect(bodyOf(3).guesses).toEqual([]);
     expect(round().submitted).toBe(true);
   });
 
   it('says nothing at all while the run is still on', async () => {
     seedRound({ startedAt: T0, deadline: T0 + runMs(0), tried: ['mer'], claimed: 1 });
     post.mockResolvedValueOnce(answer(200, { startedAt: at(0) }));
-    beginWordRoundSync(ctx(), false);
+    mount();
     await settle(60_000);
     // The read, and nothing else: Word mode does not stream.
     expect(post).toHaveBeenCalledTimes(1);

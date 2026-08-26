@@ -32,13 +32,23 @@
       scores.ts               /scores GET route (READ-ONLY since #203): params, derived histogram
       scoreLimits.ts          the Word field's claim ceiling (the sentence one retired with #203)
       liveRoute.ts            what the LIVE routes share: no-store headers, the JSON-body
-                              reader + size cap, the #187 secret check, the (lang, mode,
+                              reader + size cap, #216's device-token check and the
+                              `unknown_device` resolution behind it, the (lang, mode,
                               date) + future-skew guard, the trusted viewer address and the
                               Turnstile-token check the gated writes share
+      devices.ts              POST /devices (#216): the Turnstile-gated idempotent bootstrap,
+                              the sign-out screen's list, and revocation by device id + opaque key
+      deviceStore.ts          device/account storage contract; device#<tokenHash> base key,
+                              the account GSI, SHA-256(token) and the once-a-day lastSeenAt
+      dynamoDeviceStore.ts    prod GetItem auth + ONE create-only transaction for the pair,
+                              the index Query and direct conditional base-item revocation
+      memoryDeviceStore.ts    process-local implementation for backend:dev/tests (seedable)
+      userAgent.ts            what a device IS, read server-side from the User-Agent header
+      testDevice.ts           TEST-ONLY: one seeded device and the account it acts as
       scoreStore.ts           score storage contract; day/dedup keys + 5/48h constants
       dynamoScoreStore.ts     prod atomic transaction + strongly-consistent day-partition Query
       memoryScoreStore.ts     process-local implementation for backend:dev/tests
-      profile.ts              /profile GET+POST route (#188): auth (derived publicId), name +
+      profile.ts              /profile GET+POST route (#188): device auth -> accountId, name +
                               avatar validation, moderation, upsert
       profileStore.ts         player-row storage contract (player#<publicId> partition)
       dynamoProfileStore.ts   prod GetItem read + UpdateItem upsert (createdAt via if_not_exists)
@@ -91,7 +101,7 @@
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output). Sentence puzzles AND #154 word artifacts (#156): the artifact type is detected from the file's SHAPE and routed to its own key.
 pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--mode sentence|word] [--ci]  # publish-buffer coverage (#61); --mode word probes the #156 word-artifact buffer; reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
-pnpm backend:dev                # local server (puzzles + /scores + /profile + /friends + /board + /round + /history + /today) on :8787; FS puzzles, in-memory scores/profiles/friends/rounds/history, local Turnstile accept-all
+pnpm backend:dev                # local server (puzzles + /scores + /profile + /friends + /board + /round + /history + /devices + /today) on :8787; FS puzzles, in-memory scores/profiles/friends/rounds/history/devices, local Turnstile accept-all
 pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server with a #190 board population (in-memory — re-run after a restart)
 ```
 
@@ -134,8 +144,8 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
 
 - **Player profile (#188):** the ONE handler also serves `GET /profile?id=<publicId>`
   (public row: `{ publicId, name, avatar }`; 400 malformed id, 404 never customized) and
-  `POST /profile` `{ secret, name, avatar }` — the authenticated upsert keyed by the
-  DERIVED publicId (shared `identity.ts`), a separate write path from scores. Every
+  `POST /profile` `{ token, name, avatar }` — the authenticated upsert keyed by the ACCOUNT
+  the caller's device token resolves to (#216), a separate write path from scores. Every
   response is `no-store`. The write validates the name against the SHARED charset rule
   (`shared/src/name.ts` `isValidName` — alphanumerics and underscores, ≤16, empty
   allowed; user-decided 2026-08-19, replacing the local trim + code-point cap +
@@ -149,7 +159,7 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   Query's rule, for the same read-after-write reason): the editor adopts what comes back
   as both its contents and its save baseline, so an eventually consistent read could
   hand a player the profile they just replaced — or, after a first save, a 404 saying
-  they never customized one. No Turnstile, no IP dedup: the secret is the auth and
+  they never customized one. No Turnstile, no IP dedup: the device token is the auth and
   the only row you can write is your own. Production POST needs `x-amz-content-sha256`
   like every live JSON write (same OAC boundary); the `id` query must stay in the CloudFront
   profile behavior's allowList (root `AGENTS.md` contract).
@@ -172,8 +182,8 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   move together.
 - **Friends graph (#189):** the ONE handler also serves `POST /friends` — and ONLY POST
   (a GET is a named 405): the player key authenticates in the BODY, so there is no way to
-  ask for a list without proving whose it is. `{secret}` reads the caller's edges,
-  `{secret, add}` records the mutual link an invite-link click makes, `{secret, remove}`
+  ask for a list without proving whose it is. `{token}` reads the caller's edges,
+  `{token, add}` records the mutual link an invite-link click makes, `{token, remove}`
   deletes both sides; every call answers `{ friends: [publicId] }` and every response is
   `no-store`. `add` refuses a self-link (400 `self_link`) and the cap (409 `friend_limit`,
   `FRIENDS_MAX` = 200, checked on BOTH sides); a re-click and a remove of a non-friend are
@@ -205,7 +215,7 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   guards (supported lang, required mode, valid date, +1-day future guard) but reads NO
   puzzle store — a population only exists for a published daily, so an unpublished day
   answers the empty board; GET's optional `id` is validated against
-  `PUBLIC_ID_PATTERN` (400 malformed); POST validates `{secret}` exactly like /friends.
+  `PUBLIC_ID_PATTERN` (400 malformed); POST authenticates `{token}` exactly like /friends.
   The param guards, the JSON-body reader and the secret check are the SHARED
   `liveRoute.ts` (below), not a fourth copy. The GLOBAL face reads the day partition
   (`ScoreStore.list`); the FRIENDS face reads `getMany` — the caller's edges plus
@@ -232,7 +242,7 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   profile rows.
   **The LIVE routes share their plumbing** (`liveRoute.ts`, extracted 2026-08-20 when
   `/board` became the FOURTH byte-identical copy): the `no-store` header, the body
-  reader with its 4 KB cap, the `{secret}` check, and the `(lang, mode, date)` guard
+  reader with its 4 KB cap, the `{token}` device resolution, and the `(lang, mode, date)` guard
   triple with the +1-day future skew. **`clientIp` and `requireTurnstileToken` moved here
   from /scores with #202**, when the word round start became the SECOND Turnstile-gated
   write: a route reaching into `scores.ts` for them would make that file a utility module
@@ -259,9 +269,9 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   like /friends (a GET is a named 405); the shared `requireDayParams` guard triple
   applies. Archive days sync like today's. *(This said the route reads NO puzzle store;
   #203 overturned it for the APPEND — see its own bullet below — and the READ still reads
-  none.)* `{secret, puzzle}` reads (404 = none yet, and
+  none.)* `{token, puzzle}` reads (404 = none yet, and
   also "nothing stored for THIS puzzle" — the tag's whole job, root `AGENTS.md`);
-  `{secret, puzzle, guesses}` appends. Validation is fail-closed BEFORE the store: a
+  `{token, puzzle, guesses}` appends. Validation is fail-closed BEFORE the store: a
   `PUZZLE_TAG_SHAPE` tag, then a non-empty string array of at most `ROUND_GUESS_CAP`
   entries, each of at most the language's `maxSlugLength` (#200) and each **left alone by
   `fold()`** — the check asks the shared contract rather than restating its pipeline as a
@@ -306,21 +316,29 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   a browser reads null for a header only curl and `backend:dev` ever see. Local serve swaps
   in `memoryRoundStore`; no new env or IAM (the table grant already carried GetItem +
   UpdateItem).
-- **Word mode's two round writes (#202):** the same route, `mode=word`. The product
-  contract (why the fast game syncs least, the server-stamped clock, the wait check, the
-  caps, what is deliberately NOT validated) lives in the root `AGENTS.md`. Implementation
+- **Word mode's two round writes (#202), owned by a DEVICE since #217:** the same route,
+  `mode=word`. The product contract (why the fast game syncs least, the server-stamped clock,
+  the wait check, the caps, what is deliberately NOT validated, and #217's two conditions)
+  lives in the root `AGENTS.md`. Implementation
   notes: the route DISPATCHES on the body — `turnstileToken` = START (a 400 on a sentence
   round, which has no clock), `guesses` = append or submit by mode, neither = read. START
-  is one conditional UpdateItem (`attribute_not_exists(#started) OR #p <> :puzzle`, with
-  `REMOVE #g` so a retired word's log leaves with its clock); a failed condition means this
-  word is already running and the ORIGINAL stamp is read back and answered. SUBMIT is the
+  is one conditional UpdateItem stamping `startedAt` AND `startedBy` (the caller's device id
+  plus its parsed user-agent fields, ONE Map attribute) under
+  `attribute_not_exists(#sub) OR #p <> :puzzle`, with `REMOVE #g, #sub` so the run it
+  replaces leaves with its clock; everything the condition passes for is REPLACED, so a
+  start is a RESTART and only a RECORDED run refuses one (`already_submitted`, answered 200
+  with the run that stands). *(#202's condition was `attribute_not_exists(#started) OR …`,
+  which made the start idempotent instead.)* SUBMIT is the
   one path here that READS A PUZZLE STORE (`getWordPuzzle`) — only the artifact can tell a
   claim from a miss, and both the claim ceiling (`wordScoreMaximum`, distinct ranks) and
   the wait check are priced from that count. The store reads once, consistently, then
-  writes under `#p = :puzzle AND attribute_exists(#started) AND attribute_not_exists(#sub)`:
+  writes under `#p = :puzzle AND #by.#dev = :device AND attribute_not_exists(#sub)`:
   the wait check is arithmetic (which DynamoDB's condition grammar has none of) and the
-  caller has to be told WHICH bound refused it, but first-write-wins is still decided by
-  the write's own condition rather than by the read before it. `startedAt` and
+  caller has to be told WHICH bound refused it, but first-write-wins AND the ownership check
+  are still decided by the write's own condition rather than by the read before it — a
+  restart can land between them, and a lost race is re-read and classified by what STANDS
+  (`already_submitted`, or `started_elsewhere` when the stamp names another device: a 409
+  carrying that stamp, which the client adopts on its way out). `startedAt` and
   `submittedAt` are STRINGS like
   `createdAt`, and no word path touches `lastWriteAt` (the streaming interval's attribute).
   **Every command's `ExpressionAttributeNames` holds exactly the aliases ITS OWN
@@ -330,16 +348,22 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   against a mocked client (it shipped that way once). `dynamoRoundStore.test.ts` runs the
   correspondence check on every command any test issues, in both directions and for values
   too, so a new write path is covered by the tests that already exist.
-  **The START answers `resumed`** — false when THAT call stamped the clock, true when it
-  joined one already running — because the client cannot otherwise tell whether it is the
-  session running the round, and the root `AGENTS.md` records what turns on that.
+  **The START's answer NAMES the run's device** (#217, replacing #202's `resumed` flag):
+  every answer on this route carries `startedBy` when a clock is stamped, so the client asks
+  whose run it is instead of remembering whether its own start was the one that opened it.
+  The root `AGENTS.md` records what turns on that, and what it retired.
   **Every answer, refusals included, carries the server's own `now`** — the client anchors
   `now − startedAt`, an elapsed span, which is what makes the visible clock immune to
   device-clock skew. `too_early`/`not_started` are 409s, an over-cap or unclaimable log is
   a 400, a missing artifact the day-addressed 404, a rejected challenge a 403
   `turnstile_rejected` (the shared `requireTurnstileToken`, extracted from /scores when
-  this became the second gated write). `HandlerDeps.rounds` is a `RoundHandlerDeps`
-  (`{roundStore, turnstile, allowSourceIp?}`) for that gate — the /scores deps' shape.
+  this became the second gated write), and a submission for a run the stamp gives to another
+  device a 409 `started_elsewhere`. `HandlerDeps.rounds` is a `RoundHandlerDeps` for that
+  gate — the /scores deps' shape — and since the PR-219 review it carries NO DeviceStore:
+  every authenticated route resolves its caller through the ONE top-level
+  `HandlerDeps.deviceStore`, so two routes can never be wired to two different stores
+  (half the private surface answering 401 `unknown_device` for a token the other half
+  authenticates).
   **The CORS PREFLIGHT is cached** (`PREFLIGHT_MAX_AGE_SECONDS`, applied on the OPTIONS
   branch and deliberately WITHOUT the live routes' `no-store` — a preflight carries no
   data, and what governs its reuse is `Access-Control-Max-Age`). /round is the first route
@@ -398,7 +422,7 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
 - **Server-backed player history (#211):** the ONE handler also serves `POST /history?lang=&mode=[&month=]`
   — the product contract (why it exists after #214, the explicit-loading rule, the streak
   window, the metering stance) lives in the root `AGENTS.md`. Implementation notes: POST-only
-  like /friends (a GET is a named 405), the `{secret}` body check and the `lang`/`mode` guard
+  like /friends (a GET is a named 405), the `{token}` body check and the `lang`/`mode` guard
   are the SHARED `liveRoute.ts` (`requireGameParams`, split out of `requireDayParams` because
   this read is addressed by a MONTH rather than a day); `month` is validated against the
   shared `HISTORY_MONTH_PATTERN` and is OPTIONAL, and there is deliberately NO future guard —
@@ -435,6 +459,45 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   the same oldest element and leave the collection a day over the cap; the next credit trims
   again. No new env, no new IAM: the table grant already carried Query, GetItem and
   UpdateItem.
+- **Devices and the accounts they belong to (#216):** the ONE handler also serves
+  `POST /devices` — and ONLY POST (a GET is a named 405). The product contract (the token's
+  exact shape, why the base item is keyed by its hash, where an account is created, what
+  `unknown_device` means) lives in the root `AGENTS.md`. Implementation notes: the route
+  DISPATCHES on the body — `turnstileToken` = BOOTSTRAP, `revoke` + `revokeKey` = sign that
+  listed device out, neither = list — and a body carrying bootstrap and either revoke field is
+  a 400, the /round rule. BOOTSTRAP verifies one
+  Siteverify call against the trusted viewer address, then writes the account row and the
+  device row in ONE `TransactWriteItems` of two CREATE-ONLY puts: an account with no device is
+  unreachable and a device with no account is unauthenticable, so a half-written pair is not a
+  state either side should have to handle. It reads by token hash FIRST, because that is the
+  common retry — the answer's own idempotence — and a racing second transaction adopts the
+  identity that won rather than throwing. The ids are minted by the ROUTE, from
+  `@whippin/shared`, so the store stays a storage contract. AUTHENTICATION
+  (`liveRoute.requireDevice`) is a strongly consistent GetItem on `device#<tokenHash>` plus
+  the account-existence check, both strongly consistent for the profile read's reason: a
+  device that just bootstrapped calls immediately with the token it was handed, and an
+  eventually-consistent miss there is `unknown_device` — the one answer that signs a player
+  out. The list exposes each projected base-key digest as an opaque, non-authenticating
+  `revokeKey`; `revoke` uses it for ONE direct base-table DeleteItem under a condition naming
+  the account and device. It performs no second GSI lookup, so propagation lag cannot turn a
+  valid sign-out into a silent miss. A failed condition performs one strongly-consistent BASE
+  read and returns `absent` or `mismatch`: the route filters an exact `revokeKey` after
+  `removed`/`absent` (including a concurrent self-revocation still visible in the GSI), and
+  filters nothing after `mismatch`. Throttling, permission and network failures propagate
+  rather than pretending the delete succeeded. `touch` swallows its own
+  failed condition for the same reason: `lastSeenAt` is a label on a screen, and a race with a
+  revocation must not turn into an error the player sees. Storage is the score table again —
+  `device#<tokenHash>`/`device` with the two `gsi1*` index attributes, and
+  `player#<accountId>`/`account` beside the #188 profile row. No new env; the table grant
+  needed no new action, and the index ARN comes along with `Table.grant` once the table has an
+  index. The store is the ONE top-level
+  `HandlerDeps.deviceStore` every authenticated route reads (PR-219 review), and BOOTSTRAP
+  RE-PARENTS an orphaned device item — base item present, account row gone — onto the
+  fresh identity (the memory store's behaviour; the client re-sends the same persisted
+  token by design, so a deterministic failure there was an account that could never be
+  created again on that device). Local serve swaps in `memoryDeviceStore` (seedable, which is what lets a route test
+  name its caller at module level) and the accept-all verifier; restarting signs every local
+  device out, exactly as a wiped table would.
 - **Word mode's daily artifact (#154/#156):** the ONE puzzle endpoint also serves the
   single-word artifact under `mode=word` (`GET /?lang=&date=&mode=word`; absent/
   `sentence` = the sentence puzzle, anything else = 400) with identical day-addressing,

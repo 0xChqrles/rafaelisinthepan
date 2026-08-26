@@ -1,5 +1,5 @@
 // CONTRACT (#201, reworked by #214): the round sync engine. The server owns each round's
-// ordered guess log, and local storage is an OUTBOX holding only what it has not
+// ordered guess log, and persistent storage is an OUTBOX holding only what it has not
 // acknowledged:
 //   - the mount READ is what the board is replayed from, so the engine PUBLISHES where a
 //     round's state is — loading / ready with the server's own state / failed, and a failure
@@ -26,7 +26,9 @@ import { useGameStore, roundKeyForDay } from './gameStore';
 import {
   backoffDelayMs,
   beginRoundSync,
+  kickRoundSync,
   notifyGuess,
+  rearmRoundSync,
   resetRoundSync,
   retryRoundSync,
   writeDelayMs,
@@ -49,8 +51,41 @@ vi.mock('../api', async (importOriginal) => ({
 
 // ROUND CREATION is Turnstile-gated (#203): the engine mints a challenge for the append
 // that creates the record. The real module throws without VITE_TURNSTILE_SITE_KEY (the
-// `roundUrl` reason above) and would turn every creating append into a failed write.
-vi.mock('../turnstile', () => ({ turnstileToken: async () => 'challenge' }));
+// `roundUrl` reason above) and would turn every creating append into a failed write. The
+// hook lets a test swap the identity ACROSS the challenge await — the one await left
+// between resolving the identity and the POST, now that the append never bootstraps.
+vi.mock('../turnstile', () => ({
+  turnstileToken: async () => {
+    identity.beforeChallenge?.();
+    return 'challenge';
+  },
+}));
+
+// This device's IDENTITY (#216, reworked 2026-08-24). Every case below is signed in except
+// the tokenless ones, which flip the flag: no identity means no private fetch AND no
+// write — the append never mints one any more; the PLAY gate's deploy does, which the
+// tests stand in for by flipping the flag and kicking the engine.
+const identity = vi.hoisted(() => ({
+  present: true,
+  value: { token: 'f'.repeat(64), accountId: 'a'.repeat(16), deviceId: 'd'.repeat(16) },
+  beforeChallenge: null as (() => void) | null,
+  signedOut: vi.fn(),
+}));
+
+vi.mock('../identity', () => ({
+  deviceIdentity: () => (identity.present ? identity.value : null),
+  currentRequestIdentity: (expected: string | null = null) => {
+    if (!identity.present) return null;
+    const epoch = `${identity.value.accountId}:${identity.value.deviceId}`;
+    if (expected !== null && expected !== epoch) return null;
+    return { identity: identity.value, epoch };
+  },
+  identityEpoch: () => (identity.present ? `${identity.value.accountId}:${identity.value.deviceId}` : null),
+  identityEpochOf: (value: { accountId: string; deviceId: string }) =>
+    `${value.accountId}:${value.deviceId}`,
+  markDeviceSignedOut: identity.signedOut,
+}));
+
 
 const post = vi.mocked(postRoundBody);
 
@@ -161,13 +196,13 @@ function capped(key: string = KEY): boolean {
 }
 
 function bodyOf(call: number): {
-  secret: string;
+  token: string;
   puzzle: string;
   guesses?: string[];
   turnstileToken?: string;
 } {
   return post.mock.calls[call][1] as {
-    secret: string;
+    token: string;
     puzzle: string;
     guesses?: string[];
     turnstileToken?: string;
@@ -189,6 +224,14 @@ beforeEach(() => {
   vi.setSystemTime(T0);
   resetRoundSync();
   post.mockReset();
+  identity.present = true;
+  identity.value = {
+    token: 'f'.repeat(64),
+    accountId: 'a'.repeat(16),
+    deviceId: 'd'.repeat(16),
+  };
+  identity.beforeChallenge = null;
+  identity.signedOut.mockReset();
   useGameStore.setState(
     { outbox: {}, wordRounds: {}, roundLoads: {}, activeWordKey: null },
     false,
@@ -246,7 +289,14 @@ describe('the mount read — what the screen waits on', () => {
     expect(load()).toEqual({
       status: 'ready',
       puzzle: REVISION,
-      server: { guesses: ['bois', 'chemin'], solved: false, solvedByAppend: false, credited: false },
+      server: {
+        guesses: ['bois', 'chemin'],
+        solved: false,
+        solvedByAppend: false,
+        credited: false,
+        // Word mode's own (#217): a sentence round has no clock, so it names no device.
+        startedBy: null,
+      },
     });
     // A READ never writes: the request carries no guesses.
     expect(bodyOf(0).guesses).toBeUndefined();
@@ -260,7 +310,7 @@ describe('the mount read — what the screen waits on', () => {
     expect(load()).toEqual({
       status: 'ready',
       puzzle: REVISION,
-      server: { guesses: [], solved: false, solvedByAppend: false, credited: false },
+      server: { guesses: [], solved: false, solvedByAppend: false, credited: false, startedBy: null },
     });
   });
 
@@ -352,6 +402,63 @@ describe('appends — coalescing, pacing and the batch prefix', () => {
     expect(bodyOf(0).guesses).toEqual(['bois', 'chemin']);
     expect(outbox()).toEqual([]);
     expect(server()?.guesses).toEqual(['bois', 'chemin']);
+  });
+
+  it('never posts A\'s captured outbox as B when the account changes across the challenge', async () => {
+    // The append resolves its identity SYNCHRONOUSLY now (#216 rework: it never
+    // bootstraps), so the one await left before the POST is the round-start challenge —
+    // and an identity swap landing inside it must still refuse to authenticate A's batch
+    // as B. An ACCOUNT change also resets this engine (identityScope's listener runs
+    // synchronously inside the identity publish), which the swap stands in for here — it
+    // is what keeps the stood-down attempt from retrying under the stranger's account.
+    post.mockResolvedValueOnce(status(404));
+    beginRoundSync(ctx());
+    await settle();
+    post.mockClear();
+    seedOutbox(['bois']);
+    identity.beforeChallenge = () => {
+      identity.value = {
+        token: '8'.repeat(64),
+        accountId: 'b'.repeat(16),
+        deviceId: 'e'.repeat(16),
+      };
+      resetRoundSync();
+    };
+
+    notifyGuess(KEY);
+    await settle();
+
+    expect(post).not.toHaveBeenCalled();
+    expect(outbox()).toEqual(['bois']);
+  });
+
+  it('a DEVICE-only change across the challenge stands the attempt down without wedging the round', async () => {
+    // Same account, new device — the shape #204's reconnect produces. Nothing resets the
+    // engine for it (the round is still this account's), so the attempt must stand down
+    // WITHOUT closing: closing here left the flight settled+closed, which `retryRoundSync`
+    // cannot reopen, and the outbox never reached the server again for the tab's life.
+    // The re-pumped attempt authenticates the SAME account under the replacement token.
+    post.mockResolvedValueOnce(status(404));
+    beginRoundSync(ctx());
+    await settle();
+    post.mockClear();
+    seedOutbox(['bois']);
+    let swapped = false;
+    identity.beforeChallenge = () => {
+      if (swapped) return;
+      swapped = true;
+      identity.value = { ...identity.value, token: '8'.repeat(64), deviceId: 'e'.repeat(16) };
+    };
+    post.mockResolvedValueOnce(ok(['bois']));
+
+    notifyGuess(KEY);
+    await settle();
+
+    expect(post).toHaveBeenCalledTimes(1);
+    const body = post.mock.calls[0][1] as { token: string; guesses?: string[] };
+    expect(body.token).toBe('8'.repeat(64));
+    expect(body.guesses).toEqual(['bois']);
+    expect(outbox()).toEqual([]);
   });
 
   it('KEEPS guesses appended while the write was in flight', async () => {
@@ -536,6 +643,7 @@ describe('the four refusals', () => {
       // Learned from a refusal, not confirmed on this device's batch: adopted history.
       solvedByAppend: false,
       credited: false,
+      startedBy: null,
     });
     // The guesses it refused are never stored, so keeping them would leave the screen
     // counting tries the recorded score does not.
@@ -622,7 +730,13 @@ describe('the SERVER\'s solve (#203/#214)', () => {
     post.mockResolvedValueOnce(ok(['foret'], true));
     notifyGuess(KEY);
     await settle();
-    expect(server()).toEqual({ guesses: ['foret'], solved: true, solvedByAppend: true, credited: false });
+    expect(server()).toEqual({
+      guesses: ['foret'],
+      solved: true,
+      solvedByAppend: true,
+      credited: false,
+      startedBy: null,
+    });
   });
 
   it('a solve read at MOUNT is adopted history — nothing may celebrate it', async () => {
@@ -768,5 +882,85 @@ describe('publishing an UNCHANGED state writes nothing', () => {
     await settle(2 * ROUND_WRITE_MIN_MS);
     expect(load()).not.toBe(first);
     expect(server()?.guesses).toEqual(['bois', 'chemin']);
+  });
+});
+
+describe('no token, no private fetch (#216)', () => {
+  it('makes a tokenless round READY and EMPTY without asking the server', async () => {
+    // A device that has never bootstrapped owns no server round, so the authoritative state
+    // is KNOWN empty. Asking would be a private read on a visit that has performed none of
+    // the deliberate acts that create an identity — and it would bootstrap an account for a
+    // player who has not acted.
+    identity.present = false;
+    beginRoundSync(ctx());
+    await settle();
+    expect(post).not.toHaveBeenCalled();
+    expect(load()).toEqual({
+      status: 'ready',
+      puzzle: REVISION,
+      server: { guesses: [], solved: false, solvedByAppend: false, credited: false, startedBy: null },
+    });
+  });
+
+  it('re-reads an ADOPTED identity\'s round instead of trusting the tokenless answer', async () => {
+    // The empty projection was published for a device with NO account. When this tab then
+    // ADOPTS an identity another tab created (a storage event), that account may hold rows
+    // this tab has never seen — so the scope owner re-arms the conversation and the round
+    // starts over with a read under the new token. The outbox is untouched by design.
+    identity.present = false;
+    beginRoundSync(ctx());
+    await settle();
+    expect(post).not.toHaveBeenCalled();
+
+    identity.present = true;
+    post.mockResolvedValueOnce(ok(['bois']));
+    rearmRoundSync();
+    await settle();
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(bodyOf(0)).toMatchObject({ token: 'f'.repeat(64) });
+    expect(load()).toMatchObject({ status: 'ready', puzzle: REVISION });
+    expect(server()?.guesses).toEqual(['bois']);
+  });
+
+  it('HOLDS a tokenless outbox until the deploy lands, then appends with the token', async () => {
+    // The append never mints (#216 rework): guesses waiting behind the PLAY gate — the
+    // pending-bootstrap recovery — stay owed until the gate's deploy creates the account,
+    // whose identity listener then kicks every conversation.
+    identity.present = false;
+    beginRoundSync(ctx());
+    await settle();
+    seedOutbox(['bois']);
+    notifyGuess(KEY);
+    await settle();
+    expect(post).not.toHaveBeenCalled();
+
+    identity.present = true;
+    post.mockResolvedValueOnce(ok(['bois']));
+    kickRoundSync();
+    await settle();
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(bodyOf(0)).toMatchObject({ token: 'f'.repeat(64), guesses: ['bois'] });
+    // The round did not exist, so the creating append still carries the #203 challenge.
+    expect(bodyOf(0).turnstileToken).toBe('challenge');
+  });
+
+  it('signs the device out on `unknown_device`, and on nothing else', async () => {
+    // The one answer that may. A 5xx is an unknown write outcome and a 400 is an ordinary
+    // verdict; neither may take a player's account away.
+    post.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: 'unknown_device' }),
+    } as unknown as Response);
+    beginRoundSync(ctx());
+    await settle();
+    expect(identity.signedOut).toHaveBeenCalledTimes(1);
+
+    resetRoundSync();
+    identity.signedOut.mockReset();
+    post.mockResolvedValueOnce(status(400));
+    beginRoundSync(ctx());
+    await settle();
+    expect(identity.signedOut).not.toHaveBeenCalled();
   });
 });

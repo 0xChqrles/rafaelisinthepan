@@ -1,25 +1,27 @@
 // The round route on the ONE handler: POST /round?lang=&date=&mode=.
 //
 // SENTENCE mode STREAMS its guess log (#201):
-//   { secret, puzzle }                 — your stored round for that daily (404 = none yet);
-//   { secret, puzzle, guesses: [...] } — append to its ordered guess log.
+//   { token, puzzle }                 — your stored round for that daily (404 = none yet);
+//   { token, puzzle, guesses: [...] } — append to its ordered guess log.
 //
 // WORD mode writes exactly TWICE (#202) — the intuition says the opposite, but the fast
 // game benefits least: what syncing buys is the live friends board, and a 60-second run is
 // over before anyone opens it.
-//   { secret, puzzle, turnstileToken } — START: stamp this round's clock from the SERVER's
-//                                        own clock, onto the same record. Its answer adds
-//                                        `resumed`: false when THIS call stamped it, true
-//                                        when it joined a clock already running;
-//   { secret, puzzle, guesses: [...] } — SUBMIT the whole log, once, at the end of the run.
+//   { token, puzzle, turnstileToken } — START: stamp this round's clock from the SERVER's
+//                                       own clock, onto the same record, FOR THE CALLING
+//                                       DEVICE (#217). A run that is not yet recorded is
+//                                       replaced — this is a restart as much as a start;
+//   { token, puzzle, guesses: [...] } — SUBMIT the whole log, once, at the end of the run,
+//                                       and only from the device the stamp names.
 //
-// Every call answers with the FULL stored state `{ guesses, createdAt, startedAt?, now }` —
+// Every call answers with the FULL stored state
+// `{ guesses, createdAt, startedAt?, startedBy?, now }` —
 // a 200 and EVERY refusal — so a write is also a reconciliation: the caller computes
 // against stale local state, the server answers with truth, and the tab re-renders correct.
 // `now` is the server's own clock at the moment it answered, which is what lets a client
 // anchor its countdown to the server's `startedAt` without trusting its own device clock.
-// The route is POST-only for the /friends reason — the secret is the auth (#187) and it
-// travels in the BODY, never in a query string, so there is no way to ask without proving
+// The route is POST-only for the /friends reason — the device token is the auth (#216) and
+// it travels in the BODY, never in a query string, so there is no way to ask without proving
 // who you are. Its CloudFront behavior forwards exactly the three addressing queries (the
 // root AGENTS.md allowList contract); a production POST still needs
 // `x-amz-content-sha256` over the exact body bytes (OAC).
@@ -41,12 +43,12 @@ import {
   countTries,
   dayNumber,
   fold,
-  publicIdFromSecret,
   ROUND_GUESS_CAP,
   VOCAB_BUILDS,
   WORD_CLAIM_ZONE,
   WORD_MISS_CAP,
   wordRunFloorMs,
+  type Puzzle,
   type WordRanks,
 } from '@whippin/shared';
 import { createHash } from 'node:crypto';
@@ -55,9 +57,10 @@ import {
   LIVE_HEADERS,
   readJsonObject,
   requireDayParams,
-  requireSecret,
+  requireDevice,
   requireTurnstileToken,
 } from './liveRoute';
+import type { DeviceStore } from './deviceStore';
 import type { PlayerHistoryStore } from './historyStore';
 import { loadPuzzle, loadSlice } from './puzzleReads';
 import { deriveRound, type PuzzleSlice } from './slice';
@@ -76,6 +79,9 @@ import type { TurnstileVerifier } from './turnstile';
 
 export interface RoundHandlerDeps {
   roundStore: RoundStore;
+  // No DeviceStore here: every path is authenticated (#216), but the caller resolves
+  // through the ONE top-level `HandlerDeps.deviceStore` — the handler passes it in, so
+  // this route can never authenticate against a different store than its siblings.
   // Since #203 a finished round records its OWN score row — there is no score POST left to
   // do it (the client-claimed score and its range validation are retired), so the day's
   // population is written from here.
@@ -104,7 +110,7 @@ function maxGuesses(mode: ScoreMode): number {
 }
 
 // …at most that many slugs of at most the longest language's maxSlugLength (#200) plus JSON
-// framing (`"…",`), with slack for the secret, the puzzle tag, a Turnstile token and the
+// framing (`"…",`), with slack for the device token, the puzzle tag, a Turnstile token and the
 // field names. DERIVED rather than hand-picked, so a longer vocabulary cannot silently
 // outgrow it — still small, since the point is bounding JSON.parse rather than serving
 // uploads.
@@ -116,6 +122,7 @@ function bodyMaxBytes(mode: ScoreMode): number {
 export async function handleRound(
   event: FnUrlEvent,
   puzzleStore: PuzzleStore,
+  devices: DeviceStore,
   deps: RoundHandlerDeps,
   serverDate: string,
   instant: Date,
@@ -128,7 +135,7 @@ export async function handleRound(
     return errorResponse(
       405,
       'method_not_allowed',
-      'The round route is POST-only: the player key authenticates in the body.',
+      'The round route is POST-only: the device token authenticates in the body.',
       responseHeaders,
     );
   }
@@ -141,10 +148,9 @@ export async function handleRound(
   const parsed = readJsonObject(event, 'Round', responseHeaders, bodyMaxBytes(mode));
   if (!parsed.ok) return parsed.response;
   const body = parsed.value;
-  const checked = requireSecret(body, responseHeaders);
-  if (!checked.ok) return checked.response;
-  const publicId = await publicIdFromSecret(checked.value);
 
+  // Validated BEFORE authentication: it costs no I/O, and knowing the tag is what lets
+  // the hot sentence append start its slice fetch beside the auth reads below.
   const puzzle = body.puzzle;
   if (typeof puzzle !== 'string' || !PUZZLE_TAG_SHAPE.test(puzzle)) {
     return errorResponse(
@@ -154,6 +160,26 @@ export async function handleRound(
       responseHeaders,
     );
   }
+
+  // The game's hottest write pays latency directly: the web paces its flushes from the
+  // previous write's ANSWER, so every serial round trip here cuts the sustained sync rate.
+  // Authentication is two sequential DynamoDB reads since #216 (the device row, then its
+  // account row); the sentence append's derivation slice (#203) depends on neither, so its
+  // S3 GET starts FIRST and hides inside them — the same overlap #203 built against the
+  // round read. The word paths and the plain read still await auth alone: everything they
+  // fetch needs the resolved account.
+  const slicePromise =
+    mode !== 'word' && body.guesses !== undefined
+      ? loadSlice(puzzleStore, date, lang, puzzle)
+      : null;
+  // A path that returns before awaiting it (a refused auth, a malformed batch) must not
+  // leave the rejection unhandled; the append path awaits the ORIGINAL promise, so a real
+  // failure still surfaces there.
+  slicePromise?.catch(() => {});
+
+  const auth = await requireDevice(body, responseHeaders, devices, instant);
+  if (!auth.ok) return auth.response;
+  const publicId = auth.value.account.accountId;
 
   const answer = (state: RoundState) => json(200, roundBody(state, instant), responseHeaders);
 
@@ -193,27 +219,37 @@ export async function handleRound(
         responseHeaders,
       );
     }
-    // `running` is not a refusal: the ORIGINAL start stands and is what the answer
-    // carries, so a double tap, a retry and a second device all resume the one clock.
+    // A START is a RESTART as much as a first start (#217): an unsubmitted run is replaced
+    // — this device's, another device's, or a retired word's — and the new stamp names the
+    // CALLER. The one thing that refuses it is a run already RECORDED, which is answered
+    // with that final run rather than as an error: the daily is one-shot once its log is
+    // stored, and the caller adopts what stands instead of wiping it.
     //
-    // But WHICH of the two happened is the caller's business, so the answer says it. A
-    // client that merely RESUMED someone else's clock cannot know what that run has
-    // claimed — Word mode stores nothing until the end — so its own clock runs short and
-    // would call a live run finished. Telling it apart from the session that actually
-    // stamped the clock is what stops a joiner from writing an empty run over a real one.
+    // The device stamp is what replaced #202's `resumed` flag and every inference the
+    // client hung off it. A device could tell "I am running this" from "I merely joined a
+    // clock somebody else is playing" only by remembering that its own start stamped it —
+    // and a joiner that got that wrong buried a real run under an empty log. Now the answer
+    // simply says whose run it is.
     const { outcome, state } = await rounds.start({
       date,
       lang,
       mode,
       publicId,
       puzzle,
+      runner: { deviceId: auth.value.device.deviceId, ...auth.value.device.agent },
       now: instant,
     });
-    return json(
-      200,
-      { ...roundBody(state, instant), resumed: outcome === 'running' },
-      responseHeaders,
-    );
+    // …and that refusal IS the run the answer carries: there is no error code for it, so
+    // the caller reads it off `submittedAt`. An `already_submitted` carrying NO recorded run
+    // therefore says nothing at all, and a 200 would read as a start that silently did
+    // nothing — the one failure this route must never fake. It happens when a republish
+    // lands between the condition failing and the strongly consistent read that classifies
+    // it: the record has moved on to the word that replaced this one, so the server
+    // genuinely holds no round for the puzzle asked about. That is the READ's own answer.
+    if (outcome === 'already_submitted' && state.submittedAt === undefined) {
+      return errorResponse(404, 'not_found', 'No round recorded.', responseHeaders);
+    }
+    return answer(state);
   }
 
   const rawGuesses = body.guesses;
@@ -230,9 +266,12 @@ export async function handleRound(
   if (rawGuesses === undefined) {
     // READ: the caller's stored round FOR THIS PUZZLE. A 404 is the honest "nothing
     // yet" — a fresh round (or a re-published daily whose old log is retired), local
-    // state authoritative until the first write lands. For a word round it is also what
-    // makes the daily one-shot ACROSS DEVICES: the answer carries the server's start, so
-    // a second device resumes the run instead of beginning a fresh one.
+    // state authoritative until the first write lands. For a word round it is what says
+    // WHOSE run the daily holds (#217): the answer carries the start and the device it was
+    // stamped for, and the caller turns that into a phase — resume, submit, or start over.
+    // *(It used to be what made the daily one-shot across devices, by handing a second
+    // device the clock to resume; #217 replaced that with an honest restart, since the
+    // run's claims live in the playing device's storage until it submits.)*
     const state = await rounds.get({ date, lang, mode }, publicId, puzzle);
     if (!state) {
       return errorResponse(404, 'not_found', 'No round recorded.', responseHeaders);
@@ -274,7 +313,7 @@ export async function handleRound(
 
   if (mode === 'word') {
     return await submitWordRound(
-      { date, lang, mode, publicId, puzzle, guesses },
+      { date, lang, mode, publicId, deviceId: auth.value.device.deviceId, puzzle, guesses },
       puzzleStore,
       deps,
       event,
@@ -285,13 +324,13 @@ export async function handleRound(
 
   const key: RoundKey = { date, lang, mode };
   // The two reads the derivation needs, CONCURRENTLY: neither depends on the other, so the
-  // slice's GET hides inside a round trip already being paid for. The round read is
-  // EVENTUALLY consistent (roundStore.ts states why that is enough here).
+  // slice's GET — started above, before authentication — hides inside round trips already
+  // being paid for. The round read is EVENTUALLY consistent (roundStore.ts states why that
+  // is enough here). The slice is the revision the CALLER is playing: an artifact
+  // describing another one is refused rather than derived against (puzzleReads.ts).
   const [seen, slice] = await Promise.all([
     rounds.get(key, publicId, puzzle, { consistent: false }),
-    // The revision the CALLER is playing: an artifact describing another one is refused
-    // rather than derived against (puzzleReads.ts).
-    loadSlice(puzzleStore, date, lang, puzzle),
+    slicePromise ?? loadSlice(puzzleStore, date, lang, puzzle),
   ]);
   if (!slice) {
     // A missing slice IS a missing puzzle — there is no degraded mode: either publishing
@@ -509,12 +548,13 @@ async function settleAppend(
     // 22:00 flip) must not load the multi-megabyte scoring artifact only for
     // `recordScoreRow` to discard the work at its own gate — archive days are explicitly
     // playable, so that is a live path, not a corner.
-    const credited = onTime(key.date, instant);
-    if (credited) {
+    const earned = onTime(key.date, instant);
+    let credited = false;
+    if (earned) {
       // The two rewards are INDEPENDENT — neither reads the other, and each swallows its
       // own failures — so they share the round trip instead of queuing on it: this is the
       // one response the solving device's celebration is waiting on.
-      await Promise.all([
+      [credited] = await Promise.all([
         creditSolvedDay(round, deps),
         recordSentenceScore(round, puzzleStore, deps, event, instant),
       ]);
@@ -523,7 +563,11 @@ async function settleAppend(
     // credit and the leaderboard row wear one predicate). The client's celebration rides
     // this flag rather than re-making the comparison on its own clock: a device inside the
     // +1-day skew window would otherwise celebrate a streak day the server refused, and
-    // the transient collection can never take a phantom day back out.
+    // the transient collection can never take a phantom day back out. For the same reason
+    // it reports the credit's OUTCOME, not merely the on-time verdict: a collection write
+    // that failed answers false, or the client celebrates and transiently holds a day the
+    // server's collection lost — the exact phantom the flag exists to prevent. The score
+    // row stays independent and silent: a missing standing, never a withheld celebration.
     return json(200, { ...roundBody(state, instant), credited }, headers);
   }
   return json(200, roundBody(state, instant), headers);
@@ -560,16 +604,21 @@ function onTime(date: string, instant: Date): boolean {
 // is also why solving a corrected revision cannot claim a day twice, and why a republish
 // never takes back a day already credited.
 //
-// FAILURE IS SILENT, and that is the point of the collection being a rebuildable cache: the
-// guesses are stored, the solve is durable on the round row, and a streak day that could not
-// be cached is a stat, never a refused append.
-async function creditSolvedDay(round: AppendedRound, deps: RoundHandlerDeps): Promise<void> {
+// FAILURE IS SILENT to the append, and that is the point of the collection being a
+// rebuildable cache: the guesses are stored, the solve is durable on the round row, and a
+// streak day that could not be cached is a stat, never a refused append. It is NOT silent
+// to `credited`, though — the return says whether the credit actually LANDED, because the
+// client's celebration and its transient day ride that flag, and a day held on a write
+// that failed is a phantom the union merge can never remove.
+async function creditSolvedDay(round: AppendedRound, deps: RoundHandlerDeps): Promise<boolean> {
   const { key, publicId } = round;
   const solvedDay = dayNumber(key.date);
   try {
     await deps.history.recordSolvedDay({ publicId, lang: key.lang, day: solvedDay });
+    return true;
   } catch (error) {
     console.error(`[round] failed to credit the streak day ${key.date} (${key.lang}):`, error);
+    return false;
   }
 }
 
@@ -590,7 +639,20 @@ async function recordSentenceScore(
   instant: Date,
 ): Promise<void> {
   const { key, publicId, state } = round;
-  const puzzle = await loadPuzzle(puzzleStore, key.date, key.lang, round.puzzle);
+  // The load is guarded too, not just the write: the store only swallows NotFound, so a
+  // throttle or a transient S3 5xx THROWS — and a throw escaping here would 500 an append
+  // that already committed and froze the round, losing the score row for good (the freeze
+  // means no later append ever retries it).
+  let puzzle: Puzzle | null;
+  try {
+    puzzle = await loadPuzzle(puzzleStore, key.date, key.lang, round.puzzle);
+  } catch (error) {
+    console.error(
+      `[round] failed to load the puzzle to score ${key.date} ${key.lang} for ${publicId}:`,
+      error,
+    );
+    return;
+  }
   if (!puzzle) {
     console.error(`[round] no puzzle to score ${key.date} ${key.lang} for ${publicId}.`);
     return;
@@ -643,8 +705,12 @@ async function recordScoreRow(
   // server-stamped start for a word run.
   earnedAt: Date = instant,
 ): Promise<void> {
-  if (!onTime(key.date, earnedAt)) return;
   try {
+    // Inside the try like every other step here: `activeDate` THROWS on an Invalid Date
+    // (Intl refuses one), and `earnedAt` comes from a stored `startedAt` on the word
+    // path — a throw escaping this function would 500 a submission that already
+    // committed, and the `already_submitted` retry then never records the row at all.
+    if (!onTime(key.date, earnedAt)) return;
     // The #169 volume floor, unchanged in shape: the address is HMACed and only the digest
     // reaches the store. A caller with no trusted address cannot be metered, so its score
     // is not recorded — the same stance the retired score POST took.
@@ -706,6 +772,9 @@ interface WordSubmission {
   lang: string;
   mode: ScoreMode;
   publicId: string;
+  // The device offering the log (#217): a run belongs to the device that started it, and
+  // only that device may end it.
+  deviceId: string;
   puzzle: string;
   guesses: string[];
 }
@@ -722,7 +791,7 @@ async function submitWordRound(
   instant: Date,
   headers: Record<string, string>,
 ): Promise<FnUrlResult> {
-  const { date, lang, mode, publicId, puzzle, guesses } = input;
+  const { date, lang, mode, publicId, deviceId, puzzle, guesses } = input;
   const rounds = deps.roundStore;
   const artifact = await puzzleStore.getWordPuzzle(date, lang);
   if (!artifact) {
@@ -754,6 +823,7 @@ async function submitWordRound(
     lang,
     mode,
     publicId,
+    deviceId,
     puzzle,
     guesses,
     // The game's OWN FLOOR, not a tuning knob: Word mode has no early finish, so a run
@@ -772,6 +842,20 @@ async function submitWordRound(
       409,
       'not_started',
       'No run of this word has been started on this server.',
+      state,
+      instant,
+      headers,
+    );
+  }
+  if (outcome === 'started_elsewhere') {
+    // This device played a run the server no longer holds: another device restarted the
+    // daily while it was away (#217). The answer carries the stamp that stands, so the
+    // screen learns whose run it is now — and offers to start over rather than reporting a
+    // failure the player can do nothing about.
+    return refusal(
+      409,
+      'started_elsewhere',
+      'This run was restarted on another device.',
       state,
       instant,
       headers,
@@ -796,7 +880,11 @@ async function submitWordRound(
   // `recordScoreRow`): the submission is deferred by the wait check and by #202's own
   // revisit shape, so a run played on its day must not lose its row to when the log landed.
   if (outcome === 'submitted') {
-    const earnedAt = state.startedAt ? new Date(state.startedAt) : instant;
+    // Parse-checked: a stored start that does not parse cannot say when the run happened,
+    // and an Invalid Date handed onward would make `onTime` throw. The write's arrival is
+    // the honest — and always valid — fallback instant.
+    const startedMs = state.startedAt == null ? Number.NaN : Date.parse(state.startedAt);
+    const earnedAt = Number.isFinite(startedMs) ? new Date(startedMs) : instant;
     await recordScoreRow(
       { date, lang, mode },
       publicId,

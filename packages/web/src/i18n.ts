@@ -35,6 +35,16 @@ const STRINGS = {
   // The #189 invite link's write, loud for the same reason: it is the one thing that
   // click existed to do, so losing it silently would leave both players none the wiser.
   failedInvite: { en: 'FAILED TO ADD FRIEND', fr: "ÉCHEC DE L'AJOUT EN AMI" },
+  // Neither the native sheet nor the clipboard could deliver (insecure context, denied
+  // clipboard, a spent activation): the one share whose silence reads as a dead button.
+  // On the error surface, whose TRY AGAIN shares inside its own fresh activation — which
+  // is what makes the single-tap INVITE honest (user-decided 2026-08-24: one tap, and the
+  // rare stale-activation failure is SAID, with the retry that cures it).
+  failedShare: { en: 'SHARE FAILED', fr: 'ÉCHEC DU PARTAGE' },
+  failedShareNote: {
+    en: 'The link could not be shared or copied. Try again — the next tap shares directly.',
+    fr: "Le lien n'a pas pu être partagé ni copié. Réessayez — le prochain appui partage directement.",
+  },
   // Word mode's round start (#202), loud for that same reason and one more: the SERVER
   // stamps the clock, so a failed start is a run that has not begun. Saying nothing would
   // leave the player tapping PLAY at a gate that never opens.
@@ -45,6 +55,58 @@ const STRINGS = {
   // side of the pair, and the clicker cannot tell which.
   friendListFull: { en: 'FRIEND LIST FULL', fr: "LISTE D'AMIS PLEINE" },
   retry: { en: 'RETRY', fr: 'RÉESSAYER' },
+  // The error surface's action (#216 trigger rework): a failed primary act offers to run
+  // again where retrying can help. RETRY above stays the load screens' label.
+  tryAgain: { en: 'TRY AGAIN', fr: 'RÉESSAYER' },
+  // The five deploy buttons' failures, on the error popup/sheet: the TITLE says what
+  // failed in the chrome voice, the NOTE explains it in a sentence (the coach-copy
+  // exemption from the all-caps rule). Account creation failing is its own story —
+  // nothing else happened behind it, so the note can honestly say "nothing was lost".
+  failedAccount: { en: 'ACCOUNT SETUP FAILED', fr: 'ÉCHEC DE LA CRÉATION DU COMPTE' },
+  failedAccountNote: {
+    en: 'Your account could not be set up, so nothing was saved. Check your connection and try again.',
+    fr: "Votre compte n'a pas pu être créé, rien n'a été enregistré. Vérifiez votre connexion et réessayez.",
+  },
+  failedStartNote: {
+    en: 'The round did not start — the clock is not running. Check your connection and try again.',
+    fr: "La partie n'a pas démarré — le chrono ne tourne pas. Vérifiez votre connexion et réessayez.",
+  },
+  failedInviteNote: {
+    en: 'The friend was not added. Check your connection and try again.',
+    fr: "L'ami n'a pas été ajouté. Vérifiez votre connexion et réessayez.",
+  },
+  failedSaveNote: {
+    en: 'Your profile was not saved. Check your connection and try again.',
+    fr: "Votre profil n'a pas été enregistré. Vérifiez votre connexion et réessayez.",
+  },
+  profileNameRejectedNote: {
+    en: 'This name is not allowed. Pick another one and save again.',
+    fr: "Ce nom n'est pas autorisé. Choisissez-en un autre et réenregistrez.",
+  },
+  profileAvatarRejectedNote: {
+    en: 'This drawing is not allowed. Change it and save again.',
+    fr: "Ce dessin n'est pas autorisé. Modifiez-le et réenregistrez.",
+  },
+  // Signed out from another device (#216). It is a SCREEN, not an error line: the account
+  // is intact and reachable, this device simply no longer holds it.
+  signedOut: { en: 'THIS DEVICE IS SIGNED OUT', fr: 'CET APPAREIL EST DÉCONNECTÉ' },
+  // The copy has to say what is being left behind, or a vanished streak and an empty
+  // friends list read as a bug rather than as the sign-out that caused them.
+  signedOutNote: {
+    en: 'Your streak, your archive and your friends stay on that account. Starting fresh here leaves them behind.',
+    fr: 'Votre série, votre archive et vos amis restent sur ce compte. Repartir de zéro ici les laisse derrière.',
+  },
+  // The account's devices, on the profile editor (#216): the surface the whole issue exists
+  // for, since signing a device out has to be possible without holding that device.
+  devicesTitle: { en: 'DEVICES', fr: 'APPAREILS' },
+  deviceCurrent: { en: 'THIS ONE', fr: 'CELUI-CI' },
+  deviceSignOut: { en: 'SIGN OUT', fr: 'DÉCONNECTER' },
+  // The UA parser leaves what it cannot read EMPTY rather than guessing, so the SCREEN names
+  // an unlabelled device.
+  deviceUnknown: { en: 'UNKNOWN DEVICE', fr: 'APPAREIL INCONNU' },
+  failedDevices: { en: 'FAILED TO LOAD DEVICES', fr: 'ÉCHEC DU CHARGEMENT DES APPAREILS' },
+  signedOutReconnect: { en: 'RECONNECT', fr: 'SE RECONNECTER' },
+  signedOutSkip: { en: 'START FRESH', fr: 'REPARTIR DE ZÉRO' },
   // The missing-puzzle state is ABNORMAL (a publish that did not happen), and the
   // wording says so — it must not read like a scheduled day off.
   noPuzzle: { en: "TODAY'S PUZZLE IS MISSING", fr: 'LE PUZZLE DU JOUR EST INTROUVABLE' },
@@ -113,6 +175,25 @@ const STRINGS = {
     en: 'Every find adds time. Rarer words add more.',
     fr: 'Chaque mot ajoute du temps. Plus il est rare, plus il en donne.',
   },
+  // A word run belongs to the DEVICE that started it (#217), and a device that does not
+  // hold this day's run can only start it OVER. The gate says what that costs before the
+  // tap. Another device is NAMED — two open tabs is enough to lose a live run by accident,
+  // and the label is exactly what makes the loss legible. This device gets its own wording:
+  // repeating its Mac / Chrome label as though it were elsewhere is accurate but confusing.
+  // `{device}` is the table's second placeholder (see `tDevice`), for the reason `{n}` is
+  // its first: the fragment is a name, and a name belongs inside its sentence rather than
+  // concatenated onto one.
+  wordRestartNote: {
+    en: 'Started on {device}. Starting here ends that run.',
+    fr: 'Commencé sur {device}. Recommencer ici met fin à cette partie.',
+  },
+  wordRestartHereNote: {
+    en: 'A run was already started on this device. Starting over replaces it.',
+    fr: 'Une partie a déjà commencé sur cet appareil. Recommencer la remplace.',
+  },
+  // …and the button says so, rather than wearing PLAY over new copy: the tap is a
+  // deliberate act, so it takes a control of its own.
+  gateRestart: { en: 'START OVER', fr: 'RECOMMENCER' },
   // A word run's day is FINISHED, never "solved" (decided 2026-08-08): the clock ran out,
   // which is not an achievement the way a reconstructed sentence is. Visually it is the
   // same gold as a solve; this is the distinction the reader hears.
@@ -341,6 +422,10 @@ const STRINGS = {
   // to continue into the game without a word, leaving the clicker unsure anything
   // happened): the inviter's mark + name above this line, PLAY below it.
   inviteAdded: { en: 'FRIEND ADDED', fr: 'AMI AJOUTÉ' },
+  // The landing's one primary button (#216 trigger rework): accepting is a TAP, never a
+  // page load — the tap deploys the clicker's account if they have none, then records the
+  // mutual edge.
+  inviteAccept: { en: 'ADD FRIEND', fr: 'AJOUTER EN AMI' },
   failedBoard: { en: 'FAILED TO LOAD LEADERBOARD', fr: 'ÉCHEC DU CHARGEMENT DU CLASSEMENT' },
   ariaLeaderboard: { en: 'Leaderboard', fr: 'Classement' },
 } satisfies Record<string, Record<UiLang, string>>;
@@ -378,6 +463,21 @@ export function sourceKind(lang: string, kind: string): string {
 // compile-time obligation the way it does every other string.
 export function tn(lang: string, key: UiKey, n: number): string {
   return t(lang, key).replace('{n}', String(n));
+}
+
+// The other placeholder: a DEVICE named inside its own sentence (#217 — "Started on
+// iPhone / Chrome."). The label is a name, so it takes a placeholder rather than being
+// concatenated onto a fragment — the two languages are free to put it where they want it.
+export function tDevice(lang: string, key: UiKey, device: string): string {
+  return t(lang, key).replace('{device}', device);
+}
+
+// Restarting always replaces a server-held Word run, but the owner changes how that cost
+// should be said: name a genuinely different device; call the device in hand "this device".
+export function wordRestartNote(lang: string, device: string, sameDevice: boolean): string {
+  return sameDevice
+    ? t(lang, 'wordRestartHereNote')
+    : tDevice(lang, 'wordRestartNote', device);
 }
 
 // Screen-reader feedback for one hole's reaction to a guess (the visual equivalent is

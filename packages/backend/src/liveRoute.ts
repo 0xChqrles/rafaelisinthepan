@@ -1,13 +1,20 @@
 // Shared plumbing of the LIVE routes (/scores, /profile, /friends, /board, /round): the
-// no-store header, the JSON-body reader with its size cap, the #187 secret check, the
-// Turnstile token check the gated writes share, and the (lang, mode, date) query guard
+// no-store header, the JSON-body reader with its size cap, the #216 device-token
+// authentication (`requireDevice`, which replaced the #187 secret check), the Turnstile
+// token check the gated writes share, and the (lang, mode, date) query guard
 // triple the day-addressed reads share. Each of these existed as a byte-identical copy
 // per route (four by the time /board landed) — one spelling here is what keeps a guard
 // from quietly drifting between routes.
 
 import { isIP } from 'node:net';
-import { dayNumber, isValidSecret, VIEWER_IP_HEADER, VOCAB_BUILDS } from '@whippin/shared';
+import { dayNumber, isValidDeviceToken, VIEWER_IP_HEADER, VOCAB_BUILDS } from '@whippin/shared';
 import { isValidDate } from './layout';
+import {
+  deviceTokenHash,
+  staleLastSeen,
+  type DeviceStore,
+  type ResolvedDevice,
+} from './deviceStore';
 import type { ScoreMode } from './scoreLimits';
 import { errorResponse, type FnUrlEvent, type FnUrlResult } from './respond';
 
@@ -68,24 +75,63 @@ export function readJsonObject(
   return { ok: true, value: raw as Record<string, unknown> };
 }
 
-// Authentication without accounts (#187): possession of the secret is the proof of
-// ownership — the caller's identity is DERIVED from it and nothing secret is ever
-// stored. A malformed key is no identity at all.
-export function requireSecret(
+// The device token's SHAPE (#216) — checked before anything is hashed, logged or read, and
+// checked against the CANONICAL spelling only: an uppercase or short value is refused, never
+// normalized, so one token can only ever key one row.
+//
+// A malformed token is an INPUT ERROR (400), which is deliberately not `unknown_device`
+// (401). The two say different things and the client acts on them differently: one is a
+// caller that went around the app, the other is the answer that signs a player out.
+export function requireDeviceToken(
   body: Record<string, unknown>,
   headers: Record<string, string>,
 ): Guarded<string> {
-  if (!isValidSecret(body.secret)) {
+  if (!isValidDeviceToken(body.token)) {
     return refuse(
       errorResponse(
         400,
         'bad_request',
-        'Body field "secret" must be the 32-hex-character player key.',
+        'Body field "token" must be the 64-hex-character device token.',
         headers,
       ),
     );
   }
-  return { ok: true, value: body.secret };
+  return { ok: true, value: body.token };
+}
+
+// Authentication (#216): the token resolves to a DEVICE, and the device to the account it
+// acts as. A well-formed token with no device item — or whose account is gone — is
+// `unknown_device`: the distinct, unambiguous answer the client turns into its signed-out
+// screen. It is NEVER what an ordinary authenticated request uses to mint a fresh identity;
+// only the explicit bootstrap does that, and only with a Turnstile proof.
+//
+// `lastSeenAt` moves at most once a DAY per device (see `staleLastSeen`) — this rides every
+// authenticated call, including the round route's once-a-second appends.
+export async function requireDevice(
+  body: Record<string, unknown>,
+  headers: Record<string, string>,
+  devices: DeviceStore,
+  instant: Date,
+): Promise<Guarded<ResolvedDevice>> {
+  const token = requireDeviceToken(body, headers);
+  if (!token.ok) return token;
+  const tokenHash = deviceTokenHash(token.value);
+  const resolved = await devices.resolve(tokenHash);
+  if (!resolved) {
+    return refuse(
+      errorResponse(
+        401,
+        'unknown_device',
+        'This device is signed out.',
+        headers,
+      ),
+    );
+  }
+  const now = instant.toISOString();
+  if (staleLastSeen(resolved.device.lastSeenAt, now)) {
+    await devices.touch(tokenHash, now);
+  }
+  return { ok: true, value: resolved };
 }
 
 function header(event: FnUrlEvent, name: string): string | undefined {

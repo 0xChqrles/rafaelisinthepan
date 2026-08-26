@@ -1,3 +1,4 @@
+import type { DeviceAgent } from './deviceStore';
 import type { ScoreMode } from './scoreLimits';
 
 // The server-authoritative round record (#201): the RAW ordered guess log of one
@@ -15,11 +16,28 @@ import type { ScoreMode } from './scoreLimits';
 // one end-of-run `submit` carrying the whole log. Neither word path touches
 // `lastWriteAt` — that attribute exists for the streaming interval, and a mode that writes
 // twice a day is not what it bounds.
+//
+// **A WORD RUN BELONGS TO THE DEVICE THAT STARTED IT (#217).** The stamp names that device,
+// and two conditions carry the whole model: a start is accepted only while the run is
+// UNSUBMITTED (and then always mints a fresh clock, wiping what it replaces), and a
+// submission only while the run is unsubmitted AND the stamp still names the caller. What
+// that removes is the client-side inference #202 needed — a device could tell "I am running
+// this" from "I merely joined it" only by remembering that its own start stamped the clock,
+// and everything downstream hung off that memory.
 
 export interface RoundKey {
   date: string;
   lang: string;
   mode: ScoreMode;
+}
+
+// WHICH DEVICE a word run belongs to (#217), stamped by the start that minted the clock.
+// It carries the device's parsed user-agent FIELDS beside its id — a SNAPSHOT taken at the
+// start, so the screen offering to end that run can name it ("Started on iPhone / Chrome")
+// without a second lookup, and can still name it after that device has been signed out. The
+// id is what the two conditions compare; the label is never read by a rule.
+export interface RoundRunner extends DeviceAgent {
+  deviceId: string;
 }
 
 export interface RoundState {
@@ -47,6 +65,11 @@ export interface RoundState {
   // for the one attribute a DynamoDB CONDITION compares arithmetically, and this one is
   // compared in the handler, after a read it has to do anyway.
   startedAt?: string;
+  // WHO that clock belongs to (#217) — absent exactly when `startedAt` is, since one write
+  // stamps both. Every answer carries it, because it is half of what the screen picks its
+  // phase from: a run this device does not own is one it may neither play nor submit, and
+  // the only thing it can do with the day is start it over.
+  startedBy?: RoundRunner;
   // When the word round's end-of-run log was RECORDED (#202). It is the submission's own
   // marker, and it has to be: a run that claimed nothing submits an EMPTY log, which is
   // indistinguishable from an unsubmitted one by the log alone. Inferring it from
@@ -102,20 +125,31 @@ export interface RoundSettleInput extends RoundKey {
 export interface RoundStartInput extends RoundKey {
   publicId: string;
   puzzle: string;
+  // The device the run is being stamped FOR (#217) — the caller's own, resolved from its
+  // token. It is written beside the clock and compared by the submission's condition.
+  runner: RoundRunner;
   now: Date;
 }
 
-// What one word-round START did:
-//   started — the clock was stamped NOW (a fresh round, or one restarted because the
-//             stored record named a RETIRED puzzle — its log goes with it);
-//   running — this puzzle's round was already stamped, so its ORIGINAL start stands.
-//             Idempotent by construction: a double tap, a retry and a second device all
-//             resume the one clock rather than minting a second one.
-export type RoundStartOutcome = 'started' | 'running';
+// What one word-round START did (#217, replacing #202's `started | running`):
+//   started — the clock was stamped NOW, for THIS device. It is a RESTART as much as a
+//             first start: an unsubmitted run — this device's, another device's, or the
+//             retired puzzle's — is wiped and replaced, log and all. That is the whole
+//             trade the issue makes: cross-device RESUME becomes cross-device RESTART,
+//             because a run whose claims live in another device's local storage was never
+//             resumable in the first place (Word mode streams nothing).
+//   already_submitted — the run is RECORDED, so there is nothing left to restart: the
+//             daily is one-shot once its log is stored. The caller adopts the final run
+//             rather than wiping it.
+export type RoundStartOutcome = 'started' | 'already_submitted';
 
 export interface RoundSubmitInput extends RoundKey {
   publicId: string;
   puzzle: string;
+  // The device claiming to have PLAYED this run (#217). A submission is accepted only
+  // while the stamp still names it: a device whose run was restarted elsewhere has a log
+  // for a clock that no longer exists, and recording it would bury the live run.
+  deviceId: string;
   guesses: string[];
   // The shortest this run can possibly have lasted, in ms (`wordRunFloorMs` over the
   // claims the log carries). The ROUTE computes it, because only it can tell a claim from
@@ -128,12 +162,22 @@ export interface RoundSubmitInput extends RoundKey {
 //   submitted        — the whole log was recorded;
 //   not_started      — no round of this puzzle has a server-stamped start, so there is
 //                      nothing to end;
+//   started_elsewhere — the stamp names ANOTHER device (#217): this run was restarted
+//                      while its player was away, so the log offered here belongs to a
+//                      clock the server no longer has. Recording it would overwrite the
+//                      run somebody is playing now, and first-write-wins would make that
+//                      permanent. The caller adopts the answer and starts over.
 //   too_early        — `now - startedAt` is under `minElapsedMs`: a run of this shape
 //                      cannot be over yet;
 //   already_submitted — first write wins, like a score row: the daily is one-shot and
 //                      cannot be replayed, so a second submission changes nothing and is
 //                      answered with the log that was recorded.
-export type RoundSubmitOutcome = 'submitted' | 'not_started' | 'too_early' | 'already_submitted';
+export type RoundSubmitOutcome =
+  | 'submitted'
+  | 'not_started'
+  | 'started_elsewhere'
+  | 'too_early'
+  | 'already_submitted';
 
 // One month of one (language, mode) for ONE player — the private calendar read (#211).
 // The month is `YYYY-MM`, which is exactly a prefix of the sort key that #203 reordered
@@ -217,10 +261,13 @@ export interface RoundStore {
   //
   // START stamps `startedAt` from the SERVER's clock on THIS record (never a separate
   // short-lived item: the submission can arrive hours later, on the revisit that finds the
-  // run over).
+  // run over) — and, since #217, the DEVICE it belongs to beside it. It is atomic and
+  // unconditional except for the one thing that ends a daily: a RECORDED run is refused,
+  // everything else is replaced.
   start(input: RoundStartInput): Promise<{ outcome: RoundStartOutcome; state: RoundState }>;
   // SUBMIT records the whole log at once, first-write-wins, no earlier than the run's own
-  // floor. Like `append`, every outcome answers with the stored state.
+  // floor, and only for the DEVICE the stamp names (#217). Like `append`, every outcome
+  // answers with the stored state.
   submit(input: RoundSubmitInput): Promise<{ outcome: RoundSubmitOutcome; state: RoundState }>;
 }
 
