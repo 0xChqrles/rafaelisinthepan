@@ -160,7 +160,6 @@ export function dynamoRoundStore(
     // logs, the table's biggest items, so the consistent read would double the cost of
     // exactly the rows with the least claim to it.
     async getMany(key, publicIds) {
-      const sk = roundSortKey(key);
       const partitionPrefix = roundPartition('');
       const rows: RoundBoardRow[] = [];
       const ids = [...new Set(publicIds)];
