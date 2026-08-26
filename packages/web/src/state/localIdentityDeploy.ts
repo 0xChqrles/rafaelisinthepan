@@ -37,6 +37,11 @@ import { adoptSignedOutVerdict } from './signedOutVerdict';
 // behavior — and the editor can still set a name by hand.
 const DEPLOY_RETRIES = 2;
 const DEPLOY_RETRY_MS = 1_000;
+// Both calls are BOUNDED, the signed-out screen's own figure for its public profile read.
+// Nothing here is on screen, so a hung request surfaces nowhere — it just parks this
+// account's entry in `inFlight` for the page's life, and the acquisition that would retry
+// the deployment gets handed the promise that never settles instead.
+const DEPLOY_TIMEOUT_MS = 6_000;
 
 let uninstall: (() => void) | null = null;
 
@@ -80,7 +85,9 @@ async function run(identity: DeviceIdentity): Promise<void> {
   const seed = useGameStore.getState().ensureLocalSeed();
   for (let attempt = 0; ; attempt += 1) {
     try {
-      const read = await fetch(profileUrl(identity.accountId));
+      const read = await fetch(profileUrl(identity.accountId), {
+        signal: AbortSignal.timeout(DEPLOY_TIMEOUT_MS),
+      });
       if (stale()) return;
       if (read.ok) return; // Something is stored — even '' /null is a deliberate save.
       if (read.status !== 404) throw new Error(`profile read: ${read.status}`);
@@ -94,14 +101,22 @@ async function run(identity: DeviceIdentity): Promise<void> {
         // backend's conditional write is the authority that makes this background task
         // incapable of replacing a deliberate profile.
         createOnly: true,
-      });
+      }, AbortSignal.timeout(DEPLOY_TIMEOUT_MS));
       if (stale()) return;
       if (response.ok) return;
-      // Every private caller adopts the server's authoritative revocation verdict through
-      // ONE helper. In particular, do not retry a token the server has already rejected and
-      // leave the rest of the app falsely believing it is signed in.
-      if (await adoptSignedOutVerdict(response, epoch)) return;
+      // ONE read of the body, then everything classifies off the parsed value (review
+      // finding). This is the only caller that needs the refusal AFTER asking for the
+      // verdict, and asking first consumed the body: `adoptSignedOutVerdict` calls `.json()`
+      // itself, so the second call threw and every refusal below silently read as null. Dead
+      // today — `unknown_device` is the only 401 this route answers, so the verdict always
+      // returned true before reaching them — and a trap the moment it is not. Feeding the
+      // helper the value keeps it the ONE spelling of that resolution, which a `clone()`
+      // would too, except the mocked responses these paths are tested against have none.
       const refusal = (await response.json().catch(() => null)) as { error?: string } | null;
+      // Do not retry a token the server has already rejected and leave the rest of the app
+      // falsely believing it is signed in.
+      if (await adoptSignedOutVerdict({ status: response.status, json: async () => refusal }, epoch))
+        return;
       // A deliberate profile won the create race. That is the desired end state: leave it
       // untouched and finish without retrying the same impossible conditional write.
       if (response.status === 409 && refusal?.error === 'profile_exists') return;

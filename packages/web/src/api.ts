@@ -542,8 +542,12 @@ export function profileUrl(publicId?: string, base: string = apiBase()): string 
 export async function postProfileBody(
   url: string,
   body: { token: string; name: string; avatar: string; createOnly?: true },
+  // Optional, and only the BACKGROUND deployment passes one: the editor's own save reports
+  // a stall on the error surface with TRY AGAIN, where a task nobody is watching would
+  // otherwise hang for the browser's own default and hold its slot the whole time.
+  signal?: AbortSignal,
 ): Promise<Response> {
-  return postSignedJson(url, body);
+  return postSignedJson(url, body, signal);
 }
 
 // The #189 friends graph: ONE route, POST-only — the device token authenticates in the body

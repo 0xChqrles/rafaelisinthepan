@@ -71,11 +71,22 @@ function fakeWindow(store: Storage): Window & typeof globalThis {
 
 let storage: Storage;
 
+// A response body may be read ONCE, exactly as the platform's is (review finding): the
+// first cut answered `json()` from a closure any number of times, which is what hid a
+// double read — the code asked for the sign-out verdict, which consumed the body, and then
+// re-read it to classify the refusal. Against a real `Response` that second call throws and
+// every refusal silently reads as null; against this mock it kept working. Modelling the
+// real constraint is what makes these tests able to see it.
 function jsonResponse(status: number, body: unknown = {}): Response {
+  let read = false;
   return {
     ok: status >= 200 && status < 300,
     status,
-    json: async () => body,
+    json: async () => {
+      if (read) throw new TypeError('Body has already been read');
+      read = true;
+      return body;
+    },
   } as unknown as Response;
 }
 
@@ -126,12 +137,18 @@ describe('deploying the locally-decided username (user-decided 2026-08-26)', () 
       const identity = await ensureDeviceIdentity();
       await settle();
       expect(save).toHaveBeenCalledOnce();
-      expect(save).toHaveBeenCalledWith('https://api.test/profile', {
-        token: identity.token,
-        name: anonName(SEED),
-        avatar: defaultAvatar(SEED),
-        createOnly: true,
-      });
+      expect(save).toHaveBeenCalledWith(
+        'https://api.test/profile',
+        {
+          token: identity.token,
+          name: anonName(SEED),
+          avatar: defaultAvatar(SEED),
+          createOnly: true,
+        },
+        // BOUNDED, like the read: nothing here is on screen, so a hung write would park
+        // this account's slot in `inFlight` for the page's life with nothing to show for it.
+        expect.any(AbortSignal),
+      );
     } finally {
       remove();
     }
@@ -187,6 +204,28 @@ describe('deploying the locally-decided username (user-decided 2026-08-26)', () 
       expect(deviceIdentity()).toBeNull();
       expect(useIdentityStore.getState().signedOut).toBe(true);
     } finally {
+      remove();
+    }
+  });
+
+  // CONTRACT (#216, review finding): a 401 signs this device out ONLY when its body CODE
+  // says `unknown_device` — the status alone never does it. `/profile` answers no other 401
+  // today, which is what made the classification below dead code and kept it invisible: the
+  // verdict check consumed the body, so the re-read threw and every refusal read as null.
+  // Pinned here because the failure it would cause is the worst one this app has — taking a
+  // player's account away over a refusal that never said to.
+  it('never signs the device out on a 401 that is not unknown_device', async () => {
+    vi.useFakeTimers();
+    save.mockResolvedValue(jsonResponse(401, { error: 'some_other_reason' }));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const remove = installLocalIdentityDeploy();
+    try {
+      await ensureDeviceIdentity();
+      await vi.advanceTimersByTimeAsync(3_500);
+      expect(deviceIdentity()).not.toBeNull();
+      expect(useIdentityStore.getState().signedOut).toBe(false);
+    } finally {
+      warn.mockRestore();
       remove();
     }
   });
