@@ -1,13 +1,16 @@
 name: CI
 
-# Test gate: runs on every PR into main and on pushes to main. Make the
+# Test gate: runs on every PR into main or dev, and on pushes to both. Make the
 # "Typecheck + test" job a required status check in branch protection so a PR
 # with failing tests cannot be merged (see .github/workflows/README.md).
+# `dev` joined 2026-08-26: feature PRs now land on the dev integration branch
+# first (PR #221/#222), and a PR retargeted there was silently getting NO run —
+# pull_request only fires for the bases this list names.
 on:
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   push:
-    branches: [main]
+    branches: [main, dev]
 
 # One in-flight run per ref; cancel superseded runs on the same PR/branch.
 concurrency:

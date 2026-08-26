@@ -14,6 +14,7 @@ import type {
   Board,
   BoardPlayer,
   BoardRow,
+  PlayingRow,
   PlayerHistory,
   PlayerProfile,
   Puzzle,
@@ -540,9 +541,13 @@ export function profileUrl(publicId?: string, base: string = apiBase()): string 
 
 export async function postProfileBody(
   url: string,
-  body: { token: string; name: string; avatar: string },
+  body: { token: string; name: string; avatar: string; createOnly?: true },
+  // Optional, and only the BACKGROUND deployment passes one: the editor's own save reports
+  // a stall on the error surface with TRY AGAIN, where a task nobody is watching would
+  // otherwise hang for the browser's own default and hold its slot the whole time.
+  signal?: AbortSignal,
 ): Promise<Response> {
-  return postSignedJson(url, body);
+  return postSignedJson(url, body, signal);
 }
 
 // The #189 friends graph: ONE route, POST-only — the device token authenticates in the body
@@ -634,11 +639,34 @@ function checkBoardRows(value: unknown, field: string): asserts value is BoardRo
   }
 }
 
+// The #206 in-progress rows: a profile-dressed player with the two live numbers — an
+// exact try count (a positive integer) and the server-derived reconstruction percentage
+// (a real number in [0, 100], not necessarily whole).
+function checkPlayingRows(value: unknown, field: string): asserts value is PlayingRow[] {
+  if (!Array.isArray(value)) throw new Error(`malformed board: "${field}" must be an array`);
+  for (const raw of value) {
+    const row = raw as Record<string, unknown>;
+    if (
+      !isBoardPlayer(raw) ||
+      typeof row.tries !== 'number' ||
+      !Number.isInteger(row.tries) ||
+      row.tries < 1 ||
+      typeof row.progress !== 'number' ||
+      !Number.isFinite(row.progress) ||
+      row.progress < 0 ||
+      row.progress > 100
+    ) {
+      throw new Error(`malformed board: bad "${field}" row`);
+    }
+  }
+}
+
 export function parseBoard(data: unknown): Board {
   if (!isRecord(data)) throw new Error('malformed board: not an object');
-  const { rows, own, waiting } = data;
+  const { rows, own, playing, waiting } = data;
   checkBoardRows(rows, 'rows');
   if (own !== null) checkBoardRows(own, 'own');
+  checkPlayingRows(playing, 'playing');
   checkBoardPlayers(waiting, 'waiting');
   return data as unknown as Board;
 }

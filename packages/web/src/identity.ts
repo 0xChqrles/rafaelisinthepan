@@ -68,17 +68,36 @@ interface IdentityState {
   // The server answered `unknown_device`: this device was signed out from elsewhere. It is
   // a SCREEN, not a retry — see `state/signedOut` in the web AGENTS.
   signedOut: boolean;
+  // WHO that verdict names — the tombstone's two public ids, published so the screen can
+  // show the ACCOUNT being left (its mark and name) instead of an abstract sentence
+  // (user feedback 2026-08-26). Non-null exactly while `signedOut` is true and the
+  // verdict carried an identity; a verdict with none (a theoretical epoch edge) still
+  // raises the screen, faceless.
+  signedOutAs: SignedOutTombstone | null;
   // Changes on every identity-scope transition except the FIRST acquisition. App keys every
   // identity-owned screen on it, so component-local caches are discarded on sign-out/account
   // swap and remounted when a replacement arrives, while the first bootstrap (which is
   // triggered by the state already on screen) stays mounted.
   scopeRevision: number;
+  // HOW the identity now held ARRIVED — true ONLY for this tab's own bootstrap commit over a
+  // token whose emptiness was still proven. Every other null -> identity publish is an
+  // ADOPTION (a sibling tab's account, a pending token recovered from storage, a raced
+  // bootstrap the other tab won), and an adopted account MAY ALREADY HOLD SERVER STATE.
+  //
+  // Published because a reader cannot tell the two apart from the transition alone, and the
+  // difference decides whether "brand new, therefore empty" is a fact or a guess: the
+  // leaderboard keeps its known-empty friends board across a MINT (nothing to fetch could
+  // contradict it) and must drop it on an adoption, where a failed refresh would otherwise
+  // park a false "no friends" under the stale-but-good rule with no retry offered.
+  mintedHere: boolean;
 }
 
 export const useIdentityStore = create<IdentityState>(() => ({
   identity: null,
   signedOut: false,
+  signedOutAs: null,
   scopeRevision: 0,
+  mintedHere: false,
 }));
 
 // One origin-wide critical section around the entire read -> mint -> bootstrap -> commit
@@ -163,7 +182,7 @@ function store(): Storage | null {
 // DIFFERENT identity ignore it. It stands until the player chooses: START FRESH removes
 // it (a #204 reconnect will too), and until then no ordinary act may mint a replacement
 // account through it (`bootstrap` fails closed on `signedOut`).
-interface SignedOutTombstone {
+export interface SignedOutTombstone {
   accountId: string;
   deviceId: string;
 }
@@ -325,6 +344,20 @@ export function useSignedOut(): boolean {
   return useIdentityStore((state) => state.signedOut);
 }
 
+// The account the signed-out screen is ABOUT (user feedback 2026-08-26): the verdict's
+// public ids, for the screen to dress with the profile read's face. Null while the
+// device is not signed out — and on the theoretical verdict that carried no identity.
+export function useSignedOutAccount(): SignedOutTombstone | null {
+  return useIdentityStore((state) => state.signedOutAs);
+}
+
+// Whether the identity this device holds was MINTED here rather than adopted (see
+// `mintedHere`). Read by anything that would otherwise infer "brand new, therefore empty"
+// from a tokenless -> identity transition, which an adoption does not license.
+export function useIdentityMintedHere(): boolean {
+  return useIdentityStore((state) => state.mintedHere);
+}
+
 export function identityScopeRevision(): number {
   return useIdentityStore.getState().scopeRevision;
 }
@@ -361,7 +394,13 @@ export function onIdentityChange(listener: Listener): () => void {
   return () => listeners.delete(listener);
 }
 
-function publish(next: DeviceIdentity | null, signedOut = false, minted = false): void {
+function publish(
+  next: DeviceIdentity | null,
+  signedOut = false,
+  minted = false,
+  // WHO a signed-out publish is about; ignored (and cleared) on every other publish.
+  signedOutAs: SignedOutTombstone | null = null,
+): void {
   const current = useIdentityStore.getState();
   const previous = current.identity;
   const accountChanged = (previous?.accountId ?? null) !== (next?.accountId ?? null);
@@ -378,8 +417,12 @@ function publish(next: DeviceIdentity | null, signedOut = false, minted = false)
   useIdentityStore.setState({
     identity: next,
     signedOut,
+    signedOutAs: signedOut ? signedOutAs : null,
     scopeRevision:
       changed && !firstAcquisition ? current.scopeRevision + 1 : current.scopeRevision,
+    // Exactly the negation of `adopted` for an acquisition, and false whenever no identity
+    // is held: leaving one mints nothing, so nothing downstream may read emptiness off it.
+    mintedHere: next !== null && minted,
   });
   if (!changed) return;
   // Clearing storage WITHOUT fencing in-flight answers would let the identity just left
@@ -428,7 +471,7 @@ function syncFromStorage(): DeviceIdentity | null {
       pendingToken = null;
       pendingUnproven = false;
       flight = null;
-      publish(null, true);
+      publish(null, true, false, tombstone);
       return null;
     }
     // Dismissed and unremovable: this tab already chose START FRESH, so the verdict it
@@ -442,7 +485,9 @@ function syncFromStorage(): DeviceIdentity | null {
   // an empty key and stands.
   if (tombstoneShared) {
     tombstoneShared = false;
-    if (useIdentityStore.getState().signedOut) useIdentityStore.setState({ signedOut: false });
+    if (useIdentityStore.getState().signedOut) {
+      useIdentityStore.setState({ signedOut: false, signedOutAs: null });
+    }
   }
   // A failed remove may leave the revoked token perfectly readable. It is no longer an
   // identity merely because localStorage still says so: the authoritative server answer
@@ -463,7 +508,9 @@ function syncFromStorage(): DeviceIdentity | null {
       held.deviceId === found.deviceId;
     // A live identity exists again, so any signed-out screen is stale.
     if (!same) publish(found);
-    else if (useIdentityStore.getState().signedOut) useIdentityStore.setState({ signedOut: false });
+    else if (useIdentityStore.getState().signedOut) {
+      useIdentityStore.setState({ signedOut: false, signedOutAs: null });
+    }
     return found;
   }
   // Our completed write failed, so EMPTY — or the same pending token that was successfully
@@ -669,7 +716,12 @@ export function markDeviceSignedOut(expectedEpoch: string): boolean {
   pendingToken = null;
   pendingUnproven = false;
   flight = null;
-  publish(null, true);
+  publish(
+    null,
+    true,
+    false,
+    identity === null ? null : { accountId: identity.accountId, deviceId: identity.deviceId },
+  );
   return true;
 }
 
@@ -755,5 +807,5 @@ export function resetDeviceIdentity(): void {
     window.removeEventListener('storage', storageListener);
   }
   storageListener = null;
-  useIdentityStore.setState({ identity: null, signedOut: false, scopeRevision: 0 });
+  useIdentityStore.setState({ identity: null, signedOut: false, signedOutAs: null, scopeRevision: 0 });
 }

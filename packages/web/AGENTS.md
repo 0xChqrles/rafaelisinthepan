@@ -17,6 +17,10 @@
                               first deliberate act, the server-assigned account it resolves
                               to, the signed-out flag and the identity epoch
       state/identityScope.ts  what an identity OWNS, cleared when it changes (wired in main)
+      state/localIdentityDeploy.ts  the username decided LOCALLY, deployed with the account
+                              (2026-08-26): acquiring an identity stores the seed's assigned
+                              face through an atomic create-only profile write (the editor's
+                              SAVE exempt)
       state/gamePersistence.ts  the atomic IndexedDB boundary for cross-tab game-state writes
       state/signedOutVerdict.ts  the ONE spelling of the sign-out resolution every private
                               route client shares (401 + `unknown_device` code)
@@ -499,6 +503,25 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `rearmPlayerHistory` (replays exactly the reads the tokenless branch answered). A
     RE-ARM, never a clear: the outbox and the word clock hold what THIS device played, owed
     to the adopted account.
+  - **THE USERNAME IS DEPLOYED, NOT SWAPPED (`state/localIdentityDeploy.ts`,
+    user-decided 2026-08-26 — the root `AGENTS.md` #216 section holds the decision):**
+    on ANY identity acquisition the module reads the account's profile and, only when it
+    answers 404 (even an empty-looking stored row is somebody's deliberate avatar-only
+    save), POSTs the seed's assigned face — `anonName(localSeed)` + `defaultAvatar(localSeed)`
+    via `ensureLocalSeed`, so the exact values the strip showed while tokenless become
+    the stored row. That POST carries `createOnly: true`: the backend's store condition,
+    not the preceding GET, atomically prevents the background deploy from replacing a row
+    the editor or another device created in between; 409 `profile_exists` is the settled
+    lost-race answer. The read keeps one uniform rule across minted AND adopted
+    acquisitions (a recovered pending token's account may be empty too), and other write
+    failures are best-effort: bounded retries (2), then silent fallback to the
+    derived-from-accountId face, never surfaced. A 401 `unknown_device` instead goes
+    through the shared signed-out-verdict helper and is not retried. It listens to the
+    same identity-change signal identityScope does, wired beside it in `main.tsx` — so a
+    future deploy trigger cannot forget it. The ONE exemption is the profile editor's
+    SAVE: its own deploy carries the player's typed fields, so it wraps its bootstrap in
+    `withoutLocalIdentityDeploy` to keep the placeholder from racing (and possibly
+    overwriting) the save. Contract-tested (`localIdentityDeploy.test.ts`).
   - **Persisted game state is TRANSACTIONAL across tabs** (PR-219 final review, replacing
     rounds 2–3's snapshot merge). Zustand is now only the synchronous UI cache. Every
     persisted action emits an explicit domain mutation — append/acknowledge/discard one
@@ -922,9 +945,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   editor opening blank while the board wears a name and a mark read as broken), with
   those values as the BASELINE too, so SAVE stays dark until something actually
   changes. **The assigned NAME is a DISPLAY value in both directions, never a stored
-  one** (corrected 2026-08-20 on review): an EMPTY stored name opens the field on the
-  pseudonym — so a 404 and a name-less stored profile open identically — and a name
-  still equal to that pseudonym SAVES as the empty name. The first cut stored it, on
+  one** (corrected 2026-08-20 on review; AMENDED 2026-08-26, user-decided — the
+  locally-decided identity IS stored now, by acquiring an account itself:
+  `state/localIdentityDeploy.ts` deploys the seed's assigned face as a new account's
+  first profile. What stands here is the EDITOR half: an EMPTY stored name opens the
+  field on the pseudonym — so a 404 and a name-less stored profile open identically —
+  and a name still equal to that pseudonym SAVES as the empty name). The first cut
+  stored it, on
   the reasoning that "storing it changes nothing anyone sees", which is false: every
   board gates its placeholder ink on the name being EMPTY, so storing the pseudonym
   flips that row from the muted placeholder to full primary, makes the player
@@ -932,7 +959,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   name against every later generator change. The BASELINE therefore lives in DISPLAY
   space and the save BODY in STORAGE space; a player who types their own pseudonym
   verbatim stores empty and renders the same text in the placeholder ink — the one
-  accepted cost of the rule. The wired entry point is
+  accepted cost of the rule (for the deployment half, that cost is the point: the
+  promoted handle is the one the player has been wearing). The wired entry point is
   the leaderboard screen's EDIT chip (#190), and the header carries a CLOSE chip back
   to it (user feedback 2026-08-20 — the screen was unleavable) — **to the board that
   actually opened it** (corrected 2026-08-20 on review): `/profile` is a GLOBAL route,
@@ -1068,7 +1096,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   during render when the epoch changes exactly as a new day drops the boards: the
   stale-but-good rule keeps a cached board over a failed refresh, so a kept
   tokenless-empty board would suppress both the adopted account's real data and the retry
-  UI. Every identity-reading effect keys on the LIVE
+  UI. **The ONE exception is a PROVEN MINT** (2026-08-26; corrected on review the same day
+  after it was first written as "any first acquisition"): a tokenless tab whose own
+  bootstrap commits keeps the known-empty friends board, because a freshly minted account
+  has no edges BY CONSTRUCTION — that is a fact, not a stale guess, and it stops the INVITE
+  tap's mint blinking the ghost into a loading frame the button is already showing. It
+  turns on `useIdentityMintedHere()`, never on the transition, because `identity.ts`'s own
+  rule is that every OTHER null → identity publish is an ADOPTION of an account that may
+  already hold server state — a sibling tab's, a storage-recovered pending token, a raced
+  bootstrap another tab won. An accepted invite is the reachable case: its tap mints AND
+  links in one gesture, so a sibling tab adopting that identity has friends the instant it
+  arrives, and a failed refresh would freeze a false ghost with no retry offered.
+  Every identity-reading effect keys on the LIVE
   identity (`useDeviceIdentity`), so the mint — or a cross-tab adoption — populates the
   strip, both boards and the friend marks without a remount (a run-once strip effect used
   to leave them blank until navigation). Its lazy

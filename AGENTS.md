@@ -1107,10 +1107,25 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     submission resolve the identity they hold or stand down (`currentRequestIdentity`).
   - **The leaderboard and the profile editor render a LOCAL PLACEHOLDER identity** for a
     tokenless device — a persisted random seed (`gameStore.localSeed`, publicId-shaped)
-    that `anonName`/`defaultAvatar` derive the name and mark from. Display-only, never
-    sent anywhere; when the account deploys, the server-assigned id takes over and the
-    derived face changes once (the server picks the id, so no local value can match). The
-    tokenless friends board is the honest empty board without a request.
+    that `anonName`/`defaultAvatar` derive the name and mark from. The tokenless friends
+    board is the honest empty board without a request.
+    **THE USERNAME IS DECIDED LOCALLY, THEN DEPLOYED WHEN NEEDED (user-decided
+    2026-08-26, superseding the display-only-in-both-directions half of #188's
+    assigned-name rule of 2026-08-20):** when the device ACQUIRES an account, the client
+    stores the placeholder it has been showing — the seed's assigned name + mark — as the
+    account's profile, so the face no longer changes at deployment. Only an account with
+    NO stored row is deployed into (even an empty-looking stored row is somebody's
+    deliberate avatar-only save): the GET's 404 avoids an unnecessary write, while the
+    POST's `createOnly: true` and the store's conditional create make the rule atomic if
+    the profile editor or another device creates the row between those calls; that lost
+    race answers 409 `profile_exists` and is settled, never retried. The profile editor's
+    own SAVE deploy is exempt (it carries the player's typed fields and must not be
+    raced), an `unknown_device` refusal adopts the shared signed-out verdict, and any
+    other failed deployment retries bounded, then falls back silently to today's
+    behavior. What remains DISPLAY-only is the
+    fallback derived from the SERVER-assigned id (`assigned.ts`), worn by any account with
+    no stored row. Implementation: `web/src/state/localIdentityDeploy.ts`, wired beside
+    the identity scope.
   - Invites remain gated on NEITHER side (the accepter is by definition a brand-new
     visitor clicking a link — the invite funnel, #189); what changed is WHEN: the tap, not
     the load.
@@ -1448,10 +1463,12 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
 - **Non-unique display name + a 10×10 palette pixel avatar, hung off #187's identity.**
   The ONE handler serves `GET /profile?id=<publicId>` (the public row: name + avatar —
   what a board renders, and what a freshly linked device loads; 404 = never customized)
-  and `POST /profile` with `{ token, name, avatar }` (the pre-#216 body carried the shared
-  player credential instead) — an
-  authenticated upsert keyed by the ACCOUNT the caller's device token resolves to, a
-  separate write path from scores. The `/scores` behavior rules
+  and `POST /profile` with `{ token, name, avatar, createOnly? }` (the pre-#216 body
+  carried the shared player credential instead) — an authenticated write keyed by the
+  ACCOUNT the caller's device token resolves to, a separate write path from scores.
+  Omitted `createOnly` is the profile editor's ordinary upsert; its only valid present
+  value is `true`, which atomically creates an absent row and answers 409
+  `profile_exists` without mutation when one already exists. The `/scores` behavior rules
   re-apply: zero-TTL CloudFront behavior, query allowList = exactly the ONE parameter the
   handler reads (`id`), `x-amz-content-sha256` over the exact body bytes on a production
   POST. No Turnstile and no IP dedup here — the device token is the auth, and an overwritten
@@ -1599,7 +1616,9 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
 - **ONE route `/board`, addressed per `(day, lang, mode)` like everything else** (the
   puzzle route's malformed-param 400s and future +1-day guard apply; no puzzle-store
   read — a population only exists for a published daily, so an unpublished day honestly
-  answers the empty board). Two faces:
+  answers the empty board). *(#206 amended the puzzle-store half for the FRIENDS POST
+  alone — its in-progress rows dedup raw logs against the day's full artifact; see its
+  section below. The GLOBAL GET still reads none.)* Two faces:
   - `GET /board?lang=&date=&mode=[&id=<publicId>]` — the **GLOBAL top 50, anonymous**
     (untrusted by design, #187: decorative, nothing treats it as truth). `id` is the
     caller's PUBLIC id — never the token, so it may travel in the query — and widens
@@ -1617,7 +1636,8 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     response's `waiting` list carries them (profile-dressed, no score/rank; sorted by
     publicId; never the caller themselves, and always empty on the global board) and
     the web draws them under ONE "not played yet" section caption — an edge is a
-    person the caller chose, never a row to silently drop.
+    person the caller chose, never a row to silently drop. *(#206 narrowed WHO waits:
+    a friend with a stored round for the current revision is IN PROGRESS instead.)*
 - **The ranking rules are shared pure functions** (`shared/src/leaderboard.ts`,
   contract-tested): competition-style tie ranks (equal ranks, never a fake ordering —
   ties ordered by publicId only for deterministic ROW order), the PLAIN top-50 cut
@@ -1643,6 +1663,74 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   ACTIVE day's routes only: a board is the active day's, so offering it from an
   archive replay would swap the day under the player and its exit would land them on
   today, ending the archive session.
+
+### Live friends board: in-progress rows (#206, decided 2026-08-25)
+
+- **The friends board has THREE states, and it is alive mid-day**: not started · **in
+  progress** — the exact deduped try count and the reconstruction percentage, ordered
+  among themselves — · finished — score and rank, above everyone still playing. It
+  narrows the `waiting` / "NOT PLAYED YET" section rather than replacing the shape: a
+  friend with a stored round for the current revision but no recorded score is a
+  `playing` row; `waiting` keeps only friends with neither. **FRIENDS ONLY, never the
+  global board** — mutual edges are consented by construction; strangers watching you
+  play is not the same thing — so `playing` is always empty on the GET. It leaks
+  nothing about the puzzle: a percentage and a try count say nothing about which words
+  are involved. **Sentence mode only**: a Word run's log reaches the server at its
+  end-of-run submission (#202), so mid-run there is honestly nothing to read — the
+  issue's own observation that a 60-second run is over before anyone looks.
+- **The try count is the EXACT deduped score, never the stored log's length.** They
+  differ: `guessKey` counts inflections of one word as one try, and the stored log can
+  hold one identity twice whenever two devices merge (the server appends, it does not
+  dedup) — a friend must not watch 40 all afternoon and see the final score land at 38.
+  Exactness needs the day's FULL artifact, so **the friends POST is the one board read
+  that touches the puzzle store** — read FRESH like every artifact read (the issue
+  predated the cache removal and assumed #203's active-day cache; fresh is the standing
+  rule, and a board open is a person tapping a screen, not the per-guess hot path the
+  slice exists for), concurrent with the round read. A FAILED playing read fails the
+  board POST rather than degrading: an in-progress friend surfacing under "not played
+  yet" is a claim, and a false one (#211's loading rule), while a failed board keeps
+  the client's cached rows on screen. An UNPUBLISHED day is not a failure — no artifact
+  means no round ever existed, so the empty section is the honest answer.
+- **The source is the round rows (#201/#203), read exactly as `roundStore.ts`
+  predicted**: `RoundStore.getMany` — BatchGetItem over the exact keys the caller's
+  edges resolve to, never a read across players; EVENTUALLY consistent, unlike the
+  score `getMany` (a playing row is a mid-flight snapshot by nature, and round items
+  carry whole logs, the table's biggest items). The percentage shown is the STORED
+  derived `progress` — the calendar's own source (#211), so the two surfaces cannot
+  disagree over one log. **Only rounds naming the artifact's own revision qualify**: a
+  retired revision's log answers a different puzzle (its tries would dedup against maps
+  it was never played on), and that round restarts on its player's next append anyway,
+  so for THIS puzzle they honestly have not started. **A member the score population
+  ranks is FINISHED, whatever their round row says** — which also keeps a solved round
+  whose row the day already holds out of `playing`.
+- **A round that ENDED without a recorded score still reads as IN PROGRESS, and that is
+  ACCEPTED (user-decided 2026-08-26, on review; the fourth state is #224).** The
+  subtraction above removes the players the population RANKS, which is not the same set as
+  the players who are DONE: a capped round ends at `∞` and records no row (#214), a solve
+  landing past the 22:00 flip is late and earns none (#211's `onTime`), and a solve whose
+  row the #169 IP allowance refused — a household or a café sharing one address, swallowed
+  silently by design — records none either. All three keep `progress`/`solved` on the round
+  row, so the board carries them under IN PROGRESS for the rest of the day. What the row
+  SHOWS is true — the try count and the percentage are the player's real ones — and only
+  the section caption over-claims; the cheap alternative drops them into `waiting`, and
+  telling a friend's friends that somebody who typed 500 guesses, or who actually solved
+  the puzzle, has NOT PLAYED YET is the worse lie, the one this section exists to refuse.
+  Saying it properly needs a FOURTH state — finished, but not in the day's population: the
+  capped player's row printing the `∞` their own result already prints, the unranked
+  solver's printing a real score with no rank — which is product design of its own and is
+  deliberately NOT in #206.
+- **The caller's own mid-round row is shown on a REAL friends board, but never defeats
+  the NO FRIENDS ghost by itself.** The server includes the caller in `playing`, so once
+  at least one friend row makes the board non-empty their live numbers show where they
+  stand among friends mid-day. The web deliberately computes friends-board emptiness
+  without the caller's own ranked OR playing row: a self-only board still means no edges
+  and stays the ghost under the identity strip. `waiting` never carries the caller; a
+  bare "not played yet" row there would still be noise.
+- **The order is a shared pure rule, and it is an ORDER, never a rank claim**
+  (`orderPlaying`, contract-tested beside the #190 rules): progress descending, tries
+  ascending, publicId last — a mid-round position moves with every guess, so the rows
+  carry NO rank number and render with the waiting rows' no-rank tick, below every
+  finished row and above the waiting group, under one "IN PROGRESS" section caption.
 
 ---
 
@@ -1727,7 +1815,9 @@ publish/inventory/backend:dev (backend), dev/build (web), cdk synth/diff/deploy
   (`pnpm@11.9.0`). `pnpm-workspace.yaml` lists the workspaces and uses `allowBuilds`
   to approve `esbuild`'s postinstall (its native binary), which pnpm blocks by default.
 - **CI/CD (#33):** two GitHub Actions workflows under `.github/workflows/`
-  (docs in `.github/workflows/README.md`). `ci.yml` — on PR→`main` and push to `main`,
+  (docs in `.github/workflows/README.md`). `ci.yml` — on PRs into `main` or `dev` and pushes to both (the `dev`
+  integration branch joined 2026-08-26 — a PR retargeted onto it was silently getting no
+  test gate),
   sets up pnpm/Node 22/uv+Python 3.12 and runs `pnpm -r --if-present run typecheck` +
   `pnpm test` (intended as a **required status check**; branch protection on `main` is a
   manual repo-admin step). `deploy.yml` — on push to `main` and `workflow_dispatch`,

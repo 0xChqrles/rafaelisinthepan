@@ -20,26 +20,46 @@
 // plain top-50 cut and the own-row window are the shared pure rules in
 // @whippin/shared/leaderboard.ts.
 //
-// No puzzle-store read: a population only ever exists for a published daily (the round
-// route's guards enforce it — it is what writes the score rows since #203), so an
-// unpublished day honestly answers the empty board. The malformed-param 400s and the
-// future +1-day guard still apply (shared liveRoute.ts).
+// THE FRIENDS BOARD IS ALIVE MID-DAY (#206): a friend with a stored round but no
+// recorded score is IN PROGRESS, not "not played yet" — their row carries the EXACT
+// deduped try count and the server-derived reconstruction percentage, ordered among
+// themselves below every finished row. Friends only, never the global board (mutual
+// edges are consented by construction; strangers watching you play is not the same
+// thing), and it leaks nothing about the puzzle — a percentage and a try count say
+// nothing about which words are involved. Getting the try count EXACT needs the day's
+// FULL artifact (`countTries` dedups on a guess's rank in EVERY map, which no summary
+// answers — the raw stored log can hold one identity twice whenever two devices merge),
+// so the friends POST is the one board read that touches the puzzle store, read FRESH
+// like every other artifact read (#203's rule, puzzleReads.ts). Sentence mode only: a
+// Word run's log reaches the server at submission, so mid-run there is honestly
+// nothing to read.
+//
+// The GLOBAL GET still reads no puzzle store: a population only ever exists for a
+// published daily (the round route's guards enforce it — it is what writes the score
+// rows since #203), so an unpublished day honestly answers the empty board. The
+// malformed-param 400s and the future +1-day guard still apply (shared liveRoute.ts).
 
 import {
   boardOwnRows,
+  countTries,
   cutBoard,
+  orderPlaying,
   rankBoard,
   PUBLIC_ID_PATTERN,
   type Board,
   type BoardPlayer,
   type BoardRow,
+  type PlayingRow,
+  type PlayingScore,
   type RankedScore,
 } from '@whippin/shared';
 import type { DeviceStore } from './deviceStore';
 import type { FriendStore } from './friendStore';
 import { LIVE_HEADERS, readJsonObject, requireDayParams, requireDevice } from './liveRoute';
 import type { ProfileStore } from './profileStore';
+import type { RoundKey, RoundStore } from './roundStore';
 import type { ScoreKey, ScoreStore } from './scoreStore';
+import type { PuzzleStore } from './store';
 import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respond';
 
 export interface BoardHandlerDeps {
@@ -48,6 +68,12 @@ export interface BoardHandlerDeps {
   friends: FriendStore;
   // The trusted face authenticates its caller's device (#216); the anonymous GET does not.
   devices: DeviceStore;
+  // The #206 in-progress rows: the friends' stored rounds, and the day's full artifact
+  // the exact try count dedups their logs against. Optional for the read-only handler
+  // consumers that never take the friends POST; without both, the board simply carries
+  // no playing section — production and the local server always provide them.
+  rounds?: RoundStore;
+  puzzles?: PuzzleStore;
 }
 
 // How a player with NO public profile is dressed — and the ONE fallback this route
@@ -83,6 +109,48 @@ async function dressRows(
 
 function toBoardRows(rows: readonly RankedScore[], dress: Dress): BoardRow[] {
   return rows.map((row) => ({ ...row, ...dress(row.publicId) }));
+}
+
+// The #206 in-progress candidates: every board member's stored round for this daily,
+// deduped into an exact try count against the day's full artifact. UNFILTERED — the
+// caller still subtracts the players the score population already ranks, which it can
+// only do once both concurrent reads have answered.
+//
+// The two loads run CONCURRENTLY (neither depends on the other), and the artifact is
+// read FRESH (#203's rule — puzzleReads.ts holds the whole reasoning): a board open is
+// a person tapping a screen, not the per-guess hot path the derivation slice exists
+// for, and a warm Lambda retaining megabytes of parsed puzzle was the cost fresh reads
+// were chosen to avoid. Only rounds naming the artifact's own published revision
+// qualify: a retired revision's log answers a different puzzle — its tries dedup
+// against maps it was never played on — and that round restarts on the player's next
+// append anyway, so for THIS puzzle they honestly have not started.
+//
+// A failure here PROPAGATES (it is not caught into an empty list): degrading would let
+// the waiting section claim "not played yet" over a friend mid-game — a claim, and a
+// false one — where a failed board keeps the client's cached rows on screen instead.
+// An UNPUBLISHED day is not a failure: no artifact means no round route ever accepted
+// a guess for it, so the empty list is the honest answer.
+async function loadPlaying(
+  rounds: RoundStore | undefined,
+  puzzles: PuzzleStore | undefined,
+  key: RoundKey,
+  members: readonly string[],
+): Promise<PlayingScore[]> {
+  if (key.mode !== 'sentence' || !rounds || !puzzles) return [];
+  const [puzzle, stored] = await Promise.all([
+    puzzles.getPuzzle(key.date, key.lang),
+    rounds.getMany(key, members),
+  ]);
+  if (!puzzle) return [];
+  return stored
+    .filter((row) => row.puzzle === puzzle.revision && row.guesses.length > 0)
+    .map((row) => ({
+      publicId: row.publicId,
+      tries: countTries(puzzle.ranks, row.guesses),
+      // The stored derived percentage (#203) — the calendar's own source, so the board
+      // and the archive can never disagree over one log.
+      progress: row.progress,
+    }));
 }
 
 export async function handleBoard(
@@ -121,6 +189,7 @@ export async function handleBoard(
     const board: Board = {
       rows: toBoardRows(cut, dress),
       own: own === null ? null : toBoardRows(own, dress),
+      playing: [],
       waiting: [],
     };
     return json(200, board, responseHeaders);
@@ -135,23 +204,50 @@ export async function handleBoard(
   const publicId = auth.value.account.accountId;
   const friends = await deps.friends.list(publicId);
   // The trusted board is the caller's edges plus themselves — and the caller already
-  // holds the exact row keys, so the store fetches THOSE (batch-shaped, constant in the
-  // day's population) rather than paging the whole day partition to keep at most
-  // FRIENDS_MAX + 1 rows. Recorded scores make the RANKED rows; a FRIEND with no score
-  // today is still named, in `waiting` — an edge is a person the caller chose, so the
-  // board says "not played yet" rather than silently dropping them (user-decided
-  // 2026-08-20). The caller's own unplayed row stays absent (the screen's identity
-  // strip already shows them). Bounded by FRIENDS_MAX, so no cut.
-  const rows = await deps.scores.getMany(key, [...friends, publicId]);
+  // holds the exact row keys, so BOTH stores fetch THOSE (batch-shaped, constant in the
+  // day's population) rather than paging anything. Recorded scores make the RANKED
+  // rows. A friend with a stored round but no score is IN PROGRESS (#206), with the
+  // exact try count and percentage — the caller included: on a board with at least one
+  // friend, their own live row shows where they stand among friends mid-day (the web
+  // deliberately keeps a self-only board as its NO FRIENDS ghost). A FRIEND with neither
+  // is still named, in `waiting` — an edge is a person the caller chose, so the board says
+  // "not played yet" rather than silently dropping them (user-decided 2026-08-20); the
+  // caller's own unplayed row stays absent (the screen's identity strip already shows
+  // them). Bounded by FRIENDS_MAX, so no cut.
+  const members = [...friends, publicId];
+  const [rows, candidates] = await Promise.all([
+    deps.scores.getMany(key, members),
+    loadPlaying(deps.rounds, deps.puzzles, key, members),
+  ]);
   const ranked = rankBoard(rows, key.mode);
   const scored = new Set(rows.map((row) => row.publicId));
+  // A member the population already ranks is FINISHED, whatever their round row says —
+  // the recorded score is the day's final word on them.
+  //
+  // What this subtracts is the RANKED, which is not the DONE (user-decided 2026-08-26, on
+  // review — the reasoning is in the root AGENTS.md #206 section, the fourth state is
+  // #224). A capped round ends at infinity and records no row (#214), a solve past the
+  // 22:00 flip is late and earns none (#211's `onTime`), and one whose row the #169 IP
+  // allowance refused records none either — all three keep their derived summary here and
+  // read as IN PROGRESS for the rest of the day. ACCEPTED: the numbers on the row are the
+  // player's real ones and only the caption over-claims, where the cheap fix would file a
+  // 500-guess round or an actual solve under "not played yet" — the false claim this whole
+  // section exists to refuse.
+  const playing = orderPlaying(candidates.filter((row) => !scored.has(row.publicId)));
+  const playingIds = new Set(playing.map((row) => row.publicId));
   // Sorted for a stable board between reads; publicId is the only order every waiting
   // row is guaranteed to carry.
-  const waiting = friends.filter((id) => !scored.has(id)).sort();
-  const dress = await dressRows(deps.profiles, ranked, waiting.map((id) => ({ publicId: id })));
+  const waiting = friends.filter((id) => !scored.has(id) && !playingIds.has(id)).sort();
+  const dress = await dressRows(
+    deps.profiles,
+    ranked,
+    playing,
+    waiting.map((id) => ({ publicId: id })),
+  );
   const board: Board = {
     rows: toBoardRows(ranked, dress),
     own: null,
+    playing: playing.map((row): PlayingRow => ({ ...row, ...dress(row.publicId) })),
     waiting: waiting.map((id): BoardPlayer => ({ publicId: id, ...dress(id) })),
   };
   return json(200, board, responseHeaders);

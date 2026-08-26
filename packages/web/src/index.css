@@ -3287,6 +3287,13 @@ button * {
   border-radius: var(--r-lg);
   text-shadow: none;
   transition: filter 0.08s linear, border-color 0.12s linear;
+  /* A FLOOR under the app's one big action (user-decided 2026-08-26): sized to its label
+     alone, a short word ("PLAY") drew a small card in the middle of a wide column and read
+     as a minor control. Every screen that hands this button a column already stretches it
+     to 100% (the tutorial invitation, the invite landing, this screen), so this only ever
+     bites where a primary is dropped with no width of its own — and `min()` is what keeps
+     the floor from overflowing a column narrower than it. */
+  min-width: min(240px, 100%);
 }
 .btn-primary::before {
   content: '';
@@ -5403,8 +5410,10 @@ button * {
   border-radius: var(--r-sm);
 }
 /* The rank is the game's own number — pixel face, quiet: the row is about the player,
-   so the number wears the secondary ink. */
+   so the number wears the secondary ink. CENTERED in its column like the no-rank tick
+   (user feedback 2026-08-26), so ranked and unranked rows share one axis. */
 .board-rank {
+  justify-self: center;
   font-family: var(--pixel-font);
   font-size: 9px;
   color: var(--muted);
@@ -5498,6 +5507,33 @@ button * {
   font-weight: 700;
 }
 
+/* A FRIEND STILL PLAYING (#206, friends board only): a glass row like the ranked ones
+   — it carries live numbers, not a promise — with the waiting rows' no-rank tick, the
+   live try count under the unit caption's column, and the reconstruction % spoken in
+   the app's OWN progress vocabulary (user feedback 2026-08-26): the % wears the pixel
+   face in the heat ramp's ink for its value (`--play-heat`, set per row inline) — the
+   exponents' dress, a progress % reading straight as the scale. The ink ALONE says it:
+   the first cut also drew the chooser card's bottom filament, dropped the same day —
+   too much colour pressed against the avatars, and it fattened the playing rows. */
+.board-row.playing {
+  grid-template-columns: 42px 28px minmax(0, 1fr) auto auto;
+}
+/* The tries cell is pinned at three pixel-face digits (the 500 cap's width) and
+   right-aligned, so the % column's right edge cannot wander with the count's digit
+   count from row to row (user feedback 2026-08-26 — the misaligned first cut). */
+.board-row.playing .board-score {
+  min-width: 39px;
+  text-align: right;
+}
+.board-progress {
+  font-family: var(--pixel-font);
+  font-size: 11px;
+  color: var(--play-heat);
+  /* The exponents' glow, quieter: enough for the ink to register as signal. */
+  text-shadow: 0 0 6px color-mix(in srgb, var(--play-heat) 45%, transparent);
+  translate: 0 1px;
+}
+
 /* A FRIEND with no score today (friends board only, user-decided 2026-08-20): the row
    stays — an edge is a person you chose — wearing the app's dashed "not yet" frame
    with no glass fill. WHY they have no score is said ONCE, by the section caption
@@ -5511,12 +5547,14 @@ button * {
   grid-column: 3 / -1;
 }
 /* The caption between the ranked rows and the waiting group: a small centered title
-   on a hairline — NOT PLAYED YET, once for everyone under it. */
+   on a hairline — NOT PLAYED YET, once for everyone under it. The wide margins set
+   each caption off as its own section break (the rows themselves stay 6px apart). */
 .board-section {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 6px;
+  margin-top: 18px;
+  margin-bottom: 10px;
   font-family: var(--ui);
   font-size: 10px;
   font-weight: 500;
@@ -5589,6 +5627,51 @@ button * {
 .invite-done .mix-btn {
   width: 100%;
   margin-top: 12px;
+}
+
+/* ---- The signed-out screen (#216, reshaped 2026-08-26 on user feedback: the
+   sentence-only frame was hard to understand). The invite landing's own shape — the
+   ACCOUNT's mark and name over what happened — so the player sees WHO they are being
+   asked to leave before choosing. Same dress, its own names: the two screens mirror
+   each other on purpose, they are not one component. ---- */
+.signed-out {
+  width: min(340px, 100%);
+  margin: auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+}
+.signed-out .avatar {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+.signed-out-name {
+  font-family: var(--ui);
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+}
+.signed-out-line {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* The action is the column's, exactly like the invite landing's (`.invite-done .mix-btn`)
+   and every other big action in the app — the first cut sized it to its label and read as
+   too narrow (user feedback 2026-08-26). The first one keeps the invite CTA's breathing
+   room off the note above it. */
+.signed-out .btn {
+  width: 100%;
+  margin-top: 12px;
+}
+.signed-out .btn + .btn {
+  margin-top: 0;
 }
 
 /* ---------------------------------------------------------------------------

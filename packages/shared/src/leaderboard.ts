@@ -69,6 +69,30 @@ export function boardWindow(
   return ranked.slice(Math.max(0, index - BOARD_WINDOW_SPAN), index + BOARD_WINDOW_SPAN + 1);
 }
 
+// One friend STILL PLAYING the daily (#206): the two live numbers a mid-round row
+// shows — the EXACT deduped try count (the same `countTries` the score records, never
+// the raw stored log length: two devices can store one identity twice, and a friend
+// must not watch 40 all afternoon and see the final score land at 38) and the server's
+// derived reconstruction percentage (#203's stored value, the calendar's own source).
+export interface PlayingScore {
+  publicId: string;
+  tries: number;
+  progress: number;
+}
+
+// The in-progress rows' order — "ranked among themselves", below every finished row,
+// which is an ORDER and never a rank claim (a mid-round position moves with every
+// guess, so the rows carry no rank number): closest to done first, fewer tries breaking
+// the tie (fewer is the score that would record), publicId last for a deterministic
+// board between reads — `rankBoard`'s own tie rule.
+export function orderPlaying(rows: readonly PlayingScore[]): PlayingScore[] {
+  return [...rows].sort((a, b) => {
+    if (a.progress !== b.progress) return b.progress - a.progress;
+    if (a.tries !== b.tries) return a.tries - b.tries;
+    return a.publicId < b.publicId ? -1 : a.publicId > b.publicId ? 1 : 0;
+  });
+}
+
 // What the global response actually carries for the caller: nothing when their row is
 // already visible in the cut, otherwise their window MINUS any row the cut already
 // shows (a row must never render twice because the window brushed the boundary).
@@ -100,10 +124,25 @@ export interface BoardRow extends BoardPlayer {
   rank: number;
 }
 
+// A dressed in-progress row (#206): the `PlayingScore` numbers with the profile a board
+// renders. No rank — the section's order is `orderPlaying`'s, and a mid-round position
+// is never a rank claim.
+export interface PlayingRow extends BoardPlayer {
+  tries: number;
+  progress: number;
+}
+
 export interface Board {
   rows: BoardRow[];
   // The caller's own below-the-cut window; always null on the friends board.
   own: BoardRow[] | null;
+  // FRIENDS mid-round today (#206), in `orderPlaying`'s order: the board is alive while
+  // the day is still being played, instead of only filling in once everybody finished.
+  // FRIENDS ONLY, always empty on the global board — mutual edges are consented by
+  // construction; strangers watching you play is not the same thing. Sentence mode only
+  // in practice: a Word run is 60 seconds plus bonuses, over before anyone looks, and
+  // its log reaches the server only at submission anyway.
+  playing: PlayingRow[];
   // FRIENDS who have no recorded score today (user-decided 2026-08-20): an edge is a
   // person you chose, so the board names them even before they play — with "not played
   // yet" where a score would be, never by silently dropping the row. Always empty on

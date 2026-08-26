@@ -496,6 +496,9 @@ describe('invite link (#189) — the shared link, its preview page and its card'
       if (fails) throw new Error('profile store is down');
       return row;
     },
+    async create() {
+      return false;
+    },
     async upsert() {},
   });
   const drawn = blankAvatar(2);

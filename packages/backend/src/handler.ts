@@ -313,8 +313,10 @@ export function createHandler(deps: HandlerDeps) {
       }
 
       if (isBoardRoute) {
-        // The board is a READ over what the three stores already hold — score rows for
-        // the population, edges for the trusted tab, profiles to dress the rows.
+        // The board is a READ over what the stores already hold — score rows for the
+        // population, edges for the trusted tab, profiles to dress the rows, and since
+        // #206 the friends' stored ROUNDS plus the day's full artifact, which the
+        // in-progress rows' exact try counts are deduped against.
         if (!deps.scores || !deps.profiles || !deps.friends || !deps.deviceStore) {
           throw new Error('The leaderboard is not configured.');
         }
@@ -325,6 +327,8 @@ export function createHandler(deps: HandlerDeps) {
             profiles: deps.profiles,
             friends: deps.friends,
             devices: deps.deviceStore,
+            rounds: deps.rounds?.roundStore,
+            puzzles: deps.store,
           },
           date,
           instant,

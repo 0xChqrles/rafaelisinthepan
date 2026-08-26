@@ -629,6 +629,27 @@ describe('localStorage is shared by every TAB (#216)', () => {
     stop();
   });
 
+  // CONTRACT (review finding): the store's `mintedHere` is the readable half of the same
+  // fact `adopted` announces, because a component sees only the transition. A reader that
+  // infers "brand new, therefore empty" from tokenless -> identity is right ONLY after a
+  // proven mint — the leaderboard's known-empty friends board turns on exactly this, and
+  // an accepted invite mints AND links in one gesture, so a sibling tab adopting that
+  // identity has edges the instant it arrives.
+  it('says mintedHere for a proven MINT and never for an adoption', async () => {
+    expect(useIdentityStore.getState().mintedHere).toBe(false);
+    await ensureDeviceIdentity();
+    expect(useIdentityStore.getState().mintedHere).toBe(true);
+
+    // A sibling tab's account arriving under a tokenless tab is an ADOPTION.
+    resetDeviceIdentity();
+    post.mockClear();
+    const theirs = { token: 'c'.repeat(64), accountId: ACCOUNT, deviceId: DEVICE };
+    storage.setItem('whippin-device', JSON.stringify(theirs));
+    await expect(ensureDeviceIdentity()).resolves.toEqual(theirs);
+    expect(post).not.toHaveBeenCalled();
+    expect(useIdentityStore.getState().mintedHere).toBe(false);
+  });
+
   it('does NOT delete a newer tab\'s identity when this one signs out', async () => {
     const identity = await ensureDeviceIdentity();
     const theirs = { token: 'f'.repeat(64), accountId: 'rrrrrrrrrrrrrrrr', deviceId: DEVICE };

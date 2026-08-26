@@ -516,11 +516,11 @@ describe('parseBoard (shape validation, #190)', () => {
     rank: 1,
     ...over,
   });
-  const valid = () => ({ rows: [row()], own: null, waiting: [] });
+  const valid = () => ({ rows: [row()], own: null, playing: [], waiting: [] });
 
   it('accepts a well-formed board, empty boards included', () => {
     expect(parseBoard(valid()).rows).toHaveLength(1);
-    expect(parseBoard({ rows: [], own: null, waiting: [] }).rows).toEqual([]);
+    expect(parseBoard({ rows: [], own: null, playing: [], waiting: [] }).rows).toEqual([]);
     expect(parseBoard({ ...valid(), own: [row()] }).own).toHaveLength(1);
     // A friend with no score today is a PLAYER row — no score, no rank.
     expect(
@@ -529,6 +529,34 @@ describe('parseBoard (shape validation, #190)', () => {
         waiting: [{ publicId: 'abcdefghij234567', name: '', avatar: null }],
       }).waiting,
     ).toHaveLength(1);
+  });
+
+  // The #206 in-progress rows: a dressed player with the two live numbers — an exact
+  // try count (positive integer) and a reconstruction percentage (real, 0..100).
+  const playingRow = (over: Partial<Record<string, unknown>> = {}) => ({
+    publicId: 'abcdefghij234567',
+    name: '',
+    avatar: null,
+    tries: 12,
+    progress: 62.5,
+    ...over,
+  });
+
+  it('accepts playing rows, fractional progress included (#206)', () => {
+    expect(parseBoard({ ...valid(), playing: [playingRow()] }).playing).toHaveLength(1);
+    expect(parseBoard({ ...valid(), playing: [playingRow({ progress: 0 })] }).playing).toHaveLength(1);
+    expect(parseBoard({ ...valid(), playing: [playingRow({ progress: 100 })] }).playing).toHaveLength(1);
+  });
+
+  it('rejects a malformed playing row (#206)', () => {
+    expect(() => parseBoard({ ...valid(), playing: undefined })).toThrow(/playing/);
+    expect(() => parseBoard({ ...valid(), playing: [playingRow({ publicId: 'NOPE' })] })).toThrow(/playing/);
+    // A round with no guesses is no round: zero or fractional tries is a wrong shape.
+    expect(() => parseBoard({ ...valid(), playing: [playingRow({ tries: 0 })] })).toThrow(/playing/);
+    expect(() => parseBoard({ ...valid(), playing: [playingRow({ tries: 1.5 })] })).toThrow(/playing/);
+    expect(() => parseBoard({ ...valid(), playing: [playingRow({ progress: -1 })] })).toThrow(/playing/);
+    expect(() => parseBoard({ ...valid(), playing: [playingRow({ progress: 101 })] })).toThrow(/playing/);
+    expect(() => parseBoard({ ...valid(), playing: [playingRow({ progress: '40' })] })).toThrow(/playing/);
   });
 
   it('rejects a wrong-shaped body (a failure, never NaN rows)', () => {

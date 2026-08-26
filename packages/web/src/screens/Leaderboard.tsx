@@ -3,9 +3,11 @@ import {
   anonName,
   dateForDayNumber,
   defaultAvatar,
+  progressHeatColor,
   type Board,
   type BoardPlayer,
   type BoardRow,
+  type PlayingRow,
 } from '@whippin/shared';
 import {
   boardUrl,
@@ -30,6 +32,7 @@ import {
   identityEpoch,
   identityEpochOf,
   useDeviceIdentity,
+  useIdentityMintedHere,
 } from '../identity';
 import { adoptSignedOutVerdict } from '../state/signedOutVerdict';
 import { prefetchTurnstileTokens } from '../turnstile';
@@ -88,7 +91,7 @@ interface Me {
 // this is the KNOWN-EMPTY answer (#216), installed synchronously — at first render and at
 // every identity-scope reset — so a tokenless visit never flashes a LOADING frame for a
 // request nobody makes.
-const EMPTY_FRIENDS_BOARD: Board = { rows: [], own: null, waiting: [] };
+const EMPTY_FRIENDS_BOARD: Board = { rows: [], own: null, playing: [], waiting: [] };
 const boardsFor = (identity: unknown): Partial<Record<Tab, Board | 'failed'>> =>
   identity ? {} : { friends: EMPTY_FRIENDS_BOARD };
 
@@ -112,6 +115,9 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
   // LOADING wave for requests nobody makes.
   const identity = useDeviceIdentity();
   const epoch = identity ? identityEpochOf(identity) : null;
+  // Whether that identity was MINTED here or ADOPTED — the known-empty rule below turns on
+  // it, and the transition alone cannot say.
+  const mintedHere = useIdentityMintedHere();
 
   // The PRE-ACCOUNT placeholder seed (user-decided 2026-08-24): persisted so the
   // placeholder face is stable across visits and tabs; display-only, never sent anywhere.
@@ -167,7 +173,28 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
   const [cachedEpoch, setCachedEpoch] = useState(epoch);
   if (cachedEpoch !== epoch) {
     setCachedEpoch(epoch);
-    setBoards(boardsFor(identity));
+    // A TOKENLESS tab whose own MINT lands keeps the known-empty friends board (user
+    // feedback 2026-08-26: the INVITE tap's mint made the ghost blink into a loading
+    // frame — the loading belongs on the button alone). A freshly minted account has no
+    // edges by construction, so known-empty is a FACT there, not a stale guess; the fetch
+    // below still fires and the stale-but-good rule swaps in the server's answer.
+    //
+    // **It must be a MINT, not merely an acquisition** (review finding): `identity.ts`'s
+    // own rule is that every other null → identity publish is an ADOPTION of an account
+    // that MAY ALREADY HOLD SERVER STATE — a sibling tab's account, a pending token
+    // recovered from storage, a raced bootstrap another tab won. An accepted invite is the
+    // reachable case: its tap mints AND links in one gesture, so a sibling tab adopting
+    // that identity has friends the instant it arrives. Keeping known-empty there is a
+    // guess, and a failed refresh would freeze it — the stale-but-good rule keeps a cached
+    // board over a failure, so the account's real edges AND the retry UI would both be
+    // suppressed behind a false ghost. Every OTHER scope change (an adoption, A → B,
+    // A → signed out) keeps the PR-219 rule: drop everything to the new scope's own
+    // synchronous answer.
+    setBoards(
+      cachedEpoch === null && identity && mintedHere
+        ? { friends: EMPTY_FRIENDS_BOARD }
+        : boardsFor(identity),
+    );
     setFriendIds(null);
     setMe(null);
     setMeSettled(identity === null);
@@ -535,8 +562,11 @@ function BoardList({
   // the ghost says and the INVITE button below remedies (user-decided 2026-08-20; a
   // friend who merely has not played is a waiting row, never empty).
   const others = board.rows.filter((row) => row.publicId !== meId);
+  const playingOthers = board.playing.filter((row) => row.publicId !== meId);
   const empty =
-    (tab === 'friends' ? others.length === 0 : board.rows.length === 0) &&
+    (tab === 'friends'
+      ? others.length === 0 && playingOthers.length === 0
+      : board.rows.length === 0) &&
     (board.own?.length ?? 0) === 0 &&
     board.waiting.length === 0;
   if (empty) {
@@ -564,9 +594,10 @@ function BoardList({
     <>
       {/* The unit column caption: which way is better is the mode's, and naming the
           unit is how the list says it (the score headline's own rule). Only over
-          actual scores — a board of nothing but waiting friends has no score column
-          to caption (user feedback 2026-08-20). */}
-      {board.rows.length > 0 && (
+          actual numbers — a board of nothing but waiting friends has no score column
+          to caption (user feedback 2026-08-20); the in-progress rows' try counts sit
+          in the same column, so they earn it too. */}
+      {(board.rows.length > 0 || board.playing.length > 0) && (
         <div className="board-unit" aria-hidden="true">
           {t(lang, mode === 'word' ? 'words' : 'tries')}
         </div>
@@ -581,6 +612,16 @@ function BoardList({
             {board.own.map(item)}
           </>
         )}
+        {/* Friends STILL PLAYING today (#206, friends board only), below every finished
+            row: the live try count and reconstruction percentage, in the server's own
+            order (`orderPlaying`), each with the no-rank tick — a mid-round position is
+            never a rank claim. ONE section caption, the waiting group's rule. */}
+        {board.playing.length > 0 && (
+          <li className="board-section">{t(lang, 'boardPlaying')}</li>
+        )}
+        {board.playing.map((row) => (
+          <PlayingRowItem key={row.publicId} row={row} me={row.publicId === meId} index={index++} />
+        ))}
         {/* Friends with no score today (friends board only): named, never dropped.
             ONE section caption says why for all of them (user feedback 2026-08-20 —
             the per-row label read as a stutter); each row keeps the dashed "not yet"
@@ -593,6 +634,40 @@ function BoardList({
         ))}
       </ol>
     </>
+  );
+}
+
+function PlayingRowItem({
+  row,
+  me,
+  index,
+}: {
+  row: PlayingRow;
+  me: boolean;
+  index: number;
+}) {
+  return (
+    <li
+      className={`board-row playing${me ? ' me' : ''}`}
+      // The row's heat is its progress read straight on the app's ONE ramp (heat.ts:
+      // "every progress surface"), feeding the % ink. The ink ALONE carries it (user
+      // feedback 2026-08-26, dropping the first cut's bottom filament: too much colour
+      // pressed against the avatars, and it fattened the playing rows against their
+      // ranked neighbors).
+      style={{ '--i': index, '--play-heat': progressHeatColor(row.progress) } as CSSProperties}
+      aria-current={me || undefined}
+    >
+      {/* No rank — the waiting rows' centered tick: an order is not a rank claim. */}
+      <span className="board-norank" aria-hidden="true" />
+      <Avatar avatar={row.avatar ?? defaultAvatar(row.publicId)} size={28} />
+      <span className={`board-name${row.name ? '' : ' anon'}`}>
+        {row.name || anonName(row.publicId)}
+      </span>
+      {/* The reconstruction % in the game's own progress dress — pixel face, heat-ramp
+          ink — then the live try count under the unit caption's column. */}
+      <span className="board-progress">{Math.round(row.progress)}%</span>
+      <span className="board-score">{row.tries}</span>
+    </li>
   );
 }
 

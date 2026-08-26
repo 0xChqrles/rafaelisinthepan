@@ -11,6 +11,7 @@ import {
   reconcileGameStateIdentity,
 } from './state/gameStore';
 import { installIdentityScope } from './state/identityScope';
+import { installLocalIdentityDeploy } from './state/localIdentityDeploy';
 import { installVersionCheck } from './versionCheck';
 import './index.css';
 
@@ -52,6 +53,11 @@ async function mount(): Promise<void> {
   // one reconciliation and the listener that owns every later one.
   const removeIdentityScope = installIdentityScope();
   if (import.meta.hot) import.meta.hot.dispose(removeIdentityScope);
+  // Beside the scope and for the same reason: the locally-decided username is deployed off
+  // the identity lifecycle, not at each of the five deploy triggers, so a future trigger
+  // cannot forget it. Installed in the same breath, before the shared key is re-read.
+  const removeLocalIdentityDeploy = installLocalIdentityDeploy();
+  if (import.meta.hot) import.meta.hot.dispose(removeLocalIdentityDeploy);
   const loadedIdentity = loadDeviceIdentity();
   // Reconcile the identity against the LATEST committed state, then wait for that ownership
   // mutation before a route can see or send an outbox. UNLESS the shared key could not be

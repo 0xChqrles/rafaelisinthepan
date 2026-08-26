@@ -10,6 +10,16 @@ export function memoryProfileStore(): ProfileStore {
       return profiles.get(publicId) ?? null;
     },
 
+    async create(input) {
+      if (profiles.has(input.publicId)) return false;
+      profiles.set(input.publicId, {
+        publicId: input.publicId,
+        name: input.name,
+        avatar: input.avatar,
+      });
+      return true;
+    },
+
     async upsert(input) {
       profiles.set(input.publicId, {
         publicId: input.publicId,

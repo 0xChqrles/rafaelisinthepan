@@ -145,8 +145,23 @@ jobs:
 
   deploy-web:
     name: Deploy WhippinWebStack
-    needs: plan
-    if: needs.plan.outputs.web == 'true'
+    # GATED ON THE BACKEND when both stacks ship together. The SPA validates the shapes it
+    # receives (`parseBoard` and friends): a response missing a field the new client
+    # requires is rejected as malformed, not tolerated. So a web deploy that lands BEFORE
+    # its backend — or one that lands after the backend FAILED — serves a client that
+    # refuses every answer the live API gives it. The two jobs used to run concurrently off
+    # `plan` alone, which made that ordering a coin toss on every deploy touching both.
+    #
+    # `always()` is what keeps a WEB-ONLY deploy working: without it, a skipped
+    # `deploy-backend` would skip this job too (a skipped dependency skips its dependents).
+    # So the gate is "the backend did not fail or get cancelled", which passes for both
+    # `success` and `skipped`.
+    needs: [plan, deploy-backend]
+    if: >-
+      always()
+      && needs.plan.outputs.web == 'true'
+      && needs.deploy-backend.result != 'failure'
+      && needs.deploy-backend.result != 'cancelled'
     runs-on: ubuntu-latest
     # VITE_API_BASE_URL is the committed single source of truth in packages/web/.env.production
     # (loaded by `pnpm build`), so it is NOT passed here. Turnstile's PUBLIC production site

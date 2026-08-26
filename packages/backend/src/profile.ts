@@ -3,10 +3,13 @@
 //   GET  /profile?id=<publicId>          — the public profile (name + avatar): what a
 //                                          board renders, and what a freshly linked
 //                                          device loads. 404 when never customized.
-//   POST /profile { token, name, avatar } — authenticated upsert, keyed by the ACCOUNT the
+//   POST /profile { token, name, avatar[, createOnly:true] }
+//                                        — authenticated write, keyed by the ACCOUNT the
 //                                          caller's device token resolves to (#216; it was
 //                                          a publicId derived from a shared secret until
-//                                          then). A separate write path from scores.
+//                                          then). Ordinary writes upsert; `createOnly`
+//                                          atomically refuses to replace an existing row.
+//                                          A separate write path from scores.
 //
 // Moderation happens here, on write: the banned-strings name filter and the avatar's
 // best-effort swastika check — both reject with a named 400.
@@ -69,6 +72,14 @@ export async function handleProfile(
   const parsed = readJsonObject(event, 'Profile', responseHeaders);
   if (!parsed.ok) return parsed.response;
   const body = parsed.value;
+  if (body.createOnly !== undefined && body.createOnly !== true) {
+    return errorResponse(
+      400,
+      'bad_request',
+      'Body field "createOnly" must be true when present.',
+      responseHeaders,
+    );
+  }
 
   // Authentication (#216): the caller's device token resolves to the ACCOUNT this row
   // belongs to, so the only profile a caller can write is their own — and a signed-out
@@ -110,11 +121,24 @@ export async function handleProfile(
   }
 
   const publicId = auth.value.account.accountId;
-  await profiles.upsert({
+  const input = {
     publicId,
     name,
     avatar: body.avatar,
     now: instant.toISOString(),
-  });
+  };
+  if (body.createOnly === true) {
+    const created = await profiles.create(input);
+    if (!created) {
+      return errorResponse(
+        409,
+        'profile_exists',
+        'A profile already exists for this account.',
+        responseHeaders,
+      );
+    }
+  } else {
+    await profiles.upsert(input);
+  }
   return json(200, { publicId, name, avatar: body.avatar }, responseHeaders);
 }

@@ -1,4 +1,5 @@
 import {
+  BatchGetItemCommand,
   GetItemCommand,
   QueryCommand,
   UpdateItemCommand,
@@ -6,17 +7,30 @@ import {
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
 import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
+import { batchRetryDelayMs } from './dynamoScoreStore';
 import {
   roundMonthPrefix,
   roundPartition,
   roundSortKeyDate,
   roundSortKey,
+  type RoundBoardRow,
   type RoundDaySummary,
   type RoundKey,
   type RoundRunner,
   type RoundState,
   type RoundStore,
 } from './roundStore';
+
+// The score store's rule (see its jittered-retry comment): a batch read that comes back
+// with UnprocessedKeys retries behind FULL JITTER over a doubling window, never
+// immediately, so a transient throttle cannot burn the whole budget inside a few
+// milliseconds and 500 the friends board.
+const BATCH_RETRY_ATTEMPTS = 5;
+
+export interface DynamoRoundStoreOptions {
+  // Injected by tests, so asserting the retry SCHEDULE costs no real time.
+  wait?: (ms: number) => Promise<void>;
+}
 
 // Production round records live in the score table (#201): one item per
 // (date, lang, mode, publicId), in the PLAYER's own `round#<publicId>` partition under a
@@ -32,7 +46,12 @@ import {
 //
 // WORD mode's two writes (#202) land on the SAME item: `start` stamps `startedAt` (one
 // conditional UpdateItem, the append's shape) and `submit` records the whole log once.
-export function dynamoRoundStore(client: DynamoDBClient, tableName: string): RoundStore {
+export function dynamoRoundStore(
+  client: DynamoDBClient,
+  tableName: string,
+  options: DynamoRoundStoreOptions = {},
+): RoundStore {
+  const wait = options.wait ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
   const itemKey = (key: RoundKey, publicId: string) => ({
     pk: { S: roundPartition(publicId) },
     sk: { S: roundSortKey(key) },
@@ -125,6 +144,65 @@ export function dynamoRoundStore(client: DynamoDBClient, tableName: string): Rou
         }
         cursor = response.LastEvaluatedKey;
       } while (cursor);
+      return rows;
+    },
+
+    // The friends board's read (#206): BatchGetItem over the exact row keys the caller
+    // resolved its edges into — the read shape the per-player partition was designed for
+    // (roundStore.ts), never a read across players. Chunked at DynamoDB's 100-key batch
+    // limit (FRIENDS_MAX + 1 callers is at most three batches), with UnprocessedKeys
+    // retried behind the jittered schedule above.
+    //
+    // EVENTUALLY CONSISTENT, where the score `getMany` reads consistently: a score row is
+    // a final result the caller may have recorded a moment ago (their own just-finished
+    // row must show), while a playing row is a MID-FLIGHT snapshot by nature — it is
+    // stale the moment the friend guesses again — and round items carry whole guess
+    // logs, the table's biggest items, so the consistent read would double the cost of
+    // exactly the rows with the least claim to it.
+    async getMany(key, publicIds) {
+      const partitionPrefix = roundPartition('');
+      const rows: RoundBoardRow[] = [];
+      const ids = [...new Set(publicIds)];
+      for (let i = 0; i < ids.length; i += 100) {
+        let keys: Record<string, AttributeValue>[] = ids
+          .slice(i, i + 100)
+          .map((id) => itemKey(key, id));
+        for (let attempt = 0; keys.length > 0; attempt += 1) {
+          if (attempt >= BATCH_RETRY_ATTEMPTS) {
+            throw new Error('Round batch read left unprocessed keys.');
+          }
+          // Only BETWEEN attempts: the first read of a batch is never delayed.
+          if (attempt > 0) await wait(batchRetryDelayMs(attempt - 1));
+          const response = await client.send(
+            new BatchGetItemCommand({
+              RequestItems: {
+                [tableName]: {
+                  Keys: keys,
+                  // The row's identity comes back out of its own partition key — the
+                  // publicId is what the key is built from, so no second attribute is
+                  // stored or read for it. The log crosses the wire because the exact
+                  // try count is a dedup over it (#206), which the stored summary
+                  // cannot answer.
+                  ProjectionExpression: `#pk, ${NAMES.guesses}, ${NAMES.puzzle}, ${NAMES.progress}`,
+                  ExpressionAttributeNames: {
+                    '#pk': 'pk',
+                    ...aliases('guesses', 'puzzle', 'progress'),
+                  },
+                },
+              },
+            }),
+          );
+          for (const item of response.Responses?.[tableName] ?? []) {
+            rows.push({
+              publicId: item.pk?.S?.slice(partitionPrefix.length) ?? '',
+              puzzle: puzzleOf(item) ?? '',
+              guesses: item.guesses?.L?.map((v) => v.S ?? '') ?? [],
+              progress: numberOf(item.progress) ?? 0,
+            });
+          }
+          keys = response.UnprocessedKeys?.[tableName]?.Keys ?? [];
+        }
+      }
       return rows;
     },
 
