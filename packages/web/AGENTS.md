@@ -24,7 +24,10 @@
       state/gamePersistence.ts  the atomic IndexedDB boundary for cross-tab game-state writes
       state/signedOutVerdict.ts  the ONE spelling of the sign-out resolution every private
                               route client shares (401 + `unknown_device` code)
-      screens/SignedOut.tsx   the `unknown_device` screen: what is left behind + START FRESH
+      screens/SignedOut.tsx   the `unknown_device` screen: what is left behind, RECONNECT (#204)
+                              into the link flow, and PLAY (start over on a new account)
+      components/AccountLink.tsx  #204's email link flow: address -> code -> bind/adopt, with
+                              the erase confirmation, on the profile editor
       components/DeviceList.tsx  the account's devices + SIGN OUT rows (#216), on the profile editor
       components/ErrorSheet.tsx  the app's error surface: a popup on desktop, a bottom sheet on a phone
       state/roundSync.ts      the #201 sync engine, reworked by #214: coalesced prefix writes,
@@ -573,6 +576,41 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `api.postSignedJson` still signs each body for the OAC contract, so an insecure context
     cannot bootstrap. That boundary is older than #216 and unchanged by it.
 
+- **Email account linking (#204).** The product contract — the one flow and its three
+  endings, when the account being left is deleted, the erase confirmation, the transfers,
+  what a deleted account stops being — lives in the root `AGENTS.md`. What is this package's:
+  - **`components/AccountLink.tsx` is the whole client half**, mounted on the PROFILE editor
+    above `DeviceList`: the two blocks answer two halves of one question ("can I get this
+    back?" before "which devices hold it?"), and that screen already IS the identity screen.
+    One path, four phases — address → code → (confirm) → done — and the ENDING's copy is
+    chosen by the OUTCOME the server reports, never by anything the screen guessed first.
+  - **Its SEND CODE is a DEPLOY BUTTON**, the sixth (#216's five plus this one), and it has to
+    be: an email link needs an account to bind, and "this device is empty" is exactly the
+    reconnect case. It wears the shape that rule defines — one tap chaining the bootstrap,
+    a loading state on the button, failures on the `ErrorSheet` — and TWO Turnstile tokens are
+    prefetched while the address is typed, since a tokenless device spends one on the
+    bootstrap and one on the send. Every other leg uses `currentRequestIdentity` and stands
+    down when there is none.
+  - **The `{token}` READ is also the merge DRAIN.** It runs when an account exists (never
+    tokenless — the #216 no-private-fetch rule) and RETRIES, bounded and backed off, while the
+    server still reports an unfinished friend merge: those edges are consented relationships,
+    so the job may not simply be abandoned, and it is durable either way.
+  - **`adoptLinkedAccount` (identity.ts) is how an ADOPT lands**: the TOKEN is unchanged — the
+    server moves the one device item rather than minting a second — so what changes is the
+    account it names, and `identityScope` clears every account-keyed cache on that transition,
+    which is exactly right (none of it belongs to the account just adopted). Fenced on the
+    epoch the flow started under, like every other authoritative answer, and persisted BEFORE
+    it publishes so a sibling tab cannot keep authenticating as the account this device left.
+  - **`SignedOut`'s RECONNECT is wired and PRIMARY** (PLAY became secondary): it lifts the
+    verdict — the one gesture that removes the tombstone origin-wide — and navigates to
+    `/profile`. Abandoning the flow costs exactly what SKIP already cost.
+  - **`FriendInvite` gained an EXPIRED state**: `unknown_player` is neither a hiccup nor the
+    cap, so it takes the cap's own surface (a state with a way ONWARD rather than a retry) —
+    retrying cannot bring an account back, and continuing silently would tell the clicker they
+    added a friend they did not.
+  - **`game/streak.ts` re-exports `currentStreak` from `@whippin/shared`** and keeps
+    `streakTransition`/`weekView`: the server derives a streak for the erase confirmation, so
+    the derivation itself moved.
 - **Local storage is an OUTBOX; a capped round ends at ∞ (#214).** The product contract —
   the three values, the load order, what the cap means, the share token, what was removed —
   lives in the root `AGENTS.md`. What is this package's:

@@ -1,14 +1,20 @@
 import {
-  GetItemCommand,
+  BatchGetItemCommand,
   UpdateItemCommand,
+  type AttributeValue,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
+import { ACCOUNT_SORT_KEY, accountKey } from './deviceStore';
 import {
   PROFILE_SORT_KEY,
   profileKey,
   type ProfileStore,
   type ProfileUpsert,
 } from './profileStore';
+
+// Two keys in one batch, so a single throttled retry round is plenty; more would only turn
+// one player's decoration into a long stall.
+const PROFILE_BATCH_ATTEMPTS = 3;
 
 // Production profile rows live in the score table (#188): one item per publicId in its
 // own `player#<id>` partition. Both create and upsert are one UpdateItem; create adds the
@@ -44,24 +50,44 @@ export function dynamoProfileStore(client: DynamoDBClient, tableName: string): P
 
   return {
     async get(publicId) {
-      const response = await client.send(
-        new GetItemCommand({
-          TableName: tableName,
-          Key: { pk: { S: profileKey(publicId) }, sk: { S: PROFILE_SORT_KEY } },
-          // Strong consistency, for the score store's reason: this is a read-after-write
-          // path. The editor re-reads its own profile on the next visit and ADOPTS what
-          // comes back as both its contents and its save baseline, so an eventually
-          // consistent read could hand a player the profile they just replaced — or, on
-          // a first save, a 404 that presents their new profile as never customized.
-          ConsistentRead: true,
-        }),
-      );
-      const item = response.Item;
-      if (!item) return null;
+      // TWO rows, ONE read: the profile the player customized and the ACCOUNT row beside it
+      // (#204). They share the `player#<id>` partition, and a `sk IN (…)` Query does not
+      // exist, so the two exact keys go out as one BatchGetItem — which reads only what is
+      // wanted, unlike a partition Query that would also drag in the solved-day collections.
+      //
+      // Strongly consistent, for the score store's reason: this is a read-after-write path.
+      // The editor re-reads its own profile on the next visit and ADOPTS what comes back as
+      // both its contents and its save baseline, so an eventually consistent read could hand
+      // a player the profile they just replaced — or, on a first save, a 404 that presents
+      // their new profile as never customized. The account row is read the same way for the
+      // same reason: a device that just linked must not be told its account is gone.
+      const keys = [
+        { pk: { S: profileKey(publicId) }, sk: { S: PROFILE_SORT_KEY } },
+        { pk: { S: accountKey(publicId) }, sk: { S: ACCOUNT_SORT_KEY } },
+      ];
+      let pending: Record<string, AttributeValue>[] = keys;
+      const found = new Map<string, Record<string, AttributeValue>>();
+      for (let attempt = 0; pending.length > 0; attempt += 1) {
+        if (attempt >= PROFILE_BATCH_ATTEMPTS) {
+          throw new Error('Profile batch read left unprocessed keys.');
+        }
+        const response = await client.send(
+          new BatchGetItemCommand({
+            RequestItems: { [tableName]: { Keys: pending, ConsistentRead: true } },
+          }),
+        );
+        for (const item of response.Responses?.[tableName] ?? []) {
+          const sk = item.sk?.S;
+          if (sk) found.set(sk, item);
+        }
+        pending = response.UnprocessedKeys?.[tableName]?.Keys ?? [];
+      }
+      const item = found.get(PROFILE_SORT_KEY);
       return {
-        publicId,
-        name: item.name?.S ?? '',
-        avatar: item.avatar?.S ?? '',
+        live: found.has(ACCOUNT_SORT_KEY),
+        profile: item
+          ? { publicId, name: item.name?.S ?? '', avatar: item.avatar?.S ?? '' }
+          : null,
       };
     },
 

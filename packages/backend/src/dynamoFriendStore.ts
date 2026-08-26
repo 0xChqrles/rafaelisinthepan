@@ -3,7 +3,11 @@ import {
   TransactWriteItemsCommand,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
-import { FRIENDS_MAX, friendsKey, type FriendStore } from './friendStore';
+import { FRIENDS_MAX, friendsKey, type FriendLink, type FriendStore } from './friendStore';
+
+// Four items per kept friendship, so 25 of them exactly fill DynamoDB's 100-item
+// transaction limit.
+const FRIEND_TRANSFER_BATCH = 25;
 
 // Production edges live in the score table (#189), one item per direction. DynamoDB's
 // transaction is what makes the pair indivisible: both rows land, or neither does, so no
@@ -127,6 +131,78 @@ export function dynamoFriendStore(client: DynamoDBClient, tableName: string): Fr
           ],
         }),
       );
+    },
+
+    // The same partition `list` reads, WITH the instants — #204's merge fills the adopting
+    // account's remaining capacity oldest-first, so it needs them and every other caller
+    // does not.
+    async entries(publicId) {
+      const rows: FriendLink[] = [];
+      let cursor: Record<string, unknown> | undefined;
+      do {
+        const response = await client.send(
+          new QueryCommand({
+            TableName: tableName,
+            KeyConditionExpression: '#pk = :pk',
+            ExpressionAttributeNames: { '#pk': 'pk' },
+            ExpressionAttributeValues: { ':pk': { S: friendsKey(publicId) } },
+            ConsistentRead: true,
+            ...(cursor ? { ExclusiveStartKey: cursor as never } : {}),
+          }),
+        );
+        for (const item of response.Items ?? []) {
+          const friendId = item.sk?.S;
+          if (friendId) rows.push({ publicId, friendId, createdAt: item.createdAt?.S ?? '' });
+        }
+        cursor = response.LastEvaluatedKey;
+      } while (cursor);
+      return rows;
+    },
+
+    // #204's friend merge, in batches of at most FRIEND_TRANSFER_BATCH friendships — four
+    // items each, which is what keeps a full 200-edge merge inside DynamoDB's 100-item
+    // transaction limit. Each batch is indivisible, so no reader can ever see one direction
+    // of a friendship pointing at the account being deleted while the other points at the
+    // one adopting it.
+    //
+    // IDEMPOTENT throughout, because the job that drives it is resumed after partial
+    // batches: the deletes are unconditional (deleting an absent row is a no-op) and the
+    // puts keep the OLDER `createdAt` via `if_not_exists`, so replaying a batch changes
+    // nothing.
+    async transfer(from, to, moves) {
+      for (let i = 0; i < moves.length; i += FRIEND_TRANSFER_BATCH) {
+        const batch = moves.slice(i, i + FRIEND_TRANSFER_BATCH);
+        const items = batch.flatMap((move) => {
+          // Both `from`-facing rows go, kept or dropped: no edge may be left pointing at an
+          // account that is about to stop existing.
+          const removals = [
+            {
+              Delete: {
+                TableName: tableName,
+                Key: { pk: { S: friendsKey(from) }, sk: { S: move.friendId } },
+              },
+            },
+            {
+              Delete: {
+                TableName: tableName,
+                Key: { pk: { S: friendsKey(move.friendId) }, sk: { S: from } },
+              },
+            },
+          ];
+          if (!move.keep) return removals;
+          const link = (owner: string, other: string) => ({
+            Update: {
+              TableName: tableName,
+              Key: { pk: { S: friendsKey(owner) }, sk: { S: other } },
+              UpdateExpression: 'SET #createdAt = if_not_exists(#createdAt, :createdAt)',
+              ExpressionAttributeNames: { '#createdAt': 'createdAt' },
+              ExpressionAttributeValues: { ':createdAt': { S: move.createdAt } },
+            },
+          });
+          return [...removals, link(to, move.friendId), link(move.friendId, to)];
+        });
+        await client.send(new TransactWriteItemsCommand({ TransactItems: items }));
+      }
     },
   };
 }

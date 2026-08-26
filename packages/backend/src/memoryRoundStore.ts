@@ -230,6 +230,20 @@ export function memoryRoundStore(): RoundStore {
       stored.submittedAt = input.now.toISOString();
       return { outcome: 'submitted' as const, state: stateOf(stored) };
     },
+
+    // #204's active-day transfer: move the whole record between two accounts' partitions,
+    // keyed on GUESSES. A word round that was merely STARTED holds none, so a recorded run
+    // moves in over it — the issue's own rule, and the reason the test is on the log rather
+    // than on the item's existence.
+    async transfer(key, from, to) {
+      const source = rounds.get(itemKey(key, from));
+      if (!source || source.guesses.length === 0) return null;
+      const destination = rounds.get(itemKey(key, to));
+      if (destination && destination.guesses.length > 0) return null;
+      rounds.set(itemKey(key, to), source);
+      rounds.delete(itemKey(key, from));
+      return stateOf(source);
+    },
   };
 }
 

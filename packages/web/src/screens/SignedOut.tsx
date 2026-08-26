@@ -23,11 +23,14 @@
 // button that says PLAY on a leaderboard route must not leave the player on the leaderboard.
 // The new account itself is minted by the game's own PLAY gate, the #216 trigger it lands on.
 //
-// RECONNECT — signing back into the account by email — is #204's flow, and it does not
-// exist yet. The prop is how it arrives: one wire, no stub button in the meantime. A button
-// that does nothing is worse than a screen that only offers what it can actually do. When it
-// DOES land, this screen has two actions and #204 owns which one is primary — today PLAY is,
-// because it is the only one.
+// **RECONNECT LANDED WITH #204, and it is the PRIMARY action now.** Signing back into the
+// account by email is what this screen's reader most likely wants — the account named above
+// is theirs, and it is reachable — so it leads, and PLAY (start over on a new one) becomes
+// the secondary. The tap LIFTS the verdict (which is what removes the persisted tombstone,
+// origin-wide — the fenced state's one gesture, and the reason a reconnect can mint at all)
+// and lands on the profile editor, the identity screen, where the link flow lives. Leaving
+// mid-flow costs exactly what SKIP already cost: this device is a fresh visitor, and the
+// account it left stands, reachable by its own address the moment one is bound to it.
 
 import { useEffect, useState } from 'react';
 import { anonName, defaultAvatar } from '@whippin/shared';
@@ -37,6 +40,7 @@ import Button from '../components/Button';
 import LoadingWave from '../components/LoadingWave';
 import { startFreshDevice, useSignedOutAccount } from '../identity';
 import { t } from '../i18n';
+import { PROFILE_PATH } from '../langs';
 import { navigate } from '../routing';
 
 // Leave the account behind and go play: the verdict is lifted (which is also what removes
@@ -45,6 +49,15 @@ import { navigate } from '../routing';
 const playFresh = () => {
   startFreshDevice();
   navigate('/', { replace: true });
+};
+
+// RECONNECT: leave the fenced state and go where the email link flow is (#204). It uses the
+// SAME gesture PLAY does — the tombstone stands until the player chooses, and choosing to
+// sign back in is a choice — so a reconnect abandoned halfway is simply a fresh visitor,
+// never a device stuck on this screen.
+const reconnect = () => {
+  startFreshDevice();
+  navigate(PROFILE_PATH);
 };
 
 // The face is TAGGED WITH THE ACCOUNT IT BELONGS TO (review finding). A tab sitting on
@@ -60,14 +73,7 @@ interface Face {
   avatar: string | null;
 }
 
-export default function SignedOut({
-  lang,
-  onReconnect,
-}: {
-  lang: string;
-  // #204's email link flow, when it lands. Absent today, so PLAY is the only way off.
-  onReconnect?: () => void;
-}) {
+export default function SignedOut({ lang }: { lang: string }) {
   const account = useSignedOutAccount();
   const [face, setFace] = useState<Face | null>(null);
 
@@ -122,12 +128,10 @@ export default function SignedOut({
         {t(lang, 'signedOut')}
       </p>
       <p className="no-puzzle-note">{t(lang, 'signedOutNote')}</p>
-      {onReconnect && (
-        <Button variant="primary" onClick={onReconnect}>
-          {t(lang, 'signedOutReconnect')}
-        </Button>
-      )}
-      <Button variant="primary" onClick={playFresh}>
+      <Button variant="primary" onClick={reconnect}>
+        {t(lang, 'signedOutReconnect')}
+      </Button>
+      <Button variant="secondary" onClick={playFresh}>
         {t(lang, 'gatePlay')}
       </Button>
     </div>

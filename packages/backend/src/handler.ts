@@ -42,6 +42,7 @@ import type { DeviceStore } from './deviceStore';
 import { handleFriends } from './friends';
 import type { FriendStore } from './friendStore';
 import { handleHistory } from './history';
+import { handleLink, type LinkHandlerDeps } from './link';
 import { handleProfile } from './profile';
 import type { ProfileRecord, ProfileStore } from './profileStore';
 import { handleRound, type RoundHandlerDeps } from './rounds';
@@ -79,6 +80,11 @@ export interface HandlerDeps {
   // now what records the day's population, and the player-history store because a confirmed
   // solve credits the streak's solved day (#211) — which is also what `/history` reads.
   rounds?: RoundHandlerDeps;
+  // Email account linking (#204), same optionality rationale. It is the one route bundle
+  // that reaches ACROSS the others — a verified link moves the day's round and score rows,
+  // credits the adopting account's solved days and merges the friend graph — so it carries
+  // those stores explicitly rather than reading them off another route's deps.
+  link?: LinkHandlerDeps;
 }
 
 // 404s expire quickly so a puzzle uploaded slightly late becomes playable soon
@@ -154,6 +160,9 @@ export function createHandler(deps: HandlerDeps) {
     // Devices (#216): the lazy bootstrap that mints an identity, and the sign-out screen's
     // list + revocation. POST-only for the same reason — the token is the auth.
     const isDevicesRoute = normalizedPath === '/devices';
+    // Email account linking (#204): the code, the verification, and the account adoption
+    // behind it. POST-only for the same reason again.
+    const isLinkRoute = normalizedPath === '/link';
     const isLiveRoute =
       isScoresRoute ||
       isProfileRoute ||
@@ -161,7 +170,8 @@ export function createHandler(deps: HandlerDeps) {
       isBoardRoute ||
       isRoundRoute ||
       isHistoryRoute ||
-      isDevicesRoute;
+      isDevicesRoute ||
+      isLinkRoute;
     const routeHeaders = isLiveRoute ? { ...cors, 'Cache-Control': 'no-store' } : cors;
 
     // CORS preflight. It carries no data, so `no-store` belongs on the live ROUTES and
@@ -203,10 +213,23 @@ export function createHandler(deps: HandlerDeps) {
         // customized") is the right answer and caches like any other.
         let profile: ProfileRecord | null = null;
         let answered = true;
+        let live = true;
         try {
-          profile = await deps.profiles.get(publicId);
+          const found = await deps.profiles.get(publicId);
+          profile = found.profile;
+          live = found.live;
         } catch {
           answered = false;
+        }
+        // An invite link carries the SENDER's account id, and an email link can delete
+        // that account (#204). The link then names nobody: it expires rather than
+        // unfurling as the assigned face of a player who is gone, and the SPA landing it
+        // bounces to refuses the edge for the same reason (`/friends` checks the target).
+        if (answered && !live) {
+          return errorResponse(404, 'not_found', 'This invite link has expired.', {
+            ...cors,
+            'Cache-Control': `public, max-age=${INVITE_MAX_AGE}`,
+          });
         }
         const cacheControl = answered ? `public, max-age=${INVITE_MAX_AGE}` : 'no-store';
         if (inviteCard) {
@@ -343,6 +366,12 @@ export function createHandler(deps: HandlerDeps) {
         // derivation slice, the full artifact a solve is scored from, and Word mode's
         // end-of-run submission (#202).
         return await handleRound(event, deps.store, deps.deviceStore, deps.rounds, date, instant, cors);
+      }
+
+      if (isLinkRoute) {
+        if (!deps.link) throw new Error('Email account linking is not configured.');
+        if (!deps.deviceStore) throw new Error('Device identity is not configured.');
+        return await handleLink(event, deps.deviceStore, deps.link, instant, cors);
       }
 
       if (isHistoryRoute) {

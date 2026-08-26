@@ -1,7 +1,9 @@
 import {
   BatchGetItemCommand,
+  ConditionalCheckFailedException,
   GetItemCommand,
   QueryCommand,
+  TransactWriteItemsCommand,
   UpdateItemCommand,
   type AttributeValue,
   type DynamoDBClient,
@@ -528,6 +530,62 @@ export function dynamoRoundStore(
         ? { outcome: 'not_started', state: now }
         : { outcome: 'started_elsewhere', state: now };
     },
+
+    // #204's active-day transfer. ONE transaction — a create-only Put of the whole item
+    // under the adopting account, and a Delete of the source under the condition it still
+    // holds the log this call read — so the round exists under exactly ONE account at every
+    // instant. The item is copied VERBATIM apart from its partition key: this store's own
+    // attribute shape is the one thing a move must not reinterpret.
+    async transfer(key, from, to) {
+      const source = await readItem(key, from, true);
+      // Keyed on GUESSES, never on the item's existence: a word round that was merely
+      // STARTED holds none server-side, and #204 lets a recorded run move in over it.
+      if (!source || (source.guesses?.L?.length ?? 0) === 0) return null;
+      const moved: Record<string, AttributeValue> = { ...source, ...itemKey(key, to) };
+      try {
+        await client.send(
+          new TransactWriteItemsCommand({
+            TransactItems: [
+              {
+                Put: {
+                  TableName: tableName,
+                  Item: moved,
+                  // "`to` has nothing": no item at all, or one whose log is empty — the
+                  // same test the source side makes, so a started-but-unplayed word round
+                  // is not treated as play.
+                  ConditionExpression:
+                    'attribute_not_exists(pk) OR attribute_not_exists(#g) OR size(#g) = :zero',
+                  ExpressionAttributeNames: { '#g': 'guesses' },
+                  ExpressionAttributeValues: { ':zero': { N: '0' } },
+                },
+              },
+              {
+                Delete: {
+                  TableName: tableName,
+                  Key: itemKey(key, from),
+                  // Still the log this call read: a guess appended between the read and here
+                  // would otherwise be deleted without ever reaching the destination.
+                  ConditionExpression: 'size(#g) = :size',
+                  ExpressionAttributeNames: { '#g': 'guesses' },
+                  ExpressionAttributeValues: {
+                    ':size': { N: String(source.guesses?.L?.length ?? 0) },
+                  },
+                },
+              },
+            ],
+          }),
+        );
+      } catch (error) {
+        // A refused CONDITION is the ORDINARY outcome — the destination already holds play,
+        // or the source moved on — not a failure, and nothing was written either way. A
+        // transaction cancelled for any OTHER reason (a throttle, a capacity limit) is a
+        // real failure and must propagate: a link that silently skipped the transfer would
+        // then delete the account the round is still sitting in.
+        if (transferRefused(error)) return null;
+        throw error;
+      }
+      return itemToState(source);
+    },
   };
 }
 
@@ -573,6 +631,22 @@ function runnerOf(item: Item): RoundRunner | undefined {
     os: map?.os?.S ?? '',
     browser: map?.browser?.S ?? '',
   };
+}
+
+// A transaction refused by its own CONDITIONS, told apart from one cancelled by anything
+// else. DynamoDB reports both as `TransactionCanceledException`; only the per-item reason
+// codes say which, so they are read rather than assumed.
+function transferRefused(error: unknown): boolean {
+  if (error instanceof ConditionalCheckFailedException) return true;
+  if (typeof error !== 'object' || error === null) return false;
+  const named = error as { name?: unknown; CancellationReasons?: { Code?: string }[] };
+  if (named.name === 'ConditionalCheckFailedException') return true;
+  if (named.name !== 'TransactionCanceledException') return false;
+  const reasons = named.CancellationReasons ?? [];
+  return (
+    reasons.length > 0 &&
+    reasons.every((reason) => reason.Code === 'ConditionalCheckFailed' || reason.Code === 'None')
+  );
 }
 
 function itemToState(item: Item): RoundState | null {

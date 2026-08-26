@@ -15,8 +15,21 @@ export interface ProfileUpsert extends ProfileRecord {
   now: string;
 }
 
+// What an identity-bearing read learns about a player: whether the ACCOUNT still exists,
+// and the row it customized (null when it never did).
+//
+// The two are one answer since #204, because an email link can DELETE the account a device
+// leaves. A missing profile then means two very different things — "never customized",
+// which every board dresses with the ASSIGNED pseudonym and mark, and "this player is
+// gone", which must be dressed with nothing at all. Both rows live in the same
+// `player#<id>` partition, so asking for both costs one read.
+export interface ProfileLookup {
+  live: boolean;
+  profile: ProfileRecord | null;
+}
+
 export interface ProfileStore {
-  get(publicId: string): Promise<ProfileRecord | null>;
+  get(publicId: string): Promise<ProfileLookup>;
   // Install the first profile only. False means another writer already created the row;
   // the existing profile is left byte-for-byte untouched. The local-identity deployment
   // uses this rather than a read-then-upsert race with the profile editor or another device.

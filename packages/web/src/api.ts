@@ -550,6 +550,93 @@ export async function postProfileBody(
   return postSignedJson(url, body, signal);
 }
 
+// Email account linking (#204): ONE route, POST-only — the device token is the auth and it
+// travels in the BODY, so the route reads no query at all (its CloudFront behavior's
+// allow-list is EMPTY, the same three-package contract as /friends and /devices).
+//
+//   { token }                                — what this account is saved as.
+//   { token, email, turnstileToken, lang }   — send a six-digit code to that address.
+//   { token, email, code, erase? }           — verify it, and link.
+export function linkUrl(base: string = apiBase()): string {
+  return `${requireApiBase(base)}/link`;
+}
+
+// Bounded like every /devices call, and for the same reason: the SEND leg waits on a
+// server-side Siteverify AND an SES call, so a request that never settles would leave the
+// flow's one button spinning with nothing to retry.
+const LINK_TIMEOUT_MS = 20_000;
+
+export async function postLinkBody(
+  url: string,
+  body: {
+    token: string;
+    email?: string;
+    turnstileToken?: string;
+    lang?: string;
+    code?: string;
+    erase?: string;
+  },
+): Promise<Response> {
+  return postSignedJson(url, body, AbortSignal.timeout(LINK_TIMEOUT_MS));
+}
+
+// What a VERIFY that succeeded did. `bound` saved the account this device already held;
+// `adopted` moved this device onto the account behind the address — which is what a second
+// device, and a reconnect after a sign-out, both are; `already_bound` is the no-op.
+export interface LinkResult {
+  outcome: 'bound' | 'adopted' | 'already_bound';
+  accountId: string;
+  deviceId: string;
+  email: string;
+  // The account this device LEFT and the server deleted, when it had no address of its own.
+  erased?: string | null;
+  // Whether a friend merge is still queued. The client asks again until it is not.
+  mergePending?: boolean;
+}
+
+// Runtime shape check for a link answer — the parsePuzzle contract. An identity is being
+// REPLACED off this body, so a wrong-shaped one must surface as a failure rather than
+// re-parenting the device onto an id nothing minted.
+export function parseLinkResult(data: unknown): LinkResult {
+  if (!isRecord(data)) throw new Error('malformed link: not an object');
+  const { outcome, accountId, deviceId, email } = data;
+  if (outcome !== 'bound' && outcome !== 'adopted' && outcome !== 'already_bound') {
+    throw new Error('malformed link: bad "outcome"');
+  }
+  if (typeof accountId !== 'string' || !PUBLIC_ID_PATTERN.test(accountId)) {
+    throw new Error('malformed link: bad "accountId"');
+  }
+  if (typeof deviceId !== 'string' || !DEVICE_ID_PATTERN.test(deviceId)) {
+    throw new Error('malformed link: bad "deviceId"');
+  }
+  if (typeof email !== 'string') throw new Error('malformed link: bad "email"');
+  return {
+    outcome,
+    accountId,
+    deviceId,
+    email,
+    erased: typeof data.erased === 'string' ? data.erased : null,
+    mergePending: data.mergePending === true,
+  };
+}
+
+// The `would_erase` refusal's payload: WHICH account is about to be deleted and what it is
+// about to lose. The screen states both before asking for a confirmation — a client bug
+// must not be able to destroy a month of play silently.
+export interface LinkErasePrompt {
+  accountId: string;
+  streak: number;
+  days: number;
+}
+
+export function parseErasePrompt(data: unknown): LinkErasePrompt | null {
+  if (!isRecord(data)) return null;
+  const { accountId, streak, days } = data;
+  if (typeof accountId !== 'string' || !PUBLIC_ID_PATTERN.test(accountId)) return null;
+  if (typeof streak !== 'number' || typeof days !== 'number') return null;
+  return { accountId, streak, days };
+}
+
 // The #189 friends graph: ONE route, POST-only — the device token authenticates in the body
 // (#216) and there is no query to ask with, so a caller can only ever read or change their
 // own edges. `{token}` reads the list, `{token, add}` records the mutual edge an invite

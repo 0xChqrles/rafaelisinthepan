@@ -63,6 +63,12 @@ export interface DeviceRecord {
 export interface AccountRecord {
   accountId: string;
   createdAt: string;
+  // The address this account can be signed back into with (#204), in CLEAR — the account
+  // row is the one place the address is the player's own data rather than an index (the
+  // index is keyed by its hash). Absent until the player links one, and what decides
+  // whether an account being LEFT is deleted: an account with an email can be reached from
+  // any future device, so it is not an orphan.
+  email?: string;
 }
 
 // What an authenticated call resolves to: the calling device and the live account it acts
@@ -91,6 +97,10 @@ export type RevokeResult = 'removed' | 'absent' | 'mismatch';
 export interface DeviceStore {
   // AUTHENTICATION. One direct read of the base item, then the account-existence check.
   resolve(tokenHash: string): Promise<ResolvedDevice | null>;
+  // Is this account LIVE? An email link can delete the account a device leaves (#204), and
+  // an invite link carries a publicId that may now name nobody — so accepting one has to
+  // ask before writing an edge that would point at a deleted player.
+  accountExists(accountId: string): Promise<boolean>;
   // BOOTSTRAP — idempotent by token hash: a lost answer after a committed write must
   // return the device/account already created rather than mint another identity.
   bootstrap(input: BootstrapInput): Promise<ResolvedDevice>;

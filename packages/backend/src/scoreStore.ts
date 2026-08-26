@@ -54,6 +54,11 @@ export interface ScoreStore {
   // version conditionally replaces that same row without spending another allowance;
   // within one version first write wins. Every refusal changes nothing.
   submit(input: ScoreSubmission): Promise<ScoreSubmitOutcome>;
+  // Move one player's recorded row to ANOTHER account (#204), beside the round it was
+  // derived from. ATOMIC — the day's population holds the score under exactly one player at
+  // every instant, so the histogram count is never transiently doubled — and conditional on
+  // `to` having no row of its own, which is the same rule the round move follows.
+  transfer(key: ScoreKey, from: string, to: string): Promise<boolean>;
 }
 
 // Partition of a daily's score rows; the sort key is the row's publicId.

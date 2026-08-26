@@ -85,6 +85,15 @@ const NO_PROFILE = { name: '', avatar: null } as const;
 
 type Dress = (publicId: string) => { name: string; avatar: string | null };
 
+// Whether a row may be RENDERED AT ALL (#204). An email link can delete the account a
+// device leaves, and an identity-bearing read must stop exposing it the moment its row is
+// gone — including through the assigned fallback, which is still that player's pseudonym
+// and mark. The orphan's SCORE may linger in the anonymous `/scores` histogram until the
+// housekeeping sweep collects it (that read renders no identity); a board may not.
+//
+// A read that FAILED is NOT a deletion: it dresses blank and stays, exactly as before.
+type Live = (publicId: string) => boolean;
+
 // Dress ranked rows with the public profile a board renders. One read per DISTINCT
 // player (a row and the own window can overlap populations, never within themselves),
 // in parallel — the response is bounded (top 50 + a 5-row window, or FRIENDS_MAX rows).
@@ -93,7 +102,7 @@ type Dress = (publicId: string) => { name: string; avatar: string | null };
 async function dressRows(
   profiles: ProfileStore,
   ...sections: (readonly { publicId: string }[])[]
-): Promise<Dress> {
+): Promise<{ dress: Dress; live: Live }> {
   const ids = [...new Set(sections.flat().map((row) => row.publicId))];
   const records = await Promise.all(ids.map((id) => profiles.get(id).catch(() => null)));
   const byId = new Map(
@@ -101,10 +110,25 @@ async function dressRows(
       id,
       // `|| null` on the avatar: an empty stored string must dress as "no mark" — the
       // client renders the assigned mark for null, where '' is not a decodable avatar.
-      { name: records[i]?.name ?? '', avatar: records[i]?.avatar || null },
+      {
+        name: records[i]?.profile?.name ?? '',
+        avatar: records[i]?.profile?.avatar || null,
+        // A FAILED read (null) is not evidence of a deleted account, so it stays live: the
+        // rule is "stop exposing a player who is gone", never "hide a player whose
+        // decoration could not be read".
+        live: records[i] === null || records[i]!.live,
+      },
     ]),
   );
-  return (publicId) => byId.get(publicId) ?? NO_PROFILE;
+  return {
+    // The row's DECORATION only — `live` is a separate question and must never leak into the
+    // JSON a board row is spread into.
+    dress: (publicId) => {
+      const found = byId.get(publicId);
+      return found ? { name: found.name, avatar: found.avatar } : NO_PROFILE;
+    },
+    live: (publicId) => byId.get(publicId)?.live ?? true,
+  };
 }
 
 function toBoardRows(rows: readonly RankedScore[], dress: Dress): BoardRow[] {
@@ -185,10 +209,16 @@ export async function handleBoard(
     const ranked = rankBoard(await deps.scores.list(key), key.mode);
     const cut = cutBoard(ranked);
     const own = id === undefined ? null : boardOwnRows(ranked, cut, id);
-    const dress = await dressRows(deps.profiles, cut, own ?? []);
+    const { dress, live } = await dressRows(deps.profiles, cut, own ?? []);
+    // A row whose ACCOUNT is gone is DROPPED rather than dressed (#204). It leaves a gap in
+    // the visible rank sequence, which is the honest picture — somebody left — and the
+    // alternative is worse: the client's fallback for a blank row is that player's own
+    // assigned pseudonym and mark, so dressing it would keep rendering the identity the
+    // link deleted. Filtering AFTER the cut is deliberate: the check is one read per row
+    // SHOWN, and testing the whole day partition would be a lookup per player who played.
     const board: Board = {
-      rows: toBoardRows(cut, dress),
-      own: own === null ? null : toBoardRows(own, dress),
+      rows: toBoardRows(cut, dress).filter((row) => live(row.publicId)),
+      own: own === null ? null : toBoardRows(own, dress).filter((row) => live(row.publicId)),
       playing: [],
       waiting: [],
     };
@@ -238,17 +268,25 @@ export async function handleBoard(
   // Sorted for a stable board between reads; publicId is the only order every waiting
   // row is guaranteed to carry.
   const waiting = friends.filter((id) => !scored.has(id) && !playingIds.has(id)).sort();
-  const dress = await dressRows(
+  const { dress, live } = await dressRows(
     deps.profiles,
     ranked,
     playing,
     waiting.map((id) => ({ publicId: id })),
   );
+  // The same #204 rule on every section. A friend whose account was deleted by their own
+  // email link disappears from this board until the merge job rewrites the edge onto the
+  // account that adopted it — the drop-then-reappear window the issue names and accepts.
+  // What it will never do is render a deleted identity.
   const board: Board = {
-    rows: toBoardRows(ranked, dress),
+    rows: toBoardRows(ranked, dress).filter((row) => live(row.publicId)),
     own: null,
-    playing: playing.map((row): PlayingRow => ({ ...row, ...dress(row.publicId) })),
-    waiting: waiting.map((id): BoardPlayer => ({ publicId: id, ...dress(id) })),
+    playing: playing
+      .filter((row) => live(row.publicId))
+      .map((row): PlayingRow => ({ ...row, ...dress(row.publicId) })),
+    waiting: waiting
+      .filter((id) => live(id))
+      .map((id): BoardPlayer => ({ publicId: id, ...dress(id) })),
   };
   return json(200, board, responseHeaders);
 }

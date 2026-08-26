@@ -13,6 +13,10 @@ interface Config {
   // URLs (og:image + the game redirect). Optional; when unset the handler falls back to the
   // request origin (fine for local dev). #8.
   siteOrigin?: string;
+  // The verified SES sender the #204 link codes go out as. REQUIRED, like the table and the
+  // secret names: a link flow whose mail cannot be sent is a flow that silently strands
+  // every player who tries it, and a boot that names the failure is the cheaper one.
+  mailFrom: string;
 }
 
 export interface ScoreSecrets {
@@ -37,9 +41,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (!ipHmacSecretParameter) {
     throw new Error('IP_HMAC_SECRET_PARAMETER env var is required.');
   }
+  const mailFrom = env.MAIL_FROM;
+  if (!mailFrom) {
+    throw new Error('MAIL_FROM env var is required.');
+  }
   return {
     bucket,
     scoreTable,
+    mailFrom,
     turnstileSecretParameter,
     ipHmacSecretParameter,
     // The web origin in prod; "*" is the permissive default for local/dev.

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  GetItemCommand,
+  BatchGetItemCommand,
   UpdateItemCommand,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
@@ -9,32 +9,56 @@ import { dynamoProfileStore } from './dynamoProfileStore';
 const PUBLIC_ID = 'lfd5pqz5pa7zjm5u';
 
 describe('dynamoProfileStore (#188)', () => {
-  it('reads the player item CONSISTENTLY — the editor adopts what comes back', async () => {
+  // CONTRACT (#204): the profile row and the ACCOUNT row are ONE read. A missing profile
+  // means "never customized" and every board dresses it with the assigned pseudonym and
+  // mark — which is still this player's face — so a DELETED account has to be a different
+  // answer, and it is the account row's absence that says so.
+  it('reads the profile row and the account row CONSISTENTLY, in one batch', async () => {
     const send = vi.fn(async (command: unknown) => {
-      expect(command).toBeInstanceOf(GetItemCommand);
-      return { Item: { name: { S: 'Chqrles' }, avatar: { S: 'AAAAAAAAAAAAAAAAAAA' } } };
+      expect(command).toBeInstanceOf(BatchGetItemCommand);
+      return {
+        Responses: {
+          scores: [
+            { sk: { S: 'profile' }, name: { S: 'Chqrles' }, avatar: { S: 'AAAAAAAAAAAAAAAAAAA' } },
+            { sk: { S: 'account' }, createdAt: { S: '2026-08-19T14:00:00.000Z' } },
+          ],
+        },
+      };
     });
     const store = dynamoProfileStore({ send } as unknown as DynamoDBClient, 'scores');
 
     await expect(store.get(PUBLIC_ID)).resolves.toEqual({
-      publicId: PUBLIC_ID,
-      name: 'Chqrles',
-      avatar: 'AAAAAAAAAAAAAAAAAAA',
+      live: true,
+      profile: { publicId: PUBLIC_ID, name: 'Chqrles', avatar: 'AAAAAAAAAAAAAAAAAAA' },
     });
     // An eventually consistent read here would hand a player the profile they just
     // replaced (or a 404 right after their first save), which the client would then
     // take as its baseline — the score store's read-after-write requirement.
-    expect((send.mock.calls[0][0] as GetItemCommand).input).toMatchObject({
-      TableName: 'scores',
-      Key: { pk: { S: `player#${PUBLIC_ID}` }, sk: { S: 'profile' } },
-      ConsistentRead: true,
+    expect((send.mock.calls[0][0] as BatchGetItemCommand).input).toMatchObject({
+      RequestItems: {
+        scores: {
+          Keys: [
+            { pk: { S: `player#${PUBLIC_ID}` }, sk: { S: 'profile' } },
+            { pk: { S: `player#${PUBLIC_ID}` }, sk: { S: 'account' } },
+          ],
+          ConsistentRead: true,
+        },
+      },
     });
   });
 
-  it('reports a never-customized identity as null, not an empty profile', async () => {
-    const send = vi.fn(async (_command: unknown) => ({}));
+  it('reports a never-customized identity as a LIVE account with no profile', async () => {
+    const send = vi.fn(async (_command: unknown) => ({
+      Responses: { scores: [{ sk: { S: 'account' }, createdAt: { S: 'x' } }] },
+    }));
     const store = dynamoProfileStore({ send } as unknown as DynamoDBClient, 'scores');
-    await expect(store.get(PUBLIC_ID)).resolves.toBeNull();
+    await expect(store.get(PUBLIC_ID)).resolves.toEqual({ live: true, profile: null });
+  });
+
+  it('reports a DELETED account as not live, whatever the profile row says (#204)', async () => {
+    const send = vi.fn(async (_command: unknown) => ({ Responses: { scores: [] } }));
+    const store = dynamoProfileStore({ send } as unknown as DynamoDBClient, 'scores');
+    await expect(store.get(PUBLIC_ID)).resolves.toEqual({ live: false, profile: null });
   });
 
   it('upserts in one write, keeping createdAt from the FIRST save', async () => {

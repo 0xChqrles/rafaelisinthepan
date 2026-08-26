@@ -82,5 +82,18 @@ export function memoryScoreStore(
       days.set(dayKey(input), day);
       return settle('recorded');
     },
+
+    // #204's active-day transfer: the recorded row follows the round it was derived from.
+    // It spends no allowance — the population gains no player, it renames the one it has —
+    // and it is refused when the destination already holds a row of its own.
+    async transfer(key, from, to) {
+      const day = days.get(dayKey(key));
+      const row = day?.get(from);
+      if (!day || !row) return false;
+      if (day.has(to)) return false;
+      day.set(to, row);
+      day.delete(from);
+      return true;
+    },
   };
 }

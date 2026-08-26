@@ -38,6 +38,16 @@
                               Turnstile-token check the gated writes share
       devices.ts              POST /devices (#216): the Turnstile-gated idempotent bootstrap,
                               the sign-out screen's list, and revocation by device id + opaque key
+      link.ts                 POST /link (#204): the read/drain, the Turnstile-gated + metered
+                              code send, and the verification that binds or adopts an account
+      accountLink.ts          what a verified link DOES: the stakes read, the active-day
+                              transfer, the friend merge and its resumable drain
+      linkStore.ts            link storage contract: the challenge/binding/allowance/job keys,
+                              the address + code hashing, and the one indivisible `adopt`
+      dynamoLinkStore.ts      prod conditional counters, the attempt-counting verify, and the
+                              ONE transaction that moves the device and deletes the account
+      memoryLinkStore.ts      process-local implementation for backend:dev/tests
+      mailer.ts               SES sender + the LOCAL console mailer that prints the code
       deviceStore.ts          device/account storage contract; device#<tokenHash> base key,
                               the account GSI, SHA-256(token) and the once-a-day lastSeenAt
       dynamoDeviceStore.ts    prod GetItem auth + ONE create-only transaction for the pair,
@@ -103,7 +113,7 @@
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output). Sentence puzzles AND #154 word artifacts (#156): the artifact type is detected from the file's SHAPE and routed to its own key.
 pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--mode sentence|word] [--ci]  # publish-buffer coverage (#61); --mode word probes the #156 word-artifact buffer; reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
-pnpm backend:dev                # local server (puzzles + /scores + /profile + /friends + /board + /round + /history + /devices + /today) on :8787; FS puzzles, in-memory scores/profiles/friends/rounds/history/devices, local Turnstile accept-all
+pnpm backend:dev                # local server (puzzles + /scores + /profile + /friends + /board + /round + /history + /devices + /link + /today) on :8787; FS puzzles, in-memory scores/profiles/friends/rounds/history/devices/links, local Turnstile accept-all, and #204's link codes PRINTED to this log
 pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server with a #190 board population (in-memory — re-run after a restart)
 ```
 
@@ -516,6 +526,41 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   created again on that device). Local serve swaps in `memoryDeviceStore` (seedable, which is what lets a route test
   name its caller at module level) and the accept-all verifier; restarting signs every local
   device out, exactly as a wiped table would.
+- **Email account linking (#204):** the ONE handler also serves `POST /link` — and ONLY POST
+  (a GET is a named 405). The product contract (the one flow, the three endings, when the
+  account being left is deleted, the erase confirmation, the active-day transfer, the friend
+  merge, what a deleted account stops being, the SES/operator steps) lives in the root
+  `AGENTS.md`. Implementation notes: the route DISPATCHES on the body — `turnstileToken` =
+  SEND, `code` = VERIFY, neither = READ — and a body carrying both is a 400, the /devices
+  rule. The READ also DRAINS any friend-merge job an interrupted link left queued, which is
+  the client's resume path. TURNSTILE is checked BEFORE the send allowances, deliberately:
+  they are spent per ADDRESS, so checking them first would let an unauthenticated caller burn
+  a stranger's code budget. The challenge is stored as `HMAC(ipHmacSecret, "link-code:" +
+  email + ":" + code)` — a bare hash of a six-digit space is a precomputable table — and the
+  attempt is counted by a write whose CONDITION is "the code is WRONG" (`#codeHash <>
+  :codeHash`), so a correct code spends none, which matters because one successful link
+  legitimately verifies twice. The send allowances put the WINDOW in the KEY
+  (`linksend#<scope>#<hash>#<window>`), so each window is a fresh item that starts at zero
+  and expires on its own TTL — a stored window instant would have to be RESET where the count
+  must not be raced. `accountLink.ts` owns the ORDER: the active-day moves first (each atomic
+  and idempotent), then `LinkStore.adopt` as ONE transaction, then the merge drain — the
+  reasoning is in that file's header and in the root `AGENTS.md`. **`dynamoLinkStore` is the
+  ONE file that writes items across several stores' key spaces**, and every key it writes
+  comes from the OWNING module's own formatter (`deviceKey`, `accountKey`, `profileKey`),
+  never a literal. `RoundStore.transfer` / `ScoreStore.transfer` / `FriendStore.entries` +
+  `transfer` are new CONTRACT methods (both implementations); a Dynamo transfer copies the
+  source ITEM verbatim apart from its partition key, so a move never reinterprets another
+  store's attribute shape, and a `TransactionCanceledException` is classified by its per-item
+  reason codes rather than assumed to be a refusal. `ProfileStore.get` widened to a
+  `ProfileLookup` (`{live, profile}`) read as ONE BatchGetItem of the profile row and the
+  ACCOUNT row beside it — same partition, same cost — which is what lets `/profile`, `/board`
+  and the `/i/` preview tell "never customized" from "gone". `DeviceStore.accountExists` is
+  what `/friends {add}` asks before writing an edge. New env: `MAIL_FROM` (required, like the
+  table name — a link flow whose mail cannot be sent strands every player who tries it). New
+  IAM: `ses:SendEmail`, scoped to the stack's own domain identity and conditioned on the one
+  `ses:FromAddress`. Local serve swaps in `memoryLinkStore` + `consoleMailer`, which PRINTS
+  the code to this server's log — explicitly local-only, the accept-all Turnstile verifier's
+  pattern.
 - **Word mode's daily artifact (#154/#156):** the ONE puzzle endpoint also serves the
   single-word artifact under `mode=word` (`GET /?lang=&date=&mode=word`; absent/
   `sentence` = the sentence puzzle, anything else = 400) with identical day-addressing,

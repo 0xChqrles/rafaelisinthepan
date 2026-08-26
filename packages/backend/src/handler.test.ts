@@ -491,10 +491,10 @@ describe('word-mode share routes (#156)', () => {
 // the bounce landing somewhere the app routes.
 describe('invite link (#189) — the shared link, its preview page and its card', () => {
   const ID = 'abcdefghij234567';
-  const stored = (row: ProfileRecord | null, fails = false): ProfileStore => ({
+  const stored = (row: ProfileRecord | null, fails = false, live = true): ProfileStore => ({
     async get() {
       if (fails) throw new Error('profile store is down');
-      return row;
+      return { live, profile: row };
     },
     async create() {
       return false;

@@ -62,11 +62,19 @@ export async function handleProfile(
         responseHeaders,
       );
     }
-    const profile = await profiles.get(id);
-    if (profile == null) {
+    const found = await profiles.get(id);
+    // GONE is not the same answer as NEVER CUSTOMIZED (#204). A 404 here means "no row
+    // yet", and every caller dresses that with the ASSIGNED pseudonym and mark derived from
+    // the id — which is still this player's face. An account an email link DELETED has no
+    // face to fall back to, so it is a distinct 410 the client can act on: an invite landing
+    // says the link expired, and the signed-out screen stops naming an account that is gone.
+    if (!found.live) {
+      return errorResponse(410, 'account_gone', `Player "${id}" no longer exists.`, responseHeaders);
+    }
+    if (found.profile == null) {
       return errorResponse(404, 'not_found', `No profile for "${id}".`, responseHeaders);
     }
-    return json(200, profile, responseHeaders);
+    return json(200, found.profile, responseHeaders);
   }
 
   const parsed = readJsonObject(event, 'Profile', responseHeaders);

@@ -13,6 +13,7 @@ export * from './scoring';
 export * from './puzzleTag';
 export * from './leaderboard';
 export * from './history';
+export * from './email';
 export * from './identity';
 export * from './avatar';
 export * from './avatarOutline';

@@ -5053,6 +5053,75 @@ button * {
   color: var(--danger);
 }
 
+/* Saving the account to an EMAIL (#204) — the profile screen's second block, above the
+   devices. It wears the device list's exact dress, because they answer two halves of one
+   question ("can I get this back?" and "which devices hold it?") and reading as one column
+   is the point: mono, all-caps chrome with secondary values in `--muted`, glass over a
+   hairline, nothing rounder than the 4px ceiling. */
+.account-link {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.account-link-title {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 10px;
+  font-weight: 550;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* The ONE sentence-case surface here: an explanation, never a label — the coach copy's
+   rule, which is why it escapes the chrome's all-caps. */
+.account-link-note {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 350;
+  line-height: 1.45;
+  color: var(--muted);
+}
+/* What the erase confirmation puts at stake, in the numbers' own weight: this is the one
+   thing on the screen a reader has to take in before a destructive tap. */
+.account-link-stakes {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 550;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg);
+}
+.account-link-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--glass);
+  color: var(--fg);
+  font-family: var(--ui);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+}
+.account-link-input::placeholder {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.account-link-input:focus {
+  outline: none;
+  border-color: var(--line-strong);
+}
+/* The code is a NUMBER the player reads off a screen and types back, so it is set in the
+   game's own pixel face at the tracking that keeps six digits countable at a glance. */
+.account-link-code {
+  font-family: var(--pixel-font);
+  font-size: 18px;
+  letter-spacing: 0.34em;
+  text-align: center;
+}
+
 /* The account's DEVICES, and the way to sign one out (#216) — the profile screen's second
    block, under the editor and inside the same column. Chrome, so: mono, all-caps, one ink
    with SECONDARY values in `--muted` (the 2026-08-20 rule), and nothing rounder than the

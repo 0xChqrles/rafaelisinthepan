@@ -50,6 +50,26 @@ export interface FriendStore {
   // Symmetric and idempotent for the same reason: deleting an edge that is not there is a
   // no-op, so a stray half-edge can always be cleared from either side too.
   unlink(publicId: string, friendId: string): Promise<void>;
+  // The caller's partition WITH the instants each edge was made at — what #204's merge
+  // orders by ("fill the remaining capacity oldest-createdAt first, ties by friend id").
+  // `list` stays the id-only read every other caller wants.
+  entries(publicId: string): Promise<FriendLink[]>;
+  // MOVE or DROP a batch of one account's edges as part of a link (#204). Each move rewrites
+  // BOTH directions: a KEPT friend F loses `from`↔F and gains `to`↔F, a dropped one just
+  // loses `from`↔F — so no edge is ever left pointing at a deleted account. It is IDEMPOTENT
+  // (deletes are no-ops, `createdAt` is kept from whichever link is older) because the job
+  // that drives it is resumed after partial batches.
+  transfer(from: string, to: string, moves: readonly FriendTransfer[]): Promise<void>;
+}
+
+// One friendship's fate in a merge. `keep` false is a DROP: `from` had this friend, `to`
+// has no capacity left for them, and both `from`-facing rows go.
+export interface FriendTransfer {
+  friendId: string;
+  keep: boolean;
+  // The instant the surviving edge should carry — the OLDER of the two, so a merged
+  // friendship does not claim to be younger than it is.
+  createdAt: string;
 }
 
 // Partition of one player's edges; the sort key is the friend's publicId.

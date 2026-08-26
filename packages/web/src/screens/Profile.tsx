@@ -25,6 +25,7 @@ import ErrorSheet from '../components/ErrorSheet';
 import { navigate } from '../routing';
 import { pathForBoard, resolveHomeLang } from '../langs';
 import { t } from '../i18n';
+import AccountLink from '../components/AccountLink';
 import DeviceList from '../components/DeviceList';
 import Avatar from '../components/Avatar';
 import LoadError from '../components/LoadError';
@@ -680,6 +681,13 @@ export default function Profile() {
               EXISTS: a tokenless editor has no device rows to list, and asking would be a
               private read on a visit that never acted (the list appears the moment SAVE's
               deploy lands, since the identity above is reactive). */}
+          {/* Saving this account to an email address (#204) — the only way it survives a
+              lost device, and the only way it moves to a new one. It sits ABOVE the device
+              list because it is the more fundamental question ("can I get this back?"
+              before "which devices hold it?"), and it renders for a TOKENLESS device too:
+              its SEND CODE is that device's own deploy button, which is exactly what a
+              reconnect after a sign-out needs. */}
+          <AccountLink lang={lang} />
           {identity !== null && <DeviceList lang={lang} />}
         </div>
       )}

@@ -137,8 +137,11 @@ describe('friends route (#189)', () => {
   });
 
   it('still lets a capped player re-open a link they already accepted', async () => {
-    const { friends, handler, me } = await makeHandler();
+    const { friends, handler, devices, me } = await makeHandler();
     for (let i = 0; i < FRIENDS_MAX; i += 1) {
+      // The target has to be a LIVE account since #204 — an invite link for a deleted
+      // player expires — so these edges point at accounts that really exist.
+      await seedDevice(devices, { accountId: fakeId(i) });
       await friends.link({
         publicId: me.accountId,
         friendId: fakeId(i),

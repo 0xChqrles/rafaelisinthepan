@@ -725,6 +725,33 @@ export function markDeviceSignedOut(expectedEpoch: string): boolean {
   return true;
 }
 
+// #204's EMAIL LINK landed and the server moved this device onto another account. The TOKEN
+// is unchanged — the link updates the one device item rather than minting a second — so what
+// changes is the account it names, and the identity SCOPE that owns every account-keyed
+// cache with it (`identityScope` clears the outbox, the transient rounds and the private
+// summaries on that transition, which is exactly right: none of it belongs to the account
+// this device just adopted).
+//
+// Fenced on the epoch the flow started under, like every other authoritative answer: a link
+// answered after the device was signed out, or after a sibling tab installed a different
+// identity, describes an identity this tab no longer holds. Returns whether it applied.
+export function adoptLinkedAccount(
+  expectedEpoch: string,
+  next: { accountId: string; deviceId: string },
+): boolean {
+  if (identityEpoch() !== expectedEpoch) return false;
+  const held = useIdentityStore.getState().identity;
+  if (!held) return false;
+  const identity: DeviceIdentity = { token: held.token, ...next };
+  // Persist FIRST, for the bootstrap's reason: sibling tabs read the shared key, and one
+  // still holding the old account id would keep authenticating as an account this device no
+  // longer acts as. A write that cannot stick leaves the identity session-only, exactly as
+  // a completed bootstrap's does.
+  sessionOnly = !write(identity);
+  publish(identity);
+  return true;
+}
+
 // SKIP on the signed-out screen: leave the old account behind and start fresh. The new
 // token is minted lazily by the next deliberate act, exactly like a first-ever visit.
 // This is also what lifts the signed-out TOMBSTONE — the one gesture the fenced state

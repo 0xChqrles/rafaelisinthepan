@@ -9,6 +9,7 @@ import {
   ConditionalCheckFailedException,
   GetItemCommand,
   QueryCommand,
+  TransactWriteItemsCommand,
   UpdateItemCommand,
   type AttributeValue,
   type DynamoDBClient,
@@ -55,8 +56,16 @@ const CONDITION_FUNCTIONS = [
 // command carrying a union map of every attribute the store knows about looks perfectly
 // fine here and fails EVERY write in production. `checkedClient` below runs this on every
 // command any test in this file issues, so a new write path is covered by existing.
-function expectAliasesMatch(command: UpdateItemCommand): void {
-  const { UpdateExpression = '', ConditionExpression = '' } = command.input;
+interface Expressed {
+  UpdateExpression?: string;
+  ConditionExpression?: string;
+  ExpressionAttributeNames?: Record<string, string>;
+  ExpressionAttributeValues?: Record<string, AttributeValue>;
+}
+
+function expectAliasesMatch(command: UpdateItemCommand | Expressed): void {
+  const input: Expressed = command instanceof UpdateItemCommand ? command.input : command;
+  const { UpdateExpression = '', ConditionExpression = '' } = input;
   const source = `${UpdateExpression} ${ConditionExpression}`;
   const check = (pattern: RegExp, declared: object | undefined, what: string) => {
     const used = new Set(source.match(pattern) ?? []);
@@ -64,14 +73,24 @@ function expectAliasesMatch(command: UpdateItemCommand): void {
     expect([...keys].filter((k) => !used.has(k)), `${what} declared but unused`).toEqual([]);
     expect([...used].filter((k) => !keys.has(k)), `${what} used but undeclared`).toEqual([]);
   };
-  check(/#[A-Za-z0-9_]+/g, command.input.ExpressionAttributeNames, 'name');
-  check(/:[A-Za-z0-9_]+/g, command.input.ExpressionAttributeValues, 'value');
+  check(/#[A-Za-z0-9_]+/g, input.ExpressionAttributeNames, 'name');
+  check(/:[A-Za-z0-9_]+/g, input.ExpressionAttributeValues, 'value');
 }
 
 // Every store in this suite is built over this, so no write escapes the checks above.
 function checkedClient(send: (command: unknown) => Promise<unknown>) {
   return vi.fn(async (command: unknown) => {
     if (command instanceof UpdateItemCommand) expectAliasesMatch(command);
+    // #204's transfer writes a TRANSACTION, and every clause inside it is subject to the
+    // same rejection — an unused or undeclared alias fails the whole write in production
+    // while looking fine against this mock.
+    if (command instanceof TransactWriteItemsCommand) {
+      for (const item of command.input.TransactItems ?? []) {
+        for (const part of [item.Put, item.Delete, item.Update]) {
+          if (part) expectAliasesMatch(part as Expressed);
+        }
+      }
+    }
     return send(command);
   });
 }
@@ -1036,5 +1055,98 @@ describe('dynamoRoundStore.getMany — the board read (#206)', () => {
     });
 
     await expect(store.getMany(KEY, [PUBLIC_ID])).rejects.toThrow(/unprocessed/i);
+  });
+});
+
+// CONTRACT (#204): a link MOVES the active day's round between two accounts, and the move
+// has to leave the row under exactly ONE of them at every instant — so it is a transaction
+// of a create-only Put and a conditional Delete, and the item is copied VERBATIM apart from
+// its partition key (this store's attribute shape is the one thing a move must not
+// reinterpret). The alias correspondence and the condition grammar are checked by the
+// harness above, which now walks a transaction's clauses too.
+describe('dynamoRoundStore.transfer (#204)', () => {
+  const FROM = PUBLIC_ID;
+  const TO = 'zzzzzzzzzzzzzzzz';
+
+  it('moves the whole item in ONE transaction, conditioned on both ends', async () => {
+    const source = {
+      ...storedItem(['bois', 'foret'], 1_000),
+      progress: { N: '40' },
+      solved: { BOOL: true },
+    };
+    const { store, send } = makeStore(async (command) => {
+      if (command instanceof GetItemCommand) return { Item: source };
+      return {};
+    });
+
+    await expect(store.transfer(KEY, FROM, TO)).resolves.toMatchObject({
+      guesses: ['bois', 'foret'],
+      progress: 40,
+      solved: true,
+    });
+
+    const written = send.mock.calls
+      .map(([command]) => command)
+      .find((command): command is TransactWriteItemsCommand =>
+        command instanceof TransactWriteItemsCommand,
+      );
+    const items = written!.input.TransactItems!;
+    expect(items).toHaveLength(2);
+    // The DESTINATION carries every attribute the source had, under the new partition.
+    expect(items[0].Put!.Item).toMatchObject({
+      ...source,
+      pk: { S: `round#${TO}` },
+      sk: { S: 'fr#sentence#2026-08-21' },
+    });
+    expectConditionSyntax(items[0].Put!.ConditionExpression);
+    expectConditionSyntax(items[1].Delete!.ConditionExpression);
+    expect(items[1].Delete!.Key).toEqual({
+      pk: { S: `round#${FROM}` },
+      sk: { S: 'fr#sentence#2026-08-21' },
+    });
+  });
+
+  it('moves NOTHING when the source has no guesses — a started word run is not play', async () => {
+    const { store, send } = makeStore(async (command) => {
+      if (command instanceof GetItemCommand) {
+        return {
+          Item: {
+            pk: { S: `round#${FROM}` },
+            sk: { S: 'fr#sentence#2026-08-21' },
+            puzzle: { S: PUZZLE },
+            startedAt: { S: '2026-08-21T09:00:00.000Z' },
+          },
+        };
+      }
+      return {};
+    });
+
+    await expect(store.transfer(KEY, FROM, TO)).resolves.toBeNull();
+    expect(
+      send.mock.calls.some(([command]) => command instanceof TransactWriteItemsCommand),
+    ).toBe(false);
+  });
+
+  it('reads a refused CONDITION as "nothing moved", and anything else as the failure it is', async () => {
+    const source = storedItem(['bois'], 1_000);
+    const refused = makeStore(async (command) => {
+      if (command instanceof GetItemCommand) return { Item: source };
+      throw Object.assign(new Error('cancelled'), {
+        name: 'TransactionCanceledException',
+        CancellationReasons: [{ Code: 'ConditionalCheckFailed' }, { Code: 'None' }],
+      });
+    });
+    await expect(refused.store.transfer(KEY, FROM, TO)).resolves.toBeNull();
+
+    // A THROTTLE is not a refusal: swallowing it would delete the account the round is
+    // still sitting in.
+    const throttled = makeStore(async (command) => {
+      if (command instanceof GetItemCommand) return { Item: source };
+      throw Object.assign(new Error('cancelled'), {
+        name: 'TransactionCanceledException',
+        CancellationReasons: [{ Code: 'ThrottlingError' }, { Code: 'None' }],
+      });
+    });
+    await expect(throttled.store.transfer(KEY, FROM, TO)).rejects.toThrow(/cancelled/);
   });
 });

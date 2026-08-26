@@ -115,6 +115,73 @@ const STRINGS = {
   deviceUnknown: { en: 'UNKNOWN DEVICE', fr: 'APPAREIL INCONNU' },
   failedDevices: { en: 'FAILED TO LOAD DEVICES', fr: 'ÉCHEC DU CHARGEMENT DES APPAREILS' },
   signedOutReconnect: { en: 'RECONNECT', fr: 'SE RECONNECTER' },
+  // Email account linking (#204), on the profile editor — the screen that already IS the
+  // identity screen. ONE flow with three endings, so the copy is chosen by the OUTCOME the
+  // server reports and never by anything this screen guessed first.
+  // An invite link whose sender's account is gone (#204). It is a STATE, not a failure:
+  // there is nothing to retry, so the screen says so and carries the reader into the game.
+  inviteExpired: { en: 'THIS INVITE LINK HAS EXPIRED', fr: "CE LIEN D'INVITATION A EXPIRÉ" },
+  linkTitle: { en: 'YOUR ACCOUNT', fr: 'VOTRE COMPTE' },
+  // WHY, in one sentence about what it buys — never about how it works. It is the only
+  // place a player is told they can move devices at all.
+  linkWhy: {
+    en: 'Add an email to get this account back on any device.',
+    fr: 'Ajoutez un e-mail pour retrouver ce compte sur tous vos appareils.',
+  },
+  linkSavedAs: { en: 'SAVED AS', fr: 'SAUVEGARDÉ SOUS' },
+  linkAddressPlaceholder: { en: 'EMAIL', fr: 'E-MAIL' },
+  linkSend: { en: 'SEND CODE', fr: 'ENVOYER LE CODE' },
+  linkCodeSent: { en: 'CODE SENT TO', fr: 'CODE ENVOYÉ À' },
+  linkCodeLabel: { en: '6-DIGIT CODE', fr: 'CODE À 6 CHIFFRES' },
+  linkConfirm: { en: 'CONFIRM', fr: 'VALIDER' },
+  linkChangeAddress: { en: 'CHANGE ADDRESS', fr: "CHANGER D'ADRESSE" },
+  // Shown only once an attempt has been SPENT: stating the budget up front reads as a
+  // warning to somebody who has typed nothing wrong.
+  linkWrongCode: { en: 'WRONG CODE. TRIES LEFT:', fr: 'CODE INCORRECT. ESSAIS RESTANTS :' },
+  linkCancel: { en: 'CANCEL', fr: 'ANNULER' },
+  // The erase confirmation. It NAMES what the tap destroys — the server refuses to erase
+  // without being told which account, and this screen is the only thing between that tap
+  // and a month of play.
+  linkEraseWarn: {
+    en: 'This device is on another account. Linking deletes it.',
+    fr: 'Cet appareil est sur un autre compte. La liaison le supprime.',
+  },
+  linkEraseStreak: { en: 'STREAK', fr: 'SÉRIE' },
+  linkEraseDays: { en: 'DAYS', fr: 'JOURS' },
+  linkEraseConfirm: { en: 'DELETE AND CONTINUE', fr: 'SUPPRIMER ET CONTINUER' },
+  // The two endings, in the issue's own words: one for an address nobody knew, one for an
+  // account the player is coming back to.
+  linkSaved: { en: 'Account saved.', fr: 'Compte sauvegardé.' },
+  linkRestored: { en: 'We found your account.', fr: 'On a retrouvé votre compte.' },
+  linkFailed: { en: 'LINK FAILED', fr: 'ÉCHEC DE LA LIAISON' },
+  linkTooMany: {
+    en: 'Too many codes asked for. Try again in a while.',
+    fr: 'Trop de codes demandés. Réessayez dans un moment.',
+  },
+  linkBadAddress: {
+    en: "That address doesn't look right.",
+    fr: 'Cette adresse ne semble pas valide.',
+  },
+  linkSendFailedNote: {
+    en: 'The code could not be sent.',
+    fr: "Le code n'a pas pu être envoyé.",
+  },
+  linkVerifyFailedNote: {
+    en: 'The code could not be checked.',
+    fr: "Le code n'a pas pu être vérifié.",
+  },
+  linkCodeSpent: {
+    en: 'Too many wrong codes. Ask for a new one.',
+    fr: 'Trop de codes incorrects. Demandez-en un nouveau.',
+  },
+  linkCodeExpired: {
+    en: 'That code has expired. Ask for a new one.',
+    fr: 'Ce code a expiré. Demandez-en un nouveau.',
+  },
+  linkAlreadySaved: {
+    en: 'This account is already saved under another address.',
+    fr: 'Ce compte est déjà sauvegardé sous une autre adresse.',
+  },
   // The missing-puzzle state is ABNORMAL (a publish that did not happen), and the
   // wording says so — it must not read like a scheduled day off.
   noPuzzle: { en: "TODAY'S PUZZLE IS MISSING", fr: 'LE PUZZLE DU JOUR EST INTROUVABLE' },

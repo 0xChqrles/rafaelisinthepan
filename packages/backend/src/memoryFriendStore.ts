@@ -40,5 +40,39 @@ export function memoryFriendStore(): FriendStore {
       own(publicId).delete(friendId);
       own(friendId).delete(publicId);
     },
+
+    async entries(publicId) {
+      const mine = own(publicId);
+      return sorted(mine).map((friendId) => ({
+        publicId,
+        friendId,
+        createdAt: mine.get(friendId) ?? '',
+      }));
+    },
+
+    // #204's friend merge, one batch. Every move rewrites BOTH directions and is
+    // IDEMPOTENT: a friendship already moved simply has nothing left to delete, and the
+    // surviving edge keeps the OLDER instant rather than restating when the two became
+    // friends.
+    async transfer(from, to, moves) {
+      // `own` returns a FRESH map for a partition with no rows, so each side is bound once
+      // and written back — the shape `link` above already uses.
+      const leaving = own(from);
+      const adopting = own(to);
+      for (const move of moves) {
+        const theirs = own(move.friendId);
+        leaving.delete(move.friendId);
+        theirs.delete(from);
+        if (move.keep) {
+          const held = adopting.get(move.friendId);
+          const at = held !== undefined && held < move.createdAt ? held : move.createdAt;
+          adopting.set(move.friendId, at);
+          theirs.set(to, at);
+        }
+        edges.set(move.friendId, theirs);
+      }
+      edges.set(from, leaving);
+      edges.set(to, adopting);
+    },
   };
 }

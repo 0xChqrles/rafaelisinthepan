@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import {
   BatchGetItemCommand,
+  ConditionalCheckFailedException,
+  GetItemCommand,
   QueryCommand,
   TransactWriteItemsCommand,
   type DynamoDBClient,
@@ -34,6 +36,22 @@ export function batchRetryDelayMs(retry: number, random: () => number = Math.ran
 export interface DynamoScoreStoreOptions {
   // Injected by tests, so asserting the retry SCHEDULE costs no real time.
   wait?: (ms: number) => Promise<void>;
+}
+
+// A transaction refused by its own CONDITIONS, told apart from one cancelled by anything
+// else (a throttle, a capacity limit). DynamoDB reports both as
+// `TransactionCanceledException`; only the per-item reason codes say which.
+function transferRefused(error: unknown): boolean {
+  if (error instanceof ConditionalCheckFailedException) return true;
+  if (typeof error !== 'object' || error === null) return false;
+  const named = error as { name?: unknown; CancellationReasons?: { Code?: string }[] };
+  if (named.name === 'ConditionalCheckFailedException') return true;
+  if (named.name !== 'TransactionCanceledException') return false;
+  const reasons = named.CancellationReasons ?? [];
+  return (
+    reasons.length > 0 &&
+    reasons.every((reason) => reason.Code === 'ConditionalCheckFailed' || reason.Code === 'None')
+  );
 }
 
 function scoreItem(input: ScoreSubmission): Record<string, AttributeValue> {
@@ -219,6 +237,51 @@ export function dynamoScoreStore(
           }
           if (reasons[0]?.Code === 'ConditionalCheckFailed') return 'capped';
         }
+        throw error;
+      }
+    },
+
+    // #204's active-day transfer: the recorded row follows the round it was derived from.
+    // ONE transaction — a create-only Put under the adopting account and a Delete of the
+    // source — so the day's population holds this score under exactly one player at every
+    // instant and the histogram count is never transiently doubled. It spends NO allowance:
+    // the population gains no player, it renames the one it has.
+    async transfer(key, from, to) {
+      const source = await client.send(
+        new GetItemCommand({
+          TableName: tableName,
+          Key: { pk: { S: dayKey(key) }, sk: { S: from } },
+          ConsistentRead: true,
+        }),
+      );
+      if (!source.Item) return false;
+      try {
+        await client.send(
+          new TransactWriteItemsCommand({
+            TransactItems: [
+              {
+                Put: {
+                  TableName: tableName,
+                  Item: { ...source.Item, pk: { S: dayKey(key) }, sk: { S: to } },
+                  ConditionExpression: 'attribute_not_exists(pk)',
+                },
+              },
+              {
+                Delete: {
+                  TableName: tableName,
+                  Key: { pk: { S: dayKey(key) }, sk: { S: from } },
+                  ConditionExpression: 'attribute_exists(pk)',
+                },
+              },
+            ],
+          }),
+        );
+        return true;
+      } catch (error) {
+        // The adopting account already has a row for this daily, or the source moved: an
+        // ordinary outcome, and nothing was written. Any OTHER cancellation is a real
+        // failure and propagates.
+        if (transferRefused(error)) return false;
         throw error;
       }
     },

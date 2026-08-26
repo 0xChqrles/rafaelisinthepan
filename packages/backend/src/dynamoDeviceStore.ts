@@ -117,6 +117,12 @@ export function dynamoDeviceStore(client: DynamoDBClient, tableName: string): De
   return {
     resolve,
 
+    // Strongly consistent, like `resolve`'s own account check: an invite accepted seconds
+    // after the target linked their email must not read a stale row either way.
+    async accountExists(accountId) {
+      return (await account(accountId)) !== null;
+    },
+
     async bootstrap(input) {
       // Idempotent by token hash: a lost answer after a committed write must return what
       // was created rather than mint a second identity. The read comes first because that

@@ -126,3 +126,67 @@ describe('dynamoFriendStore (#189)', () => {
     expect(send.mock.calls.every(([c]) => !(c instanceof TransactWriteItemsCommand))).toBe(true);
   });
 });
+
+// CONTRACT (#204): the merge rewrites BOTH directions of every kept friendship onto the
+// adopting account, and removes both facing rows of every friendship it keeps OR drops —
+// **no link may be left pointing at an account that is about to stop existing.** Four items
+// per kept friendship is what bounds the batch at 25: DynamoDB refuses a 101-item
+// transaction, and a full 200-edge merge has to fit inside repeated ones.
+describe('dynamoFriendStore.transfer (#204)', () => {
+  const TO = 'zzzzzzzzzzzzzzzz';
+
+  it('removes both facing rows and writes both new ones, keeping the OLDER instant', async () => {
+    const { send, client } = fakeClient();
+    await dynamoFriendStore(client, 'scores').transfer(ME, TO, [
+      { friendId: THEM, keep: true, createdAt: NOW },
+    ]);
+
+    const items = (send.mock.calls[0][0] as TransactWriteItemsCommand).input.TransactItems!;
+    expect(items).toHaveLength(4);
+    expect(items.flatMap((i) => (i.Delete ? [[i.Delete.Key!.pk.S, i.Delete.Key!.sk.S]] : []))).toEqual([
+      [`friends#${ME}`, THEM],
+      [`friends#${THEM}`, ME],
+    ]);
+    const links = items.flatMap((i) => (i.Update ? [i.Update] : []));
+    expect(links.map((u) => [u.Key!.pk.S, u.Key!.sk.S])).toEqual([
+      [`friends#${TO}`, THEM],
+      [`friends#${THEM}`, TO],
+    ]);
+    // `if_not_exists` keeps the ORIGINAL instant, which is also what makes replaying a
+    // partial batch a no-op — the job that drives this is resumed.
+    for (const update of links) {
+      expect(update.UpdateExpression).toBe('SET #createdAt = if_not_exists(#createdAt, :createdAt)');
+    }
+  });
+
+  it('DROPS a friendship by removing its two facing rows and writing nothing else', async () => {
+    const { send, client } = fakeClient();
+    await dynamoFriendStore(client, 'scores').transfer(ME, TO, [
+      { friendId: THEM, keep: false, createdAt: NOW },
+    ]);
+    const items = (send.mock.calls[0][0] as TransactWriteItemsCommand).input.TransactItems!;
+    expect(items).toHaveLength(2);
+    expect(items.every((item) => item.Delete !== undefined)).toBe(true);
+  });
+
+  it('batches so no transaction can exceed DynamoDB\'s 100-item limit', async () => {
+    const { send, client } = fakeClient();
+    const moves = Array.from({ length: FRIENDS_MAX }, (_, i) => ({
+      friendId: `y${String(i).padStart(15, '0')}`,
+      keep: true,
+      createdAt: NOW,
+    }));
+    await dynamoFriendStore(client, 'scores').transfer(ME, TO, moves);
+
+    const transactions = send.mock.calls
+      .map(([command]) => command)
+      .filter((command): command is TransactWriteItemsCommand =>
+        command instanceof TransactWriteItemsCommand,
+      );
+    expect(transactions).toHaveLength(FRIENDS_MAX / 25);
+    for (const transaction of transactions) {
+      expect(transaction.input.TransactItems!.length).toBeLessThanOrEqual(100);
+    }
+  });
+});
+

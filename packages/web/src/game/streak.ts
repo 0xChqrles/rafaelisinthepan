@@ -6,28 +6,12 @@
 // under any union/ordering (the property the day-set exists for), and they defensively
 // sort + dedupe their input so a raw union is a valid argument.
 
-// Sort ascending + drop duplicates. A union of two valid sets may repeat a shared day;
-// normalizing here makes the derivation order-independent and idempotent.
-function normalize(days: number[]): number[] {
-  return [...new Set(days)].sort((a, b) => a - b);
-}
-
-// Length of the consecutive run ending at the last solved day, but only while the streak
-// is ALIVE: today is not yet required, so the last solved day may be today (activeDay) or
-// yesterday (activeDay - 1). Once the last solve is older than yesterday the chain is
-// broken and the current streak is 0. Empty set -> 0.
-export function currentStreak(days: number[], activeDay: number): number {
-  const sorted = normalize(days);
-  if (sorted.length === 0) return 0;
-  const last = sorted[sorted.length - 1];
-  if (last < activeDay - 1) return 0; // chain broken — last solve is older than yesterday
-  let run = 1;
-  for (let i = sorted.length - 1; i > 0; i--) {
-    if (sorted[i] - sorted[i - 1] === 1) run++;
-    else break;
-  }
-  return run;
-}
+// `currentStreak` MOVED to @whippin/shared with #204: the erase confirmation names the
+// streak the account being deleted is about to lose, so the SERVER derives one too, and two
+// spellings would put a different number on that dialog than this screen shows over the
+// same days. Re-exported here so every caller in this package keeps one import.
+import { currentStreak } from '@whippin/shared';
+export { currentStreak };
 
 interface StreakTransition {
   previous: number;
@@ -67,7 +51,7 @@ function mondayIndex(dayNumber: number): number {
 // The current week (the Monday..Sunday that contains `activeDay`, #74) as 7 cells. Pure
 // over the day array, like the counters, so it stays correct under any future set union.
 export function weekView(days: number[], activeDay: number): WeekView {
-  const solvedSet = new Set(normalize(days));
+  const solvedSet = new Set(days);
   const weekStart = activeDay - mondayIndex(activeDay); // this week's Monday
   const cells: WeekCell[] = [];
   for (let i = 0; i < 7; i++) {

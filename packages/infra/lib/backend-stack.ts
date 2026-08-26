@@ -26,6 +26,7 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as route53 from 'aws-cdk-lib/aws-route53';
+import * as ses from 'aws-cdk-lib/aws-ses';
 import * as targets from 'aws-cdk-lib/aws-route53-targets';
 import { NagSuppressions } from 'cdk-nag';
 
@@ -58,6 +59,12 @@ interface BackendStackProps extends StackProps {
   // resolves both encrypted values together on first use, caching only a successful read.
   turnstileSecretParameter?: string;
   ipHmacSecretParameter?: string;
+  // The LOCAL PART of the SES sender the #204 link codes go out as, under `domainName`
+  // (default "hello" -> hello@<domain>). The domain identity is verified in-stack below;
+  // with no custom domain there is nothing to verify and no mail to send, so the sender
+  // has to be supplied whole via `mailFrom`.
+  mailSender?: string;
+  mailFrom?: string;
 }
 
 export class BackendStack extends Stack {
@@ -69,6 +76,31 @@ export class BackendStack extends Stack {
       props.turnstileSecretParameter ?? '/whippin/turnstile-secret';
     const ipHmacSecretParameter =
       props.ipHmacSecretParameter ?? '/whippin/ip-hmac-secret';
+
+    // ── SES: the address #204's link codes are sent FROM ─────────────────────
+    // Email is this game's account backup (#204), so the sender has to be an address the
+    // provider will accept: a DOMAIN identity with EasyDKIM, whose CNAMEs are published into
+    // the same hosted zone the API's records live in. `mailFromDomain` is deliberately NOT
+    // set — a custom MAIL FROM needs its own MX record and buys nothing while every message
+    // is a six-digit code to a person who just asked for one.
+    //
+    // **The SANDBOX is a manual step**, and the one that decides whether this works: a new
+    // account may only send to verified addresses until AWS lifts it, so a fresh deployment
+    // sends codes into a void for every address but the operator's own. The request is made
+    // by hand in the SES console (`aws sesv2 put-account-details`), which is why it is
+    // written down here rather than automated.
+    //
+    // DKIM/SPF/DMARC: EasyDKIM below publishes the three DKIM CNAMEs; SPF and DMARC are TXT
+    // records on the apex and belong to whoever owns the zone's mail policy, so they are a
+    // documented operator step too rather than records this stack would silently overwrite.
+    const mailSender = props.mailSender ?? 'hello';
+    const mailFrom =
+      props.mailFrom ?? (props.domainName ? `${mailSender}@${props.domainName}` : undefined);
+    if (!mailFrom) {
+      throw new Error(
+        'BackendStack needs a sender for #204 link codes: pass `mailFrom`, or `domainName` to derive one.',
+      );
+    }
 
     // ── S3: the private puzzle bucket ─────────────────────────────────────────
     // Holds the `<YYYY-MM-DD>.<lang>.json` objects keyed by backend/src/layout.ts
@@ -172,6 +204,8 @@ export class BackendStack extends Stack {
         TURNSTILE_SECRET_PARAMETER: turnstileSecretParameter,
         IP_HMAC_SECRET_PARAMETER: ipHmacSecretParameter,
         ALLOWED_ORIGIN: allowedOrigin,
+        // The verified sender #204's link codes go out as.
+        MAIL_FROM: mailFrom,
         // Canonical apex for the share card's absolute URLs (#8); omitted (request-origin
         // fallback) when there is no custom domain.
         ...(props.siteOrigin ? { SITE_ORIGIN: props.siteOrigin } : {}),
@@ -232,6 +266,19 @@ export class BackendStack extends Stack {
         resourceName: name.replace(/^\/+/, ''),
         arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
       });
+    // #204's link codes. Scoped to the ONE verified identity this stack owns and, through
+    // `ses:FromAddress`, to the ONE address it sends as: a leaked role may not turn this
+    // account's reputation into somebody else's mail.
+    fn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['ses:SendEmail'],
+        resources: [
+          this.formatArn({ service: 'ses', resource: 'identity', resourceName: props.domainName ?? '*' }),
+          this.formatArn({ service: 'ses', resource: 'configuration-set', resourceName: '*' }),
+        ],
+        conditions: { StringEquals: { 'ses:FromAddress': mailFrom } },
+      }),
+    );
     fn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ['ssm:GetParameters'],
@@ -260,6 +307,14 @@ export class BackendStack extends Stack {
       apiCertificate = new acm.Certificate(this, 'ApiCert', {
         domainName: apiDomain,
         validation: acm.CertificateValidation.fromDns(zone),
+      });
+      // The DOMAIN identity #204's codes are sent from, with EasyDKIM: passing the hosted
+      // zone is what publishes the three DKIM CNAMEs into it, so the records and the
+      // identity can never disagree about which key is live. Verification then completes on
+      // its own — where an EMAIL identity would need a human to click a link in an inbox
+      // nobody owns yet.
+      new ses.EmailIdentity(this, 'MailIdentity', {
+        identity: ses.Identity.publicHostedZone(zone as route53.IPublicHostedZone),
       });
     }
 
@@ -437,6 +492,17 @@ export class BackendStack extends Stack {
       [],
     );
 
+    // `/link` (#204) reads NO query at all — the device token is the auth and it travels in
+    // the body, exactly like `/friends` and `/devices`. Same empty-allow-list rule: the day
+    // it reads one, it has to be named here or CloudFront will strip it before the handler
+    // sees it.
+    const linkOriginRequestPolicy = liveOriginRequestPolicy(
+      'LinkOriginRequestPolicy',
+      'WhippinAccountLinkOrigin',
+      'Account link: no query strings, Lambda-URL-safe headers outside cache.',
+      [],
+    );
+
     // `/history` (#211) reads THREE — `lang`/`mode` name which game, and `month` the
     // calendar page. NOT `date`: this read is addressed by a MONTH, which is exactly the
     // sort-key prefix a player's calendar is one Query over. The device token travels in the
@@ -546,6 +612,12 @@ export class BackendStack extends Stack {
         'devices*': liveBehavior(devicesOriginRequestPolicy, {
           functionAssociations: [viewerIpAssociation],
         }),
+        // Sending a #204 link code is Turnstile-gated AND metered per address, so this
+        // route needs a trusted client address exactly as the round start does — the fourth
+        // behavior wearing the viewer-request function.
+        'link*': liveBehavior(linkOriginRequestPolicy, {
+          functionAssociations: [viewerIpAssociation],
+        }),
       },
     });
 
@@ -589,7 +661,7 @@ export class BackendStack extends Stack {
         {
           id: 'AwsSolutions-IAM5',
           reason:
-            'S3 read access is scoped to the puzzle bucket/object keys. DynamoDB is scoped to this table and its indexes — the grant\'s <table>/index/* resource covers exactly the one DeviceByAccount GSI (#216) — with only Query/GetItem/PutItem/UpdateItem/DeleteItem (DeleteItem serves symmetric friend removal and device revocation), and SSM GetParameters to the two exact secret-parameter ARNs; no parameter wildcard exists.',
+            'S3 read access is scoped to the puzzle bucket/object keys. DynamoDB is scoped to this table and its indexes — the grant\'s <table>/index/* resource covers exactly the one DeviceByAccount GSI (#216) — with only Query/GetItem/PutItem/UpdateItem/DeleteItem (DeleteItem serves symmetric friend removal, device revocation and #204\'s account erase), and SSM GetParameters to the two exact secret-parameter ARNs; no parameter wildcard exists. ses:SendEmail names this stack\'s own domain identity and is additionally conditioned on the single ses:FromAddress it may send as; the configuration-set wildcard is required by SES on every SendEmail call and grants nothing on its own.',
         },
         {
           id: 'AwsSolutions-L1',
