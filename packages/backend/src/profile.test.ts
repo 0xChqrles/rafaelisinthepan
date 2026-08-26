@@ -109,6 +109,50 @@ describe('profile route (#188)', () => {
     });
   });
 
+  it('creates the locally-decided profile ONLY while the row is absent', async () => {
+    const { handler, me } = await makeHandler();
+    const firstAvatar = blankAvatar(0);
+    const created = await handler(
+      post({
+        token: me.token,
+        name: 'LocalFace',
+        avatar: firstAvatar,
+        createOnly: true,
+      }),
+    );
+    expect(created.statusCode).toBe(200);
+
+    // The profile editor or another device won before a background deployment reached
+    // its write. The create-only retry must report that outcome without replacing a byte.
+    const raced = await handler(
+      post({
+        token: me.token,
+        name: 'Background',
+        avatar: blankAvatar(3),
+        createOnly: true,
+      }),
+    );
+    expect(raced.statusCode).toBe(409);
+    expect(JSON.parse(raced.body).error).toBe('profile_exists');
+    const read = await handler(get(me.accountId));
+    expect(JSON.parse(read.body)).toEqual({
+      publicId: me.accountId,
+      name: 'LocalFace',
+      avatar: firstAvatar,
+    });
+  });
+
+  it('refuses a malformed create-only instruction instead of silently upserting', async () => {
+    const { handler, me } = await makeHandler();
+    for (const createOnly of [false, 'yes', 1, null]) {
+      const response = await handler(
+        post({ token: me.token, name: 'x', avatar: blankAvatar(), createOnly }),
+      );
+      expect(response.statusCode).toBe(400);
+      expect(JSON.parse(response.body).error).toBe('bad_request');
+    }
+  });
+
   it('two devices on two accounts are two identities', async () => {
     const { handler, me, other } = await makeHandler();
     await handler(post({ token: me.token, name: 'One', avatar: blankAvatar() }));

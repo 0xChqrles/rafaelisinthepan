@@ -211,6 +211,7 @@ describe('board route (#190)', () => {
         if (publicId === me) throw new Error('throttled');
         return { publicId, name: 'Zoe', avatar: '' };
       },
+      create: async () => false,
       upsert: async () => {},
     };
     const handler = createHandler({

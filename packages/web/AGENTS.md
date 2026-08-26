@@ -19,7 +19,8 @@
       state/identityScope.ts  what an identity OWNS, cleared when it changes (wired in main)
       state/localIdentityDeploy.ts  the username decided LOCALLY, deployed with the account
                               (2026-08-26): acquiring an identity stores the seed's assigned
-                              face as the profile (404-only; the editor's SAVE exempt)
+                              face through an atomic create-only profile write (the editor's
+                              SAVE exempt)
       state/gamePersistence.ts  the atomic IndexedDB boundary for cross-tab game-state writes
       state/signedOutVerdict.ts  the ONE spelling of the sign-out resolution every private
                               route client shares (401 + `unknown_device` code)
@@ -508,13 +509,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
     answers 404 (even an empty-looking stored row is somebody's deliberate avatar-only
     save), POSTs the seed's assigned face — `anonName(localSeed)` + `defaultAvatar(localSeed)`
     via `ensureLocalSeed`, so the exact values the strip showed while tokenless become
-    the stored row. The read-before-write keeps one uniform rule across minted AND
-    adopted acquisitions (a recovered pending token's account may be empty too), and the
-    write is best-effort: bounded retries (2), then silent fallback to the
-    derived-from-accountId face, never surfaced. It listens to the same identity-change
-    signal identityScope does, wired beside it in `main.tsx` — so a future deploy trigger
-    cannot forget it. The ONE exemption is the profile editor's SAVE: its own deploy
-    carries the player's typed fields, so it wraps its bootstrap in
+    the stored row. That POST carries `createOnly: true`: the backend's store condition,
+    not the preceding GET, atomically prevents the background deploy from replacing a row
+    the editor or another device created in between; 409 `profile_exists` is the settled
+    lost-race answer. The read keeps one uniform rule across minted AND adopted
+    acquisitions (a recovered pending token's account may be empty too), and other write
+    failures are best-effort: bounded retries (2), then silent fallback to the
+    derived-from-accountId face, never surfaced. A 401 `unknown_device` instead goes
+    through the shared signed-out-verdict helper and is not retried. It listens to the
+    same identity-change signal identityScope does, wired beside it in `main.tsx` — so a
+    future deploy trigger cannot forget it. The ONE exemption is the profile editor's
+    SAVE: its own deploy carries the player's typed fields, so it wraps its bootstrap in
     `withoutLocalIdentityDeploy` to keep the placeholder from racing (and possibly
     overwriting) the save. Contract-tested (`localIdentityDeploy.test.ts`).
   - **Persisted game state is TRANSACTIONAL across tabs** (PR-219 final review, replacing

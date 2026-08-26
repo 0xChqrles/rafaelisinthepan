@@ -1,10 +1,10 @@
 // CONTRACT (user-decided 2026-08-26): the username is decided LOCALLY and DEPLOYED with
 // the account. What is pinned here is the rule, not the plumbing: acquiring an identity
 // stores the placeholder this device has been showing (the local seed's assigned name and
-// mark) as the account's profile — but ONLY into an account that holds nothing (a 404;
-// even an empty stored row is somebody's deliberate save), never inside the profile
-// editor's own SAVE deploy, and a failure that will not land gives up after bounded
-// retries instead of surfacing.
+// mark) as the account's profile — but ONLY into an account that holds nothing (the POST
+// is an atomic create; even an empty stored row is somebody's deliberate save), never
+// inside the profile editor's own SAVE deploy. An unknown-device answer signs out through
+// the shared verdict; another failure that will not land gives up after bounded retries.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { anonName, defaultAvatar } from '@whippin/shared';
@@ -23,6 +23,7 @@ import {
   deviceIdentity,
   ensureDeviceIdentity,
   resetDeviceIdentity,
+  useIdentityStore,
 } from '../identity';
 import {
   installLocalIdentityDeploy,
@@ -129,6 +130,7 @@ describe('deploying the locally-decided username (user-decided 2026-08-26)', () 
         token: identity.token,
         name: anonName(SEED),
         avatar: defaultAvatar(SEED),
+        createOnly: true,
       });
     } finally {
       remove();
@@ -157,6 +159,33 @@ describe('deploying the locally-decided username (user-decided 2026-08-26)', () 
       expect(deviceIdentity()).not.toBeNull();
       expect(fetchMock).not.toHaveBeenCalled();
       expect(save).not.toHaveBeenCalled();
+    } finally {
+      remove();
+    }
+  });
+
+  it('treats a profile that won between GET and POST as settled', async () => {
+    save.mockResolvedValue(jsonResponse(409, { error: 'profile_exists' }));
+    const remove = installLocalIdentityDeploy();
+    try {
+      await ensureDeviceIdentity();
+      await settle();
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(save).toHaveBeenCalledOnce();
+    } finally {
+      remove();
+    }
+  });
+
+  it('adopts the server\u2019s unknown-device verdict instead of retrying', async () => {
+    save.mockResolvedValue(jsonResponse(401, { error: 'unknown_device' }));
+    const remove = installLocalIdentityDeploy();
+    try {
+      await ensureDeviceIdentity();
+      await settle();
+      expect(save).toHaveBeenCalledOnce();
+      expect(deviceIdentity()).toBeNull();
+      expect(useIdentityStore.getState().signedOut).toBe(true);
     } finally {
       remove();
     }

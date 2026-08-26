@@ -1113,11 +1113,16 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     2026-08-26, superseding the display-only-in-both-directions half of #188's
     assigned-name rule of 2026-08-20):** when the device ACQUIRES an account, the client
     stores the placeholder it has been showing — the seed's assigned name + mark — as the
-    account's profile, so the face no longer changes at deployment. Only a 404-empty row
-    is deployed into (even an empty-looking stored row is somebody's deliberate
-    avatar-only save), the profile editor's own SAVE deploy is exempt (it carries the
-    player's typed fields and must not be raced), and a failed deployment retries bounded,
-    then falls back silently to today's behavior. What remains DISPLAY-only is the
+    account's profile, so the face no longer changes at deployment. Only an account with
+    NO stored row is deployed into (even an empty-looking stored row is somebody's
+    deliberate avatar-only save): the GET's 404 avoids an unnecessary write, while the
+    POST's `createOnly: true` and the store's conditional create make the rule atomic if
+    the profile editor or another device creates the row between those calls; that lost
+    race answers 409 `profile_exists` and is settled, never retried. The profile editor's
+    own SAVE deploy is exempt (it carries the player's typed fields and must not be
+    raced), an `unknown_device` refusal adopts the shared signed-out verdict, and any
+    other failed deployment retries bounded, then falls back silently to today's
+    behavior. What remains DISPLAY-only is the
     fallback derived from the SERVER-assigned id (`assigned.ts`), worn by any account with
     no stored row. Implementation: `web/src/state/localIdentityDeploy.ts`, wired beside
     the identity scope.
@@ -1458,10 +1463,12 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
 - **Non-unique display name + a 10×10 palette pixel avatar, hung off #187's identity.**
   The ONE handler serves `GET /profile?id=<publicId>` (the public row: name + avatar —
   what a board renders, and what a freshly linked device loads; 404 = never customized)
-  and `POST /profile` with `{ token, name, avatar }` (the pre-#216 body carried the shared
-  player credential instead) — an
-  authenticated upsert keyed by the ACCOUNT the caller's device token resolves to, a
-  separate write path from scores. The `/scores` behavior rules
+  and `POST /profile` with `{ token, name, avatar, createOnly? }` (the pre-#216 body
+  carried the shared player credential instead) — an authenticated write keyed by the
+  ACCOUNT the caller's device token resolves to, a separate write path from scores.
+  Omitted `createOnly` is the profile editor's ordinary upsert; its only valid present
+  value is `true`, which atomically creates an absent row and answers 409
+  `profile_exists` without mutation when one already exists. The `/scores` behavior rules
   re-apply: zero-TTL CloudFront behavior, query allowList = exactly the ONE parameter the
   handler reads (`id`), `x-amz-content-sha256` over the exact body bytes on a production
   POST. No Turnstile and no IP dedup here — the device token is the auth, and an overwritten
@@ -1712,9 +1719,13 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   capped player's row printing the `∞` their own result already prints, the unranked
   solver's printing a real score with no rank — which is product design of its own and is
   deliberately NOT in #206.
-- **The caller's own mid-round row IS shown** — unlike `waiting`, which never carries
-  them: a live row with numbers is where they stand among friends mid-day, where a
-  bare "not played yet" row under their own identity strip is noise.
+- **The caller's own mid-round row is shown on a REAL friends board, but never defeats
+  the NO FRIENDS ghost by itself.** The server includes the caller in `playing`, so once
+  at least one friend row makes the board non-empty their live numbers show where they
+  stand among friends mid-day. The web deliberately computes friends-board emptiness
+  without the caller's own ranked OR playing row: a self-only board still means no edges
+  and stays the ghost under the identity strip. `waiting` never carries the caller; a
+  bare "not played yet" row there would still be noise.
 - **The order is a shared pure rule, and it is an ORDER, never a rank claim**
   (`orderPlaying`, contract-tested beside the #190 rules): progress descending, tries
   ascending, publicId last — a mid-round position moves with every guess, so the rows

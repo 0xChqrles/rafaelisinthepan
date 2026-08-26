@@ -207,9 +207,10 @@ export async function handleBoard(
   // holds the exact row keys, so BOTH stores fetch THOSE (batch-shaped, constant in the
   // day's population) rather than paging anything. Recorded scores make the RANKED
   // rows. A friend with a stored round but no score is IN PROGRESS (#206), with the
-  // exact try count and percentage — the caller included: their own live row is the one
-  // place they see where they stand among friends mid-day. A FRIEND with neither is
-  // still named, in `waiting` — an edge is a person the caller chose, so the board says
+  // exact try count and percentage — the caller included: on a board with at least one
+  // friend, their own live row shows where they stand among friends mid-day (the web
+  // deliberately keeps a self-only board as its NO FRIENDS ghost). A FRIEND with neither
+  // is still named, in `waiting` — an edge is a person the caller chose, so the board says
   // "not played yet" rather than silently dropping them (user-decided 2026-08-20); the
   // caller's own unplayed row stays absent (the screen's identity strip already shows
   // them). Bounded by FRIENDS_MAX, so no cut.

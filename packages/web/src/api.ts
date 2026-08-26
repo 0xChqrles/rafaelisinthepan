@@ -541,7 +541,7 @@ export function profileUrl(publicId?: string, base: string = apiBase()): string 
 
 export async function postProfileBody(
   url: string,
-  body: { token: string; name: string; avatar: string },
+  body: { token: string; name: string; avatar: string; createOnly?: true },
 ): Promise<Response> {
   return postSignedJson(url, body);
 }

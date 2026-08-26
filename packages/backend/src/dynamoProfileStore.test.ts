@@ -61,4 +61,38 @@ describe('dynamoProfileStore (#188)', () => {
     // The profile row is its own partition: a write here can never touch a score row.
     expect(command.input.UpdateExpression).toContain('if_not_exists(#createdAt, :now)');
   });
+
+  it('creates the first profile with an atomic item-absence condition', async () => {
+    const send = vi.fn(async (_command: unknown) => ({}));
+    const store = dynamoProfileStore({ send } as unknown as DynamoDBClient, 'scores');
+    await expect(
+      store.create({
+        publicId: PUBLIC_ID,
+        name: 'LocalFace',
+        avatar: 'AAAAAAAAAAAAAAAAAAA',
+        now: '2026-08-26T09:00:00.000Z',
+      }),
+    ).resolves.toBe(true);
+
+    const command = send.mock.calls[0][0] as UpdateItemCommand;
+    expect(command.input.ConditionExpression).toBe('attribute_not_exists(#pk)');
+    expect(command.input.ExpressionAttributeNames?.['#pk']).toBe('pk');
+  });
+
+  it('reports a lost create race without replacing the existing profile', async () => {
+    const conflict = Object.assign(new Error('exists'), {
+      name: 'ConditionalCheckFailedException',
+    });
+    const send = vi.fn(async (_command: unknown) => Promise.reject(conflict));
+    const store = dynamoProfileStore({ send } as unknown as DynamoDBClient, 'scores');
+
+    await expect(
+      store.create({
+        publicId: PUBLIC_ID,
+        name: 'Background',
+        avatar: 'AAAAAAAAAAAAAAAAAAA',
+        now: '2026-08-26T09:00:00.000Z',
+      }),
+    ).resolves.toBe(false);
+  });
 });

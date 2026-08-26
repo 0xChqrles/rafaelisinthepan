@@ -8,9 +8,10 @@
 // local value could match it, and every new player watched their own name change once.
 //
 // The fix keeps the decision where it was made: when THIS device acquires an identity,
-// the placeholder it has been showing is stored as the account's real profile (unless
-// something is already stored — a 404 alone means "never customized", and even an empty
-// row is somebody's deliberate avatar-only save). From then on every surface reads the
+// the placeholder it has been showing is stored as the account's real profile unless
+// something is already stored (even an empty row is somebody's deliberate avatar-only
+// save). The read's 404 avoids an unnecessary write; the POST's atomic create is the
+// authority if another writer lands between them. From then on every surface reads the
 // same stored values: your own strip, your friends' boards, the invite card.
 //
 // It listens to the identity lifecycle here — the same one readable block identityScope
@@ -28,6 +29,7 @@ import {
 } from '../identity';
 import { postProfileBody, profileUrl } from '../api';
 import { useGameStore } from './gameStore';
+import { adoptSignedOutVerdict } from './signedOutVerdict';
 
 // A failed deployment is retried BOUNDED and then abandoned, never surfaced: like the
 // streak credit, it is a side effect of an answer the player already saw. If it never
@@ -87,10 +89,22 @@ async function run(identity: DeviceIdentity): Promise<void> {
         token: identity.token,
         name: anonName(seed),
         avatar: defaultAvatar(seed),
+        // The GET above avoids an unnecessary write, but it cannot provide the invariant:
+        // the editor or another device may create the row before this POST lands. The
+        // backend's conditional write is the authority that makes this background task
+        // incapable of replacing a deliberate profile.
+        createOnly: true,
       });
       if (stale()) return;
       if (response.ok) return;
+      // Every private caller adopts the server's authoritative revocation verdict through
+      // ONE helper. In particular, do not retry a token the server has already rejected and
+      // leave the rest of the app falsely believing it is signed in.
+      if (await adoptSignedOutVerdict(response, epoch)) return;
       const refusal = (await response.json().catch(() => null)) as { error?: string } | null;
+      // A deliberate profile won the create race. That is the desired end state: leave it
+      // untouched and finish without retrying the same impossible conditional write.
+      if (response.status === 409 && refusal?.error === 'profile_exists') return;
       // Moderation refused the generated values: retrying cannot help (the editor's rule).
       if (
         response.status === 400 &&

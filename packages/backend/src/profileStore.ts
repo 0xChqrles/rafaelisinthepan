@@ -1,7 +1,8 @@
-// The #188 player profile row: ONE item per publicId — name + encoded avatar — upserted
-// by the authenticated profile write and read when a board resolves rows to display
-// (#190). A separate write path from scores: customizing a profile never touches a
-// score row.
+// The #188 player profile row: ONE item per publicId — name + encoded avatar — written
+// by the authenticated profile route and read when a board resolves rows to display
+// (#190). Ordinary editor writes upsert; the locally-decided background identity uses an
+// atomic create. A separate write path from scores: customizing a profile never touches
+// a score row.
 
 export interface ProfileRecord {
   publicId: string;
@@ -16,6 +17,10 @@ export interface ProfileUpsert extends ProfileRecord {
 
 export interface ProfileStore {
   get(publicId: string): Promise<ProfileRecord | null>;
+  // Install the first profile only. False means another writer already created the row;
+  // the existing profile is left byte-for-byte untouched. The local-identity deployment
+  // uses this rather than a read-then-upsert race with the profile editor or another device.
+  create(input: ProfileUpsert): Promise<boolean>;
   upsert(input: ProfileUpsert): Promise<void>;
 }
 

@@ -146,8 +146,11 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
 
 - **Player profile (#188):** the ONE handler also serves `GET /profile?id=<publicId>`
   (public row: `{ publicId, name, avatar }`; 400 malformed id, 404 never customized) and
-  `POST /profile` `{ token, name, avatar }` — the authenticated upsert keyed by the ACCOUNT
-  the caller's device token resolves to (#216), a separate write path from scores. Every
+  `POST /profile` `{ token, name, avatar, createOnly? }` — the authenticated write keyed
+  by the ACCOUNT the caller's device token resolves to (#216), a separate write path from
+  scores. Omitted `createOnly` upserts; the only valid present value is `true`, which uses
+  the store's atomic item-absence condition and answers 409 `profile_exists` without
+  mutation when another writer already owns the row. Every
   response is `no-store`. The write validates the name against the SHARED charset rule
   (`shared/src/name.ts` `isValidName` — alphanumerics and underscores, ≤16, empty
   allowed; user-decided 2026-08-19, replacing the local trim + code-point cap +
