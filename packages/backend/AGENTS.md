@@ -555,7 +555,10 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   `ProfileLookup` (`{live, profile}`) read as ONE BatchGetItem of the profile row and the
   ACCOUNT row beside it — same partition, same cost — which is what lets `/profile`, `/board`
   and the `/i/` preview tell "never customized" from "gone". `DeviceStore.accountExists` is
-  what `/friends {add}` asks before writing an edge. New env: `MAIL_FROM` (required, like the
+  what `/friends {add}` asks before writing an edge. The `{token}` READ also answers the
+  account's own **`createdAt`** (2026-08-26, with the UX rework): it costs nothing — the row
+  was read to authenticate the call — and it is the one true thing the account screen can say
+  about an identity whose name and mark it already draws. New env: `MAIL_FROM` (required, like the
   table name — a link flow whose mail cannot be sent strands every player who tries it). New
   IAM: `ses:SendEmail`, scoped to the stack's own domain identity and conditioned on the one
   `ses:FromAddress`. Local serve swaps in `memoryLinkStore` + `consoleMailer`, which PRINTS

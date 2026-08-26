@@ -580,6 +580,41 @@ export async function postLinkBody(
   return postSignedJson(url, body, AbortSignal.timeout(LINK_TIMEOUT_MS));
 }
 
+// What the `{token}` READ answers: what this account IS, from the one row that authenticated
+// the call. `email` is null until the player saves it — that absence is the ACCOUNT SCREEN's
+// whole state, so it is a value rather than a missing field.
+export interface AccountSummary {
+  accountId: string;
+  deviceId: string;
+  email: string | null;
+  createdAt: string;
+  // A friend merge an interrupted link left queued. The client asks again until it is not.
+  mergePending: boolean;
+}
+
+export function parseAccountSummary(data: unknown): AccountSummary {
+  if (!isRecord(data)) throw new Error('malformed account: not an object');
+  const { accountId, deviceId, email, createdAt } = data;
+  if (typeof accountId !== 'string' || !PUBLIC_ID_PATTERN.test(accountId)) {
+    throw new Error('malformed account: bad "accountId"');
+  }
+  if (typeof deviceId !== 'string' || !DEVICE_ID_PATTERN.test(deviceId)) {
+    throw new Error('malformed account: bad "deviceId"');
+  }
+  return {
+    accountId,
+    deviceId,
+    // A stored address is a string; anything else reads as "not saved yet", which is the
+    // honest fallback — the screen then offers to save one.
+    email: typeof email === 'string' && email.length > 0 ? email : null,
+    // Checked as a string but NOT as a parseable instant: the screen already renders an
+    // unreadable date as no date (the device list's rule), and refusing the whole summary
+    // over a label would hide the email state this screen exists for.
+    createdAt: typeof createdAt === 'string' ? createdAt : '',
+    mergePending: data.mergePending === true,
+  };
+}
+
 // What a VERIFY that succeeded did. `bound` saved the account this device already held;
 // `adopted` moved this device onto the account behind the address — which is what a second
 // device, and a reconnect after a sign-out, both are; `already_bound` is the no-op.

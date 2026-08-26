@@ -4,6 +4,8 @@ import LoadingWave from './components/LoadingWave';
 import usePuzzle from './hooks/usePuzzle';
 import useWordPuzzle from './hooks/useWordPuzzle';
 import LanguageSelect from './screens/LanguageSelect';
+import Account from './screens/Account';
+import AccountEmail from './screens/AccountEmail';
 import Profile from './screens/Profile';
 import FriendInvite from './screens/FriendInvite';
 import Archive from './screens/Archive';
@@ -109,6 +111,10 @@ export default function App() {
         {/* The living backdrop — every screen (game, archive, select, tutorial) sits on it. */}
         {signedOut && <SignedOut lang={homeLang} />}
         {!signedOut && route.view === 'select' && <LanguageSelect />}
+        {/* The ACCOUNT area (#204's UX rework): three routes, three questions — the
+            account itself, the editor, and the email flow. One purpose per screen. */}
+        {!signedOut && route.view === 'account' && <Account />}
+        {!signedOut && route.view === 'accountEmail' && <AccountEmail />}
         {!signedOut && route.view === 'profile' && <Profile />}
         {/* The invite link (#189) is a beat, not a screen: it lands the mutual edge and
             hands over to the home redirect above. */}

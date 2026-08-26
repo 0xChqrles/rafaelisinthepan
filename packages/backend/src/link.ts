@@ -144,6 +144,10 @@ export async function handleLink(
         accountId: account.accountId,
         deviceId: auth.value.device.deviceId,
         email: account.email ?? null,
+        // WHEN this account began. It costs nothing — the row was read to authenticate the
+        // call — and it is the one true thing the account screen can say about an identity
+        // whose name and mark it already draws.
+        createdAt: account.createdAt,
         mergePending: !merged,
       },
       responseHeaders,

@@ -25,9 +25,17 @@
       state/signedOutVerdict.ts  the ONE spelling of the sign-out resolution every private
                               route client shares (401 + `unknown_device` code)
       screens/SignedOut.tsx   the `unknown_device` screen: what is left behind, RECONNECT (#204)
-                              into the link flow, and PLAY (start over on a new account)
-      components/AccountLink.tsx  #204's email link flow: address -> code -> bind/adopt, with
-                              the erase confirmation, on the profile editor
+                              onto the email step, and PLAY (start over on a new account)
+      screens/Account.tsx     `/account` (#204): who this account is, whether it is SAVED,
+                              and which devices hold it — the area's one door
+      screens/AccountEmail.tsx  `/account/email`: address -> code -> bind/adopt, one purpose
+                              per step, with the erase confirmation and the face-led endings
+      components/CodeInput.tsx  the six-digit prompt: six drawn cells over ONE real input,
+                              auto-verifying on the sixth digit
+      components/AccountFace.tsx  the ONE read of "who an account is" (mark + name), shared
+                              by the account screen, the flow's ending and the sign-out screen
+      state/account.ts        what `/account` shows — the `{token}` summary and the
+                              friend-merge drain behind it
       components/DeviceList.tsx  the account's devices + SIGN OUT rows (#216), on the profile editor
       components/ErrorSheet.tsx  the app's error surface: a popup on desktop, a bottom sheet on a phone
       state/roundSync.ts      the #201 sync engine, reworked by #214: coalesced prefix writes,
@@ -576,25 +584,48 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `api.postSignedJson` still signs each body for the OAC contract, so an insecure context
     cannot bootstrap. That boundary is older than #216 and unchanged by it.
 
-- **Email account linking (#204).** The product contract — the one flow and its three
-  endings, when the account being left is deleted, the erase confirmation, the transfers,
-  what a deleted account stops being — lives in the root `AGENTS.md`. What is this package's:
-  - **`components/AccountLink.tsx` is the whole client half**, mounted on the PROFILE editor
-    above `DeviceList`: the two blocks answer two halves of one question ("can I get this
-    back?" before "which devices hold it?"), and that screen already IS the identity screen.
-    One path, four phases — address → code → (confirm) → done — and the ENDING's copy is
-    chosen by the OUTCOME the server reports, never by anything the screen guessed first.
-  - **Its SEND CODE is a DEPLOY BUTTON**, the sixth (#216's five plus this one), and it has to
+- **Email account linking (#204), reworked to ONE PURPOSE PER SCREEN on 2026-08-26.** The
+  product contract — the one flow and its three endings, the three screens and why, the code
+  prompt's shape, the copy rule, when the account being left is deleted, the transfers —
+  lives in the root `AGENTS.md`. What is this package's:
+  - **THREE routes, three screens.** `screens/Account.tsx` (`/account`) is the area's one
+    door: the identity summary with EDIT out to the editor, the email state, and
+    `DeviceList` moved in from the editor. `screens/AccountEmail.tsx` (`/account/email`) is
+    the flow, one purpose per step. `screens/Profile.tsx` is the editor ALONE — its email
+    section and device list are gone, and its CLOSE now goes UP to `/account` rather than
+    guessing a board from `profileReturn` (the account screen is its only door, so there is
+    nothing left to guess).
+  - **`components/CodeInput.tsx` is the prompt**, and its own header holds the reasoning:
+    ONE real input under six drawn cells (paste, `one-time-code` autofill and screen readers
+    all need a single field), `onComplete` carrying the VALUE because state has not flushed
+    on the sixth keystroke, and the invalid-word shake for a refusal. **Its CSS class is worn
+    BESIDE `.account-screen`** — `.link-step` therefore sets the GAP alone, since a `padding`
+    there wins the cascade and silently undoes the screen's header clearance (found in the
+    browser, on the first run).
+  - **`components/AccountFace.tsx` is the ONE read of who an account is.** Three surfaces
+    draw a mark and a name — the account summary, the flow's ending, the sign-out screen —
+    and each used to fetch it themselves. It resolves to NOTHING until settled and is TAGGED
+    with the account it is about, the leaderboard strip's own rule: a component that is not
+    remounted when its account changes would otherwise render the previous person's face.
+  - **`state/account.ts` holds the summary AND the merge drain.** Both screens need the same
+    one fact (is this saved, and to what), so `/account` can state it without mounting the
+    flow. The `{token}` read runs only with an account (the #216 no-private-fetch rule) and
+    RETRIES the drain, bounded and backed off — those edges are consented relationships, so
+    the job may not simply be abandoned, and it is durable either way. It is ACCOUNT-owned,
+    so `identityScope` resets it.
+  - **CONTINUE is a DEPLOY BUTTON**, the sixth (#216's five plus this one), and it has to
     be: an email link needs an account to bind, and "this device is empty" is exactly the
     reconnect case. It wears the shape that rule defines — one tap chaining the bootstrap,
     a loading state on the button, failures on the `ErrorSheet` — and TWO Turnstile tokens are
     prefetched while the address is typed, since a tokenless device spends one on the
     bootstrap and one on the send. Every other leg uses `currentRequestIdentity` and stands
     down when there is none.
-  - **The `{token}` READ is also the merge DRAIN.** It runs when an account exists (never
-    tokenless — the #216 no-private-fetch rule) and RETRIES, bounded and backed off, while the
-    server still reports an unfinished friend merge: those edges are consented relationships,
-    so the job may not simply be abandoned, and it is durable either way.
+  - **The account screens follow `.profile-screen`'s geometry, verbatim**: `.app` centres
+    the column and the header floats over it, so the clearance is a LITERAL `48px` — never a
+    `calc()` naming `--hud-height`, which is scoped to `.topbar` and voids the whole
+    declaration out here (the trap `.word-input`'s zeroed padding already records; it bit
+    again on the first run of this rework). Never `100dvh` either, for the reason
+    `.profile-screen` states.
   - **`adoptLinkedAccount` (identity.ts) is how an ADOPT lands**: the TOKEN is unchanged — the
     server moves the one device item rather than minting a second — so what changes is the
     account it names, and `identityScope` clears every account-keyed cache on that transition,

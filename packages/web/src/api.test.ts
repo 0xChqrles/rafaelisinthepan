@@ -16,6 +16,7 @@ import {
   puzzleOutcome,
   parseFriends,
   parsePuzzle,
+  parseAccountSummary,
   parseProfile,
   parseRound,
   parseScoreHistogram,
@@ -651,3 +652,62 @@ describe('roundUrl + parseRound (#201/#202)', () => {
     expect(() => parseRound({ ...valid(), submittedAt: 'whenever' })).toThrow(/submittedAt/);
   });
 });
+
+// CONTRACT (#204): the `{token}` read is what the ACCOUNT SCREEN is. `email` is the whole
+// state that screen branches on — offer to save, or show the address — so an absent or
+// malformed one has to read as "not saved yet" rather than failing the summary: the honest
+// fallback is the screen that offers to save one.
+describe('parseAccountSummary (#204)', () => {
+  const ID = 'lfd5pqz5pa7zjm5u';
+  const DEVICE = 'nq2yv6cme4jkbhtx';
+
+  it('reads a saved account', () => {
+    expect(
+      parseAccountSummary({
+        accountId: ID,
+        deviceId: DEVICE,
+        email: 'zoe@example.com',
+        createdAt: '2026-08-12T10:00:00.000Z',
+        mergePending: false,
+      }),
+    ).toEqual({
+      accountId: ID,
+      deviceId: DEVICE,
+      email: 'zoe@example.com',
+      createdAt: '2026-08-12T10:00:00.000Z',
+      mergePending: false,
+    });
+  });
+
+  it('reads an UNSAVED account as a null address, never as a failure', () => {
+    for (const email of [null, undefined, '', 42]) {
+      const summary = parseAccountSummary({
+        accountId: ID,
+        deviceId: DEVICE,
+        email,
+        createdAt: '2026-08-12T10:00:00.000Z',
+      });
+      expect(summary.email, String(email)).toBeNull();
+    }
+  });
+
+  it('tolerates an unreadable createdAt — a LABEL may not fail the block it decorates', () => {
+    const summary = parseAccountSummary({ accountId: ID, deviceId: DEVICE, email: null });
+    expect(summary.createdAt).toBe('');
+    // The screen renders no "since" line for it, exactly as the device list renders no date.
+    expect(Number.isFinite(Date.parse(summary.createdAt))).toBe(false);
+  });
+
+  it('refuses a body whose IDS are wrong — an account screen may not name nobody', () => {
+    expect(() => parseAccountSummary({ accountId: 'nope', deviceId: DEVICE })).toThrow(/accountId/);
+    expect(() => parseAccountSummary({ accountId: ID, deviceId: 'nope' })).toThrow(/deviceId/);
+    expect(() => parseAccountSummary(null)).toThrow(/not an object/);
+  });
+
+  it('carries the merge flag, which is what the client retries on', () => {
+    const base = { accountId: ID, deviceId: DEVICE, email: null, createdAt: '' };
+    expect(parseAccountSummary({ ...base, mergePending: true }).mergePending).toBe(true);
+    expect(parseAccountSummary(base).mergePending).toBe(false);
+  });
+});
+

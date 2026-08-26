@@ -6,6 +6,9 @@
 import { describe, it, expect } from 'vitest';
 import { inviteLandingPath } from '@whippin/shared';
 import {
+  ACCOUNT_EMAIL_PATH,
+  ACCOUNT_PATH,
+  PROFILE_PATH,
   isLang,
   pathForMode,
   pathForArchive,
@@ -228,5 +231,34 @@ describe('resolveHomeLang', () => {
     expect(resolveHomeLang(null, 'de-DE')).toBe('en');
     expect(resolveHomeLang(null, undefined)).toBe('en');
     expect(resolveHomeLang('de', 'de-DE')).toBe('en'); // invalid persisted -> ignored
+  });
+});
+
+// CONTRACT (#204's UX rework): the ACCOUNT AREA is three global routes, because it answers
+// three different questions and one screen may only answer one. They sit above /<lang> like
+// /select — an identity is not language-scoped — and the email step is one segment deeper
+// than the account itself, which is what makes RECONNECT able to land straight on it.
+describe('account routes (#204)', () => {
+  it('parses the account screen and its email step as distinct global routes', () => {
+    expect(parseRoute('/account')).toEqual({ view: 'account' });
+    expect(parseRoute('/account/email')).toEqual({ view: 'accountEmail' });
+    // The editor keeps its own route: it answers "how do others see me", which is neither.
+    expect(parseRoute('/profile')).toEqual({ view: 'profile' });
+  });
+
+  it('keeps the game routes\' tolerance for an unknown step', () => {
+    // The area's own entry, never a bounce home — the same treatment /<lang>/xyz gets.
+    expect(parseRoute('/account/nonsense')).toEqual({ view: 'account' });
+    expect(parseRoute('/account/')).toEqual({ view: 'account' });
+  });
+
+  it('is not language-scoped — a lang prefix is a GAME route, not an account one', () => {
+    expect(parseRoute('/fr/account')).toEqual({ view: 'game', lang: 'fr', mode: 'sentence' });
+  });
+
+  it('states its paths once, so every caller navigates to the same place', () => {
+    expect(parseRoute(ACCOUNT_PATH)).toEqual({ view: 'account' });
+    expect(parseRoute(ACCOUNT_EMAIL_PATH)).toEqual({ view: 'accountEmail' });
+    expect(parseRoute(PROFILE_PATH)).toEqual({ view: 'profile' });
   });
 });

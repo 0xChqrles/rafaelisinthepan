@@ -23,10 +23,8 @@ import { prefetchTurnstileTokens } from '../turnstile';
 import { withoutLocalIdentityDeploy } from '../state/localIdentityDeploy';
 import ErrorSheet from '../components/ErrorSheet';
 import { navigate } from '../routing';
-import { pathForBoard, resolveHomeLang } from '../langs';
+import { ACCOUNT_PATH, resolveHomeLang } from '../langs';
 import { t } from '../i18n';
-import AccountLink from '../components/AccountLink';
-import DeviceList from '../components/DeviceList';
 import Avatar from '../components/Avatar';
 import LoadError from '../components/LoadError';
 import LoadingWave from '../components/LoadingWave';
@@ -143,10 +141,6 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 
 export default function Profile() {
   const lastLang = useGameStore((s) => s.lastLang);
-  const lastMode = useGameStore((s) => s.lastMode);
-  // Where the board that opened this editor lives — see the close control below.
-  const profileReturn = useGameStore((s) => s.profileReturn);
-  const setProfileReturn = useGameStore((s) => s.setProfileReturn);
   // No puzzle to take a language from: same resolution as the `/` redirect.
   const lang = resolveHomeLang(lastLang, navigator.language);
 
@@ -510,20 +504,16 @@ export default function Profile() {
         lang={lang}
         left={<span className="topbar-title">{t(lang, 'profileTitle')}</span>}
         right={
-          // The way OUT (user feedback 2026-08-20 — the screen was unleavable): back
-          // to the leaderboard, this editor's wired entry point — and to the SAME one
-          // that opened it (review finding, 2026-08-20). `/profile` is a global route,
-          // so the board's (lang, mode) is not in the URL: the opener states it
-          // (`profileReturn`), and only an editor reached with nothing set — a deep
-          // link, a reload — falls back to guessing from the last loaded GAME.
+          // The way OUT: UP, to `/account` (#204's UX rework, 2026-08-26). This screen
+          // answers ONE question now — how others see me — and `/account` is its only
+          // door, so there is nothing left to guess: the old `profileReturn` dance
+          // existed because the editor could be entered from either board, and the
+          // account screen is where that choice now lives.
           <button
             type="button"
             className="home-btn archive-close"
             aria-label={t(lang, 'ariaClose')}
-            onClick={() => {
-              setProfileReturn(null);
-              navigate(profileReturn ?? pathForBoard(lang, lastMode ?? 'sentence'));
-            }}
+            onClick={() => navigate(ACCOUNT_PATH)}
           >
             <CloseIcon className="ui-icon" aria-hidden />
           </button>
@@ -681,14 +671,6 @@ export default function Profile() {
               EXISTS: a tokenless editor has no device rows to list, and asking would be a
               private read on a visit that never acted (the list appears the moment SAVE's
               deploy lands, since the identity above is reactive). */}
-          {/* Saving this account to an email address (#204) — the only way it survives a
-              lost device, and the only way it moves to a new one. It sits ABOVE the device
-              list because it is the more fundamental question ("can I get this back?"
-              before "which devices hold it?"), and it renders for a TOKENLESS device too:
-              its SEND CODE is that device's own deploy button, which is exactly what a
-              reconnect after a sign-out needs. */}
-          <AccountLink lang={lang} />
-          {identity !== null && <DeviceList lang={lang} />}
         </div>
       )}
     </>

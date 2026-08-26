@@ -115,29 +115,41 @@ const STRINGS = {
   deviceUnknown: { en: 'UNKNOWN DEVICE', fr: 'APPAREIL INCONNU' },
   failedDevices: { en: 'FAILED TO LOAD DEVICES', fr: 'ÉCHEC DU CHARGEMENT DES APPAREILS' },
   signedOutReconnect: { en: 'RECONNECT', fr: 'SE RECONNECTER' },
-  // Email account linking (#204), on the profile editor — the screen that already IS the
-  // identity screen. ONE flow with three endings, so the copy is chosen by the OUTCOME the
-  // server reports and never by anything this screen guessed first.
+  // THE ACCOUNT AREA (#204, reworked 2026-08-26). One purpose per screen, and one rule for
+  // the words: a line survives only if it says something the screen does not already show.
+  // So there is no "YOUR ACCOUNT" over a screen titled ACCOUNT, no "SAVED AS" in front of
+  // something plainly an email, and no "6-DIGIT CODE" over six cells.
   // An invite link whose sender's account is gone (#204). It is a STATE, not a failure:
   // there is nothing to retry, so the screen says so and carries the reader into the game.
   inviteExpired: { en: 'THIS INVITE LINK HAS EXPIRED', fr: "CE LIEN D'INVITATION A EXPIRÉ" },
-  linkTitle: { en: 'YOUR ACCOUNT', fr: 'VOTRE COMPTE' },
-  // WHY, in one sentence about what it buys — never about how it works. It is the only
-  // place a player is told they can move devices at all.
-  linkWhy: {
-    en: 'Add an email to get this account back on any device.',
-    fr: 'Ajoutez un e-mail pour retrouver ce compte sur tous vos appareils.',
+  accountTitle: { en: 'ACCOUNT', fr: 'COMPTE' },
+  // The account's own age, prefixed once — the only thing this screen can say about an
+  // identity whose name and mark it already draws.
+  accountSince: { en: 'SINCE', fr: 'DEPUIS' },
+  accountSave: { en: 'SAVE WITH EMAIL', fr: 'SAUVEGARDER PAR E-MAIL' },
+  // THE ONE LINE THAT EARNS ITS PLACE: why a word game wants an email is genuinely not
+  // obvious, so it is said once, where the decision is made, in the stakes the player
+  // actually feels — a lost phone, not "cross-device continuity".
+  accountSaveNote: {
+    en: "So a lost phone doesn't lose it.",
+    fr: "Pour qu'un téléphone perdu ne perde pas tout.",
   },
-  linkSavedAs: { en: 'SAVED AS', fr: 'SAUVEGARDÉ SOUS' },
+  accountChange: { en: 'CHANGE', fr: 'CHANGER' },
   linkAddressPlaceholder: { en: 'EMAIL', fr: 'E-MAIL' },
-  linkSend: { en: 'SEND CODE', fr: 'ENVOYER LE CODE' },
-  linkCodeSent: { en: 'CODE SENT TO', fr: 'CODE ENVOYÉ À' },
-  linkCodeLabel: { en: '6-DIGIT CODE', fr: 'CODE À 6 CHIFFRES' },
-  linkConfirm: { en: 'CONFIRM', fr: 'VALIDER' },
+  linkContinue: { en: 'CONTINUE', fr: 'CONTINUER' },
+  // Where it went — the answer to "did I typo my own address?", which is the one thing the
+  // player cannot check for themselves.
+  linkSentTo: { en: 'Sent to', fr: 'Envoyé à' },
+  // The code prompt's ACCESSIBLE name. The six cells are decoration (aria-hidden), so this
+  // is what a screen reader announces for the one real input — it is deliberately NOT on
+  // screen, where the cells already demonstrate what is wanted.
+  linkCodeLabel: { en: '6-digit code', fr: 'Code à 6 chiffres' },
+  linkResend: { en: 'RESEND', fr: 'RENVOYER' },
   linkChangeAddress: { en: 'CHANGE ADDRESS', fr: "CHANGER D'ADRESSE" },
   // Shown only once an attempt has been SPENT: stating the budget up front reads as a
-  // warning to somebody who has typed nothing wrong.
-  linkWrongCode: { en: 'WRONG CODE. TRIES LEFT:', fr: 'CODE INCORRECT. ESSAIS RESTANTS :' },
+  // warning to somebody who has typed nothing wrong. One line, at the input, beside the
+  // cells that just shook.
+  linkWrongCode: { en: 'Wrong code — {n} left', fr: 'Code incorrect — {n} restants' },
   linkCancel: { en: 'CANCEL', fr: 'ANNULER' },
   // The erase confirmation. It NAMES what the tap destroys — the server refuses to erase
   // without being told which account, and this screen is the only thing between that tap
@@ -149,8 +161,9 @@ const STRINGS = {
   linkEraseStreak: { en: 'STREAK', fr: 'SÉRIE' },
   linkEraseDays: { en: 'DAYS', fr: 'JOURS' },
   linkEraseConfirm: { en: 'DELETE AND CONTINUE', fr: 'SUPPRIMER ET CONTINUER' },
-  // The two endings, in the issue's own words: one for an address nobody knew, one for an
-  // account the player is coming back to.
+  // The two endings, in #204's own decided words: one for an address nobody knew, one for
+  // an account the player is coming back to. Both land under the account's own FACE, which
+  // is the claim "we found your account" actually makes.
   linkSaved: { en: 'Account saved.', fr: 'Compte sauvegardé.' },
   linkRestored: { en: 'We found your account.', fr: 'On a retrouvé votre compte.' },
   linkFailed: { en: 'LINK FAILED', fr: 'ÉCHEC DE LA LIAISON' },

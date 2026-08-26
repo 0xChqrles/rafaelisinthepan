@@ -61,8 +61,20 @@ export function pathForBoard(lang: string | null, mode: Mode = 'sentence'): stri
 // chooser was RETIRED 2026-08-18 for the header's segmented mode tabs.)
 export const SELECT_PATH = '/select';
 
-// The profile editor (#188) is its own route for the same reason: the identity is
-// global, not language-scoped. The leaderboard screen (#190) is its wired entry point.
+// The ACCOUNT area (#204's UX rework, 2026-08-26). THREE routes, because they answer
+// three different questions and one screen may only answer one:
+//
+//   /account        is this account mine, and safe?   — who it is, whether it is saved,
+//                                                       where it is signed in
+//   /profile        how do others see me?             — the editor, and nothing else
+//   /account/email  save it / get it back             — one input per step
+//
+// All three are GLOBAL, like /select: an identity is not language-scoped. The leaderboard's
+// identity strip is the ONE door into the area (a player's own face is the natural handle
+// for "my account"), and the signed-out screen's RECONNECT lands straight on the email step,
+// because a player who has just been signed out has exactly one intention.
+export const ACCOUNT_PATH = '/account';
+export const ACCOUNT_EMAIL_PATH = '/account/email';
 export const PROFILE_PATH = '/profile';
 
 // The #189 INVITE LINK: `/i/<publicId>`, the sender's own id in the path. Global — an
@@ -89,6 +101,8 @@ export type Route =
   | { view: 'archive'; lang: LangCode; mode: Mode }
   | { view: 'board'; lang: LangCode; mode: Mode }
   | { view: 'select' }
+  | { view: 'account' }
+  | { view: 'accountEmail' }
   | { view: 'profile' }
   | { view: 'invite'; publicId: string }
   | { view: 'home' };
@@ -120,6 +134,11 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
   const [seg, second, third] = segs;
   if (seg === 'select') return { view: 'select' };
   if (seg === 'profile') return { view: 'profile' };
+  // `/account` and its one step deeper. An unknown third form keeps the game routes'
+  // tolerance and lands on the area's own entry rather than bouncing home.
+  if (seg === 'account') {
+    return second === 'email' ? { view: 'accountEmail' } : { view: 'account' };
+  }
   // A broken invite link falls through to `home` rather than asking the server about an id
   // that cannot exist — the same treatment a broken date deep-link gets.
   if (seg === INVITE_LANDING_SEGMENT) {

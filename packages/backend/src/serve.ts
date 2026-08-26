@@ -147,7 +147,7 @@ server.listen(PORT, () => {
   console.log(`[backend]   GET /?lang=<xx>&date=<YYYY-MM-DD>[&mode=word]  GET /scores?lang=&date=&mode=`);
   console.log(`[backend]   GET /profile?id=<publicId>  POST /profile  POST /friends`);
   console.log(`[backend]   GET|POST /board?lang=&date=&mode=[&id=]  POST /round?lang=&date=&mode=`);
-  console.log(`[backend]   POST /history?lang=&mode=[&month=YYYY-MM]  POST /devices`);
+  console.log(`[backend]   POST /history?lang=&mode=[&month=YYYY-MM]  POST /devices  POST /link`);
   console.log(`[backend]   GET /today  GET /s/<token>  GET /og/<token>.png`);
   console.log(`[backend] point the front at it: VITE_API_BASE_URL=http://localhost:${PORT}`);
 });

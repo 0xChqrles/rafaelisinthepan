@@ -1098,7 +1098,7 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   **sending an invite link** · **saving a profile** (the SAVE tap, never the editor
   opening) — **and, since #204, the email link flow's SEND CODE** (a device with no account
   cannot be given one by an email link, and "this device is empty" is the reconnect case
-  that flow exists for; see the #204 section). Each is a SINGLE tap that chains its real action behind the bootstrap, shows a
+  that flow exists for; it is the CONTINUE on `/account/email` — see the #204 section). Each is a SINGLE tap that chains its real action behind the bootstrap, shows a
   clear loading state on the button, and reports failure on the app's ERROR SURFACE — a
   popup on desktop, a bottom sheet on a phone (`web/components/ErrorSheet.tsx`) — saying
   what happened, with TRY AGAIN when retrying can help. Consequences, all deliberate:
@@ -1450,6 +1450,42 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   `shared/src/history.ts` for the same reason: the erase confirmation names a streak the server
   derives, and two spellings would put a different number on that dialog than the streak screen
   shows over the same days.
+- **ONE PURPOSE PER SCREEN (user-decided 2026-08-26, on the first cut's review).** The flow
+  shipped as a section at the BOTTOM of the #188 profile editor, behind the leaderboard's
+  EDIT chip: reaching it meant game → crown → EDIT → wait for the profile read → scroll past
+  the name field, the 10×10 painting grid and the palette. Even the author struggled to find
+  it. Three different questions were sharing one scrolling screen, so they were split into
+  three, each answering one:
+  - **`/account`** — *is this account mine, and safe?* The mark, the name and when the
+    account began (with EDIT out to the editor); whether it is SAVED; where it is signed in
+    (#216's device rows, acted on in place).
+  - **`/profile`** — *how do others see me?* The editor, and nothing else.
+  - **`/account/email`** — *save it / get it back.* One input per step.
+  All three are GLOBAL routes like `/select`. **The leaderboard's identity STRIP is the one
+  door into the area** (a player's own face is the natural handle for "my account"), and the
+  EDIT chip is gone: profile editing is one tap deeper, which is the right trade for a thing
+  edited once and admired daily. **RECONNECT lands on the email STEP directly** — not the
+  editor, not even the account screen: a player who has just been signed out has exactly one
+  intention. No new header icon: the 320px header is already at its measured width budget.
+  A flat `/account` was chosen over a 3-card hub — a hub taxes every action a tap, and two of
+  its three destinations would hold three rows each.
+- **THE CODE PROMPT IS SIX DRAWN CELLS OVER ONE REAL INPUT, AND THE SIXTH DIGIT SUBMITS**
+  (same decision). Six separate `<input>`s would break the three things that matter on a
+  phone — PASTE, iOS/Android `one-time-code` AUTOFILL, and screen readers — so there is
+  exactly one field, invisible, stretched over cells painted from its value. A COMPLETE CODE
+  IS THE INTENT, so there is no CONFIRM button anywhere in the flow. A wrong code stays AT
+  the input: the game's own invalid-word shake, a clear, and one line saying how many tries
+  remain — a modal for a typo is punishment. RESEND is quiet and countdown-gated (~30s),
+  never a primary button, because the server allows only 5 sends per address per hour.
+- **THE COPY SAYS ONLY WHAT THE SCREEN DOES NOT SHOW** (the standing show-don't-tell rule,
+  applied): `YOUR ACCOUNT` over a screen titled ACCOUNT, `SAVED AS` in front of something
+  plainly an email, and `6-DIGIT CODE` over six cells are all CUT. The ONE line kept is why
+  a word game wants an address — genuinely not obvious — said once, where the decision is
+  made, in stakes a player feels: *"Pour qu'un téléphone perdu ne perde pas tout."* The two
+  endings keep #204's own decided words and gain the account's own FACE, which is the claim
+  "we found your account" actually makes. DESTRUCTION NEVER GLOWS: the erase confirmation's
+  button is the QUIET variant in the danger ink, so the lit primary is never the one that
+  deletes an account.
 - **AMENDS #216's DEPLOY-TRIGGER LIST: the link flow's SEND CODE is the SIXTH trigger.** A device
   with no account cannot be given one by an email link, and "this device is empty" is precisely
   the reconnect case the flow exists for — so its primary button is an account-deploying tap of
@@ -1458,8 +1494,9 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   part of the flow resolves the identity it holds or stands down.
 - **RECONNECT is wired, and it is the signed-out screen's PRIMARY action.** The tap LIFTS the
   verdict (which removes the persisted tombstone origin-wide — #216 reserved exactly this
-  gesture) and lands on the profile editor, where the link flow lives; PLAY becomes the
-  secondary. Leaving mid-flow costs what SKIP already cost: this device is a fresh visitor, and
+  gesture) and lands on `/account/email`, the address step itself; PLAY becomes the
+  secondary. Abandoning the flow costs exactly what SKIP already cost: this device is a fresh
+  visitor, and the account it left stands, reachable by its own address. Leaving mid-flow costs what SKIP already cost: this device is a fresh visitor, and
   the account it left stands, reachable by its own address.
 - **CONSEQUENCE worth naming: a link signs the account's OTHER devices out.** Only the CALLING
   device moves, so when the account being left is deleted, every other device still on it fails

@@ -40,7 +40,7 @@ import Button from '../components/Button';
 import LoadingWave from '../components/LoadingWave';
 import { startFreshDevice, useSignedOutAccount } from '../identity';
 import { t } from '../i18n';
-import { PROFILE_PATH } from '../langs';
+import { ACCOUNT_EMAIL_PATH } from '../langs';
 import { navigate } from '../routing';
 
 // Leave the account behind and go play: the verdict is lifted (which is also what removes
@@ -51,13 +51,15 @@ const playFresh = () => {
   navigate('/', { replace: true });
 };
 
-// RECONNECT: leave the fenced state and go where the email link flow is (#204). It uses the
-// SAME gesture PLAY does — the tombstone stands until the player chooses, and choosing to
-// sign back in is a choice — so a reconnect abandoned halfway is simply a fresh visitor,
-// never a device stuck on this screen.
+// RECONNECT: leave the fenced state and go STRAIGHT to the email step (#204). Not the
+// editor, not even the account screen — a player who has just been signed out has exactly
+// one intention, and every screen between them and the address field is a screen they have
+// to read past. It uses the SAME gesture PLAY does — the tombstone stands until the player
+// chooses, and choosing to sign back in is a choice — so a reconnect abandoned halfway is
+// simply a fresh visitor, never a device stuck on this screen.
 const reconnect = () => {
   startFreshDevice();
-  navigate(PROFILE_PATH);
+  navigate(ACCOUNT_EMAIL_PATH);
 };
 
 // The face is TAGGED WITH THE ACCOUNT IT BELONGS TO (review finding). A tab sitting on

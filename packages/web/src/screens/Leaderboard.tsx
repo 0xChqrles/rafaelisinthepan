@@ -42,7 +42,7 @@ import {
   pathForBoard,
   pathForInvite,
   pathForMode,
-  PROFILE_PATH,
+  ACCOUNT_PATH,
   type LangCode,
   type Mode,
 } from '../langs';
@@ -423,7 +423,22 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
       {/* The identity strip: the mark and name a board row shows for YOU, with the two
           things this screen wires in — the profile editor and the invite link. An
           uncustomized player reads as their pseudonym, in the secondary ink. */}
-      <div className="board-me">
+      {/* THE STRIP IS THE DOOR TO `/account` (#204's UX rework, 2026-08-26). A player's own
+          face is the natural handle for "my account", and it replaced an EDIT chip that
+          promised editing and was also, silently, the only way to reach the email backup and
+          the device list. Profile editing is one tap deeper now — from the account screen —
+          which is the right trade for a thing edited once and admired daily. */}
+      <button
+        type="button"
+        className="board-me"
+        aria-label={t(lang, 'accountTitle')}
+        onClick={() => {
+          // `/account` is a GLOBAL route, so the board's (lang, mode) is not in the URL:
+          // the opener states where to come back to.
+          setProfileReturn(pathForBoard(lang, mode));
+          navigate(ACCOUNT_PATH);
+        }}
+      >
         {/* Until the read settles this is a SKELETON, never a name: publishing the
             assigned identity early and correcting it a beat later showed every named
             player a stranger's name under their own mark (user feedback 2026-08-20).
@@ -446,20 +461,7 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
             {!shownSettled && <span className="skeleton skeleton-name" />}
           </span>
         )}
-        {/* `/profile` is a GLOBAL route, so the board that opened it leaves the URL —
-            state where to come back to, or the editor has to guess from the last
-            loaded GAME (which can be the other daily, or another language). */}
-        <button
-          type="button"
-          className="board-chip"
-          onClick={() => {
-            setProfileReturn(pathForBoard(lang, mode));
-            navigate(PROFILE_PATH);
-          }}
-        >
-          {t(lang, 'boardEdit')}
-        </button>
-      </div>
+      </button>
 
       {/* FRIENDS first — the trusted default; GLOBAL is the fun view. The segmented
           control is the header mode switcher's own dress, stretched to the column. */}

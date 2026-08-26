@@ -5053,73 +5053,290 @@ button * {
   color: var(--danger);
 }
 
-/* Saving the account to an EMAIL (#204) — the profile screen's second block, above the
-   devices. It wears the device list's exact dress, because they answer two halves of one
-   question ("can I get this back?" and "which devices hold it?") and reading as one column
-   is the point: mono, all-caps chrome with secondary values in `--muted`, glass over a
-   hairline, nothing rounder than the 4px ceiling. */
-.account-link {
+/* ── THE ACCOUNT AREA (#204, reworked 2026-08-26) ──────────────────────────────────────
+   Three screens, three questions — `/account` (is this mine, and safe?), `/profile` (how
+   do others see me?), `/account/email` (save it / get it back). They share one column and
+   one dress: mono all-caps chrome, sentence-case explanation, glass over a hairline,
+   nothing rounder than the 4px ceiling. */
+/* `.profile-screen`'s geometry, verbatim and for its stated reasons: `.app` centres this
+   column and the header floats over it, so the clearance comes from `.app`'s own padding —
+   NEVER `100dvh` here, because a taller child of a centring flex parent overflows
+   symmetrically and its top gets clipped under the bar. (`--hud-height` is scoped to
+   `.topbar` and unavailable out here; a `calc()` naming it voids the whole declaration —
+   the trap `.word-input`'s zeroed padding already records.) */
+.account-screen {
+  width: min(400px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 16px;
+  /* 48px is the bar's own height — `.profile-screen`'s exact clearance, and the reason it
+     is a literal: `--hud-height` lives on `.topbar` and naming it in a `calc()` out here
+     voids the whole declaration. */
+  padding: 48px 2px 0;
 }
-.account-link-title {
-  margin: 0;
+.account-body,
+.link-step {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+/* The email flow's steps hold ONE thing each — `.app` already centres the column, so a
+   step needs no centring of its own, only room to breathe. It sets the GAP alone: this
+   class is worn BESIDE `.account-screen`, so a `padding` here would win the cascade and
+   silently undo that rule's header clearance. */
+.link-step {
+  gap: 18px;
+}
+
+/* WHO: the mark, the name, when it began — and EDIT, out to the editor. */
+.account-id {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 6px;
+}
+.account-id .avatar {
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+/* Held while the face read is out: the exact boxes the settled row takes, so nothing moves
+   when the name lands (the leaderboard strip's rule — a name must never flash and correct
+   itself). */
+.account-id-mark {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--r-md);
+}
+.account-id-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.account-id-name {
+  font-family: var(--ui);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-id-since {
   font-family: var(--ui);
   font-size: 10px;
-  font-weight: 550;
-  letter-spacing: 0.14em;
+  font-weight: 500;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted);
 }
-/* The ONE sentence-case surface here: an explanation, never a label — the coach copy's
-   rule, which is why it escapes the chrome's all-caps. */
-.account-link-note {
-  margin: 0;
-  font-family: var(--ui);
-  font-size: 12px;
-  font-weight: 350;
-  line-height: 1.45;
-  color: var(--muted);
-}
-/* What the erase confirmation puts at stake, in the numbers' own weight: this is the one
-   thing on the screen a reader has to take in before a destructive tap. */
-.account-link-stakes {
-  margin: 0;
-  font-family: var(--ui);
-  font-size: 12px;
-  font-weight: 550;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--fg);
-}
-.account-link-input {
-  width: 100%;
-  padding: 10px 12px;
+
+/* SAVED: the ADDRESS itself is the status, so the row carries no label in front of it. */
+.account-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   background: var(--glass);
+  font-family: var(--ui);
+  font-size: 12px;
+}
+.account-row-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+/* The one EXPLANATION on these screens — sentence case, like the coach copy, because it is
+   help rather than a label (the chrome's all-caps rule names that exception). */
+.account-note {
+  margin: -4px 0 0;
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 350;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.account-note-center {
+  margin: 0;
+  text-align: center;
+}
+.account-note.danger {
+  color: var(--danger);
+  font-weight: 500;
+}
+
+.account-input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: rgba(0, 0, 0, 0.28);
   color: var(--fg);
   font-family: var(--ui);
-  font-size: 14px;
-  letter-spacing: 0.04em;
+  font-size: 15px;
+  letter-spacing: 0.03em;
 }
-.account-link-input::placeholder {
+.account-input::placeholder {
   color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
+  font-size: 12px;
 }
-.account-link-input:focus {
+.account-input:focus {
   outline: none;
   border-color: var(--line-strong);
 }
-/* The code is a NUMBER the player reads off a screen and types back, so it is set in the
-   game's own pixel face at the tracking that keeps six digits countable at a glance. */
-.account-link-code {
+
+/* THE CODE PROMPT: six drawn cells over ONE real input (components/CodeInput.tsx explains
+   why one). The input is stretched over the whole row and invisible — never
+   `display: none`, which would take it out of the tab order and off the autofill path. */
+.code-input {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  cursor: text;
+}
+.code-field {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  opacity: 0;
+  /* The caret would otherwise sit at the row's left edge, unrelated to the cell being
+     filled — the one visible artefact of drawing the prompt beside the field. */
+  caret-color: transparent;
+  color: transparent;
+  font-size: 16px; /* iOS zooms a focused field under 16px. */
+}
+.code-field:focus {
+  outline: none;
+}
+.code-cell {
+  width: 44px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: rgba(0, 0, 0, 0.28);
+  /* A number the player TYPES — keyboard territory, so the game's own pixel face. */
   font-family: var(--pixel-font);
   font-size: 18px;
-  letter-spacing: 0.34em;
-  text-align: center;
+  color: var(--fg);
+  transition: border-color 120ms, color 120ms;
+}
+/* Where the next digit lands. The accent, not the solve blue: this is chrome pointing at
+   an input, not a word being resolved. */
+.code-input:focus-within .code-cell.next {
+  border-color: var(--accent);
+}
+/* A refusal stays AT the input: the game's own invalid-word gesture, at its own amplitude
+   and for the length the caller clears on. The WHOLE ROW is the message, so the "next" cell
+   drops its accent here — one violet box in a red row reads as a second, unrelated state. */
+.code-input.invalid .code-cell,
+.code-input.invalid:focus-within .code-cell.next {
+  border-color: var(--danger);
+  color: var(--danger);
+  animation: word-shake var(--shake-ms, 380ms) ease-in-out;
+}
+.code-input.disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* The quiet row under the cells: RESEND and CHANGE ADDRESS are alternatives, never calls
+   to action — the send allowance is 5 an hour, so the UI must not invite spending it. */
+.link-quiet {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-family: var(--ui);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.link-quiet-btn {
+  padding: 4px 2px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  transition: color 120ms;
+}
+.link-quiet-btn:hover:not(:disabled) {
+  color: var(--fg);
+}
+.link-quiet-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* What the erase destroys, in the numbers' own weight — the one thing on the screen a
+   reader has to take in before a destructive tap. */
+.link-stakes {
+  display: flex;
+  justify-content: center;
+  gap: 22px;
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.link-stakes b {
+  margin-left: 8px;
+  font-family: var(--pixel-font);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--fg);
+}
+/* DESTRUCTION NEVER GLOWS: the confirming control is the quiet variant wearing the danger
+   ink, so the lit LED button is never the one that deletes an account. */
+.link-danger {
+  color: var(--danger);
+  border: 1px solid rgba(255, 61, 46, 0.45);
+  border-radius: var(--r-md);
+  padding: 11px 12px;
+}
+.link-danger:hover:not(:disabled) {
+  border-color: var(--danger);
+}
+
+/* The ending: the account's own FACE over the one sentence, then PLAY. */
+.link-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.link-done .avatar {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.link-done .btn {
+  width: 100%;
 }
 
 /* The account's DEVICES, and the way to sign one out (#216) — the profile screen's second
@@ -5339,10 +5556,41 @@ button * {
 
 /* The identity strip: your mark and name as a board row shows them, with EDIT (the
    #188 editor's wired entry) on the row's far edge. */
+/* THE STRIP IS THE DOOR TO `/account` (#204's UX rework, 2026-08-26), so it is a BUTTON —
+   which means resetting the UA's own button dress rather than styling a div: a button
+   brings its own font, background, border and centring, and inherits none of the page's.
+   Full width and left-aligned so it reads as the row it already was, never as a control
+   somebody dropped on the board. */
 .board-me {
   display: flex;
   align-items: center;
   gap: 12px;
+  width: 100%;
+  padding: 6px;
+  margin: -6px;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms;
+}
+/* The affordance is a whisper — this row is a person's own face, not a call to action. */
+.board-me:hover {
+  background: var(--glass);
+  border-color: var(--line);
+}
+/* A chevron at the trailing edge: the row LEADS somewhere, said the way the date chip's
+   own tick says it. */
+.board-me::after {
+  content: '›';
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
 }
 .board-me .avatar {
   flex: none;
@@ -5350,7 +5598,6 @@ button * {
   border-radius: var(--r-md);
 }
 .board-me-name {
-  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
