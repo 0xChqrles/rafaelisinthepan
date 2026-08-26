@@ -134,11 +134,6 @@ const STRINGS = {
     en: "So a lost phone doesn't lose it.",
     fr: "Pour qu'un téléphone perdu ne perde pas tout.",
   },
-  // MANAGE, not CHANGE (user-decided 2026-08-26): an account carries at most ONE address
-  // and the server refuses a second, so a CHANGE chip promised something the route would
-  // refuse. What there is to do with a saved account is manage where it is signed in.
-  accountManage: { en: 'MANAGE', fr: 'GÉRER' },
-  accountManageTitle: { en: 'MANAGE', fr: 'GÉRER' },
   linkAddressPlaceholder: { en: 'EMAIL', fr: 'E-MAIL' },
   linkContinue: { en: 'CONTINUE', fr: 'CONTINUER' },
   // Where it went — the answer to "did I typo my own address?", which is the one thing the

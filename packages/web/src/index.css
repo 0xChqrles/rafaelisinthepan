@@ -5091,31 +5091,9 @@ button * {
   gap: 14px;
 }
 
-/* THE ACCOUNT PAGE IS TWO ZONES (user-decided 2026-08-26): the account shown off at the
-   top, the one thing to DO on the bottom edge — the board screen's own shape, and the
-   app's everywhere (content floats, actions sit on an edge).
-   `align-self: stretch` gives the column a bottom for the action to sit on — but ONLY on
-   a phone, and that is deliberate: the base rule's `margin: auto 0` (the desktop
-   centring) beats `stretch` by the flexbox auto-margin rule, and the mobile block below
-   drops that margin. So a desktop reads as ONE compact centred card, where flinging the
-   button 700px down a 1280×800 window would be void for its own sake, and a phone gets
-   the full-height two-zone layout with the action under the thumb. Two behaviours, one
-   declaration each — do not "fix" either into the other. */
-.account-page {
-  align-self: stretch;
-  gap: 0;
-}
-.account-action {
-  margin-top: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  /* Clears the bottom edge by the same margin the column keeps at its sides. */
-  padding-top: 32px;
-}
 /* Held while the summary is out: the action's own box, so the screen does not resize when
    the answer lands — and, more importantly, does not CLAIM "unsaved" before it knows
-   (#211's explicit-loading rule). */
+   (#211's explicit-loading rule — a guessed empty answer is a false claim). */
 .account-action-slot {
   height: 52px;
   border-radius: var(--r-md);
@@ -5130,40 +5108,63 @@ button * {
   margin: 0;
 }
 
-/* WHO — the HERO (user feedback 2026-08-26: the signed-out screen was showing the account
-   off better than its own home, so the home borrows its exact dress: the 64px mark
-   centered, the 20/650 name under it). The since-line and the EDIT chip hang quiet
-   beneath; everything else on the screen is a section under this. */
-.account-hero {
+/* THE ROW — the identity as the page's MASTHEAD (user-decided 2026-08-26, rolling back
+   the centered hero: the UX research's own strip — mark, name and age on the left, EDIT
+   at the trailing edge). The hairline under it is what says "everything below is ABOUT
+   this": the screen's one explicit separation, so the sections never read as one pile. */
+.account-id {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 12px;
-  text-align: center;
-  padding: 4px 0;
-  /* Never squeezed by the free space the page hands to the gap between the zones. */
-  flex: none;
+  gap: 14px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
 }
-.account-hero .avatar {
+.account-id .avatar {
+  flex: none;
   border: 1px solid var(--line);
-  border-radius: var(--r-lg);
+  border-radius: var(--r-md);
 }
 /* Held while the face read is out: the exact box the settled mark takes, so nothing moves
    when the name lands (the leaderboard strip's rule — a name must never flash and correct
-   itself). Shared with the flow's endings and the erase confirmation, which wear the same
-   hero. */
+   itself). */
+.account-id-mark {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--r-md);
+}
+.account-id-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.account-id-name {
+  font-family: var(--ui);
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-id-since {
+  font-family: var(--ui);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* The FLOW'S centered face — the endings, the erase confirmation and the address step's
+   lead all wear it: the signed-out screen's own 64px mark and 20/650 name, since those
+   are the moments the screen is ABOUT an account rather than headed by one. */
 .account-hero-mark {
   width: 64px;
   height: 64px;
   border-radius: var(--r-lg);
-}
-/* The name and its since-line are ONE statement, tighter than the hero's own rhythm. */
-.account-hero-id {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  max-width: 100%;
 }
 .account-hero-name {
   font-family: var(--ui);
@@ -5174,14 +5175,6 @@ button * {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.account-hero-since {
-  font-family: var(--ui);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted);
 }
 
 /* SAVED: the ADDRESS itself is the status, so the row carries no label in front of it. */

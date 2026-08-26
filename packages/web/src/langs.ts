@@ -75,10 +75,6 @@ export const SELECT_PATH = '/select';
 // because a player who has just been signed out has exactly one intention.
 export const ACCOUNT_PATH = '/account';
 export const ACCOUNT_EMAIL_PATH = '/account/email';
-// One door deeper than `/account`, reached from a SAVED account's MANAGE chip: where the
-// account is signed in, and (with #207) the way to delete it. A list to act on, not a
-// statement to read — which is why it is not on the account screen itself.
-export const ACCOUNT_MANAGE_PATH = '/account/manage';
 export const PROFILE_PATH = '/profile';
 
 // The #189 INVITE LINK: `/i/<publicId>`, the sender's own id in the path. Global — an
@@ -107,7 +103,6 @@ export type Route =
   | { view: 'select' }
   | { view: 'account' }
   | { view: 'accountEmail' }
-  | { view: 'accountManage' }
   | { view: 'profile' }
   | { view: 'invite'; publicId: string }
   | { view: 'home' };
@@ -142,9 +137,7 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
   // `/account` and its one step deeper. An unknown third form keeps the game routes'
   // tolerance and lands on the area's own entry rather than bouncing home.
   if (seg === 'account') {
-    if (second === 'email') return { view: 'accountEmail' };
-    if (second === 'manage') return { view: 'accountManage' };
-    return { view: 'account' };
+    return second === 'email' ? { view: 'accountEmail' } : { view: 'account' };
   }
   // A broken invite link falls through to `home` rather than asking the server about an id
   // that cannot exist — the same treatment a broken date deep-link gets.

@@ -40,7 +40,7 @@ import {
   postLinkBody,
   type LinkErasePrompt,
 } from '../api';
-import { useAccountFace, useOwnFace } from '../components/AccountFace';
+import { useAccountFace, useOwnFace, type Face } from '../components/AccountFace';
 import Avatar from '../components/Avatar';
 import Button from '../components/Button';
 import CodeInput from '../components/CodeInput';
@@ -277,13 +277,18 @@ export default function AccountEmail() {
   // The erase confirmation draws the account about to be DELETED — the signed-out screen's
   // own move: numbers state the stakes, a face makes them somebody's.
   const eraseFace = useAccountFace(step === 'confirm' ? (prompt?.accountId ?? null) : null);
+  // The address step leads with WHO is being saved — and it is the SAME face whether or
+  // not the account is deployed yet (user-decided 2026-08-26: nothing in the area may tell
+  // you which). `useOwnFace` answers the account's profile or the identical local-seed
+  // pair; and the first face resolved is HELD for the flow's whole life, because the SEND's
+  // own deploy swaps the id from the seed to the account mid-flight, and re-reading then
+  // races the background profile write for a face that is the same by construction.
   const ownFace = useOwnFace();
-  // The address step leads with WHO is being saved — a bare input floating on a screen was
-  // the "does not use its space" finding, and the face is the honest statement of what the
-  // button will do. It is `useOwnFace`, so a device with NO account shows the SAME
-  // pseudonym and mark it will carry into the account this tap creates: the app mark that
-  // stood here announced "you have no account yet", which is the one thing these screens
-  // may never say (user-decided 2026-08-26).
+  const [lead, setLead] = useState<Face | null>(null);
+  useEffect(() => {
+    if (ownFace !== null && lead === null) setLead(ownFace);
+  }, [ownFace, lead]);
+  const savingFace = lead ?? ownFace;
 
   return (
     <>
@@ -305,13 +310,13 @@ export default function AccountEmail() {
         {step === 'address' && (
           <>
             <div className="link-stack link-lead" aria-hidden="true">
-              {ownFace ? (
+              {savingFace ? (
                 <>
                   <Avatar
-                    avatar={ownFace.avatar ?? defaultAvatar(ownFace.publicId)}
+                    avatar={savingFace.avatar ?? defaultAvatar(savingFace.publicId)}
                     size={64}
                   />
-                  <span className="account-hero-name">{ownFace.name}</span>
+                  <span className="account-hero-name">{savingFace.name}</span>
                 </>
               ) : (
                 <span className="account-hero-mark skeleton" />

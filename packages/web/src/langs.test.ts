@@ -7,7 +7,6 @@ import { describe, it, expect } from 'vitest';
 import { inviteLandingPath } from '@whippin/shared';
 import {
   ACCOUNT_EMAIL_PATH,
-  ACCOUNT_MANAGE_PATH,
   ACCOUNT_PATH,
   PROFILE_PATH,
   isLang,
@@ -260,15 +259,6 @@ describe('account routes (#204)', () => {
   it('states its paths once, so every caller navigates to the same place', () => {
     expect(parseRoute(ACCOUNT_PATH)).toEqual({ view: 'account' });
     expect(parseRoute(ACCOUNT_EMAIL_PATH)).toEqual({ view: 'accountEmail' });
-    expect(parseRoute(ACCOUNT_MANAGE_PATH)).toEqual({ view: 'accountManage' });
     expect(parseRoute(PROFILE_PATH)).toEqual({ view: 'profile' });
-  });
-
-  // MANAGE is one door deeper than the account screen, reached from a SAVED account's own
-  // chip: where it is signed in, and (with #207) the way to delete it.
-  it('routes the manage step, and only that spelling', () => {
-    expect(parseRoute('/account/manage')).toEqual({ view: 'accountManage' });
-    expect(parseRoute('/account/manage/extra')).toEqual({ view: 'accountManage' });
-    expect(parseRoute('/account/managed')).toEqual({ view: 'account' });
   });
 });
