@@ -29,15 +29,16 @@
 // nothing typed, nothing in flight — which the startup path OBSERVES rather than
 // assumes, since the answer can land long after the app became playable.
 
+import { timeoutSignal } from './timeout';
+
 const VERSION_URL = '/version.json';
 const CHECK_INTERVAL_MS = 60 * 60 * 1000;
 // A request that neither resolves nor errors must not strand the in-flight promise
 // forever — every later trigger would join it and the checker would be dead for the
 // session (the turnstile.ts script-load rule). The abort rejects into the same silent
-// catch as any other failure, so the next trigger retries. Hand-rolled controller +
-// timer, NOT AbortSignal.timeout(): that is Baseline 2024, above Vite 5's browser floor
-// (Chrome 87 / Firefox 78 / Safari 14), and there the missing API would throw before
-// fetch ever ran — silently disabling the checker on exactly those browsers.
+// catch as any other failure, so the next trigger retries. The deadline is
+// `timeoutSignal`, never `AbortSignal.timeout()` — that module carries the rule, and
+// this file is where it was first written down.
 const FETCH_TIMEOUT_MS = 10_000;
 const STARTUP_RELOAD_KEY = 'whippin-version-reload';
 
@@ -77,12 +78,10 @@ export function installVersionCheck(current: string = __BUILD_ID__): void {
   const check = (): Promise<void> => {
     if (stale) return Promise.resolve();
     inFlight ??= (async () => {
-      const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
       try {
         const res = await fetch(VERSION_URL, {
           cache: 'no-store',
-          signal: controller.signal,
+          signal: timeoutSignal(FETCH_TIMEOUT_MS),
         });
         if (!res.ok) return;
         const body = (await res.json()) as { build?: unknown };
@@ -90,7 +89,6 @@ export function installVersionCheck(current: string = __BUILD_ID__): void {
       } catch {
         // Offline, or the file mid-swap during a deploy: the next trigger retries.
       } finally {
-        window.clearTimeout(timeout);
         inFlight = null;
       }
     })();

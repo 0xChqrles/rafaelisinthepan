@@ -14,6 +14,7 @@ import { adoptSignedOutVerdict } from '../state/signedOutVerdict';
 import { prefetchTurnstileTokens } from '../turnstile';
 import { t } from '../i18n';
 import { navigate } from '../routing';
+import { timeoutSignal } from '../timeout';
 
 // The #189 invite link's landing: `/join/<publicId>` records the MUTUAL edge, SAYS SO,
 // and then gets out of the way. One link does both jobs — "add me" and "come play".
@@ -101,7 +102,7 @@ export default function FriendInvite({ publicId, lang }: { publicId: string; lan
       let shown: Inviter = { name: anonName(publicId), avatar: null };
       try {
         const response = await fetch(profileUrl(publicId), {
-          signal: AbortSignal.timeout(6_000),
+          signal: timeoutSignal(6_000),
         });
         if (response.ok) {
           const profile = parseProfile(await response.json());

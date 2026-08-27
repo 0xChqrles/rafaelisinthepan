@@ -5684,8 +5684,18 @@ button * {
 .error-dialog {
   /* The coach-rules stack restated with the danger brackets: eight corner strips
      over the glass fill (the .coach rule's own technique — kept separate because
-     that rule also sets layout this dialog does not want). */
-  --corner-c: color-mix(in srgb, var(--danger) 90%, transparent);
+     that rule also sets layout this dialog does not want).
+     A LITERAL rgba, exactly as `.coach` writes its cobalt, and never `color-mix()`
+     (Baseline 2023, Safari 16.2): this is the one use in the file that feeds a
+     CUSTOM PROPERTY the `background` shorthand substitutes, so a browser that does
+     not know the function loses the whole shorthand at computed-value time — the
+     eight strips AND the `var(--bg)` fill under them — and the dialog resolves to
+     `unset`, i.e. transparent. Reported from production 2026-08-27: an iOS 15
+     iPhone drew ACCOUNT SETUP FAILED with no background at all, the rules gate
+     showing straight through the sheet that was refusing to start the round. Every
+     other color-mix here is a direct declaration whose loss costs a glow; only a
+     var() indirection can take a surface with it. */
+  --corner-c: rgba(240, 78, 99, 0.9); /* --danger #f04e63 at 90% */
   margin: auto;
   width: min(420px, calc(100vw - 40px));
   border: 1px solid var(--line-strong);
