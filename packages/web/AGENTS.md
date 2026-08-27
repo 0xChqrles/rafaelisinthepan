@@ -38,7 +38,8 @@
       state/account.ts        what `/account` shows — the `{token}` summary and the
                               friend-merge drain behind it
       components/DeviceList.tsx  the account's devices + SIGN OUT rows (#216), on the profile editor
-      components/ErrorSheet.tsx  the app's error surface: a popup on desktop, a bottom sheet on a phone
+      components/ErrorScreen.tsx  the app's error surface: a FULL-SCREEN modal led by the
+                              user-drawn ERROR BOT (2026-08-27, replacing the popup/sheet)
       state/roundSync.ts      the #201 sync engine, reworked by #214: coalesced prefix writes,
                             the transient server snapshot it publishes for the screen, the
                             outbox it settles by identity, cap + freeze, #203's round-start
@@ -65,6 +66,9 @@
       components/Avatar.tsx   a stored avatar rendered as SVG (editor preview + #190 board rows);
                               the tracer + the assigned identity are @whippin/shared's since 2026-08-20
       versionCheck.ts         stale-tab reload: __BUILD_ID__ vs /version.json on visibility flips
+      timeout.ts              a fetch deadline as an AbortSignal — the ONE spelling, because
+                              `AbortSignal.timeout()` is above the browser floor and throws
+                              BEFORE the fetch (it took the #216 bootstrap out on iOS 15)
       i18n.ts                 UI chrome strings (en+fr), t(lang, key); parity type-enforced
       tutorial/               onboarding (#51/#155): Tutorial.tsx + data scripts/<lang>.ts
                               (+ <lang>.word.json, the pruned #154 board it plays on)
@@ -119,9 +123,15 @@ These are decided and verified against the code. Treat them as load-bearing.
        weird red terminus. `MISS_COLOR` (#ff3d2e) lives with the ramp in
        `@whippin/shared`, and `heatColor(0)` IS it. A 100-away exponent therefore wears
        the same colour as a MISS (the fixed absolute cap collapses every farther rank
-       onto the terminus); only the label distinguishes them. The red remains distinct
-       from the timer/invalid `--danger` red and is legible on `--bg`, pinned by the heat
-       and rarity tests.
+       onto the terminus); only the label distinguishes them. It is legible on `--bg`,
+       pinned by the heat and rarity tests. **It is NO LONGER distinct from the
+       timer/invalid `--danger` red, and that is deliberate (user-decided 2026-08-27):**
+       `--danger` moved to the ERROR BOT's own ink `#ff2e38`, which sits 7.7 dE from
+       MISS_COLOR — the two are one red now, where they used to be held ~31 apart. The
+       claim that the separation was "pinned by the heat and rarity tests" was never true
+       either: those pin the GRADES against each red (still >30, measured 83.7), never the
+       two reds against each other. Re-separating them means moving MISS_COLOR, which is
+       the heat ramp's terminus and takes `heat.test.ts` and the share card with it.
      - **Warm + improves** (entry's rank beats the hole's current rank) → the hole
        **additionally** swaps to the entry's **accented `word`** and lower `rank`,
        but **only when its floating number begins to fade out** (`fadeDelayMs`), so
@@ -198,7 +208,9 @@ These are decided and verified against the code. Treat them as load-bearing.
   2026-08-17 — a film-grain overlay and then an edge halftone dot-vignette each shipped
   and were both removed on review; the single dither and the gradients are the look, and
   nothing sits above the content).
-  `--fg` is stamp paper #f4f1e8, `--muted` warm grey, `--danger` an ink red; Word mode's
+  `--fg` is stamp paper #f4f1e8, `--muted` warm grey, `--danger` the alarm red #ff2e38
+  (the error bot's own ink since 2026-08-27 — the old #f04e63 sat at 62% lightness and read
+  coral rather than dangerous); Word mode's
   rarity ladder is authored as a VIVID INK set (`components/rarity.ts` — same hue walk,
   thresholds re-measured in `rarity.test.ts`). Still ELECTRIC, pending an art repaint: the
   remaining baked pixel art (the streak flame sheets, ultracode.png, the hit sheets —
@@ -423,7 +435,9 @@ pnpm typecheck  # tsc --noEmit
 ```
 
 Front-end dev harnesses: `?tutorial=1` forces the tutorial, `?streak=N` previews the
-streak celebration (dev only). There is **no `?puzzle=` file override** — the front
+streak celebration, `?error=<variant>` previews the error screen against a real backdrop
+(`dev/errorPreview.ts` — every variant is a real call site's copy; bare `?error` takes the
+account one, closing CYCLES the set). All dev only. There is **no `?puzzle=` file override** — the front
 always loads the day's puzzle from the backend (test a specific puzzle by publishing
 it to the local store — see `packages/backend/AGENTS.md`).
 
@@ -643,7 +657,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **CONTINUE is a DEPLOY BUTTON**, the sixth (#216's five plus this one), and it has to
     be: an email link needs an account to bind, and "this device is empty" is exactly the
     reconnect case. It wears the shape that rule defines — one tap chaining the bootstrap,
-    a loading state on the button, failures on the `ErrorSheet` — and TWO Turnstile tokens are
+    a loading state on the button, failures on the `ErrorScreen` — and TWO Turnstile tokens are
     prefetched while the address is typed, since a tokenless device spends one on the
     bootstrap and one on the send. Every other leg uses `currentRequestIdentity` and stands
     down when there is none.
@@ -1048,7 +1062,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   block: the copyable-key/paste-to-link UI was removed with `adoptPlayerSecret` (the
   backup affordance's future surface is an open decision — root `AGENTS.md`). Saving
   POSTs `{token, name, avatar}` via the OAC-hashed body (`api.postProfileBody`);
-  server refusals surface on the app's `ErrorSheet` (#216 trigger rework — title +
+  server refusals surface on the app's `ErrorScreen` (#216 trigger rework — title +
   explanatory note; the moderation refusals offer no retry, a transport failure and a
   failed deploy carry TRY AGAIN, which re-runs the whole single-tap save).
   **OPENING THE EDITOR DEPLOYS NOTHING and SAVING deploys (user-decided 2026-08-24):**
@@ -1146,7 +1160,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (a best-effort bounded profile read, the assigned identity as fallback) over ONE primary
   ADD FRIEND button; the tap POSTs `{token, add}` with this device's token — minted by
   that same tap for a brand-new visitor, which is what lands the edge before their first
-  game — with a loading wave in the button and the `ErrorSheet` (TRY AGAIN) for a
+  game — with a loading wave in the button and the `ErrorScreen` (TRY AGAIN) for a
   transport/5xx failure. The `shareInviteFlight` one-conversation map went with the
   auto-add: the effect-replay hazard it guarded no longer exists once the POST rides a
   click. **A SUCCESSFUL add is still CONFIRMED on screen**
@@ -1220,13 +1234,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   is skipped, and the INVITE tap is the screen's account-creating act — **and it is ONE
   TAP (user-decided 2026-08-24, superseding the same day's two-phase mint-then-ask: the
   deploy buttons are single taps)**: a tokenless tap bootstraps (LoadingWave in the
-  button, the Word gate's PLAY shape; a failed deploy raises the `ErrorSheet` with
+  button, the Word gate's PLAY shape; a failed deploy raises the `ErrorScreen` with
   `failedAccount` + TRY AGAIN, nothing created) and then delivers in the same gesture.
   The physics the two-phase design guarded against still exist — Turnstile + /devices can
   outlive the transient user activation, and past it navigator.share rejects by spec and
   the async clipboard does on WebKit — so `useShare.share` REPORTS delivery (a dismissed
   sheet counts as delivered), and a share neither channel could make raises the
-  `ErrorSheet` (`failedShare`/`failedShareNote`) instead of being swallowed: its TRY
+  `ErrorScreen` (`failedShare`/`failedShareNote`) instead of being swallowed: its TRY
   AGAIN shares inside its own fresh activation, identity now in hand, which is exactly
   the delivery the first tap could not make. Desktop and an already-deployed account
   never hit that path. The TOKENLESS answers are derived
@@ -1322,7 +1336,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   board is the honest empty one without a request, and the strip's profile read re-runs
   when an account arrives). The INVITE device-card button on the bottom edge is always
   live: with an account it shares at once; without one the tap IS the deploy button — it
-  bootstraps (loading wave in the button, `ErrorSheet` on failure, a prefetched challenge
+  bootstraps (loading wave in the button, `ErrorScreen` on failure, a prefetched challenge
   so the tap is fast) and then shares. The single tap accepts one degradation:
   `navigator.share` wants a fresh gesture, so a browser refusing the native sheet after
   the bootstrap round trip falls back to useShare's clipboard path (COPIED).
@@ -2749,7 +2763,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **Since the #216 trigger rework the gate is also the sentence game's DEPLOY BUTTON**: a
   device with NO account shows the FULL rules gate on every sentence day (archive days and
   post-sign-out included), whatever the flag says, because its PLAY is the only trigger on
-  the screen — the tap bootstraps the account (loading wave in the button, `ErrorSheet`
+  the screen — the tap bootstraps the account (loading wave in the button, `ErrorScreen`
   with TRY AGAIN on failure, nothing created on a failure) and then marks the rules seen.
   An account-holding player who has read the rules never sees the gate again; the flag
   still keeps them from seeing the rules twice when their account arrived through another

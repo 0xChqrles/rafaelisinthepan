@@ -21,7 +21,7 @@ import {
 } from '../identity';
 import { prefetchTurnstileTokens } from '../turnstile';
 import { withoutLocalIdentityDeploy } from '../state/localIdentityDeploy';
-import ErrorSheet from '../components/ErrorSheet';
+import ErrorScreen from '../components/ErrorScreen';
 import { navigate } from '../routing';
 import { ACCOUNT_PATH, resolveHomeLang } from '../langs';
 import { t } from '../i18n';
@@ -657,7 +657,7 @@ export default function Profile() {
             </button>
             {/* The save's failure, on the app's error surface (#216 rework). */}
             {saveError && (
-              <ErrorSheet
+              <ErrorScreen
                 lang={lang}
                 title={saveError.title}
                 note={saveError.note}

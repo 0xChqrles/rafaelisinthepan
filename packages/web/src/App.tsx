@@ -40,6 +40,13 @@ import BoardIcon from './assets/icons/board.svg?react';
 import { t } from './i18n';
 import useToday from './hooks/useToday';
 import { streakPreviewFromSearch } from './dev/streakPreview';
+import ErrorScreen from './components/ErrorScreen';
+import {
+  nextErrorVariant,
+  errorPreviewFromSearch,
+  errorVariant,
+  type ErrorVariantName,
+} from './dev/errorPreview';
 
 export default function App() {
   const pathname = useLocation();
@@ -200,6 +207,16 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
   // Stable across renders: StreakDialog keys its whole staged sequence on onDismiss, so
   // an inline closure would restart the animation every time this route re-renders.
   const dismissStreakPreview = useCallback(() => setStreakPreview(null), []);
+  // Dev-only preview of the error surface (`?error=<variant>`): the real ErrorScreen over
+  // whatever route is on screen, so the box is judged against a real backdrop. Closing
+  // CYCLES the copy set rather than dismissing — see dev/errorPreview.ts.
+  const [errorPreview, setErrorPreview] = useState<ErrorVariantName | null>(() =>
+    errorPreviewFromSearch(window.location.search),
+  );
+  const cycleErrorPreview = useCallback(
+    () => setErrorPreview((held) => (held === null ? null : nextErrorVariant(held))),
+    [],
+  );
   const onboarded = useGameStore((s) => s.onboarded);
   const tutorialOpen = useGameStore((s) => s.tutorialOpen);
   const openTutorial = useGameStore((s) => s.openTutorial);
@@ -232,7 +249,7 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
   if (tutorialOpen) {
     return <LazyTutorial key={lang} lang={lang} onDone={closeTutorial} />;
   }
-  if (!onboarded && streakPreview == null) {
+  if (!onboarded && streakPreview == null && errorPreview == null) {
     return (
       <Invite
         lang={lang}
@@ -320,6 +337,16 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
           puzzle={word.puzzle}
           dayNumber={dayNumber}
           onHeaderLeftChange={updateHeaderLeft}
+        />
+      )}
+      {errorPreview != null && (
+        <ErrorScreen
+          key={errorPreview}
+          lang={lang}
+          title={t(lang, errorVariant(errorPreview).title)}
+          note={t(lang, errorVariant(errorPreview).note)}
+          onRetry={errorVariant(errorPreview).retry ? cycleErrorPreview : undefined}
+          onClose={cycleErrorPreview}
         />
       )}
       {streakPreview != null && (

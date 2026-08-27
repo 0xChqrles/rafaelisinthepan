@@ -44,7 +44,7 @@ import { useAccountFace, useOwnFace, type Face } from '../components/AccountFace
 import Avatar from '../components/Avatar';
 import Button from '../components/Button';
 import CodeInput from '../components/CodeInput';
-import ErrorSheet from '../components/ErrorSheet';
+import ErrorScreen from '../components/ErrorScreen';
 import LoadingWave from '../components/LoadingWave';
 import TopBar from '../components/TopBar';
 import {
@@ -488,7 +488,7 @@ export default function AccountEmail() {
       </div>
 
       {refusal && (
-        <ErrorSheet
+        <ErrorScreen
           lang={lang}
           title={refusal.title}
           note={refusal.note}
