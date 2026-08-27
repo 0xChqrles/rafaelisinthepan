@@ -36,7 +36,7 @@ import {
 } from '../identity';
 import { adoptSignedOutVerdict } from '../state/signedOutVerdict';
 import { prefetchTurnstileTokens } from '../turnstile';
-import ErrorSheet from '../components/ErrorSheet';
+import ErrorScreen from '../components/ErrorScreen';
 import { useGameStore, type BoardTab } from '../state/gameStore';
 import {
   pathForBoard,
@@ -528,7 +528,7 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
           created nothing; a delivery failing has the account in hand, and TRY AGAIN
           shares inside its own fresh activation. */}
       {inviteFailed !== null && (
-        <ErrorSheet
+        <ErrorScreen
           lang={lang}
           title={t(lang, inviteFailed === 'account' ? 'failedAccount' : 'failedShare')}
           note={t(lang, inviteFailed === 'account' ? 'failedAccountNote' : 'failedShareNote')}

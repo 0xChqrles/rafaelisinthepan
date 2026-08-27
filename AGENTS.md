@@ -1097,9 +1097,16 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   **accepting an invite** (its button — the landing no longer auto-adds on load) ·
   **sending an invite link** · **saving a profile** (the SAVE tap, never the editor
   opening). Each is a SINGLE tap that chains its real action behind the bootstrap, shows a
-  clear loading state on the button, and reports failure on the app's ERROR SURFACE — a
-  popup on desktop, a bottom sheet on a phone (`web/components/ErrorSheet.tsx`) — saying
-  what happened, with TRY AGAIN when retrying can help. Consequences, all deliberate:
+  clear loading state on the button, and reports failure on the app's ERROR SURFACE —
+  a FULL-SCREEN MODAL (`web/components/ErrorScreen.tsx`) saying what happened, with TRY
+  AGAIN when retrying can help. **It was a desktop popup / phone bottom SHEET until
+  2026-08-27, when the user retired that format outright:** a sheet is the dismissal
+  gesture's own shape — it slides up from an edge and asks to be swiped away — where every
+  message this surface carries is a CALL TO ACTION, and the account one most of all (the
+  account is what PLAY deploys, so dismissing it is declining to play, not tidying a
+  notification away). It leads with the ERROR BOT — a user-drawn 4-frame idle sprite
+  speaking through a drawn balloon — then the title, the note, and the action.
+  Consequences, all deliberate:
   - **The sentence game shows the FULL RULES GATE whenever the device has no account**
     (archive days included), whatever `sentenceRulesSeen` says: its PLAY is the only
     trigger on that screen, and the server owns the log from the first guess, so no guess

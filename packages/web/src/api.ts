@@ -23,6 +23,7 @@ import type {
   WordPuzzle,
 } from '@whippin/shared';
 import type { Mode } from './langs';
+import { timeoutSignal } from './timeout';
 
 // Base URL of the backend, configured at build time via VITE_API_BASE_URL.
 // Trailing slashes are trimmed so callers can append paths cleanly. Empty when
@@ -280,7 +281,7 @@ export async function postDevicesBody(
   url: string,
   body: { token: string; turnstileToken?: string; revoke?: string; revokeKey?: string },
 ): Promise<Response> {
-  return postSignedJson(url, body, AbortSignal.timeout(DEVICES_TIMEOUT_MS));
+  return postSignedJson(url, body, timeoutSignal(DEVICES_TIMEOUT_MS));
 }
 
 export interface DeviceRow {

@@ -38,6 +38,7 @@ import LoadingWave from '../components/LoadingWave';
 import { startFreshDevice, useSignedOutAccount } from '../identity';
 import { t } from '../i18n';
 import { navigate } from '../routing';
+import { timeoutSignal } from '../timeout';
 
 // Leave the account behind and go play: the verdict is lifted (which is also what removes
 // the persisted tombstone, origin-wide), then App's home redirect resolves the last-played
@@ -82,7 +83,7 @@ export default function SignedOut({
       let shown: Face = { publicId, name: anonName(publicId), avatar: null };
       try {
         const response = await fetch(profileUrl(publicId), {
-          signal: AbortSignal.timeout(6_000),
+          signal: timeoutSignal(6_000),
         });
         if (response.ok) {
           const profile = parseProfile(await response.json());
