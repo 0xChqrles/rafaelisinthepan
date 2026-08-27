@@ -40,11 +40,11 @@ import useToday from './hooks/useToday';
 import { streakPreviewFromSearch } from './dev/streakPreview';
 import ErrorScreen from './components/ErrorScreen';
 import {
-  nextSheetVariant,
-  sheetPreviewFromSearch,
-  sheetVariant,
-  type SheetVariantName,
-} from './dev/sheetPreview';
+  nextErrorVariant,
+  errorPreviewFromSearch,
+  errorVariant,
+  type ErrorVariantName,
+} from './dev/errorPreview';
 
 export default function App() {
   const pathname = useLocation();
@@ -201,14 +201,14 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
   // Stable across renders: StreakDialog keys its whole staged sequence on onDismiss, so
   // an inline closure would restart the animation every time this route re-renders.
   const dismissStreakPreview = useCallback(() => setStreakPreview(null), []);
-  // Dev-only preview of the error surface (`?sheet=<variant>`): the real ErrorScreen over
+  // Dev-only preview of the error surface (`?error=<variant>`): the real ErrorScreen over
   // whatever route is on screen, so the box is judged against a real backdrop. Closing
-  // CYCLES the copy set rather than dismissing — see dev/sheetPreview.ts.
-  const [sheetPreview, setSheetPreview] = useState<SheetVariantName | null>(() =>
-    sheetPreviewFromSearch(window.location.search),
+  // CYCLES the copy set rather than dismissing — see dev/errorPreview.ts.
+  const [errorPreview, setErrorPreview] = useState<ErrorVariantName | null>(() =>
+    errorPreviewFromSearch(window.location.search),
   );
-  const cycleSheetPreview = useCallback(
-    () => setSheetPreview((held) => (held === null ? null : nextSheetVariant(held))),
+  const cycleErrorPreview = useCallback(
+    () => setErrorPreview((held) => (held === null ? null : nextErrorVariant(held))),
     [],
   );
   const onboarded = useGameStore((s) => s.onboarded);
@@ -243,7 +243,7 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
   if (tutorialOpen) {
     return <LazyTutorial key={lang} lang={lang} onDone={closeTutorial} />;
   }
-  if (!onboarded && streakPreview == null && sheetPreview == null) {
+  if (!onboarded && streakPreview == null && errorPreview == null) {
     return (
       <Invite
         lang={lang}
@@ -333,14 +333,14 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
           onHeaderLeftChange={updateHeaderLeft}
         />
       )}
-      {sheetPreview != null && (
+      {errorPreview != null && (
         <ErrorScreen
-          key={sheetPreview}
+          key={errorPreview}
           lang={lang}
-          title={t(lang, sheetVariant(sheetPreview).title)}
-          note={t(lang, sheetVariant(sheetPreview).note)}
-          onRetry={sheetVariant(sheetPreview).retry ? cycleSheetPreview : undefined}
-          onClose={cycleSheetPreview}
+          title={t(lang, errorVariant(errorPreview).title)}
+          note={t(lang, errorVariant(errorPreview).note)}
+          onRetry={errorVariant(errorPreview).retry ? cycleErrorPreview : undefined}
+          onClose={cycleErrorPreview}
         />
       )}
       {streakPreview != null && (

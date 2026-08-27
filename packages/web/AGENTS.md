@@ -423,8 +423,8 @@ pnpm typecheck  # tsc --noEmit
 ```
 
 Front-end dev harnesses: `?tutorial=1` forces the tutorial, `?streak=N` previews the
-streak celebration, `?sheet=<variant>` previews the error screen against a real backdrop
-(`dev/sheetPreview.ts` — every variant is a real call site's copy; bare `?sheet` takes the
+streak celebration, `?error=<variant>` previews the error screen against a real backdrop
+(`dev/errorPreview.ts` — every variant is a real call site's copy; bare `?error` takes the
 account one, closing CYCLES the set). All dev only. There is **no `?puzzle=` file override** — the front
 always loads the day's puzzle from the backend (test a specific puzzle by publishing
 it to the local store — see `packages/backend/AGENTS.md`).
