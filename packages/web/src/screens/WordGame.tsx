@@ -36,7 +36,7 @@ import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import WordEndScreen from '../components/WordEndScreen';
 import LoadError from '../components/LoadError';
-import ErrorSheet from '../components/ErrorSheet';
+import ErrorScreen from '../components/ErrorScreen';
 import CoachText from '../tutorial/CoachText';
 import { t, tn, wordRestartNote, srWordClaim, srWordMiss, srWordTimeUp } from '../i18n';
 import { prefersReducedMotion } from '../hooks/useScramble';
@@ -257,7 +257,7 @@ function WordRound({
     // network legs own their errors, but its tail (the store guard, the anchor, a
     // server-supplied log's replay) can throw — and with `setStarting(false)` only in a
     // fulfilled handler, that throw froze PLAY on its LoadingWave forever, with no
-    // ErrorSheet, on a one-shot daily whose only escape was a reload.
+    // ErrorScreen, on a one-shot daily whose only escape was a reload.
     void startWordRound(syncContext)
       .then((ok) => {
         if (!ok) setStartFailed(true);
@@ -659,7 +659,7 @@ function WordRound({
           Keeping the retired play controls underneath prevents any state from resizing
           the surface above. */}
       {startFailed && (
-        <ErrorSheet
+        <ErrorScreen
           lang={lang}
           title={t(lang, 'failedStart')}
           note={t(lang, 'failedStartNote')}

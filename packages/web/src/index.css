@@ -74,7 +74,11 @@
      cobalt, the pale hole blue, RARE's cyan and OBSCURE's pinker #b164f2. Chrome,
      rewards, the credit headline; never a scale value, never a word state. */
   --accent: #8f7bff;
-  --danger: #f04e63;
+  /* ALARM RED, and it is the ERROR BOT's own ink (user-decided 2026-08-27, superseding
+     #f04e63): that hex sat at 62% lightness and read coral rather than dangerous. Note it
+     is only 7.7 dE from MISS_COLOR (#ff3d2e) — the two reds are deliberately allowed to be
+     one red now, where the ladder's reservation used to hold them 30 apart. */
+  --danger: #ff2e38;
   --muted: #b0aca4; /* warm grey — paper-toned */
   --flame: #4642e8; /* streak flame indigo — the sprite's body color (#74); milestone tiers swap it */
 
@@ -5677,110 +5681,192 @@ button * {
 /* ---------------------------------------------------------------------------
    THE ERROR SURFACE (#216 trigger rework, user-decided 2026-08-24): where a
    PRIMARY ACTION reports that it failed — the two PLAY gates, the invite accept,
-   the invite send, the profile save. A centered popup on desktop, a bottom SHEET
-   on a phone (the app's ≤640px step). It wears the dialog boxes' own dress — the
-   coach glass and the corner brackets — with the brackets in the DANGER ink,
-   since this box is the one that says something went wrong. */
-.error-dialog {
-  /* The coach-rules stack restated with the danger brackets: eight corner strips
-     over the glass fill (the .coach rule's own technique — kept separate because
-     that rule also sets layout this dialog does not want).
-     A LITERAL rgba, exactly as `.coach` writes its cobalt, and never `color-mix()`
-     (Baseline 2023, Safari 16.2): this is the one use in the file that feeds a
-     CUSTOM PROPERTY the `background` shorthand substitutes, so a browser that does
-     not know the function loses the whole shorthand at computed-value time — the
-     eight strips AND the `var(--bg)` fill under them — and the dialog resolves to
-     `unset`, i.e. transparent. Reported from production 2026-08-27: an iOS 15
-     iPhone drew ACCOUNT SETUP FAILED with no background at all, the rules gate
-     showing straight through the sheet that was refusing to start the round. Every
-     other color-mix here is a direct declaration whose loss costs a glow; only a
-     var() indirection can take a surface with it. */
-  --corner-c: rgba(240, 78, 99, 0.9); /* --danger #f04e63 at 90% */
-  margin: auto;
-  width: min(420px, calc(100vw - 40px));
-  border: 1px solid var(--line-strong);
-  border-radius: 0;
-  background:
-    linear-gradient(var(--corner-c), var(--corner-c)) 0 0 / 14px 2px,
-    linear-gradient(var(--corner-c), var(--corner-c)) 0 0 / 2px 14px,
-    linear-gradient(var(--corner-c), var(--corner-c)) 100% 0 / 14px 2px,
-    linear-gradient(var(--corner-c), var(--corner-c)) 100% 0 / 2px 14px,
-    linear-gradient(var(--corner-c), var(--corner-c)) 0 100% / 14px 2px,
-    linear-gradient(var(--corner-c), var(--corner-c)) 0 100% / 2px 14px,
-    linear-gradient(var(--corner-c), var(--corner-c)) 100% 100% / 14px 2px,
-    linear-gradient(var(--corner-c), var(--corner-c)) 100% 100% / 2px 14px,
-    var(--bg);
-  background-repeat: no-repeat;
+   the invite send, the profile save, and the profile editor's two moderation
+   refusals.
+
+   IT IS A FULL-SCREEN MODAL, NOT A SHEET (user-decided 2026-08-27). It shipped as
+   a desktop popup / phone bottom sheet, and a sheet is the DISMISSAL gesture's own
+   shape — it slides up from the edge and asks to be swiped away — where every
+   message here is a CALL TO ACTION. Dismissing the account one is not tidying a
+   notification away; it is declining to play. So the box became the screen: the
+   app's ground, opaque, with the SignedOut column's geometry (that screen is the
+   other consequential full-screen message, and the two now read as one surface),
+   opening on a big FAIL CROSS in the danger ink. */
+.error-screen {
+  /* The page's own ground, edge to edge. No corner brackets: those are the dialog
+     boxes' dress, and this is not a box on a screen any more — it IS the screen
+     (the SignedOut / NoPuzzle language). */
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  border: 0;
+  background: var(--bg);
   color: var(--fg);
-  padding: 20px;
   outline: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.error-dialog::backdrop {
-  background: rgba(0, 0, 0, 0.55);
+.error-body {
+  /* SignedOut's exact column, so the app's two full-screen messages are one shape. */
+  width: min(340px, 100% - 40px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
-.error-dialog[open] {
-  animation: error-in 160ms ease-out;
+/* THE ERROR BOT (user-drawn, 2026-08-27) — 4-frame 32x32 idle bob, and a speech
+   balloon it says ERROR ! through. It replaced a big fail cross the same day: a
+   cross is a verdict stamped on the player, where a character is the game's own
+   voice, which this app already uses (the coach box, the board's ghost).
+
+   The sheet is COLOUR art (10 colours), so it is a background-image and not a
+   `currentColor` mask — the ultra-slash rule. Integer scale + `pixelated`, the
+   standing pixel-art rule: 5x desktop, 4x on a phone. */
+.error-bot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* The balloon's tail overlaps the bot's head rather than floating off it. */
+  gap: 0;
 }
-.error-dialog[open].closing {
-  animation: error-out 140ms ease-in forwards;
-  pointer-events: none;
+.error-bot-sprite {
+  width: 160px; /* 32 x 5 */
+  height: 160px;
+  flex: none;
+  background-repeat: no-repeat;
+  background-size: 400% 100%; /* 4 frames laid horizontally */
+  image-rendering: pixelated;
+  /* A LOOPING walk needs the n/(n-1) overshoot (the .cal-ripple rule): steps(4) over
+     0 -> 133.333% lands exactly on 0 / 33.3 / 66.7 / 100%, the four frame positions,
+     and restarts clean. A bare 0 -> 100% would land BETWEEN frames. */
+  animation: bot-idle 640ms steps(4) infinite;
 }
-@keyframes error-in {
+@keyframes bot-idle {
   from {
-    transform: translateY(14px);
-    opacity: 0;
+    background-position-x: 0%;
   }
   to {
-    transform: translateY(0);
-    opacity: 1;
+    background-position-x: 133.333%;
   }
 }
-@keyframes error-out {
-  from {
-    transform: translateY(0);
-    opacity: 1;
-  }
-  to {
-    transform: translateY(14px);
-    opacity: 0;
+/* An infinite decoration: switched OFF rather than collapsed, or the walk lands on a
+   duration of nothing and the sheet holds whatever frame the fill left it on (the
+   ultra-slash finding). Frame 0 is the bot at rest, which is the right one to park on. */
+@media (prefers-reduced-motion: reduce) {
+  .error-bot-sprite {
+    animation: none;
+    background-position-x: 0%;
   }
 }
-.error-close {
+/* THE BALLOON is DRAWN (`error-speech-ballon.png`, 61x16 — user-decided 2026-08-27,
+   replacing a CSS rebuild of the same shape around live pixel-font text). The word is
+   fixed, so the rebuild bought nothing but four clip-path layers and a lesson about
+   `clip-path` clipping its own pseudo-elements; the art is one file at one integer scale.
+
+   It is TWO TONES, and the accent one FOLLOWS `--danger` rather than being baked: the
+   source paints its accent pixels a flat `#ff0000` TINT MARKER, which is the signal for
+   exactly this. Both layers are the slash sheets' own technique — a CSS mask over a
+   background-color — and that is what makes the marker cost nothing: **a mask reads ALPHA,
+   never colour**, so the source's #ff0000 is not recoloured, it is simply never painted.
+   The WHOLE shape goes down in the art's white, then the accent pixels alone in `--danger`
+   over it. `error-balloon-accent.png` is that second mask, DERIVED from the source (same
+   61x16 box, alpha where the source is #ff0000, so the two register by construction).
+   Redraw the balloon and it must be regenerated with it — the one file here not authored. */
+.error-balloon {
+  --balloon-scale: 5;
+  position: relative;
+  flex: none;
+  width: calc(61px * var(--balloon-scale));
+  height: calc(16px * var(--balloon-scale));
+  /* The ART's white, deliberately NOT `--fg`: the paper token is #f4f1e8, and the balloon
+     is drawn pure white — as is the bot's outline right under it, which would read as two
+     different whites stacked. A sprite matches its own sheet, not the type palette. */
+  background-color: #fff;
+  -webkit-mask-image: url('./assets/error-speech-ballon.png');
+  mask-image: url('./assets/error-speech-ballon.png');
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  image-rendering: pixelated;
+}
+.error-balloon::after {
+  content: '';
   position: absolute;
-  top: 6px;
-  right: 6px;
+  inset: 0;
+  background-color: var(--danger);
+  -webkit-mask-image: url('./assets/error-balloon-accent.png');
+  mask-image: url('./assets/error-balloon-accent.png');
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  image-rendering: pixelated;
 }
 .error-title {
-  margin: 4px 36px 0 0;
+  margin: 0;
+  font-family: var(--ui);
   font-weight: 650;
-  font-size: 14px;
-  letter-spacing: 0.04em;
+  font-size: 15px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--danger);
 }
 .error-note {
   /* Coach copy voice: sentence case, resting weight — the one mono surface the
      all-caps chrome rule exempts, because it explains rather than labels. */
-  margin: 10px 0 0;
+  margin: 0;
+  font-family: var(--ui);
   font-size: 14px;
   font-weight: 350;
-  line-height: 1.5;
+  line-height: 1.55;
   text-transform: none;
+  color: var(--muted);
 }
-.error-retry {
+/* The action is the column's, exactly like SignedOut's and the invite landing's. */
+.error-body .btn {
   width: 100%;
-  margin-top: 16px;
+  margin-top: 12px;
 }
-/* On a phone the popup becomes a SHEET on the bottom edge: full-bleed, riding the
-   safe area, the same slide the exit animation already plays. */
+.error-body .btn + .btn {
+  margin-top: 0;
+}
+.error-screen[open] {
+  animation: error-in 160ms ease-out;
+}
+.error-screen[open].closing {
+  animation: error-out 140ms ease-in forwards;
+  pointer-events: none;
+}
+@keyframes error-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes error-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
 @media (max-width: 640px) {
-  .error-dialog {
-    margin: auto 0 0;
-    width: 100vw;
-    max-width: 100vw;
-    padding: 20px 16px calc(16px + env(safe-area-inset-bottom, 0px));
-    border-left: 0;
-    border-right: 0;
-    border-bottom: 0;
+  /* 4x rather than 5x — the standing pixel-art rule allows only WHOLE steps. */
+  .error-bot-sprite {
+    width: 128px;
+    height: 128px;
+  }
+  .error-balloon {
+    --balloon-scale: 4;
   }
 }

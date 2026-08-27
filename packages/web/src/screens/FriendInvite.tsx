@@ -3,7 +3,7 @@ import { anonName, defaultAvatar } from '@whippin/shared';
 import Avatar from '../components/Avatar';
 import LoadingWave from '../components/LoadingWave';
 import LoadError from '../components/LoadError';
-import ErrorSheet from '../components/ErrorSheet';
+import ErrorScreen from '../components/ErrorScreen';
 import { friendsUrl, parseProfile, postFriendsBody, profileUrl } from '../api';
 import {
   deviceIdentity,
@@ -191,7 +191,7 @@ export default function FriendInvite({ publicId, lang }: { publicId: string; lan
       )}
 
       {failed && (
-        <ErrorSheet
+        <ErrorScreen
           lang={lang}
           title={t(lang, 'failedInvite')}
           note={t(lang, 'failedInviteNote')}
