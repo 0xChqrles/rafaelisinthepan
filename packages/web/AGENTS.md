@@ -29,8 +29,11 @@
       screens/Account.tsx     `/account` (#204): the identity masthead row, the save state
                               (button, or the address), and — once SAVED — #216's devices.
                               The area's one door
-      screens/AccountEmail.tsx  `/account/email`: address -> code -> bind/adopt, one purpose
-                              per step, with the erase confirmation and the face-led endings
+      screens/AccountEmail.tsx  `/account/email` (SAVE) and `/account/signin` (RETURN) — one
+                              engine, two declared intentions: address -> code -> bind/adopt,
+                              the two-face crossroads, six face-led endings
+      components/AccountMark.tsx  the ghost grid the returning door waits on, and the
+                              cell-by-cell arrival that hands off to Avatar
       components/CodeInput.tsx  the six-digit prompt: six drawn cells over ONE real input,
                               auto-verifying on the sixth digit
       components/AccountFace.tsx  the ONE read of "who an account is" (mark + name), shared
@@ -603,6 +606,24 @@ it to the local store — see `packages/backend/AGENTS.md`).
   product contract — the one flow and its three endings, the three screens and why, the code
   prompt's shape, the copy rule, when the account being left is deleted, the transfers —
   lives in the root `AGENTS.md`. What is this package's:
+  - **TWO DOORS ONTO ONE ENGINE (vol. 2, 2026-08-27).** `/account/email` and
+    `/account/signin` mount the SAME `AccountEmail` with an `intent` the ROUTE declares
+    (`langs.ts` `LinkIntent`); it never reaches the server, and every request the flow makes
+    is byte-identical on both. The product contract is the root `AGENTS.md`'s. What is this
+    package's: `components/AccountMark.tsx` is the wordless tell — the ghost 10×10 grid the
+    returning door opens on, and the transient cell-by-cell composition that hands off to
+    `Avatar`'s canonical traced path (so #188's union-outline decision is untouched, and
+    `prefers-reduced-motion` skips the composition entirely; its cell order is a
+    DETERMINISTIC shuffle seeded by the drawing, the slash-flip rule, so a re-render mid-flight
+    cannot re-scatter cells that have already landed). The ending's copy follows the face in
+    on a `--arrive-delay` cascade (the `--slash-ms` rule: the JS that ends the composition and
+    the CSS that waits for it hold ONE number), every element keeping its layout box so
+    nothing moves while it arrives. The address step's cost line reads the CACHED
+    `useAccountSummary` — no new request, and a tokenless device says nothing at all. And the
+    crossroads' two labels are different KINDS of word: `.link-cross-tag` is tracked all-caps
+    chrome for the verdict, `.link-cross-name` an identity with its case kept; the row is
+    equal-width sides around the arrow, because the two labels differ in length and a row that
+    merely centres its content puts the pivot off by half that difference.
   - **THREE routes, three screens** (a fourth, `/account/manage`, lived for one commit on
     2026-08-26 and was ROLLED BACK the same day, user-decided: the devices belong on the
     account screen — gated, below). `screens/Account.tsx` (`/account`) is the area's one
@@ -675,8 +696,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     it publishes so a sibling tab cannot keep authenticating as the account this device left.
   - **`SignedOut`'s RECONNECT is wired and PRIMARY** (PLAY became secondary): it lifts the
     verdict — the one gesture that removes the tombstone origin-wide — and lands on
-    `/account/email` DIRECTLY: a player who has just been signed out has exactly one
-    intention, and every screen between them and the address field is one they have to read
+    `/account/signin` DIRECTLY (vol. 2; it was `/account/email`, whose every word is about
+    SAVING an account the reader no longer holds): a player who has just been signed out has
+    exactly one intention, and every screen between them and the address field is one they have to read
     past. Abandoning the flow costs exactly what SKIP already cost.
   - **The centered 64px-mark + 20/650-name HERO survives only where the screen is ABOUT an
     account** — the flow's address-step lead, its endings, the erase confirmation, and the

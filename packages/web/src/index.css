@@ -5392,6 +5392,231 @@ button * {
   margin-bottom: 4px;
 }
 
+/* ── THE MARK THAT WAITS, AND THE MARK THAT ARRIVES (#204's UX rework vol. 2) ───────────
+   The email flow performs two OPPOSITE acts through one engine — saving the account you
+   hold, and signing into another one — and this is the wordless tell that separates them
+   (`components/AccountMark.tsx` holds the reasoning). Saving keeps a real face on screen
+   throughout; returning opens on an EMPTY grid that the recovered account develops into.
+   Both are drawn at `Avatar`'s exact geometry, so the swap moves nothing by a pixel. */
+.account-mark {
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+/* The empty slot. NOT a skeleton — nothing is loading, and the skeleton's sweep would
+   promise an answer this screen has not even asked for yet. It is the question drawn:
+   somebody is out there, and this is where they will appear. */
+.ghost-ground {
+  fill: rgba(0, 0, 0, 0.28);
+}
+.ghost-cell {
+  fill: none;
+  stroke: rgba(244, 241, 232, 0.07);
+  stroke-width: 0.6;
+}
+/* THE BREATH: five cells of a hundred drifting on a long cycle, deliberately below the
+   threshold of a thing you would call an animation — enough that the slot reads as alive
+   rather than broken, never enough to compete with the input under it. */
+.ghost-cell.breathing {
+  animation: ghost-breathe 4.2s ease-in-out infinite;
+}
+/* A standalone INFINITE decoration is switched off rather than collapsed (the streak
+   flame's rule): the global reduced-motion rule shortens durations, which would leave this
+   flickering rather than resting. The empty grid says what it says perfectly still. */
+@media (prefers-reduced-motion: reduce) {
+  .ghost-cell.breathing {
+    animation: none;
+  }
+}
+@keyframes ghost-breathe {
+  0%,
+  100% {
+    stroke: rgba(244, 241, 232, 0.07);
+  }
+  50% {
+    stroke: rgba(244, 241, 232, 0.26);
+  }
+}
+/* THE ARRIVAL: the ground lands, then the drawing grows into it cell by cell, in the order
+   its own pixels were shuffled. `opacity` alone — a `scale` per cell would resample the
+   very pixel grid the mark is made of (the sprites' integer-scale rule), and the final
+   frame hands off to `Avatar`'s canonical traced path either way. */
+.mark-ground {
+  animation: mark-ground-in 180ms ease-out both;
+}
+.mark-cell {
+  animation-name: mark-cell-in;
+  animation-timing-function: cubic-bezier(0.2, 0.7, 0.3, 1);
+  animation-fill-mode: both;
+}
+@keyframes mark-ground-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes mark-cell-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ── THE CROSSROADS (#204's UX rework vol. 2) ──────────────────────────────────────────
+   The erase confirmation used to show only the account being LOST, which draws a trade as
+   pure loss — the screen could say what the tap costs but never what it buys. It is a
+   FORK, so it draws both: the account being left, dimmed under the word DELETED, and the
+   one being joined, lit and named. The sentence beneath is then free to carry the only
+   part a picture cannot — what SURVIVES. */
+.link-cross {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 14px;
+  /* THE ARROW IS THE AXIS. The two labels are different lengths — DELETED against a
+     player's name — so a row that merely centres its content puts the marks off-centre by
+     half that difference. Equal-width sides fix the pivot; the cap keeps the two faces from
+     drifting apart on a wide column, and 300 is what leaves each side room for a full
+     16-character name at 320px. */
+  width: 100%;
+  max-width: 280px;
+  margin: 0 auto;
+}
+.link-cross-side {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+/* The one being left reads as already half-gone. Not hidden and not crossed out: the
+   player has been wearing this face, and it has to stay recognisable right up to the tap
+   that deletes it. */
+.link-cross-side.leaving {
+  opacity: 0.5;
+}
+.link-cross .avatar {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.link-cross-mark {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--r-md);
+}
+/* THE TWO LABELS ARE DIFFERENT KINDS OF WORD, and they are dressed as such. DELETED is a
+   system verdict — tracked all-caps chrome, in the one red this whole area contains, so the
+   first red thing on screen IS the signal. The other side is a NAME: case kept, ordinary
+   spacing, the way every board already writes an identity. Both are bounded by their SIDE,
+   which is half the row. */
+.link-cross-tag,
+.link-cross-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ui);
+  color: var(--fg);
+}
+.link-cross-tag {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.link-cross-tag.danger {
+  color: var(--danger);
+}
+.link-cross-name {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+/* The direction of travel, drawn rather than written: a hairline running from the account
+   being left into the one being joined, with the arrowhead as a sharp CSS corner (no
+   glyph — the pixel face has no arrow, and a text `→` sits on its own baseline instead of
+   on the line's). Centred on the 44px marks above the labels. */
+.link-cross-arrow {
+  position: relative;
+  flex: none;
+  align-self: flex-start;
+  width: 26px;
+  height: 44px;
+}
+.link-cross-arrow::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: var(--line-strong);
+}
+.link-cross-arrow::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 5px;
+  height: 5px;
+  border-top: 1px solid var(--line-strong);
+  border-right: 1px solid var(--line-strong);
+  translate: 0 -50%;
+  rotate: 45deg;
+}
+
+/* THE ENDING'S COPY WAITS FOR THE FACE. When a mark ARRIVES, the composition is the beat —
+   an account appearing out of nothing — and a name landing at full strength beside a
+   half-drawn face steals it. So the name, the receipt, the sentence and the action follow it
+   in, each a breath behind the last, in the order they are read. Every one holds its layout
+   box from the first frame (`both`), so nothing on the screen moves while they arrive. The
+   delay is the caller's (`--arrive-delay`), the `--slash-ms` rule: the JS that ends the
+   composition and the CSS that waits for it must not hold two numbers. */
+.link-arrive {
+  animation: link-arrive-in 240ms ease-out both;
+  animation-delay: var(--arrive-delay, 0ms);
+}
+@keyframes link-arrive-in {
+  from {
+    opacity: 0;
+    translate: 0 3px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+/* THE ONE NEW FACT the ending shows about the account, under its name: the address it is
+   now saved to. (A RECOVERY shows `.link-stakes` instead — the streak and day count that
+   PROVE the account is theirs.) Quiet, because the face and the sentence carry the
+   moment; this is the receipt under them. */
+.link-receipt {
+  margin: -6px 0 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+/* The SECOND DOOR, on `/account`: a quiet way to the returning flow, never a second
+   primary. It sits on its own line under everything the screen offers, with air above it,
+   because it leads AWAY from this account rather than acting on it. */
+.account-door {
+  align-self: center;
+  margin-top: 4px;
+}
+
 /* The centered FACE STACK: both endings and the erase confirmation — an account's mark
    and name over the one thing being said about it, then the actions. One class, because
    the three moments must read as one voice: this screen is always about WHO. */

@@ -1458,6 +1458,80 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   `shared/src/history.ts` for the same reason: the erase confirmation names a streak the server
   derives, and two spellings would put a different number on that dialog than the streak screen
   shows over the same days.
+- **TWO DOORS ONTO ONE ENGINE (user-decided 2026-08-27, on the vol. 2 UX research).** The
+  flow performs two OPPOSITE acts — saving the account this device holds, which is additive,
+  and signing into ANOTHER one, which may delete it — and they wore one costume: the same
+  entry, the same taps, the same words, the same picture, diverging only in the last
+  half-second at the erase confirmation. The cause is recorded above and is CORRECT: the
+  server may not branch before the code is verified, or it enumerates accounts. **But the
+  server's discretion had become the interface's silence** — because the back end may not
+  guess the intention, the front end stopped asking for it, and a returning player was
+  looking for a word that was not on screen. So `/account/signin` joins `/account/email`:
+  the same screen, the same requests, the same allowances and challenges, byte for byte.
+  What the path carries is the player's DECLARED INTENTION, and the rule it runs on is
+  **the declaration shapes the JOURNEY · the server shapes the DESTINATION · the ending
+  always tells the TRUTH about what actually happened.** Nothing is detected, nothing is
+  routed, every ending stays reachable from either door, and a player who picks the "wrong"
+  one is never blocked and never lied to. This AMENDS the SCOPE of "the player never has to
+  say whether they are new or returning" — the SERVER never asks; the SCREEN may offer.
+  - **THE DOORS.** `/account` keeps its lit SAVE and gains a QUIET second door under it —
+    *I ALREADY HAVE AN ACCOUNT* / *J'AI DÉJÀ UN COMPTE* — never a second primary, since most
+    visitors there came to save. Its WORDS change with what it would cost, off the one fact
+    the client already holds: unsaved, leaving DESTROYS this account; SAVED, leaving is
+    reversible (*SIGN IN TO ANOTHER ACCOUNT*), because the account stays reachable by its own
+    address. It is held back until the summary settles, the same explicit-loading rule the
+    action above it follows. **RECONNECT now lands on `/account/signin`** — a signed-out
+    player is a returning player by definition, and the SAVE door's every word is about
+    keeping an account they no longer hold.
+  - **THE WORDLESS TELL IS THE FACE, and there is deliberately NO SECOND INK**
+    (`web/components/AccountMark.tsx`). Saving keeps a real face on screen from the first
+    step: it is the OBJECT of the sentence. Returning opens on an EMPTY 10×10 grid —
+    somebody is out there — which the recovered account DEVELOPS into, cell by cell, when
+    the code lands. Same layout, opposite narrative, no copy. The vol. 2 research proposed a
+    second flow ink for the doors and it was NOT taken: the app's token set is three colours
+    with settled meanings, and a fourth buys at a glance what the picture says outright. The
+    composition is TRANSIENT and hands off to `Avatar`'s canonical traced path, so #188's
+    one-union-outline decision is untouched; under `prefers-reduced-motion` there is no
+    composition at all. The ending's name, receipt, sentence and action then follow the face
+    in on a short cascade — a name at full strength beside a half-drawn mark steals the one
+    beat the flow exists for.
+  - **THE ERASE CONFIRMATION IS A CROSSROADS, NOT A WARNING.** A trade drawn from one side
+    reads as pure loss, so it draws BOTH accounts: the one being left, dimmed under DELETED
+    in the one red this whole area contains, and the one being joined, lit and NAMED (a
+    verdict is tracked all-caps chrome; a name is a name, case kept). That frees its one
+    sentence to carry what the picture cannot — what SURVIVES: *Today's game and your friends
+    come with you. The rest is lost.* / *La partie du jour et vos amis vous suivent. Le reste
+    est perdu.* Both halves are true and neither is obvious (the active-day transfer, the
+    friend merge), and a confirmation that OVERSTATES the damage misleads exactly as much as
+    one that hides it — which is what the line it replaces did. Reached from the RETURN door
+    it is expected (the address step already said so); reached from the SAVE door it is a
+    genuine surprise, so it gains one lead line, *That address already has an account.*, and
+    explains the turn before asking anything. It is still skipped when there is nothing to
+    lose.
+  - **THE SERVER NAMES BOTH SIDES.** `would_erase` carries `target` — the account being
+    adopted — beside the one being erased. It leaks nothing: the refusal fires only AFTER the
+    code is verified, so the caller has proved control of the address. A missing or malformed
+    one degrades to the single-face prompt, never to a refusal the player cannot answer.
+  - **THE ADOPT ANSWER CARRIES A RECEIPT.** *"We found your account"* is a CLAIM; the
+    account's streak and day count are its EVIDENCE, and the first thing a returning player
+    checks. `accountStakes` is read for the TARGET after the adopt, so a transferred active
+    day is already counted. Decorative: an unreadable one is simply no receipt, never a
+    failed link on a device whose identity has already moved.
+  - **SIX ENDINGS, ONE PER CELL of doors × outcomes.** Four of them used to borrow one of the
+    other two's sentences: `already_bound` claimed *Compte sauvegardé.* for a no-op, and a
+    RETURN that found nothing said it too, under the very face the player hoped to replace,
+    with no explanation. Now: SAVE+bound keeps *Account saved.* with the address beneath the
+    face; SAVE+already_bound says *Already saved to this address.*; RETURN+adopted keeps
+    *We found your account.* with the receipt and PLAY; RETURN+bound says *Nothing was saved
+    there — this account is now.* and offers TRY ANOTHER ADDRESS (now REVERSIBLE, since the
+    account has just acquired an address of its own); RETURN+already_bound says *You're
+    already on this account.* and plays; and an adopt from either door composes the new face,
+    because the account genuinely changed hands.
+  - **NOT DONE, and it is the user's call:** the confirmation is still gated on
+    `stakes.days > 0`, which counts SOLVED days — so a player eleven days into a losing
+    streak is erased with no dialog at all. Widening it needs a signal this route does not
+    hold (a profile row, or any stored round), which means a new store dependency on
+    `LinkHandlerDeps`. Flagged, deliberately not changed.
 - **ONE PURPOSE PER SCREEN (user-decided 2026-08-26, on the first cut's review).** The flow
   shipped as a section at the BOTTOM of the #188 profile editor, behind the leaderboard's
   EDIT chip: reaching it meant game → crown → EDIT → wait for the profile read → scroll past
@@ -1468,13 +1542,15 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     account began (with EDIT out to the editor); whether it is SAVED; where it is signed in
     (#216's device rows, acted on in place).
   - **`/profile`** — *how do others see me?* The editor, and nothing else.
-  - **`/account/email`** — *save it / get it back.* One input per step.
+  - **`/account/email`** — *save it.* One input per step. (Its twin `/account/signin` — *get
+    another one back* — arrived with vol. 2's split, above.)
   All three are GLOBAL routes like `/select`. **The leaderboard's identity STRIP is the one
   door into the area** (a player's own face is the natural handle for "my account"), and the
   EDIT chip is gone: profile editing is one tap deeper, which is the right trade for a thing
   edited once and admired daily. **RECONNECT lands on the email STEP directly** — not the
   editor, not even the account screen: a player who has just been signed out has exactly one
-  intention. No new header icon: the 320px header is already at its measured width budget.
+  intention — and since vol. 2 that step is the RETURNING door's. No new header icon: the
+  320px header is already at its measured width budget.
   A flat `/account` was chosen over a 3-card hub — a hub taxes every action a tap, and two of
   its three destinations would hold three rows each.
 - **THE CODE PROMPT IS SIX DRAWN CELLS OVER ONE REAL INPUT, AND THE SIXTH DIGIT SUBMITS**

@@ -35,7 +35,13 @@ import DeviceList from '../components/DeviceList';
 import TopBar from '../components/TopBar';
 import { useDeviceIdentity } from '../identity';
 import { t } from '../i18n';
-import { ACCOUNT_EMAIL_PATH, PROFILE_PATH, pathForBoard, resolveHomeLang } from '../langs';
+import {
+  ACCOUNT_EMAIL_PATH,
+  ACCOUNT_SIGNIN_PATH,
+  PROFILE_PATH,
+  pathForBoard,
+  resolveHomeLang,
+} from '../langs';
 import { navigate } from '../routing';
 import { loadAccountSummary, useAccountSummary } from '../state/account';
 import { useGameStore } from '../state/gameStore';
@@ -151,6 +157,30 @@ export default function Account() {
             this screen, and a list of yourself is noise. Multi-device only ever arrives
             through the email link. */}
         {saved !== null && identity !== null && <DeviceList lang={lang} />}
+
+        {/* THE SECOND DOOR (#204's UX rework vol. 2). Saving an account and signing into
+            another one are OPPOSITE acts, and until now this screen offered only the first
+            — so a returning player was looking for a word that was not on screen, and had
+            to guess that SAVE also meant "get it back" on the one screen where guessing
+            wrong deletes something. It stays QUIET, never a second primary: most visitors
+            here came to save.
+
+            Its WORDS change with what it would cost, which is one fact this screen already
+            holds. Unsaved, leaving destroys this account, so the door names the intention
+            plainly and the flow states the price before a keystroke is spent. SAVED, the
+            account stays reachable by its own address — leaving is reversible — so the door
+            simply says what it does. It is held back until the summary settles, for the
+            same reason the action above it is: a door whose meaning depends on an answer we
+            do not have yet may not be drawn. */}
+        {known && (
+          <button
+            type="button"
+            className="link-quiet-btn account-door"
+            onClick={() => navigate(ACCOUNT_SIGNIN_PATH)}
+          >
+            {t(lang, saved !== null ? 'accountSwitch' : 'accountHaveAccount')}
+          </button>
+        )}
       </div>
     </>
   );

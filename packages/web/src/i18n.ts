@@ -140,6 +140,26 @@ const STRINGS = {
     en: "So a lost phone doesn't lose it.",
     fr: "Pour qu'un téléphone perdu ne perde pas tout.",
   },
+  // THE SECOND DOOR (#204's UX rework vol. 2). Saving an account and signing into another
+  // one were one button, one dress and one set of taps — and opposite acts. A returning
+  // player was looking for a word that was not on screen, and had to infer that "save" also
+  // meant "get it back" on the one screen where guessing wrong deletes something. It is a
+  // QUIET door, never a second primary: most visitors to /account came to save.
+  accountHaveAccount: { en: 'I ALREADY HAVE AN ACCOUNT', fr: "J'AI DÉJÀ UN COMPTE" },
+  // The same door once THIS account is saved, where it means something milder: leaving is
+  // reversible, because the account stays reachable by its own address.
+  accountSwitch: { en: 'SIGN IN TO ANOTHER ACCOUNT', fr: 'SE CONNECTER À UN AUTRE COMPTE' },
+  // What signing in COSTS, said before a keystroke is spent rather than after the mail app,
+  // the six digits and the commitment ritual. Which of the two lines shows is decided by one
+  // fact the client already holds: whether this device's account has an address of its own.
+  linkReturnReplaces: {
+    en: "This device's account will be replaced.",
+    fr: 'Le compte de cet appareil sera remplacé.',
+  },
+  linkReturnKeeps: {
+    en: 'You can come back to this one anytime.',
+    fr: 'Vous pourrez revenir sur celui-ci quand vous voulez.',
+  },
   linkAddressPlaceholder: { en: 'EMAIL', fr: 'E-MAIL' },
   linkContinue: { en: 'CONTINUE', fr: 'CONTINUER' },
   // Where it went — the answer to "did I typo my own address?", which is the one thing the
@@ -163,9 +183,25 @@ const STRINGS = {
   // The erase confirmation. It NAMES what the tap destroys — the server refuses to erase
   // without being told which account, and this screen is the only thing between that tap
   // and a month of play.
-  linkEraseWarn: {
-    en: 'This device is on another account. Linking deletes it.',
-    fr: 'Cet appareil est sur un autre compte. La liaison le supprime.',
+  // THE CROSSROADS (#204's UX rework vol. 2). The confirmation used to STATE the deletion —
+  // "This device is on another account. Linking deletes it." — while showing only the account
+  // being lost. It now SHOWS the fork instead: two marks, the one being left struck through
+  // under the word DELETED, the one being joined lit beside it. So the sentence is free to
+  // carry the only part the screen cannot draw — what SURVIVES. Both halves are true and
+  // neither is obvious: the active day's play moves across, and the friends graph is merged.
+  // A confirmation that overstates the damage misleads exactly as much as one that hides it.
+  linkEraseKeeps: {
+    en: "Today's game and your friends come with you. The rest is lost.",
+    fr: 'La partie du jour et vos amis vous suivent. Le reste est perdu.',
+  },
+  linkEraseDeleted: { en: 'DELETED', fr: 'SUPPRIMÉ' },
+  // Reached from the SAVE door, the crossroads is a genuine surprise — the player asked to
+  // keep something and is being shown a deletion. One line explains the turn before the
+  // screen asks anything. From the RETURN door it is omitted: the address step already said
+  // this, and repeating it there would read as a scolding.
+  linkEraseFound: {
+    en: 'That address already has an account.',
+    fr: 'Cette adresse a déjà un compte.',
   },
   linkEraseStreak: { en: 'STREAK', fr: 'SÉRIE' },
   linkEraseDays: { en: 'DAYS', fr: 'JOURS' },
@@ -175,6 +211,25 @@ const STRINGS = {
   // is the claim "we found your account" actually makes.
   linkSaved: { en: 'Account saved.', fr: 'Compte sauvegardé.' },
   linkRestored: { en: 'We found your account.', fr: 'On a retrouvé votre compte.' },
+  // THE FOUR OTHER ENDINGS. Six cells exist — two doors times three outcomes — and until
+  // vol. 2 four of them borrowed one of the two sentences above. `already_bound` claimed
+  // "Compte sauvegardé." for a no-op, and a RETURN that found nothing said it too, under the
+  // very face the player was hoping to replace, with no explanation at all.
+  linkAlreadyAddress: {
+    en: 'Already saved to this address.',
+    fr: 'Déjà sauvegardé sous cette adresse.',
+  },
+  linkAlreadyAccount: {
+    en: "You're already on this account.",
+    fr: 'Vous êtes déjà sur ce compte.',
+  },
+  // A RETURN that bound instead. Nothing was destroyed, so it is not a failure — but it is a
+  // surprise, and the ending both names it and offers the retry.
+  linkNothingThere: {
+    en: 'Nothing was saved there — this account is now.',
+    fr: "Rien n'était sauvegardé là — ce compte l'est maintenant.",
+  },
+  linkTryAnother: { en: 'TRY ANOTHER ADDRESS', fr: 'ESSAYER UNE AUTRE ADRESSE' },
   linkFailed: { en: 'LINK FAILED', fr: 'ÉCHEC DE LA LIAISON' },
   linkTooMany: {
     en: 'Too many codes asked for. Try again in a while.',

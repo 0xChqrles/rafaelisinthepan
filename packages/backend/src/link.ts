@@ -325,10 +325,11 @@ export async function handleLink(
 
   // ── ADOPT ─────────────────────────────────────────────────────────────────────────────
   const leaving = account.accountId;
+  const activeDay = dayNumber(activeDate(instant));
   // The account being left is deleted only when it carries NO address of its own.
   const erase = account.email === undefined;
   if (erase) {
-    const stakes = await accountStakes(deps.history, leaving, dayNumber(activeDate(instant)));
+    const stakes = await accountStakes(deps.history, leaving, activeDay);
     // EMPTY needs no dialog: there is nothing to state, so there is nothing to confirm.
     if (stakes.days > 0 && body.erase !== leaving) {
       return errorResponse(
@@ -336,7 +337,14 @@ export async function handleLink(
         'would_erase',
         'Linking this address will delete the account this device is on.',
         responseHeaders,
-        { accountId: leaving, ...stakes },
+        // BOTH SIDES OF THE FORK (#204's UX rework, vol. 2). The refusal used to name only
+        // the account being destroyed, which draws a trade as pure loss — so the screen
+        // could show what the tap costs but never what it buys. `target` is the account
+        // being adopted, and it is what lets the confirmation put the two faces side by
+        // side. It leaks nothing: this refusal fires only AFTER the code is verified, so
+        // the caller has proved control of the address and the account behind it is
+        // legitimately theirs to reach.
+        { accountId: leaving, target, ...stakes },
       );
     }
   }
@@ -372,6 +380,12 @@ export async function handleLink(
   // drains, so an unfinished merge is reported rather than lost.
   const merged = await drainMerges(deps.links, deps.friends, target);
 
+  // THE RECEIPT. "We found your account" is a claim; the streak and the day count are the
+  // evidence, and they are the first thing a returning player wants to check. Read AFTER
+  // the adopt, so an active day that just moved across is already counted — the answer
+  // describes the account the device now holds, not the one it held a moment ago.
+  const stakes = await accountStakes(deps.history, target, activeDay);
+
   return json(
     200,
     {
@@ -382,6 +396,7 @@ export async function handleLink(
       erased: erase ? leaving : null,
       moved: moved.length,
       mergePending: !merged,
+      stakes,
     },
     responseHeaders,
   );

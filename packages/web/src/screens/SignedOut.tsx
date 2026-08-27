@@ -28,9 +28,12 @@
 // is theirs, and it is reachable — so it leads, and PLAY (start over on a new one) becomes
 // the secondary. The tap LIFTS the verdict (which is what removes the persisted tombstone,
 // origin-wide — the fenced state's one gesture, and the reason a reconnect can mint at all)
-// and lands on the profile editor, the identity screen, where the link flow lives. Leaving
-// mid-flow costs exactly what SKIP already cost: this device is a fresh visitor, and the
-// account it left stands, reachable by its own address the moment one is bound to it.
+// and lands on `/account/signin` — the RETURNING door of the email flow (vol. 2's split),
+// which is what this screen's reader is by definition. It used to land on `/account/email`,
+// whose every word is about SAVING the account you already hold: the one screen reached
+// exclusively by people who hold none. Leaving mid-flow costs exactly what SKIP already
+// cost: this device is a fresh visitor, and the account it left stands, reachable by its own
+// address the moment one is bound to it.
 
 import { useEffect, useState } from 'react';
 import { anonName, defaultAvatar } from '@whippin/shared';
@@ -40,7 +43,7 @@ import Button from '../components/Button';
 import LoadingWave from '../components/LoadingWave';
 import { startFreshDevice, useSignedOutAccount } from '../identity';
 import { t } from '../i18n';
-import { ACCOUNT_EMAIL_PATH } from '../langs';
+import { ACCOUNT_SIGNIN_PATH } from '../langs';
 import { navigate } from '../routing';
 import { timeoutSignal } from '../timeout';
 
@@ -52,15 +55,15 @@ const playFresh = () => {
   navigate('/', { replace: true });
 };
 
-// RECONNECT: leave the fenced state and go STRAIGHT to the email step (#204). Not the
-// editor, not even the account screen — a player who has just been signed out has exactly
-// one intention, and every screen between them and the address field is a screen they have
-// to read past. It uses the SAME gesture PLAY does — the tombstone stands until the player
-// chooses, and choosing to sign back in is a choice — so a reconnect abandoned halfway is
-// simply a fresh visitor, never a device stuck on this screen.
+// RECONNECT: leave the fenced state and go STRAIGHT to the RETURNING door's address step
+// (#204). Not the editor, not even the account screen — a player who has just been signed
+// out has exactly one intention, and every screen between them and the address field is a
+// screen they have to read past. It uses the SAME gesture PLAY does — the tombstone stands
+// until the player chooses, and choosing to sign back in is a choice — so a reconnect
+// abandoned halfway is simply a fresh visitor, never a device stuck on this screen.
 const reconnect = () => {
   startFreshDevice();
-  navigate(ACCOUNT_EMAIL_PATH);
+  navigate(ACCOUNT_SIGNIN_PATH);
 };
 
 // The face is TAGGED WITH THE ACCOUNT IT BELONGS TO (review finding). A tab sitting on

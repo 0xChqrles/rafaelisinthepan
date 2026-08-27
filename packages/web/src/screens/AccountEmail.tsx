@@ -1,31 +1,49 @@
-// SAVING AN ACCOUNT TO AN ADDRESS, AND GETTING IT BACK (#204, reworked 2026-08-26).
+// SAVING AN ACCOUNT TO AN ADDRESS, AND GETTING ONE BACK (#204, reworked 2026-08-26,
+// SPLIT INTO TWO DOORS 2026-08-27).
 //
-// ONE FLOW, and that is the whole design: the player types their address, then the code.
-// They never say whether they are new or returning, because the server only branches AFTER
-// the code is verified — which is what makes the second-device problem tractable. So this
-// screen has one path with three endings, and the ending's words are chosen by the OUTCOME
-// the server reports rather than by anything the screen guessed beforehand.
+// **ONE ENGINE, TWO DOORS.** The server refuses to branch before the code is verified —
+// telling somebody "we know this address" ahead of proof is account enumeration — and that
+// discretion became the interface's silence: because the back end may not guess the
+// intention, the front end stopped asking for it, and the two opposite acts this screen
+// performs wore one costume. Saving the account you hold is ADDITIVE; signing into another
+// one may DELETE the account this device is on. They took the same taps, in the same words,
+// with the same picture on screen, and diverged only in the last half-second — the erase
+// confirmation, arriving at maximum sunk cost, after the mail app and the six digits.
 //
-// **ONE PURPOSE PER STEP.** The address step holds an input and a button and nothing else;
-// the code step holds six cells and two quiet links. This used to be a section at the bottom
-// of the profile editor, reached by scrolling past a painting grid — which is where the whole
-// rework started.
+// So `intent` is DECLARED BY THE ROUTE (`/account/email` vs `/account/signin`) and dresses
+// the flow. It never reaches the server: every request, refusal, allowance and Turnstile
+// gate is byte-identical, nothing is detected, nothing is routed, and all six endings stay
+// reachable from either door. The rule it runs on:
+//
+//     the declaration shapes the JOURNEY · the server shapes the DESTINATION
+//     · the ending always tells the TRUTH about what actually happened
+//
+// A player who picks the "wrong" door is never blocked and never lied to — they get an
+// ending that names the turn, under the face they now hold.
+//
+// **THE WORDLESS TELL IS THE FACE** (`components/AccountMark.tsx`). Saving keeps one face
+// on screen from the first step: it is the object of the sentence. Returning opens on an
+// EMPTY grid — somebody is out there — which the recovered account DEVELOPS into when the
+// code lands. Same layout, opposite narrative, no copy. There is deliberately no second
+// INK: the app's token set is three colours with settled meanings, and a fourth would buy
+// at a glance what the picture already says outright.
+//
+// **THE ERASE CONFIRMATION IS A CROSSROADS, NOT A WARNING.** A trade drawn from one side
+// reads as pure loss, so it shows BOTH accounts — the one being left, struck under the word
+// DELETED, and the one being joined, lit beside it. That frees its one sentence to carry
+// the part the screen cannot draw: what SURVIVES (the active day's play moves across, the
+// friends graph is merged). It is still skipped entirely when there is nothing to lose.
 //
 // It is a CODE, not a magic link: a link opens in whatever browser the mail client prefers
-// rather than the one that asked, and corporate scanners prefetch links and spend single-use
-// tokens before the human ever taps.
+// rather than the one that asked, and corporate scanners prefetch links and spend
+// single-use tokens before the human ever taps.
 //
-// **CONTINUE IS AN ACCOUNT-DEPLOYING TRIGGER** (#216's sixth), and it has to be: an email
-// link needs an account to bind, and "this device is empty" is precisely the reconnect case
-// this screen exists for. It wears the shape that rule defines — one tap chaining the
-// bootstrap, a loading state on the button, failures on the app's error surface.
-//
-// **THE ERASE CONFIRMATION IS THE ONE INTERRUPTION.** When linking would delete the account
-// this device is on, the first verification is refused with what is at stake and this screen
-// says so; only the second call carries the name of the account being erased. It is skipped
-// when there is nothing to lose.
+// **CONTINUE IS AN ACCOUNT-DEPLOYING TRIGGER** (#216's sixth), on BOTH doors: an email link
+// needs an account to bind, and "this device is empty" is precisely the reconnect case this
+// screen exists for. It wears the shape that rule defines — one tap chaining the bootstrap,
+// a loading state on the button, failures on the app's error surface.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
   defaultAvatar,
   isValidEmail,
@@ -38,9 +56,11 @@ import {
   parseErasePrompt,
   parseLinkResult,
   postLinkBody,
+  type AccountStakes,
   type LinkErasePrompt,
 } from '../api';
 import { useAccountFace, useOwnFace, type Face } from '../components/AccountFace';
+import AccountMark from '../components/AccountMark';
 import Avatar from '../components/Avatar';
 import Button from '../components/Button';
 import CodeInput from '../components/CodeInput';
@@ -56,9 +76,9 @@ import {
   useDeviceIdentity,
 } from '../identity';
 import { t, tn } from '../i18n';
-import { ACCOUNT_PATH, resolveHomeLang } from '../langs';
+import { ACCOUNT_PATH, resolveHomeLang, type LinkIntent } from '../langs';
 import { navigate } from '../routing';
-import { loadAccountSummary, noteAccountEmail } from '../state/account';
+import { loadAccountSummary, noteAccountEmail, useAccountSummary } from '../state/account';
 import { useGameStore } from '../state/gameStore';
 import { prefetchTurnstileTokens, turnstileToken } from '../turnstile';
 import CloseIcon from '../assets/icons/close.svg?react';
@@ -87,18 +107,27 @@ interface Refusal {
 // Module-level, because the module is exactly what survives a remount, and NAMED by the
 // account it is about, so it can never be read by a different one. Consumed ONCE — in an
 // effect rather than in a state initializer, since React double-invokes initializers in
-// development and clearing there would lose it on the second call.
-let justLinked: { accountId: string; outcome: LinkOutcome } | null = null;
+// development and clearing there would lose it on the second call. (`intent` needs no
+// carrying: it comes from the ROUTE, which the remount preserves.)
+let justLinked: {
+  accountId: string;
+  outcome: LinkOutcome;
+  email: string;
+  stakes: AccountStakes | null;
+} | null = null;
 
-export default function AccountEmail() {
+export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   const lastLang = useGameStore((s) => s.lastLang);
   const lang = resolveHomeLang(lastLang, navigator.language);
   const identity = useDeviceIdentity();
+  const returning = intent === 'return';
 
   const carried =
     identity !== null && justLinked?.accountId === identity.accountId ? justLinked : null;
   const [step, setStep] = useState<Step>(carried ? 'done' : 'address');
   const [outcome, setOutcome] = useState<LinkOutcome | null>(carried?.outcome ?? null);
+  const [linked, setLinked] = useState<string | null>(carried?.email ?? null);
+  const [receipt, setReceipt] = useState<AccountStakes | null>(carried?.stakes ?? null);
   const [address, setAddress] = useState('');
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -113,6 +142,15 @@ export default function AccountEmail() {
   useEffect(() => {
     if (carried) justLinked = null;
   }, [carried]);
+
+  // WHAT SIGNING IN WOULD COST, known before a keystroke is spent. One fact decides it and
+  // the client already holds it — whether this device's account has an address of its own —
+  // so this is the cached summary, not a new request (and a tokenless device gets the
+  // answer without one at all, #216).
+  const { phase: summaryPhase, summary } = useAccountSummary();
+  useEffect(() => {
+    if (returning) loadAccountSummary();
+  }, [returning, identity]);
 
   // The challenges are PREFETCHED while the address is being typed (#203's rule): a bot
   // check landing on the tap costs real seconds on a button the player is watching. TWO,
@@ -216,12 +254,19 @@ export default function AccountEmail() {
         if (response.ok) {
           const result = parseLinkResult(body);
           setOutcome(result.outcome);
+          setLinked(result.email);
+          setReceipt(result.stakes ?? null);
           setStep('done');
           noteAccountEmail(result.accountId, result.email);
           if (result.accountId !== resolved.identity.accountId) {
             // Recorded BEFORE the adoption, because the adoption is what unmounts this
             // screen: the remounted one reads it and opens on the ending.
-            justLinked = { accountId: result.accountId, outcome: result.outcome };
+            justLinked = {
+              accountId: result.accountId,
+              outcome: result.outcome,
+              email: result.email,
+              stakes: result.stakes ?? null,
+            };
             adoptLinkedAccount(resolved.epoch, {
               accountId: result.accountId,
               deviceId: result.deviceId,
@@ -274,21 +319,62 @@ export default function AccountEmail() {
   // one, and its face is the claim "we found your account" actually makes.
   const endingId = identity?.accountId ?? null;
   const face = useAccountFace(step === 'done' ? endingId : null);
-  // The erase confirmation draws the account about to be DELETED — the signed-out screen's
-  // own move: numbers state the stakes, a face makes them somebody's.
+  // The crossroads draws BOTH sides of the fork: the account about to be deleted, and the
+  // one about to be joined. The server names the second only since vol. 2, so a missing
+  // `target` degrades to the one-sided prompt rather than failing a refusal the player has
+  // to be able to answer.
   const eraseFace = useAccountFace(step === 'confirm' ? (prompt?.accountId ?? null) : null);
-  // The address step leads with WHO is being saved — and it is the SAME face whether or
-  // not the account is deployed yet (user-decided 2026-08-26: nothing in the area may tell
-  // you which). `useOwnFace` answers the account's profile or the identical local-seed
-  // pair; and the first face resolved is HELD for the flow's whole life, because the SEND's
-  // own deploy swaps the id from the seed to the account mid-flight, and re-reading then
-  // races the background profile write for a face that is the same by construction.
+  const targetFace = useAccountFace(step === 'confirm' ? (prompt?.target ?? null) : null);
+  // The SAVE door leads with WHO is being saved — and it is the SAME face whether or not the
+  // account is deployed yet (user-decided 2026-08-26: nothing in the area may tell you
+  // which). `useOwnFace` answers the account's profile or the identical local-seed pair; and
+  // the first face resolved is HELD for the flow's whole life, because the SEND's own deploy
+  // swaps the id from the seed to the account mid-flight, and re-reading then races the
+  // background profile write for a face that is the same by construction.
   const ownFace = useOwnFace();
   const [lead, setLead] = useState<Face | null>(null);
   useEffect(() => {
     if (ownFace !== null && lead === null) setLead(ownFace);
   }, [ownFace, lead]);
   const savingFace = lead ?? ownFace;
+
+  // What the RETURN door costs, or that it costs nothing. Held silent until the summary has
+  // settled — #211's rule: an unknown answer is never rendered as a claim. A tokenless
+  // device has no account to replace, so it says nothing at all.
+  const cost =
+    !returning || identity === null || summaryPhase !== 'ready' || summary === null
+      ? null
+      : summary.email
+        ? t(lang, 'linkReturnKeeps')
+        : t(lang, 'linkReturnReplaces');
+
+  // AN ENDING PER CELL of the two-doors × three-outcomes grid. Until vol. 2 four of the six
+  // borrowed one of the other two's sentences.
+  const endingLine =
+    outcome === 'adopted'
+      ? t(lang, 'linkRestored')
+      : outcome === 'already_bound'
+        ? t(lang, returning ? 'linkAlreadyAccount' : 'linkAlreadyAddress')
+        : t(lang, returning ? 'linkNothingThere' : 'linkSaved');
+  // An ADOPT is a reconnect — the player wants their game back, so PLAY hands them to App's
+  // home redirect; so does a RETURN that finds it was already on this account, since the
+  // errand is over and they came here to get playing. A BIND was a settings errand started
+  // on /account, and teleporting a person who was managing their account into the game reads
+  // as losing their place: OK returns them to the screen that now shows the address.
+  const endingPlays = outcome === 'adopted' || (returning && outcome === 'already_bound');
+  // The composition runs when a face ARRIVES: every ending of the returning door (the grid
+  // it opened on has to resolve into somebody), and an adopt from either door (the account
+  // genuinely changed hands, and that had no moment at all before).
+  const composeEnding = returning || outcome === 'adopted';
+  const showStakes = prompt !== null && (prompt.streak > 0 || prompt.days > 0);
+  const showReceipt = outcome === 'adopted' && receipt !== null && (receipt.streak > 0 || receipt.days > 0);
+  // The ending's copy FOLLOWS the face in when the face is arriving: the composition is the
+  // beat, and a name at full strength beside a half-drawn mark steals it. Each line a breath
+  // behind the last, in reading order, ending on the action. Nothing when the face was
+  // already there (a save), where there is no arrival to wait for.
+  const arriveClass = composeEnding ? ' link-arrive' : '';
+  const arrive = (ms: number): { style?: CSSProperties } =>
+    composeEnding ? { style: { '--arrive-delay': `${ms}ms` } as CSSProperties } : {};
 
   return (
     <>
@@ -310,7 +396,12 @@ export default function AccountEmail() {
         {step === 'address' && (
           <>
             <div className="link-stack link-lead" aria-hidden="true">
-              {savingFace ? (
+              {returning ? (
+                // THE EMPTY SLOT. Not a skeleton — nothing is loading. It is the question
+                // the screen is asking, drawn: somebody is out there, and this is where
+                // they will appear.
+                <AccountMark avatar={null} size={64} />
+              ) : savingFace ? (
                 <>
                   <Avatar
                     avatar={savingFace.avatar ?? defaultAvatar(savingFace.publicId)}
@@ -344,6 +435,9 @@ export default function AccountEmail() {
             <Button variant="primary" disabled={busy || !isValidEmail(address)} onClick={() => void send()}>
               {busy ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'linkContinue')}
             </Button>
+            {/* What the tap costs, BEFORE the mail app and the six digits — the disclosure
+                that stops the crossroads being an ambush. */}
+            {cost && <p className="account-note caption">{cost}</p>}
           </>
         )}
 
@@ -403,11 +497,39 @@ export default function AccountEmail() {
 
         {step === 'confirm' && prompt !== null && (
           <div className="link-stack">
-            {/* NAMES what is about to be destroyed before asking — and SHOWS it: the mark
-                and name the player has been wearing, over the numbers they cost. The
-                server refuses to erase without being told which account, so this screen
-                is the only thing standing between a tap and a month of play. */}
-            {eraseFace ? (
+            {/* From the SAVE door this is a genuine surprise — the player asked to KEEP
+                something and is being shown a deletion — so one line explains the turn
+                before the screen asks anything. From the RETURN door the address step
+                already said it, and repeating it here would read as a scolding. */}
+            {!returning && (
+              <p className="account-note account-note-center">{t(lang, 'linkEraseFound')}</p>
+            )}
+            {/* THE CROSSROADS. A trade drawn from one side reads as pure loss, so both
+                accounts are here: the one being left, struck under DELETED, and the one
+                being joined, lit and named. The server names the second only since vol. 2,
+                so a prompt without it falls back to the single face — a confirmation the
+                player has to be able to answer must never depend on a decoration. */}
+            {prompt.target !== null ? (
+              <div className="link-cross">
+                <div className="link-cross-side leaving">
+                  {eraseFace ? (
+                    <Avatar avatar={eraseFace.avatar ?? defaultAvatar(prompt.accountId)} size={44} />
+                  ) : (
+                    <span className="link-cross-mark skeleton" aria-hidden="true" />
+                  )}
+                  <span className="link-cross-tag danger">{t(lang, 'linkEraseDeleted')}</span>
+                </div>
+                <span className="link-cross-arrow" aria-hidden="true" />
+                <div className="link-cross-side">
+                  {targetFace ? (
+                    <Avatar avatar={targetFace.avatar ?? defaultAvatar(prompt.target)} size={44} />
+                  ) : (
+                    <span className="link-cross-mark skeleton" aria-hidden="true" />
+                  )}
+                  <span className="link-cross-name">{targetFace?.name ?? ''}</span>
+                </div>
+              </div>
+            ) : eraseFace ? (
               <>
                 <Avatar avatar={eraseFace.avatar ?? defaultAvatar(prompt.accountId)} size={64} />
                 <span className="account-hero-name">{eraseFace.name}</span>
@@ -415,19 +537,24 @@ export default function AccountEmail() {
             ) : (
               <span className="account-hero-mark skeleton" aria-hidden="true" />
             )}
+            {/* The one thing the picture cannot say: what SURVIVES. Both halves are true and
+                neither is obvious — a confirmation that overstates the damage misleads
+                exactly as much as one that hides it. */}
             <p className="account-note account-note-center" role="status">
-              {t(lang, 'linkEraseWarn')}
+              {t(lang, 'linkEraseKeeps')}
             </p>
-            <p className="link-stakes">
-              <span>
-                {t(lang, 'linkEraseStreak')}
-                <b>{prompt.streak}</b>
-              </span>
-              <span>
-                {t(lang, 'linkEraseDays')}
-                <b>{prompt.days}</b>
-              </span>
-            </p>
+            {showStakes && (
+              <p className="link-stakes">
+                <span>
+                  {t(lang, 'linkEraseStreak')}
+                  <b>{prompt.streak}</b>
+                </span>
+                <span>
+                  {t(lang, 'linkEraseDays')}
+                  <b>{prompt.days}</b>
+                </span>
+              </p>
+            )}
             {/* Destruction never GLOWS: the confirming button is the quiet one, and leaving
                 is the ordinary way out. */}
             <Button
@@ -448,23 +575,58 @@ export default function AccountEmail() {
           <div className="link-stack">
             {face && endingId ? (
               <>
-                <Avatar avatar={face.avatar ?? defaultAvatar(endingId)} size={64} />
-                <span className="account-hero-name">{face.name}</span>
+                <AccountMark
+                  avatar={face.avatar ?? defaultAvatar(endingId)}
+                  size={64}
+                  compose={composeEnding}
+                />
+                <span
+                  {...arrive(540)}
+                  className={`account-hero-name${arriveClass}`}
+                >
+                  {face.name}
+                </span>
               </>
             ) : (
               <span className="account-hero-mark skeleton" aria-hidden="true" />
             )}
-            <p className="account-note account-note-center" role="status">
-              {outcome === 'adopted' ? t(lang, 'linkRestored') : t(lang, 'linkSaved')}
+            {/* THE ONE NEW FACT about this account, shown rather than described. A recovery
+                shows the history that PROVES it is theirs — "we found your account" is a
+                claim and these two numbers are its evidence, and the first thing a
+                returning player wants to check. Every other ending shows the address, which
+                is the thing that just changed. */}
+            {showReceipt && receipt ? (
+              <p {...arrive(620)} className={`link-stakes${arriveClass}`}>
+                <span>
+                  {t(lang, 'linkEraseStreak')}
+                  <b>{receipt.streak}</b>
+                </span>
+                <span>
+                  {t(lang, 'linkEraseDays')}
+                  <b>{receipt.days}</b>
+                </span>
+              </p>
+            ) : (
+              linked && (
+                <p
+                  {...arrive(620)}
+                  className={`link-receipt${arriveClass}`}
+                >
+                  {linked}
+                </p>
+              )
+            )}
+            <p
+              {...arrive(700)}
+              className={`account-note account-note-center${arriveClass}`}
+              role="status"
+            >
+              {endingLine}
             </p>
-            {/* TWO endings, two returns. An ADOPT is a reconnect — the player wants their
-                game back, so PLAY hands them to App's home redirect. A BIND was a settings
-                errand started on /account, and teleporting a person who was managing their
-                account into the game reads as losing their place: OK returns them to the
-                screen that now shows the address they just saved. */}
-            {outcome === 'adopted' ? (
+            {endingPlays ? (
               <Button
                 variant="primary"
+                {...arrive(780)}
                 onClick={() => {
                   loadAccountSummary(true);
                   navigate('/', { replace: true });
@@ -475,6 +637,7 @@ export default function AccountEmail() {
             ) : (
               <Button
                 variant="primary"
+                {...arrive(780)}
                 onClick={() => {
                   loadAccountSummary(true);
                   leave();
@@ -482,6 +645,26 @@ export default function AccountEmail() {
               >
                 {t(lang, 'linkDone')}
               </Button>
+            )}
+            {/* A RETURN that bound instead found nobody there. Nothing was destroyed, so the
+                offer is simply to try again — and the retry is now REVERSIBLE, because this
+                account has just acquired an address of its own. */}
+            {returning && outcome === 'bound' && (
+              <button
+                type="button"
+                className="link-quiet-btn"
+                onClick={() => {
+                  setStep('address');
+                  setAddress('');
+                  setCode('');
+                  setWrong(null);
+                  setOutcome(null);
+                  setLinked(null);
+                  setReceipt(null);
+                }}
+              >
+                {t(lang, 'linkTryAnother')}
+              </button>
             )}
           </div>
         )}

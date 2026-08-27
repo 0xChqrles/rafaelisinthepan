@@ -628,6 +628,25 @@ export interface LinkResult {
   erased?: string | null;
   // Whether a friend merge is still queued. The client asks again until it is not.
   mergePending?: boolean;
+  // THE RECEIPT on an ADOPT: what the recovered account holds, which is the evidence for
+  // the claim "we found your account". Absent on the other two outcomes — nothing was
+  // recovered, so there is nothing to vouch for.
+  stakes?: AccountStakes | null;
+}
+
+// What an account is worth, in the two numbers a player would name if asked what they
+// would miss. Shown as a RECEIPT under a recovered face, and as the PRICE under a face
+// about to be deleted — one shape, because they are the same measure.
+export interface AccountStakes {
+  streak: number;
+  days: number;
+}
+
+function parseStakes(data: unknown): AccountStakes | null {
+  if (!isRecord(data)) return null;
+  const { streak, days } = data;
+  if (typeof streak !== 'number' || typeof days !== 'number') return null;
+  return { streak, days };
 }
 
 // Runtime shape check for a link answer — the parsePuzzle contract. An identity is being
@@ -653,6 +672,9 @@ export function parseLinkResult(data: unknown): LinkResult {
     email,
     erased: typeof data.erased === 'string' ? data.erased : null,
     mergePending: data.mergePending === true,
+    // Decorative, so a missing or malformed one is simply no receipt — never a failed
+    // link, which would strand a device whose identity has already moved.
+    stakes: parseStakes(data.stakes),
   };
 }
 
@@ -660,17 +682,28 @@ export function parseLinkResult(data: unknown): LinkResult {
 // about to lose. The screen states both before asking for a confirmation — a client bug
 // must not be able to destroy a month of play silently.
 export interface LinkErasePrompt {
+  // The account being LEFT and deleted, with what it costs to lose it.
   accountId: string;
   streak: number;
   days: number;
+  // The account being ADOPTED. A trade shown from one side reads as pure loss, so the
+  // confirmation draws both faces — and this is the other one. Optional in the TYPE only
+  // so a malformed field degrades to a one-sided prompt instead of failing a refusal the
+  // player has to be able to answer.
+  target: string | null;
 }
 
 export function parseErasePrompt(data: unknown): LinkErasePrompt | null {
   if (!isRecord(data)) return null;
-  const { accountId, streak, days } = data;
+  const { accountId, streak, days, target } = data;
   if (typeof accountId !== 'string' || !PUBLIC_ID_PATTERN.test(accountId)) return null;
   if (typeof streak !== 'number' || typeof days !== 'number') return null;
-  return { accountId, streak, days };
+  return {
+    accountId,
+    streak,
+    days,
+    target: typeof target === 'string' && PUBLIC_ID_PATTERN.test(target) ? target : null,
+  };
 }
 
 // The #189 friends graph: ONE route, POST-only — the device token authenticates in the body

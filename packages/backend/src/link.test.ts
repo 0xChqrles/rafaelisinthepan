@@ -299,10 +299,15 @@ describe('email account linking (#204) — the erase confirmation', () => {
     const code = await askForCode(h, playing.token, 'zoe@example.com');
     const asked = await h.handler(post({ token: playing.token, email: 'zoe@example.com', code }));
     expect(asked.statusCode).toBe(409);
-    // What is at stake, named: the account, its live streak and its day count.
+    // What is at stake, named: the account, its live streak and its day count — AND the
+    // account being adopted (#204's UX rework vol. 2). A trade shown from one side reads as
+    // pure loss, so the confirmation draws both faces, which it can only do if the refusal
+    // says whose the other one is. It leaks nothing: this fires only after the code is
+    // verified, so the caller has proved control of the address.
     expect(JSON.parse(asked.body)).toMatchObject({
       error: 'would_erase',
       accountId: playing.accountId,
+      target: saved.accountId,
       streak: 2,
       days: 2,
     });
@@ -313,7 +318,14 @@ describe('email account linking (#204) — the erase confirmation', () => {
       post({ token: playing.token, email: 'zoe@example.com', code, erase: playing.accountId }),
     );
     expect(confirmed.statusCode).toBe(200);
-    expect(JSON.parse(confirmed.body)).toMatchObject({ outcome: 'adopted', accountId: saved.accountId });
+    // THE RECEIPT: an adopt answers what the recovered account HOLDS. "We found your
+    // account" is a claim; these two numbers are its evidence, and the first thing a
+    // returning player checks. Read after the adopt, so a transferred active day counts.
+    expect(JSON.parse(confirmed.body)).toMatchObject({
+      outcome: 'adopted',
+      accountId: saved.accountId,
+      stakes: { streak: expect.any(Number), days: expect.any(Number) },
+    });
     await expect(h.devices.accountExists(playing.accountId)).resolves.toBe(false);
   });
 

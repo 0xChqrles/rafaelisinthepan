@@ -121,7 +121,7 @@ export default function App() {
         {/* The ACCOUNT area (#204's UX rework): three routes, three questions — the
             account itself, the editor, and the email flow. One purpose per screen. */}
         {!signedOut && route.view === 'account' && <Account />}
-        {!signedOut && route.view === 'accountEmail' && <AccountEmail />}
+        {!signedOut && route.view === 'accountEmail' && <AccountEmail intent={route.intent} />}
         {!signedOut && route.view === 'profile' && <Profile />}
         {/* The invite link (#189) is a beat, not a screen: it lands the mutual edge and
             hands over to the home redirect above. */}

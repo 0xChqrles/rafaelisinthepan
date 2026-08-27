@@ -17,6 +17,8 @@ import {
   parseFriends,
   parsePuzzle,
   parseAccountSummary,
+  parseErasePrompt,
+  parseLinkResult,
   parseProfile,
   parseRound,
   parseScoreHistogram,
@@ -711,3 +713,39 @@ describe('parseAccountSummary (#204)', () => {
   });
 });
 
+// CONTRACT (#204's UX rework vol. 2): the email flow's two DECORATIONS. Both are drawn on
+// screens the player has to be able to answer — a destructive confirmation and an ending
+// that changed which account this device holds — so a missing or malformed one degrades to
+// LESS on screen, never to a failure.
+describe('link answers (#204 vol. 2)', () => {
+  const ID = 'abcdefghijklmnop';
+  const OTHER = 'qrstuvwxyz234567';
+  const DEVICE = 'abcdefghijklmnop';
+
+  it('carries the account being ADOPTED, so the crossroads can draw both faces', () => {
+    const prompt = parseErasePrompt({ accountId: ID, target: OTHER, streak: 4, days: 12 });
+    expect(prompt).toEqual({ accountId: ID, target: OTHER, streak: 4, days: 12 });
+  });
+
+  it('degrades a missing or malformed target to ONE face, never to a refused prompt', () => {
+    // The refusal is the only thing standing between a tap and a deleted account: a
+    // decoration the client cannot read must not be able to make it unanswerable.
+    expect(parseErasePrompt({ accountId: ID, streak: 0, days: 0 })?.target).toBeNull();
+    expect(parseErasePrompt({ accountId: ID, target: 'nope', streak: 0, days: 0 })?.target).toBeNull();
+    // What it may NOT degrade: the account it is asking to erase, and what that costs.
+    expect(parseErasePrompt({ accountId: 'nope', target: OTHER, streak: 0, days: 0 })).toBeNull();
+    expect(parseErasePrompt({ accountId: ID, streak: 4 })).toBeNull();
+  });
+
+  it('carries the recovered account\'s RECEIPT on an adopt, and nothing on the others', () => {
+    const base = { outcome: 'adopted', accountId: ID, deviceId: DEVICE, email: 'z@example.com' };
+    expect(parseLinkResult({ ...base, stakes: { streak: 12, days: 41 } }).stakes).toEqual({
+      streak: 12,
+      days: 41,
+    });
+    // A bind recovered nothing, so it vouches for nothing — and an unreadable receipt is
+    // simply no receipt, never a failed link on a device whose identity has already moved.
+    expect(parseLinkResult({ ...base, outcome: 'bound' }).stakes).toBeNull();
+    expect(parseLinkResult({ ...base, stakes: { streak: 'lots' } }).stakes).toBeNull();
+  });
+});
