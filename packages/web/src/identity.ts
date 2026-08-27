@@ -18,7 +18,7 @@
 //   sending an invite link · saving a profile
 //
 // Each is a SINGLE tap that chains its real action behind the bootstrap, shows a loading
-// state on the button, and reports failure on the app's error surface (ErrorSheet).
+// state on the button, and reports failure on the app's error surface (ErrorScreen).
 // Surfaces that used to mint by being opened — the leaderboard, the profile editor — show
 // the LOCAL placeholder identity instead (the persisted seed in the game store).
 //

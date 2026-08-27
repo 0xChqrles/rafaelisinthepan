@@ -30,6 +30,7 @@ import {
 import { postProfileBody, profileUrl } from '../api';
 import { useGameStore } from './gameStore';
 import { adoptSignedOutVerdict } from './signedOutVerdict';
+import { timeoutSignal } from '../timeout';
 
 // A failed deployment is retried BOUNDED and then abandoned, never surfaced: like the
 // streak credit, it is a side effect of an answer the player already saw. If it never
@@ -86,7 +87,7 @@ async function run(identity: DeviceIdentity): Promise<void> {
   for (let attempt = 0; ; attempt += 1) {
     try {
       const read = await fetch(profileUrl(identity.accountId), {
-        signal: AbortSignal.timeout(DEPLOY_TIMEOUT_MS),
+        signal: timeoutSignal(DEPLOY_TIMEOUT_MS),
       });
       if (stale()) return;
       if (read.ok) return; // Something is stored — even '' /null is a deliberate save.
@@ -101,7 +102,7 @@ async function run(identity: DeviceIdentity): Promise<void> {
         // backend's conditional write is the authority that makes this background task
         // incapable of replacing a deliberate profile.
         createOnly: true,
-      }, AbortSignal.timeout(DEPLOY_TIMEOUT_MS));
+      }, timeoutSignal(DEPLOY_TIMEOUT_MS));
       if (stale()) return;
       if (response.ok) return;
       // ONE read of the body, then everything classifies off the parsed value (review

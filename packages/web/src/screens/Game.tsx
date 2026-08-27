@@ -35,7 +35,7 @@ import { track } from '../analytics';
 import { fold, dateForDayNumber, ROUND_GUESS_CAP } from '@whippin/shared';
 import { prefetchTurnstileTokens } from '../turnstile';
 import { deviceIdentity, ensureDeviceIdentity, useDeviceIdentity } from '../identity';
-import ErrorSheet from '../components/ErrorSheet';
+import ErrorScreen from '../components/ErrorScreen';
 import type {
   HitState,
   Hole,
@@ -1015,7 +1015,7 @@ function Round({
       {/* The deploy's failure, on the app's error surface: what happened, and TRY AGAIN
           re-runs the same single-tap chain. */}
       {deployFailed && (
-        <ErrorSheet
+        <ErrorScreen
           lang={lang}
           title={t(lang, 'failedAccount')}
           note={t(lang, 'failedAccountNote')}

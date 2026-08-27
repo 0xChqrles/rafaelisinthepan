@@ -58,14 +58,20 @@ const STRINGS = {
   // The error surface's action (#216 trigger rework): a failed primary act offers to run
   // again where retrying can help. RETRY above stays the load screens' label.
   tryAgain: { en: 'TRY AGAIN', fr: 'RÉESSAYER' },
-  // The five deploy buttons' failures, on the error popup/sheet: the TITLE says what
-  // failed in the chrome voice, the NOTE explains it in a sentence (the coach-copy
-  // exemption from the all-caps rule). Account creation failing is its own story —
-  // nothing else happened behind it, so the note can honestly say "nothing was lost".
+  // The error screen's way OUT (2026-08-27, when the sheet became a full-screen modal).
+  // It is not "close" — nothing is being tidied away; the act did not happen and the player
+  // is going back to the screen that asked for it.
+  errorDismiss: { en: 'GO BACK', fr: 'RETOUR' },
+  // The five deploy buttons' failures, on the error screen: the TITLE says what failed in
+  // the chrome voice, the NOTE explains it in a sentence (the coach-copy exemption from
+  // the all-caps rule). TWO clauses, never three (user-decided 2026-08-27): what happened,
+  // then what to do. The note used to add "so nothing was saved" — true, but it answers a
+  // worry the player has not had yet, and on a screen whose whole job is to get them to
+  // press TRY AGAIN it spends the reader's attention on reassurance instead of the act.
   failedAccount: { en: 'ACCOUNT SETUP FAILED', fr: 'ÉCHEC DE LA CRÉATION DU COMPTE' },
   failedAccountNote: {
-    en: 'Your account could not be set up, so nothing was saved. Check your connection and try again.',
-    fr: "Votre compte n'a pas pu être créé, rien n'a été enregistré. Vérifiez votre connexion et réessayez.",
+    en: 'Your account could not be set up. Check your connection and try again.',
+    fr: "Votre compte n'a pas pu être créé. Vérifiez votre connexion et réessayez.",
   },
   failedStartNote: {
     en: 'The round did not start — the clock is not running. Check your connection and try again.',
