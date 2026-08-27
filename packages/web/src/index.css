@@ -5691,7 +5691,7 @@ button * {
    notification away; it is declining to play. So the box became the screen: the
    app's ground, opaque, with the SignedOut column's geometry (that screen is the
    other consequential full-screen message, and the two now read as one surface),
-   opening on a big FAIL CROSS in the danger ink. */
+   led by the ERROR BOT in the danger ink. */
 .error-screen {
   /* The page's own ground, edge to edge. No corner brackets: those are the dialog
      boxes' dress, and this is not a box on a screen any more — it IS the screen
@@ -5707,12 +5707,16 @@ button * {
   color: var(--fg);
   outline: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  /* Center through the body's auto margins, NOT flex alignment: auto margins collapse
+     to zero when the column is taller than a short viewport, keeping its top at the
+     scroll origin so every part of the screen remains reachable. */
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .error-body {
   /* SignedOut's exact column, so the app's two full-screen messages are one shape. */
   width: min(340px, 100% - 40px);
+  margin: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -5727,7 +5731,7 @@ button * {
 
    The sheet is COLOUR art (10 colours), so it is a background-image and not a
    `currentColor` mask — the ultra-slash rule. Integer scale + `pixelated`, the
-   standing pixel-art rule: 5x desktop, 4x on a phone. */
+   standing pixel-art rule: 5x by default, 4x on a narrow or short viewport. */
 .error-bot {
   display: flex;
   flex-direction: column;
@@ -5860,7 +5864,7 @@ button * {
     opacity: 0;
   }
 }
-@media (max-width: 640px) {
+@media (max-width: 640px), (max-height: 500px) {
   /* 4x rather than 5x — the standing pixel-art rule allows only WHOLE steps. */
   .error-bot-sprite {
     width: 128px;
