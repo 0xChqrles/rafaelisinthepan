@@ -1480,7 +1480,11 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     the client already holds: unsaved, leaving DESTROYS this account; SAVED, leaving is
     reversible (*SIGN IN TO ANOTHER ACCOUNT*), because the account stays reachable by its own
     address. It is held back until the summary settles, the same explicit-loading rule the
-    action above it follows. **RECONNECT now lands on `/account/signin`** — a signed-out
+    action above it follows. **The address step states the COST only when there is one**
+    (user-decided 2026-08-28): the reversible case said *"You can come back to this one
+    anytime"* there and it was cut — no decision is pending on that step, so a reassurance
+    about a consequence nobody has met yet is noise. It is said where it is load-bearing
+    instead, on the switch confirmation, which IS a decision. **RECONNECT now lands on `/account/signin`** — a signed-out
     player is a returning player by definition, and the SAVE door's every word is about
     keeping an account they no longer hold.
   - **THE WORDLESS TELL IS THE FACE, and there is deliberately NO SECOND INK**
@@ -1523,10 +1527,31 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     in. The inks are `AccountMark`'s `CODE_INKS`, ADDRESSED into `AVATAR_PALETTES` rather
     than copied, so the two surfaces cannot drift. A refusal still takes the WHOLE row red —
     a row that half-kept its colours would read as a partial refusal.
+  - **LEAVING AN ACCOUNT IS CONFIRMED TOO, even when nothing is destroyed** (user-decided
+    2026-08-28). When the account this device holds carries an address of its OWN it
+    survives and stays reachable — so there was no dialog at all and the device was simply
+    moved. But it still stops BEING that account: the name, the mark, the streak and the
+    friends on screen all become somebody else's, and that may not happen silently. `POST
+    /link` now answers **409 `would_switch`** (`{accountId, target}`) unless the caller NAMES
+    the account it is leaving in `leave`, exactly as `erase` names one being deleted. Unlike
+    the erase it is NOT gated on there being anything at stake: nothing is lost either way,
+    so what is being confirmed is the SWITCH itself, whatever the leaving account's day count
+    happens to be. It is the SAME crossroads with the red taken out — the leaving face keeps
+    its own NAME instead of DELETED, the sentence says what is true here (*Nothing is deleted
+    — this account stays saved under its own address.*), no stakes are printed (they are not
+    at stake), and the primary is an ordinary lit SWITCH ACCOUNT: dressing it as a danger
+    would teach the red to mean "a decision" rather than "a loss".
+  - **`account_linked` IS A FACT AT THE FIELD, NOT A MODAL** (user-decided 2026-08-28). An
+    account carries at most one address, so a device whose account is already saved under a
+    different one cannot bind a second. That was an `ErrorScreen` with no retry — a dead end
+    on a screen whose one remaining move is to type the address it IS saved under — so the
+    line now stands under the address input with the input still there, and clears on the
+    next keystroke. Same decided words, no modal.
   - **THE ERASE CONFIRMATION IS A CROSSROADS, NOT A WARNING.** A trade drawn from one side
-    reads as pure loss, so it draws BOTH accounts: the one being left, dimmed under DELETED
-    in the one red this whole area contains, and the one being joined, lit and NAMED (a
-    verdict is tracked all-caps chrome; a name is a name, case kept). That frees its one
+    reads as pure loss, so it draws BOTH accounts: the one being left, dimmed — under
+    DELETED in the one red this whole area contains, or under its own NAME when it is only
+    being left (above) — and the one being joined, lit and NAMED (a verdict is tracked
+    all-caps chrome; a name is a name, case kept). That frees its one
     sentence to carry what the picture cannot — what SURVIVES: *Today's game and your friends
     come with you. The rest is lost.* / *La partie du jour et vos amis vous suivent. Le reste
     est perdu.* Both halves are true and neither is obvious (the active-day transfer, the
@@ -1550,11 +1575,15 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     RETURN that found nothing said it too, under the very face the player hoped to replace,
     with no explanation. Now: SAVE+bound keeps *Account saved.* with the address beneath the
     face; SAVE+already_bound says *Already saved to this address.*; RETURN+adopted keeps
-    *We found your account.* with the receipt and PLAY; RETURN+bound says *Nothing was saved
-    there — this account is now.* and offers TRY ANOTHER ADDRESS (now REVERSIBLE, since the
-    account has just acquired an address of its own); RETURN+already_bound says *You're
-    already on this account.* and plays; and an adopt from either door composes the new face,
+    *We found your account.* with the receipt and PLAY; RETURN+bound says *No account was tied
+    to that address — so we saved this one there.* (*Aucun n'était associé à cette adresse —
+    on y a sauvegardé celui-ci.*); RETURN+already_bound says *You're already on this
+    account.* and plays; and an adopt from either door composes the new face,
     because the account genuinely changed hands.
+  - **EVERY SUCCESSFUL ENDING IS A DEAD STOP** (user-decided 2026-08-28): a RETURN that bound
+    instead briefly offered TRY ANOTHER ADDRESS, and it is gone. The errand SUCCEEDED — this
+    account is saved now — so a second door out of a finished screen invites undoing a thing
+    that just worked.
   - **NOT DONE, and it is the user's call:** the confirmation is still gated on
     `stakes.days > 0`, which counts SOLVED days — so a player eleven days into a losing
     streak is erased with no dialog at all. Widening it needs a signal this route does not

@@ -5428,6 +5428,112 @@ button * {
   image-rendering: pixelated;
 }
 
+/* ── THE CROSSROADS (#204's UX rework vol. 2) ──────────────────────────────────────────
+   The erase confirmation used to show only the account being LOST, which draws a trade as
+   pure loss — the screen could say what the tap costs but never what it buys. It is a
+   FORK, so it draws both: the account being left — dimmed, under the word DELETED when it
+   is about to become unreachable and under its own NAME when it survives (2026-08-28: a
+   device leaving a SAVED account is asked too, and nothing red belongs on that screen) —
+   and the one being joined, lit and named. The sentence beneath is then free to carry the
+   only part a picture cannot: what happens to the account being left. */
+.link-cross {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 14px;
+  /* THE ARROW IS THE AXIS. The two labels are different lengths — DELETED against a
+     player's name — so a row that merely centres its content puts the marks off-centre by
+     half that difference. Equal-width sides fix the pivot; the cap keeps the two faces from
+     drifting apart on a wide column, and 300 is what leaves each side room for a full
+     16-character name at 320px. */
+  width: 100%;
+  max-width: 280px;
+  margin: 0 auto;
+}
+.link-cross-side {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+/* The one being left reads as already half-gone. Not hidden and not crossed out: the
+   player has been wearing this face, and it has to stay recognisable right up to the tap
+   that deletes it. */
+.link-cross-side.leaving {
+  opacity: 0.5;
+}
+.link-cross .avatar {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.link-cross-mark {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--r-md);
+}
+/* THE TWO LABELS ARE DIFFERENT KINDS OF WORD, and they are dressed as such. DELETED is a
+   system verdict — tracked all-caps chrome, in the one red this whole area contains, so the
+   first red thing on screen IS the signal. The other side is a NAME: case kept, ordinary
+   spacing, the way every board already writes an identity. Both are bounded by their SIDE,
+   which is half the row. */
+.link-cross-tag,
+.link-cross-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ui);
+  color: var(--fg);
+}
+.link-cross-tag {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.link-cross-tag.danger {
+  color: var(--danger);
+}
+.link-cross-name {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+/* The direction of travel, drawn rather than written: a hairline running from the account
+   being left into the one being joined, with the arrowhead as a sharp CSS corner (no
+   glyph — the pixel face has no arrow, and a text `→` sits on its own baseline instead of
+   on the line's). Centred on the 44px marks above the labels. */
+.link-cross-arrow {
+  position: relative;
+  flex: none;
+  align-self: flex-start;
+  width: 26px;
+  height: 44px;
+}
+.link-cross-arrow::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: var(--line-strong);
+}
+.link-cross-arrow::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 5px;
+  height: 5px;
+  border-top: 1px solid var(--line-strong);
+  border-right: 1px solid var(--line-strong);
+  translate: 0 -50%;
+  rotate: 45deg;
+}
+
 /* THE ENDING'S COPY WAITS FOR THE FACE. When a mark ARRIVES, the composition is the beat —
    an account appearing out of nothing — and a name landing at full strength beside a
    half-drawn face steals it. So the name, the receipt, the sentence and the action follow it

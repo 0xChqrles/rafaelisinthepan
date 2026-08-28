@@ -723,18 +723,33 @@ describe('link answers (#204 vol. 2)', () => {
   const DEVICE = 'abcdefghijklmnop';
 
   it('carries the account being ADOPTED, so the crossroads can draw both faces', () => {
-    const prompt = parseErasePrompt({ accountId: ID, target: OTHER, streak: 4, days: 12 });
-    expect(prompt).toEqual({ accountId: ID, target: OTHER, streak: 4, days: 12 });
+    const prompt = parseErasePrompt({ accountId: ID, target: OTHER, streak: 4, days: 12 }, 'erase');
+    expect(prompt).toEqual({ kind: 'erase', accountId: ID, target: OTHER, streak: 4, days: 12 });
   });
 
   it('degrades a missing or malformed target to ONE face, never to a refused prompt', () => {
     // The refusal is the only thing standing between a tap and a deleted account: a
     // decoration the client cannot read must not be able to make it unanswerable.
-    expect(parseErasePrompt({ accountId: ID, streak: 0, days: 0 })?.target).toBeNull();
-    expect(parseErasePrompt({ accountId: ID, target: 'nope', streak: 0, days: 0 })?.target).toBeNull();
+    expect(parseErasePrompt({ accountId: ID, streak: 0, days: 0 }, 'erase')?.target).toBeNull();
+    expect(
+      parseErasePrompt({ accountId: ID, target: 'nope', streak: 0, days: 0 }, 'erase')?.target,
+    ).toBeNull();
     // What it may NOT degrade: the account it is asking to erase, and what that costs.
-    expect(parseErasePrompt({ accountId: 'nope', target: OTHER, streak: 0, days: 0 })).toBeNull();
-    expect(parseErasePrompt({ accountId: ID, streak: 4 })).toBeNull();
+    expect(parseErasePrompt({ accountId: 'nope', target: OTHER, streak: 0, days: 0 }, 'erase')).toBeNull();
+    expect(parseErasePrompt({ accountId: ID, streak: 4 }, 'erase')).toBeNull();
+  });
+
+  it('accepts a SWITCH with no stakes — a switch loses nothing, so it states nothing', () => {
+    // The account being left survives here, so the server sends no numbers and the screen
+    // shows none. Requiring them would refuse a confirmation the player has to answer.
+    expect(parseErasePrompt({ accountId: ID, target: OTHER }, 'switch')).toEqual({
+      kind: 'switch',
+      accountId: ID,
+      target: OTHER,
+      streak: 0,
+      days: 0,
+    });
+    expect(parseErasePrompt({ target: OTHER }, 'switch')).toBeNull();
   });
 
   it('carries the recovered account\'s RECEIPT on an adopt, and nothing on the others', () => {

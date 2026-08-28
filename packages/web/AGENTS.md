@@ -628,7 +628,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `AccountEmail`'s step branches, so it is one element across address → code rather than a
     second one mounting in its place. `CODE_INKS` lives beside it and `CodeInput` wears it:
     the six cells' colours are `AVATAR_PALETTES` entries addressed rather than copied, so the
-    prompt and the tile above it cannot drift. The ending's copy follows the face in
+    prompt and the tile above it cannot drift. The CONFIRM step serves BOTH refusals —
+    `would_erase` and `would_switch` — off `LinkErasePrompt.kind`, and `parseErasePrompt`
+    takes that kind as an argument because a SWITCH carries no stakes: requiring the numbers
+    there would refuse a confirmation the player has to be able to answer. `account_linked`
+    lands as a NOTE under the address input rather than on the `ErrorScreen`, and the next
+    keystroke clears it. The ending's copy follows the face in
     on a `--arrive-delay` cascade (the `--slash-ms` rule: the JS that ends the composition and
     the CSS that waits for it hold ONE number), every element keeping its layout box so
     nothing moves while it arrives. The address step's cost line reads the CACHED

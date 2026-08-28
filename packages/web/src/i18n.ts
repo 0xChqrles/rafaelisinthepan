@@ -153,16 +153,17 @@ const STRINGS = {
   // reversible, because the account stays reachable by its own address.
   accountSwitch: { en: 'SIGN IN TO ANOTHER ACCOUNT', fr: 'SE CONNECTER À UN AUTRE COMPTE' },
   // What signing in COSTS, said before a keystroke is spent rather than after the mail app,
-  // the six digits and the commitment ritual. Which of the two lines shows is decided by one
-  // fact the client already holds: whether this device's account has an address of its own.
+  // the six digits and the commitment ritual. It is shown on the ONE case that has a cost:
+  // an account with no address of its own is deleted when this device leaves it. The
+  // reversible case said "you can come back to this one anytime" until 2026-08-28, and the
+  // user cut it — there is no decision pending on that step, so a reassurance about a
+  // consequence nobody has met yet is noise. It is said where it is load-bearing instead:
+  // on the switch confirmation, which is a decision.
   linkReturnReplaces: {
     en: "This device's account will be replaced.",
     fr: 'Le compte de cet appareil sera remplacé.',
   },
-  linkReturnKeeps: {
-    en: 'You can come back to this one anytime.',
-    fr: 'Vous pourrez revenir sur celui-ci quand vous voulez.',
-  },
+
   linkAddressPlaceholder: { en: 'EMAIL', fr: 'E-MAIL' },
   linkContinue: { en: 'CONTINUE', fr: 'CONTINUER' },
   // Where it went — the answer to "did I typo my own address?", which is the one thing the
@@ -206,6 +207,14 @@ const STRINGS = {
     en: 'That address already has an account.',
     fr: 'Cette adresse a déjà un compte.',
   },
+  // THE SWITCH, which is the same crossroads with nothing destroyed on it. What it has to
+  // say is what happens to the account being left — since the picture shows the leaving, and
+  // "deleted" is exactly what is NOT happening here.
+  linkSwitchKeeps: {
+    en: 'Nothing is deleted — this account stays saved under its own address.',
+    fr: "Rien n'est supprimé — ce compte reste sauvegardé sous sa propre adresse.",
+  },
+  linkSwitchConfirm: { en: 'SWITCH ACCOUNT', fr: 'CHANGER DE COMPTE' },
   linkEraseStreak: { en: 'STREAK', fr: 'SÉRIE' },
   linkEraseDays: { en: 'DAYS', fr: 'JOURS' },
   linkEraseConfirm: { en: 'DELETE AND CONTINUE', fr: 'SUPPRIMER ET CONTINUER' },
@@ -234,8 +243,8 @@ const STRINGS = {
   // whole sentence on an elided verb — "l'est" standing in for "est sauvegardé" — whose
   // referent was the first half's negative.)
   linkNothingThere: {
-    en: 'No account at that address — so we saved this one there.',
-    fr: "Aucun compte à cette adresse — on y a sauvegardé celui-ci.",
+    en: 'No account was tied to that address — so we saved this one there.',
+    fr: "Aucun n'était associé à cette adresse — on y a sauvegardé celui-ci.",
   },
   linkFailed: { en: 'LINK FAILED', fr: 'ÉCHEC DE LA LIAISON' },
   linkTooMany: {
@@ -262,6 +271,11 @@ const STRINGS = {
     en: 'That code has expired. Ask for a new one.',
     fr: 'Ce code a expiré. Demandez-en un nouveau.',
   },
+  // An account carries at most ONE address, so a device whose account is already saved under
+  // a different one cannot bind a second (the old address would reach an account nobody
+  // could ever sign into again). It is a FACT about this account, not a failure: it says so
+  // AT the address field with the field still there to type in — a modal would be a dead end
+  // on a screen whose one remaining move is to try another address.
   linkAlreadySaved: {
     en: 'This account is already saved under another address.',
     fr: 'Ce compte est déjà sauvegardé sous une autre adresse.',

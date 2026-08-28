@@ -682,7 +682,13 @@ export function parseLinkResult(data: unknown): LinkResult {
 // about to lose. The screen states both before asking for a confirmation — a client bug
 // must not be able to destroy a month of play silently.
 export interface LinkErasePrompt {
-  // The account being LEFT and deleted, with what it costs to lose it.
+  // WHICH confirmation this is. `erase` — the account being left carries no address of its
+  // own, so it becomes unreachable and is deleted. `switch` — it carries one, so it survives
+  // and this device is only walking away from it. Nothing is destroyed there, but this
+  // device stops BEING that account, which is the thing being confirmed.
+  kind: 'erase' | 'switch';
+  // The account being LEFT, with what it costs to lose it (a switch costs nothing, and its
+  // numbers are not shown).
   accountId: string;
   streak: number;
   days: number;
@@ -693,15 +699,22 @@ export interface LinkErasePrompt {
   target: string | null;
 }
 
-export function parseErasePrompt(data: unknown): LinkErasePrompt | null {
+export function parseErasePrompt(
+  data: unknown,
+  kind: 'erase' | 'switch',
+): LinkErasePrompt | null {
   if (!isRecord(data)) return null;
   const { accountId, streak, days, target } = data;
   if (typeof accountId !== 'string' || !PUBLIC_ID_PATTERN.test(accountId)) return null;
-  if (typeof streak !== 'number' || typeof days !== 'number') return null;
+  // A SWITCH carries no stakes — nothing is lost — so its numbers are optional and default
+  // to none rather than failing a confirmation the player has to be able to answer.
+  const has = typeof streak === 'number' && typeof days === 'number';
+  if (kind === 'erase' && !has) return null;
   return {
+    kind,
     accountId,
-    streak,
-    days,
+    streak: has ? (streak as number) : 0,
+    days: has ? (days as number) : 0,
     target: typeof target === 'string' && PUBLIC_ID_PATTERN.test(target) ? target : null,
   };
 }

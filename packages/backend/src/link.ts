@@ -226,16 +226,20 @@ export async function handleLink(
   if (!isValidLinkCode(body.code)) {
     return errorResponse(400, 'bad_request', 'Body field "code" must be six digits.', responseHeaders);
   }
-  if (
-    body.erase !== undefined &&
-    (typeof body.erase !== 'string' || !PUBLIC_ID_PATTERN.test(body.erase))
-  ) {
-    return errorResponse(
-      400,
-      'bad_request',
-      'Body field "erase" must be a 16-character player id when present.',
-      responseHeaders,
-    );
+  // The two CONFIRMATIONS, both of which name the account being left rather than merely
+  // agreeing: `erase` when it will be deleted, `leave` when it survives and this device is
+  // only walking away from it. A client bug then cannot destroy a month of play, and cannot
+  // silently change whose account this device is either.
+  for (const field of ['erase', 'leave'] as const) {
+    const value = body[field];
+    if (value !== undefined && (typeof value !== 'string' || !PUBLIC_ID_PATTERN.test(value))) {
+      return errorResponse(
+        400,
+        'bad_request',
+        `Body field "${field}" must be a 16-character player id when present.`,
+        responseHeaders,
+      );
+    }
   }
 
   const verdict = await deps.links.verify(
@@ -347,6 +351,26 @@ export async function handleLink(
         { accountId: leaving, target, ...stakes },
       );
     }
+  } else if (body.leave !== leaving) {
+    // **LEAVING AN ACCOUNT IS CONFIRMED TOO, even when nothing is destroyed** (user-decided
+    // 2026-08-28). The account this device holds carries an address of its own, so it
+    // survives and stays reachable — but this device still stops being it: the name, the
+    // mark, the streak and the friends on screen all become somebody else's. That happened
+    // SILENTLY, which is the one outcome an identity change may not have; a player who typed
+    // an address to SAVE their account, and turned out to have typed one that already
+    // belongs to another, was simply moved to it with nothing said.
+    //
+    // Unlike the erase, it is NOT gated on there being anything at stake: nothing is lost
+    // either way, so what is being confirmed is the SWITCH itself, and that is worth asking
+    // about whatever the leaving account's day count happens to be. Naming the account being
+    // left is what makes it deliberate, exactly as `erase` does.
+    return errorResponse(
+      409,
+      'would_switch',
+      'This device will leave the account it is on for the one at this address.',
+      responseHeaders,
+      { accountId: leaving, target },
+    );
   }
 
   // The active day's play moves FIRST, and only when the account it is in is about to be

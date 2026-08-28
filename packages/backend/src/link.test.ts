@@ -329,6 +329,54 @@ describe('email account linking (#204) — the erase confirmation', () => {
     await expect(h.devices.accountExists(playing.accountId)).resolves.toBe(false);
   });
 
+  // CONTRACT (#204's UX rework vol. 2, 2026-08-28): LEAVING AN ACCOUNT IS CONFIRMED TOO,
+  // even when nothing is destroyed. The account survives and stays reachable by its own
+  // address, but this device stops BEING it — the name, the mark, the streak and the friends
+  // on screen become somebody else's — and that may not happen silently.
+  it('asks before a device leaves a SAVED account for another, and destroys nothing', async () => {
+    const h = harness();
+    const a = await seedDevice(h.devices);
+    await h.handler(
+      post({ token: a.token, email: 'a@example.com', code: await askForCode(h, a.token, 'a@example.com') }),
+    );
+    const b = await seedDevice(h.devices);
+    await h.handler(
+      post({ token: b.token, email: 'b@example.com', code: await askForCode(h, b.token, 'b@example.com') }),
+    );
+
+    // B's device asks for A's address. Nothing is at stake, so the refusal carries no
+    // numbers — but it names BOTH accounts, which is what draws the two faces.
+    const asked = await h.handler(
+      post({ token: b.token, email: 'a@example.com', code: await askForCode(h, b.token, 'a@example.com') }),
+    );
+    expect(asked.statusCode).toBe(409);
+    expect(JSON.parse(asked.body)).toMatchObject({
+      error: 'would_switch',
+      accountId: b.accountId,
+      target: a.accountId,
+    });
+    // Asking changed nothing: B still exists, and this device is still on it.
+    await expect(h.devices.accountExists(b.accountId)).resolves.toBe(true);
+
+    // Naming the account being left is what makes it deliberate — exactly as `erase` does.
+    const confirmed = await h.handler(
+      post({
+        token: b.token,
+        email: 'a@example.com',
+        code: await askForCode(h, b.token, 'a@example.com'),
+        leave: b.accountId,
+      }),
+    );
+    expect(confirmed.statusCode).toBe(200);
+    expect(JSON.parse(confirmed.body)).toMatchObject({
+      outcome: 'adopted',
+      accountId: a.accountId,
+      erased: null,
+    });
+    // The account it left survives, reachable by its own address.
+    await expect(h.devices.accountExists(b.accountId)).resolves.toBe(true);
+  });
+
   it('does NOT delete an account that carries an address of its own — it is simply left', async () => {
     const h = harness();
     const a = await seedDevice(h.devices);
@@ -341,9 +389,16 @@ describe('email account linking (#204) — the erase confirmation', () => {
     );
 
     // B's device links A's address. B can be signed back into from any future device, so it
-    // is not an orphan: nothing is destroyed, nothing transfers, and no dialog is needed.
+    // is not an orphan: nothing is destroyed and nothing transfers. The device still has to
+    // NAME the account it is leaving (the switch confirmation above), which is what
+    // separates "nothing is destroyed" from "nothing is asked".
     const answer = await h.handler(
-      post({ token: b.token, email: 'a@example.com', code: await askForCode(h, b.token, 'a@example.com') }),
+      post({
+        token: b.token,
+        email: 'a@example.com',
+        code: await askForCode(h, b.token, 'a@example.com'),
+        leave: b.accountId,
+      }),
     );
     expect(answer.statusCode).toBe(200);
     expect(JSON.parse(answer.body)).toMatchObject({

@@ -134,6 +134,9 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   const [wrong, setWrong] = useState<number | null>(null);
   const [prompt, setPrompt] = useState<LinkErasePrompt | null>(null);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
+  // A standing explanation under the address field — something true about this account that
+  // the player has to read before typing again, rather than a failure with a retry.
+  const [note, setNote] = useState<string | null>(null);
   const [waitLeft, setWaitLeft] = useState(0);
   const shakeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -232,7 +235,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   // flushed by then. `erase` is present only on the SECOND call, after the player has read
   // what the first one refused to do silently.
   const verify = useCallback(
-    async (typed: string, erase?: string) => {
+    async (typed: string, confirm?: { erase?: string; leave?: string }) => {
       const email = normalizeEmail(address);
       if (email === null || !isValidLinkCode(typed) || busy) return;
       setBusy(true);
@@ -248,7 +251,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           token: resolved.identity.token,
           email,
           code: typed,
-          ...(erase ? { erase } : {}),
+          ...(confirm ?? {}),
         });
         const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
         if (response.ok) {
@@ -279,8 +282,12 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           markDeviceSignedOut(resolved.epoch);
           return;
         }
-        if (error === 'would_erase') {
-          const stakes = parseErasePrompt(body);
+        // THE TWO CONFIRMATIONS, one screen. `would_erase` names an account that is about
+        // to become unreachable; `would_switch` an account that survives and is merely
+        // being left. Both are the crossroads, and both are answered by NAMING the account
+        // being left rather than by merely agreeing.
+        if (error === 'would_erase' || error === 'would_switch') {
+          const stakes = parseErasePrompt(body, error === 'would_erase' ? 'erase' : 'switch');
           if (stakes) {
             setPrompt(stakes);
             setStep('confirm');
@@ -302,7 +309,13 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           return;
         }
         if (error === 'account_linked') {
-          fail(t(lang, 'linkFailed'), t(lang, 'linkAlreadySaved'));
+          // A FACT about this account, not a failure: it carries an address already, and it
+          // may carry only one. So it is said AT the address field, with the field still
+          // there to type in — a modal would be a dead end on a screen whose one remaining
+          // move is to try the address it IS saved under.
+          setStep('address');
+          setCode('');
+          setNote(t(lang, 'linkAlreadySaved'));
           return;
         }
         fail(t(lang, 'linkFailed'), t(lang, 'linkVerifyFailedNote'), true);
@@ -338,15 +351,20 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   }, [ownFace, lead]);
   const savingFace = lead ?? ownFace;
 
-  // What the RETURN door costs, or that it costs nothing. Held silent until the summary has
-  // settled — #211's rule: an unknown answer is never rendered as a claim. A tokenless
-  // device has no account to replace, so it says nothing at all.
+  // What the RETURN door costs, on the ONE case that has a cost: an account with no address
+  // of its own is deleted when this device leaves it. Held silent until the summary has
+  // settled — #211's rule: an unknown answer is never rendered as a claim — and silent for a
+  // tokenless device, which has no account to replace. The reversible case said so here
+  // until 2026-08-28; there is no decision pending on this step, so it was noise, and the
+  // switch confirmation says it where it is load-bearing.
   const cost =
-    !returning || identity === null || summaryPhase !== 'ready' || summary === null
-      ? null
-      : summary.email
-        ? t(lang, 'linkReturnKeeps')
-        : t(lang, 'linkReturnReplaces');
+    returning &&
+    identity !== null &&
+    summaryPhase === 'ready' &&
+    summary !== null &&
+    !summary.email
+      ? t(lang, 'linkReturnReplaces')
+      : null;
 
   // AN ENDING PER CELL of the two-doors × three-outcomes grid. Until vol. 2 four of the six
   // borrowed one of the other two's sentences.
@@ -366,7 +384,10 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   // it opened on has to resolve into somebody), and an adopt from either door (the account
   // genuinely changed hands, and that had no moment at all before).
   const composeEnding = returning || outcome === 'adopted';
-  const showStakes = prompt !== null && (prompt.streak > 0 || prompt.days > 0);
+  const erasing = prompt?.kind === 'erase';
+  // A SWITCH has no stakes to state — nothing is lost — and printing a streak under the
+  // face being left would read as its price.
+  const showStakes = erasing && prompt !== null && (prompt.streak > 0 || prompt.days > 0);
   const showReceipt = outcome === 'adopted' && receipt !== null && (receipt.streak > 0 || receipt.days > 0);
   // The ending's copy FOLLOWS the face in when the face is arriving: the composition is the
   // beat, and a name at full strength beside a half-drawn mark steals it. Each line a breath
@@ -437,7 +458,10 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
               placeholder={t(lang, 'linkAddressPlaceholder')}
               aria-label={t(lang, 'linkAddressPlaceholder')}
               value={address}
-              onChange={(event) => setAddress(event.target.value)}
+              onChange={(event) => {
+                setAddress(event.target.value);
+                if (note !== null) setNote(null);
+              }}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && isValidEmail(address)) void send();
               }}
@@ -448,6 +472,11 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             {/* What the tap costs, BEFORE the mail app and the six digits — the disclosure
                 that stops the crossroads being an ambush. */}
             {cost && <p className="account-note caption">{cost}</p>}
+            {note && (
+              <p className="account-note caption danger" role="status">
+                {note}
+              </p>
+            )}
           </>
         )}
 
@@ -527,7 +556,15 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                   ) : (
                     <span className="link-cross-mark skeleton" aria-hidden="true" />
                   )}
-                  <span className="link-cross-tag danger">{t(lang, 'linkEraseDeleted')}</span>
+                  {/* The LEAVING side says what is happening to it: DELETED when it is
+                      about to become unreachable, and its own NAME when it survives — a
+                      switch has nothing red about it, and calling that account "deleted"
+                      would be a lie the whole screen exists to avoid telling. */}
+                  {erasing ? (
+                    <span className="link-cross-tag danger">{t(lang, 'linkEraseDeleted')}</span>
+                  ) : (
+                    <span className="link-cross-name">{eraseFace?.name ?? ''}</span>
+                  )}
                 </div>
                 <span className="link-cross-arrow" aria-hidden="true" />
                 <div className="link-cross-side">
@@ -547,11 +584,14 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             ) : (
               <span className="account-hero-mark skeleton" aria-hidden="true" />
             )}
-            {/* The one thing the picture cannot say: what SURVIVES. Both halves are true and
-                neither is obvious — a confirmation that overstates the damage misleads
-                exactly as much as one that hides it. */}
+            {/* The one thing the picture cannot say: what happens to the account being
+                left. An ERASE names what survives the deletion — both halves are true and
+                neither is obvious, and a confirmation that overstates the damage misleads
+                exactly as much as one that hides it. A SWITCH says the opposite thing, and
+                it is the one that has to be said out loud: nothing is destroyed here, and
+                the account stays reachable by its own address. */}
             <p className="account-note account-note-center" role="status">
-              {t(lang, 'linkEraseKeeps')}
+              {t(lang, erasing ? 'linkEraseKeeps' : 'linkSwitchKeeps')}
             </p>
             {showStakes && (
               <p className="link-stakes">
@@ -565,16 +605,28 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                 </span>
               </p>
             )}
-            {/* Destruction never GLOWS: the confirming button is the quiet one, and leaving
-                is the ordinary way out. */}
-            <Button
-              variant="secondary"
-              className="link-danger"
-              disabled={busy}
-              onClick={() => void verify(code, prompt.accountId)}
-            >
-              {busy ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'linkEraseConfirm')}
-            </Button>
+            {/* Destruction never GLOWS, so the erase is the QUIET button in the danger ink
+                and the lit primary is never the one that deletes an account. A switch
+                destroys nothing, so it is an ordinary primary — dressing it as a danger
+                would teach the red to mean "a decision" rather than "a loss". */}
+            {erasing ? (
+              <Button
+                variant="secondary"
+                className="link-danger"
+                disabled={busy}
+                onClick={() => void verify(code, { erase: prompt.accountId })}
+              >
+                {busy ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'linkEraseConfirm')}
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                disabled={busy}
+                onClick={() => void verify(code, { leave: prompt.accountId })}
+              >
+                {busy ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'linkSwitchConfirm')}
+              </Button>
+            )}
             <button type="button" className="link-quiet-btn" disabled={busy} onClick={leave}>
               {t(lang, 'linkCancel')}
             </button>
