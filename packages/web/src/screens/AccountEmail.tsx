@@ -309,13 +309,19 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           return;
         }
         if (error === 'account_linked') {
-          // A FACT about this account, not a failure: it carries an address already, and it
-          // may carry only one. So it is said AT the address field, with the field still
+          // A FACT, not a failure: it is said AT the address field with the field still
           // there to type in — a modal would be a dead end on a screen whose one remaining
-          // move is to try the address it IS saved under.
+          // move is to try another address.
+          //
+          // ONE refusal, TWO situations. The server answers this in exactly one case — the
+          // address reaches nobody AND this device's account already has one of its own —
+          // and which half of that the player needs is decided by the door they came
+          // through. Coming to SAVE, the answer is that this account is already saved.
+          // Coming to SIGN IN, they asked about an ADDRESS, so the answer is about the
+          // address: nobody is there. Both are exactly true of the same refusal.
           setStep('address');
           setCode('');
-          setNote(t(lang, 'linkAlreadySaved'));
+          setNote(t(lang, returning ? 'linkNoAccountThere' : 'linkAlreadySaved'));
           return;
         }
         fail(t(lang, 'linkFailed'), t(lang, 'linkVerifyFailedNote'), true);

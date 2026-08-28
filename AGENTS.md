@@ -1544,9 +1544,16 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   - **`account_linked` IS A FACT AT THE FIELD, NOT A MODAL** (user-decided 2026-08-28). An
     account carries at most one address, so a device whose account is already saved under a
     different one cannot bind a second. That was an `ErrorScreen` with no retry — a dead end
-    on a screen whose one remaining move is to type the address it IS saved under — so the
-    line now stands under the address input with the input still there, and clears on the
-    next keystroke. Same decided words, no modal.
+    on a screen whose one remaining move is to type another address — so the line now stands
+    under the address input with the input still there, and clears on the next keystroke.
+    **And ONE refusal covers TWO situations, so the DOOR picks the half that is an answer**
+    (same day): the server sends it in exactly one case — the address reaches NOBODY and this
+    device's account already has one of its own — and both halves of that are exactly true.
+    Coming to SAVE, the answer is *This account is already saved under another address.*
+    Coming to SIGN IN, the player asked about an ADDRESS, so the answer is about the address:
+    *No account is saved at that address.* The save wording was being shown to both, which
+    told a returning player about a binding they had not asked for instead of about the thing
+    they had just done.
   - **THE ERASE CONFIRMATION IS A CROSSROADS, NOT A WARNING.** A trade drawn from one side
     reads as pure loss, so it draws BOTH accounts: the one being left, dimmed — under
     DELETED in the one red this whole area contains, or under its own NAME when it is only

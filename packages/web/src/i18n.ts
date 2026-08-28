@@ -276,9 +276,23 @@ const STRINGS = {
   // could ever sign into again). It is a FACT about this account, not a failure: it says so
   // AT the address field with the field still there to type in — a modal would be a dead end
   // on a screen whose one remaining move is to try another address.
+  //
+  // **THE REFUSAL IS ONE, THE SITUATION IS TWO** (user-decided 2026-08-28). The server
+  // answers `account_linked` in exactly one case: the address reaches NOBODY, and this
+  // device's account already has one of its own. Which of those two facts the player needs
+  // depends entirely on which door they came through, and the SAVE wording was being shown
+  // to both — so a player trying to SIGN IN was told about a binding they had not asked for
+  // ("this account is already saved elsewhere") instead of the answer to what they actually
+  // did. From the RETURN door the true and useful half is the other one: there is nobody at
+  // that address. Both statements are exactly true of the same refusal; the door decides
+  // which one is an answer.
   linkAlreadySaved: {
     en: 'This account is already saved under another address.',
     fr: 'Ce compte est déjà sauvegardé sous une autre adresse.',
+  },
+  linkNoAccountThere: {
+    en: 'No account is saved at that address.',
+    fr: "Aucun compte n'est sauvegardé à cette adresse.",
   },
   // The missing-puzzle state is ABNORMAL (a publish that did not happen), and the
   // wording says so — it must not read like a scheduled day off.
