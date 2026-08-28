@@ -138,10 +138,15 @@ const STRINGS = {
   // (User-decided 2026-08-28, superseding "Pour qu'un téléphone perdu ne perde pas tout.":
   // the loss framing turned on a play on words — perdu/perde — which is the opposite of
   // plain, and read as cringe rather than as stakes. What a player actually pictures is
-  // getting a new phone, so the line names that.)
+  // getting a new device, so the line names that.)
+  //
+  // Two words in it are the user's own (same day) and both are deliberate: APPAREIL rather
+  // than téléphone, which is the word the device list already prints (`devicesTitle`), and
+  // TON rather than ce — the app's FIRST tutoiement outside the two tap/click hints. The
+  // rest of the French copy still says vous; the voice is the user's to settle.
   accountSaveNote: {
-    en: 'To get this account back on another phone.',
-    fr: 'Pour retrouver ce compte sur un autre téléphone.',
+    en: 'To get your account back on another device.',
+    fr: 'Pour retrouver ton compte sur un autre appareil.',
   },
   // THE SECOND DOOR (#204's UX rework vol. 2). Saving an account and signing into another
   // one were one button, one dress and one set of taps — and opposite acts. A returning
