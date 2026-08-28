@@ -18,9 +18,20 @@
 // `word-shake`, at the shared amplitude — clears, and says how many tries remain in one
 // line beneath. A modal for a typo is punishment; the player's next act is to type again,
 // so the cursor stays where that happens.
+//
+// **EACH CELL LIGHTS IN ITS OWN INK** (user-decided 2026-08-28, superseding "the cells rest
+// quiet and brighten to `--line-strong` as they fill"): a filled cell takes one of the SIX
+// AVATAR PALETTE colours — its digit and its border together — so the row fills into a
+// small spectrum as the code goes in. It is the same palette the tile above is churning
+// through while it looks for the face, which is the point: the code is typed in the colours
+// the account is being found in. The inks are `AccountMark`'s, addressed rather than copied,
+// so the two surfaces cannot drift. An EMPTY cell stays quiet, and a refused code still
+// paints the whole row red — the danger rule wins over the spectrum, because a row that
+// half-kept its colours would read as a partial refusal.
 
-import { useEffect, useId, useRef } from 'react';
+import { useEffect, useId, useRef, type CSSProperties } from 'react';
 import { LINK_CODE_LENGTH } from '@whippin/shared';
+import { CODE_INKS } from './AccountMark';
 
 export default function CodeInput({
   value,
@@ -86,6 +97,7 @@ export default function CodeInput({
           className={`code-cell${digit ? ' filled' : ''}${
             !disabled && i === value.length ? ' next' : ''
           }`}
+          style={{ '--cell-ink': CODE_INKS[i % CODE_INKS.length] } as CSSProperties}
           aria-hidden="true"
         >
           {digit}

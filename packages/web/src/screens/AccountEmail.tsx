@@ -393,26 +393,36 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
         }
       />
       <div className="account-screen link-step">
+        {/* THE LEAD STAYS UP THROUGH THE CODE (user-decided 2026-08-28). It is rendered
+            OUTSIDE the step branches, so it is one element that survives the address → code
+            transition rather than a second one mounting in its place: the RETURNING tile
+            keeps churning across the step where the player is actually waiting to be found,
+            which is where the picture means the most, and the SAVING face keeps the promise
+            its own rule makes — the thing being kept is on screen from the first step to
+            the last. */}
+        {(step === 'address' || step === 'code') && (
+          <div className="link-stack link-lead" aria-hidden="true">
+            {returning ? (
+              // THE FIELD. Not a skeleton — nothing is loading. It is the question the
+              // screen is asking, drawn: somebody is out there, and this is where they
+              // will appear.
+              <AccountMark avatar={null} size={64} />
+            ) : savingFace ? (
+              <>
+                <Avatar
+                  avatar={savingFace.avatar ?? defaultAvatar(savingFace.publicId)}
+                  size={64}
+                />
+                <span className="account-hero-name">{savingFace.name}</span>
+              </>
+            ) : (
+              <span className="account-hero-mark skeleton" />
+            )}
+          </div>
+        )}
+
         {step === 'address' && (
           <>
-            <div className="link-stack link-lead" aria-hidden="true">
-              {returning ? (
-                // THE EMPTY SLOT. Not a skeleton — nothing is loading. It is the question
-                // the screen is asking, drawn: somebody is out there, and this is where
-                // they will appear.
-                <AccountMark avatar={null} size={64} />
-              ) : savingFace ? (
-                <>
-                  <Avatar
-                    avatar={savingFace.avatar ?? defaultAvatar(savingFace.publicId)}
-                    size={64}
-                  />
-                  <span className="account-hero-name">{savingFace.name}</span>
-                </>
-              ) : (
-                <span className="account-hero-mark skeleton" />
-              )}
-            </div>
             <input
               className="account-input"
               type="email"

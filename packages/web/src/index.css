@@ -5293,13 +5293,23 @@ button * {
   color: var(--fg);
   transition: border-color 120ms, color 120ms;
 }
+/* A FILLED cell lights in its OWN ink — the digit and the border together — so the row
+   fills into a small spectrum of the avatar palettes as the code goes in: the same colours
+   the tile above it is churning through while it looks for the face (`AccountMark`'s
+   `CODE_INKS` supplies them, so the two surfaces cannot drift). The glow is the app's own
+   LED language at a whisper, never a fill: the cell is still a frame around a digit. */
 .code-cell.filled {
-  border-color: var(--line-strong);
+  border-color: var(--cell-ink, var(--line-strong));
+  color: var(--cell-ink, var(--fg));
+  box-shadow: 0 0 10px -2px var(--cell-ink, transparent);
 }
-/* Where the next digit lands. The accent, not the solve blue: this is chrome pointing at
-   an input, not a word being resolved. */
+/* Where the next digit lands: a DIM VERSION OF THAT CELL'S OWN INK, so the row previews
+   its own spectrum one step ahead instead of borrowing a colour from outside it (it was the
+   chrome accent until 2026-08-28, when the cells gained their inks — a violet frame in the
+   middle of a walk from violet to magenta read as a sixth, unrelated state). Dim, because
+   this cell holds nothing yet; the ink at full strength means a digit landed. */
 .code-input:focus-within .code-cell.next {
-  border-color: var(--accent);
+  border-color: color-mix(in srgb, var(--cell-ink, var(--accent)) 55%, transparent);
 }
 /* A refusal stays AT the input: the game's own invalid-word gesture, at its own amplitude
    and for the length the caller clears on. The WHOLE ROW is the message, so the "next" cell
@@ -5308,6 +5318,9 @@ button * {
 .code-input.invalid:focus-within .code-cell.next {
   border-color: var(--danger);
   color: var(--danger);
+  /* The refusal takes the WHOLE row, spectrum included: a row that half-kept its colours
+     would read as a partial refusal, and the digits were all wrong together. */
+  box-shadow: none;
   animation: word-shake var(--shake-ms, 380ms) ease-in-out;
 }
 .code-input.disabled {
@@ -5406,145 +5419,13 @@ button * {
 /* The empty slot. NOT a skeleton — nothing is loading, and the skeleton's sweep would
    promise an answer this screen has not even asked for yet. It is the question drawn as
    WHAT IT IS WAITING FOR: a mark, churning through the avatar palettes on a noise field
-   (`AccountMark.tsx` holds the reasoning). A canvas at the marks' own 10×10 backing pixels,
+   that RESOLVES into the real drawing when the code lands (`AccountMark.tsx` holds the
+   reasoning). A canvas at the marks' own 10×10 backing pixels,
    so it takes the standing integer-scale pixel-art dress — and `pixelated`, because at 6.4
    device pixels a cell, bilinear sampling would blur the one property the drawing has. */
-.account-mark.ghost {
+.account-mark.field {
   display: block;
   image-rendering: pixelated;
-}
-
-/* THE ARRIVAL: the ground lands, then the drawing grows into it cell by cell, in the order
-   its own pixels were shuffled. `opacity` alone — a `scale` per cell would resample the
-   very pixel grid the mark is made of (the sprites' integer-scale rule), and the final
-   frame hands off to `Avatar`'s canonical traced path either way. */
-.mark-ground {
-  animation: mark-ground-in 180ms ease-out both;
-}
-.mark-cell {
-  animation-name: mark-cell-in;
-  animation-timing-function: cubic-bezier(0.2, 0.7, 0.3, 1);
-  animation-fill-mode: both;
-}
-@keyframes mark-ground-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-@keyframes mark-cell-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-/* ── THE CROSSROADS (#204's UX rework vol. 2) ──────────────────────────────────────────
-   The erase confirmation used to show only the account being LOST, which draws a trade as
-   pure loss — the screen could say what the tap costs but never what it buys. It is a
-   FORK, so it draws both: the account being left, dimmed under the word DELETED, and the
-   one being joined, lit and named. The sentence beneath is then free to carry the only
-   part a picture cannot — what SURVIVES. */
-.link-cross {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 14px;
-  /* THE ARROW IS THE AXIS. The two labels are different lengths — DELETED against a
-     player's name — so a row that merely centres its content puts the marks off-centre by
-     half that difference. Equal-width sides fix the pivot; the cap keeps the two faces from
-     drifting apart on a wide column, and 300 is what leaves each side room for a full
-     16-character name at 320px. */
-  width: 100%;
-  max-width: 280px;
-  margin: 0 auto;
-}
-.link-cross-side {
-  flex: 1 1 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-/* The one being left reads as already half-gone. Not hidden and not crossed out: the
-   player has been wearing this face, and it has to stay recognisable right up to the tap
-   that deletes it. */
-.link-cross-side.leaving {
-  opacity: 0.5;
-}
-.link-cross .avatar {
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-}
-.link-cross-mark {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--r-md);
-}
-/* THE TWO LABELS ARE DIFFERENT KINDS OF WORD, and they are dressed as such. DELETED is a
-   system verdict — tracked all-caps chrome, in the one red this whole area contains, so the
-   first red thing on screen IS the signal. The other side is a NAME: case kept, ordinary
-   spacing, the way every board already writes an identity. Both are bounded by their SIDE,
-   which is half the row. */
-.link-cross-tag,
-.link-cross-name {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--ui);
-  color: var(--fg);
-}
-.link-cross-tag {
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-.link-cross-tag.danger {
-  color: var(--danger);
-}
-.link-cross-name {
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.02em;
-}
-/* The direction of travel, drawn rather than written: a hairline running from the account
-   being left into the one being joined, with the arrowhead as a sharp CSS corner (no
-   glyph — the pixel face has no arrow, and a text `→` sits on its own baseline instead of
-   on the line's). Centred on the 44px marks above the labels. */
-.link-cross-arrow {
-  position: relative;
-  flex: none;
-  align-self: flex-start;
-  width: 26px;
-  height: 44px;
-}
-.link-cross-arrow::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 0;
-  width: 100%;
-  height: 1px;
-  background: var(--line-strong);
-}
-.link-cross-arrow::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  right: 0;
-  width: 5px;
-  height: 5px;
-  border-top: 1px solid var(--line-strong);
-  border-right: 1px solid var(--line-strong);
-  translate: 0 -50%;
-  rotate: 45deg;
 }
 
 /* THE ENDING'S COPY WAITS FOR THE FACE. When a mark ARRIVES, the composition is the beat —

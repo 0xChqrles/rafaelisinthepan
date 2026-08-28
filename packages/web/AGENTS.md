@@ -610,19 +610,25 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `/account/signin` mount the SAME `AccountEmail` with an `intent` the ROUTE declares
     (`langs.ts` `LinkIntent`); it never reaches the server, and every request the flow makes
     is byte-identical on both. The product contract is the root `AGENTS.md`'s. What is this
-    package's: `components/AccountMark.tsx` is the wordless tell — the ghost tile the
-    returning door opens on, and the transient cell-by-cell composition that hands off to
-    `Avatar`'s canonical traced path (so #188's union-outline decision is untouched, and
-    `prefers-reduced-motion` skips the composition entirely; its cell order is a
-    DETERMINISTIC shuffle seeded by the drawing, the slash-flip rule, so a re-render mid-flight
-    cannot re-scatter cells that have already landed). The GHOST is a CANVAS at 10×10 backing
-    pixels under `image-rendering: pixelated` — the standing integer-scale rule, and the
-    cheapest surface for a hundred pixels repainted ~14 times a second, where a hundred
+    package's: `components/AccountMark.tsx` is the wordless tell — ONE CANVAS that churns
+    while nobody is known and RESOLVES into the real drawing when the code lands, then hands
+    off to `Avatar`'s canonical traced path (so #188's union-outline decision is untouched;
+    a canvas at exactly 10×10 backing pixels has no sub-pixel edges to seam in the first
+    place). Its cell order is a DETERMINISTIC shuffle seeded by the drawing, the slash-flip
+    rule, so a re-render mid-flight cannot re-scatter cells that have already landed, and a
+    resolved cell is FINAL while the field churns around it. `image-rendering: pixelated` —
+    the standing integer-scale rule — and a canvas rather than rects because a hundred
     React-managed rects would be a hundred style writes per frame on the one screen whose job
     is to stay out of an input's way. Its noise is ONE octave of integer-hashed 3D VALUE noise
     (x, y, time): a 10-cell tile cannot resolve more, and gradient noise would cost more code
     to be indistinguishable. Both fields are offset in TIME so they cannot beat into a visible
-    period. The ending's copy follows the face in
+    period, and the clock starts at `T0` rather than 0 — an integer-hashed value noise is
+    exactly its own hash at the lattice origin, so t=0 paints a degenerate frame, which is
+    the one a REDUCED-MOTION tile would hold forever. The lead is rendered OUTSIDE
+    `AccountEmail`'s step branches, so it is one element across address → code rather than a
+    second one mounting in its place. `CODE_INKS` lives beside it and `CodeInput` wears it:
+    the six cells' colours are `AVATAR_PALETTES` entries addressed rather than copied, so the
+    prompt and the tile above it cannot drift. The ending's copy follows the face in
     on a `--arrive-delay` cascade (the `--slash-ms` rule: the JS that ends the composition and
     the CSS that waits for it hold ONE number), every element keeping its layout box so
     nothing moves while it arrives. The address step's cost line reads the CACHED

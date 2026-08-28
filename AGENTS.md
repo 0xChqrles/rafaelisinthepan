@@ -1503,6 +1503,26 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     picks each cell's palette and a second decides its ground or its ink — so nothing is
     ever blended into a colour no avatar could wear. Reduced motion keeps the picture and
     drops the movement: one frame of the field is still a mark-shaped absence.
+  - **THE FIELD STAYS UP THROUGH THE CODE, AND THE ARRIVAL RESOLVES IT** (user-decided
+    2026-08-28). Two changes of the same kind. The lead is rendered outside the step
+    branches, so ONE element survives address → code: the returning tile keeps churning
+    across the step where the player is actually waiting to be found, and the saving face
+    keeps the promise its own rule makes — the thing being kept is on screen from the first
+    step to the last. And the waiting tile and the arrival are now ONE canvas: they were two
+    surfaces, so the instant the code landed the thing the player had been watching
+    disappeared and a different thing grew in its place. Resolving the SAME field is the
+    picture the flow actually promises — the static was never noise, it was a face nobody
+    could read yet. A resolved cell is final and the rest churns around it, so the drawing
+    precipitates out of the storm before handing off to `Avatar`.
+  - **THE CODE'S CELLS LIGHT IN THE PALETTE'S OWN INKS** (user-decided 2026-08-28,
+    superseding "the cells rest quiet and brighten to `--line-strong` as they fill"): a
+    filled cell takes one of SIX avatar-palette colours — its digit and its border together
+    — and the empty NEXT cell previews its own at half strength, so the row fills into a
+    small spectrum as the code goes in. It is the palette the tile above is churning
+    through, which is the point: the code is typed in the colours the account is being found
+    in. The inks are `AccountMark`'s `CODE_INKS`, ADDRESSED into `AVATAR_PALETTES` rather
+    than copied, so the two surfaces cannot drift. A refusal still takes the WHOLE row red —
+    a row that half-kept its colours would read as a partial refusal.
   - **THE ERASE CONFIRMATION IS A CROSSROADS, NOT A WARNING.** A trade drawn from one side
     reads as pure loss, so it draws BOTH accounts: the one being left, dimmed under DELETED
     in the one red this whole area contains, and the one being joined, lit and NAMED (a
