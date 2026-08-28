@@ -5404,39 +5404,16 @@ button * {
   border-radius: var(--r-md);
 }
 /* The empty slot. NOT a skeleton — nothing is loading, and the skeleton's sweep would
-   promise an answer this screen has not even asked for yet. It is the question drawn:
-   somebody is out there, and this is where they will appear. */
-.ghost-ground {
-  fill: rgba(0, 0, 0, 0.28);
+   promise an answer this screen has not even asked for yet. It is the question drawn as
+   WHAT IT IS WAITING FOR: a mark, churning through the avatar palettes on a noise field
+   (`AccountMark.tsx` holds the reasoning). A canvas at the marks' own 10×10 backing pixels,
+   so it takes the standing integer-scale pixel-art dress — and `pixelated`, because at 6.4
+   device pixels a cell, bilinear sampling would blur the one property the drawing has. */
+.account-mark.ghost {
+  display: block;
+  image-rendering: pixelated;
 }
-.ghost-cell {
-  fill: none;
-  stroke: rgba(244, 241, 232, 0.07);
-  stroke-width: 0.6;
-}
-/* THE BREATH: five cells of a hundred drifting on a long cycle, deliberately below the
-   threshold of a thing you would call an animation — enough that the slot reads as alive
-   rather than broken, never enough to compete with the input under it. */
-.ghost-cell.breathing {
-  animation: ghost-breathe 4.2s ease-in-out infinite;
-}
-/* A standalone INFINITE decoration is switched off rather than collapsed (the streak
-   flame's rule): the global reduced-motion rule shortens durations, which would leave this
-   flickering rather than resting. The empty grid says what it says perfectly still. */
-@media (prefers-reduced-motion: reduce) {
-  .ghost-cell.breathing {
-    animation: none;
-  }
-}
-@keyframes ghost-breathe {
-  0%,
-  100% {
-    stroke: rgba(244, 241, 232, 0.07);
-  }
-  50% {
-    stroke: rgba(244, 241, 232, 0.26);
-  }
-}
+
 /* THE ARRIVAL: the ground lands, then the drawing grows into it cell by cell, in the order
    its own pixels were shuffled. `opacity` alone — a `scale` per cell would resample the
    very pixel grid the mark is made of (the sprites' integer-scale rule), and the final

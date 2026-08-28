@@ -134,11 +134,14 @@ const STRINGS = {
   accountSince: { en: 'SINCE', fr: 'DEPUIS' },
   accountSave: { en: 'SAVE WITH EMAIL', fr: 'SAUVEGARDER PAR E-MAIL' },
   // THE ONE LINE THAT EARNS ITS PLACE: why a word game wants an email is genuinely not
-  // obvious, so it is said once, where the decision is made, in the stakes the player
-  // actually feels — a lost phone, not "cross-device continuity".
+  // obvious, so it is said once, where the decision is made — and it says it PLAINLY.
+  // (User-decided 2026-08-28, superseding "Pour qu'un téléphone perdu ne perde pas tout.":
+  // the loss framing turned on a play on words — perdu/perde — which is the opposite of
+  // plain, and read as cringe rather than as stakes. What a player actually pictures is
+  // getting a new phone, so the line names that.)
   accountSaveNote: {
-    en: "So a lost phone doesn't lose it.",
-    fr: "Pour qu'un téléphone perdu ne perde pas tout.",
+    en: 'To get this account back on another phone.',
+    fr: 'Pour retrouver ce compte sur un autre téléphone.',
   },
   // THE SECOND DOOR (#204's UX rework vol. 2). Saving an account and signing into another
   // one were one button, one dress and one set of taps — and opposite acts. A returning
@@ -223,13 +226,17 @@ const STRINGS = {
     en: "You're already on this account.",
     fr: 'Vous êtes déjà sur ce compte.',
   },
-  // A RETURN that bound instead. Nothing was destroyed, so it is not a failure — but it is a
-  // surprise, and the ending both names it and offers the retry.
+  // A RETURN that bound instead: there was nobody at that address, so the account this
+  // device already held was saved to it. Nothing was destroyed, so it is not a failure — but
+  // it IS a surprise, and the line has to say the cause and then the effect, in that order,
+  // with no clause a reader has to unpick. (User-decided 2026-08-28, superseding "Rien
+  // n'était sauvegardé là — ce compte l'est maintenant.", whose second half leaned the
+  // whole sentence on an elided verb — "l'est" standing in for "est sauvegardé" — whose
+  // referent was the first half's negative.)
   linkNothingThere: {
-    en: 'Nothing was saved there — this account is now.',
-    fr: "Rien n'était sauvegardé là — ce compte l'est maintenant.",
+    en: 'No account at that address — so we saved this one there.',
+    fr: "Aucun compte à cette adresse — on y a sauvegardé celui-ci.",
   },
-  linkTryAnother: { en: 'TRY ANOTHER ADDRESS', fr: 'ESSAYER UNE AUTRE ADRESSE' },
   linkFailed: { en: 'LINK FAILED', fr: 'ÉCHEC DE LA LIAISON' },
   linkTooMany: {
     en: 'Too many codes asked for. Try again in a while.',

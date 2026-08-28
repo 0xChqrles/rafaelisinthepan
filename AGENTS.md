@@ -1494,7 +1494,15 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     one-union-outline decision is untouched; under `prefers-reduced-motion` there is no
     composition at all. The ending's name, receipt, sentence and action then follow the face
     in on a short cascade — a name at full strength beside a half-drawn mark steals the one
-    beat the flow exists for.
+    beat the flow exists for. **The EMPTY grid is drawn as what it is WAITING FOR**
+    (user-decided 2026-08-28, superseding a hairline grid with a few cells breathing — "the
+    small squares are weird", which read as a technical placeholder rather than as a
+    question): the tile churns through the AVATAR PALETTES on a slow value-noise field at
+    the marks' own 10×10 resolution — a face forming and reforming, every frame a plausible
+    one, none of them yours yet. **Every frame stays INSIDE the palette** — one noise field
+    picks each cell's palette and a second decides its ground or its ink — so nothing is
+    ever blended into a colour no avatar could wear. Reduced motion keeps the picture and
+    drops the movement: one frame of the field is still a mark-shaped absence.
   - **THE ERASE CONFIRMATION IS A CROSSROADS, NOT A WARNING.** A trade drawn from one side
     reads as pure loss, so it draws BOTH accounts: the one being left, dimmed under DELETED
     in the one red this whole area contains, and the one being joined, lit and NAMED (a

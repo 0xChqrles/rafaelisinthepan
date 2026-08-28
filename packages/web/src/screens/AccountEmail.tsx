@@ -646,26 +646,6 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                 {t(lang, 'linkDone')}
               </Button>
             )}
-            {/* A RETURN that bound instead found nobody there. Nothing was destroyed, so the
-                offer is simply to try again — and the retry is now REVERSIBLE, because this
-                account has just acquired an address of its own. */}
-            {returning && outcome === 'bound' && (
-              <button
-                type="button"
-                className="link-quiet-btn"
-                onClick={() => {
-                  setStep('address');
-                  setAddress('');
-                  setCode('');
-                  setWrong(null);
-                  setOutcome(null);
-                  setLinked(null);
-                  setReceipt(null);
-                }}
-              >
-                {t(lang, 'linkTryAnother')}
-              </button>
-            )}
           </div>
         )}
       </div>
