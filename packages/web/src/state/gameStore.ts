@@ -261,6 +261,13 @@ export interface PersistedState {
   // server. When the account deploys, the server-assigned id takes over and the derived
   // face changes once — unavoidable, since the server picks the id.
   localSeed: string | null;
+  // WHEN that placeholder identity began. The account screen states an account's age, and a
+  // device that has not deployed one yet has no server `createdAt` to state — so without
+  // this the one line on the screen would be missing exactly when the account does not exist
+  // yet, which is the one thing the area may never reveal (user-decided 2026-08-26). The
+  // seed's own instant is honest about the identity being shown: it really did begin then,
+  // on this device, and it is the identity that gets deployed on the first PLAY.
+  localSeedAt: string | null;
 }
 
 interface GameState extends PersistedState {
@@ -585,6 +592,7 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
       boardTab: 'friends',
       sentenceRulesSeen: false,
       localSeed: null,
+      localSeedAt: null,
     };
   }
   const p = (
@@ -604,6 +612,10 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
   // The pre-account seed is display-only, so a malformed one simply re-mints on next need.
   const localSeed =
     typeof p.localSeed === 'string' && PUBLIC_ID_PATTERN.test(p.localSeed) ? p.localSeed : null;
+  // A seed persisted before the instant existed keeps NO date rather than being given a
+  // made-up one: the screen simply states no age for it, which is what it honestly knows.
+  const localSeedAt =
+    localSeed !== null && typeof p.localSeedAt === 'string' ? p.localSeedAt : null;
   const boardTab = p.boardTab === 'global' ? 'global' : 'friends';
   const parsedOwner = version < 17 ? null : parseIdentityOwner(p.identityOwner);
   // `undefined` means a current-version blob claimed an owner but did not carry a valid
@@ -625,6 +637,7 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
     boardTab,
     sentenceRulesSeen,
     localSeed,
+    localSeedAt,
   };
 }
 
@@ -654,6 +667,7 @@ export function initialPersistedState(): PersistedState {
     boardTab: 'friends',
     sentenceRulesSeen: false,
     localSeed: null,
+    localSeedAt: null,
   };
 }
 
@@ -665,7 +679,7 @@ export type GameMutation =
   | { type: 'setBoardTab'; tab: BoardTab }
   | { type: 'setOnboarded' }
   | { type: 'setSentenceRulesSeen' }
-  | { type: 'ensureLocalSeed'; seed: string }
+  | { type: 'ensureLocalSeed'; seed: string; at: string }
   | ({ type: 'ensureOutbox'; key: string; puzzle: string } & OwnedGameMutation)
   | ({ type: 'appendOutbox'; key: string; puzzle: string; typed: string } & OwnedGameMutation)
   | ({
@@ -775,7 +789,7 @@ export function applyGameMutation(
     case 'ensureLocalSeed':
       return state.localSeed !== null
         ? changed(state, state)
-        : changed(state, { ...state, localSeed: mutation.seed });
+        : changed(state, { ...state, localSeed: mutation.seed, localSeedAt: mutation.at });
     case 'ensureOutbox': {
       const kept = { ...state.outbox };
       const existing = kept[mutation.key];
@@ -983,6 +997,7 @@ export function persistedStateOf(state: GameState): PersistedState {
     boardTab: state.boardTab,
     sentenceRulesSeen: state.sentenceRulesSeen,
     localSeed: state.localSeed,
+    localSeedAt: state.localSeedAt,
   };
 }
 
@@ -1031,7 +1046,11 @@ export const useGameStore = create<GameState>((set, get) => {
       const held = get().localSeed;
       if (held !== null) return held;
       const seed = generatePublicId();
-      return commit({ type: 'ensureLocalSeed', seed }).state.localSeed ?? seed;
+      // The instant travels IN the mutation, never read inside the reducer: mutations are
+      // applied against the latest committed state inside the persistence transaction, and
+      // one that reads a clock of its own is not the same mutation twice.
+      const at = new Date().toISOString();
+      return commit({ type: 'ensureLocalSeed', seed, at }).state.localSeed ?? seed;
     },
 
     ensureOutbox: (key, puzzle) => {
@@ -1209,6 +1228,7 @@ function applyCommittedState(state: PersistedState, forceOwner = false): void {
     onboarded: state.onboarded,
     sentenceRulesSeen: state.sentenceRulesSeen,
     localSeed: state.localSeed,
+    localSeedAt: state.localSeedAt,
     ...(adoptOwned
       ? {
           identityOwner: ownerMatches ? current.identityOwner : state.identityOwner,
@@ -1353,6 +1373,7 @@ export async function hydrateGameStore(): Promise<void> {
     const seeded = applyGameMutation(fallback, {
       type: 'ensureLocalSeed',
       seed: generatePublicId(),
+      at: new Date().toISOString(),
     }).state;
     applyCommittedState(seeded, true);
     return;
@@ -1362,9 +1383,10 @@ export async function hydrateGameStore(): Promise<void> {
   try {
     database = new GameStateDatabase<PersistedState>();
     const seed = generatePublicId();
+    const at = new Date().toISOString();
     const stored = await database.update((current) => {
       const normalized = normalizedEnvelope(current);
-      const seeded = applyGameMutation(normalized.state, { type: 'ensureLocalSeed', seed }).state;
+      const seeded = applyGameMutation(normalized.state, { type: 'ensureLocalSeed', seed, at }).state;
       return { version: GAME_PERSIST_VERSION, state: seeded };
     });
     gameDatabase = database;
@@ -1383,6 +1405,7 @@ export async function hydrateGameStore(): Promise<void> {
     const seeded = applyGameMutation(fallback, {
       type: 'ensureLocalSeed',
       seed: generatePublicId(),
+      at: new Date().toISOString(),
     }).state;
     applyCommittedState(seeded, true);
   }

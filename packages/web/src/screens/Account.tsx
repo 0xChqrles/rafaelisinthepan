@@ -9,6 +9,11 @@
 //   THE ROW   the mark, the name, the account's age, and EDIT — the identity as a header,
 //             the UX research's own strip (user-decided 2026-08-26, rolling back the hero:
 //             a page's identity is a masthead, not a monument).
+//   STATS     the three numbers the account IS — the live STREAK (moved here from the
+//             archive, user-decided 2026-08-28: a streak is a fact about the ACCOUNT, and
+//             the archive is one language's calendar), the BEST it has ever held, and the
+//             total DAYS. Across every supported language, which is what makes them the
+//             same numbers the erase confirmation names when it asks whether to delete one.
 //   SAVED     one lit button while the account is unsaved; the ADDRESS ITSELF once it is —
 //             a fact with no chip, because an account carries at most ONE address and the
 //             server refuses a second, so a CHANGE control would promise what the route
@@ -17,14 +22,23 @@
 //             unlinked account can only ever hold the one device reading the screen, and a
 //             list of yourself is noise. (It is also half of the next rule.)
 //
-// **NOTHING HERE TELLS YOU WHETHER THE ACCOUNT IS DEPLOYED YET** (user-decided 2026-08-26).
+// **THE SCREEN IS THE SAME SCREEN FOR EVERY ACCOUNT** (user-decided 2026-08-28, widening
+// 2026-08-26's rule rather than dropping it). The stats and the account's AGE are drawn
+// whatever state it is in — unsaved, brand new, nothing played — because a screen that
+// hides what it has nothing to show of teaches a new player that the area is broken, where
+// three zeros and a date teach them what there is to fill.
+//
+// **AND NOTHING HERE STILL TELLS YOU WHETHER THE ACCOUNT IS DEPLOYED YET** (2026-08-26).
 // The pseudonym and the mark are derived locally before deployment and stored as the
 // account's first profile at it (`localIdentityDeploy`), so `useOwnFace` answers the same
-// face either way; the age and the devices appear only once SAVED, which both a tokenless
-// and a deployed-unsaved device equally are not; and the action holds its box while the
-// summary is out rather than claiming UNSAVED before it knows (#211's explicit-loading
-// rule). SAVE is live either way — its tap leads to the flow whose CONTINUE is the
-// account-deploying trigger.
+// face either way; the AGE is the account's `createdAt` or — with no account yet — the
+// local seed's own instant, which is honest about the identity on screen and is the one
+// that gets deployed; the STATS are zero for a tokenless device by the same fact that makes
+// them zero for a deployed one that has not played (#216: no token, no rows, no request);
+// the DEVICES still appear only once SAVED, because an unlinked account can only ever hold
+// the one device reading the screen; and the action holds its box while the summary is out
+// rather than claiming UNSAVED before it knows (#211's explicit-loading rule). SAVE is live
+// either way — its tap leads to the flow whose CONTINUE is the account-deploying trigger.
 
 import { useEffect } from 'react';
 import { defaultAvatar } from '@whippin/shared';
@@ -44,14 +58,17 @@ import {
 } from '../langs';
 import { navigate } from '../routing';
 import { loadAccountSummary, useAccountSummary } from '../state/account';
+import { useAccountStats } from '../state/history';
 import { useGameStore } from '../state/gameStore';
+import useToday from '../hooks/useToday';
+import streakFlame from '../assets/streak-small.png';
 import CloseIcon from '../assets/icons/close.svg?react';
 
-// "since 12 aug" — the account's own age, in the reader's locale. An unparseable or absent
+// "since 12 aug" — the identity's own age, in the reader's locale. An unparseable or absent
 // instant renders as NO line rather than a placeholder: the device list's rule, for the same
 // reason (a label must not be able to fail the block it decorates).
-function began(createdAt: string, lang: string): string | null {
-  const at = Date.parse(createdAt);
+function began(createdAt: string | null, lang: string): string | null {
+  const at = createdAt === null ? NaN : Date.parse(createdAt);
   if (!Number.isFinite(at)) return null;
   return new Intl.DateTimeFormat(lang, { day: 'numeric', month: 'short' }).format(new Date(at));
 }
@@ -65,6 +82,10 @@ export default function Account() {
   const accountReturn = useGameStore((s) => s.profileReturn);
   const setProfileReturn = useGameStore((s) => s.setProfileReturn);
   const face = useOwnFace();
+  const localSeedAt = useGameStore((state) => state.localSeedAt);
+  // The day the streak is measured against, off the app's ONE day signal — which re-fires
+  // at the 22:00 reset, so a screen left open overnight cannot keep showing an expired one.
+  const stats = useAccountStats(useToday());
 
   // What this account IS — read once per account, and re-read when one arrives. A tokenless
   // device gets the answer without a request (#216): no token, no account, nothing to ask.
@@ -73,9 +94,10 @@ export default function Account() {
   }, [identity]);
 
   const saved = summary?.email ?? null;
-  // The age joins the row only once the account is SAVED — before that it would be the one
-  // line telling a deployed device apart from a tokenless one.
-  const since = saved !== null && summary ? began(summary.createdAt, lang) : null;
+  // WHEN this identity began. The account's own instant once there is one; the local seed's
+  // before that, which is honest about the face on screen and keeps the line from being the
+  // one thing that tells a deployed device from a tokenless one.
+  const since = began(summary?.createdAt ?? localSeedAt, lang);
   // The ACTION is unknown until the summary settles: offering SAVE while we do not yet know
   // whether it is already saved is the guessed-empty claim #211's rule forbids — it would
   // flash SAVE and swap it for the address on every visit of a linked player.
@@ -132,6 +154,44 @@ export default function Account() {
           >
             {t(lang, 'boardEdit')}
           </button>
+        </div>
+
+        {/* THE STATS — what this account IS, in the three numbers the server itself names
+            when it asks whether to delete one. Drawn in EVERY state, zeros included: a
+            screen that hides what it has nothing to show of reads as broken to the player
+            who has just arrived, where three zeros and a date read as a thing to fill.
+            Until the collections land the VALUES hold their boxes rather than claiming zero
+            (#211: an unknown answer is never rendered as a claim) — and a tokenless device
+            knows its rows are empty without asking, so it settles at zero with no request
+            and no skeleton. The FLAME lights only on a live streak: it is the archive's own
+            sprite, and beside a 0 it would be a celebration of nothing. */}
+        <div className="account-stats">
+          {[
+            { key: 'streak', label: t(lang, 'streak'), value: stats.streak, flame: true },
+            { key: 'best', label: t(lang, 'statBest'), value: stats.best, flame: false },
+            { key: 'days', label: t(lang, 'statDays'), value: stats.days, flame: false },
+          ].map((stat) => (
+            <div className="account-stat" key={stat.key}>
+              <span className="account-stat-value">
+                {stats.phase === 'ready' ? (
+                  <>
+                    {stat.flame && stat.value > 0 && (
+                      <img src={streakFlame} className="account-stat-flame" alt="" />
+                    )}
+                    {stat.value}
+                  </>
+                ) : (
+                  <span
+                    className={`account-stat-slot skeleton${
+                      stats.phase === 'loading' ? '' : ' still'
+                    }`}
+                    aria-hidden="true"
+                  />
+                )}
+              </span>
+              <span className="account-stat-label">{stat.label}</span>
+            </div>
+          ))}
         </div>
 
         {/* SAVED. Unsaved, the lit button is the screen's one call; saved, the ADDRESS is

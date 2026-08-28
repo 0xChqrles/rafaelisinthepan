@@ -72,3 +72,24 @@ export function currentStreak(days: readonly number[], activeDay: number): numbe
   }
   return run;
 }
+
+// The LONGEST run the collection has ever held, alive or broken — the account's record,
+// beside the streak it is currently on. Unlike `currentStreak` it takes no `activeDay`: a
+// record is a fact about days already played, and nothing about today can raise or break it.
+//
+// Cross-package for `currentStreak`'s reason: what an account is WORTH is stated in two
+// places (the account screen shows it, and the erase confirmation names what a deletion
+// costs), and two spellings would put different numbers on the same days.
+//
+// Order-independent and idempotent by construction — it normalizes its input — because the
+// collection is a SET that is merged, never a sequence.
+export function bestStreak(days: readonly number[]): number {
+  const sorted = [...new Set(days)].sort((a, b) => a - b);
+  let best = 0;
+  let run = 0;
+  for (let i = 0; i < sorted.length; i += 1) {
+    run = i > 0 && sorted[i] - sorted[i - 1] === 1 ? run + 1 : 1;
+    if (run > best) best = run;
+  }
+  return best;
+}

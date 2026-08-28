@@ -497,39 +497,6 @@ button * {
   padding-top: 70px;
 }
 
-/* The streak hero (moved here from the header, 2026-07-21): flame + count centered
-   above the calendar the streak is made of. A stat headline — the flame IS the label
-   (no copy), 4x pixel scale of the 8x10 source, the count the page's biggest figure. */
-.archive-streak {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  margin-bottom: 28px;
-  font-family: var(--ui);
-  color: var(--fg);
-}
-/* The hero's box while the private collection (#211) has not arrived: laid out, unpainted.
-   `visibility` rather than `opacity` so nothing of it is readable at any moment, and the
-   digit inside keeps the box exactly the height the real count will take. */
-.archive-streak-pending {
-  visibility: hidden;
-}
-.archive-streak-flame {
-  display: block;
-  width: 32px; /* 4 × the 8x10 source */
-  height: 40px;
-  image-rendering: pixelated;
-}
-.archive-streak-count {
-  font-size: 38px;
-  font-weight: 300;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  /* Optical correction: the flame's visual mass sits low. */
-  transform: translateY(2px);
-}
-
 /* Month navigation, clamped to [first puzzle month, current month] — the ‹ › ends dim
    when the range runs out. The month/year title (locale-formatted) fills the middle. */
 .cal-nav {
@@ -5179,6 +5146,70 @@ button * {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* THE ACCOUNT'S THREE NUMBERS (user-decided 2026-08-28) — the live STREAK, the BEST it has
+   ever held, and the total DAYS, across every supported language. A three-up row of equal
+   columns, values in the game's own PIXEL face (a number the game produced) over labels in
+   the chrome's mono, so the row reads as a scoreboard rather than as a form. It is drawn in
+   EVERY state, zeros included; only the VALUES are ever withheld, and only until they
+   land. */
+.account-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  /* Tight under the masthead's rule and given air before the actions: the numbers answer
+     the same question the row above them does — what this account IS — where everything
+     below the row is something to DO with it. */
+  margin: -8px 0 4px;
+}
+.account-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.account-stat-value {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  /* One fixed height for the row, whether it holds a number, a number with the flame beside
+     it, or the box it is waiting in — so nothing on the screen moves when the collections
+     land or when a streak lights. */
+  height: 30px;
+  font-family: var(--pixel-font);
+  font-size: 20px;
+  line-height: 1;
+  color: var(--fg);
+}
+/* The archive's own sprite, at an exact 3× of its 8×10 source — the standing pixel-art
+   rule. It lights only on a LIVE streak: beside a 0 it would celebrate nothing. */
+.account-stat-flame {
+  display: block;
+  width: 24px;
+  height: 30px;
+  image-rendering: pixelated;
+}
+/* The value's box while the private collections are still out (#211: an unknown answer is
+   never drawn as a claim). It BREATHES only while a read is actually in flight — a failure
+   rests still, since breathing promises an answer that is no longer coming. */
+.account-stat-slot {
+  width: 28px;
+  height: 22px;
+  border-radius: var(--r-md);
+}
+.account-stat-slot.still {
+  animation: none;
+}
+.account-stat-label {
+  font-family: var(--ui);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 /* SAVED: the ADDRESS itself is the status, so the row carries no label in front of it. */

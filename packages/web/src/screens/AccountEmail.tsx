@@ -602,11 +602,11 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             {showStakes && (
               <p className="link-stakes">
                 <span>
-                  {t(lang, 'linkEraseStreak')}
+                  {t(lang, 'streak')}
                   <b>{prompt.streak}</b>
                 </span>
                 <span>
-                  {t(lang, 'linkEraseDays')}
+                  {t(lang, 'statDays')}
                   <b>{prompt.days}</b>
                 </span>
               </p>
@@ -666,11 +666,11 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             {showReceipt && receipt ? (
               <p {...arrive(620)} className={`link-stakes${arriveClass}`}>
                 <span>
-                  {t(lang, 'linkEraseStreak')}
+                  {t(lang, 'streak')}
                   <b>{receipt.streak}</b>
                 </span>
                 <span>
-                  {t(lang, 'linkEraseDays')}
+                  {t(lang, 'statDays')}
                   <b>{receipt.days}</b>
                 </span>
               </p>

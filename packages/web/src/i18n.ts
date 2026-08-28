@@ -215,8 +215,17 @@ const STRINGS = {
     fr: "Rien n'est supprimé — ce compte reste sauvegardé sous sa propre adresse.",
   },
   linkSwitchConfirm: { en: 'SWITCH ACCOUNT', fr: 'CHANGER DE COMPTE' },
-  linkEraseStreak: { en: 'STREAK', fr: 'SÉRIE' },
-  linkEraseDays: { en: 'DAYS', fr: 'JOURS' },
+  // THE ACCOUNT'S THREE NUMBERS, one word each, shared by every surface that states them —
+  // the account screen and the erase/switch confirmations. They were `linkEraseStreak` /
+  // `linkEraseDays` while only the dialog said them, and the streak one rendered « SÉRIE »
+  // there against the archive's « STREAK » for the same number: two French words for one
+  // thing, on screens that now sit one tap apart. Unified on the older, game-facing one —
+  // STREAK is untranslated vocabulary here, the family MISS and the rarity grades belong to.
+  statDays: { en: 'DAYS', fr: 'JOURS' },
+  // The longest run the account has ever held, beside the one it is on. RECORD rather than
+  // « MEILLEUR »: it is the word a French player would use for a personal best, and it is
+  // short enough to sit under a number in a three-up row.
+  statBest: { en: 'BEST', fr: 'RECORD' },
   linkEraseConfirm: { en: 'DELETE AND CONTINUE', fr: 'SUPPRIMER ET CONTINUER' },
   // The two endings, in #204's own decided words: one for an address nobody knew, one for
   // an account the player is coming back to. Both land under the account's own FACE, which

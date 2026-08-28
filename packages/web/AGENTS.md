@@ -645,12 +645,28 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **THREE routes, three screens** (a fourth, `/account/manage`, lived for one commit on
     2026-08-26 and was ROLLED BACK the same day, user-decided: the devices belong on the
     account screen — gated, below). `screens/Account.tsx` (`/account`) is the area's one
-    door and reads top-down as a PAGE: the identity as a MASTHEAD ROW — mark, name, the
+    door and reads top-down as a PAGE: the ACCOUNT'S THREE NUMBERS under the identity as a
+    MASTHEAD ROW — mark, name, the
     account's age, EDIT at the trailing edge, the UX research's own strip, chosen over the
     centered hero the second polish pass tried (user-decided the same day: a page's
     identity is a masthead, not a monument) — over a hairline, then the save state, then
     the devices. `screens/AccountEmail.tsx` (`/account/email`) is the flow, one purpose
     per step. `screens/Profile.tsx` is the editor ALONE.
+  - **THE STATS ROW (2026-08-28)** is `state/history.ts`'s `useAccountStats(activeDay)` — a
+    hook rather than a `usePlayerHistory` per language, because the languages come from a
+    module constant and a hook called once per entry of one is a rule waiting to be broken
+    the day a third ships. It settles READY only when EVERY language's collection has
+    landed: a total summed over one of two is a smaller number stated as a fact. Values
+    withheld until then (the slot BREATHES only while a read is in flight — a failure rests
+    still, the archive cells' rule), labels and layout always drawn. The FLAME is the
+    archive's own sprite at an exact 3× and lights only on a live streak; the row keeps ONE
+    fixed value height so nothing moves when the collections land or when the flame appears.
+  - **`gameStore.localSeedAt`** stamps the placeholder identity's own instant, so the screen
+    can state an age before an account exists. The instant travels IN the mutation, never
+    read inside the reducer: mutations are applied against the latest committed state inside
+    the persistence transaction, and one that reads a clock of its own is not the same
+    mutation twice. A seed persisted before the field existed keeps NO date rather than being
+    given a made-up one.
   - **DEVICES appear only once an email is SAVED** (user-decided 2026-08-26): an unlinked
     account can only ever hold the one device reading the screen — multi-device arrives
     through the email link and no other way — so the list would be a list of yourself.

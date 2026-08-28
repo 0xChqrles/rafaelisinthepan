@@ -1596,6 +1596,38 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     streak is erased with no dialog at all. Widening it needs a signal this route does not
     hold (a profile row, or any stored round), which means a new store dependency on
     `LinkHandlerDeps`. Flagged, deliberately not changed.
+- **THE ACCOUNT SCREEN STATES WHAT THE ACCOUNT IS (user-decided 2026-08-28).** It carried
+  only an identity and an action; it now leads with the account's own three numbers — the
+  live STREAK, the BEST it has ever held, and its total DAYS — plus the date it began.
+  - **The STREAK moved here from the ARCHIVE**, where it had lived since 2026-07-21. A
+    streak is a fact about the ACCOUNT, and the archive is ONE LANGUAGE's calendar; the
+    account screen is where the rest of the account's facts already are. The archive keeps
+    its calendar and its failure block, and now reads its month with `collection: false` —
+    nothing there consumes the solved-day collection any more, so asking for it would spend
+    a consistent GetItem per open on an answer nobody renders (the language chooser's rule).
+  - **The numbers are ACROSS EVERY SUPPORTED LANGUAGE, and they are the SERVER's own
+    reading**: the BEST live streak rather than the sum (a streak is a run of days in one
+    language, and adding two states a number no streak screen shows) and the TOTAL of the
+    collections — exactly `accountStakes`, so the account screen and the erase/switch
+    confirmation cannot print different numbers over the same days. `bestStreak` joins
+    `currentStreak` in `shared/src/history.ts` for that reason, and takes no active day: a
+    record is a fact about days already played, and nothing about today can raise or break it.
+  - **IT IS THE SAME SCREEN FOR EVERY ACCOUNT — zeros are drawn, not hidden.** A screen that
+    hides what it has nothing to show of reads as broken to the player who has just arrived,
+    where three zeros and a date read as a thing to fill. Only the VALUES are ever withheld,
+    and only while the collections are in flight (#211: an unknown answer is never drawn as a
+    claim); a tokenless device settles at zero with no request at all (#216).
+  - **AND THE SCREEN STILL DOES NOT REVEAL WHETHER THE ACCOUNT EXISTS YET** (2026-08-26's
+    rule, kept). The AGE was gated on SAVED for exactly that reason; it is ungated now and
+    falls back to the LOCAL SEED's own instant (`gameStore.localSeedAt`, stamped when the
+    placeholder identity is minted), which is honest about the face on screen and is the
+    identity that gets deployed on the first PLAY. The DEVICES stay gated on SAVED, since an
+    unlinked account can only ever hold the one device reading the screen.
+  - **One word per number, shared with the confirmations.** `linkEraseStreak`/`linkEraseDays`
+    became `streak`/`statDays`, because the streak one rendered « SÉRIE » on the dialog
+    against the archive's « STREAK » for the same number — two French words for one thing, on
+    screens now one tap apart. Unified on the older game-facing one: STREAK is untranslated
+    vocabulary here, the family MISS and the rarity grades belong to.
 - **ONE PURPOSE PER SCREEN (user-decided 2026-08-26, on the first cut's review).** The flow
   shipped as a section at the BOTTOM of the #188 profile editor, behind the leaderboard's
   EDIT chip: reaching it meant game → crown → EDIT → wait for the profile read → scroll past
