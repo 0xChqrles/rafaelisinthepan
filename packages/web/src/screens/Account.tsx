@@ -61,7 +61,6 @@ import { loadAccountSummary, useAccountSummary } from '../state/account';
 import { useAccountStats } from '../state/history';
 import { useGameStore } from '../state/gameStore';
 import useToday from '../hooks/useToday';
-import streakFlame from '../assets/streak-small.png';
 import CloseIcon from '../assets/icons/close.svg?react';
 
 // "since 12 aug" — the identity's own age, in the reader's locale. An unparseable or absent
@@ -163,23 +162,17 @@ export default function Account() {
             Until the collections land the VALUES hold their boxes rather than claiming zero
             (#211: an unknown answer is never rendered as a claim) — and a tokenless device
             knows its rows are empty without asking, so it settles at zero with no request
-            and no skeleton. The FLAME lights only on a live streak: it is the archive's own
-            sprite, and beside a 0 it would be a celebration of nothing. */}
+            and no skeleton. */}
         <div className="account-stats">
           {[
-            { key: 'streak', label: t(lang, 'streak'), value: stats.streak, flame: true },
-            { key: 'best', label: t(lang, 'statBest'), value: stats.best, flame: false },
-            { key: 'days', label: t(lang, 'statDays'), value: stats.days, flame: false },
+            { key: 'streak', label: t(lang, 'streak'), value: stats.streak },
+            { key: 'best', label: t(lang, 'statBest'), value: stats.best },
+            { key: 'days', label: t(lang, 'statDays'), value: stats.days },
           ].map((stat) => (
             <div className="account-stat" key={stat.key}>
               <span className="account-stat-value">
                 {stats.phase === 'ready' ? (
-                  <>
-                    {stat.flame && stat.value > 0 && (
-                      <img src={streakFlame} className="account-stat-flame" alt="" />
-                    )}
-                    {stat.value}
-                  </>
+                  stat.value
                 ) : (
                   <span
                     className={`account-stat-slot skeleton${

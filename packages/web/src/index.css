@@ -5174,23 +5174,13 @@ button * {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  /* One fixed height for the row, whether it holds a number, a number with the flame beside
-     it, or the box it is waiting in — so nothing on the screen moves when the collections
-     land or when a streak lights. */
-  height: 30px;
+  /* One fixed height, whether it holds a number or the box it is waiting in, so nothing on
+     the screen moves when the collections land. */
+  height: 24px;
   font-family: var(--pixel-font);
   font-size: 20px;
   line-height: 1;
   color: var(--fg);
-}
-/* The archive's own sprite, at an exact 3× of its 8×10 source — the standing pixel-art
-   rule. It lights only on a LIVE streak: beside a 0 it would celebrate nothing. */
-.account-stat-flame {
-  display: block;
-  width: 24px;
-  height: 30px;
-  image-rendering: pixelated;
 }
 /* The value's box while the private collections are still out (#211: an unknown answer is
    never drawn as a claim). It BREATHES only while a read is actually in flight — a failure

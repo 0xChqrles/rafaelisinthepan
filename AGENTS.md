@@ -1616,7 +1616,11 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     hides what it has nothing to show of reads as broken to the player who has just arrived,
     where three zeros and a date read as a thing to fill. Only the VALUES are ever withheld,
     and only while the collections are in flight (#211: an unknown answer is never drawn as a
-    claim); a tokenless device settles at zero with no request at all (#216).
+    claim); a tokenless device settles at zero with no request at all (#216). The STREAK
+    cell wore the archive's own flame sprite for one commit and it was pulled the same day
+    (user-decided): a better one is being drawn, so the row is three bare numbers until it
+    lands. `assets/streak-small.png` is unreferenced meanwhile — the celebration's animated
+    flame is its own pair of sheets and is untouched.
   - **AND THE SCREEN STILL DOES NOT REVEAL WHETHER THE ACCOUNT EXISTS YET** (2026-08-26's
     rule, kept). The AGE was gated on SAVED for exactly that reason; it is ungated now and
     falls back to the LOCAL SEED's own instant (`gameStore.localSeedAt`, stamped when the

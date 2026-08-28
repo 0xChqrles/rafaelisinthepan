@@ -658,9 +658,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the day a third ships. It settles READY only when EVERY language's collection has
     landed: a total summed over one of two is a smaller number stated as a fact. Values
     withheld until then (the slot BREATHES only while a read is in flight — a failure rests
-    still, the archive cells' rule), labels and layout always drawn. The FLAME is the
-    archive's own sprite at an exact 3× and lights only on a live streak; the row keeps ONE
-    fixed value height so nothing moves when the collections land or when the flame appears.
+    still, the archive cells' rule), labels and layout always drawn, and ONE fixed value
+    height so nothing moves when the collections land. The STREAK cell briefly wore the
+    archive's flame sprite; it was pulled pending a drawing of its own, which leaves
+    `assets/streak-small.png` unreferenced (the celebration's `streak-flamme`/`streak-glow`
+    sheets are a separate pair and are untouched).
   - **`gameStore.localSeedAt`** stamps the placeholder identity's own instant, so the screen
     can state an age before an account exists. The instant travels IN the mutation, never
     read inside the reducer: mutations are applied against the latest committed state inside
