@@ -249,17 +249,6 @@ const STRINGS = {
     en: "You're already on this account.",
     fr: 'Vous êtes déjà sur ce compte.',
   },
-  // A RETURN that bound instead: there was nobody at that address, so the account this
-  // device already held was saved to it. Nothing was destroyed, so it is not a failure — but
-  // it IS a surprise, and the line has to say the cause and then the effect, in that order,
-  // with no clause a reader has to unpick. (User-decided 2026-08-28, superseding "Rien
-  // n'était sauvegardé là — ce compte l'est maintenant.", whose second half leaned the
-  // whole sentence on an elided verb — "l'est" standing in for "est sauvegardé" — whose
-  // referent was the first half's negative.)
-  linkNothingThere: {
-    en: 'No account was tied to that address — so we saved this one there.',
-    fr: "Aucun n'était associé à cette adresse — on y a sauvegardé celui-ci.",
-  },
   linkFailed: { en: 'LINK FAILED', fr: 'ÉCHEC DE LA LIAISON' },
   linkTooMany: {
     en: 'Too many codes asked for. Try again in a while.',
@@ -304,6 +293,12 @@ const STRINGS = {
     en: 'This account is already saved under another address.',
     fr: 'Ce compte est déjà sauvegardé sous une autre adresse.',
   },
+  // The RETURNING door's answer when nobody is at the address. It used to be an ENDING —
+  // the account this device held got bound to the address instead, and the screen explained
+  // the turn — until 2026-08-28, when the user pointed out that binding is not a smaller
+  // version of recovering: a player who typed a wrong address would SPEND their account's
+  // one address slot on it. Nothing happens now, and this is a note at the field with the
+  // field still there to correct.
   linkNoAccountThere: {
     en: 'No account is saved at that address.',
     fr: "Aucun compte n'est sauvegardé à cette adresse.",

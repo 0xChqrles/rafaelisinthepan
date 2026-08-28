@@ -22,7 +22,7 @@
 // nothing, commits, and lands right. Commit-then-moves leaves the round in an account that
 // has just been DELETED, with nothing left to retry from.
 
-import { dayNumber, currentStreak, VOCAB_BUILDS } from '@whippin/shared';
+import { bestStreak, dayNumber, currentStreak, VOCAB_BUILDS } from '@whippin/shared';
 import { FRIENDS_MAX, type FriendStore, type FriendTransfer } from './friendStore';
 import type { PlayerHistoryStore } from './historyStore';
 import type { LinkStore } from './linkStore';
@@ -40,14 +40,18 @@ export function supportedTuples(): { lang: string; mode: ScoreMode }[] {
   return Object.keys(VOCAB_BUILDS).flatMap((lang) => modes.map((mode) => ({ lang, mode })));
 }
 
-// What the account being deleted is about to lose, as the confirmation dialog states it.
-// SOLVED DAYS are the measure: they are what the streak is derived from, they are what a
-// player would name if asked what they would miss, and they are bounded (one small read per
-// language). An account with none is EMPTY for the confirmation's purpose — there is nothing
-// to show, so there is nothing to confirm, which is exactly the fresh device that links
-// immediately.
+// WHAT AN ACCOUNT IS WORTH, in the three numbers every surface that states one uses: the
+// live streak, the best it has ever held, and its total days. SOLVED DAYS are the measure —
+// they are what a streak is derived from, they are what a player would name if asked what
+// they would miss, and they are bounded (one small read per language).
+//
+// It is read for two opposite reasons and states the same three either way: what a deletion
+// is about to COST, and what a recovery just HANDED BACK. An account with no days at all is
+// EMPTY for the confirmation's purpose — nothing to show, so nothing to confirm, which is
+// exactly the fresh device that links immediately.
 export interface AccountStakes {
   streak: number;
+  best: number;
   days: number;
 }
 
@@ -59,9 +63,11 @@ export async function accountStakes(
   const langs = Object.keys(VOCAB_BUILDS);
   const collections = await Promise.all(langs.map((lang) => history.solvedDays(accountId, lang)));
   return {
-    // The BEST live streak across languages, not their sum: a streak is a run of days in one
-    // language, and adding two of them would state a number the streak screen never shows.
-    streak: collections.reduce((best, days) => Math.max(best, currentStreak(days, activeDay)), 0),
+    // The BEST of each across languages, never their sum: a streak is a run of days in ONE
+    // language, and adding two of them would state a number no streak screen ever shows.
+    // The DAYS do sum, because a day played in either language is a day played.
+    streak: collections.reduce((most, days) => Math.max(most, currentStreak(days, activeDay)), 0),
+    best: collections.reduce((most, days) => Math.max(most, bestStreak(days)), 0),
     days: collections.reduce((total, days) => total + days.length, 0),
   };
 }

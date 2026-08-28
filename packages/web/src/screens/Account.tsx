@@ -43,6 +43,7 @@
 import { useEffect } from 'react';
 import { defaultAvatar } from '@whippin/shared';
 import { useOwnFace } from '../components/AccountFace';
+import AccountStats from '../components/AccountStats';
 import Avatar from '../components/Avatar';
 import Button from '../components/Button';
 import DeviceList from '../components/DeviceList';
@@ -156,36 +157,13 @@ export default function Account() {
         </div>
 
         {/* THE STATS — what this account IS, in the three numbers the server itself names
-            when it asks whether to delete one. Drawn in EVERY state, zeros included: a
-            screen that hides what it has nothing to show of reads as broken to the player
-            who has just arrived, where three zeros and a date read as a thing to fill.
-            Until the collections land the VALUES hold their boxes rather than claiming zero
-            (#211: an unknown answer is never rendered as a claim) — and a tokenless device
-            knows its rows are empty without asking, so it settles at zero with no request
-            and no skeleton. */}
-        <div className="account-stats">
-          {[
-            { key: 'streak', label: t(lang, 'streak'), value: stats.streak },
-            { key: 'best', label: t(lang, 'statBest'), value: stats.best },
-            { key: 'days', label: t(lang, 'statDays'), value: stats.days },
-          ].map((stat) => (
-            <div className="account-stat" key={stat.key}>
-              <span className="account-stat-value">
-                {stats.phase === 'ready' ? (
-                  stat.value
-                ) : (
-                  <span
-                    className={`account-stat-slot skeleton${
-                      stats.phase === 'loading' ? '' : ' still'
-                    }`}
-                    aria-hidden="true"
-                  />
-                )}
-              </span>
-              <span className="account-stat-label">{stat.label}</span>
-            </div>
-          ))}
-        </div>
+            when it asks whether to delete one, and the recovery ending prints when it hands
+            one back (`components/AccountStats` holds the reasoning). */}
+        <AccountStats
+          lang={lang}
+          stats={stats.phase === 'ready' ? stats : null}
+          loading={stats.phase === 'loading'}
+        />
 
         {/* SAVED. Unsaved, the lit button is the screen's one call; saved, the ADDRESS is
             the status — no prefix, no chip. Unknown holds the button's own box. */}

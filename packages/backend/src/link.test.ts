@@ -309,6 +309,7 @@ describe('email account linking (#204) — the erase confirmation', () => {
       accountId: playing.accountId,
       target: saved.accountId,
       streak: 2,
+      best: 2,
       days: 2,
     });
     // Nothing was destroyed by ASKING.
@@ -324,9 +325,62 @@ describe('email account linking (#204) — the erase confirmation', () => {
     expect(JSON.parse(confirmed.body)).toMatchObject({
       outcome: 'adopted',
       accountId: saved.accountId,
-      stakes: { streak: expect.any(Number), days: expect.any(Number) },
+      // The RECEIPT is the three numbers every surface that states an account's worth uses.
+      stakes: {
+        streak: expect.any(Number),
+        best: expect.any(Number),
+        days: expect.any(Number),
+      },
     });
     await expect(h.devices.accountExists(playing.accountId)).resolves.toBe(false);
+  });
+
+  // CONTRACT (#204's UX rework vol. 2, 2026-08-28): BINDING IS A CONSENT. A caller that
+  // came to RECOVER an account did not ask to have its own bound to whatever address it
+  // typed — and that is not a smaller version of what it wanted, it is a costly different
+  // act: an account carries at most ONE address, so a mistyped one would spend the slot and
+  // leave the account unable to be saved under the right one afterwards.
+  it('refuses to BIND when the caller did not authorize it, and changes nothing', async () => {
+    const h = harness();
+    const device = await seedDevice(h.devices);
+    const code = await askForCode(h, device.token, 'nobody@example.com');
+
+    const refused = await h.handler(
+      post({ token: device.token, email: 'nobody@example.com', code, bind: false }),
+    );
+    expect(refused.statusCode).toBe(404);
+    expect(JSON.parse(refused.body)).toMatchObject({ error: 'no_account' });
+
+    // The address is still free, and the account is still unsaved — so the player can
+    // correct their typo and save under the address they actually meant.
+    const saved = await h.handler(
+      post({
+        token: device.token,
+        email: 'meant@example.com',
+        code: await askForCode(h, device.token, 'meant@example.com'),
+      }),
+    );
+    expect(saved.statusCode).toBe(200);
+    expect(JSON.parse(saved.body)).toMatchObject({ outcome: 'bound', email: 'meant@example.com' });
+  });
+
+  it('still ADOPTS without the bind consent — it only ever withheld creating one', async () => {
+    const h = harness();
+    const home = await seedDevice(h.devices);
+    await h.handler(
+      post({ token: home.token, email: 'home@example.com', code: await askForCode(h, home.token, 'home@example.com') }),
+    );
+    const fresh = await seedDevice(h.devices);
+    const answer = await h.handler(
+      post({
+        token: fresh.token,
+        email: 'home@example.com',
+        code: await askForCode(h, fresh.token, 'home@example.com'),
+        bind: false,
+      }),
+    );
+    expect(answer.statusCode).toBe(200);
+    expect(JSON.parse(answer.body)).toMatchObject({ outcome: 'adopted', accountId: home.accountId });
   });
 
   // CONTRACT (#204's UX rework vol. 2, 2026-08-28): LEAVING AN ACCOUNT IS CONFIRMED TOO,

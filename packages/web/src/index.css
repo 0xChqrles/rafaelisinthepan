@@ -5193,6 +5193,17 @@ button * {
 .account-stat-slot.still {
   animation: none;
 }
+/* The row inside the flow's centered face-stack: the crossroads and the recovery ending
+   both draw it, and both want the column's full width rather than the grid's content width,
+   so the three cells land on the same rhythm they have on `/account`. */
+.link-stack .account-stats,
+.link-receipt-stats {
+  width: 100%;
+  margin: 0;
+}
+.link-receipt-stats .account-stats {
+  margin: 0;
+}
 .account-stat-label {
   font-family: var(--ui);
   font-size: 9px;
@@ -5387,26 +5398,6 @@ button * {
   cursor: default;
 }
 
-/* What the erase destroys, in the numbers' own weight — the one thing on the screen a
-   reader has to take in before a destructive tap. */
-.link-stakes {
-  display: flex;
-  justify-content: center;
-  gap: 22px;
-  margin: 0;
-  font-family: var(--ui);
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.link-stakes b {
-  margin-left: 8px;
-  font-family: var(--pixel-font);
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--fg);
-}
 /* DESTRUCTION NEVER GLOWS: the confirming control is the quiet variant wearing the danger
    ink, so the lit LED button is never the one that deletes an account. */
 .link-danger {
@@ -5578,8 +5569,8 @@ button * {
 }
 
 /* THE ONE NEW FACT the ending shows about the account, under its name: the address it is
-   now saved to. (A RECOVERY shows `.link-stakes` instead — the streak and day count that
-   PROVE the account is theirs.) Quiet, because the face and the sentence carry the
+   now saved to. (A RECOVERY shows the three-up stats row instead — the numbers that PROVE
+   the account is theirs, and the same ones `/account` prints.) Quiet, because the face and the sentence carry the
    moment; this is the receipt under them. */
 .link-receipt {
   margin: -6px 0 0;

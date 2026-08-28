@@ -230,6 +230,14 @@ export async function handleLink(
   // agreeing: `erase` when it will be deleted, `leave` when it survives and this device is
   // only walking away from it. A client bug then cannot destroy a month of play, and cannot
   // silently change whose account this device is either.
+  if (body.bind !== undefined && typeof body.bind !== 'boolean') {
+    return errorResponse(
+      400,
+      'bad_request',
+      'Body field "bind" must be a boolean when present.',
+      responseHeaders,
+    );
+  }
   for (const field of ['erase', 'leave'] as const) {
     const value = body[field];
     if (value !== undefined && (typeof value !== 'string' || !PUBLIC_ID_PATTERN.test(value))) {
@@ -267,10 +275,29 @@ export async function handleLink(
   const binding = await deps.links.binding(hash);
 
   if (binding === null) {
-    // The address reaches nobody: bind it to the account this device already holds. An
-    // account carries at most ONE address, so a device whose account is already saved under
-    // a different one is refused rather than silently re-pointed — the old address would
-    // reach an account nobody could ever sign into again.
+    // **BINDING IS A CONSENT, like `erase` and `leave`** (user-decided 2026-08-28). The
+    // address reaches nobody, so the only thing that CAN happen here is binding it to the
+    // account this device already holds — and a caller who came to RECOVER an account did
+    // not ask for that. They typed an address expecting to find somebody at it; creating a
+    // binding instead is not a smaller version of what they wanted, it is a different act,
+    // and a costly one: an account carries at most ONE address, so a mistyped address
+    // SPENDS the slot and the account can never be saved under the right one afterwards.
+    //
+    // The server still guesses NOTHING — this is not the intent the client declares to
+    // itself (that never crosses the wire), it is the caller naming what it authorizes,
+    // exactly as the two confirmations do. Absent means consent, so only the door that
+    // must not bind says so.
+    if (body.bind === false) {
+      return errorResponse(
+        404,
+        'no_account',
+        'No account is saved at this address.',
+        responseHeaders,
+      );
+    }
+    // An account carries at most ONE address, so a device whose account is already saved
+    // under a different one is refused rather than silently re-pointed — the old address
+    // would reach an account nobody could ever sign into again.
     if (account.email !== undefined && account.email !== email) {
       return errorResponse(
         409,

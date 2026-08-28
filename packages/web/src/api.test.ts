@@ -722,21 +722,24 @@ describe('link answers (#204 vol. 2)', () => {
   const OTHER = 'qrstuvwxyz234567';
   const DEVICE = 'abcdefghijklmnop';
 
+  const STAKES = { streak: 4, best: 9, days: 12 };
+
   it('carries the account being ADOPTED, so the crossroads can draw both faces', () => {
-    const prompt = parseErasePrompt({ accountId: ID, target: OTHER, streak: 4, days: 12 }, 'erase');
-    expect(prompt).toEqual({ kind: 'erase', accountId: ID, target: OTHER, streak: 4, days: 12 });
+    const prompt = parseErasePrompt({ accountId: ID, target: OTHER, ...STAKES }, 'erase');
+    expect(prompt).toEqual({ kind: 'erase', accountId: ID, target: OTHER, stakes: STAKES });
   });
 
   it('degrades a missing or malformed target to ONE face, never to a refused prompt', () => {
     // The refusal is the only thing standing between a tap and a deleted account: a
     // decoration the client cannot read must not be able to make it unanswerable.
-    expect(parseErasePrompt({ accountId: ID, streak: 0, days: 0 }, 'erase')?.target).toBeNull();
+    expect(parseErasePrompt({ accountId: ID, ...STAKES }, 'erase')?.target).toBeNull();
     expect(
-      parseErasePrompt({ accountId: ID, target: 'nope', streak: 0, days: 0 }, 'erase')?.target,
+      parseErasePrompt({ accountId: ID, target: 'nope', ...STAKES }, 'erase')?.target,
     ).toBeNull();
-    // What it may NOT degrade: the account it is asking to erase, and what that costs.
-    expect(parseErasePrompt({ accountId: 'nope', target: OTHER, streak: 0, days: 0 }, 'erase')).toBeNull();
-    expect(parseErasePrompt({ accountId: ID, streak: 4 }, 'erase')).toBeNull();
+    // What it may NOT degrade: the account it is asking to erase, and what that costs —
+    // and the cost is all THREE numbers, since every surface that states one states them.
+    expect(parseErasePrompt({ accountId: 'nope', target: OTHER, ...STAKES }, 'erase')).toBeNull();
+    expect(parseErasePrompt({ accountId: ID, streak: 4, days: 12 }, 'erase')).toBeNull();
   });
 
   it('accepts a SWITCH with no stakes — a switch loses nothing, so it states nothing', () => {
@@ -746,21 +749,21 @@ describe('link answers (#204 vol. 2)', () => {
       kind: 'switch',
       accountId: ID,
       target: OTHER,
-      streak: 0,
-      days: 0,
+      stakes: null,
     });
     expect(parseErasePrompt({ target: OTHER }, 'switch')).toBeNull();
   });
 
   it('carries the recovered account\'s RECEIPT on an adopt, and nothing on the others', () => {
     const base = { outcome: 'adopted', accountId: ID, deviceId: DEVICE, email: 'z@example.com' };
-    expect(parseLinkResult({ ...base, stakes: { streak: 12, days: 41 } }).stakes).toEqual({
+    expect(parseLinkResult({ ...base, stakes: { streak: 12, best: 30, days: 41 } }).stakes).toEqual({
       streak: 12,
+      best: 30,
       days: 41,
     });
     // A bind recovered nothing, so it vouches for nothing — and an unreadable receipt is
     // simply no receipt, never a failed link on a device whose identity has already moved.
     expect(parseLinkResult({ ...base, outcome: 'bound' }).stakes).toBeNull();
-    expect(parseLinkResult({ ...base, stakes: { streak: 'lots' } }).stakes).toBeNull();
+    expect(parseLinkResult({ ...base, stakes: { streak: 12, days: 41 } }).stakes).toBeNull();
   });
 });

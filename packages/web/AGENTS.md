@@ -662,7 +662,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     height so nothing moves when the collections land. The STREAK cell briefly wore the
     archive's flame sprite; it was pulled pending a drawing of its own, which leaves
     `assets/streak-small.png` unreferenced (the celebration's `streak-flamme`/`streak-glow`
-    sheets are a separate pair and are untouched).
+    sheets are a separate pair and are untouched). The ROW ITSELF is
+    `components/AccountStats.tsx`, drawn by three surfaces for three reasons — what this
+    account IS, what a deletion is about to COST, and what a recovery just HANDED BACK —
+    because a player who reads a streak of 12 on the account screen and is then offered a
+    dialog saying 9 has been told the app does not know its own numbers.
   - **`gameStore.localSeedAt`** stamps the placeholder identity's own instant, so the screen
     can state an age before an account exists. The instant travels IN the mutation, never
     read inside the reducer: mutations are applied against the latest committed state inside

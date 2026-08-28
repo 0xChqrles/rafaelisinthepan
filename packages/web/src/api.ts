@@ -575,7 +575,12 @@ export async function postLinkBody(
     turnstileToken?: string;
     lang?: string;
     code?: string;
+    // The three CONSENTS a verify may carry: what may be created, and what may be left.
+    // The server does only what the caller authorized — it never guesses which of them
+    // the player meant.
+    bind?: boolean;
     erase?: string;
+    leave?: string;
   },
 ): Promise<Response> {
   return postSignedJson(url, body, AbortSignal.timeout(LINK_TIMEOUT_MS));
@@ -639,14 +644,17 @@ export interface LinkResult {
 // about to be deleted — one shape, because they are the same measure.
 export interface AccountStakes {
   streak: number;
+  best: number;
   days: number;
 }
 
 function parseStakes(data: unknown): AccountStakes | null {
   if (!isRecord(data)) return null;
-  const { streak, days } = data;
-  if (typeof streak !== 'number' || typeof days !== 'number') return null;
-  return { streak, days };
+  const { streak, best, days } = data;
+  if (typeof streak !== 'number' || typeof best !== 'number' || typeof days !== 'number') {
+    return null;
+  }
+  return { streak, best, days };
 }
 
 // Runtime shape check for a link answer — the parsePuzzle contract. An identity is being
@@ -690,8 +698,7 @@ export interface LinkErasePrompt {
   // The account being LEFT, with what it costs to lose it (a switch costs nothing, and its
   // numbers are not shown).
   accountId: string;
-  streak: number;
-  days: number;
+  stakes: AccountStakes | null;
   // The account being ADOPTED. A trade shown from one side reads as pure loss, so the
   // confirmation draws both faces — and this is the other one. Optional in the TYPE only
   // so a malformed field degrades to a one-sided prompt instead of failing a refusal the
@@ -704,17 +711,16 @@ export function parseErasePrompt(
   kind: 'erase' | 'switch',
 ): LinkErasePrompt | null {
   if (!isRecord(data)) return null;
-  const { accountId, streak, days, target } = data;
+  const { accountId, target } = data;
   if (typeof accountId !== 'string' || !PUBLIC_ID_PATTERN.test(accountId)) return null;
-  // A SWITCH carries no stakes — nothing is lost — so its numbers are optional and default
-  // to none rather than failing a confirmation the player has to be able to answer.
-  const has = typeof streak === 'number' && typeof days === 'number';
-  if (kind === 'erase' && !has) return null;
+  // A SWITCH carries no stakes — nothing is lost — so its numbers are optional there, and
+  // requiring them would refuse a confirmation the player has to be able to answer.
+  const stakes = parseStakes(data);
+  if (kind === 'erase' && stakes === null) return null;
   return {
     kind,
     accountId,
-    streak: has ? (streak as number) : 0,
-    days: has ? (days as number) : 0,
+    stakes,
     target: typeof target === 'string' && PUBLIC_ID_PATTERN.test(target) ? target : null,
   };
 }

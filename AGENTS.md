@@ -1541,6 +1541,23 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     — this account stays saved under its own address.*), no stakes are printed (they are not
     at stake), and the primary is an ordinary lit SWITCH ACCOUNT: dressing it as a danger
     would teach the red to mean "a decision" rather than "a loss".
+  - **BINDING IS A CONSENT, and the RETURNING door does not give it** (user-decided
+    2026-08-28). A player who came to RECOVER an account and typed an address nobody holds
+    was having their LOCAL account bound to it — which is not a smaller version of what they
+    asked for, it is a costly different act: an account carries at most ONE address, so a
+    mistyped address SPENT the slot and left the account unable to be saved under the right
+    one afterwards, forever. The verify body carries `bind` beside `erase` and `leave` — the
+    caller naming what it authorizes, never the declared intent crossing the wire — and an
+    address that reaches nobody without that consent is **404 `no_account`**, a note at the
+    address field with the field still there to correct. Two consequences: the endings drop
+    from six to FIVE (`bound` is reachable from the SAVE door alone), and `account_linked`
+    goes back to meaning one thing, on one door, since the returning door never reaches the
+    bind branch at all.
+  - **THE RECOVERY ENDING PRINTS WHAT IT HANDED BACK** (user-decided 2026-08-28): the same
+    three numbers `/account` prints, so a player reading them there and then opening the
+    account screen sees the numbers they were just shown. `accountStakes` gained `best` for
+    it, and the CROSSROADS prints all three too — everywhere the app states what an account
+    is worth, it states the same three (`web/components/AccountStats.tsx`).
   - **`account_linked` IS A FACT AT THE FIELD, NOT A MODAL** (user-decided 2026-08-28). An
     account carries at most one address, so a device whose account is already saved under a
     different one cannot bind a second. That was an `ErrorScreen` with no retry — a dead end

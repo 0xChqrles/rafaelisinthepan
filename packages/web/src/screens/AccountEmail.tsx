@@ -60,6 +60,7 @@ import {
   type LinkErasePrompt,
 } from '../api';
 import { useAccountFace, useOwnFace, type Face } from '../components/AccountFace';
+import AccountStats from '../components/AccountStats';
 import AccountMark from '../components/AccountMark';
 import Avatar from '../components/Avatar';
 import Button from '../components/Button';
@@ -251,6 +252,14 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           token: resolved.identity.token,
           email,
           code: typed,
+          // **THE RETURNING DOOR AUTHORIZES NO BINDING** (user-decided 2026-08-28). A
+          // player who came to RECOVER an account and typed an address nobody holds did not
+          // ask to have their local one bound to it — that is a different act, and a costly
+          // one: an account carries at most ONE address, so a mistyped address would SPEND
+          // the slot and leave the account unable to be saved under the right one. This is
+          // not the declared intent crossing the wire (it never does); it is the caller
+          // naming what it authorizes, exactly as `erase` and `leave` do.
+          bind: !returning,
           ...(confirm ?? {}),
         });
         const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
@@ -308,20 +317,25 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           fail(t(lang, 'linkFailed'), t(lang, 'linkCodeExpired'));
           return;
         }
+        // Nobody is at that address, and this door did not authorize creating anybody.
+        // The answer is about the ADDRESS, because that is what the player asked about.
+        if (error === 'no_account') {
+          setStep('address');
+          setCode('');
+          setNote(t(lang, 'linkNoAccountThere'));
+          return;
+        }
         if (error === 'account_linked') {
           // A FACT, not a failure: it is said AT the address field with the field still
           // there to type in — a modal would be a dead end on a screen whose one remaining
           // move is to try another address.
           //
-          // ONE refusal, TWO situations. The server answers this in exactly one case — the
-          // address reaches nobody AND this device's account already has one of its own —
-          // and which half of that the player needs is decided by the door they came
-          // through. Coming to SAVE, the answer is that this account is already saved.
-          // Coming to SIGN IN, they asked about an ADDRESS, so the answer is about the
-          // address: nobody is there. Both are exactly true of the same refusal.
+          // SAVE-door only now: the returning door never reaches the bind branch at all,
+          // so this can only be a device that came to save an account which already carries
+          // an address of its own.
           setStep('address');
           setCode('');
-          setNote(t(lang, returning ? 'linkNoAccountThere' : 'linkAlreadySaved'));
+          setNote(t(lang, 'linkAlreadySaved'));
           return;
         }
         fail(t(lang, 'linkFailed'), t(lang, 'linkVerifyFailedNote'), true);
@@ -374,12 +388,15 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
 
   // AN ENDING PER CELL of the two-doors × three-outcomes grid. Until vol. 2 four of the six
   // borrowed one of the other two's sentences.
+  // FIVE endings, not six: the returning door authorizes no binding, so `bound` is
+  // reachable from the SAVE door alone and "nothing was there" is a NOTE at the address
+  // field now rather than an ending anybody lands on.
   const endingLine =
     outcome === 'adopted'
       ? t(lang, 'linkRestored')
       : outcome === 'already_bound'
         ? t(lang, returning ? 'linkAlreadyAccount' : 'linkAlreadyAddress')
-        : t(lang, returning ? 'linkNothingThere' : 'linkSaved');
+        : t(lang, 'linkSaved');
   // An ADOPT is a reconnect — the player wants their game back, so PLAY hands them to App's
   // home redirect; so does a RETURN that finds it was already on this account, since the
   // errand is over and they came here to get playing. A BIND was a settings errand started
@@ -391,10 +408,15 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   // genuinely changed hands, and that had no moment at all before).
   const composeEnding = returning || outcome === 'adopted';
   const erasing = prompt?.kind === 'erase';
-  // A SWITCH has no stakes to state — nothing is lost — and printing a streak under the
-  // face being left would read as its price.
-  const showStakes = erasing && prompt !== null && (prompt.streak > 0 || prompt.days > 0);
-  const showReceipt = outcome === 'adopted' && receipt !== null && (receipt.streak > 0 || receipt.days > 0);
+  // A SWITCH has no stakes to state — nothing is lost — and printing numbers under the face
+  // being left would read as its price. An account with nothing on the board has none to
+  // state either.
+  const stakes = erasing ? prompt?.stakes ?? null : null;
+  const showStakes = stakes !== null && (stakes.streak > 0 || stakes.best > 0 || stakes.days > 0);
+  // THE RECEIPT: what signing back in just handed back. Drawn whenever the server sent it,
+  // zeros included — the same row the account screen draws, so a player who reads it here
+  // and then opens `/account` sees the numbers they were just shown.
+  const showReceipt = outcome === 'adopted' && receipt !== null;
   // The ending's copy FOLLOWS the face in when the face is arriving: the composition is the
   // beat, and a name at full strength beside a half-drawn mark steals it. Each line a breath
   // behind the last, in reading order, ending on the action. Nothing when the face was
@@ -599,18 +621,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             <p className="account-note account-note-center" role="status">
               {t(lang, erasing ? 'linkEraseKeeps' : 'linkSwitchKeeps')}
             </p>
-            {showStakes && (
-              <p className="link-stakes">
-                <span>
-                  {t(lang, 'streak')}
-                  <b>{prompt.streak}</b>
-                </span>
-                <span>
-                  {t(lang, 'statDays')}
-                  <b>{prompt.days}</b>
-                </span>
-              </p>
-            )}
+            {showStakes && <AccountStats lang={lang} stats={stakes} />}
             {/* Destruction never GLOWS, so the erase is the QUIET button in the danger ink
                 and the lit primary is never the one that deletes an account. A switch
                 destroys nothing, so it is an ordinary primary — dressing it as a danger
@@ -664,16 +675,9 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                 returning player wants to check. Every other ending shows the address, which
                 is the thing that just changed. */}
             {showReceipt && receipt ? (
-              <p {...arrive(620)} className={`link-stakes${arriveClass}`}>
-                <span>
-                  {t(lang, 'streak')}
-                  <b>{receipt.streak}</b>
-                </span>
-                <span>
-                  {t(lang, 'statDays')}
-                  <b>{receipt.days}</b>
-                </span>
-              </p>
+              <div {...arrive(620)} className={`link-receipt-stats${arriveClass}`}>
+                <AccountStats lang={lang} stats={receipt} />
+              </div>
             ) : (
               linked && (
                 <p
