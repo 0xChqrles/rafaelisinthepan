@@ -642,6 +642,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
     chrome for the verdict, `.link-cross-name` an identity with its case kept; the row is
     equal-width sides around the arrow, because the two labels differ in length and a row that
     merely centres its content puts the pivot off by half that difference.
+  - **THE AREA'S TYPE ROLES AND ITS BACK CONTROL (2026-08-29)** — the product contract is
+    the root `AGENTS.md`'s. What is this package's: `.account-note` is INFO, `.account-note
+    .danger` is an ERROR and carries an `::before` LED in the danger ink, `.link-quiet-btn`
+    is an ACTION in `--fg` at a finger's size; `TopBar` takes `back={{title, label, onBack}}`
+    and renders `.topbar-back` INTO the left slot, so a screen passes either `left` or
+    `back`, never both. `assets/icons/arrow-left.svg` is the Lucide glyph in the `.ui-icon`
+    dress (square caps, miter joins) — NOT `back.svg`, which is the KEYBOARD's pixel
+    backspace and belongs to the play surface's icon family.
   - **THREE routes, three screens** (a fourth, `/account/manage`, lived for one commit on
     2026-08-26 and was ROLLED BACK the same day, user-decided: the devices belong on the
     account screen — gated, below). `screens/Account.tsx` (`/account`) is the area's one

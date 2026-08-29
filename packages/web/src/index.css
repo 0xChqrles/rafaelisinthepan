@@ -3284,16 +3284,20 @@ button * {
 .btn-primary:active {
   filter: brightness(1.5);
 }
-/* Secondary: simple text, no fill. */
+/* Secondary: simple text, no fill — but a BUTTON'S SIZE (user-decided 2026-08-29). At 14px
+   in 8px of padding it sat under a primary three times its height and read as a caption
+   somebody had made clickable; every screen that mounts one mounts it as the real second
+   choice (START FRESH, RETRY, CHANGE LANGUAGE). The dress is unchanged — no fill, no rule,
+   the flat rule's brightness-not-travel press — only the target and the weight. */
 .btn-secondary {
-  padding: calc(4px + var(--cap-shift)) 8px calc(4px - var(--cap-shift));
-  font-size: 14px;
-  font-weight: 500;
+  padding: calc(13px + var(--cap-shift)) 20px calc(13px - var(--cap-shift));
+  font-size: 15px;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   background: transparent;
   color: var(--fg);
-  opacity: 0.7;
+  opacity: 0.75;
 }
 .btn-secondary:hover {
   opacity: 1;
@@ -5213,6 +5217,33 @@ button * {
   color: var(--muted);
 }
 
+/* THE HEADER'S BACK CONTROL (user-decided 2026-08-29): the arrow and the screen's NAME as
+   ONE target, in the left slot where a back control belongs and where the eye already is.
+   It replaces the title rather than sitting beside it, so the row's measured width budget
+   is unchanged — the icon takes the place of the tracking the title used to have. */
+.topbar-back {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* A finger's target around type that stays small: the padding is pulled back out with a
+     negative margin so the visible word still starts on the row's own left edge. */
+  padding: 8px 10px 8px 0;
+  margin: -8px 0;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  cursor: pointer;
+  transition: color 120ms;
+}
+.topbar-back .ui-icon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+.topbar-back:hover {
+  color: var(--accent);
+}
+
 /* SAVED: the ADDRESS itself is the status, so the row carries no label in front of it. */
 .account-row {
   display: flex;
@@ -5234,14 +5265,23 @@ button * {
   letter-spacing: 0.02em;
 }
 
-/* The one EXPLANATION on these screens — sentence case, like the coach copy, because it is
-   help rather than a label (the chrome's all-caps rule names that exception). */
+/* ── THREE ROLES, TOLD APART ON THREE AXES (user-decided 2026-08-29) ───────────────────
+   The area's small type was one size and nearly one colour, so an EXPLANATION, an ERROR and
+   a SECONDARY ACTION read as the same thing: 12px muted help, 12px danger help, 10px
+   uppercase muted button. They now differ in CASE, in WEIGHT+INK, and — for the error — in
+   carrying a MARK, so which of the three a line is can be read before it is read:
+
+     INFO    sentence case · muted · regular  · no mark
+     ERROR   sentence case · danger · medium  · a danger LED before it
+     ACTION  UPPERCASE     · --fg   · bold    · a finger's target
+
+   Sizes went up with it: help was smaller than the buttons it explained. */
 .account-note {
   margin: -4px 0 0;
   font-family: var(--ui);
-  font-size: 12px;
-  font-weight: 350;
-  line-height: 1.5;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.55;
   color: var(--muted);
 }
 .account-note-center {
@@ -5253,9 +5293,28 @@ button * {
   margin-top: -4px;
   text-align: center;
 }
+/* An ERROR CARRIES A MARK — the app's own LED square, in the danger ink, the same shape the
+   primary button lights with. It is what separates a refusal from the help text above it at
+   a glance, where colour alone did not (the two sat at the same size and weight, and a
+   muted-vs-red difference is exactly what a colour-blind reader does not get). */
 .account-note.danger {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
   color: var(--danger);
   font-weight: 500;
+}
+.account-note.danger::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  background: var(--danger);
+  box-shadow: 0 0 8px rgba(255, 46, 56, 0.8);
+  /* Sat on the text's own baseline rather than centred on the box: a two-line error keeps
+     its mark beside the FIRST line, where the sentence starts. */
+  translate: 0 -1px;
 }
 
 .account-input {
@@ -5367,31 +5426,30 @@ button * {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  font-family: var(--ui);
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted);
 }
 .link-quiet-btn {
   /* Generous padding around small type: the visible word stays quiet while the tap
      target stays a finger's. */
-  padding: 8px 6px;
+  padding: 12px 10px;
   border: 0;
   background: none;
-  color: var(--muted);
+  /* AN ACTION, IN THE ACTION INK. At `--muted` it was the same colour as the help text
+     around it and a size smaller, so the one tappable thing on the screen was the quietest
+     — the chrome's ONE INK rule, which reserves `--muted` for secondary VALUES rather than
+     for controls. */
+  color: var(--fg);
   /* Its OWN dress, not `inherit`: the erase step mounts one of these alone (CANCEL),
      outside the `.link-quiet` row that used to supply the typography. */
   font-family: var(--ui);
-  font-size: 10px;
-  font-weight: 550;
+  font-size: 12px;
+  font-weight: 650;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   cursor: pointer;
   transition: color 120ms;
 }
 .link-quiet-btn:hover:not(:disabled) {
-  color: var(--fg);
+  color: var(--accent);
 }
 .link-quiet-btn:disabled {
   opacity: 0.5;
@@ -5586,11 +5644,12 @@ button * {
 }
 
 /* The SECOND DOOR, on `/account`: a quiet way to the returning flow, never a second
-   primary. It sits on its own line under everything the screen offers, with air above it,
-   because it leads AWAY from this account rather than acting on it. */
+   primary. It sits on its own line under everything the screen offers, with real air above
+   it, because it leads AWAY from this account rather than acting on it — and because at the
+   column's own gap it read as one more row of the block above. */
 .account-door {
   align-self: center;
-  margin-top: 4px;
+  margin-top: 16px;
 }
 
 /* The centered FACE STACK: both endings and the erase confirmation — an account's mark
@@ -5617,16 +5676,23 @@ button * {
 .device-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  /* A SECTION IS SPACE AND A TITLE (user-decided 2026-08-29). This block sat one column gap
+     under the save state with a 10px muted label on it, so a list of devices and the button
+     above it read as one undifferentiated pile. The extra room is what says "a new thing
+     starts here"; the title says what it is. */
+  margin-top: 20px;
 }
+/* Loud enough to head a block: the chrome's own ink at the size the rest of the chrome
+   uses, where it was a 10px muted whisper — smaller than every row it named. */
 .device-list-title {
-  margin: 0;
+  margin: 0 0 2px;
   font-family: var(--ui);
-  font-size: 10px;
-  font-weight: 550;
-  letter-spacing: 0.14em;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--fg);
 }
 .device-row {
   display: flex;

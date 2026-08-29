@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import LangButton from './LangButton';
+import ArrowLeftIcon from '../assets/icons/arrow-left.svg?react';
 
 // The app header, finalized 2026-08-18 (superseding the floating corner chips): ONE
 // GLASS BAND — the dialogs' own material as chrome, which is what keeps the controls
@@ -18,20 +19,38 @@ import LangButton from './LangButton';
 // decided entry point, superseding the earlier standing-line note): it must be
 // reachable BEFORE playing, since the screen is also the profile editor's and the
 // invite link's home.
+//
+// **A TITLED SCREEN GOES BACK FROM ITS TITLE** (user-decided 2026-08-29). The account area
+// left by a ✕ in the RIGHT group, which is the corner furthest from a thumb and reads as
+// "dismiss this" — right for a modal, wrong for a page you navigated into. `back` turns the
+// LEFT slot into one target: an arrow and the title together, where a back control belongs
+// and where the eye already is when it reads what screen it is on. It replaces the title
+// rather than sitting beside it, so the row's width budget is unchanged.
 export default function TopBar({
   lang,
   left,
+  back,
   center,
   right,
 }: {
   lang: string;
   left?: ReactNode;
+  // The screen's title, as the way OUT of it: rendered as the left slot's own button.
+  back?: { title: string; label: string; onBack: () => void };
   center?: ReactNode;
   right?: ReactNode;
 }) {
   return (
     <header className="topbar">
       <div className="topbar-inner">
+        {back && (
+          <div className="topbar-left">
+            <button type="button" className="topbar-back" aria-label={back.label} onClick={back.onBack}>
+              <ArrowLeftIcon className="ui-icon" aria-hidden />
+              <span className="topbar-title">{back.title}</span>
+            </button>
+          </div>
+        )}
         {left && <div className="topbar-left">{left}</div>}
         {center && <div className="topbar-center">{center}</div>}
         <div className="topbar-right">

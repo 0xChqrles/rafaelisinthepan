@@ -179,7 +179,6 @@ const STRINGS = {
   // screen, where the cells already demonstrate what is wanted.
   linkCodeLabel: { en: '6-digit code', fr: 'Code à 6 chiffres' },
   linkResend: { en: 'RESEND', fr: 'RENVOYER' },
-  linkChangeAddress: { en: 'CHANGE ADDRESS', fr: "CHANGER D'ADRESSE" },
   // Shown only once an attempt has been SPENT: stating the budget up front reads as a
   // warning to somebody who has typed nothing wrong. One line, at the input, beside the
   // cells that just shook.
@@ -460,6 +459,9 @@ const STRINGS = {
   archive: { en: 'ARCHIVE', fr: 'ARCHIVE' },
   ariaArchive: { en: 'Past puzzles', fr: 'Puzzles précédents' },
   ariaBackToToday: { en: "Back to today's puzzle", fr: 'Retour au puzzle du jour' },
+  // The account area's way OUT, on the header's own title (2026-08-29). The visible words
+  // are the screen's NAME; this is what the control is called for a reader.
+  ariaBack: { en: 'Back', fr: 'Retour' },
   ariaPrevMonth: { en: 'Previous month', fr: 'Mois précédent' },
   ariaNextMonth: { en: 'Next month', fr: 'Mois suivant' },
   // ---- tutorial invitation (#51): the tutorial never starts without an action.

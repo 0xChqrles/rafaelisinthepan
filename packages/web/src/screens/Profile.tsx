@@ -32,7 +32,6 @@ import TopBar from '../components/TopBar';
 import { useGameStore } from '../state/gameStore';
 // Inline SVG (vite-plugin-svgr): the close control back to the leaderboard, painting
 // with currentColor; the button's aria-label names it.
-import CloseIcon from '../assets/icons/close.svg?react';
 
 // The #188 profile editor: name, tap-to-paint 10×10 grid, and the palette picker —
 // each swatch IS a palette ({bg, fg} pair, user-decided 2026-08-19: two colours,
@@ -502,22 +501,16 @@ export default function Profile() {
     <>
       <TopBar
         lang={lang}
-        left={<span className="topbar-title">{t(lang, 'profileTitle')}</span>}
-        right={
-          // The way OUT: UP, to `/account` (#204's UX rework, 2026-08-26). This screen
-          // answers ONE question now — how others see me — and `/account` is its only
-          // door, so there is nothing left to guess: the old `profileReturn` dance
-          // existed because the editor could be entered from either board, and the
-          // account screen is where that choice now lives.
-          <button
-            type="button"
-            className="home-btn archive-close"
-            aria-label={t(lang, 'ariaClose')}
-            onClick={() => navigate(ACCOUNT_PATH)}
-          >
-            <CloseIcon className="ui-icon" aria-hidden />
-          </button>
-        }
+        // The way OUT: UP, to `/account` (#204's UX rework, 2026-08-26). This screen
+        // answers ONE question now — how others see me — and `/account` is its only door,
+        // so there is nothing left to guess: the old `profileReturn` dance existed because
+        // the editor could be entered from either board, and the account screen is where
+        // that choice now lives.
+        back={{
+          title: t(lang, 'profileTitle'),
+          label: t(lang, 'ariaBack'),
+          onBack: () => navigate(ACCOUNT_PATH),
+        }}
       />
       {load === 'loading' && (
         <p className="status">

@@ -62,7 +62,6 @@ import { loadAccountSummary, useAccountSummary } from '../state/account';
 import { useAccountStats } from '../state/history';
 import { useGameStore } from '../state/gameStore';
 import useToday from '../hooks/useToday';
-import CloseIcon from '../assets/icons/close.svg?react';
 
 // "since 12 aug" — the identity's own age, in the reader's locale. An unparseable or absent
 // instant renders as NO line rather than a placeholder: the device list's rule, for the same
@@ -107,20 +106,14 @@ export default function Account() {
     <>
       <TopBar
         lang={lang}
-        left={<span className="topbar-title">{t(lang, 'accountTitle')}</span>}
-        right={
-          <button
-            type="button"
-            className="home-btn archive-close"
-            aria-label={t(lang, 'ariaClose')}
-            onClick={() => {
-              setProfileReturn(null);
-              navigate(accountReturn ?? pathForBoard(lang, lastMode ?? 'sentence'));
-            }}
-          >
-            <CloseIcon className="ui-icon" aria-hidden />
-          </button>
-        }
+        back={{
+          title: t(lang, 'accountTitle'),
+          label: t(lang, 'ariaBack'),
+          onBack: () => {
+            setProfileReturn(null);
+            navigate(accountReturn ?? pathForBoard(lang, lastMode ?? 'sentence'));
+          },
+        }}
       />
       <div className="account-screen">
         {/* THE ROW — the identity as the page's masthead. The face holds its boxes until

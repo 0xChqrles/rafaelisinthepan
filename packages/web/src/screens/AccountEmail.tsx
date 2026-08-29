@@ -82,7 +82,6 @@ import { navigate } from '../routing';
 import { loadAccountSummary, noteAccountEmail, useAccountSummary } from '../state/account';
 import { useGameStore } from '../state/gameStore';
 import { prefetchTurnstileTokens, turnstileToken } from '../turnstile';
-import CloseIcon from '../assets/icons/close.svg?react';
 
 type Step = 'address' | 'code' | 'confirm' | 'done';
 type LinkOutcome = 'bound' | 'adopted' | 'already_bound';
@@ -429,17 +428,22 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
     <>
       <TopBar
         lang={lang}
-        left={<span className="topbar-title">{t(lang, 'accountTitle')}</span>}
-        right={
-          <button
-            type="button"
-            className="home-btn archive-close"
-            aria-label={t(lang, 'ariaClose')}
-            onClick={leave}
-          >
-            <CloseIcon className="ui-icon" aria-hidden />
-          </button>
-        }
+        back={{
+          title: t(lang, 'accountTitle'),
+          label: t(lang, 'ariaBack'),
+          // BACK IS A STEP, not an exit, wherever there is a step to take: from the code
+          // it returns to the ADDRESS — which is what the quiet CHANGE ADDRESS button used
+          // to be, and why that button is gone. Everywhere else it leaves the flow.
+          onBack: () => {
+            if (step !== 'code') {
+              leave();
+              return;
+            }
+            setStep('address');
+            setCode('');
+            setWrong(null);
+          },
+        }}
       />
       <div className="account-screen link-step">
         {/* THE LEAD STAYS UP THROUGH THE CODE (user-decided 2026-08-28). It is rendered
@@ -536,6 +540,9 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                 {tn(lang, 'linkWrongCode', wrong)}
               </p>
             )}
+            {/* ONE quiet control under the cells now: the header's BACK is what changes
+                the address (user-decided 2026-08-29), so the row that used to hold two
+                similar-looking words holds the one that has nowhere else to live. */}
             <div className="link-quiet">
               <button
                 type="button"
@@ -544,19 +551,6 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                 onClick={() => void send(true)}
               >
                 {waitLeft > 0 ? `${t(lang, 'linkResend')} (${waitLeft})` : t(lang, 'linkResend')}
-              </button>
-              <span aria-hidden="true">·</span>
-              <button
-                type="button"
-                className="link-quiet-btn"
-                disabled={busy}
-                onClick={() => {
-                  setStep('address');
-                  setCode('');
-                  setWrong(null);
-                }}
-              >
-                {t(lang, 'linkChangeAddress')}
               </button>
             </div>
           </>

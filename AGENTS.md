@@ -1649,6 +1649,34 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     against the archive's « STREAK » for the same number — two French words for one thing, on
     screens now one tap apart. Unified on the older game-facing one: STREAK is untranslated
     vocabulary here, the family MISS and the rarity grades belong to.
+- **THE AREA'S SMALL TYPE HAD ONE VOICE FOR THREE ROLES (user-decided 2026-08-29).** An
+  EXPLANATION, an ERROR and a SECONDARY ACTION were 12px muted help, 12px danger help and
+  10px uppercase muted button — near enough that which of the three a line was could not be
+  read before reading it, and the one TAPPABLE thing on a screen was its quietest. They now
+  differ on three axes at once: **INFO** sentence case · muted · regular · no mark;
+  **ERROR** sentence case · danger · medium · a danger LED before it (colour alone is
+  exactly what a colour-blind reader does not get); **ACTION** uppercase · `--fg` · bold ·
+  a finger's target. Sizes went up with it, help included — it was smaller than the buttons
+  it explained. `.btn-secondary` grew a button's padding and weight app-wide for the same
+  reason: at 14px in 8px of padding under a primary three times its height it read as a
+  caption somebody had made clickable, on every screen that mounts one.
+- **A TITLED SCREEN GOES BACK FROM ITS TITLE (user-decided 2026-08-29).** The account area
+  left by a ✕ in the header's RIGHT group — the corner furthest from a thumb, and the
+  gesture for dismissing a modal rather than for leaving a page you navigated into. `TopBar`
+  takes a `back` instead: the arrow and the screen's NAME as ONE target in the LEFT slot,
+  where a back control belongs and where the eye already is when it reads what screen it is
+  on. It REPLACES the title rather than sitting beside it, so the row's measured width
+  budget is unchanged. Worn by `/account`, `/profile` and both flow doors. **In the flow it
+  is a STEP, not an exit**: from the code it returns to the ADDRESS — which is what the
+  quiet CHANGE ADDRESS button used to be, so that button is gone and the row under the
+  cells holds RESEND alone.
+- **A SECTION IS SPACE AND A TITLE (user-decided 2026-08-29).** The devices sat one column
+  gap under the save state with a 10px muted label on them — smaller than every row they
+  named — so a list and the button above it read as one undifferentiated pile. The room is
+  what says a new thing starts here; the title says what it is, at the chrome's own ink and
+  size. No titles were INVENTED for blocks that do not need one (the save block's button
+  already says what it is — the show-don't-tell rule), so the grammar is: generous space
+  between blocks, a real title on the block that needs naming.
 - **ONE PURPOSE PER SCREEN (user-decided 2026-08-26, on the first cut's review).** The flow
   shipped as a section at the BOTTOM of the #188 profile editor, behind the leaderboard's
   EDIT chip: reaching it meant game → crown → EDIT → wait for the profile read → scroll past
