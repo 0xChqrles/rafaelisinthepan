@@ -97,9 +97,9 @@ function loadMasks(): Promise<Mask[]> {
 // The ground colour as r,g,b — the halo needs it with its own alphas.
 function bgChannels(): [number, number, number] {
   const hex =
-    getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#08090f';
+    getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#050507';
   const m = /^#([0-9a-f]{6})$/i.exec(hex);
-  if (!m) return [8, 9, 15];
+  if (!m) return [5, 5, 7];
   return [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16)) as [number, number, number];
 }
 

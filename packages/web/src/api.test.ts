@@ -729,17 +729,27 @@ describe('link answers (#204 vol. 2)', () => {
     expect(prompt).toEqual({ kind: 'erase', accountId: ID, target: OTHER, stakes: STAKES });
   });
 
-  it('degrades a missing or malformed target to ONE face, never to a refused prompt', () => {
+  it('degrades every decoration, and refuses only what it cannot ask about', () => {
     // The refusal is the only thing standing between a tap and a deleted account: a
     // decoration the client cannot read must not be able to make it unanswerable.
     expect(parseErasePrompt({ accountId: ID, ...STAKES }, 'erase')?.target).toBeNull();
     expect(
       parseErasePrompt({ accountId: ID, target: 'nope', ...STAKES }, 'erase')?.target,
     ).toBeNull();
-    // What it may NOT degrade: the account it is asking to erase, and what that costs —
-    // and the cost is all THREE numbers, since every surface that states one states them.
+    // THE STAKES ARE A DECORATION TOO, on both kinds (widened by #204's review). They were
+    // required on an ERASE, which broke the rule this test states: an incomplete trio
+    // refused the prompt, the caller fell through to the generic failure, and its TRY AGAIN
+    // re-sent the same code for the same 409 — a loop with no way out, on the one screen a
+    // player must be able to answer. `showStakes` already draws nothing when they are
+    // absent, so the confirmation simply loses three numbers and keeps everything that
+    // makes it answerable: the fork, the sentence and both buttons.
+    const partial = parseErasePrompt({ accountId: ID, streak: 4, days: 12 }, 'erase');
+    expect(partial?.accountId).toBe(ID);
+    expect(partial?.stakes).toBeNull();
+    // What it may NOT degrade: the account it is asking to erase. With no name there is
+    // nothing to confirm and nothing to send back, so `verify` closes without offering a
+    // retry that could only repeat it.
     expect(parseErasePrompt({ accountId: 'nope', target: OTHER, ...STAKES }, 'erase')).toBeNull();
-    expect(parseErasePrompt({ accountId: ID, streak: 4, days: 12 }, 'erase')).toBeNull();
   });
 
   it('accepts a SWITCH with no stakes — a switch loses nothing, so it states nothing', () => {

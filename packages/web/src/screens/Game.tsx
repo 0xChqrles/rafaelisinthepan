@@ -21,7 +21,6 @@ import { noteSolvedDay, usePlayerHistory } from '../state/history';
 import Phrase from '../components/Phrase';
 import DissolvePhrase from '../components/DissolvePhrase';
 import CellDigits from '../components/CellDigits';
-import PuzzleDate from '../components/PuzzleDate';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import SolvedScreen from '../components/SolvedScreen';
@@ -83,7 +82,6 @@ export default function Game({
   dayNumber,
   isActiveDay = true,
   deferResultsAnimation = false,
-  onHeaderLeftChange,
 }: {
   puzzle: Puzzle;
   dayNumber: number;
@@ -93,7 +91,6 @@ export default function Game({
   // The dev streak preview lives above Game in App, so it supplies the same animation gate
   // as the real in-round dialog without coupling the preview to persisted round state.
   deferResultsAnimation?: boolean;
-  onHeaderLeftChange: (left: ReactNode | null) => void;
 }) {
   const { vocab, error, retry } = useVocab(puzzle.lang);
 
@@ -120,7 +117,6 @@ export default function Game({
       dayNumber={dayNumber}
       isActiveDay={isActiveDay}
       deferResultsAnimation={deferResultsAnimation}
-      onHeaderLeftChange={onHeaderLeftChange}
     />
   );
 }
@@ -139,7 +135,6 @@ function Round({
   dayNumber,
   isActiveDay,
   deferResultsAnimation,
-  onHeaderLeftChange,
 }: {
   words: string[];
   puzzleHoles: Hole[];
@@ -153,7 +148,6 @@ function Round({
   dayNumber: number;
   isActiveDay: boolean;
   deferResultsAnimation: boolean;
-  onHeaderLeftChange: (left: ReactNode | null) => void;
 }) {
   // Fresh per-hole state derived from the puzzle. Used until the persisted store
   // reconciles to this round, and as the reset state on a new day/language.
@@ -425,14 +419,6 @@ function Round({
     const id = window.setTimeout(() => preloadStreakDialog(), 1_500);
     return () => window.clearTimeout(id);
   }, [dayNumber, isActiveDay, roundKey, finished]);
-
-  // The header's left slot belongs to TopBar's actual left group, not to the game body. A
-  // layout effect fills it before paint and clears it when this round leaves. It holds WHICH
-  // DAY this is — fixed for the round, so this runs once per day rather than per guess.
-  useLayoutEffect(() => {
-    onHeaderLeftChange(<PuzzleDate dayNumber={dayNumber} lang={lang} />);
-    return () => onHeaderLeftChange(null);
-  }, [onHeaderLeftChange, dayNumber, lang]);
 
   // This round replayed: the per-guess reconstruction-% trajectory (the run ruler's cells,
   // and what the share token carries) plus the solve moments (its ticks), from ONE walk of

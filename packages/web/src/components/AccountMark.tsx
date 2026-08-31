@@ -73,7 +73,24 @@ function noise3(x: number, y: number, z: number): number {
 // How the field moves. The INK churns at a readable pace; the PALETTE is a slow drift with
 // almost no spatial term at all, which is what keeps the tile reading as ONE mark rather
 // than as a colour field — see the FRONT constants.
-const INK_SCALE = 0.3;
+// MEASURED AGAINST A REAL MARK (2026-08-30). What the tile is waiting for is an assigned
+// avatar, and `defaultAvatar`'s are drawn to a shape: over six of them, 23% of the cells
+// carry ink, a horizontal run averages 3.0 cells, and they are MIRRORED — 100% symmetric
+// about the vertical axis, because that is what makes ten squares read as a creature and
+// not as television static.
+//
+// The first cut was none of those things: at `INK_SCALE = 0.3` the field's period was
+// three cells wide, so a frame was two or three enormous blobs at 62% coverage with no
+// symmetry at all — a colour field, which is exactly the "the small squares are weird"
+// reading the churning tile was written to replace. So the ink is sampled about the tile's
+// MIDLINE (`mirror`), and the scale and threshold are set where the field's own statistics
+// land on the drawing's: ~30% ink, runs of ~2.5 cells. Every frame is a plausible face
+// because it is built the way the real ones are.
+//
+// The PALETTE front below is deliberately NOT mirrored: the shape is what has to be
+// plausible, and a colour transition folded about the same axis reads as a mechanism.
+const mirror = (x: number): number => (x < AVATAR_SIZE / 2 ? x : AVATAR_SIZE - 1 - x);
+const INK_SCALE = 1;
 const INK_SPEED = 0.34;
 const PALETTE_SPEED = 0.17;
 // A change of palette arrives as a FRONT crossing the tile, never as a switch. The front's
@@ -85,10 +102,10 @@ const PALETTE_SPEED = 0.17;
 const FRONT_SCALE = 0.16;
 const FRONT_SPEED = 0.09;
 const FRONT_SPREAD = 1.4;
-// A shade OVER half the cells carry ink. Real marks are drawn sparser than that, but this
-// is a signal rather than a drawing, and at the sparse end the darker palettes' grounds sit
-// close enough to the page that the tile reads as a hole rather than as something alive.
-const INK_THRESHOLD = 0.47;
+// A shade richer than a real mark's 23% — a drawing can be sparse because it is a definite
+// shape, where a frame nobody will look at twice needs a little more to hold the tile off
+// the page's own ground.
+const INK_THRESHOLD = 0.57;
 // Pixel art has nothing to gain from 60fps, and this sits above an input.
 const FRAME_MS = 1000 / 16;
 // The field is started AWAY from the lattice origin: an integer-hashed value noise is
@@ -193,7 +210,7 @@ export default function AccountMark({ avatar, size, compose = false }: AccountMa
             const front = noise3(x * FRONT_SCALE, y * FRONT_SCALE, seconds * FRONT_SPEED);
             // The two fields are offset in TIME so they cannot beat against each other into
             // a visible period.
-            const ink = noise3(x * INK_SCALE, y * INK_SCALE, seconds * INK_SPEED + 31.7);
+            const ink = noise3(mirror(x) * INK_SCALE, y * INK_SCALE, seconds * INK_SPEED + 31.7);
             const palette = AVATAR_PALETTES[Math.floor((drift + front * FRONT_SPREAD) % count)];
             context.fillStyle = ink > INK_THRESHOLD ? palette.fg : palette.bg;
           }
@@ -247,13 +264,20 @@ export default function AccountMark({ avatar, size, compose = false }: AccountMa
 // The six INKS the code prompt's cells wear, in the order they fill (`CodeInput`). They are
 // AVATAR_PALETTE colours ADDRESSED rather than copied, so the prompt cannot drift from the
 // drawings the tile above it is churning through: the code is typed in the same colours the
-// face is being found in. The walk is violet → cobalt → azure → cyan → lime → magenta — a
-// hue walk with one honest jump at the end, since this palette holds no green.
+// face is being found in. The walk is cobalt → azure → cyan → lime → rose → magenta — a hue
+// walk with one honest jump at the end, since this palette holds no green.
+//
+// IT USED TO OPEN ON VIOLET (`AVATAR_PALETTES[1].bg`, #8f06ff) and that one failed: 3.50:1
+// against the cell's ground, which passes only as LARGE text and this is an 18px digit —
+// the FIRST digit typed, next to a cyan at 16:1. Every colour here now clears AA (4.62 at
+// the floor), which is also what pulled the row's brightness spread in from 4.9x to 3.7x.
+// There is no violet in the palettes that clears it; the walk starts one step along
+// instead, which costs nothing — it still crosses six hues and still ends on the jump.
 export const CODE_INKS: readonly string[] = [
-  AVATAR_PALETTES[1].bg,
   AVATAR_PALETTES[0].fg,
   AVATAR_PALETTES[3].bg,
   AVATAR_PALETTES[1].fg,
   AVATAR_PALETTES[2].fg,
+  AVATAR_PALETTES[2].bg,
   AVATAR_PALETTES[4].fg,
 ];

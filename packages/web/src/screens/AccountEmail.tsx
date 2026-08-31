@@ -48,6 +48,7 @@ import {
   defaultAvatar,
   isValidEmail,
   isValidLinkCode,
+  LINK_CODE_TTL_SECONDS,
   normalizeEmail,
 } from '@whippin/shared';
 import {
@@ -68,6 +69,7 @@ import CodeInput from '../components/CodeInput';
 import ErrorScreen from '../components/ErrorScreen';
 import LoadingWave from '../components/LoadingWave';
 import TopBar from '../components/TopBar';
+import HeaderKeys from '../components/HeaderKeys';
 import {
   adoptLinkedAccount,
   currentRequestIdentity,
@@ -76,6 +78,7 @@ import {
   markDeviceSignedOut,
   useDeviceIdentity,
 } from '../identity';
+import useKeyboardInset from '../hooks/useKeyboardInset';
 import { t, tn } from '../i18n';
 import { ACCOUNT_PATH, resolveHomeLang, type LinkIntent } from '../langs';
 import { navigate } from '../routing';
@@ -89,6 +92,53 @@ type LinkOutcome = 'bound' | 'adopted' | 'already_bound';
 // How long before RESEND is offered. Long enough that a mail has had a chance to arrive —
 // tapping it earlier only spends one of the five sends the server allows per hour.
 const RESEND_AFTER_SECONDS = 30;
+
+// THE TRIP TO THE MAIL APP MUST NOT COST A CODE (review finding). Every fact about where
+// the flow stood was component state, so a RELOAD put the player back on the address step
+// with the code in their inbox now unreachable — and the only way forward is to send
+// another, out of the five the server allows per address per hour. Android evicts
+// backgrounded tabs routinely and switching apps to fetch the code is what this step asks
+// for, so the reload is not an edge case: it is the step's own happy path, interrupted.
+//
+// sessionStorage, because the flow's life IS this tab's: a new tab is a new attempt, and
+// none of this is account state worth surviving one. It holds no code and no token — only
+// which address was written to and WHEN, which is also what makes the resend countdown
+// wall-clock (below) instead of a tick counter the browser suspends in a background tab.
+const RESUME_KEY = 'whippin-link-step';
+
+interface Resumable {
+  intent: LinkIntent;
+  address: string;
+  sentAt: number;
+}
+
+function readResumable(intent: LinkIntent): Resumable | null {
+  try {
+    const raw = sessionStorage.getItem(RESUME_KEY);
+    if (raw === null) return null;
+    const held = JSON.parse(raw) as Partial<Resumable>;
+    // The DOOR is part of the identity: a resume onto the other one would dress the wrong
+    // narrative around a code sent from this one.
+    if (held.intent !== intent) return null;
+    if (typeof held.address !== 'string' || !isValidEmail(held.address)) return null;
+    if (typeof held.sentAt !== 'number' || !Number.isFinite(held.sentAt)) return null;
+    // A code the server has already forgotten resumes nothing — the step would refuse the
+    // first thing typed into it. Inside the TTL it is still the code in the player's mail.
+    if (Date.now() - held.sentAt > LINK_CODE_TTL_SECONDS * 1_000) return null;
+    return { intent, address: held.address, sentAt: held.sentAt };
+  } catch {
+    return null;
+  }
+}
+
+function writeResumable(value: Resumable | null): void {
+  try {
+    if (value === null) sessionStorage.removeItem(RESUME_KEY);
+    else sessionStorage.setItem(RESUME_KEY, JSON.stringify(value));
+  } catch {
+    // A session that cannot remember simply does not resume — never a failed flow.
+  }
+}
 
 // What went wrong, in the words the error surface needs. `retry` is present only when asking
 // again can help — a refused code cannot be fixed by re-sending the same one.
@@ -118,17 +168,23 @@ let justLinked: {
 
 export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   const lastLang = useGameStore((s) => s.lastLang);
+  const lastMode = useGameStore((s) => s.lastMode);
   const lang = resolveHomeLang(lastLang, navigator.language);
   const identity = useDeviceIdentity();
   const returning = intent === 'return';
 
   const carried =
     identity !== null && justLinked?.accountId === identity.accountId ? justLinked : null;
-  const [step, setStep] = useState<Step>(carried ? 'done' : 'address');
+  // Read ONCE, and only when there is no ending to show: a completed link outranks a code
+  // that was in flight before it.
+  const [resumed] = useState(() => (carried ? null : readResumable(intent)));
+  const [step, setStep] = useState<Step>(carried ? 'done' : resumed ? 'code' : 'address');
   const [outcome, setOutcome] = useState<LinkOutcome | null>(carried?.outcome ?? null);
   const [linked, setLinked] = useState<string | null>(carried?.email ?? null);
   const [receipt, setReceipt] = useState<AccountStakes | null>(carried?.stakes ?? null);
-  const [address, setAddress] = useState('');
+  const [address, setAddress] = useState(resumed?.address ?? '');
+  // The instant the code was SENT — the countdown's anchor, and the resume's clock.
+  const [sentAt, setSentAt] = useState<number | null>(resumed?.sentAt ?? null);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [wrong, setWrong] = useState<number | null>(null);
@@ -163,12 +219,28 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
     if (step === 'address') prefetchTurnstileTokens(2);
   }, [step]);
 
-  // The resend cooldown, counted down on the code step alone.
+  // The resend cooldown, read off the SEND'S OWN INSTANT rather than counted down. A tick
+  // counter stalls in a backgrounded tab — which is precisely the tab this step asks the
+  // player to leave — so it came back still counting time that had already passed. Reading
+  // the wall clock also makes a resumed step correct with no extra bookkeeping: whatever
+  // the tab was doing, the answer is the same subtraction.
   useEffect(() => {
-    if (waitLeft <= 0) return;
-    const timer = setTimeout(() => setWaitLeft((n) => n - 1), 1_000);
-    return () => clearTimeout(timer);
-  }, [waitLeft]);
+    if (sentAt === null) return;
+    const left = () =>
+      Math.max(0, RESEND_AFTER_SECONDS - Math.floor((Date.now() - sentAt) / 1_000));
+    setWaitLeft(left());
+    if (left() === 0) return;
+    const timer = setInterval(() => {
+      const n = left();
+      setWaitLeft(n);
+      if (n === 0) clearInterval(timer);
+    }, 500);
+    return () => clearInterval(timer);
+  }, [sentAt]);
+
+  // The soft keyboard covers the bottom of the code step on iOS, where the layout viewport
+  // does not resize; this is what lets the column scroll its own bottom back into reach.
+  useKeyboardInset();
 
   useEffect(() => () => clearTimeout(shakeTimer.current), []);
 
@@ -177,13 +249,37 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
     [],
   );
 
-  const leave = () => navigate(ACCOUNT_PATH);
+  const leave = () => {
+    writeResumable(null);
+    navigate(ACCOUNT_PATH);
+  };
+  // Back to the address field, from anywhere that reached it: the code that was sent is
+  // moot the moment the player is choosing a different address to send to.
+  const backToAddress = () => {
+    writeResumable(null);
+    setSentAt(null);
+    setWaitLeft(0);
+    setStep('address');
+    setCode('');
+    setWrong(null);
+  };
 
   // ── SEND ──────────────────────────────────────────────────────────────────────────────
+  // `handOff` moves the caret into the code prompt BEFORE the request — the tap is the only
+  // moment iOS will open a keyboard, and by the time the send answers it is long over. Only
+  // the address step's two entry points ask for it: a retry tapped inside the error dialog
+  // does not (moving focus out of an open modal is worse than a closed keyboard), and RESEND
+  // does not (the caret is already in the prompt).
   const send = useCallback(
-    async (resend = false) => {
+    async ({ resend = false, handOff = false }: { resend?: boolean; handOff?: boolean } = {}) => {
       const email = normalizeEmail(address);
       if (email === null || busy) return;
+      if (handOff) codeField.current?.focus();
+      // Whether the caret is allowed to STAY there. Every path that does not reach the code
+      // step puts it back in the address field — otherwise a failed send leaves the player
+      // typing into a field that is not on screen, which is worse than the keyboard never
+      // opening at all.
+      let handedOn = false;
       setBusy(true);
       setRefusal(null);
       try {
@@ -201,10 +297,16 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           lang,
         });
         if (response.ok) {
-          if (!resend) setCode('');
+          // ALWAYS clear, a resend included: the digits already typed were aimed at the
+          // code this send just replaced, so leaving them meant the next two keystrokes
+          // auto-submitted a poisoned six and spent one of the five wrong-code attempts.
+          setCode('');
           setWrong(null);
-          setWaitLeft(RESEND_AFTER_SECONDS);
+          const now = Date.now();
+          setSentAt(now);
+          writeResumable({ intent, address: email, sentAt: now });
           setStep('code');
+          handedOn = true;
           return;
         }
         const error = ((await response.json().catch(() => ({}))) as { error?: unknown }).error;
@@ -225,9 +327,10 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
         fail(t(lang, 'linkFailed'), t(lang, 'linkSendFailedNote'), true);
       } finally {
         setBusy(false);
+        if (handOff && !handedOn) addressField.current?.focus();
       }
     },
-    [address, busy, fail, lang],
+    [address, busy, fail, intent, lang],
   );
 
   // ── VERIFY ────────────────────────────────────────────────────────────────────────────
@@ -268,6 +371,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           setLinked(result.email);
           setReceipt(result.stakes ?? null);
           setStep('done');
+          writeResumable(null);
           noteAccountEmail(result.accountId, result.email);
           if (result.accountId !== resolved.identity.accountId) {
             // Recorded BEFORE the adoption, because the adoption is what unmounts this
@@ -301,6 +405,13 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             setStep('confirm');
             return;
           }
+          // The confirmation degrades a long way — a missing `target` falls back to one
+          // face, missing stakes simply print no numbers — so reaching here means the body
+          // named no account this screen could ask about, and there is nothing to confirm.
+          // It closes WITHOUT a retry: the same code re-sent gets the same refusal, and the
+          // generic failure's TRY AGAIN spun that loop with no way out of it.
+          fail(t(lang, 'linkFailed'), t(lang, 'linkVerifyFailedNote'));
+          return;
         }
         if (error === 'bad_code') {
           // The refusal stays AT the input: shake, clear, and say how many tries remain.
@@ -311,16 +422,14 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           return;
         }
         if (error === 'code_expired' || error === 'code_spent' || error === 'no_code') {
-          setStep('address');
-          setCode('');
+          backToAddress();
           fail(t(lang, 'linkFailed'), t(lang, 'linkCodeExpired'));
           return;
         }
         // Nobody is at that address, and this door did not authorize creating anybody.
         // The answer is about the ADDRESS, because that is what the player asked about.
         if (error === 'no_account') {
-          setStep('address');
-          setCode('');
+          backToAddress();
           setNote(t(lang, 'linkNoAccountThere'));
           return;
         }
@@ -332,8 +441,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           // SAVE-door only now: the returning door never reaches the bind branch at all,
           // so this can only be a device that came to save an account which already carries
           // an address of its own.
-          setStep('address');
-          setCode('');
+          backToAddress();
           setNote(t(lang, 'linkAlreadySaved'));
           return;
         }
@@ -412,10 +520,15 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   // state either.
   const stakes = erasing ? prompt?.stakes ?? null : null;
   const showStakes = stakes !== null && (stakes.streak > 0 || stakes.best > 0 || stakes.days > 0);
-  // THE RECEIPT: what signing back in just handed back. Drawn whenever the server sent it,
-  // zeros included — the same row the account screen draws, so a player who reads it here
-  // and then opens `/account` sees the numbers they were just shown.
-  const showReceipt = outcome === 'adopted' && receipt !== null;
+  // THE RECEIPT: what signing back in just handed back — the evidence for the claim above
+  // it, and the same row `/account` prints, so the two cannot disagree. It is the STAKES'
+  // own rule about when to draw: an account whose numbers are all zero has no evidence to
+  // offer, and "We found your account." over 0 / 0 / 0 argues against itself. That ending
+  // shows the ADDRESS instead, which is the other true new fact about it.
+  const showReceipt =
+    outcome === 'adopted' &&
+    receipt !== null &&
+    (receipt.streak > 0 || receipt.best > 0 || receipt.days > 0);
   // The ending's copy FOLLOWS the face in when the face is arriving: the composition is the
   // beat, and a name at full strength beside a half-drawn mark steals it. Each line a breath
   // behind the last, in reading order, ending on the action. Nothing when the face was
@@ -424,12 +537,53 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   const arrive = (ms: number): { style?: CSSProperties } =>
     composeEnding ? { style: { '--arrive-delay': `${ms}ms` } as CSSProperties } : {};
 
+  // WHAT A SCREEN READER IS TOLD, in ONE region mounted for the flow's whole life. Every
+  // step transition here was silent — the account-deletion confirmation included — because
+  // `role="status"` was worn by elements that MOUNT WITH THEIR TEXT, and a live region has
+  // to exist before its content changes to be announced. So the regions moved off the
+  // visible copy (which is read normally when focus lands on it) and into this one, which
+  // never unmounts. Priority is what the player most needs: a standing refusal about the
+  // address, then a refused code, then where the flow now stands.
+  const spoken = (() => {
+    if (note !== null) return note;
+    if (wrong !== null && wrong > 0) {
+      return wrong === 1 ? t(lang, 'linkWrongCodeOne') : tn(lang, 'linkWrongCode', wrong);
+    }
+    if (step === 'code') return `${t(lang, 'linkSentTo')} ${normalizeEmail(address) ?? ''}`;
+    if (step === 'confirm') {
+      const lead = !returning ? `${t(lang, 'linkEraseFound')} ` : '';
+      return `${lead}${t(lang, erasing ? 'linkEraseKeeps' : 'linkSwitchKeeps')}`;
+    }
+    if (step === 'done') return endingLine;
+    return t(lang, returning ? 'linkTitleReturn' : 'linkTitleSave');
+  })();
+
+  // AND FOCUS FOLLOWS THE STEP, on the two that are not a field. The address and code steps
+  // focus their own input (which is the act); the confirmation and the ending focus their
+  // STACK — a container, never a button, since `buttonFocus` blurs those by design and a
+  // dismiss control lit on arrival is the thing `useModalDismiss` exists to prevent.
+  const stack = useRef<HTMLDivElement>(null);
+  // THE TWO FIELDS, so a tap can move the caret between them. iOS raises a keyboard only
+  // for a `focus()` made inside a user gesture, and the code step is reached across an
+  // `await` — so the code field is MOUNTED FROM THE ADDRESS STEP (offstage) and CONTINUE
+  // focuses it synchronously, before the request. The keyboard then stays up across the
+  // transition instead of dropping and never coming back.
+  const codeField = useRef<HTMLInputElement | null>(null);
+  const addressField = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (step === 'confirm' || step === 'done') stack.current?.focus();
+  }, [step]);
+
   return (
     <>
       <TopBar
-        lang={lang}
         back={{
-          title: t(lang, 'accountTitle'),
+          // THE SCREEN'S OWN NAME. `back` renders the CURRENT screen's — `/account` says
+          // ACCOUNT, `/profile` says PROFILE — and this passed `accountTitle`, its PARENT's,
+          // so the returning door was a screen whose whole text was the word CONTINUE, under
+          // a header naming somewhere else. The declared intention is the one thing either
+          // door can honestly call itself.
+          title: t(lang, returning ? 'linkTitleReturn' : 'linkTitleSave'),
           label: t(lang, 'ariaBack'),
           // BACK IS A STEP, not an exit, wherever there is a step to take: from the code
           // it returns to the ADDRESS — which is what the quiet CHANGE ADDRESS button used
@@ -439,13 +593,15 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
               leave();
               return;
             }
-            setStep('address');
-            setCode('');
-            setWrong(null);
+            backToAddress();
           },
         }}
+        right={<HeaderKeys lang={lang} mode={lastMode ?? 'sentence'} on="account" />}
       />
       <div className="account-screen link-step">
+        <p className="sr-only" role="status">
+          {spoken}
+        </p>
         {/* THE LEAD STAYS UP THROUGH THE CODE (user-decided 2026-08-28). It is rendered
             OUTSIDE the step branches, so it is one element that survives the address → code
             transition rather than a second one mounting in its place: the RETURNING tile
@@ -489,25 +645,28 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
               autoFocus
               placeholder={t(lang, 'linkAddressPlaceholder')}
               aria-label={t(lang, 'linkAddressPlaceholder')}
+              ref={addressField}
               value={address}
               onChange={(event) => {
                 setAddress(event.target.value);
                 if (note !== null) setNote(null);
               }}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' && isValidEmail(address)) void send();
+                if (event.key === 'Enter' && isValidEmail(address)) void send({ handOff: true });
               }}
             />
-            <Button variant="primary" disabled={busy || !isValidEmail(address)} onClick={() => void send()}>
+            <Button
+              variant="primary"
+              disabled={busy || !isValidEmail(address)}
+              onClick={() => void send({ handOff: true })}
+            >
               {busy ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'linkContinue')}
             </Button>
             {/* What the tap costs, BEFORE the mail app and the six digits — the disclosure
                 that stops the crossroads being an ambush. */}
             {cost && <p className="account-note caption">{cost}</p>}
             {note && (
-              <p className="account-note caption danger" role="status">
-                {note}
-              </p>
+              <p className="account-note caption danger">{note}</p>
             )}
           </>
         )}
@@ -519,25 +678,43 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             <p className="account-note account-note-center">
               {`${t(lang, 'linkSentTo')} ${normalizeEmail(address) ?? ''}`}
             </p>
-            <CodeInput
-              value={code}
-              onChange={(next) => {
-                setCode(next);
-                if (wrong !== null) setWrong(null);
-              }}
-              onComplete={(typed) => void verify(typed)}
-              // Red only while the refused code is still on screen: once the cells clear
-              // for the retype, the row returns to rest and the tries-left LINE carries
-              // the message — six empty red boxes read as a broken input, not a verdict.
-              invalid={wrong !== null && code !== ''}
-              disabled={busy}
-              label={t(lang, 'linkCodeLabel')}
-            />
+          </>
+        )}
+        {/* THE CODE PROMPT IS MOUNTED FROM THE ADDRESS STEP ON, offstage until it is the
+            step. It is the only way iOS ever raises a keyboard for it: `focus()` has to
+            happen inside the tap, and by the time the send has answered the tap is long
+            over. It sits HERE — between the "sent to" line and the tries-left line the code
+            step renders around it — so the reading order is unchanged on the step that
+            shows it, and it renders nothing at all on the step that does not. */}
+        {(step === 'address' || step === 'code') && (
+          <CodeInput
+            value={code}
+            onChange={(next) => {
+              setCode(next);
+              if (wrong !== null) setWrong(null);
+            }}
+            onComplete={(typed) => void verify(typed)}
+            // Red only while the refused code is still on screen: once the cells clear
+            // for the retype, the row returns to rest and the tries-left LINE carries
+            // the message — six empty red boxes read as a broken input, not a verdict.
+            invalid={wrong !== null && code !== ''}
+            // Never disabled while OFFSTAGE: a disabled input cannot hold focus, so the
+            // caret CONTINUE just placed there would be thrown straight back out and the
+            // keyboard would close — which is the whole thing this is here to prevent.
+            disabled={step === 'code' ? busy : false}
+            offstage={step !== 'code'}
+            fieldRef={codeField}
+            label={t(lang, 'linkCodeLabel')}
+          />
+        )}
+
+        {step === 'code' && (
+          <>
             {/* Only once an attempt has been SPENT: stating the budget up front reads as a
                 warning to somebody who has typed nothing wrong. */}
             {wrong !== null && wrong > 0 && (
-              <p className="account-note account-note-center danger" role="status">
-                {tn(lang, 'linkWrongCode', wrong)}
+              <p className="account-note account-note-center danger">
+                {wrong === 1 ? t(lang, 'linkWrongCodeOne') : tn(lang, 'linkWrongCode', wrong)}
               </p>
             )}
             {/* ONE quiet control under the cells now: the header's BACK is what changes
@@ -548,7 +725,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                 type="button"
                 className="link-quiet-btn"
                 disabled={busy || waitLeft > 0}
-                onClick={() => void send(true)}
+                onClick={() => void send({ resend: true })}
               >
                 {waitLeft > 0 ? `${t(lang, 'linkResend')} (${waitLeft})` : t(lang, 'linkResend')}
               </button>
@@ -557,7 +734,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
         )}
 
         {step === 'confirm' && prompt !== null && (
-          <div className="link-stack">
+          <div className="link-stack" ref={stack} tabIndex={-1}>
             {/* From the SAVE door this is a genuine surprise — the player asked to KEEP
                 something and is being shown a deletion — so one line explains the turn
                 before the screen asks anything. From the RETURN door the address step
@@ -606,16 +783,23 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             ) : (
               <span className="account-hero-mark skeleton" aria-hidden="true" />
             )}
+            {/* WHAT IS AT STAKE, DIRECTLY UNDER THE FORK — ahead of the sentence, not
+                after it (review finding). Centred below "…come with you. The rest is
+                lost.", these three numbers read as what the player is GETTING: they sit
+                equidistant from both faces and the line immediately above them is about
+                what SURVIVES. Read in this order they are the deletion's own price, and
+                the sentence that follows is what qualifies them — "the rest" now has an
+                antecedent on screen. */}
+            {showStakes && <AccountStats lang={lang} stats={stakes} />}
             {/* The one thing the picture cannot say: what happens to the account being
                 left. An ERASE names what survives the deletion — both halves are true and
                 neither is obvious, and a confirmation that overstates the damage misleads
                 exactly as much as one that hides it. A SWITCH says the opposite thing, and
                 it is the one that has to be said out loud: nothing is destroyed here, and
                 the account stays reachable by its own address. */}
-            <p className="account-note account-note-center" role="status">
+            <p className="account-note account-note-center">
               {t(lang, erasing ? 'linkEraseKeeps' : 'linkSwitchKeeps')}
             </p>
-            {showStakes && <AccountStats lang={lang} stats={stakes} />}
             {/* Destruction never GLOWS, so the erase is the QUIET button in the danger ink
                 and the lit primary is never the one that deletes an account. A switch
                 destroys nothing, so it is an ordinary primary — dressing it as a danger
@@ -645,7 +829,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
         )}
 
         {step === 'done' && (
-          <div className="link-stack">
+          <div className="link-stack" ref={stack} tabIndex={-1}>
             {face && endingId ? (
               <>
                 <AccountMark
@@ -685,7 +869,6 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             <p
               {...arrive(700)}
               className={`account-note account-note-center${arriveClass}`}
-              role="status"
             >
               {endingLine}
             </p>

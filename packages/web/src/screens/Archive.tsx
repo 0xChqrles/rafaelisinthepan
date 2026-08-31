@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { activeDate, dayNumber, progressHeatColor } from '@whippin/shared';
 import TopBar from '../components/TopBar';
-import ModeTabs from '../components/ModeTabs';
+import PuzzleTitle from '../components/PuzzleTitle';
+import HeaderKeys from '../components/HeaderKeys';
 import { navigate } from '../routing';
 import { pathForMode, pathForDay, pathForArchive, type LangCode, type Mode } from '../langs';
 import { FIRST_PUZZLE_DATE } from '../config';
@@ -23,7 +24,6 @@ import {
 } from '../calendar';
 // Inline SVG (vite-plugin-svgr): renders into the DOM and paints with currentColor, so
 // it inherits the header control's tint. Decorative — the button's aria-label names it.
-import CloseIcon from '../assets/icons/close.svg?react';
 
 // The locale's first weekday (0 = Sunday … 6 = Saturday). Prefers Intl's `weekInfo`
 // (fr weeks start Monday, en-US Sunday); falls back to a per-language default where it
@@ -132,24 +132,8 @@ export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; m
   return (
     <div className="archive">
       <TopBar
-        lang={lang}
-        left={<span className="topbar-title">{t(lang, 'archive')}</span>}
-        center={
-          // The tabs work here too — they switch WHICH daily's calendar this is, which
-          // is also what makes Word mode's archive reachable now that the word screens'
-          // left slot is the clock: enter the archive from anywhere, tab to the word.
-          <ModeTabs lang={lang} mode={mode} onSelect={(m) => navigate(pathForArchive(lang, m))} />
-        }
-        right={
-          <button
-            type="button"
-            className="home-btn archive-close"
-            aria-label={t(lang, 'ariaBackToToday')}
-            onClick={() => navigate(pathForMode(lang, mode))}
-          >
-            <CloseIcon className="ui-icon" aria-hidden />
-          </button>
-        }
+        left={<PuzzleTitle lang={lang} mode={mode} onArchive />}
+        right={<HeaderKeys lang={lang} mode={mode} on="archive" />}
       />
 
       <div className="cal">

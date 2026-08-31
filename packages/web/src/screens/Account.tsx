@@ -48,13 +48,13 @@ import Avatar from '../components/Avatar';
 import Button from '../components/Button';
 import DeviceList from '../components/DeviceList';
 import TopBar from '../components/TopBar';
+import HeaderKeys from '../components/HeaderKeys';
 import { useDeviceIdentity } from '../identity';
 import { t } from '../i18n';
 import {
   ACCOUNT_EMAIL_PATH,
   ACCOUNT_SIGNIN_PATH,
   PROFILE_PATH,
-  pathForBoard,
   resolveHomeLang,
 } from '../langs';
 import { navigate } from '../routing';
@@ -78,8 +78,6 @@ export default function Account() {
   const lang = resolveHomeLang(lastLang, navigator.language);
   const identity = useDeviceIdentity();
   const { phase, summary } = useAccountSummary();
-  const accountReturn = useGameStore((s) => s.profileReturn);
-  const setProfileReturn = useGameStore((s) => s.setProfileReturn);
   const face = useOwnFace();
   const localSeedAt = useGameStore((state) => state.localSeedAt);
   // The day the streak is measured against, off the app's ONE day signal — which re-fires
@@ -104,16 +102,14 @@ export default function Account() {
 
   return (
     <>
+      {/* A PLACE, not a step (2026-08-31): the header's fixed row is here too, with the
+          FACE lit, and leaving is tapping any other key — so the left slot carries the
+          screen's plain name rather than a back control (the steps INSIDE the area, the
+          editor and the email doors, keep theirs). Nothing remembers where this screen
+          was opened from any more: every place is one tap away in the row. */}
       <TopBar
-        lang={lang}
-        back={{
-          title: t(lang, 'accountTitle'),
-          label: t(lang, 'ariaBack'),
-          onBack: () => {
-            setProfileReturn(null);
-            navigate(accountReturn ?? pathForBoard(lang, lastMode ?? 'sentence'));
-          },
-        }}
+        left={<span className="topbar-title">{t(lang, 'accountTitle')}</span>}
+        right={<HeaderKeys lang={lang} mode={lastMode ?? 'sentence'} on="account" />}
       />
       <div className="account-screen">
         {/* THE ROW — the identity as the page's masthead. The face holds its boxes until
@@ -138,12 +134,7 @@ export default function Account() {
           <button
             type="button"
             className="board-chip"
-            onClick={() => {
-              // `/profile` is global, so the editor cannot read where it was opened from.
-              // It comes back HERE, which is now the one door to it.
-              setProfileReturn(null);
-              navigate(PROFILE_PATH);
-            }}
+            onClick={() => navigate(PROFILE_PATH)}
           >
             {t(lang, 'boardEdit')}
           </button>
@@ -158,6 +149,15 @@ export default function Account() {
           loading={stats.phase === 'loading'}
         />
 
+        {/* EVERYTHING THERE IS TO DO WITH THIS ACCOUNT, as one block — and on a phone it
+            sits on the screen's BOTTOM EDGE (review finding: the primary action sat in the
+            worst thumb zone with 46% of the screen empty under it). The area's start-high
+            rule is about where the page BEGINS, and it is untouched: the identity and its
+            three numbers still open at the same line every screen here opens at. What was
+            empty is now the SEAM between what this account IS and what to do with it — the
+            solved screen's own two-block shape, and the same `margin-top: auto` the
+            tutorial's one button has always used to park itself against the tray. */}
+        <div className="account-actions">
         {/* SAVED. Unsaved, the lit button is the screen's one call; saved, the ADDRESS is
             the status — no prefix, no chip. Unknown holds the button's own box. */}
         {!known ? (
@@ -176,11 +176,6 @@ export default function Account() {
             <p className="account-note caption">{t(lang, 'accountSaveNote')}</p>
           </>
         )}
-
-        {/* DEVICES — only once SAVED: an unlinked account holds exactly the device reading
-            this screen, and a list of yourself is noise. Multi-device only ever arrives
-            through the email link. */}
-        {saved !== null && identity !== null && <DeviceList lang={lang} />}
 
         {/* THE SECOND DOOR (#204's UX rework vol. 2). Saving an account and signing into
             another one are OPPOSITE acts, and until now this screen offered only the first
@@ -205,6 +200,19 @@ export default function Account() {
             {t(lang, saved !== null ? 'accountSwitch' : 'accountHaveAccount')}
           </button>
         )}
+        </div>
+
+        {/* DEVICES — its own SECTION, below everything there is to DO with this account
+            (2026-08-30). It used to sit BETWEEN the save state and the second door, which
+            put a list of hardware in the middle of a pair of alternatives and left the
+            door stranded under it — the one control on the screen a returning player is
+            looking for, below the longest block on it. A section is space and a title,
+            and it goes last.
+
+            ONLY once SAVED: an unlinked account holds exactly the device reading this
+            screen, and a list of yourself is noise. Multi-device only ever arrives through
+            the email link. */}
+        {saved !== null && identity !== null && <DeviceList lang={lang} />}
       </div>
     </>
   );

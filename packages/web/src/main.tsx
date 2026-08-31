@@ -13,7 +13,10 @@ import {
 import { installIdentityScope } from './state/identityScope';
 import { installLocalIdentityDeploy } from './state/localIdentityDeploy';
 import { installVersionCheck } from './versionCheck';
+import { installTheme } from './theme';
 import './index.css';
+
+installTheme();
 
 const removeButtonFocusGuard = installButtonFocusGuard();
 if (import.meta.hot) import.meta.hot.dispose(removeButtonFocusGuard);

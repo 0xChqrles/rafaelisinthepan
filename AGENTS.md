@@ -1666,10 +1666,13 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   takes a `back` instead: the arrow and the screen's NAME as ONE target in the LEFT slot,
   where a back control belongs and where the eye already is when it reads what screen it is
   on. It REPLACES the title rather than sitting beside it, so the row's measured width
-  budget is unchanged. Worn by `/account`, `/profile` and both flow doors. **In the flow it
-  is a STEP, not an exit**: from the code it returns to the ADDRESS — which is what the
-  quiet CHANGE ADDRESS button used to be, so that button is gone and the row under the
-  cells holds RESEND alone.
+  budget is unchanged. Worn by `/profile` and both flow doors — and by `/account` until
+  2026-08-31, when the header's fixed row of places reached the account area (user-decided,
+  see the web `AGENTS.md`): `/account` is a PLACE, lit on the row's face key and left by
+  tapping any other key, so its left slot is its plain name; the steps INSIDE it keep the
+  back control. **In the flow it is a STEP, not an exit**: from the code it returns to the
+  ADDRESS — which is what the quiet CHANGE ADDRESS button used to be, so that button is
+  gone and the row under the cells holds RESEND alone.
 - **A SECTION IS SPACE AND A TITLE (user-decided 2026-08-29).** The devices sat one column
   gap under the save state with a 10px muted label on them — smaller than every row they
   named — so a list and the button above it read as one undifferentiated pile. The room is
@@ -1689,13 +1692,22 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   - **`/profile`** — *how do others see me?* The editor, and nothing else.
   - **`/account/email`** — *save it.* One input per step. (Its twin `/account/signin` — *get
     another one back* — arrived with vol. 2's split, above.)
-  All three are GLOBAL routes like `/select`. **The leaderboard's identity STRIP is the one
-  door into the area** (a player's own face is the natural handle for "my account"), and the
-  EDIT chip is gone: profile editing is one tap deeper, which is the right trade for a thing
-  edited once and admired daily. **RECONNECT lands on the email STEP directly** — not the
-  editor, not even the account screen: a player who has just been signed out has exactly one
-  intention — and since vol. 2 that step is the RETURNING door's. No new header icon: the
-  320px header is already at its measured width budget.
+  All three are GLOBAL routes like `/select`. The EDIT chip is gone: profile editing is one
+  tap deeper, which is the right trade for a thing edited once and admired daily.
+  **RECONNECT lands on the email STEP directly** — not the editor, not even the account
+  screen: a player who has just been signed out has exactly one intention — and since vol. 2
+  that step is the RETURNING door's.
+  A player's own face is the natural handle for "my account", and the leaderboard's
+  identity STRIP was the area's ONLY door until the HEADER REWORK (user-decided
+  2026-08-30), which gave it a door in the daily loop: the reason there was no header icon
+  — "the 320px header is already at its measured width budget" — was true of the
+  THREE-SLOT row and stopped being true when the row went to two (see the web
+  `AGENTS.md`). The right group's last key is the player's own MARK, onto `/account`, on
+  every game surface, and it comes back to the screen it was opened from — the one place
+  in the app where an account is reachable in fewer than two taps from a game. **The strip
+  is GONE with it** (same day, on the polish pass): the header face sat 40px above it
+  showing the same drawing, and two identical faces at the top of one screen read as a
+  rendering fault, not as emphasis.
   A flat `/account` was chosen over a 3-card hub — a hub taxes every action a tap, and two of
   its three destinations would hold three rows each.
 - **THE CODE PROMPT IS SIX DRAWN CELLS OVER ONE REAL INPUT, AND THE SIXTH DIGIT SUBMITS**
@@ -2109,7 +2121,9 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   percentile — that stat never requires visiting this screen. The entry is on the
   ACTIVE day's routes only: a board is the active day's, so offering it from an
   archive replay would swap the day under the player and its exit would land them on
-  today, ending the archive session.
+  today, ending the archive session. *(OVERTURNED 2026-08-31 with the stable header row —
+  user-decided: the same five keys on every game surface, the crown included on a past
+  day, leading to the LIVE board; see the web `AGENTS.md` header bullet.)*
 
 ### Live friends board: in-progress rows (#206, decided 2026-08-25)
 
@@ -2171,7 +2185,7 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   at least one friend row makes the board non-empty their live numbers show where they
   stand among friends mid-day. The web deliberately computes friends-board emptiness
   without the caller's own ranked OR playing row: a self-only board still means no edges
-  and stays the ghost under the identity strip. `waiting` never carries the caller; a
+  and stays the ghost. `waiting` never carries the caller; a
   bare "not played yet" row there would still be noise.
 - **The order is a shared pure rule, and it is an ORDER, never a rank claim**
   (`orderPlaying`, contract-tested beside the #190 rules): progress descending, tries

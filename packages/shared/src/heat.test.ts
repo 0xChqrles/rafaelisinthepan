@@ -41,7 +41,7 @@ function luminance(color: string): number {
   const [r, g, b] = rgb(color);
   return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 }
-const BG_LUMINANCE = luminance('rgb(8, 9, 15)'); // --bg #08090f
+const BG_LUMINANCE = luminance('rgb(5, 5, 7)'); // --bg #050507
 const contrastOnBg = (color: string) =>
   (Math.max(luminance(color), BG_LUMINANCE) + 0.05) / (Math.min(luminance(color), BG_LUMINANCE) + 0.05);
 

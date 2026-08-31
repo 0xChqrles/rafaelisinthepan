@@ -29,7 +29,7 @@
 // paints the whole row red — the danger rule wins over the spectrum, because a row that
 // half-kept its colours would read as a partial refusal.
 
-import { useEffect, useId, useRef, type CSSProperties } from 'react';
+import { useEffect, useId, useRef, type CSSProperties, type MutableRefObject } from 'react';
 import { LINK_CODE_LENGTH } from '@whippin/shared';
 import { CODE_INKS } from './AccountMark';
 
@@ -40,6 +40,8 @@ export default function CodeInput({
   invalid,
   disabled,
   label,
+  fieldRef,
+  offstage = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -50,25 +52,38 @@ export default function CodeInput({
   disabled?: boolean;
   // What the ONE input is called for a screen reader. The cells are decoration.
   label: string;
+  // The caller's handle on the ONE real input, so it can move focus into it INSIDE a tap
+  // (`AccountEmail`'s CONTINUE) — which is the only moment iOS will raise a keyboard.
+  fieldRef?: MutableRefObject<HTMLInputElement | null>;
+  // Mounted, but not this step yet: hidden, out of the tab order, and taking no focus of
+  // its own. It exists early so the address step's tap has something to focus.
+  offstage?: boolean;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const id = useId();
 
   // The player arrived here to type a code, so the caret is already in it — and after a
-  // refusal it comes back, since the cells were just cleared for exactly that.
+  // refusal it comes back, since the cells were just cleared for exactly that. Never while
+  // OFFSTAGE: this component is mounted from the address step on, and focusing there would
+  // take the caret out of the address field the player is typing in.
   useEffect(() => {
-    if (!disabled) input.current?.focus();
-  }, [disabled, invalid]);
+    if (!disabled && !offstage) input.current?.focus();
+  }, [disabled, invalid, offstage]);
 
   const digits = Array.from({ length: LINK_CODE_LENGTH }, (_, i) => value[i] ?? '');
 
   return (
     <div
-      className={`code-input${invalid ? ' invalid' : ''}${disabled ? ' disabled' : ''}`}
+      className={`code-input${invalid ? ' invalid' : ''}${disabled ? ' disabled' : ''}${
+        offstage ? ' offstage' : ''
+      }`}
       onClick={() => input.current?.focus()}
     >
       <input
-        ref={input}
+        ref={(node) => {
+          input.current = node;
+          if (fieldRef) fieldRef.current = node;
+        }}
         id={id}
         className="code-field"
         type="text"
@@ -79,8 +94,19 @@ export default function CodeInput({
         autoCorrect="off"
         autoCapitalize="off"
         spellCheck={false}
-        maxLength={LINK_CODE_LENGTH}
+        // NO `maxLength`. The browser enforces it on the RAW value, BEFORE this handler
+        // runs, so a pasted " 123456 " arrives here already cut to " 12345" and the
+        // sanitiser below is handed FIVE digits — nothing submits, and nothing on screen
+        // says why ("Code: 123456" lands as no digits at all). Six of nine realistic paste
+        // shapes failed that way. The bound is the slice below, which counts DIGITS rather
+        // than characters, and a controlled `value` writes the trimmed result straight
+        // back — so the field can never hold more than the code.
         aria-label={label}
+        // Out of the TAB ORDER while offstage — reachable only by the deliberate focus the
+        // address step's tap makes. It keeps its label and stays in the accessibility tree
+        // rather than being `aria-hidden`, because focus may genuinely land here for the
+        // length of the send, and moving focus into hidden content is the worse trade.
+        tabIndex={offstage ? -1 : undefined}
         value={value}
         disabled={disabled}
         onChange={(event) => {

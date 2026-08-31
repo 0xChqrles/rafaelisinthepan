@@ -29,6 +29,7 @@ import Avatar from '../components/Avatar';
 import LoadError from '../components/LoadError';
 import LoadingWave from '../components/LoadingWave';
 import TopBar from '../components/TopBar';
+import HeaderKeys from '../components/HeaderKeys';
 import { useGameStore } from '../state/gameStore';
 // Inline SVG (vite-plugin-svgr): the close control back to the leaderboard, painting
 // with currentColor; the button's aria-label names it.
@@ -140,6 +141,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 
 export default function Profile() {
   const lastLang = useGameStore((s) => s.lastLang);
+  const lastMode = useGameStore((s) => s.lastMode);
   // No puzzle to take a language from: same resolution as the `/` redirect.
   const lang = resolveHomeLang(lastLang, navigator.language);
 
@@ -500,7 +502,6 @@ export default function Profile() {
   return (
     <>
       <TopBar
-        lang={lang}
         // The way OUT: UP, to `/account` (#204's UX rework, 2026-08-26). This screen
         // answers ONE question now — how others see me — and `/account` is its only door,
         // so there is nothing left to guess: the old `profileReturn` dance existed because
@@ -511,6 +512,7 @@ export default function Profile() {
           label: t(lang, 'ariaBack'),
           onBack: () => navigate(ACCOUNT_PATH),
         }}
+        right={<HeaderKeys lang={lang} mode={lastMode ?? 'sentence'} on="account" />}
       />
       {load === 'loading' && (
         <p className="status">

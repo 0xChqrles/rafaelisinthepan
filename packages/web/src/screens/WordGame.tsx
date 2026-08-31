@@ -30,7 +30,6 @@ import useScrollEdges from '../hooks/useScrollEdges';
 import WordBoard, { WordTerminus } from '../components/WordBoard';
 import WordSubject, { hitDurationMs, type WordHit } from '../components/WordSubject';
 import WordTimer, { type TimeGain } from '../components/WordTimer';
-import PuzzleDate from '../components/PuzzleDate';
 import CellDigits from '../components/CellDigits';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
@@ -77,11 +76,9 @@ const WORD_END_SETTLE_MS = 320;
 export default function WordGame({
   puzzle,
   dayNumber,
-  onHeaderLeftChange,
 }: {
   puzzle: WordPuzzle;
   dayNumber: number;
-  onHeaderLeftChange: (left: ReactNode | null) => void;
 }) {
   const { vocab, error, retry } = useVocab(puzzle.lang);
 
@@ -102,7 +99,6 @@ export default function WordGame({
       vocabSet={vocab.vocabSet}
       prefixSet={vocab.prefixSet}
       dayNumber={dayNumber}
-      onHeaderLeftChange={onHeaderLeftChange}
     />
   );
 }
@@ -112,13 +108,11 @@ function WordRound({
   vocabSet,
   prefixSet,
   dayNumber,
-  onHeaderLeftChange,
 }: {
   puzzle: WordPuzzle;
   vocabSet: Set<string>;
   prefixSet: Set<string>;
   dayNumber: number;
-  onHeaderLeftChange: (left: ReactNode | null) => void;
 }) {
   const lang = puzzle.lang;
   const ranks = puzzle.ranks;
@@ -372,17 +366,6 @@ function WordRound({
   // a monotonic id, so two claims in a row restart the animation.
   const [gain, setGain] = useState<TimeGain | null>(null);
   const gainId = useRef(0);
-
-  // The header's left slot holds the DATE CHIP — the archive entry, like the sentence
-  // game's (user-decided 2026-08-18; the CLOCK moved down under the word, where the
-  // playing eye already lives). Absent when the artifact has no drawable board, matching
-  // the load-failure body below.
-  useLayoutEffect(() => {
-    onHeaderLeftChange(
-      board ? <PuzzleDate dayNumber={dayNumber} lang={lang} mode="word" /> : null,
-    );
-    return () => onHeaderLeftChange(null);
-  }, [board, dayNumber, lang, onHeaderLeftChange]);
 
   const [input, setInput] = useState('');
   const [invalidAt, setInvalidAt] = useState(0);

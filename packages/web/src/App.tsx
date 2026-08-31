@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { activeDate } from '@whippin/shared';
 import LoadingWave from './components/LoadingWave';
 import usePuzzle from './hooks/usePuzzle';
@@ -15,7 +15,8 @@ import { useIdentityScopeRevision, useSignedOut } from './identity';
 import Game from './screens/Game';
 import WordGame from './screens/WordGame';
 import TopBar from './components/TopBar';
-import ModeTabs from './components/ModeTabs';
+import PuzzleTitle from './components/PuzzleTitle';
+import HeaderKeys from './components/HeaderKeys';
 import DeviceFrame from './components/DeviceFrame';
 import LazyStreakDialog from './components/LazyStreakDialog';
 import LoadError from './components/LoadError';
@@ -36,7 +37,6 @@ import {
 } from './langs';
 // Inline SVG (vite-plugin-svgr): the header's leaderboard entry, painting with
 // currentColor like every chrome icon; the button's aria-label names it.
-import BoardIcon from './assets/icons/board.svg?react';
 import { t } from './i18n';
 import useToday from './hooks/useToday';
 import { streakPreviewFromSearch } from './dev/streakPreview';
@@ -230,20 +230,6 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
     useGameStore.getState().closeTutorial();
   }, [setOnboarded]);
 
-  // The header itself stays mounted at this route boundary. A loaded game reports the
-  // live content for its left slot; keying the report prevents a departing route's
-  // layout-effect cleanup from blanking the next route's status.
-  const headerKey = `${lang}:${mode}:${date ?? 'today'}`;
-  const [headerLeft, setHeaderLeft] = useState<{
-    key: string;
-    content: ReactNode | null;
-  } | null>(null);
-  const updateHeaderLeft = useCallback(
-    (content: ReactNode | null) => setHeaderLeft({ key: headerKey, content }),
-    [headerKey],
-  );
-  const currentHeaderLeft = headerLeft?.key === headerKey ? headerLeft.content : undefined;
-
   // key={lang}: switching language mid-tutorial (via /select) restarts it in that
   // language.
   if (tutorialOpen) {
@@ -265,55 +251,16 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
     );
   }
 
-  // The two CHOOSERS (mode, language) are the header's own — see TopBar; `modeChooser`
-  // below opts this route into the first. What follows is this screen's own controls.
-  const headerRight = (
-    <>
-      {/* The leaderboard entry (#190, the issue's decided entry point): reachable
-          BEFORE playing — the screen is also where a player customizes their profile
-          and shares their invite link, neither of which requires having played.
-          ACTIVE DAY ONLY: the board is the active day's (pathForBoard carries no date
-          and the screen reads its own activeDate), so on an archive replay this icon
-          would silently swap the day under the player — and the board's exit lands on
-          today, ending the archive session. An archived day keeps its date chip as
-          the way back. */}
-      {/* `board-btn` gives the crown the header's foreground ink — buttons don't
-          inherit color, and a bare .home-btn renders its stroke UA-black. */}
-      {isActiveDay && (
-        <button
-          type="button"
-          className="home-btn board-btn"
-          aria-label={t(lang, 'ariaLeaderboard')}
-          onClick={() => navigate(pathForBoard(lang, mode))}
-        >
-          <BoardIcon className="ui-icon" aria-hidden />
-        </button>
-      )}
-      {/* Replays the onboarding tutorial (#51) on demand — one tap, out of the way.
-          (The archive icon left the header 2026-08-18: the DATE CHIP is the archive
-          entry now — see PuzzleDate.) */}
-      <button
-        type="button"
-        className="home-btn help-btn"
-        aria-label={t(lang, 'ariaHelp')}
-        onClick={() => openTutorial('replay')}
-      >
-        <span className="help-chip" aria-hidden="true">
-          ?
-        </span>
-      </button>
-    </>
-  );
+  // THE RIGHT GROUP IS THE APP'S PLACES, the one you are on LIT — the SAME five keys on
+  // every screen (`HeaderKeys` holds the reasoning). Here: HOME is lit on the live daily
+  // and the ARCHIVE on a past day, since a past day is the archive's.
+  const headerKeys = <HeaderKeys lang={lang} mode={mode} on={isActiveDay ? 'home' : 'archive'} />;
   return (
     <>
-      {/* The route owns one persistent actual header. Loaded games populate its left slot;
-          loading/error/missing states leave it empty. */}
-      <TopBar
-        lang={lang}
-        left={currentHeaderLeft}
-        center={<ModeTabs lang={lang} mode={mode} onSelect={(m) => navigate(pathForMode(lang, m))} />}
-        right={headerRight}
-      />
+      {/* The route owns one persistent actual header, identical through loading, error,
+          missing-puzzle and the loaded game: which puzzle is a fact of the ROUTE, so it no
+          longer waits on a game to report it. */}
+      <TopBar left={<PuzzleTitle lang={lang} mode={mode} dayNumber={isActiveDay ? null : dayNumber} />} right={headerKeys} />
       {loading && (
         <p className="status">
           <LoadingWave text={t(lang, 'loading')} />
@@ -329,14 +276,12 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
           dayNumber={dayNumber}
           isActiveDay={isActiveDay}
           deferResultsAnimation={streakPreview != null}
-          onHeaderLeftChange={updateHeaderLeft}
         />
       )}
       {mode === 'word' && word.puzzle && (
         <WordGame
           puzzle={word.puzzle}
           dayNumber={dayNumber}
-          onHeaderLeftChange={updateHeaderLeft}
         />
       )}
       {errorPreview != null && (

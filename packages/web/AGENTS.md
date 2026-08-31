@@ -34,6 +34,13 @@
                               the two-face crossroads, six face-led endings
       components/AccountMark.tsx  the ghost grid the returning door waits on, and the
                               cell-by-cell arrival that hands off to Avatar
+      components/PuzzleTitle.tsx  the header's left slot: WHICH DAILY (+ the day on an
+                              archive route), over the sheet that switches it
+      components/PuzzleSheet.tsx  that sheet: language and daily as rows
+      components/HeaderKeys.tsx  the header's right group: the SAME five keys on every
+                              game surface (home · archive · board · rules · face),
+                              the current place lit
+      components/AccountKey.tsx  the fifth of them — the account's door in the daily loop
       components/CodeInput.tsx  the six-digit prompt: six drawn cells over ONE real input,
                               auto-verifying on the sixth digit
       components/AccountFace.tsx  the ONE read of "who an account is" (mark + name), shared
@@ -65,7 +72,8 @@
                               edge with this device's token, then continue into the game. The link
                               players SHARE is /i/<publicId>, served by the backend for its preview
       screens/Leaderboard.tsx the #190 leaderboard (/<lang>[/word]/board): friends board first,
-                              global top 50; identity strip (EDIT -> /profile) + INVITE share
+                              global top 50; INVITE share (its identity strip left with
+                              the 2026-08-30 header rework — the face is the header's)
       components/Avatar.tsx   a stored avatar rendered as SVG (editor preview + #190 board rows);
                               the tracer + the assigned identity are @whippin/shared's since 2026-08-20
       versionCheck.ts         stale-tab reload: __BUILD_ID__ vs /version.json on visibility flips
@@ -196,29 +204,61 @@ These are decided and verified against the code. Treat them as load-bearing.
   still "dull/dead" — the /inspiration stamps are genuinely VIVID inks, so the palette
   is now fully saturated print colour, and the CALM comes from the textures, the paper
   fg and the static ground, never from muting the ink.
-- **THE POSTER GROUND (iterated to its final form 2026-08-17, sampled off the Séance
-  sheet in the user's /inspiration set).** The ambient Perlin canvas (`BackgroundWaves`)
-  is DELETED — a field breathing under everything is the opposite of calm — and the
-  ground is `--bg` #08090f, the poster's near-black (its sheet is #000; a whisper of
-  navy keeps the glows breathing), wearing FOUR static layers:
-  - the fine HALFTONE DOT matrix (one soft paper dot per `--cell`, replacing the
-    graph-paper grid lines);
-  - a COBALT SKY GLOW washing down from the top edge plus two faint corner ORBS (violet
-    lower-right, cobalt lower-left — the orange orb left with the orange accent,
-    2026-08-18): #184cf4 cobalt, #8b45ea violet. The raw poster cobalt is deliberately a
-    GLOW-only colour (3.2:1 — too dim for text; `--solve` is its text-safe sibling);
-  That is the WHOLE ambiance: ONE halftone texture plus the radial glows (user-tuned
-  2026-08-17 — a film-grain overlay and then an edge halftone dot-vignette each shipped
-  and were both removed on review; the single dither and the gradients are the look, and
-  nothing sits above the content).
-  `--fg` is stamp paper #f4f1e8, `--muted` warm grey, `--danger` the alarm red #ff2e38
-  (the error bot's own ink since 2026-08-27 — the old #f04e63 sat at 62% lightness and read
-  coral rather than dangerous); Word mode's
-  rarity ladder is authored as a VIVID INK set (`components/rarity.ts` — same hue walk,
-  thresholds re-measured in `rarity.test.ts`). Still ELECTRIC, pending an art repaint: the
-  remaining baked pixel art (the streak flame sheets, ultracode.png, the hit sheets —
-  logo-blue.png and the whippin.png mode sprite were DELETED 2026-08-18 for the
-  user-drawn `assets/logo.svg`).
+- **THE REBRAND (user-decided 2026-09-01, THE STANDING VISUAL RULE — it supersedes the
+  2026-08-17 stamp-ink dressing and both grain cuts wherever older prose below describes
+  textures, glows, auras, washes or corner tabs): SIMPLE, CLEAN, BASIC. Clean shapes,
+  clear contrasts, saturated vivid colours only where they mean something.** Concretely:
+  - **The GROUND is ONE FLAT near-black sheet** — `--bg` #050507, no texture, no
+    gradients, no ambient anything (the halftone dots, the sky glow, the corner orbs and
+    the grain are all gone; the grain shipped twice and was dropped as "ugly as hell").
+  - **`--fg` is PLAIN WHITE** #ffffff (the warm stamp-paper #f4f1e8 is retired), `--muted`
+    a neutral cool grey #a6adb8, the hairline/glass tokens white-based, the surfaces
+    neutral dark (#14151c / #1f212a). `shared/src/cardSvg.ts` MIRRORS bg/fg/muted — a
+    palette move edits both, and `heat.test.ts`'s BG_LUMINANCE + `AccountMark.test.ts`'s
+    GROUND pin the shared value.
+  - **ONE GAME ACCENT, and it is the SOLVE COBALT** (user-decided 2026-09-01, third
+    pass: "the solved word color, which should be the game accent color"): `--accent` is
+    #4a6aff = `--solve`, retiring the violet #8f7bff of 2026-08-18. The prompt's chevron
+    and cursor, the statuses, COPIED, the +Ns gain, the streak, the credit headline, the
+    rank number and every solved word/trophy/terminus/LED are the same blue — and it is
+    still the heat ramp's calm terminus, so the ruler, the archive fills and the OG card
+    agree with it. The history line's "you are here" square moved to `--hole` so the
+    marker and the terminus it walks toward stay two colours.
+  - **`--hole` is VIVID CYAN #00e5ff** (fourth pass the same day: pastel #aec1ff and azure
+    #38b6ff were too close to the solve; green #3ddc84 was far enough but "means valid,
+    the opposite of the hole's purpose"). Cyan is the game's own cool family and sits on
+    no heat-ramp stop, so an exponent never matches its word: dE 96 from the cobalt, 103
+    from the orchid exponents, 13.2:1 on the ground. **The dashed
+    OPEN-BLANK underline is retired** — under the hole words AND the route terminus's
+    `???` — the colour alone says "not yet".
+  - **The PROMPT wears the SENTENCE's size** (user-decided 2026-09-01, superseding the flat
+    24px of 2026-08-06): `.word-input` carries `.phrase`'s exact clamp at both breakpoints
+    — the two move together.
+  - **DECORATIVE LIGHT IS GONE**: the game words' soft currentColor aura (the hard 2px
+    print stays — it is legibility), the LED self-glows (mosaic cells, meter cells,
+    button LEDs, the sheet tick, the code-cell ink glow, the danger-note LED), the ENTER
+    key's lamp shadow, the keyboard plate's cobalt wash, the chooser/invite logo aura and
+    the dialogs' cobalt CORNER TABS (a coach box is a plain hairline glass box now). An
+    LED is a flat vivid square; a key is a flat vivid tile.
+  - **HEADER ICONS SIT AT FULL `--fg` even when not selected**, and **THE LIT PLACE IS A
+    DOT THAT TRAVELS** (user-decided 2026-09-01, replacing the held chip and the hover
+    chip: "not a large square background but a small dot below them, and this dot should
+    move with a translation animation rather than appearing or disappearing"; refined the
+    same day: "the hover should have a secondary color dot while the selected page keeps
+    its fg dot, and on click the fg dot lands above the secondary dot"). TWO dots under
+    `HeaderKeys`' `.hk-row`, positioned by measurement and moved by `transform`
+    transitions: the FG dot marks the lit place; the `--muted` dot answers a mouse hover
+    and slides back UNDER the fg dot on leave (stacked at rest, so one shows); the fg
+    dot's last x is kept at MODULE level so a row rebuilt by navigation paints it where it
+    was and travels it onto the secondary dot already waiting under the new place.
+  - **THE PRIMARY BUTTON IS THE ACCENT, FLAT, WITH A DISCREET DIAGONAL GRADIENT**
+    (user-decided 2026-09-01, superseding the 2026-08-18 device card — glass, hairline,
+    LED, all gone): `linear-gradient(135deg, --accent, --accent-deep)`, where
+    `--accent-deep` is DERIVED at startup by **`polished.darken(0.07, --accent)`**
+    (`src/theme.ts`, installed from `main.tsx`; `polished` joined the dependencies for
+    it) — never a second typed hex, so retuning the accent moves the whole button. White
+    bold label, no border, hover brightens, a press is a state. `.btn-primary` and
+    `.mix-btn` share it.
 - **THE TYPE SYSTEM IS TWO VOICES — PIXEL ONLY WHERE YOU PLAY (user-decided
   2026-08-18, closing the redesign's deferred fonts half; walked from three voices to
   two on the user's same-day reviews — Inter "no soul" → Space Grotesk, then the grotesk
@@ -455,7 +495,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `unknown_device` means, what local state an identity owns — lives in the root `AGENTS.md`.
   What is this package's:
   - **`identity.ts` is the whole client half**, and it is a zustand store rather than a
-    function: the signed-out screen and the leaderboard's identity strip both re-render on it.
+    function: the signed-out screen and the header's face key both re-render on it.
     `deviceIdentity()` is the SYNCHRONOUS "should I even ask the server?" test every private
     read makes; `ensureDeviceIdentity()` is the ONE bootstrap flight (the `activeScoreFlights`
     pattern — two deploy taps landing in one tick, a PLAY while an invite accept is still
@@ -598,7 +638,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     raises `SignedOut` from that same authoritative answer.
   - **`crypto.subtle` is still required by every live POST** (corrected on review): #216
     removes it from the paths that need NO identity — the global board's own-window `id` and
-    the identity strip, which each carried a try/catch for the LAN-IP mobile check — but
+    the (since retired) identity strip, which each carried a try/catch for the LAN-IP mobile check — but
     `api.postSignedJson` still signs each body for the OAC contract, so an insecure context
     cannot bootstrap. That boundary is older than #216 and unchanged by it.
 
@@ -624,7 +664,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
     to be indistinguishable. Both fields are offset in TIME so they cannot beat into a visible
     period, and the clock starts at `T0` rather than 0 — an integer-hashed value noise is
     exactly its own hash at the lattice origin, so t=0 paints a degenerate frame, which is
-    the one a REDUCED-MOTION tile would hold forever. The lead is rendered OUTSIDE
+    the one a REDUCED-MOTION tile would hold forever.
+    **ITS FIELD IS MEASURED AGAINST A REAL MARK, and MIRRORED (2026-08-30).** "Every frame
+    a plausible one" is a claim that can be checked, so it was: over six `defaultAvatar`
+    marks, **23% of the cells carry ink, a horizontal run averages 3.0 cells, and they are
+    100% SYMMETRIC about the vertical axis** — the mirroring is what makes ten squares read
+    as a creature rather than as television static. The first cut was none of those things:
+    at `INK_SCALE = 0.3` the field's period was three cells, so a frame was two or three
+    enormous blobs at 62% coverage with no symmetry at all — a colour field, which is
+    exactly the "the small squares are weird" reading the tile was written to replace. The
+    ink is sampled about the tile's midline and the scale/threshold sit where the field's
+    statistics land on the drawing's (~30% ink, ~2.5-cell runs). The PALETTE front is
+    deliberately NOT mirrored: the SHAPE is what has to be plausible, and a colour
+    transition folded about the same axis reads as a mechanism.
+    The lead is rendered OUTSIDE
     `AccountEmail`'s step branches, so it is one element across address → code rather than a
     second one mounting in its place. `CODE_INKS` lives beside it and `CodeInput` wears it:
     the six cells' colours are `AVATAR_PALETTES` entries addressed rather than copied, so the
@@ -675,6 +728,30 @@ it to the local store — see `packages/backend/AGENTS.md`).
     account IS, what a deletion is about to COST, and what a recovery just HANDED BACK —
     because a player who reads a streak of 12 on the account screen and is then offered a
     dialog saying 9 has been told the app does not know its own numbers.
+  - **THE 2026-08-30 PASS, from the mobile navigation review.** Four corrections, each
+    to something that had been shown to read as the wrong KIND of thing:
+    - **`/account` FLOWS FROM THE TOP again.** Its action group had been given
+      `margin: auto 0` to answer a finding that the primary sat in the upper third with
+      the screen empty beneath it. Both ways of spending that space measured worse than
+      not spending it: parked hard on the bottom edge (`margin-top: auto`) the screen
+      read as two blocks with a rift, and splitting the free height put a **161px HOLE**
+      in the middle of it — the same emptiness, now twice and on both sides. A
+      five-element screen has no interior to distribute, and the trailing space is not a
+      defect; it is what a short page looks like. The group is a real box held by a 44px
+      SECTION seam, and the area's own start-high rule is what the screen obeys.
+    - **The DEVICES are the LAST section**, below everything there is to DO with the
+      account. They sat BETWEEN the save state and the second door, which put a list of
+      hardware in the middle of a pair of alternatives and stranded the door — the one
+      control a returning player is looking for — under the longest block on the screen.
+    - **The saved ADDRESS lost its LED.** The lit cobalt square before a label is the
+      PRIMARY BUTTON's own mark (the device card's power light); the address is a fact
+      that REPLACES that button when there is nothing left to do, and wearing its costume
+      it read as a control that did not respond to being pressed.
+    - **RESEND drops its box while it counts down.** It spends its first ~30s disabled,
+      and a dimmed hairline box held that long reads as a broken button rather than as a
+      wait — the same rule that holds the second door back until the summary settles: a
+      control drawn before it can be pressed is a false offer. Counting it is a STATUS
+      line; when the clock runs out the box arrives with the offer.
   - **`gameStore.localSeedAt`** stamps the placeholder identity's own instant, so the screen
     can state an age before an account exists. The instant travels IN the mutation, never
     read inside the reducer: mutations are applied against the latest committed state inside
@@ -768,14 +845,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the centred column "feels like the screen starts at the middle").** On a phone every
     screen of the area — the account page, the flow's steps, the endings — opens at the
     same `clamp(76px, 13vh, 128px)` start line, free space accumulating at the BOTTOM the
-    way a page reads; desktop keeps `.app`'s centring. The ADDRESS step leads with WHO is
+    way a page reads; desktop keeps `.app`'s centring. **`/profile` joins that line on
+    2026-08-30** — the editor is one tap inside `/account` and opened 53px higher than
+    it, two screens of one place disagreeing about where a page begins. The ADDRESS step leads with WHO is
     being saved — the account's face, or the chooser's glowing app mark on a device with
     none (the reconnect case) — because a bare input floating on a screen was the "does
     not use its space" finding. And the two flagged corner-affordances became DRAWN
     chevrons in the chrome icon dress (`assets/icons/chevron-right.svg` on the board's
     identity strip, `chevron-down.svg` in the date chip's tick, replacing an 8px `▾`);
     the 320px header budget was re-measured with the wider tick — the right group's last
-    chip ends at 318 of 320.
+    chip ends at 318 of 320. *(The date chip is gone with the 2026-08-30 header rework;
+    that chevron is `PuzzleTitle`'s now, and the budget was re-measured again there.)*
   - **The 2026-08-26 POLISH pass, all current-state:** on a phone the flow steps sit in
     the UPPER THIRD (`.account-screen.link-step` gets `max(48px, 14vh)` top padding in the
     mobile block — mobile `.app` is start-aligned, so a lone input otherwise hugged the
@@ -1185,8 +1265,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   verbatim stores empty and renders the same text in the placeholder ink — the one
   accepted cost of the rule (for the deployment half, that cost is the point: the
   promoted handle is the one the player has been wearing). The wired entry point is
-  the leaderboard screen's EDIT chip (#190), and the header carries a CLOSE chip back
-  to it (user feedback 2026-08-20 — the screen was unleavable) — **to the board that
+  the ACCOUNT screen's EDIT chip (#204's split; it was the leaderboard's until then), and
+  the header carries a BACK control — its title, per 2026-08-29 — to what opened it (user
+  feedback 2026-08-20: the screen was unleavable) — **to the surface that
   actually opened it** (corrected 2026-08-20 on review): `/profile` is a GLOBAL route,
   so that board's (lang, mode) is not in the URL, and rebuilding it from
   `lastLang`/`lastMode` describes the last loaded GAME instead — editing from the Word
@@ -1260,10 +1341,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
 
 - **Leaderboard screen (#190):** `/<lang>/board` and `/<lang>/word/board`
   (`pathForBoard` — the archive's grammar; a board is per (day, lang, mode), always
-  the ACTIVE day), `screens/Leaderboard.tsx`, entered from the game header's crown
-  icon (recorded in the header bullet). FRIENDS is the default tab — the trusted
-  surface — GLOBAL the top-50 untrusted one; the header's ModeTabs switch WHICH
-  daily's board, the in-screen tabs WHOSE scores. **WHICH TAB belongs to a VISIT — not
+  the ACTIVE day), `screens/Leaderboard.tsx`, entered from the game header's CROWN KEY
+  — which stays LIT while the board is up (2026-08-30; the LEADERBOARD title is gone —
+  the header's left slot carries `PuzzleTitle` here too, because a board is a view OF a
+  daily — and the way out is any other key of the same, unmoving row, HOME above all:
+  `HeaderKeys`, user-decided 2026-08-31). FRIENDS is the default tab — the trusted surface — GLOBAL the top-50 untrusted
+  one; the header's TITLE SHEET switches WHICH daily's board, the in-screen `.board-tab`s
+  WHOSE scores. **WHICH TAB belongs to a VISIT — not
   to the screen, and NOT to the player** (user feedback 2026-08-20, in two passes; the
   first cut made it a standing preference and the user narrowed it). Two things remount
   this screen WITHOUT ending the visit — a page REFRESH and a header MODE SWITCH (App
@@ -1300,7 +1384,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the leaderboard mints an account" — the root AGENTS trigger list moved with it):** a
   navigation must not create server state, so a tokenless visitor's FRIENDS board is the
   KNOWN-EMPTY answer (the ghost + INVITE, no request — the #216 no-private-fetch rule),
-  the identity strip shows the LOCAL placeholder (below), the `/friends` decoration read
+  the header's face key shows the LOCAL placeholder (`useOwnFace`), the `/friends` decoration read
   is skipped, and the INVITE tap is the screen's account-creating act — **and it is ONE
   TAP (user-decided 2026-08-24, superseding the same day's two-phase mint-then-ask: the
   deploy buttons are single taps)**: a tokenless tap bootstraps (LoadingWave in the
@@ -1386,25 +1470,24 @@ it to the local store — see `packages/backend/AGENTS.md`).
   always includes the caller once they have played, so keying the ghost on "no rows at
   all" made it unreachable for exactly the player who needs it — someone with no
   friends who finished today's daily landed on a board of one row, themselves, under
-  an identity strip already showing the same mark and name, with nothing saying why.
-  **The identity strip on
-  top (your mark + name + EDIT → `/profile`) shows NOTHING until its read settles — a
-  SKELETON, never a name (user feedback 2026-08-20).** The first cut published the id the
-  moment the bootstrap resolved it, which rendered the ASSIGNED identity and swapped it for the real
-  profile a beat later, so every named player watched a stranger's name flash under their
-  own mark on every visit. The placeholder holds the exact boxes the resolved strip takes,
-  so nothing moves when the values land, and it breathes (the global reduced-motion rule
-  collapses that to one instant pass) so a slow read does not read as a broken render. A
-  read that FAILS still SETTLES, on the assigned identity — it is what a board row with a
-  failed profile read already shows, and a skeleton that never resolves is the one outcome
-  worse than the fallback; a 404 is not a failure at all but the answer "never
-  customized", whose display IS that identity. **A device with NO account shows the LOCAL
-  placeholder at once** (#216 trigger rework, user-decided 2026-08-24): the persisted seed
-  (`gameStore.localSeed`) derives an assigned name and mark exactly as a board row would —
-  an ANSWER, not a pending read, so no skeleton — and nothing on this screen mints an
-  account any more (opening the leaderboard is no longer a trigger; the tokenless friends
-  board is the honest empty one without a request, and the strip's profile read re-runs
-  when an account arrives). The INVITE device-card button on the bottom edge is always
+  a header face already showing the same mark, with nothing saying why.
+  **THE IDENTITY STRIP IS GONE (2026-08-30, with the header rework).** The board opened on
+  the player's own mark + name as a row (from 2026-08-20; the door to `/account` from
+  2026-08-26), and the header's right group now ends in the player's own face on every
+  game surface — the same drawing, the same door, 40px above where the strip sat. Two
+  identical faces stacked at the top of one screen read as a rendering fault, so the strip
+  went, its duplicate profile read with it (`useOwnFace` is the ONE read now). Its rules
+  OUTLIVE it and moved to the face key: it shows NOTHING until its read settles — a
+  SKELETON, never a name (user feedback 2026-08-20: the first cut published the id the
+  moment the bootstrap resolved it, rendered the ASSIGNED identity and swapped it for the
+  real profile a beat later, so every named player watched a stranger's face flash on
+  every visit); a read that FAILS still settles on the assigned identity; a 404 is the
+  answer "never customized", whose display IS that identity; and **a device with NO
+  account shows the LOCAL placeholder at once** (#216 trigger rework, user-decided
+  2026-08-24): the persisted seed (`gameStore.localSeed`) derives the mark exactly as a
+  board row would — an ANSWER, not a pending read. Nothing on this screen mints an account
+  (opening the leaderboard is no longer a trigger; the tokenless friends board is the
+  honest empty one without a request). The INVITE device-card button on the bottom edge is always
   live: with an account it shares at once; without one the tap IS the deploy button — it
   bootstraps (loading wave in the button, `ErrorScreen` on failure, a prefetched challenge
   so the tap is fast) and then shares. The single tap accepts one degradation:
@@ -1623,7 +1706,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   screen says back when they ACT (the slash, below).
   **The TIMER sits UNDER THE WORD and the SCORE is the watermark (clock placement
   user-decided 2026-08-18, superseding the header corner: the header's left slot went to
-  the date chip / archive entry, and the clock — in the PIXEL face now, like every number
+  which-puzzle — the date chip then, `PuzzleTitle` since 2026-08-30 — and the clock — in the PIXEL face now, like every number
   the game produces — lives in `.word-clock` right under the day's word, where the
   playing eye already is; the gate previews it there, and the post-mortem mounts no clock
   at all).** And the count becomes the big `CellDigits` watermark behind the
@@ -2852,10 +2935,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   2026-07-06 superseding a brief direct-toggle). The open-tutorial state is
   **transient store state** (`tutorialOpen: 'first' | 'replay' | null`, NOT
   persisted), so it survives the /select round-trip: picking a language returns INTO
-  the tutorial in that language. Centre reads **"TUTORIAL"**, and the right control
-  is a **fast-forward that SKIPS the whole tutorial** (`assets/icons/skip.svg`, →
-  `onDone`) — a header affordance, NOT a coach-box `×` (which read as "close this
-  box only"). Skip is available on both the first run and replays. The tutorial
+  the tutorial in that language. The left slot reads **"TUTORIAL"**, and the right
+  group is the header's FIXED ROW with the BOOK lit (2026-08-31; see the header bullet
+  — it replaced a fast-forward SKIP control, `skip.svg`, in that slot): any other key
+  leaves the lesson through `onDone`, tracked as a `skip`, on the first run and replays
+  alike — a header affordance, NOT a coach-box `×` (which read as "close this box
+  only"). The tutorial
   itself is **ONE board**, in the REAL game components. **Screen contract:**
   explanations in a TOP box (typewritten like a game dialog — `tutorial/CoachText.tsx`,
   app-bg + surface border — with inline markup so words look like what they are
@@ -2955,56 +3040,122 @@ it to the local store — see `packages/backend/AGENTS.md`).
   invitation preloads it while the player reads the question, a replay lazy-loads it behind
   the plain loading line, and a failed chunk calls `onDone` (into the game) rather than
   stranding a blank screen.
-- **App header — FINALIZED 2026-08-18 (user-decided, mobile-first; supersedes the
-  2026-07-21 "no band, corner chips" design below — that rule guarded against boxes
-  over the old ANIMATED waves, and over the static ground the dialogs' own glass is
-  what keeps the controls legible without simplifying the backdrop):** ONE **GLASS
-  BAND** (`components/TopBar.tsx`): `--glass` + hairline + backdrop blur, full-bleed
-  with a single bottom hairline on a phone, FLOATING capped-and-rounded just inside the
-  device frame's brackets on desktop (`min(900px, 100vw - 48px)`, 50px, 8px off the
-  top). THREE explicit grid slots (`1fr auto 1fr`, columns assigned by class so a
-  missing slot never shifts its neighbours; ModalHeader reuses the classes with no
-  centre):
-  - **LEFT, the status spot**: the DATE CHIP in BOTH games — which **IS the ARCHIVE
-    ENTRY** since the finalization (`PuzzleDate` is a button to `pathForArchive`; "tap
-    the day to change the day", the ▾ tick carries the affordance; the standalone
-    calendar icon is deleted; Word mode joined the same day its clock moved down under
-    the word) — or a screen's title chip.
-  - **CENTER, the SEGMENTED MODE SWITCHER** (`components/ModeTabs`): both dailies,
-    active one in the inverted selection box — and WEIGHT is the state (430 resting,
-    700 in the box; the mono's fixed advance means the swap moves nothing). The band's
-    whole hierarchy is weight: titles/date 500, tabs 430/700, the FR + `?` pair one
-    quiet 480 at one 12px size — retiring the /mode chooser round-trip
-    for the app's most frequent navigation (and fixing what killed the 2026-08-06
-    toggle: these tabs show BOTH modes and mark the current one). The route builds it
-    so it owns where a tap lands: the game routes to the other mode's today, the
-    ARCHIVE to the other mode's calendar. A third daily is one more segment.
-  - **RIGHT**: the language CODE chip (`FR`/`EN`, `LangButton` — two mono letters, no
-    fill, replacing the languages glyph; still the one gesture onto /select) then the
-    screen's contextual controls (help `?`, skip, close). **The logo LEFT the header**
-    with the /mode chooser it opened — brand lives on the frame rail and the hero
-    screens. **The LEADERBOARD enters from HERE** (#190's issue decided the entry point
-    — a right-group icon, reachable BEFORE playing, since the screen is also the profile
-    editor's and the invite link's home; this supersedes the earlier "enters from the
-    solved screen's standing line" note): `assets/icons/board.svg`, a sharp CROWN in
-    the `.ui-icon` dress (user-decided 2026-08-20, superseding a squared trophy that
-    read badly against the chrome), on the game routes' right group before the help
-    `?` — and wearing `.board-btn`, since a button does not inherit `color` and a bare
-    `.home-btn` would render its stroke UA-black. **ACTIVE DAY ONLY** (corrected
-    2026-08-20 on review): a board is the active day's, so an archive replay showed an
-    icon that silently swapped the day, and whose screen then exited onto TODAY's
-    puzzle — the archive session gone. An archived day keeps its date chip as the way
-    back.
+- **App header — TWO SLOTS (user-decided 2026-08-30, superseding the 2026-08-18
+  three-slot finalization recorded below).** The BAND is unchanged — `--glass` +
+  hairline + backdrop blur (`components/TopBar.tsx`), full-bleed with one bottom
+  hairline on a phone, floating capped-and-rounded just inside the device frame's
+  brackets on desktop (`min(900px, 100vw - 48px)`, 50px, 8px off the top). What changed
+  is what it holds, and why.
+  **THE BAND WAITS FOR SCROLL (user-decided 2026-09-01, amending 2026-08-18's
+  always-on glass).** At REST the header is TRANSPARENT — no glass, no hairline, no
+  blur — sitting directly on the grain ground, and the band arrives only once the
+  screen under it has actually scrolled: `.topbar.scrolled`, set by TopBar's own
+  capture-phase scroll listener (one listener hears every scroller in the app and the
+  phone's page scroll; a dialog's scroll never lights it, a horizontal-only scroller
+  says nothing, and a scroller that unmounts drops its state on the next render). The
+  border stays 1px so nothing shifts when it colours in. ModalHeader, which reuses the
+  classes with no `.topbar` ancestor, is therefore BANDLESS on its flat-`--bg` dialogs —
+  the row's original "no band, directly on the backdrop" reading come back.
+  **THE PROBLEM IT SOLVES.** The row carried WHICH PUZZLE in three places — the day as a
+  left chip, the daily as a centred segmented switcher, the language as a right chip —
+  and the row had nothing left. Measured at 320px the grid was `98.6 | 118.8 | 98.6`
+  with the centre's right edge at 219 and the right group starting at 218: **a one-pixel
+  collision.** Its consequences were all over the app. The leaderboard could not carry
+  both its own NAME and a back control (~140px of side track against the ~150px an arrow
+  plus `CLASSEMENT` needs), so it kept a ✕. The account area could have no header door at
+  all — the root `AGENTS.md`'s "no new header icon: the header is already at its measured
+  width budget" — so the one way in was the leaderboard's identity strip, two taps behind
+  a crown, in an app whose whole identity model is that the account is already there.
+  **THE TWO SLOTS, and each has ONE meaning:**
+  - **LEFT — WHAT YOU ARE LOOKING AT.** On a play surface that is `PuzzleTitle`: the
+    daily's NAME with a chevron (`SENTENCE ⌄`), opening `PuzzleSheet` — one dialog
+    holding both remaining axes of which-puzzle, LANGUAGE and DAILY, as rows with a
+    hairline between the groups and an LED tick on the current one. It routes by the
+    SURFACE it was opened from, which is exactly what the retired tabs did: from the
+    archive, the other daily means that daily's CALENDAR. On a screen you navigated INTO
+    it is `back` — the arrow and the screen's own name as one target (2026-08-29).
+  - **RIGHT — WHERE YOU ARE AND WHERE YOU CAN GO: the app's PLACES, the current one
+    LIT — and it is THE SAME ROW ON EVERY SCREEN THAT HAS A HEADER** (user-decided
+    2026-08-31: "the header is supposed to be something stable", then extended the same
+    day to the account area and the tutorial on the question "keep the right icons always
+    in place?"; `components/HeaderKeys.tsx`):
+    **home · archive · board · rules · face**, fixed order. The lit state is the header's
+    own whisper chip held permanently — the hover, answered — plus a hairline. **Leaving
+    a place is tapping another one**, a tab bar's grammar, which needs no exit control:
+    the board is left by HOME. Two exits were built and rejected the same day — pressing
+    the lit key again ("not intuitive at all") and a ✕ that appeared only on the board and
+    the archive ("moving the header icons around on a click is not a great solution").
+    A lit key still answers a press (it goes nowhere), so nothing on the row is dead.
+  **THE KEYS, per surface — identical, only the LIT one moves.** Live daily: HOME lit.
+  Past day: ARCHIVE lit (a past day is the archive's). Calendar: ARCHIVE lit. Board:
+  BOARD lit. Account area — `/account`, `/profile`, both email doors: FACE lit (the
+  account is a place; the steps inside it keep their `back` on the LEFT while the face
+  stays lit on the right). Tutorial: BOOK lit (the rules' place; any other key leaves the
+  lesson, which is a SKIP — the fast-forward control that slot held, `skip.svg` and
+  `ariaSkipTutorial`, are retired). **`profileReturn` is GONE from the store**: every
+  place is one tap away, so nothing has to remember where it was opened from, and
+  `/account`'s left slot is its plain NAME rather than a back control. **This OVERTURNS #190's ACTIVE-DAY-ONLY crown** (2026-08-20): that rule hid
+  the crown on an archive day so a key could not silently swap the day under the player,
+  but a key that vanishes is exactly the instability the fixed row exists to end — the
+  crown always leads to the LIVE board, and the lit calendar already says the day on
+  screen is a past one. The RULES key (an open book) lights while the tutorial is open;
+  from anywhere but the game it goes home with it, where the tutorial mounts.
+  - **THE ARCHIVE IS A KEY, not the date chip.** "Tap the day to change the day" made one
+    control answer two questions and put the calendar behind the one label that changes
+    every day. A calendar is a place; places are keys. The day did not lose its slot —
+    it was PROMOTED to where it means something: absent on today (today is the default
+    and the screen IS the day's game), joined to the title on an ARCHIVE route, so the
+    abnormal state is the one that is always labelled. The old chip spent the slot
+    stating the normal case.
+  - **THE FACE is the account's door in the daily loop** (`components/AccountKey.tsx`),
+    the row's last key. It reveals nothing about server state, which is the invariant it
+    must not break: `useOwnFace` answers the account's stored profile or the identical
+    pair derived from the persisted local seed, and `localIdentityDeploy` stores exactly
+    that pair at deployment — the same face before and after (#216). It HOLDS ITS BOX
+    until the face settles (the leaderboard strip's rule, and it matters more here, where
+    the control is on screen every day), and it sets `profileReturn` so `/account`'s back
+    lands where it was opened from. **It is a FRAMED PORTRAIT, IN COLOUR** (user-decided
+    2026-08-31 — the colour "was actually quite cool, just not well implemented"; a
+    one-ink glyph lived for one commit between): the mark at 20px, 2px a cell, inside a
+    1px `--line-strong` ring that makes it 22 like the icons and gives every palette an
+    edge — a bare 26px square almost filling its key had none, so a dark palette sank into
+    the band and a loud one shouted over three hairline drawings. The one full-colour
+    chrome control, because that colour is the one thing on the row that is THEIRS.
+  - **THE ICONS ARE ONE FAMILY OF OBJECTS** (2026-08-31): a house, a calendar, a crown, an
+    open book — Lucide-shaped strokes in the `.ui-icon` dress at 22px. The rules key was a
+    bare text `?` (2026-08-18, over circle-help) and then a drawn `?`; both were a MARK
+    where every other key is an object, and the user asked for a shape that matched. The
+    book is the rules.
+  - **A CHEVRON, NOT TABS.** The segmented switcher showed both dailies at once, which is
+    what killed the 2026-08-06 icon toggle — but a title NAMES the current mode, which
+    the toggle never did, and switching dailies is a once-a-day act rather than a flip.
+    The sheet costs one tap for a choice nobody makes twice in a session. The LANGUAGE
+    chip went into the same sheet, and `components/LangButton.tsx` is deleted with it.
+  **THE BUDGET, re-measured.** Worst case (320px, English, a PAST day — the title carries
+  the day — and the fixed five-key group): title 147px + keys 165px = 312 of the row's
+  316px content box, against the 336–359px the three-slot row wanted; the live daily has
+  60px to spare. **The title has ONE size on every screen — 12px, the chrome's own
+  small-caps size — and never steps down** (user-decided 2026-08-31: a viewport clamp
+  plus two phone overrides had COMPTE at 14px over PROFIL at 11, one tap apart); what
+  gives on a phone is the KEYS — gap 3px at ≤400, 30px boxes and 2px gaps at ≤340 — and,
+  last, the puzzle title's own padding and its day's tracking. The flow's French return
+  door is titled CONNEXION rather than SE CONNECTER for the same row. The grid is
+  `minmax(0, 1fr) auto`: the keys are icons and may never shrink, so the TITLE is the
+  track that gives ground and ellipsises rather than pushing a control off a phone.
+  The ≤400px step-down (32px controls) and the ≤340 one (30px, tighter gaps) are what
+  hold the five-key row; the arithmetic is commented at the step-downs under "THE
+  NARROW-PHONE HEADER BUDGET" — re-measure before a SIXTH key.
   Word mode's top reserve is 66px and the archive's 70px, clearing the band.
-  **The right group's THIRD control (the crown) put the row over its width budget on a
-  320px phone** — the band is one fixed-width `1fr auto 1fr` grid whose side tracks
-  floor at min-content, so the overflow clipped the help `?` off the screen entirely
-  (English was already marginal with two). Two fixes, both in `index.css`: the side
-  tracks are `minmax(0, 1fr)` so the grid can never exceed its own box, and a ≤380px
-  step-down (32px controls, an 11px date chip, 10px tabs with most of their tracking
-  and side padding given back) buys the row back ~30px of real slack. The arithmetic —
-  every group's cost is a glyph count, the mono advancing 0.6em — is commented at the
-  step-down; re-measure it before adding a FOURTH control.
+  **What this DELETED** (the standing no-back-compat rule): `components/ModeTabs.tsx`,
+  `components/PuzzleDate.tsx`, `components/LangButton.tsx`, the leaderboard's IDENTITY
+  STRIP (`.board-me`, its own profile read, `chevron-right.svg` — see the leaderboard
+  bullet), `TopBar`'s `center` and
+  `lang` props, and the whole HEADER-LEFT REPORTING CHANNEL — `App`'s keyed
+  `headerLeft` state and the `onHeaderLeftChange` prop both games filled with a layout
+  effect. Which puzzle is a fact of the ROUTE, so the header no longer waits on a loaded
+  game to report it, and its content is identical through loading, error and
+  missing-puzzle. The board's in-screen FRIENDS/GLOBAL tabs wore `.mode-tab` by sharing
+  the switcher's class; the dress moved onto `.board-tab`, its last consumer.
   *(The paragraphs below predate the band and stand only where they don't contradict
   it.)*
   Historical: a fixed **topbar**
@@ -3066,6 +3217,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the focus trap and Escape are untouched.
   - **A backdrop tap is NOT a dismissal.** The close chip is the way out; Escape stays, being a
     keyboard affordance rather than a mis-tap. Both modals' click handlers are gone with it.
+    **ONE exception, `PuzzleSheet` (2026-08-30):** a MENU hanging off the header's title
+    has no chrome to hold a close chip and no Escape on a phone, so a tap OUTSIDE it closes
+    it — without that, the only way to leave without choosing was to re-pick the current
+    row. The rule above is about full-SCREEN modals, and the sheet is not one.
   - **Closing is a BEAT, not an event.** `beginClose()` only starts the exit; the real
     `dialog.close()` — which fires `onClose` and lets the owner unmount — waits on the exit
     animation's `animationend`, with `EXIT_FALLBACK_MS` behind it. Escape goes through the same
@@ -3160,7 +3315,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     attributes" means for any new icon.
   - **TWO icon families since 2026-08-18, one per type voice.** CHROME icons (header +
     modal controls: calendar, x, fast-forward; circle-help was replaced 2026-08-18 by a
-    bare `?` TEXT glyph — `.help-chip`, the lang chip's sibling — and question.svg is
+    bare `?` TEXT glyph — `.help-chip`, retired in turn 2026-08-31 for the drawn `help.svg` below — and question.svg is
     deleted; languages.svg left with the FR chip) are **LUCIDE
     icons** (ISC; user-picked the same day) restated in the repo's own dress as the
     **`.ui-icon` stroke set** — `viewBox="0 0 24 24"`, `fill="none"`,
@@ -3168,9 +3323,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
     hairline chrome), **SQUARE caps and MITER joins** (user-decided 2026-08-18 — the
     round defaults read "goofy" against the sharp chrome; the calendar's rect lost its
     rx, the circled ? became a bare sharp ?, fast-forward became double chevrons),
-    in-file `width`/`height` (28px, sized against the 32px pixel mark beside them). A
-    new chrome icon starts from the Lucide glyph of that name, squared off the same
-    way. PIXEL icons
+    in-file `width`/`height` — **22px since 2026-08-31** (28 before, sized against a
+    32px pixel mark that has since left the header; at 28 in a 38px key four of them
+    read as a toolbar jammed against itself). A new chrome icon starts from the Lucide
+    glyph of that name, squared off the same way. The help control is `help.svg` — a
+    bare stroke `?` on the same grid, its dot a small square, no circle (the 2026-08-18
+    verdict on circle-help stands); it replaced the `.help-chip` TEXT glyph the same day,
+    which was a letterform among drawings. PIXEL icons
     survive only on the PLAY surface: the on-screen keyboard's enter/back glyphs —
     orthogonal pixel art (integer grid, no diagonals, the 2026-07-08 rules), sized by
     `.kb-icon` in CSS (`height: 30%`) because the keys shrink on narrow phones. The

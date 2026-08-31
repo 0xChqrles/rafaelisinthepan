@@ -107,9 +107,15 @@ const STRINGS = {
   // Written in the FUTURE the tap opens, never the past — the account is minted by the
   // game's own PLAY gate the tap lands on, so "has been created" would be a screen
   // claiming something that has not happened yet.
+  // AMENDED by #204's review: it described the SECONDARY, and contradicted the primary
+  // that now leads. RECONNECT signs back into the account named above; the sentence under
+  // it read "playing creates a new account and you start from scratch", which is the one
+  // thing reconnecting does NOT do — so a reader scanning primary-then-note met a
+  // contradiction on the screen that has to be clearest. It names neither button (both are
+  // right there): it says the account is still reachable, and what the other tap costs.
   signedOutNote: {
-    en: "Don't worry, playing creates a new account and you start from scratch.",
-    fr: 'Pas de panique, jouer crée un nouveau compte et vous repartez de zéro.',
+    en: "Don't worry — this account is still there. Playing instead starts a new one, from scratch.",
+    fr: 'Pas de panique : ce compte existe toujours. Jouer démarre plutôt un nouveau, de zéro.',
   },
   // The account's devices, on the profile editor (#216): the surface the whole issue exists
   // for, since signing a device out has to be possible without holding that device.
@@ -140,13 +146,18 @@ const STRINGS = {
   // plain, and read as cringe rather than as stakes. What a player actually pictures is
   // getting a new device, so the line names that.)
   //
-  // Two words in it are the user's own (same day) and both are deliberate: APPAREIL rather
-  // than téléphone, which is the word the device list already prints (`devicesTitle`), and
-  // TON rather than ce — the app's FIRST tutoiement outside the two tap/click hints. The
-  // rest of the French copy still says vous; the voice is the user's to settle.
+  // APPAREIL rather than téléphone is the user's own word and stays: it is what the device
+  // list already prints (`devicesTitle`), so the note and the list name one thing.
+  //
+  // TON became VOTRE (review finding). It was the app's first tutoiement, and it landed in
+  // an area that says vous five times within two taps of it — « Réessayez », « Demandez-en
+  // un nouveau », « vos amis vous suivent », « Vous êtes déjà sur ce compte ». One sentence
+  // in the other register does not read as warmth, it reads as an inconsistency, and this
+  // is the one line on the screen a player is meant to weigh a decision against. The voice
+  // is still the user's to settle — it is one word either way — but it has to be ONE.
   accountSaveNote: {
     en: 'To get your account back on another device.',
-    fr: 'Pour retrouver ton compte sur un autre appareil.',
+    fr: 'Pour retrouver votre compte sur un autre appareil.',
   },
   // THE SECOND DOOR (#204's UX rework vol. 2). Saving an account and signing into another
   // one were one button, one dress and one set of taps — and opposite acts. A returning
@@ -169,6 +180,16 @@ const STRINGS = {
     fr: 'Le compte de cet appareil sera remplacé.',
   },
 
+  // WHAT SCREEN THIS IS. `back` renders the CURRENT screen's name as the way out of it —
+  // `/account` says ACCOUNT and `/profile` says PROFILE — and the flow was passing
+  // `accountTitle`, its PARENT's. On the returning door that left a screen whose entire
+  // text was the word CONTINUE: a churning tile, an unlabelled field, and a header naming
+  // somewhere else. The door's declared intention is the one thing it can honestly say.
+  linkTitleSave: { en: 'SAVE ACCOUNT', fr: 'SAUVEGARDER' },
+  // fr CONNEXION rather than SE CONNECTER (2026-08-31): the title has ONE size on every
+  // screen, and at 320px the longer spelling ran into the header's fixed five keys.
+  linkTitleReturn: { en: 'SIGN IN', fr: 'CONNEXION' },
+
   linkAddressPlaceholder: { en: 'EMAIL', fr: 'E-MAIL' },
   linkContinue: { en: 'CONTINUE', fr: 'CONTINUER' },
   // Where it went — the answer to "did I typo my own address?", which is the one thing the
@@ -183,6 +204,10 @@ const STRINGS = {
   // warning to somebody who has typed nothing wrong. One line, at the input, beside the
   // cells that just shook.
   linkWrongCode: { en: 'Wrong code — {n} left', fr: 'Code incorrect — {n} restants' },
+  // The last attempt before the code is spent. Two keys and a caller-side `n === 1`, the
+  // shape TRY/TRIES already uses — French disagrees where English does not (« 1 restant »,
+  // "1 left"), and the pair keeps both languages in the type-checked table.
+  linkWrongCodeOne: { en: 'Wrong code — 1 left', fr: 'Code incorrect — 1 restant' },
   linkCancel: { en: 'CANCEL', fr: 'ANNULER' },
   // The BIND ending's way back to the account screen: a settings errand ends where it
   // began, and OK is the one word that is chrome in both languages. The ADOPT ending keeps
@@ -400,6 +425,14 @@ const STRINGS = {
   ariaChangeMode: { en: 'Change game mode', fr: 'Changer de mode de jeu' },
   modeSentence: { en: 'Sentence', fr: 'Phrase' },
   modeWord: { en: 'Word', fr: 'Mot' },
+  // ── WHICH PUZZLE (2026-08-30, user-decided) ────────────────────────────────────────
+  // The header's left slot names the daily you are on, and one sheet behind it holds every
+  // axis of "which puzzle am I playing": the language, the daily, and the day. They were
+  // three separate controls in three places — a centred segmented switcher, a date chip and
+  // a language chip — which is what left the row with no space and the account with no door.
+  puzzleMenu: { en: 'Change puzzle', fr: 'Changer de puzzle' },
+  // The DAY row. It flips: from today it offers the calendar, from the calendar (or a past
+  // day) it offers the way back to the live one.
   share: { en: 'SHARE', fr: 'PARTAGER' },
   copied: { en: 'COPIED', fr: 'COPIÉ' },
   // ---- the solved screen's STANDING (#170, user-decided 2026-08-15, replacing the
@@ -453,8 +486,8 @@ const STRINGS = {
   ariaEnter: { en: 'enter', fr: 'entrée' },
   ariaBackspace: { en: 'backspace', fr: 'effacer' },
   ariaDash: { en: 'dash', fr: 'tiret' },
+  ariaHome: { en: "Today's puzzle", fr: 'Puzzle du jour' },
   ariaHelp: { en: 'How to play', fr: 'Comment jouer' },
-  ariaSkipTutorial: { en: 'Skip tutorial', fr: 'Passer le tutoriel' },
   // ---- archive calendar (#55): playable past days behind a calendar screen.
   archive: { en: 'ARCHIVE', fr: 'ARCHIVE' },
   ariaArchive: { en: 'Past puzzles', fr: 'Puzzles précédents' },

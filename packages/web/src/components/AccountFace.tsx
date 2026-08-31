@@ -18,8 +18,11 @@ import { anonName } from '@whippin/shared';
 import { parseProfile, profileUrl } from '../api';
 import { useDeviceIdentity } from '../identity';
 import { useGameStore } from '../state/gameStore';
+import { timeoutSignal } from '../timeout';
 
-// How long a decorative read may hold a screen before its fallback stands in.
+// How long a decorative read may hold a screen before its fallback stands in. Spent
+// through `timeoutSignal`, never `AbortSignal.timeout()` — the rule and its reason live in
+// `timeout.ts`, and here it would take the face off every screen of the account area.
 const FACE_TIMEOUT_MS = 6_000;
 
 export interface Face {
@@ -48,7 +51,7 @@ export function useAccountFace(publicId: string | null, local = false): Face | n
       let shown: Face = { publicId, name: anonName(publicId), avatar: null };
       try {
         const response = await fetch(profileUrl(publicId), {
-          signal: AbortSignal.timeout(FACE_TIMEOUT_MS),
+          signal: timeoutSignal(FACE_TIMEOUT_MS),
         });
         if (response.ok) {
           const profile = parseProfile(await response.json());

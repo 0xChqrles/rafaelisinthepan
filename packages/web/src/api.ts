@@ -565,6 +565,13 @@ export function linkUrl(base: string = apiBase()): string {
 // Bounded like every /devices call, and for the same reason: the SEND leg waits on a
 // server-side Siteverify AND an SES call, so a request that never settles would leave the
 // flow's one button spinning with nothing to retry.
+//
+// Through `timeoutSignal`, NEVER `AbortSignal.timeout()`: that API is above the browser
+// floor and is read as an ARGUMENT, so its `TypeError` lands before `fetch` is ever
+// called. Here that is not a slow request but a dead feature — every leg of the flow
+// surfaces as an ordinary send/verify failure whose TRY AGAIN can only fail again, on a
+// browser where the rest of the app works. `timeout.ts` carries the rule and the
+// production incident that wrote it; `timeout.test.ts` is what now keeps it.
 const LINK_TIMEOUT_MS = 20_000;
 
 export async function postLinkBody(
@@ -583,7 +590,7 @@ export async function postLinkBody(
     leave?: string;
   },
 ): Promise<Response> {
-  return postSignedJson(url, body, AbortSignal.timeout(LINK_TIMEOUT_MS));
+  return postSignedJson(url, body, timeoutSignal(LINK_TIMEOUT_MS));
 }
 
 // What the `{token}` READ answers: what this account IS, from the one row that authenticated
@@ -713,10 +720,14 @@ export function parseErasePrompt(
   if (!isRecord(data)) return null;
   const { accountId, target } = data;
   if (typeof accountId !== 'string' || !PUBLIC_ID_PATTERN.test(accountId)) return null;
-  // A SWITCH carries no stakes — nothing is lost — so its numbers are optional there, and
-  // requiring them would refuse a confirmation the player has to be able to answer.
+  // The stakes are DECORATIVE on both kinds. A switch has none by construction; an erase
+  // normally does, but requiring them there refused the confirmation for exactly the reason
+  // the line below already gives for a switch — the player has to be able to answer it. And
+  // the refusal was not silent-but-safe: the caller fell through to the generic failure,
+  // whose TRY AGAIN re-sends the same code, gets the same 409, and shows the same screen,
+  // forever. `showStakes` already draws nothing when they are absent, so the confirmation
+  // simply loses three numbers and keeps the fork, the sentence and both buttons.
   const stakes = parseStakes(data);
-  if (kind === 'erase' && stakes === null) return null;
   return {
     kind,
     accountId,
