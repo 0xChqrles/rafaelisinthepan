@@ -6,7 +6,6 @@ import WordLoot, { lootDurationMs } from './WordLoot';
 import type { Rarity } from '../game/wordGame';
 import type { StrikeArt } from './rarity';
 import { STRUCK_MS } from './rarity';
-import { fitWord } from './routeDrawing';
 import useLetterWave, { WAVE_VARS } from '../hooks/useLetterWave';
 import { srWordBoardWord } from '../i18n';
 
@@ -17,15 +16,24 @@ import { srWordBoardWord } from '../i18n';
 //
 // It is deliberately NOT the route drawing's terminus row. That row is a station on a line
 // — it carries a square node, a rail stub and a rank gutter because it is the END OF A
-// LINE, and none of those mean anything when there is no line. The post-mortem still
-// mounts the real `WordTerminus` at the bottom of the revealed board; this is the other
-// half of the same word, on a screen that has no map.
+// LINE, and none of those meant anything when there was no line (the route drawing itself
+// retired on 2026-09-01 for the board's grid). The post-mortem pins the word under the
+// grid as `WordFoot`; this is the other half of the same word, on a screen with no board.
 //
 // The type size is the shared `fitWord`'s, so the one rule that matters for a long word —
 // it may shrink but it may never break mid-word — holds here exactly as it does on every
 // route the app draws. `--wordw` is this surface's own (see `.word-subject` in index.css):
 // the whole page column, where the route frame's is what is left after the gutter and rail.
 const SUBJECT_PX = 40;
+// The word column's own width is known in CSS (`--wordw`), and Press Start 2P advances
+// EXACTLY 1em per glyph, so the size at which a word fits its column is arithmetic: width
+// over length. A long word therefore shrinks a little instead of breaking mid-word. (The
+// route drawing's own `fitWord` until 2026-09-01, when the drawing retired with the
+// board's grid and this became its one consumer.)
+const WORD_MIN_PX = 8;
+function fitWord(word: string, max: number): string {
+  return `clamp(${WORD_MIN_PX}px, calc(var(--wordw) / ${Math.max(1, word.length)}), ${max}px)`;
+}
 
 // Word mode's guess feedback (#163). The two outcomes are DIFFERENT EVENTS and they look
 // nothing alike (decided 2026-08-09), which is the point: at a glance, before reading

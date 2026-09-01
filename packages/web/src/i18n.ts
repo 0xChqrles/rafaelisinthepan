@@ -469,7 +469,6 @@ const STRINGS = {
   // too), so the shelf now names them in the vocabulary the player already met rather than
   // describing where they sit. Untranslated for the same reason MISS is — one label,
   // identical in every language.
-  routeOffMap: { en: 'MISSED', fr: 'MISSED' },
   // The streak celebration's ending hint: pure "what to do" — the whole screen dismisses,
   // so naming a "why" (continue/close — continue to WHAT? the game is done) would only
   // raise a question it can't answer. Pointer-aware: coarse pointers read TAP.
@@ -741,13 +740,7 @@ export function ariaHoleHistory(lang: string, n: number): string {
   return uiLang(lang) === 'fr' ? `Vos essais sur le mot ${n}` : `Your tries on word ${n}`;
 }
 
-// The history drawing is decorative (aria-hidden); these carry it in words. Closest first,
-// misses last — the same order the line reads bottom to top.
-export function srRouteDestination(lang: string, word: string | null): string {
-  if (uiLang(lang) === 'fr') return `destination : ${word ?? 'cachée'}`;
-  return `destination: ${word ?? 'hidden'}`;
-}
-
+// The route drawings are decorative (aria-hidden); these carry them in words.
 export function srRouteStop(
   lang: string,
   stop: {
@@ -771,14 +764,6 @@ export function srRouteStop(
   if (stop.best) parts.push(fr ? 'vous êtes ici' : 'you are here');
   if (stop.behind) parts.push(fr ? 'derrière le départ' : 'behind the start');
   return parts.join(' — ');
-}
-
-// The shelf in words. The visible heading is the universal MISSED token, but this is PROSE
-// and prose stays in the reader's language (the rule every sr helper here follows) — it
-// just says the same thing the heading now does.
-export function srRouteOffMap(lang: string, words: string[]): string {
-  const list = words.join(', ');
-  return uiLang(lang) === 'fr' ? `manqués : ${list}` : `missed: ${list}`;
 }
 
 // ---- Word mode (#156). The board drawing is decorative like the route map's; these

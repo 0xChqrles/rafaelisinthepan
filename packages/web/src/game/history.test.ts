@@ -44,7 +44,7 @@ describe('buildHistory', () => {
     const model = build([]);
     expect(model.secret).toBeNull(); // `???` — the unknown the line is walked toward
     expect(model.stops).toEqual([
-      { rank: 87, dq: 90, word: 'prairie', start: true, best: true, behind: false, revealed: false },
+      { rank: 87, dq: 90, display: 'prairie', word: 'prairie', start: true, best: true, behind: false, revealed: false },
     ]);
     expect(model.misses).toEqual([]);
   });
@@ -128,7 +128,7 @@ describe('buildHistory', () => {
       startRank: 1,
       secretWord: 'mot',
     });
-    expect(model.stops).toEqual([{ rank: 1, dq: null, word: 'proche', start: true, best: true, behind: false, revealed: false }]);
+    expect(model.stops).toEqual([{ rank: 1, dq: null, display: 'proche', word: 'proche', start: true, best: true, behind: false, revealed: false }]);
   });
 
   it('states the map\'s farthest rank so the gutter can be reserved up front', () => {

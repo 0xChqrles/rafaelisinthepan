@@ -11,12 +11,9 @@ const model = (over: Partial<WordBoardModel> = {}): WordBoardModel => ({
   word: 'phare',
   grades: [COMMON],
   stations: [
-    { rank: 1, dq: 255, rarity: COMMON, word: 'balise', claimed: true },
-    { rank: 2, dq: 180, rarity: COMMON, word: null, claimed: false },
+    { rank: 1, rarity: COMMON, word: 'balise', claimed: true },
+    { rank: 2, rarity: COMMON, word: null, claimed: false },
   ],
-  outside: [],
-  misses: [],
-  maxRank: 2,
   ...over,
 });
 
@@ -24,15 +21,14 @@ const render = (over: Partial<WordBoardModel> = {}): string =>
   renderToStaticMarkup(<WordBoard model={model(over)} lang="en" />);
 
 describe('WordBoard accessibility mirror', () => {
-  it('states the field per GRADE — what station colours say to everyone else', () => {
+  it('states the field per GRADE — what the word colours say to everyone else', () => {
     const markup = render({
       grades: [COMMON, RARE],
       stations: [
-        { rank: 1, dq: 255, rarity: COMMON, word: 'balise', claimed: true },
-        { rank: 2, dq: 180, rarity: RARE, word: null, claimed: false },
-        { rank: 3, dq: 90, rarity: RARE, word: null, claimed: false },
+        { rank: 1, rarity: COMMON, word: 'balise', claimed: true },
+        { rank: 2, rarity: RARE, word: null, claimed: false },
+        { rank: 3, rarity: RARE, word: null, claimed: false },
       ],
-      maxRank: 3,
     });
 
     expect(markup).toContain('neighborhood: 3 stops by rarity (COMMON 1, RARE 2), 1 found');
@@ -42,22 +38,22 @@ describe('WordBoard accessibility mirror', () => {
     expect(render()).toContain('neighborhood: 2 stops by rarity (COMMON 2), 1 found');
   });
 
-  it('names a revealed stop by its grade — the station colour, in words', () => {
+  it('names a revealed word by its grade — the word colour, in words', () => {
     expect(render({ grades: [COMMON, RARE] })).toContain('rank 1 — balise — COMMON');
   });
 });
 
-// CONTRACT: rarity is said in the WORD's COLOUR on one trunk (user-decided 2026-08-11 —
-// the board is the sentence route's exact drawing). Every ZONE station carries its grade's
-// `--rarity-c` (COMMON is the ladder's floor, so a station can never be gradeless); a near
-// miss out on the trunk belongs to no grade and carries none.
+// CONTRACT: rarity is said in the WORD's COLOUR (user-decided 2026-08-11; the grid since
+// 2026-09-01 keeps it). Every zone word carries its grade's `--rarity-c` (COMMON is the
+// ladder's floor, so a word can never be gradeless); a CLAIMED word is marked apart from
+// one merely named, and a censored one is still drawn, as `???`.
 describe('WordBoard rarity colours', () => {
-  it("paints a station in its own GRADE's colour", () => {
+  it("paints a word in its own GRADE's colour", () => {
     const markup = render({
       grades: [COMMON, RARE],
       stations: [
-        { rank: 1, dq: 255, rarity: COMMON, word: 'balise', claimed: true },
-        { rank: 2, dq: 180, rarity: RARE, word: 'fanal', claimed: true },
+        { rank: 1, rarity: COMMON, word: 'balise', claimed: true },
+        { rank: 2, rarity: RARE, word: 'fanal', claimed: true },
       ],
     });
 
@@ -65,13 +61,15 @@ describe('WordBoard rarity colours', () => {
     expect(markup).toContain(RARITY_COLORS[RARE]);
   });
 
-  it('leaves a near miss uncoloured — it belongs to no grade', () => {
+  it('marks a claimed word apart from a named one, and draws a censored one as ???', () => {
     const markup = render({
-      stations: [],
-      outside: [{ rank: 300, dq: 20, word: 'sable' }],
-      maxRank: 300,
+      stations: [
+        { rank: 1, rarity: COMMON, word: 'balise', claimed: true },
+        { rank: 2, rarity: COMMON, word: 'fanal', claimed: false },
+        { rank: 3, rarity: COMMON, word: null, claimed: false },
+      ],
     });
-
-    expect(markup).not.toContain('--rarity-c');
+    expect(markup.match(/wb-claimed/g)).toHaveLength(1);
+    expect(markup).toContain('???');
   });
 });

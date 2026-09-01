@@ -25,6 +25,10 @@ export interface HistoryStop {
   // carries no `dq` — the drawing then falls back to uniform spacing instead of refusing
   // to draw the line at all.
   dq: number | null;
+  // What the SENTENCE would show if this stop were swapped into the hole (the net's pick,
+  // 2026-09-01): the group's canonical accented form — the hole never displays a typed
+  // form, and a pick is the hole showing one of its own words.
+  display: string;
   // How the stop is NAMED: the form the PLAYER TYPED wherever a typed form reached it —
   // their log, their words (answering `sables` with the group's `sable` reads as a
   // correction; the rule the old trunk stops and the MISSED shelf always followed, legal
@@ -131,6 +135,7 @@ export function buildHistory({
     byRank.set(entry.rank, {
       rank: entry.rank,
       dq: entry.dq ?? null,
+      display: entry.word,
       word: typed ?? entry.word,
       start,
       best: false,

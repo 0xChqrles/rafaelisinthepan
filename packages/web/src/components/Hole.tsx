@@ -42,18 +42,25 @@ export default function Hole({
   onResolved,
   explore,
   quiet = false,
+  veiled = false,
 }: {
   hole: RuntimeHole;
   hit: HitState | null;
   holeIndex: number;
   onHitDone: (id: number) => void;
   onResolved?: (index: number) => void;
-  // The history modal's entry point (2026-08-10, formerly the #117 route map's): the whole
+  // The hole WHEEL's entry point (2026-09-01; the history modal's before it, the #117 route
+  // map's before that): the whole
   // hole becomes one button. Present for the WHOLE round or not at all — the choreography
   // gates it with `disabled` rather than by unwrapping, which would remount the word
   // mid-scramble. `hintId` points at the sr-only "your tries" note Phrase renders OUTSIDE
   // the sentence; see the button below for why it is a description and not a label.
   explore?: { hintId: string; disabled: boolean; onOpen: () => void };
+  // The wheel stands over this hole: its word and exponent are hidden in place (the box
+  // stays, so nothing reflows), because the wheel's slot row draws the word there itself
+  // and a longer word beneath would show its tail through the dim (user-reported
+  // 2026-09-01; a ground band was tried first and covered the watermark).
+  veiled?: boolean;
   // Is the SENTENCE quiet — no guess feedback in flight, no modal over it, the round still
   // being played? That is the one thing about the ambient wave (#129) a hole cannot see for
   // itself, so the round supplies it and the hole owns everything else: its own clock, and
@@ -225,7 +232,7 @@ export default function Hole({
   );
 
   return (
-    <span className={`hole${resolved ? ' resolved' : ''}`}>
+    <span className={`hole${resolved ? ' resolved' : ''}${veiled ? ' veiled' : ''}`}>
       {explore ? (
         <button
           type="button"

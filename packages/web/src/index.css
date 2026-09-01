@@ -290,44 +290,6 @@ button * {
   }
 }
 
-/* TORN EDGES, the scrollbar's twin: worn by the FRAME around a scroller whose drawing runs
-   taller than its window (Word mode's board #156; the onboarding's routes teaser wore them
-   first, until its 2026-08-11 retirement). The
-   window is smaller than the line on every real board, and an edge that simply ends reads as
-   the end of the map — so the side that still has line beyond it is torn, with the same
-   9px-on, 9px-off rule the route map's parked separator wears, meaning
-   the same thing here: it does not continue straight through. Which sides those are is the
-   scroll position's business (hooks/useScrollEdges), handed back as `more-up` / `more-down`.
-
-   Two structural requirements on anyone wearing it. The rules sit just OUTSIDE the window
-   (anchored past its edges), never over it: inside, the tear covered the outermost row instead
-   of marking where the window cuts. And they must live on a NON-SCROLLING parent of the
-   scroller — a pseudo-element inside a scroller scrolls away with the content — which is why
-   both surfaces are two boxes, a frame around a scroller. */
-.scroll-torn {
-  position: relative;
-}
-.scroll-torn::before,
-.scroll-torn::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: repeating-linear-gradient(90deg, var(--surface) 0 9px, transparent 9px 18px);
-  pointer-events: none;
-  opacity: 0;
-}
-.scroll-torn::before {
-  bottom: 100%;
-}
-.scroll-torn::after {
-  top: 100%;
-}
-.scroll-torn.more-up::before,
-.scroll-torn.more-down::after {
-  opacity: 1;
-}
 
 .sr-only {
   position: absolute;
@@ -932,10 +894,14 @@ button * {
    band): at REST the header is TRANSPARENT — no glass, no hairline, no blur — sitting
    directly on the dark grain ground, and the band arrives only once the screen under it
    has actually scrolled (`.topbar.scrolled`, set by TopBar's own capture-phase scroll
-   listener), the moment content could otherwise pass beneath the controls. The border is
-   always 1px so nothing shifts when it colours in. Mobile-first: full-bleed slim band
-   with one hairline bottom edge when scrolled; on desktop it floats, capped and rounded,
-   just inside the device frame's brackets.
+   listener), the moment content could otherwise pass beneath the controls. WHAT ARRIVES
+   IS THE GROUND, NOT A BOX (user-decided 2026-09-01, superseding the glass + hairline
+   band the same day): the whole width of the screen behind the row fills with flat
+   `--bg`, and a short vertical gradient from `--bg` to transparent hangs UNDER it, so
+   content scrolling up fades into the ground before it reaches the controls — no
+   border, no blur, no rounded float. Both are pseudo-elements of `.topbar` itself (the
+   full-width fixed layer), faded in by opacity so nothing ever shifts; `.topbar-inner`
+   keeps only its geometry.
    TWO slots since 2026-08-30 (left: which puzzle, or the screen's own name as its way
    back; right: the app's places, the current one lit). The centre went with the mode
    tabs — see PuzzleTitle for what the collision cost. ModalHeader reuses the classes —
@@ -957,19 +923,33 @@ button * {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   padding: 0 8px;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--r-lg);
-  transition:
-    background-color 160ms ease,
-    border-color 160ms ease;
   pointer-events: auto;
 }
-.topbar.scrolled .topbar-inner {
-  background: var(--glass);
-  border-color: var(--line);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+/* The ground behind the row, and the fade under it. The height the fade runs is the one
+   number here; both layers ride the scrolled state on opacity alone. */
+.topbar::before,
+.topbar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.topbar::before {
+  top: 0;
+  bottom: 0;
+  background: var(--bg);
+}
+.topbar::after {
+  top: 100%;
+  height: 36px;
+  background: linear-gradient(to bottom, var(--bg), transparent);
+}
+.topbar.scrolled::before,
+.topbar.scrolled::after {
+  opacity: 1;
 }
 /* The header's two corner groups sit DIRECTLY on the backdrop — no chip background/blur
    (removed 2026-07-21: boxes read as floating rectangles over the animated waves); the
@@ -2300,19 +2280,16 @@ button * {
   color: var(--fg);
 }
 
-/* ===================== the route drawing + history modal ===================== */
-/* A hole's guess HISTORY (user-decided 2026-08-10, replacing the #117 route map — the drawn
-   neighborhood was rarely meaningful in practice, so the modal now answers the one question a
-   player actually brings to it: what have I tried, and how close was each?).
-
-   One list, closest first: the rank in a right-aligned heat-coloured gutter — the same ladder
-   of numbers the route map's "time" column taught, running hot to cold down the page — then
-   the word AS TYPED. MISS closes the list in its weird red, exactly the word that floated
-   over the hole when those guesses landed; the solving guess leads it in the solve cobalt.
-   Full-screen native dialog on the SOLID app background. The LIST has no
-   motion of its own past its entrance — the zoom below is about the transition into the modal,
-   and the cascade is about arrival, not about the list. */
-.history-dialog[open] {
+/* ===================== the WORDS modal ===================== */
+/* A COMPLETED hole's words (user-decided 2026-09-01): the old history modal's full screen
+   with the road taken out — no rail, no nodes, no distances — the found word as the
+   headline in the solved ink, then every word found for it as a plain GRID, closest first,
+   "like on a synonyms website" — every word `--fg`, the ones the player typed in the held
+   word's inverted chip. ONE type size: the column is as wide as the longest word
+   needs (set inline), and the grid fills the whole width with as many such columns as fit
+   (`auto-fill`) — a wide screen uses its space, a phone gets one or two. Flat `--bg`
+   like every full-screen dialog, the shared header above a `.pixel-scroll` scroller. */
+.hw-dialog[open] {
   position: fixed;
   inset: 0;
   z-index: 100;
@@ -2326,490 +2303,267 @@ button * {
   outline: 0;
   background: var(--bg);
   color: var(--fg);
-  /* Header row above, scroller below — the header is IN FLOW, which is the whole reason it can
-     obey the app's no-band/no-border/no-background header policy: nothing ever passes under it,
-     so it needs nothing painted behind it. */
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  animation: hw-in 100ms ease-out both;
 }
-/* The drawing's own variables live on `.route-frame` — everything the drawing's CSS consumes
-   resolves from the frame, so the drawing stands apart from whatever surface mounts it (#155).
-   Word mode's post-mortem board is that surface today (`.word-frame` refines it below); the
-   sentence game's route modal was the other until 2026-08-10, when the history modal replaced
-   it. */
-.route-frame {
-  /* The containing block for the sr-only mirror it carries: `.sr-only` is absolutely
-     positioned, and an unpositioned frame would hand it to an ancestor outside the
-     scroller, where its static position sits below the line's whole height. */
-  position: relative;
-  /* A station whose word you have NOT found, and the `???` it wears: dimmer than the line, so
-     it recedes behind the words that ARE on the map. */
-  --unfound: #3a4270;
-  /* One Press Start cell is exactly 1em, so an exponent's width is its length times this — which
-     is why `routeFrameVars` can set `--gutter` to fit the widest rank a line can show (a fixed
-     one sized for the theoretical "9970" left a dead column on most rounds). This is the
-     fallback; the media query below is what makes it responsive without the component knowing.
-     Four cells, not five, since the exponent lost its leading `-` on 2026-08-16. */
-  --rank-size: 10px;
-  --gutter: calc(var(--rank-size) * 4 + 10px);
-  /* Air between the rail and the words, SHARED by every route the app draws: both frames
-     subtract it from their `--wordw`, or fitWord sizes a long word to a column wider than
-     the real one. */
-  --word-gap: 14px;
-  /* Every line on a route — trunk, leap, tail — is this thick. */
-  --line-w: 5px;
-  /* Set per-frame by routeFrameVars; these are the fallbacks. */
-  --railw: 31px;
-  --trunk-x: 15.5px;
-  /* The word column's width, so a route can size a long word to FIT it (see fitWord). The
-     other two columns and the scroller's own padding are all known here, which is the only
-     reason that arithmetic is possible without measuring anything. The 18px is the one thing it
-     canNOT know: a classic (non-overlay) scrollbar takes ~15-17px off the scroller's client
-     width and `100vw` cannot see it, so without the allowance a long word gets sized to a column
-     that turns out narrower and breaks mid-word — the one outcome fitWord exists to prevent.
-     Platforms with overlay scrollbars just get slightly smaller long words. */
-  --wordw: calc(min(430px, 100vw - 40px) - var(--gutter) - var(--railw) - 18px);
-  /* The height of a station's FIRST line — the one the rank, the node and the word share — so
-     the node sits exactly on the word's midline while the rail still runs the full height of a
-     station that also carries a tag underneath. */
-  --head: 26px;
-}
-.history-dialog::backdrop {
-  background: transparent;
-}
-/* Opening is a ZOOM OUT OF THE WORD you tapped, the way a desktop window opens out of its
-   icon: the screen grows from that point instead of replacing what was there, so the modal
-   reads as that word opened rather than as a new screen. HistoryModal supplies the word's
-   centre in viewport coordinates — which are this element's own, since it is fixed at inset
-   0 — so the origin needs no arithmetic here; without it the fallback is dead centre.
-
-   It scales the WHOLE dialog, opaque background included, which is what sells the growth. The
-   opacity closes early so the panel is solid for most of the travel — a fade running the
-   whole way reads as a cross-dissolve, not as an opening.
-
-   Short on purpose (120ms, down from the 200ms first tried — 2026-07-27): this is a tap
-   opening a screen, not a transition worth watching, and the list is the thing you came for.
-   Long enough to read as growth out of the word, over before it asks for patience.
-
-   Under reduced motion the global rule collapses the duration; with no fill mode the dialog
-   lands on its natural scale and full opacity, never mid-zoom. */
-.history-dialog[open] {
-  transform-origin: var(--zoom-x, 50%) var(--zoom-y, 50%);
-  animation: history-zoom 120ms ease-out;
-}
-@keyframes history-zoom {
-  from {
-    transform: scale(0.05);
-    opacity: 0;
-  }
-  35% {
-    opacity: 1;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-/* Closing RETRACTS into the same word: the opening run backwards, so the modal goes back where
-   it came from and the sentence underneath is somewhere you RETURNED to rather than somewhere
-   you were dropped. HistoryModal holds the dialog open through this and only calls `close()`
-   when it ends (see `beginClose`) — a native dialog would otherwise vanish on the spot.
-
-   Written out as its own keyframes rather than `animation-direction: reverse` on the opening
-   one: with the same `animation-name`, changing direction UPDATES the existing animation instead
-   of starting one, and the opening run has long since finished — so it would hold its end state
-   and snap rather than play. The mirror is exact — `ease-in` against `ease-out`, and the opacity
-   stop moved from 35% to 65% — so the panel stays solid for most of the travel and only thins
-   out at the end, the same way round.
-
-   `forwards` holds the final tiny frame: without it the dialog would flash back to full size for
-   the frame between the animation ending and React unmounting it. */
-.history-dialog[open].closing {
-  animation: history-zoom-out 120ms ease-in forwards;
-  /* Nothing inside is aimed at any more — and a second dismissal mid-retraction would only
-     restart a beat that is already leaving. */
+.hw-dialog[open].closing {
+  animation: hw-out 100ms ease-in both;
   pointer-events: none;
 }
-@keyframes history-zoom-out {
+.hw-dialog::backdrop {
+  background: transparent;
+}
+@keyframes hw-in {
   from {
-    transform: scale(1);
+    opacity: 0;
+  }
+  to {
     opacity: 1;
   }
-  65% {
+}
+@keyframes hw-out {
+  from {
     opacity: 1;
   }
   to {
-    transform: scale(0.05);
     opacity: 0;
   }
 }
-/* --- the line --- */
-.history-scroll {
+/* The list FADES into the ground as it scrolls up under the header (user-decided
+   2026-09-01, the game header's own fade): a mask over the scroller's top 40px, with the
+   same 40px of padding above the content so nothing is faded at rest. The header itself
+   stays bandless — ModalHeader sits in flow on the flat `--bg` dialog, so the fade is
+   the scroller's. */
+.hw-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 20px;
-  /* A flex column so the frame's auto margins can centre a SHORT journey in the screen — a
-     few stops top-left in a dark field read as an unfinished page. Auto margins (not
-     `justify-content: center`) on purpose: with negative free space they collapse to 0, so a
-     line taller than the screen scrolls normally instead of clipping its ends. */
-  display: flex;
-  flex-direction: column;
+  padding: 40px 20px 48px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 40px);
+  mask-image: linear-gradient(to bottom, transparent, #000 40px);
 }
-/* The drawing itself is the shared `.route-frame`/`.route` (HistoryModal composes
-   routeDrawing, trunk only); this class adds the modal's own centring and the JOURNEY
-   dress the shared drawing does not know about (2026-08-10, user-asked polish: the three
-   zones must read at first sight, in colour). */
-.history-frame {
-  margin: auto;
-  width: 100%;
-  /* The shared `--word-gap` comes off the word column here as on the word board — only the
-     dialog's own 40px of sides differ. */
-  --wordw: calc(min(430px, 100vw - 40px) - var(--gutter) - var(--railw) - 18px - var(--word-gap));
-}
-/* (The rail keeps its own `--rail` everywhere — a green journey stretch was tried and
-   walked back the same day, 2026-08-10: the zones are said by the TYPE and the nodes, the
-   dashes still say where the walk begins, and the line stays the app's one quiet rail.) */
-/* NAMED by the solve, not reached (user-decided 2026-08-10): once the hole is solved the
-   line names every group between the departure and the word, so the post-mortem shows the
-   whole walked stretch rather than only the player's own steps. They stay GOLD — they are
-   part of the same journey — and take the app's own "named, not found" dress, the word
-   board's own distinction: the word dimmed to the census's 0.55 and the node small and
-   muted. So what the player actually HELD reads at full strength straight out of a field
-   that was there all along. Scoped to this modal: the word board's `route-revealed` dresses
-   its own stations. */
-.history-frame .route-revealed .route-word {
-  opacity: 0.55;
-}
-.history-frame .route-revealed .route-node {
-  width: 11px;
-  height: 11px;
-  background: var(--muted);
-}
-/* The point to reach is a COBALT SQUARE from the first frame (user-decided 2026-08-10):
-   cobalt is the app's solved-word colour, and the terminus IS the word to get — the square says
-   so before it is won, and the word beside it joins it in cobalt at the solve
-   (`.route-found`). */
-.history-frame .route-arrival .route-node {
-  background: var(--solve);
-}
-/* ONE grid for the whole line, every row a `subgrid` of it — which is what lets the rank gutter be
-   a true `max-content` FIT: the track is sized by the widest exponent actually rendered, measured
-   by the browser across every row at once. Per-row grids cannot do this (each would fit its own
-   rank and the rail would zigzag), and `--gutter` computes the same number but only under the
-   assumption that the pixel font is the one that loaded. It is still declared — as the fallback
-   template below for anything without subgrid, and because `--wordw` needs the width as a NUMBER,
-   which a measured track cannot hand it. FLOORED at that number: a `max-content` fit and the
-   computed width then agree by construction while the pixel font is the one that loaded, and the
-   floor is what holds the line together if it is not. (The floor earned its keep on 2026-08-03,
-   when the route map's one non-subgrid row — a WebKit sticky workaround, gone with that modal —
-   contributed nothing to the measured track and slid off the line without it.) */
-.route {
-  width: min(430px, 100%);
+.hw-frame {
+  width: min(1100px, 100%);
   margin: 0 auto;
-  /* The tail below the terminus is generous on purpose: the end of the line should not sit on the
-     screen edge when the map is scrolled all the way down. */
-  padding: 4px 0 104px;
-  display: grid;
-  grid-template-columns: minmax(var(--gutter), max-content) var(--railw) 1fr;
 }
-.route-station,
-.route-link,
-.route-shelf {
-  grid-column: 1 / -1;
-}
-.route-station,
-.route-link {
-  display: grid;
-  /* Fallback first: without subgrid the row falls back to the computed gutter rather than
-     collapsing to a single column. */
-  grid-template-columns: var(--gutter) var(--railw) 1fr;
-  grid-template-columns: subgrid;
-}
-/* A connector: pure distance, no content. Its height comes from the model (LINK_SPAN px per
-   full dq scale) and its line is inset to land under the trunk. */
-.route-link::before {
-  content: '';
-  grid-column: 2;
-  justify-self: start;
-  width: var(--line-w);
-  height: 100%;
-  margin-left: calc(var(--trunk-x) - var(--line-w) / 2);
-  background: var(--rail);
-}
-/* The cold end above the first station: not a distance, so not a solid line — the broken
-   trace (the leap into the word joined the solid rail on 2026-08-04: the routes should
-   visibly LEAD to the word). `.broken` is the history modal's behind-the-departure stretch
-   wearing the same trace (2026-08-10): a backwards guess is a stop, but not a step of the
-   journey, which turns solid only at the departure. The unit comes from `routeFrameVars`
-   (`--dash` / `--dash-period`); heights are cut to a whole number of it — a run that ends
-   mid-unit leaves a stub of gap right where the trace meets the solid rail. */
-.route-link.tail::before,
-.route-link.broken::before {
-  background: repeating-linear-gradient(
-    to bottom,
-    var(--rail) 0 var(--dash, 5px),
-    transparent var(--dash, 5px) var(--dash-period, 13px)
-  );
-}
-/* (A `.route-link.dashed` variant lived here for the day Word mode's board drew only the
-   words you had found and dashed the ground between them. With the `???` census restored
-   every rank on that board is a station of its own, so no connector hides anything and the
-   TAIL above is once again the only broken run either surface draws.) */
-
-/* --- one station --- */
-/* Every cell names its column: an item with a definite ROW span but an auto column is placed
-   before the fully-auto ones, so leaving the rail/body implicit would shuffle the order. */
-.route-rank {
-  grid-column: 1;
-  height: var(--head);
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-right: 10px;
-  /* The route DRAWING is a game surface, one voice throughout: pixel ranks beside pixel
-     words (the modal's chrome above it is the modern header's). Also load-bearing: the
-     `--gutter` arithmetic assumes the pixel font's exact 1em-per-glyph advance. */
+/* The headline: the word itself, in the ink a solved word wears. */
+.hw-head {
+  margin: 12px 0 28px;
   font-family: var(--pixel-font);
-  /* The rank IS the "time" column: one face, one size, right-aligned, so the numbers stack
-     into a ladder you can read down. In the heat the SAME number wore when it floated over
-     the hole. */
-  font-size: var(--rank-size);
-  line-height: 1;
-  color: var(--rank-color);
-  text-shadow: none;
-  white-space: nowrap;
+  font-size: clamp(20px, 3vw, 28px);
+  line-height: 1.3;
+  color: var(--solve);
+  text-shadow: 2px 2px 0 black;
+  overflow-wrap: anywhere;
 }
-/* The rail spans the WHOLE station (a tagged one is two lines tall) so the line never breaks;
-   the node is placed on the first line's midline. */
-.route-rail {
-  position: relative;
-  grid-column: 2;
-  grid-row: 1 / -1;
+.hw-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  /* The real template is inline (the longest word's width); this is the fallback. */
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 16px 24px;
 }
-.route-rail::before {
-  content: '';
-  position: absolute;
-  left: var(--trunk-x);
-  transform: translateX(-50%);
-  width: var(--line-w);
-  top: var(--line-top, 0);
-  bottom: var(--line-bottom, 0);
-  background: var(--rail);
-}
-/* Every node is a FILLED square — no outline-only stops. What a stop IS comes from its size and
-   its fill: a word you found (bright), the one you were handed (muted), where you are now (gold,
-   biggest), one you have not found (small, so it swells the line instead of punching a hole in
-   it). */
-.route-node {
-  position: absolute;
-  left: var(--node-x, var(--trunk-x));
-  top: calc(var(--head) / 2);
-  width: 15px;
-  height: 15px;
-  transform: translate(-50%, -50%);
-  background: var(--fg);
-}
-.route-body {
-  grid-column: 3;
-  grid-row: 1 / -1;
-  min-width: 0;
-  padding-left: var(--word-gap);
-}
-.route-word {
-  display: flex;
-  align-items: center;
-  min-height: var(--head);
+/* One word: the pixel face at ONE size (`HistoryModal` sets it inline — 15px, and only a
+   word wider than the whole frame shrinks), its exponent raised as the hole's, in the
+   shared heat. */
+.hw-word {
   font-family: var(--pixel-font);
-  /* The surface sets the real size inline (fitWord): a word too long for `--wordw` shrinks to
-     fit instead of breaking mid-word. This is only the fallback if that never arrives. */
   font-size: 15px;
   line-height: 1.3;
   color: var(--fg);
-  /* Past fitWord's floor, breaking is still better than overflowing the dialog. */
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  text-shadow: 2px 2px 0 black;
 }
-/* Word mode's post-mortem: a station says its GRADE in its own TYPE — the word painted in the rarity's colour
-   (`--rarity-c`, set with `.graded` per zone station by WordBoard), the vocabulary the
-   run's strikes and loot already taught. Keyed on the CLASS, not on every station, so the
-   terminus keeps `.route-found`'s brand accent and a gradeless near miss stays `--fg`. */
-.word-frame .route-station.graded .route-word {
-  color: var(--rarity-c);
+.hw-rank {
+  display: inline-block;
+  font-size: 0.55em;
+  margin-left: 1px;
+  color: var(--rank-color);
+  vertical-align: super;
 }
-/* A claimed station stays pinned to the line while its width changes through the shared
-   slot-machine scramble. Compress once at the start, remain nearly still while the letters
-   resolve, then make a small landing overshoot as the final glyphs settle. This has its own
-   motion instead of borrowing the exponent's 1.6x pop, which was too large and too short for
-   a whole word. */
-.route-word.revealing {
-  transform-origin: left center;
-  animation: route-word-reveal var(--reveal-ms, 650ms) cubic-bezier(0.22, 0.75, 0.25, 1) both;
-  will-change: transform;
-}
-@keyframes route-word-reveal {
-  0% {
-    transform: scale(1);
-  }
-  16% {
-    transform: scale(0.92);
-  }
-  72% {
-    transform: scale(0.98);
-  }
-  88% {
-    transform: scale(1.08);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-/* --- the end of the line --- */
-.route-arrival {
-  --head: 40px;
-}
-/* Nothing below the terminus: its rail stops AT the node. */
-.route-arrival .route-rail {
-  --line-bottom: calc(100% - var(--head) / 2);
-}
-.route-arrival .route-node {
-  width: 23px;
-  height: 23px;
-  background: var(--rail);
-}
-.route-arrival .route-word {
-  color: var(--muted);
-}
-/* Found: the accented secret in the solve cobalt, and the terminus lights up with it —
-   the same line then reads as the post-mortem of the route taken. */
-.route-found .route-word {
-  color: var(--solve);
-}
-.route-found .route-node {
-  background: var(--solve);
-}
-
-/* --- station states --- */
-/* (The DEPARTURE has no station state of its own, user-decided 2026-08-10: it renders
-   exactly as a valid guess does — gold word at full strength on the plain `--fg` node.
-   The start word is a word the player HOLDS like any other, and singling it out with a dim
-   and a muted node made the line's quietest stop out of the one it begins at. What still
-   says "the walk starts here" is structural and needs no per-stop dress: the broken trace
-   ends AT it, and everything above it is grey. `route-departure` is gone with the rule —
-   `HistoryStop.start` survives in the MODEL, where the sr mirror and the dashed-connector
-   boundary read it.) */
-/* "You are here" (history modal): the hole's current stop, the biggest node on the line —
-   in `--hole`, the colour of the word the player HOLDS (2026-09-01: it wore `--accent`,
-   and once the accent became the solve cobalt the marker would have matched the
-   terminus square it is walking toward; the held-word green keeps you and the target two
-   colours). (The sticky both-edges parking the route map gave this row died with that
-   modal — the history line is one screen in the common case, and a journey you scroll is
-   a journey; the marker just rides it.) */
-.route-you .route-node {
-  width: 21px;
-  height: 21px;
-  background: var(--hole);
-}
-/* BEHIND the departure (history modal, 2026-08-10): a guess that went backwards from where
-   the puzzle put the player down. A real stop — their word, their node — but not a step of
-   the journey, so the whole zone goes GREY: the word as quiet as the revealed census's
-   (0.55), the node small and muted, and the connectors around it stay the broken trace
-   (`.route-link.broken`). It is the ONE zone that reads differently from a valid guess,
-   which is what makes the boundary at the departure legible. */
-.route-behind .route-word {
-  opacity: 0.55;
-}
-.route-behind .route-node {
-  width: 11px;
-  height: 11px;
-  background: var(--muted);
-}
-/* A step of the WALK (history modal): a stop between the departure and the word. Its word
-   is GOLD — the sentence game's own grammar carried over: `--hole` is the colour of the
-   words the player holds, and these are exactly the words they held on the way in
-   (user-decided 2026-08-10, superseding a green journey stretch that also painted the
-   rail — the line keeps `--rail`, the TYPE carries the zone). The node stays the found
-   stop's plain `--fg`; only the CURRENT word gets the gold square (`.route-you`). */
-.route-ahead .route-word {
-  color: var(--hole);
-}
-/* The current word: the gold square, and its word in the same gold — the hole as it looks
-   in the sentence, transplanted onto the line. */
-.route-you .route-word {
-  color: var(--hole);
-}
-/* A station of the censored field: a real position with its word withheld. Quiet by design —
-   it must read as "not found yet", never as one of the words that ARE on the line. The node
-   stays structural (the grade lives in the WORD's colour, the history line's own grammar),
-   so it recedes rather than repeating the type. */
-.route-unknown .route-node {
-  width: 11px;
-  height: 11px;
-  background: var(--unfound);
-}
-.route-station.route-unknown .route-word {
-  color: var(--unfound);
-}
-/* Solved: every censored station gives up its word, and the board becomes the post-mortem of
-   the whole neighborhood. The word keeps its GRADE's colour — the grade is the point of
-   showing it — but dimmed, and the node stays small, so what you FOUND still reads apart
-   from what was simply there. */
-.word-frame .route-station.graded.route-revealed .route-word {
-  color: var(--rarity-c);
-  opacity: 0.55;
-}
-/* --- off the map --- */
-/* ABOVE the line: the guesses that earned no rank at all. Beyond the top-K there is no
-   distance left to draw, and that IS the mechanic. Nothing rules them off — the line's own
-   broken tail runs immediately below, and a second horizontal tear only fenced these words
-   off from what they are already outside of. */
-.route-shelf-head {
-  margin: 0 0 12px;
-  /* Part of the game drawing, like the ranks: pixel. */
-  font-family: var(--pixel-font);
-  font-size: 16px;
-  letter-spacing: 2px;
-  /* Only the FALLBACK: both drawings set MISS's weird red inline — the one
-     the floating `MISS` wears — so the heading says "missed" in the voice the round
-     already answered these words in. The ONE `MISS_COLOR` constant there, never a hex
-     copied down here, so the two cannot drift. */
-  color: var(--muted);
-  text-align: center;
+/* A word the player FOUND wears the held word's own inverted chip — `--fg` ground, `--bg`
+   ink, the sentence chip's em geometry (0.2em over, 4px-at-30px above and below) — laid
+   out here rather than drawn, the grid's gap holding the overhang; the words the solve
+   merely NAMED stay plain `--fg`. The chip drops the hard print for the phrase's reason
+   (near-black ink on white). */
+.hw-found .hw-text {
+  padding: 0.133em 0.2em;
+  margin: -0.133em 0;
+  background: var(--fg);
+  color: var(--bg);
   text-shadow: none;
 }
-.route-misses {
-  /* 48: the shelf is the drawing's top neighbour, and at 26px it read as the first stop's
-     label (2026-08-10's history finding, shared by both drawings since 2026-08-11). */
-  margin: 0 0 48px;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 10px 16px;
-  font-family: var(--pixel-font);
-  font-size: 14px;
-  /* Only the FALLBACK — OffMapShelf sets MISS's weird red inline, the same
-     `MISS_COLOR` as the heading, so the shelf speaks in one voice (2026-08-10,
-     superseding muted words that could pass for ordinary ones). */
-  color: var(--muted);
-}
-/* Dimmed a step under the heading: the words are the shelf's CONTENT, red like it but never
-   louder than it — the same quieting the behind stops get (0.55), so "not progress" reads at
-   one brightness across the whole drawing. */
-.route-miss {
-  opacity: 0.55;
-}
 
-/* A very narrow phone leaves the word column genuinely short, so the rank ladder gives some
-   of its width back rather than letting fitWord bottom out on its
-   floor and break a long word in half. One cell smaller is enough — and because the gutter is
-   `--rank-size` times the widest exponent, it follows on its own. */
-@media (max-width: 360px) {
-  .route-frame {
-    --rank-size: 9px;
+/* ===================== the hole WHEEL ===================== */
+/* Tap a hole and its place in the sentence becomes a fixed SLOT that ONE column of the
+   words already found for it scrolls THROUGH, item by item (user-decided 2026-09-01, the
+   day's fifth approach: the history modal's line, a radial net with lines twice revised,
+   and a plain stack came before it): farther words above, closer words below; the word in
+   the slot wears the hole's own chip at the sentence's own size, the others stand plain
+   and smaller; the word the wheel settles on is the pick. `HistoryWheel` owns every
+   number that has to agree with the sentence (row height = its line box, the slot = the
+   word's own line, all set inline from the measured host); the CSS owns the dress.
+
+   The dialog IS the dim: a transparent full-screen native dialog whose own background is
+   the ground at 74%, so the sentence reads through it at about a quarter — the slot's
+   word stands in it at full strength, the sentence around it legible as what the wheel
+   is about. It is the PuzzleSheet's kind of surface (a thing hanging off a control that
+   stays on screen), so a tap outside closes it. */
+.wheel-dialog[open] {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  overflow: hidden;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--bg) 74%, transparent);
+  animation: wheel-in 100ms ease-out both;
+}
+.wheel-dialog[open].closing {
+  animation: wheel-out 100ms ease-in both;
+  pointer-events: none;
+}
+.wheel-dialog::backdrop {
+  background: transparent;
+}
+@keyframes wheel-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }
+@keyframes wheel-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+/* THE DRUM: one column under the header, on the word's left edge, whose scroll position
+   `HistoryWheel` writes itself — a ratchet with momentum, hopping row by row (see the
+   component; native snap with momentum and a one-row-per-gesture stepper were each tried
+   and retired the same day). No native scrolling at all (`overflow: hidden`,
+   `touch-action: none`), so no scrollbar; its two ends FADE, so a word entering from
+   above or below arrives out of the dark rather than cut by an edge. */
+.wheel-scroll {
+  position: absolute;
+  bottom: 0;
+  overflow: hidden;
+  touch-action: none;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 44px, #000 calc(100% - 44px), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 44px, #000 calc(100% - 44px), transparent);
+}
+.wheel-scroll::-webkit-scrollbar {
+  display: none;
+}
+/* THE VEIL: while the wheel stands over a hole, the word and exponent beneath it are
+   hidden in place (the box stays, so nothing reflows) — the slot row draws the word there
+   itself, and a longer word beneath would show its tail through the dim. Hiding rather
+   than covering, so the watermark and the sentence around it show through as before (a
+   ground band was tried first and covered the watermark, user-reported 2026-09-01). */
+.hole.veiled .hole-word-wrap,
+.hole.veiled .hole-rank,
+.solved-word.veiled .hole-word-wrap {
+  visibility: hidden;
+}
+/* A ROW: one line box of the sentence's own height (inline), the word in the pixel face
+   with its exponent raised as the hole's is — plain text, no tile — snapping to the slot.
+   The one IN the slot wears the hole's own markup (chip + exponent at the sentence's size,
+   `.hole` inside), so it lands exactly on the word it stands for. Rows arrive on a short
+   stagger counted out from the slot (`--i`), each a quick fade. */
+.wheel-row {
+  position: relative;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font-family: var(--pixel-font);
+  text-align: left;
+  white-space: nowrap;
+  overflow: visible;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  animation: wheel-row-in 120ms ease-out both;
+  animation-delay: calc(var(--i, 0) * 18ms);
+}
+.wheel-right .wheel-row {
+  text-align: right;
+}
+@keyframes wheel-row-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+/* The sentence's hard 2px print on the plain rows (the global `button *` strips it), and
+   NOT on the chip, for the phrase's own reason (near-black ink on white). */
+.wheel-row .wheel-word,
+.wheel-row .wheel-rank {
+  text-shadow: 2px 2px 0 black;
+}
+.wheel-row .hole:not(.resolved) .hole-word,
+.wheel-row .hole:not(.resolved) .hole-word .hole-letter {
+  text-shadow: none;
+}
+/* The exponent of a plain row: the hole's own superscript, in the shared heat colour. */
+.wheel-rank {
+  display: inline-block;
+  font-size: 0.55em;
+  margin-left: 1px;
+  color: var(--rank-color);
+  vertical-align: super;
+}
+/* The app's one interaction language on a plain row: brighten. The slot row's chip
+   answers a press itself. */
+button.wheel-row:not(.wheel-row-slot):hover .wheel-word,
+button.wheel-row:not(.wheel-row-slot):active .wheel-word {
+  filter: brightness(1.35);
+}
+.wheel-row-slot:active .hole:not(.resolved) .hole-word::before {
+  background: color-mix(in srgb, var(--fg) 68%, var(--bg));
+}
+/* The two dresses: a word the solve merely NAMED recedes to the census's 0.55; the hole's
+   TRUE position — when the slot holds a pick standing in for it — carries an LED in the
+   held-word colour before it, the app's flat vivid square. */
+.wheel-row-revealed .wheel-word {
+  opacity: 0.55;
+}
+.wheel-row-best::before {
+  content: '';
+  display: inline-block;
+  width: 0.4em;
+  height: 0.4em;
+  margin-right: 0.5em;
+  vertical-align: middle;
+  background: var(--hole);
+}
+/* Reduced motion: the arrival collapses with every other duration; the snap and the
+   glide are the scroller's own and honour `behavior: auto` from the component. */
 
 /* Result action: a modern glass pill — the result is the hero, the action is quietly
    available beside it (chrome, since 2026-08-18). */
@@ -3448,19 +3202,12 @@ button * {
   .solved-caption {
     align-items: stretch;
   }
-  /* The band goes FULL-BLEED on a phone: no float, no radius, one hairline bottom
-     edge — the app's status strip. */
+  /* The row goes edge to edge on a phone: no float. */
   .topbar-inner {
     margin: 0;
     width: 100vw;
     height: 48px;
     padding: 0 6px;
-    border: 0;
-    border-bottom: 1px solid transparent;
-    border-radius: 0;
-  }
-  .topbar.scrolled .topbar-inner {
-    border-bottom-color: var(--line);
   }
   /* The band is full-bleed here, so the sheet hangs off the screen's own left inset. */
   .puzzle-sheet {
@@ -4230,16 +3977,12 @@ button * {
   gap: clamp(16px, 2.4vh, 24px);
 }
 
-/* The WINDOW: a non-scrolling frame around the post-mortem's scroller, which is what lets it
-   wear the shared TORN EDGES (`.scroll-torn`) — the revealed line runs far taller than the
-   screen, and an edge that simply ends would read as the end of the map. The two boxes are
-   the retired teaser's own structure, for the same reason (a pseudo-element inside a
-   scroller scrolls away with the content).
+/* The WINDOW: the frame around the post-mortem's scroller and the day's word under it.
    `center` is what puts the word in the MIDDLE of the screen while it is alone there — the
-   gate and the run — and it needs no phase class to stop doing so: once `.word-cut` mounts it
-   is `flex: 1 1 0` and eats every spare pixel, which leaves the word pinned to the window's
-   bottom edge with the line running down into it. So the reveal moves the field in around a
-   word that does not move. */
+   gate and the run — and it needs no phase class to stop doing so: once `.word-scroll`
+   mounts it is `flex: 1 1 0` and eats every spare pixel, which leaves the word pinned to
+   the window's bottom edge with the grid above it. So the reveal moves the field in around
+   a word that does not move. */
 .word-window {
   flex: 1 1 0;
   min-height: 0;
@@ -4265,6 +4008,15 @@ button * {
   max-width: calc(430px + 20px + 6px);
   align-self: center;
 }
+/* The POST-MORTEM window opens to the words modal's own width (2026-09-01): the grid
+   takes as many columns as the screen holds, where the line it replaced was one 430px
+   trunk. The word under it keeps its place at the window's left edge. And it reaches UP
+   to the header's bottom edge — the screen reserves 66px, the desktop bar ends at 58
+   (8px float + 50px) — so the scroller's own fade sits right under the bar. */
+.word-window.wb-open {
+  max-width: calc(1100px + 20px + 6px);
+  margin-top: -8px;
+}
 .word-scroll {
   flex: 1 1 0;
   min-height: 0;
@@ -4274,76 +4026,77 @@ button * {
   /* The board is the screen behind a live prompt — rubber-banding the page under it while
      hunting the line would take the keyboard with it. */
   overscroll-behavior: contain;
-  /* Horizontal only — the line's breathing room is content, never a
-     vertical padding (a sticky offset would resolve against it).
-     The LEFT side is 0 (2026-08-06): the drawing is a left-aligned block — the rank gutter
-     starts it and the words run off to the right — so an inset there just held the whole
-     board 20px in from the prompt under it and from the torn rules that bracket it, and it
-     read as a box floating inside the page rather than as the page's own content. The RIGHT
-     side keeps its 20px: that is the clearance the pixel scrollbar needs off the words. */
-  padding: 0 20px 0 0;
+  /* The LEFT side is 0 (2026-08-06): the board is a left-aligned block, and the prompt
+     under it lines up on the same edge. The RIGHT side keeps its 20px: the clearance the
+     pixel scrollbar needs off the words. And it FADES ITS OWN TOP (2026-09-01): a 36px
+     mask, exactly the header's gradient, drawn by the scroller because the header's own
+     only lights on a scroll it hears. For that fade to sit UNDER the header rather than
+     a band below it, the post-mortem window is pulled up to the header's bottom edge
+     (`.word-window.wb-open`) — the screen's reserve otherwise leaves a strip of bare
+     ground between the bar and the first word, where the fade started "way too low". The
+     36px of top padding is the fade's own height, so the farthest word rests CLEAR of it
+     at the top of the scroll (user-reported). */
+  padding: 36px 20px 0 0;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 36px);
+  mask-image: linear-gradient(to bottom, transparent, #000 36px);
 }
-/* The board lives IN THE PAGE, inside .app's frame inset — unlike the route modal,
-   which is a full-bleed dialog — so `--wordw`'s 100vw arithmetic must also shed the
-   app's side padding (24px each side; 14px under the 640px mobile breakpoint) or
-   fitWord sizes long words to a column ~2 insets wider than the real one and they
-   break mid-word at the terminus. Verified: 'tropiques' at 390px wraps without this.
-   The 20px is the scroller's ONE remaining side (right only since 2026-08-06). */
-.word-frame {
-  --wordw: calc(min(430px, 100vw - 20px - 48px) - var(--gutter) - var(--railw) - 18px - var(--word-gap));
+/* The board's grid (2026-09-01, replacing the route drawing's `.word-frame` rules, the
+   torn `.word-cut` and the `.word-terminus` rail footer): as many columns as the window
+   holds at ONE type size (`WordBoard` sets the column inline off the longest word), the
+   farthest words at the top and the closest at the bottom, next to the day's word pinned
+   under the window. The scroller opens parked at that bottom. */
+.wb-grid {
+  list-style: none;
+  margin: 0;
+  padding: 8px 0 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px 20px;
 }
-/* The scrolling line ends AT the window's bottom edge, because the terminus sits just past
-   it (see `.word-terminus`): scrolled all the way down, the merge's last link runs out of
-   the scroller and straight into the terminus's own rail. Any padding here would open a gap
-   in the middle of that line. */
-.word-frame .route {
-  padding-bottom: 0;
+/* One word, in its RARITY grade's colour (`--rarity-c`, set per word), its exponent raised
+   as the hole's in the shared heat. A CLAIMED word wears its grade's colour as a chip —
+   the held word's inverted chip, in the grade's ink, the sentence chip's em geometry —
+   so a claimed word reads as yours the way a found word does in the sentence modal; a
+   word still censored is `???`, quiet. */
+.wb-word {
+  font-family: var(--pixel-font);
+  font-size: 15px;
+  line-height: 1.3;
+  color: var(--rarity-c, var(--fg));
+  white-space: nowrap;
+  text-shadow: 2px 2px 0 black;
 }
-/* The window cut: the non-scrolling frame that wears the TORN EDGES around the scroller.
-   It exists as its own box INSIDE `.word-window` (rather than the window wearing them, as it
-   did while the terminus lived in the scroller) because the terminus footer is the window's
-   last child: tears on the window would draw UNDER the footer, marking the wrong edge — the
-   cut is where the SCROLLER ends, which is exactly where the line can be cut mid-field. */
-.word-cut {
-  flex: 1 1 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
+.wb-claimed .wb-text {
+  padding: 0.133em 0.2em;
+  margin: -0.133em 0;
+  background: var(--rarity-c, var(--fg));
+  color: var(--bg);
+  text-shadow: none;
 }
-/* While the line is CUT, the content stops 8px SHORT of the torn rule: an empty band of bare
-   backdrop between the severed field and the dashes — the old route map's grammar for a parked
-   row, whose separator kept an 8px clearance rather than sitting against the rows it
-   interrupted. Spoken here with a MASK, not a strip: painting the band would put a box over
-   the animated waves, which is the thing this footer exists to avoid. Only while torn — at the
-   true bottom the mask lifts, because the merge's last link must run flush out of the scroller
-   into the terminus's rail below it. */
-.word-cut.more-down .word-scroll {
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    #000 calc(100% - 8px),
-    transparent calc(100% - 8px)
-  );
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 8px), transparent calc(100% - 8px));
+.wb-unknown {
+  opacity: 0.55;
 }
-/* The TERMINUS: the day's word, pinned UNDER the window as the board's own footer — always
-   on screen, and with nothing ever scrolling behind it, so it needs no masking background
-   (a sticky in-scroller row needed an opaque `--bg` box, which over the page's animated
-   waves read as a black patch stamped on the backdrop — the route modal never shows one
-   only because its dialog is flat `--bg`). When the line is cut mid-field, the cut's torn
-   bottom rule lands right on this footer's top edge, where the terminus's own rail stub
-   runs into it — the same "the map does not continue straight through here" the modal's
-   parked separator speaks, for free.
-   The right padding mirrors the scroller's one padded side PLUS its 6px pixel scrollbar, so
-   this grid lands on the same columns as the line scrolling above it. */
-.word-terminus {
-  padding: 0 26px 0 0;
+.wb-rank {
+  display: inline-block;
+  font-size: 0.55em;
+  margin-left: 1px;
+  color: var(--rank-color);
+  vertical-align: super;
 }
-.word-terminus .route {
-  padding: 0;
+/* The day's word as the grid's LAST ROW, in the solved ink, at the size the route
+   terminus wore — it scrolls with its words (user-decided 2026-09-01). */
+.word-foot {
+  margin: 22px 0 8px;
+  font-family: var(--pixel-font);
+  font-size: 24px;
+  line-height: 1.3;
+  color: var(--solve);
+  text-shadow: 2px 2px 0 black;
+  overflow-wrap: anywhere;
 }
 /* The day's word during the GATE and the RUN (#163): just the word, centred, in the solved
    blue. No node, no rail, no rank gutter — there is no line yet for it to be the end of, and
-   the post-mortem's `.word-terminus` is where it becomes a station again.
+   the post-mortem's `.word-foot` is where it lands under the grid.
    `--wordw` is what `fitWord` divides by, and here it is the WHOLE page column (the route
    frame's is what survives the gutter and the rail), so a long word shrinks to fit rather
    than ever breaking mid-word. The grade label's size is set below, and is much smaller than
@@ -4730,11 +4483,26 @@ button * {
   }
 }
 @media (max-width: 640px) {
-  .word-frame {
-    --wordw: calc(min(430px, 100vw - 20px - 28px) - var(--gutter) - var(--railw) - 18px - var(--word-gap));
-  }
   .word-subject {
     --wordw: calc(min(430px, calc(100vw - 28px)) * 0.95);
+  }
+  /* The phone's bar is 48px full-bleed under the same 66px reserve — and the post-mortem
+     window BLEEDS to the screen's edges (user-decided 2026-09-01): the scrollbar sits on
+     the screen's border with no padding, while the words keep the page's 14px inset. */
+  .word-window.wb-open {
+    margin-top: -18px;
+    margin-left: -14px;
+    margin-right: -14px;
+    width: 100vw;
+    max-width: none;
+  }
+  .word-window.wb-open .word-scroll {
+    padding-right: 0;
+  }
+  .word-window.wb-open .wb-grid,
+  .word-window.wb-open .word-foot {
+    padding-left: 14px;
+    padding-right: 14px;
   }
   /* One integer step down here — 4x rather than 5x. At 320px the page leaves 292px of
      column, and 5x would put a 180px stroke on it: still inside, but reading as a strike

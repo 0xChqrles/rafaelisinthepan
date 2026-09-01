@@ -25,10 +25,12 @@ import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import SolvedScreen from '../components/SolvedScreen';
 import LazyStreakDialog, { preloadStreakDialog } from '../components/LazyStreakDialog';
+import HistoryWheel from '../components/HistoryWheel';
 import HistoryModal from '../components/HistoryModal';
 import CoachText from '../tutorial/CoachText';
 import LoadError from '../components/LoadError';
 import { buildHistory } from '../game/history';
+import type { HistoryStop } from '../game/history';
 import { t, ariaHoleHistory, srHoleResult } from '../i18n';
 import { track } from '../analytics';
 import { fold, dateForDayNumber, ROUND_GUESS_CAP } from '@whippin/shared';
@@ -248,6 +250,10 @@ function Round({
   // the air, and each release is one timer removing one entry. The deferral is presentation
   // only: the score, the history and the ruler all read the full log.
   const [deferred, setDeferred] = useState<string[]>([]);
+  // The wheel's PICKS, by hole index — see `shownHoles` below.
+  const [picked, setPicked] = useState<Record<number, { word: string; rank: number; at: number }>>(
+    {},
+  );
   const holes = useMemo(
     () => replayHoles(freshHoles, ranks, withoutDeferred(ranks, playLog, deferred)),
     [freshHoles, ranks, playLog, deferred],
@@ -267,6 +273,7 @@ function Round({
     setResolvedHoleIndices(new Set());
     // Whatever was still animating belonged to the previous round.
     setDeferred([]);
+    setPicked({});
   }, [roundKey]);
   const markHoleResolved = useCallback((index: number) => {
     setResolvedHoleIndices((current) => {
@@ -579,22 +586,42 @@ function Round({
     setDissolved(true);
   }, []);
 
-  // --- the hole HISTORY modal (2026-08-10, replacing the #117 route map): each hole opens
-  // the round's guess log ranked against its own secret. Numbering is by DISTINCT secret in
-  // sentence order (1..3) — the same numbers the run ruler's ticks and the share row's
-  // keycaps use — so two occurrences of one secret, which share a rank map, share a number.
-  // A history needs no #115 geometry, so EVERY hole has one — a map with no `dq` draws on
-  // uniform spacing rather than refusing.
+  // --- the hole WHEEL (2026-09-01, replacing the history modal; 2026-08-10's own
+  // replacement of the #117 route map): each hole opens the round's guess log ranked against
+  // its own secret, as one column scrolling through the word's own place. Numbering is by DISTINCT secret in sentence
+  // order (1..3) — the same numbers the run ruler's ticks and the share row's keycaps use —
+  // so two occurrences of one secret, which share a rank map, share a number. A history
+  // needs no #115 geometry, so EVERY hole has one.
   const holeNumbers = useMemo<number[]>(() => {
     const order: string[] = [];
     for (const h of puzzleHoles) if (!order.includes(h.secret.slug)) order.push(h.secret.slug);
     return puzzleHoles.map((h) => order.indexOf(h.secret.slug) + 1);
   }, [puzzleHoles]);
   const [historyHole, setHistoryHole] = useState<number | null>(null);
-  // The point the modal zooms out of: the tapped word's centre, in viewport coordinates (the
-  // dialog is fixed and fills the viewport, so they ARE its own box's). Null only if the hole
-  // somehow isn't on screen, which falls back to a plain centre zoom.
-  const [historyOrigin, setHistoryOrigin] = useState<{ x: number; y: number } | null>(null);
+  // A PICK (the wheel): the hole shows one of its own earlier words in place of its best, so
+  // the sentence can be read with that word in it. DISPLAY ONLY — the round's state, the
+  // score, the progress and the history all read the real `holes` — and it lasts until the
+  // hole IMPROVES: `at` records the real rank the pick was made against, and the moment that
+  // rank moves the new best takes the hole back. A pick at the hole's own rank is simply the
+  // hole. Never persisted: a reading aid, not a fact about the round.
+  const shownHoles = useMemo(
+    () =>
+      holes.map((h, i) => {
+        const p = picked[i];
+        return p && h.rank > 0 && p.at === h.rank && p.rank !== h.rank
+          ? { ...h, word: p.word, rank: p.rank }
+          : h;
+      }),
+    [holes, picked],
+  );
+  const pickWord = useCallback(
+    (index: number, stop: HistoryStop) => {
+      const at = holes[index]?.rank;
+      if (at === undefined || at === 0) return;
+      setPicked((cur) => ({ ...cur, [index]: { word: stop.display, rank: stop.rank, at } }));
+    },
+    [holes],
+  );
   // Tapping a hole is available during normal play only, since the 2026-08-14 redesign:
   // once the solving beats begin, the sentence belongs to the choreography (and then
   // dissolves), and the tap moves to the solved stage's own word buttons — which are
@@ -645,18 +672,13 @@ function Round({
   const closeHistory = useCallback(() => {
     setHistoryHole(null);
   }, []);
-  // Opening takes the WORD's position on screen, which is where the modal grows from:
-  // opening is a zoom out of the thing you tapped, the way a desktop window opens out of its
-  // icon, so the full screen that lands reads as that word rather than as a screen that
-  // replaced it. Measured at the click (the word is on screen), never re-measured — the
-  // modal covers the sentence anyway. `.hole-word-wrap` and not the button, so the origin is
-  // the word itself with the exponent excluded.
+  // A COMPLETED hole (rank 0) opens the words MODAL — there is nothing to swap in — whether
+  // or not the rest of the sentence is done (user-decided 2026-09-01); an open hole opens
+  // the WHEEL, and only the wheel veils the word beneath it.
+  const wheelOpen = historyHole !== null && holes[historyHole]?.rank !== 0;
+  // The wheel measures the tapped word itself (`data-hole-explore`), so opening is only
+  // naming the hole.
   const openHistory = useCallback((index: number) => {
-    const word = document
-      .querySelector<HTMLElement>(`[data-hole-explore="${index}"]`)
-      ?.querySelector('.hole-word-wrap');
-    const box = word?.getBoundingClientRect();
-    setHistoryOrigin(box ? { x: box.left + box.width / 2, y: box.top + box.height / 2 } : null);
     setHistoryHole(index);
   }, []);
 
@@ -868,6 +890,7 @@ function Round({
           source={source}
           words={solvedWords}
           onExplore={openHistory}
+          veiledHole={wheelOpen ? historyHole : null}
           placement={placement}
           animate={animateResults}
           // The dev `?streak=N` preview (App owns that dialog, so this round never sees it
@@ -902,7 +925,7 @@ function Round({
               ) : (
                 <Phrase
                   words={words}
-                  holes={holes}
+                  holes={shownHoles}
                   puzzleHoles={puzzleHoles}
                   hits={hits}
                   onHitDone={removeHit}
@@ -911,6 +934,7 @@ function Round({
                   exploreDisabled={exploreDisabled}
                   onExplore={openHistory}
                   quiet={quiet}
+                  veiledHole={wheelOpen ? historyHole : null}
                 />
               )}
             </div>
@@ -1014,14 +1038,27 @@ function Round({
         <LazyStreakDialog lang={lang} solvedDay={dayNumber} onDismiss={dismissStreakDialog} />
       )}
 
-      {/* One hole's guess history (2026-08-10, replacing the #117 route map). Fully derived
-          from (tried, ranks), so it survives a reload for free like everything else. */}
-      {historyModel && historyHole !== null && (
+      {/* One hole's found words (2026-09-01): a COMPLETED hole opens them as a plain grid in
+          the full-screen words modal; an open hole opens the WHEEL, scrolling them through
+          the word's own place. Fully derived from (tried, ranks), so it survives a reload
+          for free like everything else. The hub is what the tapped control SHOWS — a pick
+          included — and picking is play-only. */}
+      {historyModel && historyHole !== null && !wheelOpen && (
         <HistoryModal
           model={historyModel}
           number={holeNumbers[historyHole]}
           lang={lang}
-          origin={historyOrigin}
+          onClose={closeHistory}
+        />
+      )}
+      {historyModel && historyHole !== null && wheelOpen && (
+        <HistoryWheel
+          model={historyModel}
+          hub={{ word: shownHoles[historyHole].word, rank: shownHoles[historyHole].rank }}
+          hostIndex={historyHole}
+          number={holeNumbers[historyHole]}
+          lang={lang}
+          onPick={exploreDisabled ? undefined : (stop) => pickWord(historyHole, stop)}
           onClose={closeHistory}
         />
       )}

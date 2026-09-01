@@ -96,11 +96,16 @@
                               @whippin/shared's since #203)
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
       hooks/useLetterWave.ts  #129's ambient ripple, shared by every surface that waves
-      components/routeDrawing.tsx  THE route drawing: geometry, frame vars + the row parts
-                              (OffMapShelf/RouteTail/RouteLink/RouteRow). Composed by
-                              WordBoard (#156) and HistoryModal; both draw one trunk.
+      components/WordBoard.tsx  Word mode's post-mortem: the zone as a GRID of words in their
+                              rarity colours, the claimed ones chipped (the route drawing
+                              that drew it as one trunk retired 2026-09-01)
       game/history.ts         a hole's guess log ranked against its secret (buildHistory)
-      components/HistoryModal.tsx  the hole tap's surface: your tries, closest first
+      game/wordWheel.ts       the order those words scroll through the tapped hole in
+                              (wheelOrder): farther above, closer below, behind-the-start apart
+      components/HistoryWheel.tsx  an OPEN hole's tap: a picker drum through the word's own
+                              place — the word the wheel folds on is the sentence's
+      components/HistoryModal.tsx  a COMPLETED hole's tap: its words as a plain grid, full
+                              screen, as many columns as the width holds
       game/share.ts           what a RESULT says: both modes' share text + link (emoji row,
                               rarity bead row, the composed messages)
       hooks/useShare.ts       how a RESULT leaves the app (native sheet -> clipboard + COPIED)
@@ -1501,6 +1506,40 @@ it to the local store — see `packages/backend/AGENTS.md`).
   collapses). Board VISUALS carry no tests per policy; the contract-y parts are the
   shared ranking rules, `parseBoard`, and the route grammar (langs.test.ts).
 
+- **Word mode's POST-MORTEM is a GRID (user-decided 2026-09-01: "apply this new design
+  to the solved word mode too" — the sentence game's words modal, applied).** The one
+  trunk of dq-spaced stations, its rail and nodes, the torn `.scroll-torn` edges, the
+  MISSED shelf and the near misses riding the trunk are ALL GONE, and with them
+  `components/routeDrawing.tsx` (WordBoard was its last composer; `fitWord` moved into
+  `WordSubject`, its one remaining consumer), `hooks/useScrollEdges.ts`, every `.route-*`
+  rule, `.word-frame`/`.word-cut`/`.word-terminus`, `srRouteOffMap` and the `routeOffMap`
+  string. `game/wordBoard.ts` states NO geometry any more — no `dq` gate (a zone group
+  with no `dq` is simply a word now), no `outside`, no `misses`, no `maxRank` — and
+  `buildWordBoard` never returns null. What the grid says: every group of the zone at ONE
+  type size (the column is as wide as the longest word needs, `repeat(auto-fill,
+  minmax(<that>px, 1fr))` set inline, so a wide screen fills its width — the post-mortem
+  window opens to the modal's 1100px, `.word-window.wb-open` — and a phone gets one or
+  two columns), FARTHEST at the top and CLOSEST at the bottom, next to the day's word —
+  the grid's LAST ROW, `WordFoot` (`.word-foot`, the solve ink, where the terminus row
+  stood; pinned under the window for one pass, then moved into the scroller, user-decided:
+  "the starting word should be in the scrollable view too"); each word in its RARITY grade's colour with its exponent in the heat; a
+  CLAIMED word wears its grade's colour as a CHIP (the held word's inverted chip in the
+  grade's ink — a claimed word reads as yours the way a found word does in the sentence
+  modal); a word merely NAMED by the reveal stands plain in its colour; a still-censored
+  one is `???` at 0.55. The scroller opens PARKED at the bottom and is kept there by a
+  `ResizeObserver` through the ending's beats until the player takes the wheel, and it
+  FADES ITS OWN TOP (a 36px mask — user-reported: it starts under the header's reserve,
+  so the header's gradient never reached its content), with the post-mortem window pulled
+  up to the header's bottom edge (`.word-window.wb-open`, −8px desktop / −18px phone
+  against the screen's 66px reserve) so that fade sits right under the bar rather than a
+  band below it (user-reported: "the gradient starts way too low"), plus 36px of top
+  padding — the fade's own height — so the farthest word rests clear of it at the top
+  (user-reported). On a phone the post-mortem window BLEEDS to the screen's edges
+  (`.word-window.wb-open` at −14px sides, the scroller's right padding 0, the grid and the
+  word padded 14px), so the scrollbar sits on the screen's border with no padding
+  (user-decided). The sr mirror is unchanged (`srWordBoardWord`, `srWordRarities`, `srRouteStop` per named word).
+  *(The bullets below describe the trunk it replaced; their reasoning stands where it is
+  about the MODEL and the phases, not the drawing.)*
 - **Word mode (#156, the second daily; RETIMED by #163 on 2026-08-08):** one app, two faces
   — `/<lang>/word` (plus `/word/<date>` and `/word/archive`, same date rules) plays the day's
   #154 artifact: the word is PUBLIC and the player claims its top-`CLAIM_ZONE` (**1000**
@@ -2228,8 +2267,94 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `isComplete(status)` so the strip (`Chooser`) and the calendar cell (`Archive`) do not
   each restate the pair. Word runs never touch the streak and fire no new analytics
   events.
-- **Hole HISTORY modal (user-decided 2026-08-10, REPLACING the #117 route map):** tapping a
-  HOLE opens the round's own journey toward that hole's secret — the player's guesses as
+- **Hole WHEEL (user-decided 2026-09-01, REPLACING the history modal below):** tapping a
+  HOLE no longer opens a screen — its place in the sentence becomes a fixed SLOT, and the
+  words already found for it stand in ONE column that SCROLLS THROUGH that slot with
+  mandatory snap, item by item, a picker drum: **farther words above, closer below; the word
+  in the slot wears the hole's own chip at the sentence's own size, the others stand plain
+  at 0.8× of it; and the word in the slot when the wheel FOLDS is the pick** (`Game`'s
+  `picked`, DISPLAY-ONLY: the round's state, score, progress and history all read the real
+  holes; never persisted; it lasts until the hole next IMPROVES). Tap a row and it glides
+  into the slot; tap the slot, outside the column, or Escape, and it folds — ONE door
+  (the dialog's `close`) for all three, and **the pick lands on that fold, never while the
+  wheel is open** (user-reported 2026-09-01: a live pick swapped the real hole beneath, its
+  scramble played under the overlay and a word of another length reflowed the sentence,
+  moving the hole to another line under a slot that stays put). The sentence under the
+  wheel is FROZEN; the slot row stands in for the word at its measured place; the hole
+  swaps with its usual choreography once the overlay is gone. **It is the day's FIFTH approach**, the
+  brief for it being "item-by-item scrolling, beautiful, works well on all devices and
+  especially on mobile": a radial NET on rings with curved strokes (the user's
+  `inspiration/words net.png`) was built first and revised twice (random scored layouts,
+  heat-coloured trimmed strokes, floating tiles; then deterministic, gapless, uncoloured),
+  then a plain STACK — left-aligned tiles above and below the word, the dialog scrolling —
+  whose scroll revealed the redrawn hub over the real word beneath. The wheel has NO
+  separate hub: the slot row IS the row of the current word, drawn on the measured line of
+  the tapped word with the hole's own markup (`data-hole-explore` → `.hole-word-wrap`, the
+  font size and line height copied; one correction measured on open), so nothing sits
+  behind it. Geometry is all the sentence's: a row is one line box tall, rows one `GAP`
+  apart, the leading spacer is the slot's own height off the scroller's top and
+  `scroll-padding-top` the same, so row i sits in the slot at `scrollTop = i × pitch` and
+  the current row is read straight off the scroll position. **EVERY stop is a row, and every row is a pick** (user-decided 2026-09-01, in two
+  passes: "let the wheel reach all the words, or else some might never be seen", then
+  "you should be able to select far words, so remove the dashed line and the different
+  look") — the words behind the start included, first by rank; the model's `behind` flag
+  is not read by this surface at all. **THE VEIL:** while the wheel is open the tapped hole's own word and exponent are
+  `visibility: hidden` in place (`Hole`/`SolvedWord` `veiled`, from `Game`'s
+  `historyHole`) — the box stays, nothing reflows — so a shorter word in the slot never
+  shows the longer word's tail through the dim (a `--bg` band over the word was tried
+  first and covered the watermark, user-reported). **THE DRUM MOVES LIKE THE iOS DATE PICKER** (user-decided 2026-09-01, the fifth pass on
+  the feel — "pixel by pixel" → a one-row stepper → "sticky" → native snap with momentum →
+  "snapped inertia" → a hop-by-hop ratchet → "unstoppable, a small swipe keeps scrolling
+  for seconds" → this): no native scrolling (`overflow: hidden`, `touch-action: none`);
+  `HistoryWheel` writes the scroll position itself. A DRAG follows the finger pixel for
+  pixel (rubber past the ends); on release the drum travels its velocity × `FLING_S`
+  (0.16s) rows, capped at `FLING_MAX_ROWS` (8), snapped to a row, in ONE eased-out glide of
+  `GLIDE_BASE_MS` + `GLIDE_ROW_MS` a row (≤ `GLIDE_MAX_MS`) — a small swipe moves a row or
+  two, a strong one a handful, never for seconds. A mouse wheel or trackpad moves the drum
+  directly (`WHEEL_GAIN` of its pixels) and it snaps to the nearest row `WHEEL_IDLE_MS`
+  after the last delta; ArrowUp/Down glide one row; a tap on a row glides to it. A press
+  that travelled `DRAG_PX` is a drag, and the click it ends on is not a tap (on a row, or
+  on the column, which would otherwise fold). Pointer capture is deliberately NOT used: it
+  retargets the click that follows a tap onto the column, which the dialog reads as a tap
+  on nothing. **A COMPLETED hole opens the WORDS MODAL instead** (same day, superseding a pass that
+  merely disabled the tap at rank 0): whether or not the rest of the sentence is done, a
+  hole at rank 0 has nothing to swap in, so its tap opens `components/HistoryModal.tsx` —
+  the old history modal's full screen with the ROAD TAKEN OUT: no rail, no nodes, no
+  distances; the found word as the headline in the solved ink, then every word found for
+  it as a plain GRID, closest first, each with its exponent, every word in `--fg` and the
+  ones the player actually TYPED wearing the held word's inverted CHIP (user-decided the
+  same day, superseding a 0.55 dim on the never-typed ones — the app's one emphasis
+  gesture, so a chipped word reads as yours exactly as it does in the sentence), "like on
+  a synonyms website". **ONE type size** (user-decided the
+  same day: "avoid reducing the font size, even if it leads to less columns"): the column
+  is as wide as the LONGEST word needs at 15px (`repeat(auto-fill, minmax(<that>px, 1fr))`,
+  set inline), so a wide screen fills its width with as many such columns as fit and a
+  phone gets one or two; only a word wider than the whole frame shrinks, alone. The list FADES into the
+  ground as it scrolls up under the header (a 40px top mask on `.hw-scroll`, padded so
+  nothing fades at rest — the game header's own fade, which a dialog's scroll never
+  lights). The
+  shared `ModalHeader` + Escape are the ways out (a fade, `hw-out`). The solved stage's
+  word buttons open it too. `Game` picks the surface off the hole's rank (`wheelOpen`),
+  and only the wheel veils the word beneath it.
+  Exponents are the hole's own superscript (`.hole-rank` in the slot, `.wheel-rank` on
+  plain rows — a flex row had flattened `<sup>`, user-reported). What it keeps: the pure
+  model (`buildHistory`, which gained `display`, the canonical form the slot shows), the
+  `revealed` dress (0.55) and the hole's TRUE position wearing an LED in `--hole` when the
+  slot holds a pick, `holeTitle` as the dialog's name, `srRouteStop` per row; on the solved
+  stage the secret is appended as the last row (rank 0 is never a stop) and nothing picks.
+  A word too near the right edge of a phone (`MIN_COLUMN`) stands the column on its RIGHT
+  edge. The scroller hides its scrollbar and fades both ends (a mask). It stays a native
+  `<dialog>` on `useModalDismiss` (`wheel-out`) — the sentence and the keyboard under it
+  must be inert — but it is the PuzzleSheet's KIND, so a tap OUTSIDE closes it. What is
+  GONE with the modal (no-back-compat): the MISSED shelf (a miss is not a found word and
+  cannot be picked), the `dq`-spaced line and the `???` terminus, `Game.openHistory`'s
+  measuring, the zoom/retract keyframes, `.history-*` CSS, `ModalHeader` on this surface
+  and `srRouteDestination`. `routeDrawing` now serves Word mode's board alone.
+  *(The paragraph below describes the modal it replaced, kept for the decisions that
+  survive in the wheel.)*
+- **Hole HISTORY modal (user-decided 2026-08-10, REPLACING the #117 route map; ITSELF
+  REPLACED by the wheel above, 2026-09-01):** tapping a
+  HOLE opened the round's own journey toward that hole's secret — the player's guesses as
   stops on ONE line walking down to the hidden word. What the user retired is everything
   that made the map unreadable and never helped anyone: the censored census of every
   unfound group, and the sticky "you are here" machinery. What
@@ -3047,15 +3172,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
   brackets on desktop (`min(900px, 100vw - 48px)`, 50px, 8px off the top). What changed
   is what it holds, and why.
   **THE BAND WAITS FOR SCROLL (user-decided 2026-09-01, amending 2026-08-18's
-  always-on glass).** At REST the header is TRANSPARENT — no glass, no hairline, no
-  blur — sitting directly on the grain ground, and the band arrives only once the
-  screen under it has actually scrolled: `.topbar.scrolled`, set by TopBar's own
-  capture-phase scroll listener (one listener hears every scroller in the app and the
-  phone's page scroll; a dialog's scroll never lights it, a horizontal-only scroller
-  says nothing, and a scroller that unmounts drops its state on the next render). The
-  border stays 1px so nothing shifts when it colours in. ModalHeader, which reuses the
-  classes with no `.topbar` ancestor, is therefore BANDLESS on its flat-`--bg` dialogs —
-  the row's original "no band, directly on the backdrop" reading come back.
+  always-on glass) — AND WHAT ARRIVES IS THE GROUND, NOT A BOX (same day, later:
+  "do not add a border, just a `--bg` background on the whole width of the screen and a
+  vertical gradient from `--bg` to transparent below to fade content behind it").** At
+  REST the header is TRANSPARENT, sitting directly on the ground; once the screen under
+  it has actually scrolled (`.topbar.scrolled`, set by TopBar's own capture-phase scroll
+  listener — one listener hears every scroller in the app and the phone's page scroll; a
+  dialog's scroll never lights it, a horizontal-only scroller says nothing, and a
+  scroller that unmounts drops its state on the next render) the whole screen width
+  behind the row fills with flat `--bg` and a 36px gradient from `--bg` to transparent
+  hangs under it, so content fades into the ground before it reaches the controls. No
+  border, no blur, no glass, no rounded float: both layers are pseudo-elements of
+  `.topbar` (the full-width fixed layer), faded in on opacity so nothing shifts, and
+  `.topbar-inner` keeps only its geometry. ModalHeader, which reuses the classes with no
+  `.topbar` ancestor, is therefore BANDLESS on its flat-`--bg` dialogs.
   **THE PROBLEM IT SOLVES.** The row carried WHICH PUZZLE in three places — the day as a
   left chip, the daily as a centred segmented switcher, the language as a right chip —
   and the row had nothing left. Measured at 320px the grid was `98.6 | 118.8 | 98.6`
@@ -3235,8 +3365,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   The hook must be the caller's FIRST hook, because it owns `showModal()` and a closed
   `<dialog>` is `display: none` — anything a modal measures on open would read a tree with no
   boxes (the retired route map's opening scroll was exactly that hazard).
-  **Which exit each wears:** the history modal RETRACTS INTO ITS WORD, because it belongs to
-  that word (the rule the route map it replaced established). (The retired leaderboard
+  **Which exit each wears:** the hole wheel FOLDS in place (a fade, since 2026-09-01; the
+  history modal it replaced RETRACTED INTO ITS WORD, because it belonged to that word — the
+  wheel never leaves the word, so there is nothing to retract). (The retired leaderboard
   dialog's SHEET exit — up from the bottom edge, back down on the way out, at every width —
   went with it on 2026-08-12; a future full-screen result surface should take that shape
   back up.)

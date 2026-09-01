@@ -26,8 +26,7 @@ import {
 import { RARITY_COLORS, strikeFor } from '../components/rarity';
 import { buildWordBoard } from '../game/wordBoard';
 import { canExtend } from '../game/keyboard';
-import useScrollEdges from '../hooks/useScrollEdges';
-import WordBoard, { WordTerminus } from '../components/WordBoard';
+import WordBoard, { WordFoot } from '../components/WordBoard';
 import WordSubject, { hitDurationMs, type WordHit } from '../components/WordSubject';
 import WordTimer, { type TimeGain } from '../components/WordTimer';
 import CellDigits from '../components/CellDigits';
@@ -355,8 +354,7 @@ function WordRound({
   }, [finishKeyboardExit, keyboardLeaving]);
 
   // The board model. Only the POST-MORTEM draws it — the gate and the run show the bare
-  // word (WordSubject) and no line at all — but it is built throughout, because the screen
-  // refuses to render at all without a drawable one (see the `!board` guard below).
+  // word (WordSubject) and no board at all.
   const board = useMemo(
     () => buildWordBoard({ ranks, word: puzzle.word.word, tried, corpusSize, reveal: postMortem }),
     [ranks, puzzle.word.word, tried, corpusSize, postMortem],
@@ -408,21 +406,33 @@ function WordRound({
     say(srWordTimeUp(lang, score));
   }, [finished, lang, say, score]);
 
-  // The post-mortem's scroller. It arrives parked at the bottom, where the line runs into
-  // the pinned terminus word below it — the line is read up from that end, like the route
-  // map opens on its own end. Nothing scrolls it during play any more: there IS no board
-  // during play, which is what retired the whole claim-scroll animation this screen used
-  // to run (SCROLL_MIN_MS/SCROLL_PX_PER_MS, the focused rank, the rAF loop).
+  // The post-mortem's scroller. It arrives parked at the bottom, where the closest words
+  // sit next to the pinned day's word below it — the grid is read up from that end.
+  // Nothing scrolls it during play: there IS no board during play.
   const scrollRef = useRef<HTMLDivElement>(null);
-  // Which way the line still runs past the window's edges — the frame wears a torn dashed
-  // rule on that side (the onboarding teaser's own vocabulary, shared with it in the hook).
-  const { more, readEdges } = useScrollEdges(scrollRef);
   useLayoutEffect(() => {
     const scroller = scrollRef.current;
-    if (!scroller) return;
-    scroller.scrollTop = scroller.scrollHeight;
-    readEdges();
-  }, [postMortem, readEdges]);
+    if (!scroller || !postMortem) return undefined;
+    // Parked at the bottom — and KEPT there while the ending's beats resize the window
+    // around it (the keyboard drops, the result rises), until the player takes the wheel.
+    let parked = true;
+    const park = () => {
+      if (parked) scroller.scrollTop = scroller.scrollHeight;
+    };
+    park();
+    const observer = new ResizeObserver(park);
+    observer.observe(scroller);
+    const unpark = () => {
+      parked = false;
+    };
+    scroller.addEventListener('wheel', unpark, { passive: true });
+    scroller.addEventListener('pointerdown', unpark);
+    return () => {
+      observer.disconnect();
+      scroller.removeEventListener('wheel', unpark);
+      scroller.removeEventListener('pointerdown', unpark);
+    };
+  }, [postMortem]);
 
   // Same prefix rule as the sentence game: a dead-end char shakes the prompt instead of
   // being silently dropped (physical typing has no greyed key to look at). Read off the
@@ -550,12 +560,6 @@ function WordRound({
     [playing, vocabSet, corpusSize, ranks, tried, recordWordGuess, lang, say],
   );
 
-  if (!board) {
-    // An artifact with no drawable geometry (no dq) cannot be played on this surface at
-    // all — surface it as the load failure it is rather than a blank board.
-    return <p className="status error">{t(lang, 'failedPuzzle')}</p>;
-  }
-
   // The run UI waits for the server's round (#214), the sentence board's rule at this
   // mode's own cadence: the clock is the SERVER's, so a gate offered before the mount read
   // lands can be tapped by a session that then becomes the writer of a run it cannot see —
@@ -584,24 +588,16 @@ function WordRound({
       </div>
 
       {/* The day's word is on screen in every phase — it is the whole game — and the
-          post-mortem's line grows in ABOVE it, so the word itself never moves between the
-          run and the reveal. The WINDOW around all of it is a non-scrolling box: the torn
-          rules that mark a cut-off edge have to stay put while the line moves under them
-          (see `.scroll-torn`). */}
-      <div className="word-window">
+          post-mortem's grid grows in ABOVE it, so the word itself never moves between the
+          run and the reveal. */}
+      <div className={`word-window${postMortem ? ' wb-open' : ''}`}>
         {postMortem && (
-          /* The CUT wears the torn edges, not the window: the terminus below is the
-             window's last child, and a tear on the window's own bottom edge would draw
-             under it — the cut is where the SCROLLER ends, which is where the line can be
-             severed mid-field (its bottom rule lands on the terminus's rail stub). */
-          <div
-            className={`word-cut scroll-torn${more.up ? ' more-up' : ''}${
-              more.down ? ' more-down' : ''
-            }`}
-          >
-            <div className="word-scroll pixel-scroll" ref={scrollRef} onScroll={readEdges}>
-              <WordBoard model={board} lang={lang} />
-            </div>
+          <div className="word-scroll pixel-scroll" ref={scrollRef}>
+            <WordBoard model={board} lang={lang} />
+            {/* The day's word is the grid's LAST row (user-decided 2026-09-01: "the
+                starting word should be in the scrollable view too"): parked at the bottom
+                it stands where it stood through the run, and it scrolls with its words. */}
+            <WordFoot word={board.word} />
           </div>
         )}
         {/* The SCORE watermark, anchored on the word rather than the viewport — the
@@ -615,13 +611,10 @@ function WordRound({
               <CellDigits value={score} />
             </div>
           )}
-          {/* Two halves of one word. Until the clock dies there is no line, so there is
-              nothing for a station to be the end OF: the word stands on its own, centred,
-              and every guess reports on it. The post-mortem brings the real terminus back
-              as what it is — the last stop of the revealed route. */}
-          {postMortem ? (
-            <WordTerminus model={board} />
-          ) : (
+          {/* Until the clock dies the word stands on its own, centred, and every guess
+              reports on it; the post-mortem moves it into the scroller as the grid's last
+              row, the closest words right above it. */}
+          {postMortem ? null : (
             <>
               <WordSubject word={puzzle.word.word} lang={lang} hit={hit} onHitDone={clearHit} />
               {/* The CLOCK, under the word since 2026-08-18 (freeing the header's left
