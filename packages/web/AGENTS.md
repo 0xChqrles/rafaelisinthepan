@@ -34,9 +34,17 @@
                               the two-face crossroads, six face-led endings
       components/AccountMark.tsx  the ghost grid the returning door waits on, and the
                               cell-by-cell arrival that hands off to Avatar
-      components/PuzzleTitle.tsx  the header's left slot: WHICH DAILY (+ the day on an
-                              archive route), over the sheet that switches it
-      components/PuzzleSheet.tsx  that sheet: language and daily as rows
+      components/TopBar.tsx   the header row itself, mounted ONCE by App: it holds the
+                              places on the right and hosts the left slot screens publish
+                              into (`HeaderLeft`, `HeaderBack`)
+      components/PuzzleTitle.tsx  what most screens put there: WHICH DAILY (+ the day on an
+                              archive route) as a held-word CHIP, over the selection that
+                              switches it
+      components/PuzzleSelect.tsx  that selection: a flat full screen holding two picker
+                              DRUMS (daily, language) on one slot line, the pick landing
+                              on the fold; a back chevron in the header's left slot
+      hooks/useDrum.ts        the picker-drum physics both wheels turn on (drag, fling,
+                              wheel, keys, the slot row)
       components/HeaderKeys.tsx  the header's right group: the SAME five keys on every
                               game surface (home · archive · board · rules · face),
                               the current place lit
@@ -102,8 +110,8 @@
       game/history.ts         a hole's guess log ranked against its secret (buildHistory)
       game/wordWheel.ts       the order those words scroll through the tapped hole in
                               (wheelOrder): farther above, closer below, behind-the-start apart
-      components/HistoryWheel.tsx  an OPEN hole's tap: a picker drum through the word's own
-                              place — the word the wheel folds on is the sentence's
+      components/HistoryWheel.tsx  an OPEN hole's tap: a picker drum (`useDrum`) through the
+                              word's own place — the word the wheel folds on is the sentence's
       components/HistoryModal.tsx  a COMPLETED hole's tap: its words as a plain grid, full
                               screen, as many columns as the width holds
       game/share.ts           what a RESULT says: both modes' share text + link (emoji row,
@@ -229,13 +237,36 @@ These are decided and verified against the code. Treat them as load-bearing.
     still the heat ramp's calm terminus, so the ruler, the archive fills and the OG card
     agree with it. The history line's "you are here" square moved to `--hole` so the
     marker and the terminus it walks toward stay two colours.
-  - **`--hole` is VIVID CYAN #00e5ff** (fourth pass the same day: pastel #aec1ff and azure
-    #38b6ff were too close to the solve; green #3ddc84 was far enough but "means valid,
-    the opposite of the hole's purpose"). Cyan is the game's own cool family and sits on
-    no heat-ramp stop, so an exponent never matches its word: dE 96 from the cobalt, 103
-    from the orchid exponents, 13.2:1 on the ground. **The dashed
-    OPEN-BLANK underline is retired** — under the hole words AND the route terminus's
-    `???` — the colour alone says "not yet".
+  - **A HELD WORD IN THE SENTENCE IS AN INVERTED CHIP** (user-decided 2026-09-01, the pass
+    after the colour walk below): `--fg` ground, `--bg` ink, 4px/6px of padding — the app's
+    one emphasis gesture, spent on the thing the round is actually about, and a solve INKS
+    IT IN (the chip goes, the cobalt word stands free). **THE PADDING IS DRAWN, NEVER LAID
+    OUT**: the chip is an absolutely positioned pseudo on `.hole-word`, so it takes only
+    space the phrase already holds — a Press Start 2P cell is a full 1em, so it eats a fifth
+    of a word gap — and removing it at the solve cannot move one letter of any other word.
+    *Verified by toggling the chip off and diffing every `offsetLeft/Top/Width` in the
+    phrase: zero boxes move, at both breakpoints.* Three details are load-bearing and each
+    was found on the screen:
+    - **sized in `em`**, not px — a fixed 4px made the chip 23.75px inside the phone's
+      23.6px line box, so two holes on consecutive lines fused into one white block;
+    - **centred, not `inset`** — `.hole-word` is an inline box 1em tall at rest and an
+      inline-BLOCK a full line-height tall while `.hit-shake` runs (a transform needs one),
+      so an inset chip grew by the leading, 15px, on every hit. Both boxes share a centre;
+    - **it rides the WORD, not the static `.hole-word-wrap`** (where the retired blank
+      lived), so the shake carries it — the ink is `--bg`, and a letter outside the chip
+      would be an invisible letter.
+    **The TAIL clears it visually**: the exponent's box starts 1px past the word, so the
+    overhang swallowed a third of the digit on desktop and over half on a phone — it and any
+    trailing punctuation are `translate`d clear, a translate and never a margin, because a
+    margin is layout. The tutorial's MixWord wears the chip too (same `.hole` markup, and
+    the lesson should look like the board).
+  - **`--hole` is VIVID CYAN #00e5ff, and after the chip it lives on the HISTORY LINE** —
+    the ink of "the words you hold" there, and the `???` terminus (fourth pass the same day:
+    pastel #aec1ff and azure #38b6ff were too close to the solve; green #3ddc84 was far
+    enough but "means valid, the opposite of the hole's purpose"). Cyan is the game's own
+    cool family and sits on no heat-ramp stop, so an exponent never matches its word: dE 96
+    from the cobalt, 103 from the orchid exponents, 13.2:1 on the ground. **The dashed
+    OPEN-BLANK underline is retired** — under the hole words AND the route terminus's `???`.
   - **The PROMPT wears the SENTENCE's size** (user-decided 2026-09-01, superseding the flat
     24px of 2026-08-06): `.word-input` carries `.phrase`'s exact clamp at both breakpoints
     — the two move together.
@@ -253,9 +284,22 @@ These are decided and verified against the code. Treat them as load-bearing.
     its fg dot, and on click the fg dot lands above the secondary dot"). TWO dots under
     `HeaderKeys`' `.hk-row`, positioned by measurement and moved by `transform`
     transitions: the FG dot marks the lit place; the `--muted` dot answers a mouse hover
-    and slides back UNDER the fg dot on leave (stacked at rest, so one shows); the fg
-    dot's last x is kept at MODULE level so a row rebuilt by navigation paints it where it
-    was and travels it onto the secondary dot already waiting under the new place.
+    and slides back UNDER the fg dot on leave (stacked at rest, so one shows), and it
+    travels onto the secondary dot already waiting under the newly lit place. Two things
+    changed with the 2026-09-02 hoist (below), both user-decided:
+    **the fg dot's module-level last-x MEMORY IS GONE** — it existed because every
+    navigation rebuilt this row, and the row is mounted once now, so the travel is simply
+    what a changed `on` does to a component that never left; and **the hover dot is not
+    RENDERED without a mouse** (`matchMedia('(hover: hover)')`, read once) — nothing on a
+    touch device can ever move it, so it sat parked under the lit dot drawing a `--muted`
+    square for no one.
+    **The dot hangs a fixed 7px UNDER THE DRAWING, not off the key box**
+    (user-reported: "a bit too close to the icons"). A key is `--hud-height` tall around a
+    20px icon and that height steps down twice on narrow phones while the icon does not, so
+    a fixed `bottom` measured the gap from the wrong edge and it shrank with the screen —
+    measured 4px at 38, 1px at 32 and touching at 30. `.hk-dot` states the GAP and derives
+    its offset (`--hk-icon` / `--hk-gap` / `--hk-size`); the 340px step-down now only makes
+    the dot smaller, where it used to restate the position.
   - **THE PRIMARY BUTTON IS THE ACCENT, FLAT, WITH A DISCREET DIAGONAL GRADIENT**
     (user-decided 2026-09-01, superseding the 2026-08-18 device card — glass, hairline,
     LED, all gone): `linear-gradient(135deg, --accent, --accent-deep)`, where
@@ -324,11 +368,12 @@ These are decided and verified against the code. Treat them as load-bearing.
     resting tabs), not a colour; the one place still dimmed by opacity is ink on the
     INVERTED selection box, where no secondary token exists (`--muted` on paper
     ground is near-invisible).
-    The HEADER's icons are the LUCIDE stroke set as `.ui-icon`s (user-picked 2026-08-18:
+    The HEADER's icons were the LUCIDE stroke set as `.ui-icon`s (user-picked 2026-08-18:
     calendar, circle-help, x, fast-forward, and LANGUAGES — the 文/A translation mark —
     for the language control, replacing the globe; 24-grid, 1.8px, currentColor, 28px
     in-file size; globe.png and the standalone `.pixel-icon`
-    class are deleted); the Whippin mark is the USER-DRAWN `assets/logo.svg` since
+    class are deleted) **until 2026-09-02, when the whole chrome set went PIXEL** (see the
+    header-keys bullet: marks on the avatar's own 10×10 grid); the Whippin mark is the USER-DRAWN `assets/logo.svg` since
     2026-08-18: cobalt with the cobalt-core/violet-halo AURA on the chooser and invite
     hero spots (it sat in the header, glowing, until the same day's header finalization —
     the mode tabs took its job and the mark left the bar). The BODY's global hard 2px
@@ -367,7 +412,9 @@ These are decided and verified against the code. Treat them as load-bearing.
       the filled title/date chips read heavy, so `.topbar-title` and `.puzzle-date`
       are plain bold foreground type now — one left-corner treatment still, just
       unfilled; the date keeps its ▾ and a whisper-chip hover as the archive-button
-      affordance). **AMENDED 2026-08-20 (user-decided, on the leaderboard's second
+      affordance). **REVERSED 2026-09-02 (user-decided): the header's TITLE wears the
+      chip again — see the header bullet's LEFT slot** (the band that made it read heavy
+      is gone, and the chip is now the sentence's held-word gesture, not a tab marker). **AMENDED 2026-08-20 (user-decided, on the leaderboard's second
       review): a LEADERBOARD row does not take it either** — in a column of glass rows
       a solid foreground block shouted, and it left nothing quieter for the friend
       marker beside it, so both wear the ACCENT instead (see the #190 bullet). The
@@ -703,11 +750,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **THE AREA'S TYPE ROLES AND ITS BACK CONTROL (2026-08-29)** — the product contract is
     the root `AGENTS.md`'s. What is this package's: `.account-note` is INFO, `.account-note
     .danger` is an ERROR and carries an `::before` LED in the danger ink, `.link-quiet-btn`
-    is an ACTION in `--fg` at a finger's size; `TopBar` takes `back={{title, label, onBack}}`
-    and renders `.topbar-back` INTO the left slot, so a screen passes either `left` or
-    `back`, never both. `assets/icons/arrow-left.svg` is the Lucide glyph in the `.ui-icon`
-    dress (square caps, miter joins) — NOT `back.svg`, which is the KEYBOARD's pixel
-    backspace and belongs to the play surface's icon family.
+    is an ACTION in `--fg` at a finger's size; the back control is `TopBar`'s exported
+    `HeaderBack`, which a screen mounts inside its own `HeaderLeft` (a `back` PROP on
+    `TopBar` until the 2026-09-02 hoist — the header bullet holds the reasoning; there is
+    one left slot now, and what a screen puts in it is the screen's business).
+    its glyph is `assets/icons/chevron-left.svg` — the title's own 7×7 pixel chevron
+    turned to point out (user-decided 2026-09-02, "use a left chevron as a back icon on
+    the header", replacing the 10×10 pixel arrow, which replaced the Lucide arrow on
+    2026-09-02's icon rewrite) — NOT `back.svg`, which is the KEYBOARD's pixel backspace
+    and belongs to the play surface's icon family.
   - **THREE routes, three screens** (a fourth, `/account/manage`, lived for one commit on
     2026-08-26 and was ROLLED BACK the same day, user-decided: the devices belong on the
     account screen — gated, below). `screens/Account.tsx` (`/account`) is the area's one
@@ -744,6 +795,33 @@ it to the local store — see `packages/backend/AGENTS.md`).
       five-element screen has no interior to distribute, and the trailing space is not a
       defect; it is what a short page looks like. The group is a real box held by a 44px
       SECTION seam, and the area's own start-high rule is what the screen obeys.
+      **ONE WIDTH FOR THE APP'S BIG ACTION (user-decided 2026-09-02: "the max width of
+      the primary button on the leaderboard and account page should also apply to the mix
+      button")**: `.mix-btn` is capped at the board column's 430px (it was 680, the
+      keyboard's footprint), the account column is 430 too (from 400, its side padding
+      gone), and the rules gate's own 10px bottom pad — which stacked on the button's
+      phone margin and put PLAY 10px higher than MIX on every screen — is deleted.
+      Measured: MIX, both gates' PLAY, INVITE and SAVE are 430px at x 425 with a 24px
+      inset on desktop, and 362px at x 14 with a 14px inset on a 390 phone — one button,
+      one place. (The gates' rules box keeps its 680px over the now-narrower PLAY.)
+      **PROPOSED 2026-09-02, awaiting the user's review** (on their finding: "a bunch of
+      primary button, label, secondary button with a different width, with different gaps
+      and sizings, all of it stuck near the stats — it looks weird and not finished"): the
+      action group is GONE. Everything there is to do with the account is a full-width
+      ROW in the device list's own dress (`.account-list` / `.account-link`): the saved
+      address as a row that is a fact (no chevron), the door to another account as a row
+      that leads somewhere (the title's 7×7 chevron, `chevron-right.svg`), the devices
+      under them — one grammar, one width, one gap, a section's air under the numbers.
+      And the ONE CALL, SAVE WITH EMAIL (unsaved only), is the `.mix-btn` itself, parked
+      on a phone's BOTTOM EDGE at the exact 14px inset the tutorial's MIX and the board's
+      INVITE sit at (`.account-cta`; measured equal at 320/375/390, same width, same x),
+      its one caption over it. This REVERSES the bottom-edge verdict above, on purpose:
+      the rift was a screen with nothing between the numbers and the call, and the rows
+      now fill that middle. On desktop the call is simply the column's last item. The
+      `.account-row`, `.account-door`, `.account-actions` and `.account-action-slot` rules
+      are deleted with it; the column stops being its own scroller on `/account` (the
+      flow's steps keep theirs for the soft keyboard) so the page scrolls a long device
+      list instead.
     - **The DEVICES are the LAST section**, below everything there is to DO with the
       account. They sat BETWEEN the save state and the second door, which put a list of
       hardware in the middle of a pair of alternatives and stranded the door — the one
@@ -850,9 +928,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the centred column "feels like the screen starts at the middle").** On a phone every
     screen of the area — the account page, the flow's steps, the endings — opens at the
     same `clamp(76px, 13vh, 128px)` start line, free space accumulating at the BOTTOM the
-    way a page reads; desktop keeps `.app`'s centring. **`/profile` joins that line on
+    way a page reads; desktop keeps `.app`'s centring. **`/profile` joined that line on
     2026-08-30** — the editor is one tap inside `/account` and opened 53px higher than
-    it, two screens of one place disagreeing about where a page begins. The ADDRESS step leads with WHO is
+    it, two screens of one place disagreeing about where a page begins — **and LEFT it on
+    2026-09-02** (user-decided: "a huge useless padding at the top of the screen, making
+    the view scrollable on most mobile devices for no reason"): the editor is the area's
+    one TALL screen, and the line's 76–128px pushed its stack past a phone's viewport. It
+    keeps its 48px header clearance — measured, an iPhone 13 (390×664) no longer scrolls;
+    an iPhone SE (375×553) still scrolls 87px, which is the editor's own height. The ADDRESS step leads with WHO is
     being saved — the account's face, or the chooser's glowing app mark on a device with
     none (the reconnect case) — because a bare input floating on a screen was the "does
     not use its space" finding. And the two flagged corner-affordances became DRAWN
@@ -1351,7 +1434,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the header's left slot carries `PuzzleTitle` here too, because a board is a view OF a
   daily — and the way out is any other key of the same, unmoving row, HOME above all:
   `HeaderKeys`, user-decided 2026-08-31). FRIENDS is the default tab — the trusted surface — GLOBAL the top-50 untrusted
-  one; the header's TITLE SHEET switches WHICH daily's board, the in-screen `.board-tab`s
+  one; the header's TITLE SELECTION switches WHICH daily's board, the in-screen `.board-tab`s
   WHOSE scores. **WHICH TAB belongs to a VISIT — not
   to the screen, and NOT to the player** (user feedback 2026-08-20, in two passes; the
   first cut made it a standing preference and the user narrowed it). Two things remount
@@ -1492,8 +1575,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   2026-08-24): the persisted seed (`gameStore.localSeed`) derives the mark exactly as a
   board row would — an ANSWER, not a pending read. Nothing on this screen mints an account
   (opening the leaderboard is no longer a trigger; the tokenless friends board is the
-  honest empty one without a request). The INVITE device-card button on the bottom edge is always
-  live: with an account it shares at once; without one the tap IS the deploy button — it
+  honest empty one without a request). The INVITE device-card button on the bottom edge —
+  **at the tutorial's MIX's own 14px phone inset since 2026-09-02** (user-reported: it sat
+  at 38, `.app`'s 28px pad plus the `.mix-btn` margin, "a weird feeling of the same button
+  being moved around" between the two screens; `.board-invite` gives the pad back) — is
+  always live: with an account it shares at once; without one the tap IS the deploy button — it
   bootstraps (loading wave in the button, `ErrorScreen` on failure, a prefetched challenge
   so the tap is fast) and then shares. The single tap accepts one degradation:
   `navigator.share` wants a fresh gesture, so a browser refusing the native sheet after
@@ -1762,16 +1848,34 @@ it to the local store — see `packages/backend/AGENTS.md`).
   that never moves again. Past two digits it does move, because there is no honest way to
   reserve for a number with no bound; 99 → 100 is a milestone where 9 → 10 is the tenth
   guess of every single round.
-  **The watermark sizes from the VIEWPORT ALONE and carries its own HALO (user-decided
-  2026-08-17):** the old implementation quantized the glyph-pixel to whole `--cell` grid
-  squares and snapped the number to the graph-paper grid — that alignment served the
-  deleted Perlin field, so `CellDigits` now takes a continuous whole-pixel size straight
-  from the same height/width budgets (`cellSize.ts` retired; `--cell` tunes only the
-  ground's dot matrix now), and paints a radial pool of the ground colour under the
-  digits — opaque at the number, fading to nothing — that erases the halftone dither
-  around the score, as if the number cleared its own zone. The halo's reach scales with
-  the digit height, and the horizontal clamp covers the halo margin too (verified: no
-  scroll overflow at 320–1440px). That split IS the mode's feedback grammar:
+  **The watermark is a PLAIN FILL, in `--fg` at 20% (user-decided 2026-09-01).** `CellDigits`
+  fills one block per lit cell of the 7-row masks — collected into ONE path and filled ONCE,
+  because a `fillRect` per block is a separate composite and at a fractional dpr (1.5, 2.5)
+  two neighbours each paint a half-covered pixel along the edge they share, showing a
+  hairline seam through the middle of a solid stroke. The ink moved from `--muted` to `--fg`:
+  the ground's own white mixed into the ground, where the muted grey put a blue-grey cast on
+  the one shape that must not draw the eye. **Measured, because the intent was "a bit
+  darker" and the arithmetic does not agree:** `--fg` at 0.20 lands on rgb(55, 55, 57) over
+  the ground, against the retired `--muted` at 0.30's rgb(53, 55, 60) — the SAME weight,
+  just neutral. Dimmer means dropping the alpha (0.14 ≈ rgb(40,40,42)); `INK_ALPHA` is the
+  one knob and it is the whole change.
+  *(A hollow 1px CONTOUR shipped for one pass the same day — the union outline of the blocks,
+  stroked with a device-pixel snap — and was rolled back: the number reads as a mass, not as
+  a wireframe.)*
+  **THE HALO WENT WITH THE FILL, and so did the opaque base.** From 2026-08-17 the canvas
+  painted a radial pool of the ground around the digits, and an opaque ground block under
+  every ink cell, so the ground's halftone DITHER could never show through a stroke. The
+  2026-09-01 rebrand made the ground one FLAT sheet, which left both painting `--bg` onto
+  `--bg`: invisible, and not free — the halo alone made the canvas 2.8× the number's height
+  and 1.9× its width, cleared and gradient-filled on every draw. Both are deleted
+  (`bgChannels` with them); the canvas is now the number plus room for its stroke, and the
+  horizontal clamp bounds that instead of a halo margin.
+  **It still sizes from the VIEWPORT ALONE (user-decided 2026-08-17):** the old
+  implementation quantized the glyph-pixel to whole `--cell` grid squares and snapped the
+  number to the graph-paper grid — that alignment served the deleted Perlin field, so the
+  size now comes continuously (whole device pixels) from the height/width budgets
+  (`cellSize.ts` retired; `--cell` retired with the dot matrix). That split IS the mode's
+  feedback grammar:
   **a float on the WORD is about the guess** (its GRADE, or MISS), **a gain on the TIMER is
   about your clock** — `+4s` in the solved-word gold, keyed by a monotonic id so two claims
   in a row replay it. The clock reads **`seconds.decisecond`** and goes `--danger` red for
@@ -2306,7 +2410,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the feel — "pixel by pixel" → a one-row stepper → "sticky" → native snap with momentum →
   "snapped inertia" → a hop-by-hop ratchet → "unstoppable, a small swipe keeps scrolling
   for seconds" → this): no native scrolling (`overflow: hidden`, `touch-action: none`);
-  `HistoryWheel` writes the scroll position itself. A DRAG follows the finger pixel for
+  the drum writes the scroll position itself — **since 2026-09-02 that drum is
+  `hooks/useDrum`, shared with the title's `PuzzleSelect`**, `HistoryWheel` supplying only
+  its `write` (a scrollTop). A DRAG follows the finger pixel for
   pixel (rubber past the ends); on release the drum travels its velocity × `FLING_S`
   (0.16s) rows, capped at `FLING_MAX_ROWS` (8), snapped to a row, in ONE eased-out glide of
   `GLIDE_BASE_MS` + `GLIDE_ROW_MS` a row (≤ `GLIDE_MAX_MS`) — a small swipe moves a row or
@@ -2343,9 +2449,31 @@ it to the local store — see `packages/backend/AGENTS.md`).
   slot holds a pick, `holeTitle` as the dialog's name, `srRouteStop` per row; on the solved
   stage the secret is appended as the last row (rank 0 is never a stop) and nothing picks.
   A word too near the right edge of a phone (`MIN_COLUMN`) stands the column on its RIGHT
-  edge. The scroller hides its scrollbar and fades both ends (a mask). It stays a native
+  edge. The scroller hides its scrollbar and fades both ends (a mask). **A PLAIN ROW
+  STANDS ON ITS OWN GROUND** (user-decided 2026-09-02: at the quarter dim the rows printed
+  over the sentence's words — "you don't have wheel items over sentence text"): `.wheel-plain`
+  boxes the word and its exponent on the `--surface` tone, drawn as the chip is drawn (an
+  absolutely positioned em-sized pseudo, no layout, so the letters keep the slot's x), a
+  little taller than the chip — 1.5em against 1.267 (user-asked the same day, "a few more
+  pixels of vertical padding"). **The
+  column is INSET by the chip's overhang on the word's own side** (`OVERHANG_EM`, 0.2em of
+  the sentence plus a pixel, as padding inside the scroller's box — user-reported the same
+  day: "when you click on a hole word, the left padding disappears"; the scroller began
+  exactly on the word's x with `overflow: hidden`, so the slot chip's and the grounds' left
+  overhang were clipped; the rows' text still starts on the word's x, measured at both
+  breakpoints). **AND THE FOLD LEAVES THE SLOT ROW STANDING** (user-reported the same day, "the hole word
+  blinking on wheel close"): `wheel-out` fades the DIM (background-color) and
+  `wheel-row-out` the plain rows, while the slot row — the hole's own markup at the hole's
+  own place — holds at full strength until the dialog leaves; and the fold itself (the
+  pick and the unveil) is `flushSync`ed from the exit animation's END handler, before the
+  hook closes the dialog in that same handler: `dialog.close()` fires `close` on a LATER
+  task, and `animationend` is not a discrete event, so a fold riding either was committed a
+  frame after the slot row had gone — one frame with no word at all, measured. For a PICK, `Hole`
+  starts its scramble in a LAYOUT effect, so the churn's first frame paints in place of the
+  old word instead of one frame after it. The title's selection wears its own whole-screen
+  fade (`select-out`), since the dim-only exit is the wheel's. It stays a native
   `<dialog>` on `useModalDismiss` (`wheel-out`) — the sentence and the keyboard under it
-  must be inert — but it is the PuzzleSheet's KIND, so a tap OUTSIDE closes it. What is
+  must be inert — but it is the PuzzleSelect's KIND, so a tap OUTSIDE closes it. What is
   GONE with the modal (no-back-compat): the MISSED shelf (a miss is not a found word and
   cannot be picked), the `dq`-spaced line and the `???` terminus, `Game.openHistory`'s
   measuring, the zoom/retract keyframes, `.history-*` CSS, `ModalHeader` on this surface
@@ -3151,8 +3279,22 @@ it to the local store — see `packages/backend/AGENTS.md`).
   copy must fit the coach box's THREE lines at 320px — split an idea into two beats before
   growing the box (learned 2026-08-04, when the box briefly went to four lines and went
   back the same day).
-  Copy is deliberately terse throughout, no under-the-hood talk. The tutorial is
-  **data-driven**:
+  Copy is deliberately terse throughout, no under-the-hood talk.
+  **The coach's hint words wear the held word's CHIP** (user-decided 2026-09-02, "the hole
+  words in the dialog box should have the new hole word design"): `[[w:word^rank]]`
+  renders the word's text in its own `.rt-word-text` span on `--fg` ground in `--bg` ink,
+  the sentence chip's em geometry, the heat exponent standing outside it — and the chip is
+  drawn PER LETTER (user-reported the same day: the letters typed on one by one while the
+  ground was already there), each letter span carrying its own slice of ground, the first
+  the left overhang and the last the right, so the chip arrives with the letters. **And every floating hit's print is `--bg`**
+  (same day, from a half-black shadow): a hit lands on a white chip as often as on the
+  ground now.
+  **The floating hit on the lesson's word is the WORD'S OWN SIZE** (user-reported
+  2026-09-02: "way too small on desktop compared to the huge size of the word" — the
+  tutorial's one word is 48px on desktop where the sentence's are 30, and the game's fixed
+  28px number read as a footnote on it; `.tutorial .floating-hit` is `1em` off the wrap it
+  is positioned in, 48 on desktop and 28 on a phone, the game's own hits untouched).
+  The tutorial is **data-driven**:
   the board, guesses and steps live in `web/src/tutorial/scripts/{en,fr}.ts`
   (copy keys in `i18n.ts`) and `tutorial/scripts.test.ts` guards the lesson arc.
   Gated steps use synthetic vocab/prefix sets (the keyboard's existing contract);
@@ -3186,6 +3328,29 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `.topbar` (the full-width fixed layer), faded in on opacity so nothing shifts, and
   `.topbar-inner` keeps only its geometry. ModalHeader, which reuses the classes with no
   `.topbar` ancestor, is therefore BANDLESS on its flat-`--bg` dialogs.
+  **THE ROW IS APP CHROME, AND IT IS MOUNTED ONCE (user-decided 2026-09-02).** Every
+  screen used to render its own `TopBar`, so tapping a header key unmounted the whole row
+  and mounted a different screen's copy of it — and the player's own FACE paid for it:
+  `useAccountFace` holds its answer in component state, so every navigation put the key
+  back to its skeleton and re-read `/profile` over the network, which reads as the page
+  reloading (user-reported). `App` mounts the row now, above the routed surface, and it
+  outlives the screens under it: `TopBar` takes only `right`, and a screen publishes its
+  LEFT slot through the exported `HeaderLeft` — a portal into the row's own left track, so
+  the slot still belongs to the screen (it owns what it says there, and the state its
+  controls close over comes with it) without the screen owning the row. The portal's target
+  is a module-level `display: contents` node rather than a ref: it has to EXIST before the
+  screens' first render, and holding it in state would re-render the whole tree every time
+  the header mounts. **Which surface is up became App's question with it**, since whether a
+  surface wears the row is the router's business — `headerPlace()` reads the route, and
+  `GameSurface` (tutorial / invite / game) is picked in App and rendered by `GameRoute`, the
+  onboarding INVITATION being the one game surface with no header. The dev harnesses
+  (`?streak=`, `?error=`, `?tutorial=1`) moved up with that decision, because they are part
+  of the answer. Verified in the browser: the `header`, `.hk-row` and `.account-key` DOM
+  nodes are the SAME elements across every key, and a deployed account's face never
+  skeletons and issues no second profile read. (Not fixed by this, and worth naming: the
+  ACCOUNT SCREEN's own `useOwnFace` still re-reads on each visit — a shared read cache is
+  the remedy there, not the row.)
+
   **THE PROBLEM IT SOLVES.** The row carried WHICH PUZZLE in three places — the day as a
   left chip, the daily as a centred segmented switcher, the language as a right chip —
   and the row had nothing left. Measured at 320px the grid was `98.6 | 118.8 | 98.6`
@@ -3198,12 +3363,70 @@ it to the local store — see `packages/backend/AGENTS.md`).
   a crown, in an app whose whole identity model is that the account is already there.
   **THE TWO SLOTS, and each has ONE meaning:**
   - **LEFT — WHAT YOU ARE LOOKING AT.** On a play surface that is `PuzzleTitle`: the
-    daily's NAME with a chevron (`SENTENCE ⌄`), opening `PuzzleSheet` — one dialog
-    holding both remaining axes of which-puzzle, LANGUAGE and DAILY, as rows with a
-    hairline between the groups and an LED tick on the current one. It routes by the
+    daily's NAME with a chevron (`SENTENCE ⌄`), opening the wheel below. It routes by the
     SURFACE it was opened from, which is exactly what the retired tabs did: from the
     archive, the other daily means that daily's CALENDAR. On a screen you navigated INTO
     it is `back` — the arrow and the screen's own name as one target (2026-08-29).
+    **THE TITLE IS A HELD WORD, AND ITS MENU IS A FULLSCREEN SELECTION IN THE HOLE
+    WHEEL'S DRESS (user-decided 2026-09-02, in two passes: "add a `--fg` background, like
+    on the hole words" and "on clickable titles, the popover should look more like a hole
+    wheel"; then, on the first cut, "maybe a fullscreen selection could work better").**
+    Every name in the header's left slot — the puzzle title, a `back` control's screen
+    name, `/account`'s plain name — wears the sentence chip: `--fg` ground, `--bg` ink,
+    square, 12px at 600, laid out rather than drawn (`.topbar .topbar-title`;
+    ModalHeader's flat dialogs keep the plain type). The day and the chevron stand OUTSIDE
+    the chip the way a hole's exponent does; hover and press DIM the chip by the hole's
+    own mixes, since white cannot brighten. The day states its own 12px now that it sits
+    outside the chip's rule (it inherited the body's 16px for one measurement), and the
+    320px budget was re-measured with the chip: SENTENCE AUG 29 beside the five keys ends
+    at 153 of 158, the chip's padding stepping to 5px at ≤340.
+    What hangs off it is `PuzzleSelect`, replacing the `PuzzleSheet` dropdown (rows,
+    hairline, LED tick — deleted with its CSS), and it took FOUR passes in one day to
+    land, each on the user's review:
+    1. **A WHEEL ON THE TITLE** — two picker drums standing on the title's own measured
+       chip, the daily's slot row drawn as the title itself and the language's drum
+       unfolding beside it, ordered current-first because a slot at the top of the screen
+       has no rows above it. Built and verified pixel-identical at 320/390/1280, retired
+       within the hour: at the screen's top edge a drum's rows "just get clipped" instead
+       of turning, and a two-item drum made a switch cost THREE taps.
+    2. **A ONE-TAP MENU**, fullscreen ("maybe a fullscreen selection could work better"):
+       the wheel's dress with the drum taken out, a tap on a plain option navigating.
+    3. **THE GROUND WENT FLAT** ("make just the veil go all black"): the hole wheel's 74%
+       and then a 96% veil both left the sentence and the rules printing behind the
+       options — the wheel's dim is a quarter because the sentence under it is what that
+       wheel is ABOUT, and nothing under this selection is. With nothing showing through
+       it became a full-screen dialog and took the app's header row.
+    4. **THE DRUMS CAME BACK, ON THE FLAT SCREEN** ("use the wheel scrolling, and bring
+       back the 3 tap logic, so users can change the mode and lang without having to
+       reopen the menu"): open, turn as many drums as you like, fold once — where the
+       one-tap menu made switching both axes two openings. **And the way back is a LEFT
+       CHEVRON in the header's left slot** ("use a left chevron as a back icon on the
+       header"): the title's own 7×7 pixel chevron turned to point out
+       (`assets/icons/chevron-left.svg`), where the modals' ✕ sits top-right.
+    **What stands:** the hole wheel's fade in and out (`.wheel-dialog`, `wheel-out`) on
+    flat `--bg`; the app's header row with the back chevron; and in the middle of the
+    screen TWO DRUMS side by side, the DAILY's and the LANGUAGE's, in their canonical
+    order, each scrolling through a slot on one shared line (five rows' room, the slot in
+    the middle, both ends fading over 44px, every number set inline from ONE measured chip
+    — `.ps-probe`). The row in a slot wears the title's chip at 22px (18 ≤640, 16 ≤360),
+    the others stand plain at the same size, and the chip hands itself from row to row
+    on a 120ms cross-fade as a drum turns; rows arrive on the wheel's stagger counted out
+    from the slot. **The drum IS the hole wheel's** — its physics moved out of
+    `HistoryWheel` into `hooks/useDrum` (`current`/`peek`/`jump`/`glideTo`/`glideBy`/
+    `tap`/`endedDrag`; the caller supplies only `write`, a scrollTop there and a translate
+    here), so a drag, a fling, a wheel delta, an arrow key and a tap on a row all feel the
+    same on both surfaces. ArrowUp/Down turn the drum holding focus (the daily's by
+    default), Left/Right hand focus across. **THE PICK LANDS AS THE FOLD BEGINS, under
+    the veil** (user-reported the same day, fifth pass): the back chevron, a slot row's
+    tap, a tap outside the drums, or Escape sets `closing`, and an effect on it navigates
+    at once to whatever BOTH slots hold — or nowhere when neither moved — so the NEW
+    screen's loading state is what stands under the veil as it lifts. Navigating on the
+    dialog's `close` (the hole wheel's rule, kept for one pass) showed the old mode's
+    screen for the fade, then a beat of loading, then the new one — "a sensation of rapid
+    blinking between multiple screens". Measured: 22ms after the tap the old screen is
+    gone and the loading line is up under the closing veil, which lifts at 170ms. The
+    hole wheel keeps its rule for its own reason (a pick reflows the sentence it stands
+    on). A tap on a plain row only TURNS its drum.
   - **RIGHT — WHERE YOU ARE AND WHERE YOU CAN GO: the app's PLACES, the current one
     LIT — and it is THE SAME ROW ON EVERY SCREEN THAT HAS A HEADER** (user-decided
     2026-08-31: "the header is supposed to be something stable", then extended the same
@@ -3244,18 +3467,66 @@ it to the local store — see `packages/backend/AGENTS.md`).
     that pair at deployment — the same face before and after (#216). It HOLDS ITS BOX
     until the face settles (the leaderboard strip's rule, and it matters more here, where
     the control is on screen every day), and it sets `profileReturn` so `/account`'s back
-    lands where it was opened from. **It is a FRAMED PORTRAIT, IN COLOUR** (user-decided
-    2026-08-31 — the colour "was actually quite cool, just not well implemented"; a
-    one-ink glyph lived for one commit between): the mark at 20px, 2px a cell, inside a
-    1px `--line-strong` ring that makes it 22 like the icons and gives every palette an
-    edge — a bare 26px square almost filling its key had none, so a dark palette sank into
-    the band and a loud one shouted over three hairline drawings. The one full-colour
-    chrome control, because that colour is the one thing on the row that is THEIRS.
-  - **THE ICONS ARE ONE FAMILY OF OBJECTS** (2026-08-31): a house, a calendar, a crown, an
-    open book — Lucide-shaped strokes in the `.ui-icon` dress at 22px. The rules key was a
-    bare text `?` (2026-08-18, over circle-help) and then a drawn `?`; both were a MARK
-    where every other key is an object, and the user asked for a shape that matched. The
-    book is the rules.
+    lands where it was opened from. **It is A BARE PIXEL TILE, IN COLOUR — the fifth cell
+    drawing in a row of five** (user-decided 2026-09-02, in two steps: square corners, then
+    "remove the box shadow"; it kept its COLOUR from 2026-08-31, "actually quite cool", and
+    is still the one full-colour chrome control, because that colour is the one thing on the
+    row that is THEIRS). It ends a year of dressing — a 26px square almost filling its key,
+    then that square inside a 1px `--line-strong` ring on a 3px radius. Every layer answered
+    the same worry, that a drawing among LINE icons needs an edge to belong; the pixel-icon
+    rewrite settled it the other way round, because the row is cell drawings now and the
+    face belongs by being one. **Measured, the cell sizes were already identical** — every
+    key is a 10-cell grid at 20px, so 2px a cell, the icons and the face alike — and what
+    the ring actually did was make the face's FOOTPRINT 22 against their 20, which is the
+    difference the eye was reading. There is no scale step between them either: 3px a cell
+    is a 30px tile, which does not fit the row, and anything between puts the mark on
+    fractional cells.
+    **The corners are square for the same reason, and BOTH roundings had to go**: the CSS
+    one, which is also what the ring followed, and the tile's OWN — cut by a clipPath INSIDE
+    the SVG, so `Avatar` gained a `sharp` prop rather than being fought with CSS. That inner
+    arc is only 0.72px at 20px but ~1.4 antialiased device pixels at 2×, exactly the
+    softening this row's grammar refuses; `sharp` skips the clip entirely, since with nothing
+    to round it only ever clipped the tile to itself. Rounding is a property of the SURFACE,
+    not of the drawing — the board rows and the account masthead keep theirs, sitting among
+    glass rows that all carry a radius — and the skeleton squared with the tile, or the
+    placeholder would change shape on arrival. `overflow: visible` went with the ring (it
+    existed so a box-shadow could paint outside the key), and the `size={26}` the key asked
+    for was dead — CSS has forced 20 since the frame landed — so it says 20.
+    **ONE CONSEQUENCE, accepted:** COBALT is the only palette with a dark ground (#222431 on
+    the #050507 header, ~1.3:1), so its tile has no boundary any more and reads as blue cells
+    floating on the band — which is how the four white marks beside it read.
+  - **THE ICONS ARE PIXEL MARKS ON THE AVATAR'S OWN 10×10 GRID** (user-decided 2026-09-02,
+    superseding the Lucide-shaped strokes of 2026-08-31: "they don't express the artistic
+    direction of the game, and you cannot recognize them at all. The icons should be part of
+    the branding too"). Every drawn thing in the app is chunky pixel art — the bot, the
+    ghost, the flame, the digits, the players' 10×10 marks — and the header was the one
+    row still wearing a borrowed stroke set beside a pixel face. The four places are now
+    `assets/icons/{home,calendar,board,rules}.svg`: 10-unit viewBoxes of `<rect>` cells,
+    `currentColor` fill, `crispEdges`, sized 20px IN-FILE — one cell = 2px, the face's
+    exact size, crisp on a 1× screen. **One-cell lines, solid only where it means
+    something:** an outlined HOUSE with a solid door; a CALENDAR with a solid header band
+    and ONE marked day; a solid CROWN (the row's one mass — a prize is the only thing there
+    worth its weight); and the RULES as a PAGE with a folded corner and three lines — the
+    open book was kept as the object through several drafts and abandoned because every
+    open book collapsed into a "U" at 20px, where the sheet reads at once. Drafts set
+    aside on the same test (each judged at REAL size, not zoomed): a solid house (front-
+    heavy beside the crown), a flat-topped crown (a castle wall), an outlined crown (a
+    basket), a jewelled crown (too busy), three open books, a hairline-header calendar.
+    **The rest of the chrome follows the same grammar:** the title's chevron (7×7 at 2px,
+    14px), the back control's LEFT CHEVRON (the same 7×7 mark turned to point out —
+    user-decided 2026-09-02, replacing a plain 10×10 pixel arrow that had itself replaced
+    the keyboard's `back.svg`, whose backspace glyph carries an ✕ inside it and read as
+    "delete") and the dialogs' ✕ (10×10). `.topbar-back .ui-icon` no longer forces a square: each file's
+    in-file size is the cell grid, and forcing one off it blurs it. `book.svg` is deleted.
+    **THEY SHARE A BASELINE, AND THAT IS A PROPERTY OF THE INK** (user-reported 2026-09-02:
+    "the icons should be aligned to the baseline"). Every key is the same box around the
+    same 20px viewBox, so alignment is decided INSIDE each file by which row its drawing
+    ends on: the house, the calendar and the page all reach row 9, and the CROWN stopped at
+    row 8 — one cell, 2px, of float. It was dropped a row (its ink is rows 1..9 now).
+    Measured on the rendered header, the four ink bottoms land on one line at every width.
+    The FACE is the deliberate exception: its 1px `--line-strong` ring is drawn outside the
+    20px tile, so the frame hangs a pixel below that line while the drawing itself sits on
+    it — the mark cannot shrink to 18px without leaving the integer 2px-a-cell scale.
   - **A CHEVRON, NOT TABS.** The segmented switcher showed both dailies at once, which is
     what killed the 2026-08-06 icon toggle — but a title NAMES the current mode, which
     the toggle never did, and switching dailies is a once-a-day act rather than a flip.
@@ -3347,10 +3618,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the focus trap and Escape are untouched.
   - **A backdrop tap is NOT a dismissal.** The close chip is the way out; Escape stays, being a
     keyboard affordance rather than a mis-tap. Both modals' click handlers are gone with it.
-    **ONE exception, `PuzzleSheet` (2026-08-30):** a MENU hanging off the header's title
-    has no chrome to hold a close chip and no Escape on a phone, so a tap OUTSIDE it closes
-    it — without that, the only way to leave without choosing was to re-pick the current
-    row. The rule above is about full-SCREEN modals, and the sheet is not one.
+    **ONE exception, the title's SELECTION and the hole WHEEL (`PuzzleSheet` from
+    2026-08-30; `PuzzleSelect` since 2026-09-02):** a thing hanging off a control that
+    stays on screen has no chrome
+    to hold a close chip and no Escape on a phone, so a tap OUTSIDE it closes it — without
+    that, the only way to leave without choosing was to re-pick the current row. The rule
+    above is about full-SCREEN modals, and a wheel is not one.
   - **Closing is a BEAT, not an event.** `beginClose()` only starts the exit; the real
     `dialog.close()` — which fires `onClose` and lets the owner unmount — waits on the exit
     animation's `animationend`, with `EXIT_FALLBACK_MS` behind it. Escape goes through the same
@@ -3420,7 +3693,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `tabIndex = -1`, prevents mouse-down focus without suppressing click, and immediately blurs
   any browser or programmatic button focus. There are no `:focus-visible` button treatments and
   modal close paths never restore focus to their triggers. Native modal focus may stay on the
-  non-button `<dialog>` itself so its focus trap and Escape behavior survive. **The missing-puzzle screen
+  non-button `<dialog>` itself so its focus trap and Escape behavior survive.
+  **AND NO BROWSER TAP FLASH, APP-WIDE** (user-reported 2026-09-02: tapping a header key
+  "makes a blue square appear for a short moment"). It is not focus — measured, a tap leaves
+  `activeElement` on `<body>` — it is Chrome's default `-webkit-tap-highlight-color`,
+  `rgba(51, 181, 229, 0.4)`, a translucent cyan box the shape of the control. A pointer-only
+  UI that draws its own press states wants it on no surface at all, so `button` carries
+  `transparent` once beside the global `text-shadow: none`; the hole, the solved word and
+  the wheel row each held a private copy of the same line and are gone. **The missing-puzzle screen
   has TWO wordings, told apart by the ROUTE (#77, decided 2026-07-27)** — the backend's
   404 is undifferentiated, and which route asked is the only signal needed: on the
   **undated** route (today) it owns that the state is **abnormal** (a publish that did not

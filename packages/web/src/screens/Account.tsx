@@ -46,9 +46,9 @@ import { useOwnFace } from '../components/AccountFace';
 import AccountStats from '../components/AccountStats';
 import Avatar from '../components/Avatar';
 import Button from '../components/Button';
+import ChevronRightIcon from '../assets/icons/chevron-right.svg?react';
 import DeviceList from '../components/DeviceList';
-import TopBar from '../components/TopBar';
-import HeaderKeys from '../components/HeaderKeys';
+import { HeaderLeft } from '../components/TopBar';
 import { useDeviceIdentity } from '../identity';
 import { t } from '../i18n';
 import {
@@ -74,7 +74,6 @@ function began(createdAt: string | null, lang: string): string | null {
 
 export default function Account() {
   const lastLang = useGameStore((s) => s.lastLang);
-  const lastMode = useGameStore((s) => s.lastMode);
   const lang = resolveHomeLang(lastLang, navigator.language);
   const identity = useDeviceIdentity();
   const { phase, summary } = useAccountSummary();
@@ -98,7 +97,8 @@ export default function Account() {
   // The ACTION is unknown until the summary settles: offering SAVE while we do not yet know
   // whether it is already saved is the guessed-empty claim #211's rule forbids — it would
   // flash SAVE and swap it for the address on every visit of a linked player.
-  const known = identity === null || phase === 'ready' || phase === 'failed';
+  const known = identity === null || phase === 'ready' || summary !== null;
+  const accountUnknown = phase === 'failed' && summary === null;
 
   return (
     <>
@@ -107,10 +107,9 @@ export default function Account() {
           screen's plain name rather than a back control (the steps INSIDE the area, the
           editor and the email doors, keep theirs). Nothing remembers where this screen
           was opened from any more: every place is one tap away in the row. */}
-      <TopBar
-        left={<span className="topbar-title">{t(lang, 'accountTitle')}</span>}
-        right={<HeaderKeys lang={lang} mode={lastMode ?? 'sentence'} on="account" />}
-      />
+      <HeaderLeft>
+        <span className="topbar-title">{t(lang, 'accountTitle')}</span>
+      </HeaderLeft>
       <div className="account-screen">
         {/* THE ROW — the identity as the page's masthead. The face holds its boxes until
             the read settles rather than flashing a pseudonym it may be about to correct
@@ -149,70 +148,78 @@ export default function Account() {
           loading={stats.phase === 'loading'}
         />
 
-        {/* EVERYTHING THERE IS TO DO WITH THIS ACCOUNT, as one block — and on a phone it
-            sits on the screen's BOTTOM EDGE (review finding: the primary action sat in the
-            worst thumb zone with 46% of the screen empty under it). The area's start-high
-            rule is about where the page BEGINS, and it is untouched: the identity and its
-            three numbers still open at the same line every screen here opens at. What was
-            empty is now the SEAM between what this account IS and what to do with it — the
-            solved screen's own two-block shape, and the same `margin-top: auto` the
-            tutorial's one button has always used to park itself against the tray. */}
-        <div className="account-actions">
-        {/* SAVED. Unsaved, the lit button is the screen's one call; saved, the ADDRESS is
-            the status — no prefix, no chip. Unknown holds the button's own box. */}
-        {!known ? (
-          <span className="account-action-slot skeleton" aria-hidden="true" />
-        ) : saved !== null ? (
-          <div className="account-row">
-            <span className="account-row-value">{saved}</span>
-          </div>
-        ) : (
-          <>
-            <Button variant="primary" onClick={() => navigate(ACCOUNT_EMAIL_PATH)}>
-              {t(lang, 'accountSave')}
-            </Button>
-            {/* The ONE line that earns its place: why a game wants an email is genuinely
-                not obvious, and it is said once, where the decision is made. */}
-            <p className="account-note caption">{t(lang, 'accountSaveNote')}</p>
-          </>
-        )}
-
-        {/* THE SECOND DOOR (#204's UX rework vol. 2). Saving an account and signing into
-            another one are OPPOSITE acts, and until now this screen offered only the first
-            — so a returning player was looking for a word that was not on screen, and had
-            to guess that SAVE also meant "get it back" on the one screen where guessing
-            wrong deletes something. It stays QUIET, never a second primary: most visitors
-            here came to save.
-
-            Its WORDS change with what it would cost, which is one fact this screen already
-            holds. Unsaved, leaving destroys this account, so the door names the intention
-            plainly and the flow states the price before a keystroke is spent. SAVED, the
-            account stays reachable by its own address — leaving is reversible — so the door
-            simply says what it does. It is held back until the summary settles, for the
-            same reason the action above it is: a door whose meaning depends on an answer we
-            do not have yet may not be drawn. */}
-        {known && (
-          <button
-            type="button"
-            className="link-quiet-btn account-door"
-            onClick={() => navigate(ACCOUNT_SIGNIN_PATH)}
-          >
-            {t(lang, saved !== null ? 'accountSwitch' : 'accountHaveAccount')}
-          </button>
-        )}
+        {/* WHAT THERE IS TO DO WITH THIS ACCOUNT — as ROWS, one grammar (proposed
+            2026-09-02 on the user's review: "a bunch of primary button, label, secondary
+            button with a different width, with different gaps and sizings, all of it stuck
+            near the stats"). Every action is a full-width row in the device list's own
+            dress — a hairline glass box, a label, a chevron pointing where it leads — so
+            the screen reads top-down as one settings page: who you are, what you hold,
+            where to go. The saved address is a row too, a fact rather than a control (no
+            chevron); the door to another account is a row that leads somewhere.
+            Unknown holds a row's box, so nothing moves when the summary lands and nothing
+            claims "unsaved" before it knows (#211's explicit-loading rule). */}
+        <div className="account-list">
+          {phase === 'failed' && (
+            <div className="account-load-error">
+              <p className="status error">{t(lang, 'failedAccountLoad')}</p>
+              <Button variant="secondary" onClick={() => loadAccountSummary(true)}>
+                {t(lang, 'retry')}
+              </Button>
+            </div>
+          )}
+          {!known ? (
+            <span className="account-link skeleton" aria-hidden="true" />
+          ) : accountUnknown ? null : (
+            <>
+              {saved !== null && (
+                <div className="account-link static">
+                  <span className="account-link-value">{saved}</span>
+                </div>
+              )}
+              {/* THE SECOND DOOR (#204's UX rework vol. 2). Saving an account and signing
+                  into another one are OPPOSITE acts; a returning player was looking for a
+                  word that was not on screen. Its WORDS change with what it would cost:
+                  unsaved, leaving destroys this account, so the door names the intention
+                  plainly; saved, the account stays reachable by its own address, so the
+                  door simply says what it does. */}
+              <button
+                type="button"
+                className="account-link"
+                onClick={() => navigate(ACCOUNT_SIGNIN_PATH)}
+              >
+                <span className="account-link-label">
+                  {t(lang, saved !== null ? 'accountSwitch' : 'accountHaveAccount')}
+                </span>
+                <ChevronRightIcon className="ui-icon" aria-hidden />
+              </button>
+            </>
+          )}
         </div>
 
-        {/* DEVICES — its own SECTION, below everything there is to DO with this account
-            (2026-08-30). It used to sit BETWEEN the save state and the second door, which
-            put a list of hardware in the middle of a pair of alternatives and left the
-            door stranded under it — the one control on the screen a returning player is
-            looking for, below the longest block on it. A section is space and a title,
-            and it goes last.
-
-            ONLY once SAVED: an unlinked account holds exactly the device reading this
-            screen, and a list of yourself is noise. Multi-device only ever arrives through
-            the email link. */}
+        {/* DEVICES — its own SECTION, after everything there is to DO with this account
+            (2026-08-30). ONLY once SAVED: an unlinked account holds exactly the device
+            reading this screen, and a list of yourself is noise. */}
         {saved !== null && identity !== null && <DeviceList lang={lang} />}
+
+        {/* THE ONE CALL, on the screen's BOTTOM EDGE — where every screen's one big action
+            sits (the tutorial's MIX, the board's INVITE, both gates' PLAY), in exactly
+            their geometry, so it is the SAME button in the SAME place from screen to
+            screen. Only while UNSAVED: saved, there is nothing left to call for, and the
+            rows above are the whole page. The ONE line that earns its place stands over
+            it: why a game wants an email is genuinely not obvious, and it is said once,
+            where the decision is made. */}
+        {known && !accountUnknown && saved === null && (
+          <div className="account-cta">
+            <p className="account-note caption">{t(lang, 'accountSaveNote')}</p>
+            <button
+              type="button"
+              className="mix-btn"
+              onClick={() => navigate(ACCOUNT_EMAIL_PATH)}
+            >
+              {t(lang, 'accountSave')}
+            </button>
+          </div>
+        )}
       </div>
     </>
   );

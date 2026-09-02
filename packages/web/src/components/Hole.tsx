@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
 import { MISS_COLOR, rankHeatColor } from '@whippin/shared';
@@ -110,8 +110,13 @@ export default function Hole({
   // the word fix its letters and interpolate its length old -> new. So the sentence never
   // reflows while the exponent is still moving, and that gradual reflow is what lets the
   // phrase wrap as natural prose (no forced <br/> per hole).
+  // A LAYOUT effect, so the scramble's first frame is painted IN PLACE of the old word,
+  // never after it (user-reported 2026-09-02, "the hole word blinking on wheel close"): the
+  // wheel's slot row stands in for the word until the dialog closes, and the pick it hands
+  // down changes `hole.word` in the same render that lifts the veil — a passive effect let
+  // the OLD word paint once between the two before the churn began.
   const { jumble, start } = useScramble();
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (hole.word === displayWord) return undefined;
     // Mix in place through the numeric tween (RANK_MAX_MS), then settle. displayWord flips
     // to the target only when the scramble settles, which is also what marks the hole

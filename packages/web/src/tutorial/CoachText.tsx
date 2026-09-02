@@ -89,14 +89,17 @@ function renderSeg(s: Seg, budget: number, key: number) {
       </span>
     );
   }
-  // Hint word: the pale hole colour with its heat-coloured exponent, exactly as a hole reads
-  // in-game. The sup is always in the layout too, so even ITS reveal moves nothing.
+  // Hint word: the held word's CHIP with its heat-coloured exponent outside it, exactly as
+  // a hole reads in-game (user-decided 2026-09-02, following the sentence's inverted chip:
+  // "the hole words in the dialog box should have the new hole word design"). The word's
+  // text is its own span so the chip wraps the WORD and not the exponent; the sup is
+  // always in the layout too, so even ITS reveal moves nothing.
   const rankStyle: CSSProperties & Record<'--rank-color', string> = {
     '--rank-color': rankHeatColor(s.rank),
   };
   return (
     <span key={key} className="rt-word">
-      {chars(s.text, budget)}
+      <span className="rt-word-text">{chars(s.text, budget)}</span>
       <sup className="hole-rank" style={rankStyle}>
         {chars(String(s.rank), budget - s.text.length)}
       </sup>

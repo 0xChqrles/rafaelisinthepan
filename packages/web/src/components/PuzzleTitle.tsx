@@ -22,12 +22,18 @@
 //
 // A CHEVRON, not tabs. The segmented switcher showed both dailies at once, which is what the
 // retired 2026-08-06 icon toggle lacked — but a title names the current mode, which the
-// toggle never did, and switching dailies is a once-a-day act rather than a flip. The sheet
+// toggle never did, and switching dailies is a once-a-day act rather than a flip. The wheel
 // costs one tap for a choice nobody makes twice in a session.
+//
+// THE TITLE IS A HELD WORD (user-decided 2026-09-02: "a --fg background, like on the hole
+// words"): the daily's name wears the sentence chip — `--fg` ground, `--bg` ink — and what
+// hangs off it is a fullscreen selection in the hole wheel's dress (`PuzzleSelect`), not a
+// dropdown. The day and the chevron stand OUTSIDE the chip, the way a hole's exponent does:
+// the chip is exactly the word.
 import { dateForDayNumber } from '@whippin/shared';
 import { useState } from 'react';
 import ChevronDownIcon from '../assets/icons/chevron-down.svg?react';
-import PuzzleSheet from './PuzzleSheet';
+import PuzzleSelect from './PuzzleSelect';
 import { t } from '../i18n';
 import type { LangCode, Mode } from '../langs';
 
@@ -69,14 +75,12 @@ export default function PuzzleTitle({
         aria-expanded={open}
         onClick={() => setOpen(true)}
       >
-        <span className="topbar-title">
-          {name}
-          {day !== null && <span className="puzzle-title-day">{day}</span>}
-        </span>
+        <span className="topbar-title">{name}</span>
+        {day !== null && <span className="puzzle-title-day">{day}</span>}
         <ChevronDownIcon className="ui-icon" aria-hidden />
       </button>
       {open && (
-        <PuzzleSheet
+        <PuzzleSelect
           lang={lang}
           mode={mode}
           onArchive={onArchive}
