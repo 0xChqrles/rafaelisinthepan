@@ -12,6 +12,7 @@ import {
   type RoundState,
   type RoundStore,
 } from './roundStore';
+import type { LinkRoundWrites } from './linkStore';
 
 interface RoundItem {
   guesses: string[];
@@ -36,7 +37,7 @@ interface RoundItem {
 // restart, plus Word mode's two writes (#202) — with no AWS account. Restarting the local server intentionally resets this lab
 // data. The bound constants are imported from @whippin/shared rather than parameterized, so
 // this implementation cannot drift from the production condition it mirrors.
-export function memoryRoundStore(): RoundStore {
+export function memoryRoundStore(): RoundStore & LinkRoundWrites {
   const rounds = new Map<string, RoundItem>();
   const itemKey = (key: RoundKey, publicId: string) =>
     `${roundPartition(publicId)}/${roundSortKey(key)}`;
@@ -235,18 +236,17 @@ export function memoryRoundStore(): RoundStore {
     // keyed on GUESSES. A word round that was merely STARTED holds none, so a recorded run
     // moves in over it — the issue's own rule, and the reason the test is on the log rather
     // than on the item's existence.
-    async transfer(key, from, to) {
+    // #204's active-day transfer, the process-local half of `dynamoLinkStore`'s one
+    // transaction (`planRoundMove`'s rules): the source must hold guesses, the destination
+    // none, and the whole item moves.
+    move(key, from, to) {
       const source = rounds.get(itemKey(key, from));
       const destination = rounds.get(itemKey(key, to));
-      if (!source || source.guesses.length === 0) {
-        return destination && destination.guesses.length > 0
-          ? { state: stateOf(destination), moved: false }
-          : null;
-      }
+      if (!source || source.guesses.length === 0) return null;
       if (destination && destination.guesses.length > 0) return null;
       rounds.set(itemKey(key, to), source);
       rounds.delete(itemKey(key, from));
-      return { state: stateOf(source), moved: true };
+      return { key, solved: source.solved === true };
     },
   };
 }

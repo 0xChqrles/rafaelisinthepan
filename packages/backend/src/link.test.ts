@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { activeDate, dayNumber, LINK_SENDS_PER_ADDRESS } from '@whippin/shared';
 import { FRIENDS_MAX } from './friendStore';
-import { emailHash, LINK_CLAIM_SECONDS } from './linkStore';
 import { createHandler } from './handler';
 import { memoryDeviceStore } from './memoryDeviceStore';
 import { memoryFriendStore } from './memoryFriendStore';
@@ -32,8 +31,8 @@ const NOW = new Date('2026-08-26T12:00:00.000Z');
 const DATE = activeDate(NOW);
 const HASH = 'a'.repeat(64);
 
-// `clock` is for the tests that move time: the rolling send window and the claim's
-// staleness are both facts about WHEN, and a fixed instant cannot exercise them.
+// `clock` is for the tests that move time: the rolling send window is a fact about WHEN,
+// and a fixed instant cannot exercise it.
 function harness(clock: { now: Date } = { now: NOW }) {
   const devices = memoryDeviceStore();
   const profiles = memoryProfileStore((id) => devices.accountExists(id));
@@ -41,7 +40,7 @@ function harness(clock: { now: Date } = { now: NOW }) {
   const rounds = memoryRoundStore();
   const scores = memoryScoreStore(() => clock.now);
   const history = memoryHistoryStore();
-  const links = memoryLinkStore({ devices, profiles });
+  const links = memoryLinkStore({ devices, profiles, rounds, scores });
   const sent: MailMessage[] = [];
   const handler = createHandler({
     store: emptyStore,
@@ -54,8 +53,6 @@ function harness(clock: { now: Date } = { now: NOW }) {
     link: {
       links,
       friends,
-      rounds,
-      scores,
       history,
       mailer: {
         async send(message) {
@@ -389,7 +386,7 @@ describe('email account linking (#204) — the three branches', () => {
     await expect(h.devices.accountExists(fresh.accountId)).resolves.toBe(false);
   });
 
-  it('does not commit adoption before the fallible receipt read', async () => {
+  it('answers a committed adoption even when the receipt cannot be read — the identity moved', async () => {
     const h = harness();
     const saved = await seedDevice(h.devices);
     await h.handler(
@@ -407,29 +404,23 @@ describe('email account linking (#204) — the three branches', () => {
       return solvedDays(accountId, lang);
     };
 
-    const failed = await h.handler(
-      post({ token: fresh.token, email: 'zoe@example.com', code }),
-    );
-    expect(failed.statusCode).toBe(500);
-    await expect(
-      h.devices.resolve((await import('./deviceStore')).deviceTokenHash(fresh.token)),
-    ).resolves.toMatchObject({ account: { accountId: fresh.accountId } });
-    await expect(h.devices.accountExists(fresh.accountId)).resolves.toBe(true);
-
-    // The challenge and source account still stand, so an ordinary retry can finish.
-    h.history.solvedDays = solvedDays;
-    const retried = await h.handler(
-      post({ token: fresh.token, email: 'zoe@example.com', code }),
-    );
-    expect(retried.statusCode).toBe(200);
-    expect(JSON.parse(retried.body)).toMatchObject({
+    const answer = await h.handler(post({ token: fresh.token, email: 'zoe@example.com', code }));
+    expect(answer.statusCode).toBe(200);
+    // The receipt is DECORATIVE: an unreadable one is no receipt, never a failed link on a
+    // device whose identity has already moved.
+    expect(JSON.parse(answer.body)).toMatchObject({
       outcome: 'adopted',
       accountId: saved.accountId,
+      stakes: null,
     });
+    await expect(
+      h.devices.resolve((await import('./deviceStore')).deviceTokenHash(fresh.token)),
+    ).resolves.toMatchObject({ account: { accountId: saved.accountId } });
+    await expect(h.devices.accountExists(fresh.accountId)).resolves.toBe(false);
   });
 });
 
-describe('email account linking (#204) — the adoption claim', () => {
+describe('email account linking (#204) — one transaction owns the adoption', () => {
   // Two saved accounts, and one unlinked account with TWO devices and today's play on it.
   async function twoTargets(h: ReturnType<typeof harness>) {
     const targets = [];
@@ -455,7 +446,7 @@ describe('email account linking (#204) — the adoption claim', () => {
     return { targets, first, second, key };
   }
 
-  it('lets exactly ONE of two concurrent adoptions of one account move its play — the other is refused before anything moves', async () => {
+  it('lets exactly ONE of two concurrent adoptions of one account carry its play — the other writes nothing', async () => {
     const h = harness();
     const { targets, first, second, key } = await twoTargets(h);
     const codes = [
@@ -480,66 +471,6 @@ describe('email account linking (#204) — the adoption claim', () => {
     });
     await expect(h.rounds.get(key, loser.accountId, 'rev1')).resolves.toBeNull();
     await expect(h.devices.accountExists(first.accountId)).resolves.toBe(false);
-  });
-
-  it('refuses a bind on an account another of its devices is adopting away, as a change — not as "saved elsewhere"', async () => {
-    const h = harness();
-    const { targets, first, second } = await twoTargets(h);
-    const adoptCode = await askForCode(h, first.token, targets[0].email);
-    const bindCode = await askForCode(h, second.token, 'mine@example.com');
-    // The claim is taken; the adoption has not committed (it is answered 200 below, but the
-    // claim alone is what the bind meets).
-    await expect(
-      h.links.claimAdoption({
-        from: first.accountId,
-        to: targets[0].accountId,
-        now: NOW.toISOString(),
-      }),
-    ).resolves.toBe('claimed');
-
-    const refused = await h.handler(
-      post({ token: second.token, email: 'mine@example.com', code: bindCode }),
-    );
-    expect(refused.statusCode).toBe(409);
-    expect(JSON.parse(refused.body).error).toBe('link_changed');
-    await expect(h.links.binding(emailHash('mine@example.com'))).resolves.toBeNull();
-
-    // The adoption the claim belongs to still goes through — the same target renews it.
-    const adopted = await h.handler(
-      post({ token: first.token, email: targets[0].email, code: adoptCode }),
-    );
-    expect(adopted.statusCode).toBe(200);
-    expect(JSON.parse(adopted.body).outcome).toBe('adopted');
-  });
-
-  it('lets a DIFFERENT target take over only once the standing claim is stale', async () => {
-    const clock = { now: NOW };
-    const h = harness(clock);
-    const { targets, first } = await twoTargets(h);
-    await expect(
-      h.links.claimAdoption({
-        from: first.accountId,
-        to: targets[1].accountId,
-        now: NOW.toISOString(),
-      }),
-    ).resolves.toBe('claimed');
-    // Nobody finished that adoption. While it stands, this device's link to the OTHER
-    // address is refused…
-    const code = await askForCode(h, first.token, targets[0].email);
-    const early = await h.handler(
-      post({ token: first.token, email: targets[0].email, code }),
-    );
-    expect(early.statusCode).toBe(409);
-    expect(JSON.parse(early.body).error).toBe('link_changed');
-    // …and once the claim is stale it is taken over, so the account is not locked forever
-    // by a link somebody abandoned. (A fresh code: the claim lives exactly as long as one.)
-    clock.now = new Date(NOW.getTime() + LINK_CLAIM_SECONDS * 1_000 + 1_000);
-    const fresh = await askForCode(h, first.token, targets[0].email);
-    const late = await h.handler(
-      post({ token: first.token, email: targets[0].email, code: fresh }),
-    );
-    expect(late.statusCode).toBe(200);
-    expect(JSON.parse(late.body).outcome).toBe('adopted');
   });
 });
 

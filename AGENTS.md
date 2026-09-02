@@ -1402,19 +1402,24 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   identity-bearing board and the adopting one appear when their edge is rewritten. That
   drop-then-reappear window is accepted and inherent; **no deleted identity is rendered during
   it.**
-- **WHAT THE CORE COMMITS TOGETHER, and what is deliberately sequenced before it.** The
-  identity-bearing core is ONE transaction — consume the challenge, move the one device item,
-  delete the leaving account's row AND its profile row, persist the friend-merge job — because
-  the half-states are not equally harmless: a device left on a DELETED account is a player
-  signed out mid-link with everything gone, the one outcome this flow may never produce. **The
-  active-day moves run BEFORE it**, each its own atomic condition and each a no-op the second
-  time. Either order can be interrupted; only this one is recoverable — moves-then-commit leaves
-  the day's round under an account nobody holds yet, and the player's retry (they still hold the
-  device, and their code is still unspent) moves nothing, commits, and lands right, where
-  commit-then-moves would leave the round in an account that has just been deleted with nothing
-  to retry from. *(The issue's own wording put the moves inside the transaction; the store
-  contracts each package can honestly implement cannot express one write across four stores'
-  item shapes, and this ordering satisfies what that requirement is FOR.)*
+- **WHAT THE CORE COMMITS TOGETHER — the identity AND the active day's play, ONE
+  transaction** (restored 2026-09-02 on the PR-227 review, to what the issue itself
+  specified): consume the challenge, move the one device item, delete the leaving account's
+  row AND its profile row, persist the friend-merge job, and carry every active-day tuple
+  the transfer rule admits — each round row and its score row conditioned on the exact rows
+  they were planned from. It is one transaction because the half-states are not equally
+  harmless: a device left on a DELETED account is a player signed out mid-link with
+  everything gone, and a round moved by an adoption that never commits is play under an
+  account nobody holds. *(From 2026-08-26 to 2026-09-02 the moves ran as separate atomic
+  writes BEFORE the commit, on the reasoning that this order was the recoverable one. The
+  review showed it is not ownable: a commit that fails after a move, or a second device
+  linking a different address, leaves the day's play split across two targets, and no claim
+  or takeover can honestly repair a move that already happened. A guess that lands between
+  the plan and the commit refuses the transaction, which is planned again over what now
+  stands; one that lands after the commit lands under a deleted account, exactly as any
+  append racing any deletion does.)* The solved-day credit a transferred sentence solve owes
+  the streak follows the commit as a logged, non-fatal side effect, the round route's own
+  rule for that rebuildable collection.
 - **A DELETED ACCOUNT STOPS BEING RENDERED, everywhere an identity is shown.** `GET /profile?id=`
   answers a distinct **410 `account_gone`**, told apart from the 404 that means "never
   customized" — every board dresses THAT with the assigned pseudonym and mark, which is still

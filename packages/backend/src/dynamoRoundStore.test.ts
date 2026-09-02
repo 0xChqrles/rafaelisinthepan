@@ -15,7 +15,7 @@ import {
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
 import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
-import { dynamoRoundStore } from './dynamoRoundStore';
+import { dynamoRoundStore, planRoundMove } from './dynamoRoundStore';
 
 const PUBLIC_ID = 'lfd5pqz5pa7zjm5u';
 const NOW = new Date('2026-08-21T14:00:00.000Z');
@@ -1058,58 +1058,48 @@ describe('dynamoRoundStore.getMany — the board read (#206)', () => {
   });
 });
 
-// CONTRACT (#204): a link MOVES the active day's round between two accounts, and the move
-// has to leave the row under exactly ONE of them at every instant — so it is a transaction
-// of a create-only Put and a conditional Delete, and the item is copied VERBATIM apart from
-// its partition key (this store's attribute shape is the one thing a move must not
-// reinterpret). The alias correspondence and the condition grammar are checked by the
-// harness above, which now walks a transaction's clauses too.
-describe('dynamoRoundStore.transfer (#204)', () => {
+// CONTRACT (#204): a link MOVES the active day's round between two accounts INSIDE the one
+// adoption transaction — this store only PLANS the two items: a create-if-empty Put under
+// the destination and a Delete of the source conditioned on the EXACT log it read, copying
+// the item VERBATIM apart from its partition key (this store's attribute shape is the one
+// thing a move must not reinterpret). The condition grammar is checked by the harness above.
+describe('planRoundMove (#204)', () => {
   const FROM = PUBLIC_ID;
   const TO = 'zzzzzzzzzzzzzzzz';
+  const client = (send: (command: unknown) => Promise<unknown>) =>
+    ({ send } as unknown as DynamoDBClient);
 
-  it('moves the whole item in ONE transaction, conditioned on both ends', async () => {
+  it('plans a create-if-empty Put and an exact-snapshot Delete, the item copied verbatim', async () => {
     const source = {
       ...storedItem(['bois', 'foret'], 1_000),
       progress: { N: '40' },
       solved: { BOOL: true },
     };
-    const { store, send } = makeStore(async (command) => {
-      if (command instanceof GetItemCommand) return { Item: source };
-      return {};
-    });
-
-    await expect(store.transfer(KEY, FROM, TO)).resolves.toMatchObject({
-      moved: true,
-      state: {
-        guesses: ['bois', 'foret'],
-        progress: 40,
-        solved: true,
-      },
-    });
-
-    const written = send.mock.calls
-      .map(([command]) => command)
-      .find((command): command is TransactWriteItemsCommand =>
-        command instanceof TransactWriteItemsCommand,
-      );
-    const items = written!.input.TransactItems!;
+    const plan = await planRoundMove(
+      client(async (command) =>
+        (command as GetItemCommand).input.Key!.pk.S === `round#${FROM}` ? { Item: source } : {},
+      ),
+      'scores',
+      KEY,
+      FROM,
+      TO,
+    );
+    expect(plan!.solved).toBe(true);
+    const items = plan!.items;
     expect(items).toHaveLength(2);
-    // The DESTINATION carries every attribute the source had, under the new partition.
     expect(items[0].Put!.Item).toMatchObject({
       ...source,
       pk: { S: `round#${TO}` },
       sk: { S: 'fr#sentence#2026-08-21' },
     });
     expectConditionSyntax(items[0].Put!.ConditionExpression);
-    expectConditionSyntax(items[1].Delete!.ConditionExpression);
     expect(items[1].Delete!.Key).toEqual({
       pk: { S: `round#${FROM}` },
       sk: { S: 'fr#sentence#2026-08-21' },
     });
-    // The source is deleted only if it is STILL the exact log this call read — the list
-    // itself and the puzzle it names, never a length: an appended guess, or a replacement of
-    // equal length, must not be deleted unseen.
+    // The list itself and the puzzle it names, never a length: an appended guess, or a
+    // replacement of equal length, must not be deleted unseen.
+    expectConditionSyntax(items[1].Delete!.ConditionExpression);
     expect(items[1].Delete!.ConditionExpression).toBe('#g = :guesses AND #p = :puzzle');
     expect(items[1].Delete!.ExpressionAttributeValues).toEqual({
       ':guesses': { L: [{ S: 'bois' }, { S: 'foret' }] },
@@ -1117,119 +1107,32 @@ describe('dynamoRoundStore.transfer (#204)', () => {
     });
   });
 
-  it('re-reads a source that CHANGED under it and moves what stands now, never skipping it', async () => {
-    let reads = 0;
-    const before = storedItem(['bois'], 1_000);
-    const after = storedItem(['bois', 'foret'], 2_000);
-    const { store, send } = makeStore(async (command) => {
-      if (command instanceof GetItemCommand) {
-        if (command.input.Key!.pk.S !== `round#${FROM}`) return {};
-        reads += 1;
-        return { Item: reads === 1 ? before : after };
-      }
-      const items = (command as TransactWriteItemsCommand).input.TransactItems!;
-      if (items[1].Delete!.ExpressionAttributeValues![':guesses'].L!.length === 1) {
-        // The source's own condition refused: a guess landed since the read.
-        throw Object.assign(new Error('cancelled'), {
-          name: 'TransactionCanceledException',
-          CancellationReasons: [{ Code: 'None' }, { Code: 'ConditionalCheckFailed' }],
-        });
-      }
-      return {};
-    });
-
-    await expect(store.transfer(KEY, FROM, TO)).resolves.toMatchObject({
-      moved: true,
-      state: { guesses: ['bois', 'foret'] },
-    });
-    const transactions = send.mock.calls
-      .map(([command]) => command)
-      .filter((command): command is TransactWriteItemsCommand =>
-        command instanceof TransactWriteItemsCommand,
-      );
-    expect(transactions).toHaveLength(2);
-    expect(transactions[1].input.TransactItems![0].Put!.Item!.guesses).toEqual(after.guesses);
-
-    // A source that never stops changing is a FAILURE, never "nothing to move": a link that
-    // skipped it would delete the account the round is still sitting in.
-    const churning = makeStore(async (command) => {
-      if (command instanceof GetItemCommand) return { Item: before };
-      throw Object.assign(new Error('cancelled'), {
-        name: 'TransactionCanceledException',
-        CancellationReasons: [{ Code: 'None' }, { Code: 'ConditionalCheckFailed' }],
-      });
-    });
-    await expect(churning.store.transfer(KEY, FROM, TO)).rejects.toThrow(/kept changing/);
-  });
-
-  it('moves NOTHING when the source has no guesses — a started word run is not play', async () => {
-    const { store, send } = makeStore(async (command) => {
-      if (command instanceof GetItemCommand) {
-        return {
-          Item: {
-            pk: { S: `round#${FROM}` },
-            sk: { S: 'fr#sentence#2026-08-21' },
-            puzzle: { S: PUZZLE },
-            startedAt: { S: '2026-08-21T09:00:00.000Z' },
-          },
-        };
-      }
-      return {};
-    });
-
-    await expect(store.transfer(KEY, FROM, TO)).resolves.toBeNull();
-    expect(
-      send.mock.calls.some(([command]) => command instanceof TransactWriteItemsCommand),
-    ).toBe(false);
-  });
-
-  it('returns an already-moved destination state so later transfer stages can resume', async () => {
-    const destination = {
-      ...storedItem(['bois'], 1_000),
-      pk: { S: `round#${TO}` },
-      progress: { N: '40' },
-      solved: { BOOL: true },
+  it('plans NOTHING for a source with no guesses — a started word run is not play', async () => {
+    const started = {
+      pk: { S: `round#${FROM}` },
+      sk: { S: 'fr#sentence#2026-08-21' },
+      puzzle: { S: PUZZLE },
+      startedAt: { S: '2026-08-21T09:00:00.000Z' },
     };
-    const { store, send } = makeStore(async (command) => {
-      if (command instanceof GetItemCommand) {
-        return command.input.Key!.pk.S === `round#${TO}` ? { Item: destination } : {};
-      }
-      return {};
-    });
-
-    await expect(store.transfer(KEY, FROM, TO)).resolves.toMatchObject({
-      moved: false,
-      state: { guesses: ['bois'], progress: 40, solved: true },
-    });
-    expect(
-      send.mock.calls.some(([command]) => command instanceof TransactWriteItemsCommand),
-    ).toBe(false);
+    await expect(
+      planRoundMove(client(async () => ({ Item: started })), 'scores', KEY, FROM, TO),
+    ).resolves.toBeNull();
   });
 
-  it('reads a refused DESTINATION as "nothing moved", and anything else as the failure it is', async () => {
-    const source = storedItem(['bois'], 1_000);
-    // The destination holds play and the source still does: two logs, no honest merge.
-    const refused = makeStore(async (command) => {
-      if (command instanceof GetItemCommand) return { Item: source };
-      throw Object.assign(new Error('cancelled'), {
-        name: 'TransactionCanceledException',
-        CancellationReasons: [{ Code: 'ConditionalCheckFailed' }, { Code: 'None' }],
-      });
-    });
-    await expect(refused.store.transfer(KEY, FROM, TO)).resolves.toBeNull();
-    expect(
-      refused.send.mock.calls.filter(([c]) => c instanceof TransactWriteItemsCommand),
-    ).toHaveLength(1);
-
-    // A THROTTLE is not a refusal: swallowing it would delete the account the round is
-    // still sitting in.
-    const throttled = makeStore(async (command) => {
-      if (command instanceof GetItemCommand) return { Item: source };
-      throw Object.assign(new Error('cancelled'), {
-        name: 'TransactionCanceledException',
-        CancellationReasons: [{ Code: 'ThrottlingError' }, { Code: 'None' }],
-      });
-    });
-    await expect(throttled.store.transfer(KEY, FROM, TO)).rejects.toThrow(/cancelled/);
+  it('plans NOTHING when the destination already holds play — two logs have no honest merge', async () => {
+    await expect(
+      planRoundMove(
+        client(async (command) => ({
+          Item:
+            (command as GetItemCommand).input.Key!.pk.S === `round#${TO}`
+              ? { ...storedItem(['souris'], 1_000), pk: { S: `round#${TO}` } }
+              : storedItem(['bois'], 1_000),
+        })),
+        'scores',
+        KEY,
+        FROM,
+        TO,
+      ),
+    ).resolves.toBeNull();
   });
 });

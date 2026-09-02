@@ -293,13 +293,6 @@ describe('dynamoLinkStore — binding one address', () => {
     const command = send.mock.calls[0][0] as TransactWriteItemsCommand;
     const items = command.input.TransactItems!;
     expect(items[1].Update!.ConditionExpression).toContain('attribute_not_exists(#email)');
-    // …and refuses while a LIVE adoption claim holds the account (a stale one does not).
-    expect(items[1].Update!.ConditionExpression).toContain(
-      '(attribute_not_exists(#linkTo) OR #linkAt <= :stale)',
-    );
-    expect(items[1].Update!.ExpressionAttributeValues![':stale'].N).toBe(
-      String(Math.floor(NOW.getTime() / 1_000) - 600),
-    );
     expect(items[2].Delete!.ConditionExpression).toContain('#codeHash = :codeHash');
     expect(command.input.ClientRequestToken).toHaveLength(36);
 
@@ -381,51 +374,130 @@ describe('dynamoLinkStore — the indivisible core', () => {
       (item) => item.Delete?.Key?.pk.S === `player#${PLAN.from}` && item.Delete.Key.sk.S === 'account',
     );
     expect(source!.Delete!.ConditionExpression).toContain('attribute_not_exists(#email)');
-    // The source is deleted only under THIS target's claim: the play that moved before this
-    // transaction moved under it.
-    expect(source!.Delete!.ConditionExpression).toContain('#linkTo = :to');
-    expect(source!.Delete!.ExpressionAttributeValues![':to'].S).toBe(PLAN.to);
-  });
-});
-
-// CONTRACT: an ERASING adoption claims the source account for one target BEFORE its play
-// moves, on the account row itself. The same target renews; a different one waits for the
-// claim to go stale; an account that gained an address or vanished cannot be claimed.
-describe('dynamoLinkStore — the adoption claim', () => {
-  const input = { from: 'bbbbbbbbbbbbbbbb', to: 'aaaaaaaaaaaaaaaa', now: NOW.toISOString() };
-
-  it('is ONE conditional update on the account row, passing its own target and a stale claim', async () => {
-    const { store, send } = makeStore(async () => ({}));
-    await expect(store.claimAdoption(input)).resolves.toBe('claimed');
-    const command = send.mock.calls[0][0] as UpdateItemCommand;
-    expect(command).toBeInstanceOf(UpdateItemCommand);
-    expect(command.input.Key).toEqual({ pk: { S: `player#${input.from}` }, sk: { S: 'account' } });
-    expect(command.input.UpdateExpression).toBe('SET #linkTo = :to, #linkAt = :now');
-    expect(command.input.ConditionExpression).toBe(
-      'attribute_exists(pk) AND attribute_not_exists(#email)' +
-        ' AND (attribute_not_exists(#linkTo) OR #linkTo = :to OR #linkAt <= :stale)',
-    );
-    expect(command.input.ExpressionAttributeValues![':stale'].N).toBe(
-      String(Math.floor(NOW.getTime() / 1_000) - 600),
-    );
   });
 
-  it('classifies a refusal by one consistent read: elsewhere / account changed', async () => {
-    const refusing = (item: Record<string, AttributeValue> | undefined) =>
-      makeStore(async (command) => {
-        if (command instanceof GetItemCommand) {
-          expect(command.input.ConsistentRead).toBe(true);
-          return { Item: item };
-        }
-        throw new ConditionalCheckFailedException({ message: 'nope', $metadata: {} });
+  // CONTRACT: the active day's play moves INSIDE this transaction — the round exists under
+  // exactly one account at every instant, and an adoption that does not commit moves
+  // nothing. The plan is the stores' own (`planRoundMove` / `planScoreMove`); what is
+  // held here is that it rides the SAME commit, and what happens when it goes stale.
+  const KEY = { date: '2026-08-26', lang: 'fr', mode: 'sentence' as const };
+  const roundKey = (publicId: string) => ({
+    pk: { S: `round#${publicId}` },
+    sk: { S: 'fr#sentence#2026-08-26' },
+  });
+  const round = (guesses: string[], solved = false) => ({
+    ...roundKey(PLAN.from),
+    guesses: { L: guesses.map((g) => ({ S: g })) },
+    puzzle: { S: 'rev1' },
+    createdAt: { S: NOW.toISOString() },
+    ...(solved ? { solved: { BOOL: true } } : {}),
+  });
+  const scoreKey = (publicId: string) => ({
+    pk: { S: 'score#2026-08-26#fr#sentence' },
+    sk: { S: publicId },
+  });
+
+  it('carries the active day\'s round and score in the SAME transaction as the identity', async () => {
+    const { store, send } = makeStore(async (command) => {
+      if (!(command instanceof GetItemCommand)) return {};
+      const key = command.input.Key!;
+      if (key.pk.S === `round#${PLAN.from}`) return { Item: round(['chat', 'chien'], true) };
+      if (key.pk.S === scoreKey('')['pk'].S && key.sk.S === PLAN.from) {
+        return { Item: { ...scoreKey(PLAN.from), score: { N: '2' } } };
+      }
+      return {};
+    });
+    await expect(
+      store.adopt({ ...PLAN, erase: true, mergeFrom: PLAN.from, moves: [KEY] }),
+    ).resolves.toEqual({ outcome: 'adopted', moved: [{ key: KEY, solved: true }] });
+
+    const transactions = send.mock.calls
+      .map(([c]) => c)
+      .filter((c): c is TransactWriteItemsCommand => c instanceof TransactWriteItemsCommand);
+    expect(transactions).toHaveLength(1);
+    const items = transactions[0].input.TransactItems!;
+    // Identity (device, target check, challenge, merge job, account, profile) + the round's
+    // Put/Delete + the score's Put/Delete.
+    expect(items).toHaveLength(10);
+    expect(items[6].Put!.Item!.pk.S).toBe(`round#${PLAN.to}`);
+    expect(items[7].Delete!.Key).toEqual(roundKey(PLAN.from));
+    expect(items[7].Delete!.ConditionExpression).toBe('#g = :guesses AND #p = :puzzle');
+    expect(items[8].Put!.Item!.sk.S).toBe(PLAN.to);
+    expect(items[9].Delete!.Key).toEqual(scoreKey(PLAN.from));
+  });
+
+  it('moves NOTHING when the destination already holds play, and reports so', async () => {
+    const { store, send } = makeStore(async (command) => {
+      if (!(command instanceof GetItemCommand)) return {};
+      const key = command.input.Key!;
+      if (key.pk.S === `round#${PLAN.from}`) return { Item: round(['chat']) };
+      if (key.pk.S === `round#${PLAN.to}`) {
+        return { Item: { ...round(['souris']), ...roundKey(PLAN.to) } };
+      }
+      return {};
+    });
+    await expect(
+      store.adopt({ ...PLAN, erase: true, mergeFrom: PLAN.from, moves: [KEY] }),
+    ).resolves.toEqual({ outcome: 'adopted', moved: [] });
+    const items = (send.mock.calls.map(([c]) => c).find((c) => c instanceof TransactWriteItemsCommand) as TransactWriteItemsCommand)
+      .input.TransactItems!;
+    expect(items).toHaveLength(6);
+  });
+
+  it('plans AGAIN when only the play refused — a guess that landed meanwhile is carried, never deleted unseen', async () => {
+    let reads = 0;
+    let writes = 0;
+    const { store, send } = makeStore(async (command) => {
+      if (command instanceof GetItemCommand) {
+        if (command.input.Key!.pk.S !== `round#${PLAN.from}`) return {};
+        reads += 1;
+        return { Item: round(reads === 1 ? ['chat'] : ['chat', 'chien']) };
+      }
+      writes += 1;
+      if (writes === 1) {
+        const items = (command as TransactWriteItemsCommand).input.TransactItems!;
+        throw Object.assign(new Error('cancelled'), {
+          name: 'TransactionCanceledException',
+          // Only the source round's exact-snapshot delete refused.
+          CancellationReasons: items.map((_, index) => ({
+            Code: index === 7 ? 'ConditionalCheckFailed' : 'None',
+          })),
+        });
+      }
+      return {};
+    });
+    await expect(
+      store.adopt({ ...PLAN, erase: true, mergeFrom: PLAN.from, moves: [KEY] }),
+    ).resolves.toEqual({ outcome: 'adopted', moved: [{ key: KEY, solved: false }] });
+    const transactions = send.mock.calls
+      .map(([c]) => c)
+      .filter((c): c is TransactWriteItemsCommand => c instanceof TransactWriteItemsCommand);
+    expect(transactions).toHaveLength(2);
+    expect(transactions[1].input.TransactItems![6].Put!.Item!.guesses).toEqual({
+      L: [{ S: 'chat' }, { S: 'chien' }],
+    });
+    // A different plan is a different request: the idempotency token moved with it.
+    expect(transactions[1].input.ClientRequestToken).not.toBe(
+      transactions[0].input.ClientRequestToken,
+    );
+  });
+
+  it('answers the IDENTITY refusal when both an identity item and a move refused — nothing was written', async () => {
+    const { store } = makeStore(async (command) => {
+      if (command instanceof GetItemCommand) {
+        return command.input.Key!.pk.S === `round#${PLAN.from}` ? { Item: round(['chat']) } : {};
+      }
+      const items = (command as TransactWriteItemsCommand).input.TransactItems!;
+      throw Object.assign(new Error('cancelled'), {
+        name: 'TransactionCanceledException',
+        CancellationReasons: items.map((_, index) => ({
+          Code: index === 4 || index === 7 ? 'ConditionalCheckFailed' : 'None',
+        })),
       });
+    });
     await expect(
-      refusing({ linkTo: { S: 'cccccccccccccccc' }, linkAt: { N: '1' } }).store.claimAdoption(input),
-    ).resolves.toBe('claimed_elsewhere');
-    await expect(
-      refusing({ email: { S: 'zoe@example.com' } }).store.claimAdoption(input),
-    ).resolves.toBe('account_changed');
-    await expect(refusing(undefined).store.claimAdoption(input)).resolves.toBe('account_changed');
+      store.adopt({ ...PLAN, erase: true, mergeFrom: PLAN.from, moves: [KEY] }),
+    ).resolves.toEqual({ outcome: 'account_changed', moved: [] });
   });
 });
 

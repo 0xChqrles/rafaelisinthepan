@@ -49,7 +49,7 @@ import {
   PUBLIC_ID_PATTERN,
   VOCAB_BUILDS,
 } from '@whippin/shared';
-import { accountStakes, drainMerges, transferActiveDay } from './accountLink';
+import { accountStakes, drainMerges, supportedTuples } from './accountLink';
 import { deviceTokenHash, type DeviceStore } from './deviceStore';
 import type { FriendStore } from './friendStore';
 import type { PlayerHistoryStore } from './historyStore';
@@ -63,17 +63,13 @@ import {
   requireTurnstileToken,
 } from './liveRoute';
 import { linkCodeMail, type Mailer } from './mailer';
-import type { RoundStore } from './roundStore';
 import { hashClientIp } from './scores';
-import type { ScoreStore } from './scoreStore';
 import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respond';
 import type { TurnstileVerifier } from './turnstile';
 
 export interface LinkHandlerDeps {
   links: LinkStore;
   friends: FriendStore;
-  rounds: RoundStore;
-  scores: ScoreStore;
   history: PlayerHistoryStore;
   mailer: Mailer;
   // SENDING a code creates state and puts a message in somebody else's inbox, so it is
@@ -343,23 +339,12 @@ export async function handleLink(
           responseHeaders,
         );
       }
-      if (current.account.email === undefined) {
-        // No address won: the account is CLAIMED by an adoption in flight from another of
-        // its devices (`LinkClaimOutcome`), whose play may already be moving out. That is
-        // not "saved under another address"; it is an account changing under this call.
-        return errorResponse(
-          409,
-          'link_changed',
-          'The account changed while it was being linked. Try the code again.',
-          responseHeaders,
-        );
-      }
       return errorResponse(
         409,
         'account_linked',
         'This account is already saved under another address.',
         responseHeaders,
-        { email: current.account.email },
+        current.account.email ? { email: current.account.email } : undefined,
       );
     }
     // `taken`: another device bound this address between the lookup and the write. That is
@@ -436,49 +421,13 @@ export async function handleLink(
     );
   }
 
-  // An ERASING adoption first CLAIMS the account being left for this target
-  // (`LinkClaimOutcome`): the moves below are several writes with nothing tying them to one
-  // adoption, and two devices on this account linking two different addresses at once would
-  // otherwise split the day's play between them. A claim this target already holds is the
-  // player's own retry and passes; another target's live claim refuses BEFORE anything
-  // moves.
-  if (erase) {
-    const claim = await deps.links.claimAdoption({
-      from: leaving,
-      to: target,
-      now: instant.toISOString(),
-    });
-    if (claim !== 'claimed') {
-      return errorResponse(
-        409,
-        'link_changed',
-        claim === 'claimed_elsewhere'
-          ? 'This account is already being linked to another address. Try again in a few minutes.'
-          : 'The account changed while it was being linked. Try the code again.',
-        responseHeaders,
-      );
-    }
-  }
-
-  // The active day's play moves next, and only when the account it is in is about to be
-  // deleted (#204: when it survives, it keeps its own play — the right answer for an account
-  // the player can sign back into). See `accountLink.ts` for why this order is the
-  // recoverable one.
-  const moved = erase
-    ? await transferActiveDay(
-        { rounds: deps.rounds, scores: deps.scores, history: deps.history },
-        leaving,
-        target,
-        activeDate(instant),
-      )
-    : [];
-
-  // Read the receipt BEFORE the identity transaction. The transfers above have already
-  // credited a moved solve, so this is the same answer the post-commit read produced, but a
-  // history outage can no longer turn a committed adoption into a 500 the client cannot
-  // distinguish from "nothing happened".
-  const stakes = await accountStakes(deps.history, target, activeDay);
-
+  // The identity and the active day's play, ONE transaction (#204): the device moves, the
+  // account being left is deleted with its profile row, the friend-merge job is persisted,
+  // and — when that account is being erased — every supported language × mode tuple of
+  // the active day moves with it where the destination has nothing and the source has
+  // play. "Active day" means ALL of them, never whichever route the linking device is on:
+  // which language a player was on lives in the browser and nowhere else, so a server that
+  // guessed would erase the round it guessed wrong about. See `accountLink.ts`.
   const adoption = await deps.links.adopt({
     tokenHash: deviceTokenHash(token.value),
     deviceId: held.deviceId,
@@ -487,13 +436,19 @@ export async function handleLink(
     erase,
     emailHash: hash,
     codeHash,
-    // The friend merge belongs to the deletion: an account that SURVIVES keeps its own
-    // edges, and there is nothing to move.
-    ...(erase ? { mergeFrom: leaving } : {}),
+    // The friend merge and the transfer both belong to the DELETION: an account that
+    // SURVIVES keeps its own edges and its own play — the right answer for an account the
+    // player can sign back into.
+    ...(erase
+      ? {
+          mergeFrom: leaving,
+          moves: supportedTuples().map((tuple) => ({ date: activeDate(instant), ...tuple })),
+        }
+      : {}),
     now: instant.toISOString(),
   });
-  if (adoption !== 'adopted') {
-    if (adoption === 'challenge_changed') {
+  if (adoption.outcome !== 'adopted') {
+    if (adoption.outcome === 'challenge_changed') {
       return errorResponse(
         409,
         'code_spent',
@@ -515,6 +470,29 @@ export async function handleLink(
     }
   }
 
+  // A transferred SENTENCE solve owes the adopting account's streak its day (#211). It
+  // follows the commit as the round route's own credit does: an idempotent set insert into
+  // a rebuildable cache, LOGGED when it fails and never surfaced — the identity has already
+  // changed, and the answer the player is waiting for is about that.
+  for (const { key, solved } of adoption.moved) {
+    if (key.mode !== 'sentence' || !solved) continue;
+    try {
+      await deps.history.recordSolvedDay({ publicId: target, lang: key.lang, day: dayNumber(key.date) });
+    } catch (error) {
+      console.warn(`[link] solved-day credit ${key.lang} ${key.date} -> ${target} failed:`, error);
+    }
+  }
+
+  // THE RECEIPT: what the recovered account holds, read AFTER the commit so a transferred
+  // solve is already counted. Decorative — an unreadable one is simply no receipt, never a
+  // failed link on a device whose identity has already moved.
+  let stakes = null;
+  try {
+    stakes = await accountStakes(deps.history, target, activeDay);
+  } catch (error) {
+    console.warn(`[link] receipt read for ${target} failed:`, error);
+  }
+
   // The fan-out the transaction promised. It is best-effort HERE — the identity has already
   // changed and the player is waiting on an answer about it — and durable in the job it
   // drains, so an unfinished merge is reported rather than lost.
@@ -528,7 +506,7 @@ export async function handleLink(
       deviceId: held.deviceId,
       email,
       erased: erase ? leaving : null,
-      moved: moved.length,
+      moved: adoption.moved.length,
       mergePending: !merged,
       stakes,
     },

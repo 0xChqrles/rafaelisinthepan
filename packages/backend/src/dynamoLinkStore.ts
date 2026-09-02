@@ -23,16 +23,15 @@ import {
   deviceIndexKey,
   deviceKey,
 } from './deviceStore';
+import { planRoundMove } from './dynamoRoundStore';
+import { planScoreMove } from './dynamoScoreStore';
 import {
   BINDING_SORT_KEY,
   CHALLENGE_SORT_KEY,
-  CLAIM_AT_ATTRIBUTE,
-  CLAIM_TO_ATTRIBUTE,
   MERGE_SORT_PREFIX,
   SEND_SORT_KEY,
   bindingKey,
   challengeKey,
-  claimStaleBefore,
   mergeKey,
   mergeSortKey,
   recentSends,
@@ -40,7 +39,8 @@ import {
   sameDigest,
   type AccountAdoption,
   type EmailBinding,
-  type LinkClaimOutcome,
+  type LinkAdoptResult,
+  type LinkMovedRound,
   type LinkStore,
   type LinkVerifyResult,
 } from './linkStore';
@@ -51,9 +51,11 @@ import { PROFILE_SORT_KEY, profileKey } from './profileStore';
 // This is the ONE file that writes items belonging to more than one store's key space, and
 // deliberately so: `adopt` has to be a single transaction, and the half-states are not
 // equally harmless — a device left on a DELETED account is a player signed out mid-link
-// with everything gone. Every key it writes comes from the OWNING module's own formatter
-// (`deviceKey`, `accountKey`, `profileKey`), never a literal, so the two files cannot drift
-// onto two spellings of one item.
+// with everything gone, and a round moved by an adoption that never commits is play under
+// an account nobody holds. Every key it writes comes from the OWNING module's own formatter
+// (`deviceKey`, `accountKey`, `profileKey`), never a literal, and the round and score
+// halves of the active-day transfer are PLANNED by their own stores (`planRoundMove`,
+// `planScoreMove`) — this file only commits the items they hand it.
 
 function isConditionFailure(error: unknown): boolean {
   return (
@@ -90,6 +92,12 @@ function requestToken(kind: string, ...parts: string[]): string {
 // under it. The allowances are small (the largest is LINK_SENDS_PER_IP), so a list that
 // changes more often than this inside one request is churn, not contention.
 const SEND_WRITE_ATTEMPTS = Math.max(LINK_SENDS_PER_ADDRESS, LINK_SENDS_PER_IP);
+
+// How many times an adoption re-plans the active day's moves when only THEY refused the
+// transaction — a guess landed on the source, or the destination gained play, between the
+// plan and the commit. A player appends about once a second at most; play that changes
+// more often than this inside one request is not a player typing.
+const MOVE_PLAN_ATTEMPTS = 4;
 
 export function dynamoLinkStore(client: DynamoDBClient, tableName: string): LinkStore {
   const challengeItem = async (hash: string): Promise<Record<string, AttributeValue> | undefined> => {
@@ -305,23 +313,13 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
                   UpdateExpression: 'SET #email = :email, #emailAt = :now',
                   // The account must still exist AND still have its one address slot. Two
                   // different-address binds can pass the route's same snapshot, so the
-                  // invariant belongs in this transaction, not in that read. And it must
-                  // not be CLAIMED by a live adoption (`LinkClaimOutcome`): its play may
-                  // already be moving out, and an account that is about to be erased must
-                  // not become reachable halfway through.
+                  // invariant belongs in this transaction, not in that read.
                   ConditionExpression:
-                    'attribute_exists(pk) AND (attribute_not_exists(#email) OR #email = :email)' +
-                    ' AND (attribute_not_exists(#linkTo) OR #linkAt <= :stale)',
-                  ExpressionAttributeNames: {
-                    '#email': 'email',
-                    '#emailAt': 'emailAt',
-                    '#linkTo': CLAIM_TO_ATTRIBUTE,
-                    '#linkAt': CLAIM_AT_ATTRIBUTE,
-                  },
+                    'attribute_exists(pk) AND (attribute_not_exists(#email) OR #email = :email)',
+                  ExpressionAttributeNames: { '#email': 'email', '#emailAt': 'emailAt' },
                   ExpressionAttributeValues: {
                     ':email': { S: input.email },
                     ':now': { S: input.now },
-                    ':stale': { N: String(claimStaleBefore(input.now)) },
                   },
                 },
               },
@@ -363,47 +361,9 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
       }
     },
 
-    async claimAdoption({ from, to, now }): Promise<LinkClaimOutcome> {
-      const key = { pk: { S: accountKey(from) }, sk: { S: ACCOUNT_SORT_KEY } };
-      try {
-        await client.send(
-          new UpdateItemCommand({
-            TableName: tableName,
-            Key: key,
-            UpdateExpression: 'SET #linkTo = :to, #linkAt = :now',
-            // Only an UNLINKED account can be claimed, by its current claimant (a retry
-            // renews it), by anybody once the standing claim is stale, or when none stands.
-            ConditionExpression:
-              'attribute_exists(pk) AND attribute_not_exists(#email)' +
-              ' AND (attribute_not_exists(#linkTo) OR #linkTo = :to OR #linkAt <= :stale)',
-            ExpressionAttributeNames: {
-              '#email': 'email',
-              '#linkTo': CLAIM_TO_ATTRIBUTE,
-              '#linkAt': CLAIM_AT_ATTRIBUTE,
-            },
-            ExpressionAttributeValues: {
-              ':to': { S: to },
-              ':now': { N: String(Math.floor(Date.parse(now) / 1_000)) },
-              ':stale': { N: String(claimStaleBefore(now)) },
-            },
-          }),
-        );
-        return 'claimed';
-      } catch (error) {
-        if (!isConditionFailure(error)) throw error;
-      }
-      // Classify the refusal by one consistent read, the verify's own pattern.
-      const response = await client.send(
-        new GetItemCommand({ TableName: tableName, Key: key, ConsistentRead: true }),
-      );
-      const item = response.Item;
-      if (!item || item.email?.S !== undefined) return 'account_changed';
-      return 'claimed_elsewhere';
-    },
-
-    async adopt(input: AccountAdoption) {
+    async adopt(input: AccountAdoption): Promise<LinkAdoptResult> {
       const seconds = Math.floor(Date.parse(input.now) / 1_000);
-      const items: TransactWriteItem[] = [
+      const identity: TransactWriteItem[] = [
         {
           // The ONE device item MOVES. Its base key is the token's hash and does not change;
           // only the account it names and the index key the sign-out screen reads it by.
@@ -458,7 +418,7 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
         },
       ];
       if (input.mergeFrom !== undefined) {
-        items.push({
+        identity.push({
           Put: {
             TableName: tableName,
             Item: {
@@ -473,20 +433,15 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
         // The account row AND the profile row. Identity-bearing reads resolve a face through
         // the profile row and check the account row beside it, so leaving either behind
         // would keep exposing an account the player has left for good.
-        items.push(
+        identity.push(
           {
             Delete: {
               TableName: tableName,
               Key: { pk: { S: accountKey(input.from) }, sk: { S: ACCOUNT_SORT_KEY } },
               // `erase` came from an earlier authenticated snapshot. A concurrent bind is
               // allowed to win, but then this account is reachable and may not be deleted.
-              // And the CLAIM must still be this target's: the play that moved before this
-              // transaction moved under it, and a stale claim another target took over
-              // means that target's moves are the ones now in flight.
-              ConditionExpression:
-                'attribute_exists(pk) AND attribute_not_exists(#email) AND #linkTo = :to',
-              ExpressionAttributeNames: { '#email': 'email', '#linkTo': CLAIM_TO_ATTRIBUTE },
-              ExpressionAttributeValues: { ':to': { S: input.to } },
+              ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(#email)',
+              ExpressionAttributeNames: { '#email': 'email' },
             },
           },
           {
@@ -500,7 +455,7 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
         // A surviving source must still be live and linked. If another adoption deleted it
         // after the route snapshot, moving this device on the strength of stale state would
         // leave the table with a second unexplained identity transition.
-        items.push({
+        identity.push({
           ConditionCheck: {
             TableName: tableName,
             Key: { pk: { S: accountKey(input.from) }, sk: { S: ACCOUNT_SORT_KEY } },
@@ -509,40 +464,64 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
           },
         });
       }
-      const sourceIndex = items.length - (input.erase ? 2 : 1);
-      try {
-        await client.send(
-          new TransactWriteItemsCommand({
-            ClientRequestToken: requestToken(
-              'adopt',
-              tableName,
-              input.tokenHash,
-              input.deviceId,
-              input.from,
-              input.to,
-              input.emailHash,
-              input.codeHash,
-              String(input.erase),
-              input.mergeFrom ?? '',
-              input.now,
-            ),
-            TransactItems: items,
+      const sourceIndex = identity.length - (input.erase ? 2 : 1);
+
+      for (let attempt = 0; attempt < MOVE_PLAN_ATTEMPTS; attempt += 1) {
+        // The active day's play, planned by the stores that own the rows and committed HERE,
+        // beside the identity — every tuple in parallel, each its own two consistent reads.
+        // The score row is planned only for a round that moves: it follows the round it was
+        // derived from, never travels alone.
+        const plans = await Promise.all(
+          (input.moves ?? []).map(async (key) => {
+            const round = await planRoundMove(client, tableName, key, input.from, input.to);
+            if (!round) return null;
+            const score = await planScoreMove(client, tableName, key, input.from, input.to);
+            return { key, round, score };
           }),
         );
-        return 'adopted';
-      } catch (error) {
-        const reasons = cancellationReasons(error);
-        if (!reasons || !conditionalCancellation(reasons)) throw error;
-        if (reasons[2]?.Code === 'ConditionalCheckFailed') return 'challenge_changed';
-        if (
-          reasons[1]?.Code === 'ConditionalCheckFailed' ||
-          reasons[sourceIndex]?.Code === 'ConditionalCheckFailed'
-        ) {
-          return 'account_changed';
+        const moved: LinkMovedRound[] = [];
+        const moves: TransactWriteItem[] = [];
+        for (const plan of plans) {
+          if (!plan) continue;
+          moved.push({ key: plan.key, solved: plan.round.solved });
+          moves.push(...plan.round.items, ...plan.score);
         }
-        if (reasons[0]?.Code === 'ConditionalCheckFailed') return 'device_changed';
-        throw error;
+        try {
+          await client.send(
+            new TransactWriteItemsCommand({
+              // The plan is part of the token: DynamoDB refuses one token reused with
+              // different items, and a re-plan IS different items.
+              ClientRequestToken: requestToken(
+                'adopt',
+                tableName,
+                input.tokenHash,
+                input.deviceId,
+                input.from,
+                input.to,
+                input.emailHash,
+                input.codeHash,
+                String(input.erase),
+                input.mergeFrom ?? '',
+                input.now,
+                JSON.stringify(moves),
+              ),
+              TransactItems: [...identity, ...moves],
+            }),
+          );
+          return { outcome: 'adopted', moved };
+        } catch (error) {
+          const reasons = cancellationReasons(error);
+          if (!reasons || !conditionalCancellation(reasons)) throw error;
+          const refused = (index: number) => reasons[index]?.Code === 'ConditionalCheckFailed';
+          if (refused(2)) return { outcome: 'challenge_changed', moved: [] };
+          if (refused(1) || refused(sourceIndex)) return { outcome: 'account_changed', moved: [] };
+          if (refused(0)) return { outcome: 'device_changed', moved: [] };
+          // Only a MOVE refused: the play changed between the plan and the commit. Nothing
+          // was written — plan again over what stands now, so the guess that landed is
+          // carried across rather than deleted unseen.
+        }
       }
+      throw new Error("The active day's play kept changing while an account was being adopted.");
     },
 
     async pendingMerges(accountId) {

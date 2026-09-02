@@ -29,7 +29,7 @@
 // second-device problem tractable, because there is nothing to detect.
 
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
-import { LINK_CODE_TTL_SECONDS } from '@whippin/shared';
+import type { RoundKey } from './roundStore';
 
 // The KEY spelling of an address. SHA-256 of the CANONICAL form (`normalizeEmail`), so one
 // address has exactly one key and a table dump enumerates no inboxes. It is deliberately
@@ -106,51 +106,19 @@ export type LinkAdoptOutcome =
   | 'challenge_changed'
   | 'device_changed';
 
-// THE ADOPTION CLAIM. An erasing adoption is not one write: the active day's play moves
-// tuple by tuple BEFORE the identity transaction (see `accountLink.ts` for why that order
-// is the recoverable one), and nothing in those moves says which adoption they belong to.
-// Two devices on one unlinked account, each linking a DIFFERENT address at the same moment,
-// would each move the tuples their own transfers reached first — splitting one day's play
-// across two targets before only one of the two final transactions could win. And a bind on
-// the source account, landing between the moves and the commit, would leave that account
-// alive and reachable with its play already gone.
-//
-// So the source account is CLAIMED for one target first, on its own row, and every later
-// step verifies the claim: the final delete conditions on it, and a bind refuses while one
-// stands. A claim for the SAME target always passes — that is the player's own retry after
-// a lost answer or a resent code — and a claim held by a different target refuses until it
-// goes STALE (`LINK_CLAIM_SECONDS`), so an abandoned link cannot lock the account forever.
-// The moves themselves do not re-check it: a transfer runs inside the request that took the
-// claim, and the Lambda's whole lifetime is two orders of magnitude shorter than the window.
-//   claimed           — this target holds the claim (fresh, renewed, or taken over stale);
-//   claimed_elsewhere — another target's claim stands and is not stale;
-//   account_changed   — the account is gone or carries an address (a bind won).
-export type LinkClaimOutcome = 'claimed' | 'claimed_elsewhere' | 'account_changed';
-
-// How long a claim binds the source account to one target with no commit. It only has to
-// outlive the request that took it (the Lambda's timeout is seconds), and a code that could
-// resume it lives this long anyway.
-export const LINK_CLAIM_SECONDS = LINK_CODE_TTL_SECONDS;
-
-// The claim's two attributes on the ACCOUNT row: the target, and when it was taken (epoch
-// seconds — a Number, because a condition compares it arithmetically for staleness).
-export const CLAIM_TO_ATTRIBUTE = 'linkTo';
-export const CLAIM_AT_ATTRIBUTE = 'linkAt';
-
-export function claimStaleBefore(now: string): number {
-  return Math.floor(Date.parse(now) / 1_000) - LINK_CLAIM_SECONDS;
+// One tuple of play the adoption CARRIED across (#204's active-day transfer): the round row
+// and, when one existed, the score row, both addressed by (date, lang, mode) per player.
+// `solved` is what the moved round's own summary said, for the solved-day credit a
+// transferred SENTENCE solve owes the adopting account's streak.
+export interface LinkMovedRound {
+  key: RoundKey;
+  solved: boolean;
 }
 
-// One tuple of play that MOVES from the account being left to the one being adopted (#204's
-// active-day transfer). It is the same triple for the round row and the score row, because
-// both are addressed by (date, lang, mode) per player.
-export interface LinkRoundMove {
-  date: string;
-  lang: string;
-  mode: 'sentence' | 'word';
-  // The game day, for the solved-day credit a transferred SENTENCE solve owes the adopting
-  // account's streak. Absent when the moved round is not a solve.
-  solvedDay?: number;
+export interface LinkAdoptResult {
+  outcome: LinkAdoptOutcome;
+  // Empty unless the outcome is `adopted`.
+  moved: LinkMovedRound[];
 }
 
 // The identity-bearing core of a link, committed as ONE transaction (see `adopt`).
@@ -174,6 +142,12 @@ export interface AccountAdoption {
   codeHash: string;
   // A friend-merge job for the surviving account, present exactly when `erase` is.
   mergeFrom?: string;
+  // The ACTIVE DAY's tuples — every supported language × both modes — whose play moves with
+  // the device when the account it is in is being erased; present exactly when `erase` is.
+  // Each tuple moves only when the source holds guesses and the destination holds none,
+  // and it moves INSIDE the identity transaction: the round exists under exactly one account
+  // at every instant, and there is no partial adoption for a retry or a rival to inherit.
+  moves?: readonly RoundKey[];
   now: string;
 }
 
@@ -209,19 +183,18 @@ export interface LinkStore {
     accountId: string;
     now: string;
   }): Promise<LinkBindOutcome>;
-  // CLAIM the source account for one target before its play moves — see `LinkClaimOutcome`.
-  // Only an account with NO address can be claimed: the claim exists for the erasing
-  // adoption, and an account that carries an address is never erased.
-  claimAdoption(input: { from: string; to: string; now: string }): Promise<LinkClaimOutcome>;
   // The identity-bearing core, indivisible: consume the challenge, move the one device item,
   // delete the account being left (its account row AND its profile row, so no
-  // identity-bearing read can dress a deleted player), and persist the friend-merge job.
-  // An ERASING adoption deletes the source only while it holds the claim for `to`.
+  // identity-bearing read can dress a deleted player), persist the friend-merge job — and
+  // carry the active day's play across (`moves`), each tuple conditioned on the exact rows
+  // it was planned from, so a guess landing meanwhile refuses the commit and the plan is
+  // made again over what now stands.
   //
   // It is ONE transaction because the half-states are not equally harmless: a device left on
-  // a deleted account is a player signed out mid-link with everything gone, which is the one
-  // outcome this flow may never produce.
-  adopt(input: AccountAdoption): Promise<LinkAdoptOutcome>;
+  // a deleted account is a player signed out mid-link with everything gone, and a round
+  // moved by an adoption that never commits is play under an account nobody holds — neither
+  // is an outcome this flow may produce.
+  adopt(input: AccountAdoption): Promise<LinkAdoptResult>;
   // The accounts whose friends still have to be merged into this one. Normally empty; a
   // partially drained job is what makes it not.
   pendingMerges(accountId: string): Promise<string[]>;
@@ -238,11 +211,8 @@ export interface LinkStore {
 // this pair says honestly that it exists for the in-memory implementation.
 export interface LinkDeviceWrites {
   // The process-local equivalent of the production account-email condition: bind only
-  // while the account exists, is still unlinked (or already carries this exact value), and
-  // is not claimed by a live adoption.
+  // while the account exists and is still unlinked (or already carries this exact value).
   bindAccountEmail(accountId: string, email: string, now: string): boolean;
-  // The process-local equivalent of the production claim condition (`LinkClaimOutcome`).
-  claimAdoption(input: { from: string; to: string; now: string }): LinkClaimOutcome;
   // The process-local equivalent of the production adoption conditions. It validates the
   // device, both accounts and the erase/survive email state, then applies the device move
   // and optional account deletion synchronously inside the one owning map.
@@ -260,6 +230,20 @@ export interface LinkProfileWrites {
   // Delete the player's public row, so no identity-bearing read can dress a deleted
   // account (#204: "a missing profile must not fall back to a display identity").
   remove(publicId: string): void;
+}
+
+// The process-local halves of the active-day transfer, applied synchronously inside the
+// memory link store's one critical section — what the round and score Put/Delete pairs are
+// inside the production transaction.
+export interface LinkRoundWrites {
+  // Move the round when the source holds guesses and the destination holds none; answers
+  // what moved, or null when nothing did.
+  move(key: RoundKey, from: string, to: string): LinkMovedRound | null;
+}
+
+export interface LinkScoreWrites {
+  // Move the recorded row when the source has one and the destination has none.
+  move(key: RoundKey, from: string, to: string): void;
 }
 
 // The pending challenge for one address.

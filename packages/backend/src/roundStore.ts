@@ -288,28 +288,6 @@ export interface RoundStore {
   // floor, and only for the DEVICE the stamp names (#217). Like `append`, every outcome
   // answers with the stored state.
   submit(input: RoundSubmitInput): Promise<{ outcome: RoundSubmitOutcome; state: RoundState }>;
-  // Move one player's stored round to ANOTHER account (#204's active-day transfer). It is
-  // ATOMIC — the row exists under exactly one account at every instant — and CONDITIONAL on
-  // the only case the issue permits: `from` has a round and `to` has none. Answering false
-  // is the ordinary outcome, not a failure: it means the source was empty or the
-  // destination was not, and either way there is nothing to move.
-  //
-  // "`to` has nothing" is keyed on GUESSES, never on solving — a solved round is just a
-  // round whose last guess landed rank 0 — and a Word mode start stamp is NOT something: a
-  // started-but-unsubmitted run holds no guesses server-side at all, so a recorded run
-  // moves in over it (#204).
-  //
-  // It answers the state now standing at the destination and whether THIS call moved it.
-  // When an earlier attempt moved the round but failed while transferring its score or
-  // solved-day credit, the retry sees `moved: false` with that destination state and can
-  // finish the remaining idempotent side effects. Null still means there is no transferable
-  // state, or both accounts held competing logs.
-  transfer(key: RoundKey, from: string, to: string): Promise<RoundTransferResult | null>;
-}
-
-export interface RoundTransferResult {
-  state: RoundState;
-  moved: boolean;
 }
 
 // A round key is only (date, lang, mode), so RE-PUBLISHING keeps the key while changing the

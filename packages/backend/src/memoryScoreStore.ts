@@ -6,6 +6,7 @@ import {
   type ScoreStore,
   type ScoreSubmitOutcome,
 } from './scoreStore';
+import type { LinkScoreWrites } from './linkStore';
 
 interface DedupCount {
   count: number;
@@ -24,7 +25,7 @@ interface DedupCount {
 export function memoryScoreStore(
   now: () => Date = () => new Date(),
   submissionLimit: number = SCORE_SUBMISSION_LIMIT,
-): ScoreStore {
+): ScoreStore & LinkScoreWrites {
   // Per player: the score AND the published version it was earned on (#203).
   const days = new Map<string, Map<string, { score: number; revision: string }>>();
   const dedup = new Map<string, DedupCount>();
@@ -86,14 +87,14 @@ export function memoryScoreStore(
     // #204's active-day transfer: the recorded row follows the round it was derived from.
     // It spends no allowance — the population gains no player, it renames the one it has —
     // and it is refused when the destination already holds a row of its own.
-    async transfer(key, from, to) {
+    // #204's active-day transfer, the score half (`planScoreMove`'s rules): the row moves
+    // when the source has one and the destination has none.
+    move(key, from, to) {
       const day = days.get(dayKey(key));
       const row = day?.get(from);
-      if (!day || !row) return false;
-      if (day.has(to)) return false;
+      if (!day || !row || day.has(to)) return;
       day.set(to, row);
       day.delete(from);
-      return true;
     },
   };
 }

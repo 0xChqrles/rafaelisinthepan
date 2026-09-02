@@ -7,6 +7,7 @@ import {
   UpdateItemCommand,
   type AttributeValue,
   type DynamoDBClient,
+  type TransactWriteItem,
 } from '@aws-sdk/client-dynamodb';
 import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
 import { batchRetryDelayMs } from './dynamoScoreStore';
@@ -28,11 +29,6 @@ import {
 // immediately, so a transient throttle cannot burn the whole budget inside a few
 // milliseconds and 500 the friends board.
 const BATCH_RETRY_ATTEMPTS = 5;
-
-// How many times a transfer re-reads a source that changed under it before giving up. A
-// player appends about once a second at most; a source that changes more often than this
-// inside one request is not a player typing.
-const TRANSFER_ATTEMPTS = 4;
 
 export interface DynamoRoundStoreOptions {
   // Injected by tests, so asserting the retry SCHEDULE costs no real time.
@@ -541,85 +537,6 @@ export function dynamoRoundStore(
     // holds the log this call read — so the round exists under exactly ONE account at every
     // instant. The item is copied VERBATIM apart from its partition key: this store's own
     // attribute shape is the one thing a move must not reinterpret.
-    async transfer(key, from, to) {
-      const destinationResult = async () => {
-        const destination = await readItem(key, to, true);
-        return destination && (destination.guesses?.L?.length ?? 0) > 0
-          ? { state: itemToState(destination)!, moved: false }
-          : null;
-      };
-      // The move is conditioned on the EXACT log it read — the list itself and the puzzle
-      // it names, never a length: a guess appended between the read and the write would
-      // otherwise be deleted without ever reaching the destination, and a replacement of
-      // equal length would move a log this call never saw. A source that changed is read
-      // again and moved as it now stands; only a source that keeps changing fails, and it
-      // fails LOUDLY — a link that silently skipped the transfer would then delete the
-      // account the round is still sitting in.
-      for (let pass = 0; pass < TRANSFER_ATTEMPTS; pass += 1) {
-        const source = await readItem(key, from, true);
-        // Keyed on GUESSES, never on the item's existence: a word round that was merely
-        // STARTED holds none server-side, and #204 lets a recorded run move in over it.
-        // When the source is already gone, the destination read distinguishes a retry after
-        // a committed move from a tuple with no play anywhere; the caller can then resume
-        // the score/history work that follows this transaction.
-        const guesses = source?.guesses;
-        if (!source || !guesses || (guesses.L?.length ?? 0) === 0) return destinationResult();
-        const moved: Record<string, AttributeValue> = { ...source, ...itemKey(key, to) };
-        try {
-          await client.send(
-            new TransactWriteItemsCommand({
-              TransactItems: [
-                {
-                  Put: {
-                    TableName: tableName,
-                    Item: moved,
-                    // "`to` has nothing": no item at all, or one whose log is empty — the
-                    // same test the source side makes, so a started-but-unplayed word round
-                    // is not treated as play.
-                    ConditionExpression:
-                      'attribute_not_exists(pk) OR attribute_not_exists(#g) OR size(#g) = :zero',
-                    ExpressionAttributeNames: { '#g': 'guesses' },
-                    ExpressionAttributeValues: { ':zero': { N: '0' } },
-                  },
-                },
-                {
-                  Delete: {
-                    TableName: tableName,
-                    Key: itemKey(key, from),
-                    ConditionExpression: '#g = :guesses AND #p = :puzzle',
-                    ExpressionAttributeNames: { '#g': 'guesses', '#p': 'puzzle' },
-                    ExpressionAttributeValues: {
-                      ':guesses': guesses,
-                      ':puzzle': { S: puzzleOf(source) ?? '' },
-                    },
-                  },
-                },
-              ],
-            }),
-          );
-        } catch (error) {
-          // A refused CONDITION is an ORDINARY outcome, and WHICH clause refused says what
-          // it means; a transaction cancelled for any OTHER reason (a throttle, a capacity
-          // limit) is a real failure and must propagate. Nothing was written either way.
-          const refused = transferRefusal(error);
-          if (!refused) throw error;
-          if (refused.destination) {
-            // The destination already holds play. If the source emptied meanwhile, an
-            // earlier attempt moved it; otherwise two real logs stand for one day, which
-            // has no honest merge.
-            const currentSource = await readItem(key, from, true);
-            if (!currentSource || (currentSource.guesses?.L?.length ?? 0) === 0) {
-              return destinationResult();
-            }
-            return null;
-          }
-          // Only the source moved on. Read it again and move what stands now.
-          continue;
-        }
-        return { state: itemToState(source)!, moved: true };
-      }
-      throw new Error(`Round ${roundSortKey(key)} of ${from} kept changing while being moved.`);
-    },
   };
 }
 
@@ -667,29 +584,6 @@ function runnerOf(item: Item): RoundRunner | undefined {
   };
 }
 
-// A transaction refused by its own CONDITIONS, told apart from one cancelled by anything
-// else. DynamoDB reports both as `TransactionCanceledException`; only the per-item reason
-// codes say which, so they are read rather than assumed — and they also say WHICH item
-// refused, which the transfer needs: the destination's refusal and the source's mean two
-// different things. Null for anything that is not a plain refusal.
-function transferRefusal(error: unknown): { destination: boolean } | null {
-  if (typeof error !== 'object' || error === null) return null;
-  const named = error as { name?: unknown; CancellationReasons?: { Code?: string }[] };
-  if (
-    error instanceof ConditionalCheckFailedException ||
-    named.name === 'ConditionalCheckFailedException'
-  ) {
-    return { destination: true };
-  }
-  if (named.name !== 'TransactionCanceledException') return null;
-  const reasons = named.CancellationReasons ?? [];
-  const plain =
-    reasons.length > 0 &&
-    reasons.every((reason) => reason.Code === 'ConditionalCheckFailed' || reason.Code === 'None');
-  if (!plain) return null;
-  return { destination: reasons[0]?.Code === 'ConditionalCheckFailed' };
-}
-
 function itemToState(item: Item): RoundState | null {
   if (!item) return null;
   const startedAt = item.startedAt?.S;
@@ -726,4 +620,81 @@ function puzzleOf(item: Item): string | undefined {
 
 function numberOf(value: AttributeValue | undefined): number | undefined {
   return value?.N === undefined ? undefined : Number(value.N);
+}
+
+// The exact item a round lives at — the closure above spells the same key; this one is for
+// the plan below, which runs outside the store.
+export function roundItemKey(key: RoundKey, publicId: string): Record<string, AttributeValue> {
+  return { pk: { S: roundPartition(publicId) }, sk: { S: roundSortKey(key) } };
+}
+
+export interface RoundMovePlan {
+  // A create-if-empty Put of the whole item under the destination, and a Delete of the
+  // source conditioned on the EXACT log it was read with.
+  items: TransactWriteItem[];
+  // What the source's own stored summary said — the solved-day credit's input.
+  solved: boolean;
+}
+
+// #204's active-day transfer, PLANNED here and COMMITTED by `dynamoLinkStore` inside the
+// one adoption transaction — so the round exists under exactly one account at every
+// instant, and no adoption that fails to commit leaves a round moved. Planned in THIS file
+// because the two items are this store's shape: the item is copied VERBATIM apart from its
+// partition key, and the conditions name its attributes.
+//
+// Null when there is nothing to move: the source holds no guesses (a word round that was
+// merely STARTED holds none server-side, and a recorded run may move in over one), or the
+// destination already holds play — two real logs for one day have no honest merge. The
+// destination test is repeated as the Put's own condition, and the source Delete is
+// conditioned on the list itself and the puzzle it names, never a length: a guess appended
+// between this read and the commit, or a replacement of equal length, refuses the
+// transaction rather than being deleted unseen — the caller plans again over what stands.
+export async function planRoundMove(
+  client: DynamoDBClient,
+  tableName: string,
+  key: RoundKey,
+  from: string,
+  to: string,
+): Promise<RoundMovePlan | null> {
+  const read = async (publicId: string) => {
+    const response = await client.send(
+      new GetItemCommand({
+        TableName: tableName,
+        Key: roundItemKey(key, publicId),
+        ConsistentRead: true,
+      }),
+    );
+    return response.Item;
+  };
+  const [source, destination] = await Promise.all([read(from), read(to)]);
+  const guesses = source?.guesses;
+  if (!source || !guesses || (guesses.L?.length ?? 0) === 0) return null;
+  if (destination && (destination.guesses?.L?.length ?? 0) > 0) return null;
+  return {
+    items: [
+      {
+        Put: {
+          TableName: tableName,
+          Item: { ...source, ...roundItemKey(key, to) },
+          ConditionExpression:
+            'attribute_not_exists(pk) OR attribute_not_exists(#g) OR size(#g) = :zero',
+          ExpressionAttributeNames: { '#g': 'guesses' },
+          ExpressionAttributeValues: { ':zero': { N: '0' } },
+        },
+      },
+      {
+        Delete: {
+          TableName: tableName,
+          Key: roundItemKey(key, from),
+          ConditionExpression: '#g = :guesses AND #p = :puzzle',
+          ExpressionAttributeNames: { '#g': 'guesses', '#p': 'puzzle' },
+          ExpressionAttributeValues: {
+            ':guesses': guesses,
+            ':puzzle': { S: puzzleOf(source) ?? '' },
+          },
+        },
+      },
+    ],
+    solved: source.solved?.BOOL === true,
+  };
 }

@@ -74,8 +74,6 @@ function initializeHandler(): Promise<ProductionHandler> {
         link: {
           links: dynamoLinkStore(dynamo, config.scoreTable),
           friends: friendStore,
-          rounds: roundStore,
-          scores: scoreStore,
           history: historyStore,
           mailer: sesMailer(ses, config.mailFrom),
           turnstile,

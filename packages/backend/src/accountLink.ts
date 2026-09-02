@@ -2,39 +2,30 @@
 // destroys, and what it promises to finish afterwards.
 //
 // The route (`link.ts`) owns the conversation — the code, the confirmation, the answers.
-// This file owns the state changes, in the order that makes every partial failure safe:
+// The state changes are two steps, in the order that makes every partial failure safe:
 //
-//   1. TRANSFER the active day's play, tuple by tuple. Each move is its own atomic
-//      condition, and every one of them is a no-op the second time, so a link interrupted
-//      here and retried converges.
-//   2. COMMIT the identity — `LinkStore.adopt`, ONE transaction: the challenge is consumed,
-//      the device moves, the account being left is deleted with its profile row, and the
-//      friend-merge job is persisted. Indivisible, because the half-states are not equally
-//      harmless: a device left on a DELETED account is a player signed out mid-link with
-//      everything gone, which is the one outcome this flow may never produce.
-//   3. DRAIN the friend merge. Up to 200 mutual edges is 800 rows, which cannot fit one
-//      transaction, so the job written in step 2 is what makes the fan-out durable: it is
+//   1. COMMIT — `LinkStore.adopt`, ONE transaction: the challenge is consumed, the device
+//      moves, the account being left is deleted with its profile row, the friend-merge job
+//      is persisted, and the ACTIVE DAY's play moves with the device (`supportedTuples`,
+//      every tuple where the destination has nothing and the source has play). Indivisible,
+//      because the half-states are not equally harmless: a device left on a DELETED account
+//      is a player signed out mid-link with everything gone, and a round moved by an
+//      adoption that never commits is play under an account nobody holds — the first cut
+//      moved the play in separate writes BEFORE the commit and could leave exactly that,
+//      which no retry, claim or takeover could then honestly own.
+//   2. DRAIN the friend merge. Up to 200 mutual edges is 800 rows, which cannot fit one
+//      transaction, so the job written in step 1 is what makes the fan-out durable: it is
 //      idempotent, resumable, and its own last act is to delete itself.
 //
-// Step 1 runs BEFORE step 2 on purpose. Either order can be interrupted; only this one is
-// recoverable. Moves-then-commit leaves the day's round under the account nobody holds yet,
-// and the player's retry (they still hold the device, and their code is still unspent) moves
-// nothing, commits, and lands right. Commit-then-moves leaves the round in an account that
-// has just been DELETED, with nothing left to retry from.
-//
-// And step 1 runs under a CLAIM the route takes first (`LinkStore.claimAdoption`): the moves
-// are several writes with nothing tying them to one adoption, so without it two devices on
-// the same account linking two different addresses at once could each move the tuples their
-// own transfers reached first. The claim names the target on the source account's own row;
-// step 2's delete conditions on it, and a bind on the source refuses while it stands.
+// The solved-day credit a transferred sentence solve owes the adopting account's streak
+// follows step 1 as a logged, non-fatal side effect, the round route's own rule for that
+// rebuildable collection.
 
-import { bestStreak, dayNumber, currentStreak, VOCAB_BUILDS } from '@whippin/shared';
+import { bestStreak, currentStreak, VOCAB_BUILDS } from '@whippin/shared';
 import { FRIENDS_MAX, type FriendStore, type FriendTransfer } from './friendStore';
 import type { PlayerHistoryStore } from './historyStore';
 import type { LinkStore } from './linkStore';
-import type { RoundKey, RoundStore } from './roundStore';
 import type { ScoreMode } from './scoreLimits';
-import type { ScoreStore } from './scoreStore';
 
 // EVERY supported language × BOTH modes — "the active day" means all of them, not whichever
 // route the linking device happens to be on (user-decided 2026-08-23). Which language a
@@ -76,48 +67,6 @@ export async function accountStakes(
     best: collections.reduce((most, days) => Math.max(most, bestStreak(days)), 0),
     days: collections.reduce((total, days) => total + days.length, 0),
   };
-}
-
-export interface TransferStores {
-  rounds: RoundStore;
-  scores: ScoreStore;
-  history: PlayerHistoryStore;
-}
-
-// Move the active day's play from the account being left to the one being adopted, for every
-// supported tuple where the destination has NOTHING and the source has something. Answers
-// the tuples that actually moved, which is what the route reports.
-//
-// "Has nothing" is keyed on GUESSES rather than on solving, because a solved round is just a
-// round whose last guess landed rank 0 — one rule covers both. And it is the only
-// unambiguous case: if the destination holds a partial round and the source a solve, that is
-// two real logs for one day with no honest resolution (a union changes the try count and the
-// score; a concatenation makes the run ruler replay nonsense).
-export async function transferActiveDay(
-  stores: TransferStores,
-  from: string,
-  to: string,
-  date: string,
-): Promise<RoundKey[]> {
-  const moved: RoundKey[] = [];
-  for (const { lang, mode } of supportedTuples()) {
-    const key: RoundKey = { date, lang, mode };
-    const transfer = await stores.rounds.transfer(key, from, to);
-    if (!transfer) continue;
-    const { state } = transfer;
-    if (transfer.moved) moved.push(key);
-    // The recorded row follows the round it was derived from, so the day's leaderboard names
-    // the account that now holds the play. A round with no row (unfinished, capped, late, or
-    // refused by the IP allowance) simply has nothing to move.
-    await stores.scores.transfer(key, from, to);
-    // A transferred SENTENCE solve owes the adopting account's streak its day (#211). The
-    // credit is a set insert, so it is idempotent by construction and a retried link cannot
-    // double-count it.
-    if (mode === 'sentence' && state.solved === true) {
-      await stores.history.recordSolvedDay({ publicId: to, lang, day: dayNumber(date) });
-    }
-  }
-  return moved;
 }
 
 // One PASS of the friend merge: read what is left of the account being deleted, decide each

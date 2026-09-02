@@ -5,7 +5,7 @@ import type {
   ResolvedDevice,
   AccountRecord,
 } from './deviceStore';
-import { LINK_CLAIM_SECONDS, type LinkDeviceWrites } from './linkStore';
+import type { LinkDeviceWrites } from './linkStore';
 
 // Process-local store for `pnpm backend:dev` and tests: the same DeviceStore contract as
 // DynamoDB with no AWS account. Restarting the local server intentionally resets it — which
@@ -23,14 +23,6 @@ export function memoryDeviceStore(
   // The base table: token hash -> the ONE device item.
   const devices = new Map<string, DeviceRecord>();
   const accounts = new Map<string, AccountRecord>();
-  // #204's adoption claims (`LinkClaimOutcome`), the two attributes production keeps on
-  // the account row: which target holds the source, and since when (epoch seconds).
-  const claims = new Map<string, { to: string; at: number }>();
-  const liveClaim = (accountId: string, now: string) => {
-    const claim = claims.get(accountId);
-    if (!claim) return undefined;
-    return claim.at <= Math.floor(Date.parse(now) / 1_000) - LINK_CLAIM_SECONDS ? undefined : claim;
-  };
 
   for (const seed of initial) {
     accounts.set(seed.accountId, { accountId: seed.accountId, createdAt: seed.now });
@@ -106,22 +98,11 @@ export function memoryDeviceStore(
     // #204's link-time writes. The production equivalents are conditions in
     // `dynamoLinkStore`'s transactions; keeping the checks beside these maps makes the
     // process-local implementation reject the same stale plans.
-    bindAccountEmail(accountId, email, now) {
+    bindAccountEmail(accountId, email) {
       const account = accounts.get(accountId);
       if (!account || (account.email !== undefined && account.email !== email)) return false;
-      // Not while a live adoption holds it: its play may already be moving out.
-      if (liveClaim(accountId, now)) return false;
       accounts.set(accountId, { ...account, email });
       return true;
-    },
-
-    claimAdoption({ from, to, now }) {
-      const account = accounts.get(from);
-      if (!account || account.email !== undefined) return 'account_changed';
-      const standing = liveClaim(from, now);
-      if (standing && standing.to !== to) return 'claimed_elsewhere';
-      claims.set(from, { to, at: Math.floor(Date.parse(now) / 1_000) });
-      return 'claimed';
     },
 
     adoptDevice({ tokenHash, deviceId, from, to, erase, now }) {
@@ -134,10 +115,7 @@ export function memoryDeviceStore(
       if (
         !source ||
         !target ||
-        (erase ? source.email !== undefined : source.email === undefined) ||
-        // An erase deletes the source only under ITS target's claim — production's
-        // `#linkTo = :to` on the delete.
-        (erase && claims.get(from)?.to !== to)
+        (erase ? source.email !== undefined : source.email === undefined)
       ) {
         return 'account_changed';
       }
@@ -147,7 +125,6 @@ export function memoryDeviceStore(
         // device still naming a deleted account stops authenticating on the account-
         // existence check above, and the housekeeping sweep (#207) collects the rows.
         accounts.delete(from);
-        claims.delete(from);
       }
       return 'adopted';
     },

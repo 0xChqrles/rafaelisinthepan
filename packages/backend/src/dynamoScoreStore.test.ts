@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   BatchGetItemCommand,
+  GetItemCommand,
   QueryCommand,
   TransactWriteItemsCommand,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
-import { batchRetryDelayMs, dynamoScoreStore } from './dynamoScoreStore';
+import { batchRetryDelayMs, dynamoScoreStore, planScoreMove } from './dynamoScoreStore';
 import { SCORE_SUBMISSION_LIMIT, type ScoreKey, type ScoreSubmission } from './scoreStore';
 
 const KEY: ScoreKey = { date: '2026-08-13', lang: 'fr', mode: 'word' };
@@ -279,5 +280,37 @@ describe('dynamoScoreStore (#187)', () => {
     await expect(
       dynamoScoreStore({ send: failing } as unknown as DynamoDBClient, 'scores').submit(SUBMISSION),
     ).rejects.toBe(conflict);
+  });
+});
+
+// CONTRACT (#204): the recorded row follows the round it was derived from, inside the one
+// adoption transaction — this store only PLANS its two items, so the day's population holds
+// the score under exactly one player at every instant.
+describe('planScoreMove (#204)', () => {
+  const FROM = 'aaaaaaaaaaaaaaaa';
+  const TO = 'bbbbbbbbbbbbbbbb';
+  const row = { pk: { S: 'score#2026-08-13#fr#word' }, sk: { S: FROM }, score: { N: '7' } };
+
+  it('plans a create-only Put under the destination and a Delete of the source row', async () => {
+    const send = vi.fn(async (command: unknown) =>
+      (command as GetItemCommand).input.Key!.sk.S === FROM ? { Item: row } : {},
+    );
+    const items = await planScoreMove({ send } as unknown as DynamoDBClient, 'scores', KEY, FROM, TO);
+    expect(items).toHaveLength(2);
+    expect(items[0].Put!.Item).toEqual({ ...row, sk: { S: TO } });
+    expect(items[0].Put!.ConditionExpression).toBe('attribute_not_exists(pk)');
+    expect(items[1].Delete!.Key).toEqual({ pk: row.pk, sk: { S: FROM } });
+    expect(items[1].Delete!.ConditionExpression).toBe('attribute_exists(pk)');
+  });
+
+  it('plans NOTHING without a source row, or when the destination already has one', async () => {
+    const none = vi.fn(async () => ({}));
+    await expect(
+      planScoreMove({ send: none } as unknown as DynamoDBClient, 'scores', KEY, FROM, TO),
+    ).resolves.toEqual([]);
+    const both = vi.fn(async () => ({ Item: row }));
+    await expect(
+      planScoreMove({ send: both } as unknown as DynamoDBClient, 'scores', KEY, FROM, TO),
+    ).resolves.toEqual([]);
   });
 });

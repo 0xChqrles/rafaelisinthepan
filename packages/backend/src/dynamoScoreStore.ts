@@ -7,12 +7,14 @@ import {
   TransactWriteItemsCommand,
   type DynamoDBClient,
   type AttributeValue,
+  type TransactWriteItem,
 } from '@aws-sdk/client-dynamodb';
 import {
   DEDUP_SORT_KEY,
   SCORE_SUBMISSION_LIMIT,
   dayKey,
   dedupKey,
+  type ScoreKey,
   type ScoreRow,
   type ScoreSubmission,
   type ScoreStore,
@@ -36,22 +38,6 @@ export function batchRetryDelayMs(retry: number, random: () => number = Math.ran
 export interface DynamoScoreStoreOptions {
   // Injected by tests, so asserting the retry SCHEDULE costs no real time.
   wait?: (ms: number) => Promise<void>;
-}
-
-// A transaction refused by its own CONDITIONS, told apart from one cancelled by anything
-// else (a throttle, a capacity limit). DynamoDB reports both as
-// `TransactionCanceledException`; only the per-item reason codes say which.
-function transferRefused(error: unknown): boolean {
-  if (error instanceof ConditionalCheckFailedException) return true;
-  if (typeof error !== 'object' || error === null) return false;
-  const named = error as { name?: unknown; CancellationReasons?: { Code?: string }[] };
-  if (named.name === 'ConditionalCheckFailedException') return true;
-  if (named.name !== 'TransactionCanceledException') return false;
-  const reasons = named.CancellationReasons ?? [];
-  return (
-    reasons.length > 0 &&
-    reasons.every((reason) => reason.Code === 'ConditionalCheckFailed' || reason.Code === 'None')
-  );
 }
 
 function scoreItem(input: ScoreSubmission): Record<string, AttributeValue> {
@@ -246,44 +232,47 @@ export function dynamoScoreStore(
     // source — so the day's population holds this score under exactly one player at every
     // instant and the histogram count is never transiently doubled. It spends NO allowance:
     // the population gains no player, it renames the one it has.
-    async transfer(key, from, to) {
-      const source = await client.send(
-        new GetItemCommand({
-          TableName: tableName,
-          Key: { pk: { S: dayKey(key) }, sk: { S: from } },
-          ConsistentRead: true,
-        }),
-      );
-      if (!source.Item) return false;
-      try {
-        await client.send(
-          new TransactWriteItemsCommand({
-            TransactItems: [
-              {
-                Put: {
-                  TableName: tableName,
-                  Item: { ...source.Item, pk: { S: dayKey(key) }, sk: { S: to } },
-                  ConditionExpression: 'attribute_not_exists(pk)',
-                },
-              },
-              {
-                Delete: {
-                  TableName: tableName,
-                  Key: { pk: { S: dayKey(key) }, sk: { S: from } },
-                  ConditionExpression: 'attribute_exists(pk)',
-                },
-              },
-            ],
-          }),
-        );
-        return true;
-      } catch (error) {
-        // The adopting account already has a row for this daily, or the source moved: an
-        // ordinary outcome, and nothing was written. Any OTHER cancellation is a real
-        // failure and propagates.
-        if (transferRefused(error)) return false;
-        throw error;
-      }
-    },
   };
+}
+
+// #204's active-day transfer, the SCORE half: planned here (the row is this store's shape)
+// and committed by `dynamoLinkStore` inside the one adoption transaction, beside the round
+// it was derived from — so the day's population holds the score under exactly one player
+// at every instant and the histogram count is never transiently doubled. Empty when there
+// is nothing to move: no row under the source, or a row already under the destination.
+export async function planScoreMove(
+  client: DynamoDBClient,
+  tableName: string,
+  key: ScoreKey,
+  from: string,
+  to: string,
+): Promise<TransactWriteItem[]> {
+  const read = async (publicId: string) => {
+    const response = await client.send(
+      new GetItemCommand({
+        TableName: tableName,
+        Key: { pk: { S: dayKey(key) }, sk: { S: publicId } },
+        ConsistentRead: true,
+      }),
+    );
+    return response.Item;
+  };
+  const [source, destination] = await Promise.all([read(from), read(to)]);
+  if (!source || destination) return [];
+  return [
+    {
+      Put: {
+        TableName: tableName,
+        Item: { ...source, pk: { S: dayKey(key) }, sk: { S: to } },
+        ConditionExpression: 'attribute_not_exists(pk)',
+      },
+    },
+    {
+      Delete: {
+        TableName: tableName,
+        Key: { pk: { S: dayKey(key) }, sk: { S: from } },
+        ConditionExpression: 'attribute_exists(pk)',
+      },
+    },
+  ];
 }

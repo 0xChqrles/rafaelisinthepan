@@ -93,10 +93,13 @@ const handler = createHandler({
   // locally is a link flow nobody tests. Explicitly local-only, exactly like the accept-all
   // Turnstile verifier beside it.
   link: {
-    links: memoryLinkStore({ devices: localDeviceStore, profiles: localProfileStore }),
+    links: memoryLinkStore({
+      devices: localDeviceStore,
+      profiles: localProfileStore,
+      rounds: localRoundStore,
+      scores: localScoreStore,
+    }),
     friends: localFriendStore,
-    rounds: localRoundStore,
-    scores: localScoreStore,
     history: localHistoryStore,
     mailer: consoleMailer,
     turnstile: localTurnstileVerifier,

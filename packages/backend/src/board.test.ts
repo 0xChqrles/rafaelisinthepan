@@ -43,9 +43,6 @@ function fixedScores(rows: ScoreRow[]): ScoreStore {
     submit: async () => {
       throw new Error('the board route never submits');
     },
-    transfer: async () => {
-      throw new Error('the board route never transfers');
-    },
   };
 }
 

@@ -1,10 +1,17 @@
 import { LINK_CODE_MAX_ATTEMPTS } from '@whippin/shared';
 import { recentSends, sameDigest, sendKey } from './linkStore';
-import type { LinkDeviceWrites, LinkProfileWrites } from './linkStore';
+import type {
+  LinkDeviceWrites,
+  LinkProfileWrites,
+  LinkRoundWrites,
+  LinkScoreWrites,
+} from './linkStore';
 import type {
   AccountAdoption,
   EmailBinding,
+  LinkAdoptResult,
   LinkChallenge,
+  LinkMovedRound,
   LinkStore,
   LinkVerifyResult,
 } from './linkStore';
@@ -13,13 +20,16 @@ import type {
 // DynamoDB with no AWS account and no SES. Restarting the local server drops every pending
 // code and every binding, which is exactly what a wiped table does.
 //
-// `adopt` is ONE transaction in production. Here its writes reach the two owning maps
-// through synchronous, memory-only methods (`LinkDeviceWrites` / `LinkProfileWrites`) and
-// run in one serialized event-loop critical section. No request can observe the device,
-// account, profile, merge job, and challenge halfway through that section.
+// `adopt` is ONE transaction in production. Here its writes reach the owning maps through
+// synchronous, memory-only methods (`LinkDeviceWrites` / `LinkProfileWrites` /
+// `LinkRoundWrites` / `LinkScoreWrites`) and run in one serialized event-loop critical
+// section. No request can observe the device, account, profile, merge job, challenge, or
+// the active day's moved play halfway through that section.
 export function memoryLinkStore(deps: {
   devices: LinkDeviceWrites;
   profiles: LinkProfileWrites;
+  rounds: LinkRoundWrites;
+  scores: LinkScoreWrites;
 }): LinkStore {
   const challenges = new Map<string, LinkChallenge>();
   const bindings = new Map<string, EmailBinding>();
@@ -113,14 +123,10 @@ export function memoryLinkStore(deps: {
       });
     },
 
-    async claimAdoption(input) {
-      return commit(() => deps.devices.claimAdoption(input));
-    },
-
-    async adopt(input: AccountAdoption) {
+    async adopt(input: AccountAdoption): Promise<LinkAdoptResult> {
       return commit(() => {
         if (!challengeMatches(input.emailHash, input.codeHash, input.now)) {
-          return 'challenge_changed';
+          return { outcome: 'challenge_changed', moved: [] };
         }
         const outcome = deps.devices.adoptDevice({
           tokenHash: input.tokenHash,
@@ -130,7 +136,7 @@ export function memoryLinkStore(deps: {
           erase: input.erase,
           now: input.now,
         });
-        if (outcome !== 'adopted') return outcome;
+        if (outcome !== 'adopted') return { outcome, moved: [] };
         if (input.mergeFrom !== undefined) {
           const queued = merges.get(input.to) ?? new Set<string>();
           queued.add(input.mergeFrom);
@@ -139,8 +145,17 @@ export function memoryLinkStore(deps: {
         if (input.erase) {
           deps.profiles.remove(input.from);
         }
+        // The active day's play, inside the same section as the identity: the round moves
+        // whole, and its score row follows it.
+        const moved: LinkMovedRound[] = [];
+        for (const key of input.moves ?? []) {
+          const round = deps.rounds.move(key, input.from, input.to);
+          if (!round) continue;
+          deps.scores.move(key, input.from, input.to);
+          moved.push(round);
+        }
         challenges.delete(input.emailHash);
-        return 'adopted';
+        return { outcome: 'adopted', moved };
       });
     },
 

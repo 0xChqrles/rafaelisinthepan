@@ -546,32 +546,40 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   scope, prunes, and writes them all back in ONE transaction whose every Put is conditioned
   on the exact list it read — a concurrent send refuses the set and it is decided again
   from what now stands, so no send ever counts against a stale view. `accountLink.ts` owns
-  the ORDER: the active-day moves first (each atomic and idempotent), then `LinkStore.adopt`
-  as ONE transaction, then the merge drain — the reasoning is in that file's header and in
-  the root `AGENTS.md`. **An ERASING adoption takes a CLAIM before the moves** (same
-  review): `LinkStore.claimAdoption` stamps the target on the source ACCOUNT row
-  (`linkTo`/`linkAt`) under one condition — unlinked, and unclaimed or claimed by this same
-  target or claimed STALE (`LINK_CLAIM_SECONDS`, the code's own TTL) — so two devices on one
-  account linking two addresses at once cannot split the day's play between them; the
-  adopt's source delete conditions on `#linkTo = :to`, a bind refuses while a live claim
-  stands (the route answers 409 `link_changed`, not `account_linked`), and the moves
-  themselves do not re-check it because they run inside the request that took it, whose
-  whole lifetime is seconds against a ten-minute window. **`dynamoLinkStore` is the
+  the ORDER: `LinkStore.adopt` as ONE transaction — the identity AND the active day's play —
+  then the merge drain; the reasoning is in that file's header and in the root `AGENTS.md`.
+  **THE ACTIVE-DAY MOVES RIDE THE ADOPTION TRANSACTION** (PR-227 review, 2026-09-02,
+  restoring what #204 itself specified): they used to run as separate writes BEFORE the
+  commit, and no claim on the source account could honestly own play that had already
+  moved when the commit then failed or a rival took the claim over. So `adopt` takes
+  `moves` (every supported language × mode of the active day) and, per tuple, the owning
+  stores PLAN the items — `planRoundMove` (a create-if-empty Put under the destination and
+  a Delete of the source conditioned on the EXACT log read, `#g = :guesses AND #p =
+  :puzzle`, never a length; null when the source holds no guesses or the destination holds
+  play) and `planScoreMove` (create-only Put + Delete, only for a round that moves) — and
+  `dynamoLinkStore` commits them beside the identity items. A `TransactionCanceledException`
+  is classified by its per-item reason codes, and by WHICH item: an identity refusal is the
+  route's answer (challenge > account > device, as before), while a refusal on a MOVE item
+  alone — a guess landed on the source, or the destination gained play, between the plan
+  and the commit — plans again over what now stands (bounded, then a loud failure), so the
+  guess is carried rather than deleted unseen; the plan is part of the `ClientRequestToken`,
+  since a re-plan is different items. `RoundStore.transfer` / `ScoreStore.transfer` are
+  GONE from the contracts; the memory stores expose the synchronous halves
+  (`LinkRoundWrites` / `LinkScoreWrites`) the memory link store composes inside its one
+  critical section, the `LinkDeviceWrites` pattern. The solved-day credit a moved sentence
+  solve owes the streak, and the receipt read, both FOLLOW the commit as logged non-fatal
+  side effects (the round route's own rule for that rebuildable collection; an unreadable
+  receipt answers `stakes: null`). An append that lands AFTER the commit lands under a
+  deleted account — the same thing an append racing any deletion does, refused on the
+  device's next authenticated call — and never a split, since the target holds the full log
+  as of the commit. **`dynamoLinkStore` is the
   ONE file that writes items across several stores' key spaces**, and every key it writes
   comes from the OWNING module's own formatter (`deviceKey`, `accountKey`, `profileKey`),
-  never a literal. `RoundStore.transfer` / `ScoreStore.transfer` / `FriendStore.entries` +
-  `transfer` are new CONTRACT methods (both implementations); a Dynamo transfer copies the
-  source ITEM verbatim apart from its partition key, so a move never reinterprets another
-  store's attribute shape, and a `TransactionCanceledException` is classified by its per-item
-  reason codes rather than assumed to be a refusal — and by WHICH item: the round transfer's
-  source delete is conditioned on the EXACT log it read (`#g = :guesses AND #p = :puzzle`,
-  never a length), a refusal there re-reads and moves what now stands (bounded, then a loud
-  failure — a skipped move would let the link delete the account the round still sits in),
-  while a refusal on the destination is the ordinary "two logs, no honest merge". The friend
-  merge's KEPT moves condition the `from`-facing delete on the edge still standing, and a
-  refused batch is re-written without the moves whose edge somebody ended meanwhile, so an
-  unlink between the plan and the write is never resurrected onto the adopting account.
-  `ProfileStore.get` widened to a
+  never a literal, and the round/score items from their own stores' planners. The friend
+  merge's KEPT moves (`FriendStore.entries` + `transfer`) condition the `from`-facing
+  delete on the edge still standing, and a refused batch is re-written without the moves
+  whose edge somebody ended meanwhile, so an unlink between the plan and the write is never
+  resurrected onto the adopting account. `ProfileStore.get` widened to a
   `ProfileLookup` (`{live, profile}`) read as ONE BatchGetItem of the profile row and the
   ACCOUNT row beside it — same partition, same cost — which is what lets `/profile`, `/board`
   and the `/i/` preview tell "never customized" from "gone". `DeviceStore.accountExists` is
