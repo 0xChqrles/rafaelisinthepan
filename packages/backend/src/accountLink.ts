@@ -96,9 +96,10 @@ export async function transferActiveDay(
   const moved: RoundKey[] = [];
   for (const { lang, mode } of supportedTuples()) {
     const key: RoundKey = { date, lang, mode };
-    const state = await stores.rounds.transfer(key, from, to);
-    if (!state) continue;
-    moved.push(key);
+    const transfer = await stores.rounds.transfer(key, from, to);
+    if (!transfer) continue;
+    const { state } = transfer;
+    if (transfer.moved) moved.push(key);
     // The recorded row follows the round it was derived from, so the day's leaderboard names
     // the account that now holds the play. A round with no row (unfinished, capped, late, or
     // refused by the IP allowance) simply has nothing to move.
@@ -130,6 +131,10 @@ async function mergePass(friends: FriendStore, from: string, to: string): Promis
   const leaving = await friends.entries(from);
   if (leaving.length === 0) return 0;
   const held = new Set(await friends.list(to));
+  // The source↔destination edge is always deleted below. It therefore consumes no slot in
+  // the graph that will stand after this pass; counting it here drops one valid candidate
+  // and leaves a full merge at FRIENDS_MAX - 1.
+  held.delete(from);
   // The two accounts' own edge to each other, if the player ever invited themselves across
   // devices: it is DROPPED, never moved — the adopting account cannot befriend itself, and
   // the edge would otherwise survive pointing at a deleted player.

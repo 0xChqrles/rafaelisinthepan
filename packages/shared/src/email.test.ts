@@ -52,7 +52,6 @@ describe('normalizeEmail — one address, one spelling', () => {
       'first.last@mail.example.org',
       'user+tag@sub.domain.co.uk',
       "o'brien@example.com",
-      'zoé@example.com',
     ]) {
       expect(isValidEmail(raw), raw).toBe(true);
     }
@@ -68,6 +67,9 @@ describe('normalizeEmail — one address, one spelling', () => {
       'spaces in@example.com',
       'trailing@example.',
       'a@b.c',
+      'zoé@example.com',
+      '.zoe@example.com',
+      'zoe..mail@example.com',
       42,
       null,
       undefined,
@@ -75,6 +77,8 @@ describe('normalizeEmail — one address, one spelling', () => {
       expect(isValidEmail(raw as unknown), String(raw)).toBe(false);
     }
     expect(isValidEmail(`${'a'.repeat(EMAIL_MAX_LENGTH)}@example.com`)).toBe(false);
+    expect(isValidEmail(`${'a'.repeat(65)}@example.com`)).toBe(false);
+    expect(isValidEmail(`zoe@${'a'.repeat(64)}.com`)).toBe(false);
   });
 });
 

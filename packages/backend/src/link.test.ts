@@ -29,6 +29,7 @@ const emptyStore: PuzzleStore = {
 
 const NOW = new Date('2026-08-26T12:00:00.000Z');
 const DATE = activeDate(NOW);
+const HASH = 'a'.repeat(64);
 
 function harness() {
   const devices = memoryDeviceStore();
@@ -91,6 +92,32 @@ async function askForCode(harnessed: ReturnType<typeof harness>, token: string, 
 }
 
 describe('email account linking (#204) — the code', () => {
+  it('spends address and IP allowances atomically', async () => {
+    const h = harness();
+    const address = 'a'.repeat(64);
+    await expect(
+      h.links.spendSends(
+        [
+          { scope: 'addr', hash: address, limit: LINK_SENDS_PER_ADDRESS },
+          { scope: 'ip', hash: 'b'.repeat(64), limit: 0 },
+        ],
+        3_600,
+        NOW,
+      ),
+    ).resolves.toBe(false);
+
+    // The refused IP did not consume the address increment that appeared before it.
+    for (let count = 0; count < LINK_SENDS_PER_ADDRESS; count += 1) {
+      await expect(
+        h.links.spendSends(
+          [{ scope: 'addr', hash: address, limit: LINK_SENDS_PER_ADDRESS }],
+          3_600,
+          NOW,
+        ),
+      ).resolves.toBe(true);
+    }
+  });
+
   it('sends a six-digit code and says nothing about whether the address is known', async () => {
     const h = harness();
     const me = await seedDevice(h.devices);
@@ -161,6 +188,54 @@ describe('email account linking (#204) — the code', () => {
     const answer = await h.handler(post({ token: me.token, email: 'zoe@example.com', code: '000000' }));
     expect(answer.statusCode).toBe(404);
     expect(JSON.parse(answer.body).error).toBe('no_code');
+  });
+
+  it('lets only one final operation consume a code', async () => {
+    const h = harness();
+    const me = await seedDevice(h.devices);
+    const code = await askForCode(h, me.token, 'zoe@example.com');
+
+    const answers = await Promise.all([
+      h.handler(post({ token: me.token, email: 'zoe@example.com', code })),
+      h.handler(post({ token: me.token, email: 'zoe@example.com', code })),
+    ]);
+    expect(answers.map(({ statusCode }) => statusCode).sort()).toEqual([200, 409]);
+    expect(JSON.parse(answers.find(({ statusCode }) => statusCode === 409)!.body).error).toBe(
+      'code_spent',
+    );
+  });
+
+  it('serializes a resend with final consumption so the replacement code is never deleted', async () => {
+    const h = harness();
+    const me = await seedDevice(h.devices);
+    const expiresAt = Math.floor(NOW.getTime() / 1_000) + 600;
+    await h.links.putChallenge(HASH, {
+      codeHash: 'old',
+      attempts: 0,
+      createdAt: NOW.toISOString(),
+      expiresAt,
+    });
+
+    // The bind enters the memory transaction first; the resend linearizes after it and its
+    // fresh challenge must remain standing. Before both writes shared the commit queue, the
+    // resend could land during bind's await and then be deleted by the old code.
+    const binding = h.links.bind({
+      emailHash: HASH,
+      codeHash: 'old',
+      email: 'zoe@example.com',
+      accountId: me.accountId,
+      now: NOW.toISOString(),
+    });
+    const resend = h.links.putChallenge(HASH, {
+      codeHash: 'new',
+      attempts: 0,
+      createdAt: NOW.toISOString(),
+      expiresAt,
+    });
+
+    await expect(binding).resolves.toBe('bound');
+    await resend;
+    await expect(h.links.verify(HASH, 'new', NOW)).resolves.toMatchObject({ outcome: 'ok' });
   });
 });
 
@@ -234,6 +309,24 @@ describe('email account linking (#204) — the three branches', () => {
     });
   });
 
+  it('keeps the one-address invariant when two different binds race the same account', async () => {
+    const h = harness();
+    const me = await seedDevice(h.devices);
+    const firstCode = await askForCode(h, me.token, 'first@example.com');
+    const secondCode = await askForCode(h, me.token, 'second@example.com');
+
+    const answers = await Promise.all([
+      h.handler(post({ token: me.token, email: 'first@example.com', code: firstCode })),
+      h.handler(post({ token: me.token, email: 'second@example.com', code: secondCode })),
+    ]);
+    expect(answers.map(({ statusCode }) => statusCode).sort()).toEqual([200, 409]);
+    expect(JSON.parse(answers.find(({ statusCode }) => statusCode === 409)!.body).error).toBe(
+      'account_linked',
+    );
+    const read = await h.handler(post({ token: me.token }));
+    expect(['first@example.com', 'second@example.com']).toContain(JSON.parse(read.body).email);
+  });
+
   it('ADOPTS the bound account silently when the device that links is EMPTY', async () => {
     const h = harness();
     const saved = await seedDevice(h.devices);
@@ -271,9 +364,81 @@ describe('email account linking (#204) — the three branches', () => {
     // reach it again.
     await expect(h.devices.accountExists(fresh.accountId)).resolves.toBe(false);
   });
+
+  it('does not commit adoption before the fallible receipt read', async () => {
+    const h = harness();
+    const saved = await seedDevice(h.devices);
+    await h.handler(
+      post({
+        token: saved.token,
+        email: 'zoe@example.com',
+        code: await askForCode(h, saved.token, 'zoe@example.com'),
+      }),
+    );
+    const fresh = await seedDevice(h.devices);
+    const code = await askForCode(h, fresh.token, 'zoe@example.com');
+    const solvedDays = h.history.solvedDays.bind(h.history);
+    h.history.solvedDays = async (accountId, lang) => {
+      if (accountId === saved.accountId) throw new Error('history unavailable');
+      return solvedDays(accountId, lang);
+    };
+
+    const failed = await h.handler(
+      post({ token: fresh.token, email: 'zoe@example.com', code }),
+    );
+    expect(failed.statusCode).toBe(500);
+    await expect(
+      h.devices.resolve((await import('./deviceStore')).deviceTokenHash(fresh.token)),
+    ).resolves.toMatchObject({ account: { accountId: fresh.accountId } });
+    await expect(h.devices.accountExists(fresh.accountId)).resolves.toBe(true);
+
+    // The challenge and source account still stand, so an ordinary retry can finish.
+    h.history.solvedDays = solvedDays;
+    const retried = await h.handler(
+      post({ token: fresh.token, email: 'zoe@example.com', code }),
+    );
+    expect(retried.statusCode).toBe(200);
+    expect(JSON.parse(retried.body)).toMatchObject({
+      outcome: 'adopted',
+      accountId: saved.accountId,
+    });
+  });
 });
 
 describe('email account linking (#204) — the erase confirmation', () => {
+  it('never deletes a source account that wins a concurrent email bind', async () => {
+    const h = harness();
+    const saved = await seedDevice(h.devices);
+    await h.handler(
+      post({
+        token: saved.token,
+        email: 'saved@example.com',
+        code: await askForCode(h, saved.token, 'saved@example.com'),
+      }),
+    );
+    const leaving = await seedDevice(h.devices);
+    const adoptCode = await askForCode(h, leaving.token, 'saved@example.com');
+    const bindCode = await askForCode(h, leaving.token, 'leaving@example.com');
+
+    const answers = await Promise.all([
+      h.handler(post({ token: leaving.token, email: 'leaving@example.com', code: bindCode })),
+      h.handler(post({ token: leaving.token, email: 'saved@example.com', code: adoptCode })),
+    ]);
+    expect(answers.map(({ statusCode }) => statusCode).sort()).toEqual([200, 409]);
+
+    const sourceLive = await h.devices.accountExists(leaving.accountId);
+    const sourceBinding = await h.links.binding(
+      (await import('./linkStore')).emailHash('leaving@example.com'),
+    );
+    if (sourceLive) {
+      expect(sourceBinding?.accountId).toBe(leaving.accountId);
+    } else {
+      // If adoption won, the losing bind transaction created no index pointing at the
+      // account it deleted.
+      expect(sourceBinding).toBeNull();
+    }
+  });
+
   it('REFUSES to erase an account with play behind it until the caller names it', async () => {
     const h = harness();
     const saved = await seedDevice(h.devices);

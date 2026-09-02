@@ -13,12 +13,10 @@ import type {
 // DynamoDB with no AWS account and no SES. Restarting the local server drops every pending
 // code and every binding, which is exactly what a wiped table does.
 //
-// `adopt` is ONE transaction in production. Here it is a SEQUENCE of writes through the two
-// memory stores it has to reach (`LinkDeviceWrites` / `LinkProfileWrites`) — there is no
-// shared item space to write atomically — so the local server and the tests can observe a
-// partial application only if a write in the middle throws, which none of these do. The
-// ORDER still mirrors the transaction's intent: everything that gives the device its new
-// account happens before anything that destroys the old one.
+// `adopt` is ONE transaction in production. Here its writes reach the two owning maps
+// through synchronous, memory-only methods (`LinkDeviceWrites` / `LinkProfileWrites`) and
+// run in one serialized event-loop critical section. No request can observe the device,
+// account, profile, merge job, and challenge halfway through that section.
 export function memoryLinkStore(deps: {
   devices: LinkDeviceWrites;
   profiles: LinkProfileWrites;
@@ -28,20 +26,46 @@ export function memoryLinkStore(deps: {
   const sends = new Map<string, number>();
   // to -> the accounts whose friends still have to be merged into it.
   const merges = new Map<string, Set<string>>();
+  // The production bind/adopt operations are DynamoDB transactions. Serialize their
+  // process-local equivalents so two Promise turns cannot both validate the same challenge
+  // or the same empty email slot before either applies its writes.
+  let commits: Promise<void> = Promise.resolve();
+  const commit = <T>(write: () => T): Promise<T> => {
+    const result = commits.then(write, write);
+    commits = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  };
+
+  const challengeMatches = (hash: string, codeHash: string, now: string): boolean => {
+    const challenge = challenges.get(hash);
+    return (
+      challenge !== undefined &&
+      sameDigest(challenge.codeHash, codeHash) &&
+      challenge.expiresAt * 1_000 > Date.parse(now) &&
+      challenge.attempts < LINK_CODE_MAX_ATTEMPTS
+    );
+  };
 
   return {
-    async spendSend(scope, hash, limit, windowSeconds, now) {
-      // The WINDOW is part of the key, exactly as it is in production: a fresh item per
-      // window starts at zero, so nothing here has to reset a counter.
-      const key = sendKey(scope, hash, sendWindow(now, windowSeconds));
-      const count = (sends.get(key) ?? 0) + 1;
-      if (count > limit) return false;
-      sends.set(key, count);
+    async spendSends(allowances, windowSeconds, now) {
+      // Decide every counter before changing any of them, mirroring DynamoDB's transaction:
+      // an IP refusal must not spend the address budget that was checked before it.
+      const next = allowances.map(({ scope, hash, limit }) => {
+        const key = sendKey(scope, hash, sendWindow(now, windowSeconds));
+        return { key, count: (sends.get(key) ?? 0) + 1, limit };
+      });
+      if (next.some(({ count, limit }) => count > limit)) return false;
+      for (const { key, count } of next) sends.set(key, count);
       return true;
     },
 
     async putChallenge(hash, challenge) {
-      challenges.set(hash, { ...challenge });
+      await commit(() => {
+        challenges.set(hash, { ...challenge });
+      });
     },
 
     async verify(hash, codeHash, now): Promise<LinkVerifyResult> {
@@ -71,33 +95,47 @@ export function memoryLinkStore(deps: {
     },
 
     async bind(input) {
-      // CREATE-ONLY, like the production Put: a device that lost the race to this address
-      // must not overwrite the binding that won it.
-      if (bindings.has(input.emailHash)) return 'taken';
-      bindings.set(input.emailHash, { accountId: input.accountId, createdAt: input.now });
-      await deps.devices.bindAccountEmail(input.accountId, input.email, input.now);
-      challenges.delete(input.emailHash);
-      return 'bound';
+      return commit(() => {
+        if (!challengeMatches(input.emailHash, input.codeHash, input.now)) {
+          return 'challenge_changed';
+        }
+        // CREATE-ONLY, like the production Put: a device that lost the race to this address
+        // must not overwrite the binding that won it.
+        if (bindings.has(input.emailHash)) return 'taken';
+        if (!deps.devices.bindAccountEmail(input.accountId, input.email, input.now)) {
+          return 'account_changed';
+        }
+        bindings.set(input.emailHash, { accountId: input.accountId, createdAt: input.now });
+        challenges.delete(input.emailHash);
+        return 'bound';
+      });
     },
 
     async adopt(input: AccountAdoption) {
-      await deps.devices.reparentDevice({
-        tokenHash: input.tokenHash,
-        deviceId: input.deviceId,
-        from: input.from,
-        to: input.to,
-        now: input.now,
+      return commit(() => {
+        if (!challengeMatches(input.emailHash, input.codeHash, input.now)) {
+          return 'challenge_changed';
+        }
+        const outcome = deps.devices.adoptDevice({
+          tokenHash: input.tokenHash,
+          deviceId: input.deviceId,
+          from: input.from,
+          to: input.to,
+          erase: input.erase,
+          now: input.now,
+        });
+        if (outcome !== 'adopted') return outcome;
+        if (input.mergeFrom !== undefined) {
+          const queued = merges.get(input.to) ?? new Set<string>();
+          queued.add(input.mergeFrom);
+          merges.set(input.to, queued);
+        }
+        if (input.erase) {
+          deps.profiles.remove(input.from);
+        }
+        challenges.delete(input.emailHash);
+        return 'adopted';
       });
-      if (input.mergeFrom !== undefined) {
-        const queued = merges.get(input.to) ?? new Set<string>();
-        queued.add(input.mergeFrom);
-        merges.set(input.to, queued);
-      }
-      if (input.erase) {
-        await deps.profiles.remove(input.from);
-        await deps.devices.deleteAccount(input.from);
-      }
-      challenges.delete(input.emailHash);
     },
 
     async pendingMerges(accountId) {

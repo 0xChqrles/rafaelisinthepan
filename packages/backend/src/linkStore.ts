@@ -9,8 +9,9 @@
 //   `email#<emailHash>` / `email`      — the BINDING: which account this address reaches.
 //                                        Create-only, so two devices racing one address
 //                                        converge on the account that won.
-//   `linksend#<scope>#<hash>` / `send` — a send allowance with its own TTL (#169's counter
-//                                        shape): one per address and one per address+IP.
+//   `linksend#<scope>#<hash>#<window>` / `send`
+//                                      — a send allowance with its own TTL (#169's counter
+//                                        shape): one per address and one per IP.
 //   `merge#<toAccountId>` / `from#<fromAccountId>`
 //                                      — the durable FRIEND-MERGE job. Up to 200 mutual
 //                                        edges cannot fit one 100-item transaction, so the
@@ -84,6 +85,26 @@ export interface EmailBinding {
   createdAt: string;
 }
 
+export interface LinkSendAllowance {
+  scope: string;
+  hash: string;
+  limit: number;
+}
+
+// A verified bind can still lose one of three races before its transaction lands. They are
+// answers, not infrastructure failures: the route either follows the binding that won,
+// re-reads the caller's account, or asks for a fresh code.
+export type LinkBindOutcome = 'bound' | 'taken' | 'account_changed' | 'challenge_changed';
+
+// The adoption transaction carries the same optimistic facts. `device_changed` includes a
+// committed write whose response was lost: the route re-reads the token and treats it as
+// success only when it now resolves to the intended account.
+export type LinkAdoptOutcome =
+  | 'adopted'
+  | 'account_changed'
+  | 'challenge_changed'
+  | 'device_changed';
+
 // One tuple of play that MOVES from the account being left to the one being adopted (#204's
 // active-day transfer). It is the same triple for the round row and the score row, because
 // both are addressed by (date, lang, mode) per player.
@@ -111,16 +132,23 @@ export interface AccountAdoption {
   // The challenge this link consumed. Deleting it inside the transaction is what makes the
   // whole verification one-shot.
   emailHash: string;
+  // The exact code that `verify` accepted. The consuming delete conditions on this digest,
+  // so a re-send between verification and commit cannot swap in a challenge the caller did
+  // not prove, and two final writes cannot both consume one code.
+  codeHash: string;
   // A friend-merge job for the surviving account, present exactly when `erase` is.
   mergeFrom?: string;
   now: string;
 }
 
 export interface LinkStore {
-  // Spend one send allowance. Returns false when the scope is over its bound for the
-  // window; nothing is written then, so a refused send costs the caller nothing but the
-  // request.
-  spendSend(scope: string, hash: string, limit: number, windowSeconds: number, now: Date): Promise<boolean>;
+  // Spend ALL send allowances as one decision. Returns false when any scope is over its
+  // bound and writes NONE of them, so an IP refusal cannot burn the address's own budget.
+  spendSends(
+    allowances: readonly LinkSendAllowance[],
+    windowSeconds: number,
+    now: Date,
+  ): Promise<boolean>;
   // Replace this address's pending challenge. A re-send always starts a fresh one: the
   // player is holding the newest mail, and leaving the old code alive would only widen the
   // guessing surface.
@@ -139,10 +167,11 @@ export interface LinkStore {
   // thing it would have done had the lookup seen it.
   bind(input: {
     emailHash: string;
+    codeHash: string;
     email: string;
     accountId: string;
     now: string;
-  }): Promise<'bound' | 'taken'>;
+  }): Promise<LinkBindOutcome>;
   // The identity-bearing core, indivisible: consume the challenge, move the one device item,
   // delete the account being left (its account row AND its profile row, so no
   // identity-bearing read can dress a deleted player), and persist the friend-merge job.
@@ -150,7 +179,7 @@ export interface LinkStore {
   // It is ONE transaction because the half-states are not equally harmless: a device left on
   // a deleted account is a player signed out mid-link with everything gone, which is the one
   // outcome this flow may never produce.
-  adopt(input: AccountAdoption): Promise<void>;
+  adopt(input: AccountAdoption): Promise<LinkAdoptOutcome>;
   // The accounts whose friends still have to be merged into this one. Normally empty; a
   // partially drained job is what makes it not.
   pendingMerges(accountId: string): Promise<string[]>;
@@ -166,26 +195,26 @@ export interface LinkStore {
 // writes for it. A contract method no production store implements would be a contract lie;
 // this pair says honestly that it exists for the in-memory implementation.
 export interface LinkDeviceWrites {
-  // Move the ONE device item to another account: the base key is the token's hash and does
-  // not change — only the account it names and its index keys.
-  reparentDevice(input: {
+  // The process-local equivalent of the production account-email condition: bind only
+  // while the account exists and is still unlinked (or already carries this exact value).
+  bindAccountEmail(accountId: string, email: string, now: string): boolean;
+  // The process-local equivalent of the production adoption conditions. It validates the
+  // device, both accounts and the erase/survive email state, then applies the device move
+  // and optional account deletion synchronously inside the one owning map.
+  adoptDevice(input: {
     tokenHash: string;
     deviceId: string;
     from: string;
     to: string;
+    erase: boolean;
     now: string;
-  }): Promise<void>;
-  // Record which address reaches this account, on the account row itself.
-  bindAccountEmail(accountId: string, email: string, now: string): Promise<void>;
-  // Delete the account row. Every device item still naming it stops authenticating, which
-  // is the account-existence check `resolve` already makes.
-  deleteAccount(accountId: string): Promise<void>;
+  }): 'adopted' | 'account_changed' | 'device_changed';
 }
 
 export interface LinkProfileWrites {
   // Delete the player's public row, so no identity-bearing read can dress a deleted
   // account (#204: "a missing profile must not fall back to a display identity").
-  remove(publicId: string): Promise<void>;
+  remove(publicId: string): void;
 }
 
 // The pending challenge for one address.

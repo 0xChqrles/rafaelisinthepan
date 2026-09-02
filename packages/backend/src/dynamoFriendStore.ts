@@ -3,6 +3,7 @@ import {
   TransactWriteItemsCommand,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
+import { ACCOUNT_SORT_KEY, accountKey } from './deviceStore';
 import { FRIENDS_MAX, friendsKey, type FriendLink, type FriendStore } from './friendStore';
 
 // Four items per kept friendship, so 25 of them exactly fill DynamoDB's 100-item
@@ -97,11 +98,48 @@ export function dynamoFriendStore(client: DynamoDBClient, tableName: string): Fr
       // the original instant, so re-writing a row that is already there costs two WCUs on a
       // rare path and changes nothing — which is also why this transaction needs no
       // ClientRequestToken: an SDK retry is the same no-op.
-      await client.send(
-        new TransactWriteItemsCommand({
-          TransactItems: [edge(publicId, friendId), edge(friendId, publicId)],
-        }),
-      );
+      try {
+        await client.send(
+          new TransactWriteItemsCommand({
+            TransactItems: [
+              {
+                ConditionCheck: {
+                  TableName: tableName,
+                  Key: { pk: { S: accountKey(publicId) }, sk: { S: ACCOUNT_SORT_KEY } },
+                  ConditionExpression: 'attribute_exists(pk)',
+                },
+              },
+              {
+                ConditionCheck: {
+                  TableName: tableName,
+                  Key: { pk: { S: accountKey(friendId) }, sk: { S: ACCOUNT_SORT_KEY } },
+                  ConditionExpression: 'attribute_exists(pk)',
+                },
+              },
+              edge(publicId, friendId),
+              edge(friendId, publicId),
+            ],
+          }),
+        );
+      } catch (error) {
+        const transaction = error as {
+          name?: unknown;
+          CancellationReasons?: { Code?: string }[];
+        };
+        const reasons = transaction.CancellationReasons ?? [];
+        const expected =
+          transaction.name === 'TransactionCanceledException' &&
+          reasons.some(({ Code }) => Code === 'ConditionalCheckFailed') &&
+          reasons.every(({ Code }) => Code === 'None' || Code === 'ConditionalCheckFailed');
+        if (
+          expected &&
+          (reasons[0]?.Code === 'ConditionalCheckFailed' ||
+            reasons[1]?.Code === 'ConditionalCheckFailed')
+        ) {
+          return { outcome: 'gone', friends: own };
+        }
+        throw error;
+      }
       // The transaction committed exactly the one edge the read was missing, so the
       // resulting list is the one just read plus it — kept in the Query's sort-key order.
       // Re-reading the partition would spend a second strongly-consistent Query to learn

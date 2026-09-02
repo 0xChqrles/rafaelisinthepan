@@ -184,26 +184,25 @@ export async function handleLink(
     // Two bounds, both spent before a single message is sent: per ADDRESS, so no inbox can
     // be made to receive an endless stream; per IP, so no one sender can spray many. Without
     // them this endpoint is a free spam relay pointed at arbitrary addresses.
-    const allowances: [string, string, number][] = [
-      ['addr', hash, LINK_SENDS_PER_ADDRESS],
-      ['ip', hashClientIp(remoteIp, deps.ipHmacSecret), LINK_SENDS_PER_IP],
-    ];
-    for (const [scope, key, limit] of allowances) {
-      const allowed = await deps.links.spendSend(
-        scope,
-        key,
-        limit,
-        LINK_SEND_WINDOW_SECONDS,
-        instant,
+    const allowed = await deps.links.spendSends(
+      [
+        { scope: 'addr', hash, limit: LINK_SENDS_PER_ADDRESS },
+        {
+          scope: 'ip',
+          hash: hashClientIp(remoteIp, deps.ipHmacSecret),
+          limit: LINK_SENDS_PER_IP,
+        },
+      ],
+      LINK_SEND_WINDOW_SECONDS,
+      instant,
+    );
+    if (!allowed) {
+      return errorResponse(
+        429,
+        'too_many_codes',
+        'Too many codes requested. Try again later.',
+        { ...responseHeaders, 'Retry-After': String(LINK_SEND_WINDOW_SECONDS) },
       );
-      if (!allowed) {
-        return errorResponse(
-          429,
-          'too_many_codes',
-          'Too many codes requested. Try again later.',
-          { ...responseHeaders, 'Retry-After': String(LINK_SEND_WINDOW_SECONDS) },
-        );
-      }
     }
     const code = mintCode();
     await deps.links.putChallenge(hash, {
@@ -250,11 +249,8 @@ export async function handleLink(
     }
   }
 
-  const verdict = await deps.links.verify(
-    hash,
-    linkCodeHash(deps.ipHmacSecret, email, body.code),
-    instant,
-  );
+  const codeHash = linkCodeHash(deps.ipHmacSecret, email, body.code);
+  const verdict = await deps.links.verify(hash, codeHash, instant);
   switch (verdict.outcome) {
     case 'none':
       return errorResponse(404, 'no_code', 'No code was asked for this address.', responseHeaders);
@@ -309,6 +305,7 @@ export async function handleLink(
     }
     const outcome = await deps.links.bind({
       emailHash: hash,
+      codeHash,
       email,
       accountId: account.accountId,
       now: instant.toISOString(),
@@ -324,6 +321,34 @@ export async function handleLink(
           mergePending: false,
         },
         responseHeaders,
+      );
+    }
+    if (outcome === 'challenge_changed') {
+      return errorResponse(
+        409,
+        'code_spent',
+        'That code is no longer the active code for this address.',
+        responseHeaders,
+      );
+    }
+    if (outcome === 'account_changed') {
+      // The transaction, not the earlier auth snapshot, owns the one-address invariant.
+      // Re-read only on this rare race so the refusal can name the address that won.
+      const current = await devices.resolve(deviceTokenHash(token.value));
+      if (!current) {
+        return errorResponse(
+          401,
+          'unknown_device',
+          'This device is no longer signed in.',
+          responseHeaders,
+        );
+      }
+      return errorResponse(
+        409,
+        'account_linked',
+        'This account is already saved under another address.',
+        responseHeaders,
+        current.account.email ? { email: current.account.email } : undefined,
       );
     }
     // `taken`: another device bound this address between the lookup and the write. That is
@@ -413,29 +438,52 @@ export async function handleLink(
       )
     : [];
 
-  await deps.links.adopt({
+  // Read the receipt BEFORE the identity transaction. The transfers above have already
+  // credited a moved solve, so this is the same answer the post-commit read produced, but a
+  // history outage can no longer turn a committed adoption into a 500 the client cannot
+  // distinguish from "nothing happened".
+  const stakes = await accountStakes(deps.history, target, activeDay);
+
+  const adoption = await deps.links.adopt({
     tokenHash: deviceTokenHash(token.value),
     deviceId: held.deviceId,
     from: leaving,
     to: target,
     erase,
     emailHash: hash,
+    codeHash,
     // The friend merge belongs to the deletion: an account that SURVIVES keeps its own
     // edges, and there is nothing to move.
     ...(erase ? { mergeFrom: leaving } : {}),
     now: instant.toISOString(),
   });
+  if (adoption !== 'adopted') {
+    if (adoption === 'challenge_changed') {
+      return errorResponse(
+        409,
+        'code_spent',
+        'That code is no longer the active code for this address.',
+        responseHeaders,
+      );
+    }
+    // A lost transaction response or an SDK retry can report stale conditions after the
+    // first write committed. Only the authoritative token may turn that ambiguity into
+    // success; every other changed plan is retried from a fresh account snapshot.
+    const current = await devices.resolve(deviceTokenHash(token.value));
+    if (current?.account.accountId !== target) {
+      return errorResponse(
+        409,
+        'link_changed',
+        'The account changed while it was being linked. Try the code again.',
+        responseHeaders,
+      );
+    }
+  }
 
   // The fan-out the transaction promised. It is best-effort HERE — the identity has already
   // changed and the player is waiting on an answer about it — and durable in the job it
   // drains, so an unfinished merge is reported rather than lost.
   const merged = await drainMerges(deps.links, deps.friends, target);
-
-  // THE RECEIPT. "We found your account" is a claim; the streak and the day count are the
-  // evidence, and they are the first thing a returning player wants to check. Read AFTER
-  // the adopt, so an active day that just moved across is already counted — the answer
-  // describes the account the device now holds, not the one it held a moment ago.
-  const stakes = await accountStakes(deps.history, target, activeDay);
 
   return json(
     200,

@@ -23,8 +23,10 @@ export interface FriendLink {
 //   linked — they did not hold this edge and now do;
 //   already_linked — they already held it, so their list is unchanged (a re-click of a
 //     shared link is an ordinary event, not an error). The write still runs — see below;
-//   capped — the pair is new and one of the two is at FRIENDS_MAX; nothing changed.
-export type FriendLinkOutcome = 'linked' | 'already_linked' | 'capped';
+//   capped — the pair is new and one of the two is at FRIENDS_MAX; nothing changed;
+//   gone — one of the two account rows disappeared before the atomic edge write, so no
+//     dangling friendship was created.
+export type FriendLinkOutcome = 'linked' | 'already_linked' | 'capped' | 'gone';
 
 export interface FriendLinkResult {
   outcome: FriendLinkOutcome;
@@ -45,7 +47,8 @@ export interface FriendStore {
   // cap on EITHER side of a pair the caller does not already hold: the link is a bearer "add
   // me" token, so a publicly posted one is exactly how a sender's own list would run away
   // from them. Answers with the caller's resulting list as well as the outcome — see
-  // FriendLinkResult.
+  // FriendLinkResult. The final edge transaction condition-checks BOTH live account rows;
+  // the route's earlier target lookup is useful for its 404 but cannot guard a later write.
   link(input: FriendLink): Promise<FriendLinkResult>;
   // Symmetric and idempotent for the same reason: deleting an edge that is not there is a
   // no-op, so a stray half-edge can always be cleared from either side too.

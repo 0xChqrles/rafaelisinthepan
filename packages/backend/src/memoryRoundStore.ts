@@ -237,12 +237,16 @@ export function memoryRoundStore(): RoundStore {
     // than on the item's existence.
     async transfer(key, from, to) {
       const source = rounds.get(itemKey(key, from));
-      if (!source || source.guesses.length === 0) return null;
       const destination = rounds.get(itemKey(key, to));
+      if (!source || source.guesses.length === 0) {
+        return destination && destination.guesses.length > 0
+          ? { state: stateOf(destination), moved: false }
+          : null;
+      }
       if (destination && destination.guesses.length > 0) return null;
       rounds.set(itemKey(key, to), source);
       rounds.delete(itemKey(key, from));
-      return stateOf(source);
+      return { state: stateOf(source), moved: true };
     },
   };
 }

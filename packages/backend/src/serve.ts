@@ -45,7 +45,7 @@ const localDeviceStore = memoryDeviceStore();
 // One instance of each store the LINK route also acts on (#204): a verified link moves the
 // day's round and score rows, credits solved days and rewrites friend edges, so it has to
 // hold the very same objects the other routes read.
-const localFriendStore = memoryFriendStore();
+const localFriendStore = memoryFriendStore((publicId) => localDeviceStore.accountExists(publicId));
 const localRoundStore = memoryRoundStore();
 const localHistoryStore = memoryHistoryStore();
 // `live` is the DEVICE store's answer (#204): a deleted account must stop dressing board

@@ -538,9 +538,18 @@ export function dynamoRoundStore(
     // attribute shape is the one thing a move must not reinterpret.
     async transfer(key, from, to) {
       const source = await readItem(key, from, true);
+      const destinationResult = async () => {
+        const destination = await readItem(key, to, true);
+        return destination && (destination.guesses?.L?.length ?? 0) > 0
+          ? { state: itemToState(destination)!, moved: false }
+          : null;
+      };
       // Keyed on GUESSES, never on the item's existence: a word round that was merely
-      // STARTED holds none server-side, and #204 lets a recorded run move in over it.
-      if (!source || (source.guesses?.L?.length ?? 0) === 0) return null;
+      // STARTED holds none server-side, and #204 lets a recorded run move in over it. When
+      // the source is already gone, the destination read distinguishes a retry after a
+      // committed move from a tuple with no play anywhere; the caller can then resume the
+      // score/history work that follows this transaction.
+      if (!source || (source.guesses?.L?.length ?? 0) === 0) return destinationResult();
       const moved: Record<string, AttributeValue> = { ...source, ...itemKey(key, to) };
       try {
         await client.send(
@@ -581,10 +590,16 @@ export function dynamoRoundStore(
         // transaction cancelled for any OTHER reason (a throttle, a capacity limit) is a
         // real failure and must propagate: a link that silently skipped the transfer would
         // then delete the account the round is still sitting in.
-        if (transferRefused(error)) return null;
+        if (transferRefused(error)) {
+          const currentSource = await readItem(key, from, true);
+          if (!currentSource || (currentSource.guesses?.L?.length ?? 0) === 0) {
+            return destinationResult();
+          }
+          return null;
+        }
         throw error;
       }
-      return itemToState(source);
+      return { state: itemToState(source)!, moved: true };
     },
   };
 }

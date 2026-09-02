@@ -614,17 +614,24 @@ export function parseAccountSummary(data: unknown): AccountSummary {
   if (typeof deviceId !== 'string' || !DEVICE_ID_PATTERN.test(deviceId)) {
     throw new Error('malformed account: bad "deviceId"');
   }
+  if (email !== null && (typeof email !== 'string' || email.length === 0)) {
+    throw new Error('malformed account: bad "email"');
+  }
+  if (typeof createdAt !== 'string') {
+    throw new Error('malformed account: bad "createdAt"');
+  }
+  if (typeof data.mergePending !== 'boolean') {
+    throw new Error('malformed account: bad "mergePending"');
+  }
   return {
     accountId,
     deviceId,
-    // A stored address is a string; anything else reads as "not saved yet", which is the
-    // honest fallback — the screen then offers to save one.
-    email: typeof email === 'string' && email.length > 0 ? email : null,
+    email,
     // Checked as a string but NOT as a parseable instant: the screen already renders an
     // unreadable date as no date (the device list's rule), and refusing the whole summary
     // over a label would hide the email state this screen exists for.
-    createdAt: typeof createdAt === 'string' ? createdAt : '',
-    mergePending: data.mergePending === true,
+    createdAt,
+    mergePending: data.mergePending,
   };
 }
 

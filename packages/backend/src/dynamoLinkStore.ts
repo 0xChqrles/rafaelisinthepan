@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   ConditionalCheckFailedException,
   DeleteItemCommand,
@@ -28,6 +29,7 @@ import {
   mergeSortKey,
   sendKey,
   sendWindow,
+  sameDigest,
   type AccountAdoption,
   type EmailBinding,
   type LinkStore,
@@ -53,6 +55,28 @@ function isConditionFailure(error: unknown): boolean {
   );
 }
 
+interface CancellationReason {
+  Code?: string;
+}
+
+function cancellationReasons(error: unknown): CancellationReason[] | null {
+  if (typeof error !== 'object' || error === null) return null;
+  const named = error as { name?: unknown; CancellationReasons?: CancellationReason[] };
+  if (named.name !== 'TransactionCanceledException' || !named.CancellationReasons) return null;
+  return named.CancellationReasons;
+}
+
+function conditionalCancellation(reasons: readonly CancellationReason[]): boolean {
+  return (
+    reasons.some(({ Code }) => Code === 'ConditionalCheckFailed') &&
+    reasons.every(({ Code }) => Code === 'None' || Code === 'ConditionalCheckFailed')
+  );
+}
+
+function requestToken(kind: string, ...parts: string[]): string {
+  return createHash('sha256').update([kind, ...parts].join('\0')).digest('hex').slice(0, 36);
+}
+
 export function dynamoLinkStore(client: DynamoDBClient, tableName: string): LinkStore {
   const challengeItem = async (hash: string): Promise<Record<string, AttributeValue> | undefined> => {
     const response = await client.send(
@@ -68,36 +92,42 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
   };
 
   return {
-    async spendSend(scope, hash, limit, windowSeconds, now) {
+    async spendSends(allowances, windowSeconds, now) {
+      if (allowances.length === 0) return true;
+      if (allowances.some(({ limit }) => limit < 1)) return false;
+      const window = sendWindow(now, windowSeconds);
       try {
         await client.send(
-          new UpdateItemCommand({
-            TableName: tableName,
-            Key: {
-              pk: { S: sendKey(scope, hash, sendWindow(now, windowSeconds)) },
-              sk: { S: SEND_SORT_KEY },
-            },
-            // ONE conditional increment. The window is in the KEY, so the counter never has
-            // to be reset and the condition is path-only — DynamoDB's condition grammar has
-            // no arithmetic (the round store's rule).
-            UpdateExpression: 'ADD #count :one SET #expiresAt = :expiresAt',
-            ConditionExpression: 'attribute_not_exists(#count) OR #count < :limit',
-            ExpressionAttributeNames: { '#count': 'count', '#expiresAt': 'expiresAt' },
-            ExpressionAttributeValues: {
-              ':one': { N: '1' },
-              ':limit': { N: String(limit) },
-              // The item's own TTL: two windows of slack, because DynamoDB's TTL deletion is
-              // best-effort and lags — an allowance item that outlives its window costs
-              // nothing, since the NEXT window is a different key.
-              ':expiresAt': {
-                N: String(Math.floor(now.getTime() / 1000) + windowSeconds * 2),
+          new TransactWriteItemsCommand({
+            TransactItems: allowances.map(({ scope, hash, limit }) => ({
+              Update: {
+                TableName: tableName,
+                Key: {
+                  pk: { S: sendKey(scope, hash, window) },
+                  sk: { S: SEND_SORT_KEY },
+                },
+                // ONE conditional increment per scope, committed together. The window is
+                // in each KEY, so no counter has to be reset.
+                UpdateExpression: 'ADD #count :one SET #expiresAt = :expiresAt',
+                ConditionExpression: 'attribute_not_exists(#count) OR #count < :limit',
+                ExpressionAttributeNames: { '#count': 'count', '#expiresAt': 'expiresAt' },
+                ExpressionAttributeValues: {
+                  ':one': { N: '1' },
+                  ':limit': { N: String(limit) },
+                  // Two windows of TTL slack: deletion may lag, while the next window is a
+                  // different key and therefore unaffected.
+                  ':expiresAt': {
+                    N: String(Math.floor(now.getTime() / 1000) + windowSeconds * 2),
+                  },
+                },
               },
-            },
+            })),
           }),
         );
         return true;
       } catch (error) {
-        if (isConditionFailure(error)) return false;
+        const reasons = cancellationReasons(error);
+        if (reasons && conditionalCancellation(reasons)) return false;
         throw error;
       }
     },
@@ -129,52 +159,63 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
 
     async verify(hash, codeHash, now): Promise<LinkVerifyResult> {
       const seconds = Math.floor(now.getTime() / 1000);
-      try {
-        // The attempt is counted by a write whose CONDITION is "the code is wrong", so a
-        // correct code never spends one — which matters, because one successful link can
-        // legitimately verify twice (the erase confirmation asks, the player confirms, the
-        // second call carries the parameter). The count is the only thing between a
-        // six-digit code and a guessing loop, so it may not be a read-then-write.
-        const response = await client.send(
-          new UpdateItemCommand({
-            TableName: tableName,
-            Key: { pk: { S: challengeKey(hash) }, sk: { S: CHALLENGE_SORT_KEY } },
-            UpdateExpression: 'SET #attempts = if_not_exists(#attempts, :zero) + :one',
-            ConditionExpression:
-              'attribute_exists(pk) AND #attempts < :max AND #expiresAt > :now AND #codeHash <> :codeHash',
-            ExpressionAttributeNames: {
-              '#attempts': 'attempts',
-              '#expiresAt': 'expiresAt',
-              '#codeHash': 'codeHash',
-            },
-            ExpressionAttributeValues: {
-              ':zero': { N: '0' },
-              ':one': { N: '1' },
-              ':max': { N: String(LINK_CODE_MAX_ATTEMPTS) },
-              ':now': { N: String(seconds) },
-              ':codeHash': { S: codeHash },
-            },
-            ReturnValues: 'ALL_NEW',
-          }),
-        );
-        const attempts = Number(response.Attributes?.attempts?.N ?? LINK_CODE_MAX_ATTEMPTS);
-        return {
-          outcome: attempts >= LINK_CODE_MAX_ATTEMPTS ? 'spent' : 'wrong',
-          attemptsLeft: Math.max(0, LINK_CODE_MAX_ATTEMPTS - attempts),
-        };
-      } catch (error) {
-        if (!isConditionFailure(error)) throw error;
+      // A re-send can replace the row between a refused update and its classification read.
+      // Retry against the row that NOW stands; never call a fresh challenge "correct"
+      // merely because the earlier condition failed for a different one. Address sends are
+      // themselves bounded, so eight replacements inside one verification is corruption or
+      // deliberate churn; failing closed there is safer than granting a free attempt.
+      for (let pass = 0; pass < 8; pass += 1) {
+        try {
+          // The attempt is counted by a write whose CONDITION is "the code is wrong", so a
+          // correct code never spends one — which matters because the confirmation verifies
+          // it twice. The count may not be a read-then-write.
+          const response = await client.send(
+            new UpdateItemCommand({
+              TableName: tableName,
+              Key: { pk: { S: challengeKey(hash) }, sk: { S: CHALLENGE_SORT_KEY } },
+              UpdateExpression: 'SET #attempts = if_not_exists(#attempts, :zero) + :one',
+              ConditionExpression:
+                'attribute_exists(pk) AND #attempts < :max AND #expiresAt > :now AND #codeHash <> :codeHash',
+              ExpressionAttributeNames: {
+                '#attempts': 'attempts',
+                '#expiresAt': 'expiresAt',
+                '#codeHash': 'codeHash',
+              },
+              ExpressionAttributeValues: {
+                ':zero': { N: '0' },
+                ':one': { N: '1' },
+                ':max': { N: String(LINK_CODE_MAX_ATTEMPTS) },
+                ':now': { N: String(seconds) },
+                ':codeHash': { S: codeHash },
+              },
+              ReturnValues: 'ALL_NEW',
+            }),
+          );
+          const attempts = Number(response.Attributes?.attempts?.N ?? LINK_CODE_MAX_ATTEMPTS);
+          return {
+            outcome: attempts >= LINK_CODE_MAX_ATTEMPTS ? 'spent' : 'wrong',
+            attemptsLeft: Math.max(0, LINK_CODE_MAX_ATTEMPTS - attempts),
+          };
+        } catch (error) {
+          if (!isConditionFailure(error)) throw error;
+        }
+
+        const item = await challengeItem(hash);
+        if (!item) return { outcome: 'none', attemptsLeft: 0 };
+        const attempts = Number(item.attempts?.N ?? '0');
+        if (Number(item.expiresAt?.N ?? '0') <= seconds) {
+          return { outcome: 'expired', attemptsLeft: 0 };
+        }
+        if (attempts >= LINK_CODE_MAX_ATTEMPTS) return { outcome: 'spent', attemptsLeft: 0 };
+        const heldHash = item.codeHash?.S;
+        if (!heldHash) throw new Error('Stored link challenge has no code hash.');
+        if (sameDigest(heldHash, codeHash)) {
+          return { outcome: 'ok', attemptsLeft: LINK_CODE_MAX_ATTEMPTS - attempts };
+        }
+        // The read observed a replacement. Loop so this request's wrong attempt is charged
+        // to that current challenge rather than returned for free.
       }
-      // The condition refused, which means one of FOUR things — the code was right, the
-      // attempts are gone, the challenge expired, or there is none. Only the exceptional
-      // path pays for this read (the happy path pays it too, which is the deliberate trade:
-      // a correct code costs two round trips, a wrong one costs one and can never be free).
-      const item = await challengeItem(hash);
-      if (!item) return { outcome: 'none', attemptsLeft: 0 };
-      const attempts = Number(item.attempts?.N ?? '0');
-      if (Number(item.expiresAt?.N ?? '0') <= seconds) return { outcome: 'expired', attemptsLeft: 0 };
-      if (attempts >= LINK_CODE_MAX_ATTEMPTS) return { outcome: 'spent', attemptsLeft: 0 };
-      return { outcome: 'ok', attemptsLeft: LINK_CODE_MAX_ATTEMPTS - attempts };
+      throw new Error('Link challenge changed repeatedly during verification.');
     },
 
     async binding(hash): Promise<EmailBinding | null> {
@@ -191,9 +232,19 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
     },
 
     async bind(input) {
+      const seconds = Math.floor(Date.parse(input.now) / 1_000);
       try {
         await client.send(
           new TransactWriteItemsCommand({
+            ClientRequestToken: requestToken(
+              'bind',
+              tableName,
+              input.accountId,
+              input.emailHash,
+              input.codeHash,
+              input.email,
+              input.now,
+            ),
             TransactItems: [
               {
                 Put: {
@@ -214,9 +265,11 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
                   TableName: tableName,
                   Key: { pk: { S: accountKey(input.accountId) }, sk: { S: ACCOUNT_SORT_KEY } },
                   UpdateExpression: 'SET #email = :email, #emailAt = :now',
-                  // The account must still exist: binding an address to a deleted account
-                  // would make the address reach nobody, permanently.
-                  ConditionExpression: 'attribute_exists(pk)',
+                  // The account must still exist AND still have its one address slot. Two
+                  // different-address binds can pass the route's same snapshot, so the
+                  // invariant belongs in this transaction, not in that read.
+                  ConditionExpression:
+                    'attribute_exists(pk) AND (attribute_not_exists(#email) OR #email = :email)',
                   ExpressionAttributeNames: { '#email': 'email', '#emailAt': 'emailAt' },
                   ExpressionAttributeValues: {
                     ':email': { S: input.email },
@@ -228,6 +281,21 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
                 Delete: {
                   TableName: tableName,
                   Key: { pk: { S: challengeKey(input.emailHash) }, sk: { S: CHALLENGE_SORT_KEY } },
+                  // Verification and consumption name the SAME challenge. A resend after
+                  // the read, or another final write consuming it first, refuses the whole
+                  // transaction rather than granting the address without its code.
+                  ConditionExpression:
+                    '#codeHash = :codeHash AND #expiresAt > :now AND #attempts < :max',
+                  ExpressionAttributeNames: {
+                    '#codeHash': 'codeHash',
+                    '#expiresAt': 'expiresAt',
+                    '#attempts': 'attempts',
+                  },
+                  ExpressionAttributeValues: {
+                    ':codeHash': { S: input.codeHash },
+                    ':now': { N: String(seconds) },
+                    ':max': { N: String(LINK_CODE_MAX_ATTEMPTS) },
+                  },
                 },
               },
             ],
@@ -235,12 +303,20 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
         );
         return 'bound';
       } catch (error) {
-        if (isConditionFailure(error)) return 'taken';
+        const reasons = cancellationReasons(error);
+        if (!reasons || !conditionalCancellation(reasons)) throw error;
+        // Challenge validity wins when more than one condition failed: a binding that won
+        // may have consumed it, and the losing request must not turn one code into two
+        // final account operations.
+        if (reasons[2]?.Code === 'ConditionalCheckFailed') return 'challenge_changed';
+        if (reasons[0]?.Code === 'ConditionalCheckFailed') return 'taken';
+        if (reasons[1]?.Code === 'ConditionalCheckFailed') return 'account_changed';
         throw error;
       }
     },
 
     async adopt(input: AccountAdoption) {
+      const seconds = Math.floor(Date.parse(input.now) / 1_000);
       const items: TransactWriteItem[] = [
         {
           // The ONE device item MOVES. Its base key is the token's hash and does not change;
@@ -266,11 +342,32 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
           },
         },
         {
+          // A binding may outlive corruption, but an adoption may not move a device onto an
+          // account that no longer exists.
+          ConditionCheck: {
+            TableName: tableName,
+            Key: { pk: { S: accountKey(input.to) }, sk: { S: ACCOUNT_SORT_KEY } },
+            ConditionExpression: 'attribute_exists(pk)',
+          },
+        },
+        {
           // Consuming the challenge inside this transaction is what makes the whole
-          // verification one-shot.
+          // verification one-shot. The condition ties it to what `verify` accepted.
           Delete: {
             TableName: tableName,
             Key: { pk: { S: challengeKey(input.emailHash) }, sk: { S: CHALLENGE_SORT_KEY } },
+            ConditionExpression:
+              '#codeHash = :codeHash AND #expiresAt > :now AND #attempts < :max',
+            ExpressionAttributeNames: {
+              '#codeHash': 'codeHash',
+              '#expiresAt': 'expiresAt',
+              '#attempts': 'attempts',
+            },
+            ExpressionAttributeValues: {
+              ':codeHash': { S: input.codeHash },
+              ':now': { N: String(seconds) },
+              ':max': { N: String(LINK_CODE_MAX_ATTEMPTS) },
+            },
           },
         },
       ];
@@ -295,6 +392,10 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
             Delete: {
               TableName: tableName,
               Key: { pk: { S: accountKey(input.from) }, sk: { S: ACCOUNT_SORT_KEY } },
+              // `erase` came from an earlier authenticated snapshot. A concurrent bind is
+              // allowed to win, but then this account is reachable and may not be deleted.
+              ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(#email)',
+              ExpressionAttributeNames: { '#email': 'email' },
             },
           },
           {
@@ -304,8 +405,53 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
             },
           },
         );
+      } else {
+        // A surviving source must still be live and linked. If another adoption deleted it
+        // after the route snapshot, moving this device on the strength of stale state would
+        // leave the table with a second unexplained identity transition.
+        items.push({
+          ConditionCheck: {
+            TableName: tableName,
+            Key: { pk: { S: accountKey(input.from) }, sk: { S: ACCOUNT_SORT_KEY } },
+            ConditionExpression: 'attribute_exists(pk) AND attribute_exists(#email)',
+            ExpressionAttributeNames: { '#email': 'email' },
+          },
+        });
       }
-      await client.send(new TransactWriteItemsCommand({ TransactItems: items }));
+      const sourceIndex = items.length - (input.erase ? 2 : 1);
+      try {
+        await client.send(
+          new TransactWriteItemsCommand({
+            ClientRequestToken: requestToken(
+              'adopt',
+              tableName,
+              input.tokenHash,
+              input.deviceId,
+              input.from,
+              input.to,
+              input.emailHash,
+              input.codeHash,
+              String(input.erase),
+              input.mergeFrom ?? '',
+              input.now,
+            ),
+            TransactItems: items,
+          }),
+        );
+        return 'adopted';
+      } catch (error) {
+        const reasons = cancellationReasons(error);
+        if (!reasons || !conditionalCancellation(reasons)) throw error;
+        if (reasons[2]?.Code === 'ConditionalCheckFailed') return 'challenge_changed';
+        if (
+          reasons[1]?.Code === 'ConditionalCheckFailed' ||
+          reasons[sourceIndex]?.Code === 'ConditionalCheckFailed'
+        ) {
+          return 'account_changed';
+        }
+        if (reasons[0]?.Code === 'ConditionalCheckFailed') return 'device_changed';
+        throw error;
+      }
     },
 
     async pendingMerges(accountId) {

@@ -90,7 +90,12 @@ export function dynamoDeviceStore(client: DynamoDBClient, tableName: string): De
       }),
     );
     if (!response.Item) return null;
-    return { accountId, createdAt: response.Item.createdAt?.S ?? '' };
+    const email = response.Item.email?.S;
+    return {
+      accountId,
+      createdAt: response.Item.createdAt?.S ?? '',
+      ...(email === undefined ? {} : { email }),
+    };
   }
 
   async function device(tokenHash: string): Promise<DeviceRecord | null> {

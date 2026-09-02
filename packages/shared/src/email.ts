@@ -15,11 +15,13 @@
 // RFC 5321's practical ceiling. Bounded so a hostile body cannot hand SES a megabyte.
 export const EMAIL_MAX_LENGTH = 254;
 
-// Deliberately PRAGMATIC, not RFC 5322: a local part with no whitespace, `@`, one dotted
-// domain with a 2+ letter final label. Every address a person types into a game passes it,
-// and the ones it refuses are typos, not exotic-but-valid mailboxes. The real validation is
-// that the code has to arrive.
-const EMAIL_PATTERN = /^[^\s@,;:<>()[\]\\"]+@[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$/;
+// Deliberately PRAGMATIC, not RFC 5322: an unquoted 7-bit local part and one dotted ASCII
+// domain with a 2+ letter final label. SES does not support SMTPUTF8, so accepting a Unicode
+// local part would promise a code the configured sender can never deliver.
+const EMAIL_PATTERN = /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$/;
+const EMAIL_LOCAL_MAX_LENGTH = 64;
+const EMAIL_DOMAIN_MAX_LENGTH = 253;
+const EMAIL_LABEL_MAX_LENGTH = 63;
 
 // The canonical spelling of one address: trimmed, NFKC-normalized and LOWERCASED WHOLE.
 //
@@ -35,7 +37,21 @@ export function normalizeEmail(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   const value = raw.trim().normalize('NFKC').toLowerCase();
   if (value.length === 0 || value.length > EMAIL_MAX_LENGTH) return null;
-  return EMAIL_PATTERN.test(value) ? value : null;
+  if (!EMAIL_PATTERN.test(value)) return null;
+  const at = value.indexOf('@');
+  const local = value.slice(0, at);
+  const domain = value.slice(at + 1);
+  if (
+    local.length > EMAIL_LOCAL_MAX_LENGTH ||
+    local.startsWith('.') ||
+    local.endsWith('.') ||
+    local.includes('..') ||
+    domain.length > EMAIL_DOMAIN_MAX_LENGTH ||
+    domain.split('.').some((label) => label.length > EMAIL_LABEL_MAX_LENGTH)
+  ) {
+    return null;
+  }
+  return value;
 }
 
 export function isValidEmail(raw: unknown): boolean {

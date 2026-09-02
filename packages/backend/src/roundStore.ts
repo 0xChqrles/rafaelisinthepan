@@ -299,10 +299,17 @@ export interface RoundStore {
   // started-but-unsubmitted run holds no guesses server-side at all, so a recorded run
   // moves in over it (#204).
   //
-  // It answers the state it MOVED (null when nothing did), because the caller has to know
-  // whether that round was a SOLVE: a transferred sentence solve owes the adopting account's
-  // streak its day. The move reads the source item anyway, so the state is free.
-  transfer(key: RoundKey, from: string, to: string): Promise<RoundState | null>;
+  // It answers the state now standing at the destination and whether THIS call moved it.
+  // When an earlier attempt moved the round but failed while transferring its score or
+  // solved-day credit, the retry sees `moved: false` with that destination state and can
+  // finish the remaining idempotent side effects. Null still means there is no transferable
+  // state, or both accounts held competing logs.
+  transfer(key: RoundKey, from: string, to: string): Promise<RoundTransferResult | null>;
+}
+
+export interface RoundTransferResult {
+  state: RoundState;
+  moved: boolean;
 }
 
 // A round key is only (date, lang, mode), so RE-PUBLISHING keeps the key while changing the

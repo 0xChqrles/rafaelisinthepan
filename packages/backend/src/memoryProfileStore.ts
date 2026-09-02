@@ -42,7 +42,7 @@ export function memoryProfileStore(
       });
     },
 
-    async remove(publicId) {
+    remove(publicId) {
       profiles.delete(publicId);
     },
   };

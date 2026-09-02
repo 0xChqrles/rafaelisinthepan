@@ -1080,9 +1080,12 @@ describe('dynamoRoundStore.transfer (#204)', () => {
     });
 
     await expect(store.transfer(KEY, FROM, TO)).resolves.toMatchObject({
-      guesses: ['bois', 'foret'],
-      progress: 40,
-      solved: true,
+      moved: true,
+      state: {
+        guesses: ['bois', 'foret'],
+        progress: 40,
+        solved: true,
+      },
     });
 
     const written = send.mock.calls
@@ -1122,6 +1125,29 @@ describe('dynamoRoundStore.transfer (#204)', () => {
     });
 
     await expect(store.transfer(KEY, FROM, TO)).resolves.toBeNull();
+    expect(
+      send.mock.calls.some(([command]) => command instanceof TransactWriteItemsCommand),
+    ).toBe(false);
+  });
+
+  it('returns an already-moved destination state so later transfer stages can resume', async () => {
+    const destination = {
+      ...storedItem(['bois'], 1_000),
+      pk: { S: `round#${TO}` },
+      progress: { N: '40' },
+      solved: { BOOL: true },
+    };
+    const { store, send } = makeStore(async (command) => {
+      if (command instanceof GetItemCommand) {
+        return command.input.Key!.pk.S === `round#${TO}` ? { Item: destination } : {};
+      }
+      return {};
+    });
+
+    await expect(store.transfer(KEY, FROM, TO)).resolves.toMatchObject({
+      moved: false,
+      state: { guesses: ['bois'], progress: 40, solved: true },
+    });
     expect(
       send.mock.calls.some(([command]) => command instanceof TransactWriteItemsCommand),
     ).toBe(false);

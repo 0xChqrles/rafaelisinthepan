@@ -54,11 +54,13 @@ import {
 import {
   isUnknownDeviceAnswer,
   linkUrl,
+  parseAccountSummary,
   parseErasePrompt,
   parseLinkResult,
   postLinkBody,
   type AccountStakes,
   type LinkErasePrompt,
+  type LinkResult,
 } from '../api';
 import { useAccountFace, useOwnFace, type Face } from '../components/AccountFace';
 import AccountStats from '../components/AccountStats';
@@ -75,6 +77,7 @@ import {
   ensureRequestIdentity,
   identityEpoch,
   markDeviceSignedOut,
+  type RequestIdentity,
   useDeviceIdentity,
 } from '../identity';
 import useKeyboardInset from '../hooks/useKeyboardInset';
@@ -82,6 +85,7 @@ import { t, tn } from '../i18n';
 import { ACCOUNT_PATH, resolveHomeLang, type LinkIntent } from '../langs';
 import { navigate } from '../routing';
 import { loadAccountSummary, noteAccountEmail, useAccountSummary } from '../state/account';
+import { recoveredLinkResult } from '../state/linkRecovery';
 import { useGameStore } from '../state/gameStore';
 import { prefetchTurnstileTokens, turnstileToken } from '../turnstile';
 
@@ -332,6 +336,63 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   );
 
   // ── VERIFY ────────────────────────────────────────────────────────────────────────────
+  const finish = useCallback((resolved: RequestIdentity, result: LinkResult) => {
+    if (currentRequestIdentity(resolved.epoch) === null) return;
+    setOutcome(result.outcome);
+    setLinked(result.email);
+    setReceipt(result.stakes ?? null);
+    setStep('done');
+    writeResumable(null);
+    noteAccountEmail(result.accountId, result.email);
+    if (result.accountId !== resolved.identity.accountId) {
+      // Recorded BEFORE the adoption, because the adoption is what unmounts this screen:
+      // the remounted one reads it and opens on the ending.
+      justLinked = {
+        accountId: result.accountId,
+        outcome: result.outcome,
+        email: result.email,
+        stakes: result.stakes ?? null,
+      };
+      adoptLinkedAccount(resolved.epoch, {
+        accountId: result.accountId,
+        deviceId: result.deviceId,
+      });
+    }
+  }, []);
+
+  const recoverAmbiguous = useCallback(
+    async (resolved: RequestIdentity, email: string): Promise<boolean> => {
+      try {
+        // A VERIFY can commit and then lose its response. Ask the token what account it NOW
+        // acts as before offering a retry whose challenge may already be consumed.
+        const response = await postLinkBody(linkUrl(), { token: resolved.identity.token });
+        const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+        if (!response.ok) {
+          if (isUnknownDeviceAnswer(response.status, body.error)) {
+            markDeviceSignedOut(resolved.epoch);
+            return true;
+          }
+          return false;
+        }
+        if (currentRequestIdentity(resolved.epoch) === null) return true;
+        const result = recoveredLinkResult({
+          summary: parseAccountSummary(body),
+          previousAccountId: resolved.identity.accountId,
+          previousEmail:
+            summary?.accountId === resolved.identity.accountId ? summary.email : null,
+          requestedEmail: email,
+          bindingAuthorized: !returning,
+        });
+        if (!result) return false;
+        finish(resolved, result);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [finish, returning, summary],
+  );
+
   // Takes the code as an ARGUMENT: the sixth keystroke submits, and React state has not
   // flushed by then. `erase` is present only on the SECOND call, after the player has read
   // what the first one refused to do silently.
@@ -341,6 +402,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
       if (email === null || !isValidLinkCode(typed) || busy) return;
       setBusy(true);
       setRefusal(null);
+      let request: RequestIdentity | null = null;
       try {
         // NOT `ensureRequestIdentity`: the SEND has already deployed the account, and a
         // verification is not a moment to mint one (#216 — everything else resolves what
@@ -348,6 +410,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
         const epoch = identityEpoch();
         const resolved = currentRequestIdentity(epoch);
         if (!resolved) return;
+        request = resolved;
         const response = await postLinkBody(linkUrl(), {
           token: resolved.identity.token,
           email,
@@ -364,27 +427,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
         });
         const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
         if (response.ok) {
-          const result = parseLinkResult(body);
-          setOutcome(result.outcome);
-          setLinked(result.email);
-          setReceipt(result.stakes ?? null);
-          setStep('done');
-          writeResumable(null);
-          noteAccountEmail(result.accountId, result.email);
-          if (result.accountId !== resolved.identity.accountId) {
-            // Recorded BEFORE the adoption, because the adoption is what unmounts this
-            // screen: the remounted one reads it and opens on the ending.
-            justLinked = {
-              accountId: result.accountId,
-              outcome: result.outcome,
-              email: result.email,
-              stakes: result.stakes ?? null,
-            };
-            adoptLinkedAccount(resolved.epoch, {
-              accountId: result.accountId,
-              deviceId: result.deviceId,
-            });
-          }
+          finish(resolved, parseLinkResult(body));
           return;
         }
         const error = body.error;
@@ -420,6 +463,10 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           return;
         }
         if (error === 'code_expired' || error === 'code_spent' || error === 'no_code') {
+          // A committed bind/adoption consumes the challenge. If that answer was lost and
+          // the first reconciliation read also failed, the player's explicit retry lands
+          // here; ask the unchanged token before calling the completed operation expired.
+          if (await recoverAmbiguous(resolved, email)) return;
           backToAddress();
           fail(t(lang, 'linkFailed'), t(lang, 'linkCodeExpired'));
           return;
@@ -443,14 +490,16 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           setNote(t(lang, 'linkAlreadySaved'));
           return;
         }
+        if (response.status >= 500 && (await recoverAmbiguous(resolved, email))) return;
         fail(t(lang, 'linkFailed'), t(lang, 'linkVerifyFailedNote'), true);
       } catch {
+        if (request && (await recoverAmbiguous(request, email))) return;
         fail(t(lang, 'linkFailed'), t(lang, 'linkVerifyFailedNote'), true);
       } finally {
         setBusy(false);
       }
     },
-    [address, busy, fail, lang],
+    [address, busy, fail, finish, lang, recoverAmbiguous, returning],
   );
 
   // The ending draws the account the player now holds — for an ADOPT that is the recovered

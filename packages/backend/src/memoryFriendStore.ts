@@ -3,7 +3,9 @@ import { FRIENDS_MAX, type FriendStore } from './friendStore';
 // Process-local store for `pnpm backend:dev` and tests: the same FriendStore contract as
 // DynamoDB — mutual edges written and deleted as one indivisible pair, the same cap on both
 // sides — with no AWS account. Restarting the local server intentionally resets the graph.
-export function memoryFriendStore(): FriendStore {
+export function memoryFriendStore(
+  accountExists: (publicId: string) => Promise<boolean> = async () => true,
+): FriendStore {
   // publicId -> friendId -> createdAt.
   const edges = new Map<string, Map<string, string>>();
   const own = (publicId: string) => edges.get(publicId) ?? new Map<string, string>();
@@ -19,6 +21,11 @@ export function memoryFriendStore(): FriendStore {
     async link({ publicId, friendId, createdAt }) {
       const mine = own(publicId);
       const theirs = own(friendId);
+      const [callerLive, friendLive] = await Promise.all([
+        accountExists(publicId),
+        accountExists(friendId),
+      ]);
+      if (!callerLive || !friendLive) return { outcome: 'gone', friends: sorted(mine) };
       // The cap gates a pair the caller does not already hold, and both rows are written
       // either way — dynamoFriendStore's semantics exactly, including the re-link that
       // repairs whichever direction is missing.
