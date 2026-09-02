@@ -10,9 +10,16 @@
 // **THE COPY RULE IS THE AREA'S, WITH ONE EXEMPTION.** The app says only what the screen does
 // not already show; a legal notice has nothing to show, so it may be plainer and wordier than
 // anything else here. What it may NOT be is legal boilerplate: every line is written to be
-// read by a fourteen-year-old, in the app's own voice, in the register the account area
-// already speaks (`vous`). Nothing here is a term of art — "a scrambled trace of your internet
-// address" is an HMAC, said in words a player can picture.
+// read by a fourteen-year-old, in the register the account area already speaks (`vous`).
+// Nothing here is a term of art: "a scrambled version of your IP address" is an HMAC, said
+// in words a player can picture.
+//
+// **AND IT READS LIKE A PERSON WROTE IT (user-decided 2026-09-03).** The first draft had the
+// tells of generated prose: dashes doing the work of sentences, aphorisms in threes,
+// "it is there for one thing", "nobody else". The user's brief: no weird sentences, no
+// jargon, no dashes, the way the person behind the game would actually explain it. So
+// ordinary sentences, ordinary punctuation, "we" where a person would say we, and nothing
+// written to sound good rather than to be understood.
 //
 // **IT DESCRIBES THE CODE, and the code is ground truth.** Every claim below is checked
 // against something: the account row's stored address (`backend/linkStore.ts`), the device
@@ -81,48 +88,48 @@ export interface PrivacyDoc {
 // different inboxes — the `{n}` rule the Word gate's own copy follows.
 export const PRIVACY: Record<UiLang, PrivacyDoc> = {
   en: {
-    title: 'Whippin keeps as little about you as it can.',
-    lead: 'Here is all of it, why it is kept, and how to get rid of it.',
+    title: 'What Whippin keeps about you, and why',
+    lead: 'Whippin stores very little, but it does store a few things. This page lists all of them, explains what they are for, and tells you how to delete them.',
     sections: [
       {
         heading: 'WHAT IS KEPT',
         entries: [
           {
             term: 'Your email address',
-            body: 'Only if you save your account. It is there for one thing: giving your account back to you on a new phone. The only message ever sent to it is a 6-digit code. It is never shared, never sold, and it will never be used to advertise anything.',
+            body: 'Only if you decide to save your account. We use it for one purpose: sending you a 6-digit code so you can get your account back on a new phone. We never share it or sell it, and we will not send you newsletters or ads.',
           },
           {
             term: 'An account number, and one key per device',
-            body: 'The server gives your account a random number, and every browser you play on keeps a random key of its own. Together they are how the game knows a round is yours — no password, no real name, nothing to remember. Each device also carries a rough label ("iPhone / Chrome") and the day it was last used, so you can recognise it on your account screen and sign it out.',
+            body: 'When you start playing, the server gives your account a random number. Each browser you play from also keeps its own random key. Together, that is how the game knows a round is yours, without a password or a username. Every device also gets a rough label (like "iPhone / Chrome") and the date it was last used, so you can recognise it on your account page and sign it out if you need to.',
           },
           {
             term: 'Your games',
-            body: 'The words you type in a round, your scores, the days you solved, the friends you added, and the name and drawing you picked. That is the game itself: your history, your streak, the boards.',
+            body: 'The words you type in each round, your scores, the days you solved, the friends you added, and the name and avatar you picked. Basically your history, your streak and the leaderboards.',
           },
           {
-            term: 'A scrambled trace of your internet address',
-            body: 'Scrambled the moment it arrives, into something nobody can turn back into an address. It is only used to stop one machine flooding the game with scores, or an inbox with codes. It is erased on its own, and never kept more than two days.',
+            term: 'A scrambled version of your IP address',
+            body: 'Your IP address is scrambled as soon as it reaches the server, in a way that cannot be reversed. We only use it to stop a single machine from flooding the game with scores, or from sending too many codes to one inbox. These traces are deleted automatically and are never kept for more than two days.',
           },
         ],
       },
       {
         heading: 'WHAT STAYS IN YOUR BROWSER',
         paragraphs: [
-          'Your device key, and the guesses still waiting to be sent, live in your own browser. The game sets no cookies.',
-          'Clearing your browsing data removes them — and the key with them, which is how this device reaches your account. Save your account with an email address first if you want to be able to get it back.',
+          'Your device key and any guesses waiting to be sent are stored in your own browser. The game does not use cookies.',
+          'If you clear your browsing data, they disappear, including the key that connects this device to your account. If you want to be able to get your account back afterwards, save it with an email address first.',
         ],
       },
       {
         heading: 'HOW LONG',
         paragraphs: [
-          'Everything above is kept while your account exists. A 6-digit code stops working after 10 minutes. The scrambled address traces are never kept more than two days.',
+          'Everything listed above is kept for as long as your account exists. A 6-digit code expires after 10 minutes. The scrambled IP traces are deleted within two days.',
         ],
       },
       {
         heading: 'DELETING IT',
         paragraphs: [
-          'Signing in to another account from this device deletes the account it leaves, unless that one has an email address of its own. The screen says exactly what is about to go before you agree to it.',
-          'There is no button yet for deleting everything else. Ask, and it is done: write to {mail}.',
+          'If you sign in to another account from this device, the account you leave behind is deleted, unless it has its own email address. The screen tells you what will be deleted before you confirm.',
+          'There is no button yet to delete everything else. Just write to {mail} and we will take care of it.',
         ],
       },
       {
@@ -130,30 +137,30 @@ export const PRIVACY: Record<UiLang, PrivacyDoc> = {
         entries: [
           {
             term: 'Amazon Web Services',
-            body: 'Hosts the game, its database and its files, and sends the code emails. Everything above sits on their machines, on servers in the United States — a transfer covered by their own EU–US Data Privacy Framework certification and by the standard contractual clauses in their data protection terms.',
+            body: 'Hosts the game, its database and its files, and sends the code emails. Everything listed above is stored on their servers, which are in the United States. That transfer is covered by their EU-US Data Privacy Framework certification and by the standard contractual clauses in their data protection terms.',
           },
           {
             term: 'Cloudflare',
-            body: 'Runs the invisible "are you a robot?" check when an account or a round is created. It sees your internet address and a little about your browser. It never sees your games.',
+            body: 'Runs the invisible "are you a robot?" check when an account or a round is created. Cloudflare sees your IP address and some basic information about your browser. It never sees your games.',
           },
           {
             term: 'Plausible',
-            body: 'Counts visits and three plain events — a puzzle solved, a result shared, the tutorial opened. No cookies, and nothing that points back at you.',
+            body: 'Counts visits and three simple events (a puzzle solved, a result shared, the tutorial opened). No cookies, and nothing that can be traced back to you.',
           },
         ],
-        outro: 'Nobody else. Nothing about you is sold, and there is no advertising here.',
+        outro: 'That is it. We do not sell anything about you, and there are no ads.',
       },
       {
         heading: 'ASKING',
         paragraphs: [
-          'Write to {mail} to know what is kept about you, to get a copy of it, to have something corrected, or to have all of it deleted.',
-          'If the answer does not satisfy you, you can complain to the CNIL, the French data protection authority.',
+          'You can write to {mail} to ask what we keep about you, get a copy of it, have something corrected, or have all of it deleted.',
+          'If you are not happy with the answer, you can file a complaint with the CNIL, the French data protection authority.',
         ],
       },
       {
         heading: 'WHO PUBLISHES THIS',
         paragraphs: [
-          'Whippin is published by a private individual, who has given their identity to the host below — the route French law leaves open to a site that is free and sells nothing.',
+          'Whippin is published by a private individual. As French law allows for a free, non-commercial site, the publisher\'s identity has been given to the host rather than shown here.',
           'Host: {host}.',
         ],
       },
@@ -161,48 +168,48 @@ export const PRIVACY: Record<UiLang, PrivacyDoc> = {
     updatedLabel: 'Last updated',
   },
   fr: {
-    title: 'Whippin garde le moins de choses possible sur vous.',
-    lead: "Voici tout ce qu'il garde, pourquoi, et comment tout effacer.",
+    title: 'Ce que Whippin garde sur vous, et pourquoi',
+    lead: "Whippin stocke très peu de choses, mais il en stocke quand même quelques-unes. Cette page les liste toutes, explique à quoi elles servent, et vous dit comment les supprimer.",
     sections: [
       {
         heading: "CE QU'ON GARDE",
         entries: [
           {
             term: 'Votre adresse e-mail',
-            body: "Seulement si vous sauvegardez votre compte. Elle sert à une chose : vous rendre votre compte sur un nouveau téléphone. Le seul message qu'elle reçoit est un code à 6 chiffres. Elle n'est jamais partagée, jamais vendue, et ne servira jamais à vous vendre quoi que ce soit.",
+            body: "Seulement si vous choisissez de sauvegarder votre compte. Elle sert à une seule chose : vous envoyer un code à 6 chiffres pour retrouver votre compte sur un nouveau téléphone. On ne la partage pas, on ne la vend pas, et on ne vous enverra ni newsletter ni pub.",
           },
           {
             term: 'Un numéro de compte, et une clé par appareil',
-            body: "Le serveur donne un numéro au hasard à votre compte, et chaque navigateur sur lequel vous jouez garde sa propre clé, au hasard elle aussi. À eux deux, c'est comme ça que le jeu sait qu'une partie est la vôtre : pas de mot de passe, pas de vrai nom, rien à retenir. Chaque appareil porte aussi une étiquette approximative (« iPhone / Chrome ») et le jour de sa dernière utilisation, pour que vous le reconnaissiez sur l'écran du compte et puissiez le déconnecter.",
+            body: "Quand vous commencez à jouer, le serveur attribue un numéro aléatoire à votre compte. Chaque navigateur depuis lequel vous jouez garde aussi sa propre clé aléatoire. C'est comme ça que le jeu sait qu'une partie est la vôtre, sans mot de passe ni identifiant. Chaque appareil reçoit aussi une étiquette approximative (par exemple « iPhone / Chrome ») et la date de sa dernière utilisation, pour que vous puissiez le reconnaître sur la page de votre compte et le déconnecter si besoin.",
           },
           {
             term: 'Vos parties',
-            body: "Les mots que vous tapez, vos scores, les jours résolus, les amis ajoutés, le nom et le dessin que vous avez choisis. C'est le jeu lui-même : votre historique, votre série, les classements.",
+            body: "Les mots que vous tapez à chaque partie, vos scores, les jours résolus, les amis que vous avez ajoutés, et le nom et l'avatar que vous avez choisis. En gros, votre historique, votre série et les classements.",
           },
           {
-            term: 'Une trace brouillée de votre adresse internet',
-            body: "Brouillée dès son arrivée, en quelque chose que personne ne peut retransformer en adresse. Elle sert seulement à empêcher une machine d'inonder le jeu de scores, ou une boîte mail de codes. Elle s'efface toute seule, et n'est jamais gardée plus de deux jours.",
+            term: 'Une version brouillée de votre adresse IP',
+            body: "Votre adresse IP est brouillée dès qu'elle arrive sur le serveur, d'une façon impossible à inverser. On s'en sert uniquement pour empêcher une même machine d'inonder le jeu de scores, ou d'envoyer trop de codes vers une même boîte mail. Ces traces sont supprimées automatiquement et ne sont jamais gardées plus de deux jours.",
           },
         ],
       },
       {
         heading: 'CE QUI RESTE DANS VOTRE NAVIGATEUR',
         paragraphs: [
-          "La clé de cet appareil, et les propositions en attente d'envoi, restent dans votre navigateur. Le jeu ne pose aucun cookie.",
-          "Effacer les données de navigation les supprime — et la clé avec elles, alors que c'est par elle que cet appareil rejoint votre compte. Sauvegardez d'abord votre compte avec une adresse e-mail si vous voulez pouvoir le retrouver.",
+          "La clé de votre appareil et les propositions en attente d'envoi sont stockées dans votre navigateur. Le jeu n'utilise pas de cookies.",
+          "Si vous effacez vos données de navigation, elles disparaissent, y compris la clé qui relie cet appareil à votre compte. Si vous voulez pouvoir retrouver votre compte ensuite, sauvegardez-le d'abord avec une adresse e-mail.",
         ],
       },
       {
         heading: 'COMBIEN DE TEMPS',
         paragraphs: [
-          "Tout ce qui précède est gardé tant que le compte existe. Un code à 6 chiffres ne marche plus au bout de 10 minutes. Les traces brouillées d'adresse ne sont jamais gardées plus de deux jours.",
+          "Tout ce qui est listé ci-dessus est gardé tant que votre compte existe. Un code à 6 chiffres expire au bout de 10 minutes. Les traces d'adresse IP brouillées sont supprimées sous deux jours.",
         ],
       },
       {
         heading: 'TOUT EFFACER',
         paragraphs: [
-          "Se connecter à un autre compte depuis cet appareil supprime le compte qu'il quitte, sauf si celui-ci a sa propre adresse e-mail. L'écran dit exactement ce qui va disparaître avant que vous acceptiez.",
-          "Pour le reste, il n'y a pas encore de bouton. Demandez, et c'est fait : écrivez à {mail}.",
+          "Si vous vous connectez à un autre compte depuis cet appareil, le compte que vous quittez est supprimé, sauf s'il a sa propre adresse e-mail. L'écran vous indique ce qui va être supprimé avant que vous confirmiez.",
+          "Il n'y a pas encore de bouton pour supprimer tout le reste. Écrivez simplement à {mail} et on s'en occupe.",
         ],
       },
       {
@@ -210,30 +217,30 @@ export const PRIVACY: Record<UiLang, PrivacyDoc> = {
         entries: [
           {
             term: 'Amazon Web Services',
-            body: "Héberge le jeu, sa base de données et ses fichiers, et envoie les e-mails de code. Tout ce qui précède est stocké sur leurs machines, sur des serveurs situés aux États-Unis — un transfert couvert par leur propre certification au EU–US Data Privacy Framework et par les clauses contractuelles types de leurs conditions de protection des données.",
+            body: "Héberge le jeu, sa base de données et ses fichiers, et envoie les e-mails de code. Tout ce qui est listé ci-dessus est stocké sur leurs serveurs, qui se trouvent aux États-Unis. Ce transfert est couvert par leur certification au EU-US Data Privacy Framework et par les clauses contractuelles types de leurs conditions de protection des données.",
           },
           {
             term: 'Cloudflare',
-            body: "Fait la vérification invisible « êtes-vous un robot ? » à la création d'un compte ou d'une partie. Il voit votre adresse internet et quelques informations sur votre navigateur. Il ne voit jamais vos parties.",
+            body: "Effectue la vérification invisible « êtes-vous un robot ? » quand un compte ou une partie est créé. Cloudflare voit votre adresse IP et quelques informations de base sur votre navigateur. Il ne voit jamais vos parties.",
           },
           {
             term: 'Plausible',
-            body: "Compte les visites et trois événements simples : une grille résolue, un résultat partagé, le tutoriel ouvert. Aucun cookie, et rien qui remonte jusqu'à vous.",
+            body: "Compte les visites et trois événements simples (une grille résolue, un résultat partagé, le tutoriel ouvert). Pas de cookies, et rien qui permette de remonter jusqu'à vous.",
           },
         ],
-        outro: "Personne d'autre. Rien de ce qui vous concerne n'est vendu, et il n'y a aucune publicité ici.",
+        outro: "C'est tout. On ne vend rien qui vous concerne, et il n'y a pas de publicité.",
       },
       {
         heading: 'NOUS ÉCRIRE',
         paragraphs: [
-          "Écrivez à {mail} pour savoir ce qui est gardé sur vous, en obtenir une copie, faire corriger quelque chose, ou tout faire supprimer.",
-          "Si la réponse ne vous convient pas, vous pouvez saisir la CNIL.",
+          "Vous pouvez écrire à {mail} pour savoir ce qu'on garde sur vous, en obtenir une copie, faire corriger quelque chose, ou tout faire supprimer.",
+          "Si la réponse ne vous convient pas, vous pouvez déposer une réclamation auprès de la CNIL.",
         ],
       },
       {
         heading: 'QUI ÉDITE CE SITE',
         paragraphs: [
-          "Whippin est édité par un particulier, dont l'identité a été communiquée à l'hébergeur ci-dessous — la voie que la loi française laisse ouverte à un site gratuit qui ne vend rien.",
+          "Whippin est édité par un particulier. Comme la loi française le permet pour un site gratuit et non commercial, l'identité de l'éditeur a été communiquée à l'hébergeur plutôt qu'affichée ici.",
           'Hébergeur : {host}.',
         ],
       },
