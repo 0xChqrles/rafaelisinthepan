@@ -1,9 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import digitsUrl from '../assets/digits.png';
 
-// The score watermark: the count drawn as big pixel-block digits behind the play content,
-// inside its own HALO — a radial pool of the page ground that erases the halftone dither
-// around the number, as if the score emitted a clean zone (user-decided 2026-08-17).
+// The score watermark: the count drawn as big PIXEL BLOCKS behind the play content, solid
+// (user-decided 2026-09-01 — a hollow 1px CONTOUR shipped for one pass the same day and was
+// rolled back; the number reads as a mass, not as a wireframe). It is `--fg` at 20%: white
+// rather than the `--muted` it used to wear, which is the ground's own neutral instead of a
+// blue-grey cast on the one shape that must not draw the eye.
+//
+// ITS HALO WENT WITH THE FILL. From 2026-08-17 the canvas painted a radial pool of the page
+// ground around the digits, to erase the halftone dither the ground used to wear — and it
+// laid an OPAQUE ground block under every ink cell for the same reason, so the dots could
+// never show through a stroke. The 2026-09-01 rebrand made the ground ONE FLAT SHEET, which
+// left both of them painting `--bg` onto `--bg`: invisible, and not cheap — the halo alone
+// made the canvas 2.8x the number's height and 1.9x its width, cleared and gradient-filled
+// on every draw. Both are deleted; the canvas is now the number plus room for its stroke.
 //
 // SIZED BY THE SCREEN ALONE (same decision): each glyph pixel of assets/digits.png is a
 // px×px block whose size comes continuously from the viewport budgets below. The old
@@ -18,8 +28,10 @@ import digitsUrl from '../assets/digits.png';
 // alpha reads as colour saturation, not translucency. The watermark opacity lives HERE,
 // not on the container: element opacity would make the occluding base translucent again.
 
-// Ink level over the opaque base. The hue comes from CSS (.cell-digits color).
-const INK_ALPHA = 0.3;
+// Ink level over the ground; the hue comes from CSS (.cell-digits color, now `--fg`). The
+// alpha lives HERE and not on the container, because element opacity would fade the canvas
+// as a whole rather than mixing the ink into the ground.
+const INK_ALPHA = 0.2;
 // digits.png is a 10-slot spritesheet in KEYBOARD order (1..9 then 0), 7px slots.
 const SHEET_ORDER = '1234567890';
 const SLOT_W = 7;
@@ -44,9 +56,6 @@ const MIN_PX = 6;
 // for a number with no bound), but 99 -> 100 is a milestone, where 9 -> 10 is the tenth
 // guess of every single round.
 const MIN_SIZED_DIGITS = 2;
-// The halo's reach beyond the digits, as a fraction of the number's height — tied to the
-// digit size so the clean zone scales with the screen exactly like the number does.
-const HALO = 0.9;
 
 type Mask = { w: number; rows: Uint8Array };
 
@@ -92,15 +101,6 @@ function loadMasks(): Promise<Mask[]> {
     })();
   }
   return masksPromise;
-}
-
-// The ground colour as r,g,b — the halo needs it with its own alphas.
-function bgChannels(): [number, number, number] {
-  const hex =
-    getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#050507';
-  const m = /^#([0-9a-f]{6})$/i.exec(hex);
-  if (!m) return [5, 5, 7];
-  return [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16)) as [number, number, number];
 }
 
 export default function CellDigits({ value }: { value: number }) {
@@ -156,15 +156,15 @@ export default function CellDigits({ value }: { value: number }) {
       );
       const bw = bits * px;
       const bh = GLYPH_ROWS * px;
-      const halo = Math.round(HALO * bh);
-      // The canvas box is the number PLUS its halo margin, centred on the anchor in
-      // document coordinates (whole pixels — no grid to snap to any more).
+      // The canvas box is exactly the number, centred on the anchor in document
+      // coordinates (whole pixels — no grid to snap to any more, and a fill has no stroke
+      // hanging outside its shape to leave room for).
       const docLeft = rect.left + window.scrollX;
       const docTop = rect.top + window.scrollY;
-      const left = Math.round(docLeft + (rect.width - bw) / 2) - halo;
-      const top = Math.round(docTop + (rect.height - bh) / 2) - halo;
-      const boxW = bw + 2 * halo;
-      const boxH = bh + 2 * halo;
+      const left = Math.round(docLeft + (rect.width - bw) / 2);
+      const top = Math.round(docTop + (rect.height - bh) / 2);
+      const boxW = bw;
+      const boxH = bh;
       // Hard clamp against scroll: at MIN_PX the glyphs cannot shrink further, so a wide
       // count (3 digits on a narrow phone) — or the halo margin itself — would extend
       // past the document's right edge and create scrollable overflow. The CANVAS spans
@@ -176,7 +176,7 @@ export default function CellDigits({ value }: { value: number }) {
       const visW = visRight - visLeft;
       if (visW <= 0) return;
       const color = getComputedStyle(canvas).color;
-      const next = [px, left, top, docLeft, docTop, bw, bh, halo, visLeft, visW, value, color].join();
+      const next = [px, left, top, docLeft, docTop, bw, bh, visLeft, visW, value, color].join();
       if (next === signature) return;
       signature = next;
 
@@ -190,43 +190,22 @@ export default function CellDigits({ value }: { value: number }) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       // Paint in ideal-box coordinates; the canvas clips whatever falls outside.
       ctx.translate(left - visLeft, 0);
-      const [br, bgc, bb] = bgChannels();
 
-      // THE HALO: a radial pool of the ground colour, opaque at the number and fading to
-      // nothing — what it paints over is the body's halftone dither (this canvas sits
-      // above the ground, below the content), so the dots lose their opacity around the
-      // score exactly as if the number cleared them. Drawn as an ellipse matched to the
-      // number's shape via a scaled circular gradient.
-      const cx = halo + bw / 2;
-      const cy = halo + bh / 2;
-      const rx = bw / 2 + halo;
-      const ry = bh / 2 + halo;
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.scale(rx, ry);
-      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
-      g.addColorStop(0, `rgba(${br}, ${bgc}, ${bb}, 1)`);
-      g.addColorStop(0.55, `rgba(${br}, ${bgc}, ${bb}, 0.85)`);
-      g.addColorStop(1, `rgba(${br}, ${bgc}, ${bb}, 0)`);
-      ctx.fillStyle = g;
-      ctx.fillRect(-1, -1, 2, 2);
-      ctx.restore();
-
-      const blocks: Array<[number, number]> = [];
+      // THE DIGITS: one block per lit cell of the mask. They are collected into ONE path and
+      // filled ONCE — a `fillRect` per block is a separate composite, so at a fractional dpr
+      // (1.5, 2.5) two neighbours each paint a half-covered pixel along the edge they share
+      // and a hairline seam shows through the middle of a solid stroke. One fill unions them.
+      const path = new Path2D();
       let gx = 0;
       for (const mask of digits) {
         for (let y = 0; y < GLYPH_ROWS; y++)
           for (let x = 0; x < mask.w; x++)
-            if (mask.rows[y * mask.w + x]) blocks.push([halo + gx + x * px, halo + y * px]);
+            if (mask.rows[y * mask.w + x]) path.rect(gx + x * px, y * px, px, px);
         gx += (mask.w + GAP) * px;
       }
-      // Opaque base under every ink block: the dither can never show through a stroke.
-      ctx.fillStyle = `rgb(${br}, ${bgc}, ${bb})`;
-      for (const [bx, by] of blocks) ctx.fillRect(bx, by, px, px);
-      // The ink itself, at the watermark level the element opacity used to provide.
       ctx.fillStyle = color;
       ctx.globalAlpha = INK_ALPHA;
-      for (const [bx, by] of blocks) ctx.fillRect(bx, by, px, px);
+      ctx.fill(path);
       ctx.globalAlpha = 1;
     };
 

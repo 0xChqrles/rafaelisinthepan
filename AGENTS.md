@@ -1662,8 +1662,9 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   caption somebody had made clickable, on every screen that mounts one.
 - **A TITLED SCREEN GOES BACK FROM ITS TITLE (user-decided 2026-08-29).** The account area
   left by a ✕ in the header's RIGHT group — the corner furthest from a thumb, and the
-  gesture for dismissing a modal rather than for leaving a page you navigated into. `TopBar`
-  takes a `back` instead: the arrow and the screen's NAME as ONE target in the LEFT slot,
+  gesture for dismissing a modal rather than for leaving a page you navigated into. A
+  `HeaderBack` goes in the left slot instead (a `TopBar` PROP until the 2026-09-02 hoist —
+  see the web `AGENTS.md`): the arrow and the screen's NAME as ONE target in the LEFT slot,
   where a back control belongs and where the eye already is when it reads what screen it is
   on. It REPLACES the title rather than sitting beside it, so the row's measured width
   budget is unchanged. Worn by `/profile` and both flow doors — and by `/account` until

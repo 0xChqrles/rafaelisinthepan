@@ -25,14 +25,14 @@
 // crown, an open book), and the player's own mark as a small framed portrait — in colour,
 // because that colour is the one thing on the row that is THEIRS, framed so a dark palette
 // does not sink into the band and a loud one is contained.
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type React from 'react';
 import { useGameStore } from '../state/gameStore';
 import AccountKey from './AccountKey';
 import HomeIcon from '../assets/icons/home.svg?react';
 import CalendarIcon from '../assets/icons/calendar.svg?react';
 import BoardIcon from '../assets/icons/board.svg?react';
-import BookIcon from '../assets/icons/book.svg?react';
+import RulesIcon from '../assets/icons/rules.svg?react';
 import { t } from '../i18n';
 import { pathForArchive, pathForBoard, pathForMode, type Mode } from '../langs';
 import { navigate } from '../routing';
@@ -47,12 +47,26 @@ const PLACES: HeaderPlace[] = ['home', 'archive', 'board', 'rules', 'account'];
 //   · the FG dot marks the LIT place and stays with it;
 //   · the SECONDARY (`--muted`) dot answers the mouse: it travels to the hovered key and
 //     slides back UNDER the fg dot on leave (at rest the two are stacked, so only the fg
-//     one shows). A touch has no hover to return from, so only a mouse moves it.
-//   · a CLICK navigates, the row is rebuilt, and the fg dot travels from where the previous
-//     row left it to land ON TOP of the secondary dot already waiting under the new place —
-//     which is why its last x is remembered at module level: one dot travelling, never two
-//     dots swapping.
-let lastDotX: number | null = null;
+//     one shows).
+//   · a CLICK navigates and the fg dot travels to the new place, landing ON TOP of the
+//     secondary dot already waiting under it — one dot travelling, never two dots swapping.
+//     It used to remember its last x at module level, because every navigation rebuilt this
+//     row and the dot would otherwise have re-appeared at its destination instead of moving
+//     there. The row is mounted once by App now (see `TopBar`), so the travel is simply what
+//     a changed `on` does to a component that is still standing.
+
+// THE HOVER DOT IS A MOUSE AFFORDANCE, so it exists only where a mouse does (2026-09-02).
+// `hoverFrom` ignores every non-mouse pointer — a tap must not leave a dot parked under a
+// key the finger has already left — which on a phone left the element permanently stacked
+// under the lit dot, drawing a `--muted` square nothing could ever move. Read once: a phone
+// does not grow a mouse mid-session, and a hybrid laptop reports `hover: hover` already.
+function hasMouse(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(hover: hover)').matches
+  );
+}
 
 export default function HeaderKeys({
   lang,
@@ -72,11 +86,12 @@ export default function HeaderKeys({
   const dot = useRef<HTMLSpanElement>(null);
   const hoverDot = useRef<HTMLSpanElement>(null);
   const [hover, setHover] = useState<HeaderPlace | null>(null);
+  const mouse = useMemo(hasMouse, []);
   useLayoutEffect(() => {
     const el = row.current;
     const d = dot.current;
     const h = hoverDot.current;
-    if (!el || !d || !h) return;
+    if (!el || !d) return;
     const xOf = (place: HeaderPlace, size: number) => {
       const key = el.querySelectorAll<HTMLElement>('.home-btn')[PLACES.indexOf(place)];
       return key ? key.offsetLeft + key.offsetWidth / 2 - size / 2 : null;
@@ -90,13 +105,12 @@ export default function HeaderKeys({
     const place = () => {
       const x = xOf(on, d.offsetWidth);
       if (x !== null) {
-        if (!d.style.transform) {
-          // A fresh mount: the fg dot starts where the previous row left it, then travels.
-          jump(d, lastDotX ?? x);
-        }
+        // The very first placement is a JUMP — there is nowhere to travel from. Every one
+        // after it is a changed `on` on a row that never left, which is the travel.
+        if (!d.style.transform) jump(d, x);
         d.style.transform = `translateX(${x}px)`;
-        lastDotX = x;
       }
+      if (!h) return;
       const hx = xOf(hover ?? on, h.offsetWidth);
       if (hx !== null) {
         // The secondary dot has no history: it is simply under the lit place until a
@@ -151,7 +165,7 @@ export default function HeaderKeys({
         if (e.pointerType === 'mouse') setHover(null);
       }}
     >
-      <span ref={hoverDot} className="hk-dot hk-dot-hover" aria-hidden="true" />
+      {mouse && <span ref={hoverDot} className="hk-dot hk-dot-hover" aria-hidden="true" />}
       <span ref={dot} className="hk-dot" aria-hidden="true" />
       {key('home', t(lang, 'ariaHome'), pathForMode(lang, mode), HomeIcon)}
       {key('archive', t(lang, 'ariaArchive'), pathForArchive(lang, mode), CalendarIcon)}
@@ -169,7 +183,7 @@ export default function HeaderKeys({
           if (on !== 'home') go(pathForMode(lang, mode));
         }}
       >
-        <BookIcon className="ui-icon" aria-hidden />
+        <RulesIcon className="ui-icon" aria-hidden />
       </button>
       <AccountKey lang={lang} lit={on === 'account'} onLeave={leave} />
     </div>

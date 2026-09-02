@@ -50,7 +50,11 @@ export default function AccountKey({
       }}
     >
       {face ? (
-        <Avatar avatar={face.avatar ?? defaultAvatar(face.publicId)} size={26} />
+        // SHARP, and 20px — the size the CSS has forced since the framed portrait landed
+        // (the 26 it was asked for was dead, and a prop that lies about the rendered size
+        // is worse than no prop). A cell is 2px, and the corners are square: it is a
+        // pixel tile among pixel marks.
+        <Avatar avatar={face.avatar ?? defaultAvatar(face.publicId)} size={20} sharp />
       ) : (
         <span className="account-key-slot skeleton" aria-hidden="true" />
       )}
