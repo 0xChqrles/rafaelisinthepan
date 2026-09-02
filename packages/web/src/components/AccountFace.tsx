@@ -67,6 +67,13 @@ export function faceSettled(state: FaceState): boolean {
   return state !== null;
 }
 
+// A face slot breathes only while its read is genuinely pending. Keep the class decision
+// beside the state model so a caller cannot accidentally turn the settled `gone` state
+// back into an endless loading promise.
+export function faceSkeletonClass(state: FaceState): '' | ' skeleton' {
+  return faceSettled(state) ? '' : ' skeleton';
+}
+
 // What each answer of `GET /profile` means HERE — named so the decision can be read, and
 // tested, on its own. GONE is the ONE answer with no face in it (`null`). `blank` (never
 // customized) and `failed` (a transport error or a 5xx, which is not evidence of a

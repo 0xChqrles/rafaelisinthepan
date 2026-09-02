@@ -16,7 +16,8 @@ vi.mock('../api', () => ({ readProfile: vi.fn() }));
 vi.mock('../identity', () => ({ useDeviceIdentity: () => null }));
 vi.mock('../state/gameStore', () => ({ useGameStore: () => null }));
 
-const { faceFromRead, faceSettled, shownFace } = await import('./AccountFace');
+const { faceFromRead, faceSettled, faceSkeletonClass, shownFace } =
+  await import('./AccountFace');
 
 const ID = 'lfd5pqz5pa7zjm5u';
 const FACE = { publicId: ID, name: 'Zoe', avatar: null };
@@ -25,11 +26,13 @@ describe('shownFace / faceSettled — the three states of an account face', () =
   it('a read still OUT draws nothing and has not settled: the caller holds its box', () => {
     expect(shownFace(null)).toBeNull();
     expect(faceSettled(null)).toBe(false);
+    expect(faceSkeletonClass(null)).toBe(' skeleton');
   });
 
   it('a DELETED account draws nothing but HAS settled — no shimmer over an absent player', () => {
     expect(shownFace('gone')).toBeNull();
     expect(faceSettled('gone')).toBe(true);
+    expect(faceSkeletonClass('gone')).toBe('');
   });
 
   it('a face is drawn, and is settled', () => {

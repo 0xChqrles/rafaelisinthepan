@@ -65,6 +65,7 @@ import {
 } from '../api';
 import {
   faceSettled,
+  faceSkeletonClass,
   shownFace,
   useAccountFace,
   useOwnFace,
@@ -538,9 +539,8 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   // moment ago and nothing here vouches for it, which is exactly why it may not be dressed
   // with an assigned identity when the read says it is gone. A missing side degrades to the
   // one-sided prompt, as a missing `target` already does.
-  const targetFace = shownFace(
-    useAccountFace(step === 'confirm' ? (prompt?.target ?? null) : null),
-  );
+  const targetState = useAccountFace(step === 'confirm' ? (prompt?.target ?? null) : null);
+  const targetFace = shownFace(targetState);
   // The SAVE door leads with WHO is being saved — and it is the SAME face whether or not the
   // account is deployed yet (user-decided 2026-08-26: nothing in the area may tell you
   // which). `useOwnFace` answers the account's profile or the identical local-seed pair; and
@@ -832,7 +832,10 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                   {eraseFace ? (
                     <Avatar avatar={eraseFace.avatar ?? defaultAvatar(prompt.accountId)} size={44} />
                   ) : (
-                    <span className="link-cross-mark skeleton" aria-hidden="true" />
+                    <span
+                      className={`link-cross-mark${faceSkeletonClass(eraseState)}`}
+                      aria-hidden="true"
+                    />
                   )}
                   {/* The LEAVING side says what is happening to it: DELETED when it is
                       about to become unreachable, and its own NAME when it survives — a
@@ -849,7 +852,10 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                   {targetFace ? (
                     <Avatar avatar={targetFace.avatar ?? defaultAvatar(prompt.target)} size={44} />
                   ) : (
-                    <span className="link-cross-mark skeleton" aria-hidden="true" />
+                    <span
+                      className={`link-cross-mark${faceSkeletonClass(targetState)}`}
+                      aria-hidden="true"
+                    />
                   )}
                   <span className="link-cross-name">{targetFace?.name ?? ''}</span>
                 </div>

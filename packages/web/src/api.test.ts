@@ -3,7 +3,7 @@
 // the server validates the date against its clock-skew window and serves exactly that
 // day. A 404 from the backend is the graceful "no puzzle today" state, not an error.
 
-import { afterEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import {
   apiBase,
   boardUrl,
@@ -429,8 +429,16 @@ describe('readProfile — the four answers (#204)', () => {
     return response;
   };
 
+  // `readProfile` owns the real URL builder, so give it the build-time value explicitly.
+  // `.env.local` supplies this on a developer machine but is gitignored and absent in CI;
+  // without the stub the builder throws before the mocked fetch sees the request.
+  beforeEach(() => {
+    vi.stubEnv('VITE_API_BASE_URL', 'https://api.example');
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   it('SHOWN: a 200 carries the stored profile', async () => {
