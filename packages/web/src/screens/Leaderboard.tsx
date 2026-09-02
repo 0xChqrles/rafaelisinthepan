@@ -21,8 +21,7 @@ import Avatar from '../components/Avatar';
 import LoadError from '../components/LoadError';
 import LoadingWave from '../components/LoadingWave';
 import PuzzleTitle from '../components/PuzzleTitle';
-import HeaderKeys from '../components/HeaderKeys';
-import TopBar from '../components/TopBar';
+import { HeaderLeft } from '../components/TopBar';
 import useShare from '../hooks/useShare';
 import useToday from '../hooks/useToday';
 import {
@@ -327,20 +326,19 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
 
   return (
     <div className="board-screen">
-      <TopBar
-        // THE BOARD KEEPS THE PUZZLE'S TITLE and takes no title of its own (user-decided
-        // 2026-08-30). A board is a view OF a daily — it is addressed by (day, lang, mode)
-        // like everything else — so naming the daily names this screen too, and the sheet
-        // behind it still switches which daily's board this is, exactly as the retired
-        // centre tabs did. What the screen IS gets said by the LIT crown instead of by a
-        // word, which is the group's whole grammar.
-        //
-        // The way OUT is any other key of the same, unmoving row — HOME above all
-        // (`HeaderKeys`, user-decided 2026-08-31 after a lit-crown-as-exit and then a ✕
-        // were each rejected: the first was not intuitive, the second rearranged the row).
-        left={<PuzzleTitle lang={lang} mode={mode} />}
-        right={<HeaderKeys lang={lang} mode={mode} on="board" />}
-      />
+      {/* THE BOARD KEEPS THE PUZZLE'S TITLE and takes no title of its own (user-decided
+          2026-08-30). A board is a view OF a daily — it is addressed by (day, lang, mode)
+          like everything else — so naming the daily names this screen too, and the sheet
+          behind it still switches which daily's board this is, exactly as the retired
+          centre tabs did. What the screen IS gets said by the LIT crown instead of by a
+          word, which is the group's whole grammar.
+
+          The way OUT is any other key of the same, unmoving row — HOME above all
+          (`HeaderKeys`, user-decided 2026-08-31 after a lit-crown-as-exit and then a ✕
+          were each rejected: the first was not intuitive, the second rearranged the row). */}
+      <HeaderLeft>
+        <PuzzleTitle lang={lang} mode={mode} />
+      </HeaderLeft>
 
       {/* FRIENDS first — the trusted default; GLOBAL is the fun view. The segmented
           control is the header mode switcher's own dress, stretched to the column. */}

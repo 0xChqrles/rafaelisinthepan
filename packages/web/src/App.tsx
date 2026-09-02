@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { activeDate } from '@whippin/shared';
 import LoadingWave from './components/LoadingWave';
 import usePuzzle from './hooks/usePuzzle';
@@ -14,9 +14,9 @@ import SignedOut from './screens/SignedOut';
 import { useIdentityScopeRevision, useSignedOut } from './identity';
 import Game from './screens/Game';
 import WordGame from './screens/WordGame';
-import TopBar from './components/TopBar';
+import TopBar, { HeaderLeft } from './components/TopBar';
 import PuzzleTitle from './components/PuzzleTitle';
-import HeaderKeys from './components/HeaderKeys';
+import HeaderKeys, { type HeaderPlace } from './components/HeaderKeys';
 import DeviceFrame from './components/DeviceFrame';
 import LazyStreakDialog from './components/LazyStreakDialog';
 import LoadError from './components/LoadError';
@@ -34,6 +34,7 @@ import {
   pathForBoard,
   type LangCode,
   type Mode,
+  type Route,
 } from './langs';
 // Inline SVG (vite-plugin-svgr): the header's leaderboard entry, painting with
 // currentColor like every chrome icon; the button's aria-label names it.
@@ -48,13 +49,69 @@ import {
   type ErrorVariantName,
 } from './dev/errorPreview';
 
+// The three things a game route can be showing. Named because App picks one and GameRoute
+// renders it: the header's presence follows this, not the other way round.
+type GameSurface = 'tutorial' | 'invite' | 'game';
+
 export default function App() {
   const pathname = useLocation();
   // The client's active game day bounds the date deep-link range (a future date -> home),
   // so parsing gets it here (kept out of parseRoute so parsing stays pure/testable).
-  const route = parseRoute(pathname, { activeDate: activeDate(new Date()) });
+  const today = activeDate(new Date());
+  const route = parseRoute(pathname, { activeDate: today });
   const lastLang = useGameStore((s) => s.lastLang);
   const lastMode = useGameStore((s) => s.lastMode);
+
+  // Dev-only animation harness: the value is the PREVIOUS streak, so ?streak=9 previews
+  // 9 -> 10 immediately without mutating persisted rounds or solved-day history.
+  const [streakPreview, setStreakPreview] = useState<number | null>(() =>
+    streakPreviewFromSearch(window.location.search),
+  );
+  // Stable across renders: StreakDialog keys its whole staged sequence on onDismiss, so
+  // an inline closure would restart the animation every time the game route re-renders.
+  const dismissStreakPreview = useCallback(() => setStreakPreview(null), []);
+  // Dev-only preview of the error surface (`?error=<variant>`): the real ErrorScreen over
+  // whatever route is on screen, so the box is judged against a real backdrop. Closing
+  // CYCLES the copy set rather than dismissing — see dev/errorPreview.ts.
+  const [errorPreview, setErrorPreview] = useState<ErrorVariantName | null>(() =>
+    errorPreviewFromSearch(window.location.search),
+  );
+  const cycleErrorPreview = useCallback(
+    () => setErrorPreview((held) => (held === null ? null : nextErrorVariant(held))),
+    [],
+  );
+
+  // The dev force-flag (`?tutorial=1`) opens the lesson before the first paint. It sits
+  // ABOVE the subscription below so the first render already sees it open — the store write
+  // is this component's own, and a write from the game route would now be a child updating
+  // its parent mid-render.
+  useState(() => {
+    const forced = new URLSearchParams(window.location.search).get('tutorial') === '1';
+    const store = useGameStore.getState();
+    if (forced && !store.tutorialOpen) store.openTutorial('first');
+    return null;
+  });
+  const onboarded = useGameStore((s) => s.onboarded);
+  const tutorialOpen = useGameStore((s) => s.tutorialOpen);
+  const setOnboarded = useGameStore((s) => s.setOnboarded);
+  // Answering the onboarding question settles it for good, whichever way it is answered.
+  // Owned here because the header's own tutorial key leaves the lesson with it, and two
+  // spellings of "close the tutorial" would be one flag apart.
+  const closeTutorial = useCallback(() => {
+    setOnboarded();
+    useGameStore.getState().closeTutorial();
+  }, [setOnboarded]);
+
+  // WHICH GAME-ROUTE SURFACE IS UP. It lives here because the header does (see `TopBar`):
+  // the row is app chrome now, and whether a surface wears it is the router's question, not
+  // the screen's. The onboarding INVITATION is the one game surface without the row — a
+  // first visitor answers it before the app's places open up — and the two dev harnesses
+  // bypass it, which is why their state is held here too.
+  const gameSurface: GameSurface = tutorialOpen
+    ? 'tutorial'
+    : !onboarded && streakPreview == null && errorPreview == null
+      ? 'invite'
+      : 'game';
 
   // The game IS the home: `/` (and any unknown path) redirects to a language — the
   // persisted last-played one, else the browser language (fr* -> /fr), else English —
@@ -110,11 +167,36 @@ export default function App() {
   // DeviceFrame is decorative and deliberately remains outside.
   const identityScope = useIdentityScopeRevision();
 
+  // The row's own language and daily: the route's where it names one, the resolved home
+  // pair everywhere else — the same split `docLang` makes just above.
+  const routed = route.view === 'game' || route.view === 'archive' || route.view === 'board';
+  const place = signedOut ? null : headerPlace(route, gameSurface, today);
+  // Leaving the lesson by the row IS skipping it, so the row says so before it goes.
+  const leaveTutorial = useCallback(() => {
+    track('tutorial', { action: 'skip' });
+    closeTutorial();
+  }, [closeTutorial]);
+
   return (
     <div className="app">
       {/* The viewport's own furniture (decorative, desktop-only) — under every screen. */}
       <DeviceFrame serial={editionDay} />
       <Fragment key={identityScope}>
+        {/* THE HEADER, MOUNTED ONCE — it outlives the screens under it, which is what keeps
+            the player's own face from re-reading its profile on every tap (`TopBar`). The
+            screens publish only their left slot, through `HeaderLeft`. */}
+        {place !== null && (
+          <TopBar
+            right={
+              <HeaderKeys
+                lang={routed ? route.lang : homeLang}
+                mode={routed ? route.mode : (lastMode ?? 'sentence')}
+                on={place}
+                leave={place === 'rules' ? leaveTutorial : undefined}
+              />
+            }
+          />
+        )}
         {/* The living backdrop — every screen (game, archive, select, tutorial) sits on it. */}
         {signedOut && <SignedOut lang={homeLang} />}
         {!signedOut && route.view === 'select' && <LanguageSelect />}
@@ -136,12 +218,48 @@ export default function App() {
           <Leaderboard key={`${route.lang}:${route.mode}`} lang={route.lang} mode={route.mode} />
         )}
         {!signedOut && route.view === 'game' && (
-          <GameRoute lang={route.lang} mode={route.mode} date={route.date} />
+          <GameRoute
+            lang={route.lang}
+            mode={route.mode}
+            date={route.date}
+            surface={gameSurface}
+            closeTutorial={closeTutorial}
+            preview={{
+              streak: streakPreview,
+              dismissStreak: dismissStreakPreview,
+              error: errorPreview,
+              cycleError: cycleErrorPreview,
+            }}
+          />
         )}
         {/* home: redirecting on the next tick — render nothing. */}
       </Fragment>
     </div>
   );
+}
+
+// WHICH PLACE THE ROW LIGHTS, and `null` where the app wears no header at all: the language
+// chooser, the invite landing, the onboarding question and the signed-out screen are each a
+// surface with nowhere else to be.
+function headerPlace(route: Route, surface: GameSurface, today: string): HeaderPlace | null {
+  switch (route.view) {
+    case 'game':
+      if (surface === 'invite') return null;
+      // The tutorial is the RULES' place; a past day is the ARCHIVE's.
+      if (surface === 'tutorial') return 'rules';
+      return route.date == null || route.date === today ? 'home' : 'archive';
+    case 'archive':
+      return 'archive';
+    case 'board':
+      return 'board';
+    // The whole account area is ONE place, its steps included (#204's UX rework).
+    case 'account':
+    case 'accountEmail':
+    case 'profile':
+      return 'account';
+    default:
+      return null;
+  }
 }
 
 // One puzzle route: /<lang> plays today's sentence, /<lang>/<date> replays a past
@@ -152,7 +270,28 @@ export default function App() {
 // header (TopBar) is owned HERE — above every transient state and the loaded game alike.
 // A loaded screen only reports the live content for its left slot, so the header itself
 // stays put while the body swaps.
-function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: string }) {
+function GameRoute({
+  lang,
+  mode,
+  date,
+  // WHICH surface is App's call, because the header is (see `headerPlace`); rendering it is
+  // this route's, because the puzzle and the callbacks live here.
+  surface,
+  closeTutorial,
+  preview,
+}: {
+  lang: LangCode;
+  mode: Mode;
+  date?: string;
+  surface: GameSurface;
+  closeTutorial: () => void;
+  preview: {
+    streak: number | null;
+    dismissStreak: () => void;
+    error: ErrorVariantName | null;
+    cycleError: () => void;
+  };
+}) {
   // ONE of the two hooks fetches (the other idles on a null lang): the two dailies are
   // separate artifacts behind separate URLs, and this route plays exactly one of them.
   const sentence = usePuzzle(mode === 'sentence' ? lang : null, date);
@@ -187,55 +326,21 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
   // Onboarding tutorial (#51): it NEVER starts without an action. A first visit (no
   // persisted `onboarded`) lands on the INVITATION — standing in for the loading
   // screen while the day's puzzle fetches behind it — and TUTORIAL / SKIP both settle
-  // the question for good (either sets the flag). The header's "?" re-opens the
-  // tutorial as a `replay`; the fast-forward in the tutorial's own header skips it.
+  // the question for good (either sets the flag). The header's book re-opens the tutorial
+  // as a `replay`; leaving the lesson by any other key skips it.
   // The open-tutorial state lives in the STORE (transient) so the tutorial's flag can
   // round-trip through the /select screen — this route unmounts, and picking a
   // language re-mounts it with the tutorial still open, now in that language.
-  // `?tutorial=1` forces it (dev/testing). URL params are read once per load.
   // The tutorial is MODE-AGNOSTIC on purpose: it teaches the rank mechanic both dailies
   // share, and its routes ending is Word mode's primer (#155/#156).
-  const forced = useMemo(
-    () => new URLSearchParams(window.location.search).get('tutorial') === '1',
-    [],
-  );
-  // Dev-only animation harness: the value is the PREVIOUS streak, so ?streak=9 previews
-  // 9 -> 10 immediately without mutating persisted rounds or solved-day history.
-  const [streakPreview, setStreakPreview] = useState<number | null>(() =>
-    streakPreviewFromSearch(window.location.search),
-  );
-  // Stable across renders: StreakDialog keys its whole staged sequence on onDismiss, so
-  // an inline closure would restart the animation every time this route re-renders.
-  const dismissStreakPreview = useCallback(() => setStreakPreview(null), []);
-  // Dev-only preview of the error surface (`?error=<variant>`): the real ErrorScreen over
-  // whatever route is on screen, so the box is judged against a real backdrop. Closing
-  // CYCLES the copy set rather than dismissing — see dev/errorPreview.ts.
-  const [errorPreview, setErrorPreview] = useState<ErrorVariantName | null>(() =>
-    errorPreviewFromSearch(window.location.search),
-  );
-  const cycleErrorPreview = useCallback(
-    () => setErrorPreview((held) => (held === null ? null : nextErrorVariant(held))),
-    [],
-  );
-  const onboarded = useGameStore((s) => s.onboarded);
-  const tutorialOpen = useGameStore((s) => s.tutorialOpen);
   const openTutorial = useGameStore((s) => s.openTutorial);
-  // The dev force-flag opens it once per mount, before the first paint.
-  useState(() => {
-    if (forced && !useGameStore.getState().tutorialOpen) openTutorial('first');
-    return null;
-  });
-  const closeTutorial = useCallback(() => {
-    setOnboarded();
-    useGameStore.getState().closeTutorial();
-  }, [setOnboarded]);
 
   // key={lang}: switching language mid-tutorial (via /select) restarts it in that
   // language.
-  if (tutorialOpen) {
+  if (surface === 'tutorial') {
     return <LazyTutorial key={lang} lang={lang} onDone={closeTutorial} />;
   }
-  if (!onboarded && streakPreview == null && errorPreview == null) {
+  if (surface === 'invite') {
     return (
       <Invite
         lang={lang}
@@ -251,16 +356,14 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
     );
   }
 
-  // THE RIGHT GROUP IS THE APP'S PLACES, the one you are on LIT — the SAME five keys on
-  // every screen (`HeaderKeys` holds the reasoning). Here: HOME is lit on the live daily
-  // and the ARCHIVE on a past day, since a past day is the archive's.
-  const headerKeys = <HeaderKeys lang={lang} mode={mode} on={isActiveDay ? 'home' : 'archive'} />;
   return (
     <>
-      {/* The route owns one persistent actual header, identical through loading, error,
-          missing-puzzle and the loaded game: which puzzle is a fact of the ROUTE, so it no
-          longer waits on a game to report it. */}
-      <TopBar left={<PuzzleTitle lang={lang} mode={mode} dayNumber={isActiveDay ? null : dayNumber} />} right={headerKeys} />
+      {/* WHICH PUZZLE, into the header's left slot — identical through loading, error,
+          missing-puzzle and the loaded game: which puzzle is a fact of the ROUTE, so it
+          never waits on a game to report it. */}
+      <HeaderLeft>
+        <PuzzleTitle lang={lang} mode={mode} dayNumber={isActiveDay ? null : dayNumber} />
+      </HeaderLeft>
       {loading && (
         <p className="status">
           <LoadingWave text={t(lang, 'loading')} />
@@ -275,7 +378,7 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
           puzzle={sentence.puzzle}
           dayNumber={dayNumber}
           isActiveDay={isActiveDay}
-          deferResultsAnimation={streakPreview != null}
+          deferResultsAnimation={preview.streak != null}
         />
       )}
       {mode === 'word' && word.puzzle && (
@@ -284,22 +387,22 @@ function GameRoute({ lang, mode, date }: { lang: LangCode; mode: Mode; date?: st
           dayNumber={dayNumber}
         />
       )}
-      {errorPreview != null && (
+      {preview.error != null && (
         <ErrorScreen
-          key={errorPreview}
+          key={preview.error}
           lang={lang}
-          title={t(lang, errorVariant(errorPreview).title)}
-          note={t(lang, errorVariant(errorPreview).note)}
-          onRetry={errorVariant(errorPreview).retry ? cycleErrorPreview : undefined}
-          onClose={cycleErrorPreview}
+          title={t(lang, errorVariant(preview.error).title)}
+          note={t(lang, errorVariant(preview.error).note)}
+          onRetry={errorVariant(preview.error).retry ? preview.cycleError : undefined}
+          onClose={preview.cycleError}
         />
       )}
-      {streakPreview != null && (
+      {preview.streak != null && (
         <LazyStreakDialog
           lang={lang}
           solvedDay={dayNumber}
-          previewPreviousStreak={streakPreview}
-          onDismiss={dismissStreakPreview}
+          previewPreviousStreak={preview.streak}
+          onDismiss={preview.dismissStreak}
         />
       )}
     </>

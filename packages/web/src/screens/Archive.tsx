@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { activeDate, dayNumber, progressHeatColor } from '@whippin/shared';
-import TopBar from '../components/TopBar';
 import PuzzleTitle from '../components/PuzzleTitle';
-import HeaderKeys from '../components/HeaderKeys';
+import { HeaderLeft } from '../components/TopBar';
 import { navigate } from '../routing';
 import { pathForMode, pathForDay, pathForArchive, type LangCode, type Mode } from '../langs';
 import { FIRST_PUZZLE_DATE } from '../config';
@@ -131,10 +130,9 @@ export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; m
 
   return (
     <div className="archive">
-      <TopBar
-        left={<PuzzleTitle lang={lang} mode={mode} onArchive />}
-        right={<HeaderKeys lang={lang} mode={mode} on="archive" />}
-      />
+      <HeaderLeft>
+        <PuzzleTitle lang={lang} mode={mode} onArchive />
+      </HeaderLeft>
 
       <div className="cal">
         {/* Month navigation, clamped to [first puzzle month, current month]. */}

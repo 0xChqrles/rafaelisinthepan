@@ -24,6 +24,7 @@ const STRINGS = {
   // the server holds is the editor's whole starting point, so a guess could be saved
   // over the real profile — the reader retries instead.
   failedProfile: { en: 'FAILED TO LOAD PROFILE', fr: 'ÉCHEC DU CHARGEMENT DU PROFIL' },
+  failedAccountLoad: { en: 'FAILED TO LOAD ACCOUNT', fr: 'ÉCHEC DU CHARGEMENT DU COMPTE' },
   // The #211 private history read, behind the archive calendar and the chooser strips.
   // Loud like the round's own: since #214 there is no local history left to fall back to,
   // so a silent failure would draw a month of untouched days over a month that was played.

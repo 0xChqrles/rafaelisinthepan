@@ -5,11 +5,9 @@ import Keyboard from '../components/Keyboard';
 import LoadError from '../components/LoadError';
 import LoadingWave from '../components/LoadingWave';
 import RarityLadder from './RarityLadder';
-import TopBar from '../components/TopBar';
 import { HIT_FADE_MS } from '../components/FloatingHit';
 import { RANK_MAX_MS, rankTransitionDuration } from '../components/Hole';
-import HeaderKeys from '../components/HeaderKeys';
-import { useGameStore } from '../state/gameStore';
+import { HeaderLeft } from '../components/TopBar';
 import { FLOATING_HIT_INTRO_MS, KB_EXIT_FALLBACK_MS } from '../screens/Game';
 import MixWord from './MixWord';
 import CoachText, { richToPlain } from './CoachText';
@@ -81,7 +79,6 @@ function freshHole(h: PuzzleHole): RuntimeHole[] {
 // mistaken for dismissing the explanation alone. `onDone` fires on both a natural finish
 // and a skip.
 export default function Tutorial({ lang, onDone }: { lang: string; onDone: () => void }) {
-  const lastMode = useGameStore((s) => s.lastMode);
   const script = useMemo(() => scriptFor(lang), [lang]);
   const { puzzle } = script;
   const hole = puzzle.holes[0];
@@ -356,23 +353,12 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
       {/* The floating header: "TUTORIAL" in the top-left status chip — no progress
           counter here, the tutorial keeps its chrome minimal — and the globe + a
           fast-forward that SKIPS the tutorial on the right. */}
-      <TopBar
-        left={<span className="topbar-title">{t(lang, 'inviteTutorial')}</span>}
-        // The fixed row, with the BOOK lit: this is the rules' place. Any other key leaves
-        // the lesson, and a lesson left is a lesson SKIPPED — the fast-forward control this
-        // slot used to hold did exactly that, and the row does it without a private control.
-        right={
-          <HeaderKeys
-            lang={lang}
-            mode={lastMode ?? 'sentence'}
-            on="rules"
-            leave={() => {
-              track('tutorial', { action: 'skip' });
-              onDone();
-            }}
-          />
-        }
-      />
+      {/* The row itself is App's, with the BOOK lit: this is the rules' place, and any
+          other key leaves the lesson (which is a SKIP — App's `leaveTutorial`). What this
+          screen owns is its NAME. */}
+      <HeaderLeft>
+        <span className="topbar-title">{t(lang, 'inviteTutorial')}</span>
+      </HeaderLeft>
 
       {/* The top box: the current explanation, typewritten. Same background as the
           app, surface border — a dialog, not a modal. */}

@@ -68,8 +68,7 @@ import Button from '../components/Button';
 import CodeInput from '../components/CodeInput';
 import ErrorScreen from '../components/ErrorScreen';
 import LoadingWave from '../components/LoadingWave';
-import TopBar from '../components/TopBar';
-import HeaderKeys from '../components/HeaderKeys';
+import { HeaderBack, HeaderLeft } from '../components/TopBar';
 import {
   adoptLinkedAccount,
   currentRequestIdentity,
@@ -168,7 +167,6 @@ let justLinked: {
 
 export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   const lastLang = useGameStore((s) => s.lastLang);
-  const lastMode = useGameStore((s) => s.lastMode);
   const lang = resolveHomeLang(lastLang, navigator.language);
   const identity = useDeviceIdentity();
   const returning = intent === 'return';
@@ -576,28 +574,27 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
 
   return (
     <>
-      <TopBar
-        back={{
-          // THE SCREEN'S OWN NAME. `back` renders the CURRENT screen's — `/account` says
-          // ACCOUNT, `/profile` says PROFILE — and this passed `accountTitle`, its PARENT's,
-          // so the returning door was a screen whose whole text was the word CONTINUE, under
-          // a header naming somewhere else. The declared intention is the one thing either
-          // door can honestly call itself.
-          title: t(lang, returning ? 'linkTitleReturn' : 'linkTitleSave'),
-          label: t(lang, 'ariaBack'),
+      {/* THE SCREEN'S OWN NAME. `HeaderBack` renders the CURRENT screen's — `/account`
+          says ACCOUNT, `/profile` says PROFILE — and this passed `accountTitle`, its
+          PARENT's, so the returning door was a screen whose whole text was the word
+          CONTINUE, under a header naming somewhere else. The declared intention is the one
+          thing either door can honestly call itself. */}
+      <HeaderLeft>
+        <HeaderBack
+          title={t(lang, returning ? 'linkTitleReturn' : 'linkTitleSave')}
+          label={t(lang, 'ariaBack')}
           // BACK IS A STEP, not an exit, wherever there is a step to take: from the code
           // it returns to the ADDRESS — which is what the quiet CHANGE ADDRESS button used
           // to be, and why that button is gone. Everywhere else it leaves the flow.
-          onBack: () => {
+          onBack={() => {
             if (step !== 'code') {
               leave();
               return;
             }
             backToAddress();
-          },
-        }}
-        right={<HeaderKeys lang={lang} mode={lastMode ?? 'sentence'} on="account" />}
-      />
+          }}
+        />
+      </HeaderLeft>
       <div className="account-screen link-step">
         <p className="sr-only" role="status">
           {spoken}
