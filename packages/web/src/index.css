@@ -6062,6 +6062,10 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   justify-content: center;
   margin-top: 28px;
 }
+/* Under the call it is the call's own footnote, closer. */
+.account-cta + .account-foot {
+  margin-top: 12px;
+}
 .account-foot-link {
   padding: 12px 14px;
   border: 0;
@@ -6272,10 +6276,21 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
      numbers and the call, the middle is no longer empty.) */
   .account-cta {
     margin-top: auto;
-    margin-bottom: -38px;
   }
   .account-cta .mix-btn {
     margin-bottom: 0;
+  }
+  /* THE FOOTNOTE TAKES THE EDGE (2026-09-03): it is the screen's last line, parked on the
+     bottom by the auto margin when there is no call, and sitting under the call when there
+     is one — which is what moves the call up off the exact edge MIX and INVITE sit on, on
+     this screen alone and on purpose. The negative margin gives back the screen's own 24px
+     and `.app`'s 28px down to the 14px inset; the link's own 12px of padding is inside it. */
+  .account-foot {
+    margin-top: auto;
+    margin-bottom: -38px;
+  }
+  .account-cta + .account-foot {
+    margin-top: 6px;
   }
 }
 

@@ -1047,13 +1047,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
     geometry (the literal 48px header clearance) and `align-self: stretch` pins it to the
     top; the column scrolls its own overflow, which is also what lights the header's band as
     the text passes under it.
-  - **THE DOOR ON `/account` IS A FOOTNOTE, not a row** (user-decided 2026-09-03: "only 0.1%
-    of the users will care and click on it… not hidden neither, just not in the middle of
-    the screen with a big button"). `.account-foot` is the last line of the content — after
-    the devices, before the bottom-edge call — small, centred, in the secondary ink, with a
-    finger's padding it does not show. It is the one place the area's ACTION-in-`--fg` rule
-    yields: that rule keeps a control from hiding among help text, and there is none here to
-    hide among; this one is meant to be exactly as visible as the interest in it.
+  - **THE DOOR ON `/account` IS A FOOTNOTE ON THE BOTTOM EDGE, not a row** (user-decided
+    2026-09-03, in two passes: "only 0.1% of the users will care and click on it… not
+    hidden neither, just not in the middle of the screen with a big button", then — once it
+    was the last line of the CONTENT — "it's still in the middle of the screen", because on
+    a short screen the content ends there). `.account-foot` is the screen's LAST line, under
+    the call: on a phone it parks on the edge by the auto margin (the call's own trick,
+    handed down), and the call sits above it — which gives up the call's exact bottom-edge
+    alignment with MIX and INVITE on this one screen, on purpose (measured 390×844: SAVE at
+    709–767, the footnote at 793–830). Small, centred, in the secondary ink, with a finger's
+    padding it does not show. It is the one place the area's ACTION-in-`--fg` rule yields:
+    that rule keeps a control from hiding among help text, and there is none here to hide
+    among; this one is meant to be exactly as visible as the interest in it.
   - **The address step's control is BARE** (`.link-aside`): the boxed `.link-quiet-btn` dress
     belongs to an ALTERNATIVE (RESEND), and directly under CONTINUE a boxed one read as a
     second button competing with the lit one. It is the same rule `.btn + .link-quiet-btn`

@@ -210,19 +210,6 @@ export default function Account() {
             reading this screen, and a list of yourself is noise. */}
         {saved !== null && identity !== null && <DeviceList lang={lang} />}
 
-        {/* WHAT THE GAME KEEPS (#229) — the LAST line of the content, as a FOOTNOTE
-            (user-decided 2026-09-03, replacing a full-width row beside the account's own
-            actions: "only 0.1% of the users will care and click on it… not hidden neither,
-            just not in the middle of the screen with a big button"). Small, centred, in the
-            secondary ink, with a finger's padding it does not show — exactly as visible as
-            the interest in it. Not gated on the summary: what is stored is a fact about the
-            game, true before this device has an account and while the read is still out. */}
-        <div className="account-foot">
-          <button type="button" className="account-foot-link" onClick={() => navigate(PRIVACY_PATH)}>
-            {t(lang, 'privacyTitle')}
-          </button>
-        </div>
-
         {/* THE ONE CALL, on the screen's BOTTOM EDGE — where every screen's one big action
             sits (the tutorial's MIX, the board's INVITE, both gates' PLAY), in exactly
             their geometry, so it is the SAME button in the SAME place from screen to
@@ -242,6 +229,23 @@ export default function Account() {
             </button>
           </div>
         )}
+
+        {/* WHAT THE GAME KEEPS (#229) — a FOOTNOTE on the screen's BOTTOM EDGE, under the
+            call (user-decided 2026-09-03, in two passes: first replacing a full-width row
+            beside the account's own actions — "only 0.1% of the users will care and click on
+            it… not hidden neither, just not in the middle of the screen with a big button" —
+            then moved off the end of the CONTENT, which on a short screen is still the
+            middle: "it's still in the middle of the screen"). Small, centred, in the
+            secondary ink, with a finger's padding it does not show — exactly as visible as
+            the interest in it. On a phone it parks on the edge and the call sits above it;
+            that call gives up its exact bottom-edge alignment with MIX and INVITE on this one
+            screen, on purpose. Not gated on the summary: what is stored is a fact about the
+            game, true before this device has an account and while the read is still out. */}
+        <div className="account-foot">
+          <button type="button" className="account-foot-link" onClick={() => navigate(PRIVACY_PATH)}>
+            {t(lang, 'privacyTitle')}
+          </button>
+        </div>
       </div>
     </>
   );
