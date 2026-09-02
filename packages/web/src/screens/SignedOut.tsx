@@ -14,6 +14,16 @@
 // until it settles, assigned identity as the fallback — a name must never flash and then
 // correct itself, the leaderboard strip's rule).
 //
+// **UNLESS THE ACCOUNT IS GONE** (#204). An email link can DELETE the account a device
+// leaves, and every other device on it lands HERE on its next private call — so this is
+// exactly the screen most likely to be naming a deleted account. `GET /profile` answers
+// 410 `account_gone` for one, and the assigned fallback is NOT a safe answer to it: the
+// pseudonym and the mark are still that player's own face, so drawing them puts an erased
+// identity on screen. It SETTLES with no face instead — the screen keeps its sentence and
+// both its actions, which is what the reader is here for. Gone, loading and shown are
+// therefore three states and not two: a read still out holds the frame, a read that
+// FAILED is not evidence of a deletion and keeps the assigned fallback.
+//
 // **THE ACTION IS `PLAY`, AND THE COPY IS ABOUT IT** (user-decided 2026-08-26, superseding
 // START FRESH and its paragraph of stakes). The reader has one decision here, so the screen
 // says the one thing they need before making it — this tap starts over on a new account,
@@ -23,20 +33,27 @@
 // button that says PLAY on a leaderboard route must not leave the player on the leaderboard.
 // The new account itself is minted by the game's own PLAY gate, the #216 trigger it lands on.
 //
-// RECONNECT — signing back into the account by email — is #204's flow, and it does not
-// exist yet. The prop is how it arrives: one wire, no stub button in the meantime. A button
-// that does nothing is worse than a screen that only offers what it can actually do. When it
-// DOES land, this screen has two actions and #204 owns which one is primary — today PLAY is,
-// because it is the only one.
+// **RECONNECT LANDED WITH #204, and it is the PRIMARY action now.** Signing back into the
+// account by email is what this screen's reader most likely wants — the account named above
+// is theirs, and it is reachable — so it leads, and PLAY (start over on a new one) becomes
+// the secondary. The tap LIFTS the verdict (which is what removes the persisted tombstone,
+// origin-wide — the fenced state's one gesture, and the reason a reconnect can mint at all)
+// and lands on `/account/signin` — the RETURNING door of the email flow (vol. 2's split),
+// which is what this screen's reader is by definition. It used to land on `/account/email`,
+// whose every word is about SAVING the account you already hold: the one screen reached
+// exclusively by people who hold none. Leaving mid-flow costs exactly what SKIP already
+// cost: this device is a fresh visitor, and the account it left stands, reachable by its own
+// address the moment one is bound to it.
 
 import { useEffect, useState } from 'react';
 import { anonName, defaultAvatar } from '@whippin/shared';
-import { parseProfile, profileUrl } from '../api';
+import { readProfile, type ProfileRead } from '../api';
 import Avatar from '../components/Avatar';
 import Button from '../components/Button';
 import LoadingWave from '../components/LoadingWave';
 import { startFreshDevice, useSignedOutAccount } from '../identity';
 import { t } from '../i18n';
+import { ACCOUNT_SIGNIN_PATH } from '../langs';
 import { navigate } from '../routing';
 import { timeoutSignal } from '../timeout';
 
@@ -48,6 +65,17 @@ const playFresh = () => {
   navigate('/', { replace: true });
 };
 
+// RECONNECT: leave the fenced state and go STRAIGHT to the RETURNING door's address step
+// (#204). Not the editor, not even the account screen — a player who has just been signed
+// out has exactly one intention, and every screen between them and the address field is a
+// screen they have to read past. It uses the SAME gesture PLAY does — the tombstone stands
+// until the player chooses, and choosing to sign back in is a choice — so a reconnect
+// abandoned halfway is simply a fresh visitor, never a device stuck on this screen.
+const reconnect = () => {
+  startFreshDevice();
+  navigate(ACCOUNT_SIGNIN_PATH);
+};
+
 // The face is TAGGED WITH THE ACCOUNT IT BELONGS TO (review finding). A tab sitting on
 // this screen holds no identity, so a tombstone arriving from a sibling tab for a DIFFERENT
 // account is adopted rather than ignored (identity.ts's storage sync) — and `account` then
@@ -57,18 +85,26 @@ const playFresh = () => {
 // whose whole job is naming who you are about to leave.
 interface Face {
   publicId: string;
-  name: string;
-  avatar: string | null;
+  // `null` is SETTLED WITH NOTHING TO DRAW — the account is gone — which is a different
+  // thing from `face` itself being null, the read not having landed.
+  shown: { name: string; avatar: string | null } | null;
 }
 
-export default function SignedOut({
-  lang,
-  onReconnect,
-}: {
-  lang: string;
-  // #204's email link flow, when it lands. Absent today, so PLAY is the only way off.
-  onReconnect?: () => void;
-}) {
+// What each answer of `GET /profile` means HERE. Named so the decision can be read — and
+// tested — on its own: a DELETED account settles with no face at all, while "never
+// customized" and a failed read both keep the assigned identity.
+export function faceFrom(read: ProfileRead, publicId: string): Face {
+  if (read.status === 'gone') return { publicId, shown: null };
+  if (read.status === 'shown') {
+    return {
+      publicId,
+      shown: { name: read.profile.name || anonName(publicId), avatar: read.profile.avatar },
+    };
+  }
+  return { publicId, shown: { name: anonName(publicId), avatar: null } };
+}
+
+export default function SignedOut({ lang }: { lang: string }) {
   const account = useSignedOutAccount();
   const [face, setFace] = useState<Face | null>(null);
 
@@ -80,19 +116,8 @@ export default function SignedOut({
     let mounted = true;
     const publicId = account.accountId;
     (async () => {
-      let shown: Face = { publicId, name: anonName(publicId), avatar: null };
-      try {
-        const response = await fetch(profileUrl(publicId), {
-          signal: timeoutSignal(6_000),
-        });
-        if (response.ok) {
-          const profile = parseProfile(await response.json());
-          shown = { publicId, name: profile.name || anonName(publicId), avatar: profile.avatar };
-        }
-      } catch {
-        // Keep the fallback.
-      }
-      if (mounted) setFace(shown);
+      const read = await readProfile(publicId, timeoutSignal(6_000));
+      if (mounted) setFace(faceFrom(read, publicId));
     })();
     return () => {
       mounted = false;
@@ -113,22 +138,20 @@ export default function SignedOut({
 
   return (
     <div className="signed-out">
-      {account !== null && face !== null && (
+      {account !== null && face?.shown != null && (
         <>
-          <Avatar avatar={face.avatar ?? defaultAvatar(account.accountId)} size={64} />
-          <span className="signed-out-name">{face.name}</span>
+          <Avatar avatar={face.shown.avatar ?? defaultAvatar(account.accountId)} size={64} />
+          <span className="signed-out-name">{face.shown.name}</span>
         </>
       )}
       <p className="signed-out-line" role="status">
         {t(lang, 'signedOut')}
       </p>
       <p className="no-puzzle-note">{t(lang, 'signedOutNote')}</p>
-      {onReconnect && (
-        <Button variant="primary" onClick={onReconnect}>
-          {t(lang, 'signedOutReconnect')}
-        </Button>
-      )}
-      <Button variant="primary" onClick={playFresh}>
+      <Button variant="primary" onClick={reconnect}>
+        {t(lang, 'signedOutReconnect')}
+      </Button>
+      <Button variant="secondary" onClick={playFresh}>
         {t(lang, 'gatePlay')}
       </Button>
     </div>

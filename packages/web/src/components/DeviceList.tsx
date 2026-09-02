@@ -48,7 +48,10 @@ export function deviceLabel(row: { device: string; os: string; browser: string }
 function lastUsed(row: DeviceRow, lang: string): string | null {
   const at = Date.parse(row.lastSeenAt);
   if (!Number.isFinite(at)) return null;
-  return new Intl.DateTimeFormat(lang, { dateStyle: 'medium' }).format(new Date(at));
+  // Day + month, no year: the sub-line answers "which one is my old phone?", and every
+  // device a person still cares about was seen within months. The account screen's own
+  // `began` formatter makes the same call.
+  return new Intl.DateTimeFormat(lang, { day: 'numeric', month: 'short' }).format(new Date(at));
 }
 
 // The route's answer is authoritative: the top-level deviceId names the caller and the
@@ -163,11 +166,18 @@ export default function DeviceList({ lang }: { lang: string }) {
           const used = lastUsed(row, lang);
           return (
             <div className={`device-row${row.current ? ' current' : ''}`} key={row.deviceId}>
-              <span className="device-name">
-                {deviceLabel(row, lang)}
-                {row.current && <span className="device-here">{t(lang, 'deviceCurrent')}</span>}
+              {/* TWO LINES (#204's polish pass): the label, then ONE quiet fact under it —
+                  THIS ONE for the row the reader is on, the last-seen day for the rest.
+                  The single-line row truncated its own current marker on a phone, and a
+                  device label plus a date plus a chip is three things fighting one line. */}
+              <span className="device-info">
+                <span className="device-name">{deviceLabel(row, lang)}</span>
+                {row.current ? (
+                  <span className="device-sub current">{t(lang, 'deviceCurrent')}</span>
+                ) : (
+                  used !== null && <span className="device-sub">{used}</span>
+                )}
               </span>
-              {used !== null && <span className="device-seen">{used}</span>}
               <button
                 type="button"
                 className="device-signout"

@@ -216,13 +216,13 @@ describe('transactional cross-tab game persistence', () => {
     const second = tab();
 
     await Promise.all([
-      mutate(first, { type: 'ensureLocalSeed', seed: 'a'.repeat(16) }),
-      mutate(second, { type: 'ensureLocalSeed', seed: 'b'.repeat(16) }),
+      mutate(first, { type: 'ensureLocalSeed', seed: 'a'.repeat(16), at: '2026-08-01T00:00:00.000Z' }),
+      mutate(second, { type: 'ensureLocalSeed', seed: 'b'.repeat(16), at: '2026-08-01T00:00:00.000Z' }),
     ]);
 
     const established = (await read(first)).localSeed;
     expect(established === 'a'.repeat(16) || established === 'b'.repeat(16)).toBe(true);
-    await mutate(first, { type: 'ensureLocalSeed', seed: 'c'.repeat(16) });
+    await mutate(first, { type: 'ensureLocalSeed', seed: 'c'.repeat(16), at: '2026-08-01T00:00:00.000Z' });
     expect((await read(second)).localSeed).toBe(established);
   });
 

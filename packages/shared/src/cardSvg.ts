@@ -40,12 +40,12 @@ import type { ShareResult, WordShareResult } from './shareCard';
 export const CARD_WIDTH = 1200;
 export const CARD_HEIGHT = 630;
 
-// Palette — mirrors :root in web/src/index.css (the calm set, 2026-08-17: warm-paper fg
-// on the calm dark ground, and the SOLVE ink — the blue every solved word wears, the
-// card's day word included).
-const BG = '#08090f';
-const FG = '#f4f1e8';
-const MUTED = '#b0aca4';
+// Palette — mirrors :root in web/src/index.css (the 2026-09-01 rebrand: white fg on a
+// near-black ground, and the SOLVE ink — the blue every solved word wears, the card's
+// day word included).
+const BG = '#050507';
+const FG = '#ffffff';
+const MUTED = '#a6adb8';
 const SOLVE = '#4a6aff';
 
 const CARD_FONT = 'Press Start 2P';

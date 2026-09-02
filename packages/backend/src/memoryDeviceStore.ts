@@ -5,6 +5,7 @@ import type {
   ResolvedDevice,
   AccountRecord,
 } from './deviceStore';
+import type { LinkDeviceWrites } from './linkStore';
 
 // Process-local store for `pnpm backend:dev` and tests: the same DeviceStore contract as
 // DynamoDB with no AWS account. Restarting the local server intentionally resets it — which
@@ -13,7 +14,12 @@ import type {
 // `initial` seeds identities that should already exist. It is what lets a route test name
 // its caller at module level (`memoryScoreStore`'s injected clock and limit are the same
 // kind of knob) instead of threading an await through every construction.
-export function memoryDeviceStore(initial: readonly BootstrapInput[] = []): DeviceStore {
+// It also carries #204's link-time writes, which are NOT on the DeviceStore contract:
+// in production they ride inside `dynamoLinkStore`'s one indivisible transaction, so the
+// device store never issues them. See `LinkDeviceWrites`.
+export function memoryDeviceStore(
+  initial: readonly BootstrapInput[] = [],
+): DeviceStore & LinkDeviceWrites {
   // The base table: token hash -> the ONE device item.
   const devices = new Map<string, DeviceRecord>();
   const accounts = new Map<string, AccountRecord>();
@@ -43,6 +49,10 @@ export function memoryDeviceStore(initial: readonly BootstrapInput[] = []): Devi
   return {
     async resolve(tokenHash) {
       return resolved(tokenHash);
+    },
+
+    async accountExists(accountId) {
+      return accounts.has(accountId);
     },
 
     async bootstrap(input) {
@@ -83,6 +93,40 @@ export function memoryDeviceStore(initial: readonly BootstrapInput[] = []): Devi
     async touch(tokenHash, now) {
       const device = devices.get(tokenHash);
       if (device) devices.set(tokenHash, { ...device, lastSeenAt: now });
+    },
+
+    // #204's link-time writes. The production equivalents are conditions in
+    // `dynamoLinkStore`'s transactions; keeping the checks beside these maps makes the
+    // process-local implementation reject the same stale plans.
+    bindAccountEmail(accountId, email) {
+      const account = accounts.get(accountId);
+      if (!account || (account.email !== undefined && account.email !== email)) return false;
+      accounts.set(accountId, { ...account, email });
+      return true;
+    },
+
+    adoptDevice({ tokenHash, deviceId, from, to, erase, now }) {
+      const device = devices.get(tokenHash);
+      if (!device || device.deviceId !== deviceId || device.accountId !== from) {
+        return 'device_changed';
+      }
+      const source = accounts.get(from);
+      const target = accounts.get(to);
+      if (
+        !source ||
+        !target ||
+        (erase ? source.email !== undefined : source.email === undefined)
+      ) {
+        return 'account_changed';
+      }
+      devices.set(tokenHash, { ...device, accountId: to, lastSeenAt: now });
+      if (erase) {
+        // The device ROWS are left where they are, exactly as production leaves them: a
+        // device still naming a deleted account stops authenticating on the account-
+        // existence check above, and the housekeeping sweep (#207) collects the rows.
+        accounts.delete(from);
+      }
+      return 'adopted';
     },
   };
 }

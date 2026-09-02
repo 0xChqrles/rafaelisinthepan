@@ -7,6 +7,8 @@ const ENV: NodeJS.ProcessEnv = {
   SCORE_TABLE: 'scores',
   TURNSTILE_SECRET_PARAMETER: '/whippin/turnstile-secret',
   IP_HMAC_SECRET_PARAMETER: '/whippin/ip-hmac-secret',
+  // The verified SES sender the #204 link codes go out as — required, like the table name.
+  MAIL_FROM: 'Whippin <hello@whippin.ai>',
   ALLOWED_ORIGIN: 'https://whippin.ai',
 };
 

@@ -540,6 +540,47 @@ export function profileUrl(publicId?: string, base: string = apiBase()): string 
   return publicId ? `${root}?id=${encodeURIComponent(publicId)}` : root;
 }
 
+// **`GET /profile` HAS THREE ANSWERS, AND THEY ARE NOT INTERCHANGEABLE** (#204). Reading
+// only `response.ok` collapses them, which is how a DELETED account ends up drawn with the
+// assigned pseudonym and mark that are still its own:
+//
+//   shown  — 200. The stored profile.
+//   blank  — 404. LIVE, never customized: the assigned identity IS this player's face.
+//   gone   — 410 `account_gone`. There is no face. Not the stored one, not the assigned
+//            one: an account nobody can reach may not be drawn as a person.
+//   failed — a transport error, a 5xx, an unparseable body. NOT evidence of a deletion,
+//            so a caller that dresses blank keeps dressing blank.
+//
+// Each caller decides what to DO with `gone` — the account screens draw an account their
+// own device token proves live, while the invite landing and the signed-out screen are
+// looking at an id somebody else handed them. What none of them may do is guess.
+export type ProfileRead =
+  | { status: 'shown'; profile: PlayerProfile }
+  | { status: 'blank' }
+  | { status: 'gone' }
+  | { status: 'failed' };
+
+export async function readProfile(publicId: string, signal?: AbortSignal): Promise<ProfileRead> {
+  try {
+    const response = await fetch(profileUrl(publicId), signal ? { signal } : {});
+    if (response.ok) return { status: 'shown', profile: parseProfile(await response.json()) };
+    if (response.status === 404) return { status: 'blank' };
+    // The CODE, not the status: a 410 is only a deletion when the body says so, and every
+    // other refusal is this client getting something wrong rather than a vanished player.
+    if (response.status === 410) {
+      const error = await response
+        .clone()
+        .json()
+        .then((body) => (body as { error?: unknown }).error)
+        .catch(() => undefined);
+      return error === 'account_gone' ? { status: 'gone' } : { status: 'failed' };
+    }
+    return { status: 'failed' };
+  } catch {
+    return { status: 'failed' };
+  }
+}
+
 export async function postProfileBody(
   url: string,
   body: { token: string; name: string; avatar: string; createOnly?: true },
@@ -549,6 +590,231 @@ export async function postProfileBody(
   signal?: AbortSignal,
 ): Promise<Response> {
   return postSignedJson(url, body, signal);
+}
+
+// Email account linking (#204): ONE route, POST-only — the device token is the auth and it
+// travels in the BODY, so the route reads no query at all (its CloudFront behavior's
+// allow-list is EMPTY, the same three-package contract as /friends and /devices).
+//
+//   { token }                                — what this account is saved as.
+//   { token, email, turnstileToken, lang }   — send a six-digit code to that address.
+//   { token, email, code, erase? }           — verify it, and link.
+export function linkUrl(base: string = apiBase()): string {
+  return `${requireApiBase(base)}/link`;
+}
+
+// Bounded like every /devices call, and for the same reason: the SEND leg waits on a
+// server-side Siteverify AND an SES call, so a request that never settles would leave the
+// flow's one button spinning with nothing to retry.
+//
+// Through `timeoutSignal`, NEVER `AbortSignal.timeout()`: that API is above the browser
+// floor and is read as an ARGUMENT, so its `TypeError` lands before `fetch` is ever
+// called. Here that is not a slow request but a dead feature — every leg of the flow
+// surfaces as an ordinary send/verify failure whose TRY AGAIN can only fail again, on a
+// browser where the rest of the app works. `timeout.ts` carries the rule and the
+// production incident that wrote it; `timeout.test.ts` is what now keeps it.
+const LINK_TIMEOUT_MS = 20_000;
+
+export async function postLinkBody(
+  url: string,
+  body: {
+    token: string;
+    email?: string;
+    turnstileToken?: string;
+    lang?: string;
+    code?: string;
+    // The three CONSENTS a verify may carry: what may be created, and what may be left.
+    // The server does only what the caller authorized — it never guesses which of them
+    // the player meant.
+    bind?: boolean;
+    erase?: string;
+    leave?: string;
+  },
+): Promise<Response> {
+  return postSignedJson(url, body, timeoutSignal(LINK_TIMEOUT_MS));
+}
+
+// What the `{token}` READ answers: what this account IS, from the one row that authenticated
+// the call. `email` is null until the player saves it — that absence is the ACCOUNT SCREEN's
+// whole state, so it is a value rather than a missing field.
+export interface AccountSummary {
+  accountId: string;
+  deviceId: string;
+  email: string | null;
+  createdAt: string;
+  // A friend merge an interrupted link left queued. The client asks again until it is not.
+  mergePending: boolean;
+}
+
+export function parseAccountSummary(data: unknown): AccountSummary {
+  if (!isRecord(data)) throw new Error('malformed account: not an object');
+  const { accountId, deviceId, email, createdAt } = data;
+  if (typeof accountId !== 'string' || !PUBLIC_ID_PATTERN.test(accountId)) {
+    throw new Error('malformed account: bad "accountId"');
+  }
+  if (typeof deviceId !== 'string' || !DEVICE_ID_PATTERN.test(deviceId)) {
+    throw new Error('malformed account: bad "deviceId"');
+  }
+  if (email !== null && (typeof email !== 'string' || email.length === 0)) {
+    throw new Error('malformed account: bad "email"');
+  }
+  if (typeof createdAt !== 'string') {
+    throw new Error('malformed account: bad "createdAt"');
+  }
+  if (typeof data.mergePending !== 'boolean') {
+    throw new Error('malformed account: bad "mergePending"');
+  }
+  return {
+    accountId,
+    deviceId,
+    email,
+    // Checked as a string but NOT as a parseable instant: the screen already renders an
+    // unreadable date as no date (the device list's rule), and refusing the whole summary
+    // over a label would hide the email state this screen exists for.
+    createdAt,
+    mergePending: data.mergePending,
+  };
+}
+
+// What a VERIFY that succeeded did. `bound` saved the account this device already held;
+// `adopted` moved this device onto the account behind the address — which is what a second
+// device, and a reconnect after a sign-out, both are; `already_bound` is the no-op.
+export interface LinkResult {
+  outcome: 'bound' | 'adopted' | 'already_bound';
+  accountId: string;
+  deviceId: string;
+  email: string;
+  // Whether a friend merge is still queued. The client RESUMES the drain off this, rather
+  // than leaving those edges for whenever the player next opens `/account` (#204).
+  //
+  // REQUIRED, and validated as strictly as `parseAccountSummary` validates its own copy
+  // (PR-227 follow-up review). It was optional and coerced with `=== true`, so a body that
+  // omitted it — or sent it wrong — silently answered "nothing queued" and the resumed
+  // drain never ran, leaving consented friend edges for whenever the player next opened
+  // `/account`. A field whose absence disables a job is a field that has to be present.
+  mergePending: boolean;
+  // THE RECEIPT on an ADOPT: what the recovered account holds, which is the evidence for
+  // the claim "we found your account". Absent on the other two outcomes — nothing was
+  // recovered, so there is nothing to vouch for.
+  stakes?: AccountStakes | null;
+}
+
+// What an account is worth, in the two numbers a player would name if asked what they
+// would miss. Shown as a RECEIPT under a recovered face, and as the PRICE under a face
+// about to be deleted — one shape, because they are the same measure.
+export interface AccountStakes {
+  streak: number;
+  best: number;
+  days: number;
+}
+
+function parseStakes(data: unknown): AccountStakes | null {
+  if (!isRecord(data)) return null;
+  const { streak, best, days } = data;
+  if (typeof streak !== 'number' || typeof best !== 'number' || typeof days !== 'number') {
+    return null;
+  }
+  return { streak, best, days };
+}
+
+// Runtime shape check for a link answer — the parsePuzzle contract. An identity is being
+// REPLACED off this body, so a wrong-shaped one must surface as a failure rather than
+// re-parenting the device onto an id nothing minted.
+export function parseLinkResult(data: unknown): LinkResult {
+  if (!isRecord(data)) throw new Error('malformed link: not an object');
+  const { outcome, accountId, deviceId, email } = data;
+  if (outcome !== 'bound' && outcome !== 'adopted' && outcome !== 'already_bound') {
+    throw new Error('malformed link: bad "outcome"');
+  }
+  if (typeof accountId !== 'string' || !PUBLIC_ID_PATTERN.test(accountId)) {
+    throw new Error('malformed link: bad "accountId"');
+  }
+  if (typeof deviceId !== 'string' || !DEVICE_ID_PATTERN.test(deviceId)) {
+    throw new Error('malformed link: bad "deviceId"');
+  }
+  if (typeof email !== 'string') throw new Error('malformed link: bad "email"');
+  if (typeof data.mergePending !== 'boolean') {
+    throw new Error('malformed link: bad "mergePending"');
+  }
+  return {
+    outcome,
+    accountId,
+    deviceId,
+    email,
+    mergePending: data.mergePending,
+    // Decorative, so a missing or malformed one is simply no receipt — never a failed
+    // link, which would strand a device whose identity has already moved.
+    stakes: parseStakes(data.stakes),
+  };
+}
+
+// WHAT A `bad_code` REFUSAL LEAVES THE PLAYER: how many tries remain on this challenge,
+// and whether that was the last one.
+//
+// **ZERO IS REACHABLE, and that is the whole point** (#204, PR-227 review). A COUNTED
+// mismatch is `bad_code` — the LAST allowed one included, with `attemptsLeft: 0` — and
+// only a call against an already-exhausted challenge is the `code_spent` 409. The server
+// used to answer that 409 for the fifth mismatch itself, which made this branch dead and
+// left the screen with nothing to say about how the code ran out.
+//
+// A missing or malformed count reads as NONE LEFT: the refusal is about a challenge whose
+// state this client cannot see, and offering another try it does not have is worse than
+// ending the step.
+export interface BadCode {
+  attemptsLeft: number;
+  // The player has no try left: the flow says so and stops asking.
+  exhausted: boolean;
+}
+
+export function parseBadCode(data: unknown): BadCode {
+  const left =
+    isRecord(data) && typeof data.attemptsLeft === 'number' && Number.isFinite(data.attemptsLeft)
+      ? Math.max(0, Math.floor(data.attemptsLeft))
+      : 0;
+  return { attemptsLeft: left, exhausted: left === 0 };
+}
+
+// The `would_erase` refusal's payload: WHICH account is about to be deleted and what it is
+// about to lose. The screen states both before asking for a confirmation — a client bug
+// must not be able to destroy a month of play silently.
+export interface LinkErasePrompt {
+  // WHICH confirmation this is. `erase` — the account being left carries no address of its
+  // own, so it becomes unreachable and is deleted. `switch` — it carries one, so it survives
+  // and this device is only walking away from it. Nothing is destroyed there, but this
+  // device stops BEING that account, which is the thing being confirmed.
+  kind: 'erase' | 'switch';
+  // The account being LEFT, with what it costs to lose it (a switch costs nothing, and its
+  // numbers are not shown).
+  accountId: string;
+  stakes: AccountStakes | null;
+  // The account being ADOPTED. A trade shown from one side reads as pure loss, so the
+  // confirmation draws both faces — and this is the other one. Optional in the TYPE only
+  // so a malformed field degrades to a one-sided prompt instead of failing a refusal the
+  // player has to be able to answer.
+  target: string | null;
+}
+
+export function parseErasePrompt(
+  data: unknown,
+  kind: 'erase' | 'switch',
+): LinkErasePrompt | null {
+  if (!isRecord(data)) return null;
+  const { accountId, target } = data;
+  if (typeof accountId !== 'string' || !PUBLIC_ID_PATTERN.test(accountId)) return null;
+  // The stakes are DECORATIVE on both kinds. A switch has none by construction; an erase
+  // normally does, but requiring them there refused the confirmation for exactly the reason
+  // the line below already gives for a switch — the player has to be able to answer it. And
+  // the refusal was not silent-but-safe: the caller fell through to the generic failure,
+  // whose TRY AGAIN re-sends the same code, gets the same 409, and shows the same screen,
+  // forever. `showStakes` already draws nothing when they are absent, so the confirmation
+  // simply loses three numbers and keeps the fork, the sentence and both buttons.
+  const stakes = parseStakes(data);
+  return {
+    kind,
+    accountId,
+    stakes,
+    target: typeof target === 'string' && PUBLIC_ID_PATTERN.test(target) ? target : null,
+  };
 }
 
 // The #189 friends graph: ONE route, POST-only — the device token authenticates in the body

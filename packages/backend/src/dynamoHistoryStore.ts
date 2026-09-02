@@ -4,6 +4,7 @@ import {
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
 import { boundSolvedDays, MAX_SOLVED_DAYS } from '@whippin/shared';
+import { isConditionFailure } from './dynamoErrors';
 import { historyPartition, historySortKey, type PlayerHistoryStore } from './historyStore';
 
 // The solved-day collection is a DynamoDB NUMBER SET, and that type is the whole design:
@@ -64,7 +65,7 @@ export function dynamoHistoryStore(
         );
         return;
       } catch (error) {
-        if ((error as { name?: string }).name !== 'ConditionalCheckFailedException') throw error;
+        if (!isConditionFailure(error)) throw error;
       }
 
       // The condition named three ways this write is legitimate, so its refusal says all

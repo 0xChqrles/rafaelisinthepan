@@ -38,6 +38,16 @@
                               Turnstile-token check the gated writes share
       devices.ts              POST /devices (#216): the Turnstile-gated idempotent bootstrap,
                               the sign-out screen's list, and revocation by device id + opaque key
+      link.ts                 POST /link (#204): the read/drain, the Turnstile-gated + metered
+                              code send, and the verification that binds or adopts an account
+      accountLink.ts          what a verified link DOES: the stakes read, the active-day
+                              transfer, the friend merge and its resumable drain
+      linkStore.ts            link storage contract: the challenge/binding/allowance/job keys,
+                              the address + code hashing, and the one indivisible `adopt`
+      dynamoLinkStore.ts      prod conditional counters, the attempt-counting verify, and the
+                              ONE transaction that moves the device and deletes the account
+      memoryLinkStore.ts      process-local implementation for backend:dev/tests
+      mailer.ts               SES sender + the LOCAL console mailer that prints the code
       deviceStore.ts          device/account storage contract; device#<tokenHash> base key,
                               the account GSI, SHA-256(token) and the once-a-day lastSeenAt
       dynamoDeviceStore.ts    prod GetItem auth + ONE create-only transaction for the pair,
@@ -83,6 +93,11 @@
       memoryRoundStore.ts     process-local implementation for backend:dev/tests
       nameFilter.ts           #188 banned-strings display-name MODERATION (normalize + substring); the charset is shared/name.ts
       avatarModeration.ts     #188 best-effort swastika template match on the decoded grid
+      dynamoErrors.ts         what a DynamoDB failure MEANS: the ONE condition-refusal
+                              predicate and the transaction-cancellation classifier
+                              (conflict > operational > business refusal)
+      dynamoRetry.ts          the ONE backoff schedule (full jitter, doubling window) the
+                              batch reads and the conflict loops share
       turnstile.ts            Cloudflare Siteverify + explicit local accept-all verifier
       ogCard.ts               resvg-wasm rasterizer + the preview PAGE template (share links + #189 invites)
       layout.ts               storeKey() / sliceKey() — the keys shared by readers + publish (#17/#4/#203)
@@ -103,7 +118,7 @@
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output). Sentence puzzles AND #154 word artifacts (#156): the artifact type is detected from the file's SHAPE and routed to its own key.
 pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--mode sentence|word] [--ci]  # publish-buffer coverage (#61); --mode word probes the #156 word-artifact buffer; reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
-pnpm backend:dev                # local server (puzzles + /scores + /profile + /friends + /board + /round + /history + /devices + /today) on :8787; FS puzzles, in-memory scores/profiles/friends/rounds/history/devices, local Turnstile accept-all
+pnpm backend:dev                # local server (puzzles + /scores + /profile + /friends + /board + /round + /history + /devices + /link + /today) on :8787; FS puzzles, in-memory scores/profiles/friends/rounds/history/devices/links, local Turnstile accept-all, and #204's link codes PRINTED to this log
 pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server with a #190 board population (in-memory — re-run after a restart)
 ```
 
@@ -516,6 +531,159 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   created again on that device). Local serve swaps in `memoryDeviceStore` (seedable, which is what lets a route test
   name its caller at module level) and the accept-all verifier; restarting signs every local
   device out, exactly as a wiped table would.
+- **Email account linking (#204):** the ONE handler also serves `POST /link` — and ONLY POST
+  (a GET is a named 405). The product contract (the one flow, the three endings, when the
+  account being left is deleted, the erase confirmation, the active-day transfer, the friend
+  merge, what a deleted account stops being, the SES/operator steps) lives in the root
+  `AGENTS.md`. Implementation notes: the route DISPATCHES on the body — `turnstileToken` =
+  SEND, `code` = VERIFY, neither = READ — and a body carrying both is a 400, the /devices
+  rule. The READ also DRAINS any friend-merge job an interrupted link left queued, which is
+  the client's resume path. TURNSTILE is checked BEFORE the send allowances, deliberately:
+  they are spent per ADDRESS, so checking them first would let an unauthenticated caller burn
+  a stranger's code budget. The challenge is stored as `HMAC(ipHmacSecret, "link-code:" +
+  email + ":" + code)` — a bare hash of a six-digit space is a precomputable table — and the
+  attempt is counted by a write whose CONDITION is "the code is WRONG" (`#codeHash <>
+  :codeHash`), so a correct code spends none, which matters because one successful link
+  legitimately verifies twice. The send allowances are ROLLING windows (the root contract's
+  "per rolling hour"; a fixed clock bucket admits two full allowances back to back across
+  its edge — PR-227 review, 2026-09-02): one item per scope (`linksend#<scope>#<hash>`)
+  holds the INSTANTS of the sends still inside the window, and `spendSends` reads every
+  scope, prunes, and writes them all back in ONE transaction whose every Put is conditioned
+  on the exact list it read — a concurrent send refuses the set and it is decided again
+  from what now stands, so no send ever counts against a stale view. `accountLink.ts` owns
+  the ORDER: `LinkStore.adopt` as ONE transaction — the identity AND the active day's play —
+  then the merge drain; the reasoning is in that file's header and in the root `AGENTS.md`.
+  **A SEND THAT FAILS IS FAIL-CLOSED** (user-decided 2026-09-02): the route catches the
+  mailer at its boundary and answers **503 `mail_unavailable`**; the allowance stays
+  CHARGED and the stored challenge stands (the next successful resend replaces it). The
+  log line carries the failure's NAME and the AWS request id and NOTHING else — never the
+  error itself, whose message names the destination SES rejected. The reasoning (SES
+  acceptance is ambiguous, so a refund would let one caller deliver more than the bound
+  allows) is the root `AGENTS.md`'s.
+  **THE ATTEMPT LADDER:** a mismatch the store COUNTED is `wrong`, the fifth included, with
+  `attemptsLeft: 0` — the route answers 401 `bad_code`, which is what lets the screen say
+  how the code ran out. `spent` (409 `code_spent`) means the challenge no longer accepts an
+  attempt: the sixth call, or one a resend or a concurrent final write replaced. Both
+  stores spell it identically (corrected 2026-09-02 on the PR-227 review: the fifth
+  mismatch used to map to `spent`, so the client's zero-remaining path was dead code).
+  **THE ACTIVE-DAY MOVES RIDE THE ADOPTION TRANSACTION** (PR-227 review, 2026-09-02,
+  restoring what #204 itself specified): they used to run as separate writes BEFORE the
+  commit, and no claim on the source account could honestly own play that had already
+  moved when the commit then failed or a rival took the claim over. So `adopt` takes
+  `moves` (every supported language × mode of the active day) and, per tuple, the owning
+  stores PLAN the items — `planRoundMove` and, only for a round that moves, `planScoreMove`
+  — and `dynamoLinkStore` commits them beside the identity items.
+  **THE MODEL, decided on that review's fourth round (2026-09-02):** *every row the plan
+  reads gets exactly one transaction item whose condition asserts the row is unchanged
+  since the read; absent asserts `attribute_not_exists(pk)`; present asserts a VERSION
+  changed by every mutation of that row; no field is ever listed by hand.* Three patches
+  had each protected the previous counterexample — the guess list, then the absences, and
+  still not the summary a `settle` rewrites with the log untouched — which is what a
+  version makes impossible by construction. Concretely: **round rows carry `version`**, a
+  counter every `UpdateItem` the round store issues bumps (`#v = if_not_exists(#v, :zero) +
+  :one`, legal in a SET action where the condition grammar's arithmetic ban does not
+  apply), and `dynamoRoundStore.test.ts`'s harness REFUSES any round update without that
+  clause, so a writer added later is covered by the tests that already exist; **score rows
+  carry `stamp`**, the submission's own idempotency token, minted inside the one
+  `scoreItem()` both score Puts build through — deterministic for one logical submission
+  (a replay under a reused `ClientRequestToken` with a different item is an
+  `IdempotentParameterMismatch`, not a no-op) and different per revision. A row read
+  without the attribute asserts its absence. Each planner emits TWO items per tuple, one
+  per row read, a no-move included (a decision resting on "nothing here" is guarded like
+  one resting on a row: a first guess, or the solving append's score row written a beat
+  after the log, landing between plan and commit would otherwise be orphaned under the
+  deleted account).
+  **WHAT MOVES is RECORDED PLAY — `guesses.length > 0 || submittedAt exists`, ONE predicate
+  (`hasPlay`), read on the SOURCE and the DESTINATION alike** (corrected 2026-09-02 on that
+  same review; it read the log alone until then, and `memoryRoundStore.move` spells the same
+  rule). An empty `guesses` list is TWO Word states: a run merely STARTED, which is not play
+  and may be moved over, and a run SUBMITTED having claimed nothing — #202 makes
+  `submittedAt` the marker, never the length — which is a recorded, unrepeatable day with a
+  real score row of 0. The log-only reading lost that day from both sides: as a source it
+  did not move, as a destination it did not block. **The copied round takes the DESTINATION's next version, never the
+  source's** — two sources adopting one target both condition on the target's version, and
+  the first must change it or the second's Put still passes and overwrites the moved log.
+  A `TransactionCanceledException` is classified by `dynamoErrors.ts` — the ONE reading,
+  shared by every store here (below) — and then by its per-item reason codes: an identity
+  refusal is the route's answer (challenge > account > device, as before), while a refusal
+  on a MOVE or GUARD item alone plans again over what now stands (bounded, then a loud
+  failure), so the play that changed is carried rather than copied stale or deleted unseen;
+  the plan is part of the `ClientRequestToken`, since a re-plan is different items. What
+  the model states once and accepts: a write landing AFTER the commit lands under a
+  deleted account, as any write racing any deletion does, refused on the device's next
+  authenticated call and collected by the sweeper; two real logs for one day never merge.
+  **ROLLOUT:** the bump and the version condition ship together. A row written BEFORE the
+  deploy carries no version and is planned as such; any new writer adds one and refuses a
+  stale plan. The one hole is an OLD invocation still writing a versionless row after the
+  new planner read it, bounded by the Lambda drain (a 10-second timeout) at the moment of
+  the deploy; the DB is wiped before launch and nothing of #204 is live yet, so the two-step
+  rollout the review asked for (writers first, then the version-based adoption) is
+  recorded here as the instruction for a live table rather than performed on an empty one.
+  `RoundStore.transfer` / `ScoreStore.transfer` are GONE from the contracts; the memory
+  stores expose the synchronous halves (`LinkRoundWrites` / `LinkScoreWrites`) the memory
+  link store composes inside its one critical section, the `LinkDeviceWrites` pattern,
+  which is why they carry no version. The solved-day credit a moved sentence solve owes the
+  streak, and the receipt read, both FOLLOW the commit as logged non-fatal side effects
+  (the round route's own rule for that rebuildable collection; an unreadable receipt
+  answers `stakes: null`). **`dynamoLinkStore` is the
+  ONE file that writes items across several stores' key spaces**, and every key it writes
+  comes from the OWNING module's own formatter (`deviceKey`, `accountKey`, `profileKey`),
+  never a literal, and the round/score items from their own stores' planners. The friend
+  merge's KEPT moves (`FriendStore.entries` + `transfer`) condition the `from`-facing
+  delete on the edge still standing, and a refused batch is re-written without the moves
+  whose edge somebody ended meanwhile, so an unlink between the plan and the write is never
+  resurrected onto the adopting account. `ProfileStore.get` widened to a
+  `ProfileLookup` (`{live, profile}`) read as ONE TRANSACTION (`TransactGetItems`) over the
+  profile row and the ACCOUNT row beside it, which is what lets `/profile`, `/board` and the
+  `/i/` preview tell "never customized" from "gone". **It was a strongly consistent
+  BatchGetItem, and that is not the same thing** (corrected 2026-09-02 on the PR-227
+  follow-up review): strong consistency is per ITEM, a batch is serializable per item and
+  NOT across the batch, and the deletion this lookup exists to detect removes both rows in
+  ONE transaction — so a batch could observe the account row before the delete and the
+  profile row after it and answer `live: true` for a player who no longer exists, which every
+  board then dresses with the assigned pseudonym and mark. A transactional read is one
+  serializable snapshot, needs no `ConsistentRead` and no new IAM (a `Get` element is
+  authorized by `dynamodb:GetItem`), has no `UnprocessedKeys` to retry, and retries only a
+  `TransactionConflict` — bounded and jittered on the shared schedule, every attempt a FRESH
+  snapshot, because a snapshot is only a snapshot whole. It costs twice the read units of the
+  batch; the alternative that keeps them (reading the account row LAST) buys that back with a
+  second round trip on a read the board already fans out per row. `DeviceStore.accountExists` is
+  what `/friends {add}` asks before writing an edge. The `{token}` READ also answers the
+  account's own **`createdAt`** (2026-08-26, with the UX rework): it costs nothing — the row
+  was read to authenticate the call — and it is the one true thing the account screen can say
+  about an identity whose name and mark it already draws. New env: `MAIL_FROM` (required, like the
+  table name — a link flow whose mail cannot be sent strands every player who tries it). New
+  IAM: `ses:SendEmail`, scoped to the stack's own domain identity and conditioned on the one
+  `ses:FromAddress` — **and `dynamodb:ConditionCheckItem`** (added 2026-09-02 on the PR-227
+  review). A transaction's Put/Update/Delete elements are authorized through the item
+  permissions the table grant already carried, but a standalone `ConditionCheck` element is
+  NOT: AWS authorizes it through its own action. The adoption asserts rows it does not write
+  — the adopted account, a surviving source, and every guarded no-move of the active day —
+  so without it every erasing link is an `AccessDeniedException` in PRODUCTION and in
+  production alone, where no local run and no synthesized template can show it. Local serve swaps in `memoryLinkStore` + `consoleMailer`, which PRINTS
+  the code to this server's log — explicitly local-only, the accept-all Turnstile verifier's
+  pattern.
+- **ONE reading of a DynamoDB failure (`dynamoErrors.ts` + `dynamoRetry.ts`, PR-227
+  review, 2026-09-02).** Four stores each carried their own spelling of "was this refused by
+  its own condition?" and "which items of this transaction were?", and the spellings had
+  drifted: two `isConditionFailure` helpers plus three inline `name === '…'` comparisons,
+  three transaction parsers that all mapped `Code` through `?? 'None'` (so a reason DynamoDB
+  sent with NO code read as "this item was fine"), and none that knew about
+  `TransactionConflict` at all. AWS documents that the SDKs do NOT retry a cancelled
+  transaction, and a conflict can arrive ALONGSIDE genuine `ConditionalCheckFailed` reasons —
+  which describe rows another writer was mid-write on. So the classifier answers ONE of four
+  verdicts (`not_cancelled` · `conflict` · `operational` · `refused`), a CONFLICT wins over
+  every condition beside it, and only a literal `Code: "None"` means an item was fine. Each
+  store still maps `refused` reasons onto its OWN outcomes — that part is genuinely
+  per-store — and `dynamoErrors.test.ts` pins the reading once. `dynamoRetry.ts` owns the
+  waiting: ONE full-jitter doubling schedule for the `UnprocessedKeys` batch reads (score,
+  round and — since this review — PROFILE, which retried immediately) and a shorter one for
+  transaction conflicts. **Three loops handle a conflict explicitly**, each bounded, jittered
+  and re-reading first where its items came from a read: the link send allowance, the
+  adoption's re-plan (a rival may have moved a guarded row, so it plans AGAIN rather than
+  re-sending), and the BIND, which had no retry at all. The friend and score stores keep
+  their existing policy of not retrying, but a mixed or malformed cancellation now surfaces
+  instead of being read as `gone` or `capped`.
 - **Word mode's daily artifact (#154/#156):** the ONE puzzle endpoint also serves the
   single-word artifact under `mode=word` (`GET /?lang=&date=&mode=word`; absent/
   `sentence` = the sentence puzzle, anything else = 400) with identical day-addressing,

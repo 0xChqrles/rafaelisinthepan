@@ -46,3 +46,50 @@ export function boundSolvedDays(days: readonly number[]): number[] {
   const sorted = [...new Set(days)].sort((a, b) => a - b);
   return sorted.length > MAX_SOLVED_DAYS ? sorted.slice(-MAX_SOLVED_DAYS) : sorted;
 }
+
+// The CURRENT STREAK derived from a solved-day collection: the length of the consecutive
+// run ending at the last solved day, but only while the chain is ALIVE — today is not yet
+// required, so the last solve may be today (`activeDay`) or yesterday. Once it is older
+// than yesterday the chain is broken and the streak is 0.
+//
+// It lives HERE since #204, where the SERVER first had to state one (the erase
+// confirmation names what the account being deleted is about to lose, and a second
+// spelling would put a different number on that dialog than the streak screen shows over
+// the same days). The web's `game/streak.ts` derives its transition and week row from
+// this one function.
+//
+// Order-independent and idempotent by construction — it normalizes its input — because the
+// collection is a SET that is merged, never a sequence.
+export function currentStreak(days: readonly number[], activeDay: number): number {
+  const sorted = [...new Set(days)].sort((a, b) => a - b);
+  if (sorted.length === 0) return 0;
+  const last = sorted[sorted.length - 1];
+  if (last < activeDay - 1) return 0; // chain broken — the last solve is older than yesterday
+  let run = 1;
+  for (let i = sorted.length - 1; i > 0; i--) {
+    if (sorted[i] - sorted[i - 1] === 1) run++;
+    else break;
+  }
+  return run;
+}
+
+// The LONGEST run the collection has ever held, alive or broken — the account's record,
+// beside the streak it is currently on. Unlike `currentStreak` it takes no `activeDay`: a
+// record is a fact about days already played, and nothing about today can raise or break it.
+//
+// Cross-package for `currentStreak`'s reason: what an account is WORTH is stated in two
+// places (the account screen shows it, and the erase confirmation names what a deletion
+// costs), and two spellings would put different numbers on the same days.
+//
+// Order-independent and idempotent by construction — it normalizes its input — because the
+// collection is a SET that is merged, never a sequence.
+export function bestStreak(days: readonly number[]): number {
+  const sorted = [...new Set(days)].sort((a, b) => a - b);
+  let best = 0;
+  let run = 0;
+  for (let i = 0; i < sorted.length; i += 1) {
+    run = i > 0 && sorted[i] - sorted[i - 1] === 1 ? run + 1 : 1;
+    if (run > best) best = run;
+  }
+  return best;
+}

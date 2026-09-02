@@ -24,6 +24,7 @@ const STRINGS = {
   // the server holds is the editor's whole starting point, so a guess could be saved
   // over the real profile — the reader retries instead.
   failedProfile: { en: 'FAILED TO LOAD PROFILE', fr: 'ÉCHEC DU CHARGEMENT DU PROFIL' },
+  failedAccountLoad: { en: 'FAILED TO LOAD ACCOUNT', fr: 'ÉCHEC DU CHARGEMENT DU COMPTE' },
   // The #211 private history read, behind the archive calendar and the chooser strips.
   // Loud like the round's own: since #214 there is no local history left to fall back to,
   // so a silent failure would draw a month of untouched days over a month that was played.
@@ -107,9 +108,15 @@ const STRINGS = {
   // Written in the FUTURE the tap opens, never the past — the account is minted by the
   // game's own PLAY gate the tap lands on, so "has been created" would be a screen
   // claiming something that has not happened yet.
+  // AMENDED by #204's review: it described the SECONDARY, and contradicted the primary
+  // that now leads. RECONNECT signs back into the account named above; the sentence under
+  // it read "playing creates a new account and you start from scratch", which is the one
+  // thing reconnecting does NOT do — so a reader scanning primary-then-note met a
+  // contradiction on the screen that has to be clearest. It names neither button (both are
+  // right there): it says the account is still reachable, and what the other tap costs.
   signedOutNote: {
-    en: "Don't worry, playing creates a new account and you start from scratch.",
-    fr: 'Pas de panique, jouer crée un nouveau compte et vous repartez de zéro.',
+    en: "Don't worry — this account is still there. Playing instead starts a new one, from scratch.",
+    fr: 'Pas de panique : ce compte existe toujours. Jouer démarre plutôt un nouveau, de zéro.',
   },
   // The account's devices, on the profile editor (#216): the surface the whole issue exists
   // for, since signing a device out has to be possible without holding that device.
@@ -121,6 +128,206 @@ const STRINGS = {
   deviceUnknown: { en: 'UNKNOWN DEVICE', fr: 'APPAREIL INCONNU' },
   failedDevices: { en: 'FAILED TO LOAD DEVICES', fr: 'ÉCHEC DU CHARGEMENT DES APPAREILS' },
   signedOutReconnect: { en: 'RECONNECT', fr: 'SE RECONNECTER' },
+  // THE ACCOUNT AREA (#204, reworked 2026-08-26). One purpose per screen, and one rule for
+  // the words: a line survives only if it says something the screen does not already show.
+  // So there is no "YOUR ACCOUNT" over a screen titled ACCOUNT, no "SAVED AS" in front of
+  // something plainly an email, and no "6-DIGIT CODE" over six cells.
+  // An invite link whose sender's account is gone (#204). It is a STATE, not a failure:
+  // there is nothing to retry, so the screen says so and carries the reader into the game.
+  inviteExpired: { en: 'THIS INVITE LINK HAS EXPIRED', fr: "CE LIEN D'INVITATION A EXPIRÉ" },
+  accountTitle: { en: 'ACCOUNT', fr: 'COMPTE' },
+  // The account's own age, prefixed once — the only thing this screen can say about an
+  // identity whose name and mark it already draws.
+  accountSince: { en: 'SINCE', fr: 'DEPUIS' },
+  accountSave: { en: 'SAVE WITH EMAIL', fr: 'SAUVEGARDER PAR E-MAIL' },
+  // THE ONE LINE THAT EARNS ITS PLACE: why a word game wants an email is genuinely not
+  // obvious, so it is said once, where the decision is made — and it says it PLAINLY.
+  // (User-decided 2026-08-28, superseding "Pour qu'un téléphone perdu ne perde pas tout.":
+  // the loss framing turned on a play on words — perdu/perde — which is the opposite of
+  // plain, and read as cringe rather than as stakes. What a player actually pictures is
+  // getting a new device, so the line names that.)
+  //
+  // APPAREIL rather than téléphone is the user's own word and stays: it is what the device
+  // list already prints (`devicesTitle`), so the note and the list name one thing.
+  //
+  // TON became VOTRE (review finding). It was the app's first tutoiement, and it landed in
+  // an area that says vous five times within two taps of it — « Réessayez », « Demandez-en
+  // un nouveau », « vos amis vous suivent », « Vous êtes déjà sur ce compte ». One sentence
+  // in the other register does not read as warmth, it reads as an inconsistency, and this
+  // is the one line on the screen a player is meant to weigh a decision against. The voice
+  // is still the user's to settle — it is one word either way — but it has to be ONE.
+  accountSaveNote: {
+    en: 'To get your account back on another device.',
+    fr: 'Pour retrouver votre compte sur un autre appareil.',
+  },
+  // THE SECOND DOOR (#204's UX rework vol. 2). Saving an account and signing into another
+  // one were one button, one dress and one set of taps — and opposite acts. A returning
+  // player was looking for a word that was not on screen, and had to infer that "save" also
+  // meant "get it back" on the one screen where guessing wrong deletes something. It is a
+  // QUIET door, never a second primary: most visitors to /account came to save.
+  accountHaveAccount: { en: 'I ALREADY HAVE AN ACCOUNT', fr: "J'AI DÉJÀ UN COMPTE" },
+  // The same door once THIS account is saved, where it means something milder: leaving is
+  // reversible, because the account stays reachable by its own address.
+  accountSwitch: { en: 'SIGN IN TO ANOTHER ACCOUNT', fr: 'SE CONNECTER À UN AUTRE COMPTE' },
+  // What signing in COSTS, said before a keystroke is spent rather than after the mail app,
+  // the six digits and the commitment ritual. It is shown on the ONE case that has a cost:
+  // an account with no address of its own is deleted when this device leaves it. The
+  // reversible case said "you can come back to this one anytime" until 2026-08-28, and the
+  // user cut it — there is no decision pending on that step, so a reassurance about a
+  // consequence nobody has met yet is noise. It is said where it is load-bearing instead:
+  // on the switch confirmation, which is a decision.
+  linkReturnReplaces: {
+    en: "This device's account will be replaced.",
+    fr: 'Le compte de cet appareil sera remplacé.',
+  },
+
+  // WHAT SCREEN THIS IS. `back` renders the CURRENT screen's name as the way out of it —
+  // `/account` says ACCOUNT and `/profile` says PROFILE — and the flow was passing
+  // `accountTitle`, its PARENT's. On the returning door that left a screen whose entire
+  // text was the word CONTINUE: a churning tile, an unlabelled field, and a header naming
+  // somewhere else. The door's declared intention is the one thing it can honestly say.
+  linkTitleSave: { en: 'SAVE ACCOUNT', fr: 'SAUVEGARDER' },
+  // fr CONNEXION rather than SE CONNECTER (2026-08-31): the title has ONE size on every
+  // screen, and at 320px the longer spelling ran into the header's fixed five keys.
+  linkTitleReturn: { en: 'SIGN IN', fr: 'CONNEXION' },
+
+  linkAddressPlaceholder: { en: 'EMAIL', fr: 'E-MAIL' },
+  linkContinue: { en: 'CONTINUE', fr: 'CONTINUER' },
+  // Where it went — the answer to "did I typo my own address?", which is the one thing the
+  // player cannot check for themselves.
+  linkSentTo: { en: 'Sent to', fr: 'Envoyé à' },
+  // The code prompt's ACCESSIBLE name. The six cells are decoration (aria-hidden), so this
+  // is what a screen reader announces for the one real input — it is deliberately NOT on
+  // screen, where the cells already demonstrate what is wanted.
+  linkCodeLabel: { en: '6-digit code', fr: 'Code à 6 chiffres' },
+  linkResend: { en: 'RESEND', fr: 'RENVOYER' },
+  // Shown only once an attempt has been SPENT: stating the budget up front reads as a
+  // warning to somebody who has typed nothing wrong. One line, at the input, beside the
+  // cells that just shook.
+  linkWrongCode: { en: 'Wrong code — {n} left', fr: 'Code incorrect — {n} restants' },
+  // The last attempt before the code is spent. Two keys and a caller-side `n === 1`, the
+  // shape TRY/TRIES already uses — French disagrees where English does not (« 1 restant »,
+  // "1 left"), and the pair keeps both languages in the type-checked table.
+  linkWrongCodeOne: { en: 'Wrong code — 1 left', fr: 'Code incorrect — 1 restant' },
+  linkCancel: { en: 'CANCEL', fr: 'ANNULER' },
+  // The BIND ending's way back to the account screen: a settings errand ends where it
+  // began, and OK is the one word that is chrome in both languages. The ADOPT ending keeps
+  // PLAY — a recovered player wants their game, not a settings screen.
+  linkDone: { en: 'OK', fr: 'OK' },
+  // The erase confirmation. It NAMES what the tap destroys — the server refuses to erase
+  // without being told which account, and this screen is the only thing between that tap
+  // and a month of play.
+  // THE CROSSROADS (#204's UX rework vol. 2). The confirmation used to STATE the deletion —
+  // "This device is on another account. Linking deletes it." — while showing only the account
+  // being lost. It now SHOWS the fork instead: two marks, the one being left struck through
+  // under the word DELETED, the one being joined lit beside it. So the sentence is free to
+  // carry the only part the screen cannot draw — what SURVIVES. Both halves are true and
+  // neither is obvious: the active day's play moves across, and the friends graph is merged.
+  // A confirmation that overstates the damage misleads exactly as much as one that hides it.
+  linkEraseKeeps: {
+    en: "Today's game and your friends come with you. The rest is lost.",
+    fr: 'La partie du jour et vos amis vous suivent. Le reste est perdu.',
+  },
+  linkEraseDeleted: { en: 'DELETED', fr: 'SUPPRIMÉ' },
+  // Reached from the SAVE door, the crossroads is a genuine surprise — the player asked to
+  // keep something and is being shown a deletion. One line explains the turn before the
+  // screen asks anything. From the RETURN door it is omitted: the address step already said
+  // this, and repeating it there would read as a scolding.
+  linkEraseFound: {
+    en: 'That address already has an account.',
+    fr: 'Cette adresse a déjà un compte.',
+  },
+  // THE SWITCH, which is the same crossroads with nothing destroyed on it. What it has to
+  // say is what happens to the account being left — since the picture shows the leaving, and
+  // "deleted" is exactly what is NOT happening here.
+  linkSwitchKeeps: {
+    en: 'Nothing is deleted — this account stays saved under its own address.',
+    fr: "Rien n'est supprimé — ce compte reste sauvegardé sous sa propre adresse.",
+  },
+  linkSwitchConfirm: { en: 'SWITCH ACCOUNT', fr: 'CHANGER DE COMPTE' },
+  // THE ACCOUNT'S THREE NUMBERS, one word each, shared by every surface that states them —
+  // the account screen and the erase/switch confirmations. They were `linkEraseStreak` /
+  // `linkEraseDays` while only the dialog said them, and the streak one rendered « SÉRIE »
+  // there against the archive's « STREAK » for the same number: two French words for one
+  // thing, on screens that now sit one tap apart. Unified on the older, game-facing one —
+  // STREAK is untranslated vocabulary here, the family MISS and the rarity grades belong to.
+  statDays: { en: 'DAYS', fr: 'JOURS' },
+  // The longest run the account has ever held, beside the one it is on. RECORD rather than
+  // « MEILLEUR »: it is the word a French player would use for a personal best, and it is
+  // short enough to sit under a number in a three-up row.
+  statBest: { en: 'BEST', fr: 'RECORD' },
+  linkEraseConfirm: { en: 'DELETE AND CONTINUE', fr: 'SUPPRIMER ET CONTINUER' },
+  // The two endings, in #204's own decided words: one for an address nobody knew, one for
+  // an account the player is coming back to. Both land under the account's own FACE, which
+  // is the claim "we found your account" actually makes.
+  linkSaved: { en: 'Account saved.', fr: 'Compte sauvegardé.' },
+  linkRestored: { en: 'We found your account.', fr: 'On a retrouvé votre compte.' },
+  // THE FOUR OTHER ENDINGS. Six cells exist — two doors times three outcomes — and until
+  // vol. 2 four of them borrowed one of the two sentences above. `already_bound` claimed
+  // "Compte sauvegardé." for a no-op, and a RETURN that found nothing said it too, under the
+  // very face the player was hoping to replace, with no explanation at all.
+  linkAlreadyAddress: {
+    en: 'Already saved to this address.',
+    fr: 'Déjà sauvegardé sous cette adresse.',
+  },
+  linkAlreadyAccount: {
+    en: "You're already on this account.",
+    fr: 'Vous êtes déjà sur ce compte.',
+  },
+  linkFailed: { en: 'LINK FAILED', fr: 'ÉCHEC DE LA LIAISON' },
+  linkTooMany: {
+    en: 'Too many codes asked for. Try again in a while.',
+    fr: 'Trop de codes demandés. Réessayez dans un moment.',
+  },
+  linkBadAddress: {
+    en: "That address doesn't look right.",
+    fr: 'Cette adresse ne semble pas valide.',
+  },
+  linkSendFailedNote: {
+    en: 'The code could not be sent.',
+    fr: "Le code n'a pas pu être envoyé.",
+  },
+  linkVerifyFailedNote: {
+    en: 'The code could not be checked.',
+    fr: "Le code n'a pas pu être vérifié.",
+  },
+  linkCodeSpent: {
+    en: 'Too many wrong codes. Ask for a new one.',
+    fr: 'Trop de codes incorrects. Demandez-en un nouveau.',
+  },
+  linkCodeExpired: {
+    en: 'That code has expired. Ask for a new one.',
+    fr: 'Ce code a expiré. Demandez-en un nouveau.',
+  },
+  // An account carries at most ONE address, so a device whose account is already saved under
+  // a different one cannot bind a second (the old address would reach an account nobody
+  // could ever sign into again). It is a FACT about this account, not a failure: it says so
+  // AT the address field with the field still there to type in — a modal would be a dead end
+  // on a screen whose one remaining move is to try another address.
+  //
+  // **THE REFUSAL IS ONE, THE SITUATION IS TWO** (user-decided 2026-08-28). The server
+  // answers `account_linked` in exactly one case: the address reaches NOBODY, and this
+  // device's account already has one of its own. Which of those two facts the player needs
+  // depends entirely on which door they came through, and the SAVE wording was being shown
+  // to both — so a player trying to SIGN IN was told about a binding they had not asked for
+  // ("this account is already saved elsewhere") instead of the answer to what they actually
+  // did. From the RETURN door the true and useful half is the other one: there is nobody at
+  // that address. Both statements are exactly true of the same refusal; the door decides
+  // which one is an answer.
+  linkAlreadySaved: {
+    en: 'This account is already saved under another address.',
+    fr: 'Ce compte est déjà sauvegardé sous une autre adresse.',
+  },
+  // The RETURNING door's answer when nobody is at the address. It used to be an ENDING —
+  // the account this device held got bound to the address instead, and the screen explained
+  // the turn — until 2026-08-28, when the user pointed out that binding is not a smaller
+  // version of recovering: a player who typed a wrong address would SPEND their account's
+  // one address slot on it. Nothing happens now, and this is a note at the field with the
+  // field still there to correct.
+  linkNoAccountThere: {
+    en: 'No account is saved at that address.',
+    fr: "Aucun compte n'est sauvegardé à cette adresse.",
+  },
   // The missing-puzzle state is ABNORMAL (a publish that did not happen), and the
   // wording says so — it must not read like a scheduled day off.
   noPuzzle: { en: "TODAY'S PUZZLE IS MISSING", fr: 'LE PUZZLE DU JOUR EST INTROUVABLE' },
@@ -219,6 +426,14 @@ const STRINGS = {
   ariaChangeMode: { en: 'Change game mode', fr: 'Changer de mode de jeu' },
   modeSentence: { en: 'Sentence', fr: 'Phrase' },
   modeWord: { en: 'Word', fr: 'Mot' },
+  // ── WHICH PUZZLE (2026-08-30, user-decided) ────────────────────────────────────────
+  // The header's left slot names the daily you are on, and one sheet behind it holds every
+  // axis of "which puzzle am I playing": the language, the daily, and the day. They were
+  // three separate controls in three places — a centred segmented switcher, a date chip and
+  // a language chip — which is what left the row with no space and the account with no door.
+  puzzleMenu: { en: 'Change puzzle', fr: 'Changer de puzzle' },
+  // The DAY row. It flips: from today it offers the calendar, from the calendar (or a past
+  // day) it offers the way back to the live one.
   share: { en: 'SHARE', fr: 'PARTAGER' },
   copied: { en: 'COPIED', fr: 'COPIÉ' },
   // ---- the solved screen's STANDING (#170, user-decided 2026-08-15, replacing the
@@ -255,7 +470,6 @@ const STRINGS = {
   // too), so the shelf now names them in the vocabulary the player already met rather than
   // describing where they sit. Untranslated for the same reason MISS is — one label,
   // identical in every language.
-  routeOffMap: { en: 'MISSED', fr: 'MISSED' },
   // The streak celebration's ending hint: pure "what to do" — the whole screen dismisses,
   // so naming a "why" (continue/close — continue to WHAT? the game is done) would only
   // raise a question it can't answer. Pointer-aware: coarse pointers read TAP.
@@ -272,12 +486,15 @@ const STRINGS = {
   ariaEnter: { en: 'enter', fr: 'entrée' },
   ariaBackspace: { en: 'backspace', fr: 'effacer' },
   ariaDash: { en: 'dash', fr: 'tiret' },
+  ariaHome: { en: "Today's puzzle", fr: 'Puzzle du jour' },
   ariaHelp: { en: 'How to play', fr: 'Comment jouer' },
-  ariaSkipTutorial: { en: 'Skip tutorial', fr: 'Passer le tutoriel' },
   // ---- archive calendar (#55): playable past days behind a calendar screen.
   archive: { en: 'ARCHIVE', fr: 'ARCHIVE' },
   ariaArchive: { en: 'Past puzzles', fr: 'Puzzles précédents' },
   ariaBackToToday: { en: "Back to today's puzzle", fr: 'Retour au puzzle du jour' },
+  // The account area's way OUT, on the header's own title (2026-08-29). The visible words
+  // are the screen's NAME; this is what the control is called for a reader.
+  ariaBack: { en: 'Back', fr: 'Retour' },
   ariaPrevMonth: { en: 'Previous month', fr: 'Mois précédent' },
   ariaNextMonth: { en: 'Next month', fr: 'Mois suivant' },
   // ---- tutorial invitation (#51): the tutorial never starts without an action.
@@ -524,13 +741,7 @@ export function ariaHoleHistory(lang: string, n: number): string {
   return uiLang(lang) === 'fr' ? `Vos essais sur le mot ${n}` : `Your tries on word ${n}`;
 }
 
-// The history drawing is decorative (aria-hidden); these carry it in words. Closest first,
-// misses last — the same order the line reads bottom to top.
-export function srRouteDestination(lang: string, word: string | null): string {
-  if (uiLang(lang) === 'fr') return `destination : ${word ?? 'cachée'}`;
-  return `destination: ${word ?? 'hidden'}`;
-}
-
+// The route drawings are decorative (aria-hidden); these carry them in words.
 export function srRouteStop(
   lang: string,
   stop: {
@@ -554,14 +765,6 @@ export function srRouteStop(
   if (stop.best) parts.push(fr ? 'vous êtes ici' : 'you are here');
   if (stop.behind) parts.push(fr ? 'derrière le départ' : 'behind the start');
   return parts.join(' — ');
-}
-
-// The shelf in words. The visible heading is the universal MISSED token, but this is PROSE
-// and prose stays in the reader's language (the rule every sr helper here follows) — it
-// just says the same thing the heading now does.
-export function srRouteOffMap(lang: string, words: string[]): string {
-  const list = words.join(', ');
-  return uiLang(lang) === 'fr' ? `manqués : ${list}` : `missed: ${list}`;
 }
 
 // ---- Word mode (#156). The board drawing is decorative like the route map's; these

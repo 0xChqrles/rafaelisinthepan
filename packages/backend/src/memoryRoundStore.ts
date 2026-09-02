@@ -12,6 +12,7 @@ import {
   type RoundState,
   type RoundStore,
 } from './roundStore';
+import type { LinkRoundWrites } from './linkStore';
 
 interface RoundItem {
   guesses: string[];
@@ -36,7 +37,7 @@ interface RoundItem {
 // restart, plus Word mode's two writes (#202) — with no AWS account. Restarting the local server intentionally resets this lab
 // data. The bound constants are imported from @whippin/shared rather than parameterized, so
 // this implementation cannot drift from the production condition it mirrors.
-export function memoryRoundStore(): RoundStore {
+export function memoryRoundStore(): RoundStore & LinkRoundWrites {
   const rounds = new Map<string, RoundItem>();
   const itemKey = (key: RoundKey, publicId: string) =>
     `${roundPartition(publicId)}/${roundSortKey(key)}`;
@@ -230,7 +231,30 @@ export function memoryRoundStore(): RoundStore {
       stored.submittedAt = input.now.toISOString();
       return { outcome: 'submitted' as const, state: stateOf(stored) };
     },
+
+    // #204's active-day transfer, the process-local half of `dynamoLinkStore`'s one
+    // transaction — the SAME decision, from the same predicate (`planRoundMove`'s
+    // `hasPlay`): the source must hold RECORDED PLAY, the destination none, and the whole
+    // item moves. Play is a guess OR a submission, so a word run merely STARTED is moved
+    // over while a submitted 0-claim run both moves and blocks — the two states an empty
+    // log can be in.
+    move(key, from, to) {
+      const source = rounds.get(itemKey(key, from));
+      const destination = rounds.get(itemKey(key, to));
+      if (!source || !recordedPlay(source)) return null;
+      if (destination && recordedPlay(destination)) return null;
+      rounds.set(itemKey(key, to), source);
+      rounds.delete(itemKey(key, from));
+      return { key, solved: source.solved === true };
+    },
   };
+}
+
+// `planRoundMove`'s predicate, in this store's own shape: a round is RECORDED PLAY when it
+// holds a guess or a submission. #202 makes `submittedAt` the run's marker rather than the
+// log's length, which is why a 0-claim run counts here.
+function recordedPlay(item: RoundItem): boolean {
+  return item.guesses.length > 0 || item.submittedAt !== undefined;
 }
 
 function empty(): RoundState {

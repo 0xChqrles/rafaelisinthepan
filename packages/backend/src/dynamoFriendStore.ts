@@ -2,8 +2,21 @@ import {
   QueryCommand,
   TransactWriteItemsCommand,
   type DynamoDBClient,
+  type TransactWriteItem,
 } from '@aws-sdk/client-dynamodb';
-import { FRIENDS_MAX, friendsKey, type FriendStore } from './friendStore';
+import { ACCOUNT_SORT_KEY, accountKey } from './deviceStore';
+import { classifyTransaction, refusedAt } from './dynamoErrors';
+import {
+  FRIENDS_MAX,
+  friendsKey,
+  type FriendLink,
+  type FriendStore,
+  type FriendTransfer,
+} from './friendStore';
+
+// Four items per kept friendship, so 25 of them exactly fill DynamoDB's 100-item
+// transaction limit.
+const FRIEND_TRANSFER_BATCH = 25;
 
 // Production edges live in the score table (#189), one item per direction. DynamoDB's
 // transaction is what makes the pair indivisible: both rows land, or neither does, so no
@@ -93,11 +106,45 @@ export function dynamoFriendStore(client: DynamoDBClient, tableName: string): Fr
       // the original instant, so re-writing a row that is already there costs two WCUs on a
       // rare path and changes nothing — which is also why this transaction needs no
       // ClientRequestToken: an SDK retry is the same no-op.
-      await client.send(
-        new TransactWriteItemsCommand({
-          TransactItems: [edge(publicId, friendId), edge(friendId, publicId)],
-        }),
-      );
+      try {
+        await client.send(
+          new TransactWriteItemsCommand({
+            TransactItems: [
+              {
+                ConditionCheck: {
+                  TableName: tableName,
+                  Key: { pk: { S: accountKey(publicId) }, sk: { S: ACCOUNT_SORT_KEY } },
+                  ConditionExpression: 'attribute_exists(pk)',
+                },
+              },
+              {
+                ConditionCheck: {
+                  TableName: tableName,
+                  Key: { pk: { S: accountKey(friendId) }, sk: { S: ACCOUNT_SORT_KEY } },
+                  ConditionExpression: 'attribute_exists(pk)',
+                },
+              },
+              edge(publicId, friendId),
+              edge(friendId, publicId),
+            ],
+          }),
+        );
+      } catch (error) {
+        // Exactly two conditions exist, [0] and [1]: both accounts must still be live.
+        // Anything else — a `TransactionConflict`, a throttle, a reason with no code —
+        // is OPERATIONAL and surfaces (`dynamoErrors.ts`): a contended attempt says
+        // nothing about whether either account exists, and answering `gone` from one
+        // would tell a player their friend's account was deleted because two writes
+        // touched the same row.
+        const verdict = classifyTransaction(error);
+        if (
+          verdict.kind === 'refused' &&
+          (refusedAt(verdict.reasons, 0) || refusedAt(verdict.reasons, 1))
+        ) {
+          return { outcome: 'gone', friends: own };
+        }
+        throw error;
+      }
       // The transaction committed exactly the one edge the read was missing, so the
       // resulting list is the one just read plus it — kept in the Query's sort-key order.
       // Re-reading the partition would spend a second strongly-consistent Query to learn
@@ -128,5 +175,122 @@ export function dynamoFriendStore(client: DynamoDBClient, tableName: string): Fr
         }),
       );
     },
+
+    // The same partition `list` reads, WITH the instants — #204's merge fills the adopting
+    // account's remaining capacity oldest-first, so it needs them and every other caller
+    // does not.
+    async entries(publicId) {
+      const rows: FriendLink[] = [];
+      let cursor: Record<string, unknown> | undefined;
+      do {
+        const response = await client.send(
+          new QueryCommand({
+            TableName: tableName,
+            KeyConditionExpression: '#pk = :pk',
+            ExpressionAttributeNames: { '#pk': 'pk' },
+            ExpressionAttributeValues: { ':pk': { S: friendsKey(publicId) } },
+            ConsistentRead: true,
+            ...(cursor ? { ExclusiveStartKey: cursor as never } : {}),
+          }),
+        );
+        for (const item of response.Items ?? []) {
+          const friendId = item.sk?.S;
+          if (friendId) rows.push({ publicId, friendId, createdAt: item.createdAt?.S ?? '' });
+        }
+        cursor = response.LastEvaluatedKey;
+      } while (cursor);
+      return rows;
+    },
+
+    // #204's friend merge, in batches of at most FRIEND_TRANSFER_BATCH friendships — four
+    // items each, which is what keeps a full 200-edge merge inside DynamoDB's 100-item
+    // transaction limit. Each batch is indivisible, so no reader can ever see one direction
+    // of a friendship pointing at the account being deleted while the other points at the
+    // one adopting it.
+    //
+    // IDEMPOTENT throughout, because the job that drives it is resumed after partial
+    // batches: the deletes are unconditional (deleting an absent row is a no-op) and the
+    // puts keep the OLDER `createdAt` via `if_not_exists`, so replaying a batch changes
+    // nothing.
+    async transfer(from, to, moves) {
+      for (let i = 0; i < moves.length; i += FRIEND_TRANSFER_BATCH) {
+        // A batch is written as ONE transaction, and a KEPT move is conditioned on the
+        // `from`-facing row it was planned from still standing: if either side unlinked
+        // meanwhile, that friendship is gone by somebody's choice, and rewriting it onto
+        // `to` would resurrect it. The whole transaction is refused when any move's row is
+        // gone, so the batch is written again WITHOUT those moves — the next pass of the
+        // merge reads the partition afresh and simply no longer sees them. A DROP needs no
+        // condition: deleting an absent row is the no-op it should be.
+        let batch = moves.slice(i, i + FRIEND_TRANSFER_BATCH);
+        while (batch.length > 0) {
+          const items = batch.flatMap((move) => transferItems(tableName, from, to, move));
+          try {
+            await client.send(new TransactWriteItemsCommand({ TransactItems: items }));
+            break;
+          } catch (error) {
+            const reasons = transactionRefusal(error);
+            if (!reasons) throw error;
+            const refused = new Set<string>();
+            let at = 0;
+            for (const move of batch) {
+              const width = move.keep ? 4 : 2;
+              if (reasons.slice(at, at + width).some(Boolean)) refused.add(move.friendId);
+              at += width;
+            }
+            // A refusal that names no move is not a state this transaction can produce.
+            if (refused.size === 0) throw error;
+            batch = batch.filter((move) => !refused.has(move.friendId));
+          }
+        }
+      }
+    },
   };
+}
+
+// The transact items of ONE move: both `from`-facing rows go, kept or dropped — no edge may
+// be left pointing at an account that is about to stop existing — and a kept friendship
+// gains its two `to`-facing rows, keeping the OLDER instant (`if_not_exists`).
+function transferItems(
+  tableName: string,
+  from: string,
+  to: string,
+  move: FriendTransfer,
+): TransactWriteItem[] {
+  const removals: TransactWriteItem[] = [
+    {
+      Delete: {
+        TableName: tableName,
+        Key: { pk: { S: friendsKey(from) }, sk: { S: move.friendId } },
+        ...(move.keep ? { ConditionExpression: 'attribute_exists(pk)' } : {}),
+      },
+    },
+    {
+      Delete: {
+        TableName: tableName,
+        Key: { pk: { S: friendsKey(move.friendId) }, sk: { S: from } },
+      },
+    },
+  ];
+  if (!move.keep) return removals;
+  const link = (owner: string, other: string): TransactWriteItem => ({
+    Update: {
+      TableName: tableName,
+      Key: { pk: { S: friendsKey(owner) }, sk: { S: other } },
+      UpdateExpression: 'SET #createdAt = if_not_exists(#createdAt, :createdAt)',
+      ExpressionAttributeNames: { '#createdAt': 'createdAt' },
+      ExpressionAttributeValues: { ':createdAt': { S: move.createdAt } },
+    },
+  });
+  return [...removals, link(to, move.friendId), link(move.friendId, to)];
+}
+
+// Which items of a refused transfer batch were refused, or null for anything this store
+// may not interpret — a throttle, a conflict, or a reason the service sent with no code
+// (`dynamoErrors.ts` draws every one of those lines). The merge job is durable and
+// resumable, so a failure that reaches `drainMerges` is LOGGED and left queued rather than
+// silently re-shaped into "somebody unlinked these friendships".
+function transactionRefusal(error: unknown): boolean[] | null {
+  const verdict = classifyTransaction(error);
+  if (verdict.kind !== 'refused') return null;
+  return verdict.reasons.map((_, index) => refusedAt(verdict.reasons, index));
 }

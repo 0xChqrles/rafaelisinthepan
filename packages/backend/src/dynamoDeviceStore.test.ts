@@ -13,6 +13,35 @@ const ACCOUNT = 'a'.repeat(16);
 const DEVICE = 'd'.repeat(16);
 const REVOKE_KEY = 'f'.repeat(64);
 
+describe('dynamoDeviceStore authentication (#204/#216)', () => {
+  it('retains the account email that decides whether leaving it may erase it', async () => {
+    const send = vi.fn(async (command: unknown) => {
+      expect(command).toBeInstanceOf(GetItemCommand);
+      const pk = ((command as GetItemCommand).input.Key?.pk as { S: string }).S;
+      if (pk === `device#${REVOKE_KEY}`) {
+        return {
+          Item: {
+            deviceId: { S: DEVICE },
+            accountId: { S: ACCOUNT },
+            createdAt: { S: '2026-08-25T00:00:00.000Z' },
+          },
+        };
+      }
+      return {
+        Item: {
+          createdAt: { S: '2026-08-20T00:00:00.000Z' },
+          email: { S: 'zoe@example.com' },
+        },
+      };
+    });
+    const store = dynamoDeviceStore({ send } as unknown as DynamoDBClient, 'scores');
+
+    await expect(store.resolve(REVOKE_KEY)).resolves.toMatchObject({
+      account: { accountId: ACCOUNT, email: 'zoe@example.com' },
+    });
+  });
+});
+
 describe('dynamoDeviceStore revocation (#216)', () => {
   it('deletes the listed BASE item directly, without an eventually-consistent lookup', async () => {
     const send = vi.fn(async (_command: unknown) => ({}));

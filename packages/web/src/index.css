@@ -47,39 +47,43 @@
 }
 
 :root {
-  /* THE STAMP-INK PALETTE (user-decided 2026-08-17, retuned the same day against the
-     /inspiration set — vintage offset stamps, riso posters — after the first calm cut
-     went dusty, "almost creepy"): the game is RESTORING PEACE to a weird sentence, and
-     the colours are real printed-ink chroma — cobalt, orange, salmon, orchid, amber — on
-     a dark ground with grain and halftone carrying the calm. The weird→calm gradient in
-     shared/heat.ts (amber → salmon → rose-orchid → cobalt) and, derived from it, the
-     word pair below. Every value measured on the ground (≥4.5:1). */
-  --bg: #08090f; /* poster black — sampled off the Séance sheet (its ground is #000; a whisper of navy keeps the glows breathing) */
+  /* THE REBRAND PALETTE (user-decided 2026-09-01, superseding the 2026-08-17 stamp-ink
+     set): simple, clean, basic — a flat NEAR-BLACK ground, PLAIN WHITE foreground, and
+     saturated vivid colours only where they mean something (the accents, the heat
+     ramp, the rarity ladder). Clean shapes, clear contrasts; no textures, no warm
+     paper cast, no decorative glows. The weird→calm gradient in shared/heat.ts is
+     unchanged. Every value measured on the ground (≥4.5:1). */
+  --bg: #050507; /* near-black — one flat sheet, no texture (rebrand 2026-09-01) */
   /* The route line's own colour: the trunk and the tail's dashes, which is why it lives
      here rather than on `.route-frame` where it started. Deliberately the ONE unsaturated
      line on the drawing — the words and the nodes carry every colour it says anything with. */
   --rail: #4a5578;
-  --surface: #161826;
-  --surface-hover: #222438;
-  --fg: #f4f1e8; /* stamp paper */
-  /* The word pair — ONE blue in two states (the user's own axes, 2026-08-17): a held
-     hole is the PALE DRAFT over its open-blank line, and solving INKS IT IN with the
-     cobalt. The ink is also the gradient's calm terminus, so a solve lands exactly on
-     the peace the scale runs toward. */
-  --hole: #aec1ff; /* the pale draft */
+  --surface: #14151c;
+  --surface-hover: #1f212a;
+  --fg: #ffffff; /* plain white — the clear contrast the rebrand asks for */
+  /* The word pair — TWO STATES, TWO HUES (rebrand 2026-09-01, fourth pass): a held
+     hole is VIVID CYAN, and solving INKS IT IN with the cobalt accent. The walk to get
+     here: the pale #aec1ff draft and an azure #38b6ff were both too close to the solve;
+     a green #3ddc84 was far enough but MEANS "valid" — the opposite of an open slot. Cyan
+     is the game's own cool family (RARE's ink), reads "highlighted, act here", and is on
+     NO heat-ramp stop, so the exponent riding the word never matches it at any rank.
+     Measured: dE 96 from --solve, 103 from the orchid exponents, 136 from MISS, at
+     13.2:1 on the ground. The cobalt is also the gradient's calm terminus, so a solve
+     lands exactly on the peace the scale runs toward. */
+  --hole: #00e5ff; /* the vivid cyan draft */
   --solve: #4a6aff; /* the cobalt ink — peace restored (poster-sampled family; the raw #184cf4 is a GLOW colour, too dim for text) */
-  /* The BRAND accent went VIOLET (user-decided 2026-08-18: the orange is gone — "keep
-     the blue/violet palette for all accent and actions"): the poster's violet orb
-     lifted to text contrast (≥4.5:1 on --bg), sitting clearly apart from the solve
-     cobalt, the pale hole blue, RARE's cyan and OBSCURE's pinker #b164f2. Chrome,
-     rewards, the credit headline; never a scale value, never a word state. */
-  --accent: #8f7bff;
+  /* THE GAME ACCENT IS THE SOLVE COBALT (user-decided 2026-09-01: "the solved word
+     color, which should be the game accent color" — the violet #8f7bff of 2026-08-18 is
+     retired). ONE accent: the prompt's chevron and cursor, the statuses, COPIED, the
+     +Ns gain, the streak, the credit headline, the rank number — and every solved word,
+     trophy, terminus and LED — are the same blue. Never a scale value, never a hole. */
+  --accent: #4a6aff;
   /* ALARM RED, and it is the ERROR BOT's own ink (user-decided 2026-08-27, superseding
      #f04e63): that hex sat at 62% lightness and read coral rather than dangerous. Note it
      is only 7.7 dE from MISS_COLOR (#ff3d2e) — the two reds are deliberately allowed to be
      one red now, where the ladder's reservation used to hold them 30 apart. */
   --danger: #ff2e38;
-  --muted: #b0aca4; /* warm grey — paper-toned */
+  --muted: #a6adb8; /* neutral cool grey (the warm paper tone left with the stamp brand) */
   --flame: #4642e8; /* streak flame indigo — the sprite's body color (#74); milestone tiers swap it */
 
   --pixel-font: 'Press Start 2P', monospace;
@@ -98,18 +102,23 @@
   --r-sm: 2px;
   --r-md: 3px;
   --r-lg: 4px;
-  --line: rgba(244, 241, 232, 0.12);
-  --line-strong: rgba(244, 241, 232, 0.4);
-  --glass: rgba(16, 18, 30, 0.62);
+  --line: rgba(255, 255, 255, 0.13);
+  --line-strong: rgba(255, 255, 255, 0.45);
+  --glass: rgba(9, 10, 14, 0.62);
 
-  --cap-shift: 0;
+  /* Optical corrections for the pixel face's cap-height overshoot — and they are read
+     INSIDE `calc()`, so they have to be LENGTHS. `calc(13px + 0)` adds a unitless number
+     to a length, which is invalid: the whole declaration then becomes invalid at
+     computed-value time and falls back to the property's initial value. That is silent,
+     and for `padding` it means ZERO — which is how `.btn-secondary` came to render 17px
+     tall on every screen in the app that mounts one. */
+  --cap-shift: 0px;
+  /* STILL BARE, deliberately: its one `calc()` consumer is `.word-input`, whose padding
+     has always computed to 0 through exactly this bug, and giving it units restores an
+     8px inset that would push Word mode's prompt off the alignment its board was built
+     on. Fixing that is a Word-mode decision, not a units one. */
   --text-shift: 0;
 
-  /* The halftone dot matrix's period (the body ground below). It stopped being a shared
-     canvas contract on 2026-08-17: BackgroundWaves is deleted and the CellDigits
-     watermark sizes from the viewport alone now, so this tunes only the ground's dots.
-     Smaller on narrow viewports (see the mobile media query). */
-  --cell: 24px;
   /* The on-screen keyboard's key geometry. Here rather than on `.keyboard` because the ROW
      width it produces (10 keys + 9 gaps) is mirrored by Word mode's guess prompt, which must
      be exactly as wide as the keys. */
@@ -129,22 +138,11 @@ body,
 }
 
 body {
-  /* App-wide backdrop (2026-08-17, replacing the graph-paper grid + the animated Perlin
-     waves; the ambiance layers deepened the same day): a print GROUND built from three
-     static layers — the fine HALFTONE DOT matrix (one soft paper dot per --cell), a faint
-     cobalt SKY GLOW washing down from the top edge plus two faint corner ORBS — violet
-     and cobalt (the orange orb left with the orange accent, 2026-08-18) —
-     and the poster-black ground. ONE halftone texture and the radial glows are the whole
-     ambiance (user-tuned 2026-08-17: a film-grain overlay and an edge dot-vignette each
-     lived here for a few hours and were both removed on review — the single dither plus
-     the gradients is the look). Static on purpose: the calm look has no ambient motion. */
-  background:
-    radial-gradient(circle, rgba(244, 241, 232, 0.055) 1px, transparent 1.6px) 0 0 / var(--cell)
-      var(--cell),
-    radial-gradient(120% 80% at 50% -20%, rgba(24, 76, 244, 0.16), transparent 62%),
-    radial-gradient(70% 55% at 100% 105%, rgba(139, 69, 234, 0.10), transparent 70%),
-    radial-gradient(60% 50% at -5% 105%, rgba(24, 76, 244, 0.09), transparent 70%),
-    var(--bg);
+  /* App-wide backdrop (user-decided 2026-09-01, the rebrand: the grain shipped twice
+     and was dropped — "more simple, more clean, more basic"): ONE FLAT near-black
+     sheet, nothing else. No texture, no gradients, no ambient anything; the content's
+     own vivid accents are the only colour on the ground. */
+  background: var(--bg);
   color: var(--fg);
   /* The CHROME face is the default (2026-08-18); every game surface pins the pixel font
      itself. */
@@ -172,6 +170,17 @@ body {
 button,
 button * {
   text-shadow: none;
+}
+/* NO TAP FLASH, ANYWHERE (user-reported 2026-09-02: tapping a header key "makes a blue
+   square appear for a short moment"). Chrome's default `-webkit-tap-highlight-color` is
+   `rgba(51, 181, 229, 0.4)` — a translucent CYAN box the shape of the control — painted
+   on touch by the browser, over a UI that draws its own press states and nothing else.
+   App-wide rather than per control: buttons here are pointer-only (`buttonFocus.ts`
+   keeps them out of the tab order and blurs any focus), so there is no surface that
+   wants it. Three buttons — the hole, the solved word, the wheel row — each carried
+   their own copy of this line; they are the same rule said three times and are gone. */
+button {
+  -webkit-tap-highlight-color: transparent;
 }
 
 .app {
@@ -292,44 +301,6 @@ button * {
   }
 }
 
-/* TORN EDGES, the scrollbar's twin: worn by the FRAME around a scroller whose drawing runs
-   taller than its window (Word mode's board #156; the onboarding's routes teaser wore them
-   first, until its 2026-08-11 retirement). The
-   window is smaller than the line on every real board, and an edge that simply ends reads as
-   the end of the map — so the side that still has line beyond it is torn, with the same
-   9px-on, 9px-off rule the route map's parked separator wears, meaning
-   the same thing here: it does not continue straight through. Which sides those are is the
-   scroll position's business (hooks/useScrollEdges), handed back as `more-up` / `more-down`.
-
-   Two structural requirements on anyone wearing it. The rules sit just OUTSIDE the window
-   (anchored past its edges), never over it: inside, the tear covered the outermost row instead
-   of marking where the window cuts. And they must live on a NON-SCROLLING parent of the
-   scroller — a pseudo-element inside a scroller scrolls away with the content — which is why
-   both surfaces are two boxes, a frame around a scroller. */
-.scroll-torn {
-  position: relative;
-}
-.scroll-torn::before,
-.scroll-torn::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: repeating-linear-gradient(90deg, var(--surface) 0 9px, transparent 9px 18px);
-  pointer-events: none;
-  opacity: 0;
-}
-.scroll-torn::before {
-  bottom: 100%;
-}
-.scroll-torn::after {
-  top: 100%;
-}
-.scroll-torn.more-up::before,
-.scroll-torn.more-down::after {
-  opacity: 1;
-}
 
 .sr-only {
   position: absolute;
@@ -368,8 +339,6 @@ button * {
   width: 64px;
   height: 60px;
   color: var(--solve);
-  filter: drop-shadow(0 0 12px rgba(74, 106, 255, 0.65))
-    drop-shadow(0 0 36px rgba(139, 69, 234, 0.45));
 }
 
 .chooser-list {
@@ -453,12 +422,11 @@ button * {
   gap: 3px;
 }
 .chooser-cells i {
-  background: rgba(244, 241, 232, 0.07);
+  background: rgba(255, 255, 255, 0.07);
   border-radius: 1px;
 }
 .chooser-cells i.on {
   background: currentColor;
-  box-shadow: 0 0 7px color-mix(in srgb, currentColor 60%, transparent);
 }
 
 /* Today's status strip (width + color set inline: % on the heat ramp, full gold
@@ -495,39 +463,6 @@ button * {
   flex-direction: column;
   justify-content: center;
   padding-top: 70px;
-}
-
-/* The streak hero (moved here from the header, 2026-07-21): flame + count centered
-   above the calendar the streak is made of. A stat headline — the flame IS the label
-   (no copy), 4x pixel scale of the 8x10 source, the count the page's biggest figure. */
-.archive-streak {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  margin-bottom: 28px;
-  font-family: var(--ui);
-  color: var(--fg);
-}
-/* The hero's box while the private collection (#211) has not arrived: laid out, unpainted.
-   `visibility` rather than `opacity` so nothing of it is readable at any moment, and the
-   digit inside keeps the box exactly the height the real count will take. */
-.archive-streak-pending {
-  visibility: hidden;
-}
-.archive-streak-flame {
-  display: block;
-  width: 32px; /* 4 × the 8x10 source */
-  height: 40px;
-  image-rendering: pixelated;
-}
-.archive-streak-count {
-  font-size: 38px;
-  font-weight: 300;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  /* Optical correction: the flame's visual mass sits low. */
-  transform: translateY(2px);
 }
 
 /* Month navigation, clamped to [first puzzle month, current month] — the ‹ › ends dim
@@ -833,11 +768,13 @@ button * {
   flex-direction: column;
   align-items: center;
   gap: clamp(16px, 2.4vh, 24px);
-  /* Bottom only: 10px keeps PLAY off the screen's bottom edge — the same offset the solved
-     results and the tutorial's button take over the keyboard's own flush fit. NO side
-     padding: the app's frame inset is already the margin, and doubling it left the box and
-     PLAY 40px narrower than the tutorial's own button (measured before the fix). */
-  padding: 0 0 10px;
+  /* NO padding at all. It carried 10px at the bottom "to keep PLAY off the screen's edge —
+     the tutorial's own offset", but that offset is `.mix-btn`'s OWN phone margin, which PLAY
+     already wears: the two stacked, and PLAY sat 10px higher than MIX and INVITE on every
+     screen size (measured 24 against 14 on a phone, 34 against 24 on desktop, 2026-09-02).
+     No side padding either: the app's frame inset is already the margin, and doubling it
+     left the box and PLAY 40px narrower than the tutorial's own button. */
+  padding: 0;
 }
 /* What the gate's tap will DESTROY (#217): the run this daily already holds on another
    device. Coach copy's voice — a sentence, not a label, so it keeps sentence case out of
@@ -887,7 +824,7 @@ button * {
   position: absolute;
   width: 14px;
   height: 14px;
-  border: 1.5px solid rgba(244, 241, 232, 0.3);
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
 }
 .df-tl {
   top: 10px;
@@ -966,37 +903,66 @@ button * {
   font-family: var(--ui);
   pointer-events: none;
 }
-/* THE GLASS BAND (finalized 2026-08-18, superseding the no-band floating chips — that
-   rule guarded against boxes over the old ANIMATED waves; over the static ground the
-   dialogs' own glass is what keeps the controls legible without simplifying the
-   backdrop). Mobile-first: a full-bleed slim band with one hairline bottom edge; on
-   desktop it FLOATS, capped and rounded, just inside the device frame's brackets.
-   Three explicit grid slots (left status / centre tabs / right controls), so a missing
-   slot never shifts its neighbours — ModalHeader reuses the same classes with no
-   centre. */
+/* THE BAND WAITS FOR SCROLL (user-decided 2026-09-01, amending the 2026-08-18 glass
+   band): at REST the header is TRANSPARENT — no glass, no hairline, no blur — sitting
+   directly on the dark grain ground, and the band arrives only once the screen under it
+   has actually scrolled (`.topbar.scrolled`, set by TopBar's own capture-phase scroll
+   listener), the moment content could otherwise pass beneath the controls. WHAT ARRIVES
+   IS THE GROUND, NOT A BOX (user-decided 2026-09-01, superseding the glass + hairline
+   band the same day): the whole width of the screen behind the row fills with flat
+   `--bg`, and a short vertical gradient from `--bg` to transparent hangs UNDER it, so
+   content scrolling up fades into the ground before it reaches the controls — no
+   border, no blur, no rounded float. Both are pseudo-elements of `.topbar` itself (the
+   full-width fixed layer), faded in by opacity so nothing ever shifts; `.topbar-inner`
+   keeps only its geometry.
+   TWO slots since 2026-08-30 (left: which puzzle, or the screen's own name as its way
+   back; right: the app's places, the current one lit). The centre went with the mode
+   tabs — see PuzzleTitle for what the collision cost. ModalHeader reuses the classes —
+   and is therefore BANDLESS now on its flat --bg dialogs, which is the row's original
+   "no band, directly on the backdrop" reading come back. */
 .topbar-inner {
   position: relative;
   margin: 8px auto 0;
   width: min(900px, calc(100vw - 48px));
   height: 50px;
   display: grid;
-  /* `minmax(0, …)` and not a bare `1fr`: a bare fr floors each side track at its
-     MIN-CONTENT, so a group too wide for its share pushes the whole grid past its own
-     fixed-width box — and on a phone `body { overflow-x: hidden }` then CLIPS the
-     right group's tail, taking a control off the screen entirely. With a zero floor the
-     grid always fits its box, so a squeezed group overlaps its neighbour (still
-     reachable) instead of disappearing. Free space still splits evenly, so the centre
-     stays truly centred and a missing slot still shifts nothing. The real budget is
-     kept by the narrow-phone step-down at the bottom of this file. */
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  /* The LEFT track takes what is left over and the RIGHT track is its own size: the
+     keys are icons and may never shrink, while a title can give ground (it ellipsises
+     rather than pushing a control off a 320px screen — `body { overflow-x: hidden }`
+     would CLIP the group's tail, taking a control off the screen entirely). `minmax(0,
+     1fr)` and not a bare `1fr`, since a bare fr floors the track at its MIN-CONTENT and
+     the whole grid would grow past its own fixed-width box. The real budget is kept by
+     the narrow-phone step-down at the bottom of this file. */
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   padding: 0 8px;
-  background: var(--glass);
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
   pointer-events: auto;
+}
+/* The ground behind the row, and the fade under it. The height the fade runs is the one
+   number here; both layers ride the scrolled state on opacity alone. */
+.topbar::before,
+.topbar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.topbar::before {
+  top: 0;
+  bottom: 0;
+  background: var(--bg);
+}
+.topbar::after {
+  top: 100%;
+  height: 36px;
+  background: linear-gradient(to bottom, var(--bg), transparent);
+}
+.topbar.scrolled::before,
+.topbar.scrolled::after {
+  opacity: 1;
 }
 /* The header's two corner groups sit DIRECTLY on the backdrop — no chip background/blur
    (removed 2026-07-21: boxes read as floating rectangles over the animated waves); the
@@ -1006,6 +972,10 @@ button * {
 .topbar-left {
   grid-column: 1;
   justify-self: start;
+  /* The track that gives ground: it may never grow past its column, or a long title
+     overlaps the keys instead of ellipsising inside its own box. */
+  min-width: 0;
+  max-width: 100%;
   display: inline-flex;
   align-items: center;
   gap: 14px;
@@ -1013,45 +983,29 @@ button * {
   padding: 0 4px;
   pointer-events: auto;
 }
-.topbar-center {
-  grid-column: 2;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
 /* The header's right controls: the game's "?" help (replays the tutorial) and the
    tutorial's fast-forward (skip) — both inline pixel-art icons. Buttons don't inherit
    color, so the muted tint is explicit; both brighten to --fg on hover. */
 /* ONE ink for the chrome (user-decided 2026-08-18, third pass): the icons sit in the
    page's own foreground — hierarchy is weight and the .home-btn opacity lift, never a
    second grey. */
+.home-btn,
 .help-btn,
-.board-btn,
-.topbar-skip {
+.board-btn {
   color: var(--fg);
 }
-/* Icon policy (revised 2026-08-18 with the modern chrome): TWO icon families, one per
-   voice. `.ui-icon` is the CHROME set — 24-grid stroke icons (1.8px, round caps,
-   currentColor, no fill) — worn by every header/modal control; it keeps its size IN the
-   .svg file (width/height beside the viewBox), so an icon's size stays a single source
-   of truth. The PIXEL icons survive only where the surface is a PLAY surface: the
-   keyboard's enter/backspace glyphs, which carry their own `.kb-icon` sizing +
-   crispEdges (the old standalone `.pixel-icon` class left with its last consumer). */
+/* Icon policy (revised 2026-09-02): ONE icon family, and it is PIXEL. `.ui-icon` is
+   the CHROME set — the header's four places (house, calendar, crown, rules page), the
+   title's chevron, the back arrow and the dialogs' ✕ — drawn as MARKS on the avatar's
+   own 10×10 grid (the chevron on 7×7, the back arrow the keyboard's own 11×7), one cell
+   = 2px, `currentColor` fill, crispEdges. That is what made the row the brand's rather
+   than a borrowed set: the 2026-08-18 Lucide strokes were unrecognisable beside a pixel
+   face. Each file keeps its size IN the .svg (width/height beside the viewBox — 20px for
+   a 10-cell mark, the face's exact size), so an icon's size stays a single source of
+   truth. The keyboard's enter/backspace glyphs are the same grammar with their own
+   `.kb-icon` sizing. */
 .ui-icon {
   display: block;
-}
-
-/* The header's Whippin mark (the mode chooser's glyph): the user-drawn SVG (2026-08-18,
-   replacing the header's last pixel artifact) in its own cobalt with a small glow — the
-   one lit object in the icon row, the way the macropad's logo key glows on the device.
-   It keeps its own ink rather than the group's currentColor, and takes .home-btn's
-   opacity/brightness hover. */
-.mode-icon {
-  display: block;
-  width: 30px;
-  height: 28px;
-  color: var(--solve);
-  filter: drop-shadow(0 0 8px rgba(74, 106, 255, 0.7));
 }
 
 /* The header's single action group, floating top-right: streak stat, language flag,
@@ -1059,88 +1013,35 @@ button * {
    gap — enough that glyphs don't read as one control, while the group still coheres.
    Re-enables pointer events under the click-through .topbar layer. */
 .topbar-right {
-  grid-column: 3;
+  grid-column: 2;
   justify-self: end;
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  /* 4px between keys (from 2): with 22px icons in the boxes each key carries its own
+     air, and the gap only has to keep them from reading as one control. */
+  gap: 4px;
   padding: 0;
   pointer-events: auto;
 }
-/* The SEGMENTED MODE SWITCHER (2026-08-18): both dailies, the active one marked by the
-   app's inverted selection box — a delicate hairline group, the header's centre. */
-.mode-tabs {
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-}
-.mode-tab {
-  border: 0;
-  background: transparent;
-  color: var(--fg);
-  opacity: 0.55;
-  font-family: var(--ui);
-  font-size: 11px;
-  /* WEIGHT is the state (2026-08-18): light at rest, bold in the box — the mono's
-     fixed advance means the swap moves nothing. */
-  font-weight: 430;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  line-height: 1;
-  padding: 6px 10px 5px;
-  border-radius: 2px;
-  cursor: pointer;
-  text-shadow: none;
-  transition: opacity 0.1s linear, background-color 0.1s linear, color 0.1s linear;
-}
-.mode-tab:not(.active):hover {
-  opacity: 0.9;
-}
-.mode-tab.active {
-  background: var(--fg);
-  color: var(--bg);
-  opacity: 1;
-  font-weight: 700;
-  cursor: default;
-}
-/* The language CODE chip (2026-08-18, replacing the languages glyph): two mono letters,
-   no fill — the header's most delicate control. */
-.lang-chip {
-  font-family: var(--ui);
-  font-size: 12px;
-  font-weight: 480;
-  letter-spacing: 0.1em;
-  line-height: 1;
-}
-/* The help control is a bare `?` GLYPH (user-decided 2026-08-18, replacing the Lucide
-   circle-help — "terrible"): the mono's own question mark beside the lang chip, at its
-   own 17px (user-tuned — a lone glyph needs more size than two letters to carry the
-   same weight), same 480. */
-.help-chip {
-  font-family: var(--ui);
-  font-size: 17px;
-  font-weight: 480;
-  line-height: 1;
-}
-/* The language chip and the contextual controls: one ink, the .home-btn opacity lift as
-   the hover. */
-.lang-btn,
-.archive-btn,
-.archive-close {
-  color: var(--fg);
-}
-
+/* The help control is an OPEN BOOK (`book.svg`, 2026-08-31): the rules. It was a bare
+   text `?` — the mono's own glyph at 17px, chosen 2026-08-18 over Lucide's circle-help —
+   which beside stroke icons was a letterform among drawings, on a baseline they do not
+   share (user feedback: the header "gets even worse when the ? is there"); a drawn `?`
+   lived for one commit and was still the odd shape out — a mark where every other key is
+   an OBJECT (a house, a calendar, a crown). The book is an object of the same family. */
 /* The screen title ("ARCHIVE", "TUTORIAL") — lives in the top-LEFT status chip, the
    same corner the game gives its percentage (decided 2026-07-21; formerly absolutely
    centered). */
-/* A screen's NAME as plain bold type (user-decided 2026-08-18, dropping the inverted
-   chip once the glass band arrived — a filled block INSIDE the band read heavy; the
-   inverted box stays the ACTIVE-TAB marker's alone). Worn by ARCHIVE, TUTORIAL and the
-   modal titles alike (ModalHeader reuses this class). */
+/* A screen's NAME. Plain type by itself (ModalHeader reuses this class on its flat
+   dialogs); IN THE HEADER it is a HELD WORD — see the chip rule below. */
 .topbar-title {
-  font-size: clamp(12px, 1.9vh, 14px);
+  /* ONE SIZE, ON EVERY SCREEN (user-decided 2026-08-31). It was a viewport clamp
+     (12–14px) that two phone step-downs then overrode for the puzzle title and the back
+     control alone — so COMPTE sat at 14px while PROFIL, one tap inside it, sat at 11. A
+     screen's name is the same kind of thing on every screen; 12px is the chrome's own
+     small-caps size (the board tabs, the quiet actions), and it is what the tightest row
+     holds: at 320px the flow's longest name beside the fixed five keys. */
+  font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1148,6 +1049,26 @@ button * {
   padding: 5px 4px 4px;
   text-shadow: none;
   font-variant-numeric: tabular-nums;
+  /* ONE LINE, always. The band is a fixed slim row, so a title that wraps does not get
+     taller — it pushes the bar out of shape. It never came up while every title was a
+     single word; the flow's two-word names (`SAVE ACCOUNT`, `SE CONNECTER`) broke at 320px
+     and took the control from 49px to 65. */
+  white-space: nowrap;
+}
+/* THE HEADER'S TITLE IS A HELD WORD (user-decided 2026-09-02: "a --fg background, like on
+   the hole words"): the sentence chip — `--fg` ground, `--bg` ink, square, no print — on
+   the name of what you are looking at. The 2026-08-18 verdict that a filled title read
+   heavy was about a chip INSIDE a glass band; the band is gone (the header sits on the bare
+   ground at rest), and the chip is now the app's one emphasis gesture worn by the one
+   thing the header is about. Laid out, not drawn: unlike the sentence's, this chip has
+   room to take — the row's centre is empty. */
+.topbar .topbar-title {
+  display: inline-block;
+  padding: 5px 7px 4px;
+  line-height: 1;
+  background: var(--fg);
+  color: var(--bg);
+  font-weight: 600;
 }
 
 /* Logo doubles as the home button, sitting at the left of the HUD beside the bar.
@@ -1165,65 +1086,262 @@ button * {
   border-radius: var(--r-sm);
   cursor: pointer;
   overflow: hidden;
-  opacity: 0.85;
-  transition: opacity 0.12s ease, filter 0.12s ease, background-color 0.12s ease;
+  /* FULL --fg at rest (user-decided 2026-09-01): an unlit key is still a key — the LIT
+     place is said by the dot under the row, never by dimming everything else. */
 }
-.home-btn:hover {
-  opacity: 1;
-  filter: brightness(1.2);
-  /* A whisper of a chip under the hovered control — modern chrome's hover, without
-     breaking the no-band header (nothing paints until touched). */
-  background-color: rgba(244, 241, 232, 0.06);
-}
-/* (The masked globe.png died with the pixel header, 2026-08-18: the language control is a
-   `.ui-icon` stroke globe now, inheriting the group's muted -> --fg hover like every other
-   inline SVG in the row.) */
-
-/* WHICH DAY is being played (user-decided 2026-08-16, replacing the reconstruction-%
-   counter that held this corner): the day's calendar date, spelled the way every other
-   surface spells a day. It is CHROME, not a stat — `.topbar-title`'s muted weight and its
-   optical downshift, and none of the counter's live ramp colour.
-   Sized for the LEFT CORNER'S REAL BUDGET, which the counter's four glyphs never tested:
-   ten glyphs plus the group's own padding have to clear the mode tabs AND the right
-   group's controls (THREE of them on a game route since #190's leaderboard crown). The
-   whole row's arithmetic — and the narrow-phone step-down that keeps it inside a 320px
-   screen — is at the bottom of this file, under "THE NARROW-PHONE HEADER BUDGET". */
-/* The date, plain bold type like the screen titles (one left-corner treatment; both
-   dropped the inverted fill 2026-08-18 with the glass band — the box is the active
-   tab's alone now) — and the chip IS the ARCHIVE BUTTON: tap the day to change the day
-   (see PuzzleDate). The ▾ tick carries the affordance; hover gets the header's own
-   whisper chip. */
-.puzzle-date {
+/* THE TWO DOTS (user-decided 2026-09-01, replacing the hover chip and the held LIT chip):
+   no box lights up under a key. A FG dot sits under the LIT place; a SECONDARY (--muted)
+   dot travels to a hovered key and back under the fg dot on leave; a click brings the fg
+   dot over to land ON TOP of it. Translations, never appearances — HeaderKeys positions
+   both; `.hk-row` is the frame it measures against. */
+.hk-row {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-family: var(--ui);
-  font-size: 14px;
-  line-height: 1;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  color: var(--fg);
+  gap: inherit;
+}
+/* THE DOT HANGS A FIXED DISTANCE UNDER THE DRAWING, not off the key box (user-reported
+   2026-09-02: "the selection dot is a bit too close to the icons"). A key is
+   `--hud-height` tall around a 20px icon, and that height steps DOWN twice on narrow
+   phones while the icon does not — so a fixed `bottom` measured the gap from the wrong
+   edge and it shrank with the screen: 4px at 38, a measured 1px at 32, and touching at
+   30. What the eye reads is the air under the drawing, so that is what the rule states,
+   and the key box is free to change size around it. `--hk-icon` is the icons' own
+   in-file size (20px = their 10-cell grid at 2px a cell). */
+.hk-dot {
+  --hk-icon: 20px;
+  --hk-gap: 7px;
+  --hk-size: 4px;
+  position: absolute;
+  left: 0;
+  bottom: calc((var(--hud-height) - var(--hk-icon)) / 2 - var(--hk-gap) - var(--hk-size));
+  width: var(--hk-size);
+  height: var(--hk-size);
+  background: var(--fg);
+  border-radius: 1px;
+  pointer-events: none;
+  transition: transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: transform;
+  z-index: 2;
+}
+.hk-dot-hover {
+  background: var(--muted);
+  z-index: 1;
+}
+.home-btn.on {
+  cursor: default;
+}
+
+
+/* WHICH PUZZLE, as the header's left slot (2026-08-30 — the reasoning is in
+   PuzzleTitle). The daily's name as the held-word chip, the day and the chevron standing
+   outside it the way a hole's exponent does. The button is only the finger's target
+   around them: it draws nothing of its own. */
+.puzzle-title {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+  /* A <button> inherits NO font, and `.topbar-title` sets only a size and a weight — so
+     without this the daily's name renders in the UA's Arial while every other chrome
+     label is the app's mono. The same fix `.topbar-back` carries, for the same reason. */
+  font: inherit;
   background: transparent;
   border: 0;
-  padding: 5px 8px 4px 6px;
-  border-radius: var(--r-sm);
+  color: var(--fg);
+  padding: 4px 4px 4px 0;
   cursor: pointer;
-  text-shadow: none;
+}
+.puzzle-title .topbar-title {
+  /* The title is the track that gives ground: the keys are icons and may not shrink, so
+     a title with nowhere left to go ellipsises rather than pushing a control off the
+     screen. Measured, it never gets there — this is the floor, not the plan. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Hover and press answer on the CHIP, the hole's own way (the hole's exact mixes): a
+   white chip cannot brighten, so it dims a step instead. Both clickable titles. */
+.puzzle-title:hover .topbar-title,
+.topbar-back:hover .topbar-title {
+  background: color-mix(in srgb, var(--fg) 80%, var(--bg));
+}
+.puzzle-title:active .topbar-title,
+.topbar-back:active .topbar-title {
+  background: color-mix(in srgb, var(--fg) 68%, var(--bg));
+}
+.puzzle-title .ui-icon {
+  flex: none;
+}
+/* THE DAY, and only on a day that is not today (PuzzleTitle's rule: the abnormal state
+   is the one that is labelled). Quieter than the name it qualifies — it is which of a
+   thing, not what the thing is — and OUTSIDE the chip, like an exponent. */
+.puzzle-title-day {
+  /* Same size as the name (one title size — stated here because the day no longer sits
+     inside the chip's own rule and would inherit the body's 16px), quieter in ink, weight
+     — and tracking: a qualifier set as tight as its headline reads as a second headline. */
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   font-variant-numeric: tabular-nums;
-  /* One line always: at 320px the centred tabs squeeze the left grid track and the ISO
-     date wrapped at its hyphens (review 2026-08-18) — nowrap raises the track's
-     min-content to the whole string, which the band's budget holds (~283px of 320). */
+  color: var(--muted);
   white-space: nowrap;
-  transition: background-color 0.1s linear;
 }
-.puzzle-date:hover {
-  background: rgba(244, 241, 232, 0.06);
+
+/* THE PLAYER'S FACE, at the corner every avatar lives at. It keeps the key group's box
+   so the row's arithmetic does not care that one key is a drawing; the mark sits inside
+   at the icons' own 20px, which is their own 2px a cell. */
+.account-key {
+  /* One more gap than the keys keep between themselves: the face is not the fourth tool
+     in a toolbar, it is WHO is holding it. */
+  margin-left: 4px;
 }
-.pd-tick {
-  font-size: 8px;
-  opacity: 0.65;
-  translate: 0 -1px;
+/* THE FACE IS A BARE PIXEL TILE — the same 10-cell grid at the same 2px a cell as the four
+   marks beside it, and nothing else (user-decided 2026-09-02, in two steps: square corners,
+   then "remove the box shadow"). It ends a year of dressing:
+   a 26px square almost filling its key (2026-08-31), then that square inside a 1px
+   `--line-strong` ring on a 3px radius. Every layer was answering the same worry — that a
+   drawing among line icons needs an edge to belong — and the pixel-icon rewrite settled it
+   the other way: the row IS cell drawings now, so the face belongs by being one. Measured,
+   the cell sizes were already identical; what the ring did was make the face's footprint 22
+   against the icons' 20, which is the difference the eye was actually reading.
+   ONE CONSEQUENCE, accepted: COBALT is the only palette with a dark ground (#222431 on a
+   #050507 header, ~1.3:1), so its tile no longer has a boundary — it reads as blue cells
+   floating on the band, which is exactly how the four white marks beside it read.
+   The corners are square for the same reason, and the tile's OWN corner is cut INSIDE the
+   SVG, so `Avatar` is asked for a `sharp` one here (its header holds that arithmetic).
+   `overflow: visible` went with the ring: it existed so a box-shadow could paint outside
+   the key, and the key's shared `hidden` now clips nothing. */
+.account-key svg {
+  display: block;
+  width: 20px;
+  height: 20px;
 }
+/* HOLDS ITS BOX until the face settles — the leaderboard strip's rule, and it matters
+   more here, where the control is on screen every day. Square like the tile it stands in
+   for: a placeholder that rounds where the drawing does not is a shape change on arrival. */
+.account-key-slot {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+
+/* ===================== the puzzle selection ===================== */
+/* The title's selection (2026-09-02, four passes — the reasoning is in PuzzleSelect): the
+   hole wheel's fade in and out (`.wheel-dialog`) on FLAT `--bg`, every full-screen
+   dialog's ground, under the app's header row with a BACK CHEVRON in its left slot; and
+   in the middle of the screen TWO DRUMS side by side, the DAILY's and the LANGUAGE's,
+   each a column scrolling through a slot on one shared line — the row in the slot in the
+   title's chip at a size the middle of a screen can carry, the others plain. Every number
+   that has to agree — the row height, the pitch, the slot — is set inline from one
+   measured chip; the CSS owns the dress. */
+/* Doubled with `.wheel-dialog` on purpose: the wheel's own `[open]` rule sets the dim and
+   sits later in this file, so at equal specificity it would win. */
+.wheel-dialog.puzzle-select[open] {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--ui);
+  background: var(--bg);
+}
+/* The way back: the title's own chevron, turned to point out, in the left slot where a
+   back control belongs. */
+.ps-back {
+  width: var(--hud-height);
+  color: var(--fg);
+}
+.ps-back:hover {
+  color: var(--muted);
+}
+/* The probe: one chip in the rows' dress, out of the way, that the drums measure their
+   row height off. */
+.ps-probe {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+}
+.ps-cols {
+  display: flex;
+  align-items: flex-start;
+  gap: 56px;
+  /* Centred in what the header leaves — auto margins, so the header keeps its own row. */
+  margin: auto;
+  padding: 24px 24px 72px;
+}
+/* A DRUM: a clipped box whose track the component translates by hand (no native
+   scrolling, `touch-action: none`), rows one GAP apart, both ends fading so a row
+   arrives out of the dark rather than cut by an edge. */
+.ps-drum {
+  position: relative;
+  overflow: hidden;
+  touch-action: none;
+  overscroll-behavior: contain;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 44px, #000 calc(100% - 44px), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 44px, #000 calc(100% - 44px), transparent);
+}
+.ps-track {
+  will-change: translate;
+}
+/* A ROW: the option in the title's own dress at a larger size — same face, weight,
+   tracking and case as the header chip, the chip's padding in `em` so it scales with the
+   type. The one in the slot wears the chip; the chip hands itself from row to row on a
+   short cross-fade as the drum turns. Rows arrive on the wheel's own stagger, counted out
+   from the slot (`--i`). */
+.ps-row {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--fg);
+  cursor: pointer;
+  animation: wheel-row-in 120ms ease-out both;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}
+.ps-chip {
+  display: inline-block;
+  padding: 0.4em 0.55em 0.33em;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--fg);
+  transition: background-color 120ms linear, color 120ms linear;
+}
+.ps-row.on .ps-chip {
+  background: var(--fg);
+  color: var(--bg);
+}
+/* The app's one interaction language on a plain row: a whisper of ground under it. The
+   slot row answers a press the chip's way. */
+.ps-row:not(.on):hover .ps-chip {
+  background: rgba(255, 255, 255, 0.1);
+}
+.ps-row.on:active .ps-chip {
+  background: color-mix(in srgb, var(--fg) 68%, var(--bg));
+}
+@media (max-width: 640px) {
+  .ps-cols {
+    gap: 36px;
+  }
+  .ps-chip {
+    font-size: 18px;
+  }
+}
+@media (max-width: 360px) {
+  .ps-cols {
+    gap: 24px;
+  }
+  .ps-chip {
+    font-size: 16px;
+  }
+}
+
 /* --- giant score watermark, always behind the play content --- */
 .progress-background {
   /* absolute (not fixed) so it is anchored to its relative wrapper — .phrase-anchor,
@@ -1233,7 +1351,7 @@ button * {
      HALO (2026-08-17 — the old grid-cell quantization and grid snapping served the
      deleted Perlin field): it centers on this box and overflows it symmetrically, which
      is exactly "behind the sentence", and the halo it paints is what fades the ground's
-     halftone dither out around the score. The watermark opacity is baked into the
+     grain out around the score. The watermark opacity is baked into the
      canvas paint (CellDigits INK_ALPHA), NOT set here: the ink blocks are opaque
      underneath so the dither can never show through a stroke. */
   position: absolute;
@@ -1242,13 +1360,16 @@ button * {
   pointer-events: none;
   user-select: none;
 }
-/* The digit canvas: left/top/size are set by CellDigits so its cells land on the same
-   --cell grid the body outlines and BackgroundWaves lights; it paints in currentColor —
+/* The digit canvas: left/top/size are set by CellDigits (viewport-sized since
+   2026-08-17); it paints in currentColor —
    the accent blue, faded to watermark level by the canvas itself (INK_ALPHA), never by
    element opacity (which would re-translucify the wave-occluding base). */
 .cell-digits {
   position: absolute;
-  color: var(--muted);
+  /* `--fg` at the canvas's own 20% (CellDigits INK_ALPHA), user-decided 2026-09-01: the
+     ground's own white mixed into the ground, where `--muted` put a blue-grey cast on the
+     one shape that must not draw the eye. */
+  color: var(--fg);
 }
 
 /* --- sentence --- */
@@ -1299,7 +1420,6 @@ button * {
   margin: 0;
   white-space: nowrap;
   cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
 }
 /* The global `button *` flattening would otherwise strip the phrase's drop shadow from
    the holes alone, leaving them lighter than every word around them. */
@@ -1326,41 +1446,72 @@ button * {
 .hole-word {
   color: var(--hole);
 }
-/* THE OPEN BLANK (user-decided 2026-08-17): a hole is a fill-in-the-blank, and the
-   dashed line under the held word is what SAYS so — the "not yet" said in the word's
-   DRESS, in the app's own dash vocabulary (the route's broken trace, the tail out of the
-   void) — and the line vanishes exactly when the word locks in (`.resolved`, below), so
-   a found word stands free. Sits below the pixel font's descender row.
-   It anchors to `.hole-word-wrap` — the STATIC box the floating hit also anchors to —
-   and NOT to `.hole-word`, deliberately (user-reported 2026-08-17): the hit-shake rides
-   `.hole-word`, and a line anchored there shook with the word. The wrap never moves and
-   is sized to the word, so the blank holds still under the shake and still follows the
-   word's width through every scramble. Scoped under `.hole`: the solved screen's words
-   reuse `.hole-word-wrap` and must never grow a blank — and the TUTORIAL none at all
-   (below): MixWord's demo hole is a lesson prop, not a blank to fill. The line HUGS the
-   word: INSIDE the wrap box's bottom edge (user-tuned 2026-08-17, walked in from -6
-   through -4 and -2 — the pixel font sits high in its em box with a near-empty descender
-   row, so even flush-under-the-box read closer to the next line than to its own word;
-   riding the box's last 2px puts it against the ink, and the rare descender tail simply
-   crosses it). */
-.hole .hole-word-wrap::after {
+/* THE HELD WORD IS AN INVERTED CHIP (user-decided 2026-09-01, superseding the coloured
+   word — and the dashed OPEN BLANK before it): `--fg` ground, `--bg` ink. The app's one
+   emphasis gesture, spent on the one thing the round is about; a solve INKS IT IN and the
+   chip goes, leaving the cobalt word standing free.
+
+   ITS PADDING IS DRAWN, NEVER LAID OUT. The chip is an absolutely positioned pseudo, so
+   it contributes NOTHING to the sentence's measure: the 6px it takes on each side is the
+   space the phrase already holds between words (a Press Start 2P cell is a full 1em — 30px
+   desktop, so a chip eats a fifth of it), and the 4px above and below is the line's own
+   half-leading (7.5px at the phrase's 1.5). That is the whole point of the pseudo: at the
+   solve it is REMOVED, and not one letter of any other word can move — proven by toggling
+   it off and diffing every `offsetLeft/Top/Width` in the phrase: zero boxes move.
+
+   IT IS SIZED IN `em`, so 4px/6px is what it measures at the sentence's full 30px and the
+   chip SCALES WITH THE TYPE IT WRAPS. Fixed pixels do not survive the phone: at ~16px the
+   4px chip came to 23.75px inside a 23.6px line box — TALLER THAN THE LINE — and two holes
+   on consecutive lines fused into one white block.
+
+   IT IS CENTRED AND SIZED IN `em`, NOT INSET. `.hole-word` is an inline box 1em tall AT
+   REST and an inline-BLOCK box a full line-height tall while `.hit-shake` runs (a transform
+   needs one) — so a top/bottom inset would grow the chip by the leading, 15px, on every
+   hit. Both boxes share the same CENTRE (the half-leading is symmetric, measured 278.4 vs
+   278.9), so the chip is centred on it at a fixed `1em + 8px`, and the hit cannot resize
+   it. `translate`, not a `transform` string: the shake's own transform must stay free.
+
+   It rides `.hole-word` and NOT the static `.hole-word-wrap` (where the retired blank
+   lived) precisely because the shake must carry it: the ink is `--bg`, so a letter that
+   left the chip would be a letter that vanished. */
+.hole:not(.resolved) .hole-word {
+  position: relative;
+  /* Contain the negative z-index: without a stacking context here the chip paints against
+     the nearest one, which is the page. */
+  isolation: isolate;
+  color: var(--bg);
+}
+.hole:not(.resolved) .hole-word::before {
   content: '';
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 2px;
-  background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 8px);
-  opacity: 0.55;
+  left: -0.2em; /* 6px at the sentence's 30px */
+  right: -0.2em;
+  top: 50%;
+  height: 1.267em; /* the word's own 1em, plus 4px above and below at that size */
+  translate: 0 -50%;
+  z-index: -1;
+  background: var(--fg);
 }
-.hole.resolved .hole-word-wrap::after {
-  display: none;
+/* The sentence's hard 2px black print is legibility ON THE GROUND; on the chip it is a
+   dark smear under near-black ink. The boosted selectors are what it takes to beat
+   `.phrase .hole-btn .hole-word .hole-letter`, which hits the letter spans directly. */
+.phrase .hole:not(.resolved) .hole-word,
+.phrase .hole:not(.resolved) .hole-word .hole-letter,
+.phrase .hole:not(.resolved) .hole-btn .hole-word .hole-letter {
+  text-shadow: none;
 }
-/* The tutorial teaches with the hole's own markup (MixWord) but its word is a DEMO, not
-   a blank the player fills — no open-blank line anywhere in the lesson (user-decided
-   2026-08-17; the coach text's hint words lost their mini-blank the same way). */
-.tutorial .hole-word-wrap::after {
-  display: none;
+/* Hover/press: the app's brighten does nothing to a white chip (and would cancel a dim
+   applied under it), so the chipped word opts out of it and the CHIP answers instead. The
+   exponent beside it keeps the brighten — it is still coloured ink. */
+.hole:not(.resolved) .hole-btn:not([disabled]):hover .hole-word,
+.hole:not(.resolved) .hole-btn:not([disabled]):active .hole-word {
+  filter: none;
+}
+.hole:not(.resolved) .hole-btn:not([disabled]):hover .hole-word::before {
+  background: color-mix(in srgb, var(--fg) 80%, var(--bg));
+}
+.hole:not(.resolved) .hole-btn:not([disabled]):active .hole-word::before {
+  background: color-mix(in srgb, var(--fg) 68%, var(--bg));
 }
 /* One letter of a hole's word. The word is ALWAYS drawn letter by letter (Hole splits it
    once, for the resting word and the scramble's frames alike) so the wave has something to
@@ -1397,6 +1548,26 @@ button * {
   50% {
     transform: translateY(-3px);
   }
+}
+/* THE TAIL CLEARS THE CHIP, AND IT CLEARS IT VISUALLY (2026-09-01). The exponent's box
+   starts 1px past the word (its own `margin-left`), so the chip's overhang swallowed 5px
+   of it — a third of the digit on desktop, over half on a phone, pink ink washed out on
+   white. The exponent is nudged clear instead of the chip being trimmed: the padding is
+   what was asked for, and the exponent is what must not sit on it. Any trailing suffix
+   moves WITH it, so the punctuation keeps its exact distance from the number instead of
+   being crowded by the nudge — the pair simply leans into the space on the far side, the
+   way the chip leans into the space on the near one.
+   `translate` and NOT a margin: a margin is layout, and the whole point of the chip is
+   that nothing it does moves a letter of the sentence. `translate` over a `transform`
+   string also leaves `transform` free for `rank-pop`, which still plays in place.
+   The exponent's own type is `0.55em`, so the chip's `0.2em` overhang is `0.2em / 0.55`
+   in ITS context — the division is the unit conversion, written out rather than resolved
+   to a number that would silently stop matching the chip. */
+.hole:not(.resolved) .hole-rank {
+  translate: calc(0.2em / 0.55) 0;
+}
+.hole:not(.resolved) ~ .word {
+  translate: 0.2em 0;
 }
 .hole-rank {
   /* inline-block (not inline) so the rank-pop transform applies; width fits the
@@ -1436,9 +1607,9 @@ button * {
 .solved-word-text .hole-letter,
 .word-subject-text,
 .word-subject-text .hole-letter {
-  text-shadow:
-    2px 2px 0 black,
-    0 0 0.3em color-mix(in srgb, currentColor 30%, transparent);
+  /* Rebrand 2026-09-01: the soft currentColor aura is gone — clean crisp ink, the
+     hard 2px print alone (it is legibility, not decoration). */
+  text-shadow: 2px 2px 0 black;
 }
 /* (THE VERTICAL INK GRADIENT the words wore from 2026-08-17 was RETIRED 2026-08-18:
    a background-clipped glyph is painted by its background, so no shadow can ever sit
@@ -1465,8 +1636,8 @@ button * {
     transform: translateY(0) scale(1);
   }
 }
-/* PEACE RESTORED: the pale draft is INKED IN — the solve blue, the gradient's own calm
-   terminus — and the open-blank line goes with the weirdness. */
+/* PEACE RESTORED: the vivid draft is INKED IN — the solve blue, the gradient's own
+   calm terminus. */
 .hole.resolved .hole-word {
   color: var(--solve);
 }
@@ -1526,12 +1697,24 @@ button * {
   font-family: var(--pixel-font);
   font-size: 28px;
   color: #fff;
-  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.5);
+  /* The GROUND's own ink as the print (user-decided 2026-09-02, from a half-black): the
+     number lands on a white chip as often as on the ground now, and a translucent shadow
+     read as a grey smear there where the hard `--bg` print reads as the sentence's own. */
+  text-shadow: 2px 2px 0 var(--bg);
   pointer-events: none;
   opacity: 0;
+
   animation:
     hit-pop-in 0.32s cubic-bezier(0.22, 1.4, 0.4, 1) var(--hit-delay, 0ms) forwards,
     hit-fade-out 0.52s ease-in var(--hit-fade-delay, 320ms) forwards;
+}
+/* ON THE TUTORIAL'S WORD THE HIT IS THE WORD'S OWN SIZE (user-reported 2026-09-02: "way
+   too small on desktop compared to the huge size of the word"): the lesson's one word is
+   48px on desktop where the sentence's are 30, and a fixed 28px number landing on it read
+   as a footnote. `1em` off the wrap it is positioned in — the word's size — keeps it 28
+   on a phone, where the word is. The game's own hits stay fixed: their words are one size. */
+.tutorial .floating-hit {
+  font-size: 1em;
 }
 @keyframes hit-pop-in {
   0% {
@@ -1612,8 +1795,9 @@ button * {
 /* ONE prompt for both games (2026-08-06): Word mode's larger, cropping prompt replaced the
    sentence game's own smaller clamp rather than living beside it — it is the same control
    doing the same job on both screens, and two sizes of it was a difference nothing asked for.
-   24px flat: walked down from 40 (which dominated the screen the board is supposed to own)
-   through 28, and still a clear step up from the 18px the old clamp gave a phone. */
+   Its SIZE is the SENTENCE's (user-decided 2026-09-01, superseding the flat 24px): the
+   prompt answers the phrase, so it wears the phrase's exact clamp at both breakpoints —
+   `.phrase` and `.word-input` must move together. */
 .word-input {
   position: relative;
   display: inline-flex;
@@ -1623,7 +1807,7 @@ button * {
   max-width: 100%;
   padding: calc(4px + var(--text-shift)) 8px calc(4px - var(--text-shift));
   font-family: var(--pixel-font);
-  font-size: 24px;
+  font-size: clamp(18px, 3.2vw, 30px); /* = .phrase */
   color: var(--fg);
   /* No native <input> to focus (issue #36): input comes from the on-screen keyboard
      and the physical keyboard, so the prompt never needs to hold a caret. */
@@ -1870,7 +2054,6 @@ button * {
   cursor: pointer;
   white-space: nowrap;
   text-shadow: 2px 2px 0 black;
-  -webkit-tap-highlight-color: transparent;
   opacity: 0;
 }
 /* The words POP in, one by one, 200ms apart (user-decided 2026-08-14): the round's
@@ -2251,19 +2434,16 @@ button * {
   color: var(--fg);
 }
 
-/* ===================== the route drawing + history modal ===================== */
-/* A hole's guess HISTORY (user-decided 2026-08-10, replacing the #117 route map — the drawn
-   neighborhood was rarely meaningful in practice, so the modal now answers the one question a
-   player actually brings to it: what have I tried, and how close was each?).
-
-   One list, closest first: the rank in a right-aligned heat-coloured gutter — the same ladder
-   of numbers the route map's "time" column taught, running hot to cold down the page — then
-   the word AS TYPED. MISS closes the list in its weird red, exactly the word that floated
-   over the hole when those guesses landed; the solving guess leads it in the solve cobalt.
-   Full-screen native dialog on the SOLID app background. The LIST has no
-   motion of its own past its entrance — the zoom below is about the transition into the modal,
-   and the cascade is about arrival, not about the list. */
-.history-dialog[open] {
+/* ===================== the WORDS modal ===================== */
+/* A COMPLETED hole's words (user-decided 2026-09-01): the old history modal's full screen
+   with the road taken out — no rail, no nodes, no distances — the found word as the
+   headline in the solved ink, then every word found for it as a plain GRID, closest first,
+   "like on a synonyms website" — every word `--fg`, the ones the player typed in the held
+   word's inverted chip. ONE type size: the column is as wide as the longest word
+   needs (set inline), and the grid fills the whole width with as many such columns as fit
+   (`auto-fill`) — a wide screen uses its space, a phone gets one or two. Flat `--bg`
+   like every full-screen dialog, the shared header above a `.pixel-scroll` scroller. */
+.hw-dialog[open] {
   position: fixed;
   inset: 0;
   z-index: 100;
@@ -2277,506 +2457,317 @@ button * {
   outline: 0;
   background: var(--bg);
   color: var(--fg);
-  /* Header row above, scroller below — the header is IN FLOW, which is the whole reason it can
-     obey the app's no-band/no-border/no-background header policy: nothing ever passes under it,
-     so it needs nothing painted behind it. */
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  animation: hw-in 100ms ease-out both;
 }
-/* The drawing's own variables live on `.route-frame` — everything the drawing's CSS consumes
-   resolves from the frame, so the drawing stands apart from whatever surface mounts it (#155).
-   Word mode's post-mortem board is that surface today (`.word-frame` refines it below); the
-   sentence game's route modal was the other until 2026-08-10, when the history modal replaced
-   it. */
-.route-frame {
-  /* The containing block for the sr-only mirror it carries: `.sr-only` is absolutely
-     positioned, and an unpositioned frame would hand it to an ancestor outside the
-     scroller, where its static position sits below the line's whole height. */
-  position: relative;
-  /* A station whose word you have NOT found, and the `???` it wears: dimmer than the line, so
-     it recedes behind the words that ARE on the map. */
-  --unfound: #3a4270;
-  /* One Press Start cell is exactly 1em, so an exponent's width is its length times this — which
-     is why `routeFrameVars` can set `--gutter` to fit the widest rank a line can show (a fixed
-     one sized for the theoretical "9970" left a dead column on most rounds). This is the
-     fallback; the media query below is what makes it responsive without the component knowing.
-     Four cells, not five, since the exponent lost its leading `-` on 2026-08-16. */
-  --rank-size: 10px;
-  --gutter: calc(var(--rank-size) * 4 + 10px);
-  /* Air between the rail and the words, SHARED by every route the app draws: both frames
-     subtract it from their `--wordw`, or fitWord sizes a long word to a column wider than
-     the real one. */
-  --word-gap: 14px;
-  /* Every line on a route — trunk, leap, tail — is this thick. */
-  --line-w: 5px;
-  /* Set per-frame by routeFrameVars; these are the fallbacks. */
-  --railw: 31px;
-  --trunk-x: 15.5px;
-  /* The word column's width, so a route can size a long word to FIT it (see fitWord). The
-     other two columns and the scroller's own padding are all known here, which is the only
-     reason that arithmetic is possible without measuring anything. The 18px is the one thing it
-     canNOT know: a classic (non-overlay) scrollbar takes ~15-17px off the scroller's client
-     width and `100vw` cannot see it, so without the allowance a long word gets sized to a column
-     that turns out narrower and breaks mid-word — the one outcome fitWord exists to prevent.
-     Platforms with overlay scrollbars just get slightly smaller long words. */
-  --wordw: calc(min(430px, 100vw - 40px) - var(--gutter) - var(--railw) - 18px);
-  /* The height of a station's FIRST line — the one the rank, the node and the word share — so
-     the node sits exactly on the word's midline while the rail still runs the full height of a
-     station that also carries a tag underneath. */
-  --head: 26px;
-}
-.history-dialog::backdrop {
-  background: transparent;
-}
-/* Opening is a ZOOM OUT OF THE WORD you tapped, the way a desktop window opens out of its
-   icon: the screen grows from that point instead of replacing what was there, so the modal
-   reads as that word opened rather than as a new screen. HistoryModal supplies the word's
-   centre in viewport coordinates — which are this element's own, since it is fixed at inset
-   0 — so the origin needs no arithmetic here; without it the fallback is dead centre.
-
-   It scales the WHOLE dialog, opaque background included, which is what sells the growth. The
-   opacity closes early so the panel is solid for most of the travel — a fade running the
-   whole way reads as a cross-dissolve, not as an opening.
-
-   Short on purpose (120ms, down from the 200ms first tried — 2026-07-27): this is a tap
-   opening a screen, not a transition worth watching, and the list is the thing you came for.
-   Long enough to read as growth out of the word, over before it asks for patience.
-
-   Under reduced motion the global rule collapses the duration; with no fill mode the dialog
-   lands on its natural scale and full opacity, never mid-zoom. */
-.history-dialog[open] {
-  transform-origin: var(--zoom-x, 50%) var(--zoom-y, 50%);
-  animation: history-zoom 120ms ease-out;
-}
-@keyframes history-zoom {
-  from {
-    transform: scale(0.05);
-    opacity: 0;
-  }
-  35% {
-    opacity: 1;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-/* Closing RETRACTS into the same word: the opening run backwards, so the modal goes back where
-   it came from and the sentence underneath is somewhere you RETURNED to rather than somewhere
-   you were dropped. HistoryModal holds the dialog open through this and only calls `close()`
-   when it ends (see `beginClose`) — a native dialog would otherwise vanish on the spot.
-
-   Written out as its own keyframes rather than `animation-direction: reverse` on the opening
-   one: with the same `animation-name`, changing direction UPDATES the existing animation instead
-   of starting one, and the opening run has long since finished — so it would hold its end state
-   and snap rather than play. The mirror is exact — `ease-in` against `ease-out`, and the opacity
-   stop moved from 35% to 65% — so the panel stays solid for most of the travel and only thins
-   out at the end, the same way round.
-
-   `forwards` holds the final tiny frame: without it the dialog would flash back to full size for
-   the frame between the animation ending and React unmounting it. */
-.history-dialog[open].closing {
-  animation: history-zoom-out 120ms ease-in forwards;
-  /* Nothing inside is aimed at any more — and a second dismissal mid-retraction would only
-     restart a beat that is already leaving. */
+.hw-dialog[open].closing {
+  animation: hw-out 100ms ease-in both;
   pointer-events: none;
 }
-@keyframes history-zoom-out {
+.hw-dialog::backdrop {
+  background: transparent;
+}
+@keyframes hw-in {
   from {
-    transform: scale(1);
+    opacity: 0;
+  }
+  to {
     opacity: 1;
   }
-  65% {
+}
+@keyframes hw-out {
+  from {
     opacity: 1;
   }
   to {
-    transform: scale(0.05);
     opacity: 0;
   }
 }
-/* --- the line --- */
-.history-scroll {
+/* The list FADES into the ground as it scrolls up under the header (user-decided
+   2026-09-01, the game header's own fade): a mask over the scroller's top 40px, with the
+   same 40px of padding above the content so nothing is faded at rest. The header itself
+   stays bandless — ModalHeader sits in flow on the flat `--bg` dialog, so the fade is
+   the scroller's. */
+.hw-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 20px;
-  /* A flex column so the frame's auto margins can centre a SHORT journey in the screen — a
-     few stops top-left in a dark field read as an unfinished page. Auto margins (not
-     `justify-content: center`) on purpose: with negative free space they collapse to 0, so a
-     line taller than the screen scrolls normally instead of clipping its ends. */
-  display: flex;
-  flex-direction: column;
+  padding: 40px 20px 48px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 40px);
+  mask-image: linear-gradient(to bottom, transparent, #000 40px);
 }
-/* The drawing itself is the shared `.route-frame`/`.route` (HistoryModal composes
-   routeDrawing, trunk only); this class adds the modal's own centring and the JOURNEY
-   dress the shared drawing does not know about (2026-08-10, user-asked polish: the three
-   zones must read at first sight, in colour). */
-.history-frame {
-  margin: auto;
-  width: 100%;
-  /* The shared `--word-gap` comes off the word column here as on the word board — only the
-     dialog's own 40px of sides differ. */
-  --wordw: calc(min(430px, 100vw - 40px) - var(--gutter) - var(--railw) - 18px - var(--word-gap));
-}
-/* (The rail keeps its own `--rail` everywhere — a green journey stretch was tried and
-   walked back the same day, 2026-08-10: the zones are said by the TYPE and the nodes, the
-   dashes still say where the walk begins, and the line stays the app's one quiet rail.) */
-/* NAMED by the solve, not reached (user-decided 2026-08-10): once the hole is solved the
-   line names every group between the departure and the word, so the post-mortem shows the
-   whole walked stretch rather than only the player's own steps. They stay GOLD — they are
-   part of the same journey — and take the app's own "named, not found" dress, the word
-   board's own distinction: the word dimmed to the census's 0.55 and the node small and
-   muted. So what the player actually HELD reads at full strength straight out of a field
-   that was there all along. Scoped to this modal: the word board's `route-revealed` dresses
-   its own stations. */
-.history-frame .route-revealed .route-word {
-  opacity: 0.55;
-}
-.history-frame .route-revealed .route-node {
-  width: 11px;
-  height: 11px;
-  background: var(--muted);
-}
-/* The point to reach is a COBALT SQUARE from the first frame (user-decided 2026-08-10):
-   cobalt is the app's solved-word colour, and the terminus IS the word to get — the square says
-   so before it is won, and the word beside it joins it in cobalt at the solve
-   (`.route-found`). */
-.history-frame .route-arrival .route-node {
-  background: var(--solve);
-}
-/* ONE grid for the whole line, every row a `subgrid` of it — which is what lets the rank gutter be
-   a true `max-content` FIT: the track is sized by the widest exponent actually rendered, measured
-   by the browser across every row at once. Per-row grids cannot do this (each would fit its own
-   rank and the rail would zigzag), and `--gutter` computes the same number but only under the
-   assumption that the pixel font is the one that loaded. It is still declared — as the fallback
-   template below for anything without subgrid, and because `--wordw` needs the width as a NUMBER,
-   which a measured track cannot hand it. FLOORED at that number: a `max-content` fit and the
-   computed width then agree by construction while the pixel font is the one that loaded, and the
-   floor is what holds the line together if it is not. (The floor earned its keep on 2026-08-03,
-   when the route map's one non-subgrid row — a WebKit sticky workaround, gone with that modal —
-   contributed nothing to the measured track and slid off the line without it.) */
-.route {
-  width: min(430px, 100%);
+.hw-frame {
+  width: min(1100px, 100%);
   margin: 0 auto;
-  /* The tail below the terminus is generous on purpose: the end of the line should not sit on the
-     screen edge when the map is scrolled all the way down. */
-  padding: 4px 0 104px;
-  display: grid;
-  grid-template-columns: minmax(var(--gutter), max-content) var(--railw) 1fr;
 }
-.route-station,
-.route-link,
-.route-shelf {
-  grid-column: 1 / -1;
-}
-.route-station,
-.route-link {
-  display: grid;
-  /* Fallback first: without subgrid the row falls back to the computed gutter rather than
-     collapsing to a single column. */
-  grid-template-columns: var(--gutter) var(--railw) 1fr;
-  grid-template-columns: subgrid;
-}
-/* A connector: pure distance, no content. Its height comes from the model (LINK_SPAN px per
-   full dq scale) and its line is inset to land under the trunk. */
-.route-link::before {
-  content: '';
-  grid-column: 2;
-  justify-self: start;
-  width: var(--line-w);
-  height: 100%;
-  margin-left: calc(var(--trunk-x) - var(--line-w) / 2);
-  background: var(--rail);
-}
-/* The cold end above the first station: not a distance, so not a solid line — the broken
-   trace (the leap into the word joined the solid rail on 2026-08-04: the routes should
-   visibly LEAD to the word). `.broken` is the history modal's behind-the-departure stretch
-   wearing the same trace (2026-08-10): a backwards guess is a stop, but not a step of the
-   journey, which turns solid only at the departure. The unit comes from `routeFrameVars`
-   (`--dash` / `--dash-period`); heights are cut to a whole number of it — a run that ends
-   mid-unit leaves a stub of gap right where the trace meets the solid rail. */
-.route-link.tail::before,
-.route-link.broken::before {
-  background: repeating-linear-gradient(
-    to bottom,
-    var(--rail) 0 var(--dash, 5px),
-    transparent var(--dash, 5px) var(--dash-period, 13px)
-  );
-}
-/* (A `.route-link.dashed` variant lived here for the day Word mode's board drew only the
-   words you had found and dashed the ground between them. With the `???` census restored
-   every rank on that board is a station of its own, so no connector hides anything and the
-   TAIL above is once again the only broken run either surface draws.) */
-
-/* --- one station --- */
-/* Every cell names its column: an item with a definite ROW span but an auto column is placed
-   before the fully-auto ones, so leaving the rail/body implicit would shuffle the order. */
-.route-rank {
-  grid-column: 1;
-  height: var(--head);
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-right: 10px;
-  /* The route DRAWING is a game surface, one voice throughout: pixel ranks beside pixel
-     words (the modal's chrome above it is the modern header's). Also load-bearing: the
-     `--gutter` arithmetic assumes the pixel font's exact 1em-per-glyph advance. */
+/* The headline: the word itself, in the ink a solved word wears. */
+.hw-head {
+  margin: 12px 0 28px;
   font-family: var(--pixel-font);
-  /* The rank IS the "time" column: one face, one size, right-aligned, so the numbers stack
-     into a ladder you can read down. In the heat the SAME number wore when it floated over
-     the hole. */
-  font-size: var(--rank-size);
-  line-height: 1;
-  color: var(--rank-color);
-  text-shadow: none;
-  white-space: nowrap;
+  font-size: clamp(20px, 3vw, 28px);
+  line-height: 1.3;
+  color: var(--solve);
+  text-shadow: 2px 2px 0 black;
+  overflow-wrap: anywhere;
 }
-/* The rail spans the WHOLE station (a tagged one is two lines tall) so the line never breaks;
-   the node is placed on the first line's midline. */
-.route-rail {
-  position: relative;
-  grid-column: 2;
-  grid-row: 1 / -1;
+.hw-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  /* The real template is inline (the longest word's width); this is the fallback. */
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 16px 24px;
 }
-.route-rail::before {
-  content: '';
-  position: absolute;
-  left: var(--trunk-x);
-  transform: translateX(-50%);
-  width: var(--line-w);
-  top: var(--line-top, 0);
-  bottom: var(--line-bottom, 0);
-  background: var(--rail);
-}
-/* Every node is a FILLED square — no outline-only stops. What a stop IS comes from its size and
-   its fill: a word you found (bright), the one you were handed (muted), where you are now (gold,
-   biggest), one you have not found (small, so it swells the line instead of punching a hole in
-   it). */
-.route-node {
-  position: absolute;
-  left: var(--node-x, var(--trunk-x));
-  top: calc(var(--head) / 2);
-  width: 15px;
-  height: 15px;
-  transform: translate(-50%, -50%);
-  background: var(--fg);
-}
-.route-body {
-  grid-column: 3;
-  grid-row: 1 / -1;
-  min-width: 0;
-  padding-left: var(--word-gap);
-}
-.route-word {
-  display: flex;
-  align-items: center;
-  min-height: var(--head);
+/* One word: the pixel face at ONE size (`HistoryModal` sets it inline — 15px, and only a
+   word wider than the whole frame shrinks), its exponent raised as the hole's, in the
+   shared heat. */
+.hw-word {
   font-family: var(--pixel-font);
-  /* The surface sets the real size inline (fitWord): a word too long for `--wordw` shrinks to
-     fit instead of breaking mid-word. This is only the fallback if that never arrives. */
   font-size: 15px;
   line-height: 1.3;
   color: var(--fg);
-  /* Past fitWord's floor, breaking is still better than overflowing the dialog. */
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  text-shadow: 2px 2px 0 black;
 }
-/* Word mode's post-mortem: a station says its GRADE in its own TYPE — the word painted in the rarity's colour
-   (`--rarity-c`, set with `.graded` per zone station by WordBoard), the vocabulary the
-   run's strikes and loot already taught. Keyed on the CLASS, not on every station, so the
-   terminus keeps `.route-found`'s brand accent and a gradeless near miss stays `--fg`. */
-.word-frame .route-station.graded .route-word {
-  color: var(--rarity-c);
-}
-/* A claimed station stays pinned to the line while its width changes through the shared
-   slot-machine scramble. Compress once at the start, remain nearly still while the letters
-   resolve, then make a small landing overshoot as the final glyphs settle. This has its own
-   motion instead of borrowing the exponent's 1.6x pop, which was too large and too short for
-   a whole word. */
-.route-word.revealing {
-  transform-origin: left center;
-  animation: route-word-reveal var(--reveal-ms, 650ms) cubic-bezier(0.22, 0.75, 0.25, 1) both;
-  will-change: transform;
-}
-@keyframes route-word-reveal {
-  0% {
-    transform: scale(1);
-  }
-  16% {
-    transform: scale(0.92);
-  }
-  72% {
-    transform: scale(0.98);
-  }
-  88% {
-    transform: scale(1.08);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-/* --- the end of the line --- */
-.route-arrival {
-  --head: 40px;
-}
-/* Nothing below the terminus: its rail stops AT the node. */
-.route-arrival .route-rail {
-  --line-bottom: calc(100% - var(--head) / 2);
-}
-.route-arrival .route-node {
-  width: 23px;
-  height: 23px;
-  background: var(--rail);
-}
-.route-arrival .route-word {
-  color: var(--muted);
-}
-/* The unfound terminus wears the OPEN BLANK too: the `???` is the round's ultimate
-   fill-in-the-blank, so the dashed line under it says the same "not yet" the holes say —
-   and its removal at the solve is the arrival. */
-.route-arrival:not(.route-found) .route-word {
-  /* inline-block hugs the `???` — an inline span's absolute children anchor to the whole
-     line box, which ran the blank across the column. */
+.hw-rank {
   display: inline-block;
-  position: relative;
+  font-size: 0.55em;
+  margin-left: 1px;
+  color: var(--rank-color);
+  vertical-align: super;
 }
-.route-arrival:not(.route-found) .route-word::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 2px;
-  background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 8px);
-  opacity: 0.55;
-}
-/* Found: the accented secret in the solve cobalt, and the terminus lights up with it —
-   the same line then reads as the post-mortem of the route taken. */
-.route-found .route-word {
-  color: var(--solve);
-}
-.route-found .route-node {
-  background: var(--solve);
-}
-
-/* --- station states --- */
-/* (The DEPARTURE has no station state of its own, user-decided 2026-08-10: it renders
-   exactly as a valid guess does — gold word at full strength on the plain `--fg` node.
-   The start word is a word the player HOLDS like any other, and singling it out with a dim
-   and a muted node made the line's quietest stop out of the one it begins at. What still
-   says "the walk starts here" is structural and needs no per-stop dress: the broken trace
-   ends AT it, and everything above it is grey. `route-departure` is gone with the rule —
-   `HistoryStop.start` survives in the MODEL, where the sr mirror and the dashed-connector
-   boundary read it.) */
-/* "You are here" (history modal): the hole's current stop, in the gold it wears in the
-   sentence, and the biggest node on the line. (The sticky both-edges parking the route map
-   gave this row died with that modal — the history line is one screen in the common case,
-   and a journey you scroll is a journey; the marker just rides it.) */
-.route-you .route-node {
-  width: 21px;
-  height: 21px;
-  background: var(--accent);
-}
-/* BEHIND the departure (history modal, 2026-08-10): a guess that went backwards from where
-   the puzzle put the player down. A real stop — their word, their node — but not a step of
-   the journey, so the whole zone goes GREY: the word as quiet as the revealed census's
-   (0.55), the node small and muted, and the connectors around it stay the broken trace
-   (`.route-link.broken`). It is the ONE zone that reads differently from a valid guess,
-   which is what makes the boundary at the departure legible. */
-.route-behind .route-word {
-  opacity: 0.55;
-}
-.route-behind .route-node {
-  width: 11px;
-  height: 11px;
-  background: var(--muted);
-}
-/* A step of the WALK (history modal): a stop between the departure and the word. Its word
-   is GOLD — the sentence game's own grammar carried over: `--hole` is the colour of the
-   words the player holds, and these are exactly the words they held on the way in
-   (user-decided 2026-08-10, superseding a green journey stretch that also painted the
-   rail — the line keeps `--rail`, the TYPE carries the zone). The node stays the found
-   stop's plain `--fg`; only the CURRENT word gets the gold square (`.route-you`). */
-.route-ahead .route-word {
-  color: var(--hole);
-}
-/* The current word: the gold square, and its word in the same gold — the hole as it looks
-   in the sentence, transplanted onto the line. */
-.route-you .route-word {
-  color: var(--hole);
-}
-/* A station of the censored field: a real position with its word withheld. Quiet by design —
-   it must read as "not found yet", never as one of the words that ARE on the line. The node
-   stays structural (the grade lives in the WORD's colour, the history line's own grammar),
-   so it recedes rather than repeating the type. */
-.route-unknown .route-node {
-  width: 11px;
-  height: 11px;
-  background: var(--unfound);
-}
-.route-station.route-unknown .route-word {
-  color: var(--unfound);
-}
-/* Solved: every censored station gives up its word, and the board becomes the post-mortem of
-   the whole neighborhood. The word keeps its GRADE's colour — the grade is the point of
-   showing it — but dimmed, and the node stays small, so what you FOUND still reads apart
-   from what was simply there. */
-.word-frame .route-station.graded.route-revealed .route-word {
-  color: var(--rarity-c);
-  opacity: 0.55;
-}
-/* --- off the map --- */
-/* ABOVE the line: the guesses that earned no rank at all. Beyond the top-K there is no
-   distance left to draw, and that IS the mechanic. Nothing rules them off — the line's own
-   broken tail runs immediately below, and a second horizontal tear only fenced these words
-   off from what they are already outside of. */
-.route-shelf-head {
-  margin: 0 0 12px;
-  /* Part of the game drawing, like the ranks: pixel. */
-  font-family: var(--pixel-font);
-  font-size: 16px;
-  letter-spacing: 2px;
-  /* Only the FALLBACK: both drawings set MISS's weird red inline — the one
-     the floating `MISS` wears — so the heading says "missed" in the voice the round
-     already answered these words in. The ONE `MISS_COLOR` constant there, never a hex
-     copied down here, so the two cannot drift. */
-  color: var(--muted);
-  text-align: center;
+/* A word the player FOUND wears the held word's own inverted chip — `--fg` ground, `--bg`
+   ink, the sentence chip's em geometry (0.2em over, 4px-at-30px above and below) — laid
+   out here rather than drawn, the grid's gap holding the overhang; the words the solve
+   merely NAMED stay plain `--fg`. The chip drops the hard print for the phrase's reason
+   (near-black ink on white). */
+.hw-found .hw-text {
+  padding: 0.133em 0.2em;
+  margin: -0.133em 0;
+  background: var(--fg);
+  color: var(--bg);
   text-shadow: none;
 }
-.route-misses {
-  /* 48: the shelf is the drawing's top neighbour, and at 26px it read as the first stop's
-     label (2026-08-10's history finding, shared by both drawings since 2026-08-11). */
-  margin: 0 0 48px;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 10px 16px;
-  font-family: var(--pixel-font);
-  font-size: 14px;
-  /* Only the FALLBACK — OffMapShelf sets MISS's weird red inline, the same
-     `MISS_COLOR` as the heading, so the shelf speaks in one voice (2026-08-10,
-     superseding muted words that could pass for ordinary ones). */
-  color: var(--muted);
-}
-/* Dimmed a step under the heading: the words are the shelf's CONTENT, red like it but never
-   louder than it — the same quieting the behind stops get (0.55), so "not progress" reads at
-   one brightness across the whole drawing. */
-.route-miss {
-  opacity: 0.55;
-}
 
-/* A very narrow phone leaves the word column genuinely short, so the rank ladder gives some
-   of its width back rather than letting fitWord bottom out on its
-   floor and break a long word in half. One cell smaller is enough — and because the gutter is
-   `--rank-size` times the widest exponent, it follows on its own. */
-@media (max-width: 360px) {
-  .route-frame {
-    --rank-size: 9px;
+/* ===================== the hole WHEEL ===================== */
+/* Tap a hole and its place in the sentence becomes a fixed SLOT that ONE column of the
+   words already found for it scrolls THROUGH, item by item (user-decided 2026-09-01, the
+   day's fifth approach: the history modal's line, a radial net with lines twice revised,
+   and a plain stack came before it): farther words above, closer words below; the word in
+   the slot wears the hole's own chip at the sentence's own size, the others stand plain
+   and smaller; the word the wheel settles on is the pick. `HistoryWheel` owns every
+   number that has to agree with the sentence (row height = its line box, the slot = the
+   word's own line, all set inline from the measured host); the CSS owns the dress.
+
+   The dialog IS the dim: a transparent full-screen native dialog whose own background is
+   the ground at 74%, so the sentence reads through it at about a quarter — the slot's
+   word stands in it at full strength, the sentence around it legible as what the wheel
+   is about. It is the PuzzleSelect's kind of surface (a thing hanging off a control that
+   stays on screen), so a tap outside closes it. */
+.wheel-dialog[open] {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  overflow: hidden;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--bg) 74%, transparent);
+  animation: wheel-in 100ms ease-out both;
+}
+.wheel-dialog[open].closing {
+  animation: wheel-out 100ms ease-in both;
+  pointer-events: none;
+}
+/* THE FOLD LEAVES THE SLOT ROW STANDING (user-reported 2026-09-02, "the hole word blinking
+   on wheel close"): the whole dialog used to fade, slot row included, while the real word
+   under it stayed VEILED until the dialog had closed — so for the fade's last frames there
+   was no word at all, and then it popped back. Now the fold fades only the DIM and the
+   plain rows; the slot row — the hole's own markup at the hole's own place — holds at full
+   strength until `close` lifts the veil, and the real word takes over under it with no
+   frame between. (The title's selection wears its own whole-screen fade, `select-out`.) */
+.wheel-dialog.closing .wheel-row:not(.wheel-row-slot) {
+  animation: wheel-row-out 100ms ease-in both;
+}
+.wheel-dialog::backdrop {
+  background: transparent;
+}
+@keyframes wheel-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }
+@keyframes wheel-out {
+  from {
+    background-color: color-mix(in srgb, var(--bg) 74%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+@keyframes wheel-row-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes select-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+.wheel-dialog.puzzle-select[open].closing {
+  animation: select-out 100ms ease-in both;
+}
+/* THE DRUM: one column under the header, on the word's left edge, whose scroll position
+   `HistoryWheel` writes itself — a ratchet with momentum, hopping row by row (see the
+   component; native snap with momentum and a one-row-per-gesture stepper were each tried
+   and retired the same day). No native scrolling at all (`overflow: hidden`,
+   `touch-action: none`), so no scrollbar; its two ends FADE, so a word entering from
+   above or below arrives out of the dark rather than cut by an edge. */
+.wheel-scroll {
+  position: absolute;
+  bottom: 0;
+  overflow: hidden;
+  touch-action: none;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 44px, #000 calc(100% - 44px), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 44px, #000 calc(100% - 44px), transparent);
+}
+.wheel-scroll::-webkit-scrollbar {
+  display: none;
+}
+/* THE VEIL: while the wheel stands over a hole, the word and exponent beneath it are
+   hidden in place (the box stays, so nothing reflows) — the slot row draws the word there
+   itself, and a longer word beneath would show its tail through the dim. Hiding rather
+   than covering, so the watermark and the sentence around it show through as before (a
+   ground band was tried first and covered the watermark, user-reported 2026-09-01). */
+.hole.veiled .hole-word-wrap,
+.hole.veiled .hole-rank,
+.solved-word.veiled .hole-word-wrap {
+  visibility: hidden;
+}
+/* A ROW: one line box of the sentence's own height (inline), the word in the pixel face
+   with its exponent raised as the hole's is — plain text, no tile — snapping to the slot.
+   The one IN the slot wears the hole's own markup (chip + exponent at the sentence's size,
+   `.hole` inside), so it lands exactly on the word it stands for. Rows arrive on a short
+   stagger counted out from the slot (`--i`), each a quick fade. */
+.wheel-row {
+  position: relative;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font-family: var(--pixel-font);
+  text-align: left;
+  white-space: nowrap;
+  overflow: visible;
+  cursor: pointer;
+  animation: wheel-row-in 120ms ease-out both;
+  animation-delay: calc(var(--i, 0) * 18ms);
+}
+.wheel-right .wheel-row {
+  text-align: right;
+}
+@keyframes wheel-row-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+/* The sentence's hard 2px print on the plain rows (the global `button *` strips it), and
+   NOT on the chip, for the phrase's own reason (near-black ink on white). */
+.wheel-row .wheel-word,
+.wheel-row .wheel-rank {
+  text-shadow: 2px 2px 0 black;
+}
+.wheel-row .hole:not(.resolved) .hole-word,
+.wheel-row .hole:not(.resolved) .hole-word .hole-letter {
+  text-shadow: none;
+}
+/* A PLAIN ROW STANDS ON ITS OWN GROUND (user-decided 2026-09-02: with the dim at a
+   quarter, the rows printed over the sentence's own words — "you don't have wheel items
+   over sentence text"). The surface tone, drawn exactly as the hole's chip is — an
+   absolutely positioned pseudo sized in `em`, so it takes no layout and the row's letters
+   keep the slot's x — around the word AND its exponent, one box per row. */
+.wheel-plain {
+  position: relative;
+  isolation: isolate;
+}
+.wheel-plain::before {
+  content: '';
+  position: absolute;
+  left: -0.2em;
+  right: -0.2em;
+  top: 50%;
+  /* A little taller than the chip's 1.267em (user-asked 2026-09-02, "a few more pixels of
+     vertical padding"): a ground reads as a box where a chip reads as a word. */
+  height: 1.5em;
+  translate: 0 -50%;
+  z-index: -1;
+  background: var(--surface);
+}
+/* The exponent of a plain row: the hole's own superscript, in the shared heat colour. */
+.wheel-rank {
+  display: inline-block;
+  font-size: 0.55em;
+  margin-left: 1px;
+  color: var(--rank-color);
+  vertical-align: super;
+}
+/* The app's one interaction language on a plain row: brighten. The slot row's chip
+   answers a press itself. */
+button.wheel-row:not(.wheel-row-slot):hover .wheel-word,
+button.wheel-row:not(.wheel-row-slot):active .wheel-word {
+  filter: brightness(1.35);
+}
+.wheel-row-slot:active .hole:not(.resolved) .hole-word::before {
+  background: color-mix(in srgb, var(--fg) 68%, var(--bg));
+}
+/* The two dresses: a word the solve merely NAMED recedes to the census's 0.55; the hole's
+   TRUE position — when the slot holds a pick standing in for it — carries an LED in the
+   held-word colour before it, the app's flat vivid square. */
+.wheel-row-revealed .wheel-word {
+  opacity: 0.55;
+}
+.wheel-row-best::before {
+  content: '';
+  display: inline-block;
+  width: 0.4em;
+  height: 0.4em;
+  margin-right: 0.5em;
+  vertical-align: middle;
+  background: var(--hole);
+}
+/* Reduced motion: the arrival collapses with every other duration; the snap and the
+   glide are the scroller's own and honour `behavior: auto` from the component. */
 
 /* Result action: a modern glass pill — the result is the hero, the action is quietly
    available beside it (chrome, since 2026-08-18). */
@@ -3141,7 +3132,6 @@ button * {
      and has to compute the same number. They are declared once so it cannot drift. */
   --kb-key: min(var(--kb-key-max), calc((100% - 9 * var(--kb-gap)) / 10));
   align-self: center;
-  position: relative; /* anchors the desktop device plate (::before) */
   width: 100%;
   max-width: 680px;
   display: flex;
@@ -3152,28 +3142,9 @@ button * {
   user-select: none;
   touch-action: manipulation;
 }
-/* The DEVICE PLATE under the keys (2026-08-18, desktop only): a hairline slab with a
-   faint cobalt edge-glow — the macropad's glowing frame, said quietly. OUT OF FLOW
-   (::before, inset past the keys) so `--kb-h` and the tray's fixed height stay exactly
-   the keys' own; the plate borrows the surrounding gaps. Hidden on phones with the
-   full-bleed keyboard. */
-.keyboard::before {
-  content: '';
-  position: absolute;
-  inset: -10px -12px;
-  z-index: -1;
-  background: rgba(14, 16, 26, 0.55);
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  /* Light only, no modelling: the cobalt wash under the board is a lamp, not a bevel
-     (the inner shadow left with the flat pass, 2026-08-18). */
-  box-shadow: 0 0 52px -14px rgba(24, 76, 244, 0.4);
-}
-@media (max-width: 640px) {
-  .keyboard::before {
-    display: none;
-  }
-}
+/* (The DEVICE PLATE under the keys — a hairline slab behind the desktop keyboard, 2026-08-18
+   — is GONE, user-decided 2026-09-01: the phone had none, and the rebrand's answer is that
+   the keys are the object. A slab drawn around them was the last of the macropad dressing.) */
 .kb-row {
   display: flex;
   justify-content: center;
@@ -3196,7 +3167,7 @@ button * {
   /* FLAT tiles (user-decided 2026-08-18, superseding the bevelled keycaps of the
      macropad pass — "old skeuomorphism"): one solid fill, the sharp radius, nothing
      modelled. A key's press is a brightness state, not a physical travel. */
-  background: #181b29;
+  background: #17181e;
   border: 0;
   border-radius: var(--r-lg);
   cursor: pointer;
@@ -3221,11 +3192,10 @@ button * {
 .kb-enter {
   color: var(--fg);
   background: var(--solve);
-  box-shadow: 0 0 14px rgba(74, 106, 255, 0.4);
 }
 .kb-enter.kb-greyed {
   color: var(--muted);
-  background: #181b29;
+  background: #17181e;
   box-shadow: none;
 }
 /* Control-key glyph: an inline currentColor SVG. Sized by % of the key so it tracks the
@@ -3270,11 +3240,11 @@ button * {
   border: 0;
   cursor: pointer;
 }
-/* Primary: the DEVICE CARD (user-decided 2026-08-18, third button pass — the chooser's
-   member cards are "very nice", so the app's one big action speaks their language):
-   dark glass, hairline rule, bold mono — and a lit COBALT LED beside the label, the
-   card mosaic's own light saying "this one is armed". Hover brightens and the rule
-   sharpens (the cards' interaction); pressing depresses it like a key. */
+/* Primary (user-decided 2026-09-01, superseding the 2026-08-18 device card — glass,
+   hairline, LED): SIMPLE. The accent colour as the background, with a discreet DIAGONAL
+   gradient into a slightly darker accent — `--accent-deep`, derived at startup by
+   `polished.darken` from the live `--accent` (src/theme.ts), never a second typed hex.
+   White bold label, no border, no LED. Hover brightens; a press is a state. */
 .btn-primary {
   display: inline-flex;
   align-items: center;
@@ -3286,11 +3256,11 @@ button * {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--fg);
-  background: var(--glass);
-  border: 1px solid var(--line-strong);
+  background: linear-gradient(135deg, var(--accent), var(--accent-deep, #3352e6));
+  border: 1px solid transparent;
   border-radius: var(--r-lg);
   text-shadow: none;
-  transition: filter 0.08s linear, border-color 0.12s linear;
+  transition: filter 0.08s linear;
   /* A FLOOR under the app's one big action (user-decided 2026-08-26): sized to its label
      alone, a short word ("PLAY") drew a small card in the middle of a wide column and read
      as a minor control. Every screen that hands this button a column already stretches it
@@ -3299,34 +3269,58 @@ button * {
      the floor from overflowing a column narrower than it. */
   min-width: min(240px, 100%);
 }
-.btn-primary::before {
-  content: '';
-  width: 8px;
-  height: 8px;
-  border-radius: 1px;
-  background: var(--solve);
-  box-shadow: 0 0 10px rgba(74, 106, 255, 0.9);
-}
 .btn-primary:hover {
-  filter: brightness(1.3);
-  border-color: var(--fg);
+  filter: brightness(1.1);
 }
 /* A press is a STATE, not travel (the flat rule, 2026-08-18). */
 .btn-primary:active {
-  filter: brightness(1.5);
+  filter: brightness(1.2);
 }
-/* Secondary: simple text, no fill. */
+/* ── THE SECONDARY IS A BUTTON, AND IT HAS TO LOOK LIKE ONE (user-decided 2026-08-30) ──
+   No border, no fill, the body ink: that dress reads as a CONTROL in exactly one position —
+   directly beneath a primary, answering what the primary just proposed, at the primary's own
+   size. There the primary establishes the action zone and the secondary is plainly its
+   sibling. The app wore it everywhere instead: the game's CHANGE LANGUAGE, NoPuzzle's two,
+   the archive's RETRY, `/account`'s second door — all floating on screens with no primary
+   above them to borrow the meaning from. They read as lines of copy that happen to be
+   tappable, found by luck.
+
+   So the DRESS FOLLOWS THE RELATIONSHIP rather than each call site's memory of the rule:
+   boxed by default, bare only where it literally follows a primary. A site that gets it
+   wrong then fails toward the VISIBLE treatment, which is the direction a mistake should
+   fail in. The box is the hairline the primary already wears; what the primary KEEPS is the
+   glass fill and the lit LED, which is the whole hierarchy — and `border-box` means the two
+   dresses are the same geometry, so nothing moves between them.
+
+   (2026-08-29's half of this stands: the SIZE was the other bug. At 14px in 8px of padding
+   it sat under a primary three times its height and read as a caption somebody had made
+   clickable. 14px of padding, not 13, so it clears the 44px touch floor like everything
+   else in the area.) */
 .btn-secondary {
-  padding: calc(4px + var(--cap-shift)) 8px calc(4px - var(--cap-shift));
-  font-size: 14px;
-  font-weight: 500;
+  padding: calc(14px + var(--cap-shift)) 20px calc(14px - var(--cap-shift));
+  font-size: 15px;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   background: transparent;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
   color: var(--fg);
-  opacity: 0.7;
 }
 .btn-secondary:hover {
+  border-color: var(--fg);
+}
+/* THE ONE POSITION THE BARE DRESS EARNS. `border-color: transparent` rather than `border:
+   0`, so the two are the same box to the pixel and a screen that mounts both keeps one
+   rhythm. */
+.btn-primary + .btn-secondary,
+.mix-btn + .btn-secondary {
+  border-color: transparent;
+  opacity: 0.75;
+}
+.btn-primary + .btn-secondary:hover,
+.mix-btn + .btn-secondary:hover {
+  border-color: transparent;
   opacity: 1;
 }
 
@@ -3336,10 +3330,7 @@ button * {
    tall play area (sentence + holes + on-screen keyboard, #36) is never clipped. The
    fixed HUD + watermark stay pinned to the viewport while the content scrolls under. */
 @media (max-width: 640px) {
-  /* Finer graph paper: 24px cells read chunky on a phone; every cell renderer (body
-     grid, BackgroundWaves, CellDigits) follows this one value. */
   :root {
-    --cell: 18px;
     /* Tighten via the VARIABLE, never a raw `gap`: the key-width formula divides by
        --kb-gap, so a desynced literal would compute rows ~9px too narrow — they then
        center inside the keyboard box and paint a phantom ~5px side inset (the
@@ -3396,25 +3387,18 @@ button * {
   .solved-caption {
     align-items: stretch;
   }
-  /* The band goes FULL-BLEED on a phone: no float, no radius, one hairline bottom
-     edge — the app's status strip. */
+  /* The row goes edge to edge on a phone: no float. */
   .topbar-inner {
     margin: 0;
     width: 100vw;
     height: 48px;
     padding: 0 6px;
-    border: 0;
-    border-bottom: 1px solid var(--line);
-    border-radius: 0;
   }
-  /* Ten glyphs of date against a phone's header corner: a step down and most of the
-     tracking given back keeps the whole string beside the right group at 320px (the
-     mono advances 0.6em/glyph against the pixel font's full em, so the budget holds). */
-  .puzzle-date {
-    font-size: 12px;
-    letter-spacing: 0;
-    padding: 4px 6px 3px 7px;
-    gap: 4px;
+  /* The title against a phone's header corner: its own padding steps down; the TYPE
+     does not (one size everywhere — see `.topbar-title`). */
+  .puzzle-title {
+    padding: 4px 4px 4px 0;
+    gap: 5px;
   }
 
   /* The sentence: a touch smaller so a hole + its exponent near the right edge still fits
@@ -3430,6 +3414,7 @@ button * {
      on the base rule now, for both games). */
   .word-input {
     min-width: 0;
+    font-size: clamp(13px, 4.2vw, 19px); /* = the phone's .phrase */
   }
 
   /* Floating hit / MISS scaled down to sit over the smaller hole words. */
@@ -3510,39 +3495,77 @@ button * {
   }
 }
 
-/* THE NARROW-PHONE HEADER BUDGET (re-measured 2026-08-20, when #190's leaderboard crown
-   made the game's right group THREE controls). The band is one fixed-width row holding
-   three groups that cannot wrap, so it is arithmetic, not taste — at 320px the row has
-   316px of content box (the 2px padding below), and at the base mobile sizes the three
-   groups want:
+/* THE NARROW-PHONE HEADER BUDGET (re-measured 2026-08-30, when the row went to TWO
+   slots — see PuzzleTitle). The band is one fixed-width row holding groups that cannot
+   wrap, so it is arithmetic, not taste. At 320px the row has 316px of content box (the
+   2px padding below). What it held BEFORE, at the base mobile sizes:
      left   the date chip — 10 glyphs at 12px + tick + padding      ~103px
      centre the mode tabs — PHRASE|MOT ~115px, SENTENCE|WORD ~138px
      right  3 x --hud-height (38px) + two 2px gaps                   118px
-   which is 336 (fr) / 359 (en) — over by 20-43px, and English was already ~5px over
-   with only two controls. The mono advances 0.6em a glyph, so every one of these is a
-   count, and the fix is to spend less in all three: a smaller control box, a smaller
-   date, and tabs at 10px with most of their tracking and side padding given back. That
-   comes to ~294 (fr) / ~307 (en) — inside 316 with room.
-   THE BREAKPOINT IS 400px, not the 380 the standing line steps down at: measured in a
-   browser, English at the BASE sizes saturates its tracks from ~400px down (at 390 —
-   the common iPhone width — the tabs' box and the right group's touch, leaving only the
-   controls' own padding as the visible gap). So the band that needs the step-down is
-   ≤400, and 390 gets it. */
+   — 336 (fr) / 359 (en), over by 20-43px, with English already ~5px over on two
+   controls alone. That is the collision the two-slot row was made to end. What it holds
+   now, at the same widths:
+     left   the title — SENTENCE at 12px + chevron + padding          ~122px
+     right  4 x --hud-height (32px) + three 2px gaps                   134px
+   — 256, inside 316 with 60px to spare, at the game's four-key group. The BOARD holds
+   five (calendar · crown · face · ✕, plus the face's and the ✕'s extra 4px): 172 + 92 =
+   264, and an ARCHIVE route adds its day to the title (~52px more) while dropping the
+   crown (-36), so both land inside the same budget.
+   The mono advances 0.6em a glyph, so every one of these is a count.
+   THE BREAKPOINT IS 400px, measured in a browser: English at the BASE sizes saturated
+   its tracks from ~400px down, and 390 — the common iPhone width — is inside that. The
+   slack above means the step-down is now margin rather than rescue; it stays, because
+   the four keys are what spend it. */
 @media (max-width: 400px) {
   .topbar {
     /* 32px still holds the 28px icons; below this width the alternative is losing a
        control off the edge. */
     --hud-height: 32px;
   }
-  .puzzle-date {
-    font-size: 11px;
-    padding: 4px 4px 3px 5px;
+  .puzzle-title {
+    padding: 4px 2px 4px 0;
+    gap: 4px;
+  }
+}
+/* FIVE keys plus a dated title at 320px: SENTENCE AUG 29 beside 5 × 32 + gaps wants
+   more than the 316px content box holds at the base gaps. The gaps step down first (a row
+   of five needs less air between keys than a row of four did), then, on the narrowest
+   phones, the boxes and the gaps again: 30px still holds a 22px icon. The TITLE never
+   steps down — one size everywhere — so the keys are what give. */
+@media (max-width: 400px) {
+  .topbar-right {
     gap: 3px;
   }
-  .mode-tab {
-    font-size: 10px;
-    letter-spacing: 0.04em;
-    padding: 6px 7px 5px;
+  .account-key {
+    margin-left: 3px;
+  }
+}
+@media (max-width: 340px) {
+  .topbar {
+    --hud-height: 30px;
+  }
+  /* And the last of the air: with the title at its one size, SENTENCE AUG 29 and
+     SE CONNECTER need every pixel — keys 5 × 30 + 4 × 2 + 2 = 160 of 316. */
+  .topbar-right {
+    gap: 2px;
+  }
+  .hk-dot {
+    --hk-size: 3px;
+  }
+  .account-key {
+    margin-left: 2px;
+  }
+  /* SENTENCE AUG 29 at the one title size was still 6px over at 320: the title's own
+     padding, the chip's, and the day's tracking are the last things that can give. */
+  .puzzle-title {
+    padding: 4px 0;
+    gap: 3px;
+  }
+  .topbar .topbar-title {
+    padding: 5px 5px 4px;
+  }
+  .puzzle-title-day {
+    letter-spacing: 0;
   }
 }
 /* On the narrowest phones, compress the header's own side padding too. */
@@ -3651,8 +3674,30 @@ button * {
 .rt-word {
   font-family: var(--pixel-font);
   font-size: 0.82em;
-  color: var(--hole);
   white-space: nowrap;
+}
+/* THE HINT WORD WEARS THE HELD WORD'S CHIP (user-decided 2026-09-02): `--fg` ground, `--bg`
+   ink, the sentence chip's own em geometry (0.2em over each side, 0.133em above and
+   below), laid out inline — the copy's line-height has the room. The exponent stands
+   outside it in its heat colour, as in the sentence. THE CHIP IS DRAWN PER LETTER
+   (user-reported the same day: "the letters appear one by one, but the hole word
+   background is already here"): every letter of the copy is its own span, hidden until
+   the typewriter reaches it, so the ground rides the letters and arrives with them —
+   the first letter carries the chip's left overhang and the last its right. */
+.rt-word-text {
+  display: inline-block;
+  margin: -0.133em 0;
+}
+.rt-word-text > span {
+  padding: 0.133em 0;
+  background: var(--fg);
+  color: var(--bg);
+}
+.rt-word-text > span:first-child {
+  padding-left: 0.2em;
+}
+.rt-word-text > span:last-child {
+  padding-right: 0.2em;
 }
 /* The coach's MISS words ([[m:]]) — guitare, violin, MISS itself — speak the same pixel
    voice as the target and the hint words (user-decided 2026-08-18); the colour stays
@@ -3683,30 +3728,9 @@ button * {
   white-space: pre-line;
 }
 
-/* CORNER TABS on the dialog boxes (user-decided 2026-08-18): dead-sharp corners wearing
-   short COBALT brackets, a step thicker than the hairline they sit on — the device
-   frame's bracket language pulled onto the one surface that talks to the player. Drawn
-   as eight background strips over the border box (two per corner), with the glass fill
-   as the stack's colour layer. */
-.coach,
-.coach-rules {
-  --corner-c: rgba(74, 106, 255, 0.9);
-  border-radius: 0;
-  background:
-    linear-gradient(var(--corner-c), var(--corner-c)) 0 0 / 14px 2px,
-    linear-gradient(var(--corner-c), var(--corner-c)) 0 0 / 2px 14px,
-    linear-gradient(var(--corner-c), var(--corner-c)) 100% 0 / 14px 2px,
-    linear-gradient(var(--corner-c), var(--corner-c)) 100% 0 / 2px 14px,
-    linear-gradient(var(--corner-c), var(--corner-c)) 0 100% / 14px 2px,
-    linear-gradient(var(--corner-c), var(--corner-c)) 0 100% / 2px 14px,
-    linear-gradient(var(--corner-c), var(--corner-c)) 100% 100% / 14px 2px,
-    linear-gradient(var(--corner-c), var(--corner-c)) 100% 100% / 2px 14px,
-    var(--glass);
-  background-repeat: no-repeat;
-  background-origin: border-box;
-  background-clip: border-box;
-}
-
+/* (The cobalt CORNER TABS the dialogs wore from 2026-08-18 were retired by the
+   2026-09-01 rebrand: a coach box is a plain hairline glass box now — clean shapes,
+   nothing decorated.) */
 /* The tutorial's ending display — a SIGNAL METER since 2026-08-18 (user-decided,
    superseding the size-ramped two-font rungs: "the difference in font size are
    terrible"): five rows, commonest first — a five-cell LED meter with one more cell lit
@@ -3751,11 +3775,10 @@ button * {
   width: 7px;
   height: 7px;
   border-radius: 1px;
-  background: rgba(244, 241, 232, 0.08);
+  background: rgba(255, 255, 255, 0.08);
 }
 .rarity-meter i.on {
   background: currentColor;
-  box-shadow: 0 0 7px color-mix(in srgb, currentColor 60%, transparent);
 }
 /* The example word: the game's face, one size, in the grade's light. */
 .rarity-example {
@@ -3765,7 +3788,6 @@ button * {
   font-size: 15px;
   letter-spacing: 0;
   justify-self: end;
-  text-shadow: 0 0 0.4em color-mix(in srgb, currentColor 35%, transparent);
 }
 @keyframes rung-in {
   from {
@@ -3789,12 +3811,19 @@ button * {
    on. `margin-top: auto` parks it against the tray's bottom edge in both. An auto margin
    beats the tray's own `justify-content`, so the keyboard and the transient loading/error
    lines keep the tray's centring — the button is the only thing this moves. */
-/* The tutorial's action is the same DEVICE CARD as .btn-primary (one big-action
-   design), full width; disabled unlights the LED. */
+/* The tutorial's action is the same PRIMARY as .btn-primary (one big-action design),
+   full width; disabled dims it. */
 .mix-btn {
   margin-top: auto;
   width: 100%;
-  max-width: 680px; /* the keyboard's max-width — same interaction footprint */
+  /* ONE WIDTH FOR THE APP'S BIG ACTION (user-decided 2026-09-02: "the max width of the
+     primary button on the leaderboard and account page should also apply to the mix
+     button"): the board column's 430px, which the account column now shares — so MIX,
+     both gates' PLAY, INVITE and SAVE are the same button at the same size on every
+     screen. It was 680px, the keyboard's own footprint, on the tutorial's reasoning that
+     the button stands in for the keys; the desktop showed one button stretched across
+     the keyboard on one screen and a card-width one on the next. */
+  max-width: 430px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3805,36 +3834,23 @@ button * {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--fg);
-  background: var(--glass);
-  border: 1px solid var(--line-strong);
+  background: linear-gradient(135deg, var(--accent), var(--accent-deep, #3352e6));
+  border: 1px solid transparent;
   border-radius: var(--r-lg);
   padding: 18px 30px;
   cursor: pointer;
   text-shadow: none;
-  transition: filter 0.08s linear, border-color 0.12s linear;
-}
-.mix-btn::before {
-  content: '';
-  width: 8px;
-  height: 8px;
-  border-radius: 1px;
-  background: var(--solve);
-  box-shadow: 0 0 10px rgba(74, 106, 255, 0.9);
+  transition: filter 0.08s linear;
 }
 .mix-btn:hover:not(:disabled) {
-  filter: brightness(1.3);
-  border-color: var(--fg);
+  filter: brightness(1.1);
 }
 .mix-btn:active:not(:disabled) {
-  filter: brightness(1.5);
+  filter: brightness(1.2);
 }
 .mix-btn:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: default;
-}
-.mix-btn:disabled::before {
-  background: var(--surface-hover);
-  box-shadow: none;
 }
 /* The ladder ending: the tray holds ONE button and the keyboard has dropped for good, so it
    stops reserving the keyboard's footprint and shrinks to the button. The page's own frame
@@ -3904,8 +3920,6 @@ button * {
   height: 60px;
   margin-bottom: 34px;
   color: var(--solve);
-  filter: drop-shadow(0 0 12px rgba(74, 106, 255, 0.65))
-    drop-shadow(0 0 36px rgba(139, 69, 234, 0.45));
 }
 /* The first thing a new player ever reads: a bold statement with its LAST WORDS in the
    board's inverted selection box (the Zaki-headline highlight, 2026-08-18). */
@@ -4145,7 +4159,6 @@ button * {
   align-items: center;
   gap: 8px;
   opacity: 0;
-  text-shadow: 0 0 0.4em color-mix(in srgb, currentColor 35%, transparent);
 }
 .word-rarity.in {
   animation: rung-in 200ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
@@ -4162,7 +4175,6 @@ button * {
   width: 0.8em;
   height: 0.8em;
   background: currentColor;
-  box-shadow: 0 0 10px color-mix(in srgb, currentColor 45%, transparent);
 }
 .word-footer-result .result-actions {
   flex: 0 0 auto;
@@ -4174,16 +4186,12 @@ button * {
   gap: clamp(16px, 2.4vh, 24px);
 }
 
-/* The WINDOW: a non-scrolling frame around the post-mortem's scroller, which is what lets it
-   wear the shared TORN EDGES (`.scroll-torn`) — the revealed line runs far taller than the
-   screen, and an edge that simply ends would read as the end of the map. The two boxes are
-   the retired teaser's own structure, for the same reason (a pseudo-element inside a
-   scroller scrolls away with the content).
+/* The WINDOW: the frame around the post-mortem's scroller and the day's word under it.
    `center` is what puts the word in the MIDDLE of the screen while it is alone there — the
-   gate and the run — and it needs no phase class to stop doing so: once `.word-cut` mounts it
-   is `flex: 1 1 0` and eats every spare pixel, which leaves the word pinned to the window's
-   bottom edge with the line running down into it. So the reveal moves the field in around a
-   word that does not move. */
+   gate and the run — and it needs no phase class to stop doing so: once `.word-scroll`
+   mounts it is `flex: 1 1 0` and eats every spare pixel, which leaves the word pinned to
+   the window's bottom edge with the grid above it. So the reveal moves the field in around
+   a word that does not move. */
 .word-window {
   flex: 1 1 0;
   min-height: 0;
@@ -4209,6 +4217,15 @@ button * {
   max-width: calc(430px + 20px + 6px);
   align-self: center;
 }
+/* The POST-MORTEM window opens to the words modal's own width (2026-09-01): the grid
+   takes as many columns as the screen holds, where the line it replaced was one 430px
+   trunk. The word under it keeps its place at the window's left edge. And it reaches UP
+   to the header's bottom edge — the screen reserves 66px, the desktop bar ends at 58
+   (8px float + 50px) — so the scroller's own fade sits right under the bar. */
+.word-window.wb-open {
+  max-width: calc(1100px + 20px + 6px);
+  margin-top: -8px;
+}
 .word-scroll {
   flex: 1 1 0;
   min-height: 0;
@@ -4218,76 +4235,77 @@ button * {
   /* The board is the screen behind a live prompt — rubber-banding the page under it while
      hunting the line would take the keyboard with it. */
   overscroll-behavior: contain;
-  /* Horizontal only — the line's breathing room is content, never a
-     vertical padding (a sticky offset would resolve against it).
-     The LEFT side is 0 (2026-08-06): the drawing is a left-aligned block — the rank gutter
-     starts it and the words run off to the right — so an inset there just held the whole
-     board 20px in from the prompt under it and from the torn rules that bracket it, and it
-     read as a box floating inside the page rather than as the page's own content. The RIGHT
-     side keeps its 20px: that is the clearance the pixel scrollbar needs off the words. */
-  padding: 0 20px 0 0;
+  /* The LEFT side is 0 (2026-08-06): the board is a left-aligned block, and the prompt
+     under it lines up on the same edge. The RIGHT side keeps its 20px: the clearance the
+     pixel scrollbar needs off the words. And it FADES ITS OWN TOP (2026-09-01): a 36px
+     mask, exactly the header's gradient, drawn by the scroller because the header's own
+     only lights on a scroll it hears. For that fade to sit UNDER the header rather than
+     a band below it, the post-mortem window is pulled up to the header's bottom edge
+     (`.word-window.wb-open`) — the screen's reserve otherwise leaves a strip of bare
+     ground between the bar and the first word, where the fade started "way too low". The
+     36px of top padding is the fade's own height, so the farthest word rests CLEAR of it
+     at the top of the scroll (user-reported). */
+  padding: 36px 20px 0 0;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 36px);
+  mask-image: linear-gradient(to bottom, transparent, #000 36px);
 }
-/* The board lives IN THE PAGE, inside .app's frame inset — unlike the route modal,
-   which is a full-bleed dialog — so `--wordw`'s 100vw arithmetic must also shed the
-   app's side padding (24px each side; 14px under the 640px mobile breakpoint) or
-   fitWord sizes long words to a column ~2 insets wider than the real one and they
-   break mid-word at the terminus. Verified: 'tropiques' at 390px wraps without this.
-   The 20px is the scroller's ONE remaining side (right only since 2026-08-06). */
-.word-frame {
-  --wordw: calc(min(430px, 100vw - 20px - 48px) - var(--gutter) - var(--railw) - 18px - var(--word-gap));
+/* The board's grid (2026-09-01, replacing the route drawing's `.word-frame` rules, the
+   torn `.word-cut` and the `.word-terminus` rail footer): as many columns as the window
+   holds at ONE type size (`WordBoard` sets the column inline off the longest word), the
+   farthest words at the top and the closest at the bottom, next to the day's word pinned
+   under the window. The scroller opens parked at that bottom. */
+.wb-grid {
+  list-style: none;
+  margin: 0;
+  padding: 8px 0 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px 20px;
 }
-/* The scrolling line ends AT the window's bottom edge, because the terminus sits just past
-   it (see `.word-terminus`): scrolled all the way down, the merge's last link runs out of
-   the scroller and straight into the terminus's own rail. Any padding here would open a gap
-   in the middle of that line. */
-.word-frame .route {
-  padding-bottom: 0;
+/* One word, in its RARITY grade's colour (`--rarity-c`, set per word), its exponent raised
+   as the hole's in the shared heat. A CLAIMED word wears its grade's colour as a chip —
+   the held word's inverted chip, in the grade's ink, the sentence chip's em geometry —
+   so a claimed word reads as yours the way a found word does in the sentence modal; a
+   word still censored is `???`, quiet. */
+.wb-word {
+  font-family: var(--pixel-font);
+  font-size: 15px;
+  line-height: 1.3;
+  color: var(--rarity-c, var(--fg));
+  white-space: nowrap;
+  text-shadow: 2px 2px 0 black;
 }
-/* The window cut: the non-scrolling frame that wears the TORN EDGES around the scroller.
-   It exists as its own box INSIDE `.word-window` (rather than the window wearing them, as it
-   did while the terminus lived in the scroller) because the terminus footer is the window's
-   last child: tears on the window would draw UNDER the footer, marking the wrong edge — the
-   cut is where the SCROLLER ends, which is exactly where the line can be cut mid-field. */
-.word-cut {
-  flex: 1 1 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
+.wb-claimed .wb-text {
+  padding: 0.133em 0.2em;
+  margin: -0.133em 0;
+  background: var(--rarity-c, var(--fg));
+  color: var(--bg);
+  text-shadow: none;
 }
-/* While the line is CUT, the content stops 8px SHORT of the torn rule: an empty band of bare
-   backdrop between the severed field and the dashes — the old route map's grammar for a parked
-   row, whose separator kept an 8px clearance rather than sitting against the rows it
-   interrupted. Spoken here with a MASK, not a strip: painting the band would put a box over
-   the animated waves, which is the thing this footer exists to avoid. Only while torn — at the
-   true bottom the mask lifts, because the merge's last link must run flush out of the scroller
-   into the terminus's rail below it. */
-.word-cut.more-down .word-scroll {
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    #000 calc(100% - 8px),
-    transparent calc(100% - 8px)
-  );
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 8px), transparent calc(100% - 8px));
+.wb-unknown {
+  opacity: 0.55;
 }
-/* The TERMINUS: the day's word, pinned UNDER the window as the board's own footer — always
-   on screen, and with nothing ever scrolling behind it, so it needs no masking background
-   (a sticky in-scroller row needed an opaque `--bg` box, which over the page's animated
-   waves read as a black patch stamped on the backdrop — the route modal never shows one
-   only because its dialog is flat `--bg`). When the line is cut mid-field, the cut's torn
-   bottom rule lands right on this footer's top edge, where the terminus's own rail stub
-   runs into it — the same "the map does not continue straight through here" the modal's
-   parked separator speaks, for free.
-   The right padding mirrors the scroller's one padded side PLUS its 6px pixel scrollbar, so
-   this grid lands on the same columns as the line scrolling above it. */
-.word-terminus {
-  padding: 0 26px 0 0;
+.wb-rank {
+  display: inline-block;
+  font-size: 0.55em;
+  margin-left: 1px;
+  color: var(--rank-color);
+  vertical-align: super;
 }
-.word-terminus .route {
-  padding: 0;
+/* The day's word as the grid's LAST ROW, in the solved ink, at the size the route
+   terminus wore — it scrolls with its words (user-decided 2026-09-01). */
+.word-foot {
+  margin: 22px 0 8px;
+  font-family: var(--pixel-font);
+  font-size: 24px;
+  line-height: 1.3;
+  color: var(--solve);
+  text-shadow: 2px 2px 0 black;
+  overflow-wrap: anywhere;
 }
 /* The day's word during the GATE and the RUN (#163): just the word, centred, in the solved
    blue. No node, no rail, no rank gutter — there is no line yet for it to be the end of, and
-   the post-mortem's `.word-terminus` is where it becomes a station again.
+   the post-mortem's `.word-foot` is where it lands under the grid.
    `--wordw` is what `fitWord` divides by, and here it is the WHOLE page column (the route
    frame's is what survives the gutter and the rail), so a long word shrinks to fit rather
    than ever breaking mid-word. The grade label's size is set below, and is much smaller than
@@ -4674,11 +4692,26 @@ button * {
   }
 }
 @media (max-width: 640px) {
-  .word-frame {
-    --wordw: calc(min(430px, 100vw - 20px - 28px) - var(--gutter) - var(--railw) - 18px - var(--word-gap));
-  }
   .word-subject {
     --wordw: calc(min(430px, calc(100vw - 28px)) * 0.95);
+  }
+  /* The phone's bar is 48px full-bleed under the same 66px reserve — and the post-mortem
+     window BLEEDS to the screen's edges (user-decided 2026-09-01): the scrollbar sits on
+     the screen's border with no padding, while the words keep the page's 14px inset. */
+  .word-window.wb-open {
+    margin-top: -18px;
+    margin-left: -14px;
+    margin-right: -14px;
+    width: 100vw;
+    max-width: none;
+  }
+  .word-window.wb-open .word-scroll {
+    padding-right: 0;
+  }
+  .word-window.wb-open .wb-grid,
+  .word-window.wb-open .word-foot {
+    padding-left: 14px;
+    padding-right: 14px;
   }
   /* One integer step down here — 4x rather than 5x. At 320px the page leaves 292px of
      column, and 5x would put a 180px stroke on it: still inside, but reading as a strike
@@ -5016,7 +5049,7 @@ button * {
 .profile-clear,
 .board-chip {
   flex: none;
-  height: 36px;
+  height: 44px;
   font-family: var(--ui);
   font-size: 11px;
   font-weight: 700;
@@ -5057,6 +5090,782 @@ button * {
   color: var(--danger);
 }
 
+/* ── THE ACCOUNT AREA (#204, reworked 2026-08-26) ──────────────────────────────────────
+   Three screens, three questions — `/account` (is this mine, and safe?), `/profile` (how
+   do others see me?), `/account/email` (save it / get it back). They share one column and
+   one dress: mono all-caps chrome, sentence-case explanation, glass over a hairline,
+   nothing rounder than the 4px ceiling. */
+/* `.profile-screen`'s geometry, verbatim and for its stated reasons: `.app` centres this
+   column and the header floats over it, so the clearance comes from `.app`'s own padding —
+   NEVER `100dvh` here, because a taller child of a centring flex parent overflows
+   symmetrically and its top gets clipped under the bar. (`--hud-height` is scoped to
+   `.topbar` and unavailable out here; a `calc()` naming it voids the whole declaration —
+   the trap `.word-input`'s zeroed padding already records.) */
+.account-screen {
+  /* The board column's width (430, from 400 on 2026-09-02), so the call on this screen
+     and INVITE on that one are one button at one size. */
+  width: min(430px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  /* Vertically centered on DESKTOP only (`.app` is start-aligned on a phone, where the
+     mobile block below pins the area to ONE high start line instead — a page reads
+     top-down, and centring made it "start at the middle", user feedback 2026-08-26).
+     When the device list outgrows the viewport the auto margins collapse and the column
+     scrolls, exactly as before. */
+  margin: auto 0;
+  /* 48px is the bar's own height — `.profile-screen`'s exact clearance, and the reason it
+     is a literal: `--hud-height` lives on `.topbar` and naming it in a `calc()` out here
+     voids the whole declaration. No side padding: the column IS the button's width. */
+  padding: 48px 0 24px;
+}
+.account-body,
+.link-step {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+/* THE ROWS (proposed 2026-09-02 on the user's review — "a bunch of primary button, label,
+   secondary button with a different width, with different gaps and sizings, all of it
+   stuck near the stats"): everything there is to DO with the account is a full-width ROW
+   in the device list's own dress, one under the other at one gap, a section's air under
+   the numbers. One grammar for the saved address (a fact — no chevron), the door to
+   another account (leads somewhere — a chevron) and, below them, the devices. */
+.account-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 20px;
+}
+.account-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--glass);
+  font-family: var(--ui);
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms;
+}
+.account-link:hover {
+  border-color: var(--line-strong);
+}
+/* A row that is a FACT, not a control: the saved address, plainly. */
+.account-link.static {
+  cursor: default;
+}
+.account-link.static:hover {
+  border-color: var(--line);
+}
+/* Held while the summary is out: a row's own box, so the screen does not resize when the
+   answer lands — and does not CLAIM "unsaved" before it knows (#211's rule). */
+.account-link.skeleton {
+  border-color: transparent;
+}
+/* The label is an ACTION (uppercase, bold, `--fg` — the area's three-roles rule); the
+   value is a fact in its own case. */
+.account-link-label {
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-link-value {
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The chevron says the row LEADS somewhere — the title's own 7×7 mark, pointing on. */
+.account-link .ui-icon {
+  flex: none;
+}
+
+/* THE ONE CALL: the screen's primary, in the tutorial's MIX / the board's INVITE / the
+   gates' PLAY geometry (`.mix-btn`), the caption that explains it over it. On desktop it
+   is the column's last item; on a phone the mobile block parks it on the bottom edge,
+   where those buttons sit on their screens. */
+.account-cta {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 20px;
+}
+.account-cta .account-note.caption {
+  margin: 0;
+}
+
+.account-load-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.account-load-error .status {
+  margin: 0;
+}
+
+/* The email flow's steps hold ONE thing each — `.app` already centres the column, so a
+   step needs no centring of its own, only room to breathe. It sets the GAP alone: this
+   class is worn BESIDE `.account-screen`, so a `padding` here would win the cascade and
+   silently undo that rule's header clearance. */
+.link-step {
+  gap: 18px;
+  margin: 0;
+}
+
+/* THE ROW — the identity as the page's MASTHEAD (user-decided 2026-08-26, rolling back
+   the centered hero: the UX research's own strip — mark, name and age on the left, EDIT
+   at the trailing edge). The hairline under it is what says "everything below is ABOUT
+   this": the screen's one explicit separation, so the sections never read as one pile. */
+.account-id {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.account-id .avatar {
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+/* Held while the face read is out: the exact box the settled mark takes, so nothing moves
+   when the name lands (the leaderboard strip's rule — a name must never flash and correct
+   itself). */
+.account-id-mark {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--r-md);
+}
+.account-id-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.account-id-name {
+  font-family: var(--ui);
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-id-since {
+  font-family: var(--ui);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* The FLOW'S centered face — the endings, the erase confirmation and the address step's
+   lead all wear it: the signed-out screen's own 64px mark and 20/650 name, since those
+   are the moments the screen is ABOUT an account rather than headed by one. */
+.account-hero-mark {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--r-lg);
+}
+.account-hero-name {
+  font-family: var(--ui);
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* THE ACCOUNT'S THREE NUMBERS (user-decided 2026-08-28) — the live STREAK, the BEST it has
+   ever held, and the total DAYS, across every supported language. A three-up row of equal
+   columns, values in the game's own PIXEL face (a number the game produced) over labels in
+   the chrome's mono, so the row reads as a scoreboard rather than as a form. It is drawn in
+   EVERY state, zeros included; only the VALUES are ever withheld, and only until they
+   land. */
+.account-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  /* Tight under the masthead's rule and given air before the actions: the numbers answer
+     the same question the row above them does — what this account IS — where everything
+     below the row is something to DO with it. */
+  margin: -8px 0 4px;
+}
+.account-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.account-stat-value {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* One fixed height, whether it holds a number or the box it is waiting in, so nothing on
+     the screen moves when the collections land. */
+  height: 24px;
+  font-family: var(--pixel-font);
+  font-size: 20px;
+  line-height: 1;
+  color: var(--fg);
+}
+/* The value's box while the private collections are still out (#211: an unknown answer is
+   never drawn as a claim). It BREATHES only while a read is actually in flight — a failure
+   rests still, since breathing promises an answer that is no longer coming. */
+.account-stat-slot {
+  width: 28px;
+  height: 22px;
+  border-radius: var(--r-md);
+}
+.account-stat-slot.still {
+  animation: none;
+}
+/* The row inside the flow's centered face-stack: the crossroads and the recovery ending
+   both draw it, and both want the column's full width rather than the grid's content width,
+   so the three cells land on the same rhythm they have on `/account`. */
+.link-stack .account-stats,
+.link-receipt-stats {
+  width: 100%;
+  margin: 0;
+}
+.link-receipt-stats .account-stats {
+  margin: 0;
+}
+.account-stat-label {
+  font-family: var(--ui);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* THE HEADER'S BACK CONTROL (user-decided 2026-08-29): the arrow and the screen's NAME as
+   ONE target, in the left slot where a back control belongs and where the eye already is.
+   It replaces the title rather than sitting beside it, so the row's measured width budget
+   is unchanged — the icon takes the place of the tracking the title used to have. */
+.topbar-back {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* A finger's target around type that stays small: the padding is pulled back out with a
+     negative margin so the visible word still starts on the row's own left edge. */
+  padding: 12px 10px 12px 0;
+  margin: -12px 0;
+  border: 0;
+  background: none;
+  /* `font: inherit`: a BUTTON brings its own font
+     and inherits none of the page's, so `.topbar-title` — which sets a size, a weight and a
+     tracking but no FAMILY — was resolving to the UA's Arial inside here while the same
+     class rendered in Azeret Mono on every other header. Same 14px, same 500, same 0.08em,
+     visibly a different word. Only the family was ever wrong, and inheriting the whole font
+     context is what guarantees the two cannot drift again. */
+  font: inherit;
+  color: var(--fg);
+  cursor: pointer;
+  transition: color 120ms;
+}
+/* The back control is the left track's content, and that track is the one that gives
+   ground (the keys may never shrink): with the fixed five-key row beside it, SE
+   CONNECTER at the base size ran 24px INTO the keys at 320px (2026-08-31). It takes the
+   title's own phone step-downs above, and as a floor it ellipsises rather than overlaps. */
+.topbar-back {
+  min-width: 0;
+}
+.topbar-back .topbar-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The back chevron is the title's own 7×7 pixel chevron at 2px a cell — its in-file
+   size; forcing a square here would put it off the cell grid and blur it. */
+.topbar-back .ui-icon {
+  flex: none;
+}
+/* Its hover is the chip's (see `.puzzle-title:hover .topbar-title`); the arrow keeps
+   its ink. */
+
+/* ── THREE ROLES, TOLD APART ON THREE AXES (user-decided 2026-08-29) ───────────────────
+   The area's small type was one size and nearly one colour, so an EXPLANATION, an ERROR and
+   a SECONDARY ACTION read as the same thing: 12px muted help, 12px danger help, 10px
+   uppercase muted button. They now differ in CASE, in WEIGHT+INK, and — for the error — in
+   carrying a MARK, so which of the three a line is can be read before it is read:
+
+     INFO    sentence case · muted · regular  · no mark
+     ERROR   sentence case · danger · medium  · a danger LED before it
+     ACTION  UPPERCASE     · --fg   · bold    · a finger's target
+
+   Sizes went up with it: help was smaller than the buttons it explained. */
+.account-note {
+  margin: -4px 0 0;
+  font-family: var(--ui);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.account-note-center {
+  margin: 0;
+  text-align: center;
+}
+/* The caption UNDER a full-width button: pulled toward what it explains, centered on it. */
+.account-note.caption {
+  margin-top: -4px;
+  text-align: center;
+}
+/* An ERROR CARRIES A MARK — the app's own LED square, in the danger ink, the same shape the
+   primary button lights with. It is what separates a refusal from the help text above it at
+   a glance, where colour alone did not (the two sat at the same size and weight, and a
+   muted-vs-red difference is exactly what a colour-blind reader does not get). */
+.account-note.danger {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
+  color: var(--danger);
+  font-weight: 500;
+}
+.account-note.danger::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  background: var(--danger);
+  /* Sat on the text's own baseline rather than centred on the box: a two-line error keeps
+     its mark beside the FIRST line, where the sentence starts. */
+  translate: 0 -1px;
+}
+
+.account-input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--fg);
+  font-family: var(--ui);
+  font-size: 15px;
+  letter-spacing: 0.03em;
+}
+.account-input::placeholder {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 12px;
+}
+.account-input:focus {
+  outline: none;
+  border-color: var(--line-strong);
+}
+
+/* THE CODE PROMPT: six drawn cells over ONE real input (components/CodeInput.tsx explains
+   why one). The input is stretched over the whole row and invisible — never
+   `display: none`, which would take it out of the tab order and off the autofill path. */
+.code-input {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  cursor: text;
+}
+.code-field {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  opacity: 0;
+  /* The caret would otherwise sit at the row's left edge, unrelated to the cell being
+     filled — the one visible artefact of drawing the prompt beside the field. */
+  caret-color: transparent;
+  color: transparent;
+  font-size: 16px; /* iOS zooms a focused field under 16px. */
+}
+.code-field:focus {
+  outline: none;
+}
+.code-cell {
+  width: 44px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Quiet at rest, LIT once filled — but a boundary still has to be visible: at `--line`
+     the empty cell measured 1.28:1 against its own ground, under WCAG 1.4.11's 3.0 for a
+     UI component, and in daylight the six cells the whole screen is about read as nothing.
+     `--line-strong` is 3.42:1, and the filled state now signals in COLOUR (`--cell-ink`
+     plus its glow) rather than in alpha, so the rest/filled distinction is louder than the
+     hairline step it replaces, not quieter. */
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: rgba(0, 0, 0, 0.28);
+  /* A number the player TYPES — keyboard territory, so the game's own pixel face. */
+  font-family: var(--pixel-font);
+  font-size: 18px;
+  color: var(--fg);
+  transition: border-color 120ms, color 120ms;
+}
+/* A FILLED cell lights in its OWN ink — the digit and the border together — so the row
+   fills into a small spectrum of the avatar palettes as the code goes in: the same colours
+   the tile above it is churning through while it looks for the face (`AccountMark`'s
+   `CODE_INKS` supplies them, so the two surfaces cannot drift). The glow is the app's own
+   LED language at a whisper, never a fill: the cell is still a frame around a digit. */
+.code-cell.filled {
+  border-color: var(--cell-ink, var(--line-strong));
+  color: var(--cell-ink, var(--fg));
+}
+/* Where the next digit lands: a DIM VERSION OF THAT CELL'S OWN INK, so the row previews
+   its own spectrum one step ahead instead of borrowing a colour from outside it (it was the
+   chrome accent until 2026-08-28, when the cells gained their inks — a violet frame in the
+   middle of a walk from violet to magenta read as a sixth, unrelated state). Dim, because
+   this cell holds nothing yet; the ink at full strength means a digit landed. */
+.code-input:focus-within .code-cell.next {
+  border-color: color-mix(in srgb, var(--cell-ink, var(--accent)) 55%, transparent);
+}
+/* A refusal stays AT the input: the game's own invalid-word gesture, at its own amplitude
+   and for the length the caller clears on. The WHOLE ROW is the message, so the "next" cell
+   drops its accent here — one violet box in a red row reads as a second, unrelated state. */
+.code-input.invalid .code-cell,
+.code-input.invalid:focus-within .code-cell.next {
+  border-color: var(--danger);
+  color: var(--danger);
+  /* The refusal takes the WHOLE row, spectrum included: a row that half-kept its colours
+     would read as a partial refusal, and the digits were all wrong together. */
+  box-shadow: none;
+  animation: word-shake var(--shake-ms, 380ms) ease-in-out;
+}
+.code-input.disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* MOUNTED, BUT NOT THIS STEP YET. The prompt exists from the address step on so that the
+   CONTINUE tap has something to move the caret into — iOS opens a keyboard only for a
+   `focus()` made inside a gesture, and the step it belongs to is an `await` away. It is the
+   `.sr-only` treatment rather than `display: none` or `visibility: hidden`, both of which
+   make an element unfocusable and would defeat the whole point. */
+.code-input.offstage {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  pointer-events: none;
+}
+
+/* The quiet row under the cells: RESEND and CHANGE ADDRESS are alternatives, never calls
+   to action — the send allowance is 5 an hour, so the UI must not invite spending it. */
+.link-quiet {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.link-quiet-btn {
+  /* Generous padding around small type: the visible word stays quiet while the tap
+     target stays a finger's — 15px is what makes that literally true (44px), where 12px
+     measured 38 and the one tappable thing on the code step was the smallest. */
+  padding: 14px 16px;
+  /* AND IT IS BOXED, by the same rule as `.btn-secondary` above: RESEND sits under the code
+     cells and the second door under a paragraph, with no primary anywhere near either, so
+     bare they were two more sentences that happened to be tappable. The small-control dress
+     is the one `.board-chip` and `.device-signout` already wear — a `--line-strong`
+     hairline at the sharp radius, no fill. Bare only where it follows the screen's action,
+     which is the crossroads' CANCEL. */
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: none;
+  /* AN ACTION, IN THE ACTION INK. At `--muted` it was the same colour as the help text
+     around it and a size smaller, so the one tappable thing on the screen was the quietest
+     — the chrome's ONE INK rule, which reserves `--muted` for secondary VALUES rather than
+     for controls. */
+  color: var(--fg);
+  /* Its OWN dress, not `inherit`: the erase step mounts one of these alone (CANCEL),
+     outside the `.link-quiet` row that used to supply the typography. */
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 120ms;
+}
+.link-quiet-btn:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.btn + .link-quiet-btn {
+  border-color: transparent;
+}
+.btn + .link-quiet-btn:hover:not(:disabled) {
+  border-color: transparent;
+}
+/* A CONTROL THAT IS NOT A CONTROL YET LOSES ITS BOX (2026-08-30). RESEND spends its first
+   ~30 seconds counting down, and a dimmed hairline box held that long reads as a broken
+   button rather than as a wait — the same reason the second door is held back until the
+   summary settles: a control drawn before it can be pressed is a false offer. Counting, it
+   is a STATUS line (`RESEND (12)`); when the clock runs out the box arrives with the
+   offer. */
+.link-quiet-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+  border-color: transparent;
+}
+
+/* DESTRUCTION NEVER GLOWS: the confirming control is the quiet variant wearing the danger
+   ink, so the lit LED button is never the one that deletes an account. */
+.link-danger {
+  color: var(--danger);
+  border: 1px solid rgba(255, 61, 46, 0.45);
+  border-radius: var(--r-md);
+  /* Matches `.btn-secondary`'s box (it overrides that rule), so the one control that
+     DELETES an account is not the smallest target on its own screen. */
+  padding: 14px 12px;
+}
+.link-danger:hover:not(:disabled) {
+  border-color: var(--danger);
+  background: rgba(255, 61, 46, 0.06);
+}
+
+/* The address step's LEAD: WHO is being saved. A touch of air between it and the input it
+   introduces. */
+.link-lead {
+  margin-bottom: 4px;
+}
+
+/* ── THE MARK THAT WAITS, AND THE MARK THAT ARRIVES (#204's UX rework vol. 2) ───────────
+   The email flow performs two OPPOSITE acts through one engine — saving the account you
+   hold, and signing into another one — and this is the wordless tell that separates them
+   (`components/AccountMark.tsx` holds the reasoning). Saving keeps a real face on screen
+   throughout; returning opens on an EMPTY grid that the recovered account develops into.
+   Both are drawn at `Avatar`'s exact geometry, so the swap moves nothing by a pixel. */
+.account-mark {
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+/* The empty slot. NOT a skeleton — nothing is loading, and the skeleton's sweep would
+   promise an answer this screen has not even asked for yet. It is the question drawn as
+   WHAT IT IS WAITING FOR: a mark, churning through the avatar palettes on a noise field
+   that RESOLVES into the real drawing when the code lands (`AccountMark.tsx` holds the
+   reasoning). A canvas at the marks' own 10×10 backing pixels,
+   so it takes the standing integer-scale pixel-art dress — and `pixelated`, because at 6.4
+   device pixels a cell, bilinear sampling would blur the one property the drawing has. */
+.account-mark.field {
+  display: block;
+  image-rendering: pixelated;
+}
+
+/* ── THE CROSSROADS (#204's UX rework vol. 2) ──────────────────────────────────────────
+   The erase confirmation used to show only the account being LOST, which draws a trade as
+   pure loss — the screen could say what the tap costs but never what it buys. It is a
+   FORK, so it draws both: the account being left — dimmed, under the word DELETED when it
+   is about to become unreachable and under its own NAME when it survives (2026-08-28: a
+   device leaving a SAVED account is asked too, and nothing red belongs on that screen) —
+   and the one being joined, lit and named. The sentence beneath is then free to carry the
+   only part a picture cannot: what happens to the account being left. */
+.link-cross {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 14px;
+  /* THE ARROW IS THE AXIS. The two labels are different lengths — DELETED against a
+     player's name — so a row that merely centres its content puts the marks off-centre by
+     half that difference. Equal-width sides fix the pivot; the cap keeps the two faces from
+     drifting apart on a wide column, and 300 is what leaves each side room for a full
+     16-character name at 320px. */
+  width: 100%;
+  max-width: 280px;
+  margin: 0 auto;
+}
+.link-cross-side {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+/* The one being left reads as already half-gone. Not hidden and not crossed out: the
+   player has been wearing this face, and it has to stay recognisable right up to the tap
+   that deletes it. */
+.link-cross-side.leaving {
+  opacity: 0.5;
+}
+.link-cross .avatar {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.link-cross-mark {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--r-md);
+}
+/* THE TWO LABELS ARE DIFFERENT KINDS OF WORD, and they are dressed as such. DELETED is a
+   system verdict — tracked all-caps chrome, in the one red this whole area contains, so the
+   first red thing on screen IS the signal. The other side is a NAME: case kept, ordinary
+   spacing, the way every board already writes an identity. Both are bounded by their SIDE,
+   which is half the row. */
+.link-cross-tag,
+.link-cross-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ui);
+  color: var(--fg);
+}
+.link-cross-tag {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.link-cross-tag.danger {
+  color: var(--danger);
+}
+.link-cross-name {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+/* The direction of travel, drawn rather than written: a hairline running from the account
+   being left into the one being joined, with the arrowhead as a sharp CSS corner (no
+   glyph — the pixel face has no arrow, and a text `→` sits on its own baseline instead of
+   on the line's). Centred on the 44px marks above the labels. */
+.link-cross-arrow {
+  position: relative;
+  flex: none;
+  align-self: flex-start;
+  width: 26px;
+  height: 44px;
+}
+.link-cross-arrow::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: var(--line-strong);
+}
+.link-cross-arrow::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 5px;
+  height: 5px;
+  border-top: 1px solid var(--line-strong);
+  border-right: 1px solid var(--line-strong);
+  translate: 0 -50%;
+  rotate: 45deg;
+}
+
+/* THE ENDING'S COPY WAITS FOR THE FACE. When a mark ARRIVES, the composition is the beat —
+   an account appearing out of nothing — and a name landing at full strength beside a
+   half-drawn face steals it. So the name, the receipt, the sentence and the action follow it
+   in, each a breath behind the last, in the order they are read. Every one holds its layout
+   box from the first frame (`both`), so nothing on the screen moves while they arrive. The
+   delay is the caller's (`--arrive-delay`), the `--slash-ms` rule: the JS that ends the
+   composition and the CSS that waits for it must not hold two numbers. */
+.link-arrive {
+  animation: link-arrive-in 240ms ease-out both;
+  animation-delay: var(--arrive-delay, 0ms);
+}
+/* Under `prefers-reduced-motion` the global rule collapses DURATIONS but deliberately
+   keeps DELAYS — several surfaces need them (a floating hit that shows, holds and goes;
+   the loot's apex; the rarity ladder's rungs), so zeroing delay globally would break them.
+   Here the delay is the whole animation: with the duration gone, the ending's name,
+   receipt, sentence and action simply stay invisible for up to 780ms and then snap in one
+   at a time — more motion-like than the fade it replaced. So the delay is dropped HERE
+   only, and the ending arrives whole. */
+@media (prefers-reduced-motion: reduce) {
+  .link-arrive {
+    animation-delay: 0ms;
+  }
+}
+@keyframes link-arrive-in {
+  from {
+    opacity: 0;
+    translate: 0 3px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+/* THE ONE NEW FACT the ending shows about the account, under its name: the address it is
+   now saved to. (A RECOVERY shows the three-up stats row instead — the numbers that PROVE
+   the account is theirs, and the same ones `/account` prints.) Quiet, because the face and the sentence carry the
+   moment; this is the receipt under them. */
+.link-receipt {
+  margin: -6px 0 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+/* The centered FACE STACK: both endings and the erase confirmation — an account's mark
+   and name over the one thing being said about it, then the actions. One class, because
+   the three moments must read as one voice: this screen is always about WHO. */
+.link-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.link-stack .avatar {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.link-stack .btn {
+  width: 100%;
+}
+/* The confirmation and the ending take focus when they arrive, so a screen reader lands on
+   what just happened rather than back at the top of the document. It is a container, not a
+   control — nothing to ring. */
+.link-stack:focus {
+  outline: none;
+}
+/* The crossroads' CANCEL is the SAFE half of a destructive fork, and it was 75x38 sitting
+   under a 358px button that deletes an account. Same width, same floor: the quiet dress is
+   what makes it secondary, never a smaller thing to hit. */
+.link-stack .link-quiet-btn {
+  width: 100%;
+}
+
 /* The account's DEVICES, and the way to sign one out (#216) — the profile screen's second
    block, under the editor and inside the same column. Chrome, so: mono, all-caps, one ink
    with SECONDARY values in `--muted` (the 2026-08-20 rule), and nothing rounder than the
@@ -5064,22 +5873,29 @@ button * {
 .device-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  /* A SECTION IS SPACE AND A TITLE (user-decided 2026-08-29). This block sat one column gap
+     under the save state with a 10px muted label on it, so a list of devices and the button
+     above it read as one undifferentiated pile. The extra room is what says "a new thing
+     starts here"; the title says what it is. */
+  margin-top: 20px;
 }
+/* Loud enough to head a block: the chrome's own ink at the size the rest of the chrome
+   uses, where it was a 10px muted whisper — smaller than every row it named. */
 .device-list-title {
-  margin: 0;
+  margin: 0 0 2px;
   font-family: var(--ui);
-  font-size: 10px;
-  font-weight: 550;
-  letter-spacing: 0.14em;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--fg);
 }
 .device-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 9px 12px;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   background: var(--glass);
@@ -5088,6 +5904,30 @@ button * {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
+/* TWO LINES per row (#204's polish pass): the label, then one quiet fact under it. A
+   label + a marker + a date + a chip is four things, and on a 390px phone the single
+   line truncated its own current marker. */
+.device-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.device-sub {
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The row the reader is ON says so in the accent — the same ink as its inset edge, so the
+   two read as one statement. */
+.device-sub.current {
+  color: var(--accent);
+}
 /* The row the reader is ON wears the accent at the board's own whisper strength — the
    2026-08-20 rule that replaced the inverted box in a column of glass rows. An INSET
    shadow, never a border-left, so marking a row cannot shift the grid by a pixel. */
@@ -5095,26 +5935,24 @@ button * {
   box-shadow: inset 2px 0 0 0 var(--accent);
 }
 .device-name {
-  flex: 1 1 auto;
-  min-width: 0;
   font-weight: 550;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.device-here {
-  margin-left: 8px;
-  font-weight: 400;
-  color: var(--accent);
-}
-.device-seen {
-  flex: 0 0 auto;
-  color: var(--muted);
-}
 .device-signout,
 .device-retry {
   flex: 0 0 auto;
-  padding: 4px 8px;
+  /* The one destructive control on `/account`, and it measured 82x27. The height is STATED
+     rather than reached through padding (`.board-chip`'s own shape), so the floor cannot
+     drift with the label's line box. The row grows with it rather than the chip being given
+     an invisible overhang: two SIGN OUT buttons one gap apart would then have OVERLAPPING
+     hit areas, and a tap landing on the wrong row's sign-out is the exact accident this
+     list must never have. */
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 14px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-sm);
   background: none;
@@ -5147,7 +5985,116 @@ button * {
   .profile-screen {
     padding: 48px 2px 0;
   }
+  /* THE ACCOUNT AREA STARTS HIGH, on ONE line (#204's third pass, user feedback: the
+     centred column "feels like the screen starts at the middle" — a PAGE reads top-down,
+     so the free space belongs at the BOTTOM). Every screen of the area — the account
+     page, the flow's steps, the endings — opens at the same height, which is what makes
+     them read as one place; and it is an UPPER-third line rather than a centre because
+     the soft keyboard eats the bottom half of the flow's input steps. `vh` is the LAYOUT
+     viewport, so nothing jumps when the keyboard resizes the visual one. Desktop keeps
+     the centring `.app` already does. */
+  /* THE AREA'S ONE START LINE. `/profile` was put on it too (2026-08-30 — the editor is
+     one tap inside `/account` and opened 53px higher) and TAKEN OFF it (user-decided
+     2026-09-02: "a huge useless padding at the top of the screen, making the view
+     scrollable on most mobile devices for no reason"). The editor is the area's one TALL
+     screen — the name, the 10×10 grid, the palette and SAVE — and the start line's
+     76–128px pushed that stack past a phone's viewport; it keeps the 48px header
+     clearance above, the rule that fit it to an iPhone 13's 664px to the pixel. */
+  .account-screen,
+  .account-screen.link-step {
+    margin: 0;
+    padding-top: clamp(76px, 13vh, 128px);
+    /* AND IT HAS TO BE ABLE TO SCROLL UNDER THE KEYBOARD. The column already carries
+       `max-height: 100%` + `overflow-y: auto`, which is exactly the right machinery — but
+       nothing was ever pushing it past its box. `interactive-widget=resizes-content` (the
+       viewport meta) shrinks the LAYOUT viewport on Chrome Android, so there the column
+       already scrolls; iOS Safari does not implement it, so there the layout viewport is
+       unchanged, nothing overflows, and the wrong-code line and RESEND simply sit under the
+       keyboard with no way to reach them. `--kb-inset` is the measured difference between
+       the two viewports (`hooks/useKeyboardInset`), so it is ~0 wherever the layout already
+       resized — self-neutralising on Android, and on iOS exactly the room the column needs
+       to scroll its own bottom into view. */
+    padding-bottom: calc(24px + var(--kb-inset, 0px));
+  }
+  /* THE AREA HAS ONE VERTICAL GRAMMAR: every screen of it opens on the same high line and
+     the free space accumulates at the BOTTOM, the way a page reads (the 2026-08-26
+     start-high rule). This block is where that was broken and put back.
+
+     What it was: `margin: auto 0` on the action group, to answer a review finding that the
+     primary sat in the upper third with the screen empty beneath it. Parked hard on the
+     bottom edge (`margin-top: auto`) the screen read as two blocks with a rift; splitting
+     the free height instead put a 161px HOLE in the middle of it — the identity and its
+     numbers at the top, the action floating in the centre, and the same emptiness, now
+     twice and on both sides. Two ways of spending free space, both worse than not spending
+     it: a five-element screen has no interior to distribute, and the trailing space is not
+     a defect to be filled — it is what a short page looks like.
+
+     So the group is a real box (its own children space at 20px) held by a SECTION gap, and
+     nothing floats. The column is still STRETCHED, because `.app` is `flex-start` here and
+     a row item is otherwise only as tall as its content — which is what lets the device
+     list, once an account is saved, grow the column and scroll it. */
+  .account-screen {
+    align-self: stretch;
+    /* The viewport minus `.app`'s own 16px + 28px pads (the board screen's exact sum), so
+       the CALL below can park on the bottom edge; a longer page (the devices) simply
+       scrolls past it. */
+    min-height: calc(100dvh - 44px);
+    /* Edge to edge like the screens the call is measured against: the 2px side pads made
+       the button 4px narrower than MIX and INVITE, on the same edge. */
+    padding-left: 0;
+    padding-right: 0;
+  }
+  /* The PAGE scrolls this screen, not the column: the column's own scroller (kept on the
+     flow's steps, which need it to scroll under the soft keyboard) would otherwise offer
+     14px of travel over the call parked past its box. */
+  .account-screen:not(.link-step) {
+    max-height: none;
+    overflow: visible;
+  }
+  /* THE CALL ON THE BOTTOM EDGE — the tutorial's MIX and the board's INVITE sit 14px off
+     the viewport's bottom on a phone, and this is the same button on the same edge: the
+     auto margin parks it, and the negative bottom margin gives back the screen's own 24px
+     and `.app`'s 28px down to that 14px. (The 2026-08-30 pass parked the action group
+     here and pulled it back as "two blocks with a rift"; with the rows between the
+     numbers and the call, the middle is no longer empty.) */
+  .account-cta {
+    margin-top: auto;
+    margin-bottom: -38px;
+  }
+  .account-cta .mix-btn {
+    margin-bottom: 0;
+  }
 }
+
+/* THE NARROWEST PHONE, where FRENCH is what bites (it runs ~20% longer than English and
+   every label here is a real word): `SAUVEGARDER PAR E-MAIL` broke mid-word into
+   "…PAR E-" / "MAIL", because the primary's 30px side padding plus its LED left 210px for
+   a label wanting 224 — the box, not the type. And `MODIFIER` is wider than `EDIT`, so the
+   masthead squeezed the account's own name to `ShinyGobl…`. Both are bought back in
+   PADDING, so no type shrinks and no label is rewritten. */
+@media (max-width: 380px) {
+  /* Measured: at 16px of side padding the label still wrapped and 14 was the exact
+     threshold, so this takes 12 — two pixels of slack against a device whose metrics round
+     the other way. */
+  .btn-primary {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  /* And the masthead hands the name back what MODIFIER took: 132px of column became 150,
+     which fits every assigned name up to 14 characters where 13 was already clipping. The
+     longest two the generator can make still ellipsize, which is what the ellipsis is for. */
+  .account-id {
+    gap: 8px;
+  }
+  .account-id .board-chip {
+    font-size: 10px;
+    padding: 0 6px;
+  }
+  .account-id-name {
+    font-size: 15px;
+  }
+}
+
 
 /* The SAVE button's loading choreography: the label always reads SAVE — on submit it
    rolls down and out while the three-dot loader drops in from the top, waves for at
@@ -5268,54 +6215,53 @@ button * {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  /* Clears the floating glass band (8px + 50px viewport, minus .app's own 24px). */
-  padding-top: 46px;
+  /* Clears the floating glass band (8px + 50px viewport, minus .app's own 24px), plus a
+     beat: the tabs are the screen's FIRST thing since the identity strip left
+     (2026-08-30), and a hairline box 12px under a hairline band read as two rules of one
+     box. */
+  padding-top: 58px;
 }
 
-/* The identity strip: your mark and name as a board row shows them, with EDIT (the
-   #188 editor's wired entry) on the row's far edge. */
-.board-me {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.board-me .avatar {
-  flex: none;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-}
-.board-me-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--ui);
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-}
-/* An uncustomized player reads as their PSEUDONYM (anonName — a deterministic
-   pronounceable name derived from the publicId; user feedback 2026-08-20, replacing
-   the raw id, which read as a machine talking). It looks like a name, so it keeps the
-   name's own size and weight — only quieter, in the plain SECONDARY ink (user-decided
-   2026-08-20: secondary text and icons wear `--muted`, never `--fg` + opacity). */
-.board-me-name.anon {
-  color: var(--muted);
-}
-/* The EDIT chip is the profile CLEAR's chip — literally, sharing its rule above
-   (`.profile-clear, .board-chip`) rather than repeating it property for property: one
-   quiet hairline chip, worn wherever a control leads AWAY from what it sits beside. */
-
-/* The whose-scores tabs wear the header switcher's exact dress, stretched to the
-   column: same hairline group, same inverted-box active state, said in weight. */
+/* The whose-scores tabs. They wore the header's segmented mode switcher's dress by
+   SHARING its class; that switcher was retired on 2026-08-30 (PuzzleTitle's sheet holds
+   which-daily now), so the dress lives here, on its last consumer — the same hairline
+   group and the same inverted-box active state, said in weight. */
 .board-tabs {
   display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
 }
-.board-tabs .mode-tab {
+.board-tab {
   flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  opacity: 0.55;
+  font-family: var(--ui);
   font-size: 12px;
+  /* WEIGHT is the state: light at rest, bold in the box — the mono's fixed advance
+     means the swap moves nothing. */
+  font-weight: 430;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1;
   padding: 8px 10px 7px;
+  border-radius: 2px;
+  cursor: pointer;
+  text-shadow: none;
+  transition: opacity 0.1s linear, background-color 0.1s linear, color 0.1s linear;
+}
+.board-tab:not(.active):hover {
+  opacity: 0.9;
+}
+.board-tab.active {
+  background: var(--fg);
+  color: var(--bg);
+  opacity: 1;
+  font-weight: 700;
+  cursor: default;
 }
 
 /* The body owns the leftover height; transient states centre in it, the list fills it. */
@@ -5454,27 +6400,18 @@ button * {
   height: 3px;
   background: var(--muted);
 }
-/* Holds the identity strip's layout for the beat before the id derives. */
-.board-me-slot {
-  flex: none;
-  width: 40px;
-  height: 40px;
-}
-
-/* The strip's SKELETON while its profile read is in flight (user feedback 2026-08-20).
-   The screen used to publish the ASSIGNED identity the moment the id derived and correct
-   it a beat later, so every named player watched a stranger's name flash under their own
-   mark. A placeholder says "not yet"; a name says something false. It holds the exact
-   boxes the resolved strip takes, so nothing moves when the real values land. The breathe
-   is what tells it from a broken render on a slow read; the global reduced-motion rule
-   collapses it to a single instant pass, which leaves it resting and still. */
+/* A SKELETON while a read is in flight (user feedback 2026-08-20, on the board's
+   identity strip — retired 2026-08-30, the rule outlived it). A surface used to publish
+   the ASSIGNED identity the moment the id derived and correct it a beat later, so every
+   named player watched a stranger's name flash under their own mark. A placeholder says
+   "not yet"; a name says something false. It holds the exact boxes the resolved values
+   take, so nothing moves when they land. The breathe is what tells it from a broken render
+   on a slow read; the global reduced-motion rule collapses it to a single instant pass,
+   which leaves it resting and still. */
 .skeleton {
   background: color-mix(in srgb, var(--fg) 10%, transparent);
   border-radius: var(--r-sm);
   animation: skeleton-breathe 1.4s ease-in-out infinite;
-}
-.board-me-slot.skeleton {
-  border-radius: var(--r-md);
 }
 .skeleton-name {
   display: block;
@@ -5533,8 +6470,6 @@ button * {
   font-family: var(--pixel-font);
   font-size: 11px;
   color: var(--play-heat);
-  /* The exponents' glow, quieter: enough for the ink to register as signal. */
-  text-shadow: 0 0 6px color-mix(in srgb, var(--play-heat) 45%, transparent);
   translate: 0 1px;
 }
 
@@ -5586,13 +6521,23 @@ button * {
 .board-invite {
   flex: none;
 }
+/* ON THE SAME EDGE AS THE TUTORIAL'S MIX (user-reported 2026-09-02: the two buttons sat
+   at different heights, "a weird feeling of the same button being moved around"): MIX
+   sits 14px off a phone's bottom, and this one sat 38 — `.app`'s 28px pad plus the
+   `.mix-btn` phone margin. The pad is given back here, so both land on 14. */
+@media (max-width: 640px) {
+  .board-invite {
+    margin-bottom: -14px;
+  }
+}
 
 @media (max-width: 640px) {
   .board-screen {
     /* The mobile .app scrolls the page; the board keeps its own internal scroll by
        taking an explicit viewport height (minus .app's 16px top / 28px bottom pads). */
     height: calc(100dvh - 44px);
-    padding-top: 48px;
+    /* The full-bleed 48px band plus the same beat the base rule gives the tabs. */
+    padding-top: 60px;
     gap: 12px;
   }
 }

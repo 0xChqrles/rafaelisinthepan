@@ -1,203 +1,101 @@
-import { Fragment, useLayoutEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import type { HistoryModel, HistoryStop } from '../game/history';
-import {
-  ARRIVAL_PX,
-  OffMapShelf,
-  RouteLink,
-  RouteRow,
-  RouteTail,
-  RouteWord,
-  STATION_PX,
-  UNKNOWN,
-  dashedRun,
-  linkGap,
-  rankGutterChars,
-  routeFrameVars,
-} from './routeDrawing';
-import { holeTitle, srRouteDestination, srRouteOffMap, srRouteStop } from '../i18n';
+import { rankHeatColor } from '@whippin/shared';
+import type { HistoryModel } from '../game/history';
+import { holeTitle, srRouteStop } from '../i18n';
 import ModalHeader from './ModalHeader';
 import useModalDismiss from '../hooks/useModalDismiss';
 
-// The HISTORY modal (user-decided 2026-08-10, replacing the #117 route map — then given
-// the map's JOURNEY spine back on review the same day): tap a hole, see your tries as
-// stops on ONE line walking down to the hidden word.
-//
-// The first cut was a flat sorted list, and it was legible but said nothing: no starting
-// word, an ordering you had to read the exponents to infer, no sense of a target being
-// reached. So the map's SPINE returned — what stays retired is everything that made the
-// map unreadable and never helped: the censored census of every unfound group, the sticky
-// "you are here" machinery. What is drawn now is only where the
-// player has BEEN, on the structure that says what it means:
-//
-//   - the MISSED shelf at the top, its words in MISS's dimmed weird red — one
-//     block of dead ends — then the broken tail: the void the line comes out of;
-//   - the BEHIND stretch (stops farther than the departure — guesses that went backwards):
-//     quiet words, small nodes, and the connectors STAY the broken trace, because the
-//     journey has not started yet ("anything farther than the start is behind you");
-//   - the DEPARTURE (muted node, dimmed word — the one stop you were given, not one you
-//     earned) is where the line turns SOLID: from here down every stop is a step of the
-//     walk, full-bright in the pale hole blue, spaced by its REAL distance (`dq`), with
-//     the orange "you are here" node at the hole's current position (the gradient lives
-//     in the gutter exponents alone — a live-gradient word was tried and rejected on screen,
-//     2026-08-17);
-//   - the terminus: the fixed-width `???` on the big node, wearing the holes' own dashed
-//     OPEN-BLANK line — the unknown target the whole round is about — turning into the
-//     accented secret (blank gone) once found.
-//
-// So the three kinds of guess are told apart by the LINE itself, not by reading numbers:
-// red and shelved = never on the map, dim on the dashes = behind where you started,
-// bright on the solid rail = progress.
-//
-// It opens scrolled to the line's END, where "how close am I, what is left" lives, and
-// keeps everything the old modal decided about being a MODAL: the zoom out of the tapped
-// word and the retraction back into it, useModalDismiss + the shared ModalHeader above a
-// pixel-scroll scroller, close chip and Escape as the only ways out. The LINE has no
-// motion of its own — the only animation is the arrival and the leaving.
+// The WORDS modal (user-decided 2026-09-01): a COMPLETED hole — rank 0, whether or not the
+// rest of the sentence is — opens this instead of the wheel, since there is nothing left
+// to swap in. It is the old history modal's screen with the ROAD taken out: no rail, no
+// nodes, no distances drawn — the found word as the headline, then every word found for
+// it "like on a synonyms website": a plain grid, closest first, every word in `--fg` with
+// its exponent in the shared heat colour — and the ones the player actually FOUND wearing
+// the held word's own inverted CHIP (user-decided 2026-09-01, superseding a dim on the
+// never-typed ones): the app's one emphasis gesture, so the list reads as the sentence
+// does — a chipped word is one you typed. ONE type
+// size for every word (user-decided 2026-09-01: "avoid reducing the font size, even if it
+// leads to less columns"): the column is as wide as the LONGEST word needs, so a wide
+// screen takes as many such columns as fit and a phone gets one or two; only a word that
+// would not fit the whole width of a phone shrinks, alone. Read-only; the shared
+// `ModalHeader` and Escape are the ways out, and it FOLDS with a fade like the wheel.
 
-// The final run into the terminus: the same solid leap the route map spent there — the
-// line should visibly LEAD to the word.
-const LEAP_H = 56;
-// "You are here" reads a step above the rest of the line, like the map's own.
-const HERE_PX = 17;
+// Press Start 2P advances exactly 1em per glyph, so a word's width is arithmetic: its
+// glyphs at `WORD_PX`, plus the exponent (up to four digits at 0.55em, one pixel off).
+const WORD_PX = 15;
+const WORD_MIN_PX = 9;
+const RANK_PX = 4 * WORD_PX * 0.55 + 1;
+// The chip's own overhang, both sides (the sentence chip's 0.2em), which a found word's
+// column has to hold.
+const CHIP_PX = WORD_PX * 0.4;
+// The scroller's side padding, both sides — what a word must fit inside on a phone.
+const SIDES_PX = 40;
+const FRAME_MAX_PX = 1100;
 
 export default function HistoryModal({
   model,
   number,
   lang,
-  origin,
   onClose,
 }: {
   model: HistoryModel;
   // The hole's 1-based sentence position among distinct secrets — the ruler's numbering.
   number: number;
   lang: string;
-  // The point the modal grows out of — the tapped word's centre in viewport coordinates,
-  // which are the dialog's own (fixed, inset 0). Null falls back to the centre of the screen.
-  origin?: { x: number; y: number } | null;
   onClose: () => void;
 }) {
-  // FIRST hook on purpose: it owns `showModal()` (a closed <dialog> is display:none — the
-  // opening scroll below would measure a tree with no boxes), takes opening focus to the
-  // dialog rather than the header's close chip, and turns every dismissal into the
-  // retraction beat.
-  const { closing, beginClose, dialogProps } = useModalDismiss('history-zoom-out');
-  const scrollRef = useRef<HTMLDivElement>(null);
+  // FIRST hook on purpose: it owns `showModal()` and turns every dismissal into the fold.
+  const { closing, beginClose, dialogProps } = useModalDismiss('hw-out');
   const title = holeTitle(lang, number);
 
-  // Open on the END of the line: the ground covered fills the screen above, and the
-  // terminus — the point of the whole drawing — is on screen from the first frame. Set
-  // directly, never smooth-scrolled (the line has no motion); a line shorter than the
-  // screen makes this a no-op and the frame's auto margins centre it instead.
-  useLayoutEffect(() => {
-    const scroller = scrollRef.current;
-    if (scroller) scroller.scrollTop = scroller.scrollHeight;
+  // The width a word has to fit — the frame's — followed across a resize.
+  const [width, setWidth] = useState(() => Math.min(FRAME_MAX_PX, window.innerWidth - SIDES_PX));
+  useEffect(() => {
+    const onResize = () => setWidth(Math.min(FRAME_MAX_PX, window.innerWidth - SIDES_PX));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
   }, []);
-
-  // Farthest first — the order the line is travelled and drawn in.
-  const stops: HistoryStop[] = [...model.stops].reverse();
-  const rankChars = rankGutterChars(model.maxRank);
-
-  // Consecutive-rank stops sit one row apart; everywhere the line SKIPS ranks the
-  // connector length carries the distance (routeDrawing's own rule). Pre-#115 data has no
-  // dq to space by, so a null on either end falls back to the minimum — uniform spacing,
-  // never a refusal.
-  const gap = (previous: HistoryStop | undefined, stop: HistoryStop): number => {
-    if (!previous) return 0;
-    if (previous.dq === null || stop.dq === null) {
-      return linkGap({ rank: stop.rank + 1, dq: 0 }, { rank: stop.rank, dq: 0 });
-    }
-    return linkGap({ rank: previous.rank, dq: previous.dq }, { rank: stop.rank, dq: stop.dq });
-  };
+  // The column: the longest word at full size, capped at the frame — so a word longer
+  // than the frame is the one exception that shrinks.
+  const longest = model.stops.reduce((max, stop) => Math.max(max, stop.word.length), 1);
+  const column = Math.min(width, longest * WORD_PX + RANK_PX + CHIP_PX);
+  const sizeOf = (word: string) =>
+    Math.max(WORD_MIN_PX, Math.min(WORD_PX, (width - RANK_PX) / Math.max(1, word.length)));
 
   return createPortal(
     <dialog
       {...dialogProps}
-      className={`history-dialog${closing ? ' closing' : ''}`}
-      // Where the opening zoom starts. Omitted when the word could not be located, so the
-      // CSS fallback (dead centre) takes over rather than 0,0 throwing it to a corner.
-      style={
-        origin
-          ? ({ '--zoom-x': `${origin.x}px`, '--zoom-y': `${origin.y}px` } as CSSProperties)
-          : undefined
-      }
+      className={`hw-dialog${closing ? ' closing' : ''}`}
       aria-label={title}
       onClose={onClose}
     >
       <ModalHeader lang={lang} title={title} onClose={beginClose} />
-
-      <div className="history-scroll pixel-scroll" ref={scrollRef}>
-        <div className="route-frame history-frame" style={routeFrameVars(rankChars)}>
-          {/* The drawing is decorative; the sr-only list below carries the same content. */}
-          <div className="route" aria-hidden="true">
-            {/* Before the line even starts: the guesses that earned no rank at all. */}
-            <OffMapShelf lang={lang} misses={model.misses} />
-            {/* The line always comes in out of that void, whether or not this round hit it. */}
-            <RouteTail />
-
-            {stops.map((stop, i) => {
-              // A connector is part of the walk only from the departure DOWN: entering a
-              // behind stop — or the departure itself, from behind territory — it stays
-              // the broken trace, so the solid line visibly BEGINS where the journey does.
-              // (`stop` is the closer end of the pair; behind > departure > ahead in this
-              // order, so the flags of the lower stop decide.) Broken heights are snapped
-              // to the dash unit, or the run ends on a cut dash against the node.
-              const broken = stop.behind || stop.start;
-              // ONE zone class per stop, so each zone owns its colour outright (the sr
-              // flags below stay complete — this is only the drawing's dress). TWO zones,
-              // not three: the DEPARTURE has no dress of its own (user-decided
-              // 2026-08-10) — it is a word the player holds like any other, so it renders
-              // exactly as a valid guess does. What still says "the walk starts here" is
-              // the LINE: the broken trace ends at it, and everything above it is grey.
-              const zone = stop.best ? 'route-you' : stop.behind ? 'route-behind' : 'route-ahead';
-              // ...plus one MODIFIER: a group the solve merely NAMED. It keeps its zone's
-              // colour and takes the app's own "named, not found" dress (the word board's
-              // distinction) — dimmed word, small node — so what the player actually held
-              // still stands out of the field that was always there.
-              const dress = stop.revealed ? `${zone} route-revealed` : zone;
-              return (
-                <Fragment key={stop.rank}>
-                  {i > 0 && (
-                    <RouteLink
-                      height={
-                        broken ? dashedRun(gap(stops[i - 1], stop)) : gap(stops[i - 1], stop)
-                      }
-                      broken={broken}
-                    />
-                  )}
-                  <RouteRow rank={stop.rank} className={dress}>
-                    <RouteWord word={stop.word} max={stop.best ? HERE_PX : STATION_PX} />
-                  </RouteRow>
-                </Fragment>
-              );
-            })}
-
-            {/* The line's final run into the word: solid — the journey visibly LEADS there. */}
-            <RouteLink height={LEAP_H} />
-            {/* The end of the line. `???` while the hole is open — the unknown target the
-                whole round is about — the accented secret, blank line gone, once found. */}
-            <RouteRow className={`route-arrival${model.solved ? ' route-found' : ''}`}>
-              <RouteWord word={model.secret ?? UNKNOWN} max={ARRIVAL_PX} />
-            </RouteRow>
-          </div>
-
-          {/* The line in words, closest first — it leads with what the drawing opens on. */}
-          <ol className="sr-only">
-            <li>{srRouteDestination(lang, model.secret)}</li>
+      <div className="hw-scroll pixel-scroll">
+        <div className="hw-frame">
+          {/* The word itself, in the solved ink — what every word below was found for. */}
+          {model.secret && <p className="hw-head">{model.secret}</p>}
+          <ul className="hw-grid" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${column}px, 1fr))` }}>
             {model.stops.map((stop) => (
-              <li key={stop.rank}>
-                {srRouteStop(lang, {
-                  rank: stop.rank,
-                  word: stop.word,
-                  start: stop.start,
-                  best: stop.best,
-                  behind: stop.behind,
-                })}
+              <li
+                key={stop.rank}
+                className={`hw-word${stop.revealed ? '' : ' hw-found'}`}
+                style={
+                  {
+                    fontSize: `${sizeOf(stop.word)}px`,
+                    '--rank-color': rankHeatColor(stop.rank),
+                  } as CSSProperties
+                }
+                aria-label={srRouteStop(lang, stop)}
+              >
+                <span aria-hidden="true">
+                  <span className="hw-text">{stop.word}</span>
+                  <sup className="hw-rank">{stop.rank}</sup>
+                </span>
               </li>
             ))}
-            {model.misses.length > 0 && <li>{srRouteOffMap(lang, model.misses)}</li>}
-          </ol>
+          </ul>
         </div>
       </div>
     </dialog>,

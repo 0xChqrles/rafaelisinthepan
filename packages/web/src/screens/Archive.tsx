@@ -1,19 +1,16 @@
 import { useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { activeDate, dayNumber, progressHeatColor } from '@whippin/shared';
-import TopBar from '../components/TopBar';
-import ModeTabs from '../components/ModeTabs';
+import PuzzleTitle from '../components/PuzzleTitle';
+import { HeaderLeft } from '../components/TopBar';
 import { navigate } from '../routing';
 import { pathForMode, pathForDay, pathForArchive, type LangCode, type Mode } from '../langs';
 import { FIRST_PUZZLE_DATE } from '../config';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
 import { daySummaryStatus, usePlayerHistory } from '../state/history';
 import { isComplete, wordStatusOf, srStatus, type Status } from '../state/status';
-import { currentStreak } from '../game/streak';
-import useToday from '../hooks/useToday';
 import { useDeadlineRefresh } from '../hooks/useCountdown';
 import Button from '../components/Button';
-import streakSmall from '../assets/streak-small.png';
 import { t } from '../i18n';
 import {
   yearMonthOf,
@@ -26,7 +23,6 @@ import {
 } from '../calendar';
 // Inline SVG (vite-plugin-svgr): renders into the DOM and paints with currentColor, so
 // it inherits the header control's tint. Decorative — the button's aria-label names it.
-import CloseIcon from '../assets/icons/close.svg?react';
 
 // The locale's first weekday (0 = Sunday … 6 = Saturday). Prefers Intl's `weekInfo`
 // (fr weeks start Monday, en-US Sunday); falls back to a per-language default where it
@@ -62,7 +58,6 @@ function firstDayOfWeek(lang: string): number {
 // histories never blur into one calendar.
 export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; mode?: Mode }) {
   const wordRounds = useGameStore((s) => s.wordRounds);
-  const activeDay = useToday();
 
   // The window of playable days: [FIRST_PUZZLE_DATE, the client's active game day]. Both
   // are ISO labels, so cells compare against them by string order (offset-free).
@@ -75,30 +70,23 @@ export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; m
     clampYearMonth(activeMonth, firstMonth, activeMonth),
   );
 
-  // The month's summaries and the streak's solved days, both off the ONE private history
-  // read (#211). Word mode is deliberately NOT server-backed: #214 kept its clock/outbox
-  // local, and a server-backed Word month needs its own product contract — so this asks
-  // for nothing at all on that face, and the cells below keep reading `wordRounds`.
+  // The month's summaries (#211). Word mode is deliberately NOT server-backed: #214 kept
+  // its clock/outbox local, and a server-backed Word month needs its own product contract —
+  // so this asks for nothing at all on that face, and the cells below keep reading
+  // `wordRounds`.
+  //
+  // `collection: false` since the STREAK left this screen (user-decided 2026-08-28, for
+  // `/account`): the cells read the MONTH, and nothing here reads the solved-day collection
+  // any more, so asking for it would spend a consistent GetItem per archive open on an
+  // answer nobody renders — the language chooser's own rule.
   const sentence = mode === 'sentence';
   const history = usePlayerHistory({
     lang,
     mode,
     month: isoMonth(current),
     enabled: sentence,
+    collection: false,
   });
-  // The live streak — displayed HERE (the player-history screen), above the calendar it is
-  // derived from (moved from the header, decided 2026-07-21). Hidden at zero, and UNDRAWN
-  // (though its box is held, below) until the collection has ARRIVED: a streak counted off
-  // an unread history announces a broken chain to someone whose chain is intact.
-  //
-  // The box is held only while an answer is still COMING. A read that FAILED collapses it,
-  // for the cells' own reason — reserving is a promise, and there is nothing left to arrive
-  // — and the failure is not swallowed by that: the block under the grid says it in words
-  // and offers RETRY, which reloads this collection with the month.
-  const pendingStreak =
-    sentence && history.solvedDays === null && history.solvedPhase !== 'failed';
-  const streak = history.solvedDays === null ? 0 : currentStreak(history.solvedDays, activeDay);
-
   const canPrev = compareYearMonth(current, firstMonth) > 0;
   const canNext = compareYearMonth(current, activeMonth) < 0;
   const step = (delta: number) =>
@@ -142,49 +130,9 @@ export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; m
 
   return (
     <div className="archive">
-      <TopBar
-        lang={lang}
-        left={<span className="topbar-title">{t(lang, 'archive')}</span>}
-        center={
-          // The tabs work here too — they switch WHICH daily's calendar this is, which
-          // is also what makes Word mode's archive reachable now that the word screens'
-          // left slot is the clock: enter the archive from anywhere, tab to the word.
-          <ModeTabs lang={lang} mode={mode} onSelect={(m) => navigate(pathForArchive(lang, m))} />
-        }
-        right={
-          <button
-            type="button"
-            className="home-btn archive-close"
-            aria-label={t(lang, 'ariaBackToToday')}
-            onClick={() => navigate(pathForMode(lang, mode))}
-          >
-            <CloseIcon className="ui-icon" aria-hidden />
-          </button>
-        }
-      />
-
-      {/* The streak hero: flame + count above the calendar the streak is made of —
-          a stat headline, no label (the flame IS the label). Hidden when zero — and on
-          Word mode's archive face, whose runs don't feed the streak (#156, out of
-          scope beyond what the round key gives for free).
-          Since #211 the collection is a server read, so there is a third state: NOT YET
-          KNOWN. While an answer is still COMING it HOLDS THE HERO'S BOX (invisible),
-          because the returning player this screen is for almost always has a streak —
-          reserving keeps the calendar still for them, where drawing nothing would pull it
-          up and then push it back down on every visit. Once the answer lands, a zero
-          streak collapses the box for good — and so does a read that FAILED, since holding
-          space for a value that is never coming is a promise nothing will keep; the block
-          under the grid is what says so, in words, with RETRY. */}
-      {mode === 'sentence' && (pendingStreak || streak > 0) && (
-        <div
-          className={`archive-streak${pendingStreak ? ' archive-streak-pending' : ''}`}
-          aria-hidden={pendingStreak || undefined}
-        >
-          <img src={streakSmall} className="archive-streak-flame" alt="" />
-          {!pendingStreak && <span className="sr-only">{t(lang, 'streak')} </span>}
-          <span className="archive-streak-count">{pendingStreak ? 0 : streak}</span>
-        </div>
-      )}
+      <HeaderLeft>
+        <PuzzleTitle lang={lang} mode={mode} onArchive />
+      </HeaderLeft>
 
       <div className="cal">
         {/* Month navigation, clamped to [first puzzle month, current month]. */}

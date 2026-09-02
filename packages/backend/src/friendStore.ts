@@ -23,8 +23,10 @@ export interface FriendLink {
 //   linked — they did not hold this edge and now do;
 //   already_linked — they already held it, so their list is unchanged (a re-click of a
 //     shared link is an ordinary event, not an error). The write still runs — see below;
-//   capped — the pair is new and one of the two is at FRIENDS_MAX; nothing changed.
-export type FriendLinkOutcome = 'linked' | 'already_linked' | 'capped';
+//   capped — the pair is new and one of the two is at FRIENDS_MAX; nothing changed;
+//   gone — one of the two account rows disappeared before the atomic edge write, so no
+//     dangling friendship was created.
+export type FriendLinkOutcome = 'linked' | 'already_linked' | 'capped' | 'gone';
 
 export interface FriendLinkResult {
   outcome: FriendLinkOutcome;
@@ -45,11 +47,32 @@ export interface FriendStore {
   // cap on EITHER side of a pair the caller does not already hold: the link is a bearer "add
   // me" token, so a publicly posted one is exactly how a sender's own list would run away
   // from them. Answers with the caller's resulting list as well as the outcome — see
-  // FriendLinkResult.
+  // FriendLinkResult. The final edge transaction condition-checks BOTH live account rows;
+  // the route's earlier target lookup is useful for its 404 but cannot guard a later write.
   link(input: FriendLink): Promise<FriendLinkResult>;
   // Symmetric and idempotent for the same reason: deleting an edge that is not there is a
   // no-op, so a stray half-edge can always be cleared from either side too.
   unlink(publicId: string, friendId: string): Promise<void>;
+  // The caller's partition WITH the instants each edge was made at — what #204's merge
+  // orders by ("fill the remaining capacity oldest-createdAt first, ties by friend id").
+  // `list` stays the id-only read every other caller wants.
+  entries(publicId: string): Promise<FriendLink[]>;
+  // MOVE or DROP a batch of one account's edges as part of a link (#204). Each move rewrites
+  // BOTH directions: a KEPT friend F loses `from`↔F and gains `to`↔F, a dropped one just
+  // loses `from`↔F — so no edge is ever left pointing at a deleted account. It is IDEMPOTENT
+  // (deletes are no-ops, `createdAt` is kept from whichever link is older) because the job
+  // that drives it is resumed after partial batches.
+  transfer(from: string, to: string, moves: readonly FriendTransfer[]): Promise<void>;
+}
+
+// One friendship's fate in a merge. `keep` false is a DROP: `from` had this friend, `to`
+// has no capacity left for them, and both `from`-facing rows go.
+export interface FriendTransfer {
+  friendId: string;
+  keep: boolean;
+  // The instant the surviving edge should carry — the OLDER of the two, so a merged
+  // friendship does not claim to be younger than it is.
+  createdAt: string;
 }
 
 // Partition of one player's edges; the sort key is the friend's publicId.

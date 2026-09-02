@@ -8,6 +8,10 @@ const ACCOUNT = '111122223333';
 const REGION = 'us-east-1';
 const TURNSTILE_PARAMETER = '/test/turnstile-secret';
 const IP_HMAC_PARAMETER = '/test/ip-hmac-secret';
+// #204's link codes need a verified sender. This template has no custom domain (a hosted
+// zone lookup would need real credentials), so the sender is named outright — the same
+// escape hatch a domain-less deployment uses.
+const MAIL_FROM = 'hello@test.invalid';
 
 function backendTemplate(): Template {
   const app = new App();
@@ -15,6 +19,7 @@ function backendTemplate(): Template {
     env: { account: ACCOUNT, region: REGION },
     turnstileSecretParameter: TURNSTILE_PARAMETER,
     ipHmacSecretParameter: IP_HMAC_PARAMETER,
+    mailFrom: MAIL_FROM,
   });
   return Template.fromStack(stack);
 }
@@ -70,10 +75,10 @@ describe('score production boundary (#169)', () => {
       template.findResources('AWS::CloudFront::OriginRequestPolicy'),
     );
     // The score policy, the profile policy (#188), the friends policy (#189), the
-    // board policy (#190), the round policy (#201), the history policy (#211) and the
-    // devices policy (#216) — each forwards exactly the queries its handler route reads
-    // (the root AGENTS.md allowList contract).
-    expect(policies).toHaveLength(7);
+    // board policy (#190), the round policy (#201), the history policy (#211), the
+    // devices policy (#216) and the account-link policy (#204) — each forwards exactly the
+    // queries its handler route reads (the root AGENTS.md allowList contract).
+    expect(policies).toHaveLength(8);
     const scorePolicy = policies.find(
       (policy) =>
         policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinLiveScoresOrigin',
@@ -248,6 +253,50 @@ describe('score production boundary (#169)', () => {
     });
   });
 
+  it('uses a deployable zero-cache link behavior forwarding NO query (#204)', () => {
+    const distributions = Object.values(template.findResources('AWS::CloudFront::Distribution'));
+    const behaviors = distributions[0].Properties.DistributionConfig.CacheBehaviors as Record<
+      string,
+      unknown
+    >[];
+    const link = behaviors.find(({ PathPattern }) => PathPattern === 'link*');
+    // An account link is live AND private: it must never sit at the edge.
+    expect(link?.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
+    // POST-only: the device token authenticates in the body, like /friends and /devices.
+    expect(link?.AllowedMethods).toContain('POST');
+
+    const policies = Object.values(
+      template.findResources('AWS::CloudFront::OriginRequestPolicy'),
+    );
+    const linkPolicy = policies.find(
+      (policy) => policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinAccountLinkOrigin',
+    );
+    // Nothing to forward — the /friends rule. The header mode still has to be the
+    // Lambda-URL-safe one, since it is what carries the OAC-signed body hash.
+    expect(linkPolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
+      QueryStringBehavior: 'none',
+    });
+    expect(linkPolicy?.Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
+      HeaderBehavior: 'allExcept',
+      Headers: ['Host'],
+    });
+  });
+
+  // CONTRACT (#204): the sender is one address, and the role may send as no other. A leaked
+  // role must not be able to turn this account's SES reputation into somebody else's mail.
+  it('grants ses:SendEmail only as the configured sender', () => {
+    const statements = Object.values(template.findResources('AWS::IAM::Policy')).flatMap(
+      (policy) => policy.Properties.PolicyDocument.Statement as Record<string, unknown>[],
+    );
+    const send = statements.filter((statement) =>
+      JSON.stringify(statement.Action).includes('ses:SendEmail'),
+    );
+    expect(send).toHaveLength(1);
+    expect(send[0].Condition).toEqual({ StringEquals: { 'ses:FromAddress': MAIL_FROM } });
+    const functions = Object.values(template.findResources('AWS::Lambda::Function'));
+    expect(functions[0].Properties.Environment.Variables).toMatchObject({ MAIL_FROM });
+  });
+
   it('uses a deployable zero-cache history behavior with exact query forwarding (#211)', () => {
     const distributions = Object.values(template.findResources('AWS::CloudFront::Distribution'));
     const behaviors = distributions[0].Properties.DistributionConfig.CacheBehaviors as Record<
@@ -307,7 +356,9 @@ describe('score production boundary (#169)', () => {
       string,
       unknown
     >[];
-    for (const pattern of ['scores*', 'round*', 'devices*']) {
+    // #204's link SEND is Turnstile-gated and metered per address, so it needs the trusted
+    // address too.
+    for (const pattern of ['scores*', 'round*', 'devices*', 'link*']) {
       const behavior = behaviors.find(({ PathPattern }) => PathPattern === pattern);
       const associations = behavior?.FunctionAssociations as { EventType: string }[];
       expect(associations, pattern).toHaveLength(1);
@@ -356,7 +407,7 @@ describe('per-player score storage (#187)', () => {
     });
   });
 
-  it('grants the handler exactly the row-store surface: Query, Get/BatchGet, conditional Put, Update, friend Delete', () => {
+  it('grants the handler exactly the row-store surface: Query, Get/BatchGet, conditional Put, Update, friend Delete, adoption ConditionCheck', () => {
     const policies = Object.values(template.findResources('AWS::IAM::Policy'));
     const statements = policies.flatMap(
       (policy) => policy.Properties.PolicyDocument.Statement as { Action?: unknown }[],
@@ -373,6 +424,11 @@ describe('per-player score storage (#187)', () => {
       'dynamodb:UpdateItem',
       // #189's symmetric removal is the only thing on this table that deletes.
       'dynamodb:DeleteItem',
+      // #204's adoption asserts rows it does not write (the adopted account, a surviving
+      // source, every guarded no-move). A standalone ConditionCheck element is authorized
+      // by its OWN action — the Put/Update/Delete grants above do not cover it — so
+      // without this the erasing link is an AccessDenied in production alone.
+      'dynamodb:ConditionCheckItem',
     ]);
   });
 });

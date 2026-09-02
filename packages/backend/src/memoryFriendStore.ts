@@ -3,7 +3,9 @@ import { FRIENDS_MAX, type FriendStore } from './friendStore';
 // Process-local store for `pnpm backend:dev` and tests: the same FriendStore contract as
 // DynamoDB — mutual edges written and deleted as one indivisible pair, the same cap on both
 // sides — with no AWS account. Restarting the local server intentionally resets the graph.
-export function memoryFriendStore(): FriendStore {
+export function memoryFriendStore(
+  accountExists: (publicId: string) => Promise<boolean> = async () => true,
+): FriendStore {
   // publicId -> friendId -> createdAt.
   const edges = new Map<string, Map<string, string>>();
   const own = (publicId: string) => edges.get(publicId) ?? new Map<string, string>();
@@ -19,6 +21,11 @@ export function memoryFriendStore(): FriendStore {
     async link({ publicId, friendId, createdAt }) {
       const mine = own(publicId);
       const theirs = own(friendId);
+      const [callerLive, friendLive] = await Promise.all([
+        accountExists(publicId),
+        accountExists(friendId),
+      ]);
+      if (!callerLive || !friendLive) return { outcome: 'gone', friends: sorted(mine) };
       // The cap gates a pair the caller does not already hold, and both rows are written
       // either way — dynamoFriendStore's semantics exactly, including the re-link that
       // repairs whichever direction is missing.
@@ -39,6 +46,43 @@ export function memoryFriendStore(): FriendStore {
     async unlink(publicId, friendId) {
       own(publicId).delete(friendId);
       own(friendId).delete(publicId);
+    },
+
+    async entries(publicId) {
+      const mine = own(publicId);
+      return sorted(mine).map((friendId) => ({
+        publicId,
+        friendId,
+        createdAt: mine.get(friendId) ?? '',
+      }));
+    },
+
+    // #204's friend merge, one batch. Every move rewrites BOTH directions and is
+    // IDEMPOTENT: a friendship already moved simply has nothing left to delete, and the
+    // surviving edge keeps the OLDER instant rather than restating when the two became
+    // friends.
+    async transfer(from, to, moves) {
+      // `own` returns a FRESH map for a partition with no rows, so each side is bound once
+      // and written back — the shape `link` above already uses.
+      const leaving = own(from);
+      const adopting = own(to);
+      for (const move of moves) {
+        const theirs = own(move.friendId);
+        // A KEPT move whose `from`-facing row is already gone was unlinked (or moved) since
+        // it was planned; rewriting it onto `to` would resurrect a friendship somebody
+        // ended — the Dynamo store's conditional delete. A drop just removes what is left.
+        const stands = leaving.delete(move.friendId);
+        theirs.delete(from);
+        if (move.keep && stands) {
+          const held = adopting.get(move.friendId);
+          const at = held !== undefined && held < move.createdAt ? held : move.createdAt;
+          adopting.set(move.friendId, at);
+          theirs.set(to, at);
+        }
+        edges.set(move.friendId, theirs);
+      }
+      edges.set(from, leaving);
+      edges.set(to, adopting);
     },
   };
 }

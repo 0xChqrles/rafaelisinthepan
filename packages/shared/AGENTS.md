@@ -18,10 +18,13 @@
     src/puzzleTag.ts          fnvTag — Word mode's round tag. The SENTENCE daily's is the
                               published puzzle's own `revision` (#203), stamped by publish
     src/identity.ts           #216's device-token shape + server-assigned account/device id minting
+    src/email.ts              #204's account-link contract: normalizeEmail (web validates ⇔
+                              backend stores), the 6-digit code's shape/TTL/attempts, the send bounds
     src/leaderboard.ts        the #190 board rules: competition tie ranks, the plain top-50 cut,
                               own-row window + the Board API types (backend cuts, web renders)
     src/history.ts            the #211 PRIVATE player history: the month/day summary types,
-                              MAX_SOLVED_DAYS + the bound both ends apply to a solved-day set
+                              MAX_SOLVED_DAYS + the bound both ends apply to a solved-day set,
+                              and (since #204) currentStreak — the derivation BOTH ends make
     src/avatar.ts             the #188 avatar: {bg, fg} palettes + the 14-byte 1-bit grid codec (web encodes/renders, backend validates)
     src/avatarOutline.ts      its DRAWING: the filled cells as one union-outline path (web SVG + the invite card)
     src/assigned.ts           the identity a player who never customized one wears: anonName + defaultAvatar
@@ -111,6 +114,23 @@
   CLIENT hashes nothing to derive identity here. That removes `crypto.subtle` from paths which
   need no identity; every live POST still hashes its exact body for the OAC contract in
   `web/api.ts`, so an insecure context still cannot bootstrap.
+- **`src/email.ts` is the ONE spelling of what an ADDRESS is (#204).** `normalizeEmail`
+  canonicalizes — trim, NFKC, lowercase the WHOLE address including the local part — and
+  everything else here is derived from it (`isValidEmail` is "the pipeline accepted it").
+  The WEB validates what it types before spending a send; the BACKEND validates, normalizes
+  and hashes what it stores into a KEY. Two spellings would index one address as two
+  accounts, which is the exact failure the whole flow exists to prevent — a player linking
+  `Bob@x.com` on their phone and `bob@x.com` on their laptop ending up with two. It
+  deliberately does NOT dot-strip or fold `+tag`: those are Gmail's rules, wrong everywhere
+  else, and an address this function rewrote would send the code to a mailbox nobody named.
+  It also owns the code's shape (six DIGITS, leading zeros kept), its TTL and attempt bound,
+  and the per-address / per-IP send allowances — all read by the route that enforces them and
+  by the screen that paces itself against them. Contract-tested (`email.test.ts`).
+- **`currentStreak` MOVED here from the web with #204** (`src/history.ts`): the erase
+  confirmation names the streak the account being deleted is about to lose, so the SERVER
+  derives one too, and two spellings would put a different number on that dialog than the
+  streak screen shows over the same days. `web/game/streak.ts` re-exports it and keeps
+  `streakTransition`/`weekView`, which are the SCREEN's own.
 - **`src/vocab.generated.json` is the ONE file in this package nobody writes by hand
   (#200).** GENERATION emits it, in the same call that writes the existence set and from
   the same slugs, so what the backend enforces — the sentence score ceiling, and by the

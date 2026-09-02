@@ -209,7 +209,7 @@ describe('board route (#190)', () => {
     const flaky = {
       get: async (publicId: string) => {
         if (publicId === me) throw new Error('throttled');
-        return { publicId, name: 'Zoe', avatar: '' };
+        return { live: true, profile: { publicId, name: 'Zoe', avatar: '' } };
       },
       create: async () => false,
       upsert: async () => {},

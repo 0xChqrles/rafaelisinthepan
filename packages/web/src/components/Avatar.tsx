@@ -24,7 +24,24 @@ import { AVATAR_PALETTES, AVATAR_SIZE, avatarOutlinePath, decodeAvatar } from '@
 const CELL = 10; // viewBox units per cell
 const RADIUS = 3.6; // outer corner rounding only — cells themselves are square
 
-export default function Avatar({ avatar, size = 40 }: { avatar: string; size?: number }) {
+export default function Avatar({
+  avatar,
+  size = 40,
+  // SQUARE CORNERS, for a mark standing among PIXEL MARKS (user-decided 2026-09-02: the
+  // header face "should not have such a rounded corner radius while being next to sharp
+  // pixelized icons"). The rounding is a property of the SURFACE, not of the drawing: on
+  // the big surfaces the tile sits among glass rows that all carry a radius, and in the
+  // header row it sits among `crispEdges` cell drawings that carry none. It has to be a
+  // prop rather than CSS because the corner is cut by a clipPath inside the SVG — at the
+  // header's 20px that arc is only 0.72px, but it is ~1.4 antialiased device pixels at
+  // 2×, which is exactly the softening the row's whole grammar refuses. Sharp skips the
+  // clip entirely: with nothing to round it only ever clipped the tile to itself.
+  sharp = false,
+}: {
+  avatar: string;
+  size?: number;
+  sharp?: boolean;
+}) {
   const clipId = useId();
   // Decoding and tracing are ONE guarded step: both read the same stored string, and a
   // renderer that throws on a malformed one takes the whole tree with it — a board of
@@ -41,6 +58,12 @@ export default function Avatar({ avatar, size = 40 }: { avatar: string; size?: n
   if (!drawing) return null;
   const { palette, outline } = drawing;
   const span = AVATAR_SIZE * CELL;
+  const tile = (
+    <>
+      <rect width={span} height={span} fill={palette.bg} />
+      {outline ? <path d={outline} fill={palette.fg} /> : null}
+    </>
+  );
   return (
     <svg
       className="avatar"
@@ -49,13 +72,16 @@ export default function Avatar({ avatar, size = 40 }: { avatar: string; size?: n
       viewBox={`0 0 ${span} ${span}`}
       aria-hidden="true"
     >
-      <clipPath id={clipId}>
-        <rect width={span} height={span} rx={RADIUS} />
-      </clipPath>
-      <g clipPath={`url(#${clipId})`}>
-        <rect width={span} height={span} fill={palette.bg} />
-        {outline ? <path d={outline} fill={palette.fg} /> : null}
-      </g>
+      {sharp ? (
+        tile
+      ) : (
+        <>
+          <clipPath id={clipId}>
+            <rect width={span} height={span} rx={RADIUS} />
+          </clipPath>
+          <g clipPath={`url(#${clipId})`}>{tile}</g>
+        </>
+      )}
     </svg>
   );
 }

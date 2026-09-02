@@ -23,17 +23,15 @@ import { prefetchTurnstileTokens } from '../turnstile';
 import { withoutLocalIdentityDeploy } from '../state/localIdentityDeploy';
 import ErrorScreen from '../components/ErrorScreen';
 import { navigate } from '../routing';
-import { pathForBoard, resolveHomeLang } from '../langs';
+import { ACCOUNT_PATH, resolveHomeLang } from '../langs';
 import { t } from '../i18n';
-import DeviceList from '../components/DeviceList';
 import Avatar from '../components/Avatar';
 import LoadError from '../components/LoadError';
 import LoadingWave from '../components/LoadingWave';
-import TopBar from '../components/TopBar';
+import { HeaderBack, HeaderLeft } from '../components/TopBar';
 import { useGameStore } from '../state/gameStore';
 // Inline SVG (vite-plugin-svgr): the close control back to the leaderboard, painting
 // with currentColor; the button's aria-label names it.
-import CloseIcon from '../assets/icons/close.svg?react';
 
 // The #188 profile editor: name, tap-to-paint 10×10 grid, and the palette picker —
 // each swatch IS a palette ({bg, fg} pair, user-decided 2026-08-19: two colours,
@@ -142,10 +140,6 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 
 export default function Profile() {
   const lastLang = useGameStore((s) => s.lastLang);
-  const lastMode = useGameStore((s) => s.lastMode);
-  // Where the board that opened this editor lives — see the close control below.
-  const profileReturn = useGameStore((s) => s.profileReturn);
-  const setProfileReturn = useGameStore((s) => s.setProfileReturn);
   // No puzzle to take a language from: same resolution as the `/` redirect.
   const lang = resolveHomeLang(lastLang, navigator.language);
 
@@ -505,29 +499,18 @@ export default function Profile() {
 
   return (
     <>
-      <TopBar
-        lang={lang}
-        left={<span className="topbar-title">{t(lang, 'profileTitle')}</span>}
-        right={
-          // The way OUT (user feedback 2026-08-20 — the screen was unleavable): back
-          // to the leaderboard, this editor's wired entry point — and to the SAME one
-          // that opened it (review finding, 2026-08-20). `/profile` is a global route,
-          // so the board's (lang, mode) is not in the URL: the opener states it
-          // (`profileReturn`), and only an editor reached with nothing set — a deep
-          // link, a reload — falls back to guessing from the last loaded GAME.
-          <button
-            type="button"
-            className="home-btn archive-close"
-            aria-label={t(lang, 'ariaClose')}
-            onClick={() => {
-              setProfileReturn(null);
-              navigate(profileReturn ?? pathForBoard(lang, lastMode ?? 'sentence'));
-            }}
-          >
-            <CloseIcon className="ui-icon" aria-hidden />
-          </button>
-        }
-      />
+      {/* The way OUT: UP, to `/account` (#204's UX rework, 2026-08-26). This screen
+          answers ONE question now — how others see me — and `/account` is its only door,
+          so there is nothing left to guess: the old `profileReturn` dance existed because
+          the editor could be entered from either board, and the account screen is where
+          that choice now lives. */}
+      <HeaderLeft>
+        <HeaderBack
+          title={t(lang, 'profileTitle')}
+          label={t(lang, 'ariaBack')}
+          onBack={() => navigate(ACCOUNT_PATH)}
+        />
+      </HeaderLeft>
       {load === 'loading' && (
         <p className="status">
           <LoadingWave text={t(lang, 'loading')} />
@@ -680,7 +663,6 @@ export default function Profile() {
               EXISTS: a tokenless editor has no device rows to list, and asking would be a
               private read on a visit that never acted (the list appears the moment SAVE's
               deploy lands, since the identity above is reactive). */}
-          {identity !== null && <DeviceList lang={lang} />}
         </div>
       )}
     </>

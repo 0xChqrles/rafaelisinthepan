@@ -17,6 +17,7 @@
 // of what an identity owns is one readable block instead of five registrations to find.
 
 import { onIdentityChange } from '../identity';
+import { resetAccountSummary } from './account';
 import { reconcileGameStateIdentity } from './gameStore';
 import { rearmPlayerHistory, resetPlayerHistory } from './history';
 import { kickRoundSync, rearmRoundSync, resetRoundSync } from './roundSync';
@@ -72,10 +73,12 @@ export function installIdentityScope(): () => void {
     }
     if (accountChanged) {
       // ACCOUNT-owned: the sentence outbox (guesses owed to a server row keyed by the
-      // account), the transient round snapshots read off it, and the private summaries the
-      // archive, the chooser and the streak draw.
+      // account), the transient round snapshots read off it, the private summaries the
+      // archive, the chooser and the streak draw — and (#204) what the account screen says
+      // this account IS, since a device that leaves one may not keep showing its address.
       resetRoundSync();
       resetPlayerHistory();
+      resetAccountSummary();
     }
     // One state write owns the persisted owner tag and the selective map clearing. It is
     // also the first-acquisition bind above, where the triggering act must survive.

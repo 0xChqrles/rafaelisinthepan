@@ -14,16 +14,14 @@ import {
   friendsUrl,
   parseBoard,
   parseFriends,
-  parseProfile,
   postBoardBody,
   postFriendsBody,
-  profileUrl,
 } from '../api';
 import Avatar from '../components/Avatar';
 import LoadError from '../components/LoadError';
 import LoadingWave from '../components/LoadingWave';
-import ModeTabs from '../components/ModeTabs';
-import TopBar from '../components/TopBar';
+import PuzzleTitle from '../components/PuzzleTitle';
+import { HeaderLeft } from '../components/TopBar';
 import useShare from '../hooks/useShare';
 import useToday from '../hooks/useToday';
 import {
@@ -39,16 +37,17 @@ import { prefetchTurnstileTokens } from '../turnstile';
 import ErrorScreen from '../components/ErrorScreen';
 import { useGameStore, type BoardTab } from '../state/gameStore';
 import {
+  pathForArchive,
   pathForBoard,
   pathForInvite,
   pathForMode,
-  PROFILE_PATH,
   type LangCode,
   type Mode,
 } from '../langs';
 import { navigate } from '../routing';
 import { t } from '../i18n';
-import CloseIcon from '../assets/icons/close.svg?react';
+// Inline SVG (vite-plugin-svgr): the control that closes the board back onto the game,
+// painting with currentColor; the button's aria-label names it.
 
 // The #190 leaderboard screen: the day's boards per (day, lang, mode), for the active
 // day. FRIENDS is the DEFAULT and the trusted surface — the whole point of the design
@@ -68,24 +67,22 @@ import CloseIcon from '../assets/icons/close.svg?react';
 // the leaderboard mints an account").** A navigation must not create server state: a
 // signed-out or brand-new visitor browsing here would otherwise silently spawn an
 // account. Tokenless, every private face is the KNOWN-EMPTY answer (#216's rule): the
-// friends board is the ghost + INVITE without a request, the identity strip shows the
-// LOCAL PLACEHOLDER — the persisted seed's assigned name and mark (`gameStore.localSeed`,
-// user-decided 2026-08-24: the player still sees an avatar and a username, generated
-// locally) — and the global read stays genuinely anonymous. The deliberate act that
-// mints is the INVITE tap — the one thing on this screen that cannot exist without an
-// account — and every identity-reading effect keys on the live identity, so a mint (or
-// a cross-tab adoption) populates the strip and the boards without a remount. When the
-// account deploys, the server-assigned id replaces the seed and the derived face
-// changes once — unavoidable, since the server picks the id.
+// friends board is the ghost + INVITE without a request, and the global read stays
+// genuinely anonymous. The deliberate act that mints is the INVITE tap — the one thing on
+// this screen that cannot exist without an account — and every identity-reading effect
+// keys on the live identity, so a mint (or a cross-tab adoption) populates the boards
+// without a remount.
+//
+// **THE IDENTITY STRIP IS GONE (2026-08-30, with the header rework).** The board opened
+// on the player's own mark and name as a row — the LOCAL PLACEHOLDER for a tokenless
+// device — and since #204 that row was the one door to `/account`. The header's right
+// group now ends in the player's own face (`AccountKey`, on every game surface), which is
+// the same drawing, the same door, 40px above where the strip sat: two identical faces
+// stacked at the top of one screen read as a rendering fault, not as emphasis. What the
+// strip carried beyond the face — the name — is on the account screen one tap away and on
+// the player's own row once they have played; its profile read (a duplicate of
+// `useOwnFace`'s) went with it.
 type Tab = BoardTab;
-
-// What the strip shows for the player. The publicId is derived locally and is available
-// first; the NAME and MARK are only ever shown RESOLVED — see the read below.
-interface Me {
-  publicId: string;
-  name: string;
-  avatar: string | null;
-}
 
 // The tokenless FRIENDS board: a device with no account holds no edges and no rows, so
 // this is the KNOWN-EMPTY answer (#216), installed synchronously — at first render and at
@@ -119,23 +116,10 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
   // it, and the transition alone cannot say.
   const mintedHere = useIdentityMintedHere();
 
-  // The PRE-ACCOUNT placeholder seed (user-decided 2026-08-24): persisted so the
-  // placeholder face is stable across visits and tabs; display-only, never sent anywhere.
-  const localSeed = useGameStore((s) => s.localSeed);
-  const ensureLocalSeed = useGameStore((s) => s.ensureLocalSeed);
-  useEffect(() => {
-    if (localSeed === null) ensureLocalSeed();
-  }, [localSeed, ensureLocalSeed]);
-
-  const [me, setMe] = useState<Me | null>(null);
   // The id alone, available as soon as the identity is: it is what the own-row marker
   // needs, which never waits on a profile. Pure derivation — state here would only ever
   // mirror the identity, one sync hazard for nothing.
   const meId = identity?.accountId ?? null;
-  // Whether the identity READ is over (however it ended). The strip holds a skeleton
-  // until it is — never a name (user feedback 2026-08-20). Tokenless there is nothing to
-  // read: settled empty from the first frame.
-  const [meSettled, setMeSettled] = useState(() => identity === null);
   // The reader's edges, for marking friends among the global rows. Decoration, fetched
   // lazily and only for the tab that needs it.
   const [friendIds, setFriendIds] = useState<ReadonlySet<string> | null>(null);
@@ -146,7 +130,6 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
     boardsFor(identity),
   );
   const [attempt, setAttempt] = useState(0);
-  const setProfileReturn = useGameStore((s) => s.setProfileReturn);
 
   // THE DAY IS A LIVE VALUE, not a clock read at fetch time (review finding,
   // 2026-08-20). A board is addressed per (day, lang, mode), and this screen can be
@@ -196,8 +179,6 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
         : boardsFor(identity),
     );
     setFriendIds(null);
-    setMe(null);
-    setMeSettled(identity === null);
   }
   // The pinned `share` analytics event means "a RESULT left the app" (the three-event
   // invariant); an invite link is not a result, so its delivery is untracked rather
@@ -207,49 +188,6 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
   // tap — the less the mint waits on, the more often the same gesture can still deliver.
   useEffect(() => {
     if (identity === null) prefetchTurnstileTokens(1);
-  }, [identity]);
-
-  // The identity strip: ONE read settles what it says — for the identity the device
-  // already holds. With none there is nothing to resolve and nothing to show: settled
-  // empty, an ANSWER, never a skeleton with no request behind it.
-  //
-  // Nothing is shown until the read settles (user feedback 2026-08-20). The first cut
-  // published the id the moment it derived, which rendered the ASSIGNED identity — the
-  // pseudonym and the generated mark — and then swapped it for the real profile a beat
-  // later: a player with a name watched someone else's name flash under their own avatar
-  // on every visit. A skeleton says "not yet"; a name says something false.
-  //
-  // A read that FAILS still settles, on the assigned identity: it is what a board row
-  // whose profile read failed already shows, and a skeleton that never resolves is the
-  // one outcome worse than the fallback. A 404 is not a failure at all — it is the
-  // answer "never customized", whose display IS the assigned identity.
-  useEffect(() => {
-    // Tokenless is already the settled-empty answer, derived synchronously above — there
-    // is nothing to read and nothing to show.
-    if (!identity) return;
-    let cancelled = false;
-    const publicId = identity.accountId;
-    const epoch = identityEpochOf(identity);
-    (async () => {
-      let resolved: Me = { publicId, name: '', avatar: null };
-      try {
-        const response = await fetch(profileUrl(publicId));
-        if (identityEpoch() !== epoch) return;
-        if (response.ok) {
-          const profile = parseProfile(await response.json());
-          if (identityEpoch() !== epoch) return;
-          resolved = { publicId, name: profile.name, avatar: profile.avatar };
-        }
-      } catch {
-        // Keep the assigned identity.
-      }
-      if (cancelled || identityEpoch() !== epoch) return;
-      setMe(resolved);
-      setMeSettled(true);
-    })();
-    return () => {
-      cancelled = true;
-    };
   }, [identity]);
 
   // The reader's OWN EDGES, for marking friends among the global rows (user-asked,
@@ -386,89 +324,30 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
     if (!delivered) setInviteFailed('share');
   };
 
-  // What the strip shows. With an account: the settled profile read (skeleton until it
-  // lands). Without one: the LOCAL placeholder — an ANSWER derived from the persisted
-  // seed, not a pending read, so no skeleton (its one-frame absence while the seed mints
-  // renders the settled empty boxes, never a breathing promise).
-  const shown: Me | null =
-    identity === null
-      ? localSeed === null
-        ? null
-        : { publicId: localSeed, name: '', avatar: null }
-      : me;
-  const shownSettled = identity === null ? localSeed !== null : meSettled;
-
   return (
     <div className="board-screen">
-      <TopBar
-        lang={lang}
-        left={<span className="topbar-title">{t(lang, 'boardTitle')}</span>}
-        center={
-          // The header's own tabs switch WHICH daily's board this is; the in-screen
-          // tabs below switch whose scores are on it.
-          <ModeTabs lang={lang} mode={mode} onSelect={(m) => navigate(pathForBoard(lang, m))} />
-        }
-        right={
-          <button
-            type="button"
-            className="home-btn archive-close"
-            aria-label={t(lang, 'ariaBackToToday')}
-            onClick={() => navigate(pathForMode(lang, mode))}
-          >
-            <CloseIcon className="ui-icon" aria-hidden />
-          </button>
-        }
-      />
+      {/* THE BOARD KEEPS THE PUZZLE'S TITLE and takes no title of its own (user-decided
+          2026-08-30). A board is a view OF a daily — it is addressed by (day, lang, mode)
+          like everything else — so naming the daily names this screen too, and the sheet
+          behind it still switches which daily's board this is, exactly as the retired
+          centre tabs did. What the screen IS gets said by the LIT crown instead of by a
+          word, which is the group's whole grammar.
 
-      {/* The identity strip: the mark and name a board row shows for YOU, with the two
-          things this screen wires in — the profile editor and the invite link. An
-          uncustomized player reads as their pseudonym, in the secondary ink. */}
-      <div className="board-me">
-        {/* Until the read settles this is a SKELETON, never a name: publishing the
-            assigned identity early and correcting it a beat later showed every named
-            player a stranger's name under their own mark (user feedback 2026-08-20).
-            The skeleton holds the exact layout the real strip takes, so nothing moves
-            when it resolves. */}
-        {shown ? (
-          <Avatar avatar={shown.avatar ?? defaultAvatar(shown.publicId)} size={40} />
-        ) : (
-          <span
-            className={`board-me-slot${shownSettled ? '' : ' skeleton'}`}
-            aria-hidden="true"
-          />
-        )}
-        {shown ? (
-          <span className={`board-me-name${shown.name ? '' : ' anon'}`}>
-            {shown.name || anonName(shown.publicId)}
-          </span>
-        ) : (
-          <span className="board-me-name" aria-hidden="true">
-            {!shownSettled && <span className="skeleton skeleton-name" />}
-          </span>
-        )}
-        {/* `/profile` is a GLOBAL route, so the board that opened it leaves the URL —
-            state where to come back to, or the editor has to guess from the last
-            loaded GAME (which can be the other daily, or another language). */}
-        <button
-          type="button"
-          className="board-chip"
-          onClick={() => {
-            setProfileReturn(pathForBoard(lang, mode));
-            navigate(PROFILE_PATH);
-          }}
-        >
-          {t(lang, 'boardEdit')}
-        </button>
-      </div>
+          The way OUT is any other key of the same, unmoving row — HOME above all
+          (`HeaderKeys`, user-decided 2026-08-31 after a lit-crown-as-exit and then a ✕
+          were each rejected: the first was not intuitive, the second rearranged the row). */}
+      <HeaderLeft>
+        <PuzzleTitle lang={lang} mode={mode} />
+      </HeaderLeft>
 
       {/* FRIENDS first — the trusted default; GLOBAL is the fun view. The segmented
           control is the header mode switcher's own dress, stretched to the column. */}
-      <nav className="mode-tabs board-tabs" aria-label={t(lang, 'boardTitle')}>
+      <nav className="board-tabs" aria-label={t(lang, 'boardTitle')}>
         {(['friends', 'global'] as const).map((view) => (
           <button
             key={view}
             type="button"
-            className={`mode-tab${tab === view ? ' active' : ''}`}
+            className={`board-tab${tab === view ? ' active' : ''}`}
             aria-current={tab === view || undefined}
             onClick={() => setTab(view)}
           >

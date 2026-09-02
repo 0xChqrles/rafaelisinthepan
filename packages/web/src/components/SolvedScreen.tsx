@@ -95,10 +95,13 @@ interface SolvedWordEntry {
 function SolvedWord({
   entry,
   shown,
+  veiled,
   onExplore,
 }: {
   entry: SolvedWordEntry;
   shown: boolean;
+  // The wheel stands over this word: it is hidden in place meanwhile (Hole's own rule).
+  veiled: boolean;
   onExplore: (holeIndex: number) => void;
 }) {
   const letters = Array.from(entry.word);
@@ -111,7 +114,7 @@ function SolvedWord({
   return (
     <button
       type="button"
-      className={`solved-word${shown ? ' in' : ''}`}
+      className={`solved-word${shown ? ' in' : ''}${veiled ? ' veiled' : ''}`}
       style={{ '--step': entry.number - 1 } as CSSProperties}
       aria-describedby={`solved-explore-${entry.number}`}
       data-hole-explore={entry.holeIndex}
@@ -144,6 +147,7 @@ export default function SolvedScreen({
   source,
   words,
   onExplore,
+  veiledHole = null,
   placement = null,
   capped = false,
   animate = true,
@@ -157,6 +161,8 @@ export default function SolvedScreen({
   source?: Source;
   words: SolvedWordEntry[]; // distinct secrets, sentence order — the ruler ticks' numbering
   onExplore: (holeIndex: number) => void;
+  // The word the wheel is open over, hidden in place meanwhile (see SolvedWord).
+  veiledHole?: number | null;
   // The day's score population (#170): 'pending' while the round trip is in flight
   // (the slot shows RANKING...); null renders the reserved empty slot (silent).
   placement?: ScorePlacementState;
@@ -358,7 +364,13 @@ export default function SolvedScreen({
             in one by one; CSS counts them out off each word's own `--step`. */}
         <div className="solved-words">
           {words.map((entry) => (
-            <SolvedWord key={entry.number} entry={entry} shown={wordsIn} onExplore={onExplore} />
+            <SolvedWord
+              key={entry.number}
+              entry={entry}
+              shown={wordsIn}
+              veiled={veiledHole === entry.holeIndex}
+              onExplore={onExplore}
+            />
           ))}
         </div>
         {words.map((entry) => (

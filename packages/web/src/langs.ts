@@ -61,9 +61,41 @@ export function pathForBoard(lang: string | null, mode: Mode = 'sentence'): stri
 // chooser was RETIRED 2026-08-18 for the header's segmented mode tabs.)
 export const SELECT_PATH = '/select';
 
-// The profile editor (#188) is its own route for the same reason: the identity is
-// global, not language-scoped. The leaderboard screen (#190) is its wired entry point.
+// The ACCOUNT area (#204's UX rework, 2026-08-26). FOUR routes, because they answer four
+// different questions and one screen may only answer one:
+//
+//   /account         is this account mine, and safe?  — who it is, whether it is saved,
+//                                                       where it is signed in
+//   /profile         how do others see me?            — the editor, and nothing else
+//   /account/email   SAVE this account                — one input per step
+//   /account/signin  GET ANOTHER ONE BACK             — the same steps, the opposite act
+//
+// **TWO DOORS ONTO ONE ENGINE** (#204's UX rework vol. 2, 2026-08-27). The last two paths
+// mount the SAME screen and send the SAME requests: the server may not branch before the
+// code is verified — telling somebody "we know this address" ahead of proof is account
+// enumeration — so nothing here is detected, nothing is routed, and every ending stays
+// reachable from either door. What the path declares is the player's own INTENTION, and it
+// buys the one thing the server's discretion cost: a flow that can be dressed for the act
+// being performed. Saving is additive; signing in may delete the account this device is on.
+// Those took the same taps, in the same words, and diverged only in the last half-second.
+//
+// The rule the split runs on: *the declaration shapes the journey; the server shapes the
+// destination; the ending always tells the truth about what actually happened.* A player who
+// picks the "wrong" door is never blocked and never lied to — they get an ending that names
+// the turn.
+//
+// All four are GLOBAL, like /select: an identity is not language-scoped. The leaderboard's
+// identity strip is the ONE door into the area (a player's own face is the natural handle
+// for "my account"), and the signed-out screen's RECONNECT lands straight on `/account/signin`
+// — a player who has just been signed out is a RETURNING player by definition, and landing
+// them on a screen whose lead verb is "save" asks them to read past their own intention.
+export const ACCOUNT_PATH = '/account';
+export const ACCOUNT_EMAIL_PATH = '/account/email';
+export const ACCOUNT_SIGNIN_PATH = '/account/signin';
 export const PROFILE_PATH = '/profile';
+
+// Which act the email flow is dressing. It never reaches the server.
+export type LinkIntent = 'save' | 'return';
 
 // The #189 INVITE LINK: `/i/<publicId>`, the sender's own id in the path. Global — an
 // identity is not language-scoped. Since 2026-08-20 the LINK ITSELF is served by the
@@ -89,6 +121,8 @@ export type Route =
   | { view: 'archive'; lang: LangCode; mode: Mode }
   | { view: 'board'; lang: LangCode; mode: Mode }
   | { view: 'select' }
+  | { view: 'account' }
+  | { view: 'accountEmail'; intent: LinkIntent }
   | { view: 'profile' }
   | { view: 'invite'; publicId: string }
   | { view: 'home' };
@@ -120,6 +154,13 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
   const [seg, second, third] = segs;
   if (seg === 'select') return { view: 'select' };
   if (seg === 'profile') return { view: 'profile' };
+  // `/account` and its one step deeper. An unknown third form keeps the game routes'
+  // tolerance and lands on the area's own entry rather than bouncing home.
+  if (seg === 'account') {
+    if (second === 'email') return { view: 'accountEmail', intent: 'save' };
+    if (second === 'signin') return { view: 'accountEmail', intent: 'return' };
+    return { view: 'account' };
+  }
   // A broken invite link falls through to `home` rather than asking the server about an id
   // that cannot exist — the same treatment a broken date deep-link gets.
   if (seg === INVITE_LANDING_SEGMENT) {

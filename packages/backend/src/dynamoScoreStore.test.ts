@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   BatchGetItemCommand,
+  GetItemCommand,
   QueryCommand,
   TransactWriteItemsCommand,
   type DynamoDBClient,
+  type AttributeValue,
 } from '@aws-sdk/client-dynamodb';
-import { batchRetryDelayMs, dynamoScoreStore } from './dynamoScoreStore';
+import { dynamoScoreStore, planScoreMove } from './dynamoScoreStore';
 import { SCORE_SUBMISSION_LIMIT, type ScoreKey, type ScoreSubmission } from './scoreStore';
 
 const KEY: ScoreKey = { date: '2026-08-13', lang: 'fr', mode: 'word' };
@@ -101,18 +103,6 @@ describe('dynamoScoreStore (#187)', () => {
     // partition at full speed spends the whole budget before capacity can return.
     expect(send).toHaveBeenCalledTimes(5);
     expect(waits).toHaveLength(4);
-  });
-
-  it('waits a full-jitter doubling window between batch retries', () => {
-    // Full jitter: each retry draws from [0, base * 2^n], so the CEILING doubles while
-    // the actual wait stays random — Lambdas throttled together must not come back in
-    // lockstep and re-throttle the partition.
-    const ceilings = [0, 1, 2, 3].map((retry) => batchRetryDelayMs(retry, () => 1));
-    expect(ceilings).toEqual([50, 100, 200, 400]);
-    // The draw is the whole window, floor included.
-    expect([0, 1, 2, 3].map((retry) => batchRetryDelayMs(retry, () => 0))).toEqual([0, 0, 0, 0]);
-    const middle = [0, 1, 2, 3].map((retry) => batchRetryDelayMs(retry, () => 0.5));
-    expect(middle).toEqual([25, 50, 100, 200]);
   });
 
   it('atomically spends the allowance only when it creates a player row', async () => {
@@ -267,6 +257,36 @@ describe('dynamoScoreStore (#187)', () => {
     expect(capped).toHaveBeenCalledTimes(1);
   });
 
+  it('never reads a CONTENDED attempt as a cap (PR-227 review)', async () => {
+    // `ConditionalCheckFailed` beside a `TransactionConflict` describes conditions
+    // evaluated while another transaction held one of these very rows. Reading item [0]
+    // there would answer `capped` — a player's score silently dropped — for a request that
+    // merely lost a race.
+    const contended = Object.assign(new Error('cancelled'), {
+      name: 'TransactionCanceledException',
+      CancellationReasons: [{ Code: 'ConditionalCheckFailed' }, { Code: 'TransactionConflict' }],
+    });
+    const failing = vi.fn(async () => {
+      throw contended;
+    });
+    await expect(
+      dynamoScoreStore({ send: failing } as unknown as DynamoDBClient, 'scores').submit(SUBMISSION),
+    ).rejects.toBe(contended);
+  });
+
+  it('never reads a reason with NO code as "this item was fine"', async () => {
+    const malformed = Object.assign(new Error('cancelled'), {
+      name: 'TransactionCanceledException',
+      CancellationReasons: [{ Code: 'ConditionalCheckFailed' }, {}],
+    });
+    const failing = vi.fn(async () => {
+      throw malformed;
+    });
+    await expect(
+      dynamoScoreStore({ send: failing } as unknown as DynamoDBClient, 'scores').submit(SUBMISSION),
+    ).rejects.toBe(malformed);
+  });
+
   it('rethrows operational cancellations', async () => {
     const conflict = new Error('transaction conflict');
     Object.assign(conflict, {
@@ -279,5 +299,115 @@ describe('dynamoScoreStore (#187)', () => {
     await expect(
       dynamoScoreStore({ send: failing } as unknown as DynamoDBClient, 'scores').submit(SUBMISSION),
     ).rejects.toBe(conflict);
+  });
+});
+
+// CONTRACT (#204): the recorded row follows the round it was derived from, inside the one
+// adoption transaction — this store only PLANS its items, two per tuple, one per row read,
+// each asserting the row is unchanged since the read: absent still absent, or at the STAMP
+// it carried. The stamp is DETERMINISTIC for one logical submission — it is the
+// submission's own idempotency token — because a replay that produced a different item
+// under a reused ClientRequestToken is an IdempotentParameterMismatch, not a no-op.
+describe('the score stamp (#204)', () => {
+  it('is the same for the same logical submission and different for a different revision', async () => {
+    const puts: Record<string, AttributeValue>[] = [];
+    const send = vi.fn(async (command: unknown) => {
+      if (command instanceof TransactWriteItemsCommand) {
+        for (const item of command.input.TransactItems ?? []) {
+          if (item.Put?.Item?.sk?.S === SUBMISSION.publicId) puts.push(item.Put.Item);
+        }
+      }
+      return {};
+    });
+    const store = dynamoScoreStore({ send } as unknown as DynamoDBClient, 'scores');
+    await store.submit(SUBMISSION);
+    await store.submit(SUBMISSION);
+    await store.submit({ ...SUBMISSION, revision: 'rev2', requestToken: 'another-token-000000000000000000' });
+    expect(puts).toHaveLength(3);
+    expect(puts[0].stamp).toEqual({ S: SUBMISSION.requestToken });
+    expect(puts[1]).toEqual(puts[0]);
+    expect(puts[2].stamp).toEqual({ S: 'another-token-000000000000000000' });
+  });
+});
+
+describe('planScoreMove (#204)', () => {
+  const FROM = 'aaaaaaaaaaaaaaaa';
+  const TO = 'bbbbbbbbbbbbbbbb';
+  const at = (publicId: string) => ({ pk: { S: 'score#2026-08-13#fr#word' }, sk: { S: publicId } });
+  const row = {
+    ...at(FROM),
+    score: { N: '7' },
+    submittedAt: { S: '2026-08-13T10:00:00.000Z' },
+    revision: { S: 'rev1' },
+    stamp: { S: 'stamp-from' },
+  };
+  const targetRow = { ...at(TO), score: { N: '3' }, revision: { S: 'rev1' }, stamp: { S: 'stamp-to' } };
+  const plan = (rows: { from?: Record<string, AttributeValue>; to?: Record<string, AttributeValue> }) =>
+    planScoreMove(
+      {
+        send: async (command: unknown) =>
+          ({ Item: (command as GetItemCommand).input.Key!.sk.S === FROM ? rows.from : rows.to }),
+      } as unknown as DynamoDBClient,
+      'scores',
+      KEY,
+      FROM,
+      TO,
+    );
+
+  it('moves: a create-only Put under the destination and a Delete of the source AT ITS STAMP', async () => {
+    const items = await plan({ from: row });
+    expect(items).toHaveLength(2);
+    expect(items[0].Put).toMatchObject({
+      Item: { ...row, ...at(TO) },
+      ConditionExpression: 'attribute_not_exists(pk)',
+    });
+    // The row as READ, never mere existence: a revision replacement landing meanwhile
+    // changes the stamp and must refuse the commit rather than be overwritten.
+    expect(items[1].Delete).toMatchObject({
+      Key: at(FROM),
+      ConditionExpression: '#stamp = :stamp',
+      ExpressionAttributeValues: { ':stamp': { S: 'stamp-from' } },
+    });
+  });
+
+  for (const [label, to] of [
+    ['absent', undefined],
+    ['present', targetRow],
+  ] as const) {
+    it(`guards BOTH rows on a no-move — no source row yet, destination ${label}`, async () => {
+      // The solving append writes the score row a beat after the log, so "no row yet" is
+      // exactly the observation a concurrent write can invalidate.
+      const items = await plan({ to });
+      expect(items).toHaveLength(2);
+      expect(items[0].ConditionCheck).toMatchObject({
+        Key: at(FROM),
+        ConditionExpression: 'attribute_not_exists(pk)',
+      });
+      expect(items[1].ConditionCheck).toMatchObject({
+        Key: at(TO),
+        ConditionExpression: to ? '#stamp = :stamp' : 'attribute_not_exists(pk)',
+      });
+    });
+  }
+
+  it('guards BOTH rows when the destination already has a row', async () => {
+    const items = await plan({ from: row, to: targetRow });
+    expect(items).toHaveLength(2);
+    expect(items[0].ConditionCheck).toMatchObject({
+      Key: at(FROM),
+      ExpressionAttributeValues: { ':stamp': { S: 'stamp-from' } },
+    });
+    expect(items[1].ConditionCheck).toMatchObject({
+      Key: at(TO),
+      ExpressionAttributeValues: { ':stamp': { S: 'stamp-to' } },
+    });
+  });
+
+  it('reads a row with no stamp as an observed state of its own', async () => {
+    const { stamp: _stamp, ...unstamped } = row;
+    const items = await plan({ from: unstamped });
+    expect(items[1].Delete!.ConditionExpression).toBe(
+      'attribute_exists(pk) AND attribute_not_exists(#stamp)',
+    );
   });
 });

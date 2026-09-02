@@ -112,10 +112,12 @@ export default function MixWord({
     <p className="phrase">
       <span className={`hole${entry ? '' : ' resolved'}`}>
         <span className="hole-word-wrap">
-          {/* The word is the flat pale hole colour like every hole (the live-gradient word
-              was rejected on screen, 2026-08-17); the exponent alone carries the gradient.
-              The tutorial suppresses the shared open-blank line because this is a demo,
-              not a blank the player fills. */}
+          {/* The demo word wears the game's own hole dress: the INVERTED CHIP while it is
+              mixed (`.hole` without `.resolved`), the solve cobalt when it lands on the
+              secret. The lesson is what the board looks like, so it is not opted out of —
+              unlike the retired open-blank line, which said "fill me" and had no business
+              on a prop. The exponent alone carries the gradient (the live-gradient WORD was
+              rejected on screen, 2026-08-17). */}
           <span className="hole-word">{jumble ?? (entry ? entry.word : secret)}</span>
         </span>
         {entry && (

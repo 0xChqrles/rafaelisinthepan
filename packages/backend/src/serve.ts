@@ -14,10 +14,12 @@ import { defaultLocalStoreRoot } from './layout';
 import { memoryDeviceStore } from './memoryDeviceStore';
 import { memoryFriendStore } from './memoryFriendStore';
 import { memoryHistoryStore } from './memoryHistoryStore';
+import { memoryLinkStore } from './memoryLinkStore';
 import { memoryProfileStore } from './memoryProfileStore';
 import { memoryRoundStore } from './memoryRoundStore';
 import { memoryScoreStore } from './memoryScoreStore';
 import type { FnUrlEvent } from './respond';
+import { consoleMailer } from './mailer';
 import { localTurnstileVerifier } from './turnstile';
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -40,6 +42,18 @@ const localScoreStore = memoryScoreStore(() => new Date(), LOCAL_SUBMISSION_LIMI
 // like the rest: restarting the local server signs every local device out, which is exactly
 // what a wiped table does.
 const localDeviceStore = memoryDeviceStore();
+// One instance of each store the LINK route also acts on (#204): a verified link moves the
+// day's round and score rows, credits solved days and rewrites friend edges, so it has to
+// hold the very same objects the other routes read.
+const localFriendStore = memoryFriendStore((publicId) => localDeviceStore.accountExists(publicId));
+const localRoundStore = memoryRoundStore();
+const localHistoryStore = memoryHistoryStore();
+// `live` is the DEVICE store's answer (#204): a deleted account must stop dressing board
+// rows and invite previews, and two in-memory copies of "does this account exist" would
+// drift exactly where that matters.
+const localProfileStore = memoryProfileStore((publicId) =>
+  localDeviceStore.accountExists(publicId),
+);
 
 const handler = createHandler({
   store: fsStore(STORE_ROOT),
@@ -50,8 +64,8 @@ const handler = createHandler({
   allowedOrigin: ALLOWED_ORIGIN,
   // Read-only since #203 — the population is written by the round route below.
   scores: { scoreStore: localScoreStore },
-  profiles: memoryProfileStore(),
-  friends: memoryFriendStore(),
+  profiles: localProfileStore,
+  friends: localFriendStore,
   // The ONE store every authenticated route resolves its caller through (#216).
   deviceStore: localDeviceStore,
   devices: {
@@ -61,7 +75,7 @@ const handler = createHandler({
     allowSourceIp: true,
   },
   rounds: {
-    roundStore: memoryRoundStore(),
+    roundStore: localRoundStore,
     // A finished round records its own score row (#203), off the same in-memory store the
     // /scores read serves from.
     scoreStore: localScoreStore,
@@ -71,7 +85,25 @@ const handler = createHandler({
     turnstile: localTurnstileVerifier,
     // A confirmed solve credits the streak's day (#211); `/history` reads it back. In
     // memory here, so a restart resets the streak with the rounds it is a cache of.
-    history: memoryHistoryStore(),
+    history: localHistoryStore,
+    allowSourceIp: true,
+  },
+  // Email account linking (#204). The code is PRINTED to this server's log rather than
+  // mailed — `backend:dev` has no verified domain, and a link flow you cannot complete
+  // locally is a link flow nobody tests. Explicitly local-only, exactly like the accept-all
+  // Turnstile verifier beside it.
+  link: {
+    links: memoryLinkStore({
+      devices: localDeviceStore,
+      profiles: localProfileStore,
+      rounds: localRoundStore,
+      scores: localScoreStore,
+    }),
+    friends: localFriendStore,
+    history: localHistoryStore,
+    mailer: consoleMailer,
+    turnstile: localTurnstileVerifier,
+    ipHmacSecret: LOCAL_IP_HMAC_SECRET,
     allowSourceIp: true,
   },
 });
@@ -118,7 +150,7 @@ server.listen(PORT, () => {
   console.log(`[backend]   GET /?lang=<xx>&date=<YYYY-MM-DD>[&mode=word]  GET /scores?lang=&date=&mode=`);
   console.log(`[backend]   GET /profile?id=<publicId>  POST /profile  POST /friends`);
   console.log(`[backend]   GET|POST /board?lang=&date=&mode=[&id=]  POST /round?lang=&date=&mode=`);
-  console.log(`[backend]   POST /history?lang=&mode=[&month=YYYY-MM]  POST /devices`);
+  console.log(`[backend]   POST /history?lang=&mode=[&month=YYYY-MM]  POST /devices  POST /link`);
   console.log(`[backend]   GET /today  GET /s/<token>  GET /og/<token>.png`);
   console.log(`[backend] point the front at it: VITE_API_BASE_URL=http://localhost:${PORT}`);
 });

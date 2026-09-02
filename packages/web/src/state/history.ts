@@ -27,7 +27,7 @@
 
 import { useCallback, useEffect } from 'react';
 import { create } from 'zustand';
-import { boundSolvedDays } from '@whippin/shared';
+import { bestStreak, boundSolvedDays, currentStreak, VOCAB_BUILDS } from '@whippin/shared';
 import { historyUrl, parsePlayerHistory, postHistoryBody } from '../api';
 import {
   deviceIdentity,
@@ -289,6 +289,59 @@ export function usePlayerHistory({
     solvedPhase: solvedState.phase,
     retry,
   };
+}
+
+// ── WHAT THE ACCOUNT IS WORTH ─────────────────────────────────────────────────────────
+// The three numbers the account screen states about itself, ACROSS EVERY SUPPORTED
+// LANGUAGE — because the account spans them, and because these are the very numbers the
+// server already names when it asks whether to delete one (`accountStakes`): the BEST live
+// streak rather than the sum of them (a streak is a run of days in ONE language, and adding
+// two would state a number no streak screen ever shows), and the TOTAL of the collections.
+// Two spellings would let the account screen and the erase confirmation disagree about the
+// same days, which is exactly what put `currentStreak` in `@whippin/shared` to begin with.
+//
+// It is a hook of its own rather than a `usePlayerHistory` per language, because the
+// languages come from a module constant and calling a hook once per entry of one is a rule
+// waiting to be broken by the day a third language ships.
+export interface AccountStats {
+  streak: number;
+  best: number;
+  days: number;
+  // READY is the only state the numbers may be drawn in. A collection that has not arrived
+  // is UNKNOWN, never a guessed zero (#211's rule) — and a device with no token knows its
+  // server state is empty without asking, so it settles ready-and-zero with no request at
+  // all (#216).
+  phase: HistoryPhase;
+}
+
+const SUPPORTED_LANGS = Object.keys(VOCAB_BUILDS);
+
+export function useAccountStats(activeDay: number): AccountStats {
+  const solved = useHistoryStore((state) => state.solved);
+
+  useEffect(() => {
+    for (const lang of SUPPORTED_LANGS) void loadPlayerHistory(lang, 'sentence', undefined, true);
+  }, []);
+
+  const entries = SUPPORTED_LANGS.map((lang) => solved[lang] ?? IDLE_SOLVED);
+  // The WHOLE set has to have landed before any of it is a claim: a total summed over one
+  // language of two is a smaller number stated as a fact. Loading wins over failed, since a
+  // read still in flight can still turn a failure into an answer.
+  const phase: HistoryPhase = entries.some((entry) => entry.phase === 'loading' || entry.phase === 'idle')
+    ? 'loading'
+    : entries.some((entry) => entry.phase === 'failed')
+      ? 'failed'
+      : 'ready';
+  let streak = 0;
+  let best = 0;
+  let days = 0;
+  for (const entry of entries) {
+    const held = entry.days ?? [];
+    streak = Math.max(streak, currentStreak(held, activeDay));
+    best = Math.max(best, bestStreak(held));
+    days += held.length;
+  }
+  return { streak, best, days, phase };
 }
 
 // One SENTENCE day's status, straight off a month read — the one place the difference

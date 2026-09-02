@@ -3,7 +3,7 @@
 // the server validates the date against its clock-skew window and serves exactly that
 // day. A 404 from the backend is the graceful "no puzzle today" state, not an error.
 
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import {
   apiBase,
   boardUrl,
@@ -16,11 +16,16 @@ import {
   puzzleOutcome,
   parseFriends,
   parsePuzzle,
+  parseAccountSummary,
+  parseErasePrompt,
+  parseBadCode,
+  parseLinkResult,
   parseProfile,
   parseRound,
   parseScoreHistogram,
   parseWordPuzzle,
   profileUrl,
+  readProfile,
   roundUrl,
   scoresUrl,
 } from './api';
@@ -403,6 +408,107 @@ describe('parseScoreHistogram (shape validation)', () => {
   });
 });
 
+// CONTRACT (#204): `GET /profile` has FOUR materially different answers, and reading only
+// `response.ok` collapses them — which is how a DELETED account ends up drawn with the
+// assigned pseudonym and mark that are still its own. The rule is spelled ONCE here; every
+// caller then decides what to DO with `gone`.
+describe('readProfile — the four answers (#204)', () => {
+  const ID = 'abcdefghij234567';
+  const answer = (init: {
+    status: number;
+    body?: unknown;
+    ok?: boolean;
+  }) => {
+    const payload = JSON.stringify(init.body ?? {});
+    const response = {
+      ok: init.ok ?? init.status < 400,
+      status: init.status,
+      json: async () => JSON.parse(payload) as unknown,
+      clone: () => response,
+    };
+    return response;
+  };
+
+  // `readProfile` owns the real URL builder, so give it the build-time value explicitly.
+  // `.env.local` supplies this on a developer machine but is gitignored and absent in CI;
+  // without the stub the builder throws before the mocked fetch sees the request.
+  beforeEach(() => {
+    vi.stubEnv('VITE_API_BASE_URL', 'https://api.example');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it('SHOWN: a 200 carries the stored profile', async () => {
+    const { blankAvatar } = await import('@whippin/shared');
+    const profile = { publicId: ID, name: 'Chqrles', avatar: blankAvatar() };
+    vi.stubGlobal('fetch', async () => answer({ status: 200, body: profile }));
+    await expect(readProfile(ID)).resolves.toEqual({ status: 'shown', profile });
+  });
+
+  it('BLANK: a 404 is LIVE but never customized — the assigned identity is this face', async () => {
+    vi.stubGlobal('fetch', async () => answer({ status: 404, body: { error: 'not_found' } }));
+    await expect(readProfile(ID)).resolves.toEqual({ status: 'blank' });
+  });
+
+  it('GONE: a 410 `account_gone` is a DELETED identity, told apart from the 404', async () => {
+    vi.stubGlobal('fetch', async () => answer({ status: 410, body: { error: 'account_gone' } }));
+    await expect(readProfile(ID)).resolves.toEqual({ status: 'gone' });
+  });
+
+  it('reads the CODE, not the status: a 410 that does not say so is not a deletion', async () => {
+    vi.stubGlobal('fetch', async () => answer({ status: 410, body: { error: 'something_else' } }));
+    await expect(readProfile(ID)).resolves.toEqual({ status: 'failed' });
+  });
+
+  it('FAILED: a transport error, a 5xx or an unparseable body is NOT evidence of a deletion', async () => {
+    vi.stubGlobal('fetch', async () => {
+      throw new Error('offline');
+    });
+    await expect(readProfile(ID)).resolves.toEqual({ status: 'failed' });
+
+    vi.stubGlobal('fetch', async () => answer({ status: 503 }));
+    await expect(readProfile(ID)).resolves.toEqual({ status: 'failed' });
+
+    vi.stubGlobal('fetch', async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ publicId: 'NOPE' }),
+      clone() {
+        return this;
+      },
+    }));
+    await expect(readProfile(ID)).resolves.toEqual({ status: 'failed' });
+  });
+});
+
+// CONTRACT (#204, PR-227 review): the attempt ladder ends at the INPUT, not on a modal.
+// Every counted mismatch is `bad_code`, the fifth included, and its `attemptsLeft: 0` is
+// what makes "too many wrong codes" reachable — the server used to answer the fifth as a
+// 409 `code_spent`, which left this branch dead and the copy unreachable.
+describe('parseBadCode — the attempt ladder the screen shows (#204)', () => {
+  it('counts the tries the refusal says remain, and 1..5 walk down to zero', () => {
+    expect([4, 3, 2, 1, 0].map((left) => parseBadCode({ attemptsLeft: left }))).toEqual([
+      { attemptsLeft: 4, exhausted: false },
+      { attemptsLeft: 3, exhausted: false },
+      { attemptsLeft: 2, exhausted: false },
+      { attemptsLeft: 1, exhausted: false },
+      // The LAST allowed mismatch — the one that ends the step and prints the copy.
+      { attemptsLeft: 0, exhausted: true },
+    ]);
+  });
+
+  it('reads a missing or malformed count as NONE LEFT rather than offering a try it cannot promise', () => {
+    expect(parseBadCode({})).toEqual({ attemptsLeft: 0, exhausted: true });
+    expect(parseBadCode(null)).toEqual({ attemptsLeft: 0, exhausted: true });
+    expect(parseBadCode({ attemptsLeft: 'two' })).toEqual({ attemptsLeft: 0, exhausted: true });
+    expect(parseBadCode({ attemptsLeft: Number.NaN })).toEqual({ attemptsLeft: 0, exhausted: true });
+    expect(parseBadCode({ attemptsLeft: -3 })).toEqual({ attemptsLeft: 0, exhausted: true });
+  });
+});
+
 describe('profileUrl + parseProfile (#188)', () => {
   it('addresses the /profile route, with the id query only on reads', () => {
     expect(profileUrl(undefined, 'https://api.example')).toBe('https://api.example/profile');
@@ -649,5 +755,157 @@ describe('roundUrl + parseRound (#201/#202)', () => {
     expect(() => parseRound({ ...valid(), now: 'whenever' })).toThrow(/now/);
     expect(() => parseRound({ ...valid(), startedAt: 'whenever' })).toThrow(/startedAt/);
     expect(() => parseRound({ ...valid(), submittedAt: 'whenever' })).toThrow(/submittedAt/);
+  });
+});
+
+// CONTRACT (#204): the `{token}` read is what the ACCOUNT SCREEN is. `email` is the whole
+// state that screen branches on — offer to save, or show the address — so only an explicit
+// null may mean "not saved yet". Missing or malformed data is UNKNOWN, never permission to
+// draw the empty branch.
+describe('parseAccountSummary (#204)', () => {
+  const ID = 'lfd5pqz5pa7zjm5u';
+  const DEVICE = 'nq2yv6cme4jkbhtx';
+
+  it('reads a saved account', () => {
+    expect(
+      parseAccountSummary({
+        accountId: ID,
+        deviceId: DEVICE,
+        email: 'zoe@example.com',
+        createdAt: '2026-08-12T10:00:00.000Z',
+        mergePending: false,
+      }),
+    ).toEqual({
+      accountId: ID,
+      deviceId: DEVICE,
+      email: 'zoe@example.com',
+      createdAt: '2026-08-12T10:00:00.000Z',
+      mergePending: false,
+    });
+  });
+
+  it('reads only an explicit null as UNSAVED and rejects an unknown address state', () => {
+    const base = {
+      accountId: ID,
+      deviceId: DEVICE,
+      createdAt: '2026-08-12T10:00:00.000Z',
+      mergePending: false,
+    };
+    expect(parseAccountSummary({ ...base, email: null }).email).toBeNull();
+    for (const email of [undefined, '', 42]) {
+      expect(() => parseAccountSummary({ ...base, email }), String(email)).toThrow(/email/);
+    }
+  });
+
+  it('tolerates an unreadable createdAt — a LABEL may not fail the block it decorates', () => {
+    const summary = parseAccountSummary({
+      accountId: ID,
+      deviceId: DEVICE,
+      email: null,
+      createdAt: '',
+      mergePending: false,
+    });
+    expect(summary.createdAt).toBe('');
+    // The screen renders no "since" line for it, exactly as the device list renders no date.
+    expect(Number.isFinite(Date.parse(summary.createdAt))).toBe(false);
+  });
+
+  it('refuses a body whose IDS are wrong — an account screen may not name nobody', () => {
+    const rest = { email: null, createdAt: '', mergePending: false };
+    expect(() => parseAccountSummary({ accountId: 'nope', deviceId: DEVICE, ...rest })).toThrow(/accountId/);
+    expect(() => parseAccountSummary({ accountId: ID, deviceId: 'nope', ...rest })).toThrow(/deviceId/);
+    expect(() => parseAccountSummary(null)).toThrow(/not an object/);
+  });
+
+  it('carries the merge flag, which is what the client retries on', () => {
+    const base = { accountId: ID, deviceId: DEVICE, email: null, createdAt: '' };
+    expect(parseAccountSummary({ ...base, mergePending: true }).mergePending).toBe(true);
+    expect(parseAccountSummary({ ...base, mergePending: false }).mergePending).toBe(false);
+    expect(() => parseAccountSummary(base)).toThrow(/mergePending/);
+  });
+});
+
+// CONTRACT (#204's UX rework vol. 2): the email flow's two DECORATIONS. Both are drawn on
+// screens the player has to be able to answer — a destructive confirmation and an ending
+// that changed which account this device holds — so a missing or malformed one degrades to
+// LESS on screen, never to a failure.
+describe('link answers (#204 vol. 2)', () => {
+  const ID = 'abcdefghijklmnop';
+  const OTHER = 'qrstuvwxyz234567';
+  const DEVICE = 'abcdefghijklmnop';
+
+  const STAKES = { streak: 4, best: 9, days: 12 };
+
+  it('carries the account being ADOPTED, so the crossroads can draw both faces', () => {
+    const prompt = parseErasePrompt({ accountId: ID, target: OTHER, ...STAKES }, 'erase');
+    expect(prompt).toEqual({ kind: 'erase', accountId: ID, target: OTHER, stakes: STAKES });
+  });
+
+  it('degrades every decoration, and refuses only what it cannot ask about', () => {
+    // The refusal is the only thing standing between a tap and a deleted account: a
+    // decoration the client cannot read must not be able to make it unanswerable.
+    expect(parseErasePrompt({ accountId: ID, ...STAKES }, 'erase')?.target).toBeNull();
+    expect(
+      parseErasePrompt({ accountId: ID, target: 'nope', ...STAKES }, 'erase')?.target,
+    ).toBeNull();
+    // THE STAKES ARE A DECORATION TOO, on both kinds (widened by #204's review). They were
+    // required on an ERASE, which broke the rule this test states: an incomplete trio
+    // refused the prompt, the caller fell through to the generic failure, and its TRY AGAIN
+    // re-sent the same code for the same 409 — a loop with no way out, on the one screen a
+    // player must be able to answer. `showStakes` already draws nothing when they are
+    // absent, so the confirmation simply loses three numbers and keeps everything that
+    // makes it answerable: the fork, the sentence and both buttons.
+    const partial = parseErasePrompt({ accountId: ID, streak: 4, days: 12 }, 'erase');
+    expect(partial?.accountId).toBe(ID);
+    expect(partial?.stakes).toBeNull();
+    // What it may NOT degrade: the account it is asking to erase. With no name there is
+    // nothing to confirm and nothing to send back, so `verify` closes without offering a
+    // retry that could only repeat it.
+    expect(parseErasePrompt({ accountId: 'nope', target: OTHER, ...STAKES }, 'erase')).toBeNull();
+  });
+
+  it('accepts a SWITCH with no stakes — a switch loses nothing, so it states nothing', () => {
+    // The account being left survives here, so the server sends no numbers and the screen
+    // shows none. Requiring them would refuse a confirmation the player has to answer.
+    expect(parseErasePrompt({ accountId: ID, target: OTHER }, 'switch')).toEqual({
+      kind: 'switch',
+      accountId: ID,
+      target: OTHER,
+      stakes: null,
+    });
+    expect(parseErasePrompt({ target: OTHER }, 'switch')).toBeNull();
+  });
+
+  it('carries the recovered account\'s RECEIPT on an adopt, and nothing on the others', () => {
+    const base = {
+      outcome: 'adopted',
+      accountId: ID,
+      deviceId: DEVICE,
+      email: 'z@example.com',
+      mergePending: false,
+    };
+    expect(parseLinkResult({ ...base, stakes: { streak: 12, best: 30, days: 41 } }).stakes).toEqual({
+      streak: 12,
+      best: 30,
+      days: 41,
+    });
+    // A bind recovered nothing, so it vouches for nothing — and an unreadable receipt is
+    // simply no receipt, never a failed link on a device whose identity has already moved.
+    expect(parseLinkResult({ ...base, outcome: 'bound' }).stakes).toBeNull();
+    expect(parseLinkResult({ ...base, stakes: { streak: 12, days: 41 } }).stakes).toBeNull();
+  });
+
+  it('REFUSES a link answer whose mergePending is missing or malformed (#204)', () => {
+    // It is a JOB the client has to come back and finish — consented friend edges the
+    // server could not fan out in one transaction. Coercing a missing field to `false`
+    // silently cancelled the resumed drain, which is the opposite of what an absent
+    // answer means; and this parser already refuses every other malformed field, because
+    // an identity is being replaced off this body.
+    const base = { outcome: 'adopted', accountId: ID, deviceId: DEVICE, email: 'z@example.com' };
+    expect(parseLinkResult({ ...base, mergePending: true }).mergePending).toBe(true);
+    expect(parseLinkResult({ ...base, mergePending: false }).mergePending).toBe(false);
+    expect(() => parseLinkResult(base)).toThrow(/mergePending/);
+    expect(() => parseLinkResult({ ...base, mergePending: 'yes' })).toThrow(/mergePending/);
+    expect(() => parseLinkResult({ ...base, mergePending: 1 })).toThrow(/mergePending/);
   });
 });

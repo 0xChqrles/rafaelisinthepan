@@ -1096,7 +1096,11 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   triggers, each a PRIMARY BUTTON: **the sentence gate's PLAY** · **Word mode's PLAY** ·
   **accepting an invite** (its button — the landing no longer auto-adds on load) ·
   **sending an invite link** · **saving a profile** (the SAVE tap, never the editor
-  opening). Each is a SINGLE tap that chains its real action behind the bootstrap, shows a
+  opening) — **and, since #204, the email link flow's SEND CODE** (a device with no account
+  cannot be given one by an email link, and "this device is empty" is the reconnect case
+  that flow exists for; it is the flow's own CONTINUE, on EITHER door — see the #204
+  section).
+  Each is a SINGLE tap that chains its real action behind the bootstrap, shows a
   clear loading state on the button, and reports failure on the app's ERROR SURFACE —
   a FULL-SCREEN MODAL (`web/components/ErrorScreen.tsx`) saying what happened, with TRY
   AGAIN when retrying can help. **It was a desktop popup / phone bottom SHEET until
@@ -1183,9 +1187,10 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   the identity that made the request; a late verdict from A must never remove current identity
   B. The copy says what is being left behind, or a
   vanished streak and an empty friends list read as a bug rather than as the sign-out that
-  caused them. **RECONNECT is NOT WIRED in #216**: the email link flow is #204's, so the
-  screen takes the handler as a prop and offers SKIP alone until then — a button that does
-  nothing is worse than a screen that only offers what it can do.
+  caused them. **RECONNECT was NOT WIRED in #216** — a button that does nothing is worse than a
+  screen that only offers what it can do — **and #204 wired it as the screen's PRIMARY
+  action**: the tap lifts the verdict (removing the tombstone origin-wide) and lands on
+  `/account/signin`, the RETURNING door's address step; PLAY became the secondary.
   **THE VERDICT IS DURABLE AND BROADCAST — a persisted TOMBSTONE (user-decided 2026-08-24,
   on the PR-219 follow-up review).** A sign-out REPLACES the stored identity with a
   non-authenticating `{signedOut, accountId, deviceId}` value — the two PUBLIC ids, never a
@@ -1314,6 +1319,498 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   UNREACHABLE**: a submitted day always lands on the final screen. #214's interim fix for
   that (a settled run ends immediately) stays — it is what settles the clock — but nothing
   now depends on it to avoid an interactive prompt over a recorded run.
+
+### Email account linking (#204, decided 2026-08-26)
+
+- **EMAIL is the account's backup, and it is a 6-DIGIT CODE rather than a magic link.** It is
+  the only identity primitive with zero comprehension cost for this audience — everyone has an
+  address and everyone has clicked a "reset password" link — where passkeys are meaningless on
+  Samsung Internet and OAuth adds a third-party origin this project has consistently avoided
+  (#199). A LINK opens in whatever browser the mail client prefers, not the one that made the
+  request, and corporate mail scanners prefetch links and spend single-use tokens before the
+  human ever taps; a code is also what a French bank asks for constantly. It depends on #211
+  (the solved-day collection a transferred solve credits) and #216 (the one device item a link
+  moves, and the account model the erase rule is written against).
+- **ONE FLOW, and the server branches only AFTER the code is verified.** The player types their
+  address, then the code; telling somebody "we know this email" before they prove they own it
+  is account enumeration, so the SEND's answer is byte-identical for a known and an unknown
+  address. The three endings:
+  - **address unknown** → BIND it to the account this device already holds. *"Compte
+    sauvegardé."*
+  - **address is this account's own** → nothing to do, said so.
+  - **address is ANOTHER account's** → ADOPT it; this device leaves the one it held. *"On a
+    retrouvé votre compte."*
+  The player never has to say whether they are new or returning, which is exactly what makes
+  the second-device problem tractable: there is nothing to detect. An account carries at most
+  ONE address — a second UNKNOWN one is refused (409 `account_linked`) rather than re-pointed,
+  because the first would then reach an account nobody could ever sign into again; entering a
+  second address that IS known is simply the adopt case and needs no special rule.
+- **THE ACCOUNT BEING LEFT IS DELETED ONLY WHEN IT CARRIES NO EMAIL OF ITS OWN.** One that does
+  can be signed back into on any future device, so it is not an orphan: the device just leaves
+  it, it stands untouched, nothing is destroyed and NOTHING TRANSFERS — which is the right
+  answer for an account the player can come back to. One that does not becomes unreachable the
+  moment this device leaves, and that is the only case the erase exists for, and therefore the
+  only case the confirmation has to cover.
+- **THE ERASE IS CONFIRMED, NOT INFERRED.** The server can work out which account is being left
+  — it authenticated the device holding it — but requiring the caller to NAME it turns
+  destruction into a confirmed act: a first call with no `erase` answers **409 `would_erase`**
+  with what is at stake (the account id, its live streak, its day count), the screen says so,
+  the player confirms, and the second call carries the name. A client bug then cannot silently
+  destroy a month of play. **The measure of "at stake" is SOLVED DAYS** — what the streak is
+  derived from, what a player would name if asked what they would miss, and one small bounded
+  read per language. An account with none is EMPTY for this purpose, so **the confirmation is
+  skipped when there is nothing to show, and when nothing is being deleted at all**: a fresh
+  device that links immediately loses nothing, so no dialog.
+- **THE ACTIVE-DAY TRANSFER.** Without it, someone who plays today's puzzle on a new device
+  before linking watches that round get erased. For the ACTIVE DAY ONLY, and only when the
+  account being left is being DELETED, every supported **language × mode** tuple is evaluated:
+  where the adopting account holds no RECORDED PLAY and the leaving one does, its round row
+  and its
+  score row MOVE, and a transferred sentence solve credits the adopting account's solved-day
+  collection idempotently. "Active day" therefore means all languages and both modes, never
+  whichever route the linking device happens to be on — which language a player was on lives in
+  the browser and nowhere else, so a server that guessed would erase the round it guessed wrong
+  about. The product is bounded (four tuples today).
+  - **RECORDED PLAY is `guesses.length > 0 || submittedAt exists` — ONE predicate, read on the
+    SOURCE and the DESTINATION alike** (corrected 2026-09-02 on the PR-227 review; it read
+    `guesses` alone until then). A solved round is just a round whose last guess landed rank 0,
+    so one rule covers a solve and a partial. And a Word mode START STAMP IS NOTHING — a started,
+    unsubmitted run holds no guesses server-side at all, its log living on the device until the
+    run ends — so a recorded run moves in over it, including over a run a device signed into the
+    adopting account is playing at that moment (it finds the day submitted on its next look). A
+    complete recorded run is worth more than a maybe-half-finished one, and it is the same human
+    either way.
+    **What the log ALONE could not see is a run SUBMITTED having claimed nothing.** #202 makes
+    `submittedAt` the marker and never the log's length, so such a run records an EMPTY
+    `guesses` list — indistinguishable, by the log, from the merely-started one above — while
+    being a recorded, unrepeatable day carrying a real score row of 0. Read by the log it was
+    invisible from BOTH sides: as a SOURCE it did not move, so the day was erased with the
+    account; as a DESTINATION it did not block a move, so a source's play was written over a day
+    the destination had already recorded. Both lose a recorded day, which is the one thing this
+    transfer exists to prevent.
+  - **"The destination has nothing" is the only unambiguous case:** a partial round there against
+    a solve here is two real logs for one day with no honest resolution (a union changes the try
+    count and the score; a concatenation makes the run ruler replay nonsense).
+  - **NOT extended past the active day.** "Every day where the adopting account has nothing" is a
+    day-by-day merge with real edges — streak recomputation over an interleaved history, and a
+    family tablet where the leaving account is genuinely two people.
+  - **Accepted cost:** this path can put a laundered score on the FRIENDS board. It is bounded by
+    the existing 5-per-IP cap, naturally one-shot per tuple (after the first transfer the
+    destination has guesses), and each move is atomic, so the histogram count is never
+    transiently doubled.
+- **FRIEND TRANSFER: merge and deduplicate the leaving account's friends into the adopting one.**
+  Keep every friendship the adopting account already has; drop the two accounts themselves and
+  the duplicates from the list being merged; fill the remaining capacity with the rest,
+  OLDEST-`createdAt` first and ties by friend id, up to `FRIENDS_MAX`; rewrite BOTH directions of
+  every kept friendship; and when no slot remains, drop that friendship and remove both facing
+  edges — **no link is ever left pointing at a deleted account.** The present cap is accepted
+  here: a future pagination change may remove it, but #204 neither waits for that work nor
+  promises to recover an edge dropped during this merge.
+  Up to 200 mutual edges is 800 rows, which cannot fit DynamoDB's 100-item transaction, so the
+  core link commits a durable, idempotent, RESUMABLE job and the fan-out drains behind it —
+  separate from #207's optional deletion cron, because the visible friend transfer is part of
+  linking rather than eventual housekeeping. **The queue drains AFTER the account row is
+  deleted**, so a kept friend may briefly see the leaving player disappear from an
+  identity-bearing board and the adopting one appear when their edge is rewritten. That
+  drop-then-reappear window is accepted and inherent; **no deleted identity is rendered during
+  it.**
+  **THE ANSWER SAYS WHETHER THE JOB IS DONE, AND THE CLIENT FINISHES IT** (`mergePending`,
+  clarified 2026-09-02 on the PR-227 review). The route drains what it can before answering
+  and reports the rest; a successful link then RESUMES the same bounded, backed-off,
+  identity-fenced drain the account read uses, rather than leaving those edges for whenever
+  the player next opens `/account`. That is also why the drain is a logged non-fatal side
+  effect and never a failed link: the identity has already committed, and the job is durable.
+  **The successful answer carries NOTHING ELSE about what was left behind** — it names the
+  account it ARRIVED at, its address and its receipt. The `erased` and `moved` fields it once
+  carried were read by no client: what was left behind is exactly what the confirmation stated
+  before the player agreed to it.
+- **WHAT THE CORE COMMITS TOGETHER — the identity AND the active day's play, ONE
+  transaction** (restored 2026-09-02 on the PR-227 review, to what the issue itself
+  specified): consume the challenge, move the one device item, delete the leaving account's
+  row AND its profile row, persist the friend-merge job, and carry every active-day tuple
+  the transfer rule admits — each round row and its score row conditioned on the exact rows
+  they were planned from. It is one transaction because the half-states are not equally
+  harmless: a device left on a DELETED account is a player signed out mid-link with
+  everything gone, and a round moved by an adoption that never commits is play under an
+  account nobody holds. *(From 2026-08-26 to 2026-09-02 the moves ran as separate atomic
+  writes BEFORE the commit, on the reasoning that this order was the recoverable one. The
+  review showed it is not ownable: a commit that fails after a move, or a second device
+  linking a different address, leaves the day's play split across two targets, and no claim
+  or takeover can honestly repair a move that already happened. A guess that lands between
+  the plan and the commit refuses the transaction, which is planned again over what now
+  stands; one that lands after the commit lands under a deleted account, exactly as any
+  append racing any deletion does.)* The solved-day credit a transferred sentence solve owes
+  the streak follows the commit as a logged, non-fatal side effect, the round route's own
+  rule for that rebuildable collection.
+- **A DELETED ACCOUNT STOPS BEING RENDERED, everywhere an identity is shown.** `GET /profile?id=`
+  answers a distinct **410 `account_gone`**, told apart from the 404 that means "never
+  customized" — every board dresses THAT with the assigned pseudonym and mark, which is still
+  the player's own face, and a deleted account has no face to fall back to. `/board` DROPS such a
+  row from every section rather than dressing it (a rank gap in the top 50 is the honest picture;
+  the check is one read per row SHOWN, so the whole day partition is never tested). The `/i/`
+  invite preview answers the expired-link 404, and **`POST /friends {add}` refuses a target whose
+  account is gone** (404 `unknown_player`) — unaccepted invite links for a deleted account
+  EXPIRE, there is no alias and no redirect, and acceptance requires a live target. A read that
+  merely FAILED is not a deletion and still dresses blank.
+  **AND EVERY WEB READER OF `GET /profile` HONOURS THE 410** (corrected 2026-09-02 on the
+  PR-227 review; `readProfile` in `web/src/api.ts` is the ONE place the four answers are told
+  apart). It matters most where the id came from somebody else: the invite landing shows the
+  EXPIRED state at once rather than drawing the erased inviter over an ADD FRIEND that can
+  only be refused, the signed-out screen settles FACELESS, and the account area's shared face
+  read settles with no face at all — including on the crossroads' `target`, an account the
+  device does not own and only the server vouched for a moment earlier. What is NOT dressed
+  differently is a WRITE path whose caller genuinely holds the account (the profile editor's
+  own read, the local-identity deploy), and neither of those creates or replaces anything on
+  an answer that is not a plain 404. **Anonymous aggregates keep counting
+  an orphan score** until a later housekeeping sweep removes it: `/scores` renders no identity,
+  and the hottest public read must not add an account-existence lookup per row. Guess-history and
+  old score rows likewise remain unreachable history until that sweeper; established friend edges
+  are the exception #204 owns now, because they carry consented relationships.
+- **ONE route, POST-only like /friends** (the device token is the auth and travels in the BODY,
+  so the route reads NO query at all — its CloudFront behavior's allow-list is EMPTY, the
+  standing three-package contract): `POST /link`. `{token}` reads what the account is saved as
+  (and DRAINS any friend-merge job an interrupted link left queued — the client's resume path);
+  `{token, email, turnstileToken, lang}` sends a code; `{token, email, code, erase?}` verifies it
+  and links.
+  - **TURNSTILE sits on the SEND**, the request that creates state and puts a message in somebody
+    else's inbox — the device-bootstrap and round-start rule — and it is checked BEFORE the
+    allowances, or an unauthenticated caller could burn a stranger's code budget.
+  - **The send is metered per ADDRESS and per IP** (`LINK_SENDS_PER_ADDRESS` = 5,
+    `LINK_SENDS_PER_IP` = 20, per rolling hour), reusing #169's `VIEWER_IP_HEADER` + HMAC
+    machinery — without it this endpoint is a free spam relay pointed at arbitrary inboxes. A
+    raw address is never stored: the key is `SHA-256(normalized address)`, and the address in
+    clear lives only on the account row it belongs to.
+  - **A FAILED SEND IS FAIL-CLOSED, AND THE ALLOWANCE STAYS CHARGED** (user-decided
+    2026-09-02, on the PR-227 review). The order is SPEND → STORE → SEND, and nothing is
+    refunded or rolled back when the provider refuses, times out, or answers ambiguously:
+    SES acceptance is AMBIGUOUS — a lost response can follow a message that was in fact
+    delivered — so returning the slot would let a caller whose mail DID go out spend it
+    again, and the bound would stop bounding what an inbox receives. The counters are ABUSE
+    CONTROLS, not a billing ledger. The route answers **503 `mail_unavailable`** (never a
+    200 for a code nobody received), the stored challenge is left to expire or be REPLACED
+    by the next successful resend, and the failure is LOGGED without the address, the code,
+    its digest or the device token — the provider's own error MESSAGE names the destination
+    it rejected, so only the failure's NAME and the AWS request id are kept.
+  - **The code is stored as a keyed HMAC, never in clear:** six digits is one million values, so
+    a bare hash of every possible code is a table anyone can precompute. It stands for
+    `LINK_CODE_TTL_SECONDS` (10 min) and tolerates `LINK_CODE_MAX_ATTEMPTS` (5) WRONG codes; a
+    CORRECT one spends none, because one successful link legitimately verifies twice (the erase
+    confirmation asks, the player confirms).
+    **EVERY COUNTED MISMATCH IS `bad_code`, THE FIFTH INCLUDED** (corrected 2026-09-02 on the
+    PR-227 review): a mismatch the store actually counted answers 401 with `attemptsLeft`, and
+    the last one answers it with ZERO — which is what puts "too many wrong codes" at the input
+    where it was typed. `code_spent` (409) means the challenge no longer ACCEPTS an attempt: the
+    sixth call, an expired-then-replaced challenge, or one a concurrent final write consumed.
+    The fifth mismatch used to answer that 409, which made the screen's zero-remaining copy
+    unreachable and reported a spent code for one the player simply got wrong.
+- **`normalizeEmail` is a cross-package contract** (`shared/src/email.ts`): trimmed,
+  NFKC-normalized and lowercased WHOLE — the local part is case-sensitive per RFC 5321 and no
+  provider a player uses treats it that way, so folding is what makes `Bob@x.com` and
+  `bob@x.com` one account. Nothing cleverer: no dot-stripping, no `+tag` folding — those are
+  Gmail's rules, wrong everywhere else, and an address the function rewrote would send the code
+  to a mailbox nobody named. The WEB validates what it types before spending a send; the BACKEND
+  validates, normalizes and hashes what it stores. `currentStreak` moved into
+  `shared/src/history.ts` for the same reason: the erase confirmation names a streak the server
+  derives, and two spellings would put a different number on that dialog than the streak screen
+  shows over the same days.
+- **TWO DOORS ONTO ONE ENGINE (user-decided 2026-08-27, on the vol. 2 UX research).** The
+  flow performs two OPPOSITE acts — saving the account this device holds, which is additive,
+  and signing into ANOTHER one, which may delete it — and they wore one costume: the same
+  entry, the same taps, the same words, the same picture, diverging only in the last
+  half-second at the erase confirmation. The cause is recorded above and is CORRECT: the
+  server may not branch before the code is verified, or it enumerates accounts. **But the
+  server's discretion had become the interface's silence** — because the back end may not
+  guess the intention, the front end stopped asking for it, and a returning player was
+  looking for a word that was not on screen. So `/account/signin` joins `/account/email`:
+  the same screen, the same requests, the same allowances and challenges, byte for byte.
+  What the path carries is the player's DECLARED INTENTION, and the rule it runs on is
+  **the declaration shapes the JOURNEY · the server shapes the DESTINATION · the ending
+  always tells the TRUTH about what actually happened.** Nothing is detected, nothing is
+  routed, every ending stays reachable from either door, and a player who picks the "wrong"
+  one is never blocked and never lied to. This AMENDS the SCOPE of "the player never has to
+  say whether they are new or returning" — the SERVER never asks; the SCREEN may offer.
+  - **THE DOORS.** `/account` keeps its lit SAVE and gains a QUIET second door under it —
+    *I ALREADY HAVE AN ACCOUNT* / *J'AI DÉJÀ UN COMPTE* — never a second primary, since most
+    visitors there came to save. Its WORDS change with what it would cost, off the one fact
+    the client already holds: unsaved, leaving DESTROYS this account; SAVED, leaving is
+    reversible (*SIGN IN TO ANOTHER ACCOUNT*), because the account stays reachable by its own
+    address. It is held back until the summary settles, the same explicit-loading rule the
+    action above it follows. **The address step states the COST only when there is one**
+    (user-decided 2026-08-28): the reversible case said *"You can come back to this one
+    anytime"* there and it was cut — no decision is pending on that step, so a reassurance
+    about a consequence nobody has met yet is noise. It is said where it is load-bearing
+    instead, on the switch confirmation, which IS a decision. **RECONNECT now lands on `/account/signin`** — a signed-out
+    player is a returning player by definition, and the SAVE door's every word is about
+    keeping an account they no longer hold.
+  - **THE WORDLESS TELL IS THE FACE, and there is deliberately NO SECOND INK**
+    (`web/components/AccountMark.tsx`). Saving keeps a real face on screen from the first
+    step: it is the OBJECT of the sentence. Returning opens on an EMPTY 10×10 grid —
+    somebody is out there — which the recovered account DEVELOPS into, cell by cell, when
+    the code lands. Same layout, opposite narrative, no copy. The vol. 2 research proposed a
+    second flow ink for the doors and it was NOT taken: the app's token set is three colours
+    with settled meanings, and a fourth buys at a glance what the picture says outright. The
+    composition is TRANSIENT and hands off to `Avatar`'s canonical traced path, so #188's
+    one-union-outline decision is untouched; under `prefers-reduced-motion` there is no
+    composition at all. The ending's name, receipt, sentence and action then follow the face
+    in on a short cascade — a name at full strength beside a half-drawn mark steals the one
+    beat the flow exists for. **The EMPTY grid is drawn as what it is WAITING FOR**
+    (user-decided 2026-08-28, superseding a hairline grid with a few cells breathing — "the
+    small squares are weird", which read as a technical placeholder rather than as a
+    question): the tile churns through the AVATAR PALETTES on a slow value-noise field at
+    the marks' own 10×10 resolution — a face forming and reforming, every frame a plausible
+    one, none of them yours yet. **Every frame stays INSIDE the palette** — one noise field
+    picks each cell's palette and a second decides its ground or its ink — so nothing is
+    ever blended into a colour no avatar could wear. Reduced motion keeps the picture and
+    drops the movement: one frame of the field is still a mark-shaped absence.
+  - **THE FIELD STAYS UP THROUGH THE CODE, AND THE ARRIVAL RESOLVES IT** (user-decided
+    2026-08-28). Two changes of the same kind. The lead is rendered outside the step
+    branches, so ONE element survives address → code: the returning tile keeps churning
+    across the step where the player is actually waiting to be found, and the saving face
+    keeps the promise its own rule makes — the thing being kept is on screen from the first
+    step to the last. And the waiting tile and the arrival are now ONE canvas: they were two
+    surfaces, so the instant the code landed the thing the player had been watching
+    disappeared and a different thing grew in its place. Resolving the SAME field is the
+    picture the flow actually promises — the static was never noise, it was a face nobody
+    could read yet. A resolved cell is final and the rest churns around it, so the drawing
+    precipitates out of the storm before handing off to `Avatar`.
+  - **THE CODE'S CELLS LIGHT IN THE PALETTE'S OWN INKS** (user-decided 2026-08-28,
+    superseding "the cells rest quiet and brighten to `--line-strong` as they fill"): a
+    filled cell takes one of SIX avatar-palette colours — its digit and its border together
+    — and the empty NEXT cell previews its own at half strength, so the row fills into a
+    small spectrum as the code goes in. It is the palette the tile above is churning
+    through, which is the point: the code is typed in the colours the account is being found
+    in. The inks are `AccountMark`'s `CODE_INKS`, ADDRESSED into `AVATAR_PALETTES` rather
+    than copied, so the two surfaces cannot drift. A refusal still takes the WHOLE row red —
+    a row that half-kept its colours would read as a partial refusal.
+  - **LEAVING AN ACCOUNT IS CONFIRMED TOO, even when nothing is destroyed** (user-decided
+    2026-08-28). When the account this device holds carries an address of its OWN it
+    survives and stays reachable — so there was no dialog at all and the device was simply
+    moved. But it still stops BEING that account: the name, the mark, the streak and the
+    friends on screen all become somebody else's, and that may not happen silently. `POST
+    /link` now answers **409 `would_switch`** (`{accountId, target}`) unless the caller NAMES
+    the account it is leaving in `leave`, exactly as `erase` names one being deleted. Unlike
+    the erase it is NOT gated on there being anything at stake: nothing is lost either way,
+    so what is being confirmed is the SWITCH itself, whatever the leaving account's day count
+    happens to be. It is the SAME crossroads with the red taken out — the leaving face keeps
+    its own NAME instead of DELETED, the sentence says what is true here (*Nothing is deleted
+    — this account stays saved under its own address.*), no stakes are printed (they are not
+    at stake), and the primary is an ordinary lit SWITCH ACCOUNT: dressing it as a danger
+    would teach the red to mean "a decision" rather than "a loss".
+  - **BINDING IS A CONSENT, and the RETURNING door does not give it** (user-decided
+    2026-08-28). A player who came to RECOVER an account and typed an address nobody holds
+    was having their LOCAL account bound to it — which is not a smaller version of what they
+    asked for, it is a costly different act: an account carries at most ONE address, so a
+    mistyped address SPENT the slot and left the account unable to be saved under the right
+    one afterwards, forever. The verify body carries `bind` beside `erase` and `leave` — the
+    caller naming what it authorizes, never the declared intent crossing the wire — and an
+    address that reaches nobody without that consent is **404 `no_account`**, a note at the
+    address field with the field still there to correct. Two consequences: the endings drop
+    from six to FIVE (`bound` is reachable from the SAVE door alone), and `account_linked`
+    goes back to meaning one thing, on one door, since the returning door never reaches the
+    bind branch at all.
+  - **THE RECOVERY ENDING PRINTS WHAT IT HANDED BACK** (user-decided 2026-08-28): the same
+    three numbers `/account` prints, so a player reading them there and then opening the
+    account screen sees the numbers they were just shown. `accountStakes` gained `best` for
+    it, and the CROSSROADS prints all three too — everywhere the app states what an account
+    is worth, it states the same three (`web/components/AccountStats.tsx`).
+  - **`account_linked` IS A FACT AT THE FIELD, NOT A MODAL** (user-decided 2026-08-28). An
+    account carries at most one address, so a device whose account is already saved under a
+    different one cannot bind a second. That was an `ErrorScreen` with no retry — a dead end
+    on a screen whose one remaining move is to type another address — so the line now stands
+    under the address input with the input still there, and clears on the next keystroke.
+    **And ONE refusal covers TWO situations, so the DOOR picks the half that is an answer**
+    (same day): the server sends it in exactly one case — the address reaches NOBODY and this
+    device's account already has one of its own — and both halves of that are exactly true.
+    Coming to SAVE, the answer is *This account is already saved under another address.*
+    Coming to SIGN IN, the player asked about an ADDRESS, so the answer is about the address:
+    *No account is saved at that address.* The save wording was being shown to both, which
+    told a returning player about a binding they had not asked for instead of about the thing
+    they had just done.
+  - **THE ERASE CONFIRMATION IS A CROSSROADS, NOT A WARNING.** A trade drawn from one side
+    reads as pure loss, so it draws BOTH accounts: the one being left, dimmed — under
+    DELETED in the one red this whole area contains, or under its own NAME when it is only
+    being left (above) — and the one being joined, lit and NAMED (a verdict is tracked
+    all-caps chrome; a name is a name, case kept). That frees its one
+    sentence to carry what the picture cannot — what SURVIVES: *Today's game and your friends
+    come with you. The rest is lost.* / *La partie du jour et vos amis vous suivent. Le reste
+    est perdu.* Both halves are true and neither is obvious (the active-day transfer, the
+    friend merge), and a confirmation that OVERSTATES the damage misleads exactly as much as
+    one that hides it — which is what the line it replaces did. Reached from the RETURN door
+    it is expected (the address step already said so); reached from the SAVE door it is a
+    genuine surprise, so it gains one lead line, *That address already has an account.*, and
+    explains the turn before asking anything. It is still skipped when there is nothing to
+    lose.
+  - **THE SERVER NAMES BOTH SIDES.** `would_erase` carries `target` — the account being
+    adopted — beside the one being erased. It leaks nothing: the refusal fires only AFTER the
+    code is verified, so the caller has proved control of the address. A missing or malformed
+    one degrades to the single-face prompt, never to a refusal the player cannot answer.
+  - **THE ADOPT ANSWER CARRIES A RECEIPT.** *"We found your account"* is a CLAIM; the
+    account's streak and day count are its EVIDENCE, and the first thing a returning player
+    checks. `accountStakes` is read for the TARGET after the adopt, so a transferred active
+    day is already counted. Decorative: an unreadable one is simply no receipt, never a
+    failed link on a device whose identity has already moved.
+  - **SIX ENDINGS, ONE PER CELL of doors × outcomes.** Four of them used to borrow one of the
+    other two's sentences: `already_bound` claimed *Compte sauvegardé.* for a no-op, and a
+    RETURN that found nothing said it too, under the very face the player hoped to replace,
+    with no explanation. Now: SAVE+bound keeps *Account saved.* with the address beneath the
+    face; SAVE+already_bound says *Already saved to this address.*; RETURN+adopted keeps
+    *We found your account.* with the receipt and PLAY; RETURN+bound says *No account was tied
+    to that address — so we saved this one there.* (*Aucun n'était associé à cette adresse —
+    on y a sauvegardé celui-ci.*); RETURN+already_bound says *You're already on this
+    account.* and plays; and an adopt from either door composes the new face,
+    because the account genuinely changed hands.
+  - **EVERY SUCCESSFUL ENDING IS A DEAD STOP** (user-decided 2026-08-28): a RETURN that bound
+    instead briefly offered TRY ANOTHER ADDRESS, and it is gone. The errand SUCCEEDED — this
+    account is saved now — so a second door out of a finished screen invites undoing a thing
+    that just worked.
+  - **NOT DONE, and it is the user's call:** the confirmation is still gated on
+    `stakes.days > 0`, which counts SOLVED days — so a player eleven days into a losing
+    streak is erased with no dialog at all. Widening it needs a signal this route does not
+    hold (a profile row, or any stored round), which means a new store dependency on
+    `LinkHandlerDeps`. Flagged, deliberately not changed.
+- **THE ACCOUNT SCREEN STATES WHAT THE ACCOUNT IS (user-decided 2026-08-28).** It carried
+  only an identity and an action; it now leads with the account's own three numbers — the
+  live STREAK, the BEST it has ever held, and its total DAYS — plus the date it began.
+  - **The STREAK moved here from the ARCHIVE**, where it had lived since 2026-07-21. A
+    streak is a fact about the ACCOUNT, and the archive is ONE LANGUAGE's calendar; the
+    account screen is where the rest of the account's facts already are. The archive keeps
+    its calendar and its failure block, and now reads its month with `collection: false` —
+    nothing there consumes the solved-day collection any more, so asking for it would spend
+    a consistent GetItem per open on an answer nobody renders (the language chooser's rule).
+  - **The numbers are ACROSS EVERY SUPPORTED LANGUAGE, and they are the SERVER's own
+    reading**: the BEST live streak rather than the sum (a streak is a run of days in one
+    language, and adding two states a number no streak screen shows) and the TOTAL of the
+    collections — exactly `accountStakes`, so the account screen and the erase/switch
+    confirmation cannot print different numbers over the same days. `bestStreak` joins
+    `currentStreak` in `shared/src/history.ts` for that reason, and takes no active day: a
+    record is a fact about days already played, and nothing about today can raise or break it.
+  - **IT IS THE SAME SCREEN FOR EVERY ACCOUNT — zeros are drawn, not hidden.** A screen that
+    hides what it has nothing to show of reads as broken to the player who has just arrived,
+    where three zeros and a date read as a thing to fill. Only the VALUES are ever withheld,
+    and only while the collections are in flight (#211: an unknown answer is never drawn as a
+    claim); a tokenless device settles at zero with no request at all (#216). The STREAK
+    cell wore the archive's own flame sprite for one commit and it was pulled the same day
+    (user-decided): a better one is being drawn, so the row is three bare numbers until it
+    lands. `assets/streak-small.png` is unreferenced meanwhile — the celebration's animated
+    flame is its own pair of sheets and is untouched.
+  - **AND THE SCREEN STILL DOES NOT REVEAL WHETHER THE ACCOUNT EXISTS YET** (2026-08-26's
+    rule, kept). The AGE was gated on SAVED for exactly that reason; it is ungated now and
+    falls back to the LOCAL SEED's own instant (`gameStore.localSeedAt`, stamped when the
+    placeholder identity is minted), which is honest about the face on screen and is the
+    identity that gets deployed on the first PLAY. The DEVICES stay gated on SAVED, since an
+    unlinked account can only ever hold the one device reading the screen.
+  - **One word per number, shared with the confirmations.** `linkEraseStreak`/`linkEraseDays`
+    became `streak`/`statDays`, because the streak one rendered « SÉRIE » on the dialog
+    against the archive's « STREAK » for the same number — two French words for one thing, on
+    screens now one tap apart. Unified on the older game-facing one: STREAK is untranslated
+    vocabulary here, the family MISS and the rarity grades belong to.
+- **THE AREA'S SMALL TYPE HAD ONE VOICE FOR THREE ROLES (user-decided 2026-08-29).** An
+  EXPLANATION, an ERROR and a SECONDARY ACTION were 12px muted help, 12px danger help and
+  10px uppercase muted button — near enough that which of the three a line was could not be
+  read before reading it, and the one TAPPABLE thing on a screen was its quietest. They now
+  differ on three axes at once: **INFO** sentence case · muted · regular · no mark;
+  **ERROR** sentence case · danger · medium · a danger LED before it (colour alone is
+  exactly what a colour-blind reader does not get); **ACTION** uppercase · `--fg` · bold ·
+  a finger's target. Sizes went up with it, help included — it was smaller than the buttons
+  it explained. `.btn-secondary` grew a button's padding and weight app-wide for the same
+  reason: at 14px in 8px of padding under a primary three times its height it read as a
+  caption somebody had made clickable, on every screen that mounts one.
+- **A TITLED SCREEN GOES BACK FROM ITS TITLE (user-decided 2026-08-29).** The account area
+  left by a ✕ in the header's RIGHT group — the corner furthest from a thumb, and the
+  gesture for dismissing a modal rather than for leaving a page you navigated into. A
+  `HeaderBack` goes in the left slot instead (a `TopBar` PROP until the 2026-09-02 hoist —
+  see the web `AGENTS.md`): the arrow and the screen's NAME as ONE target in the LEFT slot,
+  where a back control belongs and where the eye already is when it reads what screen it is
+  on. It REPLACES the title rather than sitting beside it, so the row's measured width
+  budget is unchanged. Worn by `/profile` and both flow doors — and by `/account` until
+  2026-08-31, when the header's fixed row of places reached the account area (user-decided,
+  see the web `AGENTS.md`): `/account` is a PLACE, lit on the row's face key and left by
+  tapping any other key, so its left slot is its plain name; the steps INSIDE it keep the
+  back control. **In the flow it is a STEP, not an exit**: from the code it returns to the
+  ADDRESS — which is what the quiet CHANGE ADDRESS button used to be, so that button is
+  gone and the row under the cells holds RESEND alone.
+- **A SECTION IS SPACE AND A TITLE (user-decided 2026-08-29).** The devices sat one column
+  gap under the save state with a 10px muted label on them — smaller than every row they
+  named — so a list and the button above it read as one undifferentiated pile. The room is
+  what says a new thing starts here; the title says what it is, at the chrome's own ink and
+  size. No titles were INVENTED for blocks that do not need one (the save block's button
+  already says what it is — the show-don't-tell rule), so the grammar is: generous space
+  between blocks, a real title on the block that needs naming.
+- **ONE PURPOSE PER SCREEN (user-decided 2026-08-26, on the first cut's review).** The flow
+  shipped as a section at the BOTTOM of the #188 profile editor, behind the leaderboard's
+  EDIT chip: reaching it meant game → crown → EDIT → wait for the profile read → scroll past
+  the name field, the 10×10 painting grid and the palette. Even the author struggled to find
+  it. Three different questions were sharing one scrolling screen, so they were split into
+  three, each answering one:
+  - **`/account`** — *is this account mine, and safe?* The mark, the name and when the
+    account began (with EDIT out to the editor); whether it is SAVED; where it is signed in
+    (#216's device rows, acted on in place).
+  - **`/profile`** — *how do others see me?* The editor, and nothing else.
+  - **`/account/email`** — *save it.* One input per step. (Its twin `/account/signin` — *get
+    another one back* — arrived with vol. 2's split, above.)
+  All three are GLOBAL routes like `/select`. The EDIT chip is gone: profile editing is one
+  tap deeper, which is the right trade for a thing edited once and admired daily.
+  **RECONNECT lands on the email STEP directly** — not the editor, not even the account
+  screen: a player who has just been signed out has exactly one intention — and since vol. 2
+  that step is the RETURNING door's.
+  A player's own face is the natural handle for "my account", and the leaderboard's
+  identity STRIP was the area's ONLY door until the HEADER REWORK (user-decided
+  2026-08-30), which gave it a door in the daily loop: the reason there was no header icon
+  — "the 320px header is already at its measured width budget" — was true of the
+  THREE-SLOT row and stopped being true when the row went to two (see the web
+  `AGENTS.md`). The right group's last key is the player's own MARK, onto `/account`, on
+  every game surface, and it comes back to the screen it was opened from — the one place
+  in the app where an account is reachable in fewer than two taps from a game. **The strip
+  is GONE with it** (same day, on the polish pass): the header face sat 40px above it
+  showing the same drawing, and two identical faces at the top of one screen read as a
+  rendering fault, not as emphasis.
+  A flat `/account` was chosen over a 3-card hub — a hub taxes every action a tap, and two of
+  its three destinations would hold three rows each.
+- **THE CODE PROMPT IS SIX DRAWN CELLS OVER ONE REAL INPUT, AND THE SIXTH DIGIT SUBMITS**
+  (same decision). Six separate `<input>`s would break the three things that matter on a
+  phone — PASTE, iOS/Android `one-time-code` AUTOFILL, and screen readers — so there is
+  exactly one field, invisible, stretched over cells painted from its value. A COMPLETE CODE
+  IS THE INTENT, so there is no CONFIRM button anywhere in the flow. A wrong code stays AT
+  the input: the game's own invalid-word shake, a clear, and one line saying how many tries
+  remain — a modal for a typo is punishment. RESEND is quiet and countdown-gated (~30s),
+  never a primary button, because the server allows only 5 sends per address per hour.
+- **THE COPY SAYS ONLY WHAT THE SCREEN DOES NOT SHOW** (the standing show-don't-tell rule,
+  applied): `YOUR ACCOUNT` over a screen titled ACCOUNT, `SAVED AS` in front of something
+  plainly an email, and `6-DIGIT CODE` over six cells are all CUT. The ONE line kept is why
+  a word game wants an address — genuinely not obvious — said once, where the decision is
+  made, in stakes a player feels: *"Pour qu'un téléphone perdu ne perde pas tout."* The two
+  endings keep #204's own decided words and gain the account's own FACE, which is the claim
+  "we found your account" actually makes. DESTRUCTION NEVER GLOWS: the erase confirmation's
+  button is the QUIET variant in the danger ink, so the lit primary is never the one that
+  deletes an account.
+- **AMENDS #216's DEPLOY-TRIGGER LIST: the link flow's SEND CODE is the SIXTH trigger.** A device
+  with no account cannot be given one by an email link, and "this device is empty" is precisely
+  the reconnect case the flow exists for — so its primary button is an account-deploying tap of
+  exactly the shape that rule defines: a SINGLE tap chaining its real action behind the
+  bootstrap, a loading state on the button, and failures on the app's ERROR SURFACE. Every other
+  part of the flow resolves the identity it holds or stands down.
+- **RECONNECT is wired, and it is the signed-out screen's PRIMARY action.** The tap LIFTS the
+  verdict (which removes the persisted tombstone origin-wide — #216 reserved exactly this
+  gesture) and lands on `/account/signin` — the RETURNING door's address step, since a
+  signed-out player is a returning player by definition and every word of the SAVE door is
+  about keeping an account they no longer hold; PLAY becomes the secondary. Leaving mid-flow
+  costs exactly what SKIP already cost: this device is a fresh visitor, and the account it
+  left stands, reachable by its own address.
+- **CONSEQUENCE worth naming: a link signs the account's OTHER devices out.** Only the CALLING
+  device moves, so when the account being left is deleted, every other device still on it fails
+  #216's account-existence check and lands on the signed-out screen — from which RECONNECT with
+  the same address adopts the surviving account. The confirmation states the streak and the day
+  count as the issue specified and does not enumerate devices.
+- **INFRA:** an SES **domain identity with EasyDKIM**, published into the same hosted zone the
+  API's records live in, so the DKIM CNAMEs and the identity cannot disagree; `ses:SendEmail`
+  scoped to that identity AND conditioned on the single `ses:FromAddress` it may send as. **Two
+  operator steps are deliberately NOT automated and must be done by hand:** requesting SANDBOX
+  EXIT (a new account may only send to verified addresses until AWS lifts it, so a fresh
+  deployment sends codes into a void for every address but the operator's own), and the SPF +
+  DMARC TXT records, which are the zone's mail policy and not something this stack may silently
+  overwrite. Cost is not a factor: $0.10 per 1,000 sends. Locally, `pnpm backend:dev` PRINTS the
+  code to its own log (`consoleMailer`) — the accept-all Turnstile verifier's exact pattern, and
+  for the same reason: a link flow you cannot complete locally is a link flow nobody tests.
 
 ### Day-addressed routing & the game day
 
@@ -1469,7 +1966,10 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
 
 - **Non-unique display name + a 10×10 palette pixel avatar, hung off #187's identity.**
   The ONE handler serves `GET /profile?id=<publicId>` (the public row: name + avatar —
-  what a board renders, and what a freshly linked device loads; 404 = never customized)
+  what a board renders, and what a freshly linked device loads; 404 = never customized,
+  and since #204 **410 `account_gone`** = this player no longer exists, which has to be a
+  different answer because the 404 is dressed with the ASSIGNED identity and a deleted
+  account may not be)
   and `POST /profile` with `{ token, name, avatar, createOnly? }` (the pre-#216 body
   carried the shared player credential instead) — an authenticated write keyed by the
   ACCOUNT the caller's device token resolves to, a separate write path from scores.
@@ -1581,6 +2081,10 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     themselves or redraw their mark. A profile read that FAILS still draws a face (the
     assigned one, the board's own fallback) but answers `no-store`: holding that at the edge
     would put a stranger's face on a player who drew their own.
+  - **An invite link EXPIRES when its sender's account is deleted (#204):** the id then
+    names nobody, there is no alias and no redirect, so the preview answers a 404 and
+    `POST /friends {add}` refuses the edge (`unknown_player`) rather than writing one with
+    nothing on the other end. Acceptance requires a live target account.
   - **Reading it needs no authentication and grants nothing**, exactly like `/board`'s `id`:
     a publicId is broadcast by design (an invite link IS one), the route only READS a public
     profile, and the edge is still written by the landing with the clicker's own key.
@@ -1645,6 +2149,11 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     the web draws them under ONE "not played yet" section caption — an edge is a
     person the caller chose, never a row to silently drop. *(#206 narrowed WHO waits:
     a friend with a stored round for the current revision is IN PROGRESS instead.)*
+- **A row whose ACCOUNT is gone is DROPPED, never dressed (#204).** An email link can delete
+  the account a device leaves, and an identity-bearing read must stop exposing it the moment
+  its row is gone — including through the assigned fallback, which is still that player's own
+  pseudonym and mark. It leaves a gap in the visible rank sequence, which is the honest
+  picture; a read that merely FAILED is not a deletion and still dresses blank.
 - **The ranking rules are shared pure functions** (`shared/src/leaderboard.ts`,
   contract-tested): competition-style tie ranks (equal ranks, never a fake ordering —
   ties ordered by publicId only for deterministic ROW order), the PLAIN top-50 cut
@@ -1669,7 +2178,9 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   percentile — that stat never requires visiting this screen. The entry is on the
   ACTIVE day's routes only: a board is the active day's, so offering it from an
   archive replay would swap the day under the player and its exit would land them on
-  today, ending the archive session.
+  today, ending the archive session. *(OVERTURNED 2026-08-31 with the stable header row —
+  user-decided: the same five keys on every game surface, the crown included on a past
+  day, leading to the LIVE board; see the web `AGENTS.md` header bullet.)*
 
 ### Live friends board: in-progress rows (#206, decided 2026-08-25)
 
@@ -1731,7 +2242,7 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   at least one friend row makes the board non-empty their live numbers show where they
   stand among friends mid-day. The web deliberately computes friends-board emptiness
   without the caller's own ranked OR playing row: a self-only board still means no edges
-  and stays the ghost under the identity strip. `waiting` never carries the caller; a
+  and stays the ghost. `waiting` never carries the caller; a
   bare "not played yet" row there would still be noise.
 - **The order is a shared pure rule, and it is an ORDER, never a rank claim**
   (`orderPlaying`, contract-tested beside the #190 rules): progress descending, tries

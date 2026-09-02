@@ -76,11 +76,43 @@ export async function handleFriends(
     if (friendId === publicId) {
       return errorResponse(400, 'self_link', 'A player cannot add themselves.', responseHeaders);
     }
+    // The target has to be a LIVE account (#204). An invite link carries a publicId, and an
+    // email link can delete the account behind it: an unaccepted link for a deleted player
+    // expires rather than writing an edge nobody is on the other end of. There is no
+    // B -> A alias and no redirect — the address is what a returning player signs in with,
+    // not the old id.
+    if (!(await devices.accountExists(friendId))) {
+      return errorResponse(
+        404,
+        'unknown_player',
+        'This invite link has expired.',
+        responseHeaders,
+      );
+    }
     const result = await friends.link({
       publicId,
       friendId,
       createdAt: instant.toISOString(),
     });
+    if (result.outcome === 'gone') {
+      // The store repeats both live-account checks inside the edge transaction. The caller
+      // may be the account that disappeared, so distinguish a signed-out device from an
+      // invite whose target expired only on this rare cancellation path.
+      if (!(await devices.accountExists(publicId))) {
+        return errorResponse(
+          401,
+          'unknown_device',
+          'This device is no longer signed in.',
+          responseHeaders,
+        );
+      }
+      return errorResponse(
+        404,
+        'unknown_player',
+        'This invite link has expired.',
+        responseHeaders,
+      );
+    }
     if (result.outcome === 'capped') {
       return errorResponse(
         409,

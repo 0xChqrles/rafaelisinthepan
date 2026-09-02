@@ -114,6 +114,23 @@ describe('friends route (#189)', () => {
     await expect(listOf(handler, me)).resolves.toEqual([]);
   });
 
+  it('treats an account disappearing inside the edge write as an expired invite', async () => {
+    const base = memoryFriendStore();
+    const racing: FriendStore = {
+      ...base,
+      async link(input) {
+        const friends = await base.list(input.publicId);
+        return { outcome: 'gone', friends };
+      },
+    };
+    const { handler, me, them } = await makeHandler(racing);
+
+    const result = await handler(post({ token: me.token, add: them.accountId }));
+    expect(result.statusCode).toBe(404);
+    expect(JSON.parse(result.body).error).toBe('unknown_player');
+    await expect(base.list(me.accountId)).resolves.toEqual([]);
+  });
+
   it('caps a player at FRIENDS_MAX — on their OWN side and on the other side alike', async () => {
     const { friends, handler, me, them } = await makeHandler();
     for (let i = 0; i < FRIENDS_MAX; i += 1) {
@@ -137,8 +154,11 @@ describe('friends route (#189)', () => {
   });
 
   it('still lets a capped player re-open a link they already accepted', async () => {
-    const { friends, handler, me } = await makeHandler();
+    const { friends, handler, devices, me } = await makeHandler();
     for (let i = 0; i < FRIENDS_MAX; i += 1) {
+      // The target has to be a LIVE account since #204 — an invite link for a deleted
+      // player expires — so these edges point at accounts that really exist.
+      await seedDevice(devices, { accountId: fakeId(i) });
       await friends.link({
         publicId: me.accountId,
         friendId: fakeId(i),

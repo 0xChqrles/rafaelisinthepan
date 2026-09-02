@@ -5,10 +5,9 @@ import Keyboard from '../components/Keyboard';
 import LoadError from '../components/LoadError';
 import LoadingWave from '../components/LoadingWave';
 import RarityLadder from './RarityLadder';
-import TopBar from '../components/TopBar';
 import { HIT_FADE_MS } from '../components/FloatingHit';
 import { RANK_MAX_MS, rankTransitionDuration } from '../components/Hole';
-import SkipIcon from '../assets/icons/skip.svg?react';
+import { HeaderLeft } from '../components/TopBar';
 import { FLOATING_HIT_INTRO_MS, KB_EXIT_FALLBACK_MS } from '../screens/Game';
 import MixWord from './MixWord';
 import CoachText, { richToPlain } from './CoachText';
@@ -354,23 +353,12 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
       {/* The floating header: "TUTORIAL" in the top-left status chip — no progress
           counter here, the tutorial keeps its chrome minimal — and the globe + a
           fast-forward that SKIPS the tutorial on the right. */}
-      <TopBar
-        lang={lang}
-        left={<span className="topbar-title">{t(lang, 'inviteTutorial')}</span>}
-        right={
-          <button
-            type="button"
-            className="home-btn topbar-skip"
-            aria-label={t(lang, 'ariaSkipTutorial')}
-            onClick={() => {
-              track('tutorial', { action: 'skip' });
-              onDone();
-            }}
-          >
-            <SkipIcon className="ui-icon" aria-hidden />
-          </button>
-        }
-      />
+      {/* The row itself is App's, with the BOOK lit: this is the rules' place, and any
+          other key leaves the lesson (which is a SKIP — App's `leaveTutorial`). What this
+          screen owns is its NAME. */}
+      <HeaderLeft>
+        <span className="topbar-title">{t(lang, 'inviteTutorial')}</span>
+      </HeaderLeft>
 
       {/* The top box: the current explanation, typewritten. Same background as the
           app, surface border — a dialog, not a modal. */}
