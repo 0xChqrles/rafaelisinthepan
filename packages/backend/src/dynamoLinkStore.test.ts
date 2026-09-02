@@ -378,32 +378,52 @@ describe('dynamoLinkStore — the indivisible core', () => {
 
   // CONTRACT: the active day's play moves INSIDE this transaction — the round exists under
   // exactly one account at every instant, and an adoption that does not commit moves
-  // nothing. The plan is the stores' own (`planRoundMove` / `planScoreMove`); what is
-  // held here is that it rides the SAME commit, and what happens when it goes stale.
+  // nothing. The plan is the stores' own (`planRoundMove` / `planScoreMove`, contract-tested
+  // there); what is held here is that it rides the SAME commit, what happens when it goes
+  // stale, and the two races the model was written against.
   const KEY = { date: '2026-08-26', lang: 'fr', mode: 'sentence' as const };
   const roundKey = (publicId: string) => ({
     pk: { S: `round#${publicId}` },
     sk: { S: 'fr#sentence#2026-08-26' },
   });
-  const round = (guesses: string[], solved = false) => ({
-    ...roundKey(PLAN.from),
+  const round = (
+    publicId: string,
+    guesses: string[],
+    version: number,
+    extra: Record<string, AttributeValue> = {},
+  ) => ({
+    ...roundKey(publicId),
     guesses: { L: guesses.map((g) => ({ S: g })) },
     puzzle: { S: 'rev1' },
     createdAt: { S: NOW.toISOString() },
-    ...(solved ? { solved: { BOOL: true } } : {}),
+    version: { N: String(version) },
+    ...extra,
   });
   const scoreKey = (publicId: string) => ({
     pk: { S: 'score#2026-08-26#fr#sentence' },
     sk: { S: publicId },
   });
+  const transactions = (send: { mock: { calls: unknown[][] } }) =>
+    send.mock.calls
+      .map(([c]) => c)
+      .filter((c): c is TransactWriteItemsCommand => c instanceof TransactWriteItemsCommand);
+  const refusing = (indices: number[]) => (command: TransactWriteItemsCommand) =>
+    Object.assign(new Error('cancelled'), {
+      name: 'TransactionCanceledException',
+      CancellationReasons: command.input.TransactItems!.map((_, index) => ({
+        Code: indices.includes(index) ? 'ConditionalCheckFailed' : 'None',
+      })),
+    });
 
   it('carries the active day\'s round and score in the SAME transaction as the identity', async () => {
     const { store, send } = makeStore(async (command) => {
       if (!(command instanceof GetItemCommand)) return {};
       const key = command.input.Key!;
-      if (key.pk.S === `round#${PLAN.from}`) return { Item: round(['chat', 'chien'], true) };
-      if (key.pk.S === scoreKey('')['pk'].S && key.sk.S === PLAN.from) {
-        return { Item: { ...scoreKey(PLAN.from), score: { N: '2' } } };
+      if (key.pk.S === `round#${PLAN.from}`) {
+        return { Item: round(PLAN.from, ['chat', 'chien'], 4, { solved: { BOOL: true } }) };
+      }
+      if (key.pk.S === scoreKey('').pk.S && key.sk.S === PLAN.from) {
+        return { Item: { ...scoreKey(PLAN.from), score: { N: '2' }, stamp: { S: 's1' } } };
       }
       return {};
     });
@@ -411,129 +431,195 @@ describe('dynamoLinkStore — the indivisible core', () => {
       store.adopt({ ...PLAN, erase: true, mergeFrom: PLAN.from, moves: [KEY] }),
     ).resolves.toEqual({ outcome: 'adopted', moved: [{ key: KEY, solved: true }] });
 
-    const transactions = send.mock.calls
-      .map(([c]) => c)
-      .filter((c): c is TransactWriteItemsCommand => c instanceof TransactWriteItemsCommand);
-    expect(transactions).toHaveLength(1);
-    const items = transactions[0].input.TransactItems!;
+    const all = transactions(send);
+    expect(all).toHaveLength(1);
+    const items = all[0].input.TransactItems!;
     // Identity (device, target check, challenge, merge job, account, profile) + the round's
-    // Put/Delete + the score's Put/Delete.
+    // Put/Delete + the score's Put/Delete — every one conditioned on what was READ.
     expect(items).toHaveLength(10);
-    expect(items[6].Put!.Item!.pk.S).toBe(`round#${PLAN.to}`);
-    expect(items[7].Delete!.Key).toEqual(roundKey(PLAN.from));
-    expect(items[7].Delete!.ConditionExpression).toBe('#g = :guesses AND #p = :puzzle');
+    expect(items[6].Put).toMatchObject({
+      Item: { pk: { S: `round#${PLAN.to}` }, version: { N: '1' } },
+      ConditionExpression: 'attribute_not_exists(pk)',
+    });
+    expect(items[7].Delete).toMatchObject({
+      Key: roundKey(PLAN.from),
+      ConditionExpression: '#v = :v',
+      ExpressionAttributeValues: { ':v': { N: '4' } },
+    });
     expect(items[8].Put!.Item!.sk.S).toBe(PLAN.to);
-    expect(items[9].Delete!.Key).toEqual(scoreKey(PLAN.from));
+    expect(items[9].Delete).toMatchObject({
+      Key: scoreKey(PLAN.from),
+      ExpressionAttributeValues: { ':stamp': { S: 's1' } },
+    });
   });
 
-  it('moves NOTHING when the destination already holds play, and reports so — but GUARDS that', async () => {
+  it('moves NOTHING when the destination already holds play — and GUARDS both rows it read', async () => {
     const { store, send } = makeStore(async (command) => {
       if (!(command instanceof GetItemCommand)) return {};
       const key = command.input.Key!;
-      if (key.pk.S === `round#${PLAN.from}`) return { Item: round(['chat']) };
-      if (key.pk.S === `round#${PLAN.to}`) {
-        return { Item: { ...round(['souris']), ...roundKey(PLAN.to) } };
-      }
+      if (key.pk.S === `round#${PLAN.from}`) return { Item: round(PLAN.from, ['chat'], 1) };
+      if (key.pk.S === `round#${PLAN.to}`) return { Item: round(PLAN.to, ['souris'], 9) };
       return {};
     });
     await expect(
       store.adopt({ ...PLAN, erase: true, mergeFrom: PLAN.from, moves: [KEY] }),
     ).resolves.toEqual({ outcome: 'adopted', moved: [] });
-    const items = (send.mock.calls.map(([c]) => c).find((c) => c instanceof TransactWriteItemsCommand) as TransactWriteItemsCommand)
-      .input.TransactItems!;
-    // Six identity items and ONE guard — the observation the no-move rests on.
-    expect(items).toHaveLength(7);
-    expect(items[6].ConditionCheck!.Key!.pk.S).toBe(`round#${PLAN.to}`);
+    const items = transactions(send)[0].input.TransactItems!;
+    expect(items).toHaveLength(8);
+    expect(items[6].ConditionCheck!.Key).toEqual(roundKey(PLAN.from));
+    expect(items[7].ConditionCheck).toMatchObject({
+      Key: roundKey(PLAN.to),
+      ExpressionAttributeValues: { ':v': { N: '9' } },
+    });
+  });
+
+  it('plans AGAIN when only the play refused — a settle with the log untouched is carried, never copied stale', async () => {
+    // The reviewer's regression: the adoption reads an unsolved round; the round route's
+    // corrective settle then lands — same guesses, same puzzle, `solved` set, version
+    // bumped — and the adoption's commit must refuse and re-plan, or the stale unsolved
+    // copy replaces a durably solved round.
+    let reads = 0;
+    const { store, send } = makeStore(async (command) => {
+      if (command instanceof GetItemCommand) {
+        if (command.input.Key!.pk.S !== `round#${PLAN.from}`) return {};
+        reads += 1;
+        return {
+          Item:
+            reads === 1
+              ? round(PLAN.from, ['chat'], 3, { progress: { N: '60' } })
+              : round(PLAN.from, ['chat'], 4, { progress: { N: '100' }, solved: { BOOL: true } }),
+        };
+      }
+      const all = transactions(send);
+      if (all.length === 1) throw refusing([7])(command as TransactWriteItemsCommand);
+      return {};
+    });
+    await expect(
+      store.adopt({ ...PLAN, erase: true, mergeFrom: PLAN.from, moves: [KEY] }),
+    ).resolves.toEqual({ outcome: 'adopted', moved: [{ key: KEY, solved: true }] });
+    const all = transactions(send);
+    expect(all).toHaveLength(2);
+    expect(all[0].input.TransactItems![7].Delete!.ExpressionAttributeValues).toEqual({ ':v': { N: '3' } });
+    expect(all[1].input.TransactItems![6].Put!.Item).toMatchObject({
+      solved: { BOOL: true },
+      progress: { N: '100' },
+    });
+    expect(all[1].input.TransactItems![7].Delete!.ExpressionAttributeValues).toEqual({ ':v': { N: '4' } });
+    // A different plan is a different request: the idempotency token moved with it.
+    expect(all[1].input.ClientRequestToken).not.toBe(all[0].input.ClientRequestToken);
   });
 
   it('GUARDS an observed-empty source, so a first guess landing before the commit is carried rather than orphaned', async () => {
     let reads = 0;
-    let writes = 0;
     const { store, send } = makeStore(async (command) => {
       if (command instanceof GetItemCommand) {
         if (command.input.Key!.pk.S !== `round#${PLAN.from}`) return {};
         reads += 1;
         // Nothing there at the first plan; a first guess by then at the second.
-        return reads === 1 ? {} : { Item: round(['chat']) };
+        return reads === 1 ? {} : { Item: round(PLAN.from, ['chat'], 1) };
       }
-      writes += 1;
-      const items = (command as TransactWriteItemsCommand).input.TransactItems!;
-      if (writes === 1) {
-        // The no-move's own guard is what refuses: the source is no longer empty.
-        expect(items).toHaveLength(7);
-        expect(items[6].ConditionCheck!.Key!.pk.S).toBe(`round#${PLAN.from}`);
-        throw Object.assign(new Error('cancelled'), {
-          name: 'TransactionCanceledException',
-          CancellationReasons: items.map((_, index) => ({
-            Code: index === 6 ? 'ConditionalCheckFailed' : 'None',
-          })),
-        });
-      }
+      const all = transactions(send);
+      if (all.length === 1) throw refusing([6])(command as TransactWriteItemsCommand);
       return {};
     });
     await expect(
       store.adopt({ ...PLAN, erase: true, mergeFrom: PLAN.from, moves: [KEY] }),
     ).resolves.toEqual({ outcome: 'adopted', moved: [{ key: KEY, solved: false }] });
-    const second = (send.mock.calls
-      .map(([c]) => c)
-      .filter((c): c is TransactWriteItemsCommand => c instanceof TransactWriteItemsCommand)[1])
-      .input.TransactItems!;
-    // The re-plan MOVES the round that appeared — and guards the score row it has not got yet.
+    const all = transactions(send);
+    const first = all[0].input.TransactItems!;
+    expect(first).toHaveLength(8);
+    expect(first[6].ConditionCheck).toMatchObject({
+      Key: roundKey(PLAN.from),
+      ConditionExpression: 'attribute_not_exists(pk)',
+    });
+    // The re-plan MOVES the round that appeared — and guards the score rows it read.
+    const second = all[1].input.TransactItems!;
     expect(second[6].Put!.Item!.pk.S).toBe(`round#${PLAN.to}`);
     expect(second[7].Delete!.Key).toEqual(roundKey(PLAN.from));
     expect(second[8].ConditionCheck!.ConditionExpression).toBe('attribute_not_exists(pk)');
+    expect(second[9].ConditionCheck!.ConditionExpression).toBe('attribute_not_exists(pk)');
   });
 
-  it('plans AGAIN when only the play refused — a guess that landed meanwhile is carried, never deleted unseen', async () => {
-    let reads = 0;
-    let writes = 0;
-    const { store, send } = makeStore(async (command) => {
+  it('two sources adopting ONE target at equal versions cannot overwrite each other\'s moved log', async () => {
+    // The ABA the model was amended for: the target holds an unplayed word start at v2;
+    // both sources hold played rounds at v2; both condition the target on v2. The first
+    // copy must take the target to v3 — never keep the source's own v2 — or the second's
+    // Put still passes and replaces the log the first just moved.
+    const OTHER = 'cccccccccccccccc';
+    const table = new Map<string, Record<string, AttributeValue>>([
+      [`round#${PLAN.to}`, round(PLAN.to, [], 2, { startedAt: { S: NOW.toISOString() } })],
+      [`round#${PLAN.from}`, round(PLAN.from, ['chat'], 2)],
+      [`round#${OTHER}`, round(OTHER, ['chien'], 2)],
+    ]);
+    // A tiny table that evaluates the version conditions the way DynamoDB would. The
+    // second adoption PLANS from a snapshot taken before the first commits (the race) and
+    // COMMITS against the real table; its re-plan reads the real table.
+    let snapshot: Map<string, Record<string, AttributeValue>> | null = null;
+    const send = async (command: unknown) => {
       if (command instanceof GetItemCommand) {
-        if (command.input.Key!.pk.S !== `round#${PLAN.from}`) return {};
-        reads += 1;
-        return { Item: round(reads === 1 ? ['chat'] : ['chat', 'chien']) };
+        return { Item: (snapshot ?? table).get(command.input.Key!.pk.S!) };
       }
-      writes += 1;
-      if (writes === 1) {
-        const items = (command as TransactWriteItemsCommand).input.TransactItems!;
-        throw Object.assign(new Error('cancelled'), {
-          name: 'TransactionCanceledException',
-          // Only the source round's exact-snapshot delete refused.
-          CancellationReasons: items.map((_, index) => ({
-            Code: index === 7 ? 'ConditionalCheckFailed' : 'None',
-          })),
-        });
+      if (!(command instanceof TransactWriteItemsCommand)) return {};
+      snapshot = null;
+      const items = command.input.TransactItems!;
+      const holds = (index: number) => {
+        const item = items[index];
+        const part = item.Put ?? item.Delete ?? item.ConditionCheck ?? item.Update;
+        const pk = (part as { Key?: { pk: { S: string } }; Item?: { pk: { S: string } } }).Key?.pk.S
+          ?? (part as { Item?: { pk: { S: string } } }).Item?.pk.S;
+        if (!pk?.startsWith('round#')) return true;
+        const row = table.get(pk);
+        const condition = part!.ConditionExpression;
+        if (condition === 'attribute_not_exists(pk)') return row === undefined;
+        if (condition === '#v = :v') return row?.version?.N === part!.ExpressionAttributeValues![':v'].N;
+        return true;
+      };
+      const failed = items.map((_, index) => index).filter((index) => !holds(index));
+      if (failed.length > 0) throw refusing(failed)(command);
+      for (const item of items) {
+        if (item.Put?.Item?.pk.S?.startsWith('round#')) table.set(item.Put.Item.pk.S, item.Put.Item);
+        if (item.Delete?.Key?.pk.S?.startsWith('round#')) table.delete(item.Delete.Key.pk.S);
       }
       return {};
-    });
+    };
+    const first = makeStore(send);
     await expect(
-      store.adopt({ ...PLAN, erase: true, mergeFrom: PLAN.from, moves: [KEY] }),
-    ).resolves.toEqual({ outcome: 'adopted', moved: [{ key: KEY, solved: false }] });
-    const transactions = send.mock.calls
-      .map(([c]) => c)
-      .filter((c): c is TransactWriteItemsCommand => c instanceof TransactWriteItemsCommand);
-    expect(transactions).toHaveLength(2);
-    expect(transactions[1].input.TransactItems![6].Put!.Item!.guesses).toEqual({
-      L: [{ S: 'chat' }, { S: 'chien' }],
+      first.store.adopt({ ...PLAN, erase: true, mergeFrom: PLAN.from, moves: [KEY] }),
+    ).resolves.toMatchObject({ outcome: 'adopted', moved: [{ key: KEY }] });
+    expect(table.get(`round#${PLAN.to}`)).toMatchObject({
+      guesses: { L: [{ S: 'chat' }] },
+      version: { N: '3' },
     });
-    // A different plan is a different request: the idempotency token moved with it.
-    expect(transactions[1].input.ClientRequestToken).not.toBe(
-      transactions[0].input.ClientRequestToken,
-    );
+
+    // Both planned at v2: the second saw the target exactly as the first did.
+    snapshot = new Map([[`round#${PLAN.to}`, round(PLAN.to, [], 2, { startedAt: { S: NOW.toISOString() } })]]);
+    snapshot.set(`round#${OTHER}`, table.get(`round#${OTHER}`)!);
+    const second = makeStore(send);
+    await expect(
+      second.store.adopt({
+        ...PLAN,
+        from: OTHER,
+        mergeFrom: OTHER,
+        erase: true,
+        tokenHash: 'b'.repeat(64),
+        moves: [KEY],
+      }),
+    ).resolves.toEqual({ outcome: 'adopted', moved: [] });
+    // Its first commit was refused on the target's version and it re-planned: the target
+    // now holds play, so nothing moved, and the first source's log is still the one there.
+    expect(transactions(second.send)).toHaveLength(2);
+    expect(table.get(`round#${PLAN.to}`)!.guesses).toEqual({ L: [{ S: 'chat' }] });
+    expect(table.get(`round#${OTHER}`)!.guesses).toEqual({ L: [{ S: 'chien' }] });
   });
 
   it('answers the IDENTITY refusal when both an identity item and a move refused — nothing was written', async () => {
     const { store } = makeStore(async (command) => {
       if (command instanceof GetItemCommand) {
-        return command.input.Key!.pk.S === `round#${PLAN.from}` ? { Item: round(['chat']) } : {};
+        return command.input.Key!.pk.S === `round#${PLAN.from}`
+          ? { Item: round(PLAN.from, ['chat'], 1) }
+          : {};
       }
-      const items = (command as TransactWriteItemsCommand).input.TransactItems!;
-      throw Object.assign(new Error('cancelled'), {
-        name: 'TransactionCanceledException',
-        CancellationReasons: items.map((_, index) => ({
-          Code: index === 4 || index === 7 ? 'ConditionalCheckFailed' : 'None',
-        })),
-      });
+      throw refusing([4, 7])(command as TransactWriteItemsCommand);
     });
     await expect(
       store.adopt({ ...PLAN, erase: true, mergeFrom: PLAN.from, moves: [KEY] }),

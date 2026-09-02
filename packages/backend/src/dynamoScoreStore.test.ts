@@ -5,6 +5,7 @@ import {
   QueryCommand,
   TransactWriteItemsCommand,
   type DynamoDBClient,
+  type AttributeValue,
 } from '@aws-sdk/client-dynamodb';
 import { batchRetryDelayMs, dynamoScoreStore, planScoreMove } from './dynamoScoreStore';
 import { SCORE_SUBMISSION_LIMIT, type ScoreKey, type ScoreSubmission } from './scoreStore';
@@ -284,56 +285,111 @@ describe('dynamoScoreStore (#187)', () => {
 });
 
 // CONTRACT (#204): the recorded row follows the round it was derived from, inside the one
-// adoption transaction — this store only PLANS its two items, so the day's population holds
-// the score under exactly one player at every instant.
+// adoption transaction — this store only PLANS its items, two per tuple, one per row read,
+// each asserting the row is unchanged since the read: absent still absent, or at the STAMP
+// it carried. The stamp is DETERMINISTIC for one logical submission — it is the
+// submission's own idempotency token — because a replay that produced a different item
+// under a reused ClientRequestToken is an IdempotentParameterMismatch, not a no-op.
+describe('the score stamp (#204)', () => {
+  it('is the same for the same logical submission and different for a different revision', async () => {
+    const puts: Record<string, AttributeValue>[] = [];
+    const send = vi.fn(async (command: unknown) => {
+      if (command instanceof TransactWriteItemsCommand) {
+        for (const item of command.input.TransactItems ?? []) {
+          if (item.Put?.Item?.sk?.S === SUBMISSION.publicId) puts.push(item.Put.Item);
+        }
+      }
+      return {};
+    });
+    const store = dynamoScoreStore({ send } as unknown as DynamoDBClient, 'scores');
+    await store.submit(SUBMISSION);
+    await store.submit(SUBMISSION);
+    await store.submit({ ...SUBMISSION, revision: 'rev2', requestToken: 'another-token-000000000000000000' });
+    expect(puts).toHaveLength(3);
+    expect(puts[0].stamp).toEqual({ S: SUBMISSION.requestToken });
+    expect(puts[1]).toEqual(puts[0]);
+    expect(puts[2].stamp).toEqual({ S: 'another-token-000000000000000000' });
+  });
+});
+
 describe('planScoreMove (#204)', () => {
   const FROM = 'aaaaaaaaaaaaaaaa';
   const TO = 'bbbbbbbbbbbbbbbb';
+  const at = (publicId: string) => ({ pk: { S: 'score#2026-08-13#fr#word' }, sk: { S: publicId } });
   const row = {
-    pk: { S: 'score#2026-08-13#fr#word' },
-    sk: { S: FROM },
+    ...at(FROM),
     score: { N: '7' },
     submittedAt: { S: '2026-08-13T10:00:00.000Z' },
     revision: { S: 'rev1' },
+    stamp: { S: 'stamp-from' },
   };
+  const targetRow = { ...at(TO), score: { N: '3' }, revision: { S: 'rev1' }, stamp: { S: 'stamp-to' } };
+  const plan = (rows: { from?: Record<string, AttributeValue>; to?: Record<string, AttributeValue> }) =>
+    planScoreMove(
+      {
+        send: async (command: unknown) =>
+          ({ Item: (command as GetItemCommand).input.Key!.sk.S === FROM ? rows.from : rows.to }),
+      } as unknown as DynamoDBClient,
+      'scores',
+      KEY,
+      FROM,
+      TO,
+    );
 
-  it('plans a create-only Put under the destination and a Delete of the EXACT source row', async () => {
-    const send = vi.fn(async (command: unknown) =>
-      (command as GetItemCommand).input.Key!.sk.S === FROM ? { Item: row } : {},
-    );
-    const items = await planScoreMove({ send } as unknown as DynamoDBClient, 'scores', KEY, FROM, TO);
+  it('moves: a create-only Put under the destination and a Delete of the source AT ITS STAMP', async () => {
+    const items = await plan({ from: row });
     expect(items).toHaveLength(2);
-    expect(items[0].Put!.Item).toEqual({ ...row, sk: { S: TO } });
-    expect(items[0].Put!.ConditionExpression).toBe('attribute_not_exists(pk)');
-    expect(items[1].Delete!.Key).toEqual({ pk: row.pk, sk: { S: FROM } });
-    // The row as READ, never mere existence: a revision replacement landing meanwhile must
-    // refuse the commit rather than be overwritten by the stale planned copy.
-    expect(items[1].Delete!.ConditionExpression).toBe(
-      '#score = :score AND #revision = :revision AND #submittedAt = :submittedAt',
-    );
-    expect(items[1].Delete!.ExpressionAttributeValues).toEqual({
-      ':score': row.score,
-      ':revision': row.revision,
-      ':submittedAt': row.submittedAt,
+    expect(items[0].Put).toMatchObject({
+      Item: { ...row, ...at(TO) },
+      ConditionExpression: 'attribute_not_exists(pk)',
+    });
+    // The row as READ, never mere existence: a revision replacement landing meanwhile
+    // changes the stamp and must refuse the commit rather than be overwritten.
+    expect(items[1].Delete).toMatchObject({
+      Key: at(FROM),
+      ConditionExpression: '#stamp = :stamp',
+      ExpressionAttributeValues: { ':stamp': { S: 'stamp-from' } },
     });
   });
 
-  it('GUARDS a no-move: no source row yet, or a destination row already there', async () => {
-    // The solving append writes the score row a beat after the log, so "no row yet" is
-    // exactly the observation a concurrent write can invalidate.
-    const none = vi.fn(async () => ({}));
-    const absent = await planScoreMove({ send: none } as unknown as DynamoDBClient, 'scores', KEY, FROM, TO);
-    expect(absent).toHaveLength(1);
-    expect(absent[0].ConditionCheck).toMatchObject({
-      Key: { pk: row.pk, sk: { S: FROM } },
-      ConditionExpression: 'attribute_not_exists(pk)',
+  for (const [label, to] of [
+    ['absent', undefined],
+    ['present', targetRow],
+  ] as const) {
+    it(`guards BOTH rows on a no-move — no source row yet, destination ${label}`, async () => {
+      // The solving append writes the score row a beat after the log, so "no row yet" is
+      // exactly the observation a concurrent write can invalidate.
+      const items = await plan({ to });
+      expect(items).toHaveLength(2);
+      expect(items[0].ConditionCheck).toMatchObject({
+        Key: at(FROM),
+        ConditionExpression: 'attribute_not_exists(pk)',
+      });
+      expect(items[1].ConditionCheck).toMatchObject({
+        Key: at(TO),
+        ConditionExpression: to ? '#stamp = :stamp' : 'attribute_not_exists(pk)',
+      });
     });
-    const both = vi.fn(async () => ({ Item: row }));
-    const taken = await planScoreMove({ send: both } as unknown as DynamoDBClient, 'scores', KEY, FROM, TO);
-    expect(taken).toHaveLength(1);
-    expect(taken[0].ConditionCheck).toMatchObject({
-      Key: { pk: row.pk, sk: { S: TO } },
-      ConditionExpression: 'attribute_exists(pk)',
+  }
+
+  it('guards BOTH rows when the destination already has a row', async () => {
+    const items = await plan({ from: row, to: targetRow });
+    expect(items).toHaveLength(2);
+    expect(items[0].ConditionCheck).toMatchObject({
+      Key: at(FROM),
+      ExpressionAttributeValues: { ':stamp': { S: 'stamp-from' } },
     });
+    expect(items[1].ConditionCheck).toMatchObject({
+      Key: at(TO),
+      ExpressionAttributeValues: { ':stamp': { S: 'stamp-to' } },
+    });
+  });
+
+  it('reads a row with no stamp as an observed state of its own', async () => {
+    const { stamp: _stamp, ...unstamped } = row;
+    const items = await plan({ from: unstamped });
+    expect(items[1].Delete!.ConditionExpression).toBe(
+      'attribute_exists(pk) AND attribute_not_exists(#stamp)',
+    );
   });
 });

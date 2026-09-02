@@ -30,6 +30,20 @@ import {
 // milliseconds and 500 the friends board.
 const BATCH_RETRY_ATTEMPTS = 5;
 
+// THE ROUND VERSION (#204's adoption model, decided on the PR-227 review). Every mutation
+// of a round item — the sentence append and its retired-puzzle restart, the corrective
+// settle, the word start and submit — bumps `version`, and the adoption transaction
+// conditions on it instead of on any list of fields: a condition written by hand protects
+// exactly the fields somebody remembered (the settle rewrites `progress`/`solved` with the
+// log untouched, which is what a guesses-and-puzzle condition let through). Arithmetic is
+// legal in a SET action, where this lives; the condition side only ever compares `#v`.
+// `dynamoRoundStore.test.ts` refuses any round UpdateItem that lacks this clause.
+const VERSION_BUMP = '#v = if_not_exists(#v, :zero) + :one';
+const VERSION_BUMP_VALUES: Record<string, AttributeValue> = {
+  ':zero': { N: '0' },
+  ':one': { N: '1' },
+};
+
 export interface DynamoRoundStoreOptions {
   // Injected by tests, so asserting the retry SCHEDULE costs no real time.
   wait?: (ms: number) => Promise<void>;
@@ -93,6 +107,7 @@ export function dynamoRoundStore(
     submittedAt: '#sub',
     progress: '#prog',
     solved: '#solved',
+    version: '#v',
   } as const;
 
   // The alias map for exactly the attributes one command touches.
@@ -256,7 +271,7 @@ export function dynamoRoundStore(
             UpdateExpression:
               'SET #g = list_append(if_not_exists(#g, :empty), :batch), ' +
               '#p = :puzzle, #last = :now, #created = if_not_exists(#created, :created), ' +
-              `#prog = :progress${markSolved}`,
+              `#prog = :progress${markSolved}, ${VERSION_BUMP}`,
             // Every clause is path-only CONDITION syntax. DynamoDB's condition grammar
             // has NO arithmetic, its function list is attribute_exists /
             // attribute_not_exists / attribute_type / begins_with / contains /
@@ -285,10 +300,12 @@ export function dynamoRoundStore(
               'createdAt',
               'progress',
               'solved',
+              'version',
             ),
             ExpressionAttributeValues: values({
               ':empty': { L: [] },
               ':room': { N: String(ROUND_GUESS_CAP - input.guesses.length) },
+              ...VERSION_BUMP_VALUES,
             }),
             ReturnValues: 'ALL_NEW',
           }),
@@ -317,7 +334,7 @@ export function dynamoRoundStore(
               // would otherwise freeze the fresh round on a sentence nobody is playing any
               // more (the word start's `REMOVE #g, #sub` rule).
               UpdateExpression:
-                'SET #g = :batch, #p = :puzzle, #last = :now, #created = :created, ' +
+                `SET #g = :batch, #p = :puzzle, #last = :now, #created = :created, ${VERSION_BUMP}, ` +
                 (input.solved
                   ? '#prog = :progress, #solved = :solved'
                   : '#prog = :progress REMOVE #solved'),
@@ -332,8 +349,9 @@ export function dynamoRoundStore(
                 'createdAt',
                 'progress',
                 'solved',
+                'version',
               ),
-              ExpressionAttributeValues: values({}),
+              ExpressionAttributeValues: values({ ...VERSION_BUMP_VALUES }),
               ReturnValues: 'ALL_NEW',
             }),
           );
@@ -386,20 +404,21 @@ export function dynamoRoundStore(
             TableName: tableName,
             Key: itemKey(input, input.publicId),
             UpdateExpression: input.solved
-              ? 'SET #prog = :progress, #solved = :solved'
-              : 'SET #prog = :progress',
+              ? `SET #prog = :progress, #solved = :solved, ${VERSION_BUMP}`
+              : `SET #prog = :progress, ${VERSION_BUMP}`,
             // Path-only condition syntax, the append's rule: a comparator against a value is
             // the grammar's own (`#last < :cutoff` already relies on it), where arithmetic
             // and `if_not_exists` are not.
             ConditionExpression:
               '#p = :puzzle AND (attribute_not_exists(#prog) OR #prog <= :progress)',
             ExpressionAttributeNames: input.solved
-              ? aliases('progress', 'solved', 'puzzle')
-              : aliases('progress', 'puzzle'),
+              ? aliases('progress', 'solved', 'puzzle', 'version')
+              : aliases('progress', 'puzzle', 'version'),
             ExpressionAttributeValues: {
               ':progress': { N: String(input.progress) },
               ':puzzle': { S: input.puzzle },
               ...(input.solved ? { ':solved': { BOOL: true } } : {}),
+              ...VERSION_BUMP_VALUES,
             },
           }),
         );
@@ -436,7 +455,8 @@ export function dynamoRoundStore(
             // that log was recorded (a retired word's), or the fresh round would read as
             // already submitted and never write.
             UpdateExpression:
-              'SET #started = :now, #by = :runner, #p = :puzzle, #created = :now REMOVE #g, #sub',
+              `SET #started = :now, #by = :runner, #p = :puzzle, #created = :now, ${VERSION_BUMP} ` +
+              'REMOVE #g, #sub',
             ConditionExpression: 'attribute_not_exists(#sub) OR #p <> :puzzle',
             ExpressionAttributeNames: aliases(
               'startedAt',
@@ -445,11 +465,13 @@ export function dynamoRoundStore(
               'createdAt',
               'guesses',
               'submittedAt',
+              'version',
             ),
             ExpressionAttributeValues: {
               ':puzzle': { S: input.puzzle },
               ':now': { S: stampedAt },
               ':runner': runnerValue(input.runner),
+              ...VERSION_BUMP_VALUES,
             },
             ReturnValues: 'ALL_NEW',
           }),
@@ -497,7 +519,7 @@ export function dynamoRoundStore(
           new UpdateItemCommand({
             TableName: tableName,
             Key: itemKey(input, input.publicId),
-            UpdateExpression: 'SET #g = :log, #sub = :now',
+            UpdateExpression: `SET #g = :log, #sub = :now, ${VERSION_BUMP}`,
             // Path-only condition syntax, the append's rule: the record must still be this
             // puzzle's, still stamped for THIS device, and still unsubmitted. The device
             // clause is what makes ownership a store decision rather than a read's opinion —
@@ -505,7 +527,7 @@ export function dynamoRoundStore(
             ConditionExpression:
               '#p = :puzzle AND #by.#dev = :device AND attribute_not_exists(#sub)',
             ExpressionAttributeNames: {
-              ...aliases('guesses', 'submittedAt', 'puzzle', 'startedBy'),
+              ...aliases('guesses', 'submittedAt', 'puzzle', 'startedBy', 'version'),
               '#dev': 'deviceId',
             },
             ExpressionAttributeValues: {
@@ -513,6 +535,7 @@ export function dynamoRoundStore(
               ':device': { S: input.deviceId },
               ':log': { L: input.guesses.map((guess) => ({ S: guess })) },
               ':now': { S: input.now.toISOString() },
+              ...VERSION_BUMP_VALUES,
             },
             ReturnValues: 'ALL_NEW',
           }),
@@ -629,31 +652,62 @@ export function roundItemKey(key: RoundKey, publicId: string): Record<string, At
 }
 
 export interface RoundMovePlan {
-  // What the transaction commits for this tuple. A MOVE is a create-if-empty Put of the
-  // whole item under the destination and a Delete of the source conditioned on the EXACT
-  // log it was read with; a NO-MOVE is a ConditionCheck that the observation it rests on
-  // still holds — so every decision, including "there is nothing here", is guarded.
+  // What the transaction commits for this tuple: two items, one per row READ. A MOVE is a
+  // Put of the whole item under the destination and a Delete of the source; a NO-MOVE is a
+  // ConditionCheck on each row. Every item asserts the row is unchanged since the read —
+  // absent still absent, or present at the VERSION it was read at — so every decision,
+  // including "there is nothing here", is guarded, and by the same clause whatever field a
+  // concurrent writer touches.
   items: TransactWriteItem[];
   moved: boolean;
   // What the source's own stored summary said — the solved-day credit's input.
   solved: boolean;
 }
 
+// The condition that a row read is still exactly that row: absent, or at the version it
+// carried (a row written before versions existed carries none, and asserts that).
+function unchanged(
+  item: Record<string, AttributeValue> | undefined,
+): Pick<
+  NonNullable<TransactWriteItem['ConditionCheck']>,
+  'ConditionExpression' | 'ExpressionAttributeNames' | 'ExpressionAttributeValues'
+> {
+  if (!item) return { ConditionExpression: 'attribute_not_exists(pk)' };
+  const version = item.version?.N;
+  if (version === undefined) {
+    return {
+      ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(#v)',
+      ExpressionAttributeNames: { '#v': 'version' },
+    };
+  }
+  return {
+    ConditionExpression: '#v = :v',
+    ExpressionAttributeNames: { '#v': 'version' },
+    ExpressionAttributeValues: { ':v': { N: version } },
+  };
+}
+
+function hasPlay(item: Record<string, AttributeValue> | undefined): boolean {
+  return (item?.guesses?.L?.length ?? 0) > 0;
+}
+
 // #204's active-day transfer, PLANNED here and COMMITTED by `dynamoLinkStore` inside the
 // one adoption transaction — so the round exists under exactly one account at every
 // instant, and no adoption that fails to commit leaves a round moved. Planned in THIS file
 // because the items are this store's shape: the item is copied VERBATIM apart from its
-// partition key, and the conditions name its attributes.
+// partition key and its version, and the conditions name its attributes.
 //
 // Nothing moves when the source holds no guesses (a word round that was merely STARTED
 // holds none server-side, and a recorded run may move in over one), or when the
-// destination already holds play — two real logs for one day have no honest merge. BUT AN
-// OBSERVED ABSENCE IS STILL AN OBSERVATION: a first guess landing on an empty source between
-// this read and the commit would otherwise be orphaned under the deleted account with
-// nothing in the transaction to notice, so a no-move carries a ConditionCheck on exactly
-// what it saw. The move's source Delete is conditioned on the list itself and the puzzle it
-// names, never a length: a guess appended meanwhile, or a replacement of equal length,
-// refuses the transaction rather than being deleted unseen — the caller plans again.
+// destination already holds play — two real logs for one day have no honest merge. Either
+// way BOTH rows read are guarded (the model's mechanical rule: two reads, two items), so a
+// first guess landing on an empty source, a settle rewriting a summary, or a start wiping a
+// log between this read and the commit refuses the transaction — the caller plans again.
+//
+// THE COPIED ITEM TAKES THE DESTINATION'S NEXT VERSION, never the source's. Two adoptions
+// from two different sources onto one target condition on the same destination version;
+// the first must move it, or the second's Put still passes and overwrites the log the
+// first just moved.
 export async function planRoundMove(
   client: DynamoDBClient,
   tableName: string,
@@ -672,64 +726,31 @@ export async function planRoundMove(
     return response.Item;
   };
   const [source, destination] = await Promise.all([read(from), read(to)]);
-  const guesses = source?.guesses;
-  if (!source || !guesses || (guesses.L?.length ?? 0) === 0) {
+  const check = (publicId: string, item: Record<string, AttributeValue> | undefined) => ({
+    ConditionCheck: { TableName: tableName, Key: roundItemKey(key, publicId), ...unchanged(item) },
+  });
+  if (!source || !hasPlay(source) || hasPlay(destination)) {
     return {
-      items: [
-        {
-          ConditionCheck: {
-            TableName: tableName,
-            Key: roundItemKey(key, from),
-            ConditionExpression:
-              'attribute_not_exists(pk) OR attribute_not_exists(#g) OR size(#g) = :zero',
-            ExpressionAttributeNames: { '#g': 'guesses' },
-            ExpressionAttributeValues: { ':zero': { N: '0' } },
-          },
-        },
-      ],
+      items: [check(from, source), check(to, destination)],
       moved: false,
       solved: false,
     };
   }
-  if (destination && (destination.guesses?.L?.length ?? 0) > 0) {
-    return {
-      items: [
-        {
-          ConditionCheck: {
-            TableName: tableName,
-            Key: roundItemKey(key, to),
-            ConditionExpression: 'attribute_exists(#g) AND size(#g) > :zero',
-            ExpressionAttributeNames: { '#g': 'guesses' },
-            ExpressionAttributeValues: { ':zero': { N: '0' } },
-          },
-        },
-      ],
-      moved: false,
-      solved: false,
-    };
-  }
+  const nextVersion = String(Number(destination?.version?.N ?? '0') + 1);
   return {
     items: [
       {
         Put: {
           TableName: tableName,
-          Item: { ...source, ...roundItemKey(key, to) },
-          ConditionExpression:
-            'attribute_not_exists(pk) OR attribute_not_exists(#g) OR size(#g) = :zero',
-          ExpressionAttributeNames: { '#g': 'guesses' },
-          ExpressionAttributeValues: { ':zero': { N: '0' } },
+          Item: { ...source, ...roundItemKey(key, to), version: { N: nextVersion } },
+          ...unchanged(destination),
         },
       },
       {
         Delete: {
           TableName: tableName,
           Key: roundItemKey(key, from),
-          ConditionExpression: '#g = :guesses AND #p = :puzzle',
-          ExpressionAttributeNames: { '#g': 'guesses', '#p': 'puzzle' },
-          ExpressionAttributeValues: {
-            ':guesses': guesses,
-            ':puzzle': { S: puzzleOf(source) ?? '' },
-          },
+          ...unchanged(source),
         },
       },
     ],

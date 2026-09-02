@@ -553,32 +553,52 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   commit, and no claim on the source account could honestly own play that had already
   moved when the commit then failed or a rival took the claim over. So `adopt` takes
   `moves` (every supported language × mode of the active day) and, per tuple, the owning
-  stores PLAN the items — `planRoundMove` (a create-if-empty Put under the destination and
-  a Delete of the source conditioned on the EXACT log read, `#g = :guesses AND #p =
-  :puzzle`, never a length; null when the source holds no guesses or the destination holds
-  play) and `planScoreMove` (create-only Put + a Delete conditioned on the exact row, only
-  for a round that moves) — and `dynamoLinkStore` commits them beside the identity items.
-  **A NO-MOVE IS GUARDED TOO** (same review, second round): a decision resting on "nothing
-  here" carries a ConditionCheck on exactly what it saw — the source round still empty, the
-  destination still holding play, the source score row still absent — because a first
-  guess (or the solving append's score row, written a beat after the log) landing between
-  the plan and the commit would otherwise be orphaned under the deleted account with
-  nothing in the transaction to notice. A `TransactionCanceledException`
-  is classified by its per-item reason codes, and by WHICH item: an identity refusal is the
-  route's answer (challenge > account > device, as before), while a refusal on a MOVE item
-  alone — a guess landed on the source, or the destination gained play, between the plan
-  and the commit — plans again over what now stands (bounded, then a loud failure), so the
-  guess is carried rather than deleted unseen; the plan is part of the `ClientRequestToken`,
-  since a re-plan is different items. `RoundStore.transfer` / `ScoreStore.transfer` are
-  GONE from the contracts; the memory stores expose the synchronous halves
-  (`LinkRoundWrites` / `LinkScoreWrites`) the memory link store composes inside its one
-  critical section, the `LinkDeviceWrites` pattern. The solved-day credit a moved sentence
-  solve owes the streak, and the receipt read, both FOLLOW the commit as logged non-fatal
-  side effects (the round route's own rule for that rebuildable collection; an unreadable
-  receipt answers `stakes: null`). An append that lands AFTER the commit lands under a
-  deleted account — the same thing an append racing any deletion does, refused on the
-  device's next authenticated call — and never a split, since the target holds the full log
-  as of the commit. **`dynamoLinkStore` is the
+  stores PLAN the items — `planRoundMove` and, only for a round that moves, `planScoreMove`
+  — and `dynamoLinkStore` commits them beside the identity items.
+  **THE MODEL, decided on that review's fourth round (2026-09-02):** *every row the plan
+  reads gets exactly one transaction item whose condition asserts the row is unchanged
+  since the read; absent asserts `attribute_not_exists(pk)`; present asserts a VERSION
+  changed by every mutation of that row; no field is ever listed by hand.* Three patches
+  had each protected the previous counterexample — the guess list, then the absences, and
+  still not the summary a `settle` rewrites with the log untouched — which is what a
+  version makes impossible by construction. Concretely: **round rows carry `version`**, a
+  counter every `UpdateItem` the round store issues bumps (`#v = if_not_exists(#v, :zero) +
+  :one`, legal in a SET action where the condition grammar's arithmetic ban does not
+  apply), and `dynamoRoundStore.test.ts`'s harness REFUSES any round update without that
+  clause, so a writer added later is covered by the tests that already exist; **score rows
+  carry `stamp`**, the submission's own idempotency token, minted inside the one
+  `scoreItem()` both score Puts build through — deterministic for one logical submission
+  (a replay under a reused `ClientRequestToken` with a different item is an
+  `IdempotentParameterMismatch`, not a no-op) and different per revision. A row read
+  without the attribute asserts its absence. Each planner emits TWO items per tuple, one
+  per row read, a no-move included (a decision resting on "nothing here" is guarded like
+  one resting on a row: a first guess, or the solving append's score row written a beat
+  after the log, landing between plan and commit would otherwise be orphaned under the
+  deleted account). **The copied round takes the DESTINATION's next version, never the
+  source's** — two sources adopting one target both condition on the target's version, and
+  the first must change it or the second's Put still passes and overwrites the moved log.
+  A `TransactionCanceledException` is classified by its per-item reason codes: an identity
+  refusal is the route's answer (challenge > account > device, as before), while a refusal
+  on a MOVE or GUARD item alone plans again over what now stands (bounded, then a loud
+  failure), so the play that changed is carried rather than copied stale or deleted unseen;
+  the plan is part of the `ClientRequestToken`, since a re-plan is different items. What
+  the model states once and accepts: a write landing AFTER the commit lands under a
+  deleted account, as any write racing any deletion does, refused on the device's next
+  authenticated call and collected by the sweeper; two real logs for one day never merge.
+  **ROLLOUT:** the bump and the version condition ship together. A row written BEFORE the
+  deploy carries no version and is planned as such; any new writer adds one and refuses a
+  stale plan. The one hole is an OLD invocation still writing a versionless row after the
+  new planner read it, bounded by the Lambda drain (a 10-second timeout) at the moment of
+  the deploy; the DB is wiped before launch and nothing of #204 is live yet, so the two-step
+  rollout the review asked for (writers first, then the version-based adoption) is
+  recorded here as the instruction for a live table rather than performed on an empty one.
+  `RoundStore.transfer` / `ScoreStore.transfer` are GONE from the contracts; the memory
+  stores expose the synchronous halves (`LinkRoundWrites` / `LinkScoreWrites`) the memory
+  link store composes inside its one critical section, the `LinkDeviceWrites` pattern,
+  which is why they carry no version. The solved-day credit a moved sentence solve owes the
+  streak, and the receipt read, both FOLLOW the commit as logged non-fatal side effects
+  (the round route's own rule for that rebuildable collection; an unreadable receipt
+  answers `stakes: null`). **`dynamoLinkStore` is the
   ONE file that writes items across several stores' key spaces**, and every key it writes
   comes from the OWNING module's own formatter (`deviceKey`, `accountKey`, `profileKey`),
   never a literal, and the round/score items from their own stores' planners. The friend

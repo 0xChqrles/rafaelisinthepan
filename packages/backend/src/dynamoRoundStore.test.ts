@@ -80,7 +80,19 @@ function expectAliasesMatch(command: UpdateItemCommand | Expressed): void {
 // Every store in this suite is built over this, so no write escapes the checks above.
 function checkedClient(send: (command: unknown) => Promise<unknown>) {
   return vi.fn(async (command: unknown) => {
-    if (command instanceof UpdateItemCommand) expectAliasesMatch(command);
+    if (command instanceof UpdateItemCommand) {
+      expectAliasesMatch(command);
+      // THE VERSION INVARIANT (#204's adoption model): every mutation of a round item bumps
+      // `version`, because the adoption transaction conditions on nothing else. A writer
+      // added next month that forgets it reopens the stale-snapshot hole, so it is refused
+      // HERE, on every UpdateItem any test in this suite issues, rather than pinned per path.
+      if (command.input.Key?.pk.S?.startsWith('round#')) {
+        expect(command.input.UpdateExpression, 'round write without the version bump').toContain(
+          '#v = if_not_exists(#v, :zero) + :one',
+        );
+        expect(command.input.ExpressionAttributeNames?.['#v']).toBe('version');
+      }
+    }
     // #204's transfer writes a TRANSACTION, and every clause inside it is subject to the
     // same rejection — an unused or undeclared alias fails the whole write in production
     // while looking fine against this mock.
@@ -786,7 +798,9 @@ describe('dynamoRoundStore — the derived summary (#203)', () => {
 
     expect(send).toHaveBeenCalledTimes(1);
     const command = send.mock.calls[0][0] as UpdateItemCommand;
-    expect(command.input.UpdateExpression).toBe('SET #prog = :progress, #solved = :solved');
+    expect(command.input.UpdateExpression).toBe(
+      'SET #prog = :progress, #solved = :solved, #v = if_not_exists(#v, :zero) + :one',
+    );
     // A record naming a DIFFERENT puzzle has already restarted and has nothing here to
     // correct. (The monotonicity clause beside it has its own suite below.)
     expect(command.input.ConditionExpression).toContain('#p = :puzzle');
@@ -798,7 +812,9 @@ describe('dynamoRoundStore — the derived summary (#203)', () => {
     const { store } = makeStore(send);
     await store.settle({ ...KEY, publicId: PUBLIC_ID, puzzle: PUZZLE, progress: 66, solved: false });
     const command = send.mock.calls[0][0] as UpdateItemCommand;
-    expect(command.input.UpdateExpression).toBe('SET #prog = :progress');
+    expect(command.input.UpdateExpression).toBe(
+      'SET #prog = :progress, #v = if_not_exists(#v, :zero) + :one',
+    );
     expect(command.input.ExpressionAttributeValues).not.toHaveProperty(':solved');
   });
 
@@ -1059,101 +1075,125 @@ describe('dynamoRoundStore.getMany — the board read (#206)', () => {
 });
 
 // CONTRACT (#204): a link MOVES the active day's round between two accounts INSIDE the one
-// adoption transaction — this store only PLANS the two items: a create-if-empty Put under
-// the destination and a Delete of the source conditioned on the EXACT log it read, copying
-// the item VERBATIM apart from its partition key (this store's attribute shape is the one
-// thing a move must not reinterpret). The condition grammar is checked by the harness above.
+// adoption transaction — this store only PLANS the items, and it plans TWO for every
+// tuple, one per row read: each asserts the row is unchanged since the read (absent still
+// absent, or at the VERSION it carried), so every decision including "nothing here" is
+// guarded, by one clause whatever field a concurrent writer touches. The copied item takes
+// the DESTINATION's next version, never the source's. The alias correspondence and the
+// condition grammar are checked by the harness above.
 describe('planRoundMove (#204)', () => {
   const FROM = PUBLIC_ID;
   const TO = 'zzzzzzzzzzzzzzzz';
-  const client = (send: (command: unknown) => Promise<unknown>) =>
-    ({ send } as unknown as DynamoDBClient);
-
-  it('plans a create-if-empty Put and an exact-snapshot Delete, the item copied verbatim', async () => {
-    const source = {
-      ...storedItem(['bois', 'foret'], 1_000),
-      progress: { N: '40' },
-      solved: { BOOL: true },
-    };
-    const plan = await planRoundMove(
-      client(async (command) =>
-        (command as GetItemCommand).input.Key!.pk.S === `round#${FROM}` ? { Item: source } : {},
-      ),
+  const at = (publicId: string) => ({ pk: { S: `round#${publicId}` }, sk: { S: 'fr#sentence#2026-08-21' } });
+  const versioned = (item: Record<string, AttributeValue>, version: number) => ({
+    ...item,
+    version: { N: String(version) },
+  });
+  const plan = (rows: { from?: Record<string, AttributeValue>; to?: Record<string, AttributeValue> }) =>
+    planRoundMove(
+      {
+        send: async (command: unknown) => {
+          const pk = (command as GetItemCommand).input.Key!.pk.S;
+          return { Item: pk === `round#${FROM}` ? rows.from : rows.to };
+        },
+      } as unknown as DynamoDBClient,
       'scores',
       KEY,
       FROM,
       TO,
     );
-    expect(plan.moved).toBe(true);
-    expect(plan.solved).toBe(true);
-    const items = plan.items;
-    expect(items).toHaveLength(2);
-    expect(items[0].Put!.Item).toMatchObject({
-      ...source,
-      pk: { S: `round#${TO}` },
-      sk: { S: 'fr#sentence#2026-08-21' },
+  const played = versioned({ ...at(FROM), ...storedItem(['bois', 'foret'], 1_000), solved: { BOOL: true } }, 7);
+  const startedRun = versioned(
+    { ...at(TO), puzzle: { S: PUZZLE }, startedAt: { S: '2026-08-21T09:00:00.000Z' } },
+    2,
+  );
+  const destinationPlayed = versioned({ ...at(TO), ...storedItem(['souris'], 1_000) }, 5);
+  // The four observations a row can present, for the table rows that read "any".
+  const anyDestination: [string, Record<string, AttributeValue> | undefined][] = [
+    ['absent', undefined],
+    ['started, unplayed', startedRun],
+    ['played', destinationPlayed],
+  ];
+
+  it('moves onto an ABSENT destination: source at its version, destination absent, copy at version 1', async () => {
+    const result = await plan({ from: played });
+    expect(result.moved).toBe(true);
+    expect(result.solved).toBe(true);
+    expect(result.items).toHaveLength(2);
+    expect(result.items[0].Put).toMatchObject({
+      Item: { ...played, ...at(TO), version: { N: '1' } },
+      ConditionExpression: 'attribute_not_exists(pk)',
     });
-    expectConditionSyntax(items[0].Put!.ConditionExpression);
-    expect(items[1].Delete!.Key).toEqual({
-      pk: { S: `round#${FROM}` },
-      sk: { S: 'fr#sentence#2026-08-21' },
-    });
-    // The list itself and the puzzle it names, never a length: an appended guess, or a
-    // replacement of equal length, must not be deleted unseen.
-    expectConditionSyntax(items[1].Delete!.ConditionExpression);
-    expect(items[1].Delete!.ConditionExpression).toBe('#g = :guesses AND #p = :puzzle');
-    expect(items[1].Delete!.ExpressionAttributeValues).toEqual({
-      ':guesses': { L: [{ S: 'bois' }, { S: 'foret' }] },
-      ':puzzle': { S: PUZZLE },
+    expectConditionSyntax(result.items[1].Delete!.ConditionExpression);
+    expect(result.items[1].Delete).toMatchObject({
+      Key: at(FROM),
+      ConditionExpression: '#v = :v',
+      ExpressionAttributeValues: { ':v': { N: '7' } },
     });
   });
 
-  it('moves NOTHING for a source with no guesses, but GUARDS that observation — a first guess landing meanwhile must refuse the commit', async () => {
-    const started = {
-      pk: { S: `round#${FROM}` },
-      sk: { S: 'fr#sentence#2026-08-21' },
-      puzzle: { S: PUZZLE },
-      startedAt: { S: '2026-08-21T09:00:00.000Z' },
-    };
-    for (const source of [started, undefined]) {
-      const plan = await planRoundMove(
-        client(async (command) =>
-          (command as GetItemCommand).input.Key!.pk.S === `round#${FROM}` ? { Item: source } : {},
-        ),
-        'scores',
-        KEY,
-        FROM,
-        TO,
-      );
-      expect(plan.moved).toBe(false);
-      expect(plan.items).toHaveLength(1);
-      const check = plan.items[0].ConditionCheck!;
-      expect(check.Key).toEqual({ pk: { S: `round#${FROM}` }, sk: { S: 'fr#sentence#2026-08-21' } });
-      expectConditionSyntax(check.ConditionExpression);
-      expect(check.ConditionExpression).toBe(
-        'attribute_not_exists(pk) OR attribute_not_exists(#g) OR size(#g) = :zero',
-      );
-    }
+  it('moves OVER a started, unplayed destination run at its version, and the copy takes the NEXT one', async () => {
+    const result = await plan({ from: played, to: startedRun });
+    expect(result.moved).toBe(true);
+    expect(result.items[0].Put).toMatchObject({
+      Item: { ...played, ...at(TO), version: { N: '3' } },
+      ConditionExpression: '#v = :v',
+      ExpressionAttributeValues: { ':v': { N: '2' } },
+    });
+    // NEVER the source's own version: two sources moving onto one target both condition on
+    // the target's version, and the first must change it or the second overwrites it.
+    expect(result.items[0].Put!.Item!.version).not.toEqual(played.version);
   });
 
-  it('moves NOTHING when the destination already holds play, guarding THAT — two logs have no honest merge', async () => {
-    const plan = await planRoundMove(
-      client(async (command) => ({
-        Item:
-          (command as GetItemCommand).input.Key!.pk.S === `round#${TO}`
-            ? { ...storedItem(['souris'], 1_000), pk: { S: `round#${TO}` } }
-            : storedItem(['bois'], 1_000),
-      })),
-      'scores',
-      KEY,
-      FROM,
-      TO,
-    );
-    expect(plan.moved).toBe(false);
-    expect(plan.items).toHaveLength(1);
-    const check = plan.items[0].ConditionCheck!;
-    expect(check.Key!.pk.S).toBe(`round#${TO}`);
-    expectConditionSyntax(check.ConditionExpression);
-    expect(check.ConditionExpression).toBe('attribute_exists(#g) AND size(#g) > :zero');
+  for (const [label, to] of anyDestination) {
+    it(`guards BOTH rows on a no-move — absent source, destination ${label}`, async () => {
+      const result = await plan({ to });
+      expect(result.moved).toBe(false);
+      expect(result.items).toHaveLength(2);
+      expect(result.items[0].ConditionCheck).toMatchObject({
+        Key: at(FROM),
+        ConditionExpression: 'attribute_not_exists(pk)',
+      });
+      expect(result.items[1].ConditionCheck!.Key).toEqual(at(TO));
+      expectConditionSyntax(result.items[1].ConditionCheck!.ConditionExpression);
+      expect(result.items[1].ConditionCheck!.ConditionExpression).toBe(
+        to ? '#v = :v' : 'attribute_not_exists(pk)',
+      );
+    });
+
+    it(`guards BOTH rows on a no-move — source started but unplayed, destination ${label}`, async () => {
+      const result = await plan({ from: { ...startedRun, ...at(FROM) }, to });
+      expect(result.moved).toBe(false);
+      expect(result.items[0].ConditionCheck).toMatchObject({
+        Key: at(FROM),
+        ConditionExpression: '#v = :v',
+        ExpressionAttributeValues: { ':v': { N: '2' } },
+      });
+      expect(result.items[1].ConditionCheck!.ConditionExpression).toBe(
+        to ? '#v = :v' : 'attribute_not_exists(pk)',
+      );
+    });
+  }
+
+  it('guards BOTH rows when the destination already holds play — two logs have no honest merge', async () => {
+    const result = await plan({ from: played, to: destinationPlayed });
+    expect(result.moved).toBe(false);
+    expect(result.items[0].ConditionCheck).toMatchObject({
+      Key: at(FROM),
+      ExpressionAttributeValues: { ':v': { N: '7' } },
+    });
+    expect(result.items[1].ConditionCheck).toMatchObject({
+      Key: at(TO),
+      ExpressionAttributeValues: { ':v': { N: '5' } },
+    });
+  });
+
+  it('reads a row with no version as version 0, and asserts exactly that', async () => {
+    const unversioned = { ...at(FROM), ...storedItem(['bois'], 1_000) };
+    const result = await plan({ from: unversioned });
+    expect(result.moved).toBe(true);
+    expect(result.items[1].Delete).toMatchObject({
+      ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(#v)',
+    });
   });
 });

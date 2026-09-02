@@ -47,6 +47,13 @@ function scoreItem(input: ScoreSubmission): Record<string, AttributeValue> {
     score: { N: String(input.score) },
     submittedAt: { S: input.submittedAt },
     revision: { S: input.revision },
+    // THE STAMP (#204's adoption model): what the adoption transaction conditions a score
+    // row on, instead of on any list of fields. Both writers of a score row build it HERE,
+    // so no writer can forget it. It is the submission's own idempotency token — the same
+    // logical submission (a replay, a retry) must produce the same item or DynamoDB refuses
+    // the reused ClientRequestToken with IdempotentParameterMismatch — and a different
+    // revision is a different token, so a replacement changes it.
+    stamp: { S: input.requestToken },
   };
 }
 
@@ -240,13 +247,13 @@ export function dynamoScoreStore(
 // it was derived from — so the day's population holds the score under exactly one player
 // at every instant and the histogram count is never transiently doubled.
 //
-// Called only for a round that MOVES, and it always answers items: a move is a create-only
-// Put under the destination and a Delete of the source conditioned on the EXACT row read
-// (a concurrent revision replacement must refuse, not be overwritten by the stale copy);
-// a no-move is a ConditionCheck on the observation it rests on — "no row under the source
-// yet" most of all, since the solving append writes the score row a beat after the log,
-// and one landing between this read and the commit would otherwise stay under the
-// deleted account.
+// Called only for a round that MOVES, and it always answers two items, one per row read: a
+// move is a create-only Put under the destination and a Delete of the source; a no-move is
+// a ConditionCheck on each. Every item asserts the row is unchanged since the read — absent
+// still absent, or present at the STAMP it was read with (a row written before stamps
+// existed carries none, and asserts that) — so "no row under the source yet" is guarded
+// too: the solving append writes the score row a beat after the log, and one landing
+// between this read and the commit would otherwise stay under the deleted account.
 export async function planScoreMove(
   client: DynamoDBClient,
   tableName: string,
@@ -261,27 +268,26 @@ export async function planScoreMove(
     );
     return response.Item;
   };
+  const unchanged = (item: Record<string, AttributeValue> | undefined) => {
+    if (!item) return { ConditionExpression: 'attribute_not_exists(pk)' };
+    const stamp = item.stamp?.S;
+    if (stamp === undefined) {
+      return {
+        ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(#stamp)',
+        ExpressionAttributeNames: { '#stamp': 'stamp' },
+      };
+    }
+    return {
+      ConditionExpression: '#stamp = :stamp',
+      ExpressionAttributeNames: { '#stamp': 'stamp' },
+      ExpressionAttributeValues: { ':stamp': { S: stamp } },
+    };
+  };
   const [source, destination] = await Promise.all([read(from), read(to)]);
-  if (!source) {
+  if (!source || destination) {
     return [
-      {
-        ConditionCheck: {
-          TableName: tableName,
-          Key: rowKey(from),
-          ConditionExpression: 'attribute_not_exists(pk)',
-        },
-      },
-    ];
-  }
-  if (destination) {
-    return [
-      {
-        ConditionCheck: {
-          TableName: tableName,
-          Key: rowKey(to),
-          ConditionExpression: 'attribute_exists(pk)',
-        },
-      },
+      { ConditionCheck: { TableName: tableName, Key: rowKey(from), ...unchanged(source) } },
+      { ConditionCheck: { TableName: tableName, Key: rowKey(to), ...unchanged(destination) } },
     ];
   }
   return [
@@ -289,25 +295,14 @@ export async function planScoreMove(
       Put: {
         TableName: tableName,
         Item: { ...source, ...rowKey(to) },
-        ConditionExpression: 'attribute_not_exists(pk)',
+        ...unchanged(destination),
       },
     },
     {
       Delete: {
         TableName: tableName,
         Key: rowKey(from),
-        ConditionExpression:
-          '#score = :score AND #revision = :revision AND #submittedAt = :submittedAt',
-        ExpressionAttributeNames: {
-          '#score': 'score',
-          '#revision': 'revision',
-          '#submittedAt': 'submittedAt',
-        },
-        ExpressionAttributeValues: {
-          ':score': source.score ?? { NULL: true },
-          ':revision': source.revision ?? { NULL: true },
-          ':submittedAt': source.submittedAt ?? { NULL: true },
-        },
+        ...unchanged(source),
       },
     },
   ];
