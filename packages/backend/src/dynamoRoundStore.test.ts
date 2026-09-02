@@ -1107,6 +1107,59 @@ describe('dynamoRoundStore.transfer (#204)', () => {
       pk: { S: `round#${FROM}` },
       sk: { S: 'fr#sentence#2026-08-21' },
     });
+    // The source is deleted only if it is STILL the exact log this call read — the list
+    // itself and the puzzle it names, never a length: an appended guess, or a replacement of
+    // equal length, must not be deleted unseen.
+    expect(items[1].Delete!.ConditionExpression).toBe('#g = :guesses AND #p = :puzzle');
+    expect(items[1].Delete!.ExpressionAttributeValues).toEqual({
+      ':guesses': { L: [{ S: 'bois' }, { S: 'foret' }] },
+      ':puzzle': { S: PUZZLE },
+    });
+  });
+
+  it('re-reads a source that CHANGED under it and moves what stands now, never skipping it', async () => {
+    let reads = 0;
+    const before = storedItem(['bois'], 1_000);
+    const after = storedItem(['bois', 'foret'], 2_000);
+    const { store, send } = makeStore(async (command) => {
+      if (command instanceof GetItemCommand) {
+        if (command.input.Key!.pk.S !== `round#${FROM}`) return {};
+        reads += 1;
+        return { Item: reads === 1 ? before : after };
+      }
+      const items = (command as TransactWriteItemsCommand).input.TransactItems!;
+      if (items[1].Delete!.ExpressionAttributeValues![':guesses'].L!.length === 1) {
+        // The source's own condition refused: a guess landed since the read.
+        throw Object.assign(new Error('cancelled'), {
+          name: 'TransactionCanceledException',
+          CancellationReasons: [{ Code: 'None' }, { Code: 'ConditionalCheckFailed' }],
+        });
+      }
+      return {};
+    });
+
+    await expect(store.transfer(KEY, FROM, TO)).resolves.toMatchObject({
+      moved: true,
+      state: { guesses: ['bois', 'foret'] },
+    });
+    const transactions = send.mock.calls
+      .map(([command]) => command)
+      .filter((command): command is TransactWriteItemsCommand =>
+        command instanceof TransactWriteItemsCommand,
+      );
+    expect(transactions).toHaveLength(2);
+    expect(transactions[1].input.TransactItems![0].Put!.Item!.guesses).toEqual(after.guesses);
+
+    // A source that never stops changing is a FAILURE, never "nothing to move": a link that
+    // skipped it would delete the account the round is still sitting in.
+    const churning = makeStore(async (command) => {
+      if (command instanceof GetItemCommand) return { Item: before };
+      throw Object.assign(new Error('cancelled'), {
+        name: 'TransactionCanceledException',
+        CancellationReasons: [{ Code: 'None' }, { Code: 'ConditionalCheckFailed' }],
+      });
+    });
+    await expect(churning.store.transfer(KEY, FROM, TO)).rejects.toThrow(/kept changing/);
   });
 
   it('moves NOTHING when the source has no guesses — a started word run is not play', async () => {
@@ -1153,8 +1206,9 @@ describe('dynamoRoundStore.transfer (#204)', () => {
     ).toBe(false);
   });
 
-  it('reads a refused CONDITION as "nothing moved", and anything else as the failure it is', async () => {
+  it('reads a refused DESTINATION as "nothing moved", and anything else as the failure it is', async () => {
     const source = storedItem(['bois'], 1_000);
+    // The destination holds play and the source still does: two logs, no honest merge.
     const refused = makeStore(async (command) => {
       if (command instanceof GetItemCommand) return { Item: source };
       throw Object.assign(new Error('cancelled'), {
@@ -1163,6 +1217,9 @@ describe('dynamoRoundStore.transfer (#204)', () => {
       });
     });
     await expect(refused.store.transfer(KEY, FROM, TO)).resolves.toBeNull();
+    expect(
+      refused.send.mock.calls.filter(([c]) => c instanceof TransactWriteItemsCommand),
+    ).toHaveLength(1);
 
     // A THROTTLE is not a refusal: swallowing it would delete the account the round is
     // still sitting in.

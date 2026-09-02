@@ -91,3 +91,21 @@ describe('friend merge capacity', () => {
     await expect(friends.list(candidate)).resolves.toEqual([TO]);
   });
 });
+
+describe('friend merge against a graph that moved since the plan', () => {
+  it('does not resurrect a friendship either side ended between the plan and the write', async () => {
+    const FRIEND = 'cccccccccccccccc';
+    const friends = memoryFriendStore();
+    await friends.link({ publicId: FROM, friendId: FRIEND, createdAt: NOW.toISOString() });
+    // The plan was read while the edge stood…
+    const plan = [{ friendId: FRIEND, keep: true, createdAt: NOW.toISOString() }];
+    // …and the friend unlinked before the batch was written.
+    await friends.unlink(FRIEND, FROM);
+    await friends.transfer(FROM, TO, plan);
+
+    await expect(friends.list(TO)).resolves.toEqual([]);
+    await expect(friends.list(FRIEND)).resolves.toEqual([]);
+    // Nothing points at the account being deleted either way.
+    await expect(friends.list(FROM)).resolves.toEqual([]);
+  });
+});

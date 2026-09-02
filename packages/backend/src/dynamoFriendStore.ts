@@ -2,9 +2,16 @@ import {
   QueryCommand,
   TransactWriteItemsCommand,
   type DynamoDBClient,
+  type TransactWriteItem,
 } from '@aws-sdk/client-dynamodb';
 import { ACCOUNT_SORT_KEY, accountKey } from './deviceStore';
-import { FRIENDS_MAX, friendsKey, type FriendLink, type FriendStore } from './friendStore';
+import {
+  FRIENDS_MAX,
+  friendsKey,
+  type FriendLink,
+  type FriendStore,
+  type FriendTransfer,
+} from './friendStore';
 
 // Four items per kept friendship, so 25 of them exactly fill DynamoDB's 100-item
 // transaction limit.
@@ -209,38 +216,87 @@ export function dynamoFriendStore(client: DynamoDBClient, tableName: string): Fr
     // nothing.
     async transfer(from, to, moves) {
       for (let i = 0; i < moves.length; i += FRIEND_TRANSFER_BATCH) {
-        const batch = moves.slice(i, i + FRIEND_TRANSFER_BATCH);
-        const items = batch.flatMap((move) => {
-          // Both `from`-facing rows go, kept or dropped: no edge may be left pointing at an
-          // account that is about to stop existing.
-          const removals = [
-            {
-              Delete: {
-                TableName: tableName,
-                Key: { pk: { S: friendsKey(from) }, sk: { S: move.friendId } },
-              },
-            },
-            {
-              Delete: {
-                TableName: tableName,
-                Key: { pk: { S: friendsKey(move.friendId) }, sk: { S: from } },
-              },
-            },
-          ];
-          if (!move.keep) return removals;
-          const link = (owner: string, other: string) => ({
-            Update: {
-              TableName: tableName,
-              Key: { pk: { S: friendsKey(owner) }, sk: { S: other } },
-              UpdateExpression: 'SET #createdAt = if_not_exists(#createdAt, :createdAt)',
-              ExpressionAttributeNames: { '#createdAt': 'createdAt' },
-              ExpressionAttributeValues: { ':createdAt': { S: move.createdAt } },
-            },
-          });
-          return [...removals, link(to, move.friendId), link(move.friendId, to)];
-        });
-        await client.send(new TransactWriteItemsCommand({ TransactItems: items }));
+        // A batch is written as ONE transaction, and a KEPT move is conditioned on the
+        // `from`-facing row it was planned from still standing: if either side unlinked
+        // meanwhile, that friendship is gone by somebody's choice, and rewriting it onto
+        // `to` would resurrect it. The whole transaction is refused when any move's row is
+        // gone, so the batch is written again WITHOUT those moves — the next pass of the
+        // merge reads the partition afresh and simply no longer sees them. A DROP needs no
+        // condition: deleting an absent row is the no-op it should be.
+        let batch = moves.slice(i, i + FRIEND_TRANSFER_BATCH);
+        while (batch.length > 0) {
+          const items = batch.flatMap((move) => transferItems(tableName, from, to, move));
+          try {
+            await client.send(new TransactWriteItemsCommand({ TransactItems: items }));
+            break;
+          } catch (error) {
+            const reasons = transactionRefusal(error);
+            if (!reasons) throw error;
+            const refused = new Set<string>();
+            let at = 0;
+            for (const move of batch) {
+              const width = move.keep ? 4 : 2;
+              if (reasons.slice(at, at + width).some((code) => code === 'ConditionalCheckFailed')) {
+                refused.add(move.friendId);
+              }
+              at += width;
+            }
+            // A refusal that names no move is not a state this transaction can produce.
+            if (refused.size === 0) throw error;
+            batch = batch.filter((move) => !refused.has(move.friendId));
+          }
+        }
       }
     },
   };
+}
+
+// The transact items of ONE move: both `from`-facing rows go, kept or dropped — no edge may
+// be left pointing at an account that is about to stop existing — and a kept friendship
+// gains its two `to`-facing rows, keeping the OLDER instant (`if_not_exists`).
+function transferItems(
+  tableName: string,
+  from: string,
+  to: string,
+  move: FriendTransfer,
+): TransactWriteItem[] {
+  const removals: TransactWriteItem[] = [
+    {
+      Delete: {
+        TableName: tableName,
+        Key: { pk: { S: friendsKey(from) }, sk: { S: move.friendId } },
+        ...(move.keep ? { ConditionExpression: 'attribute_exists(pk)' } : {}),
+      },
+    },
+    {
+      Delete: {
+        TableName: tableName,
+        Key: { pk: { S: friendsKey(move.friendId) }, sk: { S: from } },
+      },
+    },
+  ];
+  if (!move.keep) return removals;
+  const link = (owner: string, other: string): TransactWriteItem => ({
+    Update: {
+      TableName: tableName,
+      Key: { pk: { S: friendsKey(owner) }, sk: { S: other } },
+      UpdateExpression: 'SET #createdAt = if_not_exists(#createdAt, :createdAt)',
+      ExpressionAttributeNames: { '#createdAt': 'createdAt' },
+      ExpressionAttributeValues: { ':createdAt': { S: move.createdAt } },
+    },
+  });
+  return [...removals, link(to, move.friendId), link(move.friendId, to)];
+}
+
+// The per-item reason codes of a transaction refused by its own CONDITIONS, or null for
+// anything else — a throttle is not a refusal, and must propagate.
+function transactionRefusal(error: unknown): string[] | null {
+  if (typeof error !== 'object' || error === null) return null;
+  const named = error as { name?: unknown; CancellationReasons?: { Code?: string }[] };
+  if (named.name !== 'TransactionCanceledException') return null;
+  const reasons = (named.CancellationReasons ?? []).map(({ Code }) => Code ?? 'None');
+  const plain =
+    reasons.some((code) => code === 'ConditionalCheckFailed') &&
+    reasons.every((code) => code === 'None' || code === 'ConditionalCheckFailed');
+  return plain ? reasons : null;
 }

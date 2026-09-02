@@ -78,49 +78,101 @@ function makeStore(send: (command: unknown) => Promise<unknown>) {
 const HASH = 'a'.repeat(64);
 const NOW = new Date('2026-08-26T12:00:00.000Z');
 
+// CONTRACT: the allowances are ROLLING windows — "5 per address per hour" means the last
+// hour, whatever the clock reads — and they are spent together or not at all.
 describe('dynamoLinkStore — the send allowance', () => {
+  const HOUR = 3_600;
+  const stored = (...at: number[]) => ({
+    Item: { sends: { L: at.map((ms) => ({ N: String(ms) })) } },
+  });
+
   it('refuses a zero allowance without creating a first counter item', async () => {
     const { store, send } = makeStore(async () => ({}));
     await expect(
-      store.spendSends([{ scope: 'addr', hash: HASH, limit: 0 }], 3_600, NOW),
+      store.spendSends([{ scope: 'addr', hash: HASH, limit: 0 }], HOUR, NOW),
     ).resolves.toBe(false);
     expect(send).not.toHaveBeenCalled();
   });
 
-  it('increments every window-keyed allowance in ONE transaction', async () => {
-    const { store, send } = makeStore(async () => ({}));
+  it('writes every scope in ONE transaction, each conditioned on the exact list it read', async () => {
+    const { store, send } = makeStore(async (command) => {
+      if (command instanceof GetItemCommand) {
+        return command.input.Key!.pk.S === `linksend#addr#${HASH}`
+          ? stored(NOW.getTime() - 10_000)
+          : {};
+      }
+      return {};
+    });
     await expect(
       store.spendSends(
         [
           { scope: 'addr', hash: HASH, limit: 5 },
           { scope: 'ip', hash: 'b'.repeat(64), limit: 20 },
         ],
-        3_600,
+        HOUR,
         NOW,
       ),
     ).resolves.toBe(true);
 
-    const command = send.mock.calls[0][0] as TransactWriteItemsCommand;
-    expect(command).toBeInstanceOf(TransactWriteItemsCommand);
-    // The WINDOW is part of the partition key: a fresh window is a fresh item at zero.
-    expect(command.input.TransactItems).toHaveLength(2);
-    expect(command.input.TransactItems![0].Update!.Key!.pk.S).toMatch(
-      /^linksend#addr#a{64}#\d+$/,
-    );
-    for (const item of command.input.TransactItems!) {
-      expect(item.Update!.UpdateExpression).toContain('ADD #count :one');
-      expect(item.Update!.ConditionExpression).toBe(
-        'attribute_not_exists(#count) OR #count < :limit',
-      );
-    }
+    const command = send.mock.calls.map(([c]) => c).find((c) => c instanceof TransactWriteItemsCommand) as TransactWriteItemsCommand;
+    const items = command.input.TransactItems!;
+    expect(items).toHaveLength(2);
+    // The key names the scope and the hash ONLY — no clock bucket.
+    expect(items[0].Put!.Item!.pk.S).toBe(`linksend#addr#${HASH}`);
+    // An existing list is replaced only if it is still the one that was read…
+    expect(items[0].Put!.ConditionExpression).toBe('#sends = :observed');
+    expect(items[0].Put!.ExpressionAttributeValues![':observed']).toEqual({
+      L: [{ N: String(NOW.getTime() - 10_000) }],
+    });
+    expect(items[0].Put!.Item!.sends.L).toHaveLength(2);
+    // …and a scope with no item yet is created, not overwritten.
+    expect(items[1].Put!.ConditionExpression).toBe('attribute_not_exists(pk)');
+    expect(items[1].Put!.Item!.sends.L).toEqual([{ N: String(NOW.getTime()) }]);
   });
 
-  it('reads one refused counter as a no-mutation refusal for the whole set', async () => {
-    const { store } = makeStore(async () => {
-      throw Object.assign(new Error('nope'), {
-        name: 'TransactionCanceledException',
-        CancellationReasons: [{ Code: 'None' }, { Code: 'ConditionalCheckFailed' }],
-      });
+  it('counts only the sends inside the ROLLING window, and prunes the rest on the write', async () => {
+    const recent = Array.from({ length: 4 }, (_, i) => NOW.getTime() - (i + 1) * 60_000);
+    const old = NOW.getTime() - HOUR * 1_000 - 1;
+    const { store, send } = makeStore(async (command) =>
+      command instanceof GetItemCommand ? stored(old, ...recent) : {},
+    );
+    // Five stored, one of them an hour and a millisecond old: four count, so the fifth send
+    // of the hour is allowed…
+    await expect(
+      store.spendSends([{ scope: 'addr', hash: HASH, limit: 5 }], HOUR, NOW),
+    ).resolves.toBe(true);
+    const written = (send.mock.calls.map(([c]) => c).find((c) => c instanceof TransactWriteItemsCommand) as TransactWriteItemsCommand)
+      .input.TransactItems![0].Put!;
+    // …the condition still names the WHOLE stored list, and the item written back holds only
+    // what still counts plus this send.
+    expect(written.ExpressionAttributeValues![':observed'].L).toHaveLength(5);
+    expect(written.Item!.sends.L!.map((v) => Number(v.N))).toEqual([...recent, NOW.getTime()]);
+
+    // …and five inside the hour refuse, with no write at all.
+    const full = makeStore(async (command) =>
+      command instanceof GetItemCommand ? stored(NOW.getTime() - 3_599_000, ...recent) : {},
+    );
+    await expect(
+      full.store.spendSends([{ scope: 'addr', hash: HASH, limit: 5 }], HOUR, NOW),
+    ).resolves.toBe(false);
+    expect(full.send.mock.calls.some(([c]) => c instanceof TransactWriteItemsCommand)).toBe(false);
+  });
+
+  it('decides again from what NOW stands when a concurrent send changed a list', async () => {
+    let writes = 0;
+    const { store, send } = makeStore(async (command) => {
+      if (command instanceof GetItemCommand) {
+        // The second read sees the send that beat this one to the row.
+        return writes === 0 ? {} : stored(NOW.getTime() - 1);
+      }
+      writes += 1;
+      if (writes === 1) {
+        throw Object.assign(new Error('cancelled'), {
+          name: 'TransactionCanceledException',
+          CancellationReasons: [{ Code: 'ConditionalCheckFailed' }, { Code: 'None' }],
+        });
+      }
+      return {};
     });
     await expect(
       store.spendSends(
@@ -128,9 +180,26 @@ describe('dynamoLinkStore — the send allowance', () => {
           { scope: 'addr', hash: HASH, limit: 5 },
           { scope: 'ip', hash: HASH, limit: 20 },
         ],
-        3_600,
+        HOUR,
         NOW,
       ),
+    ).resolves.toBe(true);
+    const retried = send.mock.calls
+      .map(([c]) => c)
+      .filter((c): c is TransactWriteItemsCommand => c instanceof TransactWriteItemsCommand);
+    expect(retried).toHaveLength(2);
+    // The retry counts the send it lost to: two instants on the row now.
+    expect(retried[1].input.TransactItems![0].Put!.Item!.sends.L).toHaveLength(2);
+
+    // A list ALREADY at its bound after the concurrent send is a refusal, not a retry loop.
+    const beaten = makeStore(async (command) => {
+      if (command instanceof GetItemCommand) {
+        return stored(...Array.from({ length: 5 }, (_, i) => NOW.getTime() - i));
+      }
+      throw new Error('must not write');
+    });
+    await expect(
+      beaten.store.spendSends([{ scope: 'addr', hash: HASH, limit: 5 }], HOUR, NOW),
     ).resolves.toBe(false);
   });
 });
@@ -224,6 +293,13 @@ describe('dynamoLinkStore — binding one address', () => {
     const command = send.mock.calls[0][0] as TransactWriteItemsCommand;
     const items = command.input.TransactItems!;
     expect(items[1].Update!.ConditionExpression).toContain('attribute_not_exists(#email)');
+    // …and refuses while a LIVE adoption claim holds the account (a stale one does not).
+    expect(items[1].Update!.ConditionExpression).toContain(
+      '(attribute_not_exists(#linkTo) OR #linkAt <= :stale)',
+    );
+    expect(items[1].Update!.ExpressionAttributeValues![':stale'].N).toBe(
+      String(Math.floor(NOW.getTime() / 1_000) - 600),
+    );
     expect(items[2].Delete!.ConditionExpression).toContain('#codeHash = :codeHash');
     expect(command.input.ClientRequestToken).toHaveLength(36);
 
@@ -305,6 +381,51 @@ describe('dynamoLinkStore — the indivisible core', () => {
       (item) => item.Delete?.Key?.pk.S === `player#${PLAN.from}` && item.Delete.Key.sk.S === 'account',
     );
     expect(source!.Delete!.ConditionExpression).toContain('attribute_not_exists(#email)');
+    // The source is deleted only under THIS target's claim: the play that moved before this
+    // transaction moved under it.
+    expect(source!.Delete!.ConditionExpression).toContain('#linkTo = :to');
+    expect(source!.Delete!.ExpressionAttributeValues![':to'].S).toBe(PLAN.to);
+  });
+});
+
+// CONTRACT: an ERASING adoption claims the source account for one target BEFORE its play
+// moves, on the account row itself. The same target renews; a different one waits for the
+// claim to go stale; an account that gained an address or vanished cannot be claimed.
+describe('dynamoLinkStore — the adoption claim', () => {
+  const input = { from: 'bbbbbbbbbbbbbbbb', to: 'aaaaaaaaaaaaaaaa', now: NOW.toISOString() };
+
+  it('is ONE conditional update on the account row, passing its own target and a stale claim', async () => {
+    const { store, send } = makeStore(async () => ({}));
+    await expect(store.claimAdoption(input)).resolves.toBe('claimed');
+    const command = send.mock.calls[0][0] as UpdateItemCommand;
+    expect(command).toBeInstanceOf(UpdateItemCommand);
+    expect(command.input.Key).toEqual({ pk: { S: `player#${input.from}` }, sk: { S: 'account' } });
+    expect(command.input.UpdateExpression).toBe('SET #linkTo = :to, #linkAt = :now');
+    expect(command.input.ConditionExpression).toBe(
+      'attribute_exists(pk) AND attribute_not_exists(#email)' +
+        ' AND (attribute_not_exists(#linkTo) OR #linkTo = :to OR #linkAt <= :stale)',
+    );
+    expect(command.input.ExpressionAttributeValues![':stale'].N).toBe(
+      String(Math.floor(NOW.getTime() / 1_000) - 600),
+    );
+  });
+
+  it('classifies a refusal by one consistent read: elsewhere / account changed', async () => {
+    const refusing = (item: Record<string, AttributeValue> | undefined) =>
+      makeStore(async (command) => {
+        if (command instanceof GetItemCommand) {
+          expect(command.input.ConsistentRead).toBe(true);
+          return { Item: item };
+        }
+        throw new ConditionalCheckFailedException({ message: 'nope', $metadata: {} });
+      });
+    await expect(
+      refusing({ linkTo: { S: 'cccccccccccccccc' }, linkAt: { N: '1' } }).store.claimAdoption(input),
+    ).resolves.toBe('claimed_elsewhere');
+    await expect(
+      refusing({ email: { S: 'zoe@example.com' } }).store.claimAdoption(input),
+    ).resolves.toBe('account_changed');
+    await expect(refusing(undefined).store.claimAdoption(input)).resolves.toBe('account_changed');
   });
 });
 

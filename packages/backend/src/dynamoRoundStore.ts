@@ -29,6 +29,11 @@ import {
 // milliseconds and 500 the friends board.
 const BATCH_RETRY_ATTEMPTS = 5;
 
+// How many times a transfer re-reads a source that changed under it before giving up. A
+// player appends about once a second at most; a source that changes more often than this
+// inside one request is not a player typing.
+const TRANSFER_ATTEMPTS = 4;
+
 export interface DynamoRoundStoreOptions {
   // Injected by tests, so asserting the retry SCHEDULE costs no real time.
   wait?: (ms: number) => Promise<void>;
@@ -537,69 +542,83 @@ export function dynamoRoundStore(
     // instant. The item is copied VERBATIM apart from its partition key: this store's own
     // attribute shape is the one thing a move must not reinterpret.
     async transfer(key, from, to) {
-      const source = await readItem(key, from, true);
       const destinationResult = async () => {
         const destination = await readItem(key, to, true);
         return destination && (destination.guesses?.L?.length ?? 0) > 0
           ? { state: itemToState(destination)!, moved: false }
           : null;
       };
-      // Keyed on GUESSES, never on the item's existence: a word round that was merely
-      // STARTED holds none server-side, and #204 lets a recorded run move in over it. When
-      // the source is already gone, the destination read distinguishes a retry after a
-      // committed move from a tuple with no play anywhere; the caller can then resume the
-      // score/history work that follows this transaction.
-      if (!source || (source.guesses?.L?.length ?? 0) === 0) return destinationResult();
-      const moved: Record<string, AttributeValue> = { ...source, ...itemKey(key, to) };
-      try {
-        await client.send(
-          new TransactWriteItemsCommand({
-            TransactItems: [
-              {
-                Put: {
-                  TableName: tableName,
-                  Item: moved,
-                  // "`to` has nothing": no item at all, or one whose log is empty — the
-                  // same test the source side makes, so a started-but-unplayed word round
-                  // is not treated as play.
-                  ConditionExpression:
-                    'attribute_not_exists(pk) OR attribute_not_exists(#g) OR size(#g) = :zero',
-                  ExpressionAttributeNames: { '#g': 'guesses' },
-                  ExpressionAttributeValues: { ':zero': { N: '0' } },
-                },
-              },
-              {
-                Delete: {
-                  TableName: tableName,
-                  Key: itemKey(key, from),
-                  // Still the log this call read: a guess appended between the read and here
-                  // would otherwise be deleted without ever reaching the destination.
-                  ConditionExpression: 'size(#g) = :size',
-                  ExpressionAttributeNames: { '#g': 'guesses' },
-                  ExpressionAttributeValues: {
-                    ':size': { N: String(source.guesses?.L?.length ?? 0) },
+      // The move is conditioned on the EXACT log it read — the list itself and the puzzle
+      // it names, never a length: a guess appended between the read and the write would
+      // otherwise be deleted without ever reaching the destination, and a replacement of
+      // equal length would move a log this call never saw. A source that changed is read
+      // again and moved as it now stands; only a source that keeps changing fails, and it
+      // fails LOUDLY — a link that silently skipped the transfer would then delete the
+      // account the round is still sitting in.
+      for (let pass = 0; pass < TRANSFER_ATTEMPTS; pass += 1) {
+        const source = await readItem(key, from, true);
+        // Keyed on GUESSES, never on the item's existence: a word round that was merely
+        // STARTED holds none server-side, and #204 lets a recorded run move in over it.
+        // When the source is already gone, the destination read distinguishes a retry after
+        // a committed move from a tuple with no play anywhere; the caller can then resume
+        // the score/history work that follows this transaction.
+        const guesses = source?.guesses;
+        if (!source || !guesses || (guesses.L?.length ?? 0) === 0) return destinationResult();
+        const moved: Record<string, AttributeValue> = { ...source, ...itemKey(key, to) };
+        try {
+          await client.send(
+            new TransactWriteItemsCommand({
+              TransactItems: [
+                {
+                  Put: {
+                    TableName: tableName,
+                    Item: moved,
+                    // "`to` has nothing": no item at all, or one whose log is empty — the
+                    // same test the source side makes, so a started-but-unplayed word round
+                    // is not treated as play.
+                    ConditionExpression:
+                      'attribute_not_exists(pk) OR attribute_not_exists(#g) OR size(#g) = :zero',
+                    ExpressionAttributeNames: { '#g': 'guesses' },
+                    ExpressionAttributeValues: { ':zero': { N: '0' } },
                   },
                 },
-              },
-            ],
-          }),
-        );
-      } catch (error) {
-        // A refused CONDITION is the ORDINARY outcome — the destination already holds play,
-        // or the source moved on — not a failure, and nothing was written either way. A
-        // transaction cancelled for any OTHER reason (a throttle, a capacity limit) is a
-        // real failure and must propagate: a link that silently skipped the transfer would
-        // then delete the account the round is still sitting in.
-        if (transferRefused(error)) {
-          const currentSource = await readItem(key, from, true);
-          if (!currentSource || (currentSource.guesses?.L?.length ?? 0) === 0) {
-            return destinationResult();
+                {
+                  Delete: {
+                    TableName: tableName,
+                    Key: itemKey(key, from),
+                    ConditionExpression: '#g = :guesses AND #p = :puzzle',
+                    ExpressionAttributeNames: { '#g': 'guesses', '#p': 'puzzle' },
+                    ExpressionAttributeValues: {
+                      ':guesses': guesses,
+                      ':puzzle': { S: puzzleOf(source) ?? '' },
+                    },
+                  },
+                },
+              ],
+            }),
+          );
+        } catch (error) {
+          // A refused CONDITION is an ORDINARY outcome, and WHICH clause refused says what
+          // it means; a transaction cancelled for any OTHER reason (a throttle, a capacity
+          // limit) is a real failure and must propagate. Nothing was written either way.
+          const refused = transferRefusal(error);
+          if (!refused) throw error;
+          if (refused.destination) {
+            // The destination already holds play. If the source emptied meanwhile, an
+            // earlier attempt moved it; otherwise two real logs stand for one day, which
+            // has no honest merge.
+            const currentSource = await readItem(key, from, true);
+            if (!currentSource || (currentSource.guesses?.L?.length ?? 0) === 0) {
+              return destinationResult();
+            }
+            return null;
           }
-          return null;
+          // Only the source moved on. Read it again and move what stands now.
+          continue;
         }
-        throw error;
+        return { state: itemToState(source)!, moved: true };
       }
-      return { state: itemToState(source)!, moved: true };
+      throw new Error(`Round ${roundSortKey(key)} of ${from} kept changing while being moved.`);
     },
   };
 }
@@ -650,18 +669,25 @@ function runnerOf(item: Item): RoundRunner | undefined {
 
 // A transaction refused by its own CONDITIONS, told apart from one cancelled by anything
 // else. DynamoDB reports both as `TransactionCanceledException`; only the per-item reason
-// codes say which, so they are read rather than assumed.
-function transferRefused(error: unknown): boolean {
-  if (error instanceof ConditionalCheckFailedException) return true;
-  if (typeof error !== 'object' || error === null) return false;
+// codes say which, so they are read rather than assumed — and they also say WHICH item
+// refused, which the transfer needs: the destination's refusal and the source's mean two
+// different things. Null for anything that is not a plain refusal.
+function transferRefusal(error: unknown): { destination: boolean } | null {
+  if (typeof error !== 'object' || error === null) return null;
   const named = error as { name?: unknown; CancellationReasons?: { Code?: string }[] };
-  if (named.name === 'ConditionalCheckFailedException') return true;
-  if (named.name !== 'TransactionCanceledException') return false;
+  if (
+    error instanceof ConditionalCheckFailedException ||
+    named.name === 'ConditionalCheckFailedException'
+  ) {
+    return { destination: true };
+  }
+  if (named.name !== 'TransactionCanceledException') return null;
   const reasons = named.CancellationReasons ?? [];
-  return (
+  const plain =
     reasons.length > 0 &&
-    reasons.every((reason) => reason.Code === 'ConditionalCheckFailed' || reason.Code === 'None')
-  );
+    reasons.every((reason) => reason.Code === 'ConditionalCheckFailed' || reason.Code === 'None');
+  if (!plain) return null;
+  return { destination: reasons[0]?.Code === 'ConditionalCheckFailed' };
 }
 
 function itemToState(item: Item): RoundState | null {

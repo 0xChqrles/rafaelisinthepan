@@ -68,9 +68,12 @@ export function memoryFriendStore(
       const adopting = own(to);
       for (const move of moves) {
         const theirs = own(move.friendId);
-        leaving.delete(move.friendId);
+        // A KEPT move whose `from`-facing row is already gone was unlinked (or moved) since
+        // it was planned; rewriting it onto `to` would resurrect a friendship somebody
+        // ended — the Dynamo store's conditional delete. A drop just removes what is left.
+        const stands = leaving.delete(move.friendId);
         theirs.delete(from);
-        if (move.keep) {
+        if (move.keep && stands) {
           const held = adopting.get(move.friendId);
           const at = held !== undefined && held < move.createdAt ? held : move.createdAt;
           adopting.set(move.friendId, at);

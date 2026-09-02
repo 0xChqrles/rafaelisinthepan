@@ -9,9 +9,9 @@
 //   `email#<emailHash>` / `email`      — the BINDING: which account this address reaches.
 //                                        Create-only, so two devices racing one address
 //                                        converge on the account that won.
-//   `linksend#<scope>#<hash>#<window>` / `send`
-//                                      — a send allowance with its own TTL (#169's counter
-//                                        shape): one per address and one per IP.
+//   `linksend#<scope>#<hash>` / `send`  — a send allowance: the instants of the sends still
+//                                        inside the ROLLING window, with its own TTL. One per
+//                                        address and one per IP.
 //   `merge#<toAccountId>` / `from#<fromAccountId>`
 //                                      — the durable FRIEND-MERGE job. Up to 200 mutual
 //                                        edges cannot fit one 100-item transaction, so the
@@ -29,6 +29,7 @@
 // second-device problem tractable, because there is nothing to detect.
 
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { LINK_CODE_TTL_SECONDS } from '@whippin/shared';
 
 // The KEY spelling of an address. SHA-256 of the CANONICAL form (`normalizeEmail`), so one
 // address has exactly one key and a table dump enumerates no inboxes. It is deliberately
@@ -105,6 +106,41 @@ export type LinkAdoptOutcome =
   | 'challenge_changed'
   | 'device_changed';
 
+// THE ADOPTION CLAIM. An erasing adoption is not one write: the active day's play moves
+// tuple by tuple BEFORE the identity transaction (see `accountLink.ts` for why that order
+// is the recoverable one), and nothing in those moves says which adoption they belong to.
+// Two devices on one unlinked account, each linking a DIFFERENT address at the same moment,
+// would each move the tuples their own transfers reached first — splitting one day's play
+// across two targets before only one of the two final transactions could win. And a bind on
+// the source account, landing between the moves and the commit, would leave that account
+// alive and reachable with its play already gone.
+//
+// So the source account is CLAIMED for one target first, on its own row, and every later
+// step verifies the claim: the final delete conditions on it, and a bind refuses while one
+// stands. A claim for the SAME target always passes — that is the player's own retry after
+// a lost answer or a resent code — and a claim held by a different target refuses until it
+// goes STALE (`LINK_CLAIM_SECONDS`), so an abandoned link cannot lock the account forever.
+// The moves themselves do not re-check it: a transfer runs inside the request that took the
+// claim, and the Lambda's whole lifetime is two orders of magnitude shorter than the window.
+//   claimed           — this target holds the claim (fresh, renewed, or taken over stale);
+//   claimed_elsewhere — another target's claim stands and is not stale;
+//   account_changed   — the account is gone or carries an address (a bind won).
+export type LinkClaimOutcome = 'claimed' | 'claimed_elsewhere' | 'account_changed';
+
+// How long a claim binds the source account to one target with no commit. It only has to
+// outlive the request that took it (the Lambda's timeout is seconds), and a code that could
+// resume it lives this long anyway.
+export const LINK_CLAIM_SECONDS = LINK_CODE_TTL_SECONDS;
+
+// The claim's two attributes on the ACCOUNT row: the target, and when it was taken (epoch
+// seconds — a Number, because a condition compares it arithmetically for staleness).
+export const CLAIM_TO_ATTRIBUTE = 'linkTo';
+export const CLAIM_AT_ATTRIBUTE = 'linkAt';
+
+export function claimStaleBefore(now: string): number {
+  return Math.floor(Date.parse(now) / 1_000) - LINK_CLAIM_SECONDS;
+}
+
 // One tuple of play that MOVES from the account being left to the one being adopted (#204's
 // active-day transfer). It is the same triple for the round row and the score row, because
 // both are addressed by (date, lang, mode) per player.
@@ -142,8 +178,9 @@ export interface AccountAdoption {
 }
 
 export interface LinkStore {
-  // Spend ALL send allowances as one decision. Returns false when any scope is over its
-  // bound and writes NONE of them, so an IP refusal cannot burn the address's own budget.
+  // Spend ALL send allowances as one decision, each over a ROLLING window of
+  // `windowSeconds`. Returns false when any scope is at its bound and writes NONE of them,
+  // so an IP refusal cannot burn the address's own budget.
   spendSends(
     allowances: readonly LinkSendAllowance[],
     windowSeconds: number,
@@ -172,9 +209,14 @@ export interface LinkStore {
     accountId: string;
     now: string;
   }): Promise<LinkBindOutcome>;
+  // CLAIM the source account for one target before its play moves — see `LinkClaimOutcome`.
+  // Only an account with NO address can be claimed: the claim exists for the erasing
+  // adoption, and an account that carries an address is never erased.
+  claimAdoption(input: { from: string; to: string; now: string }): Promise<LinkClaimOutcome>;
   // The identity-bearing core, indivisible: consume the challenge, move the one device item,
   // delete the account being left (its account row AND its profile row, so no
   // identity-bearing read can dress a deleted player), and persist the friend-merge job.
+  // An ERASING adoption deletes the source only while it holds the claim for `to`.
   //
   // It is ONE transaction because the half-states are not equally harmless: a device left on
   // a deleted account is a player signed out mid-link with everything gone, which is the one
@@ -196,8 +238,11 @@ export interface LinkStore {
 // this pair says honestly that it exists for the in-memory implementation.
 export interface LinkDeviceWrites {
   // The process-local equivalent of the production account-email condition: bind only
-  // while the account exists and is still unlinked (or already carries this exact value).
+  // while the account exists, is still unlinked (or already carries this exact value), and
+  // is not claimed by a live adoption.
   bindAccountEmail(accountId: string, email: string, now: string): boolean;
+  // The process-local equivalent of the production claim condition (`LinkClaimOutcome`).
+  claimAdoption(input: { from: string; to: string; now: string }): LinkClaimOutcome;
   // The process-local equivalent of the production adoption conditions. It validates the
   // device, both accounts and the erase/survive email state, then applies the device move
   // and optional account deletion synchronously inside the one owning map.
@@ -230,19 +275,23 @@ export function bindingKey(hash: string): string {
 }
 export const BINDING_SORT_KEY = 'email';
 
-// A send allowance. `scope` names WHICH bound is being spent ("addr", "addrip"), so the two
-// counters can never collide on one item — and the WINDOW is part of the key, so each one is
-// a fresh item that starts at zero and expires on its own TTL. A single item with a stored
-// window instant would have to be RESET when the window rolls, which is a read-then-write
-// exactly where the count must not be raced; naming the window makes the whole thing one
-// conditional `ADD`.
-export function sendWindow(now: Date, windowSeconds: number): number {
-  return Math.floor(now.getTime() / 1000 / windowSeconds);
-}
-export function sendKey(scope: string, hash: string, window: number): string {
-  return `linksend#${scope}#${hash}#${window}`;
+// A send allowance. `scope` names WHICH bound is being spent ("addr", "ip"), so the two
+// counters can never collide on one item. The item holds the INSTANTS of the sends still
+// inside the rolling window rather than a count: a count per fixed clock bucket admits two
+// full allowances back to back across a bucket edge, which is not the bound the contract
+// states. The list is bounded by the allowance itself (it is pruned on every write), and
+// the write is optimistic — conditioned on the exact list it read — so two concurrent sends
+// cannot both count against the same stale view.
+export function sendKey(scope: string, hash: string): string {
+  return `linksend#${scope}#${hash}`;
 }
 export const SEND_SORT_KEY = 'send';
+
+// The sends that still count: those inside the window ending at `now`.
+export function recentSends(sends: readonly number[], windowSeconds: number, now: Date): number[] {
+  const since = now.getTime() - windowSeconds * 1_000;
+  return sends.filter((at) => at > since);
+}
 
 // The friend-merge queue, partitioned by the SURVIVING account: the drain is "what still has
 // to be merged into me", which is the question the adopting device's next call asks.

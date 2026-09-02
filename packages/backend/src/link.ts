@@ -343,12 +343,23 @@ export async function handleLink(
           responseHeaders,
         );
       }
+      if (current.account.email === undefined) {
+        // No address won: the account is CLAIMED by an adoption in flight from another of
+        // its devices (`LinkClaimOutcome`), whose play may already be moving out. That is
+        // not "saved under another address"; it is an account changing under this call.
+        return errorResponse(
+          409,
+          'link_changed',
+          'The account changed while it was being linked. Try the code again.',
+          responseHeaders,
+        );
+      }
       return errorResponse(
         409,
         'account_linked',
         'This account is already saved under another address.',
         responseHeaders,
-        current.account.email ? { email: current.account.email } : undefined,
+        { email: current.account.email },
       );
     }
     // `taken`: another device bound this address between the lookup and the write. That is
@@ -425,7 +436,31 @@ export async function handleLink(
     );
   }
 
-  // The active day's play moves FIRST, and only when the account it is in is about to be
+  // An ERASING adoption first CLAIMS the account being left for this target
+  // (`LinkClaimOutcome`): the moves below are several writes with nothing tying them to one
+  // adoption, and two devices on this account linking two different addresses at once would
+  // otherwise split the day's play between them. A claim this target already holds is the
+  // player's own retry and passes; another target's live claim refuses BEFORE anything
+  // moves.
+  if (erase) {
+    const claim = await deps.links.claimAdoption({
+      from: leaving,
+      to: target,
+      now: instant.toISOString(),
+    });
+    if (claim !== 'claimed') {
+      return errorResponse(
+        409,
+        'link_changed',
+        claim === 'claimed_elsewhere'
+          ? 'This account is already being linked to another address. Try again in a few minutes.'
+          : 'The account changed while it was being linked. Try the code again.',
+        responseHeaders,
+      );
+    }
+  }
+
+  // The active day's play moves next, and only when the account it is in is about to be
   // deleted (#204: when it survives, it keeps its own play — the right answer for an account
   // the player can sign back into). See `accountLink.ts` for why this order is the
   // recoverable one.

@@ -189,6 +189,60 @@ describe('dynamoFriendStore.transfer (#204)', () => {
     }
   });
 
+  it('conditions a KEPT move on the planned edge still standing, and re-plans without one that is gone', async () => {
+    const OTHER = 'pq7dm2vh3xk9wbrt';
+    let writes = 0;
+    const send = vi.fn(async (command: unknown) => {
+      writes += 1;
+      const items = (command as TransactWriteItemsCommand).input.TransactItems!;
+      if (writes === 1) {
+        // THEM unlinked `from` between the plan and the write: their `from`-facing row is
+        // gone, so its conditional delete refuses the whole batch.
+        throw Object.assign(new Error('cancelled'), {
+          name: 'TransactionCanceledException',
+          CancellationReasons: items.map((_, index) => ({
+            Code: index === 0 ? 'ConditionalCheckFailed' : 'None',
+          })),
+        });
+      }
+      return {};
+    });
+    const client = { send } as unknown as DynamoDBClient;
+    await dynamoFriendStore(client, 'scores').transfer(ME, TO, [
+      { friendId: THEM, keep: true, createdAt: NOW },
+      { friendId: OTHER, keep: false, createdAt: NOW },
+    ]);
+
+    const first = (send.mock.calls[0][0] as TransactWriteItemsCommand).input.TransactItems!;
+    // A kept move's `from`-side delete names its condition; a drop's deletes name none.
+    expect(first[0].Delete!.ConditionExpression).toBe('attribute_exists(pk)');
+    expect(first[1].Delete!.ConditionExpression).toBeUndefined();
+    expect(first[4].Delete!.ConditionExpression).toBeUndefined();
+    // The retry writes the batch WITHOUT the friendship somebody ended — no `to`↔THEM rows,
+    // which would have resurrected it — and still drops OTHER.
+    expect(send).toHaveBeenCalledTimes(2);
+    const second = (send.mock.calls[1][0] as TransactWriteItemsCommand).input.TransactItems!;
+    expect(second).toHaveLength(2);
+    expect(second.map((item) => [item.Delete!.Key!.pk.S, item.Delete!.Key!.sk.S])).toEqual([
+      [`friends#${ME}`, OTHER],
+      [`friends#${OTHER}`, ME],
+    ]);
+  });
+
+  it('propagates a transaction cancelled for any reason but a condition', async () => {
+    const send = vi.fn(async () => {
+      throw Object.assign(new Error('throttled'), {
+        name: 'TransactionCanceledException',
+        CancellationReasons: [{ Code: 'ThrottlingError' }, { Code: 'None' }],
+      });
+    });
+    await expect(
+      dynamoFriendStore({ send } as unknown as DynamoDBClient, 'scores').transfer(ME, TO, [
+        { friendId: THEM, keep: false, createdAt: NOW },
+      ]),
+    ).rejects.toThrow(/throttled/);
+  });
+
   it('DROPS a friendship by removing its two facing rows and writing nothing else', async () => {
     const { send, client } = fakeClient();
     await dynamoFriendStore(client, 'scores').transfer(ME, TO, [

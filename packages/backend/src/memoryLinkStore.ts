@@ -1,5 +1,5 @@
 import { LINK_CODE_MAX_ATTEMPTS } from '@whippin/shared';
-import { sameDigest, sendKey, sendWindow } from './linkStore';
+import { recentSends, sameDigest, sendKey } from './linkStore';
 import type { LinkDeviceWrites, LinkProfileWrites } from './linkStore';
 import type {
   AccountAdoption,
@@ -23,7 +23,8 @@ export function memoryLinkStore(deps: {
 }): LinkStore {
   const challenges = new Map<string, LinkChallenge>();
   const bindings = new Map<string, EmailBinding>();
-  const sends = new Map<string, number>();
+  // Per scope, the instants of its sends — pruned to the rolling window on every write.
+  const sends = new Map<string, number[]>();
   // to -> the accounts whose friends still have to be merged into it.
   const merges = new Map<string, Set<string>>();
   // The production bind/adopt operations are DynamoDB transactions. Serialize their
@@ -51,14 +52,15 @@ export function memoryLinkStore(deps: {
 
   return {
     async spendSends(allowances, windowSeconds, now) {
-      // Decide every counter before changing any of them, mirroring DynamoDB's transaction:
+      if (allowances.some(({ limit }) => limit < 1)) return false;
+      // Decide every scope before changing any of them, mirroring DynamoDB's transaction:
       // an IP refusal must not spend the address budget that was checked before it.
       const next = allowances.map(({ scope, hash, limit }) => {
-        const key = sendKey(scope, hash, sendWindow(now, windowSeconds));
-        return { key, count: (sends.get(key) ?? 0) + 1, limit };
+        const key = sendKey(scope, hash);
+        return { key, recent: recentSends(sends.get(key) ?? [], windowSeconds, now), limit };
       });
-      if (next.some(({ count, limit }) => count > limit)) return false;
-      for (const { key, count } of next) sends.set(key, count);
+      if (next.some(({ recent, limit }) => recent.length >= limit)) return false;
+      for (const { key, recent } of next) sends.set(key, [...recent, now.getTime()]);
       return true;
     },
 
@@ -109,6 +111,10 @@ export function memoryLinkStore(deps: {
         challenges.delete(input.emailHash);
         return 'bound';
       });
+    },
+
+    async claimAdoption(input) {
+      return commit(() => deps.devices.claimAdoption(input));
     },
 
     async adopt(input: AccountAdoption) {

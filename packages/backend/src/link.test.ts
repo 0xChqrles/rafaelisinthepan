@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { activeDate, dayNumber, LINK_SENDS_PER_ADDRESS } from '@whippin/shared';
 import { FRIENDS_MAX } from './friendStore';
+import { emailHash, LINK_CLAIM_SECONDS } from './linkStore';
 import { createHandler } from './handler';
 import { memoryDeviceStore } from './memoryDeviceStore';
 import { memoryFriendStore } from './memoryFriendStore';
@@ -31,18 +32,20 @@ const NOW = new Date('2026-08-26T12:00:00.000Z');
 const DATE = activeDate(NOW);
 const HASH = 'a'.repeat(64);
 
-function harness() {
+// `clock` is for the tests that move time: the rolling send window and the claim's
+// staleness are both facts about WHEN, and a fixed instant cannot exercise them.
+function harness(clock: { now: Date } = { now: NOW }) {
   const devices = memoryDeviceStore();
   const profiles = memoryProfileStore((id) => devices.accountExists(id));
   const friends = memoryFriendStore();
   const rounds = memoryRoundStore();
-  const scores = memoryScoreStore(() => NOW);
+  const scores = memoryScoreStore(() => clock.now);
   const history = memoryHistoryStore();
   const links = memoryLinkStore({ devices, profiles });
   const sent: MailMessage[] = [];
   const handler = createHandler({
     store: emptyStore,
-    now: () => NOW,
+    now: () => clock.now,
     scores: { scoreStore: scores },
     profiles,
     friends,
@@ -116,6 +119,27 @@ describe('email account linking (#204) — the code', () => {
         ),
       ).resolves.toBe(true);
     }
+  });
+
+  it('bounds the sends over a ROLLING hour — an old send frees its slot, a bucket edge frees nothing', async () => {
+    const clock = { now: new Date('2026-08-26T12:50:00.000Z') };
+    const h = harness(clock);
+    const me = await seedDevice(h.devices);
+    const ask = () =>
+      h.handler(post({ token: me.token, email: 'zoe@example.com', turnstileToken: 'ok' }));
+    // Five sends, one a minute, up to the top of the hour.
+    for (let count = 0; count < LINK_SENDS_PER_ADDRESS; count += 1) {
+      clock.now = new Date(`2026-08-26T12:5${count}:00.000Z`);
+      expect((await ask()).statusCode).toBe(200);
+    }
+    // Crossing the top of the hour changes nothing: the window is the last hour, not the
+    // wall clock's.
+    clock.now = new Date('2026-08-26T13:10:00.000Z');
+    expect((await ask()).statusCode).toBe(429);
+    // An hour after the FIRST send, exactly one slot is back.
+    clock.now = new Date('2026-08-26T13:50:00.001Z');
+    expect((await ask()).statusCode).toBe(200);
+    expect((await ask()).statusCode).toBe(429);
   });
 
   it('sends a six-digit code and says nothing about whether the address is known', async () => {
@@ -402,6 +426,120 @@ describe('email account linking (#204) — the three branches', () => {
       outcome: 'adopted',
       accountId: saved.accountId,
     });
+  });
+});
+
+describe('email account linking (#204) — the adoption claim', () => {
+  // Two saved accounts, and one unlinked account with TWO devices and today's play on it.
+  async function twoTargets(h: ReturnType<typeof harness>) {
+    const targets = [];
+    for (const email of ['one@example.com', 'two@example.com']) {
+      const saved = await seedDevice(h.devices);
+      await h.handler(
+        post({ token: saved.token, email, code: await askForCode(h, saved.token, email) }),
+      );
+      targets.push({ ...saved, email });
+    }
+    const first = await seedDevice(h.devices);
+    const second = await seedDevice(h.devices, { accountId: first.accountId });
+    const key = { date: DATE, lang: 'fr', mode: 'sentence' as const };
+    await h.rounds.append({
+      ...key,
+      publicId: first.accountId,
+      guesses: ['chat', 'chien'],
+      puzzle: 'rev1',
+      progress: 100,
+      solved: true,
+      now: NOW,
+    });
+    return { targets, first, second, key };
+  }
+
+  it('lets exactly ONE of two concurrent adoptions of one account move its play — the other is refused before anything moves', async () => {
+    const h = harness();
+    const { targets, first, second, key } = await twoTargets(h);
+    const codes = [
+      await askForCode(h, first.token, targets[0].email),
+      await askForCode(h, second.token, targets[1].email),
+    ];
+
+    const answers = await Promise.all([
+      h.handler(post({ token: first.token, email: targets[0].email, code: codes[0] })),
+      h.handler(post({ token: second.token, email: targets[1].email, code: codes[1] })),
+    ]);
+    const statuses = answers.map(({ statusCode }) => statusCode);
+    expect(statuses.sort()).toEqual([200, 409]);
+    const won = answers.findIndex(({ statusCode }) => statusCode === 200);
+    expect(JSON.parse(answers[1 - won].body).error).toBe('link_changed');
+
+    // The day's play is in the winner's account, whole; the loser's target got nothing.
+    const winner = targets[won];
+    const loser = targets[1 - won];
+    await expect(h.rounds.get(key, winner.accountId, 'rev1')).resolves.toMatchObject({
+      guesses: ['chat', 'chien'],
+    });
+    await expect(h.rounds.get(key, loser.accountId, 'rev1')).resolves.toBeNull();
+    await expect(h.devices.accountExists(first.accountId)).resolves.toBe(false);
+  });
+
+  it('refuses a bind on an account another of its devices is adopting away, as a change — not as "saved elsewhere"', async () => {
+    const h = harness();
+    const { targets, first, second } = await twoTargets(h);
+    const adoptCode = await askForCode(h, first.token, targets[0].email);
+    const bindCode = await askForCode(h, second.token, 'mine@example.com');
+    // The claim is taken; the adoption has not committed (it is answered 200 below, but the
+    // claim alone is what the bind meets).
+    await expect(
+      h.links.claimAdoption({
+        from: first.accountId,
+        to: targets[0].accountId,
+        now: NOW.toISOString(),
+      }),
+    ).resolves.toBe('claimed');
+
+    const refused = await h.handler(
+      post({ token: second.token, email: 'mine@example.com', code: bindCode }),
+    );
+    expect(refused.statusCode).toBe(409);
+    expect(JSON.parse(refused.body).error).toBe('link_changed');
+    await expect(h.links.binding(emailHash('mine@example.com'))).resolves.toBeNull();
+
+    // The adoption the claim belongs to still goes through — the same target renews it.
+    const adopted = await h.handler(
+      post({ token: first.token, email: targets[0].email, code: adoptCode }),
+    );
+    expect(adopted.statusCode).toBe(200);
+    expect(JSON.parse(adopted.body).outcome).toBe('adopted');
+  });
+
+  it('lets a DIFFERENT target take over only once the standing claim is stale', async () => {
+    const clock = { now: NOW };
+    const h = harness(clock);
+    const { targets, first } = await twoTargets(h);
+    await expect(
+      h.links.claimAdoption({
+        from: first.accountId,
+        to: targets[1].accountId,
+        now: NOW.toISOString(),
+      }),
+    ).resolves.toBe('claimed');
+    // Nobody finished that adoption. While it stands, this device's link to the OTHER
+    // address is refused…
+    const code = await askForCode(h, first.token, targets[0].email);
+    const early = await h.handler(
+      post({ token: first.token, email: targets[0].email, code }),
+    );
+    expect(early.statusCode).toBe(409);
+    expect(JSON.parse(early.body).error).toBe('link_changed');
+    // …and once the claim is stale it is taken over, so the account is not locked forever
+    // by a link somebody abandoned. (A fresh code: the claim lives exactly as long as one.)
+    clock.now = new Date(NOW.getTime() + LINK_CLAIM_SECONDS * 1_000 + 1_000);
+    const fresh = await askForCode(h, first.token, targets[0].email);
+    const late = await h.handler(
+      post({ token: first.token, email: targets[0].email, code: fresh }),
+    );
+    expect(late.statusCode).toBe(200);
+    expect(JSON.parse(late.body).outcome).toBe('adopted');
   });
 });
 

@@ -539,19 +539,39 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   email + ":" + code)` — a bare hash of a six-digit space is a precomputable table — and the
   attempt is counted by a write whose CONDITION is "the code is WRONG" (`#codeHash <>
   :codeHash`), so a correct code spends none, which matters because one successful link
-  legitimately verifies twice. The send allowances put the WINDOW in the KEY
-  (`linksend#<scope>#<hash>#<window>`), so each window is a fresh item that starts at zero
-  and expires on its own TTL — a stored window instant would have to be RESET where the count
-  must not be raced. `accountLink.ts` owns the ORDER: the active-day moves first (each atomic
-  and idempotent), then `LinkStore.adopt` as ONE transaction, then the merge drain — the
-  reasoning is in that file's header and in the root `AGENTS.md`. **`dynamoLinkStore` is the
+  legitimately verifies twice. The send allowances are ROLLING windows (the root contract's
+  "per rolling hour"; a fixed clock bucket admits two full allowances back to back across
+  its edge — PR-227 review, 2026-09-02): one item per scope (`linksend#<scope>#<hash>`)
+  holds the INSTANTS of the sends still inside the window, and `spendSends` reads every
+  scope, prunes, and writes them all back in ONE transaction whose every Put is conditioned
+  on the exact list it read — a concurrent send refuses the set and it is decided again
+  from what now stands, so no send ever counts against a stale view. `accountLink.ts` owns
+  the ORDER: the active-day moves first (each atomic and idempotent), then `LinkStore.adopt`
+  as ONE transaction, then the merge drain — the reasoning is in that file's header and in
+  the root `AGENTS.md`. **An ERASING adoption takes a CLAIM before the moves** (same
+  review): `LinkStore.claimAdoption` stamps the target on the source ACCOUNT row
+  (`linkTo`/`linkAt`) under one condition — unlinked, and unclaimed or claimed by this same
+  target or claimed STALE (`LINK_CLAIM_SECONDS`, the code's own TTL) — so two devices on one
+  account linking two addresses at once cannot split the day's play between them; the
+  adopt's source delete conditions on `#linkTo = :to`, a bind refuses while a live claim
+  stands (the route answers 409 `link_changed`, not `account_linked`), and the moves
+  themselves do not re-check it because they run inside the request that took it, whose
+  whole lifetime is seconds against a ten-minute window. **`dynamoLinkStore` is the
   ONE file that writes items across several stores' key spaces**, and every key it writes
   comes from the OWNING module's own formatter (`deviceKey`, `accountKey`, `profileKey`),
   never a literal. `RoundStore.transfer` / `ScoreStore.transfer` / `FriendStore.entries` +
   `transfer` are new CONTRACT methods (both implementations); a Dynamo transfer copies the
   source ITEM verbatim apart from its partition key, so a move never reinterprets another
   store's attribute shape, and a `TransactionCanceledException` is classified by its per-item
-  reason codes rather than assumed to be a refusal. `ProfileStore.get` widened to a
+  reason codes rather than assumed to be a refusal — and by WHICH item: the round transfer's
+  source delete is conditioned on the EXACT log it read (`#g = :guesses AND #p = :puzzle`,
+  never a length), a refusal there re-reads and moves what now stands (bounded, then a loud
+  failure — a skipped move would let the link delete the account the round still sits in),
+  while a refusal on the destination is the ordinary "two logs, no honest merge". The friend
+  merge's KEPT moves condition the `from`-facing delete on the edge still standing, and a
+  refused batch is re-written without the moves whose edge somebody ended meanwhile, so an
+  unlink between the plan and the write is never resurrected onto the adopting account.
+  `ProfileStore.get` widened to a
   `ProfileLookup` (`{live, profile}`) read as ONE BatchGetItem of the profile row and the
   ACCOUNT row beside it — same partition, same cost — which is what lets `/profile`, `/board`
   and the `/i/` preview tell "never customized" from "gone". `DeviceStore.accountExists` is

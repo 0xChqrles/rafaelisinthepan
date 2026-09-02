@@ -21,6 +21,12 @@
 // and the player's retry (they still hold the device, and their code is still unspent) moves
 // nothing, commits, and lands right. Commit-then-moves leaves the round in an account that
 // has just been DELETED, with nothing left to retry from.
+//
+// And step 1 runs under a CLAIM the route takes first (`LinkStore.claimAdoption`): the moves
+// are several writes with nothing tying them to one adoption, so without it two devices on
+// the same account linking two different addresses at once could each move the tuples their
+// own transfers reached first. The claim names the target on the source account's own row;
+// step 2's delete conditions on it, and a bind on the source refuses while it stands.
 
 import { bestStreak, dayNumber, currentStreak, VOCAB_BUILDS } from '@whippin/shared';
 import { FRIENDS_MAX, type FriendStore, type FriendTransfer } from './friendStore';

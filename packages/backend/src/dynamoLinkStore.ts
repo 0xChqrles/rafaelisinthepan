@@ -10,7 +10,12 @@ import {
   type DynamoDBClient,
   type TransactWriteItem,
 } from '@aws-sdk/client-dynamodb';
-import { DEVICE_INDEX_PARTITION_KEY, LINK_CODE_MAX_ATTEMPTS } from '@whippin/shared';
+import {
+  DEVICE_INDEX_PARTITION_KEY,
+  LINK_CODE_MAX_ATTEMPTS,
+  LINK_SENDS_PER_ADDRESS,
+  LINK_SENDS_PER_IP,
+} from '@whippin/shared';
 import {
   ACCOUNT_SORT_KEY,
   DEVICE_SORT_KEY,
@@ -21,17 +26,21 @@ import {
 import {
   BINDING_SORT_KEY,
   CHALLENGE_SORT_KEY,
+  CLAIM_AT_ATTRIBUTE,
+  CLAIM_TO_ATTRIBUTE,
   MERGE_SORT_PREFIX,
   SEND_SORT_KEY,
   bindingKey,
   challengeKey,
+  claimStaleBefore,
   mergeKey,
   mergeSortKey,
+  recentSends,
   sendKey,
-  sendWindow,
   sameDigest,
   type AccountAdoption,
   type EmailBinding,
+  type LinkClaimOutcome,
   type LinkStore,
   type LinkVerifyResult,
 } from './linkStore';
@@ -77,6 +86,11 @@ function requestToken(kind: string, ...parts: string[]): string {
   return createHash('sha256').update([kind, ...parts].join('\0')).digest('hex').slice(0, 36);
 }
 
+// How many times an optimistic send write is retried against a list that keeps changing
+// under it. The allowances are small (the largest is LINK_SENDS_PER_IP), so a list that
+// changes more often than this inside one request is churn, not contention.
+const SEND_WRITE_ATTEMPTS = Math.max(LINK_SENDS_PER_ADDRESS, LINK_SENDS_PER_IP);
+
 export function dynamoLinkStore(client: DynamoDBClient, tableName: string): LinkStore {
   const challengeItem = async (hash: string): Promise<Record<string, AttributeValue> | undefined> => {
     const response = await client.send(
@@ -95,41 +109,65 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
     async spendSends(allowances, windowSeconds, now) {
       if (allowances.length === 0) return true;
       if (allowances.some(({ limit }) => limit < 1)) return false;
-      const window = sendWindow(now, windowSeconds);
-      try {
-        await client.send(
-          new TransactWriteItemsCommand({
-            TransactItems: allowances.map(({ scope, hash, limit }) => ({
-              Update: {
-                TableName: tableName,
-                Key: {
-                  pk: { S: sendKey(scope, hash, window) },
-                  sk: { S: SEND_SORT_KEY },
-                },
-                // ONE conditional increment per scope, committed together. The window is
-                // in each KEY, so no counter has to be reset.
-                UpdateExpression: 'ADD #count :one SET #expiresAt = :expiresAt',
-                ConditionExpression: 'attribute_not_exists(#count) OR #count < :limit',
-                ExpressionAttributeNames: { '#count': 'count', '#expiresAt': 'expiresAt' },
-                ExpressionAttributeValues: {
-                  ':one': { N: '1' },
-                  ':limit': { N: String(limit) },
-                  // Two windows of TTL slack: deletion may lag, while the next window is a
-                  // different key and therefore unaffected.
-                  ':expiresAt': {
-                    N: String(Math.floor(now.getTime() / 1000) + windowSeconds * 2),
-                  },
-                },
-              },
-            })),
+      const keys = allowances.map(({ scope, hash }) => ({
+        pk: { S: sendKey(scope, hash) },
+        sk: { S: SEND_SORT_KEY },
+      }));
+      const expiresAt = { N: String(Math.floor(now.getTime() / 1000) + windowSeconds) };
+      // A ROLLING window cannot be one conditional increment: what counts is how many sends
+      // fall inside the last `windowSeconds`, which no condition can compute. So each scope
+      // is read, pruned and written back as ONE optimistic transaction — every Put is
+      // conditioned on the exact list its read observed, so a concurrent send on either
+      // scope refuses the whole set and it is decided again from what now stands.
+      for (let attempt = 0; attempt < SEND_WRITE_ATTEMPTS; attempt += 1) {
+        const items = await Promise.all(
+          keys.map(async (key) => {
+            const response = await client.send(
+              new GetItemCommand({ TableName: tableName, Key: key, ConsistentRead: true }),
+            );
+            return response.Item;
           }),
         );
-        return true;
-      } catch (error) {
-        const reasons = cancellationReasons(error);
-        if (reasons && conditionalCancellation(reasons)) return false;
-        throw error;
+        const observed = items.map((item) => item?.sends?.L);
+        const recent = observed.map((sends) =>
+          recentSends(
+            (sends ?? []).map((at) => Number(at.N ?? '0')),
+            windowSeconds,
+            now,
+          ),
+        );
+        if (recent.some((sends, index) => sends.length >= allowances[index].limit)) return false;
+        try {
+          await client.send(
+            new TransactWriteItemsCommand({
+              TransactItems: keys.map((key, index) => ({
+                Put: {
+                  TableName: tableName,
+                  Item: {
+                    ...key,
+                    sends: { L: [...recent[index], now.getTime()].map((at) => ({ N: String(at) })) },
+                    expiresAt,
+                  },
+                  ...(observed[index] === undefined
+                    ? { ConditionExpression: 'attribute_not_exists(pk)' }
+                    : {
+                        ConditionExpression: '#sends = :observed',
+                        ExpressionAttributeNames: { '#sends': 'sends' },
+                        ExpressionAttributeValues: { ':observed': { L: observed[index] } },
+                      }),
+                },
+              })),
+            }),
+          );
+          return true;
+        } catch (error) {
+          const reasons = cancellationReasons(error);
+          if (!reasons || !conditionalCancellation(reasons)) throw error;
+          // Somebody else's send landed between the read and the write. Decide again over
+          // the list that now stands — the bound is on what is STORED, never on a view.
+        }
       }
+      throw new Error('Link send allowance changed repeatedly while being spent.');
     },
 
     async putChallenge(hash, challenge) {
@@ -267,13 +305,23 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
                   UpdateExpression: 'SET #email = :email, #emailAt = :now',
                   // The account must still exist AND still have its one address slot. Two
                   // different-address binds can pass the route's same snapshot, so the
-                  // invariant belongs in this transaction, not in that read.
+                  // invariant belongs in this transaction, not in that read. And it must
+                  // not be CLAIMED by a live adoption (`LinkClaimOutcome`): its play may
+                  // already be moving out, and an account that is about to be erased must
+                  // not become reachable halfway through.
                   ConditionExpression:
-                    'attribute_exists(pk) AND (attribute_not_exists(#email) OR #email = :email)',
-                  ExpressionAttributeNames: { '#email': 'email', '#emailAt': 'emailAt' },
+                    'attribute_exists(pk) AND (attribute_not_exists(#email) OR #email = :email)' +
+                    ' AND (attribute_not_exists(#linkTo) OR #linkAt <= :stale)',
+                  ExpressionAttributeNames: {
+                    '#email': 'email',
+                    '#emailAt': 'emailAt',
+                    '#linkTo': CLAIM_TO_ATTRIBUTE,
+                    '#linkAt': CLAIM_AT_ATTRIBUTE,
+                  },
                   ExpressionAttributeValues: {
                     ':email': { S: input.email },
                     ':now': { S: input.now },
+                    ':stale': { N: String(claimStaleBefore(input.now)) },
                   },
                 },
               },
@@ -313,6 +361,44 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
         if (reasons[1]?.Code === 'ConditionalCheckFailed') return 'account_changed';
         throw error;
       }
+    },
+
+    async claimAdoption({ from, to, now }): Promise<LinkClaimOutcome> {
+      const key = { pk: { S: accountKey(from) }, sk: { S: ACCOUNT_SORT_KEY } };
+      try {
+        await client.send(
+          new UpdateItemCommand({
+            TableName: tableName,
+            Key: key,
+            UpdateExpression: 'SET #linkTo = :to, #linkAt = :now',
+            // Only an UNLINKED account can be claimed, by its current claimant (a retry
+            // renews it), by anybody once the standing claim is stale, or when none stands.
+            ConditionExpression:
+              'attribute_exists(pk) AND attribute_not_exists(#email)' +
+              ' AND (attribute_not_exists(#linkTo) OR #linkTo = :to OR #linkAt <= :stale)',
+            ExpressionAttributeNames: {
+              '#email': 'email',
+              '#linkTo': CLAIM_TO_ATTRIBUTE,
+              '#linkAt': CLAIM_AT_ATTRIBUTE,
+            },
+            ExpressionAttributeValues: {
+              ':to': { S: to },
+              ':now': { N: String(Math.floor(Date.parse(now) / 1_000)) },
+              ':stale': { N: String(claimStaleBefore(now)) },
+            },
+          }),
+        );
+        return 'claimed';
+      } catch (error) {
+        if (!isConditionFailure(error)) throw error;
+      }
+      // Classify the refusal by one consistent read, the verify's own pattern.
+      const response = await client.send(
+        new GetItemCommand({ TableName: tableName, Key: key, ConsistentRead: true }),
+      );
+      const item = response.Item;
+      if (!item || item.email?.S !== undefined) return 'account_changed';
+      return 'claimed_elsewhere';
     },
 
     async adopt(input: AccountAdoption) {
@@ -394,8 +480,13 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
               Key: { pk: { S: accountKey(input.from) }, sk: { S: ACCOUNT_SORT_KEY } },
               // `erase` came from an earlier authenticated snapshot. A concurrent bind is
               // allowed to win, but then this account is reachable and may not be deleted.
-              ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(#email)',
-              ExpressionAttributeNames: { '#email': 'email' },
+              // And the CLAIM must still be this target's: the play that moved before this
+              // transaction moved under it, and a stale claim another target took over
+              // means that target's moves are the ones now in flight.
+              ConditionExpression:
+                'attribute_exists(pk) AND attribute_not_exists(#email) AND #linkTo = :to',
+              ExpressionAttributeNames: { '#email': 'email', '#linkTo': CLAIM_TO_ATTRIBUTE },
+              ExpressionAttributeValues: { ':to': { S: input.to } },
             },
           },
           {

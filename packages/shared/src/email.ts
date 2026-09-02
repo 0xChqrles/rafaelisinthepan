@@ -78,7 +78,8 @@ export const LINK_CODE_MAX_ATTEMPTS = 5;
 // The send allowances (#204's "or it is a free spam relay pointed at arbitrary inboxes"),
 // enforced with the #169 HMAC-IP machinery. Per ADDRESS bounds what one inbox can be made to
 // receive whoever asks; per IP bounds what one sender can spray across many. Both are
-// counted per fixed window, which is what makes each one a single conditional increment.
+// counted over a ROLLING window ending at the request — never a fixed clock bucket, which
+// admits two full allowances back to back across a bucket edge.
 export const LINK_SEND_WINDOW_SECONDS = 60 * 60;
 export const LINK_SENDS_PER_ADDRESS = 5;
 export const LINK_SENDS_PER_IP = 20;
