@@ -5220,15 +5220,16 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    where those buttons sit on their screens.
    ON DESKTOP IT STANDS OFF (user-decided 2026-09-03: the column is centred there, and at
    the rows' own 20px the call read as one more row — "everything is packed in the middle
-   of the screen"). 48px over the column's 20px gap is a section's break, more than twice
-   the room between the rows, so the call is a different kind of thing from the list above
-   it. A phone never sees this margin: its block replaces it with the auto margin that
-   parks the call on the bottom edge, where the gap was already right. */
+   of the screen"). 96px over the column's 20px gap is a real break — 48 was tried first
+   and read as no change at all at 1280×900, a 28px difference in a centred column — so
+   the call is plainly a different kind of thing from the list above it, not its last row.
+   A phone never sees this margin: its block replaces it with the auto margin that parks
+   the call on the bottom edge, where the gap was already right. */
 .account-cta {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  margin-top: 48px;
+  margin-top: 96px;
 }
 .account-cta .account-note.caption {
   margin: 0;
