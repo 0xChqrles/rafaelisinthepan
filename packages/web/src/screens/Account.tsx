@@ -54,6 +54,7 @@ import { t } from '../i18n';
 import {
   ACCOUNT_EMAIL_PATH,
   ACCOUNT_SIGNIN_PATH,
+  PRIVACY_PATH,
   PROFILE_PATH,
   resolveHomeLang,
 } from '../langs';
@@ -202,6 +203,20 @@ export default function Account() {
               </button>
             </>
           )}
+          {/* WHAT THE GAME KEEPS (#229) — a row like the others, because it answers this
+              screen's own question from the other side: not "is this account mine" but
+              "what does holding one cost me". It is NOT gated on the summary the way the
+              rows above are: what is stored is a fact about the game, true before this
+              device has an account and while the read is still out, so holding it back
+              would be a screen withholding the one thing on it that never has to wait. */}
+          <button
+            type="button"
+            className="account-link"
+            onClick={() => navigate(PRIVACY_PATH)}
+          >
+            <span className="account-link-label">{t(lang, 'privacyTitle')}</span>
+            <ChevronRightIcon className="ui-icon" aria-hidden />
+          </button>
         </div>
 
         {/* DEVICES — its own SECTION, after everything there is to DO with this account

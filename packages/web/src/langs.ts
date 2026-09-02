@@ -94,6 +94,17 @@ export const ACCOUNT_EMAIL_PATH = '/account/email';
 export const ACCOUNT_SIGNIN_PATH = '/account/signin';
 export const PROFILE_PATH = '/profile';
 
+// THE PRIVACY NOTICE (#229): what the game keeps about a player, why, and how to be rid of
+// it. GLOBAL like the four above — what is stored is a fact about the whole game, not about
+// one language's daily — and a STEP rather than a place: it is reached from `/account` and
+// from the email flow's address field, which are the two screens where a person is deciding
+// whether to hand over an address, and it goes back to whichever one asked.
+//
+// It is a real route rather than a dialog because a legal notice has to be LINKABLE: the SES
+// production-access form asks for a URL and a reviewer opens it, and « où est-ce écrit ? »
+// deserves an answer that can be pasted into a message.
+export const PRIVACY_PATH = '/privacy';
+
 // Which act the email flow is dressing. It never reaches the server.
 export type LinkIntent = 'save' | 'return';
 
@@ -112,7 +123,7 @@ export { invitePath as pathForInvite } from '@whippin/shared';
 
 // A parsed route. The game IS the home: /<lang> plays today's puzzle, /<lang>/<date>
 // plays a past day (archive, #55), /<lang>/archive is the calendar, /select is the
-// language picker, and anything else (/, unknown paths) is
+// language picker, /privacy is the data notice, and anything else (/, unknown paths) is
 // a `home` redirect that bounces to the user's language (see resolveHomeLang). Word
 // mode (#156) mirrors the whole grammar under /<lang>/word: today's word,
 // /word/<date>, /word/archive.
@@ -124,6 +135,7 @@ export type Route =
   | { view: 'account' }
   | { view: 'accountEmail'; intent: LinkIntent }
   | { view: 'profile' }
+  | { view: 'privacy' }
   | { view: 'invite'; publicId: string }
   | { view: 'home' };
 
@@ -154,6 +166,7 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
   const [seg, second, third] = segs;
   if (seg === 'select') return { view: 'select' };
   if (seg === 'profile') return { view: 'profile' };
+  if (seg === 'privacy') return { view: 'privacy' };
   // `/account` and its one step deeper. An unknown third form keeps the game routes'
   // tolerance and lands on the area's own entry rather than bouncing home.
   if (seg === 'account') {

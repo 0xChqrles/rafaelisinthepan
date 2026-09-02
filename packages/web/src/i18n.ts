@@ -169,6 +169,17 @@ const STRINGS = {
   // The same door once THIS account is saved, where it means something milder: leaving is
   // reversible, because the account stays reachable by its own address.
   accountSwitch: { en: 'SIGN IN TO ANOTHER ACCOUNT', fr: 'SE CONNECTER À UN AUTRE COMPTE' },
+  // THE PRIVACY NOTICE (#229). ONE word for one thing: it names the screen in the header,
+  // and it names the row on `/account` that leads there — a row whose label and its
+  // destination's title should be the same word, or the tap reads as going somewhere else.
+  // fr VIE PRIVÉE rather than CONFIDENTIALITÉ: plainer, and five characters shorter in a
+  // header slot that ellipsises at 320px (the `linkTitleReturn` finding).
+  privacyTitle: { en: 'PRIVACY', fr: 'VIE PRIVÉE' },
+  // The same page from the ADDRESS field, where it answers the question actually being
+  // asked at that moment — not "what is your privacy policy" but "what happens to the
+  // address I am about to type". It is an ACTION (the area's three-roles rule), quiet,
+  // under the button it qualifies.
+  privacyFromAddress: { en: 'WHAT WE DO WITH IT', fr: "CE QU'ON EN FAIT" },
   // What signing in COSTS, said before a keystroke is spent rather than after the mail app,
   // the six digits and the commitment ritual. It is shown on the ONE case that has a cost:
   // an account with no address of its own is deleted when this device leaves it. The

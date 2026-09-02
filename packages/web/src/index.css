@@ -5624,6 +5624,18 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .btn + .link-quiet-btn:hover:not(:disabled) {
   border-color: transparent;
 }
+/* THE SAME RULE, one wrapper further out. The bare dress belongs to a quiet control that
+   FOLLOWS the screen's action rather than standing as an alternative to it — the crossroads'
+   CANCEL — and the address step's privacy control is exactly that: it sits under CONTINUE,
+   and boxed it read as a second button competing with the lit one. The adjacency above
+   cannot reach it, because it lives in the centring `.link-quiet` row (with the cost and
+   refusal captions between them on the door that shows one), so it says so itself. */
+.link-aside {
+  border-color: transparent;
+}
+.link-aside:hover:not(:disabled) {
+  border-color: transparent;
+}
 /* A CONTROL THAT IS NOT A CONTROL YET LOSES ITS BOX (2026-08-30). RESEND spends its first
    ~30 seconds counting down, and a dimmed hairline box held that long reads as a broken
    button rather than as a wait — the same reason the second door is held back until the
@@ -5864,6 +5876,103 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    what makes it secondary, never a smaller thing to hit. */
 .link-stack .link-quiet-btn {
   width: 100%;
+}
+
+/* ===================== the privacy notice (#229) ===================== */
+/* THE APP'S ONE DOCUMENT. Every other surface says only what it cannot show; a legal notice
+   has nothing to show, so this is the one screen made of paragraphs — and it is set to be
+   READ, not skimmed past: the account column's own width (min(430px, 100%) is ~60 characters
+   at this size, a real measure), the area's 48px header clearance stated as a LITERAL for the
+   reason `.account-screen` records (`--hud-height` is scoped to `.topbar`, and naming it in a
+   `calc()` out here voids the whole declaration).
+
+   It does NOT wear `.account-screen`: that class centres its column vertically and, on a
+   phone, opens on the area's high start line. A document reads top-down from as high as the
+   header allows — the same finding that took `/profile` off that line on 2026-09-02, and this
+   is by far the area's tallest screen. `align-self: stretch` is what pins it to the top of
+   `.app`'s centring row; the column then scrolls its own overflow, which is also what lights
+   the header's band as the text passes under it. */
+.privacy-screen {
+  width: min(430px, 100%);
+  align-self: stretch;
+  /* 100% (the `.app` padding box), never 100dvh: a taller child of a centring flex parent
+     overflows symmetrically and its top gets clipped under the bar (`.profile-screen`'s
+     recorded trap). */
+  max-height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  /* A SECTION'S AIR, the account screen's own (its rows sit 20px apart under a 20px seam):
+     the space is what says a new thing starts here, and the heading says what it is. */
+  gap: 30px;
+  padding: 48px 2px 40px;
+}
+/* The lead is the document's own voice — one sentence at the body's size but in the reading
+   ink, so the page opens on a statement rather than on a heading. */
+.privacy-lead {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.6;
+  color: var(--fg);
+}
+.privacy-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+/* CHROME (the area's three-roles rule, 2026-08-29): uppercase, tracked, `--fg` — the same
+   dress `.account-link-label` wears, so a heading here and a row label there read as one
+   kind of thing. */
+.privacy-heading {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg);
+}
+/* INFO: sentence case, muted, regular — `.account-note`'s exact voice, since it is the same
+   role on the same screens. */
+.privacy-text {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.6;
+  color: var(--muted);
+}
+/* The thing being NAMED, at the head of its own paragraph: `--fg` at the labels' weight, in
+   its own case (it is a noun, not a control). It is what makes the section skimmable for the
+   one item a reader came for. */
+.privacy-term {
+  color: var(--fg);
+  font-weight: 550;
+}
+/* THE ONE LINK OUT OF THIS APP. "Write to us" is the only instruction here a reader is meant
+   to ACT on and a paragraph is not tappable, so the address is a real `mailto:` — in the
+   ACTION ink rather than a browser blue, underlined because a link inside running text has
+   nothing else to say it is one. */
+.privacy-mail {
+  color: var(--fg);
+  font-weight: 550;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.privacy-mail:hover {
+  color: var(--accent);
+}
+/* WHEN THIS WAS LAST TRUE — the quietest line on the page, and the last. */
+.privacy-updated {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  opacity: 0.75;
 }
 
 /* The account's DEVICES, and the way to sign one out (#216) — the profile screen's second

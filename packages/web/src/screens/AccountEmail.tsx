@@ -90,7 +90,7 @@ import {
 } from '../identity';
 import useKeyboardInset from '../hooks/useKeyboardInset';
 import { t, tn } from '../i18n';
-import { ACCOUNT_PATH, resolveHomeLang, type LinkIntent } from '../langs';
+import { ACCOUNT_PATH, PRIVACY_PATH, resolveHomeLang, type LinkIntent } from '../langs';
 import { navigate } from '../routing';
 import {
   loadAccountSummary,
@@ -747,6 +747,20 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             {note && (
               <p className="account-note caption danger">{note}</p>
             )}
+            {/* WHAT HAPPENS TO THE ADDRESS (#229), in the quiet row's own dress — here,
+                because this is where an address is actually typed, and a notice a player
+                has to go looking for on another screen answers the question after they
+                have already answered it themselves. It is the step's ONE quiet control,
+                exactly as RESEND is the code step's. */}
+            <div className="link-quiet">
+              <button
+                type="button"
+                className="link-quiet-btn link-aside"
+                onClick={() => navigate(PRIVACY_PATH)}
+              >
+                {t(lang, 'privacyFromAddress')}
+              </button>
+            </div>
           </>
         )}
 

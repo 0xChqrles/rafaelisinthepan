@@ -7,6 +7,7 @@ import LanguageSelect from './screens/LanguageSelect';
 import Account from './screens/Account';
 import AccountEmail from './screens/AccountEmail';
 import Profile from './screens/Profile';
+import Privacy from './screens/Privacy';
 import FriendInvite from './screens/FriendInvite';
 import Archive from './screens/Archive';
 import Leaderboard from './screens/Leaderboard';
@@ -205,6 +206,9 @@ export default function App() {
         {!signedOut && route.view === 'account' && <Account />}
         {!signedOut && route.view === 'accountEmail' && <AccountEmail intent={route.intent} />}
         {!signedOut && route.view === 'profile' && <Profile />}
+        {/* The data notice (#229) — a STEP of the account area, reachable on its own URL
+            because a legal notice has to be linkable (the SES review opens one). */}
+        {!signedOut && route.view === 'privacy' && <Privacy />}
         {/* The invite link (#189) is a beat, not a screen: it lands the mutual edge and
             hands over to the home redirect above. */}
         {!signedOut && route.view === 'invite' && (
@@ -252,10 +256,12 @@ function headerPlace(route: Route, surface: GameSurface, today: string): HeaderP
       return 'archive';
     case 'board':
       return 'board';
-    // The whole account area is ONE place, its steps included (#204's UX rework).
+    // The whole account area is ONE place, its steps included (#204's UX rework) —
+    // the privacy notice among them (#229), reached from this area and no other.
     case 'account':
     case 'accountEmail':
     case 'profile':
+    case 'privacy':
       return 'account';
     default:
       return null;

@@ -78,6 +78,8 @@
                               screen's own `finishWordRound`, #217)
       screens/Profile.tsx     the #188 profile editor (/profile): name, tap-to-paint 10×10 grid,
                               ground-swatch palette picker (#190 wires the entry point)
+      screens/Privacy.tsx     `/privacy` (#229): what the game keeps, why, and how to be rid
+                              of it — the app's one DOCUMENT, its words in privacyDoc.ts
       screens/FriendInvite.tsx  the #189 invite link's landing (/join/<publicId>): POST the mutual
                               edge with this device's token, then continue into the game. The link
                               players SHARE is /i/<publicId>, served by the backend for its preview
@@ -1000,6 +1002,45 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **`game/streak.ts` re-exports `currentStreak` from `@whippin/shared`** and keeps
     `streakTransition`/`weekView`: the server derives a streak for the erase confirmation, so
     the derivation itself moved.
+- **The PRIVACY NOTICE (#229).** `/privacy` — a global route like the account area's, and a
+  STEP of it: the header's row lights the FACE and the left slot carries the back control.
+  Reached from TWO doors, which is the whole reason `routing.ts` grew `goBack(fallback)`: a
+  row on `/account` and a quiet action under the email flow's ADDRESS field, where the address
+  is actually typed — and sending that second reader to a fixed parent would drop somebody
+  three taps into saving their account back at the start of it. `goBack` stamps every
+  `navigate` entry as the app's own (`history.state.app`) and uses the browser's back only
+  where it finds that stamp; a pasted or bookmarked arrival falls back to `/account`, because
+  what sits behind THAT entry is not ours to send anyone to.
+  - **It is a real ROUTE and not a dialog** because a legal notice has to be LINKABLE: the SES
+    production-access review opens a URL, and « où est-ce écrit ? » deserves an answer that
+    can be pasted into a message.
+  - **The words live in `screens/privacyDoc.ts`**, per language, parity enforced by the type
+    (the tutorial scripts' shape) — `i18n.ts` is a table of chrome strings, and this is twenty
+    paragraphs whose structure is part of what they say. The chrome that IS chrome (the screen
+    name, the two entry labels) stays in `i18n.ts`. `{mail}` is filled from ONE
+    `PRIVACY_CONTACT` (`hello@whippin.ai`, the SES sender infra derives), so the two languages
+    cannot name two inboxes, and the address renders as the app's ONE `<a>` — a `mailto:`,
+    because "write to us" is the only instruction here a reader is meant to ACT on.
+  - **It describes the CODE, so a change to what the server stores is a change to this file.**
+    Every claim is checked against something: the account row's stored address, the device
+    item's hashed token and coarse user-agent (#216), the round rows' folded guesses (#201),
+    the HMAC-of-IP rows and their TTLs, the 10-minute code, the us-east-1 stacks, Turnstile
+    and Plausible's three events. The TTLs are stated as an upper BOUND, never an instant —
+    DynamoDB's sweep is best-effort and the two rows expire at different lengths.
+  - **It does NOT wear `.account-screen`**: that class centres its column and, on a phone,
+    opens on the area's high start line — and this is by far the area's tallest screen, which
+    is exactly what took `/profile` off that line on 2026-09-02. `.privacy-screen` states its
+    own geometry (the same 430px column, the same literal 48px header clearance) and
+    `align-self: stretch` pins it to the top; the column scrolls its own overflow, which is
+    also what lights the header's band as the text passes under it.
+  - **The address step's control is BARE** (`.link-aside`): the boxed `.link-quiet-btn` dress
+    belongs to an ALTERNATIVE (RESEND), and directly under CONTINUE a boxed one read as a
+    second button competing with the lit one. It is the same rule `.btn + .link-quiet-btn`
+    already states, one wrapper further out.
+  - **NOT done, and it is the user's call:** there is no self-serve "delete my account", so
+    the notice says to write to the contact address. The page states that plainly rather than
+    implying a button exists.
+
 - **Local storage is an OUTBOX; a capped round ends at ∞ (#214).** The product contract —
   the three values, the load order, what the cap means, the share token, what was removed —
   lives in the root `AGENTS.md`. What is this package's:
