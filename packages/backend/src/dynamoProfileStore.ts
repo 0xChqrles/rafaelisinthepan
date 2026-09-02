@@ -1,12 +1,11 @@
 import {
-  BatchGetItemCommand,
+  TransactGetItemsCommand,
   UpdateItemCommand,
-  type AttributeValue,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
 import { ACCOUNT_SORT_KEY, accountKey } from './deviceStore';
-import { isConditionFailure } from './dynamoErrors';
-import { batchRetryDelayMs, sleep, type Wait } from './dynamoRetry';
+import { classifyTransaction, isConditionFailure } from './dynamoErrors';
+import { CONFLICT_RETRY_ATTEMPTS, conflictDelayMs, sleep, type Wait } from './dynamoRetry';
 import {
   PROFILE_SORT_KEY,
   profileKey,
@@ -14,15 +13,8 @@ import {
   type ProfileUpsert,
 } from './profileStore';
 
-// THREE ATTEMPTS: the first read plus TWO retries. Only two keys go out, so a partition
-// under enough pressure to leave one unprocessed three times running is not going to clear
-// inside this request — and this read decorates a board row or answers one profile, where
-// a long stall costs more than a loud failure. (The comment here used to say "a single
-// retry round", which the count never was.)
-const PROFILE_BATCH_ATTEMPTS = 3;
-
 export interface DynamoProfileStoreOptions {
-  // Injected by tests, so asserting the retry SCHEDULE costs no real time.
+  // Injected by tests, so asserting the conflict SCHEDULE costs no real time.
   wait?: Wait;
 }
 
@@ -65,55 +57,82 @@ export function dynamoProfileStore(
 
   return {
     async get(publicId) {
-      // TWO rows, ONE read: the profile the player customized and the ACCOUNT row beside it
-      // (#204). They share the `player#<id>` partition, and a `sk IN (…)` Query does not
-      // exist, so the two exact keys go out as one BatchGetItem — which reads only what is
-      // wanted, unlike a partition Query that would also drag in the solved-day collections.
+      // TWO rows, ONE OBSERVATION: the profile the player customized and the ACCOUNT row
+      // beside it (#204), read as a TRANSACTION.
       //
-      // Strongly consistent, for the score store's reason: this is a read-after-write path.
-      // The editor re-reads its own profile on the next visit and ADOPTS what comes back as
-      // both its contents and its save baseline, so an eventually consistent read could hand
-      // a player the profile they just replaced — or, on a first save, a 404 that presents
-      // their new profile as never customized. The account row is read the same way for the
-      // same reason: a device that just linked must not be told its account is gone.
-      const keys = [
-        { pk: { S: profileKey(publicId) }, sk: { S: PROFILE_SORT_KEY } },
-        { pk: { S: accountKey(publicId) }, sk: { S: ACCOUNT_SORT_KEY } },
-      ];
+      // **It was a strongly consistent BatchGetItem, and that is not the same thing**
+      // (corrected 2026-09-02, PR-227 follow-up review). Strong consistency is per ITEM: a
+      // batch read is serializable with respect to each item SEPARATELY and not across the
+      // batch, so it can observe one side of a transactional write and not the other — and
+      // the deletion this lookup exists to detect removes BOTH rows in one transaction
+      // (#204's adoption). The harmful skew is exact: the ACCOUNT row observed before the
+      // delete and the PROFILE row after it answers `{live: true, profile: null}`, which
+      // every identity-bearing surface dresses with the assigned pseudonym and mark — a
+      // deleted player drawn as a person, which is the one thing `live` exists to prevent.
+      // Accumulating across `UnprocessedKeys` retries widens that window; nothing about the
+      // two rows sharing a partition closes it.
       //
-      // UnprocessedKeys are RETRIED, and the retry WAITS — the score/round batch reads'
-      // shared full-jitter schedule (`dynamoRetry.ts`). Coming straight back spends the
-      // whole budget inside a few milliseconds, before any capacity can return, which is
-      // the throttle turning itself into a failure. Only the keys DynamoDB handed back are
-      // asked for again, and exhausting the budget THROWS: answering with what arrived
-      // would present a missing profile row as "never customized" (404) or a missing
-      // account row as "gone" (410) — a throttle rendered as a verdict about an identity.
-      let pending: Record<string, AttributeValue>[] = keys;
-      const found = new Map<string, Record<string, AttributeValue>>();
-      for (let attempt = 0; pending.length > 0; attempt += 1) {
-        if (attempt >= PROFILE_BATCH_ATTEMPTS) {
-          throw new Error('Profile batch read left unprocessed keys.');
+      // A transactional read is ONE serializable snapshot, so `live` and `profile` always
+      // describe the same instant. Three things follow. It needs NO new IAM: a `Get`
+      // element is authorized by `dynamodb:GetItem`, which the table grant already carries
+      // (`ConditionCheckItem` belongs to the WRITE transaction). It needs no
+      // `ConsistentRead`, because a transactional read is serializable by definition —
+      // which is exactly what the editor's read-after-write needs (it ADOPTS what comes
+      // back as both its contents and its save baseline, so a stale answer hands a player
+      // the profile they just replaced, or a first save a 404 saying they never customized
+      // one). And there are no UnprocessedKeys to retry: a transactional read either
+      // answers in full or is CANCELLED, and the one cancellation worth retrying is
+      // `TransactionConflict` — a concurrent write on one of these two rows — which waits
+      // on the shared jittered schedule and asks again from a FRESH snapshot.
+      //
+      // It costs twice the read units of the batch it replaces. The alternative that keeps
+      // them — reading the profile, then the account row LAST, so a live answer is never
+      // staler than an absent profile — buys that back with a second round trip on a read
+      // the board already fans out per row. One observation is the simpler thing to reason
+      // about, and the fan-out is bounded by the board's own row count.
+      let conflict: unknown;
+      for (let attempt = 0; attempt <= CONFLICT_RETRY_ATTEMPTS; attempt += 1) {
+        // Only BETWEEN attempts: the first read is never delayed.
+        if (attempt > 0) await wait(conflictDelayMs(attempt - 1));
+        try {
+          const response = await client.send(
+            new TransactGetItemsCommand({
+              TransactItems: [
+                {
+                  Get: {
+                    TableName: tableName,
+                    Key: { pk: { S: profileKey(publicId) }, sk: { S: PROFILE_SORT_KEY } },
+                  },
+                },
+                {
+                  Get: {
+                    TableName: tableName,
+                    Key: { pk: { S: accountKey(publicId) }, sk: { S: ACCOUNT_SORT_KEY } },
+                  },
+                },
+              ],
+            }),
+          );
+          // Positional, and that is the contract: the responses come back in the order the
+          // items were sent, with no `Item` where the row is absent. NOTHING is carried
+          // over from an earlier attempt — a snapshot is only a snapshot whole.
+          const rows = response.Responses ?? [];
+          const item = rows[0]?.Item;
+          return {
+            live: rows[1]?.Item !== undefined,
+            profile: item
+              ? { publicId, name: item.name?.S ?? '', avatar: item.avatar?.S ?? '' }
+              : null,
+          };
+        } catch (error) {
+          // A cancellation that is NOT a conflict is operational and surfaces: answering
+          // with half a read would present a throttle as a verdict about an identity —
+          // "never customized" (404) or "gone" (410).
+          if (classifyTransaction(error).kind !== 'conflict') throw error;
+          conflict = error;
         }
-        // Only BETWEEN attempts: the first read of a batch is never delayed.
-        if (attempt > 0) await wait(batchRetryDelayMs(attempt - 1));
-        const response = await client.send(
-          new BatchGetItemCommand({
-            RequestItems: { [tableName]: { Keys: pending, ConsistentRead: true } },
-          }),
-        );
-        for (const item of response.Responses?.[tableName] ?? []) {
-          const sk = item.sk?.S;
-          if (sk) found.set(sk, item);
-        }
-        pending = response.UnprocessedKeys?.[tableName]?.Keys ?? [];
       }
-      const item = found.get(PROFILE_SORT_KEY);
-      return {
-        live: found.has(ACCOUNT_SORT_KEY),
-        profile: item
-          ? { publicId, name: item.name?.S ?? '', avatar: item.avatar?.S ?? '' }
-          : null,
-      };
+      throw conflict;
     },
 
     async create(input) {

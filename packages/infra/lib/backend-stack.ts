@@ -241,10 +241,11 @@ export class BackendStack extends Stack {
     // graph (#189) reuses Query (a player's edge partition) and UpdateItem (the mutual
     // link), and first adds DeleteItem — removal deletes both directions. The friends board
     // (#190) adds BatchGetItem: it reads the score rows of
-    // a KNOWN key set instead of paging the whole day partition. A transaction's Put,
-    // Update and Delete elements are authorized through those same item permissions, so
-    // no Scan surface is needed — but a standalone `ConditionCheck` element is NOT one of
-    // them: AWS authorizes it through its OWN action, `dynamodb:ConditionCheckItem`
+    // a KNOWN key set instead of paging the whole day partition. A transaction's Get, Put,
+    // Update and Delete elements are authorized through those same item permissions (the
+    // #204 profile lookup is a `TransactGetItems` and needs nothing beyond the GetItem
+    // above), so no Scan surface is needed — but a standalone `ConditionCheck` element is
+    // NOT one of them: AWS authorizes it through its OWN action, `dynamodb:ConditionCheckItem`
     // (docs: transaction-apis-iam). #204's adoption asserts rows it does not write — the
     // adopted account, a surviving source, and every guarded no-move of the active day's
     // play — so without it every erasing link is an AccessDeniedException in production

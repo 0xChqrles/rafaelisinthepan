@@ -869,7 +869,13 @@ describe('link answers (#204 vol. 2)', () => {
   });
 
   it('carries the recovered account\'s RECEIPT on an adopt, and nothing on the others', () => {
-    const base = { outcome: 'adopted', accountId: ID, deviceId: DEVICE, email: 'z@example.com' };
+    const base = {
+      outcome: 'adopted',
+      accountId: ID,
+      deviceId: DEVICE,
+      email: 'z@example.com',
+      mergePending: false,
+    };
     expect(parseLinkResult({ ...base, stakes: { streak: 12, best: 30, days: 41 } }).stakes).toEqual({
       streak: 12,
       best: 30,
@@ -879,5 +885,19 @@ describe('link answers (#204 vol. 2)', () => {
     // simply no receipt, never a failed link on a device whose identity has already moved.
     expect(parseLinkResult({ ...base, outcome: 'bound' }).stakes).toBeNull();
     expect(parseLinkResult({ ...base, stakes: { streak: 12, days: 41 } }).stakes).toBeNull();
+  });
+
+  it('REFUSES a link answer whose mergePending is missing or malformed (#204)', () => {
+    // It is a JOB the client has to come back and finish — consented friend edges the
+    // server could not fan out in one transaction. Coercing a missing field to `false`
+    // silently cancelled the resumed drain, which is the opposite of what an absent
+    // answer means; and this parser already refuses every other malformed field, because
+    // an identity is being replaced off this body.
+    const base = { outcome: 'adopted', accountId: ID, deviceId: DEVICE, email: 'z@example.com' };
+    expect(parseLinkResult({ ...base, mergePending: true }).mergePending).toBe(true);
+    expect(parseLinkResult({ ...base, mergePending: false }).mergePending).toBe(false);
+    expect(() => parseLinkResult(base)).toThrow(/mergePending/);
+    expect(() => parseLinkResult({ ...base, mergePending: 'yes' })).toThrow(/mergePending/);
+    expect(() => parseLinkResult({ ...base, mergePending: 1 })).toThrow(/mergePending/);
   });
 });

@@ -42,7 +42,7 @@
 
 import { useEffect } from 'react';
 import { defaultAvatar } from '@whippin/shared';
-import { useOwnFace } from '../components/AccountFace';
+import { faceSettled, shownFace, useOwnFace } from '../components/AccountFace';
 import AccountStats from '../components/AccountStats';
 import Avatar from '../components/Avatar';
 import Button from '../components/Button';
@@ -77,7 +77,12 @@ export default function Account() {
   const lang = resolveHomeLang(lastLang, navigator.language);
   const identity = useDeviceIdentity();
   const { phase, summary } = useAccountSummary();
-  const face = useOwnFace();
+  const faceState = useOwnFace();
+  const face = shownFace(faceState);
+  // The masthead's placeholders breathe only while the read is OUT. A deleted account
+  // (#204's 410) settles with no face, and a shimmer over it promises an arrival that is
+  // not coming — that device is one private call away from the signed-out screen.
+  const facePending = !faceSettled(faceState);
   const localSeedAt = useGameStore((state) => state.localSeedAt);
   // The day the streak is measured against, off the app's ONE day signal — which re-fires
   // at the 22:00 reset, so a screen left open overnight cannot keep showing an expired one.
@@ -118,13 +123,16 @@ export default function Account() {
           {face ? (
             <Avatar avatar={face.avatar ?? defaultAvatar(face.publicId)} size={48} />
           ) : (
-            <span className="account-id-mark skeleton" aria-hidden="true" />
+            <span
+              className={`account-id-mark${facePending ? ' skeleton' : ''}`}
+              aria-hidden="true"
+            />
           )}
           <span className="account-id-text">
             {face ? (
               <span className="account-id-name">{face.name}</span>
             ) : (
-              <span className="skeleton skeleton-name" aria-hidden="true" />
+              facePending && <span className="skeleton skeleton-name" aria-hidden="true" />
             )}
             {since && (
               <span className="account-id-since">{`${t(lang, 'accountSince')} ${since}`}</span>

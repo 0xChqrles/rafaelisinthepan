@@ -63,7 +63,13 @@ import {
   type LinkErasePrompt,
   type LinkResult,
 } from '../api';
-import { useAccountFace, useOwnFace, type Face } from '../components/AccountFace';
+import {
+  faceSettled,
+  shownFace,
+  useAccountFace,
+  useOwnFace,
+  type Face,
+} from '../components/AccountFace';
 import AccountStats from '../components/AccountStats';
 import AccountMark from '../components/AccountMark';
 import Avatar from '../components/Avatar';
@@ -367,7 +373,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
     // AFTER the adoption, so the drain runs as the account it landed on (#204). The server
     // drained what it could before answering; this finishes the rest without waiting for the
     // player to visit `/account`.
-    resumeMergeDrain(result.mergePending === true);
+    resumeMergeDrain(result.mergePending);
   }, []);
 
   const recoverAmbiguous = useCallback(
@@ -517,25 +523,40 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   // The ending draws the account the player now holds — for an ADOPT that is the recovered
   // one, and its face is the claim "we found your account" actually makes.
   const endingId = identity?.accountId ?? null;
-  const face = useAccountFace(step === 'done' ? endingId : null);
+  // `shownFace` throughout: a DELETED account (#204's 410) has no face — not even the
+  // assigned one, which is still that player's own — so every one of these draws nothing
+  // rather than an identity that no longer exists.
+  const endingState = useAccountFace(step === 'done' ? endingId : null);
+  const face = shownFace(endingState);
   // The crossroads draws BOTH sides of the fork: the account about to be deleted, and the
   // one about to be joined. The server names the second only since vol. 2, so a missing
   // `target` degrades to the one-sided prompt rather than failing a refusal the player has
   // to be able to answer.
-  const eraseFace = useAccountFace(step === 'confirm' ? (prompt?.accountId ?? null) : null);
-  const targetFace = useAccountFace(step === 'confirm' ? (prompt?.target ?? null) : null);
+  const eraseState = useAccountFace(step === 'confirm' ? (prompt?.accountId ?? null) : null);
+  const eraseFace = shownFace(eraseState);
+  // The account being ADOPTED is the one this device does NOT own — the server named it a
+  // moment ago and nothing here vouches for it, which is exactly why it may not be dressed
+  // with an assigned identity when the read says it is gone. A missing side degrades to the
+  // one-sided prompt, as a missing `target` already does.
+  const targetFace = shownFace(
+    useAccountFace(step === 'confirm' ? (prompt?.target ?? null) : null),
+  );
   // The SAVE door leads with WHO is being saved — and it is the SAME face whether or not the
   // account is deployed yet (user-decided 2026-08-26: nothing in the area may tell you
   // which). `useOwnFace` answers the account's profile or the identical local-seed pair; and
   // the first face resolved is HELD for the flow's whole life, because the SEND's own deploy
   // swaps the id from the seed to the account mid-flight, and re-reading then races the
   // background profile write for a face that is the same by construction.
-  const ownFace = useOwnFace();
+  const ownState = useOwnFace();
+  const ownFace = shownFace(ownState);
   const [lead, setLead] = useState<Face | null>(null);
   useEffect(() => {
     if (ownFace !== null && lead === null) setLead(ownFace);
   }, [ownFace, lead]);
   const savingFace = lead ?? ownFace;
+  // The lead's placeholder breathes only while the read is OUT: a gone account settles with
+  // nothing, and a shimmer over it promises a face that is not coming.
+  const savingPending = lead === null && !faceSettled(ownState);
 
   // What the RETURN door costs, on the ONE case that has a cost: an account with no address
   // of its own is deleted when this device leaves it. Held silent until the summary has
@@ -683,7 +704,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                 <span className="account-hero-name">{savingFace.name}</span>
               </>
             ) : (
-              <span className="account-hero-mark skeleton" />
+              <span className={`account-hero-mark${savingPending ? ' skeleton' : ''}`} />
             )}
           </div>
         )}
@@ -839,7 +860,10 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                 <span className="account-hero-name">{eraseFace.name}</span>
               </>
             ) : (
-              <span className="account-hero-mark skeleton" aria-hidden="true" />
+              <span
+                className={`account-hero-mark${faceSettled(eraseState) ? '' : ' skeleton'}`}
+                aria-hidden="true"
+              />
             )}
             {/* WHAT IS AT STAKE, DIRECTLY UNDER THE FORK — ahead of the sentence, not
                 after it (review finding). Centred below "…come with you. The rest is
@@ -903,7 +927,10 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                 </span>
               </>
             ) : (
-              <span className="account-hero-mark skeleton" aria-hidden="true" />
+              <span
+                className={`account-hero-mark${faceSettled(endingState) ? '' : ' skeleton'}`}
+                aria-hidden="true"
+              />
             )}
             {/* THE ONE NEW FACT about this account, shown rather than described. A recovery
                 shows the history that PROVES it is theirs — "we found your account" is a

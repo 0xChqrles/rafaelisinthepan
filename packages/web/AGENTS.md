@@ -680,9 +680,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **`state/identityScope.ts` holds the whole list of what an identity owns**, wired once
     from `main.tsx` rather than as import-time side effects in five modules — so `identity.ts`
     keeps knowing nothing about the game, and the list is one readable block.
-  - **`SignedOut` takes its RECONNECT handler as a PROP, and #216 passes none.** The email
-    link flow is #204's; a button that does nothing is worse than a screen that only offers
-    what it can actually do, so START FRESH is the only action until then.
+  - **`SignedOut`'s RECONNECT was a PROP #216 passed none for** — a button that does nothing
+    is worse than a screen that only offers what it can do — until #204 landed the email flow
+    and wired it as the screen's PRIMARY action onto `/account/signin` (the account bullet
+    below holds the reasoning). It is the screen's own handler now, not a prop.
   - **`components/DeviceList.tsx` is the REACHABLE surface for signing any device out**,
     mounted on the PROFILE editor — the screen that already is the identity screen. Every
     call answers the list as it now stands (the /friends house rule), so a revocation needs no
@@ -890,9 +891,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
     erased inviter over an ADD FRIEND whose only outcome is `unknown_player`, and `SignedOut`
     SETTLES FACELESS (`faceFrom`) instead of holding a loading frame or drawing the erased
     account. Both keep `gone`, `loading` and `shown` as three states rather than two, and both
-    export their mapping so it can be read and tested on its own. Every other consumer —
-    `AccountFace`, the profile editor, `localIdentityDeploy` — dresses 404 and 410 alike
-    ON PURPOSE: its caller's own device token already proves the account is live.
+    export their mapping so it can be read and tested on its own.
+    **`AccountFace` DOES TOO** (corrected 2026-09-02 on the PR-227 follow-up review; it
+    dressed 404 and 410 alike, on the claim that every caller proves the account live — which
+    was FALSE: the flow's crossroads draws `target`, an account this device does not own, and
+    a locally cached token outlives another device's adoption). `useAccountFace` answers
+    `Face | 'gone' | null`, with `shownFace` and `faceSettled` as the two questions a caller
+    asks — so a deleted account draws NOTHING and the box that held its place stops breathing
+    (a skeleton over an arrival that is not coming is #211's own false claim). The
+    consumers that stay on the raw fetch are the WRITE paths whose caller genuinely holds the
+    account: the profile editor's own read and `localIdentityDeploy`, which already treats
+    anything but a 404 as a reason NOT to create a row.
   - **`api.parseBadCode` is the attempt ladder the code step shows.** Every counted mismatch
     is `bad_code`, the FIFTH included, and its `attemptsLeft: 0` is what puts "too many wrong
     codes" at the input; a missing or malformed count reads as NONE LEFT rather than offering

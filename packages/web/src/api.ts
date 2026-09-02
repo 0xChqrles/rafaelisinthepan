@@ -686,7 +686,13 @@ export interface LinkResult {
   email: string;
   // Whether a friend merge is still queued. The client RESUMES the drain off this, rather
   // than leaving those edges for whenever the player next opens `/account` (#204).
-  mergePending?: boolean;
+  //
+  // REQUIRED, and validated as strictly as `parseAccountSummary` validates its own copy
+  // (PR-227 follow-up review). It was optional and coerced with `=== true`, so a body that
+  // omitted it — or sent it wrong — silently answered "nothing queued" and the resumed
+  // drain never ran, leaving consented friend edges for whenever the player next opened
+  // `/account`. A field whose absence disables a job is a field that has to be present.
+  mergePending: boolean;
   // THE RECEIPT on an ADOPT: what the recovered account holds, which is the evidence for
   // the claim "we found your account". Absent on the other two outcomes — nothing was
   // recovered, so there is nothing to vouch for.
@@ -727,12 +733,15 @@ export function parseLinkResult(data: unknown): LinkResult {
     throw new Error('malformed link: bad "deviceId"');
   }
   if (typeof email !== 'string') throw new Error('malformed link: bad "email"');
+  if (typeof data.mergePending !== 'boolean') {
+    throw new Error('malformed link: bad "mergePending"');
+  }
   return {
     outcome,
     accountId,
     deviceId,
     email,
-    mergePending: data.mergePending === true,
+    mergePending: data.mergePending,
     // Decorative, so a missing or malformed one is simply no receipt — never a failed
     // link, which would strand a device whose identity has already moved.
     stakes: parseStakes(data.stakes),

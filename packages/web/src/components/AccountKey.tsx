@@ -21,7 +21,7 @@
 // on `.account-key` holds the reasoning). Full colour is for where the face is content.
 import { defaultAvatar } from '@whippin/shared';
 import Avatar from './Avatar';
-import { useOwnFace } from './AccountFace';
+import { faceSettled, shownFace, useOwnFace } from './AccountFace';
 import { t } from '../i18n';
 import { ACCOUNT_PATH } from '../langs';
 import { navigate } from '../routing';
@@ -36,7 +36,8 @@ export default function AccountKey({
   lit: boolean;
   onLeave?: () => void;
 }) {
-  const face = useOwnFace();
+  const state = useOwnFace();
+  const face = shownFace(state);
   return (
     <button
       type="button"
@@ -56,7 +57,13 @@ export default function AccountKey({
         // pixel tile among pixel marks.
         <Avatar avatar={face.avatar ?? defaultAvatar(face.publicId)} size={20} sharp />
       ) : (
-        <span className="account-key-slot skeleton" aria-hidden="true" />
+        // The box, always. It BREATHES only while the read is out: an account that came
+        // back GONE (#204) has settled with nothing to draw, and a skeleton over it would
+        // promise an arrival that is not coming — the archive cells' rule.
+        <span
+          className={`account-key-slot${faceSettled(state) ? '' : ' skeleton'}`}
+          aria-hidden="true"
+        />
       )}
     </button>
   );

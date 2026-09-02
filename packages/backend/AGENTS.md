@@ -633,9 +633,21 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   delete on the edge still standing, and a refused batch is re-written without the moves
   whose edge somebody ended meanwhile, so an unlink between the plan and the write is never
   resurrected onto the adopting account. `ProfileStore.get` widened to a
-  `ProfileLookup` (`{live, profile}`) read as ONE BatchGetItem of the profile row and the
-  ACCOUNT row beside it — same partition, same cost — which is what lets `/profile`, `/board`
-  and the `/i/` preview tell "never customized" from "gone". `DeviceStore.accountExists` is
+  `ProfileLookup` (`{live, profile}`) read as ONE TRANSACTION (`TransactGetItems`) over the
+  profile row and the ACCOUNT row beside it, which is what lets `/profile`, `/board` and the
+  `/i/` preview tell "never customized" from "gone". **It was a strongly consistent
+  BatchGetItem, and that is not the same thing** (corrected 2026-09-02 on the PR-227
+  follow-up review): strong consistency is per ITEM, a batch is serializable per item and
+  NOT across the batch, and the deletion this lookup exists to detect removes both rows in
+  ONE transaction — so a batch could observe the account row before the delete and the
+  profile row after it and answer `live: true` for a player who no longer exists, which every
+  board then dresses with the assigned pseudonym and mark. A transactional read is one
+  serializable snapshot, needs no `ConsistentRead` and no new IAM (a `Get` element is
+  authorized by `dynamodb:GetItem`), has no `UnprocessedKeys` to retry, and retries only a
+  `TransactionConflict` — bounded and jittered on the shared schedule, every attempt a FRESH
+  snapshot, because a snapshot is only a snapshot whole. It costs twice the read units of the
+  batch; the alternative that keeps them (reading the account row LAST) buys that back with a
+  second round trip on a read the board already fans out per row. `DeviceStore.accountExists` is
   what `/friends {add}` asks before writing an edge. The `{token}` READ also answers the
   account's own **`createdAt`** (2026-08-26, with the UX rework): it costs nothing — the row
   was read to authenticate the call — and it is the one true thing the account screen can say

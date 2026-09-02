@@ -1456,11 +1456,12 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   PR-227 review; `readProfile` in `web/src/api.ts` is the ONE place the four answers are told
   apart). It matters most where the id came from somebody else: the invite landing shows the
   EXPIRED state at once rather than drawing the erased inviter over an ADD FRIEND that can
-  only be refused, and the signed-out screen settles FACELESS rather than drawing the assigned
-  identity of an account that no longer exists. Screens whose caller independently proves the
-  account is live — the account area, the profile editor, the local-identity deploy — keep
-  dressing a 404 and a 410 alike, because they only ever draw an account their own device
-  token resolved to. **Anonymous aggregates keep counting
+  only be refused, the signed-out screen settles FACELESS, and the account area's shared face
+  read settles with no face at all — including on the crossroads' `target`, an account the
+  device does not own and only the server vouched for a moment earlier. What is NOT dressed
+  differently is a WRITE path whose caller genuinely holds the account (the profile editor's
+  own read, the local-identity deploy), and neither of those creates or replaces anything on
+  an answer that is not a plain 404. **Anonymous aggregates keep counting
   an orphan score** until a later housekeeping sweep removes it: `/scores` renders no identity,
   and the hottest public read must not add an account-existence lookup per row. Guess-history and
   old score rows likewise remain unreachable history until that sweeper; established friend edges
