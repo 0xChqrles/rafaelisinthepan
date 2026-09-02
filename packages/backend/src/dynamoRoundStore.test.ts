@@ -1084,8 +1084,9 @@ describe('planRoundMove (#204)', () => {
       FROM,
       TO,
     );
-    expect(plan!.solved).toBe(true);
-    const items = plan!.items;
+    expect(plan.moved).toBe(true);
+    expect(plan.solved).toBe(true);
+    const items = plan.items;
     expect(items).toHaveLength(2);
     expect(items[0].Put!.Item).toMatchObject({
       ...source,
@@ -1107,32 +1108,52 @@ describe('planRoundMove (#204)', () => {
     });
   });
 
-  it('plans NOTHING for a source with no guesses — a started word run is not play', async () => {
+  it('moves NOTHING for a source with no guesses, but GUARDS that observation — a first guess landing meanwhile must refuse the commit', async () => {
     const started = {
       pk: { S: `round#${FROM}` },
       sk: { S: 'fr#sentence#2026-08-21' },
       puzzle: { S: PUZZLE },
       startedAt: { S: '2026-08-21T09:00:00.000Z' },
     };
-    await expect(
-      planRoundMove(client(async () => ({ Item: started })), 'scores', KEY, FROM, TO),
-    ).resolves.toBeNull();
-  });
-
-  it('plans NOTHING when the destination already holds play — two logs have no honest merge', async () => {
-    await expect(
-      planRoundMove(
-        client(async (command) => ({
-          Item:
-            (command as GetItemCommand).input.Key!.pk.S === `round#${TO}`
-              ? { ...storedItem(['souris'], 1_000), pk: { S: `round#${TO}` } }
-              : storedItem(['bois'], 1_000),
-        })),
+    for (const source of [started, undefined]) {
+      const plan = await planRoundMove(
+        client(async (command) =>
+          (command as GetItemCommand).input.Key!.pk.S === `round#${FROM}` ? { Item: source } : {},
+        ),
         'scores',
         KEY,
         FROM,
         TO,
-      ),
-    ).resolves.toBeNull();
+      );
+      expect(plan.moved).toBe(false);
+      expect(plan.items).toHaveLength(1);
+      const check = plan.items[0].ConditionCheck!;
+      expect(check.Key).toEqual({ pk: { S: `round#${FROM}` }, sk: { S: 'fr#sentence#2026-08-21' } });
+      expectConditionSyntax(check.ConditionExpression);
+      expect(check.ConditionExpression).toBe(
+        'attribute_not_exists(pk) OR attribute_not_exists(#g) OR size(#g) = :zero',
+      );
+    }
+  });
+
+  it('moves NOTHING when the destination already holds play, guarding THAT — two logs have no honest merge', async () => {
+    const plan = await planRoundMove(
+      client(async (command) => ({
+        Item:
+          (command as GetItemCommand).input.Key!.pk.S === `round#${TO}`
+            ? { ...storedItem(['souris'], 1_000), pk: { S: `round#${TO}` } }
+            : storedItem(['bois'], 1_000),
+      })),
+      'scores',
+      KEY,
+      FROM,
+      TO,
+    );
+    expect(plan.moved).toBe(false);
+    expect(plan.items).toHaveLength(1);
+    const check = plan.items[0].ConditionCheck!;
+    expect(check.Key!.pk.S).toBe(`round#${TO}`);
+    expectConditionSyntax(check.ConditionExpression);
+    expect(check.ConditionExpression).toBe('attribute_exists(#g) AND size(#g) > :zero');
   });
 });

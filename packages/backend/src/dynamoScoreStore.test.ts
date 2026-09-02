@@ -289,9 +289,15 @@ describe('dynamoScoreStore (#187)', () => {
 describe('planScoreMove (#204)', () => {
   const FROM = 'aaaaaaaaaaaaaaaa';
   const TO = 'bbbbbbbbbbbbbbbb';
-  const row = { pk: { S: 'score#2026-08-13#fr#word' }, sk: { S: FROM }, score: { N: '7' } };
+  const row = {
+    pk: { S: 'score#2026-08-13#fr#word' },
+    sk: { S: FROM },
+    score: { N: '7' },
+    submittedAt: { S: '2026-08-13T10:00:00.000Z' },
+    revision: { S: 'rev1' },
+  };
 
-  it('plans a create-only Put under the destination and a Delete of the source row', async () => {
+  it('plans a create-only Put under the destination and a Delete of the EXACT source row', async () => {
     const send = vi.fn(async (command: unknown) =>
       (command as GetItemCommand).input.Key!.sk.S === FROM ? { Item: row } : {},
     );
@@ -300,17 +306,34 @@ describe('planScoreMove (#204)', () => {
     expect(items[0].Put!.Item).toEqual({ ...row, sk: { S: TO } });
     expect(items[0].Put!.ConditionExpression).toBe('attribute_not_exists(pk)');
     expect(items[1].Delete!.Key).toEqual({ pk: row.pk, sk: { S: FROM } });
-    expect(items[1].Delete!.ConditionExpression).toBe('attribute_exists(pk)');
+    // The row as READ, never mere existence: a revision replacement landing meanwhile must
+    // refuse the commit rather than be overwritten by the stale planned copy.
+    expect(items[1].Delete!.ConditionExpression).toBe(
+      '#score = :score AND #revision = :revision AND #submittedAt = :submittedAt',
+    );
+    expect(items[1].Delete!.ExpressionAttributeValues).toEqual({
+      ':score': row.score,
+      ':revision': row.revision,
+      ':submittedAt': row.submittedAt,
+    });
   });
 
-  it('plans NOTHING without a source row, or when the destination already has one', async () => {
+  it('GUARDS a no-move: no source row yet, or a destination row already there', async () => {
+    // The solving append writes the score row a beat after the log, so "no row yet" is
+    // exactly the observation a concurrent write can invalidate.
     const none = vi.fn(async () => ({}));
-    await expect(
-      planScoreMove({ send: none } as unknown as DynamoDBClient, 'scores', KEY, FROM, TO),
-    ).resolves.toEqual([]);
+    const absent = await planScoreMove({ send: none } as unknown as DynamoDBClient, 'scores', KEY, FROM, TO);
+    expect(absent).toHaveLength(1);
+    expect(absent[0].ConditionCheck).toMatchObject({
+      Key: { pk: row.pk, sk: { S: FROM } },
+      ConditionExpression: 'attribute_not_exists(pk)',
+    });
     const both = vi.fn(async () => ({ Item: row }));
-    await expect(
-      planScoreMove({ send: both } as unknown as DynamoDBClient, 'scores', KEY, FROM, TO),
-    ).resolves.toEqual([]);
+    const taken = await planScoreMove({ send: both } as unknown as DynamoDBClient, 'scores', KEY, FROM, TO);
+    expect(taken).toHaveLength(1);
+    expect(taken[0].ConditionCheck).toMatchObject({
+      Key: { pk: row.pk, sk: { S: TO } },
+      ConditionExpression: 'attribute_exists(pk)',
+    });
   });
 });

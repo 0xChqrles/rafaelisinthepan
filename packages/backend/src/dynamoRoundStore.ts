@@ -629,9 +629,12 @@ export function roundItemKey(key: RoundKey, publicId: string): Record<string, At
 }
 
 export interface RoundMovePlan {
-  // A create-if-empty Put of the whole item under the destination, and a Delete of the
-  // source conditioned on the EXACT log it was read with.
+  // What the transaction commits for this tuple. A MOVE is a create-if-empty Put of the
+  // whole item under the destination and a Delete of the source conditioned on the EXACT
+  // log it was read with; a NO-MOVE is a ConditionCheck that the observation it rests on
+  // still holds — so every decision, including "there is nothing here", is guarded.
   items: TransactWriteItem[];
+  moved: boolean;
   // What the source's own stored summary said — the solved-day credit's input.
   solved: boolean;
 }
@@ -639,23 +642,25 @@ export interface RoundMovePlan {
 // #204's active-day transfer, PLANNED here and COMMITTED by `dynamoLinkStore` inside the
 // one adoption transaction — so the round exists under exactly one account at every
 // instant, and no adoption that fails to commit leaves a round moved. Planned in THIS file
-// because the two items are this store's shape: the item is copied VERBATIM apart from its
+// because the items are this store's shape: the item is copied VERBATIM apart from its
 // partition key, and the conditions name its attributes.
 //
-// Null when there is nothing to move: the source holds no guesses (a word round that was
-// merely STARTED holds none server-side, and a recorded run may move in over one), or the
-// destination already holds play — two real logs for one day have no honest merge. The
-// destination test is repeated as the Put's own condition, and the source Delete is
-// conditioned on the list itself and the puzzle it names, never a length: a guess appended
-// between this read and the commit, or a replacement of equal length, refuses the
-// transaction rather than being deleted unseen — the caller plans again over what stands.
+// Nothing moves when the source holds no guesses (a word round that was merely STARTED
+// holds none server-side, and a recorded run may move in over one), or when the
+// destination already holds play — two real logs for one day have no honest merge. BUT AN
+// OBSERVED ABSENCE IS STILL AN OBSERVATION: a first guess landing on an empty source between
+// this read and the commit would otherwise be orphaned under the deleted account with
+// nothing in the transaction to notice, so a no-move carries a ConditionCheck on exactly
+// what it saw. The move's source Delete is conditioned on the list itself and the puzzle it
+// names, never a length: a guess appended meanwhile, or a replacement of equal length,
+// refuses the transaction rather than being deleted unseen — the caller plans again.
 export async function planRoundMove(
   client: DynamoDBClient,
   tableName: string,
   key: RoundKey,
   from: string,
   to: string,
-): Promise<RoundMovePlan | null> {
+): Promise<RoundMovePlan> {
   const read = async (publicId: string) => {
     const response = await client.send(
       new GetItemCommand({
@@ -668,8 +673,41 @@ export async function planRoundMove(
   };
   const [source, destination] = await Promise.all([read(from), read(to)]);
   const guesses = source?.guesses;
-  if (!source || !guesses || (guesses.L?.length ?? 0) === 0) return null;
-  if (destination && (destination.guesses?.L?.length ?? 0) > 0) return null;
+  if (!source || !guesses || (guesses.L?.length ?? 0) === 0) {
+    return {
+      items: [
+        {
+          ConditionCheck: {
+            TableName: tableName,
+            Key: roundItemKey(key, from),
+            ConditionExpression:
+              'attribute_not_exists(pk) OR attribute_not_exists(#g) OR size(#g) = :zero',
+            ExpressionAttributeNames: { '#g': 'guesses' },
+            ExpressionAttributeValues: { ':zero': { N: '0' } },
+          },
+        },
+      ],
+      moved: false,
+      solved: false,
+    };
+  }
+  if (destination && (destination.guesses?.L?.length ?? 0) > 0) {
+    return {
+      items: [
+        {
+          ConditionCheck: {
+            TableName: tableName,
+            Key: roundItemKey(key, to),
+            ConditionExpression: 'attribute_exists(#g) AND size(#g) > :zero',
+            ExpressionAttributeNames: { '#g': 'guesses' },
+            ExpressionAttributeValues: { ':zero': { N: '0' } },
+          },
+        },
+      ],
+      moved: false,
+      solved: false,
+    };
+  }
   return {
     items: [
       {
@@ -695,6 +733,7 @@ export async function planRoundMove(
         },
       },
     ],
+    moved: true,
     solved: source.solved?.BOOL === true,
   };
 }

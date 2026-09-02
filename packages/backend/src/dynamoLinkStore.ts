@@ -468,22 +468,26 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
 
       for (let attempt = 0; attempt < MOVE_PLAN_ATTEMPTS; attempt += 1) {
         // The active day's play, planned by the stores that own the rows and committed HERE,
-        // beside the identity — every tuple in parallel, each its own two consistent reads.
-        // The score row is planned only for a round that moves: it follows the round it was
-        // derived from, never travels alone.
+        // beside the identity — every tuple in parallel, each its own consistent reads.
+        // EVERY plan contributes items, a no-move included: a decision resting on "nothing
+        // here" is guarded exactly like one resting on a row, or a first guess landing on
+        // an empty source between the plan and the commit would be orphaned under the
+        // deleted account with nothing in the transaction to notice. The score row is
+        // planned only for a round that moves: it follows the round it was derived from,
+        // never travels alone.
         const plans = await Promise.all(
           (input.moves ?? []).map(async (key) => {
             const round = await planRoundMove(client, tableName, key, input.from, input.to);
-            if (!round) return null;
-            const score = await planScoreMove(client, tableName, key, input.from, input.to);
+            const score = round.moved
+              ? await planScoreMove(client, tableName, key, input.from, input.to)
+              : [];
             return { key, round, score };
           }),
         );
         const moved: LinkMovedRound[] = [];
         const moves: TransactWriteItem[] = [];
         for (const plan of plans) {
-          if (!plan) continue;
-          moved.push({ key: plan.key, solved: plan.round.solved });
+          if (plan.round.moved) moved.push({ key: plan.key, solved: plan.round.solved });
           moves.push(...plan.round.items, ...plan.score);
         }
         try {
@@ -516,9 +520,9 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
           if (refused(2)) return { outcome: 'challenge_changed', moved: [] };
           if (refused(1) || refused(sourceIndex)) return { outcome: 'account_changed', moved: [] };
           if (refused(0)) return { outcome: 'device_changed', moved: [] };
-          // Only a MOVE refused: the play changed between the plan and the commit. Nothing
-          // was written — plan again over what stands now, so the guess that landed is
-          // carried across rather than deleted unseen.
+          // Only a MOVE (or a no-move's guard) refused: the play changed between the plan
+          // and the commit. Nothing was written — plan again over what stands now, so the
+          // guess that landed is carried across rather than deleted unseen or orphaned.
         }
       }
       throw new Error("The active day's play kept changing while an account was being adopted.");

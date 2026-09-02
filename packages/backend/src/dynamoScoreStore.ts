@@ -238,8 +238,15 @@ export function dynamoScoreStore(
 // #204's active-day transfer, the SCORE half: planned here (the row is this store's shape)
 // and committed by `dynamoLinkStore` inside the one adoption transaction, beside the round
 // it was derived from — so the day's population holds the score under exactly one player
-// at every instant and the histogram count is never transiently doubled. Empty when there
-// is nothing to move: no row under the source, or a row already under the destination.
+// at every instant and the histogram count is never transiently doubled.
+//
+// Called only for a round that MOVES, and it always answers items: a move is a create-only
+// Put under the destination and a Delete of the source conditioned on the EXACT row read
+// (a concurrent revision replacement must refuse, not be overwritten by the stale copy);
+// a no-move is a ConditionCheck on the observation it rests on — "no row under the source
+// yet" most of all, since the solving append writes the score row a beat after the log,
+// and one landing between this read and the commit would otherwise stay under the
+// deleted account.
 export async function planScoreMove(
   client: DynamoDBClient,
   tableName: string,
@@ -247,31 +254,60 @@ export async function planScoreMove(
   from: string,
   to: string,
 ): Promise<TransactWriteItem[]> {
+  const rowKey = (publicId: string) => ({ pk: { S: dayKey(key) }, sk: { S: publicId } });
   const read = async (publicId: string) => {
     const response = await client.send(
-      new GetItemCommand({
-        TableName: tableName,
-        Key: { pk: { S: dayKey(key) }, sk: { S: publicId } },
-        ConsistentRead: true,
-      }),
+      new GetItemCommand({ TableName: tableName, Key: rowKey(publicId), ConsistentRead: true }),
     );
     return response.Item;
   };
   const [source, destination] = await Promise.all([read(from), read(to)]);
-  if (!source || destination) return [];
+  if (!source) {
+    return [
+      {
+        ConditionCheck: {
+          TableName: tableName,
+          Key: rowKey(from),
+          ConditionExpression: 'attribute_not_exists(pk)',
+        },
+      },
+    ];
+  }
+  if (destination) {
+    return [
+      {
+        ConditionCheck: {
+          TableName: tableName,
+          Key: rowKey(to),
+          ConditionExpression: 'attribute_exists(pk)',
+        },
+      },
+    ];
+  }
   return [
     {
       Put: {
         TableName: tableName,
-        Item: { ...source, pk: { S: dayKey(key) }, sk: { S: to } },
+        Item: { ...source, ...rowKey(to) },
         ConditionExpression: 'attribute_not_exists(pk)',
       },
     },
     {
       Delete: {
         TableName: tableName,
-        Key: { pk: { S: dayKey(key) }, sk: { S: from } },
-        ConditionExpression: 'attribute_exists(pk)',
+        Key: rowKey(from),
+        ConditionExpression:
+          '#score = :score AND #revision = :revision AND #submittedAt = :submittedAt',
+        ExpressionAttributeNames: {
+          '#score': 'score',
+          '#revision': 'revision',
+          '#submittedAt': 'submittedAt',
+        },
+        ExpressionAttributeValues: {
+          ':score': source.score ?? { NULL: true },
+          ':revision': source.revision ?? { NULL: true },
+          ':submittedAt': source.submittedAt ?? { NULL: true },
+        },
       },
     },
   ];

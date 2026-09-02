@@ -556,8 +556,14 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   stores PLAN the items — `planRoundMove` (a create-if-empty Put under the destination and
   a Delete of the source conditioned on the EXACT log read, `#g = :guesses AND #p =
   :puzzle`, never a length; null when the source holds no guesses or the destination holds
-  play) and `planScoreMove` (create-only Put + Delete, only for a round that moves) — and
-  `dynamoLinkStore` commits them beside the identity items. A `TransactionCanceledException`
+  play) and `planScoreMove` (create-only Put + a Delete conditioned on the exact row, only
+  for a round that moves) — and `dynamoLinkStore` commits them beside the identity items.
+  **A NO-MOVE IS GUARDED TOO** (same review, second round): a decision resting on "nothing
+  here" carries a ConditionCheck on exactly what it saw — the source round still empty, the
+  destination still holding play, the source score row still absent — because a first
+  guess (or the solving append's score row, written a beat after the log) landing between
+  the plan and the commit would otherwise be orphaned under the deleted account with
+  nothing in the transaction to notice. A `TransactionCanceledException`
   is classified by its per-item reason codes, and by WHICH item: an identity refusal is the
   route's answer (challenge > account > device, as before), while a refusal on a MOVE item
   alone — a guess landed on the source, or the destination gained play, between the plan

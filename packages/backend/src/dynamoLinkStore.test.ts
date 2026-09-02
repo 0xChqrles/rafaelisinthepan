@@ -426,7 +426,7 @@ describe('dynamoLinkStore — the indivisible core', () => {
     expect(items[9].Delete!.Key).toEqual(scoreKey(PLAN.from));
   });
 
-  it('moves NOTHING when the destination already holds play, and reports so', async () => {
+  it('moves NOTHING when the destination already holds play, and reports so — but GUARDS that', async () => {
     const { store, send } = makeStore(async (command) => {
       if (!(command instanceof GetItemCommand)) return {};
       const key = command.input.Key!;
@@ -441,7 +441,47 @@ describe('dynamoLinkStore — the indivisible core', () => {
     ).resolves.toEqual({ outcome: 'adopted', moved: [] });
     const items = (send.mock.calls.map(([c]) => c).find((c) => c instanceof TransactWriteItemsCommand) as TransactWriteItemsCommand)
       .input.TransactItems!;
-    expect(items).toHaveLength(6);
+    // Six identity items and ONE guard — the observation the no-move rests on.
+    expect(items).toHaveLength(7);
+    expect(items[6].ConditionCheck!.Key!.pk.S).toBe(`round#${PLAN.to}`);
+  });
+
+  it('GUARDS an observed-empty source, so a first guess landing before the commit is carried rather than orphaned', async () => {
+    let reads = 0;
+    let writes = 0;
+    const { store, send } = makeStore(async (command) => {
+      if (command instanceof GetItemCommand) {
+        if (command.input.Key!.pk.S !== `round#${PLAN.from}`) return {};
+        reads += 1;
+        // Nothing there at the first plan; a first guess by then at the second.
+        return reads === 1 ? {} : { Item: round(['chat']) };
+      }
+      writes += 1;
+      const items = (command as TransactWriteItemsCommand).input.TransactItems!;
+      if (writes === 1) {
+        // The no-move's own guard is what refuses: the source is no longer empty.
+        expect(items).toHaveLength(7);
+        expect(items[6].ConditionCheck!.Key!.pk.S).toBe(`round#${PLAN.from}`);
+        throw Object.assign(new Error('cancelled'), {
+          name: 'TransactionCanceledException',
+          CancellationReasons: items.map((_, index) => ({
+            Code: index === 6 ? 'ConditionalCheckFailed' : 'None',
+          })),
+        });
+      }
+      return {};
+    });
+    await expect(
+      store.adopt({ ...PLAN, erase: true, mergeFrom: PLAN.from, moves: [KEY] }),
+    ).resolves.toEqual({ outcome: 'adopted', moved: [{ key: KEY, solved: false }] });
+    const second = (send.mock.calls
+      .map(([c]) => c)
+      .filter((c): c is TransactWriteItemsCommand => c instanceof TransactWriteItemsCommand)[1])
+      .input.TransactItems!;
+    // The re-plan MOVES the round that appeared — and guards the score row it has not got yet.
+    expect(second[6].Put!.Item!.pk.S).toBe(`round#${PLAN.to}`);
+    expect(second[7].Delete!.Key).toEqual(roundKey(PLAN.from));
+    expect(second[8].ConditionCheck!.ConditionExpression).toBe('attribute_not_exists(pk)');
   });
 
   it('plans AGAIN when only the play refused — a guess that landed meanwhile is carried, never deleted unseen', async () => {
