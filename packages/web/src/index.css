@@ -5217,12 +5217,18 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 /* THE ONE CALL: the screen's primary, in the tutorial's MIX / the board's INVITE / the
    gates' PLAY geometry (`.mix-btn`), the caption that explains it over it. On desktop it
    is the column's last item; on a phone the mobile block parks it on the bottom edge,
-   where those buttons sit on their screens. */
+   where those buttons sit on their screens.
+   ON DESKTOP IT STANDS OFF (user-decided 2026-09-03: the column is centred there, and at
+   the rows' own 20px the call read as one more row — "everything is packed in the middle
+   of the screen"). 48px over the column's 20px gap is a section's break, more than twice
+   the room between the rows, so the call is a different kind of thing from the list above
+   it. A phone never sees this margin: its block replaces it with the auto margin that
+   parks the call on the bottom edge, where the gap was already right. */
 .account-cta {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  margin-top: 20px;
+  margin-top: 48px;
 }
 .account-cta .account-note.caption {
   margin: 0;
