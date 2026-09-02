@@ -411,7 +411,6 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
           lang={lang}
           title={t(lang, inviteFailed === 'account' ? 'failedAccount' : 'failedShare')}
           note={t(lang, inviteFailed === 'account' ? 'failedAccountNote' : 'failedShareNote')}
-          onRetry={() => void invite()}
           onClose={() => setInviteFailed(null)}
         />
       )}

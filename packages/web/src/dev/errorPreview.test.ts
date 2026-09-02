@@ -37,15 +37,6 @@ describe('errorPreviewFromSearch', () => {
 });
 
 describe('the variant set', () => {
-  it('covers BOTH shapes the screen has to render', () => {
-    const named = Object.values(ERROR_VARIANTS);
-    expect(named.some((v) => 'retry' in v)).toBe(true);
-    // The moderation refusals: asking again cannot help, so the note is the answer and the
-    // one button is the way out. A preview set of only retryable variants would never show
-    // that layout.
-    expect(named.some((v) => !('retry' in v))).toBe(true);
-  });
-
   it('cycles through every variant and returns to the first', () => {
     const walk = [ERROR_VARIANT_NAMES[0]];
     for (let i = 1; i < ERROR_VARIANT_NAMES.length; i += 1) {

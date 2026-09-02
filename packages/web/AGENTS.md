@@ -59,7 +59,8 @@
                               friend-merge drain behind it
       components/DeviceList.tsx  the account's devices + SIGN OUT rows (#216), on the profile editor
       components/ErrorScreen.tsx  the app's error surface: a FULL-SCREEN modal led by the
-                              user-drawn ERROR BOT (2026-08-27, replacing the popup/sheet)
+                              user-drawn ERROR BOT (2026-08-27, replacing the popup/sheet);
+                              ONE quiet way out since 2026-09-03 — no TRY AGAIN
       state/roundSync.ts      the #201 sync engine, reworked by #214: coalesced prefix writes,
                             the transient server snapshot it publishes for the screen, the
                             outbox it settles by identity, cap + freeze, #203's round-start
@@ -1032,12 +1033,27 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the HMAC-of-IP rows and their TTLs, the 10-minute code, the us-east-1 stacks, Turnstile
     and Plausible's three events. The TTLs are stated as an upper BOUND, never an instant —
     DynamoDB's sweep is best-effort and the two rows expire at different lengths.
-  - **It does NOT wear `.account-screen`**: that class centres its column and, on a phone,
-    opens on the area's high start line — and this is by far the area's tallest screen, which
-    is exactly what took `/profile` off that line on 2026-09-02. `.privacy-screen` states its
-    own geometry (the same 430px column, the same literal 48px header clearance) and
-    `align-self: stretch` pins it to the top; the column scrolls its own overflow, which is
-    also what lights the header's band as the text passes under it.
+  - **It is SET LIKE AN ARTICLE (user-decided 2026-09-03: "a bit more beautiful, like a blog
+    post", and wider — at the account column's 430px "on desktop it feels like you're on a
+    phone").** A 640px measure (~76 characters of the mono, a real reading line), a TITLE in
+    sentence case that is the document's own first sentence (the header chip names the
+    SCREEN; the title names the CLAIM the page substantiates — `privacyDoc.title`, split out
+    of the lead), a DATELINE under it in the archive day's tag dress, a STANDFIRST, then
+    sections each opened by a hairline; every named thing is a `<dl>` term on its own line
+    over what is true of it, so a section skims like a run of small subheads. It does NOT
+    wear `.account-screen`: that class centres its column and, on a phone, opens on the
+    area's high start line — and this is by far the area's tallest screen, which is exactly
+    what took `/profile` off that line on 2026-09-02. `.privacy-screen` states its own
+    geometry (the literal 48px header clearance) and `align-self: stretch` pins it to the
+    top; the column scrolls its own overflow, which is also what lights the header's band as
+    the text passes under it.
+  - **THE DOOR ON `/account` IS A FOOTNOTE, not a row** (user-decided 2026-09-03: "only 0.1%
+    of the users will care and click on it… not hidden neither, just not in the middle of
+    the screen with a big button"). `.account-foot` is the last line of the content — after
+    the devices, before the bottom-edge call — small, centred, in the secondary ink, with a
+    finger's padding it does not show. It is the one place the area's ACTION-in-`--fg` rule
+    yields: that rule keeps a control from hiding among help text, and there is none here to
+    hide among; this one is meant to be exactly as visible as the interest in it.
   - **The address step's control is BARE** (`.link-aside`): the boxed `.link-quiet-btn` dress
     belongs to an ALTERNATIVE (RESEND), and directly under CONTINUE a boxed one read as a
     second button competing with the lit one. It is the same rule `.btn + .link-quiet-btn`
@@ -1056,6 +1072,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
     words without naming a legal basis under Art. 6 — the readable half of what Art. 13(1)(c)
     asks for, left that way deliberately rather than turned into boilerplate.
 
+- **THE ERROR SCREEN HAS ONE WAY OUT (user-decided 2026-09-03: "get rid of the retry
+  button… it's weird to retry from a fullscreen error page, just go back and retry if you
+  want").** `ErrorScreen` carried a lit TRY AGAIN wherever asking again could help
+  (2026-08-24), with GO BACK as its secondary; it carries a single SECONDARY that dismisses
+  now. The act that failed belongs to the screen underneath — the typed address, the
+  drawing, the gate are all still there — and the honest gesture is to go back to it and
+  press the same button again. Gone with it: the `onRetry` prop and its seven wirings, the
+  `retry` flag on `AccountEmail`'s refusals and `Profile`'s save error, the `tryAgain` string,
+  `errorPreview`'s retry shape and its "both layouts" test, and the synchronous-in-tap rule
+  the retry needed on WebKit (the act is re-run inside its own fresh tap now). `LoadError`'s
+  RETRY is untouched: that is a screen that could not open, where this is an act that did
+  not land.
 - **EVERY PAGE CAN CHANGE LANGUAGE (user-decided 2026-09-03).** The game routes always
   could — `PuzzleTitle`'s selection holds the language beside the daily — and the ACCOUNT
   AREA could not: `/account` carried a plain name and its steps carried a back control, so a
@@ -1075,12 +1103,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
     language from (`lastLang` → `resolveHomeLang`), so the page re-renders where it stands.
     One component, because the two faces differ by which drums render and one branch in the
     fold.
-  - **`HeaderBack` IS THE ARROW ALONE now.** It carried the screen's NAME as one target
-    (2026-08-29), which was right while the name said only which screen you were on; the
-    name opens a wheel now, and one target cannot do both. The arrow takes the retired
-    control's own geometry minus its word — 44px of height around the glyph, pulled back to
-    the row's left edge — rather than `.ps-back`'s `--hud-height` square, which cost the
-    title 12px it did not have.
+  - **`HeaderBack` IS THE ARROW ALONE now, and it is the SELECTION's way out too.** It
+    carried the screen's NAME as one target (2026-08-29), which was right while the name said
+    only which screen you were on; the name opens a wheel now, and one target cannot do
+    both. The arrow takes the retired control's own geometry minus its word — 44px of height
+    around the glyph, pulled back to the row's left edge — and it is deliberately NOT a
+    `.home-btn`: that class sizes a key by `--hud-height`, which steps down with the phone
+    breakpoints on `.topbar` and not on `.modal-bar`, so `PuzzleSelect`'s own back control
+    (`.ps-back`, deleted) measured 40px where the header's measured 32 and its chevron sat
+    4px to the right — "it feels like the back button is moving" (user-reported 2026-09-03).
+    The selection mounts `HeaderBack` itself now; measured, the two chevrons land on the same
+    pixel at 320/390/640/1280.
   - **THE ROW IS AT ITS LIMIT, and the LANGUAGE TAG is what gives.** A step's left slot holds
     FOUR things beside a five-key group that may never shrink, and French runs ~20% longer:
     measured, SAUVEGARDE and VIE PRIVÉE ran 7px into the keys at 360 and 18px at 320. Three

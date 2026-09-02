@@ -158,12 +158,12 @@ function writeResumable(value: Resumable | null): void {
   }
 }
 
-// What went wrong, in the words the error surface needs. `retry` is present only when asking
-// again can help — a refused code cannot be fixed by re-sending the same one.
+// What went wrong, in the words the error surface needs. (A `retry` flag chose between two
+// buttons on that surface until 2026-09-03; the screen has one way out now, and the act is
+// re-run from the step that owns it.)
 interface Refusal {
   title: string;
   note: string;
-  retry?: boolean;
 }
 
 // THE ENDING HAS TO SURVIVE ITS OWN SUCCESS. An ADOPT changes the account this device acts
@@ -260,10 +260,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
 
   useEffect(() => () => clearTimeout(shakeTimer.current), []);
 
-  const fail = useCallback(
-    (title: string, note: string, retry?: boolean) => setRefusal({ title, note, retry }),
-    [],
-  );
+  const fail = useCallback((title: string, note: string) => setRefusal({ title, note }), []);
 
   const leave = () => {
     writeResumable(null);
@@ -338,9 +335,9 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           fail(t(lang, 'linkFailed'), t(lang, 'linkBadAddress'));
           return;
         }
-        fail(t(lang, 'linkFailed'), t(lang, 'linkSendFailedNote'), true);
+        fail(t(lang, 'linkFailed'), t(lang, 'linkSendFailedNote'));
       } catch {
-        fail(t(lang, 'linkFailed'), t(lang, 'linkSendFailedNote'), true);
+        fail(t(lang, 'linkFailed'), t(lang, 'linkSendFailedNote'));
       } finally {
         setBusy(false);
         if (handOff && !handedOn) addressField.current?.focus();
@@ -511,10 +508,10 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           return;
         }
         if (response.status >= 500 && (await recoverAmbiguous(resolved, email))) return;
-        fail(t(lang, 'linkFailed'), t(lang, 'linkVerifyFailedNote'), true);
+        fail(t(lang, 'linkFailed'), t(lang, 'linkVerifyFailedNote'));
       } catch {
         if (request && (await recoverAmbiguous(request, email))) return;
-        fail(t(lang, 'linkFailed'), t(lang, 'linkVerifyFailedNote'), true);
+        fail(t(lang, 'linkFailed'), t(lang, 'linkVerifyFailedNote'));
       } finally {
         setBusy(false);
       }
@@ -1010,11 +1007,6 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           lang={lang}
           title={refusal.title}
           note={refusal.note}
-          onRetry={
-            refusal.retry
-              ? () => void (step === 'code' && isValidLinkCode(code) ? verify(code) : send())
-              : undefined
-          }
           onClose={() => setRefusal(null)}
         />
       )}

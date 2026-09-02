@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent, RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import ChevronLeftIcon from '../assets/icons/chevron-left.svg?react';
 import useDrum from '../hooks/useDrum';
 import useModalDismiss from '../hooks/useModalDismiss';
+import { HeaderBack } from './TopBar';
 import { t } from '../i18n';
 import {
   LANGS,
@@ -257,20 +257,20 @@ export default function PuzzleSelect({
         if (bare && !closing) beginClose();
       }}
     >
-      {/* The app's header row, with the way back in its left slot. */}
+      {/* The app's header row, with the way back in its left slot — `HeaderBack` ITSELF, not
+          a look-alike: the selection opens over a header that carries the same control on
+          every step of the account area, and a chevron drawn a few pixels off from the one
+          it covers reads as the back button MOVING when the screen opens (user-reported
+          2026-09-03). Same component, same geometry, same slot: it does not move. */}
       <div className="modal-bar">
         <div className="topbar-inner">
           <div className="topbar-left">
-            <button
-              type="button"
-              className="home-btn ps-back"
-              aria-label={t(lang, 'ariaClose')}
-              onClick={() => {
+            <HeaderBack
+              label={t(lang, 'ariaClose')}
+              onBack={() => {
                 if (!closing) beginClose();
               }}
-            >
-              <ChevronLeftIcon className="ui-icon" aria-hidden />
-            </button>
+            />
           </div>
           <div className="topbar-right" />
         </div>

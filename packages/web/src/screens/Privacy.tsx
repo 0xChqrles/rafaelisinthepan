@@ -8,10 +8,14 @@
 // readable by a fourteen-year-old. The words themselves live in `privacyDoc.ts`; what is
 // here is how they are set.
 //
-// **THREE ROLES, THE ACCOUNT AREA'S OWN** (2026-08-29): the section HEADINGS are chrome
-// (uppercase, tracked, `--fg`), a TERM is the thing being named (`--fg`, medium) and the
-// BODY is explanation (`--muted`, sentence case, regular) — so the page can be skimmed for
-// the one thing a reader came for before a word of it is read.
+// **SET LIKE AN ARTICLE** (user-decided 2026-09-03: "a bit more beautiful, like a blog
+// post", and wider than the account column, which "on desktop feels like you're on a
+// phone"): a TITLE in sentence case — the document's own first line, the claim the page
+// substantiates — a DATELINE under it, a STANDFIRST, then sections each opened by a
+// hairline. The area's three roles still tell the parts apart (2026-08-29): a section
+// HEADING is chrome (uppercase, tracked, `--fg`), a TERM is the thing being named — on its
+// own line, in a definition list, so a section skims like a run of small subheads — and the
+// BODY is explanation (`--muted`, sentence case, regular).
 //
 // It is a STEP, not a place: the header's row lights the FACE (the whole account area is one
 // place, its steps included) and the left slot carries the back control. Back is `goBack` and
@@ -47,7 +51,7 @@ function fill(text: string): ReactNode {
     }
     if (part === '{host}') {
       return (
-        <span key={i} className="privacy-term">
+        <span key={i} className="privacy-strong">
           {PRIVACY_HOST}
         </span>
       );
@@ -83,11 +87,17 @@ export default function Privacy() {
         <HeaderBack label={t(lang, 'ariaBack')} onBack={() => goBack(ACCOUNT_PATH)} />
         <LangTitle lang={lang} title={title} />
       </HeaderLeft>
-      <div className="privacy-screen">
-        {/* The screen's name is in the header, which is a BUTTON — so the document itself
-            still owes a reader a heading to land on. */}
-        <h1 className="sr-only">{title}</h1>
-        <p className="privacy-lead">{doc.lead}</p>
+      <article className="privacy-screen">
+        {/* THE HEAD: the document's title is its own first sentence — the header's chip
+            names the SCREEN, this names the CLAIM — with the dateline where an article
+            keeps one, and the standfirst under both. */}
+        <header className="privacy-head">
+          <h1 className="privacy-title">{doc.title}</h1>
+          {updated && (
+            <p className="privacy-dateline">{`${doc.updatedLabel} ${updated}`}</p>
+          )}
+          <p className="privacy-lead">{doc.lead}</p>
+        </header>
         {doc.sections.map((section) => (
           <section key={section.heading} className="privacy-section">
             <h2 className="privacy-heading">{section.heading}</h2>
@@ -96,18 +106,20 @@ export default function Privacy() {
                 {fill(paragraph)}
               </p>
             ))}
-            {section.entries?.map((entry) => (
-              <p key={entry.term} className="privacy-text">
-                <span className="privacy-term">{entry.term}</span>
-                {' — '}
-                {fill(entry.body)}
-              </p>
-            ))}
+            {section.entries && (
+              <dl className="privacy-list">
+                {section.entries.map((entry) => (
+                  <div key={entry.term}>
+                    <dt className="privacy-term">{entry.term}</dt>
+                    <dd className="privacy-text">{fill(entry.body)}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
             {section.outro && <p className="privacy-text">{section.outro}</p>}
           </section>
         ))}
-        {updated && <p className="privacy-updated">{`${doc.updatedLabel} ${updated}`}</p>}
-      </div>
+      </article>
     </>
   );
 }

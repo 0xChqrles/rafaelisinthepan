@@ -63,6 +63,10 @@ interface Section {
 }
 
 export interface PrivacyDoc {
+  // The document's own first line — a sentence, set as a title (2026-09-03: "like a blog
+  // post"). It is the claim the whole page substantiates.
+  title: string;
+  // The standfirst under it: what the page is going to do about that claim.
   lead: string;
   sections: Section[];
   updatedLabel: string;
@@ -77,7 +81,8 @@ export interface PrivacyDoc {
 // different inboxes — the `{n}` rule the Word gate's own copy follows.
 export const PRIVACY: Record<UiLang, PrivacyDoc> = {
   en: {
-    lead: 'Whippin keeps as little about you as it can. Here is all of it, why it is kept, and how to get rid of it.',
+    title: 'Whippin keeps as little about you as it can.',
+    lead: 'Here is all of it, why it is kept, and how to get rid of it.',
     sections: [
       {
         heading: 'WHAT IS KEPT',
@@ -156,7 +161,8 @@ export const PRIVACY: Record<UiLang, PrivacyDoc> = {
     updatedLabel: 'Last updated',
   },
   fr: {
-    lead: "Whippin garde le moins de choses possible sur vous. Voici tout ce qu'il garde, pourquoi, et comment tout effacer.",
+    title: 'Whippin garde le moins de choses possible sur vous.',
+    lead: "Voici tout ce qu'il garde, pourquoi, et comment tout effacer.",
     sections: [
       {
         heading: "CE QU'ON GARDE",

@@ -1251,15 +1251,9 @@ button {
   font-family: var(--ui);
   background: var(--bg);
 }
-/* The way back: the title's own chevron, turned to point out, in the left slot where a
-   back control belongs. */
-.ps-back {
-  width: var(--hud-height);
-  color: var(--fg);
-}
-.ps-back:hover {
-  color: var(--muted);
-}
+/* The way back is `HeaderBack` itself — the same control, the same geometry, in the same
+   slot — so the chevron does not move by a few pixels between the screen's header and the
+   selection's (user-reported 2026-09-03: "it feels like the back button is moving"). */
 /* The probe: one chip in the rows' dress, out of the way, that the drums measure their
    row height off. */
 .ps-probe {
@@ -5390,21 +5384,24 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 /* THE HEADER'S BACK CONTROL (user-decided 2026-08-29; the ARROW ALONE since 2026-09-03).
    It carried the screen's NAME as one target until the name grew a job of its own — the
    LANGUAGE, and the selection behind it (`LangTitle`) — and one target cannot both leave a
-   screen and open a wheel. So the arrow moved into the KEYS' own square, which is the size
-   `.ps-back` has always used for exactly this glyph: the negative-margin trick that gave the
-   old control its 44px only worked because there was a WORD inside the box to pull back out
-   to the row's left edge, and there is no word in it now. `.home-btn` supplies the box; this
-   pulls it back to that edge (a bare glyph in a 38px square otherwise starts a quarter of a
-   square inboard of every other screen's title) and keeps the ink at full strength. */
+   screen and open a wheel. It is the ARROW's own control now — and since 2026-09-03 the
+   selection's way out is this very component too, so the chevron cannot sit a few pixels off
+   from the one it opens over. */
 .header-back {
   display: flex;
   align-items: center;
   flex: none;
+  /* NOT a `.home-btn`: that class sizes a key by `--hud-height`, which steps down with the
+     phone breakpoints on `.topbar` but not on `.modal-bar`, so the same control measured
+     32px in the header and 40px in the selection over it — and a glyph centred in boxes of
+     two widths lands 4px apart, which is exactly the "back button moving" the shared
+     component was meant to end (measured 2026-09-03). The padding is the whole box, in
+     both places. */
   /* The RETIRED control's own geometry with its word taken out: 44px of height around a
      glyph that stays small, and the padding pulled back out with a negative margin so the
      chevron still starts on the row's own left edge. It began as a `--hud-height` square
-     (`.ps-back`'s shape) and that cost the title 12px it did not have — a key's box is
-     sized for a 20px drawing, and this is a 14px mark with a title waiting beside it. */
+     and that cost the title 12px it did not have — a key's box is sized for a 20px
+     drawing, and this is a 14px mark with a title waiting beside it. */
   padding: 12px 10px 12px 4px;
   margin: -12px 0 -12px -4px;
   border: 0;
@@ -5894,21 +5891,28 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 
 /* ===================== the privacy notice (#229) ===================== */
-/* THE APP'S ONE DOCUMENT. Every other surface says only what it cannot show; a legal notice
-   has nothing to show, so this is the one screen made of paragraphs — and it is set to be
-   READ, not skimmed past: the account column's own width (min(430px, 100%) is ~60 characters
-   at this size, a real measure), the area's 48px header clearance stated as a LITERAL for the
-   reason `.account-screen` records (`--hud-height` is scoped to `.topbar`, and naming it in a
-   `calc()` out here voids the whole declaration).
+/* THE APP'S ONE DOCUMENT, SET LIKE AN ARTICLE (user-decided 2026-09-03: "a bit more
+   beautiful, like a blog post" — and wider: at the account column's 430px "on desktop it
+   feels like you're on a phone"). Every other surface says only what it cannot show; this
+   is the one screen made of paragraphs, so it takes a reader's shape: a TITLE in sentence
+   case (a document's own first line, not chrome), a DATELINE under it, a STANDFIRST, and
+   sections opened by a hairline and a small tracked heading — each named thing standing on
+   its own line over what is true of it, so the page skims for the one item a reader came
+   for before a word of it is read.
+
+   The MEASURE is 640px: ~76 characters of the mono at this size, a real reading line where
+   430 was a phone column stood on a desk. The area's 48px header clearance is stated as a
+   LITERAL for the reason `.account-screen` records (`--hud-height` is scoped to `.topbar`,
+   and naming it in a `calc()` out here voids the whole declaration).
 
    It does NOT wear `.account-screen`: that class centres its column vertically and, on a
-   phone, opens on the area's high start line. A document reads top-down from as high as the
-   header allows — the same finding that took `/profile` off that line on 2026-09-02, and this
-   is by far the area's tallest screen. `align-self: stretch` is what pins it to the top of
-   `.app`'s centring row; the column then scrolls its own overflow, which is also what lights
-   the header's band as the text passes under it. */
+   phone, opens on the area's high start line — a document reads top-down from as high as
+   the header allows (the finding that took `/profile` off that line on 2026-09-02).
+   `align-self: stretch` pins it to the top of `.app`'s centring row; the column then scrolls
+   its own overflow, which is also what lights the header's band as the text passes under
+   it. */
 .privacy-screen {
-  width: min(430px, 100%);
+  width: min(640px, 100%);
   align-self: stretch;
   /* 100% (the `.app` padding box), never 100dvh: a taller child of a centring flex parent
      overflows symmetrically and its top gets clipped under the bar (`.profile-screen`'s
@@ -5917,17 +5921,41 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  /* A SECTION'S AIR, the account screen's own (its rows sit 20px apart under a 20px seam):
-     the space is what says a new thing starts here, and the heading says what it is. */
-  gap: 30px;
-  padding: 48px 2px 40px;
+  padding: 64px 2px 72px;
 }
-/* The lead is the document's own voice — one sentence at the body's size but in the reading
-   ink, so the page opens on a statement rather than on a heading. */
-.privacy-lead {
+/* THE HEAD — title, dateline, standfirst — then the sections, each opened by a rule. */
+.privacy-head {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 40px;
+}
+/* A document's TITLE: sentence case (it is a line of prose, not a label), the chrome's
+   family, at a display size — hierarchy said in WEIGHT and SIZE, never in a second family. */
+.privacy-title {
   margin: 0;
   font-family: var(--ui);
-  font-size: 14px;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+}
+/* The DATELINE — the archive day's own dress (`.title-tag`): small, tracked, muted. */
+.privacy-dateline {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* The STANDFIRST — one sentence in the reading ink, a step above the body. */
+.privacy-lead {
+  margin: 6px 0 0;
+  font-family: var(--ui);
+  font-size: 16px;
   font-weight: 400;
   line-height: 1.6;
   color: var(--fg);
@@ -5935,13 +5963,18 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .privacy-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+.privacy-section + .privacy-section {
+  margin-top: 32px;
 }
 /* CHROME (the area's three-roles rule, 2026-08-29): uppercase, tracked, `--fg` — the same
    dress `.account-link-label` wears, so a heading here and a row label there read as one
    kind of thing. */
 .privacy-heading {
-  margin: 0;
+  margin: 0 0 2px;
   font-family: var(--ui);
   font-size: 12px;
   font-weight: 650;
@@ -5949,20 +5982,37 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   text-transform: uppercase;
   color: var(--fg);
 }
-/* INFO: sentence case, muted, regular — `.account-note`'s exact voice, since it is the same
-   role on the same screens. */
+/* INFO: sentence case, muted, regular — `.account-note`'s voice at a reading size. */
 .privacy-text {
   margin: 0;
   font-family: var(--ui);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 400;
-  line-height: 1.6;
+  line-height: 1.7;
   color: var(--muted);
 }
-/* The thing being NAMED, at the head of its own paragraph: `--fg` at the labels' weight, in
-   its own case (it is a noun, not a control). It is what makes the section skimmable for the
-   one item a reader came for. */
+/* A NAMED THING and what is true of it: a definition list, the term on its own line at the
+   labels' weight in the reading ink, its body under it — an article's run of small
+   subheads, which is what lets a section be skimmed. */
+.privacy-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
 .privacy-term {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 15px;
+  font-weight: 550;
+  line-height: 1.4;
+  color: var(--fg);
+}
+.privacy-list dd {
+  margin: 4px 0 0;
+}
+/* Inline emphasis inside a paragraph — the host's name, in the term's ink and weight. */
+.privacy-strong {
   color: var(--fg);
   font-weight: 550;
 }
@@ -5974,20 +6024,59 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   color: var(--fg);
   font-weight: 550;
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--line-strong);
 }
 .privacy-mail:hover {
   color: var(--accent);
+  text-decoration-color: var(--accent);
 }
-/* WHEN THIS WAS LAST TRUE — the quietest line on the page, and the last. */
-.privacy-updated {
-  margin: 0;
+@media (max-width: 640px) {
+  .privacy-screen {
+    padding: 48px 2px 40px;
+  }
+  .privacy-head {
+    margin-bottom: 32px;
+  }
+  .privacy-title {
+    font-size: 23px;
+  }
+  .privacy-lead {
+    font-size: 15px;
+  }
+  .privacy-section + .privacy-section {
+    margin-top: 26px;
+  }
+}
+
+/* THE QUIET DOOR TO THE NOTICE, on `/account` (user-decided 2026-09-03: "only 0.1% of the
+   users will care and click on it… not hidden neither, just not in the middle of the
+   screen with a big button"). It was a full-width row beside the account's own actions; it
+   is a FOOTNOTE now — the last line of the content, centred, small, in the secondary ink,
+   with a finger's padding it does not show. Muted on purpose, and the one place the area's
+   ACTION-in-`--fg` rule yields: that rule keeps a control from hiding among help text, and
+   there is no help text here to hide among — the whole point of this one is to be exactly
+   as visible as the interest in it. */
+.account-foot {
+  display: flex;
+  justify-content: center;
+  margin-top: 28px;
+}
+.account-foot-link {
+  padding: 12px 14px;
+  border: 0;
+  background: none;
   font-family: var(--ui);
   font-size: 11px;
-  font-weight: 400;
-  letter-spacing: 0.04em;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   color: var(--muted);
-  opacity: 0.75;
+  cursor: pointer;
+  transition: color 120ms;
+}
+.account-foot-link:hover {
+  color: var(--fg);
 }
 
 /* The account's DEVICES, and the way to sign one out (#216) — the profile screen's second
@@ -6902,13 +6991,12 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   text-transform: none;
   color: var(--muted);
 }
-/* The action is the column's, exactly like SignedOut's and the invite landing's. */
+/* The ONE way out is the column's width, exactly like SignedOut's and the invite landing's —
+   and it is the QUIET variant (2026-09-03): a full-screen error page is not a place to retry
+   from, so nothing on it is lit. The act is re-run from the screen underneath. */
 .error-body .btn {
   width: 100%;
   margin-top: 12px;
-}
-.error-body .btn + .btn {
-  margin-top: 0;
 }
 .error-screen[open] {
   animation: error-in 160ms ease-out;

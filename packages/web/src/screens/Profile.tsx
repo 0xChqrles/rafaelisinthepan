@@ -493,9 +493,9 @@ export default function Profile() {
       : refused === 'avatar_rejected'
         ? { title: t(lang, 'profileAvatarRejected'), note: t(lang, 'profileAvatarRejectedNote') }
         : refused === 'account'
-          ? { title: t(lang, 'failedAccount'), note: t(lang, 'failedAccountNote'), retry: true }
+          ? { title: t(lang, 'failedAccount'), note: t(lang, 'failedAccountNote') }
           : refused === 'error'
-            ? { title: t(lang, 'profileSaveFailed'), note: t(lang, 'failedSaveNote'), retry: true }
+            ? { title: t(lang, 'profileSaveFailed'), note: t(lang, 'failedSaveNote') }
             : null;
 
   return (
@@ -651,7 +651,6 @@ export default function Profile() {
                 lang={lang}
                 title={saveError.title}
                 note={saveError.note}
-                onRetry={saveError.retry ? () => void onSave() : undefined}
                 onClose={() => setRefused(null)}
               />
             )}

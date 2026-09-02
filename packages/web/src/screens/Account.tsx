@@ -203,26 +203,25 @@ export default function Account() {
               </button>
             </>
           )}
-          {/* WHAT THE GAME KEEPS (#229) — a row like the others, because it answers this
-              screen's own question from the other side: not "is this account mine" but
-              "what does holding one cost me". It is NOT gated on the summary the way the
-              rows above are: what is stored is a fact about the game, true before this
-              device has an account and while the read is still out, so holding it back
-              would be a screen withholding the one thing on it that never has to wait. */}
-          <button
-            type="button"
-            className="account-link"
-            onClick={() => navigate(PRIVACY_PATH)}
-          >
-            <span className="account-link-label">{t(lang, 'privacyTitle')}</span>
-            <ChevronRightIcon className="ui-icon" aria-hidden />
-          </button>
         </div>
 
         {/* DEVICES — its own SECTION, after everything there is to DO with this account
             (2026-08-30). ONLY once SAVED: an unlinked account holds exactly the device
             reading this screen, and a list of yourself is noise. */}
         {saved !== null && identity !== null && <DeviceList lang={lang} />}
+
+        {/* WHAT THE GAME KEEPS (#229) — the LAST line of the content, as a FOOTNOTE
+            (user-decided 2026-09-03, replacing a full-width row beside the account's own
+            actions: "only 0.1% of the users will care and click on it… not hidden neither,
+            just not in the middle of the screen with a big button"). Small, centred, in the
+            secondary ink, with a finger's padding it does not show — exactly as visible as
+            the interest in it. Not gated on the summary: what is stored is a fact about the
+            game, true before this device has an account and while the read is still out. */}
+        <div className="account-foot">
+          <button type="button" className="account-foot-link" onClick={() => navigate(PRIVACY_PATH)}>
+            {t(lang, 'privacyTitle')}
+          </button>
+        </div>
 
         {/* THE ONE CALL, on the screen's BOTTOM EDGE — where every screen's one big action
             sits (the tutorial's MIX, the board's INVITE, both gates' PLAY), in exactly

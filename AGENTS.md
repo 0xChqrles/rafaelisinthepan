@@ -1102,8 +1102,10 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   section).
   Each is a SINGLE tap that chains its real action behind the bootstrap, shows a
   clear loading state on the button, and reports failure on the app's ERROR SURFACE —
-  a FULL-SCREEN MODAL (`web/components/ErrorScreen.tsx`) saying what happened, with TRY
-  AGAIN when retrying can help. **It was a desktop popup / phone bottom SHEET until
+  a FULL-SCREEN MODAL (`web/components/ErrorScreen.tsx`) saying what happened, with ONE
+  quiet way out (**TRY AGAIN was RETIRED 2026-09-03, user-decided**: a full-screen error
+  page is not a place to retry from — the player goes back to the button that failed and
+  presses it again, where everything it needs is still on screen). **It was a desktop popup / phone bottom SHEET until
   2026-08-27, when the user retired that format outright:** a sheet is the dismissal
   gesture's own shape — it slides up from an edge and asks to be swiped away — where every
   message this surface carries is a CALL TO ACTION, and the account one most of all (the

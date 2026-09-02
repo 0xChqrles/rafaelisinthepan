@@ -118,14 +118,14 @@ export function HeaderLeft({ children }: { children: ReactNode }) {
 // more now: on every screen that is not a puzzle the name also carries the LANGUAGE and
 // opens the selection behind it (`LangTitle`), and one target cannot both leave a screen and
 // open a wheel. So a step's left slot is the arrow, then its name — two controls, still read
-// as one thing, and the row's measured width budget is unchanged (the name kept its box; the
-// arrow moved out of it into the keys' own square). It takes `.home-btn`'s size, which is
-// what `PuzzleSelect`'s own way out has always used: a chevron alone needs a finger's target
-// around it, and the negative-margin trick that gave the old one its 44px only worked because
-// there was a word inside the box to pull back out to the row's edge.
+// as one thing, and the row's measured width budget is unchanged. It is NOT a `.home-btn`:
+// that class sizes a key by `--hud-height`, which steps down with the phone breakpoints on
+// the header and not on a dialog's bar, so the same control drew two widths and its glyph
+// landed 4px apart between a screen and the selection over it. Its box is its own padding.
+// It is also `PuzzleSelect`'s way out — the same component, so the two cannot drift.
 export function HeaderBack({ label, onBack }: { label: string; onBack: () => void }) {
   return (
-    <button type="button" className="home-btn header-back" aria-label={label} onClick={onBack}>
+    <button type="button" className="header-back" aria-label={label} onClick={onBack}>
       <ChevronLeftIcon className="ui-icon" aria-hidden />
     </button>
   );

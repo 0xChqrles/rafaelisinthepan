@@ -56,9 +56,6 @@ const STRINGS = {
   // side of the pair, and the clicker cannot tell which.
   friendListFull: { en: 'FRIEND LIST FULL', fr: "LISTE D'AMIS PLEINE" },
   retry: { en: 'RETRY', fr: 'RÉESSAYER' },
-  // The error surface's action (#216 trigger rework): a failed primary act offers to run
-  // again where retrying can help. RETRY above stays the load screens' label.
-  tryAgain: { en: 'TRY AGAIN', fr: 'RÉESSAYER' },
   // The error screen's way OUT (2026-08-27, when the sheet became a full-screen modal).
   // It is not "close" — nothing is being tidied away; the act did not happen and the player
   // is going back to the screen that asked for it.

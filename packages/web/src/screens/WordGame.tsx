@@ -639,7 +639,6 @@ function WordRound({
           lang={lang}
           title={t(lang, 'failedStart')}
           note={t(lang, 'failedStartNote')}
-          onRetry={handlePlay}
           onClose={() => setStartFailed(false)}
         />
       )}

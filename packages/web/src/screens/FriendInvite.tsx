@@ -226,7 +226,6 @@ export default function FriendInvite({ publicId, lang }: { publicId: string; lan
           lang={lang}
           title={t(lang, 'failedInvite')}
           note={t(lang, 'failedInviteNote')}
-          onRetry={accept}
           onClose={() => setFailed(false)}
         />
       )}

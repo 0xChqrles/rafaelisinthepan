@@ -397,7 +397,6 @@ function GameRoute({
           lang={lang}
           title={t(lang, errorVariant(preview.error).title)}
           note={t(lang, errorVariant(preview.error).note)}
-          onRetry={errorVariant(preview.error).retry ? preview.cycleError : undefined}
           onClose={preview.cycleError}
         />
       )}
