@@ -1102,8 +1102,10 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   section).
   Each is a SINGLE tap that chains its real action behind the bootstrap, shows a
   clear loading state on the button, and reports failure on the app's ERROR SURFACE —
-  a FULL-SCREEN MODAL (`web/components/ErrorScreen.tsx`) saying what happened, with TRY
-  AGAIN when retrying can help. **It was a desktop popup / phone bottom SHEET until
+  a FULL-SCREEN MODAL (`web/components/ErrorScreen.tsx`) saying what happened, with ONE
+  quiet way out (**TRY AGAIN was RETIRED 2026-09-03, user-decided**: a full-screen error
+  page is not a place to retry from — the player goes back to the button that failed and
+  presses it again, where everything it needs is still on screen). **It was a desktop popup / phone bottom SHEET until
   2026-08-27, when the user retired that format outright:** a sheet is the dismissal
   gesture's own shape — it slides up from an edge and asks to be swiped away — where every
   message this surface carries is a CALL TO ACTION, and the account one most of all (the
@@ -2332,6 +2334,16 @@ publish/inventory/backend:dev (backend), dev/build (web), cdk synth/diff/deploy
 - **Package manager:** pnpm, pinned via the root `packageManager` field
   (`pnpm@11.9.0`). `pnpm-workspace.yaml` lists the workspaces and uses `allowBuilds`
   to approve `esbuild`'s postinstall (its native binary), which pnpm blocks by default.
+- **The PRIVACY NOTICE describes what this repo STORES (#229).** `/privacy`
+  (`web/src/screens/privacyDoc.ts`) states, in both languages, every category the backend
+  keeps about a player and why: the account row's email, the device item's hashed token and
+  parsed user-agent (#216), the round rows' guess logs (#201), scores, friends and the profile,
+  and the HMAC-of-IP rows the #169 volume floor and #204's send meter write. **Changing what
+  the server stores — a new field, a new third party, a changed retention — is a change to
+  that file**, which is the one place the game makes a promise about any of it. It is
+  reachable from `/account` and from the email flow's address step, and it is what the SES
+  production-access review is pointed at.
+
 - **CI/CD (#33):** two GitHub Actions workflows under `.github/workflows/`
   (docs in `.github/workflows/README.md`). `ci.yml` — on PRs into `main` or `dev` and pushes to both (the `dev`
   integration branch joined 2026-08-26 — a PR retargeted onto it was silently getting no

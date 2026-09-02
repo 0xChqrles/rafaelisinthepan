@@ -1029,7 +1029,6 @@ function Round({
           lang={lang}
           title={t(lang, 'failedAccount')}
           note={t(lang, 'failedAccountNote')}
-          onRetry={handleGatePlay}
           onClose={() => setDeployFailed(false)}
         />
       )}

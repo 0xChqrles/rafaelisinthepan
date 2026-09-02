@@ -1,12 +1,29 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent, RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import ChevronLeftIcon from '../assets/icons/chevron-left.svg?react';
 import useDrum from '../hooks/useDrum';
 import useModalDismiss from '../hooks/useModalDismiss';
+import { HeaderBack } from './TopBar';
 import { t } from '../i18n';
-import { LANGS, pathForArchive, pathForMode, type LangCode, type Mode } from '../langs';
+import {
+  LANGS,
+  pathForArchive,
+  pathForBoard,
+  pathForMode,
+  type LangCode,
+  type Mode,
+} from '../langs';
 import { navigate } from '../routing';
+
+// WHICH SURFACE the selection was opened from — and so where a pick lands. A selection
+// changes what you are LOOKING AT, so it keeps you on the same kind of screen.
+export type SelectSurface = 'game' | 'archive' | 'board';
+
+const PATH_FOR: Record<SelectSurface, (l: LangCode, m: Mode) => string> = {
+  game: pathForMode,
+  archive: pathForArchive,
+  board: pathForBoard,
+};
 
 // THE SELECTION BEHIND THE TITLE (user-decided 2026-09-02, over four passes). The title is
 // a HELD WORD — it wears the sentence chip — and what opens under it is the hole wheel's
@@ -35,7 +52,9 @@ import { navigate } from '../routing';
 // rule for its own reason (a pick reflows the sentence the wheel stands on); here the
 // screen under the veil is exactly what should change. It routes by the SURFACE it was
 // opened from, which is what the retired tabs did: from the archive, the other daily means
-// that daily's CALENDAR.
+// that daily's CALENDAR, and from the LEADERBOARD it means that daily's BOARD (user-reported
+// 2026-09-03: changing either axis there dropped the player onto the puzzle instead — a
+// selection answers "which daily am I looking at", never "take me somewhere else").
 //
 // THE GROUND IS FLAT `--bg` (third pass: "make just the veil go all black" — two translucent
 // veils left the sentence and the rules printing behind the options; the hole wheel's dim
@@ -45,6 +64,19 @@ import { navigate } from '../routing';
 // a left chevron as a back icon on the header"), the title's own chevron turned to point
 // the way out, rather than the modals' ✕. A native <dialog> on `useModalDismiss`, so the
 // screen under it is inert.
+//
+// **ONE DRUM, ON A SCREEN THAT IS NOT A PUZZLE** (user-decided 2026-09-03: every page of the
+// game should be able to switch language, and the account area could not). `mode: null` is
+// that face: the LANGUAGE alone, same screen, same drum, same fold. It is one component
+// rather than two because a second language wheel would be a second set of physics, a second
+// dress and a second thing to keep in step with this one — and the difference between the two
+// faces is genuinely two lines (which drums render, and what the fold does).
+//
+// What the FOLD does differs because the two axes are not the same kind of fact. A daily and
+// a language are both IN the game's URL, so picking them is a NAVIGATION; the account area's
+// routes are GLOBAL — an identity is not language-scoped — so there is no URL to move to and
+// the pick is a PREFERENCE: `lastLang`, which is exactly what every screen of that area reads
+// its chrome language from (`resolveHomeLang`), and where the `/` redirect will land.
 
 // The air between rows, and between the two drums.
 const GAP = 14;
@@ -60,14 +92,23 @@ const MODES: { mode: Mode; key: 'modeSentence' | 'modeWord' }[] = [
 export default function PuzzleSelect({
   lang,
   mode,
-  onArchive,
+  surface = 'game',
+  onLang,
   onClose,
 }: {
   lang: LangCode;
-  mode: Mode;
-  onArchive: boolean;
+  // NULL is the language-only face: a screen that is not a puzzle has no daily to name.
+  mode: Mode | null;
+  surface?: SelectSurface;
+  // What a LANGUAGE-ONLY pick does. It is the caller's, because the two screens that mount
+  // this face answer it differently: the account area has no URL to move to and stores a
+  // preference, while the tutorial sits on a language-scoped route and navigates. This
+  // component knows the drums; the screen knows what its own language means.
+  onLang?: (lang: LangCode) => void;
   onClose: () => void;
 }) {
+  // Which question is on screen — it decides the drums, the fold and the dialog's own name.
+  const puzzle = mode !== null;
   // FIRST hook, per the contract: a closed <dialog> is `display: none`, and the row height
   // is measured below.
   const { closing, beginClose, dialogProps } = useModalDismiss('select-out');
@@ -91,6 +132,8 @@ export default function PuzzleSelect({
   const modeTrack = useRef<HTMLDivElement>(null);
   const langBox = useRef<HTMLDivElement>(null);
   const langTrack = useRef<HTMLDivElement>(null);
+  // The mode drum is still HOOKED when it is not drawn (hooks are unconditional) — with no
+  // box in the tree `useDrum` binds no listener, so it sits inert.
   const modeIndex = Math.max(0, MODES.findIndex((m) => m.mode === mode));
   const langIndex = Math.max(0, LANGS.findIndex((l) => l.code === lang));
   const modeDrum = useDrum({
@@ -130,10 +173,16 @@ export default function PuzzleSelect({
   useEffect(() => {
     if (!closing || moved.current) return;
     moved.current = true;
-    const m = MODES[modeDrum.peek()]?.mode ?? mode;
     const l = LANGS[langDrum.peek()]?.code ?? lang;
-    if (m !== mode || l !== lang) navigate(onArchive ? pathForArchive(l, m) : pathForMode(l, m));
-  }, [closing, lang, langDrum, mode, modeDrum, onArchive]);
+    // A screen that is not a puzzle has no daily to move between: its caller says what a
+    // language means there.
+    if (mode === null) {
+      if (l !== lang) onLang?.(l);
+      return;
+    }
+    const m = MODES[modeDrum.peek()]?.mode ?? mode;
+    if (m !== mode || l !== lang) navigate(PATH_FOR[surface](l, m));
+  }, [closing, lang, langDrum, mode, modeDrum, onLang, surface]);
 
   // The arrow keys turn the drum that holds focus — the daily's when none does; Left and
   // Right hand focus from one drum's slot row to the other's.
@@ -142,14 +191,15 @@ export default function PuzzleSelect({
       const inLang = langBox.current?.contains(document.activeElement) ?? false;
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         e.preventDefault();
-        (inLang ? langDrum : modeDrum).glideBy(e.key === 'ArrowDown' ? 1 : -1);
-      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        (inLang || !puzzle ? langDrum : modeDrum).glideBy(e.key === 'ArrowDown' ? 1 : -1);
+        // With ONE drum there is nowhere to hand focus across.
+      } else if (puzzle && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
         e.preventDefault();
         const box = (e.key === 'ArrowRight' ? langBox : modeBox).current;
         box?.querySelector<HTMLElement>('[aria-current="true"]')?.focus({ preventScroll: true });
       }
     },
-    [langDrum, modeDrum],
+    [langDrum, modeDrum, puzzle],
   );
 
   // A drum: the slot sits in the middle of `VISIBLE` rows, so row i is in it at
@@ -192,7 +242,7 @@ export default function PuzzleSelect({
     <dialog
       {...dialogProps}
       className={`wheel-dialog puzzle-select${closing ? ' closing' : ''}`}
-      aria-label={t(lang, 'puzzleMenu')}
+      aria-label={t(lang, puzzle ? 'puzzleMenu' : 'langMenu')}
       onClose={onClose}
       onKeyDown={onKeyDown}
       onClick={(e) => {
@@ -207,20 +257,20 @@ export default function PuzzleSelect({
         if (bare && !closing) beginClose();
       }}
     >
-      {/* The app's header row, with the way back in its left slot. */}
+      {/* The app's header row, with the way back in its left slot — `HeaderBack` ITSELF, not
+          a look-alike: the selection opens over a header that carries the same control on
+          every step of the account area, and a chevron drawn a few pixels off from the one
+          it covers reads as the back button MOVING when the screen opens (user-reported
+          2026-09-03). Same component, same geometry, same slot: it does not move. */}
       <div className="modal-bar">
         <div className="topbar-inner">
           <div className="topbar-left">
-            <button
-              type="button"
-              className="home-btn ps-back"
-              aria-label={t(lang, 'ariaClose')}
-              onClick={() => {
+            <HeaderBack
+              label={t(lang, 'ariaClose')}
+              onBack={() => {
                 if (!closing) beginClose();
               }}
-            >
-              <ChevronLeftIcon className="ui-icon" aria-hidden />
-            </button>
+            />
           </div>
           <div className="topbar-right" />
         </div>
@@ -231,19 +281,20 @@ export default function PuzzleSelect({
       </span>
       {ready && (
         <div className="ps-cols">
-          {drum(
-            MODES.map((m) => ({ key: m.mode, label: t(lang, m.key).toUpperCase() })),
-            modeDrum,
-            modeBox,
-            modeTrack,
-            0,
-          )}
+          {puzzle &&
+            drum(
+              MODES.map((m) => ({ key: m.mode, label: t(lang, m.key).toUpperCase() })),
+              modeDrum,
+              modeBox,
+              modeTrack,
+              0,
+            )}
           {drum(
             LANGS.map((l) => ({ key: l.code, label: l.native.toUpperCase() })),
             langDrum,
             langBox,
             langTrack,
-            1,
+            puzzle ? 1 : 0,
           )}
         </div>
       )}

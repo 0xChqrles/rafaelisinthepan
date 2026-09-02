@@ -59,7 +59,8 @@
                               friend-merge drain behind it
       components/DeviceList.tsx  the account's devices + SIGN OUT rows (#216), on the profile editor
       components/ErrorScreen.tsx  the app's error surface: a FULL-SCREEN modal led by the
-                              user-drawn ERROR BOT (2026-08-27, replacing the popup/sheet)
+                              user-drawn ERROR BOT (2026-08-27, replacing the popup/sheet);
+                              ONE quiet way out since 2026-09-03 — no TRY AGAIN
       state/roundSync.ts      the #201 sync engine, reworked by #214: coalesced prefix writes,
                             the transient server snapshot it publishes for the screen, the
                             outbox it settles by identity, cap + freeze, #203's round-start
@@ -78,6 +79,13 @@
                               screen's own `finishWordRound`, #217)
       screens/Profile.tsx     the #188 profile editor (/profile): name, tap-to-paint 10×10 grid,
                               ground-swatch palette picker (#190 wires the entry point)
+      screens/Privacy.tsx     `/privacy` (#229): what the game keeps, why, and how to be rid
+                              of it — the app's one DOCUMENT, its words in privacyDoc.ts
+      components/LangTitle.tsx  the header's OTHER clickable title: a screen's own name, the
+                              LANGUAGE beside it in the archive day's dress, and the
+                              one-drum `PuzzleSelect` behind it
+      hooks/useUiLang.ts      the chrome language of a screen the URL names none for: the
+                              link's `?lang=`, then the stored preference, then the browser
       screens/FriendInvite.tsx  the #189 invite link's landing (/join/<publicId>): POST the mutual
                               edge with this device's token, then continue into the game. The link
                               players SHARE is /i/<publicId>, served by the backend for its preview
@@ -1000,6 +1008,201 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **`game/streak.ts` re-exports `currentStreak` from `@whippin/shared`** and keeps
     `streakTransition`/`weekView`: the server derives a streak for the erase confirmation, so
     the derivation itself moved.
+- **The PRIVACY NOTICE (#229).** `/privacy` — a global route like the account area's, and a
+  STEP of it: the header's row lights the FACE and the left slot carries the back control.
+  Reached from TWO doors, which is the whole reason `routing.ts` grew `goBack(fallback)`: a
+  row on `/account` and a quiet action under the email flow's ADDRESS field, where the address
+  is actually typed — and sending that second reader to a fixed parent would drop somebody
+  three taps into saving their account back at the start of it. `goBack` uses the browser's
+  back only where it finds the app's own stamp (`history.state.app`); a pasted or bookmarked
+  arrival falls back to `/account`, because what sits behind THAT entry is not ours to send
+  anyone to.
+  - **ONLY A PUSH MAY STAMP** (`writeEntry`, contract-tested in `routing.test.ts`). The stamp
+    answers one question — is there a screen of OURS behind this entry — and that is a fact
+    about the entry's PREDECESSOR, which only a push creates. Both replaces this app makes are
+    on entries somebody else landed on: the `/` → `/<lang>` redirect, and `dropLangParam`. The
+    first cut stamped all three, and it broke the exact journey `?lang=` exists for — a pasted
+    `/privacy?lang=en`, a language picked from the wheel (which rewrites the URL), then back:
+    off the site, or in a fresh tab nothing at all, since the entry was the tab's first.
+  - **A SIGN-OUT DOES NOT CLOSE IT** (`App`'s `blocked`, which is `signedOut` everywhere
+    else). The verdict takes the whole screen because every private read answers
+    `unknown_device` from there on — and this route makes none: it is a static document about
+    what the game stores, on the one URL that has to be openable by anybody. Answering "what
+    do you keep about me?" with a sign-in screen is worst for the reader with the strongest
+    reason to ask.
+  - **It is a real ROUTE and not a dialog** because a legal notice has to be LINKABLE: the SES
+    production-access review opens a URL, and « où est-ce écrit ? » deserves an answer that
+    can be pasted into a message.
+  - **The words live in `screens/privacyDoc.ts`**, per language, parity enforced by the type
+    (the tutorial scripts' shape) — `i18n.ts` is a table of chrome strings, and this is twenty
+    paragraphs whose structure is part of what they say. The chrome that IS chrome (the screen
+    name, the two entry labels) stays in `i18n.ts`. `{mail}` is filled from ONE
+    `PRIVACY_CONTACT` (`hello@whippin.ai`, the SES sender infra derives), so the two languages
+    cannot name two inboxes, and the address renders as the app's ONE `<a>` — a `mailto:`,
+    because "write to us" is the only instruction here a reader is meant to ACT on.
+  - **It describes the CODE, so a change to what the server stores is a change to this file.**
+    Every claim is checked against something: the account row's stored address, the device
+    item's hashed token and coarse user-agent (#216), the round rows' folded guesses (#201),
+    the HMAC-of-IP rows and their TTLs, the 10-minute code, the us-east-1 stacks, Turnstile
+    and Plausible's three events. The TTLs are stated as an upper BOUND, never an instant —
+    DynamoDB's sweep is best-effort and the two rows expire at different lengths.
+  - **It is SET LIKE AN ARTICLE (user-decided 2026-09-03: "a bit more beautiful, like a blog
+    post", and wider — at the account column's 430px "on desktop it feels like you're on a
+    phone").** A 640px measure (~76 characters of the mono, a real reading line), a TITLE in
+    sentence case that is the document's own first sentence (the header chip names the
+    SCREEN; the title names the CLAIM the page substantiates — `privacyDoc.title`, split out
+    of the lead), a DATELINE under it in the archive day's tag dress, a STANDFIRST, then
+    sections each opened by a hairline; every named thing is a `<dl>` term on its own line
+    over what is true of it, so a section skims like a run of small subheads. It does NOT
+    wear `.account-screen`: that class centres its column and, on a phone, opens on the
+    area's high start line — and this is by far the area's tallest screen, which is exactly
+    what took `/profile` off that line on 2026-09-02. `.privacy-screen` states its own
+    geometry (the literal 48px header clearance) and `align-self: stretch` pins it to the
+    top; the column scrolls its own overflow, which is also what lights the header's band as
+    the text passes under it.
+  - **THE DOOR ON `/account` IS A FOOTNOTE ON THE BOTTOM EDGE, not a row** (user-decided
+    2026-09-03, in two passes: "only 0.1% of the users will care and click on it… not
+    hidden neither, just not in the middle of the screen with a big button", then — once it
+    was the last line of the CONTENT — "it's still in the middle of the screen", because on
+    a short screen the content ends there). `.account-foot` is the screen's LAST line, under
+    the call: on a phone it parks on the edge by the auto margin (the call's own trick,
+    handed down), and the call sits above it — which gives up the call's exact bottom-edge
+    alignment with MIX and INVITE on this one screen, on purpose (measured 390×844: SAVE at
+    709–767, the footnote at 793–830). Small, centred, in the secondary ink, with a finger's
+    padding it does not show. It is the one place the area's ACTION-in-`--fg` rule yields:
+    that rule keeps a control from hiding among help text, and there is none here to hide
+    among; this one is meant to be exactly as visible as the interest in it.
+  - **The address step's control is BARE** (`.link-aside`): the boxed `.link-quiet-btn` dress
+    belongs to an ALTERNATIVE (RESEND), and directly under CONTINUE a boxed one read as a
+    second button competing with the lit one. It is the same rule `.btn + .link-quiet-btn`
+    already states, one wrapper further out.
+  - **TWO VALUES ARE NOT PROSE.** `PRIVACY_CONTACT` is the SES sender infra already derives;
+    `PRIVACY_HOST` names the site's host. It exists because the notice takes the LCEN's
+    non-professional route (art. 6-III-2): a free site that sells nothing may keep its
+    publisher's identity with the HOST and publish the host's details instead, which is what
+    lets the page carry no personal name. The day the game earns money it stops qualifying.
+    It shipped as a GUESS for one commit and is **read off the AWS billing mail** since
+    2026-09-03, whose footer names the entity that produced it — same string, now a fact. It
+    is a legal identification: if the account ever contracts with another AWS entity, this
+    line is read off the invoice again, never adjusted from memory. (A `PRIVACY_HOST_CONFIRMED`
+    flag failed the production build while it was a guess, and left with the guess: once true
+    it could never fire again, and it protects nothing against a later edit.)
+  - **NOT done, and both are the user's call:** there is no self-serve "delete my account"
+    (#207 is filed and specified — when it lands, DELETING IT loses its "no button yet"
+    paragraph and gains the purge delay #207's own scope requires, and ASKING shrinks to the
+    rights a button cannot serve), and the notice states each category's PURPOSE in plain
+    words without naming a legal basis under Art. 6 — the readable half of what Art. 13(1)(c)
+    asks for, left that way deliberately rather than turned into boilerplate.
+
+- **THE ERROR SCREEN HAS ONE WAY OUT (user-decided 2026-09-03: "get rid of the retry
+  button… it's weird to retry from a fullscreen error page, just go back and retry if you
+  want").** `ErrorScreen` carried a lit TRY AGAIN wherever asking again could help
+  (2026-08-24), with GO BACK as its secondary; it carries a single SECONDARY that dismisses
+  now. The act that failed belongs to the screen underneath — the typed address, the
+  drawing, the gate are all still there — and the honest gesture is to go back to it and
+  press the same button again. Gone with it: the `onRetry` prop and its seven wirings, the
+  `retry` flag on `AccountEmail`'s refusals and `Profile`'s save error, the `tryAgain` string,
+  `errorPreview`'s retry shape and its "both layouts" test, and the synchronous-in-tap rule
+  the retry needed on WebKit (the act is re-run inside its own fresh tap now). `LoadError`'s
+  RETRY is untouched: that is a screen that could not open, where this is an act that did
+  not land.
+- **EVERY PAGE CAN CHANGE LANGUAGE (user-decided 2026-09-03).** The game routes always
+  could — `PuzzleTitle`'s selection holds the language beside the daily — and the ACCOUNT
+  AREA could not: `/account` carried a plain name and its steps carried a back control, so a
+  player who landed there in the wrong language had to go back to a game to get out of it.
+  - **`components/LangTitle.tsx` is the other clickable title**: the screen's own name in the
+    header chip, the LANGUAGE beside it in the ARCHIVE DAY's exact dress, the same chevron,
+    and `PuzzleSelect` behind it with the daily drum left out. It wears `.puzzle-title`,
+    which is the dress of BOTH titles rather than the puzzle one's alone — the row's phone
+    step-downs are tuned on that class, and a second class beside it would be three more
+    overrides nothing forces to agree. `.puzzle-title-day` became `.title-tag` for the same
+    reason: the day and the language are one KIND of value (which of a thing), so they are
+    one class.
+  - **`PuzzleSelect` takes `mode: Mode | null`.** Null is the language-only face — same
+    screen, same drum, same fold — and what differs is what the FOLD does: a daily and a
+    language are both in the game's URL, so picking them NAVIGATES, while the account area's
+    routes are global and the pick is the PREFERENCE every screen there reads its chrome
+    language from (`lastLang` → `resolveHomeLang`), so the page re-renders where it stands.
+    One component, because the two faces differ by which drums render and one branch in the
+    fold.
+  - **`HeaderBack` IS THE ARROW ALONE now, and it is the SELECTION's way out too.** It
+    carried the screen's NAME as one target (2026-08-29), which was right while the name said
+    only which screen you were on; the name opens a wheel now, and one target cannot do
+    both. The arrow takes the retired control's own geometry minus its word — 44px of height
+    around the glyph, pulled back to the row's left edge — and it is deliberately NOT a
+    `.home-btn`: that class sizes a key by `--hud-height`, which steps down with the phone
+    breakpoints on `.topbar` and not on `.modal-bar`, so `PuzzleSelect`'s own back control
+    (`.ps-back`, deleted) measured 40px where the header's measured 32 and its chevron sat
+    4px to the right — "it feels like the back button is moving" (user-reported 2026-09-03).
+    The selection mounts `HeaderBack` itself now; measured, the two chevrons land on the same
+    pixel at 320/390/640/1280.
+  - **THE ROW IS AT ITS LIMIT, and the LANGUAGE TAG is what gives.** A step's left slot holds
+    FOUR things beside a five-key group that may never shrink, and French runs ~20% longer:
+    measured, SAUVEGARDE and VIE PRIVÉE ran 7px into the keys at 360 and 18px at 320. Three
+    things bought it back — the ≤340 title compressions moved up to ≤400 (that block was
+    tuned for a game route, whose slot holds ONE control), `SAVE ACCOUNT` shortened to `SAVE`
+    / `SAUVEGARDE` (`linkTitleReturn`'s own 2026-08-31 finding, one door over), and
+    **`.lang-tag` hidden below 375px**: the honest order is the name, then the affordance,
+    then which value it holds, and nothing is lost that the page is not already saying in
+    that language. 374 is measured, not chosen — 375 is the iPhone SE/6/7/8 width and the
+    longest French title still fits there. The archive DAY keeps its tag at every width (no
+    back arrow beside it, and the day is the abnormal state a route must always label).
+    Residue, accepted: at 341–359 — a band no shipping device sits in — the two longest
+    French titles ellipsise by 6px.
+  - **A LINK CAN CARRY ITS OWN LANGUAGE — `?lang=`, APP-WIDE** (user-decided the same day:
+    "so you can send the privacy policy in a specific language… not only to the privacy
+    page"). Three sources in order, and the whole precedence is one pure function
+    (`resolveUiLang`, contract-tested): the LINK, then the stored preference, then the
+    browser. `hooks/useUiLang` is the reactive binding — the store because the wheel writes
+    it, `useLocation` because the URL is the other source — and it is what every screen the
+    URL names no language for now calls (`/account`, `/profile`, both flow doors,
+    `/privacy`, the chooser, and App's own `docLang` + `/` redirect, which carries the
+    invite landing and the signed-out screen with it).
+    - **It is NOT persisted, and a deliberate pick OUTRANKS it.** A support link in English
+      must not take a French player's app away from them for good; and since the parameter
+      is read AHEAD of the store, choosing FRANÇAIS while `?lang=en` stands would be
+      answered by the URL rather than by the wheel. So `LangTitle`'s pick calls
+      `dropLangParam()` BEFORE writing the preference — a `replaceState` that KEEPS the
+      entry's own stamp (the privacy bullet's rule), because a suggestion the player just
+      overruled is not a place to go back to.
+      **IT DOES RIDE ALONG WHILE IT STANDS, and that is the shape of the decision, not an
+      oversight:** `navigate` carries the whole query string across, and the header's keys
+      take the RESOLVED language — so a French player following an English link and then
+      tapping PLAY lands in the English game, with `?lang=en` still in the URL. Every screen
+      they pass is then consistently the language the link was sent in, which is what the
+      parameter promises; one pick from any wheel ends it for good, and `lastLang` is
+      untouched, so the next visit to `/` is French again.
+    - **A route that NAMES a language ignores it** (`/fr?lang=en` is French): the path is
+      the more specific statement, and `?lang=` is the fallback for the routes that name
+      none. An unsupported code says nothing at all rather than falling to English, so a
+      typo cannot take a stored French away.
+    - **`useLocation` now TRACKS the search string** (and still returns only the path, which
+      is what every caller routes on). The two used to be one, and a query-only change
+      re-rendered NOTHING — React bails out when a state write lands on the value already
+      held — so `dropLangParam` notified every listener and moved no screen: the player
+      picked FRANÇAIS, the URL stopped saying English, and the page stayed English until a
+      reload. Found in a browser, not in a test.
+  - **THE TUTORIAL SWITCHES TOO** (user-decided: "even on the tutorial"). Its left slot was a
+    plain name; it is a `LangTitle` whose pick NAVIGATES — the lesson sits on `/fr` or `/en`,
+    and `App` keys it on that language, so it restarts in the one it lands in (the trip
+    `/select` already made, without leaving the header). `Tutorial` takes a `mode` for that
+    one reason: the lesson is mode-agnostic, but the pick should put the player back on the
+    daily they came from. **`PuzzleSelect`'s language-only fold is a CALLBACK** (`onLang`)
+    rather than a store write, because the two screens that mount that face answer it
+    differently — the account area has no URL to move to and stores a preference, the
+    tutorial travels. The component knows the drums; the screen knows what its own language
+    means.
+  - **A PICK KEEPS YOU ON THE KIND OF SCREEN YOU WERE ON** (user-reported: changing either
+    axis on the leaderboard dropped the player onto the puzzle). `onArchive: boolean` became
+    `surface: 'game' | 'archive' | 'board'`, and `PATH_FOR` maps it to `pathForMode` /
+    `pathForArchive` / `pathForBoard`. A selection answers "which daily am I looking at",
+    never "take me somewhere else" — the rule the archive already followed, said once for
+    all three.
+  - **FOUR SURFACES STILL CANNOT SWITCH FROM WITHIN, each by an older decision**: `/select`
+    (it IS the picker), the invite landing, the onboarding invitation and the signed-out
+    screen — all four wear no header at all, being surfaces "with nowhere else to be". They
+    do honour `?lang=`, so a link sent in a language renders them in it.
+
 - **Local storage is an OUTBOX; a capped round ends at ∞ (#214).** The product contract —
   the three values, the load order, what the cap means, the share token, what was removed —
   lives in the root `AGENTS.md`. What is this package's:

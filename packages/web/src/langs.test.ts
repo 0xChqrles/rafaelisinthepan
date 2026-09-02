@@ -9,6 +9,7 @@ import {
   ACCOUNT_EMAIL_PATH,
   ACCOUNT_PATH,
   ACCOUNT_SIGNIN_PATH,
+  PRIVACY_PATH,
   PROFILE_PATH,
   isLang,
   pathForMode,
@@ -16,8 +17,10 @@ import {
   pathForBoard,
   pathForDay,
   pathForInvite,
+  langFromSearch,
   parseRoute,
   resolveHomeLang,
+  resolveUiLang,
   LANGS,
 } from './langs';
 
@@ -217,6 +220,43 @@ describe('leaderboard routes (#190)', () => {
   });
 });
 
+// CONTRACT (2026-09-03): the chrome language of a screen whose URL does not name one has
+// THREE sources, in order — the LINK's own `?lang=`, the stored preference, the browser.
+// The parameter exists so a page can be SENT in a chosen language ("send the privacy policy
+// in a specific language"), and it is app-wide rather than that page's alone.
+describe('resolveUiLang', () => {
+  it('lets the LINK speak first — over a stored preference and over the browser', () => {
+    expect(resolveUiLang('?lang=en', 'fr', 'fr-FR')).toBe('en');
+    expect(resolveUiLang('?lang=fr', 'en', 'en-US')).toBe('fr');
+    // With other parameters beside it, and with none of its own.
+    expect(resolveUiLang('?tutorial=1&lang=fr', 'en', 'en-US')).toBe('fr');
+  });
+
+  it('falls through to the stored preference, then the browser, then English', () => {
+    expect(resolveUiLang('', 'fr', 'en-US')).toBe('fr');
+    expect(resolveUiLang('', null, 'fr-FR')).toBe('fr');
+    expect(resolveUiLang('', null, 'de-DE')).toBe('en');
+  });
+
+  it('ignores a parameter that names no supported language', () => {
+    // A typo must not silently become English when the player has a stored French: it is
+    // not a language this game has, so it says nothing at all.
+    expect(resolveUiLang('?lang=de', 'fr', 'en-US')).toBe('fr');
+    expect(resolveUiLang('?lang=', 'fr', 'en-US')).toBe('fr');
+    expect(resolveUiLang('?lang=FR', 'en', 'en-US')).toBe('en');
+  });
+});
+
+describe('langFromSearch', () => {
+  it('reads only a supported language, and nothing else', () => {
+    expect(langFromSearch('?lang=fr')).toBe('fr');
+    expect(langFromSearch('?lang=en')).toBe('en');
+    expect(langFromSearch('?lang=de')).toBe(null);
+    expect(langFromSearch('')).toBe(null);
+    expect(langFromSearch('?other=fr')).toBe(null);
+  });
+});
+
 describe('resolveHomeLang', () => {
   it('prefers a valid persisted language over the browser language', () => {
     expect(resolveHomeLang('fr', 'en-US')).toBe('fr');
@@ -279,5 +319,22 @@ describe('account routes (#204)', () => {
     expect(parseRoute(ACCOUNT_EMAIL_PATH)).toEqual({ view: 'accountEmail', intent: 'save' });
     expect(parseRoute(ACCOUNT_SIGNIN_PATH)).toEqual({ view: 'accountEmail', intent: 'return' });
     expect(parseRoute(PROFILE_PATH)).toEqual({ view: 'profile' });
+  });
+});
+
+// CONTRACT (#229): the PRIVACY NOTICE is a global route of its own. It has to be LINKABLE —
+// the SES production-access review opens the URL, and "where is that written?" deserves an
+// answer that can be pasted into a message — so it is a real path rather than a dialog, and
+// it is not language-scoped for the account area's reason: what the game stores is a fact
+// about the game, not about one language's daily.
+describe('privacy route (#229)', () => {
+  it('parses /privacy as a global route, and states its path once', () => {
+    expect(parseRoute('/privacy')).toEqual({ view: 'privacy' });
+    expect(parseRoute('/privacy/')).toEqual({ view: 'privacy' });
+    expect(parseRoute(PRIVACY_PATH)).toEqual({ view: 'privacy' });
+  });
+
+  it('is not language-scoped — a lang prefix is a GAME route', () => {
+    expect(parseRoute('/fr/privacy')).toEqual({ view: 'game', lang: 'fr', mode: 'sentence' });
   });
 });

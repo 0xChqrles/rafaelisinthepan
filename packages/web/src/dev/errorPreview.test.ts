@@ -3,15 +3,12 @@
 // otherwise anyone could pop the app's failure screen over a working game by editing a URL.
 // That the variants name REAL copy is the COMPILER's (`UiKey` is `keyof typeof STRINGS`,
 // and the en+fr table is parity-checked by its own `satisfies`), so nothing here restates
-// it. What is left is the dev gate, and the two SHAPES the screen has to be able to draw.
+// it. What is left is the dev gate and the cycle. (There was a third case until 2026-09-03,
+// pinning that the set covered BOTH layouts the screen could draw; the screen has one way
+// out now, so a variant is only its words and there are no shapes to cover.)
 
 import { describe, expect, it } from 'vitest';
-import {
-  nextErrorVariant,
-  ERROR_VARIANT_NAMES,
-  ERROR_VARIANTS,
-  errorPreviewFromSearch,
-} from './errorPreview';
+import { nextErrorVariant, ERROR_VARIANT_NAMES, errorPreviewFromSearch } from './errorPreview';
 
 describe('errorPreviewFromSearch', () => {
   it('reads a named variant in development', () => {
@@ -37,15 +34,6 @@ describe('errorPreviewFromSearch', () => {
 });
 
 describe('the variant set', () => {
-  it('covers BOTH shapes the screen has to render', () => {
-    const named = Object.values(ERROR_VARIANTS);
-    expect(named.some((v) => 'retry' in v)).toBe(true);
-    // The moderation refusals: asking again cannot help, so the note is the answer and the
-    // one button is the way out. A preview set of only retryable variants would never show
-    // that layout.
-    expect(named.some((v) => !('retry' in v))).toBe(true);
-  });
-
   it('cycles through every variant and returns to the first', () => {
     const walk = [ERROR_VARIANT_NAMES[0]];
     for (let i = 1; i < ERROR_VARIANT_NAMES.length; i += 1) {

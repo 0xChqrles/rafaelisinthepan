@@ -48,20 +48,22 @@ import Avatar from '../components/Avatar';
 import Button from '../components/Button';
 import ChevronRightIcon from '../assets/icons/chevron-right.svg?react';
 import DeviceList from '../components/DeviceList';
+import LangTitle from '../components/LangTitle';
 import { HeaderLeft } from '../components/TopBar';
 import { useDeviceIdentity } from '../identity';
 import { t } from '../i18n';
 import {
   ACCOUNT_EMAIL_PATH,
   ACCOUNT_SIGNIN_PATH,
+  PRIVACY_PATH,
   PROFILE_PATH,
-  resolveHomeLang,
 } from '../langs';
 import { navigate } from '../routing';
 import { loadAccountSummary, useAccountSummary } from '../state/account';
 import { useAccountStats } from '../state/history';
 import { useGameStore } from '../state/gameStore';
 import useToday from '../hooks/useToday';
+import useUiLang from '../hooks/useUiLang';
 
 // "since 12 aug" — the identity's own age, in the reader's locale. An unparseable or absent
 // instant renders as NO line rather than a placeholder: the device list's rule, for the same
@@ -73,8 +75,7 @@ function began(createdAt: string | null, lang: string): string | null {
 }
 
 export default function Account() {
-  const lastLang = useGameStore((s) => s.lastLang);
-  const lang = resolveHomeLang(lastLang, navigator.language);
+  const lang = useUiLang();
   const identity = useDeviceIdentity();
   const { phase, summary } = useAccountSummary();
   const faceState = useOwnFace();
@@ -113,7 +114,7 @@ export default function Account() {
           editor and the email doors, keep theirs). Nothing remembers where this screen
           was opened from any more: every place is one tap away in the row. */}
       <HeaderLeft>
-        <span className="topbar-title">{t(lang, 'accountTitle')}</span>
+        <LangTitle lang={lang} title={t(lang, 'accountTitle')} />
       </HeaderLeft>
       <div className="account-screen">
         {/* THE ROW — the identity as the page's masthead. The face holds its boxes until
@@ -228,6 +229,23 @@ export default function Account() {
             </button>
           </div>
         )}
+
+        {/* WHAT THE GAME KEEPS (#229) — a FOOTNOTE on the screen's BOTTOM EDGE, under the
+            call (user-decided 2026-09-03, in two passes: first replacing a full-width row
+            beside the account's own actions — "only 0.1% of the users will care and click on
+            it… not hidden neither, just not in the middle of the screen with a big button" —
+            then moved off the end of the CONTENT, which on a short screen is still the
+            middle: "it's still in the middle of the screen"). Small, centred, in the
+            secondary ink, with a finger's padding it does not show — exactly as visible as
+            the interest in it. On a phone it parks on the edge and the call sits above it;
+            that call gives up its exact bottom-edge alignment with MIX and INVITE on this one
+            screen, on purpose. Not gated on the summary: what is stored is a fact about the
+            game, true before this device has an account and while the read is still out. */}
+        <div className="account-foot">
+          <button type="button" className="account-foot-link" onClick={() => navigate(PRIVACY_PATH)}>
+            {t(lang, 'privacyTitle')}
+          </button>
+        </div>
       </div>
     </>
   );

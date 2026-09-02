@@ -23,11 +23,13 @@ import { prefetchTurnstileTokens } from '../turnstile';
 import { withoutLocalIdentityDeploy } from '../state/localIdentityDeploy';
 import ErrorScreen from '../components/ErrorScreen';
 import { navigate } from '../routing';
-import { ACCOUNT_PATH, resolveHomeLang } from '../langs';
+import { ACCOUNT_PATH } from '../langs';
+import useUiLang from '../hooks/useUiLang';
 import { t } from '../i18n';
 import Avatar from '../components/Avatar';
 import LoadError from '../components/LoadError';
 import LoadingWave from '../components/LoadingWave';
+import LangTitle from '../components/LangTitle';
 import { HeaderBack, HeaderLeft } from '../components/TopBar';
 import { useGameStore } from '../state/gameStore';
 // Inline SVG (vite-plugin-svgr): the close control back to the leaderboard, painting
@@ -139,9 +141,8 @@ const SAVE_RESTORE_MS = 240;
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export default function Profile() {
-  const lastLang = useGameStore((s) => s.lastLang);
   // No puzzle to take a language from: same resolution as the `/` redirect.
-  const lang = resolveHomeLang(lastLang, navigator.language);
+  const lang = useUiLang();
 
   // OPENING THE EDITOR DEPLOYS NOTHING (#216 trigger rework, user-decided 2026-08-24):
   // the identity is whatever the device holds, and SAVE is the deploy button. Reactive so
@@ -492,9 +493,9 @@ export default function Profile() {
       : refused === 'avatar_rejected'
         ? { title: t(lang, 'profileAvatarRejected'), note: t(lang, 'profileAvatarRejectedNote') }
         : refused === 'account'
-          ? { title: t(lang, 'failedAccount'), note: t(lang, 'failedAccountNote'), retry: true }
+          ? { title: t(lang, 'failedAccount'), note: t(lang, 'failedAccountNote') }
           : refused === 'error'
-            ? { title: t(lang, 'profileSaveFailed'), note: t(lang, 'failedSaveNote'), retry: true }
+            ? { title: t(lang, 'profileSaveFailed'), note: t(lang, 'failedSaveNote') }
             : null;
 
   return (
@@ -505,11 +506,8 @@ export default function Profile() {
           the editor could be entered from either board, and the account screen is where
           that choice now lives. */}
       <HeaderLeft>
-        <HeaderBack
-          title={t(lang, 'profileTitle')}
-          label={t(lang, 'ariaBack')}
-          onBack={() => navigate(ACCOUNT_PATH)}
-        />
+        <HeaderBack label={t(lang, 'ariaBack')} onBack={() => navigate(ACCOUNT_PATH)} />
+        <LangTitle lang={lang} title={t(lang, 'profileTitle')} />
       </HeaderLeft>
       {load === 'loading' && (
         <p className="status">
@@ -653,7 +651,6 @@ export default function Profile() {
                 lang={lang}
                 title={saveError.title}
                 note={saveError.note}
-                onRetry={saveError.retry ? () => void onSave() : undefined}
                 onClose={() => setRefused(null)}
               />
             )}

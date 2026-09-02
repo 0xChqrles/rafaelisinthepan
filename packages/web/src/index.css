@@ -978,7 +978,12 @@ button {
   max-width: 100%;
   display: inline-flex;
   align-items: center;
-  gap: 14px;
+  /* The ONE seam this track ever has: the back ARROW and the title beside it (every other
+     screen puts a single control here). 6px is the rhythm the retired single-target back
+     control used between its own chevron and its word — the same picture, now two controls
+     — and the 14px it replaces was 8px the title could not spare once the language joined
+     it (measured 2026-09-03: SAUVEGARDER and VIE PRIVÉE both ellipsised at 360). */
+  gap: 6px;
   height: var(--hud-height);
   padding: 0 4px;
   pointer-events: auto;
@@ -1143,8 +1148,8 @@ button {
   min-width: 0;
   gap: 6px;
   /* A <button> inherits NO font, and `.topbar-title` sets only a size and a weight — so
-     without this the daily's name renders in the UA's Arial while every other chrome
-     label is the app's mono. The same fix `.topbar-back` carries, for the same reason. */
+     without this the title renders in the UA's Arial while every other chrome label is the
+     app's mono. */
   font: inherit;
   background: transparent;
   border: 0;
@@ -1160,22 +1165,25 @@ button {
   text-overflow: ellipsis;
 }
 /* Hover and press answer on the CHIP, the hole's own way (the hole's exact mixes): a
-   white chip cannot brighten, so it dims a step instead. Both clickable titles. */
-.puzzle-title:hover .topbar-title,
-.topbar-back:hover .topbar-title {
+   white chip cannot brighten, so it dims a step instead. `.puzzle-title` is the dress of
+   BOTH clickable titles — the daily's and, since 2026-09-03, every other screen's
+   (`LangTitle`) — so the three phone step-downs below are tuned once and cannot drift. The
+   back ARROW is no longer one of them: it holds no chip, and answers in its own ink. */
+.puzzle-title:hover .topbar-title {
   background: color-mix(in srgb, var(--fg) 80%, var(--bg));
 }
-.puzzle-title:active .topbar-title,
-.topbar-back:active .topbar-title {
+.puzzle-title:active .topbar-title {
   background: color-mix(in srgb, var(--fg) 68%, var(--bg));
 }
 .puzzle-title .ui-icon {
   flex: none;
 }
-/* THE DAY, and only on a day that is not today (PuzzleTitle's rule: the abnormal state
-   is the one that is labelled). Quieter than the name it qualifies — it is which of a
-   thing, not what the thing is — and OUTSIDE the chip, like an exponent. */
-.puzzle-title-day {
+/* WHICH OF A THING, beside the name of it: the DAY on an archive route (PuzzleTitle's rule —
+   the abnormal state is the one that is labelled) and, since 2026-09-03, the LANGUAGE on
+   every screen that is not a puzzle (`LangTitle`). ONE class, because they are one kind of
+   value: quieter than the name it qualifies — it is which of a thing, not what the thing is
+   — and OUTSIDE the chip, like an exponent. */
+.title-tag {
   /* Same size as the name (one title size — stated here because the day no longer sits
      inside the chip's own rule and would inherit the body's 16px), quieter in ink, weight
      — and tracking: a qualifier set as tight as its headline reads as a second headline. */
@@ -1243,15 +1251,9 @@ button {
   font-family: var(--ui);
   background: var(--bg);
 }
-/* The way back: the title's own chevron, turned to point out, in the left slot where a
-   back control belongs. */
-.ps-back {
-  width: var(--hud-height);
-  color: var(--fg);
-}
-.ps-back:hover {
-  color: var(--muted);
-}
+/* The way back is `HeaderBack` itself — the same control, the same geometry, in the same
+   slot — so the chevron does not move by a few pixels between the screen's header and the
+   selection's (user-reported 2026-09-03: "it feels like the back button is moving"). */
 /* The probe: one chip in the rows' dress, out of the way, that the drums measure their
    row height off. */
 .ps-probe {
@@ -3526,6 +3528,19 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     padding: 4px 2px 4px 0;
     gap: 4px;
   }
+  /* AND THE TITLE'S LAST AIR, moved up from ≤340 on 2026-09-03. That block was tuned for a
+     GAME route, whose left slot holds one control; the account area's STEPS hold four
+     things — a back arrow, the name, the language and a chevron — so they saturate the
+     track ~40px earlier. The chip's own padding and the tag's tracking are what the ≤340
+     comment already calls the last things that can give; they simply have to give sooner.
+     Measured at 341, the worst width (the keys are still 32px there and none of the ≤340
+     air has arrived): SAUVEGARDE ran 31px into the keys, 14px after this. */
+  .topbar .topbar-title {
+    padding: 5px 5px 4px;
+  }
+  .title-tag {
+    letter-spacing: 0;
+  }
 }
 /* FIVE keys plus a dated title at 320px: SENTENCE AUG 29 beside 5 × 32 + gaps wants
    more than the 316px content box holds at the base gaps. The gaps step down first (a row
@@ -3556,18 +3571,23 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     margin-left: 2px;
   }
   /* SENTENCE AUG 29 at the one title size was still 6px over at 320: the title's own
-     padding, the chip's, and the day's tracking are the last things that can give. */
+     padding is the last of it (the chip's and the tag's tracking give at 400 now, above). */
   .puzzle-title {
     padding: 4px 0;
     gap: 3px;
   }
-  .topbar .topbar-title {
-    padding: 5px 5px 4px;
-  }
-  .puzzle-title-day {
-    letter-spacing: 0;
+}
+/* THE LANGUAGE TAG IS THE FIRST THING TO GIVE (2026-09-03; `LangTitle` holds the reasoning).
+   374px is measured, not chosen: at 375 — the iPhone SE/6/7/8 width — the longest French
+   title still fits beside the tag, and below it VIE PRIVÉE and SAUVEGARDE start eating into
+   the keys. The archive DAY keeps its own tag at every width: that title has no back arrow
+   beside it, and the day is the abnormal state a route must always label. */
+@media (max-width: 374px) {
+  .lang-tag {
+    display: none;
   }
 }
+
 /* On the narrowest phones, compress the header's own side padding too. */
 @media (max-width: 340px) {
   .topbar-inner {
@@ -5197,12 +5217,19 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 /* THE ONE CALL: the screen's primary, in the tutorial's MIX / the board's INVITE / the
    gates' PLAY geometry (`.mix-btn`), the caption that explains it over it. On desktop it
    is the column's last item; on a phone the mobile block parks it on the bottom edge,
-   where those buttons sit on their screens. */
+   where those buttons sit on their screens.
+   ON DESKTOP IT STANDS OFF (user-decided 2026-09-03: the column is centred there, and at
+   the rows' own 20px the call read as one more row — "everything is packed in the middle
+   of the screen"). 96px over the column's 20px gap is a real break — 48 was tried first
+   and read as no change at all at 1280×900, a 28px difference in a centred column — so
+   the call is plainly a different kind of thing from the list above it, not its last row.
+   A phone never sees this margin: its block replaces it with the auto margin that parks
+   the call on the bottom edge, where the gap was already right. */
 .account-cta {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  margin-top: 20px;
+  margin-top: 96px;
 }
 .account-cta .account-note.caption {
   margin: 0;
@@ -5361,49 +5388,41 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   color: var(--muted);
 }
 
-/* THE HEADER'S BACK CONTROL (user-decided 2026-08-29): the arrow and the screen's NAME as
-   ONE target, in the left slot where a back control belongs and where the eye already is.
-   It replaces the title rather than sitting beside it, so the row's measured width budget
-   is unchanged — the icon takes the place of the tracking the title used to have. */
-.topbar-back {
+/* THE HEADER'S BACK CONTROL (user-decided 2026-08-29; the ARROW ALONE since 2026-09-03).
+   It carried the screen's NAME as one target until the name grew a job of its own — the
+   LANGUAGE, and the selection behind it (`LangTitle`) — and one target cannot both leave a
+   screen and open a wheel. It is the ARROW's own control now — and since 2026-09-03 the
+   selection's way out is this very component too, so the chevron cannot sit a few pixels off
+   from the one it opens over. */
+.header-back {
   display: flex;
   align-items: center;
-  gap: 6px;
-  /* A finger's target around type that stays small: the padding is pulled back out with a
-     negative margin so the visible word still starts on the row's own left edge. */
-  padding: 12px 10px 12px 0;
-  margin: -12px 0;
+  flex: none;
+  /* NOT a `.home-btn`: that class sizes a key by `--hud-height`, which steps down with the
+     phone breakpoints on `.topbar` but not on `.modal-bar`, so the same control measured
+     32px in the header and 40px in the selection over it — and a glyph centred in boxes of
+     two widths lands 4px apart, which is exactly the "back button moving" the shared
+     component was meant to end (measured 2026-09-03). The padding is the whole box, in
+     both places. */
+  /* The RETIRED control's own geometry with its word taken out: 44px of height around a
+     glyph that stays small, and the padding pulled back out with a negative margin so the
+     chevron still starts on the row's own left edge. It began as a `--hud-height` square
+     and that cost the title 12px it did not have — a key's box is sized for a 20px
+     drawing, and this is a 14px mark with a title waiting beside it. */
+  padding: 12px 10px 12px 4px;
+  margin: -12px 0 -12px -4px;
   border: 0;
   background: none;
-  /* `font: inherit`: a BUTTON brings its own font
-     and inherits none of the page's, so `.topbar-title` — which sets a size, a weight and a
-     tracking but no FAMILY — was resolving to the UA's Arial inside here while the same
-     class rendered in Azeret Mono on every other header. Same 14px, same 500, same 0.08em,
-     visibly a different word. Only the family was ever wrong, and inheriting the whole font
-     context is what guarantees the two cannot drift again. */
-  font: inherit;
   color: var(--fg);
   cursor: pointer;
   transition: color 120ms;
 }
-/* The back control is the left track's content, and that track is the one that gives
-   ground (the keys may never shrink): with the fixed five-key row beside it, SE
-   CONNECTER at the base size ran 24px INTO the keys at 320px (2026-08-31). It takes the
-   title's own phone step-downs above, and as a floor it ellipsises rather than overlaps. */
-.topbar-back {
-  min-width: 0;
+.header-back:hover {
+  color: var(--muted);
 }
-.topbar-back .topbar-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* The back chevron is the title's own 7×7 pixel chevron at 2px a cell — its in-file
-   size; forcing a square here would put it off the cell grid and blur it. */
-.topbar-back .ui-icon {
+.header-back .ui-icon {
   flex: none;
 }
-/* Its hover is the chip's (see `.puzzle-title:hover .topbar-title`); the arrow keeps
-   its ink. */
 
 /* ── THREE ROLES, TOLD APART ON THREE AXES (user-decided 2026-08-29) ───────────────────
    The area's small type was one size and nearly one colour, so an EXPLANATION, an ERROR and
@@ -5622,6 +5641,18 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   border-color: transparent;
 }
 .btn + .link-quiet-btn:hover:not(:disabled) {
+  border-color: transparent;
+}
+/* THE SAME RULE, one wrapper further out. The bare dress belongs to a quiet control that
+   FOLLOWS the screen's action rather than standing as an alternative to it — the crossroads'
+   CANCEL — and the address step's privacy control is exactly that: it sits under CONTINUE,
+   and boxed it read as a second button competing with the lit one. The adjacency above
+   cannot reach it, because it lives in the centring `.link-quiet` row (with the cost and
+   refusal captions between them on the door that shows one), so it says so itself. */
+.link-aside {
+  border-color: transparent;
+}
+.link-aside:hover:not(:disabled) {
   border-color: transparent;
 }
 /* A CONTROL THAT IS NOT A CONTROL YET LOSES ITS BOX (2026-08-30). RESEND spends its first
@@ -5866,6 +5897,199 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   width: 100%;
 }
 
+/* ===================== the privacy notice (#229) ===================== */
+/* THE APP'S ONE DOCUMENT, SET LIKE AN ARTICLE (user-decided 2026-09-03: "a bit more
+   beautiful, like a blog post" — and wider: at the account column's 430px "on desktop it
+   feels like you're on a phone"). Every other surface says only what it cannot show; this
+   is the one screen made of paragraphs, so it takes a reader's shape: a TITLE in sentence
+   case (a document's own first line, not chrome), a DATELINE under it, a STANDFIRST, and
+   sections opened by a hairline and a small tracked heading — each named thing standing on
+   its own line over what is true of it, so the page skims for the one item a reader came
+   for before a word of it is read.
+
+   The MEASURE is 640px: ~76 characters of the mono at this size, a real reading line where
+   430 was a phone column stood on a desk. The area's 48px header clearance is stated as a
+   LITERAL for the reason `.account-screen` records (`--hud-height` is scoped to `.topbar`,
+   and naming it in a `calc()` out here voids the whole declaration).
+
+   It does NOT wear `.account-screen`: that class centres its column vertically and, on a
+   phone, opens on the area's high start line — a document reads top-down from as high as
+   the header allows (the finding that took `/profile` off that line on 2026-09-02).
+   `align-self: stretch` pins it to the top of `.app`'s centring row; the column then scrolls
+   its own overflow, which is also what lights the header's band as the text passes under
+   it. */
+.privacy-screen {
+  width: min(640px, 100%);
+  align-self: stretch;
+  /* 100% (the `.app` padding box), never 100dvh: a taller child of a centring flex parent
+     overflows symmetrically and its top gets clipped under the bar (`.profile-screen`'s
+     recorded trap). */
+  max-height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 64px 2px 72px;
+}
+/* THE HEAD — title, dateline, standfirst — then the sections, each opened by a rule. */
+.privacy-head {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 40px;
+}
+/* A document's TITLE: sentence case (it is a line of prose, not a label), the chrome's
+   family, at a display size — hierarchy said in WEIGHT and SIZE, never in a second family. */
+.privacy-title {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+}
+/* The DATELINE — the archive day's own dress (`.title-tag`): small, tracked, muted. */
+.privacy-dateline {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* The STANDFIRST — one sentence in the reading ink, a step above the body. */
+.privacy-lead {
+  margin: 6px 0 0;
+  font-family: var(--ui);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.6;
+  color: var(--fg);
+}
+.privacy-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+.privacy-section + .privacy-section {
+  margin-top: 32px;
+}
+/* CHROME (the area's three-roles rule, 2026-08-29): uppercase, tracked, `--fg` — the same
+   dress `.account-link-label` wears, so a heading here and a row label there read as one
+   kind of thing. */
+.privacy-heading {
+  margin: 0 0 2px;
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg);
+}
+/* INFO: sentence case, muted, regular — `.account-note`'s voice at a reading size. */
+.privacy-text {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.7;
+  color: var(--muted);
+}
+/* A NAMED THING and what is true of it: a definition list, the term on its own line at the
+   labels' weight in the reading ink, its body under it — an article's run of small
+   subheads, which is what lets a section be skimmed. */
+.privacy-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.privacy-term {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 15px;
+  font-weight: 550;
+  line-height: 1.4;
+  color: var(--fg);
+}
+.privacy-list dd {
+  margin: 4px 0 0;
+}
+/* Inline emphasis inside a paragraph — the host's name, in the term's ink and weight. */
+.privacy-strong {
+  color: var(--fg);
+  font-weight: 550;
+}
+/* THE ONE LINK OUT OF THIS APP. "Write to us" is the only instruction here a reader is meant
+   to ACT on and a paragraph is not tappable, so the address is a real `mailto:` — in the
+   ACTION ink rather than a browser blue, underlined because a link inside running text has
+   nothing else to say it is one. */
+.privacy-mail {
+  color: var(--fg);
+  font-weight: 550;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--line-strong);
+}
+.privacy-mail:hover {
+  color: var(--accent);
+  text-decoration-color: var(--accent);
+}
+@media (max-width: 640px) {
+  .privacy-screen {
+    padding: 48px 2px 40px;
+  }
+  .privacy-head {
+    margin-bottom: 32px;
+  }
+  .privacy-title {
+    font-size: 23px;
+  }
+  .privacy-lead {
+    font-size: 15px;
+  }
+  .privacy-section + .privacy-section {
+    margin-top: 26px;
+  }
+}
+
+/* THE QUIET DOOR TO THE NOTICE, on `/account` (user-decided 2026-09-03: "only 0.1% of the
+   users will care and click on it… not hidden neither, just not in the middle of the
+   screen with a big button"). It was a full-width row beside the account's own actions; it
+   is a FOOTNOTE now — the last line of the content, centred, small, in the secondary ink,
+   with a finger's padding it does not show. Muted on purpose, and the one place the area's
+   ACTION-in-`--fg` rule yields: that rule keeps a control from hiding among help text, and
+   there is no help text here to hide among — the whole point of this one is to be exactly
+   as visible as the interest in it. */
+.account-foot {
+  display: flex;
+  justify-content: center;
+  margin-top: 28px;
+}
+/* Under the call it is the call's own footnote, closer. */
+.account-cta + .account-foot {
+  margin-top: 12px;
+}
+.account-foot-link {
+  padding: 12px 14px;
+  border: 0;
+  background: none;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 120ms;
+}
+.account-foot-link:hover {
+  color: var(--fg);
+}
+
 /* The account's DEVICES, and the way to sign one out (#216) — the profile screen's second
    block, under the editor and inside the same column. Chrome, so: mono, all-caps, one ink
    with SECONDARY values in `--muted` (the 2026-08-20 rule), and nothing rounder than the
@@ -6059,10 +6283,21 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
      numbers and the call, the middle is no longer empty.) */
   .account-cta {
     margin-top: auto;
-    margin-bottom: -38px;
   }
   .account-cta .mix-btn {
     margin-bottom: 0;
+  }
+  /* THE FOOTNOTE TAKES THE EDGE (2026-09-03): it is the screen's last line, parked on the
+     bottom by the auto margin when there is no call, and sitting under the call when there
+     is one — which is what moves the call up off the exact edge MIX and INVITE sit on, on
+     this screen alone and on purpose. The negative margin gives back the screen's own 24px
+     and `.app`'s 28px down to the 14px inset; the link's own 12px of padding is inside it. */
+  .account-foot {
+    margin-top: auto;
+    margin-bottom: -38px;
+  }
+  .account-cta + .account-foot {
+    margin-top: 6px;
   }
 }
 
@@ -6778,13 +7013,12 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   text-transform: none;
   color: var(--muted);
 }
-/* The action is the column's, exactly like SignedOut's and the invite landing's. */
+/* The ONE way out is the column's width, exactly like SignedOut's and the invite landing's —
+   and it is the QUIET variant (2026-09-03): a full-screen error page is not a place to retry
+   from, so nothing on it is lit. The act is re-run from the screen underneath. */
 .error-body .btn {
   width: 100%;
   margin-top: 12px;
-}
-.error-body .btn + .btn {
-  margin-top: 0;
 }
 .error-screen[open] {
   animation: error-in 160ms ease-out;

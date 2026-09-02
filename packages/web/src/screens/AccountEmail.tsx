@@ -78,6 +78,7 @@ import Button from '../components/Button';
 import CodeInput from '../components/CodeInput';
 import ErrorScreen from '../components/ErrorScreen';
 import LoadingWave from '../components/LoadingWave';
+import LangTitle from '../components/LangTitle';
 import { HeaderBack, HeaderLeft } from '../components/TopBar';
 import {
   adoptLinkedAccount,
@@ -89,8 +90,9 @@ import {
   useDeviceIdentity,
 } from '../identity';
 import useKeyboardInset from '../hooks/useKeyboardInset';
+import useUiLang from '../hooks/useUiLang';
 import { t, tn } from '../i18n';
-import { ACCOUNT_PATH, resolveHomeLang, type LinkIntent } from '../langs';
+import { ACCOUNT_PATH, PRIVACY_PATH, type LinkIntent } from '../langs';
 import { navigate } from '../routing';
 import {
   loadAccountSummary,
@@ -99,7 +101,6 @@ import {
   useAccountSummary,
 } from '../state/account';
 import { recoveredLinkResult } from '../state/linkRecovery';
-import { useGameStore } from '../state/gameStore';
 import { prefetchTurnstileTokens, turnstileToken } from '../turnstile';
 
 type Step = 'address' | 'code' | 'confirm' | 'done';
@@ -156,12 +157,12 @@ function writeResumable(value: Resumable | null): void {
   }
 }
 
-// What went wrong, in the words the error surface needs. `retry` is present only when asking
-// again can help — a refused code cannot be fixed by re-sending the same one.
+// What went wrong, in the words the error surface needs. (A `retry` flag chose between two
+// buttons on that surface until 2026-09-03; the screen has one way out now, and the act is
+// re-run from the step that owns it.)
 interface Refusal {
   title: string;
   note: string;
-  retry?: boolean;
 }
 
 // THE ENDING HAS TO SURVIVE ITS OWN SUCCESS. An ADOPT changes the account this device acts
@@ -183,8 +184,7 @@ let justLinked: {
 } | null = null;
 
 export default function AccountEmail({ intent }: { intent: LinkIntent }) {
-  const lastLang = useGameStore((s) => s.lastLang);
-  const lang = resolveHomeLang(lastLang, navigator.language);
+  const lang = useUiLang();
   const identity = useDeviceIdentity();
   const returning = intent === 'return';
 
@@ -259,10 +259,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
 
   useEffect(() => () => clearTimeout(shakeTimer.current), []);
 
-  const fail = useCallback(
-    (title: string, note: string, retry?: boolean) => setRefusal({ title, note, retry }),
-    [],
-  );
+  const fail = useCallback((title: string, note: string) => setRefusal({ title, note }), []);
 
   const leave = () => {
     writeResumable(null);
@@ -337,9 +334,9 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           fail(t(lang, 'linkFailed'), t(lang, 'linkBadAddress'));
           return;
         }
-        fail(t(lang, 'linkFailed'), t(lang, 'linkSendFailedNote'), true);
+        fail(t(lang, 'linkFailed'), t(lang, 'linkSendFailedNote'));
       } catch {
-        fail(t(lang, 'linkFailed'), t(lang, 'linkSendFailedNote'), true);
+        fail(t(lang, 'linkFailed'), t(lang, 'linkSendFailedNote'));
       } finally {
         setBusy(false);
         if (handOff && !handedOn) addressField.current?.focus();
@@ -510,10 +507,10 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           return;
         }
         if (response.status >= 500 && (await recoverAmbiguous(resolved, email))) return;
-        fail(t(lang, 'linkFailed'), t(lang, 'linkVerifyFailedNote'), true);
+        fail(t(lang, 'linkFailed'), t(lang, 'linkVerifyFailedNote'));
       } catch {
         if (request && (await recoverAmbiguous(request, email))) return;
-        fail(t(lang, 'linkFailed'), t(lang, 'linkVerifyFailedNote'), true);
+        fail(t(lang, 'linkFailed'), t(lang, 'linkVerifyFailedNote'));
       } finally {
         setBusy(false);
       }
@@ -663,7 +660,6 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           thing either door can honestly call itself. */}
       <HeaderLeft>
         <HeaderBack
-          title={t(lang, returning ? 'linkTitleReturn' : 'linkTitleSave')}
           label={t(lang, 'ariaBack')}
           // BACK IS A STEP, not an exit, wherever there is a step to take: from the code
           // it returns to the ADDRESS — which is what the quiet CHANGE ADDRESS button used
@@ -676,6 +672,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             backToAddress();
           }}
         />
+        <LangTitle lang={lang} title={t(lang, returning ? 'linkTitleReturn' : 'linkTitleSave')} />
       </HeaderLeft>
       <div className="account-screen link-step">
         <p className="sr-only" role="status">
@@ -747,6 +744,20 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             {note && (
               <p className="account-note caption danger">{note}</p>
             )}
+            {/* WHAT HAPPENS TO THE ADDRESS (#229), in the quiet row's own dress — here,
+                because this is where an address is actually typed, and a notice a player
+                has to go looking for on another screen answers the question after they
+                have already answered it themselves. It is the step's ONE quiet control,
+                exactly as RESEND is the code step's. */}
+            <div className="link-quiet">
+              <button
+                type="button"
+                className="link-quiet-btn link-aside"
+                onClick={() => navigate(PRIVACY_PATH)}
+              >
+                {t(lang, 'privacyFromAddress')}
+              </button>
+            </div>
           </>
         )}
 
@@ -995,11 +1006,6 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           lang={lang}
           title={refusal.title}
           note={refusal.note}
-          onRetry={
-            refusal.retry
-              ? () => void (step === 'code' && isValidLinkCode(code) ? verify(code) : send())
-              : undefined
-          }
           onClose={() => setRefusal(null)}
         />
       )}

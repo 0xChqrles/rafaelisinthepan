@@ -21,10 +21,12 @@ import ChevronLeftIcon from '../assets/icons/chevron-left.svg?react';
 // **TWO SLOTS, AND EACH HAS ONE MEANING** (user-decided 2026-08-30, retiring the three-slot
 // row whose centre held the segmented mode switcher):
 //
-//   LEFT   WHAT YOU ARE LOOKING AT. On a play surface that is the daily itself
-//          (`PuzzleTitle` — "SENTENCE ⌄", and the day too on an archive route), whose sheet
-//          holds every axis of which puzzle: language, daily, day. On a screen you navigated
-//          INTO it is `HeaderBack` — the arrow and the screen's own name as one target.
+//   LEFT   WHAT YOU ARE LOOKING AT, and the axes of it you can change. On a play surface
+//          that is the daily itself (`PuzzleTitle` — "SENTENCE ⌄", and the day too on an
+//          archive route), whose selection holds every axis of which puzzle: language,
+//          daily, day. On a screen you navigated INTO it is `HeaderBack` — the arrow — then
+//          `LangTitle`, the screen's own name with the LANGUAGE beside it and that one axis
+//          behind it (2026-09-03: every page of the game can change language now).
 //   RIGHT  WHERE YOU ARE AND WHERE YOU CAN GO: the state keys, the current one LIT.
 //
 // The centre is deliberately empty. What that bought is recorded in `PuzzleTitle`: the row
@@ -105,26 +107,26 @@ export function HeaderLeft({ children }: { children: ReactNode }) {
   return node ? createPortal(children, node) : null;
 }
 
-// A STEP's way back: a LEFT CHEVRON and the screen's own name as ONE target, in the left
-// slot where the eye already is when it reads what screen it is on (user-decided
-// 2026-08-29). It REPLACES a title rather than sitting beside it, so the row's measured
-// width budget is unchanged. The chevron is the title's own 7×7 pixel mark turned to point
-// out (user-decided 2026-09-02, "use a left chevron as a back icon on the header",
-// replacing the 10×10 pixel arrow): the way INTO the title and the way BACK out of a step
-// are one glyph, and the arrow read as a different kind of thing beside it.
-export function HeaderBack({
-  title,
-  label,
-  onBack,
-}: {
-  title: string;
-  label: string;
-  onBack: () => void;
-}) {
+// A STEP's way back: a LEFT CHEVRON in the left slot, where a back control belongs and where
+// the eye already is when it reads what screen it is on (user-decided 2026-08-29). The
+// chevron is the title's own 7×7 pixel mark turned to point out (user-decided 2026-09-02,
+// "use a left chevron as a back icon on the header", replacing the 10×10 pixel arrow): the
+// way INTO the title and the way BACK out of a step are one glyph.
+//
+// **IT CARRIED THE SCREEN'S NAME UNTIL 2026-09-03, and the two split.** One target for the
+// arrow and the name was right while the name said only WHICH SCREEN you were on. It says
+// more now: on every screen that is not a puzzle the name also carries the LANGUAGE and
+// opens the selection behind it (`LangTitle`), and one target cannot both leave a screen and
+// open a wheel. So a step's left slot is the arrow, then its name — two controls, still read
+// as one thing, and the row's measured width budget is unchanged. It is NOT a `.home-btn`:
+// that class sizes a key by `--hud-height`, which steps down with the phone breakpoints on
+// the header and not on a dialog's bar, so the same control drew two widths and its glyph
+// landed 4px apart between a screen and the selection over it. Its box is its own padding.
+// It is also `PuzzleSelect`'s way out — the same component, so the two cannot drift.
+export function HeaderBack({ label, onBack }: { label: string; onBack: () => void }) {
   return (
-    <button type="button" className="topbar-back" aria-label={label} onClick={onBack}>
+    <button type="button" className="header-back" aria-label={label} onClick={onBack}>
       <ChevronLeftIcon className="ui-icon" aria-hidden />
-      <span className="topbar-title">{title}</span>
     </button>
   );
 }

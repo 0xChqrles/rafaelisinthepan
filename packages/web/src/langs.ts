@@ -94,6 +94,17 @@ export const ACCOUNT_EMAIL_PATH = '/account/email';
 export const ACCOUNT_SIGNIN_PATH = '/account/signin';
 export const PROFILE_PATH = '/profile';
 
+// THE PRIVACY NOTICE (#229): what the game keeps about a player, why, and how to be rid of
+// it. GLOBAL like the four above — what is stored is a fact about the whole game, not about
+// one language's daily — and a STEP rather than a place: it is reached from `/account` and
+// from the email flow's address field, which are the two screens where a person is deciding
+// whether to hand over an address, and it goes back to whichever one asked.
+//
+// It is a real route rather than a dialog because a legal notice has to be LINKABLE: the SES
+// production-access form asks for a URL and a reviewer opens it, and « où est-ce écrit ? »
+// deserves an answer that can be pasted into a message.
+export const PRIVACY_PATH = '/privacy';
+
 // Which act the email flow is dressing. It never reaches the server.
 export type LinkIntent = 'save' | 'return';
 
@@ -112,7 +123,7 @@ export { invitePath as pathForInvite } from '@whippin/shared';
 
 // A parsed route. The game IS the home: /<lang> plays today's puzzle, /<lang>/<date>
 // plays a past day (archive, #55), /<lang>/archive is the calendar, /select is the
-// language picker, and anything else (/, unknown paths) is
+// language picker, /privacy is the data notice, and anything else (/, unknown paths) is
 // a `home` redirect that bounces to the user's language (see resolveHomeLang). Word
 // mode (#156) mirrors the whole grammar under /<lang>/word: today's word,
 // /word/<date>, /word/archive.
@@ -124,6 +135,7 @@ export type Route =
   | { view: 'account' }
   | { view: 'accountEmail'; intent: LinkIntent }
   | { view: 'profile' }
+  | { view: 'privacy' }
   | { view: 'invite'; publicId: string }
   | { view: 'home' };
 
@@ -154,6 +166,7 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
   const [seg, second, third] = segs;
   if (seg === 'select') return { view: 'select' };
   if (seg === 'profile') return { view: 'profile' };
+  if (seg === 'privacy') return { view: 'privacy' };
   // `/account` and its one step deeper. An unknown third form keeps the game routes'
   // tolerance and lands on the area's own entry rather than bouncing home.
   if (seg === 'account') {
@@ -207,6 +220,34 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
   // Any other non-date, non-archive segment keeps today's tolerance: /<lang>/xyz plays
   // today's game (unchanged behavior, so old links never break).
   return { view: 'game', lang: seg, mode: 'sentence' };
+}
+
+// THE LINK'S OWN LANGUAGE (`?lang=`, user-decided 2026-09-03: "so you can send the privacy
+// policy in a specific language" — and APP-WIDE, not that page's alone). It is a SUGGESTION
+// carried by a URL: the sender knows which language their reader wants, and the reader may
+// never have opened the game.
+//
+// It ranks ABOVE the stored preference, which is what makes a sent link work for a player
+// who already has one — and it is deliberately NOT persisted: a support link in English must
+// not take a French player's app away from them for good. A deliberate PICK beats it and
+// removes it from the URL (`dropLangParam`), so the wheel is never argued with.
+//
+// It has no say on a route that NAMES a language (`/fr`, `/en/2026-08-30`): the path is the
+// more specific statement, and `?lang=` is the fallback for the routes that name none.
+export function langFromSearch(search: string): LangCode | null {
+  const asked = new URLSearchParams(search).get('lang');
+  return isLang(asked) ? asked : null;
+}
+
+// THE CHROME LANGUAGE for a screen whose URL does not name one — the link's, else the
+// stored preference, else the browser's. Pure, so the precedence can be tested on its own;
+// `hooks/useUiLang` is the reactive binding every such screen actually calls.
+export function resolveUiLang(
+  search: string,
+  persisted: string | null | undefined,
+  navigatorLang?: string,
+): LangCode {
+  return langFromSearch(search) ?? resolveHomeLang(persisted, navigatorLang);
 }
 
 // Where `/` (and any unknown path) should land: the persisted last-played language if

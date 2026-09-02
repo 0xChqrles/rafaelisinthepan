@@ -43,7 +43,6 @@ export default defineConfig(({ command, mode }) => {
       'VITE_TURNSTILE_SITE_KEY is required for production builds; refusing to ship score collection disabled.',
     );
   }
-
   const build = buildId();
   return {
     // svgr before react so `?react` SVG imports are transformed into components first.

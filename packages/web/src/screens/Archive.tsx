@@ -131,7 +131,7 @@ export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; m
   return (
     <div className="archive">
       <HeaderLeft>
-        <PuzzleTitle lang={lang} mode={mode} onArchive />
+        <PuzzleTitle lang={lang} mode={mode} surface="archive" />
       </HeaderLeft>
 
       <div className="cal">

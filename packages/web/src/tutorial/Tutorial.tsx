@@ -7,7 +7,9 @@ import LoadingWave from '../components/LoadingWave';
 import RarityLadder from './RarityLadder';
 import { HIT_FADE_MS } from '../components/FloatingHit';
 import { RANK_MAX_MS, rankTransitionDuration } from '../components/Hole';
+import LangTitle from '../components/LangTitle';
 import { HeaderLeft } from '../components/TopBar';
+import { pathForMode, type LangCode, type Mode } from '../langs';
 import { FLOATING_HIT_INTRO_MS, KB_EXIT_FALLBACK_MS } from '../screens/Game';
 import MixWord from './MixWord';
 import CoachText, { richToPlain } from './CoachText';
@@ -78,7 +80,19 @@ function freshHole(h: PuzzleHole): RuntimeHole[] {
 // tutorial (`onDone`) — a header affordance, not a "close this box" icon, so it can't be
 // mistaken for dismissing the explanation alone. `onDone` fires on both a natural finish
 // and a skip.
-export default function Tutorial({ lang, onDone }: { lang: string; onDone: () => void }) {
+export default function Tutorial({
+  lang,
+  // The daily the lesson was opened from. The lesson itself is MODE-AGNOSTIC — it teaches
+  // what both dailies share — and this is only where a LANGUAGE pick has to land: the
+  // tutorial lives on `/fr` or `/en`, so switching language is a navigation, and it should
+  // put the player back on the daily they came from.
+  mode,
+  onDone,
+}: {
+  lang: LangCode;
+  mode: Mode;
+  onDone: () => void;
+}) {
   const script = useMemo(() => scriptFor(lang), [lang]);
   const { puzzle } = script;
   const hole = puzzle.holes[0];
@@ -356,8 +370,17 @@ export default function Tutorial({ lang, onDone }: { lang: string; onDone: () =>
       {/* The row itself is App's, with the BOOK lit: this is the rules' place, and any
           other key leaves the lesson (which is a SKIP — App's `leaveTutorial`). What this
           screen owns is its NAME. */}
+      {/* The lesson's own name, and the language it is being taught in (2026-09-03: every
+          page of the game can change language, "even on the tutorial"). The pick NAVIGATES
+          — the lesson is on a language-scoped route — and `App` keys it on that language,
+          so it restarts in the one it lands in. That was already true through `/select`;
+          this is the same trip without leaving the header. */}
       <HeaderLeft>
-        <span className="topbar-title">{t(lang, 'inviteTutorial')}</span>
+        <LangTitle
+          lang={lang}
+          title={t(lang, 'inviteTutorial')}
+          to={(picked) => pathForMode(picked, mode)}
+        />
       </HeaderLeft>
 
       {/* The top box: the current explanation, typewritten. Same background as the

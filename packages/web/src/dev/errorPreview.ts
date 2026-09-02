@@ -5,24 +5,23 @@ import type { UiKey } from '../i18n';
 // The `?streak=N` harness's rules, for its reasons: parsing is pure and injectable so a test
 // can prove a PRODUCTION build ignores the parameter even when it is otherwise valid.
 //
-// Every variant here is a REAL call site's (title, note, retry) triple — never invented copy.
-// That is the whole point of previewing on this surface rather than on a mock: what the box
-// has to survive is the copy it actually carries, and the two shapes that copy comes in (the
-// refusals that offer no retry explain themselves, and are the short ones).
+// Every variant here is a REAL call site's (title, note) pair — never invented copy. That is
+// the whole point of previewing on this surface rather than on a mock: what the box has to
+// survive is the copy it actually carries, from the longest note to the shortest. (Until
+// 2026-09-03 a variant also said whether it carried TRY AGAIN; the screen has one way out
+// now, so a variant is only its words.)
 export interface ErrorVariant {
   title: UiKey;
   note: UiKey;
-  // Absent where asking again cannot help — the moderation refusals.
-  retry?: true;
 }
 
 export const ERROR_VARIANTS = {
-  // The one production reported on 2026-08-27, and the longest note that carries a retry.
-  account: { title: 'failedAccount', note: 'failedAccountNote', retry: true },
-  share: { title: 'failedShare', note: 'failedShareNote', retry: true },
-  start: { title: 'failedStart', note: 'failedStartNote', retry: true },
-  invite: { title: 'failedInvite', note: 'failedInviteNote', retry: true },
-  save: { title: 'profileSaveFailed', note: 'failedSaveNote', retry: true },
+  // The one production reported on 2026-08-27, and the longest note.
+  account: { title: 'failedAccount', note: 'failedAccountNote' },
+  share: { title: 'failedShare', note: 'failedShareNote' },
+  start: { title: 'failedStart', note: 'failedStartNote' },
+  invite: { title: 'failedInvite', note: 'failedInviteNote' },
+  save: { title: 'profileSaveFailed', note: 'failedSaveNote' },
   name: { title: 'profileNameRejected', note: 'profileNameRejectedNote' },
   avatar: { title: 'profileAvatarRejected', note: 'profileAvatarRejectedNote' },
 } as const satisfies Record<string, ErrorVariant>;
@@ -31,9 +30,8 @@ export type ErrorVariantName = keyof typeof ERROR_VARIANTS;
 
 export const ERROR_VARIANT_NAMES = Object.keys(ERROR_VARIANTS) as ErrorVariantName[];
 
-// Read through the WIDE interface. `as const satisfies` keeps the key names literal (which is
-// what the parser validates against), but it also narrows each entry to its own exact shape,
-// so `.retry` does not exist on the refusals that omit it.
+// Read through the WIDE interface: `as const satisfies` keeps the key names literal (which is
+// what the parser validates against) while narrowing each entry to its own exact shape.
 export function errorVariant(name: ErrorVariantName): ErrorVariant {
   return ERROR_VARIANTS[name];
 }
@@ -51,10 +49,10 @@ export function errorPreviewFromSearch(
   return (ERROR_VARIANT_NAMES as string[]).includes(raw) ? (raw as ErrorVariantName) : null;
 }
 
-// Closing CYCLES rather than dismissing, and TRY AGAIN re-opens the same one. A design
-// conversation is a series of looks at the box, so the two controls are the fastest way to
-// walk the copy set — and a preview that vanished on the first tap would cost a reload per
-// look. The screen's own handlers are what they are; nothing here changes the component.
+// Closing CYCLES rather than dismissing. A design conversation is a series of looks at the
+// box, so the one control is the fastest way to walk the copy set — a preview that vanished
+// on the first tap would cost a reload per look. The screen's own handler is what it is;
+// nothing here changes the component.
 export function nextErrorVariant(held: ErrorVariantName): ErrorVariantName {
   const at = ERROR_VARIANT_NAMES.indexOf(held);
   return ERROR_VARIANT_NAMES[(at + 1) % ERROR_VARIANT_NAMES.length];

@@ -32,27 +32,27 @@ import botIdle from '../assets/error-bot-idle.png';
 // The stack, top to bottom: the bot saying ERROR ! · WHAT failed (chrome voice, all-caps,
 // in the danger ink) · what happened and what to do about it (coach voice — sentence case,
 // the one mono surface the all-caps rule exempts, because it explains rather than labels) ·
-// the ACTION.
-// The primary button is TRY AGAIN wherever asking again can help; where it cannot (the
-// moderation refusals — the same name will be refused the same way) the note IS the answer
-// and the one button is the way out, so it takes the primary slot rather than leaving the
-// screen with nothing to press.
+// ONE quiet way out.
+//
+// **THERE IS NO TRY AGAIN (user-decided 2026-09-03, retiring the primary it carried since
+// 2026-08-24).** A full-screen error page is not a place to retry FROM: the act that failed
+// belongs to the screen underneath, and the honest gesture is to go back to it and press the
+// same button again — where the state it needs (the typed address, the drawing, the gate) is
+// still on screen. What the retry bought was one tap; what it cost was a lit primary on a
+// page whose only real message is "that did not work", and a second button competing with
+// the way out. So the surface is the bot, the title, the note, and a single SECONDARY that
+// dismisses — the note says what to do, and the screen under it is where to do it.
 //
 // Follows the modal rules (`useModalDismiss`) for DISMISSAL: opening focuses the dialog, a
 // backdrop tap is not one (there is no backdrop left to tap), and Escape leaves through the
-// `error-out` exit beat. **TRY AGAIN is the deliberate exception (PR-219 round-2 review,
-// P1): it fires SYNCHRONOUSLY inside its own tap.** The retried act may need the tap's
-// transient user activation — WebKit refuses a clipboard write (and the spec a native share)
-// reached across an async boundary, so a retry deferred to the exit animation could NEVER
-// deliver on Safari: the screen would reopen on every tap, forever. The button calls
-// `onClose()` then `onRetry()` in the click's own tick — the owner's state change unmounts
-// the dialog (no exit beat; an open dialog unmounts cleanly), and a retry that fails again
-// mounts a fresh one, which is itself the honest feedback.
+// `error-out` exit beat. The retired retry needed a synchronous, in-tap firing (WebKit refuses
+// a clipboard write reached across an async boundary — PR-219 review); with the retry gone
+// that constraint is gone with it, and the act is re-run from the screen that owns it, inside
+// its own fresh tap.
 export default function ErrorScreen({
   lang,
   title,
   note,
-  onRetry,
   onClose,
 }: {
   lang: string;
@@ -60,11 +60,6 @@ export default function ErrorScreen({
   title: string;
   // What happened and what to do about it — a sentence, not a code.
   note: string;
-  // Present only when asking again can help; its absence means the note is the answer.
-  // MUST begin its activation-dependent work synchronously (see above): the screen
-  // guarantees the call happens inside the tap, and the handler must not spend that on
-  // an await of its own before the delivery API.
-  onRetry?: () => void;
   onClose: () => void;
 }) {
   const { closing, beginClose, dialogProps } = useModalDismiss('error-out');
@@ -85,29 +80,9 @@ export default function ErrorScreen({
         </div>
         <p className="error-title">{title}</p>
         <p className="error-note">{note}</p>
-        {onRetry ? (
-          <>
-            <Button
-              variant="primary"
-              onClick={() => {
-                // Order matters: the owner clears its failed state first (the unmount), and
-                // the retry starts second — still the same synchronous tick, so the whole
-                // chain down to the delivery API runs inside this tap's activation.
-                onClose();
-                onRetry();
-              }}
-            >
-              {t(lang, 'tryAgain')}
-            </Button>
-            <Button variant="secondary" onClick={beginClose}>
-              {t(lang, 'errorDismiss')}
-            </Button>
-          </>
-        ) : (
-          <Button variant="primary" onClick={beginClose}>
-            {t(lang, 'errorDismiss')}
-          </Button>
-        )}
+        <Button variant="secondary" onClick={beginClose}>
+          {t(lang, 'errorDismiss')}
+        </Button>
       </div>
     </dialog>
   );

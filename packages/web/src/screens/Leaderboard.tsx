@@ -337,7 +337,7 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
           (`HeaderKeys`, user-decided 2026-08-31 after a lit-crown-as-exit and then a ✕
           were each rejected: the first was not intuitive, the second rearranged the row). */}
       <HeaderLeft>
-        <PuzzleTitle lang={lang} mode={mode} />
+        <PuzzleTitle lang={lang} mode={mode} surface="board" />
       </HeaderLeft>
 
       {/* FRIENDS first — the trusted default; GLOBAL is the fun view. The segmented
@@ -411,7 +411,6 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
           lang={lang}
           title={t(lang, inviteFailed === 'account' ? 'failedAccount' : 'failedShare')}
           note={t(lang, inviteFailed === 'account' ? 'failedAccountNote' : 'failedShareNote')}
-          onRetry={() => void invite()}
           onClose={() => setInviteFailed(null)}
         />
       )}
