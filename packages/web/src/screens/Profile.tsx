@@ -23,7 +23,8 @@ import { prefetchTurnstileTokens } from '../turnstile';
 import { withoutLocalIdentityDeploy } from '../state/localIdentityDeploy';
 import ErrorScreen from '../components/ErrorScreen';
 import { navigate } from '../routing';
-import { ACCOUNT_PATH, resolveHomeLang } from '../langs';
+import { ACCOUNT_PATH } from '../langs';
+import useUiLang from '../hooks/useUiLang';
 import { t } from '../i18n';
 import Avatar from '../components/Avatar';
 import LoadError from '../components/LoadError';
@@ -140,9 +141,8 @@ const SAVE_RESTORE_MS = 240;
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export default function Profile() {
-  const lastLang = useGameStore((s) => s.lastLang);
   // No puzzle to take a language from: same resolution as the `/` redirect.
-  const lang = resolveHomeLang(lastLang, navigator.language);
+  const lang = useUiLang();
 
   // OPENING THE EDITOR DEPLOYS NOTHING (#216 trigger rework, user-decided 2026-08-24):
   // the identity is whatever the device holds, and SAVE is the deploy button. Reactive so

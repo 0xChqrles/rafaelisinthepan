@@ -90,8 +90,9 @@ import {
   useDeviceIdentity,
 } from '../identity';
 import useKeyboardInset from '../hooks/useKeyboardInset';
+import useUiLang from '../hooks/useUiLang';
 import { t, tn } from '../i18n';
-import { ACCOUNT_PATH, PRIVACY_PATH, resolveHomeLang, type LinkIntent } from '../langs';
+import { ACCOUNT_PATH, PRIVACY_PATH, type LinkIntent } from '../langs';
 import { navigate } from '../routing';
 import {
   loadAccountSummary,
@@ -184,8 +185,7 @@ let justLinked: {
 } | null = null;
 
 export default function AccountEmail({ intent }: { intent: LinkIntent }) {
-  const lastLang = useGameStore((s) => s.lastLang);
-  const lang = resolveHomeLang(lastLang, navigator.language);
+  const lang = useUiLang();
   const identity = useDeviceIdentity();
   const returning = intent === 'return';
 

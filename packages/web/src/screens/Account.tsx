@@ -57,13 +57,13 @@ import {
   ACCOUNT_SIGNIN_PATH,
   PRIVACY_PATH,
   PROFILE_PATH,
-  resolveHomeLang,
 } from '../langs';
 import { navigate } from '../routing';
 import { loadAccountSummary, useAccountSummary } from '../state/account';
 import { useAccountStats } from '../state/history';
 import { useGameStore } from '../state/gameStore';
 import useToday from '../hooks/useToday';
+import useUiLang from '../hooks/useUiLang';
 
 // "since 12 aug" — the identity's own age, in the reader's locale. An unparseable or absent
 // instant renders as NO line rather than a placeholder: the device list's rule, for the same
@@ -75,8 +75,7 @@ function began(createdAt: string | null, lang: string): string | null {
 }
 
 export default function Account() {
-  const lastLang = useGameStore((s) => s.lastLang);
-  const lang = resolveHomeLang(lastLang, navigator.language);
+  const lang = useUiLang();
   const identity = useDeviceIdentity();
   const { phase, summary } = useAccountSummary();
   const faceState = useOwnFace();

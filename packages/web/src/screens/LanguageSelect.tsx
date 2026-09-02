@@ -1,6 +1,7 @@
 import { dateForDayNumber } from '@whippin/shared';
 import Chooser, { ChooserCard } from '../components/Chooser';
-import { LANGS, pathForMode, resolveHomeLang, type LangCode, type Mode } from '../langs';
+import useUiLang from '../hooks/useUiLang';
+import { LANGS, pathForMode, type LangCode, type Mode } from '../langs';
 import { navigate } from '../routing';
 import useToday from '../hooks/useToday';
 import { useDeadlineRefresh } from '../hooks/useCountdown';
@@ -19,13 +20,12 @@ import { yearMonthOf, isoMonth } from '../calendar';
 export default function LanguageSelect() {
   const dayNumber = useToday();
   const wordRounds = useGameStore((s) => s.wordRounds);
-  const lastLang = useGameStore((s) => s.lastLang);
   // A card lands on the LAST-PLAYED MODE (#156, the same rule as the `/` redirect), so
   // its status strip reads that mode's round — the day the tap will actually open.
   const mode = useGameStore((s) => s.lastMode) ?? 'sentence';
   // This screen has no puzzle to take a language from; its chrome follows the same
   // resolution as the `/` redirect (last played, else browser, else English).
-  const uiLang = resolveHomeLang(lastLang, navigator.language);
+  const uiLang = useUiLang();
   // Both languages can have overlapping live runs. Wake for the first deadline; the hook
   // then selects the next one, so each card becomes done at its own wall-clock end.
   useDeadlineRefresh(

@@ -33,7 +33,7 @@
 import { dateForDayNumber } from '@whippin/shared';
 import { useState } from 'react';
 import ChevronDownIcon from '../assets/icons/chevron-down.svg?react';
-import PuzzleSelect from './PuzzleSelect';
+import PuzzleSelect, { type SelectSurface } from './PuzzleSelect';
 import { t } from '../i18n';
 import type { LangCode, Mode } from '../langs';
 
@@ -51,13 +51,15 @@ export default function PuzzleTitle({
   mode,
   // Present only on an archive route: the day being played, or null on today.
   dayNumber = null,
-  // The calendar itself: the other daily then means that daily's CALENDAR, not its puzzle.
-  onArchive = false,
+  // WHICH KIND OF SCREEN this title sits on, and so where a pick lands: the other daily
+  // means that daily's puzzle from a game, its CALENDAR from the archive, and its BOARD
+  // from the leaderboard. A selection changes what you are looking AT.
+  surface = 'game',
 }: {
   lang: LangCode;
   mode: Mode;
   dayNumber?: number | null;
-  onArchive?: boolean;
+  surface?: SelectSurface;
 }) {
   const [open, setOpen] = useState(false);
   const name = t(lang, mode === 'word' ? 'modeWord' : 'modeSentence').toUpperCase();
@@ -83,7 +85,7 @@ export default function PuzzleTitle({
         <PuzzleSelect
           lang={lang}
           mode={mode}
-          onArchive={onArchive}
+          surface={surface}
           onClose={() => setOpen(false)}
         />
       )}

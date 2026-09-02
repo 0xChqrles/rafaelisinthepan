@@ -21,8 +21,9 @@
 import type { ReactNode } from 'react';
 import LangTitle from '../components/LangTitle';
 import { HeaderBack, HeaderLeft } from '../components/TopBar';
+import useUiLang from '../hooks/useUiLang';
 import { t } from '../i18n';
-import { ACCOUNT_PATH, resolveHomeLang } from '../langs';
+import { ACCOUNT_PATH } from '../langs';
 import { goBack } from '../routing';
 import { useGameStore } from '../state/gameStore';
 import { PRIVACY_CONTACT, PRIVACY_HOST, PRIVACY_UPDATED, privacyDoc } from './privacyDoc';
@@ -69,10 +70,9 @@ function updatedOn(lang: string): string | null {
 }
 
 export default function Privacy() {
-  const lastLang = useGameStore((s) => s.lastLang);
   // Global like the rest of the account area: an identity is not language-scoped, so the
   // chrome language is the `/` redirect's own resolution.
-  const lang = resolveHomeLang(lastLang, navigator.language);
+  const lang = useUiLang();
   const doc = privacyDoc(lang);
   const title = t(lang, 'privacyTitle');
   const updated = updatedOn(lang);

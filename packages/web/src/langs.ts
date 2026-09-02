@@ -222,6 +222,34 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
   return { view: 'game', lang: seg, mode: 'sentence' };
 }
 
+// THE LINK'S OWN LANGUAGE (`?lang=`, user-decided 2026-09-03: "so you can send the privacy
+// policy in a specific language" — and APP-WIDE, not that page's alone). It is a SUGGESTION
+// carried by a URL: the sender knows which language their reader wants, and the reader may
+// never have opened the game.
+//
+// It ranks ABOVE the stored preference, which is what makes a sent link work for a player
+// who already has one — and it is deliberately NOT persisted: a support link in English must
+// not take a French player's app away from them for good. A deliberate PICK beats it and
+// removes it from the URL (`dropLangParam`), so the wheel is never argued with.
+//
+// It has no say on a route that NAMES a language (`/fr`, `/en/2026-08-30`): the path is the
+// more specific statement, and `?lang=` is the fallback for the routes that name none.
+export function langFromSearch(search: string): LangCode | null {
+  const asked = new URLSearchParams(search).get('lang');
+  return isLang(asked) ? asked : null;
+}
+
+// THE CHROME LANGUAGE for a screen whose URL does not name one — the link's, else the
+// stored preference, else the browser's. Pure, so the precedence can be tested on its own;
+// `hooks/useUiLang` is the reactive binding every such screen actually calls.
+export function resolveUiLang(
+  search: string,
+  persisted: string | null | undefined,
+  navigatorLang?: string,
+): LangCode {
+  return langFromSearch(search) ?? resolveHomeLang(persisted, navigatorLang);
+}
+
 // Where `/` (and any unknown path) should land: the persisted last-played language if
 // valid, else the browser's preferred language (fr* -> fr), else English. Pure so it
 // can be unit-tested — the caller passes navigator.language.

@@ -83,6 +83,8 @@
       components/LangTitle.tsx  the header's OTHER clickable title: a screen's own name, the
                               LANGUAGE beside it in the archive day's dress, and the
                               one-drum `PuzzleSelect` behind it
+      hooks/useUiLang.ts      the chrome language of a screen the URL names none for: the
+                              link's `?lang=`, then the stored preference, then the browser
       screens/FriendInvite.tsx  the #189 invite link's landing (/join/<publicId>): POST the mutual
                               edge with this device's token, then continue into the game. The link
                               players SHARE is /i/<publicId>, served by the backend for its preview
@@ -1092,6 +1094,51 @@ it to the local store — see `packages/backend/AGENTS.md`).
     back arrow beside it, and the day is the abnormal state a route must always label).
     Residue, accepted: at 341–359 — a band no shipping device sits in — the two longest
     French titles ellipsise by 6px.
+  - **A LINK CAN CARRY ITS OWN LANGUAGE — `?lang=`, APP-WIDE** (user-decided the same day:
+    "so you can send the privacy policy in a specific language… not only to the privacy
+    page"). Three sources in order, and the whole precedence is one pure function
+    (`resolveUiLang`, contract-tested): the LINK, then the stored preference, then the
+    browser. `hooks/useUiLang` is the reactive binding — the store because the wheel writes
+    it, `useLocation` because the URL is the other source — and it is what every screen the
+    URL names no language for now calls (`/account`, `/profile`, both flow doors,
+    `/privacy`, the chooser, and App's own `docLang` + `/` redirect, which carries the
+    invite landing and the signed-out screen with it).
+    - **It is NOT persisted, and a deliberate pick OUTRANKS it.** A support link in English
+      must not take a French player's app away from them for good; and since the parameter
+      is read AHEAD of the store, choosing FRANÇAIS while `?lang=en` stands would be
+      answered by the URL rather than by the wheel. So `LangTitle`'s pick calls
+      `dropLangParam()` BEFORE writing the preference — a `replaceState`, because a
+      suggestion the player just overruled is not a place to go back to.
+    - **A route that NAMES a language ignores it** (`/fr?lang=en` is French): the path is
+      the more specific statement, and `?lang=` is the fallback for the routes that name
+      none. An unsupported code says nothing at all rather than falling to English, so a
+      typo cannot take a stored French away.
+    - **`useLocation` now TRACKS the search string** (and still returns only the path, which
+      is what every caller routes on). The two used to be one, and a query-only change
+      re-rendered NOTHING — React bails out when a state write lands on the value already
+      held — so `dropLangParam` notified every listener and moved no screen: the player
+      picked FRANÇAIS, the URL stopped saying English, and the page stayed English until a
+      reload. Found in a browser, not in a test.
+  - **THE TUTORIAL SWITCHES TOO** (user-decided: "even on the tutorial"). Its left slot was a
+    plain name; it is a `LangTitle` whose pick NAVIGATES — the lesson sits on `/fr` or `/en`,
+    and `App` keys it on that language, so it restarts in the one it lands in (the trip
+    `/select` already made, without leaving the header). `Tutorial` takes a `mode` for that
+    one reason: the lesson is mode-agnostic, but the pick should put the player back on the
+    daily they came from. **`PuzzleSelect`'s language-only fold is a CALLBACK** (`onLang`)
+    rather than a store write, because the two screens that mount that face answer it
+    differently — the account area has no URL to move to and stores a preference, the
+    tutorial travels. The component knows the drums; the screen knows what its own language
+    means.
+  - **A PICK KEEPS YOU ON THE KIND OF SCREEN YOU WERE ON** (user-reported: changing either
+    axis on the leaderboard dropped the player onto the puzzle). `onArchive: boolean` became
+    `surface: 'game' | 'archive' | 'board'`, and `PATH_FOR` maps it to `pathForMode` /
+    `pathForArchive` / `pathForBoard`. A selection answers "which daily am I looking at",
+    never "take me somewhere else" — the rule the archive already followed, said once for
+    all three.
+  - **FOUR SURFACES STILL CANNOT SWITCH FROM WITHIN, each by an older decision**: `/select`
+    (it IS the picker), the invite landing, the onboarding invitation and the signed-out
+    screen — all four wear no header at all, being surfaces "with nowhere else to be". They
+    do honour `?lang=`, so a link sent in a language renders them in it.
 
 - **Local storage is an OUTBOX; a capped round ends at ∞ (#214).** The product contract —
   the three values, the load order, what the cap means, the share token, what was removed —

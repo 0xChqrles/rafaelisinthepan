@@ -5,9 +5,25 @@ import ChevronLeftIcon from '../assets/icons/chevron-left.svg?react';
 import useDrum from '../hooks/useDrum';
 import useModalDismiss from '../hooks/useModalDismiss';
 import { t } from '../i18n';
-import { LANGS, pathForArchive, pathForMode, type LangCode, type Mode } from '../langs';
+import {
+  LANGS,
+  pathForArchive,
+  pathForBoard,
+  pathForMode,
+  type LangCode,
+  type Mode,
+} from '../langs';
 import { navigate } from '../routing';
-import { useGameStore } from '../state/gameStore';
+
+// WHICH SURFACE the selection was opened from — and so where a pick lands. A selection
+// changes what you are LOOKING AT, so it keeps you on the same kind of screen.
+export type SelectSurface = 'game' | 'archive' | 'board';
+
+const PATH_FOR: Record<SelectSurface, (l: LangCode, m: Mode) => string> = {
+  game: pathForMode,
+  archive: pathForArchive,
+  board: pathForBoard,
+};
 
 // THE SELECTION BEHIND THE TITLE (user-decided 2026-09-02, over four passes). The title is
 // a HELD WORD — it wears the sentence chip — and what opens under it is the hole wheel's
@@ -36,7 +52,9 @@ import { useGameStore } from '../state/gameStore';
 // rule for its own reason (a pick reflows the sentence the wheel stands on); here the
 // screen under the veil is exactly what should change. It routes by the SURFACE it was
 // opened from, which is what the retired tabs did: from the archive, the other daily means
-// that daily's CALENDAR.
+// that daily's CALENDAR, and from the LEADERBOARD it means that daily's BOARD (user-reported
+// 2026-09-03: changing either axis there dropped the player onto the puzzle instead — a
+// selection answers "which daily am I looking at", never "take me somewhere else").
 //
 // THE GROUND IS FLAT `--bg` (third pass: "make just the veil go all black" — two translucent
 // veils left the sentence and the rules printing behind the options; the hole wheel's dim
@@ -74,13 +92,19 @@ const MODES: { mode: Mode; key: 'modeSentence' | 'modeWord' }[] = [
 export default function PuzzleSelect({
   lang,
   mode,
-  onArchive = false,
+  surface = 'game',
+  onLang,
   onClose,
 }: {
   lang: LangCode;
   // NULL is the language-only face: a screen that is not a puzzle has no daily to name.
   mode: Mode | null;
-  onArchive?: boolean;
+  surface?: SelectSurface;
+  // What a LANGUAGE-ONLY pick does. It is the caller's, because the two screens that mount
+  // this face answer it differently: the account area has no URL to move to and stores a
+  // preference, while the tutorial sits on a language-scoped route and navigates. This
+  // component knows the drums; the screen knows what its own language means.
+  onLang?: (lang: LangCode) => void;
   onClose: () => void;
 }) {
   // Which question is on screen — it decides the drums, the fold and the dialog's own name.
@@ -150,15 +174,15 @@ export default function PuzzleSelect({
     if (!closing || moved.current) return;
     moved.current = true;
     const l = LANGS[langDrum.peek()]?.code ?? lang;
-    // A screen that is not a puzzle has no URL to move to: the pick is the PREFERENCE every
-    // global route reads its chrome language from, so the page re-renders where it stands.
+    // A screen that is not a puzzle has no daily to move between: its caller says what a
+    // language means there.
     if (mode === null) {
-      if (l !== lang) useGameStore.getState().setLastLang(l);
+      if (l !== lang) onLang?.(l);
       return;
     }
     const m = MODES[modeDrum.peek()]?.mode ?? mode;
-    if (m !== mode || l !== lang) navigate(onArchive ? pathForArchive(l, m) : pathForMode(l, m));
-  }, [closing, lang, langDrum, mode, modeDrum, onArchive]);
+    if (m !== mode || l !== lang) navigate(PATH_FOR[surface](l, m));
+  }, [closing, lang, langDrum, mode, modeDrum, onLang, surface]);
 
   // The arrow keys turn the drum that holds focus — the daily's when none does; Left and
   // Right hand focus from one drum's slot row to the other's.

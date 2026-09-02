@@ -33,10 +33,32 @@ import ChevronDownIcon from '../assets/icons/chevron-down.svg?react';
 import PuzzleSelect from './PuzzleSelect';
 import { t } from '../i18n';
 import type { LangCode } from '../langs';
+import { dropLangParam, navigate } from '../routing';
+import { useGameStore } from '../state/gameStore';
 
-export default function LangTitle({ lang, title }: { lang: LangCode; title: string }) {
+export default function LangTitle({
+  lang,
+  title,
+  // WHERE this screen lives in the OTHER language, when its URL names one. The account area
+  // has no such URL — its routes are global — so a pick there is a preference and the page
+  // re-renders where it stands; the TUTORIAL sits on `/fr` or `/en`, so its pick has to
+  // travel, and `key={lang}` restarts the lesson in the language it lands in.
+  to,
+}: {
+  lang: LangCode;
+  title: string;
+  to?: (lang: LangCode) => string;
+}) {
   const [open, setOpen] = useState(false);
   const tag = lang.toUpperCase();
+  // A DELIBERATE PICK OUTRANKS THE LINK THAT SUGGESTED ONE: `?lang=` is read ahead of the
+  // stored preference, so it has to go before the preference is written — or the URL would
+  // answer the player instead of the wheel, and a reload would put the link's language back.
+  const pick = (picked: LangCode) => {
+    dropLangParam();
+    useGameStore.getState().setLastLang(picked);
+    if (to) navigate(to(picked));
+  };
   return (
     <>
       <button
@@ -54,7 +76,14 @@ export default function LangTitle({ lang, title }: { lang: LangCode; title: stri
         <span className="title-tag lang-tag">{tag}</span>
         <ChevronDownIcon className="ui-icon" aria-hidden />
       </button>
-      {open && <PuzzleSelect lang={lang} mode={null} onClose={() => setOpen(false)} />}
+      {open && (
+        <PuzzleSelect
+          lang={lang}
+          mode={null}
+          onLang={pick}
+          onClose={() => setOpen(false)}
+        />
+      )}
     </>
   );
 }

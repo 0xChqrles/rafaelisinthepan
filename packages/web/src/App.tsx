@@ -29,7 +29,6 @@ import { track } from './analytics';
 import { useLocation, navigate } from './routing';
 import {
   parseRoute,
-  resolveHomeLang,
   pathForMode,
   pathForArchive,
   pathForBoard,
@@ -41,6 +40,7 @@ import {
 // currentColor like every chrome icon; the button's aria-label names it.
 import { t } from './i18n';
 import useToday from './hooks/useToday';
+import useUiLang from './hooks/useUiLang';
 import { streakPreviewFromSearch } from './dev/streakPreview';
 import ErrorScreen from './components/ErrorScreen';
 import {
@@ -60,8 +60,10 @@ export default function App() {
   // so parsing gets it here (kept out of parseRoute so parsing stays pure/testable).
   const today = activeDate(new Date());
   const route = parseRoute(pathname, { activeDate: today });
-  const lastLang = useGameStore((s) => s.lastLang);
   const lastMode = useGameStore((s) => s.lastMode);
+  // The chrome language of every screen the URL does not name one for — the link's `?lang=`,
+  // then the stored preference, then the browser's (`hooks/useUiLang`).
+  const homeLang = useUiLang();
 
   // Dev-only animation harness: the value is the PREVIOUS streak, so ?streak=9 previews
   // 9 -> 10 immediately without mutating persisted rounds or solved-day history.
@@ -114,19 +116,16 @@ export default function App() {
       ? 'invite'
       : 'game';
 
-  // The game IS the home: `/` (and any unknown path) redirects to a language — the
-  // persisted last-played one, else the browser language (fr* -> /fr), else English —
-  // in the LAST-PLAYED MODE (#156: arrival lands on it, like lastLang; a first visit
-  // has no preference and lands on the sentence). replaceState so `/` never lingers in
-  // history: back from the game exits instead of bouncing through the redirect, and a
-  // deep link to /fr or /en never redirects.
+  // The game IS the home: `/` (and any unknown path) redirects to a language — the LINK's
+  // own `?lang=` if it carries one, else the persisted last-played one, else the browser's
+  // (fr* -> /fr), else English — in the LAST-PLAYED MODE (#156: arrival lands on it, like
+  // the language; a first visit has no preference and lands on the sentence). replaceState
+  // so `/` never lingers in history: back from the game exits instead of bouncing through
+  // the redirect, and a deep link to /fr or /en never redirects.
   useEffect(() => {
     if (route.view !== 'home') return;
-    navigate(
-      pathForMode(resolveHomeLang(lastLang, navigator.language), lastMode ?? 'sentence'),
-      { replace: true },
-    );
-  }, [route.view, lastLang, lastMode]);
+    navigate(pathForMode(homeLang, lastMode ?? 'sentence'), { replace: true });
+  }, [route.view, homeLang, lastMode]);
 
   // The board's whose-scores tab belongs to a VISIT (user feedback 2026-08-20, narrowing
   // the first cut's standing preference). It has to survive the two things that remount
@@ -144,7 +143,6 @@ export default function App() {
   // content and the UI chrome are French — screen readers pick pronunciation rules from
   // this attribute. Language-scoped routes (game + archive + board) use their own lang;
   // the language-less routes use the same resolution as the `/` redirect.
-  const homeLang = resolveHomeLang(lastLang, navigator.language);
   const docLang =
     route.view === 'game' || route.view === 'archive' || route.view === 'board'
       ? route.lang
@@ -344,7 +342,7 @@ function GameRoute({
   // key={lang}: switching language mid-tutorial (via /select) restarts it in that
   // language.
   if (surface === 'tutorial') {
-    return <LazyTutorial key={lang} lang={lang} onDone={closeTutorial} />;
+    return <LazyTutorial key={lang} lang={lang} mode={mode} onDone={closeTutorial} />;
   }
   if (surface === 'invite') {
     return (
