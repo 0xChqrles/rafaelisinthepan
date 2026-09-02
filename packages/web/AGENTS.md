@@ -1076,18 +1076,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
     belongs to an ALTERNATIVE (RESEND), and directly under CONTINUE a boxed one read as a
     second button competing with the lit one. It is the same rule `.btn + .link-quiet-btn`
     already states, one wrapper further out.
-  - **TWO VALUES ARE NOT PROSE, and one of them is a PLACEHOLDER.** `PRIVACY_CONTACT` is the
-    SES sender infra already derives; `PRIVACY_HOST` names the site's host, and it must be
-    read off a real AWS invoice before this ships — it is a legal identification, where a
-    plausible guess is worse than none. It exists because the notice takes the LCEN's
+  - **TWO VALUES ARE NOT PROSE.** `PRIVACY_CONTACT` is the SES sender infra already derives;
+    `PRIVACY_HOST` names the site's host. It exists because the notice takes the LCEN's
     non-professional route (art. 6-III-2): a free site that sells nothing may keep its
     publisher's identity with the HOST and publish the host's details instead, which is what
     lets the page carry no personal name. The day the game earns money it stops qualifying.
-    **THE BUILD REFUSES TO SHIP THE GUESS:** `PRIVACY_HOST_CONFIRMED` sits beside it and
-    `vite.config.ts` throws on a PRODUCTION build while it is false — `VITE_TURNSTILE_SITE_KEY`'s
-    own rule, for its own reason. A ⚠ in a comment is a note to whoever opens the file, and
-    `main` deploys the web stack on every push; the flag is flipped in the same commit that
-    writes the address off the invoice.
+    It shipped as a GUESS for one commit and is **read off the AWS billing mail** since
+    2026-09-03, whose footer names the entity that produced it — same string, now a fact. It
+    is a legal identification: if the account ever contracts with another AWS entity, this
+    line is read off the invoice again, never adjusted from memory. (A `PRIVACY_HOST_CONFIRMED`
+    flag failed the production build while it was a guess, and left with the guess: once true
+    it could never fire again, and it protects nothing against a later edit.)
   - **NOT done, and both are the user's call:** there is no self-serve "delete my account"
     (#207 is filed and specified — when it lands, DELETING IT loses its "no button yet"
     paragraph and gains the purge delay #207's own scope requires, and ASKING shrinks to the

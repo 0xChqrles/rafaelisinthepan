@@ -36,7 +36,7 @@ type UiLang = 'en' | 'fr';
 // game already writes FROM — a reply lands in the same inbox as a question about a code.
 export const PRIVACY_CONTACT = 'hello@whippin.ai';
 
-// ⚠ FILL BEFORE LAUNCH — the ONE value on this page nobody can derive from the code.
+// The ONE value on this page nobody can derive from the code — CONFIRMED 2026-09-03.
 //
 // WHO PUBLISHES THE SITE, said the way French law lets a private individual say it. The
 // LCEN (art. 6-III-2) asks a website to identify its publisher, and gives a NON-PROFESSIONAL
@@ -45,20 +45,16 @@ export const PRIVACY_CONTACT = 'hello@whippin.ai';
 // that route — the day it earns money, it stops qualifying and the publisher's own details
 // have to appear here.
 //
-// The value below is AWS's published EMEA contracting entity, and it is a PLACEHOLDER: the
-// entity on YOUR account and its registered address must be read off your own AWS invoice
-// before this ships. It is a legal identification, so a plausible guess is worse than none.
-export const PRIVACY_HOST = 'Amazon Web Services EMEA SARL, 38 avenue John F. Kennedy, L-1855 Luxembourg';
-
-// AND THE BUILD REFUSES TO SHIP IT WHILE IT IS A GUESS. A ⚠ in a comment is a note to
-// whoever reads this file; the thing that must not happen is a deploy that publishes a legal
-// identification nobody checked, and `main` deploys the web stack on every push. So the flag
-// is what `vite.config.ts` reads to fail a PRODUCTION build — `VITE_TURNSTILE_SITE_KEY`'s own
-// rule, for its own reason: refuse to ship a page that silently claims something untrue.
+// It shipped as a GUESS at first — AWS's published EMEA entity, which is the usual one for a
+// French account but not something the code can know. It is READ OFF THE BILLING MAIL now
+// (the August 2026 statement, 2026-09-03), whose footer states it outright: "This message was
+// produced and distributed by Amazon Web Services EMEA SARL, 38 avenue John F. Kennedy,
+// L-1855 Luxembourg." Same string, now a fact.
 //
-// Flip it to `true` in the SAME commit that replaces the address above with the one on the
-// invoice. Nothing else reads it.
-export const PRIVACY_HOST_CONFIRMED = false;
+// It is a legal identification, so a plausible guess is worse than none: if the account ever
+// contracts with another AWS entity, this line is read off the invoice again, never adjusted
+// from memory.
+export const PRIVACY_HOST = 'Amazon Web Services EMEA SARL, 38 avenue John F. Kennedy, L-1855 Luxembourg';
 
 // WHEN THIS WAS LAST TRUE. An ISO instant rather than a sentence per language: the two would
 // drift, and a date reads differently in the two locales anyway (the screen formats it).
