@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import {
-  ConditionalCheckFailedException,
   DeleteItemCommand,
   GetItemCommand,
   QueryCommand,
@@ -23,6 +22,8 @@ import {
   deviceIndexKey,
   deviceKey,
 } from './deviceStore';
+import { classifyTransaction, isConditionFailure, refusedAt } from './dynamoErrors';
+import { CONFLICT_RETRY_ATTEMPTS, conflictDelayMs, sleep, type Wait } from './dynamoRetry';
 import { planRoundMove } from './dynamoRoundStore';
 import { planScoreMove } from './dynamoScoreStore';
 import {
@@ -57,33 +58,6 @@ import { PROFILE_SORT_KEY, profileKey } from './profileStore';
 // halves of the active-day transfer are PLANNED by their own stores (`planRoundMove`,
 // `planScoreMove`) — this file only commits the items they hand it.
 
-function isConditionFailure(error: unknown): boolean {
-  return (
-    error instanceof ConditionalCheckFailedException ||
-    (typeof error === 'object' &&
-      error !== null &&
-      (error as { name?: unknown }).name === 'ConditionalCheckFailedException')
-  );
-}
-
-interface CancellationReason {
-  Code?: string;
-}
-
-function cancellationReasons(error: unknown): CancellationReason[] | null {
-  if (typeof error !== 'object' || error === null) return null;
-  const named = error as { name?: unknown; CancellationReasons?: CancellationReason[] };
-  if (named.name !== 'TransactionCanceledException' || !named.CancellationReasons) return null;
-  return named.CancellationReasons;
-}
-
-function conditionalCancellation(reasons: readonly CancellationReason[]): boolean {
-  return (
-    reasons.some(({ Code }) => Code === 'ConditionalCheckFailed') &&
-    reasons.every(({ Code }) => Code === 'None' || Code === 'ConditionalCheckFailed')
-  );
-}
-
 function requestToken(kind: string, ...parts: string[]): string {
   return createHash('sha256').update([kind, ...parts].join('\0')).digest('hex').slice(0, 36);
 }
@@ -99,7 +73,24 @@ const SEND_WRITE_ATTEMPTS = Math.max(LINK_SENDS_PER_ADDRESS, LINK_SENDS_PER_IP);
 // more often than this inside one request is not a player typing.
 const MOVE_PLAN_ATTEMPTS = 4;
 
-export function dynamoLinkStore(client: DynamoDBClient, tableName: string): LinkStore {
+// Every transaction in this file can be cancelled by `TransactionConflict` — another
+// transaction writing the very items it names — and AWS documents that the SDKs do NOT
+// retry a cancellation on their own. It is not an answer about anything: the conditions
+// beside it were evaluated while somebody else was mid-write, so none of them may be read
+// as a verdict (`dynamoErrors.ts`). Each loop below therefore waits, then asks AGAIN from a
+// FRESH read wherever its items came from one — a conflicting writer may have changed the
+// row the plan was built on — and only a conflict-free attempt is allowed to classify.
+export interface DynamoLinkStoreOptions {
+  // Injected by tests, so asserting the conflict SCHEDULE costs no real time.
+  wait?: Wait;
+}
+
+export function dynamoLinkStore(
+  client: DynamoDBClient,
+  tableName: string,
+  options: DynamoLinkStoreOptions = {},
+): LinkStore {
+  const wait = options.wait ?? sleep;
   const challengeItem = async (hash: string): Promise<Record<string, AttributeValue> | undefined> => {
     const response = await client.send(
       new GetItemCommand({
@@ -126,7 +117,10 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
       // fall inside the last `windowSeconds`, which no condition can compute. So each scope
       // is read, pruned and written back as ONE optimistic transaction — every Put is
       // conditioned on the exact list its read observed, so a concurrent send on either
-      // scope refuses the whole set and it is decided again from what now stands.
+      // scope refuses the whole set and it is decided again from what now stands. A
+      // CONFLICT is decided again too, after a jittered wait: the list this attempt read
+      // may be exactly the one the rival transaction was rewriting.
+      let conflicts = 0;
       for (let attempt = 0; attempt < SEND_WRITE_ATTEMPTS; attempt += 1) {
         const items = await Promise.all(
           keys.map(async (key) => {
@@ -169,8 +163,16 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
           );
           return true;
         } catch (error) {
-          const reasons = cancellationReasons(error);
-          if (!reasons || !conditionalCancellation(reasons)) throw error;
+          const verdict = classifyTransaction(error);
+          if (verdict.kind === 'conflict') {
+            // Another transaction was writing these very items. Wait, then read again —
+            // never conclude "the allowance is full" from an attempt that was contended.
+            if (conflicts >= CONFLICT_RETRY_ATTEMPTS) throw error;
+            await wait(conflictDelayMs(conflicts));
+            conflicts += 1;
+            continue;
+          }
+          if (verdict.kind !== 'refused') throw error;
           // Somebody else's send landed between the read and the write. Decide again over
           // the list that now stands — the bound is on what is STORED, never on a view.
         }
@@ -238,8 +240,14 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
             }),
           );
           const attempts = Number(response.Attributes?.attempts?.N ?? LINK_CODE_MAX_ATTEMPTS);
+          // THE ATTEMPT WAS COUNTED, so the answer is `wrong` — the LAST one included, with
+          // nothing left. `spent` means "this challenge no longer accepts an attempt", which
+          // is what the NEXT call gets (the condition `#attempts < :max` refuses it, and the
+          // classification read below says so). Calling the fifth mismatch `spent` reports a
+          // 409 for a code the player actually typed wrong, and leaves the screen with no
+          // way to say how it ended — `bad_code` with zero remaining is that copy.
           return {
-            outcome: attempts >= LINK_CODE_MAX_ATTEMPTS ? 'spent' : 'wrong',
+            outcome: 'wrong',
             attemptsLeft: Math.max(0, LINK_CODE_MAX_ATTEMPTS - attempts),
           };
         } catch (error) {
@@ -274,91 +282,109 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
       );
       const accountId = response.Item?.accountId?.S;
       if (!accountId) return null;
-      return { accountId, createdAt: response.Item?.createdAt?.S ?? '' };
+      return { accountId };
     },
 
     async bind(input) {
       const seconds = Math.floor(Date.parse(input.now) / 1_000);
-      try {
-        await client.send(
-          new TransactWriteItemsCommand({
-            ClientRequestToken: requestToken(
-              'bind',
-              tableName,
-              input.accountId,
-              input.emailHash,
-              input.codeHash,
-              input.email,
-              input.now,
-            ),
-            TransactItems: [
-              {
-                Put: {
-                  TableName: tableName,
-                  Item: {
-                    pk: { S: bindingKey(input.emailHash) },
-                    sk: { S: BINDING_SORT_KEY },
-                    accountId: { S: input.accountId },
-                    createdAt: { S: input.now },
-                  },
-                  // CREATE-ONLY: a device that lost the race to this address must not
-                  // overwrite the binding that won it.
-                  ConditionExpression: 'attribute_not_exists(pk)',
-                },
-              },
-              {
-                Update: {
-                  TableName: tableName,
-                  Key: { pk: { S: accountKey(input.accountId) }, sk: { S: ACCOUNT_SORT_KEY } },
-                  UpdateExpression: 'SET #email = :email, #emailAt = :now',
-                  // The account must still exist AND still have its one address slot. Two
-                  // different-address binds can pass the route's same snapshot, so the
-                  // invariant belongs in this transaction, not in that read.
-                  ConditionExpression:
-                    'attribute_exists(pk) AND (attribute_not_exists(#email) OR #email = :email)',
-                  ExpressionAttributeNames: { '#email': 'email', '#emailAt': 'emailAt' },
-                  ExpressionAttributeValues: {
-                    ':email': { S: input.email },
-                    ':now': { S: input.now },
+      // ONE send per attempt, the wait BETWEEN them (the batch read's rule — the first try
+      // is never delayed). Nothing here is re-read, so a conflict simply re-sends the same
+      // three items; what it may NOT do is read this attempt's conditions, which were
+      // evaluated while another transaction held one of these rows.
+      let conflict: unknown;
+      for (let attempt = 0; attempt <= CONFLICT_RETRY_ATTEMPTS; attempt += 1) {
+        if (attempt > 0) await wait(conflictDelayMs(attempt - 1));
+        try {
+          await client.send(
+            new TransactWriteItemsCommand({
+              ClientRequestToken: requestToken(
+                'bind',
+                tableName,
+                input.accountId,
+                input.emailHash,
+                input.codeHash,
+                input.email,
+                input.now,
+              ),
+              TransactItems: [
+                {
+                  Put: {
+                    TableName: tableName,
+                    Item: {
+                      pk: { S: bindingKey(input.emailHash) },
+                      sk: { S: BINDING_SORT_KEY },
+                      accountId: { S: input.accountId },
+                    },
+                    // CREATE-ONLY: a device that lost the race to this address must not
+                    // overwrite the binding that won it.
+                    ConditionExpression: 'attribute_not_exists(pk)',
                   },
                 },
-              },
-              {
-                Delete: {
-                  TableName: tableName,
-                  Key: { pk: { S: challengeKey(input.emailHash) }, sk: { S: CHALLENGE_SORT_KEY } },
-                  // Verification and consumption name the SAME challenge. A resend after
-                  // the read, or another final write consuming it first, refuses the whole
-                  // transaction rather than granting the address without its code.
-                  ConditionExpression:
-                    '#codeHash = :codeHash AND #expiresAt > :now AND #attempts < :max',
-                  ExpressionAttributeNames: {
-                    '#codeHash': 'codeHash',
-                    '#expiresAt': 'expiresAt',
-                    '#attempts': 'attempts',
-                  },
-                  ExpressionAttributeValues: {
-                    ':codeHash': { S: input.codeHash },
-                    ':now': { N: String(seconds) },
-                    ':max': { N: String(LINK_CODE_MAX_ATTEMPTS) },
+                {
+                  Update: {
+                    TableName: tableName,
+                    Key: { pk: { S: accountKey(input.accountId) }, sk: { S: ACCOUNT_SORT_KEY } },
+                    UpdateExpression: 'SET #email = :email, #emailAt = :now',
+                    // The account must still exist AND still have its one address slot. Two
+                    // different-address binds can pass the route's same snapshot, so the
+                    // invariant belongs in this transaction, not in that read.
+                    ConditionExpression:
+                      'attribute_exists(pk) AND (attribute_not_exists(#email) OR #email = :email)',
+                    ExpressionAttributeNames: { '#email': 'email', '#emailAt': 'emailAt' },
+                    ExpressionAttributeValues: {
+                      ':email': { S: input.email },
+                      ':now': { S: input.now },
+                    },
                   },
                 },
-              },
-            ],
-          }),
-        );
-        return 'bound';
-      } catch (error) {
-        const reasons = cancellationReasons(error);
-        if (!reasons || !conditionalCancellation(reasons)) throw error;
-        // Challenge validity wins when more than one condition failed: a binding that won
-        // may have consumed it, and the losing request must not turn one code into two
-        // final account operations.
-        if (reasons[2]?.Code === 'ConditionalCheckFailed') return 'challenge_changed';
-        if (reasons[0]?.Code === 'ConditionalCheckFailed') return 'taken';
-        if (reasons[1]?.Code === 'ConditionalCheckFailed') return 'account_changed';
-        throw error;
+                {
+                  Delete: {
+                    TableName: tableName,
+                    Key: {
+                      pk: { S: challengeKey(input.emailHash) },
+                      sk: { S: CHALLENGE_SORT_KEY },
+                    },
+                    // Verification and consumption name the SAME challenge. A resend after
+                    // the read, or another final write consuming it first, refuses the whole
+                    // transaction rather than granting the address without its code.
+                    ConditionExpression:
+                      '#codeHash = :codeHash AND #expiresAt > :now AND #attempts < :max',
+                    ExpressionAttributeNames: {
+                      '#codeHash': 'codeHash',
+                      '#expiresAt': 'expiresAt',
+                      '#attempts': 'attempts',
+                    },
+                    ExpressionAttributeValues: {
+                      ':codeHash': { S: input.codeHash },
+                      ':now': { N: String(seconds) },
+                      ':max': { N: String(LINK_CODE_MAX_ATTEMPTS) },
+                    },
+                  },
+                },
+              ],
+            }),
+          );
+          return 'bound';
+        } catch (error) {
+          const verdict = classifyTransaction(error);
+          if (verdict.kind === 'conflict') {
+            conflict = error;
+            continue;
+          }
+          if (verdict.kind !== 'refused') throw error;
+          const { reasons } = verdict;
+          // Challenge validity wins when more than one condition failed: a binding that won
+          // may have consumed it, and the losing request must not turn one code into two
+          // final account operations.
+          if (refusedAt(reasons, 2)) return 'challenge_changed';
+          if (refusedAt(reasons, 0)) return 'taken';
+          if (refusedAt(reasons, 1)) return 'account_changed';
+          throw error;
+        }
       }
+      // Contention this request cannot win. The challenge is untouched, so the player's
+      // retry is a fresh attempt rather than a spent code.
+      throw conflict;
     },
 
     async adopt(input: AccountAdoption): Promise<LinkAdoptResult> {
@@ -466,7 +492,15 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
       }
       const sourceIndex = identity.length - (input.erase ? 2 : 1);
 
-      for (let attempt = 0; attempt < MOVE_PLAN_ATTEMPTS; attempt += 1) {
+      // TWO reasons to try again, each bounded on its own and each meaning something
+      // different. A REFUSAL on a move or a guard is the PLAY changing between the plan and
+      // the commit. A CONFLICT is another transaction writing these very items: it says
+      // nothing about any condition — the ones beside it were evaluated while somebody else
+      // was mid-write — so it too plans AGAIN from fresh reads, since the overlapping writer
+      // may have changed a row this plan was built from. `replans` therefore advances only
+      // on a refusal, which is the thing it counts.
+      let conflicts = 0;
+      for (let replans = 0; replans < MOVE_PLAN_ATTEMPTS; ) {
         // The active day's play, planned by the stores that own the rows and committed HERE,
         // beside the identity — every tuple in parallel, each its own consistent reads.
         // EVERY plan contributes items, a no-move included: a decision resting on "nothing
@@ -514,15 +548,27 @@ export function dynamoLinkStore(client: DynamoDBClient, tableName: string): Link
           );
           return { outcome: 'adopted', moved };
         } catch (error) {
-          const reasons = cancellationReasons(error);
-          if (!reasons || !conditionalCancellation(reasons)) throw error;
-          const refused = (index: number) => reasons[index]?.Code === 'ConditionalCheckFailed';
-          if (refused(2)) return { outcome: 'challenge_changed', moved: [] };
-          if (refused(1) || refused(sourceIndex)) return { outcome: 'account_changed', moved: [] };
-          if (refused(0)) return { outcome: 'device_changed', moved: [] };
+          const verdict = classifyTransaction(error);
+          if (verdict.kind === 'conflict') {
+            if (conflicts >= CONFLICT_RETRY_ATTEMPTS) throw error;
+            await wait(conflictDelayMs(conflicts));
+            conflicts += 1;
+            continue;
+          }
+          if (verdict.kind !== 'refused') throw error;
+          const { reasons } = verdict;
+          // IDENTITY PRECEDENCE, unchanged: challenge, then account, then device. Only a
+          // conflict-free attempt reaches here, so these conditions describe rows nobody
+          // else was writing.
+          if (refusedAt(reasons, 2)) return { outcome: 'challenge_changed', moved: [] };
+          if (refusedAt(reasons, 1) || refusedAt(reasons, sourceIndex)) {
+            return { outcome: 'account_changed', moved: [] };
+          }
+          if (refusedAt(reasons, 0)) return { outcome: 'device_changed', moved: [] };
           // Only a MOVE (or a no-move's guard) refused: the play changed between the plan
           // and the commit. Nothing was written — plan again over what stands now, so the
           // guess that landed is carried across rather than deleted unseen or orphaned.
+          replans += 1;
         }
       }
       throw new Error("The active day's play kept changing while an account was being adopted.");

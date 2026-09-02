@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { activeDate, dayNumber, LINK_SENDS_PER_ADDRESS } from '@whippin/shared';
 import { FRIENDS_MAX } from './friendStore';
 import { createHandler } from './handler';
@@ -6,6 +6,7 @@ import { memoryDeviceStore } from './memoryDeviceStore';
 import { memoryFriendStore } from './memoryFriendStore';
 import { memoryHistoryStore } from './memoryHistoryStore';
 import { memoryLinkStore } from './memoryLinkStore';
+import { emailHash } from './linkStore';
 import { memoryProfileStore } from './memoryProfileStore';
 import { memoryRoundStore } from './memoryRoundStore';
 import { memoryScoreStore } from './memoryScoreStore';
@@ -32,8 +33,10 @@ const DATE = activeDate(NOW);
 const HASH = 'a'.repeat(64);
 
 // `clock` is for the tests that move time: the rolling send window is a fact about WHEN,
-// and a fixed instant cannot exercise it.
-function harness(clock: { now: Date } = { now: NOW }) {
+// and a fixed instant cannot exercise it. `mail.fail` is for the SES boundary: a provider
+// can refuse, time out, or answer ambiguously, and what the route does then is a decided
+// behaviour rather than an accident.
+function harness(clock: { now: Date } = { now: NOW }, mail: { fail?: unknown } = {}) {
   const devices = memoryDeviceStore();
   const profiles = memoryProfileStore((id) => devices.accountExists(id));
   const friends = memoryFriendStore();
@@ -56,6 +59,7 @@ function harness(clock: { now: Date } = { now: NOW }) {
       history,
       mailer: {
         async send(message) {
+          if (mail.fail !== undefined) throw mail.fail;
           sent.push(message);
         },
       },
@@ -201,6 +205,42 @@ describe('email account linking (#204) — the code', () => {
     // player confirms).
     const ok = await h.handler(post({ token: me.token, email: 'zoe@example.com', code }));
     expect(ok.statusCode).toBe(200);
+  });
+
+  // THE WHOLE ATTEMPT LADDER, 1 through 6 (PR-227 review). The FIFTH mismatch is still a
+  // mismatch — 401 `bad_code` with ZERO remaining, which is what makes the screen's "too
+  // many wrong codes" line reachable at all — and only the SIXTH call, against a challenge
+  // that no longer accepts an attempt, is the 409.
+  it('answers every counted mismatch 401 bad_code — the fifth with none left — and the sixth 409', async () => {
+    const h = harness();
+    const me = await seedDevice(h.devices);
+    const code = await askForCode(h, me.token, 'zoe@example.com');
+    const wrong = String((Number(code) + 1) % 1_000_000).padStart(6, '0');
+
+    const seen: { status: number; error: unknown; attemptsLeft?: number }[] = [];
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const answer = await h.handler(
+        post({ token: me.token, email: 'zoe@example.com', code: wrong }),
+      );
+      const body = JSON.parse(answer.body) as { error?: unknown; attemptsLeft?: number };
+      seen.push({ status: answer.statusCode, error: body.error, attemptsLeft: body.attemptsLeft });
+    }
+
+    expect(seen.slice(0, 5)).toEqual([
+      { status: 401, error: 'bad_code', attemptsLeft: 4 },
+      { status: 401, error: 'bad_code', attemptsLeft: 3 },
+      { status: 401, error: 'bad_code', attemptsLeft: 2 },
+      { status: 401, error: 'bad_code', attemptsLeft: 1 },
+      // The one the old mapping turned into a 409 — the screen's only chance to say how
+      // the code ran out.
+      { status: 401, error: 'bad_code', attemptsLeft: 0 },
+    ]);
+    expect(seen[5]).toMatchObject({ status: 409, error: 'code_spent' });
+
+    // And the CORRECT code is gone with the attempts: the challenge is exhausted.
+    const right = await h.handler(post({ token: me.token, email: 'zoe@example.com', code }));
+    expect(right.statusCode).toBe(409);
+    expect(JSON.parse(right.body).error).toBe('code_spent');
   });
 
   it('answers a code nobody asked for as a missing challenge, not a wrong one', async () => {
@@ -373,8 +413,12 @@ describe('email account linking (#204) — the three branches', () => {
     expect(JSON.parse(answer.body)).toMatchObject({
       outcome: 'adopted',
       accountId: saved.accountId,
-      erased: fresh.accountId,
     });
+    // The answer names the account it ARRIVED at and nothing else: what was left behind is
+    // exactly what the confirmation stated before the player agreed to it (#204's review —
+    // `erased` and `moved` were read by nothing).
+    expect(JSON.parse(answer.body)).not.toHaveProperty('erased');
+    expect(JSON.parse(answer.body)).not.toHaveProperty('moved');
     // The DEVICE moved; there is still exactly one device item for it.
     const resolved = await h.devices.resolve(
       (await import('./deviceStore')).deviceTokenHash(fresh.token),
@@ -659,7 +703,6 @@ describe('email account linking (#204) — the erase confirmation', () => {
     expect(JSON.parse(confirmed.body)).toMatchObject({
       outcome: 'adopted',
       accountId: a.accountId,
-      erased: null,
     });
     // The account it left survives, reachable by its own address.
     await expect(h.devices.accountExists(b.accountId)).resolves.toBe(true);
@@ -692,8 +735,6 @@ describe('email account linking (#204) — the erase confirmation', () => {
     expect(JSON.parse(answer.body)).toMatchObject({
       outcome: 'adopted',
       accountId: a.accountId,
-      erased: null,
-      moved: 0,
     });
     await expect(h.devices.accountExists(b.accountId)).resolves.toBe(true);
   });
@@ -743,7 +784,6 @@ describe('email account linking (#204) — the active-day transfer', () => {
       }),
     );
     expect(answer.statusCode).toBe(200);
-    expect(JSON.parse(answer.body).moved).toBe(1);
 
     await expect(h.rounds.get(key, saved.accountId, 'rev1')).resolves.toMatchObject({
       guesses: ['chat', 'chien'],
@@ -794,10 +834,259 @@ describe('email account linking (#204) — the active-day transfer', () => {
         code: await askForCode(h, playing.token, 'zoe@example.com'),
       }),
     );
-    expect(JSON.parse(answer.body).moved).toBe(0);
+    expect(answer.statusCode).toBe(200);
+    // The destination keeps ITS log, and the source's dies with the account it was in.
     await expect(h.rounds.get(key, saved.accountId, 'rev1')).resolves.toMatchObject({
       guesses: ['souris'],
     });
+  });
+
+  // THE REGRESSION (PR-227 review): a Word run that claimed NOTHING records an EMPTY log —
+  // #202 makes `submittedAt` its marker, never the log's length — and a real score row of
+  // 0. Read as "no guesses", it is indistinguishable from a run merely STARTED, so the
+  // transfer left it behind and the player's recorded, unrepeatable day was deleted with
+  // the account. It must MOVE, score row and all.
+  it('carries a SUBMITTED Word run that claimed nothing — with its score of 0', async () => {
+    const h = harness();
+    const saved = await seedDevice(h.devices);
+    await h.handler(
+      post({
+        token: saved.token,
+        email: 'zoe@example.com',
+        code: await askForCode(h, saved.token, 'zoe@example.com'),
+      }),
+    );
+
+    const key = { date: DATE, lang: 'fr', mode: 'word' as const };
+    const playing = await seedDevice(h.devices);
+    await h.rounds.start({
+      ...key,
+      publicId: playing.accountId,
+      puzzle: 'rev1',
+      runner: {
+        deviceId: playing.deviceId,
+        device: 'iPhone',
+        os: 'iOS',
+        browser: 'Chrome',
+      },
+      now: NOW,
+    });
+    await h.rounds.submit({
+      ...key,
+      publicId: playing.accountId,
+      puzzle: 'rev1',
+      deviceId: playing.deviceId,
+      guesses: [],
+      minElapsedMs: 0,
+      now: NOW,
+    });
+    await h.scores.submit({
+      ...key,
+      publicId: playing.accountId,
+      score: 0,
+      submittedAt: NOW.toISOString(),
+      revision: 'rev1',
+      ipHash: 'iphash',
+      expiresAt: Math.floor(NOW.getTime() / 1000) + 3600,
+      requestToken: 'tok',
+    });
+
+    const answer = await h.handler(
+      post({
+        token: playing.token,
+        email: 'zoe@example.com',
+        code: await askForCode(h, playing.token, 'zoe@example.com'),
+      }),
+    );
+    expect(answer.statusCode).toBe(200);
+
+    // The recorded run moved WHOLE — its empty log, and the submission stamp that says it
+    // is a finished day.
+    const moved = await h.rounds.get(key, saved.accountId, 'rev1');
+    expect(moved?.guesses).toEqual([]);
+    expect(moved?.submittedAt).toBeTruthy();
+    await expect(h.rounds.get(key, playing.accountId, 'rev1')).resolves.toBeNull();
+    // And the score of 0 followed it, exactly as a non-zero one does.
+    await expect(h.scores.list(key)).resolves.toEqual([{ publicId: saved.accountId, score: 0 }]);
+  });
+
+  it('does NOT carry a Word run that was merely STARTED — its claims are on the device', async () => {
+    const h = harness();
+    const saved = await seedDevice(h.devices);
+    await h.handler(
+      post({
+        token: saved.token,
+        email: 'zoe@example.com',
+        code: await askForCode(h, saved.token, 'zoe@example.com'),
+      }),
+    );
+
+    const key = { date: DATE, lang: 'fr', mode: 'word' as const };
+    const playing = await seedDevice(h.devices);
+    await h.rounds.start({
+      ...key,
+      publicId: playing.accountId,
+      puzzle: 'rev1',
+      runner: {
+        deviceId: playing.deviceId,
+        device: 'iPhone',
+        os: 'iOS',
+        browser: 'Chrome',
+      },
+      now: NOW,
+    });
+
+    await h.handler(
+      post({
+        token: playing.token,
+        email: 'zoe@example.com',
+        code: await askForCode(h, playing.token, 'zoe@example.com'),
+      }),
+    );
+    await expect(h.rounds.get(key, saved.accountId, 'rev1')).resolves.toBeNull();
+  });
+
+  it('lets a submitted 0-claim run at the DESTINATION block a move — both days are recorded', async () => {
+    const h = harness();
+    const saved = await seedDevice(h.devices);
+    await h.handler(
+      post({
+        token: saved.token,
+        email: 'zoe@example.com',
+        code: await askForCode(h, saved.token, 'zoe@example.com'),
+      }),
+    );
+
+    const key = { date: DATE, lang: 'fr', mode: 'word' as const };
+    const runner = (deviceId: string) => ({
+      deviceId,
+      device: 'iPhone',
+      os: 'iOS',
+      browser: 'Chrome',
+    });
+    // The DESTINATION already recorded an empty run of its own.
+    await h.rounds.start({ ...key, publicId: saved.accountId, puzzle: 'rev1', runner: runner(saved.deviceId), now: NOW });
+    await h.rounds.submit({
+      ...key,
+      publicId: saved.accountId,
+      puzzle: 'rev1',
+      deviceId: saved.deviceId,
+      guesses: [],
+      minElapsedMs: 0,
+      now: NOW,
+    });
+
+    const playing = await seedDevice(h.devices);
+    await h.rounds.start({ ...key, publicId: playing.accountId, puzzle: 'rev1', runner: runner(playing.deviceId), now: NOW });
+    await h.rounds.submit({
+      ...key,
+      publicId: playing.accountId,
+      puzzle: 'rev1',
+      deviceId: playing.deviceId,
+      guesses: ['chat'],
+      minElapsedMs: 0,
+      now: NOW,
+    });
+
+    await h.handler(
+      post({
+        token: playing.token,
+        email: 'zoe@example.com',
+        code: await askForCode(h, playing.token, 'zoe@example.com'),
+      }),
+    );
+    // The destination's own recorded day stands; the source's dies with its account.
+    const held = await h.rounds.get(key, saved.accountId, 'rev1');
+    expect(held?.guesses).toEqual([]);
+    expect(held?.submittedAt).toBeTruthy();
+  });
+});
+
+
+// CONTRACT (user-decided, PR-227 review): the send order is SPEND -> STORE -> SEND, and a
+// failed or ambiguous SES call is FAIL-CLOSED. Nothing is refunded and nothing is rolled
+// back: SES acceptance is ambiguous — a timeout can follow a message that was delivered —
+// so giving the allowance back would let a caller whose mail DID go out spend the slot
+// again, and the bound would stop bounding what an inbox receives.
+describe('email account linking (#204) — a failed SEND', () => {
+  const sesFailure = () =>
+    Object.assign(new Error('Email address is not verified: victim@example.com'), {
+      name: 'MessageRejected',
+      $metadata: { requestId: 'req-123', httpStatusCode: 400 },
+    });
+
+  it('answers 503 mail_unavailable — never a 200 for a code nobody received', async () => {
+    const h = harness({ now: NOW }, { fail: sesFailure() });
+    const me = await seedDevice(h.devices);
+    const answer = await h.handler(
+      post({ token: me.token, email: 'zoe@example.com', turnstileToken: 'ok' }),
+    );
+    expect(answer.statusCode).toBe(503);
+    expect(JSON.parse(answer.body).error).toBe('mail_unavailable');
+    expect(h.sent).toEqual([]);
+  });
+
+  it('LOGS the failure without the address, the code or any digest', async () => {
+    const logged: unknown[][] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((...args) => {
+      logged.push(args);
+    });
+    try {
+      const h = harness({ now: NOW }, { fail: sesFailure() });
+      const me = await seedDevice(h.devices);
+      const answer = await h.handler(
+        post({ token: me.token, email: 'zoe@example.com', turnstileToken: 'ok' }),
+      );
+      const printed = JSON.stringify({ logged, body: answer.body, headers: answer.headers });
+      // The operational facts an on-call reader can act on.
+      expect(printed).toContain('MessageRejected');
+      expect(printed).toContain('req-123');
+      // And nothing that identifies a person or lets a code be replayed. The provider's own
+      // MESSAGE names the rejected destination, which is exactly why it is never logged.
+      expect(printed).not.toContain('zoe@example.com');
+      expect(printed).not.toContain('victim@example.com');
+      expect(printed).not.toContain(me.token);
+      expect(printed).not.toContain(emailHash('zoe@example.com'));
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('leaves the allowance CHARGED — a failed send is not a refund', async () => {
+    const h = harness({ now: NOW }, { fail: sesFailure() });
+    const me = await seedDevice(h.devices);
+    for (let i = 0; i < LINK_SENDS_PER_ADDRESS; i += 1) {
+      const answer = await h.handler(
+        post({ token: me.token, email: 'zoe@example.com', turnstileToken: 'ok' }),
+      );
+      expect(answer.statusCode).toBe(503);
+    }
+    // Every one of them spent a slot, so the address is now at its bound — the abuse
+    // control holds whatever the provider did with the messages.
+    const refused = await h.handler(
+      post({ token: me.token, email: 'zoe@example.com', turnstileToken: 'ok' }),
+    );
+    expect(refused.statusCode).toBe(429);
+    expect(JSON.parse(refused.body).error).toBe('too_many_codes');
+  });
+
+  it('leaves the stored challenge to be REPLACED by the next successful resend', async () => {
+    // The failed send stored a code nobody can read. It is not deleted — deleting it would
+    // be one more write on a path that has already failed — and the next accepted send
+    // simply replaces it, which is what `putChallenge` does.
+    const failing = { fail: sesFailure() as unknown };
+    const h = harness({ now: NOW }, failing);
+    const me = await seedDevice(h.devices);
+    const lost = await h.handler(
+      post({ token: me.token, email: 'zoe@example.com', turnstileToken: 'ok' }),
+    );
+    expect(lost.statusCode).toBe(503);
+
+    failing.fail = undefined;
+    const code = await askForCode(h, me.token, 'zoe@example.com');
+    const answer = await h.handler(post({ token: me.token, email: 'zoe@example.com', code }));
+    expect(answer.statusCode).toBe(200);
+    expect(JSON.parse(answer.body).outcome).toBe('bound');
   });
 });
 

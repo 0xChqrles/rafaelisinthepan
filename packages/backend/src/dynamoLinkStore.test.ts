@@ -56,7 +56,9 @@ function expectAliasesMatch(input: Expressed): void {
   expect(condition).not.toMatch(/if_not_exists/);
 }
 
-// Every store here is built over this, so no write in this file escapes the checks.
+// Every store here is built over this, so no write in this file escapes the checks. The
+// `wait` is INJECTED (`waits` records the schedule), so the conflict backoff is asserted
+// without a test ever sleeping.
 function makeStore(send: (command: unknown) => Promise<unknown>) {
   const checked = vi.fn(async (command: unknown) => {
     if (command instanceof UpdateItemCommand) expectAliasesMatch(command.input);
@@ -69,11 +71,25 @@ function makeStore(send: (command: unknown) => Promise<unknown>) {
     }
     return send(command);
   });
+  const waits: number[] = [];
   return {
-    store: dynamoLinkStore({ send: checked } as unknown as DynamoDBClient, 'scores'),
+    store: dynamoLinkStore({ send: checked } as unknown as DynamoDBClient, 'scores', {
+      wait: async (ms) => {
+        waits.push(ms);
+      },
+    }),
     send: checked,
+    waits,
   };
 }
+
+// A cancellation naming a code per item, in the order the items were sent. `undefined`
+// stands for a reason the service sent with NO code at all.
+const cancelling = (...codes: (string | undefined)[]) =>
+  Object.assign(new Error('cancelled'), {
+    name: 'TransactionCanceledException',
+    CancellationReasons: codes.map((Code) => (Code === undefined ? {} : { Code })),
+  });
 
 const HASH = 'a'.repeat(64);
 const NOW = new Date('2026-08-26T12:00:00.000Z');
@@ -246,6 +262,42 @@ describe('dynamoLinkStore — verifying a code', () => {
         .find((command): command is GetItemCommand => command instanceof GetItemCommand);
       expect(read!.input.ConsistentRead).toBe(true);
     }
+  });
+
+  // THE FIFTH WRONG CODE IS STILL A WRONG CODE (PR-227 review). A COUNTED mismatch is
+  // `wrong` — the last one included, with nothing left — and `spent` is what the NEXT call
+  // gets. Calling the fifth one `spent` answered 409 for a code the player actually typed
+  // wrong, and made the screen's "too many wrong codes" copy unreachable.
+  it('answers the LAST counted mismatch `wrong` with nothing left, and the NEXT one `spent`', async () => {
+    const submitted = 'c'.repeat(64);
+    // The write that counted the fifth attempt SUCCEEDS — the condition is `< :max` and
+    // the stored count was 4 — and returns the new total.
+    const fifth = makeStore(async () => ({
+      Attributes: { attempts: { N: String(LINK_CODE_MAX_ATTEMPTS) } },
+    }));
+    await expect(fifth.store.verify(HASH, submitted, NOW)).resolves.toEqual({
+      outcome: 'wrong',
+      attemptsLeft: 0,
+    });
+
+    // The sixth: the condition refuses it, and the classification read says the challenge
+    // no longer accepts an attempt.
+    const sixth = makeStore(async (command) => {
+      if (command instanceof GetItemCommand) {
+        return {
+          Item: {
+            attempts: { N: String(LINK_CODE_MAX_ATTEMPTS) },
+            expiresAt: { N: '9999999999' },
+            codeHash: { S: 'd'.repeat(64) },
+          },
+        };
+      }
+      throw new ConditionalCheckFailedException({ $metadata: {}, message: 'spent' });
+    });
+    await expect(sixth.store.verify(HASH, submitted, NOW)).resolves.toEqual({
+      outcome: 'spent',
+      attemptsLeft: 0,
+    });
   });
 
   it('retries a refusal against a replacement challenge instead of calling any fresh row ok', async () => {
@@ -624,6 +676,201 @@ describe('dynamoLinkStore — the indivisible core', () => {
     await expect(
       store.adopt({ ...PLAN, erase: true, mergeFrom: PLAN.from, moves: [KEY] }),
     ).resolves.toEqual({ outcome: 'account_changed', moved: [] });
+  });
+});
+
+// CONTRACT (PR-227 review): AWS documents that the SDKs do NOT retry a
+// `TransactionCanceledException`, and that item-level contention is reported as
+// `TransactionConflict`. Every transaction in this file therefore handles it explicitly —
+// bounded, jittered, and re-reading first wherever its items came from a read — and NO
+// condition from a contended attempt is ever read as a business verdict.
+describe('dynamoLinkStore — transaction conflicts', () => {
+  const PLAN = {
+    tokenHash: HASH,
+    deviceId: 'dddddddddddddddd',
+    from: 'bbbbbbbbbbbbbbbb',
+    to: 'aaaaaaaaaaaaaaaa',
+    emailHash: 'e'.repeat(64),
+    codeHash: 'c'.repeat(64),
+    now: NOW.toISOString(),
+  };
+  const BIND = {
+    emailHash: 'e'.repeat(64),
+    codeHash: 'c'.repeat(64),
+    email: 'zoe@example.com',
+    accountId: 'aaaaaaaaaaaaaaaa',
+    now: NOW.toISOString(),
+  };
+  const HOUR = 3_600;
+  const ALLOWANCE = [{ scope: 'addr', hash: HASH, limit: 5 }];
+
+  it('BIND: one conflict, then success — and the wait sits BETWEEN attempts, never before', async () => {
+    let sends = 0;
+    const { store, send, waits } = makeStore(async (command) => {
+      if (!(command instanceof TransactWriteItemsCommand)) return {};
+      sends += 1;
+      if (sends === 1) throw cancelling('TransactionConflict', 'None', 'None');
+      return {};
+    });
+    await expect(store.bind(BIND)).resolves.toBe('bound');
+    expect(sends).toBe(2);
+    // ONE wait, and it is the conflict schedule's first window — never an immediate retry.
+    expect(waits).toHaveLength(1);
+    expect(waits[0]).toBeGreaterThanOrEqual(0);
+    expect(waits[0]).toBeLessThanOrEqual(20);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it('BIND: a conflict then a REAL condition refusal answers the condition, not the conflict', async () => {
+    let sends = 0;
+    const { store } = makeStore(async (command) => {
+      if (!(command instanceof TransactWriteItemsCommand)) return {};
+      sends += 1;
+      if (sends === 1) throw cancelling('TransactionConflict');
+      // The binding Put refused: another device won this address.
+      throw cancelling('ConditionalCheckFailed', 'None', 'None');
+    });
+    await expect(store.bind(BIND)).resolves.toBe('taken');
+    expect(sends).toBe(2);
+  });
+
+  it('BIND: a MIXED conflict + conditional cancellation is NOT a verdict — it is tried again', async () => {
+    // The whole point of the classifier: `ConditionalCheckFailed` beside a
+    // `TransactionConflict` describes rows another transaction was mid-write on. Reading
+    // it would answer `challenge_changed` for a link nothing was wrong with.
+    let sends = 0;
+    const { store } = makeStore(async (command) => {
+      if (!(command instanceof TransactWriteItemsCommand)) return {};
+      sends += 1;
+      if (sends === 1) throw cancelling('None', 'None', 'ConditionalCheckFailed', 'TransactionConflict');
+      return {};
+    });
+    await expect(store.bind(BIND)).resolves.toBe('bound');
+    expect(sends).toBe(2);
+  });
+
+  it('BIND: a reason with NO code is OPERATIONAL and surfaces — it is not silently "None"', async () => {
+    const { store, waits } = makeStore(async (command) => {
+      if (!(command instanceof TransactWriteItemsCommand)) return {};
+      throw cancelling('ConditionalCheckFailed', undefined, 'None');
+    });
+    await expect(store.bind(BIND)).rejects.toThrow(/cancelled/);
+    expect(waits).toEqual([]);
+  });
+
+  it('BIND: a THROTTLE inside a cancellation is operational too, and is never retried here', async () => {
+    let sends = 0;
+    const { store } = makeStore(async (command) => {
+      if (!(command instanceof TransactWriteItemsCommand)) return {};
+      sends += 1;
+      throw cancelling('ThrottlingError', 'None', 'None');
+    });
+    await expect(store.bind(BIND)).rejects.toThrow(/cancelled/);
+    expect(sends).toBe(1);
+  });
+
+  it('BIND: conflict exhaustion is BOUNDED and throws the cancellation it could not win', async () => {
+    let sends = 0;
+    const { store, waits } = makeStore(async (command) => {
+      if (!(command instanceof TransactWriteItemsCommand)) return {};
+      sends += 1;
+      throw cancelling('TransactionConflict');
+    });
+    await expect(store.bind(BIND)).rejects.toThrow(/cancelled/);
+    // CONFLICT_RETRY_ATTEMPTS waits, so one send more than that.
+    expect(sends).toBe(5);
+    expect(waits).toHaveLength(4);
+  });
+
+  it('SEND ALLOWANCE: a conflict is decided again from a FRESH read, never from the stale view', async () => {
+    let reads = 0;
+    let sends = 0;
+    const { store, waits } = makeStore(async (command) => {
+      if (command instanceof GetItemCommand) {
+        reads += 1;
+        return reads === 1 ? {} : { Item: { sends: { L: [{ N: String(NOW.getTime() - 10) }] } } };
+      }
+      sends += 1;
+      if (sends === 1) throw cancelling('TransactionConflict');
+      return {};
+    });
+    await expect(store.spendSends(ALLOWANCE, HOUR, NOW)).resolves.toBe(true);
+    // Read, refused, WAITED, read AGAIN, written: the bound is on what is STORED.
+    expect(reads).toBe(2);
+    expect(waits).toHaveLength(1);
+  });
+
+  it('SEND ALLOWANCE: conflict exhaustion surfaces instead of silently granting a send', async () => {
+    const { store, waits } = makeStore(async (command) => {
+      if (command instanceof GetItemCommand) return {};
+      throw cancelling('TransactionConflict');
+    });
+    await expect(store.spendSends(ALLOWANCE, HOUR, NOW)).rejects.toThrow(/cancelled/);
+    expect(waits).toHaveLength(4);
+  });
+
+  it('ADOPT: a conflict RE-PLANS from fresh reads — the rival may have moved a guarded row', async () => {
+    const KEY = { date: '2026-08-26', lang: 'fr', mode: 'sentence' as const };
+    let reads = 0;
+    let sends = 0;
+    const { store, send, waits } = makeStore(async (command) => {
+      if (command instanceof GetItemCommand) {
+        if (command.input.Key!.pk.S !== `round#${PLAN.from}`) return {};
+        reads += 1;
+        return {
+          Item: {
+            pk: { S: `round#${PLAN.from}` },
+            sk: { S: 'fr#sentence#2026-08-26' },
+            guesses: { L: [{ S: 'chat' }] },
+            puzzle: { S: 'rev1' },
+            // The rival's write landed between the two plans.
+            version: { N: reads === 1 ? '3' : '4' },
+          },
+        };
+      }
+      sends += 1;
+      if (sends === 1) throw cancelling('None', 'None', 'None', 'None', 'None', 'None', 'TransactionConflict', 'None');
+      return {};
+    });
+    await expect(
+      store.adopt({ ...PLAN, erase: true, mergeFrom: PLAN.from, moves: [KEY] }),
+    ).resolves.toMatchObject({ outcome: 'adopted' });
+    expect(reads).toBe(2);
+    expect(waits).toHaveLength(1);
+    const all = send.mock.calls
+      .map(([c]) => c)
+      .filter((c): c is TransactWriteItemsCommand => c instanceof TransactWriteItemsCommand);
+    // The second plan conditions on what NOW stands, and is a different request.
+    expect(all[1].input.TransactItems![7].Delete!.ExpressionAttributeValues).toEqual({
+      ':v': { N: '4' },
+    });
+    expect(all[1].input.ClientRequestToken).not.toBe(all[0].input.ClientRequestToken);
+  });
+
+  it('ADOPT: identity precedence still holds — but only on a CONFLICT-FREE attempt', async () => {
+    let sends = 0;
+    const { store } = makeStore(async (command) => {
+      if (command instanceof GetItemCommand) return {};
+      sends += 1;
+      // A contended attempt whose challenge condition ALSO reads as refused must not
+      // answer `challenge_changed`; the conflict-free retry is what classifies.
+      if (sends === 1) throw cancelling('None', 'None', 'ConditionalCheckFailed', 'TransactionConflict');
+      throw cancelling('None', 'ConditionalCheckFailed', 'None', 'None');
+    });
+    await expect(store.adopt({ ...PLAN, erase: false })).resolves.toEqual({
+      outcome: 'account_changed',
+      moved: [],
+    });
+    expect(sends).toBe(2);
+  });
+
+  it('ADOPT: conflict exhaustion is bounded and loud', async () => {
+    const { store, waits } = makeStore(async (command) => {
+      if (command instanceof GetItemCommand) return {};
+      throw cancelling('TransactionConflict');
+    });
+    await expect(store.adopt({ ...PLAN, erase: false })).rejects.toThrow(/cancelled/);
+    expect(waits).toHaveLength(4);
   });
 });
 

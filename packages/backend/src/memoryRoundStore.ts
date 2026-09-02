@@ -232,23 +232,29 @@ export function memoryRoundStore(): RoundStore & LinkRoundWrites {
       return { outcome: 'submitted' as const, state: stateOf(stored) };
     },
 
-    // #204's active-day transfer: move the whole record between two accounts' partitions,
-    // keyed on GUESSES. A word round that was merely STARTED holds none, so a recorded run
-    // moves in over it — the issue's own rule, and the reason the test is on the log rather
-    // than on the item's existence.
     // #204's active-day transfer, the process-local half of `dynamoLinkStore`'s one
-    // transaction (`planRoundMove`'s rules): the source must hold guesses, the destination
-    // none, and the whole item moves.
+    // transaction — the SAME decision, from the same predicate (`planRoundMove`'s
+    // `hasPlay`): the source must hold RECORDED PLAY, the destination none, and the whole
+    // item moves. Play is a guess OR a submission, so a word run merely STARTED is moved
+    // over while a submitted 0-claim run both moves and blocks — the two states an empty
+    // log can be in.
     move(key, from, to) {
       const source = rounds.get(itemKey(key, from));
       const destination = rounds.get(itemKey(key, to));
-      if (!source || source.guesses.length === 0) return null;
-      if (destination && destination.guesses.length > 0) return null;
+      if (!source || !recordedPlay(source)) return null;
+      if (destination && recordedPlay(destination)) return null;
       rounds.set(itemKey(key, to), source);
       rounds.delete(itemKey(key, from));
       return { key, solved: source.solved === true };
     },
   };
+}
+
+// `planRoundMove`'s predicate, in this store's own shape: a round is RECORDED PLAY when it
+// holds a guess or a submission. #202 makes `submittedAt` the run's marker rather than the
+// log's length, which is why a 0-claim run counts here.
+function recordedPlay(item: RoundItem): boolean {
+  return item.guesses.length > 0 || item.submittedAt !== undefined;
 }
 
 function empty(): RoundState {

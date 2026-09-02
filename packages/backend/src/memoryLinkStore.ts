@@ -94,10 +94,12 @@ export function memoryLinkStore(deps: {
         return { outcome: 'ok', attemptsLeft: LINK_CODE_MAX_ATTEMPTS - held.attempts };
       }
       // The attempt is counted BEFORE the answer, the same way the conditional update does:
-      // the count is the only thing between a six-digit code and a guessing loop.
+      // the count is the only thing between a six-digit code and a guessing loop. A COUNTED
+      // mismatch is `wrong`, the LAST one included, with nothing left — `spent` is what the
+      // NEXT call gets, from the guard above. The production store says exactly this.
       held.attempts += 1;
       return {
-        outcome: held.attempts >= LINK_CODE_MAX_ATTEMPTS ? 'spent' : 'wrong',
+        outcome: 'wrong',
         attemptsLeft: Math.max(0, LINK_CODE_MAX_ATTEMPTS - held.attempts),
       };
     },
@@ -117,7 +119,7 @@ export function memoryLinkStore(deps: {
         if (!deps.devices.bindAccountEmail(input.accountId, input.email, input.now)) {
           return 'account_changed';
         }
-        bindings.set(input.emailHash, { accountId: input.accountId, createdAt: input.now });
+        bindings.set(input.emailHash, { accountId: input.accountId });
         challenges.delete(input.emailHash);
         return 'bound';
       });

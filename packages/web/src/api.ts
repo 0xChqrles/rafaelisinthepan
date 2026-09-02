@@ -540,6 +540,47 @@ export function profileUrl(publicId?: string, base: string = apiBase()): string 
   return publicId ? `${root}?id=${encodeURIComponent(publicId)}` : root;
 }
 
+// **`GET /profile` HAS THREE ANSWERS, AND THEY ARE NOT INTERCHANGEABLE** (#204). Reading
+// only `response.ok` collapses them, which is how a DELETED account ends up drawn with the
+// assigned pseudonym and mark that are still its own:
+//
+//   shown  — 200. The stored profile.
+//   blank  — 404. LIVE, never customized: the assigned identity IS this player's face.
+//   gone   — 410 `account_gone`. There is no face. Not the stored one, not the assigned
+//            one: an account nobody can reach may not be drawn as a person.
+//   failed — a transport error, a 5xx, an unparseable body. NOT evidence of a deletion,
+//            so a caller that dresses blank keeps dressing blank.
+//
+// Each caller decides what to DO with `gone` — the account screens draw an account their
+// own device token proves live, while the invite landing and the signed-out screen are
+// looking at an id somebody else handed them. What none of them may do is guess.
+export type ProfileRead =
+  | { status: 'shown'; profile: PlayerProfile }
+  | { status: 'blank' }
+  | { status: 'gone' }
+  | { status: 'failed' };
+
+export async function readProfile(publicId: string, signal?: AbortSignal): Promise<ProfileRead> {
+  try {
+    const response = await fetch(profileUrl(publicId), signal ? { signal } : {});
+    if (response.ok) return { status: 'shown', profile: parseProfile(await response.json()) };
+    if (response.status === 404) return { status: 'blank' };
+    // The CODE, not the status: a 410 is only a deletion when the body says so, and every
+    // other refusal is this client getting something wrong rather than a vanished player.
+    if (response.status === 410) {
+      const error = await response
+        .clone()
+        .json()
+        .then((body) => (body as { error?: unknown }).error)
+        .catch(() => undefined);
+      return error === 'account_gone' ? { status: 'gone' } : { status: 'failed' };
+    }
+    return { status: 'failed' };
+  } catch {
+    return { status: 'failed' };
+  }
+}
+
 export async function postProfileBody(
   url: string,
   body: { token: string; name: string; avatar: string; createOnly?: true },
@@ -643,9 +684,8 @@ export interface LinkResult {
   accountId: string;
   deviceId: string;
   email: string;
-  // The account this device LEFT and the server deleted, when it had no address of its own.
-  erased?: string | null;
-  // Whether a friend merge is still queued. The client asks again until it is not.
+  // Whether a friend merge is still queued. The client RESUMES the drain off this, rather
+  // than leaving those edges for whenever the player next opens `/account` (#204).
   mergePending?: boolean;
   // THE RECEIPT on an ADOPT: what the recovered account holds, which is the evidence for
   // the claim "we found your account". Absent on the other two outcomes — nothing was
@@ -692,12 +732,37 @@ export function parseLinkResult(data: unknown): LinkResult {
     accountId,
     deviceId,
     email,
-    erased: typeof data.erased === 'string' ? data.erased : null,
     mergePending: data.mergePending === true,
     // Decorative, so a missing or malformed one is simply no receipt — never a failed
     // link, which would strand a device whose identity has already moved.
     stakes: parseStakes(data.stakes),
   };
+}
+
+// WHAT A `bad_code` REFUSAL LEAVES THE PLAYER: how many tries remain on this challenge,
+// and whether that was the last one.
+//
+// **ZERO IS REACHABLE, and that is the whole point** (#204, PR-227 review). A COUNTED
+// mismatch is `bad_code` — the LAST allowed one included, with `attemptsLeft: 0` — and
+// only a call against an already-exhausted challenge is the `code_spent` 409. The server
+// used to answer that 409 for the fifth mismatch itself, which made this branch dead and
+// left the screen with nothing to say about how the code ran out.
+//
+// A missing or malformed count reads as NONE LEFT: the refusal is about a challenge whose
+// state this client cannot see, and offering another try it does not have is worse than
+// ending the step.
+export interface BadCode {
+  attemptsLeft: number;
+  // The player has no try left: the flow says so and stops asking.
+  exhausted: boolean;
+}
+
+export function parseBadCode(data: unknown): BadCode {
+  const left =
+    isRecord(data) && typeof data.attemptsLeft === 'number' && Number.isFinite(data.attemptsLeft)
+      ? Math.max(0, Math.floor(data.attemptsLeft))
+      : 0;
+  return { attemptsLeft: left, exhausted: left === 0 };
 }
 
 // The `would_erase` refusal's payload: WHICH account is about to be deleted and what it is

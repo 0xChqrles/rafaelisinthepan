@@ -407,7 +407,7 @@ describe('per-player score storage (#187)', () => {
     });
   });
 
-  it('grants the handler exactly the row-store surface: Query, Get/BatchGet, conditional Put, Update, friend Delete', () => {
+  it('grants the handler exactly the row-store surface: Query, Get/BatchGet, conditional Put, Update, friend Delete, adoption ConditionCheck', () => {
     const policies = Object.values(template.findResources('AWS::IAM::Policy'));
     const statements = policies.flatMap(
       (policy) => policy.Properties.PolicyDocument.Statement as { Action?: unknown }[],
@@ -424,6 +424,11 @@ describe('per-player score storage (#187)', () => {
       'dynamodb:UpdateItem',
       // #189's symmetric removal is the only thing on this table that deletes.
       'dynamodb:DeleteItem',
+      // #204's adoption asserts rows it does not write (the adopted account, a surviving
+      // source, every guarded no-move). A standalone ConditionCheck element is authorized
+      // by its OWN action — the Put/Update/Delete grants above do not cover it — so
+      // without this the erasing link is an AccessDenied in production alone.
+      'dynamodb:ConditionCheckItem',
     ]);
   });
 });

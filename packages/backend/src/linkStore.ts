@@ -69,9 +69,12 @@ export interface LinkChallenge {
 // What one verification did to the stored challenge:
 //   ok        — the code matched; the challenge stands until the link's own transaction
 //               consumes it (a failure after this point must be retryable);
-//   wrong     — it did not match, and the attempt was counted. `attemptsLeft` is what the
-//               screen shows;
-//   spent     — the attempts are exhausted, or a concurrent verification consumed it;
+//   wrong     — it did not match, and the attempt WAS COUNTED. `attemptsLeft` is what the
+//               screen shows, and it may be ZERO: the LAST allowed mismatch is still a
+//               mismatch, and the screen says so at the input where it was typed;
+//   spent     — this challenge no longer accepts an attempt: the count is already at
+//               LINK_CODE_MAX_ATTEMPTS when the call arrives, or a concurrent verification
+//               replaced or consumed it;
 //   expired   — the challenge is past its instant;
 //   none      — no challenge stands for this address.
 export type LinkVerifyOutcome = 'ok' | 'wrong' | 'spent' | 'expired' | 'none';
@@ -81,9 +84,11 @@ export interface LinkVerifyResult {
   attemptsLeft: number;
 }
 
+// A binding says ONE thing: which account this address reaches. It carried a `createdAt`
+// that no caller ever read — the route branches on the account id alone — and the stores
+// no longer write one either: an attribute nothing reads is a field that drifts.
 export interface EmailBinding {
   accountId: string;
-  createdAt: string;
 }
 
 export interface LinkSendAllowance {
@@ -144,7 +149,7 @@ export interface AccountAdoption {
   mergeFrom?: string;
   // The ACTIVE DAY's tuples — every supported language × both modes — whose play moves with
   // the device when the account it is in is being erased; present exactly when `erase` is.
-  // Each tuple moves only when the source holds guesses and the destination holds none,
+  // Each tuple moves only when the source holds RECORDED PLAY and the destination holds none,
   // and it moves INSIDE the identity transaction: the round exists under exactly one account
   // at every instant, and there is no partial adoption for a retry or a rival to inherit.
   moves?: readonly RoundKey[];
@@ -236,8 +241,9 @@ export interface LinkProfileWrites {
 // memory link store's one critical section — what the round and score Put/Delete pairs are
 // inside the production transaction.
 export interface LinkRoundWrites {
-  // Move the round when the source holds guesses and the destination holds none; answers
-  // what moved, or null when nothing did.
+  // Move the round when the source holds RECORDED PLAY — a guess, or a Word submission,
+  // since a submitted 0-claim run is a real recorded day with an empty log — and the
+  // destination holds none; answers what moved, or null when nothing did.
   move(key: RoundKey, from: string, to: string): LinkMovedRound | null;
 }
 

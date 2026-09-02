@@ -1,5 +1,4 @@
 import {
-  ConditionalCheckFailedException,
   DeleteItemCommand,
   GetItemCommand,
   QueryCommand,
@@ -25,6 +24,7 @@ import {
   type DeviceRecord,
   type DeviceStore,
 } from './deviceStore';
+import { isConditionFailure } from './dynamoErrors';
 
 // Production device and account rows live in the score table (#216).
 //
@@ -67,17 +67,6 @@ function deviceOf(item: Record<string, AttributeValue>, knownRevokeKey?: string)
     createdAt: item.createdAt?.S ?? '',
     lastSeenAt: item.lastSeenAt?.S ?? '',
   };
-}
-
-// The AWS SDK sometimes surfaces a condition failure as a plain object carrying only the
-// name (a transaction cancellation path), so both spellings are recognised.
-function isConditionFailure(error: unknown): boolean {
-  return (
-    error instanceof ConditionalCheckFailedException ||
-    (typeof error === 'object' &&
-      error !== null &&
-      (error as { name?: unknown }).name === 'ConditionalCheckFailedException')
-  );
 }
 
 export function dynamoDeviceStore(client: DynamoDBClient, tableName: string): DeviceStore {
@@ -211,6 +200,12 @@ export function dynamoDeviceStore(client: DynamoDBClient, tableName: string): De
         // A concurrent bootstrap of the SAME token committed first (two tabs, a retry that
         // overtook its own request). Its identity is the one that exists, so adopt it —
         // minting another here is exactly the duplicate identity the idempotence is for.
+        //
+        // This is the ONE transaction in the backend that does not classify its failure
+        // (`dynamoErrors.ts`), and deliberately: it catches EVERYTHING and re-reads, so a
+        // `TransactionConflict`, a condition refusal and a throttle all resolve the same
+        // correct way — whatever the read finds is the identity, and an empty read rethrows
+        // the original error unchanged.
         const raced = await resolve(input.tokenHash);
         if (raced) return raced;
         throw error;

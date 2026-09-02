@@ -56,6 +56,7 @@ import {
   linkUrl,
   parseAccountSummary,
   parseErasePrompt,
+  parseBadCode,
   parseLinkResult,
   postLinkBody,
   type AccountStakes,
@@ -84,7 +85,12 @@ import useKeyboardInset from '../hooks/useKeyboardInset';
 import { t, tn } from '../i18n';
 import { ACCOUNT_PATH, resolveHomeLang, type LinkIntent } from '../langs';
 import { navigate } from '../routing';
-import { loadAccountSummary, noteAccountEmail, useAccountSummary } from '../state/account';
+import {
+  loadAccountSummary,
+  noteAccountEmail,
+  resumeMergeDrain,
+  useAccountSummary,
+} from '../state/account';
 import { recoveredLinkResult } from '../state/linkRecovery';
 import { useGameStore } from '../state/gameStore';
 import { prefetchTurnstileTokens, turnstileToken } from '../turnstile';
@@ -358,6 +364,10 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
         deviceId: result.deviceId,
       });
     }
+    // AFTER the adoption, so the drain runs as the account it landed on (#204). The server
+    // drained what it could before answering; this finishes the rest without waiting for the
+    // player to visit `/account`.
+    resumeMergeDrain(result.mergePending === true);
   }, []);
 
   const recoverAmbiguous = useCallback(
@@ -456,10 +466,12 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
         }
         if (error === 'bad_code') {
           // The refusal stays AT the input: shake, clear, and say how many tries remain.
-          const left = typeof body.attemptsLeft === 'number' ? body.attemptsLeft : 0;
-          setWrong(left);
+          // The LAST allowed mismatch answers here too, with none left (#204's attempt
+          // ladder), which is what puts "too many wrong codes" on screen.
+          const { attemptsLeft, exhausted } = parseBadCode(body);
+          setWrong(attemptsLeft);
           shakeTimer.current = setTimeout(() => setCode(''), 420);
-          if (left === 0) fail(t(lang, 'linkFailed'), t(lang, 'linkCodeSpent'));
+          if (exhausted) fail(t(lang, 'linkFailed'), t(lang, 'linkCodeSpent'));
           return;
         }
         if (error === 'code_expired' || error === 'code_spent' || error === 'no_code') {

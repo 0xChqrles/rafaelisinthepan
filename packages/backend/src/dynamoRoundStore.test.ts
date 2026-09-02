@@ -1107,11 +1107,27 @@ describe('planRoundMove (#204)', () => {
     { ...at(TO), puzzle: { S: PUZZLE }, startedAt: { S: '2026-08-21T09:00:00.000Z' } },
     2,
   );
+  // THE STATE THE LOG ALONE CANNOT SEE (PR-227 review): a Word run SUBMITTED having
+  // claimed nothing. #202 makes `submittedAt` the marker and not the log's length, so this
+  // is a recorded, unrepeatable day carrying a real score row of 0 — and an empty
+  // `guesses` list, exactly like the merely-started run above it.
+  const submittedEmpty = (publicId: string, version: number) =>
+    versioned(
+      {
+        ...at(publicId),
+        guesses: { L: [] },
+        puzzle: { S: PUZZLE },
+        startedAt: { S: '2026-08-21T09:00:00.000Z' },
+        submittedAt: { S: '2026-08-21T09:01:00.000Z' },
+      },
+      version,
+    );
   const destinationPlayed = versioned({ ...at(TO), ...storedItem(['souris'], 1_000) }, 5);
-  // The four observations a row can present, for the table rows that read "any".
+  // The FOUR observations a row can present, for the table rows that read "any".
   const anyDestination: [string, Record<string, AttributeValue> | undefined][] = [
     ['absent', undefined],
     ['started, unplayed', startedRun],
+    ['submitted with no claims', submittedEmpty(TO, 6)],
     ['played', destinationPlayed],
   ];
 
@@ -1161,7 +1177,7 @@ describe('planRoundMove (#204)', () => {
       );
     });
 
-    it(`guards BOTH rows on a no-move — source started but unplayed, destination ${label}`, async () => {
+    it(`guards BOTH rows on a no-move — source started but UNSUBMITTED, destination ${label}`, async () => {
       const result = await plan({ from: { ...startedRun, ...at(FROM) }, to });
       expect(result.moved).toBe(false);
       expect(result.items[0].ConditionCheck).toMatchObject({
@@ -1185,6 +1201,45 @@ describe('planRoundMove (#204)', () => {
     expect(result.items[1].ConditionCheck).toMatchObject({
       Key: at(TO),
       ExpressionAttributeValues: { ':v': { N: '5' } },
+    });
+  });
+
+  // RECORDED PLAY is `guesses.length > 0 || submittedAt exists` — ONE predicate, read on
+  // BOTH sides. These three rows are what the log-only version got wrong, and each of them
+  // loses a recorded day.
+  it('MOVES a submitted 0-claim run onto an absent destination — an empty log is still a day', async () => {
+    const result = await plan({ from: submittedEmpty(FROM, 7) });
+    expect(result.moved).toBe(true);
+    expect(result.items[0].Put).toMatchObject({
+      Item: { ...submittedEmpty(FROM, 7), ...at(TO), version: { N: '1' } },
+      ConditionExpression: 'attribute_not_exists(pk)',
+    });
+    expect(result.items[1].Delete).toMatchObject({
+      Key: at(FROM),
+      ExpressionAttributeValues: { ':v': { N: '7' } },
+    });
+  });
+
+  it('MOVES a submitted 0-claim run OVER a merely started one — only one of them is recorded', async () => {
+    const result = await plan({ from: submittedEmpty(FROM, 7), to: startedRun });
+    expect(result.moved).toBe(true);
+    expect(result.items[0].Put).toMatchObject({
+      Item: { ...submittedEmpty(FROM, 7), ...at(TO), version: { N: '3' } },
+      ConditionExpression: '#v = :v',
+      ExpressionAttributeValues: { ':v': { N: '2' } },
+    });
+  });
+
+  it('BLOCKS a move onto a submitted 0-claim destination — both sides hold recorded play', async () => {
+    const result = await plan({ from: played, to: submittedEmpty(TO, 6) });
+    expect(result.moved).toBe(false);
+    expect(result.items[0].ConditionCheck).toMatchObject({
+      Key: at(FROM),
+      ExpressionAttributeValues: { ':v': { N: '7' } },
+    });
+    expect(result.items[1].ConditionCheck).toMatchObject({
+      Key: at(TO),
+      ExpressionAttributeValues: { ':v': { N: '6' } },
     });
   });
 

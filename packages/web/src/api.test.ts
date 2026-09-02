@@ -3,7 +3,7 @@
 // the server validates the date against its clock-skew window and serves exactly that
 // day. A 404 from the backend is the graceful "no puzzle today" state, not an error.
 
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   apiBase,
   boardUrl,
@@ -18,12 +18,14 @@ import {
   parsePuzzle,
   parseAccountSummary,
   parseErasePrompt,
+  parseBadCode,
   parseLinkResult,
   parseProfile,
   parseRound,
   parseScoreHistogram,
   parseWordPuzzle,
   profileUrl,
+  readProfile,
   roundUrl,
   scoresUrl,
 } from './api';
@@ -403,6 +405,99 @@ describe('parseScoreHistogram (shape validation)', () => {
     expect(() => parseScoreHistogram({ ...valid(), bucket: 'zero' })).toThrow(/bucket/);
     expect(() => parseScoreHistogram({ ...valid(), bucket: -1 })).toThrow(/bucket/);
     expect(() => parseScoreHistogram({ ...valid(), bucket: 2 })).toThrow(/bucket/);
+  });
+});
+
+// CONTRACT (#204): `GET /profile` has FOUR materially different answers, and reading only
+// `response.ok` collapses them — which is how a DELETED account ends up drawn with the
+// assigned pseudonym and mark that are still its own. The rule is spelled ONCE here; every
+// caller then decides what to DO with `gone`.
+describe('readProfile — the four answers (#204)', () => {
+  const ID = 'abcdefghij234567';
+  const answer = (init: {
+    status: number;
+    body?: unknown;
+    ok?: boolean;
+  }) => {
+    const payload = JSON.stringify(init.body ?? {});
+    const response = {
+      ok: init.ok ?? init.status < 400,
+      status: init.status,
+      json: async () => JSON.parse(payload) as unknown,
+      clone: () => response,
+    };
+    return response;
+  };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('SHOWN: a 200 carries the stored profile', async () => {
+    const { blankAvatar } = await import('@whippin/shared');
+    const profile = { publicId: ID, name: 'Chqrles', avatar: blankAvatar() };
+    vi.stubGlobal('fetch', async () => answer({ status: 200, body: profile }));
+    await expect(readProfile(ID)).resolves.toEqual({ status: 'shown', profile });
+  });
+
+  it('BLANK: a 404 is LIVE but never customized — the assigned identity is this face', async () => {
+    vi.stubGlobal('fetch', async () => answer({ status: 404, body: { error: 'not_found' } }));
+    await expect(readProfile(ID)).resolves.toEqual({ status: 'blank' });
+  });
+
+  it('GONE: a 410 `account_gone` is a DELETED identity, told apart from the 404', async () => {
+    vi.stubGlobal('fetch', async () => answer({ status: 410, body: { error: 'account_gone' } }));
+    await expect(readProfile(ID)).resolves.toEqual({ status: 'gone' });
+  });
+
+  it('reads the CODE, not the status: a 410 that does not say so is not a deletion', async () => {
+    vi.stubGlobal('fetch', async () => answer({ status: 410, body: { error: 'something_else' } }));
+    await expect(readProfile(ID)).resolves.toEqual({ status: 'failed' });
+  });
+
+  it('FAILED: a transport error, a 5xx or an unparseable body is NOT evidence of a deletion', async () => {
+    vi.stubGlobal('fetch', async () => {
+      throw new Error('offline');
+    });
+    await expect(readProfile(ID)).resolves.toEqual({ status: 'failed' });
+
+    vi.stubGlobal('fetch', async () => answer({ status: 503 }));
+    await expect(readProfile(ID)).resolves.toEqual({ status: 'failed' });
+
+    vi.stubGlobal('fetch', async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ publicId: 'NOPE' }),
+      clone() {
+        return this;
+      },
+    }));
+    await expect(readProfile(ID)).resolves.toEqual({ status: 'failed' });
+  });
+});
+
+// CONTRACT (#204, PR-227 review): the attempt ladder ends at the INPUT, not on a modal.
+// Every counted mismatch is `bad_code`, the fifth included, and its `attemptsLeft: 0` is
+// what makes "too many wrong codes" reachable — the server used to answer the fifth as a
+// 409 `code_spent`, which left this branch dead and the copy unreachable.
+describe('parseBadCode — the attempt ladder the screen shows (#204)', () => {
+  it('counts the tries the refusal says remain, and 1..5 walk down to zero', () => {
+    expect([4, 3, 2, 1, 0].map((left) => parseBadCode({ attemptsLeft: left }))).toEqual([
+      { attemptsLeft: 4, exhausted: false },
+      { attemptsLeft: 3, exhausted: false },
+      { attemptsLeft: 2, exhausted: false },
+      { attemptsLeft: 1, exhausted: false },
+      // The LAST allowed mismatch — the one that ends the step and prints the copy.
+      { attemptsLeft: 0, exhausted: true },
+    ]);
+  });
+
+  it('reads a missing or malformed count as NONE LEFT rather than offering a try it cannot promise', () => {
+    expect(parseBadCode({})).toEqual({ attemptsLeft: 0, exhausted: true });
+    expect(parseBadCode(null)).toEqual({ attemptsLeft: 0, exhausted: true });
+    expect(parseBadCode({ attemptsLeft: 'two' })).toEqual({ attemptsLeft: 0, exhausted: true });
+    expect(parseBadCode({ attemptsLeft: Number.NaN })).toEqual({ attemptsLeft: 0, exhausted: true });
+    expect(parseBadCode({ attemptsLeft: -3 })).toEqual({ attemptsLeft: 0, exhausted: true });
   });
 });
 

@@ -241,9 +241,15 @@ export class BackendStack extends Stack {
     // graph (#189) reuses Query (a player's edge partition) and UpdateItem (the mutual
     // link), and first adds DeleteItem — removal deletes both directions. The friends board
     // (#190) adds BatchGetItem: it reads the score rows of
-    // a KNOWN key set instead of paging the whole day partition. AWS authorizes
-    // transactional actions through their underlying item permissions, so no Scan
-    // surface is needed. The private history (#211) adds NO action: its calendar is a
+    // a KNOWN key set instead of paging the whole day partition. A transaction's Put,
+    // Update and Delete elements are authorized through those same item permissions, so
+    // no Scan surface is needed — but a standalone `ConditionCheck` element is NOT one of
+    // them: AWS authorizes it through its OWN action, `dynamodb:ConditionCheckItem`
+    // (docs: transaction-apis-iam). #204's adoption asserts rows it does not write — the
+    // adopted account, a surviving source, and every guarded no-move of the active day's
+    // play — so without it every erasing link is an AccessDeniedException in production
+    // and in production only, where no local run or synthesized template can show it. The
+    // private history (#211) adds NO action: its calendar is a
     // Query over the caller's own round partition and its solved-day collection a
     // GetItem + UpdateItem on the private player row. Devices (#216) add no action either
     // — authentication is a GetItem, the bootstrap a transaction of two create-only Puts,
@@ -258,6 +264,7 @@ export class BackendStack extends Stack {
       'dynamodb:PutItem',
       'dynamodb:UpdateItem',
       'dynamodb:DeleteItem',
+      'dynamodb:ConditionCheckItem',
     );
     const parameterArn = (name: string) =>
       this.formatArn({

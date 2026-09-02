@@ -101,6 +101,23 @@ export function loadAccountSummary(force = false): void {
   })();
 }
 
+// A LINK LANDED, AND IT MAY OWE A FRIEND MERGE (#204). Up to 200 mutual edges is 800 rows,
+// which cannot fit one transaction, so the adoption commits a durable JOB and the server
+// drains what it can before answering — `mergePending` is it saying "not all of it". The
+// edges are consented relationships, so the job may not simply be left for whenever the
+// player next opens `/account`: this resumes the SAME bounded, backed-off, epoch-fenced
+// drain the summary read uses, in the identity the link just landed on.
+//
+// Called AFTER the adoption has published, so the epoch it captures is the one the drain
+// has to run under — an adopt CHANGES the account id, and a drain fenced on the epoch the
+// verify started under would return on its first check without ever calling.
+export function resumeMergeDrain(pending: boolean): void {
+  if (!pending) return;
+  const resolved = currentRequestIdentity();
+  if (!resolved) return;
+  void drain(resolved.identity.token, resolved.epoch, true);
+}
+
 // A link just landed. The flow already knows the answer, so the screen the player returns to
 // must not have to re-read for it.
 export function noteAccountEmail(accountId: string, email: string): void {

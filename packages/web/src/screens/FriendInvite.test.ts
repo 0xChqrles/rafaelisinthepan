@@ -10,13 +10,15 @@
 // effect-replay hazard it guarded no longer exists once the POST rides a click.)
 
 import { describe, expect, it, vi } from 'vitest';
-import { sendInvite } from './FriendInvite';
+import { anonName } from '@whippin/shared';
+import { inviterFrom, sendInvite } from './FriendInvite';
 
 const postFriendsBody = vi.hoisted(() => vi.fn());
 const identityState = vi.hoisted(() => ({ present: true, revision: 0 }));
 vi.mock('../api', () => ({
   postFriendsBody,
   friendsUrl: () => 'https://api.test/friends',
+  readProfile: vi.fn(),
 }));
 // Accepting an invite is a TRIGGER (#216): the clicker is a brand-new visitor, and their
 // identity is minted on this first need so the edge lands before their first game.
@@ -76,5 +78,37 @@ describe('sendInvite — the click carries the CLICKER key and the SENDER id', (
   it('treats the backend failing as retryable', async () => {
     await expect(answer(500)).resolves.toBe('failed');
     await expect(answer(503)).resolves.toBe('failed');
+  });
+});
+
+// CONTRACT (#204): an invite link carries the SENDER's account id, and an email link can
+// DELETE that account. `GET /profile` says so with a 410 `account_gone`, and this landing
+// must act on it BEFORE offering anything: drawing the erased player's assigned face over
+// an ADD FRIEND whose only possible outcome is `unknown_player` is the one thing the
+// expired state exists to prevent.
+describe('inviterFrom — what each profile answer means on the landing', () => {
+  it('a DELETED account ends the landing: no face, no button, no request', () => {
+    expect(inviterFrom({ status: 'gone' }, INVITER)).toBe('gone');
+  });
+
+  it('a stored profile is the inviter, and an EMPTY stored name falls back to the pseudonym', () => {
+    expect(
+      inviterFrom(
+        { status: 'shown', profile: { publicId: INVITER, name: 'Zoe', avatar: null } },
+        INVITER,
+      ),
+    ).toEqual({ name: 'Zoe', avatar: null });
+    expect(
+      inviterFrom(
+        { status: 'shown', profile: { publicId: INVITER, name: '', avatar: null } },
+        INVITER,
+      ),
+    ).toEqual({ name: anonName(INVITER), avatar: null });
+  });
+
+  it('a 404 and a FAILED read both keep the assigned identity — neither is a deletion', () => {
+    const assigned = { name: anonName(INVITER), avatar: null };
+    expect(inviterFrom({ status: 'blank' }, INVITER)).toEqual(assigned);
+    expect(inviterFrom({ status: 'failed' }, INVITER)).toEqual(assigned);
   });
 });

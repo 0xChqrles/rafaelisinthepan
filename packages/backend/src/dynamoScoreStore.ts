@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
   BatchGetItemCommand,
-  ConditionalCheckFailedException,
   GetItemCommand,
   QueryCommand,
   TransactWriteItemsCommand,
@@ -9,6 +8,8 @@ import {
   type AttributeValue,
   type TransactWriteItem,
 } from '@aws-sdk/client-dynamodb';
+import { classifyTransaction, refusedAt } from './dynamoErrors';
+import { BATCH_RETRY_ATTEMPTS, batchRetryDelayMs, sleep, type Wait } from './dynamoRetry';
 import {
   DEDUP_SORT_KEY,
   SCORE_SUBMISSION_LIMIT,
@@ -21,23 +22,12 @@ import {
 } from './scoreStore';
 
 // A batch read that comes back with UnprocessedKeys is DynamoDB saying the partition is
-// under pressure. Retrying immediately spends the whole budget inside a few
-// milliseconds — before any capacity can come back — which is how a transient throttle
-// turns into a 500 on the friends board. So retries wait, with FULL JITTER over a
-// doubling window (AWS's own recommendation): the window bounds the wait while the
-// randomness keeps Lambdas that were throttled together from returning in lockstep,
-// which is the thing that would re-throttle the partition. Worst case here is 5
-// attempts over well under a second, comfortably inside the request's own budget.
-const BATCH_RETRY_ATTEMPTS = 5;
-const BATCH_RETRY_BASE_MS = 50;
-
-export function batchRetryDelayMs(retry: number, random: () => number = Math.random): number {
-  return Math.round(random() * BATCH_RETRY_BASE_MS * 2 ** retry);
-}
+// under pressure, and the wait between attempts is the SHARED full-jitter schedule
+// (`dynamoRetry.ts`, which holds the reasoning and the numbers).
 
 export interface DynamoScoreStoreOptions {
   // Injected by tests, so asserting the retry SCHEDULE costs no real time.
-  wait?: (ms: number) => Promise<void>;
+  wait?: Wait;
 }
 
 function scoreItem(input: ScoreSubmission): Record<string, AttributeValue> {
@@ -73,7 +63,7 @@ export function dynamoScoreStore(
   tableName: string,
   options: DynamoScoreStoreOptions = {},
 ): ScoreStore {
-  const wait = options.wait ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
+  const wait = options.wait ?? sleep;
   return {
     async list(key) {
       const rows: ScoreRow[] = [];
@@ -179,14 +169,14 @@ export function dynamoScoreStore(
         return 'recorded';
       } catch (error) {
         // Exactly two conditions exist: [0] the IP allowance, [1] row creation. Anything
-        // else (conflicts, throttling, validation) is operational and must surface/retry.
-        const transaction = error as {
-          name?: string;
-          CancellationReasons?: { Code?: string; Item?: Record<string, AttributeValue> }[];
-        };
-        if (transaction.name === 'TransactionCanceledException') {
-          const reasons = transaction.CancellationReasons ?? [];
-          if (reasons[1]?.Code === 'ConditionalCheckFailed') {
+        // else — a `TransactionConflict`, a throttle, a validation error, a reason carrying
+        // no code at all — is OPERATIONAL and surfaces (`dynamoErrors.ts` draws the line;
+        // this store keeps its policy of not retrying, since the round route already
+        // reports a failed score write rather than failing the append it belongs to).
+        const verdict = classifyTransaction(error);
+        if (verdict.kind === 'refused') {
+          const { reasons } = verdict;
+          if (refusedAt(reasons, 1)) {
             const heldRevision = reasons[1].Item?.revision?.S;
             if (heldRevision === input.revision) return 'already_recorded';
 
@@ -213,14 +203,8 @@ export function dynamoScoreStore(
               );
               return 'recorded';
             } catch (replacementError) {
-              const replacement = replacementError as {
-                name?: string;
-                CancellationReasons?: { Code?: string }[];
-              };
-              if (
-                replacement.name === 'TransactionCanceledException' &&
-                replacement.CancellationReasons?.[0]?.Code === 'ConditionalCheckFailed'
-              ) {
+              const replacement = classifyTransaction(replacementError);
+              if (replacement.kind === 'refused' && refusedAt(replacement.reasons, 0)) {
                 // Another request already wrote this version. This request consumed no
                 // allowance and changed nothing.
                 return 'already_recorded';
@@ -228,7 +212,7 @@ export function dynamoScoreStore(
               throw replacementError;
             }
           }
-          if (reasons[0]?.Code === 'ConditionalCheckFailed') return 'capped';
+          if (refusedAt(reasons, 0)) return 'capped';
         }
         throw error;
       }

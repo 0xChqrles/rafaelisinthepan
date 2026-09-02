@@ -1098,7 +1098,8 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   **sending an invite link** · **saving a profile** (the SAVE tap, never the editor
   opening) — **and, since #204, the email link flow's SEND CODE** (a device with no account
   cannot be given one by an email link, and "this device is empty" is the reconnect case
-  that flow exists for; it is the CONTINUE on `/account/email` — see the #204 section).
+  that flow exists for; it is the flow's own CONTINUE, on EITHER door — see the #204
+  section).
   Each is a SINGLE tap that chains its real action behind the bootstrap, shows a
   clear loading state on the button, and reports failure on the app's ERROR SURFACE —
   a FULL-SCREEN MODAL (`web/components/ErrorScreen.tsx`) saying what happened, with TRY
@@ -1188,8 +1189,8 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   vanished streak and an empty friends list read as a bug rather than as the sign-out that
   caused them. **RECONNECT was NOT WIRED in #216** — a button that does nothing is worse than a
   screen that only offers what it can do — **and #204 wired it as the screen's PRIMARY
-  action**: the tap lifts the verdict (removing the tombstone origin-wide) and lands on the
-  profile editor, where the link flow lives; PLAY became the secondary.
+  action**: the tap lifts the verdict (removing the tombstone origin-wide) and lands on
+  `/account/signin`, the RETURNING door's address step; PLAY became the secondary.
   **THE VERDICT IS DURABLE AND BROADCAST — a persisted TOMBSTONE (user-decided 2026-08-24,
   on the PR-219 follow-up review).** A sign-out REPLACES the stored identity with a
   non-authenticating `{signedOut, accountId, deviceId}` value — the two PUBLIC ids, never a
@@ -1363,19 +1364,30 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
 - **THE ACTIVE-DAY TRANSFER.** Without it, someone who plays today's puzzle on a new device
   before linking watches that round get erased. For the ACTIVE DAY ONLY, and only when the
   account being left is being DELETED, every supported **language × mode** tuple is evaluated:
-  where the adopting account has no guesses and the leaving one does, its round row and its
+  where the adopting account holds no RECORDED PLAY and the leaving one does, its round row
+  and its
   score row MOVE, and a transferred sentence solve credits the adopting account's solved-day
   collection idempotently. "Active day" therefore means all languages and both modes, never
   whichever route the linking device happens to be on — which language a player was on lives in
   the browser and nowhere else, so a server that guessed would erase the round it guessed wrong
   about. The product is bounded (four tuples today).
-  - **Keyed on GUESSES, not on solving:** a solved round is just a round whose last guess landed
-    rank 0, so one rule covers both. And a Word mode START STAMP IS NOTHING — a started,
+  - **RECORDED PLAY is `guesses.length > 0 || submittedAt exists` — ONE predicate, read on the
+    SOURCE and the DESTINATION alike** (corrected 2026-09-02 on the PR-227 review; it read
+    `guesses` alone until then). A solved round is just a round whose last guess landed rank 0,
+    so one rule covers a solve and a partial. And a Word mode START STAMP IS NOTHING — a started,
     unsubmitted run holds no guesses server-side at all, its log living on the device until the
     run ends — so a recorded run moves in over it, including over a run a device signed into the
     adopting account is playing at that moment (it finds the day submitted on its next look). A
     complete recorded run is worth more than a maybe-half-finished one, and it is the same human
     either way.
+    **What the log ALONE could not see is a run SUBMITTED having claimed nothing.** #202 makes
+    `submittedAt` the marker and never the log's length, so such a run records an EMPTY
+    `guesses` list — indistinguishable, by the log, from the merely-started one above — while
+    being a recorded, unrepeatable day carrying a real score row of 0. Read by the log it was
+    invisible from BOTH sides: as a SOURCE it did not move, so the day was erased with the
+    account; as a DESTINATION it did not block a move, so a source's play was written over a day
+    the destination had already recorded. Both lose a recorded day, which is the one thing this
+    transfer exists to prevent.
   - **"The destination has nothing" is the only unambiguous case:** a partial round there against
     a solve here is two real logs for one day with no honest resolution (a union changes the try
     count and the score; a concatenation makes the run ruler replay nonsense).
@@ -1402,6 +1414,16 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   identity-bearing board and the adopting one appear when their edge is rewritten. That
   drop-then-reappear window is accepted and inherent; **no deleted identity is rendered during
   it.**
+  **THE ANSWER SAYS WHETHER THE JOB IS DONE, AND THE CLIENT FINISHES IT** (`mergePending`,
+  clarified 2026-09-02 on the PR-227 review). The route drains what it can before answering
+  and reports the rest; a successful link then RESUMES the same bounded, backed-off,
+  identity-fenced drain the account read uses, rather than leaving those edges for whenever
+  the player next opens `/account`. That is also why the drain is a logged non-fatal side
+  effect and never a failed link: the identity has already committed, and the job is durable.
+  **The successful answer carries NOTHING ELSE about what was left behind** — it names the
+  account it ARRIVED at, its address and its receipt. The `erased` and `moved` fields it once
+  carried were read by no client: what was left behind is exactly what the confirmation stated
+  before the player agreed to it.
 - **WHAT THE CORE COMMITS TOGETHER — the identity AND the active day's play, ONE
   transaction** (restored 2026-09-02 on the PR-227 review, to what the issue itself
   specified): consume the challenge, move the one device item, delete the leaving account's
@@ -1429,7 +1451,16 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   invite preview answers the expired-link 404, and **`POST /friends {add}` refuses a target whose
   account is gone** (404 `unknown_player`) — unaccepted invite links for a deleted account
   EXPIRE, there is no alias and no redirect, and acceptance requires a live target. A read that
-  merely FAILED is not a deletion and still dresses blank. **Anonymous aggregates keep counting
+  merely FAILED is not a deletion and still dresses blank.
+  **AND EVERY WEB READER OF `GET /profile` HONOURS THE 410** (corrected 2026-09-02 on the
+  PR-227 review; `readProfile` in `web/src/api.ts` is the ONE place the four answers are told
+  apart). It matters most where the id came from somebody else: the invite landing shows the
+  EXPIRED state at once rather than drawing the erased inviter over an ADD FRIEND that can
+  only be refused, and the signed-out screen settles FACELESS rather than drawing the assigned
+  identity of an account that no longer exists. Screens whose caller independently proves the
+  account is live — the account area, the profile editor, the local-identity deploy — keep
+  dressing a 404 and a 410 alike, because they only ever draw an account their own device
+  token resolved to. **Anonymous aggregates keep counting
   an orphan score** until a later housekeeping sweep removes it: `/scores` renders no identity,
   and the hottest public read must not add an account-existence lookup per row. Guess-history and
   old score rows likewise remain unreachable history until that sweeper; established friend edges
@@ -1448,11 +1479,29 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     machinery — without it this endpoint is a free spam relay pointed at arbitrary inboxes. A
     raw address is never stored: the key is `SHA-256(normalized address)`, and the address in
     clear lives only on the account row it belongs to.
+  - **A FAILED SEND IS FAIL-CLOSED, AND THE ALLOWANCE STAYS CHARGED** (user-decided
+    2026-09-02, on the PR-227 review). The order is SPEND → STORE → SEND, and nothing is
+    refunded or rolled back when the provider refuses, times out, or answers ambiguously:
+    SES acceptance is AMBIGUOUS — a lost response can follow a message that was in fact
+    delivered — so returning the slot would let a caller whose mail DID go out spend it
+    again, and the bound would stop bounding what an inbox receives. The counters are ABUSE
+    CONTROLS, not a billing ledger. The route answers **503 `mail_unavailable`** (never a
+    200 for a code nobody received), the stored challenge is left to expire or be REPLACED
+    by the next successful resend, and the failure is LOGGED without the address, the code,
+    its digest or the device token — the provider's own error MESSAGE names the destination
+    it rejected, so only the failure's NAME and the AWS request id are kept.
   - **The code is stored as a keyed HMAC, never in clear:** six digits is one million values, so
     a bare hash of every possible code is a table anyone can precompute. It stands for
     `LINK_CODE_TTL_SECONDS` (10 min) and tolerates `LINK_CODE_MAX_ATTEMPTS` (5) WRONG codes; a
     CORRECT one spends none, because one successful link legitimately verifies twice (the erase
     confirmation asks, the player confirms).
+    **EVERY COUNTED MISMATCH IS `bad_code`, THE FIFTH INCLUDED** (corrected 2026-09-02 on the
+    PR-227 review): a mismatch the store actually counted answers 401 with `attemptsLeft`, and
+    the last one answers it with ZERO — which is what puts "too many wrong codes" at the input
+    where it was typed. `code_spent` (409) means the challenge no longer ACCEPTS an attempt: the
+    sixth call, an expired-then-replaced challenge, or one a concurrent final write consumed.
+    The fifth mismatch used to answer that 409, which made the screen's zero-remaining copy
+    unreachable and reported a spent code for one the player simply got wrong.
 - **`normalizeEmail` is a cross-package contract** (`shared/src/email.ts`): trimmed,
   NFKC-normalized and lowercased WHOLE — the local part is case-sensitive per RFC 5321 and no
   provider a player uses treats it that way, so folding is what makes `Bob@x.com` and
@@ -1741,10 +1790,11 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   part of the flow resolves the identity it holds or stands down.
 - **RECONNECT is wired, and it is the signed-out screen's PRIMARY action.** The tap LIFTS the
   verdict (which removes the persisted tombstone origin-wide — #216 reserved exactly this
-  gesture) and lands on `/account/email`, the address step itself; PLAY becomes the
-  secondary. Abandoning the flow costs exactly what SKIP already cost: this device is a fresh
-  visitor, and the account it left stands, reachable by its own address. Leaving mid-flow costs what SKIP already cost: this device is a fresh visitor, and
-  the account it left stands, reachable by its own address.
+  gesture) and lands on `/account/signin` — the RETURNING door's address step, since a
+  signed-out player is a returning player by definition and every word of the SAVE door is
+  about keeping an account they no longer hold; PLAY becomes the secondary. Leaving mid-flow
+  costs exactly what SKIP already cost: this device is a fresh visitor, and the account it
+  left stands, reachable by its own address.
 - **CONSEQUENCE worth naming: a link signs the account's OTHER devices out.** Only the CALLING
   device moves, so when the account being left is deleted, every other device still on it fails
   #216's account-existence check and lands on the signed-out screen — from which RECONNECT with

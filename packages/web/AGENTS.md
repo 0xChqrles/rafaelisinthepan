@@ -12,7 +12,9 @@
     src/
       hooks/useVocab.ts       fetch+cache the per-language existence Set (once per session)
       hooks/usePuzzle.ts      fetch the client-computed day's puzzle from the backend
-      api.ts                  backend client: puzzleUrl/wordPuzzleUrl, 404->NO PUZZLE
+      api.ts                  backend client: puzzleUrl/wordPuzzleUrl, 404->NO PUZZLE, and
+                              `readProfile` — the ONE place `GET /profile`'s four answers
+                              (shown / blank / GONE / failed) are told apart (#204)
       identity.ts             the #216 DEVICE identity: a localStorage token minted on the
                               first deliberate act, the server-assigned account it resolves
                               to, the signed-out flag and the identity epoch
@@ -877,12 +879,36 @@ it to the local store — see `packages/backend/AGENTS.md`).
     and each used to fetch it themselves. It resolves to NOTHING until settled and is TAGGED
     with the account it is about, the leaderboard strip's own rule: a component that is not
     remounted when its account changes would otherwise render the previous person's face.
+  - **`GET /profile` HAS FOUR ANSWERS, AND `api.readProfile` IS WHERE THEY ARE TOLD APART**
+    (PR-227 review, 2026-09-02): `shown` (200), `blank` (404 — LIVE, never customized, so the
+    assigned identity IS this player's face), `gone` (410 `account_gone` — a DELETED account,
+    which has no face at all, not even the assigned one), `failed` (a transport error, a 5xx,
+    an unparseable body — NOT evidence of a deletion). Reading `response.ok` alone collapses
+    them, and what it collapsed was a deleted account drawn with the pseudonym and mark that
+    are still its own. **The 410 matters where the id came from SOMEBODY ELSE:**
+    `FriendInvite` shows the EXPIRED state at once (`inviterFrom`) instead of drawing the
+    erased inviter over an ADD FRIEND whose only outcome is `unknown_player`, and `SignedOut`
+    SETTLES FACELESS (`faceFrom`) instead of holding a loading frame or drawing the erased
+    account. Both keep `gone`, `loading` and `shown` as three states rather than two, and both
+    export their mapping so it can be read and tested on its own. Every other consumer —
+    `AccountFace`, the profile editor, `localIdentityDeploy` — dresses 404 and 410 alike
+    ON PURPOSE: its caller's own device token already proves the account is live.
+  - **`api.parseBadCode` is the attempt ladder the code step shows.** Every counted mismatch
+    is `bad_code`, the FIFTH included, and its `attemptsLeft: 0` is what puts "too many wrong
+    codes" at the input; a missing or malformed count reads as NONE LEFT rather than offering
+    a try the client cannot promise. (The server used to answer the fifth mismatch as a 409
+    `code_spent`, which left this branch dead — PR-227 review.)
   - **`state/account.ts` holds the summary AND the merge drain.** Both screens need the same
     one fact (is this saved, and to what), so `/account` can state it without mounting the
     flow. The `{token}` read runs only with an account (the #216 no-private-fetch rule) and
     RETRIES the drain, bounded and backed off — those edges are consented relationships, so
     the job may not simply be abandoned, and it is durable either way. It is ACCOUNT-owned,
-    so `identityScope` resets it.
+    so `identityScope` resets it. **A SUCCESSFUL LINK RESUMES THAT SAME DRAIN**
+    (`resumeMergeDrain`, PR-227 review): the verify answer's `mergePending` says the server
+    could not finish the fan-out, and `AccountEmail.finish` hands it over AFTER the adoption
+    has published — so the drain runs as the account the link LANDED on, not the one the
+    verify started under, and the remaining edges are not left for whenever the player next
+    opens `/account`.
   - **CONTINUE is a DEPLOY BUTTON**, the sixth (#216's five plus this one), and it has to
     be: an email link needs an account to bind, and "this device is empty" is exactly the
     reconnect case. It wears the shape that rule defines — one tap chaining the bootstrap,

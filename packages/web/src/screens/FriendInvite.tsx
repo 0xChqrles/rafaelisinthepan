@@ -4,7 +4,7 @@ import Avatar from '../components/Avatar';
 import LoadingWave from '../components/LoadingWave';
 import LoadError from '../components/LoadError';
 import ErrorScreen from '../components/ErrorScreen';
-import { friendsUrl, parseProfile, postFriendsBody, profileUrl } from '../api';
+import { friendsUrl, postFriendsBody, readProfile, type ProfileRead } from '../api';
 import {
   deviceIdentity,
   ensureRequestIdentity,
@@ -55,6 +55,12 @@ import { timeoutSignal } from '../timeout';
 // is over. It gets the cap's own surface — a state with a way ONWARD rather than a retry —
 // because retrying cannot bring an account back, and continuing silently would tell the
 // clicker they added a friend they did not.
+//
+// **AND THE PROFILE READ ALREADY KNOWS IT.** `GET /profile` answers 410 `account_gone` for
+// a deleted account, which is why this landing does not wait for the ADD to find out: it
+// would otherwise draw the erased player's assigned face over a primary button whose only
+// possible outcome is `unknown_player`. A read that merely FAILED is not a deletion and
+// still shows the assigned identity — the fallback this screen has always had.
 export type InviteOutcome = 'added' | 'settled' | 'full' | 'failed' | 'expired';
 
 export async function sendInvite(publicId: string): Promise<InviteOutcome> {
@@ -96,12 +102,28 @@ interface Inviter {
   avatar: string | null;
 }
 
+// The read's own three states, kept APART on purpose: `null` is "not settled yet", which is
+// the loading frame, and `'gone'` is a settled answer that has no face in it. Collapsing
+// them into one nullable inviter is what drew a deleted account.
+export type InviterState = Inviter | 'gone' | null;
+
+// What each answer of `GET /profile` means HERE. Named so the decision can be read — and
+// tested — on its own: `gone` ends the landing, `blank` and `failed` both keep the assigned
+// identity, and only a stored profile replaces it.
+export function inviterFrom(read: ProfileRead, publicId: string): Exclude<InviterState, null> {
+  if (read.status === 'gone') return 'gone';
+  if (read.status === 'shown') {
+    return { name: read.profile.name || anonName(publicId), avatar: read.profile.avatar };
+  }
+  return { name: anonName(publicId), avatar: null };
+}
+
 // Hand the destination to App's own home redirect, and replace this landing in history so a
 // back tap leaves the game instead of re-offering the invite.
 const continueToGame = () => navigate('/', { replace: true });
 
 export default function FriendInvite({ publicId, lang }: { publicId: string; lang: string }) {
-  const [inviter, setInviter] = useState<Inviter | null>(null);
+  const [inviter, setInviter] = useState<InviterState>(null);
   // The accept's own lifecycle: idle on the landing, busy while the tap's chain runs,
   // done on the confirmation. `full` is the one refusal with its own screen.
   const [phase, setPhase] = useState<'idle' | 'busy' | 'done' | 'full' | 'expired'>('idle');
@@ -116,19 +138,11 @@ export default function FriendInvite({ publicId, lang }: { publicId: string; lan
   useEffect(() => {
     let mounted = true;
     (async () => {
-      let shown: Inviter = { name: anonName(publicId), avatar: null };
-      try {
-        const response = await fetch(profileUrl(publicId), {
-          signal: timeoutSignal(6_000),
-        });
-        if (response.ok) {
-          const profile = parseProfile(await response.json());
-          shown = { name: profile.name || anonName(publicId), avatar: profile.avatar };
-        }
-      } catch {
-        // Keep the fallback.
-      }
-      if (mounted) setInviter(shown);
+      const read = await readProfile(publicId, timeoutSignal(6_000));
+      // GONE ends the landing here: no face, no button, no request. `blank` and `failed`
+      // both keep the assigned identity — one is a player who never customized theirs, the
+      // other is a read this screen may not turn into a claim about anybody.
+      if (mounted) setInviter(inviterFrom(read, publicId));
     })();
     return () => {
       mounted = false;
@@ -171,7 +185,7 @@ export default function FriendInvite({ publicId, lang }: { publicId: string; lan
   // The cap is a state, so its screen carries the player on rather than retrying: asking
   // again cannot empty a full list, and a dead end with no way out is the one thing every
   // failure surface here exists to prevent.
-  if (phase === 'full' || phase === 'expired') {
+  if (phase === 'full' || phase === 'expired' || inviter === 'gone') {
     return (
       <LoadError
         message={t(lang, phase === 'full' ? 'friendListFull' : 'inviteExpired')}

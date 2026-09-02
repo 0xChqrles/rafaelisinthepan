@@ -1,6 +1,5 @@
 import {
   BatchGetItemCommand,
-  ConditionalCheckFailedException,
   GetItemCommand,
   QueryCommand,
   TransactWriteItemsCommand,
@@ -10,7 +9,8 @@ import {
   type TransactWriteItem,
 } from '@aws-sdk/client-dynamodb';
 import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
-import { batchRetryDelayMs } from './dynamoScoreStore';
+import { isConditionFailure } from './dynamoErrors';
+import { BATCH_RETRY_ATTEMPTS, batchRetryDelayMs, sleep, type Wait } from './dynamoRetry';
 import {
   roundMonthPrefix,
   roundPartition,
@@ -23,12 +23,6 @@ import {
   type RoundState,
   type RoundStore,
 } from './roundStore';
-
-// The score store's rule (see its jittered-retry comment): a batch read that comes back
-// with UnprocessedKeys retries behind FULL JITTER over a doubling window, never
-// immediately, so a transient throttle cannot burn the whole budget inside a few
-// milliseconds and 500 the friends board.
-const BATCH_RETRY_ATTEMPTS = 5;
 
 // THE ROUND VERSION (#204's adoption model, decided on the PR-227 review). Every mutation
 // of a round item — the sentence append and its retired-puzzle restart, the corrective
@@ -312,7 +306,7 @@ export function dynamoRoundStore(
         );
         return { outcome: 'appended', state: itemToState(response.Attributes)! };
       } catch (error) {
-        if ((error as { name?: string }).name !== 'ConditionalCheckFailedException') throw error;
+        if (!isConditionFailure(error)) throw error;
       }
 
       // The condition named four bounds; classify against the stored item.
@@ -357,7 +351,7 @@ export function dynamoRoundStore(
           );
           return { outcome: 'appended', state: itemToState(response.Attributes)! };
         } catch (error) {
-          if ((error as { name?: string }).name !== 'ConditionalCheckFailedException') throw error;
+          if (!isConditionFailure(error)) throw error;
           // Lost the restart race — another tab replaced it first, or a write landed
           // inside the interval. Re-read: whatever is there now may already BE this
           // puzzle's fresh log, which is the truth to answer with.
@@ -429,7 +423,7 @@ export function dynamoRoundStore(
         // correction already landed. Both are the right outcome, and neither is a retry —
         // but neither is a SUCCESS either: the caller has to know the state it asked for is
         // not the stored one, or it claims a solve this record never took.
-        if ((error as { name?: string }).name !== 'ConditionalCheckFailedException') throw error;
+        if (!isConditionFailure(error)) throw error;
         return false;
       }
     },
@@ -478,7 +472,7 @@ export function dynamoRoundStore(
         );
         return { outcome: 'started', state: itemToState(response.Attributes)! };
       } catch (error) {
-        if ((error as { name?: string }).name !== 'ConditionalCheckFailedException') throw error;
+        if (!isConditionFailure(error)) throw error;
       }
       // A submission won the race: the recorded run is what stands, and the answer carries
       // it so the caller adopts the final run instead of wiping it. `stateForTag` is belt
@@ -542,7 +536,7 @@ export function dynamoRoundStore(
         );
         return { outcome: 'submitted', state: itemToState(response.Attributes)! };
       } catch (error) {
-        if ((error as { name?: string }).name !== 'ConditionalCheckFailedException') throw error;
+        if (!isConditionFailure(error)) throw error;
       }
       // Lost the race. Re-read and let what STANDS say which race it was: another device's
       // submission landing first, another device's RESTART taking the clock, or the daily
@@ -687,8 +681,21 @@ function unchanged(
   };
 }
 
+// RECORDED PLAY: `guesses.length > 0 || submittedAt exists` (PR-227 review, 2026-09-02).
+// ONE predicate, read for the SOURCE and the DESTINATION alike — which is what makes the
+// decision table symmetric and leaves no state uncovered.
+//
+// The log alone was not enough, because an empty log is TWO different Word states. A run
+// merely STARTED holds no guesses server-side (its claims live on the playing device until
+// it submits) and is not play: a recorded run may move in over it, which is #204's own
+// rule. A run SUBMITTED WITH ZERO CLAIMS also holds an empty log — and #202 is explicit
+// that the marker is `submittedAt`, never the length — but it is a recorded, unrepeatable
+// day carrying a real score row of 0. Reading only the log made a submitted empty round
+// invisible from both sides: as a SOURCE it did not move (the day was erased with the
+// account), and as a DESTINATION it did not block one (a source's play was written over
+// a day the destination had already recorded).
 function hasPlay(item: Record<string, AttributeValue> | undefined): boolean {
-  return (item?.guesses?.L?.length ?? 0) > 0;
+  return (item?.guesses?.L?.length ?? 0) > 0 || item?.submittedAt?.S !== undefined;
 }
 
 // #204's active-day transfer, PLANNED here and COMMITTED by `dynamoLinkStore` inside the
@@ -697,9 +704,10 @@ function hasPlay(item: Record<string, AttributeValue> | undefined): boolean {
 // because the items are this store's shape: the item is copied VERBATIM apart from its
 // partition key and its version, and the conditions name its attributes.
 //
-// Nothing moves when the source holds no guesses (a word round that was merely STARTED
-// holds none server-side, and a recorded run may move in over one), or when the
-// destination already holds play — two real logs for one day have no honest merge. Either
+// Nothing moves when the source holds no RECORDED PLAY (`hasPlay` above — a word round
+// that was merely STARTED holds none, and a recorded run may move in over one), or when
+// the destination already holds some — two real logs for one day have no honest merge, and
+// a submitted 0-claim run IS a real one. Either
 // way BOTH rows read are guarded (the model's mechanical rule: two reads, two items), so a
 // first guess landing on an empty source, a settle rewriting a summary, or a start wiping a
 // log between this read and the commit refuses the transaction — the caller plans again.

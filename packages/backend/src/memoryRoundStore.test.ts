@@ -103,6 +103,84 @@ describe('roundSortKeyDate — the sort-key formatters\' inverse', () => {
   });
 });
 
+// CONTRACT (#204, PR-227 review): the active-day transfer's predicate is RECORDED PLAY —
+// `guesses.length > 0 || submittedAt exists` — and the memory store spells it EXACTLY as
+// `planRoundMove` does, on BOTH sides. This is the store every route test runs on, so a
+// rule spelled differently here is a rule those tests cannot see.
+describe('memoryRoundStore.move — what counts as recorded play (#204)', () => {
+  const TO = 'aaaaaaaaaaaaaaaa';
+  const WORD: RoundKey = { date: '2026-08-21', lang: 'fr', mode: 'word' };
+
+  // A Word run merely STARTED: a server-stamped clock, no log (the claims live on the
+  // playing device), no submission.
+  const startRun = (store: ReturnType<typeof memoryRoundStore>, publicId: string) =>
+    store.start({
+      ...WORD,
+      publicId,
+      puzzle: PUZZLE,
+      runner: { deviceId: 'dddddddddddddddd', device: 'iPhone', os: 'iOS', browser: 'Chrome' },
+      now: NOW,
+    });
+
+  // A Word run SUBMITTED having claimed nothing: an EMPTY log, and a recorded day.
+  const submitEmpty = async (store: ReturnType<typeof memoryRoundStore>, publicId: string) => {
+    await startRun(store, publicId);
+    await store.submit({
+      ...WORD,
+      publicId,
+      puzzle: PUZZLE,
+      deviceId: 'dddddddddddddddd',
+      guesses: [],
+      minElapsedMs: 0,
+      now: new Date(NOW.getTime() + 60_000),
+    });
+  };
+
+  it('MOVES a submitted 0-claim run — `submittedAt` is the marker, never the log length', async () => {
+    const store = memoryRoundStore();
+    await submitEmpty(store, PUBLIC_ID);
+    expect(store.move(WORD, PUBLIC_ID, TO)).toEqual({ key: WORD, solved: false });
+    expect(await store.get(WORD, PUBLIC_ID, PUZZLE)).toBeNull();
+    expect((await store.get(WORD, TO, PUZZLE))?.submittedAt).toBeTruthy();
+  });
+
+  it('MOVES it OVER a merely started run — only one of the two is recorded play', async () => {
+    const store = memoryRoundStore();
+    await submitEmpty(store, PUBLIC_ID);
+    await startRun(store, TO);
+    expect(store.move(WORD, PUBLIC_ID, TO)).not.toBeNull();
+    expect((await store.get(WORD, TO, PUZZLE))?.submittedAt).toBeTruthy();
+  });
+
+  it('BLOCKS a move onto a submitted 0-claim destination — both sides hold a recorded day', async () => {
+    const store = await seeded(40);
+    const other = memoryRoundStore();
+    // One store, two accounts: the source has a real sentence log, the destination a
+    // recorded empty Word run for the SAME tuple it is asked about.
+    await submitEmpty(other, TO);
+    await other.append({
+      ...WORD,
+      publicId: PUBLIC_ID,
+      guesses: ['chat'],
+      puzzle: PUZZLE,
+      progress: 10,
+      solved: false,
+      now: NOW,
+    });
+    expect(other.move(WORD, PUBLIC_ID, TO)).toBeNull();
+    expect((await other.get(WORD, PUBLIC_ID, PUZZLE))?.guesses).toEqual(['chat']);
+    // And the sentence store is untouched by any of it.
+    expect((await store.get(KEY, PUBLIC_ID, PUZZLE))?.progress).toBe(40);
+  });
+
+  it('does NOT move a merely started run — its claims are not on the server at all', async () => {
+    const store = memoryRoundStore();
+    await startRun(store, PUBLIC_ID);
+    expect(store.move(WORD, PUBLIC_ID, TO)).toBeNull();
+    expect(await store.get(WORD, TO, PUZZLE)).toBeNull();
+  });
+});
+
 // The friends board's read (#206): the named players' stored rounds for one daily —
 // nothing else, and nobody else's.
 describe('memoryRoundStore.getMany — the board read (#206)', () => {

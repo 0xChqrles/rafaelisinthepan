@@ -78,6 +78,32 @@ describe('dynamoFriendStore (#189)', () => {
     ).resolves.toEqual({ outcome: 'gone', friends: [] });
   });
 
+  it('never reads a CONTENDED attempt as a deleted account (PR-227 review)', async () => {
+    // A `ConditionalCheckFailed` beside a `TransactionConflict` says nothing about whether
+    // either account exists. Answering `gone` there tells a player their friend's account
+    // was deleted because two writes touched one row.
+    const contended = Object.assign(new Error('cancelled'), {
+      name: 'TransactionCanceledException',
+      CancellationReasons: [
+        { Code: 'ConditionalCheckFailed' },
+        { Code: 'None' },
+        { Code: 'TransactionConflict' },
+        { Code: 'None' },
+      ],
+    });
+    const send = vi.fn(async (command: unknown) => {
+      if (command instanceof TransactWriteItemsCommand) throw contended;
+      return { Items: [] };
+    });
+    await expect(
+      dynamoFriendStore({ send } as unknown as DynamoDBClient, 'scores').link({
+        publicId: ME,
+        friendId: THEM,
+        createdAt: NOW,
+      }),
+    ).rejects.toBe(contended);
+  });
+
   it('deletes BOTH directions in ONE transaction', async () => {
     const { send, client } = fakeClient();
     await dynamoFriendStore(client, 'scores').unlink(ME, THEM);
@@ -241,6 +267,21 @@ describe('dynamoFriendStore.transfer (#204)', () => {
         { friendId: THEM, keep: false, createdAt: NOW },
       ]),
     ).rejects.toThrow(/throttled/);
+  });
+
+  it('propagates a cancellation whose reason carries NO code — it is not silently "None"', async () => {
+    const malformed = Object.assign(new Error('malformed'), {
+      name: 'TransactionCanceledException',
+      CancellationReasons: [{ Code: 'ConditionalCheckFailed' }, {}],
+    });
+    const send = vi.fn(async () => {
+      throw malformed;
+    });
+    await expect(
+      dynamoFriendStore({ send } as unknown as DynamoDBClient, 'scores').transfer(ME, TO, [
+        { friendId: THEM, keep: false, createdAt: NOW },
+      ]),
+    ).rejects.toBe(malformed);
   });
 
   it('DROPS a friendship by removing its two facing rows and writing nothing else', async () => {

@@ -5,6 +5,7 @@ import {
   type TransactWriteItem,
 } from '@aws-sdk/client-dynamodb';
 import { ACCOUNT_SORT_KEY, accountKey } from './deviceStore';
+import { classifyTransaction, refusedAt } from './dynamoErrors';
 import {
   FRIENDS_MAX,
   friendsKey,
@@ -129,19 +130,16 @@ export function dynamoFriendStore(client: DynamoDBClient, tableName: string): Fr
           }),
         );
       } catch (error) {
-        const transaction = error as {
-          name?: unknown;
-          CancellationReasons?: { Code?: string }[];
-        };
-        const reasons = transaction.CancellationReasons ?? [];
-        const expected =
-          transaction.name === 'TransactionCanceledException' &&
-          reasons.some(({ Code }) => Code === 'ConditionalCheckFailed') &&
-          reasons.every(({ Code }) => Code === 'None' || Code === 'ConditionalCheckFailed');
+        // Exactly two conditions exist, [0] and [1]: both accounts must still be live.
+        // Anything else — a `TransactionConflict`, a throttle, a reason with no code —
+        // is OPERATIONAL and surfaces (`dynamoErrors.ts`): a contended attempt says
+        // nothing about whether either account exists, and answering `gone` from one
+        // would tell a player their friend's account was deleted because two writes
+        // touched the same row.
+        const verdict = classifyTransaction(error);
         if (
-          expected &&
-          (reasons[0]?.Code === 'ConditionalCheckFailed' ||
-            reasons[1]?.Code === 'ConditionalCheckFailed')
+          verdict.kind === 'refused' &&
+          (refusedAt(verdict.reasons, 0) || refusedAt(verdict.reasons, 1))
         ) {
           return { outcome: 'gone', friends: own };
         }
@@ -236,9 +234,7 @@ export function dynamoFriendStore(client: DynamoDBClient, tableName: string): Fr
             let at = 0;
             for (const move of batch) {
               const width = move.keep ? 4 : 2;
-              if (reasons.slice(at, at + width).some((code) => code === 'ConditionalCheckFailed')) {
-                refused.add(move.friendId);
-              }
+              if (reasons.slice(at, at + width).some(Boolean)) refused.add(move.friendId);
               at += width;
             }
             // A refusal that names no move is not a state this transaction can produce.
@@ -288,15 +284,13 @@ function transferItems(
   return [...removals, link(to, move.friendId), link(move.friendId, to)];
 }
 
-// The per-item reason codes of a transaction refused by its own CONDITIONS, or null for
-// anything else — a throttle is not a refusal, and must propagate.
-function transactionRefusal(error: unknown): string[] | null {
-  if (typeof error !== 'object' || error === null) return null;
-  const named = error as { name?: unknown; CancellationReasons?: { Code?: string }[] };
-  if (named.name !== 'TransactionCanceledException') return null;
-  const reasons = (named.CancellationReasons ?? []).map(({ Code }) => Code ?? 'None');
-  const plain =
-    reasons.some((code) => code === 'ConditionalCheckFailed') &&
-    reasons.every((code) => code === 'None' || code === 'ConditionalCheckFailed');
-  return plain ? reasons : null;
+// Which items of a refused transfer batch were refused, or null for anything this store
+// may not interpret — a throttle, a conflict, or a reason the service sent with no code
+// (`dynamoErrors.ts` draws every one of those lines). The merge job is durable and
+// resumable, so a failure that reaches `drainMerges` is LOGGED and left queued rather than
+// silently re-shaped into "somebody unlinked these friendships".
+function transactionRefusal(error: unknown): boolean[] | null {
+  const verdict = classifyTransaction(error);
+  if (verdict.kind !== 'refused') return null;
+  return verdict.reasons.map((_, index) => refusedAt(verdict.reasons, index));
 }

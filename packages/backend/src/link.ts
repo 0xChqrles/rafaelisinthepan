@@ -82,6 +82,18 @@ export interface LinkHandlerDeps {
   allowSourceIp?: boolean;
 }
 
+// What a failed send may be LOGGED as. Never the error itself and never its message: a
+// provider naming the destination it rejected would put the address straight into the log
+// this route exists to keep it out of. The name says WHAT failed (`MessageRejected`,
+// `AccountSendingPausedException`, `TimeoutError`) and the request id is what support can
+// quote back to AWS.
+function mailFailure(error: unknown): { name: string; requestId?: string } {
+  const named = error as { name?: unknown; $metadata?: { requestId?: unknown } };
+  const name = typeof named?.name === 'string' ? named.name : 'unknown';
+  const requestId = named?.$metadata?.requestId;
+  return typeof requestId === 'string' ? { name, requestId } : { name };
+}
+
 // Six digits, leading zeros kept, from a CSPRNG. `randomInt` is uniform over the range —
 // `Math.random() * 1e6` is neither uniform nor unpredictable, and an attacker who can
 // predict the code needs no inbox at all.
@@ -211,7 +223,34 @@ export async function handleLink(
     });
     // Sent AFTER the challenge is stored: a mail whose code the server does not hold is a
     // code that can never work, which reads to the player as a broken product.
-    await deps.mailer.send(linkCodeMail(email, code, lang));
+    //
+    // **A FAILED SEND IS FAIL-CLOSED, AND THE ALLOWANCE STAYS CHARGED** (user-decided, on
+    // the PR-227 review). The order above — spend, store, send — is the only safe one, and
+    // nothing here is refunded or rolled back: SES acceptance is AMBIGUOUS (a timeout or a
+    // dropped response can follow a message that was in fact accepted and delivered), so
+    // giving the allowance back would let a caller whose mail DID go out spend the slot
+    // again, and the bound would no longer bound the number of messages an inbox receives.
+    // The counters are ABUSE CONTROLS, not a billing ledger; over-charging a rare failure
+    // costs the player one of five hourly sends, which the next resend simply uses. The
+    // stored challenge is left standing too: it expires on its own, and the next successful
+    // send REPLACES it (`putChallenge` is a replace), so an unreachable code strands nobody.
+    try {
+      await deps.mailer.send(linkCodeMail(email, code, lang));
+    } catch (error) {
+      // LOGGED WITHOUT THE ADDRESS, THE CODE OR ITS DIGEST — and without the error's own
+      // MESSAGE, which is the trap here: SES names the rejected destination inside it
+      // ("the following identities failed the check: …"), so passing the error through to
+      // the log is how the address this route is careful never to store in clear ends up
+      // in CloudWatch. What is kept is what an operator can act on: the failure's NAME and
+      // the AWS request id.
+      console.error('[link] code mail send failed:', mailFailure(error));
+      return errorResponse(
+        503,
+        'mail_unavailable',
+        'The code could not be sent. Try again in a moment.',
+        { ...responseHeaders, 'Retry-After': '5' },
+      );
+    }
     // The answer says NOTHING about whether this address is known — that branch is what the
     // code exists to earn, and answering it here would be account enumeration.
     return json(200, { sent: true, expiresIn: LINK_CODE_TTL_SECONDS }, responseHeaders);
@@ -498,6 +537,10 @@ export async function handleLink(
   // drains, so an unfinished merge is reported rather than lost.
   const merged = await drainMerges(deps.links, deps.friends, target);
 
+  // `erased` and `moved` used to ride along here and no client ever read either: the
+  // ending draws the account it ARRIVED at, and what was left behind is exactly what the
+  // player was shown on the confirmation before they agreed to it. `mergePending` stays,
+  // because it is a JOB the client has to come back and finish (`state/account.ts`).
   return json(
     200,
     {
@@ -505,8 +548,6 @@ export async function handleLink(
       accountId: target,
       deviceId: held.deviceId,
       email,
-      erased: erase ? leaving : null,
-      moved: adoption.moved.length,
       mergePending: !merged,
       stakes,
     },

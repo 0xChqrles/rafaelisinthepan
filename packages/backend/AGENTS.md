@@ -93,6 +93,11 @@
       memoryRoundStore.ts     process-local implementation for backend:dev/tests
       nameFilter.ts           #188 banned-strings display-name MODERATION (normalize + substring); the charset is shared/name.ts
       avatarModeration.ts     #188 best-effort swastika template match on the decoded grid
+      dynamoErrors.ts         what a DynamoDB failure MEANS: the ONE condition-refusal
+                              predicate and the transaction-cancellation classifier
+                              (conflict > operational > business refusal)
+      dynamoRetry.ts          the ONE backoff schedule (full jitter, doubling window) the
+                              batch reads and the conflict loops share
       turnstile.ts            Cloudflare Siteverify + explicit local accept-all verifier
       ogCard.ts               resvg-wasm rasterizer + the preview PAGE template (share links + #189 invites)
       layout.ts               storeKey() / sliceKey() — the keys shared by readers + publish (#17/#4/#203)
@@ -548,6 +553,19 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   from what now stands, so no send ever counts against a stale view. `accountLink.ts` owns
   the ORDER: `LinkStore.adopt` as ONE transaction — the identity AND the active day's play —
   then the merge drain; the reasoning is in that file's header and in the root `AGENTS.md`.
+  **A SEND THAT FAILS IS FAIL-CLOSED** (user-decided 2026-09-02): the route catches the
+  mailer at its boundary and answers **503 `mail_unavailable`**; the allowance stays
+  CHARGED and the stored challenge stands (the next successful resend replaces it). The
+  log line carries the failure's NAME and the AWS request id and NOTHING else — never the
+  error itself, whose message names the destination SES rejected. The reasoning (SES
+  acceptance is ambiguous, so a refund would let one caller deliver more than the bound
+  allows) is the root `AGENTS.md`'s.
+  **THE ATTEMPT LADDER:** a mismatch the store COUNTED is `wrong`, the fifth included, with
+  `attemptsLeft: 0` — the route answers 401 `bad_code`, which is what lets the screen say
+  how the code ran out. `spent` (409 `code_spent`) means the challenge no longer accepts an
+  attempt: the sixth call, or one a resend or a concurrent final write replaced. Both
+  stores spell it identically (corrected 2026-09-02 on the PR-227 review: the fifth
+  mismatch used to map to `spent`, so the client's zero-remaining path was dead code).
   **THE ACTIVE-DAY MOVES RIDE THE ADOPTION TRANSACTION** (PR-227 review, 2026-09-02,
   restoring what #204 itself specified): they used to run as separate writes BEFORE the
   commit, and no claim on the source account could honestly own play that had already
@@ -574,10 +592,19 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   per row read, a no-move included (a decision resting on "nothing here" is guarded like
   one resting on a row: a first guess, or the solving append's score row written a beat
   after the log, landing between plan and commit would otherwise be orphaned under the
-  deleted account). **The copied round takes the DESTINATION's next version, never the
+  deleted account).
+  **WHAT MOVES is RECORDED PLAY — `guesses.length > 0 || submittedAt exists`, ONE predicate
+  (`hasPlay`), read on the SOURCE and the DESTINATION alike** (corrected 2026-09-02 on that
+  same review; it read the log alone until then, and `memoryRoundStore.move` spells the same
+  rule). An empty `guesses` list is TWO Word states: a run merely STARTED, which is not play
+  and may be moved over, and a run SUBMITTED having claimed nothing — #202 makes
+  `submittedAt` the marker, never the length — which is a recorded, unrepeatable day with a
+  real score row of 0. The log-only reading lost that day from both sides: as a source it
+  did not move, as a destination it did not block. **The copied round takes the DESTINATION's next version, never the
   source's** — two sources adopting one target both condition on the target's version, and
   the first must change it or the second's Put still passes and overwrites the moved log.
-  A `TransactionCanceledException` is classified by its per-item reason codes: an identity
+  A `TransactionCanceledException` is classified by `dynamoErrors.ts` — the ONE reading,
+  shared by every store here (below) — and then by its per-item reason codes: an identity
   refusal is the route's answer (challenge > account > device, as before), while a refusal
   on a MOVE or GUARD item alone plans again over what now stands (bounded, then a loud
   failure), so the play that changed is carried rather than copied stale or deleted unseen;
@@ -615,9 +642,36 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   about an identity whose name and mark it already draws. New env: `MAIL_FROM` (required, like the
   table name — a link flow whose mail cannot be sent strands every player who tries it). New
   IAM: `ses:SendEmail`, scoped to the stack's own domain identity and conditioned on the one
-  `ses:FromAddress`. Local serve swaps in `memoryLinkStore` + `consoleMailer`, which PRINTS
+  `ses:FromAddress` — **and `dynamodb:ConditionCheckItem`** (added 2026-09-02 on the PR-227
+  review). A transaction's Put/Update/Delete elements are authorized through the item
+  permissions the table grant already carried, but a standalone `ConditionCheck` element is
+  NOT: AWS authorizes it through its own action. The adoption asserts rows it does not write
+  — the adopted account, a surviving source, and every guarded no-move of the active day —
+  so without it every erasing link is an `AccessDeniedException` in PRODUCTION and in
+  production alone, where no local run and no synthesized template can show it. Local serve swaps in `memoryLinkStore` + `consoleMailer`, which PRINTS
   the code to this server's log — explicitly local-only, the accept-all Turnstile verifier's
   pattern.
+- **ONE reading of a DynamoDB failure (`dynamoErrors.ts` + `dynamoRetry.ts`, PR-227
+  review, 2026-09-02).** Four stores each carried their own spelling of "was this refused by
+  its own condition?" and "which items of this transaction were?", and the spellings had
+  drifted: two `isConditionFailure` helpers plus three inline `name === '…'` comparisons,
+  three transaction parsers that all mapped `Code` through `?? 'None'` (so a reason DynamoDB
+  sent with NO code read as "this item was fine"), and none that knew about
+  `TransactionConflict` at all. AWS documents that the SDKs do NOT retry a cancelled
+  transaction, and a conflict can arrive ALONGSIDE genuine `ConditionalCheckFailed` reasons —
+  which describe rows another writer was mid-write on. So the classifier answers ONE of four
+  verdicts (`not_cancelled` · `conflict` · `operational` · `refused`), a CONFLICT wins over
+  every condition beside it, and only a literal `Code: "None"` means an item was fine. Each
+  store still maps `refused` reasons onto its OWN outcomes — that part is genuinely
+  per-store — and `dynamoErrors.test.ts` pins the reading once. `dynamoRetry.ts` owns the
+  waiting: ONE full-jitter doubling schedule for the `UnprocessedKeys` batch reads (score,
+  round and — since this review — PROFILE, which retried immediately) and a shorter one for
+  transaction conflicts. **Three loops handle a conflict explicitly**, each bounded, jittered
+  and re-reading first where its items came from a read: the link send allowance, the
+  adoption's re-plan (a rival may have moved a guarded row, so it plans AGAIN rather than
+  re-sending), and the BIND, which had no retry at all. The friend and score stores keep
+  their existing policy of not retrying, but a mixed or malformed cancellation now surfaces
+  instead of being read as `gone` or `capped`.
 - **Word mode's daily artifact (#154/#156):** the ONE puzzle endpoint also serves the
   single-word artifact under `mode=word` (`GET /?lang=&date=&mode=word`; absent/
   `sentence` = the sentence puzzle, anything else = 400) with identical day-addressing,

@@ -61,6 +61,68 @@ describe('dynamoProfileStore (#188)', () => {
     await expect(store.get(PUBLIC_ID)).resolves.toEqual({ live: false, profile: null });
   });
 
+  // CONTRACT (PR-227 review): an UnprocessedKeys response is DynamoDB saying the partition
+  // is under pressure. Coming straight back spends the whole budget inside a few
+  // milliseconds, before any capacity can return — AWS's own BatchGetItem guidance — so
+  // the retries WAIT on the shared full-jitter schedule, and the budget's exhaustion is
+  // loud: answering with what arrived would present a throttle as a verdict about an
+  // identity (404 "never customized", or 410 "gone").
+  describe('UnprocessedKeys', () => {
+    const profileRow = { sk: { S: 'profile' }, name: { S: 'Chqrles' }, avatar: { S: '' } };
+    const accountRow = { sk: { S: 'account' }, createdAt: { S: 'x' } };
+    const accountKey = { pk: { S: `player#${PUBLIC_ID}` }, sk: { S: 'account' } };
+
+    it('does not delay the FIRST read, and asks again only for the keys handed back', async () => {
+      let reads = 0;
+      const send = vi.fn(async (_command: unknown) => {
+        reads += 1;
+        return reads === 1
+          ? { Responses: { scores: [profileRow] }, UnprocessedKeys: { scores: { Keys: [accountKey] } } }
+          : { Responses: { scores: [accountRow] } };
+      });
+      const waits: number[] = [];
+      const store = dynamoProfileStore({ send } as unknown as DynamoDBClient, 'scores', {
+        wait: async (ms) => {
+          waits.push(ms);
+        },
+      });
+
+      await expect(store.get(PUBLIC_ID)).resolves.toEqual({
+        live: true,
+        profile: { publicId: PUBLIC_ID, name: 'Chqrles', avatar: '' },
+      });
+      expect(send).toHaveBeenCalledTimes(2);
+      // ONE wait, and only BETWEEN the attempts.
+      expect(waits).toHaveLength(1);
+      // The retry carries the unprocessed key and nothing else — the profile row already
+      // answered and must not be paid for twice.
+      expect((send.mock.calls[1][0] as BatchGetItemCommand).input.RequestItems!.scores.Keys).toEqual([
+        accountKey,
+      ]);
+    });
+
+    it('waits on the shared full-jitter schedule, bounded to the store\u2019s attempts', async () => {
+      const send = vi.fn(async (_command: unknown) => ({
+        Responses: { scores: [] },
+        UnprocessedKeys: { scores: { Keys: [accountKey] } },
+      }));
+      const waits: number[] = [];
+      const store = dynamoProfileStore({ send } as unknown as DynamoDBClient, 'scores', {
+        wait: async (ms) => {
+          waits.push(ms);
+        },
+      });
+
+      // LOUD: a throttle must never be answered as "this account is gone".
+      await expect(store.get(PUBLIC_ID)).rejects.toThrow(/unprocessed/i);
+      expect(send).toHaveBeenCalledTimes(3);
+      expect(waits).toHaveLength(2);
+      // Full jitter over a doubling window: each wait inside its own retry's ceiling.
+      expect(waits[0]).toBeLessThanOrEqual(50);
+      expect(waits[1]).toBeLessThanOrEqual(100);
+    });
+  });
+
   it('upserts in one write, keeping createdAt from the FIRST save', async () => {
     const send = vi.fn(async (_command: unknown) => ({}));
     const store = dynamoProfileStore({ send } as unknown as DynamoDBClient, 'scores');

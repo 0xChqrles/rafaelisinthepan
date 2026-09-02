@@ -7,7 +7,7 @@ import {
   type DynamoDBClient,
   type AttributeValue,
 } from '@aws-sdk/client-dynamodb';
-import { batchRetryDelayMs, dynamoScoreStore, planScoreMove } from './dynamoScoreStore';
+import { dynamoScoreStore, planScoreMove } from './dynamoScoreStore';
 import { SCORE_SUBMISSION_LIMIT, type ScoreKey, type ScoreSubmission } from './scoreStore';
 
 const KEY: ScoreKey = { date: '2026-08-13', lang: 'fr', mode: 'word' };
@@ -103,18 +103,6 @@ describe('dynamoScoreStore (#187)', () => {
     // partition at full speed spends the whole budget before capacity can return.
     expect(send).toHaveBeenCalledTimes(5);
     expect(waits).toHaveLength(4);
-  });
-
-  it('waits a full-jitter doubling window between batch retries', () => {
-    // Full jitter: each retry draws from [0, base * 2^n], so the CEILING doubles while
-    // the actual wait stays random — Lambdas throttled together must not come back in
-    // lockstep and re-throttle the partition.
-    const ceilings = [0, 1, 2, 3].map((retry) => batchRetryDelayMs(retry, () => 1));
-    expect(ceilings).toEqual([50, 100, 200, 400]);
-    // The draw is the whole window, floor included.
-    expect([0, 1, 2, 3].map((retry) => batchRetryDelayMs(retry, () => 0))).toEqual([0, 0, 0, 0]);
-    const middle = [0, 1, 2, 3].map((retry) => batchRetryDelayMs(retry, () => 0.5));
-    expect(middle).toEqual([25, 50, 100, 200]);
   });
 
   it('atomically spends the allowance only when it creates a player row', async () => {
@@ -267,6 +255,36 @@ describe('dynamoScoreStore (#187)', () => {
       dynamoScoreStore({ send: capped } as unknown as DynamoDBClient, 'scores').submit(SUBMISSION),
     ).resolves.toBe('capped');
     expect(capped).toHaveBeenCalledTimes(1);
+  });
+
+  it('never reads a CONTENDED attempt as a cap (PR-227 review)', async () => {
+    // `ConditionalCheckFailed` beside a `TransactionConflict` describes conditions
+    // evaluated while another transaction held one of these very rows. Reading item [0]
+    // there would answer `capped` — a player's score silently dropped — for a request that
+    // merely lost a race.
+    const contended = Object.assign(new Error('cancelled'), {
+      name: 'TransactionCanceledException',
+      CancellationReasons: [{ Code: 'ConditionalCheckFailed' }, { Code: 'TransactionConflict' }],
+    });
+    const failing = vi.fn(async () => {
+      throw contended;
+    });
+    await expect(
+      dynamoScoreStore({ send: failing } as unknown as DynamoDBClient, 'scores').submit(SUBMISSION),
+    ).rejects.toBe(contended);
+  });
+
+  it('never reads a reason with NO code as "this item was fine"', async () => {
+    const malformed = Object.assign(new Error('cancelled'), {
+      name: 'TransactionCanceledException',
+      CancellationReasons: [{ Code: 'ConditionalCheckFailed' }, {}],
+    });
+    const failing = vi.fn(async () => {
+      throw malformed;
+    });
+    await expect(
+      dynamoScoreStore({ send: failing } as unknown as DynamoDBClient, 'scores').submit(SUBMISSION),
+    ).rejects.toBe(malformed);
   });
 
   it('rethrows operational cancellations', async () => {

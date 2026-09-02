@@ -14,6 +14,16 @@
 // until it settles, assigned identity as the fallback — a name must never flash and then
 // correct itself, the leaderboard strip's rule).
 //
+// **UNLESS THE ACCOUNT IS GONE** (#204). An email link can DELETE the account a device
+// leaves, and every other device on it lands HERE on its next private call — so this is
+// exactly the screen most likely to be naming a deleted account. `GET /profile` answers
+// 410 `account_gone` for one, and the assigned fallback is NOT a safe answer to it: the
+// pseudonym and the mark are still that player's own face, so drawing them puts an erased
+// identity on screen. It SETTLES with no face instead — the screen keeps its sentence and
+// both its actions, which is what the reader is here for. Gone, loading and shown are
+// therefore three states and not two: a read still out holds the frame, a read that
+// FAILED is not evidence of a deletion and keeps the assigned fallback.
+//
 // **THE ACTION IS `PLAY`, AND THE COPY IS ABOUT IT** (user-decided 2026-08-26, superseding
 // START FRESH and its paragraph of stakes). The reader has one decision here, so the screen
 // says the one thing they need before making it — this tap starts over on a new account,
@@ -37,7 +47,7 @@
 
 import { useEffect, useState } from 'react';
 import { anonName, defaultAvatar } from '@whippin/shared';
-import { parseProfile, profileUrl } from '../api';
+import { readProfile, type ProfileRead } from '../api';
 import Avatar from '../components/Avatar';
 import Button from '../components/Button';
 import LoadingWave from '../components/LoadingWave';
@@ -75,8 +85,23 @@ const reconnect = () => {
 // whose whole job is naming who you are about to leave.
 interface Face {
   publicId: string;
-  name: string;
-  avatar: string | null;
+  // `null` is SETTLED WITH NOTHING TO DRAW — the account is gone — which is a different
+  // thing from `face` itself being null, the read not having landed.
+  shown: { name: string; avatar: string | null } | null;
+}
+
+// What each answer of `GET /profile` means HERE. Named so the decision can be read — and
+// tested — on its own: a DELETED account settles with no face at all, while "never
+// customized" and a failed read both keep the assigned identity.
+export function faceFrom(read: ProfileRead, publicId: string): Face {
+  if (read.status === 'gone') return { publicId, shown: null };
+  if (read.status === 'shown') {
+    return {
+      publicId,
+      shown: { name: read.profile.name || anonName(publicId), avatar: read.profile.avatar },
+    };
+  }
+  return { publicId, shown: { name: anonName(publicId), avatar: null } };
 }
 
 export default function SignedOut({ lang }: { lang: string }) {
@@ -91,19 +116,8 @@ export default function SignedOut({ lang }: { lang: string }) {
     let mounted = true;
     const publicId = account.accountId;
     (async () => {
-      let shown: Face = { publicId, name: anonName(publicId), avatar: null };
-      try {
-        const response = await fetch(profileUrl(publicId), {
-          signal: timeoutSignal(6_000),
-        });
-        if (response.ok) {
-          const profile = parseProfile(await response.json());
-          shown = { publicId, name: profile.name || anonName(publicId), avatar: profile.avatar };
-        }
-      } catch {
-        // Keep the fallback.
-      }
-      if (mounted) setFace(shown);
+      const read = await readProfile(publicId, timeoutSignal(6_000));
+      if (mounted) setFace(faceFrom(read, publicId));
     })();
     return () => {
       mounted = false;
@@ -124,10 +138,10 @@ export default function SignedOut({ lang }: { lang: string }) {
 
   return (
     <div className="signed-out">
-      {account !== null && face !== null && (
+      {account !== null && face?.shown != null && (
         <>
-          <Avatar avatar={face.avatar ?? defaultAvatar(account.accountId)} size={64} />
-          <span className="signed-out-name">{face.name}</span>
+          <Avatar avatar={face.shown.avatar ?? defaultAvatar(account.accountId)} size={64} />
+          <span className="signed-out-name">{face.shown.name}</span>
         </>
       )}
       <p className="signed-out-line" role="status">
