@@ -101,7 +101,6 @@ import {
   useAccountSummary,
 } from '../state/account';
 import { recoveredLinkResult } from '../state/linkRecovery';
-import { useGameStore } from '../state/gameStore';
 import { prefetchTurnstileTokens, turnstileToken } from '../turnstile';
 
 type Step = 'address' | 'code' | 'confirm' | 'done';

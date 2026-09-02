@@ -50,6 +50,16 @@ export const PRIVACY_CONTACT = 'hello@whippin.ai';
 // before this ships. It is a legal identification, so a plausible guess is worse than none.
 export const PRIVACY_HOST = 'Amazon Web Services EMEA SARL, 38 avenue John F. Kennedy, L-1855 Luxembourg';
 
+// AND THE BUILD REFUSES TO SHIP IT WHILE IT IS A GUESS. A ⚠ in a comment is a note to
+// whoever reads this file; the thing that must not happen is a deploy that publishes a legal
+// identification nobody checked, and `main` deploys the web stack on every push. So the flag
+// is what `vite.config.ts` reads to fail a PRODUCTION build — `VITE_TURNSTILE_SITE_KEY`'s own
+// rule, for its own reason: refuse to ship a page that silently claims something untrue.
+//
+// Flip it to `true` in the SAME commit that replaces the address above with the one on the
+// invoice. Nothing else reads it.
+export const PRIVACY_HOST_CONFIRMED = false;
+
 // WHEN THIS WAS LAST TRUE. An ISO instant rather than a sentence per language: the two would
 // drift, and a date reads differently in the two locales anyway (the screen formats it).
 export const PRIVACY_UPDATED = '2026-09-03';
@@ -115,7 +125,7 @@ export const PRIVACY: Record<UiLang, PrivacyDoc> = {
       {
         heading: 'WHAT STAYS IN YOUR BROWSER',
         paragraphs: [
-          'Your device key and any guesses waiting to be sent are stored in your own browser. The game does not use cookies.',
+          'Your device key and any guesses waiting to be sent are stored in your own browser. Whippin itself does not use cookies.',
           'If you clear your browsing data, they disappear, including the key that connects this device to your account. If you want to be able to get your account back afterwards, save it with an email address first.',
         ],
       },
@@ -141,7 +151,7 @@ export const PRIVACY: Record<UiLang, PrivacyDoc> = {
           },
           {
             term: 'Cloudflare',
-            body: 'Runs the invisible "are you a robot?" check when an account or a round is created. Cloudflare sees your IP address and some basic information about your browser. It never sees your games.',
+            body: 'Runs the invisible "are you a robot?" check when an account or a round is created. Cloudflare sees your IP address and some basic information about your browser, and may leave a cookie of its own for that check. It never sees your games.',
           },
           {
             term: 'Plausible',
@@ -195,7 +205,7 @@ export const PRIVACY: Record<UiLang, PrivacyDoc> = {
       {
         heading: 'CE QUI RESTE DANS VOTRE NAVIGATEUR',
         paragraphs: [
-          "La clé de votre appareil et les propositions en attente d'envoi sont stockées dans votre navigateur. Le jeu n'utilise pas de cookies.",
+          "La clé de votre appareil et les propositions en attente d'envoi sont stockées dans votre navigateur. Whippin lui-même n'utilise pas de cookies.",
           "Si vous effacez vos données de navigation, elles disparaissent, y compris la clé qui relie cet appareil à votre compte. Si vous voulez pouvoir retrouver votre compte ensuite, sauvegardez-le d'abord avec une adresse e-mail.",
         ],
       },
@@ -221,7 +231,7 @@ export const PRIVACY: Record<UiLang, PrivacyDoc> = {
           },
           {
             term: 'Cloudflare',
-            body: "Effectue la vérification invisible « êtes-vous un robot ? » quand un compte ou une partie est créé. Cloudflare voit votre adresse IP et quelques informations de base sur votre navigateur. Il ne voit jamais vos parties.",
+            body: "Effectue la vérification invisible « êtes-vous un robot ? » quand un compte ou une partie est créé. Cloudflare voit votre adresse IP et quelques informations de base sur votre navigateur, et peut y déposer un cookie pour cette vérification. Il ne voit jamais vos parties.",
           },
           {
             term: 'Plausible',

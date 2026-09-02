@@ -5,6 +5,9 @@ import react from '@vitejs/plugin-react';
 // "SVG icons"): the SVG is emitted into the DOM, so its `fill="currentColor"` inherits the
 // button's `color` for every theme/state instead of being locked to a rasterised <img>.
 import svgr from 'vite-plugin-svgr';
+// The one app module this config reads: a plain constant file with no imports of its own, so
+// pulling it in costs the config nothing (see the production guard below).
+import { PRIVACY_HOST_CONFIRMED } from './src/screens/privacyDoc';
 
 // The build's identity, for stale-tab detection (src/versionCheck.ts): the bundle carries
 // it as `__BUILD_ID__` and the emitted `dist/version.json` names the same value — so an
@@ -41,6 +44,14 @@ export default defineConfig(({ command, mode }) => {
   if (command === 'build' && mode === 'production' && !turnstileSiteKey) {
     throw new Error(
       'VITE_TURNSTILE_SITE_KEY is required for production builds; refusing to ship score collection disabled.',
+    );
+  }
+  // The privacy notice's HOST is a legal identification (#229) and it ships as a guess until
+  // somebody reads it off the AWS invoice. Same rule as the key above, for the same reason:
+  // a production build must not silently publish a claim nobody checked.
+  if (command === 'build' && mode === 'production' && !PRIVACY_HOST_CONFIRMED) {
+    throw new Error(
+      'PRIVACY_HOST in src/screens/privacyDoc.ts is still the placeholder; set it from the AWS invoice and flip PRIVACY_HOST_CONFIRMED before shipping /privacy.',
     );
   }
 

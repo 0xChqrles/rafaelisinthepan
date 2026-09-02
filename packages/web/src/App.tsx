@@ -160,6 +160,12 @@ export default function App() {
   // on, so there is nothing under it worth rendering, and a player who reads a vanished
   // streak as a bug is exactly what the copy exists to prevent.
   const signedOut = useSignedOut();
+  // **EXCEPT THE NOTICE (#229).** It reads no private state and makes no request: it is a
+  // document about what the game stores, and the one screen here that has to be LINKABLE.
+  // A verdict that swallowed it would answer "what do you keep about me?" with a sign-in
+  // screen — for the one player who has the strongest reason to ask, and for anyone opening
+  // the URL on a device that was signed out from elsewhere.
+  const blocked = signedOut && route.view !== 'privacy';
   // Component-local caches (profile fields, board rows, device lists, invite outcomes)
   // belong to the identity that mounted them. A scope change remounts the whole routed
   // surface synchronously, including when a replacement arrives after an intervening null;
@@ -169,7 +175,7 @@ export default function App() {
   // The row's own language and daily: the route's where it names one, the resolved home
   // pair everywhere else — the same split `docLang` makes just above.
   const routed = route.view === 'game' || route.view === 'archive' || route.view === 'board';
-  const place = signedOut ? null : headerPlace(route, gameSurface, today);
+  const place = blocked ? null : headerPlace(route, gameSurface, today);
   // Leaving the lesson by the row IS skipping it, so the row says so before it goes.
   const leaveTutorial = useCallback(() => {
     track('tutorial', { action: 'skip' });
@@ -197,29 +203,30 @@ export default function App() {
           />
         )}
         {/* The living backdrop — every screen (game, archive, select, tutorial) sits on it. */}
-        {signedOut && <SignedOut lang={homeLang} />}
-        {!signedOut && route.view === 'select' && <LanguageSelect />}
+        {blocked && <SignedOut lang={homeLang} />}
+        {!blocked && route.view === 'select' && <LanguageSelect />}
         {/* The ACCOUNT area (#204's UX rework): three routes, three questions — the
             account itself, the editor, and the email flow. One purpose per screen. */}
-        {!signedOut && route.view === 'account' && <Account />}
-        {!signedOut && route.view === 'accountEmail' && <AccountEmail intent={route.intent} />}
-        {!signedOut && route.view === 'profile' && <Profile />}
+        {!blocked && route.view === 'account' && <Account />}
+        {!blocked && route.view === 'accountEmail' && <AccountEmail intent={route.intent} />}
+        {!blocked && route.view === 'profile' && <Profile />}
         {/* The data notice (#229) — a STEP of the account area, reachable on its own URL
-            because a legal notice has to be linkable (the SES review opens one). */}
-        {!signedOut && route.view === 'privacy' && <Privacy />}
+            because a legal notice has to be linkable (the SES review opens one), and the
+            one route a sign-out does not close (`blocked`): it reads no private state. */}
+        {!blocked && route.view === 'privacy' && <Privacy />}
         {/* The invite link (#189) is a beat, not a screen: it lands the mutual edge and
             hands over to the home redirect above. */}
-        {!signedOut && route.view === 'invite' && (
+        {!blocked && route.view === 'invite' && (
           <FriendInvite publicId={route.publicId} lang={homeLang} />
         )}
-        {!signedOut && route.view === 'archive' && <Archive lang={route.lang} mode={route.mode} />}
+        {!blocked && route.view === 'archive' && <Archive lang={route.lang} mode={route.mode} />}
         {/* The leaderboard screen (#190) — keyed so switching daily/language drops the
             cached reads for that board's own. The TAB is deliberately outside the key: a
             mode switch is still the same visit (see the reset effect above). */}
-        {!signedOut && route.view === 'board' && (
+        {!blocked && route.view === 'board' && (
           <Leaderboard key={`${route.lang}:${route.mode}`} lang={route.lang} mode={route.mode} />
         )}
-        {!signedOut && route.view === 'game' && (
+        {!blocked && route.view === 'game' && (
           <GameRoute
             lang={route.lang}
             mode={route.mode}

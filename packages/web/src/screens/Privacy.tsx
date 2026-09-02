@@ -29,7 +29,6 @@ import useUiLang from '../hooks/useUiLang';
 import { t } from '../i18n';
 import { ACCOUNT_PATH } from '../langs';
 import { goBack } from '../routing';
-import { useGameStore } from '../state/gameStore';
 import { PRIVACY_CONTACT, PRIVACY_HOST, PRIVACY_UPDATED, privacyDoc } from './privacyDoc';
 
 // THE TWO VALUES THAT ARE NOT PROSE, dropped into whichever sentences name them — each

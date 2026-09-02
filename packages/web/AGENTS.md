@@ -1013,10 +1013,23 @@ it to the local store — see `packages/backend/AGENTS.md`).
   Reached from TWO doors, which is the whole reason `routing.ts` grew `goBack(fallback)`: a
   row on `/account` and a quiet action under the email flow's ADDRESS field, where the address
   is actually typed — and sending that second reader to a fixed parent would drop somebody
-  three taps into saving their account back at the start of it. `goBack` stamps every
-  `navigate` entry as the app's own (`history.state.app`) and uses the browser's back only
-  where it finds that stamp; a pasted or bookmarked arrival falls back to `/account`, because
-  what sits behind THAT entry is not ours to send anyone to.
+  three taps into saving their account back at the start of it. `goBack` uses the browser's
+  back only where it finds the app's own stamp (`history.state.app`); a pasted or bookmarked
+  arrival falls back to `/account`, because what sits behind THAT entry is not ours to send
+  anyone to.
+  - **ONLY A PUSH MAY STAMP** (`writeEntry`, contract-tested in `routing.test.ts`). The stamp
+    answers one question — is there a screen of OURS behind this entry — and that is a fact
+    about the entry's PREDECESSOR, which only a push creates. Both replaces this app makes are
+    on entries somebody else landed on: the `/` → `/<lang>` redirect, and `dropLangParam`. The
+    first cut stamped all three, and it broke the exact journey `?lang=` exists for — a pasted
+    `/privacy?lang=en`, a language picked from the wheel (which rewrites the URL), then back:
+    off the site, or in a fresh tab nothing at all, since the entry was the tab's first.
+  - **A SIGN-OUT DOES NOT CLOSE IT** (`App`'s `blocked`, which is `signedOut` everywhere
+    else). The verdict takes the whole screen because every private read answers
+    `unknown_device` from there on — and this route makes none: it is a static document about
+    what the game stores, on the one URL that has to be openable by anybody. Answering "what
+    do you keep about me?" with a sign-in screen is worst for the reader with the strongest
+    reason to ask.
   - **It is a real ROUTE and not a dialog** because a legal notice has to be LINKABLE: the SES
     production-access review opens a URL, and « où est-ce écrit ? » deserves an answer that
     can be pasted into a message.
@@ -1070,6 +1083,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     non-professional route (art. 6-III-2): a free site that sells nothing may keep its
     publisher's identity with the HOST and publish the host's details instead, which is what
     lets the page carry no personal name. The day the game earns money it stops qualifying.
+    **THE BUILD REFUSES TO SHIP THE GUESS:** `PRIVACY_HOST_CONFIRMED` sits beside it and
+    `vite.config.ts` throws on a PRODUCTION build while it is false — `VITE_TURNSTILE_SITE_KEY`'s
+    own rule, for its own reason. A ⚠ in a comment is a note to whoever opens the file, and
+    `main` deploys the web stack on every push; the flag is flipped in the same commit that
+    writes the address off the invoice.
   - **NOT done, and both are the user's call:** there is no self-serve "delete my account"
     (#207 is filed and specified — when it lands, DELETING IT loses its "no button yet"
     paragraph and gains the purge delay #207's own scope requires, and ASKING shrinks to the
@@ -1145,8 +1163,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
       must not take a French player's app away from them for good; and since the parameter
       is read AHEAD of the store, choosing FRANÇAIS while `?lang=en` stands would be
       answered by the URL rather than by the wheel. So `LangTitle`'s pick calls
-      `dropLangParam()` BEFORE writing the preference — a `replaceState`, because a
-      suggestion the player just overruled is not a place to go back to.
+      `dropLangParam()` BEFORE writing the preference — a `replaceState` that KEEPS the
+      entry's own stamp (the privacy bullet's rule), because a suggestion the player just
+      overruled is not a place to go back to.
+      **IT DOES RIDE ALONG WHILE IT STANDS, and that is the shape of the decision, not an
+      oversight:** `navigate` carries the whole query string across, and the header's keys
+      take the RESOLVED language — so a French player following an English link and then
+      tapping PLAY lands in the English game, with `?lang=en` still in the URL. Every screen
+      they pass is then consistently the language the link was sent in, which is what the
+      parameter promises; one pick from any wheel ends it for good, and `lastLang` is
+      untouched, so the next visit to `/` is French again.
     - **A route that NAMES a language ignores it** (`/fr?lang=en` is French): the path is
       the more specific statement, and `?lang=` is the fallback for the routes that name
       none. An unsupported code says nothing at all rather than falling to English, so a
