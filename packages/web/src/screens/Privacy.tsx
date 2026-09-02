@@ -19,30 +19,40 @@
 // was three taps into saving their account back at `/account` would cost them the flow.
 
 import type { ReactNode } from 'react';
+import LangTitle from '../components/LangTitle';
 import { HeaderBack, HeaderLeft } from '../components/TopBar';
 import { t } from '../i18n';
 import { ACCOUNT_PATH, resolveHomeLang } from '../langs';
 import { goBack } from '../routing';
 import { useGameStore } from '../state/gameStore';
-import { PRIVACY_CONTACT, PRIVACY_UPDATED, privacyDoc } from './privacyDoc';
+import { PRIVACY_CONTACT, PRIVACY_HOST, PRIVACY_UPDATED, privacyDoc } from './privacyDoc';
 
-// The one inbox, dropped into whichever sentences name it — as a real `mailto:`, because
-// "write to us" is the one instruction on this page a reader is meant to ACT on, and a
-// phone cannot tap a paragraph. It is the app's only link out; every other control here is
-// a button, so it wears the ACTION ink rather than a browser blue.
-function withContact(text: string): ReactNode {
-  const parts = text.split('{mail}');
-  if (parts.length === 1) return text;
-  return parts.map((part, i) => (
-    <span key={i}>
-      {i > 0 && (
-        <a className="privacy-mail" href={`mailto:${PRIVACY_CONTACT}`}>
+// THE TWO VALUES THAT ARE NOT PROSE, dropped into whichever sentences name them — each
+// stated ONCE in `privacyDoc.ts`, so the two languages cannot name two inboxes or two hosts.
+//
+// The address is a real `mailto:`, because "write to us" is the one instruction on this page
+// a reader is meant to ACT on, and a phone cannot tap a paragraph. It is the app's only link
+// out; every other control here is a button, so it wears the ACTION ink rather than a
+// browser blue. The HOST is a legal identification and not a destination, so it is plain
+// emphasised text — a name to read, never somewhere to go.
+function fill(text: string): ReactNode {
+  return text.split(/(\{mail\}|\{host\})/).map((part, i) => {
+    if (part === '{mail}') {
+      return (
+        <a key={i} className="privacy-mail" href={`mailto:${PRIVACY_CONTACT}`}>
           {PRIVACY_CONTACT}
         </a>
-      )}
-      {part}
-    </span>
-  ));
+      );
+    }
+    if (part === '{host}') {
+      return (
+        <span key={i} className="privacy-term">
+          {PRIVACY_HOST}
+        </span>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
 }
 
 // The date the notice last became true, in the reader's own locale. Read as UTC: the value is
@@ -70,11 +80,8 @@ export default function Privacy() {
   return (
     <>
       <HeaderLeft>
-        <HeaderBack
-          title={title}
-          label={t(lang, 'ariaBack')}
-          onBack={() => goBack(ACCOUNT_PATH)}
-        />
+        <HeaderBack label={t(lang, 'ariaBack')} onBack={() => goBack(ACCOUNT_PATH)} />
+        <LangTitle lang={lang} title={title} />
       </HeaderLeft>
       <div className="privacy-screen">
         {/* The screen's name is in the header, which is a BUTTON — so the document itself
@@ -86,14 +93,14 @@ export default function Privacy() {
             <h2 className="privacy-heading">{section.heading}</h2>
             {section.paragraphs?.map((paragraph) => (
               <p key={paragraph} className="privacy-text">
-                {withContact(paragraph)}
+                {fill(paragraph)}
               </p>
             ))}
             {section.entries?.map((entry) => (
               <p key={entry.term} className="privacy-text">
                 <span className="privacy-term">{entry.term}</span>
                 {' — '}
-                {withContact(entry.body)}
+                {fill(entry.body)}
               </p>
             ))}
             {section.outro && <p className="privacy-text">{section.outro}</p>}

@@ -29,9 +29,23 @@ type UiLang = 'en' | 'fr';
 // game already writes FROM — a reply lands in the same inbox as a question about a code.
 export const PRIVACY_CONTACT = 'hello@whippin.ai';
 
+// ⚠ FILL BEFORE LAUNCH — the ONE value on this page nobody can derive from the code.
+//
+// WHO PUBLISHES THE SITE, said the way French law lets a private individual say it. The
+// LCEN (art. 6-III-2) asks a website to identify its publisher, and gives a NON-PROFESSIONAL
+// one this route: keep your own identity with the HOST, and publish the HOST's name and
+// address instead. Whippin is free, carries no advertising and sells nothing, so it takes
+// that route — the day it earns money, it stops qualifying and the publisher's own details
+// have to appear here.
+//
+// The value below is AWS's published EMEA contracting entity, and it is a PLACEHOLDER: the
+// entity on YOUR account and its registered address must be read off your own AWS invoice
+// before this ships. It is a legal identification, so a plausible guess is worse than none.
+export const PRIVACY_HOST = 'Amazon Web Services EMEA SARL, 38 avenue John F. Kennedy, L-1855 Luxembourg';
+
 // WHEN THIS WAS LAST TRUE. An ISO instant rather than a sentence per language: the two would
 // drift, and a date reads differently in the two locales anyway (the screen formats it).
-export const PRIVACY_UPDATED = '2026-09-02';
+export const PRIVACY_UPDATED = '2026-09-03';
 
 // A NAMED THING and what is true of it — the shape four of the six sections take, because the
 // question this page answers is "what, and why" and a bare paragraph buries the "what".
@@ -59,7 +73,7 @@ export interface PrivacyDoc {
 // allowance's inside the hour, and DynamoDB's TTL sweep is best-effort besides — so a
 // promise of an exact moment is one the store does not make.
 //
-// `{mail}` is filled by the screen from PRIVACY_CONTACT, so the two languages cannot name two
+// `{mail}` and `{host}` are filled by the screen from PRIVACY_CONTACT / PRIVACY_HOST, so the two languages cannot name two
 // different inboxes — the `{n}` rule the Word gate's own copy follows.
 export const PRIVACY: Record<UiLang, PrivacyDoc> = {
   en: {
@@ -111,7 +125,7 @@ export const PRIVACY: Record<UiLang, PrivacyDoc> = {
         entries: [
           {
             term: 'Amazon Web Services',
-            body: 'Hosts the game, its database and its files, on servers in the United States, and sends the code emails. Everything above sits on their machines.',
+            body: 'Hosts the game, its database and its files, and sends the code emails. Everything above sits on their machines, on servers in the United States — a transfer covered by their own EU–US Data Privacy Framework certification and by the standard contractual clauses in their data protection terms.',
           },
           {
             term: 'Cloudflare',
@@ -129,6 +143,13 @@ export const PRIVACY: Record<UiLang, PrivacyDoc> = {
         paragraphs: [
           'Write to {mail} to know what is kept about you, to get a copy of it, to have something corrected, or to have all of it deleted.',
           'If the answer does not satisfy you, you can complain to the CNIL, the French data protection authority.',
+        ],
+      },
+      {
+        heading: 'WHO PUBLISHES THIS',
+        paragraphs: [
+          'Whippin is published by a private individual, who has given their identity to the host below — the route French law leaves open to a site that is free and sells nothing.',
+          'Host: {host}.',
         ],
       },
     ],
@@ -183,7 +204,7 @@ export const PRIVACY: Record<UiLang, PrivacyDoc> = {
         entries: [
           {
             term: 'Amazon Web Services',
-            body: "Héberge le jeu, sa base de données et ses fichiers, sur des serveurs aux États-Unis, et envoie les e-mails de code. Tout ce qui précède est stocké sur leurs machines.",
+            body: "Héberge le jeu, sa base de données et ses fichiers, et envoie les e-mails de code. Tout ce qui précède est stocké sur leurs machines, sur des serveurs situés aux États-Unis — un transfert couvert par leur propre certification au EU–US Data Privacy Framework et par les clauses contractuelles types de leurs conditions de protection des données.",
           },
           {
             term: 'Cloudflare',
@@ -201,6 +222,13 @@ export const PRIVACY: Record<UiLang, PrivacyDoc> = {
         paragraphs: [
           "Écrivez à {mail} pour savoir ce qui est gardé sur vous, en obtenir une copie, faire corriger quelque chose, ou tout faire supprimer.",
           "Si la réponse ne vous convient pas, vous pouvez saisir la CNIL.",
+        ],
+      },
+      {
+        heading: 'QUI ÉDITE CE SITE',
+        paragraphs: [
+          "Whippin est édité par un particulier, dont l'identité a été communiquée à l'hébergeur ci-dessous — la voie que la loi française laisse ouverte à un site gratuit qui ne vend rien.",
+          'Hébergeur : {host}.',
         ],
       },
     ],

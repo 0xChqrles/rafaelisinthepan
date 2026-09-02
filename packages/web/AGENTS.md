@@ -80,6 +80,9 @@
                               ground-swatch palette picker (#190 wires the entry point)
       screens/Privacy.tsx     `/privacy` (#229): what the game keeps, why, and how to be rid
                               of it — the app's one DOCUMENT, its words in privacyDoc.ts
+      components/LangTitle.tsx  the header's OTHER clickable title: a screen's own name, the
+                              LANGUAGE beside it in the archive day's dress, and the
+                              one-drum `PuzzleSelect` behind it
       screens/FriendInvite.tsx  the #189 invite link's landing (/join/<publicId>): POST the mutual
                               edge with this device's token, then continue into the game. The link
                               players SHARE is /i/<publicId>, served by the backend for its preview
@@ -1037,9 +1040,58 @@ it to the local store — see `packages/backend/AGENTS.md`).
     belongs to an ALTERNATIVE (RESEND), and directly under CONTINUE a boxed one read as a
     second button competing with the lit one. It is the same rule `.btn + .link-quiet-btn`
     already states, one wrapper further out.
-  - **NOT done, and it is the user's call:** there is no self-serve "delete my account", so
-    the notice says to write to the contact address. The page states that plainly rather than
-    implying a button exists.
+  - **TWO VALUES ARE NOT PROSE, and one of them is a PLACEHOLDER.** `PRIVACY_CONTACT` is the
+    SES sender infra already derives; `PRIVACY_HOST` names the site's host, and it must be
+    read off a real AWS invoice before this ships — it is a legal identification, where a
+    plausible guess is worse than none. It exists because the notice takes the LCEN's
+    non-professional route (art. 6-III-2): a free site that sells nothing may keep its
+    publisher's identity with the HOST and publish the host's details instead, which is what
+    lets the page carry no personal name. The day the game earns money it stops qualifying.
+  - **NOT done, and both are the user's call:** there is no self-serve "delete my account"
+    (#207 is filed and specified — when it lands, DELETING IT loses its "no button yet"
+    paragraph and gains the purge delay #207's own scope requires, and ASKING shrinks to the
+    rights a button cannot serve), and the notice states each category's PURPOSE in plain
+    words without naming a legal basis under Art. 6 — the readable half of what Art. 13(1)(c)
+    asks for, left that way deliberately rather than turned into boilerplate.
+
+- **EVERY PAGE CAN CHANGE LANGUAGE (user-decided 2026-09-03).** The game routes always
+  could — `PuzzleTitle`'s selection holds the language beside the daily — and the ACCOUNT
+  AREA could not: `/account` carried a plain name and its steps carried a back control, so a
+  player who landed there in the wrong language had to go back to a game to get out of it.
+  - **`components/LangTitle.tsx` is the other clickable title**: the screen's own name in the
+    header chip, the LANGUAGE beside it in the ARCHIVE DAY's exact dress, the same chevron,
+    and `PuzzleSelect` behind it with the daily drum left out. It wears `.puzzle-title`,
+    which is the dress of BOTH titles rather than the puzzle one's alone — the row's phone
+    step-downs are tuned on that class, and a second class beside it would be three more
+    overrides nothing forces to agree. `.puzzle-title-day` became `.title-tag` for the same
+    reason: the day and the language are one KIND of value (which of a thing), so they are
+    one class.
+  - **`PuzzleSelect` takes `mode: Mode | null`.** Null is the language-only face — same
+    screen, same drum, same fold — and what differs is what the FOLD does: a daily and a
+    language are both in the game's URL, so picking them NAVIGATES, while the account area's
+    routes are global and the pick is the PREFERENCE every screen there reads its chrome
+    language from (`lastLang` → `resolveHomeLang`), so the page re-renders where it stands.
+    One component, because the two faces differ by which drums render and one branch in the
+    fold.
+  - **`HeaderBack` IS THE ARROW ALONE now.** It carried the screen's NAME as one target
+    (2026-08-29), which was right while the name said only which screen you were on; the
+    name opens a wheel now, and one target cannot do both. The arrow takes the retired
+    control's own geometry minus its word — 44px of height around the glyph, pulled back to
+    the row's left edge — rather than `.ps-back`'s `--hud-height` square, which cost the
+    title 12px it did not have.
+  - **THE ROW IS AT ITS LIMIT, and the LANGUAGE TAG is what gives.** A step's left slot holds
+    FOUR things beside a five-key group that may never shrink, and French runs ~20% longer:
+    measured, SAUVEGARDE and VIE PRIVÉE ran 7px into the keys at 360 and 18px at 320. Three
+    things bought it back — the ≤340 title compressions moved up to ≤400 (that block was
+    tuned for a game route, whose slot holds ONE control), `SAVE ACCOUNT` shortened to `SAVE`
+    / `SAUVEGARDE` (`linkTitleReturn`'s own 2026-08-31 finding, one door over), and
+    **`.lang-tag` hidden below 375px**: the honest order is the name, then the affordance,
+    then which value it holds, and nothing is lost that the page is not already saying in
+    that language. 374 is measured, not chosen — 375 is the iPhone SE/6/7/8 width and the
+    longest French title still fits there. The archive DAY keeps its tag at every width (no
+    back arrow beside it, and the day is the abnormal state a route must always label).
+    Residue, accepted: at 341–359 — a band no shipping device sits in — the two longest
+    French titles ellipsise by 6px.
 
 - **Local storage is an OUTBOX; a capped round ends at ∞ (#214).** The product contract —
   the three values, the load order, what the cap means, the share token, what was removed —

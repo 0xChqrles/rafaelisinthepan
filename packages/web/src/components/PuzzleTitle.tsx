@@ -76,7 +76,7 @@ export default function PuzzleTitle({
         onClick={() => setOpen(true)}
       >
         <span className="topbar-title">{name}</span>
-        {day !== null && <span className="puzzle-title-day">{day}</span>}
+        {day !== null && <span className="title-tag">{day}</span>}
         <ChevronDownIcon className="ui-icon" aria-hidden />
       </button>
       {open && (

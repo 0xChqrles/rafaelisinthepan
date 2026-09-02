@@ -197,7 +197,12 @@ const STRINGS = {
   // `accountTitle`, its PARENT's. On the returning door that left a screen whose entire
   // text was the word CONTINUE: a churning tile, an unlabelled field, and a header naming
   // somewhere else. The door's declared intention is the one thing it can honestly say.
-  linkTitleSave: { en: 'SAVE ACCOUNT', fr: 'SAUVEGARDER' },
+  // SAVE / SAUVEGARDE, shortened 2026-09-03 when the language joined the title: `SAVE
+  // ACCOUNT` is 12 glyphs, and the row holds ~9 beside a back arrow, a language tag and a
+  // chevron. It is `linkTitleReturn`'s own finding one door over (SE CONNECTER → CONNEXION,
+  // 2026-08-31) — and it leaves the two doors a matched pair in each language: a verb and a
+  // verb phrase in English, two nouns in French.
+  linkTitleSave: { en: 'SAVE', fr: 'SAUVEGARDE' },
   // fr CONNEXION rather than SE CONNECTER (2026-08-31): the title has ONE size on every
   // screen, and at 320px the longer spelling ran into the header's fixed five keys.
   linkTitleReturn: { en: 'SIGN IN', fr: 'CONNEXION' },
@@ -443,6 +448,11 @@ const STRINGS = {
   // three separate controls in three places — a centred segmented switcher, a date chip and
   // a language chip — which is what left the row with no space and the account with no door.
   puzzleMenu: { en: 'Change puzzle', fr: 'Changer de puzzle' },
+  // THE SAME SELECTION WITH ONE DRUM (2026-09-03): a screen that is not a puzzle has no
+  // daily to name, so what hangs off its title is the LANGUAGE alone — and it says so, or a
+  // reader who cannot see the screen is told they are about to change a puzzle that is not
+  // there.
+  langMenu: { en: 'Change language', fr: 'Changer de langue' },
   // The DAY row. It flips: from today it offers the calendar, from the calendar (or a past
   // day) it offers the way back to the live one.
   share: { en: 'SHARE', fr: 'PARTAGER' },

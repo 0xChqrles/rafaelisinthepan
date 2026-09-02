@@ -48,6 +48,7 @@ import Avatar from '../components/Avatar';
 import Button from '../components/Button';
 import ChevronRightIcon from '../assets/icons/chevron-right.svg?react';
 import DeviceList from '../components/DeviceList';
+import LangTitle from '../components/LangTitle';
 import { HeaderLeft } from '../components/TopBar';
 import { useDeviceIdentity } from '../identity';
 import { t } from '../i18n';
@@ -114,7 +115,7 @@ export default function Account() {
           editor and the email doors, keep theirs). Nothing remembers where this screen
           was opened from any more: every place is one tap away in the row. */}
       <HeaderLeft>
-        <span className="topbar-title">{t(lang, 'accountTitle')}</span>
+        <LangTitle lang={lang} title={t(lang, 'accountTitle')} />
       </HeaderLeft>
       <div className="account-screen">
         {/* THE ROW — the identity as the page's masthead. The face holds its boxes until

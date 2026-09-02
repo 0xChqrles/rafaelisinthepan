@@ -28,6 +28,7 @@ import { t } from '../i18n';
 import Avatar from '../components/Avatar';
 import LoadError from '../components/LoadError';
 import LoadingWave from '../components/LoadingWave';
+import LangTitle from '../components/LangTitle';
 import { HeaderBack, HeaderLeft } from '../components/TopBar';
 import { useGameStore } from '../state/gameStore';
 // Inline SVG (vite-plugin-svgr): the close control back to the leaderboard, painting
@@ -505,11 +506,8 @@ export default function Profile() {
           the editor could be entered from either board, and the account screen is where
           that choice now lives. */}
       <HeaderLeft>
-        <HeaderBack
-          title={t(lang, 'profileTitle')}
-          label={t(lang, 'ariaBack')}
-          onBack={() => navigate(ACCOUNT_PATH)}
-        />
+        <HeaderBack label={t(lang, 'ariaBack')} onBack={() => navigate(ACCOUNT_PATH)} />
+        <LangTitle lang={lang} title={t(lang, 'profileTitle')} />
       </HeaderLeft>
       {load === 'loading' && (
         <p className="status">

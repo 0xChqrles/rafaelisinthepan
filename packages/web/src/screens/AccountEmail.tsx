@@ -78,6 +78,7 @@ import Button from '../components/Button';
 import CodeInput from '../components/CodeInput';
 import ErrorScreen from '../components/ErrorScreen';
 import LoadingWave from '../components/LoadingWave';
+import LangTitle from '../components/LangTitle';
 import { HeaderBack, HeaderLeft } from '../components/TopBar';
 import {
   adoptLinkedAccount,
@@ -663,7 +664,6 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           thing either door can honestly call itself. */}
       <HeaderLeft>
         <HeaderBack
-          title={t(lang, returning ? 'linkTitleReturn' : 'linkTitleSave')}
           label={t(lang, 'ariaBack')}
           // BACK IS A STEP, not an exit, wherever there is a step to take: from the code
           // it returns to the ADDRESS — which is what the quiet CHANGE ADDRESS button used
@@ -676,6 +676,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             backToAddress();
           }}
         />
+        <LangTitle lang={lang} title={t(lang, returning ? 'linkTitleReturn' : 'linkTitleSave')} />
       </HeaderLeft>
       <div className="account-screen link-step">
         <p className="sr-only" role="status">

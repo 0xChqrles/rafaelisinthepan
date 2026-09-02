@@ -7,6 +7,7 @@ import useModalDismiss from '../hooks/useModalDismiss';
 import { t } from '../i18n';
 import { LANGS, pathForArchive, pathForMode, type LangCode, type Mode } from '../langs';
 import { navigate } from '../routing';
+import { useGameStore } from '../state/gameStore';
 
 // THE SELECTION BEHIND THE TITLE (user-decided 2026-09-02, over four passes). The title is
 // a HELD WORD — it wears the sentence chip — and what opens under it is the hole wheel's
@@ -45,6 +46,19 @@ import { navigate } from '../routing';
 // a left chevron as a back icon on the header"), the title's own chevron turned to point
 // the way out, rather than the modals' ✕. A native <dialog> on `useModalDismiss`, so the
 // screen under it is inert.
+//
+// **ONE DRUM, ON A SCREEN THAT IS NOT A PUZZLE** (user-decided 2026-09-03: every page of the
+// game should be able to switch language, and the account area could not). `mode: null` is
+// that face: the LANGUAGE alone, same screen, same drum, same fold. It is one component
+// rather than two because a second language wheel would be a second set of physics, a second
+// dress and a second thing to keep in step with this one — and the difference between the two
+// faces is genuinely two lines (which drums render, and what the fold does).
+//
+// What the FOLD does differs because the two axes are not the same kind of fact. A daily and
+// a language are both IN the game's URL, so picking them is a NAVIGATION; the account area's
+// routes are GLOBAL — an identity is not language-scoped — so there is no URL to move to and
+// the pick is a PREFERENCE: `lastLang`, which is exactly what every screen of that area reads
+// its chrome language from (`resolveHomeLang`), and where the `/` redirect will land.
 
 // The air between rows, and between the two drums.
 const GAP = 14;
@@ -60,14 +74,17 @@ const MODES: { mode: Mode; key: 'modeSentence' | 'modeWord' }[] = [
 export default function PuzzleSelect({
   lang,
   mode,
-  onArchive,
+  onArchive = false,
   onClose,
 }: {
   lang: LangCode;
-  mode: Mode;
-  onArchive: boolean;
+  // NULL is the language-only face: a screen that is not a puzzle has no daily to name.
+  mode: Mode | null;
+  onArchive?: boolean;
   onClose: () => void;
 }) {
+  // Which question is on screen — it decides the drums, the fold and the dialog's own name.
+  const puzzle = mode !== null;
   // FIRST hook, per the contract: a closed <dialog> is `display: none`, and the row height
   // is measured below.
   const { closing, beginClose, dialogProps } = useModalDismiss('select-out');
@@ -91,6 +108,8 @@ export default function PuzzleSelect({
   const modeTrack = useRef<HTMLDivElement>(null);
   const langBox = useRef<HTMLDivElement>(null);
   const langTrack = useRef<HTMLDivElement>(null);
+  // The mode drum is still HOOKED when it is not drawn (hooks are unconditional) — with no
+  // box in the tree `useDrum` binds no listener, so it sits inert.
   const modeIndex = Math.max(0, MODES.findIndex((m) => m.mode === mode));
   const langIndex = Math.max(0, LANGS.findIndex((l) => l.code === lang));
   const modeDrum = useDrum({
@@ -130,8 +149,14 @@ export default function PuzzleSelect({
   useEffect(() => {
     if (!closing || moved.current) return;
     moved.current = true;
-    const m = MODES[modeDrum.peek()]?.mode ?? mode;
     const l = LANGS[langDrum.peek()]?.code ?? lang;
+    // A screen that is not a puzzle has no URL to move to: the pick is the PREFERENCE every
+    // global route reads its chrome language from, so the page re-renders where it stands.
+    if (mode === null) {
+      if (l !== lang) useGameStore.getState().setLastLang(l);
+      return;
+    }
+    const m = MODES[modeDrum.peek()]?.mode ?? mode;
     if (m !== mode || l !== lang) navigate(onArchive ? pathForArchive(l, m) : pathForMode(l, m));
   }, [closing, lang, langDrum, mode, modeDrum, onArchive]);
 
@@ -142,14 +167,15 @@ export default function PuzzleSelect({
       const inLang = langBox.current?.contains(document.activeElement) ?? false;
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         e.preventDefault();
-        (inLang ? langDrum : modeDrum).glideBy(e.key === 'ArrowDown' ? 1 : -1);
-      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        (inLang || !puzzle ? langDrum : modeDrum).glideBy(e.key === 'ArrowDown' ? 1 : -1);
+        // With ONE drum there is nowhere to hand focus across.
+      } else if (puzzle && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
         e.preventDefault();
         const box = (e.key === 'ArrowRight' ? langBox : modeBox).current;
         box?.querySelector<HTMLElement>('[aria-current="true"]')?.focus({ preventScroll: true });
       }
     },
-    [langDrum, modeDrum],
+    [langDrum, modeDrum, puzzle],
   );
 
   // A drum: the slot sits in the middle of `VISIBLE` rows, so row i is in it at
@@ -192,7 +218,7 @@ export default function PuzzleSelect({
     <dialog
       {...dialogProps}
       className={`wheel-dialog puzzle-select${closing ? ' closing' : ''}`}
-      aria-label={t(lang, 'puzzleMenu')}
+      aria-label={t(lang, puzzle ? 'puzzleMenu' : 'langMenu')}
       onClose={onClose}
       onKeyDown={onKeyDown}
       onClick={(e) => {
@@ -231,19 +257,20 @@ export default function PuzzleSelect({
       </span>
       {ready && (
         <div className="ps-cols">
-          {drum(
-            MODES.map((m) => ({ key: m.mode, label: t(lang, m.key).toUpperCase() })),
-            modeDrum,
-            modeBox,
-            modeTrack,
-            0,
-          )}
+          {puzzle &&
+            drum(
+              MODES.map((m) => ({ key: m.mode, label: t(lang, m.key).toUpperCase() })),
+              modeDrum,
+              modeBox,
+              modeTrack,
+              0,
+            )}
           {drum(
             LANGS.map((l) => ({ key: l.code, label: l.native.toUpperCase() })),
             langDrum,
             langBox,
             langTrack,
-            1,
+            puzzle ? 1 : 0,
           )}
         </div>
       )}

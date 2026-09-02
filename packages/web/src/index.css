@@ -978,7 +978,12 @@ button {
   max-width: 100%;
   display: inline-flex;
   align-items: center;
-  gap: 14px;
+  /* The ONE seam this track ever has: the back ARROW and the title beside it (every other
+     screen puts a single control here). 6px is the rhythm the retired single-target back
+     control used between its own chevron and its word — the same picture, now two controls
+     — and the 14px it replaces was 8px the title could not spare once the language joined
+     it (measured 2026-09-03: SAUVEGARDER and VIE PRIVÉE both ellipsised at 360). */
+  gap: 6px;
   height: var(--hud-height);
   padding: 0 4px;
   pointer-events: auto;
@@ -1143,8 +1148,8 @@ button {
   min-width: 0;
   gap: 6px;
   /* A <button> inherits NO font, and `.topbar-title` sets only a size and a weight — so
-     without this the daily's name renders in the UA's Arial while every other chrome
-     label is the app's mono. The same fix `.topbar-back` carries, for the same reason. */
+     without this the title renders in the UA's Arial while every other chrome label is the
+     app's mono. */
   font: inherit;
   background: transparent;
   border: 0;
@@ -1160,22 +1165,25 @@ button {
   text-overflow: ellipsis;
 }
 /* Hover and press answer on the CHIP, the hole's own way (the hole's exact mixes): a
-   white chip cannot brighten, so it dims a step instead. Both clickable titles. */
-.puzzle-title:hover .topbar-title,
-.topbar-back:hover .topbar-title {
+   white chip cannot brighten, so it dims a step instead. `.puzzle-title` is the dress of
+   BOTH clickable titles — the daily's and, since 2026-09-03, every other screen's
+   (`LangTitle`) — so the three phone step-downs below are tuned once and cannot drift. The
+   back ARROW is no longer one of them: it holds no chip, and answers in its own ink. */
+.puzzle-title:hover .topbar-title {
   background: color-mix(in srgb, var(--fg) 80%, var(--bg));
 }
-.puzzle-title:active .topbar-title,
-.topbar-back:active .topbar-title {
+.puzzle-title:active .topbar-title {
   background: color-mix(in srgb, var(--fg) 68%, var(--bg));
 }
 .puzzle-title .ui-icon {
   flex: none;
 }
-/* THE DAY, and only on a day that is not today (PuzzleTitle's rule: the abnormal state
-   is the one that is labelled). Quieter than the name it qualifies — it is which of a
-   thing, not what the thing is — and OUTSIDE the chip, like an exponent. */
-.puzzle-title-day {
+/* WHICH OF A THING, beside the name of it: the DAY on an archive route (PuzzleTitle's rule —
+   the abnormal state is the one that is labelled) and, since 2026-09-03, the LANGUAGE on
+   every screen that is not a puzzle (`LangTitle`). ONE class, because they are one kind of
+   value: quieter than the name it qualifies — it is which of a thing, not what the thing is
+   — and OUTSIDE the chip, like an exponent. */
+.title-tag {
   /* Same size as the name (one title size — stated here because the day no longer sits
      inside the chip's own rule and would inherit the body's 16px), quieter in ink, weight
      — and tracking: a qualifier set as tight as its headline reads as a second headline. */
@@ -3526,6 +3534,19 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     padding: 4px 2px 4px 0;
     gap: 4px;
   }
+  /* AND THE TITLE'S LAST AIR, moved up from ≤340 on 2026-09-03. That block was tuned for a
+     GAME route, whose left slot holds one control; the account area's STEPS hold four
+     things — a back arrow, the name, the language and a chevron — so they saturate the
+     track ~40px earlier. The chip's own padding and the tag's tracking are what the ≤340
+     comment already calls the last things that can give; they simply have to give sooner.
+     Measured at 341, the worst width (the keys are still 32px there and none of the ≤340
+     air has arrived): SAUVEGARDE ran 31px into the keys, 14px after this. */
+  .topbar .topbar-title {
+    padding: 5px 5px 4px;
+  }
+  .title-tag {
+    letter-spacing: 0;
+  }
 }
 /* FIVE keys plus a dated title at 320px: SENTENCE AUG 29 beside 5 × 32 + gaps wants
    more than the 316px content box holds at the base gaps. The gaps step down first (a row
@@ -3556,18 +3577,23 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     margin-left: 2px;
   }
   /* SENTENCE AUG 29 at the one title size was still 6px over at 320: the title's own
-     padding, the chip's, and the day's tracking are the last things that can give. */
+     padding is the last of it (the chip's and the tag's tracking give at 400 now, above). */
   .puzzle-title {
     padding: 4px 0;
     gap: 3px;
   }
-  .topbar .topbar-title {
-    padding: 5px 5px 4px;
-  }
-  .puzzle-title-day {
-    letter-spacing: 0;
+}
+/* THE LANGUAGE TAG IS THE FIRST THING TO GIVE (2026-09-03; `LangTitle` holds the reasoning).
+   374px is measured, not chosen: at 375 — the iPhone SE/6/7/8 width — the longest French
+   title still fits beside the tag, and below it VIE PRIVÉE and SAUVEGARDE start eating into
+   the keys. The archive DAY keeps its own tag at every width: that title has no back arrow
+   beside it, and the day is the abnormal state a route must always label. */
+@media (max-width: 374px) {
+  .lang-tag {
+    display: none;
   }
 }
+
 /* On the narrowest phones, compress the header's own side padding too. */
 @media (max-width: 340px) {
   .topbar-inner {
@@ -5361,49 +5387,38 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   color: var(--muted);
 }
 
-/* THE HEADER'S BACK CONTROL (user-decided 2026-08-29): the arrow and the screen's NAME as
-   ONE target, in the left slot where a back control belongs and where the eye already is.
-   It replaces the title rather than sitting beside it, so the row's measured width budget
-   is unchanged — the icon takes the place of the tracking the title used to have. */
-.topbar-back {
+/* THE HEADER'S BACK CONTROL (user-decided 2026-08-29; the ARROW ALONE since 2026-09-03).
+   It carried the screen's NAME as one target until the name grew a job of its own — the
+   LANGUAGE, and the selection behind it (`LangTitle`) — and one target cannot both leave a
+   screen and open a wheel. So the arrow moved into the KEYS' own square, which is the size
+   `.ps-back` has always used for exactly this glyph: the negative-margin trick that gave the
+   old control its 44px only worked because there was a WORD inside the box to pull back out
+   to the row's left edge, and there is no word in it now. `.home-btn` supplies the box; this
+   pulls it back to that edge (a bare glyph in a 38px square otherwise starts a quarter of a
+   square inboard of every other screen's title) and keeps the ink at full strength. */
+.header-back {
   display: flex;
   align-items: center;
-  gap: 6px;
-  /* A finger's target around type that stays small: the padding is pulled back out with a
-     negative margin so the visible word still starts on the row's own left edge. */
-  padding: 12px 10px 12px 0;
-  margin: -12px 0;
+  flex: none;
+  /* The RETIRED control's own geometry with its word taken out: 44px of height around a
+     glyph that stays small, and the padding pulled back out with a negative margin so the
+     chevron still starts on the row's own left edge. It began as a `--hud-height` square
+     (`.ps-back`'s shape) and that cost the title 12px it did not have — a key's box is
+     sized for a 20px drawing, and this is a 14px mark with a title waiting beside it. */
+  padding: 12px 10px 12px 4px;
+  margin: -12px 0 -12px -4px;
   border: 0;
   background: none;
-  /* `font: inherit`: a BUTTON brings its own font
-     and inherits none of the page's, so `.topbar-title` — which sets a size, a weight and a
-     tracking but no FAMILY — was resolving to the UA's Arial inside here while the same
-     class rendered in Azeret Mono on every other header. Same 14px, same 500, same 0.08em,
-     visibly a different word. Only the family was ever wrong, and inheriting the whole font
-     context is what guarantees the two cannot drift again. */
-  font: inherit;
   color: var(--fg);
   cursor: pointer;
   transition: color 120ms;
 }
-/* The back control is the left track's content, and that track is the one that gives
-   ground (the keys may never shrink): with the fixed five-key row beside it, SE
-   CONNECTER at the base size ran 24px INTO the keys at 320px (2026-08-31). It takes the
-   title's own phone step-downs above, and as a floor it ellipsises rather than overlaps. */
-.topbar-back {
-  min-width: 0;
+.header-back:hover {
+  color: var(--muted);
 }
-.topbar-back .topbar-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* The back chevron is the title's own 7×7 pixel chevron at 2px a cell — its in-file
-   size; forcing a square here would put it off the cell grid and blur it. */
-.topbar-back .ui-icon {
+.header-back .ui-icon {
   flex: none;
 }
-/* Its hover is the chip's (see `.puzzle-title:hover .topbar-title`); the arrow keeps
-   its ink. */
 
 /* ── THREE ROLES, TOLD APART ON THREE AXES (user-decided 2026-08-29) ───────────────────
    The area's small type was one size and nearly one colour, so an EXPLANATION, an ERROR and
