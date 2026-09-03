@@ -38,7 +38,8 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
                                 personality, podium comments (validated, retried, degrade to none)
     src/chat/                   addressed conversation: trigger (mention/reply/name), ceilings (limits),
                                 in-memory recent context, durable social memory, read-only tools + name
-                                resolution, the bounded tool-loop agent
+                                resolution (one window constant: a tool never promises days it
+                                cannot read), the bounded tool-loop agent
     src/whatsapp/               the Baileys boundary: inbound mapping, durable auth (DynamoDB), the
                                 single-session lease + the keeper that stops a holder whose renewals
                                 stop landing, the socket wrapper (reconnect/stop policy), metrics
@@ -86,10 +87,14 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   REDELIVERY and nothing longer-lived, so it wears the table's TTL (30 days) rather than
   accumulating a permanent row per message ever sent. ONE reaction per MESSAGE, for the
   best result it carried — the id is keyed by the message, and WhatsApp holds one reaction
-  per account anyway. A leader row moves on every improvement and on a REPLAY, so history
-  cannot make a later share announce a lead it does not hold; only a change of HOLDER is
-  announced, read from what the write DISPLACED rather than from a stale read
-  (`leader.ts` says why).
+  per account anyway. A leader row is keyed by (group, LANGUAGE, day) and moves on every
+  improvement and on a REPLAY, so history cannot make a later share announce a lead it does
+  not hold; only a change of HOLDER is announced, read from what the write DISPLACED rather
+  than from a stale read (`leader.ts` says why). A claim that fails is logged and dropped —
+  the announcement is decoration, the acknowledgement is not. **The consumer does not
+  receive while the socket is down**: a redelivery counts against the queue's
+  `maxReceiveCount`, so pulling what cannot be sent turns a reconnection into a
+  dead-letter alarm.
 - **Conversation is opt-in per message**: mention, reply-to-bot, or a leading `chat.name`.
   Nothing else reaches the model. Ceilings: per sender/day and per group/day (config), each
   charged once per QUESTION and only once there is one to answer; plus

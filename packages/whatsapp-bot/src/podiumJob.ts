@@ -116,6 +116,11 @@ async function buildDeps(): Promise<PodiumJobDeps> {
 }
 
 export async function handler(event: PodiumJobEvent): Promise<PodiumJobResult> {
-  deps ??= buildDeps();
+  // A REJECTED promise must not be the cache: an SSM blip on the first invocation would
+  // otherwise fail every later one for the life of the container, long after the cause.
+  deps ??= buildDeps().catch((error) => {
+    deps = undefined;
+    throw error;
+  });
   return runPodiumJob(event, await deps);
 }

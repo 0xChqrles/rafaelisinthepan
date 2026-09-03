@@ -24,18 +24,32 @@ import {
 
 export type LeadOutcome = 'first' | 'took_lead' | 'unchanged';
 
-export interface LeaderStore {
-  claim(group: string, dayNumber: number, sender: string, score: number): Promise<LeadOutcome>;
+export interface LeadClaim {
+  group: string;
+  // The daily this row ranks. Scoped like every READ of the declarations (`inLanguage`):
+  // without it, a group that changes language would have the old daily's best gate the new
+  // one's announcements, comparing try counts from two different puzzles.
+  lang: string;
+  dayNumber: number;
+  sender: string;
+  score: number;
 }
 
-export function leaderKey(group: string, dayNumber: number) {
-  return { pk: { S: `GROUP#${group}` }, sk: { S: `LEAD#${String(dayNumber).padStart(6, '0')}` } };
+export interface LeaderStore {
+  claim(claim: LeadClaim): Promise<LeadOutcome>;
+}
+
+export function leaderKey(group: string, lang: string, dayNumber: number) {
+  return {
+    pk: { S: `GROUP#${group}` },
+    sk: { S: `LEAD#${lang}#${String(dayNumber).padStart(6, '0')}` },
+  };
 }
 
 export function dynamoLeaderStore(client: DynamoDBClient, tableName: string): LeaderStore {
   return {
-    async claim(group, dayNumber, sender, score) {
-      const key = leaderKey(group, dayNumber);
+    async claim({ group, lang, dayNumber, sender, score }) {
+      const key = leaderKey(group, lang, dayNumber);
       const current = (await client.send(new GetItemCommand({ TableName: tableName, Key: key })))
         .Item;
       const previousScore = current ? Number(current.score?.N) : undefined;
@@ -74,8 +88,8 @@ export function dynamoLeaderStore(client: DynamoDBClient, tableName: string): Le
 export function memoryLeaderStore(): LeaderStore {
   const rows = new Map<string, { sender: string; score: number }>();
   return {
-    async claim(group, dayNumber, sender, score) {
-      const key = `${group}#${dayNumber}`;
+    async claim({ group, lang, dayNumber, sender, score }) {
+      const key = `${group}#${lang}#${dayNumber}`;
       const current = rows.get(key);
       if (current && current.score <= score) return 'unchanged';
       rows.set(key, { sender, score });

@@ -3,7 +3,7 @@ import { GroupRegistry, parseGroupConfig } from '../config/groupConfig';
 import { createLog, redactJids, type Log } from '../log';
 import { commandIds, parseCommand, type OutboundCommand } from './commands';
 import { memorySentStore } from './dedupStore';
-import { createDispatcher } from './dispatcher';
+import { createDispatcher, runConsumer } from './dispatcher';
 
 const GROUP = '120363000000000001@g.us';
 const groups = new GroupRegistry([
@@ -107,4 +107,24 @@ describe('outbound dispatcher (#236)', () => {
   ])('refuses %s', (_, body) => {
     expect(parseCommand(JSON.stringify(body))).toBeNull();
   });
+
+  it('does not RECEIVE while the socket is closed — a redelivery is a step toward the DLQ', async () => {
+    const receive = vi.fn(async () => []);
+    const abort = new AbortController();
+    let open = false;
+    const consumer = runConsumer(
+      { receive, settle: async () => {} },
+      { dispatch: async () => 'sent' as const },
+      log,
+      abort.signal,
+      () => open,
+    );
+    await new Promise((r) => setTimeout(r, 50));
+    expect(receive).not.toHaveBeenCalled();
+    open = true;
+    await new Promise((r) => setTimeout(r, 1_200));
+    expect(receive).toHaveBeenCalled();
+    abort.abort();
+    await consumer;
+  }, 10_000);
 });

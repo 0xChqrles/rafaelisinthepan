@@ -21,33 +21,40 @@ const puts = (send: ReturnType<typeof answering>) =>
 describe('the new-leader event (#236)', () => {
   it('announces a change of HOLDER — never the first share, never a tie', async () => {
     const store = memoryLeaderStore();
-    expect(await store.claim(GROUP, DAY, GAB, 10)).toBe('first');
-    expect(await store.claim(GROUP, DAY, ZOU, 4)).toBe('took_lead');
-    expect(await store.claim(GROUP, DAY, GAB, 4)).toBe('unchanged');
-    expect(await store.claim(GROUP, DAY, GAB, 9)).toBe('unchanged');
+    expect(await store.claim({ group: GROUP, lang: 'fr', dayNumber: DAY, sender: GAB, score: 10 })).toBe('first');
+    expect(await store.claim({ group: GROUP, lang: 'fr', dayNumber: DAY, sender: ZOU, score: 4 })).toBe('took_lead');
+    expect(await store.claim({ group: GROUP, lang: 'fr', dayNumber: DAY, sender: GAB, score: 4 })).toBe('unchanged');
+    expect(await store.claim({ group: GROUP, lang: 'fr', dayNumber: DAY, sender: GAB, score: 9 })).toBe('unchanged');
   });
 
   it('moves the row on a self-improvement, so the next player is judged against it', async () => {
     const store = memoryLeaderStore();
-    await store.claim(GROUP, DAY, GAB, 10);
+    await store.claim({ group: GROUP, lang: 'fr', dayNumber: DAY, sender: GAB, score: 10 });
     // Gab improving their own lead is not news…
-    expect(await store.claim(GROUP, DAY, GAB, 5)).toBe('unchanged');
+    expect(await store.claim({ group: GROUP, lang: 'fr', dayNumber: DAY, sender: GAB, score: 5 })).toBe('unchanged');
     // …but it IS the day's best: 7 is two behind it and takes no lead.
-    expect(await store.claim(GROUP, DAY, ZOU, 7)).toBe('unchanged');
-    expect(await store.claim(GROUP, DAY, ZOU, 3)).toBe('took_lead');
+    expect(await store.claim({ group: GROUP, lang: 'fr', dayNumber: DAY, sender: ZOU, score: 7 })).toBe('unchanged');
+    expect(await store.claim({ group: GROUP, lang: 'fr', dayNumber: DAY, sender: ZOU, score: 3 })).toBe('took_lead');
   });
 
-  it('keeps days and groups apart', async () => {
+  it('keeps days, groups and LANGUAGES apart', async () => {
     const store = memoryLeaderStore();
-    await store.claim(GROUP, DAY, GAB, 5);
-    expect(await store.claim(GROUP, DAY + 1, ZOU, 9)).toBe('first');
-    expect(await store.claim('120363000000000002@g.us', DAY, ZOU, 9)).toBe('first');
+    await store.claim({ group: GROUP, lang: 'fr', dayNumber: DAY, sender: GAB, score: 5 });
+    expect(await store.claim({ group: GROUP, lang: 'fr', dayNumber: DAY + 1, sender: ZOU, score: 9 })).toBe('first');
+    expect(
+      await store.claim({ group: '120363000000000002@g.us', lang: 'fr', dayNumber: DAY, sender: ZOU, score: 9 }),
+    ).toBe('first');
+    // A group that changed language starts a fresh row: an `en` best must not gate an
+    // `fr` announcement, since the two numbers count tries at different puzzles.
+    expect(
+      await store.claim({ group: GROUP, lang: 'en', dayNumber: DAY, sender: ZOU, score: 9 }),
+    ).toBe('first');
   });
 
   it('the DynamoDB store WRITES the self-improvement it declines to announce', async () => {
     const send = answering({ sender: { S: GAB }, score: { N: '10' } });
     const store = dynamoLeaderStore({ send } as unknown as DynamoDBClient, 'bot');
-    expect(await store.claim(GROUP, DAY, GAB, 5)).toBe('unchanged');
+    expect(await store.claim({ group: GROUP, lang: 'fr', dayNumber: DAY, sender: GAB, score: 5 })).toBe('unchanged');
     const [put] = puts(send) as PutItemCommand[];
     expect(put.input.Item?.score).toEqual({ N: '5' });
     expect(put.input.Item?.sender).toEqual({ S: GAB });
@@ -57,7 +64,7 @@ describe('the new-leader event (#236)', () => {
   it('the DynamoDB store writes nothing for a score no better than what stands', async () => {
     const send = answering({ sender: { S: GAB }, score: { N: '3' } });
     const store = dynamoLeaderStore({ send } as unknown as DynamoDBClient, 'bot');
-    expect(await store.claim(GROUP, DAY, ZOU, 8)).toBe('unchanged');
+    expect(await store.claim({ group: GROUP, lang: 'fr', dayNumber: DAY, sender: ZOU, score: 8 })).toBe('unchanged');
     expect(puts(send)).toHaveLength(0);
   });
 
@@ -71,13 +78,13 @@ describe('the new-leader event (#236)', () => {
         : { Attributes: { sender: { S: GAB }, score: { N: '9' } } },
     );
     const store = dynamoLeaderStore({ send } as unknown as DynamoDBClient, 'bot');
-    expect(await store.claim(GROUP, DAY, ZOU, 4)).toBe('took_lead');
+    expect(await store.claim({ group: GROUP, lang: 'fr', dayNumber: DAY, sender: ZOU, score: 4 })).toBe('took_lead');
   });
 
   it('the DynamoDB store reports a real change of holder', async () => {
     const send = answering({ sender: { S: GAB }, score: { N: '9' } });
     const store = dynamoLeaderStore({ send } as unknown as DynamoDBClient, 'bot');
-    expect(await store.claim(GROUP, DAY, ZOU, 4)).toBe('took_lead');
+    expect(await store.claim({ group: GROUP, lang: 'fr', dayNumber: DAY, sender: ZOU, score: 4 })).toBe('took_lead');
     expect(puts(send)).toHaveLength(1);
   });
 });

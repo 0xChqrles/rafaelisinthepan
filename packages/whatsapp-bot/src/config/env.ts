@@ -3,6 +3,8 @@
 // stack sets; SECRETS never do (the environment carries a Parameter Store NAME, and the
 // key is read at runtime — the backend's own rule).
 
+import { fileURLToPath } from 'node:url';
+
 export interface LlmEnv {
   provider: string; // BOT_LLM_PROVIDER, e.g. "deepseek"
   model: string; // BOT_LLM_MODEL, e.g. "deepseek-v4-flash"
@@ -28,6 +30,15 @@ function required(env: NodeJS.ProcessEnv, name: string): string {
   return value;
 }
 
+// Where the committed group files are when nobody says otherwise: the SOURCE tree, which
+// is what `pnpm bot:start` and `pnpm bot:pair` run from. Both DEPLOYED forms set
+// BOT_GROUPS_DIR outright — the image copies the files to /app/…, the Lambda bundle keeps
+// them beside its handler — because resolved from a bundle this path lands beside the
+// bundle instead, where there is nothing.
+function sourceGroupsDir(): string {
+  return fileURLToPath(new URL('../../groups', import.meta.url));
+}
+
 export function loadEnv(env: NodeJS.ProcessEnv = process.env): BotEnv {
   const ceiling = Number(env.BOT_LLM_DAILY_CALL_CEILING ?? 500);
   if (!Number.isFinite(ceiling) || ceiling < 0) {
@@ -36,7 +47,7 @@ export function loadEnv(env: NodeJS.ProcessEnv = process.env): BotEnv {
   return {
     table: required(env, 'BOT_TABLE'),
     outboundQueueUrl: env.BOT_OUTBOUND_QUEUE_URL || undefined,
-    groupsDir: env.BOT_GROUPS_DIR || new URL('../../groups', import.meta.url).pathname,
+    groupsDir: env.BOT_GROUPS_DIR || sourceGroupsDir(),
     siteOrigin: (env.BOT_SITE_ORIGIN || 'https://whippin.ai').replace(/\/+$/, ''),
     metricsNamespace: env.BOT_METRICS_NAMESPACE || undefined,
     llm: {

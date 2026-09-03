@@ -83,10 +83,25 @@ async function main(): Promise<void> {
     log.error({ event: 'lease.held' }, 'another process holds the WhatsApp session; refusing to start');
     process.exit(1);
   }
+  // RENEWED FROM HERE, not from after the socket is up: the auth read, the SSM fetch and
+  // the WhatsApp handshake in between can outlast the lease's own grace window, and an
+  // unrenewed lease is one another process may take while this one is still opening a
+  // socket against the same device.
+  keeper = keepLease(lease, {
+    onLost(reason) {
+      log.error({ event: 'lease.lost', reason }, 'the session lease is gone; stopping');
+      void shutdown(1);
+    },
+    onError: (error, staleMs) =>
+      log.warn({ event: 'lease.renew_failed', staleMs, error: error.message }, 'renew failed'),
+  });
 
   const auth = await useDynamoAuthState(dynamo, env.table);
   if (!auth.state.creds.registered) {
     log.error({ event: 'auth.unpaired' }, 'no paired device in the durable store; run `pnpm bot:pair`');
+    // Stopped BEFORE the release, or the next renew would take back the lease this idle
+    // process has just given up.
+    keeper.stop();
     await lease.release();
     await idleUntilOperator(
       async () => (await useDynamoAuthState(dynamo, env.table)).state.creds.registered,
@@ -189,16 +204,7 @@ async function main(): Promise<void> {
     groups,
     log,
   });
-  void runConsumer(source, dispatcher, log, abort.signal);
-
-  keeper = keepLease(lease, {
-    onLost(reason) {
-      log.error({ event: 'lease.lost', reason }, 'the session lease is gone; stopping');
-      void shutdown(1);
-    },
-    onError: (error, staleMs) =>
-      log.warn({ event: 'lease.renew_failed', staleMs, error: error.message }, 'renew failed'),
-  });
+  void runConsumer(source, dispatcher, log, abort.signal, () => client?.isOpen() === true);
 
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     process.on(signal, () => {

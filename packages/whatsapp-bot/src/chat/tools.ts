@@ -22,7 +22,12 @@ import { withFact, type MemoryStore } from './memory';
 
 export const HISTORY_WINDOW_DAYS = 60; // how far back the resolution universe and records look
 const DEFAULT_DAYS = 7;
-const MAX_DAYS = 90;
+const RECORDS_DEFAULT_DAYS = 30;
+// A window may never exceed what is actually READ. Accepting 90 while `history()` reads 60
+// answers sixty days of rows under the label `windowDays: 90`, which is a wrong number
+// reported confidently — the one thing these tools exist to prevent. One constant, and the
+// tool descriptions below are built from it so the model is never told otherwise.
+const MAX_DAYS = HISTORY_WINDOW_DAYS;
 
 export interface ToolContext {
   group: GroupConfig;
@@ -62,9 +67,12 @@ export function resolvePlayer(
   return { kind: 'unknown', known: labelled.map((l) => l.name) };
 }
 
-function clampDays(raw: unknown): number {
-  const n = typeof raw === 'number' ? Math.floor(raw) : DEFAULT_DAYS;
-  return Math.min(MAX_DAYS, Math.max(1, Number.isFinite(n) ? n : DEFAULT_DAYS));
+function clampDays(raw: unknown, fallback: number = DEFAULT_DAYS): number {
+  // A model that sends "30" means thirty, not "I did not say" — reading that as the
+  // default silently answers a different question from the one asked.
+  const asNumber = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN;
+  const days = Number.isFinite(asNumber) ? Math.floor(asNumber) : fallback;
+  return Math.min(MAX_DAYS, Math.max(1, days));
 }
 
 function scoreOf(d: Declaration): number | '∞' {
@@ -112,7 +120,7 @@ export const TOOL_DEFINITIONS: LlmTool[] = [
       type: 'object',
       properties: {
         player: { type: 'string' },
-        days: { type: 'integer', description: 'Window in days, default 7, max 90' },
+        days: { type: 'integer', description: `Window in days, default ${DEFAULT_DAYS}, max ${MAX_DAYS}` },
       },
       required: ['player'],
       additionalProperties: false,
@@ -126,7 +134,7 @@ export const TOOL_DEFINITIONS: LlmTool[] = [
       properties: {
         left: { type: 'string' },
         right: { type: 'string' },
-        days: { type: 'integer', description: 'Window in days, default 7, max 90' },
+        days: { type: 'integer', description: `Window in days, default ${DEFAULT_DAYS}, max ${MAX_DAYS}` },
       },
       required: ['left', 'right'],
       additionalProperties: false,
@@ -147,7 +155,12 @@ export const TOOL_DEFINITIONS: LlmTool[] = [
     description: 'Group records over the last N days: best score, most podium wins, most days played.',
     parameters: {
       type: 'object',
-      properties: { days: { type: 'integer', description: 'Window in days, default 30, max 90' } },
+      properties: {
+        days: {
+          type: 'integer',
+          description: `Window in days, default ${RECORDS_DEFAULT_DAYS}, max ${MAX_DAYS}`,
+        },
+      },
       additionalProperties: false,
     },
   },
@@ -319,7 +332,7 @@ export function createToolRunner(ctx: ToolContext): ToolRunner {
       return { player: displayName(ctx.group, player.sender, player.name), streak };
     },
     async get_group_records(args) {
-      const days = Math.min(MAX_DAYS, Math.max(1, typeof args.days === 'number' ? Math.floor(args.days) : 30));
+      const days = clampDays(args.days, RECORDS_DEFAULT_DAYS);
       const rows = (await history()).filter((x) => x.dayNumber > ctx.today - days);
       const finite = rows.filter((x) => !x.capped);
       const best = finite.reduce<Declaration | null>((b, x) => (!b || x.score < b.score ? x : b), null);

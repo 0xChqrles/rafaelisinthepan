@@ -23,6 +23,8 @@ function flag(name: string): string | undefined {
   return i >= 0 ? (process.argv[i + 1] ?? '') : undefined;
 }
 
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function main(): Promise<void> {
   const log = createLog();
   const env = loadEnv({ ...process.env, BOT_TABLE: process.env.BOT_TABLE });
@@ -50,63 +52,73 @@ async function main(): Promise<void> {
     onError: (error) => console.error(`Could not renew the session lease: ${error.message}`),
   });
 
-  let auth = await useDynamoAuthState(dynamo, env.table);
-  if (auth.state.creds.registered && !reset) {
-    console.log('A paired device is already stored. Re-run with --reset to pair again.');
-    renew.stop();
-    await lease.release();
-    return;
-  }
-  if (reset) {
-    console.log('Wiping the stored auth state…');
-    await auth.wipe();
-    auth = await useDynamoAuthState(dynamo, env.table);
-  }
-
-  const client = await connectWhatsApp({
-    auth,
-    log,
-    onMessage: async () => {},
-    async onStop(reason) {
-      console.error(`Connection stopped: ${reason}`);
-      renew.stop();
-      await lease.release();
-      process.exit(1);
-    },
-    onQr: phone
-      ? undefined
-      : (qr) => {
-          console.log('\nScan this with WhatsApp > Linked devices > Link a device:\n');
-          qrcode.generate(qr, { small: true });
-        },
-    pairingPhone: phone,
-    onPairingCode: (code) => console.log(`\nPairing code for ${phone}: ${code}\n`),
-  });
-
-  // Wait for the socket to open (post-pairing Baileys restarts once, then opens).
-  const deadline = Date.now() + 5 * 60_000;
-  while (!client.isOpen()) {
-    if (Date.now() > deadline) {
-      console.error('Timed out waiting for the pairing to complete.');
-      await client.close();
-      renew.stop();
-      await lease.release();
-      process.exit(1);
+  // Past here the lease is handed back on EVERY path, a throw from Baileys included:
+  // leaving it held makes the Fargate task refuse to start until the whole TTL expires.
+  // `process.exitCode` rather than `process.exit()` inside, because an exit would skip the
+  // finally that does the handing back.
+  try {
+    let auth = await useDynamoAuthState(dynamo, env.table);
+    if (auth.state.creds.registered && !reset) {
+      console.log('A paired device is already stored. Re-run with --reset to pair again.');
+      return;
     }
-    await new Promise((r) => setTimeout(r, 500));
+    if (reset) {
+      console.log('Wiping the stored auth state…');
+      await auth.wipe();
+      auth = await useDynamoAuthState(dynamo, env.table);
+    }
+
+    const client = await connectWhatsApp({
+      auth,
+      log,
+      onMessage: async () => {},
+      async onStop(reason) {
+        console.error(`Connection stopped: ${reason}`);
+        renew.stop();
+        await lease.release();
+        process.exit(1);
+      },
+      onQr: phone
+        ? undefined
+        : (qr) => {
+            console.log('\nScan this with WhatsApp > Linked devices > Link a device:\n');
+            qrcode.generate(qr, { small: true });
+          },
+      pairingPhone: phone,
+      onPairingCode: (code) => console.log(`\nPairing code for ${phone}: ${code}\n`),
+    });
+
+    try {
+      // Wait for the socket to open (post-pairing Baileys restarts once, then opens).
+      const deadline = Date.now() + 5 * 60_000;
+      while (!client.isOpen()) {
+        if (Date.now() > deadline) {
+          console.error('Timed out waiting for the pairing to complete.');
+          process.exitCode = 1;
+          return;
+        }
+        await wait(500);
+      }
+      // Give the socket a moment to flush the post-login key/creds updates to the store.
+      await wait(5_000);
+      await clearAuthInvalidated(dynamo, env.table);
+      console.log(`Paired as ${client.selfJids().join(' / ')}. Auth state is in ${env.table}.`);
+      console.log('You can start the Fargate task now (scale the service back to 1).');
+    } finally {
+      await client.close();
+    }
+  } finally {
+    renew.stop();
+    await lease.release().catch(() => {});
   }
-  // Give the socket a moment to flush the post-login key/creds updates to the store.
-  await new Promise((r) => setTimeout(r, 5_000));
-  await clearAuthInvalidated(dynamo, env.table);
-  console.log(`Paired as ${client.selfJids().join(' / ')}. Auth state is in ${env.table}.`);
-  console.log('You can start the Fargate task now (scale the service back to 1).');
-  await client.close();
-  renew.stop();
-  await lease.release();
-  process.exit(0);
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+// Exit explicitly once every `finally` above has run: the AWS SDK's keep-alive sockets
+// would otherwise hold the loop open on a command that has finished.
+main().then(
+  () => process.exit(process.exitCode ?? 0),
+  (error) => {
+    console.error(error);
+    process.exit(1);
+  },
+);

@@ -105,6 +105,11 @@ export class BotStack extends Stack {
     // The connected task is the ONLY WhatsApp sender; a podium job produces a command here.
     // Visibility timeout covers one send; a command that fails five deliveries lands in the
     // DLQ, which is alarmed — a podium that could not go out must not vanish quietly.
+    //
+    // Five is a count of REAL failures, not of disconnected polls: the consumer does not
+    // receive at all while the socket is down (`runConsumer`'s ready gate), so a
+    // reconnection does not spend a message's deliveries and push a perfectly good podium
+    // into the dead-letter queue while the disconnection alarm is already ringing.
     const deadLetter = new sqs.Queue(this, 'OutboundDlq', {
       retentionPeriod: Duration.days(14),
       enforceSSL: true,

@@ -33,6 +33,9 @@ export interface IngestDeps {
   wait?: (ms: number) => Promise<void>;
 }
 
+// `failed` WINS over `recorded`: a message carrying two days, one of which could not be
+// written, reports the LOSS, because the loss is the half a caller must not miss — the
+// share that did land is already durable and needs nobody's attention.
 export type IngestOutcome = 'ignored' | 'no_share' | 'recorded' | 'unchanged' | 'failed';
 
 const WRITE_ATTEMPTS = 3;
@@ -128,20 +131,30 @@ export function createIngest(deps: IngestDeps) {
         // THE CLAIM RUNS ON A REPLAY TOO. The row holds the day's best, so a replayed
         // share that left it stale would have the next live one announce a lead it does
         // not hold. Only the ANNOUNCEMENT is live-only: history is not news.
-        const lead = await deps.leaders.claim(
-          group.id,
-          share.dayNumber,
-          message.sender,
-          share.score,
-        );
-        if (lead === 'took_lead' && message.live) {
-          const name = displayName(group, message.sender, message.senderName);
-          announcements.push({
-            id: commandIds.leader(group.id, share.dayNumber, message.sender, share.score),
-            kind: 'message',
+        try {
+          const lead = await deps.leaders.claim({
             group: group.id,
-            text: renderLeader(name, share.score, group.language),
+            lang: share.lang,
+            dayNumber: share.dayNumber,
+            sender: message.sender,
+            score: share.score,
           });
+          if (lead === 'took_lead' && message.live) {
+            const name = displayName(group, message.sender, message.senderName);
+            announcements.push({
+              id: commandIds.leader(group.id, share.dayNumber, message.sender, share.score),
+              kind: 'message',
+              group: group.id,
+              text: renderLeader(name, share.score, group.language),
+            });
+          }
+        } catch (error) {
+          // The announcement is decoration; the acknowledgement is not. A claim that
+          // throws must not take the reaction down with it — the share IS recorded.
+          deps.log.warn(
+            { event: 'leader.claim_failed', group: tag(group.id), error: (error as Error).message },
+            'could not update the day leader',
+          );
         }
       }
     }

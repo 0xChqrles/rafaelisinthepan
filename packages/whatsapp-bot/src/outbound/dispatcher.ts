@@ -17,6 +17,10 @@ export interface Sender {
 
 export type DispatchOutcome = 'sent' | 'duplicate' | 'dropped' | 'deferred';
 
+// What the consumer waits when there is nothing to do — negligible beside a 20-second
+// long poll, and the difference between a paced loop and a hot one.
+const IDLE_MS = 250;
+
 export interface Dispatcher {
   dispatch(body: string): Promise<DispatchOutcome>;
 }
@@ -76,15 +80,34 @@ export function runConsumer(
   dispatcher: Dispatcher,
   log: Log,
   signal: AbortSignal,
+  // Whether the transport can send at all. Defaults to "always" for the memory queue.
+  ready: () => boolean = () => true,
 ): Promise<void> {
   return (async () => {
     while (!signal.aborted) {
+      // DO NOT PULL WHAT CANNOT BE SENT. A message received while the socket is down is
+      // left unsettled and redelivered, and every redelivery counts against the queue's
+      // `maxReceiveCount` — so a few minutes of disconnection would push a podium into the
+      // dead-letter queue, raising ITS alarm on top of the disconnection alarm already
+      // firing, for a message nothing was wrong with. Waiting leaves the work in the queue.
+      if (!ready()) {
+        await new Promise((r) => setTimeout(r, 1_000));
+        continue;
+      }
       let batch;
       try {
         batch = await source.receive();
       } catch (error) {
         log.error({ event: 'outbound.receive_failed', error: (error as Error).message });
         await new Promise((r) => setTimeout(r, 5_000));
+        continue;
+      }
+      // THE LOOP PACES ITSELF. Both sources happen to wait when they have nothing (SQS
+      // long-polls for 20s, the in-process one sleeps), but a loop that spins hot the
+      // moment one of them answers immediately is a busy-wait, and it should not be the
+      // source's job to prevent that.
+      if (batch.length === 0) {
+        await new Promise((r) => setTimeout(r, IDLE_MS));
         continue;
       }
       for (const item of batch) {

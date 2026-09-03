@@ -197,6 +197,24 @@ describe('share ingestion (#236)', () => {
     expect(await declarations.day(GROUP, DAY)).toEqual([]);
   });
 
+  it('still reacts when the leader row cannot be claimed', async () => {
+    const declarations = memoryDeclarationStore();
+    const sent: OutboundCommand[] = [];
+    const ingest = createIngest({
+      groups: registry({ leaderAnnouncements: true }),
+      declarations,
+      outbound: { enqueue: async (c) => void sent.push(c) },
+      leaders: { claim: async () => { throw new Error('throttled'); } },
+      siteOrigin: ORIGIN,
+      log: createLog('silent'),
+      wait: async () => {},
+    });
+    expect(await ingest(message())).toBe('recorded');
+    expect((await declarations.day(GROUP, DAY))[0].score).toBe(7);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ kind: 'reaction' });
+  });
+
   it('announces a lead CHANGE, with the operator name, and never the first share', async () => {
     const { ingest, sent } = harness(registry({ leaderAnnouncements: true, reactions: false }));
     await ingest(message({ id: 'M1', text: `${ORIGIN}/s/${token(7)}` }));

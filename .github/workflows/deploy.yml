@@ -31,7 +31,7 @@ permissions:
 
 jobs:
   # Decide which stacks to deploy: the changed-path mapping for pushes / a manual
-  # "changed" run, or the forced selection from workflow_dispatch (web|backend|all).
+  # "changed" run, or the forced selection from workflow_dispatch (web|backend|bot|all).
   plan:
     name: Plan stacks
     runs-on: ubuntu-latest

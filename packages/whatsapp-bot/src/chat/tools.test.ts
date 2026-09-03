@@ -3,7 +3,7 @@ import { dayNumber } from '@whippin/shared';
 import { parseGroupConfig } from '../config/groupConfig';
 import { memoryDeclarationStore, type Declaration } from '../domain/declarations';
 import { memoryMemoryStore } from './memory';
-import { createToolRunner, resolvePlayer } from './tools';
+import { HISTORY_WINDOW_DAYS, TOOL_DEFINITIONS, createToolRunner, resolvePlayer } from './tools';
 
 const GROUP = '120363000000000001@g.us';
 const TODAY = dayNumber('2026-09-03');
@@ -144,6 +144,24 @@ describe('Whippin tools are read-only structured answers (#236)', () => {
     });
     // The filtered-out row is not even a player the group knows.
     expect(await tools.run('get_player_history', { player: 'Zou' })).toMatchObject({ unknown: true });
+  });
+
+  it('never promises a window wider than it reads, and takes a numeric string', async () => {
+    const { tools } = await harness();
+    const asked = (await tools.run('get_player_history', { player: 'gab', days: 90 })) as {
+      windowDays: number;
+    };
+    expect(asked.windowDays).toBe(HISTORY_WINDOW_DAYS);
+    const stringly = (await tools.run('get_head_to_head', {
+      left: 'Gab',
+      right: 'Zou',
+      days: '30',
+    })) as { windowDays: number };
+    expect(stringly.windowDays).toBe(30);
+    // And what the model is TOLD matches what it gets.
+    const history = TOOL_DEFINITIONS.find((t) => t.name === 'get_player_history')!;
+    const days = (history.parameters.properties as Record<string, { description: string }>).days;
+    expect(days.description).toContain(`max ${HISTORY_WINDOW_DAYS}`);
   });
 
   it('refuses a date that is not a real one instead of answering about its neighbour', async () => {
