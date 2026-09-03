@@ -497,6 +497,25 @@ describe('mail plumbing (#230)', () => {
     }
   });
 
+  it('lets the forwarder send RAW mail, to a recipient who is an identity, as ONE address', () => {
+    // Learned from the first real message through it: SES authorizes a SendEmail carrying
+    // raw content as ses:SendRawEmail, and evaluates the statement against the RECIPIENT's
+    // identity when that recipient is a verified identity of the account — the operator's
+    // own address, in a sandboxed account, always is. Without both the forwarder read the
+    // message and was refused at the send, and the alarm was the only thing that worked.
+    const statements = Object.values(mail.findResources('AWS::IAM::Policy')).flatMap(
+      (policy) => policy.Properties.PolicyDocument.Statement as Record<string, unknown>[],
+    );
+    const raw = statements.filter((statement) =>
+      JSON.stringify(statement.Action).includes('ses:SendRawEmail'),
+    );
+    expect(raw).toHaveLength(1);
+    expect(raw[0].Action).toEqual(['ses:SendEmail', 'ses:SendRawEmail']);
+    expect(JSON.stringify(raw[0].Resource)).toContain(':identity/*');
+    // The bound that matters survives: it may send as the one verified sender and no other.
+    expect(raw[0].Condition).toEqual({ StringEquals: { 'ses:FromAddress': `hello@${DOMAIN}` } });
+  });
+
   it('delivers a dropped forwarder event to the alerts topic, so the alarm names the message', () => {
     // The alarm says THAT a message was lost; the failed event (the SES notification, which
     // carries the message id and so the S3 key) says WHICH. The same topic rather than a
