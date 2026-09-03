@@ -1900,11 +1900,28 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     `X-Whippin-Forwarded`, and every message carrying it is refused. Without it: the operator's
     inbox rejects a forward, SES forwards that bounce to `hello@`, and it is forwarded straight
     back at the address that just rejected it, for as long as the mailbox stays broken.
+    **It is matched against the WHOLE RAW MESSAGE, not the top-level headers** (corrected
+    2026-09-03 on the PR-233 review), and that is what makes it work at all: the bounce SES
+    forwards is a DSN whose OWN headers are SES's, with the failed message quoted in a
+    `message/rfc822` part — so a header lookup finds nothing and forwards the bounce, which
+    bounces. Deliberately COARSE, and the trade runs the right way: a false positive is a
+    message mentioning that exact header name, logged and left in the landing bucket, while
+    what it declines is exactly the useless half (news about the operator's own mailbox) and a
+    bounce of a CODE MAIL — the one this issue exists to surface — carries no marker and
+    forwards normally.
   - Spam and virus verdicts (scanning is on) are refused rather than relayed into a personal
     inbox from our own verified domain. A message over ~9 MB is not relayed either — SES accepts
     up to 40 MB inbound — but its SIZE becomes the notification: a short notice names the
     sender, the subject and the S3 key, because a message silently never forwarded is this
     issue's own failure mode.
+  - **REFUSALS COME FIRST, BEFORE ANY SIDE EFFECT** (same review). Size is a question about HOW
+    to deliver a message; spam, a virus and a loop are questions about WHETHER to — and the
+    oversize path SENDS something. Gated the other way round, a large spam lands in the
+    operator's inbox as a notice from our own verified domain, and a large looping bounce is
+    answered with a fresh notice carrying NO marker, which reopens the very loop the marker
+    exists to close. The bounds are read with `Number.isFinite`, too: `Number('9mb')` is NaN
+    and NaN loses every comparison, so a typo in the environment would not fail — it would
+    silently remove the cap.
   - **`FeedbackForwardingEmailAddress` was NOT added.** The issue offered it as a stopgap for
     notifications going to an address that did not exist; with `hello@` receiving, SES's default
     (the From address, no Return-Path being set) now lands in the same inbox as everything else.

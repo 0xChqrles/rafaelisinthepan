@@ -57,6 +57,20 @@ export interface SesEvent {
 // That is the whole loop guard: the operator's inbox can bounce (a full mailbox, a
 // disappeared address), SES forwards that bounce to `hello@`, and without this the bounce
 // would be forwarded straight back at the address that just rejected it, forever.
+//
+// **It is matched against the WHOLE RAW MESSAGE, not the top-level headers**, and that is
+// the entire reason it works. The bounce SES forwards is a DSN whose OWN headers are SES's
+// (`From: MAILER-DAEMON@…`, `Subject: Delivery Status Notification`); our marker rides
+// inside the `message/rfc822` part quoting the message that failed. A header lookup sees
+// nothing there and forwards the bounce — which bounces — forever. Reading the raw bytes
+// catches the copy wherever it is quoted.
+//
+// It is deliberately COARSE, and the trade runs the right way. A false positive is a
+// message mentioning this exact header name, which is not a thing a player writes; it is
+// logged and sits in the landing bucket for its retention window. What it declines to
+// forward is exactly the useless half — a bounce of a message we forwarded, which is news
+// about the operator's OWN mailbox — while a bounce of a CODE MAIL, the one this whole
+// issue exists to surface, carries no marker and forwards normally.
 export const FORWARD_MARKER = 'X-Whippin-Forwarded';
 
 // SES's own judgement of the message, carried across in one line. The raw
@@ -193,13 +207,13 @@ export type ForwardRefusal = 'spam' | 'virus' | 'loop';
  */
 export function forwardDecision(input: {
   receipt: SesNotification['receipt'];
-  fields: string[];
+  raw: Buffer;
 }): { forward: true } | { forward: false; reason: ForwardRefusal } {
   if (input.receipt.spamVerdict?.status === 'FAIL') return { forward: false, reason: 'spam' };
   if (input.receipt.virusVerdict?.status === 'FAIL') return { forward: false, reason: 'virus' };
-  if (readHeader(input.fields, FORWARD_MARKER) !== undefined) {
-    return { forward: false, reason: 'loop' };
-  }
+  // Exact case: every copy this function sends spells the marker one way, and a
+  // `message/rfc822` part quotes the headers it wraps verbatim.
+  if (input.raw.includes(FORWARD_MARKER)) return { forward: false, reason: 'loop' };
   return { forward: true };
 }
 
@@ -278,14 +292,23 @@ function required(name: string): string {
   return value;
 }
 
+// A BOUND THAT IS NOT A NUMBER IS NOT A BOUND. `Number('9mb')` is NaN, and NaN loses every
+// comparison — so a typo in the environment would not fail, it would silently REMOVE the
+// size cap and hand SES a 40 MB message. The stack always sets both values (`infra/lib/
+// mail.ts`, which is their single source); this is the floor under a hand-run invocation.
+function boundedNumber(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 export function forwardConfig(): ForwardConfig {
   return {
     bucket: required('MAIL_BUCKET'),
     prefix: process.env.MAIL_PREFIX ?? '',
     mailFrom: required('MAIL_FROM'),
     forwardTo: required('MAIL_FORWARD_TO'),
-    maxBytes: Number(process.env.MAX_FORWARD_BYTES ?? 9 * 1024 * 1024),
-    retentionDays: Number(process.env.MAIL_RETENTION_DAYS ?? 30),
+    maxBytes: boundedNumber(process.env.MAX_FORWARD_BYTES, 9 * 1024 * 1024),
+    retentionDays: boundedNumber(process.env.MAIL_RETENTION_DAYS, 30),
   };
 }
 
@@ -303,6 +326,21 @@ export async function forwardNotification(
   );
   if (!object.Body) throw new Error(`mailForward: no body at ${key}`);
   const raw = Buffer.from(await object.Body.transformToByteArray());
+
+  // REFUSALS COME FIRST, BEFORE ANY SIDE EFFECT. Size is a question about how to deliver a
+  // message; spam, a virus and a loop are questions about whether to deliver it at all —
+  // and the oversize path below SENDS something. Gated the other way round, a large spam
+  // lands in the operator's inbox as a notice, and a large looping bounce is answered with
+  // a fresh notice carrying no marker, which reopens the loop the marker exists to close.
+  const decision = forwardDecision({ receipt: notification.receipt, raw });
+  if (!decision.forward) {
+    // Logged, never forwarded, and never an error: a refusal is this function working. The
+    // message stays in S3 for its retention window if anyone wants to look.
+    console.log(
+      `[mail] not forwarded (${decision.reason}) messageId=${notification.mail.messageId}`,
+    );
+    return;
+  }
 
   if (raw.byteLength > config.maxBytes) {
     const notice = oversizeNotice({
@@ -325,20 +363,6 @@ export async function forwardNotification(
           },
         },
       }),
-    );
-    return;
-  }
-
-  const { header } = splitMessage(raw);
-  const decision = forwardDecision({
-    receipt: notification.receipt,
-    fields: headerFields(header),
-  });
-  if (!decision.forward) {
-    // Logged, never forwarded, and never an error: a refusal is this function working. The
-    // message stays in S3 for its retention window if anyone wants to look.
-    console.log(
-      `[mail] not forwarded (${decision.reason}) messageId=${notification.mail.messageId}`,
     );
     return;
   }

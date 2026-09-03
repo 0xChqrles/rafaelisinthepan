@@ -158,7 +158,16 @@ export class MailAlerts extends Construct {
     );
   }
 
-  /** Alarm on a Lambda's own errors, onto this same topic. */
+  /**
+   * Alarm on a Lambda's own errors, onto this same topic.
+   *
+   * NO OK ACTION, unlike the reputation alarms above, and the asymmetry is deliberate. A
+   * reputation rate falls slowly, so "it is back under the line" is a fact somebody would
+   * otherwise have to go and look up. An error alarm returning to OK says only "no error in
+   * the last 15 minutes", which is true after every transient blip and says nothing about
+   * whether the message that failed ever reached anyone — it is still in the landing bucket,
+   * and getting it out is a human act, not a recovery to be congratulated on.
+   */
   addFunctionErrorAlarm(id: string, fn: lambda.IFunction, description: string): cloudwatch.Alarm {
     const created = new cloudwatch.Alarm(this, id, {
       metric: fn.metricErrors({ period: Duration.minutes(15), statistic: 'Sum' }),

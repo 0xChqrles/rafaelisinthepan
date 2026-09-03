@@ -1,14 +1,17 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   FORWARD_MARKER,
   VERDICT_HEADER,
+  forwardConfig,
   forwardDecision,
   forwardFrom,
+  forwardNotification,
   forwardedMessage,
   headerFields,
   oversizeNotice,
   readHeader,
   splitMessage,
+  type ForwardConfig,
   verdictLine,
   type SesNotification,
 } from './mailForward';
@@ -146,18 +149,16 @@ describe('what a forwarded copy changes', () => {
 describe('what is refused', () => {
   it('forwards an ordinary message', () => {
     const raw = message(['From: a@b.c', 'Subject: hello']);
-    expect(forwardDecision({ receipt: receipt(), fields: fieldsOf(raw) })).toEqual({
-      forward: true,
-    });
+    expect(forwardDecision({ receipt: receipt(), raw })).toEqual({ forward: true });
   });
 
   it("refuses what SES already judged spam or a virus", () => {
-    const fields = fieldsOf(message(['From: a@b.c']));
-    expect(forwardDecision({ receipt: receipt({ spamVerdict: { status: 'FAIL' } }), fields })).toEqual(
+    const raw = message(['From: a@b.c']);
+    expect(forwardDecision({ receipt: receipt({ spamVerdict: { status: 'FAIL' } }), raw })).toEqual(
       { forward: false, reason: 'spam' },
     );
     expect(
-      forwardDecision({ receipt: receipt({ virusVerdict: { status: 'FAIL' } }), fields }),
+      forwardDecision({ receipt: receipt({ virusVerdict: { status: 'FAIL' } }), raw }),
     ).toEqual({ forward: false, reason: 'virus' });
   });
 
@@ -167,7 +168,40 @@ describe('what is refused', () => {
     // that just rejected it — for as long as the mailbox stays broken.
     const raw = message(['From: ada@example.com', 'Subject: hi']);
     const once = forwardedMessage(raw, { mailFrom: MAIL_FROM, envelopeSender: 'ada@example.com' });
-    expect(forwardDecision({ receipt: receipt(), fields: fieldsOf(once) })).toEqual({
+    expect(forwardDecision({ receipt: receipt(), raw: once })).toEqual({
+      forward: false,
+      reason: 'loop',
+    });
+  });
+
+  it('SEES THE MARKER INSIDE A BOUNCE, where a header lookup never would', () => {
+    // This is the loop that actually happens. SES's feedback forwarding sends a DSN whose
+    // OWN headers are its own — `From: MAILER-DAEMON@…` — and quotes the failed message in
+    // a message/rfc822 part. Reading top-level headers finds no marker there and forwards
+    // the bounce, which bounces, forever.
+    const ours = forwardedMessage(message(['From: ada@example.com', 'Subject: hi']), {
+      mailFrom: MAIL_FROM,
+      envelopeSender: 'ada@example.com',
+    });
+    const bounce = Buffer.concat([
+      Buffer.from(
+        [
+          'From: MAILER-DAEMON@amazonses.com',
+          'To: hello@whippin.ai',
+          'Subject: Delivery Status Notification (Failure)',
+          'Content-Type: multipart/report; report-type=delivery-status; boundary=b',
+          '',
+          '--b',
+          'Content-Type: message/rfc822',
+          '',
+        ].join('\r\n'),
+        'latin1',
+      ),
+      ours,
+      Buffer.from('\r\n--b--\r\n', 'latin1'),
+    ]);
+    expect(readHeader(fieldsOf(bounce), FORWARD_MARKER)).toBeUndefined();
+    expect(forwardDecision({ receipt: receipt(), raw: bounce })).toEqual({
       forward: false,
       reason: 'loop',
     });
@@ -207,5 +241,122 @@ describe('a message too large to relay', () => {
     expect(notice.text).toContain('12.0 MB');
     expect(notice.text).toContain('s3://landing-bucket/inbound/abc123');
     expect(notice.text).toContain('30 days');
+  });
+});
+
+// ── The wiring, with the clients faked ───────────────────────────────────────
+// The reason `forwardNotification` takes its clients: the ORDER of its refusals and its one
+// side effect is the part with a failure mode, and the pure functions above cannot see it.
+// A size gate placed before the refusals sends a notice for a message that should have been
+// dropped — and answers a looping bounce with a fresh, unmarked message.
+
+const CONFIG: ForwardConfig = {
+  bucket: 'landing',
+  prefix: 'inbound/',
+  mailFrom: MAIL_FROM,
+  forwardTo: 'ops@example.com',
+  maxBytes: 1024,
+  retentionDays: 30,
+};
+
+function clientsOver(raw: Buffer) {
+  const sent: Record<string, unknown>[] = [];
+  const s3 = {
+    send: vi.fn(async (_command: { input: Record<string, unknown> }) => ({
+      Body: { transformToByteArray: async () => new Uint8Array(raw) },
+    })),
+  };
+  const ses = { send: vi.fn(async (command: { input: Record<string, unknown> }) => {
+    sent.push(command.input);
+    return {};
+  }) };
+  return { clients: { s3, ses } as never, sent, s3, ses };
+}
+
+function notification(overrides: Partial<SesNotification['receipt']> = {}): SesNotification {
+  return {
+    mail: { messageId: 'abc123', source: 'ada@example.com', commonHeaders: { subject: 'hi' } },
+    receipt: { recipients: ['hello@whippin.ai'], ...receipt(overrides) },
+  };
+}
+
+function big(headers: string[]): Buffer {
+  return message(headers, 'x'.repeat(CONFIG.maxBytes * 2));
+}
+
+describe('forwarding a received message', () => {
+  it('forwards an ordinary one as raw MIME, marked', async () => {
+    const { clients, sent } = clientsOver(message(['From: ada@example.com', 'Subject: hi']));
+    await forwardNotification(notification(), CONFIG, clients);
+    expect(sent).toHaveLength(1);
+    const raw = (sent[0].Content as { Raw: { Data: Buffer } }).Raw.Data;
+    expect(readHeader(fieldsOf(Buffer.from(raw)), FORWARD_MARKER)).toBe('1');
+    expect(sent[0].Destination).toEqual({ ToAddresses: ['ops@example.com'] });
+  });
+
+  it('sends a notice instead when it is too large to relay', async () => {
+    const { clients, sent } = clientsOver(big(['From: ada@example.com', 'Subject: hi']));
+    await forwardNotification(notification(), CONFIG, clients);
+    expect(sent).toHaveLength(1);
+    expect(sent[0].Content).toHaveProperty('Simple');
+    expect(JSON.stringify(sent[0].Content)).toContain('s3://landing/inbound/abc123');
+  });
+
+  it('SENDS NOTHING for a large spam message — the refusal outranks the size', async () => {
+    // Gated the other way round, SES's own spam verdict is answered with a mail from our
+    // verified domain into a personal inbox, which is how a domain earns a reputation.
+    const { clients, sent } = clientsOver(big(['From: spam@example.com']));
+    await forwardNotification(notification({ spamVerdict: { status: 'FAIL' } }), CONFIG, clients);
+    expect(sent).toEqual([]);
+  });
+
+  it('SENDS NOTHING for a large virus message', async () => {
+    const { clients, sent } = clientsOver(big(['From: bad@example.com']));
+    await forwardNotification(notification({ virusVerdict: { status: 'FAIL' } }), CONFIG, clients);
+    expect(sent).toEqual([]);
+  });
+
+  it('SENDS NOTHING for a looping message, at any size', async () => {
+    // The oversize notice carries no marker, so answering a loop with one reopens the very
+    // loop the marker exists to close.
+    for (const raw of [
+      message([`${FORWARD_MARKER}: 1`, 'From: ada@example.com']),
+      big([`${FORWARD_MARKER}: 1`, 'From: ada@example.com']),
+    ]) {
+      const { clients, sent } = clientsOver(raw);
+      await forwardNotification(notification(), CONFIG, clients);
+      expect(sent).toEqual([]);
+    }
+  });
+
+  it('reads the message from the prefixed key it was told about', async () => {
+    const { clients, s3 } = clientsOver(message(['From: a@b.c']));
+    await forwardNotification(notification(), CONFIG, clients);
+    expect(s3.send.mock.calls[0]?.[0].input).toMatchObject({
+      Bucket: 'landing',
+      Key: 'inbound/abc123',
+    });
+  });
+});
+
+describe('reading the bounds from the environment', () => {
+  it('falls back rather than letting a non-number remove the cap', () => {
+    // `Number('9mb')` is NaN, and NaN loses every comparison — so a typo would not fail,
+    // it would silently disable the size gate and hand SES a 40 MB message.
+    const env = { ...process.env };
+    Object.assign(process.env, {
+      MAIL_BUCKET: 'b',
+      MAIL_FROM: MAIL_FROM,
+      MAIL_FORWARD_TO: 'ops@example.com',
+      MAX_FORWARD_BYTES: '9mb',
+      MAIL_RETENTION_DAYS: '',
+    });
+    try {
+      const config = forwardConfig();
+      expect(config.maxBytes).toBe(9 * 1024 * 1024);
+      expect(config.retentionDays).toBe(30);
+    } finally {
+      process.env = env;
+    }
   });
 });
