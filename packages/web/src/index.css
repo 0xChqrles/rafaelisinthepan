@@ -5643,18 +5643,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .btn + .link-quiet-btn:hover:not(:disabled) {
   border-color: transparent;
 }
-/* THE SAME RULE, one wrapper further out. The bare dress belongs to a quiet control that
-   FOLLOWS the screen's action rather than standing as an alternative to it — the crossroads'
-   CANCEL — and the address step's privacy control is exactly that: it sits under CONTINUE,
-   and boxed it read as a second button competing with the lit one. The adjacency above
-   cannot reach it, because it lives in the centring `.link-quiet` row (with the cost and
-   refusal captions between them on the door that shows one), so it says so itself. */
-.link-aside {
-  border-color: transparent;
-}
-.link-aside:hover:not(:disabled) {
-  border-color: transparent;
-}
 /* A CONTROL THAT IS NOT A CONTROL YET LOSES ITS BOX (2026-08-30). RESEND spends its first
    ~30 seconds counting down, and a dimmed hairline box held that long reads as a broken
    button rather than as a wait — the same reason the second door is held back until the

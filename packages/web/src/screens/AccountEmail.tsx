@@ -92,7 +92,7 @@ import {
 import useKeyboardInset from '../hooks/useKeyboardInset';
 import useUiLang from '../hooks/useUiLang';
 import { t, tn } from '../i18n';
-import { ACCOUNT_PATH, PRIVACY_PATH, type LinkIntent } from '../langs';
+import { ACCOUNT_PATH, type LinkIntent } from '../langs';
 import { navigate } from '../routing';
 import {
   loadAccountSummary,
@@ -221,7 +221,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   // the client already holds it — whether this device's account has an address of its own —
   // so this is the cached summary, not a new request (and a tokenless device gets the
   // answer without one at all, #216).
-  const { phase: summaryPhase, summary } = useAccountSummary();
+  const { summary } = useAccountSummary();
   useEffect(() => {
     if (returning) loadAccountSummary();
   }, [returning, identity]);
@@ -555,21 +555,6 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   // nothing, and a shimmer over it promises a face that is not coming.
   const savingPending = lead === null && !faceSettled(ownState);
 
-  // What the RETURN door costs, on the ONE case that has a cost: an account with no address
-  // of its own is deleted when this device leaves it. Held silent until the summary has
-  // settled — #211's rule: an unknown answer is never rendered as a claim — and silent for a
-  // tokenless device, which has no account to replace. The reversible case said so here
-  // until 2026-08-28; there is no decision pending on this step, so it was noise, and the
-  // switch confirmation says it where it is load-bearing.
-  const cost =
-    returning &&
-    identity !== null &&
-    summaryPhase === 'ready' &&
-    summary !== null &&
-    !summary.email
-      ? t(lang, 'linkReturnReplaces')
-      : null;
-
   // AN ENDING PER CELL of the two-doors × three-outcomes grid. Until vol. 2 four of the six
   // borrowed one of the other two's sentences.
   // FIVE endings, not six: the returning door authorizes no binding, so `bound` is
@@ -738,26 +723,9 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             >
               {busy ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'linkContinue')}
             </Button>
-            {/* What the tap costs, BEFORE the mail app and the six digits — the disclosure
-                that stops the crossroads being an ambush. */}
-            {cost && <p className="account-note caption">{cost}</p>}
             {note && (
               <p className="account-note caption danger">{note}</p>
             )}
-            {/* WHAT HAPPENS TO THE ADDRESS (#229), in the quiet row's own dress — here,
-                because this is where an address is actually typed, and a notice a player
-                has to go looking for on another screen answers the question after they
-                have already answered it themselves. It is the step's ONE quiet control,
-                exactly as RESEND is the code step's. */}
-            <div className="link-quiet">
-              <button
-                type="button"
-                className="link-quiet-btn link-aside"
-                onClick={() => navigate(PRIVACY_PATH)}
-              >
-                {t(lang, 'privacyFromAddress')}
-              </button>
-            </div>
           </>
         )}
 

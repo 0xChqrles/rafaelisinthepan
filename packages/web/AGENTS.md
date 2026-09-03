@@ -1072,10 +1072,6 @@ it to the local store — see `packages/backend/AGENTS.md`).
     padding it does not show. It is the one place the area's ACTION-in-`--fg` rule yields:
     that rule keeps a control from hiding among help text, and there is none here to hide
     among; this one is meant to be exactly as visible as the interest in it.
-  - **The address step's control is BARE** (`.link-aside`): the boxed `.link-quiet-btn` dress
-    belongs to an ALTERNATIVE (RESEND), and directly under CONTINUE a boxed one read as a
-    second button competing with the lit one. It is the same rule `.btn + .link-quiet-btn`
-    already states, one wrapper further out.
   - **TWO VALUES ARE NOT PROSE.** `PRIVACY_CONTACT` is the SES sender infra already derives;
     `PRIVACY_HOST` names the site's host. It exists because the notice takes the LCEN's
     non-professional route (art. 6-III-2): a free site that sells nothing may keep its

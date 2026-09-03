@@ -172,22 +172,6 @@ const STRINGS = {
   // fr VIE PRIVÉE rather than CONFIDENTIALITÉ: plainer, and five characters shorter in a
   // header slot that ellipsises at 320px (the `linkTitleReturn` finding).
   privacyTitle: { en: 'PRIVACY', fr: 'VIE PRIVÉE' },
-  // The same page from the ADDRESS field, where it answers the question actually being
-  // asked at that moment — not "what is your privacy policy" but "what happens to the
-  // address I am about to type". It is an ACTION (the area's three-roles rule), quiet,
-  // under the button it qualifies.
-  privacyFromAddress: { en: 'WHAT WE DO WITH IT', fr: "CE QU'ON EN FAIT" },
-  // What signing in COSTS, said before a keystroke is spent rather than after the mail app,
-  // the six digits and the commitment ritual. It is shown on the ONE case that has a cost:
-  // an account with no address of its own is deleted when this device leaves it. The
-  // reversible case said "you can come back to this one anytime" until 2026-08-28, and the
-  // user cut it — there is no decision pending on that step, so a reassurance about a
-  // consequence nobody has met yet is noise. It is said where it is load-bearing instead:
-  // on the switch confirmation, which is a decision.
-  linkReturnReplaces: {
-    en: "This device's account will be replaced.",
-    fr: 'Le compte de cet appareil sera remplacé.',
-  },
 
   // WHAT SCREEN THIS IS. `back` renders the CURRENT screen's name as the way out of it —
   // `/account` says ACCOUNT and `/profile` says PROFILE — and the flow was passing
