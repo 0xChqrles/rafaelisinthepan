@@ -28,6 +28,20 @@ describe('the in-process outbound queue (local dry runs)', () => {
     expect((await queue.receive()).map((m) => m.body)).toEqual([first.body]); // back
   }, 10_000);
 
+  it('never hands back more than one receive of the real queue would', async () => {
+    // Seven commands, a batch of five: the two that do not fit are not lost, they are
+    // simply still there on the next poll — and a backlog of REDELIVERIES obeys the same
+    // ceiling, which is what capping only the fresh half used to miss.
+    const queue = memoryOutbound({ visibilitySeconds: 0.4 });
+    for (let n = 1; n <= 7; n += 1) await queue.enqueue(command(n));
+    expect(await queue.receive()).toHaveLength(5);
+    expect(await queue.receive()).toHaveLength(2); // the remainder, the five still hidden
+    // Nothing is visible yet, and the empty poll is what waits the window out.
+    expect(await queue.receive()).toEqual([]);
+    // All seven are visible again now, and a receive STILL yields five.
+    expect(await queue.receive()).toHaveLength(5);
+  }, 10_000);
+
   it('what is pending is delivered while an earlier message is still in flight', async () => {
     // The socket dropped for one command, which is deferred for minutes: the reaction
     // queued a second later must not wait those minutes out behind it.

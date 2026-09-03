@@ -243,6 +243,14 @@ export async function connectWhatsApp(options: WhatsAppClientOptions): Promise<W
       } else {
         // The quote bubble is drawn from `quotedMessage`, which Baileys copies from this
         // stub's content: with nothing there it encodes empty and the reply quotes a blank.
+        // A TEXT STUB WHATEVER THE ORIGINAL WAS. `messageText` already flattens a media
+        // caption to text, so quoting an image-with-caption embeds the caption as a plain
+        // quote rather than a thumbnail. Deliberate: a faithful stub would need the
+        // original's media keys, which a queue command has no business carrying, and an
+        // `imageMessage` stub without them renders worse than plain text — a broken
+        // attachment instead of the words the person actually wrote. The reply path never
+        // reaches here with an empty one: an addressed message with no text produces no
+        // question, so the agent stays silent and no reply is queued.
         const quoted = command.replyTo
           ? ({
               key: {
