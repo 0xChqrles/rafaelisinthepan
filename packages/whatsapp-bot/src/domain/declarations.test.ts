@@ -5,7 +5,13 @@ import {
   QueryCommand,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
-import { memoryDeclarationStore, playersIn, supersedes, type Declaration } from './declarations';
+import {
+  memoryDeclarationStore,
+  ownEarlierAttempt,
+  playersIn,
+  supersedes,
+  type Declaration,
+} from './declarations';
 import { dynamoDeclarationStore, declarationSortKey, fromItem } from './dynamoDeclarationStore';
 
 const base: Declaration = {
@@ -59,10 +65,27 @@ describe('declaration precedence (#236)', () => {
     expect((await other.day(base.group, base.dayNumber))[0].token).toBe('AAA');
   });
 
+  it('a retry of its OWN lost write is recorded; a second delivery is the no-op', async () => {
+    const later = { ...base, receivedAt: '2026-09-03T10:00:05.000Z' };
+    expect(ownEarlierAttempt(undefined, base)).toBe(false);
+    expect(ownEarlierAttempt(base, base)).toBe(true);
+    expect(ownEarlierAttempt(base, later)).toBe(false);
+    expect(ownEarlierAttempt(base, { ...base, messageId: 'M2' })).toBe(false);
+
+    const store = memoryDeclarationStore();
+    expect(await store.record(base)).toBe('recorded');
+    // The same ingest call sending the same declaration again: its first write landed and
+    // the answer was lost. Refused by its own row, and told so.
+    expect(await store.record(base)).toBe('recorded');
+    // The same MESSAGE arriving again in a later call (a replay, a duplicate delivery).
+    expect(await store.record(later)).toBe('unchanged');
+    expect((await store.day(base.group, base.dayNumber))[0].receivedAt).toBe(base.receivedAt);
+  });
+
   it('the memory store applies it and answers day + range reads in order', async () => {
     const store = memoryDeclarationStore();
     expect(await store.record(base)).toBe('recorded');
-    expect(await store.record(base)).toBe('unchanged');
+    expect(await store.record({ ...base, receivedAt: '2026-09-03T10:00:05.000Z' })).toBe('unchanged');
     expect(
       await store.record({ ...base, score: 4, token: 'BBB', messageId: 'M2', messageTs: 1_001 }),
     ).toBe('recorded');
@@ -105,6 +128,7 @@ describe('DynamoDB declaration keyspace', () => {
       'attribute_not_exists(#sk) OR #ts < :ts OR (#ts = :ts AND #id < :id)',
     );
     expect(put.input.ReturnValues).toBe('ALL_OLD');
+    expect(put.input.ReturnValuesOnConditionCheckFailure).toBe('ALL_OLD');
     expect(put.input.Item?.pk).toEqual({ S: `GROUP#${base.group}` });
     expect(fromItem(put.input.Item!)).toEqual(base);
   });
@@ -116,6 +140,17 @@ describe('DynamoDB declaration keyspace', () => {
     expect(await store.record({ ...base, token: 'BBB', messageId: 'M3', messageTs: 1_002 })).toBe(
       'recorded',
     );
+  });
+
+  it('recognises its own earlier attempt in the row a refused write hands back', async () => {
+    const standing = { messageId: { S: base.messageId }, receivedAt: { S: base.receivedAt } };
+    const send = vi.fn(async () => {
+      throw new ConditionalCheckFailedException({ message: 'refused', $metadata: {}, Item: standing });
+    });
+    const store = dynamoDeclarationStore({ send } as unknown as DynamoDBClient, 'bot');
+    expect(await store.record(base)).toBe('recorded');
+    expect(await store.record({ ...base, receivedAt: '2026-09-03T10:00:05.000Z' })).toBe('unchanged');
+    expect(await store.record({ ...base, messageId: 'M0', messageTs: 900 })).toBe('unchanged');
   });
 
   it('reads a refused condition as unchanged and pages a range query', async () => {

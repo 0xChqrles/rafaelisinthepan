@@ -12,6 +12,11 @@ import {
 } from '@aws-sdk/client-sqs';
 import type { OutboundCommand, OutboundQueue } from './commands';
 
+// How many messages one receive may hand back, for the real queue AND its in-process
+// double: the double exists to model this transport, so a second spelling of its batch
+// size is a way for the two to drift apart silently.
+const BATCH = 5;
+
 export function sqsOutboundQueue(client: SQSClient, queueUrl: string): OutboundQueue {
   return {
     async enqueue(command) {
@@ -42,7 +47,7 @@ export function sqsCommandSource(client: SQSClient, queueUrl: string): CommandSo
       const response = await client.send(
         new ReceiveMessageCommand({
           QueueUrl: queueUrl,
-          MaxNumberOfMessages: 5,
+          MaxNumberOfMessages: BATCH,
           WaitTimeSeconds: 20,
         }),
       );
@@ -65,12 +70,22 @@ export function sqsCommandSource(client: SQSClient, queueUrl: string): CommandSo
   };
 }
 
+// The real queue's visibility timeout (infra `bot-stack.ts`), modelled the same way: a
+// received message is hidden for this long, and comes back if nothing settled it.
+const VISIBILITY_SECONDS = 60;
+
 // Local dry runs: a queue that feeds its own consumer in-process. It models the visibility
 // TIMEOUT as well as the delivery, because the dispatcher leans on it — a command deferred
 // while the socket is closed is deliberately left unsettled so the queue brings it back,
 // and a stand-in that simply dropped it would silently lose exactly the podium the real
-// queue exists to keep.
-export function memoryOutbound(): OutboundQueue & CommandSource {
+// queue exists to keep. And, like SQS, a message in flight never blocks the ones behind
+// it: a receive answers what has become visible again AND what is newly pending, up to the
+// batch — a stand-in that answered only the former left every reaction and reply waiting
+// out one deferred command's five minutes, with the socket long since back.
+export function memoryOutbound(
+  options: { visibilitySeconds?: number } = {},
+): OutboundQueue & CommandSource {
+  const visibilityMs = (options.visibilitySeconds ?? VISIBILITY_SECONDS) * 1_000;
   const pending: QueuedBody[] = [];
   // Received and not settled, each with the instant it becomes visible again.
   const inFlight = new Map<string, { item: QueuedBody; visibleAt: number }>();
@@ -81,15 +96,23 @@ export function memoryOutbound(): OutboundQueue & CommandSource {
       pending.push({ body: JSON.stringify(command), receipt: String((n += 1)) });
     },
     async receive() {
-      // Anything received and not settled comes back first, in order — once visible.
-      if (inFlight.size > 0) {
+      const now = Date.now();
+      // Redeliveries first, in order, then what is newly pending — and every message
+      // handed out is hidden for the visibility window from this instant, so a dispatch
+      // that THROWS is retried after the window rather than on every poll.
+      // BOTH HALVES COUNT TOWARD THE BATCH. Capping only the fresh half let a backlog of
+      // redeliveries hand back more than a real receive ever would, which is the one thing
+      // a stand-in for the transport may not do: what it does not return now is not lost,
+      // it is simply visible again on the next poll.
+      const back = [...inFlight.values()].filter((f) => f.visibleAt <= now).slice(0, BATCH);
+      const fresh = pending.splice(0, BATCH - back.length);
+      for (const item of fresh) inFlight.set(item.receipt, { item, visibleAt: now });
+      const batch = [...back.map((f) => f.item), ...fresh];
+      if (batch.length === 0) {
         await idle();
-        const now = Date.now();
-        return [...inFlight.values()].filter((f) => f.visibleAt <= now).map((f) => f.item);
+        return [];
       }
-      const batch = pending.splice(0, 5);
-      if (batch.length === 0) await idle();
-      for (const item of batch) inFlight.set(item.receipt, { item, visibleAt: 0 });
+      for (const item of batch) inFlight.get(item.receipt)!.visibleAt = now + visibilityMs;
       return batch;
     },
     async settle(receipt) {

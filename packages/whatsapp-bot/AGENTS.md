@@ -100,8 +100,21 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
 - **A share is deterministic input.** The token's day and score, decoded with the shared
   codec; the WhatsApp receive date never groups a result. Word-mode tokens are ignored.
   The sender JID (phone-number form preferred over a LID) is the player key; names are a
-  snapshot. Precedence: same message twice = no-op; a later message with a different token
-  replaces; order by message timestamp, message id as the tie-break. **A later message
+  snapshot. **A person is one key, a message keeps its own** (PR-237 review): a LID that
+  came without its number is mapped through the LID↔PN store Baileys keeps in the auth
+  state (a local read, `client.ts` `playerKey`), and a mention and a quoted author resolve
+  the same way (each carries the JID it came as AND its player key; `trigger.ts` reads
+  the bot in either spelling, for addressing and for stripping alike) — but
+  the message KEY's `participant` is kept as WhatsApp addressed it (`InboundMessage.
+  participant`, the LID in a LID-addressed group), because a reaction or a quote names the
+  ORIGINAL key and a canonical one there attaches to nothing. Precedence: same message
+  twice = no-op; a later message with a different token
+  replaces; order by message timestamp, message id as the tie-break. **A retry of the
+  ingest call's OWN write whose answer was lost is NOT that no-op** (PR-237 review): the
+  monotonic condition refuses it, and the refused write hands back the standing row
+  (`ReturnValuesOnConditionCheckFailure`) — this message id under this call's `receivedAt`
+  is the earlier attempt, answered `recorded` so the emoji and the leader claim still
+  happen (`declarations.ts` `ownEarlierAttempt`). **A later message
   with the SAME token is `unchanged`** — nothing material: no reaction, no leader claim —
   while the row's message bookkeeping (id, timestamp, name snapshot) still follows it,
   because a replay arriving in any order must converge on the player's latest statement
@@ -134,12 +147,17 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   dead-letter alarm. The one message the gate cannot cover — already in hand when the
   socket drops — is DEFERRED (`ChangeMessageVisibility`, `DEFER_SECONDS` = 5 min) rather
   than left to the 60-second timeout, so five deliveries span ~25 minutes of outage
-  instead of five.
+  instead of five. The in-process queue of a local dry run (`memoryOutbound`) models the
+  same two things — a received message hidden for the visibility window, and pending
+  messages delivered beside one still in flight — so a deferred command cannot make a dry
+  run look hung.
 - **Conversation is opt-in per message**: mention, reply-to-bot, or a leading `chat.name`.
   Nothing else reaches the model. **Only the BOT's mention is addressing**: everybody else's
   is part of the question, and is replaced by the name the group uses (the tool runner's
   `labelFor`, so the model gets a name the tools can look up again, and never the phone
-  number behind it). The emptiness test still reads EVERY mention as addressing, which is
+  number behind it) — looked up by the PLAYER key the mention resolved to, keyed by the
+  digits the text's @token spells, since in a LID-addressed group those differ and the
+  declarations know nobody by LID. The emptiness test still reads EVERY mention as addressing, which is
   what keeps a bare "@Bot @Zou" free of the ceilings.
   **THE SYSTEM PROMPT IS CODE- AND OPERATOR-AUTHORED, AND NOTHING ELSE.** What a group
   member typed — their push name, their message, and the notes `remember` saved from what

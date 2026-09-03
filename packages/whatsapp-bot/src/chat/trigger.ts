@@ -4,7 +4,7 @@
 // direct-name form ("WhippinBot, …"). Everything else is a group of humans talking among
 // themselves, which is not prompt material.
 
-import type { InboundMessage } from '../domain/message';
+import type { InboundMessage, Mention, QuotedRef } from '../domain/message';
 import { fallbackName } from '../domain/names';
 
 export interface BotIdentity {
@@ -44,18 +44,30 @@ function nameForm(name: string, trailing = ''): RegExp {
 
 export type Address = 'mention' | 'reply' | 'name' | null;
 
+// Either spelling of a reference may be the bot's: the JID the message carried, or the
+// player key it resolved to (the bot's own LID may be unknown to `identity` while the
+// mapping already knows its number). ONE predicate for a mention and a quote alike, and
+// for stripping the addressing below — three readings of "is this the bot" would let a
+// message count as addressed by a token the question then keeps.
+function namesBot(ref: Mention | QuotedRef, identity: BotIdentity): boolean {
+  const jid = 'jid' in ref ? ref.jid : ref.participant;
+  return isBot(jid, identity) || isBot(ref.player, identity);
+}
+
 export function addressedTo(message: InboundMessage, identity: BotIdentity): Address {
-  if (message.mentions.some((m) => isBot(m, identity))) return 'mention';
-  if (message.quoted && isBot(message.quoted.participant, identity)) return 'reply';
+  if (message.mentions.some((m) => namesBot(m, identity))) return 'mention';
+  if (message.quoted && namesBot(message.quoted, identity)) return 'reply';
   if (nameForm(identity.name).test(message.text)) return 'name';
   return null;
 }
 
 // Who else this message points at. Only the BOT's mention is addressing; everybody else's
 // is part of the question ("how many days has @Zou beaten me?"), and the agent resolves
-// these to the names the group uses before any of it reaches the model.
-export function mentionedOthers(message: InboundMessage, identity: BotIdentity): string[] {
-  return message.mentions.filter((jid) => !isBot(jid, identity));
+// these to the names the group uses before any of it reaches the model — by their PLAYER
+// key, which is what the declarations are filed under, while the text's @token spells the
+// JID the message carried.
+export function mentionedOthers(message: InboundMessage, identity: BotIdentity): Mention[] {
+  return message.mentions.filter((m) => !namesBot(m, identity));
 }
 
 const MENTION = /@(\d{5,})/g;
@@ -74,7 +86,11 @@ export function questionText(
   identity: BotIdentity,
   names: ReadonlyMap<string, string> = new Map(),
 ): string {
+  // The bot's own digits: what `identity` lists, plus the spelling of any mention that
+  // names the bot by its PLAYER key — the text's token spells the JID the message
+  // carried, and an unlisted LID would otherwise survive into the question as a handle.
   const own = new Set(identity.jids.map(jidUser));
+  for (const m of message.mentions) if (namesBot(m, identity)) own.add(jidUser(m.jid));
   const text = message.text.replace(MENTION, (whole, digits: string) => {
     if (own.has(digits)) return ' ';
     // With no resolution supplied, this is the emptiness test's reading (see the agent):

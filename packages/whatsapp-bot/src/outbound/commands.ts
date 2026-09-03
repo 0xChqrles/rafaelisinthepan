@@ -8,8 +8,13 @@
 
 export interface MessageRef {
   id: string; // WhatsApp message id
-  participant: string; // its author's JID (what a reaction / quote needs in a group)
+  // Its author's JID AS THE MESSAGE KEY NAMES IT (`InboundMessage.participant`) — the LID
+  // in a LID-addressed group — never the canonical player key: a reaction or a quote
+  // addresses the original key, and a rewritten one addresses nothing.
+  participant: string;
   fromMe?: boolean;
+  // What the quoted message said (a reply only): the quote bubble is drawn from it.
+  text?: string;
 }
 
 export type OutboundCommand =
@@ -47,7 +52,11 @@ function isMessageRef(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) return false;
   const ref = value as Record<string, unknown>;
   const filled = (field: unknown) => typeof field === 'string' && field !== '';
-  return filled(ref.id) && filled(ref.participant);
+  return (
+    filled(ref.id) &&
+    filled(ref.participant) &&
+    (ref.text === undefined || typeof ref.text === 'string')
+  );
 }
 
 // What the consumer accepts off the wire. A body that is not a command is dropped, not
