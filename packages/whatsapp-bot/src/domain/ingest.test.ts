@@ -135,6 +135,19 @@ describe('share ingestion (#236)', () => {
     expect(sent[0]).toMatchObject({ kind: 'message', text: 'Zou prend la tête avec 2.' });
   });
 
+  it('re-sharing the SAME token in a new message changes nothing: no row change, no reaction', async () => {
+    const { ingest, declarations, sent } = harness(registry({ leaderAnnouncements: true }));
+    expect(await ingest(message())).toBe('recorded');
+    expect(await ingest(message({ id: 'M2', timestamp: 1_001, senderName: 'Gab 🔥' }))).toBe(
+      'unchanged',
+    );
+    // The row's bookkeeping follows the latest message (replays must converge on it)…
+    expect((await declarations.day(GROUP, DAY))[0]).toMatchObject({ score: 7, messageId: 'M2', name: 'Gab 🔥' });
+    // …but the result was acknowledged once, on the message that first declared it.
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ kind: 'reaction', id: `react:${GROUP}:M1` });
+  });
+
   it('a later message replaces the declaration; an older replay does not', async () => {
     const { ingest, declarations } = harness();
     await ingest(message());

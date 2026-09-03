@@ -13,18 +13,27 @@ export function fallbackName(jid: string): string {
   return `…${user.slice(-4)}`;
 }
 
-// A snapshot is a push name: arbitrary text its owner chose, and it lands in a podium
-// line, a tool answer and a prompt. So it arrives on ONE line and at a length a name can
-// plausibly be — a name carrying newlines can forge a turn boundary in either, and one
-// carrying a paragraph is not a name at all. The operator's override is trusted and
-// already validated by the config parser.
+// A name lands in a podium line, a tool answer and a prompt, so it arrives on ONE line
+// and at a length a name can plausibly be — a name carrying newlines can forge a turn
+// boundary in either, and one carrying a paragraph is not a name at all. A snapshot is a
+// push name, arbitrary text its owner chose; an override is the operator's, but the bound
+// is ONE function applied to BOTH: the config parser refuses an override this would
+// change (so the file says what the group sees), and `displayName` applies it regardless,
+// so no source of a name reaches a line or a prompt around it.
 export const NAME_MAX_CHARS = 40;
 
+export function boundName(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().slice(0, NAME_MAX_CHARS).trim();
+}
+
+// A valid override is one the bound leaves alone — one rule, with no second spelling.
+export function isBoundName(text: string): boolean {
+  return text !== '' && boundName(text) === text;
+}
+
 export function displayName(group: GroupConfig, jid: string, snapshot: string): string {
-  const override = group.names[jid];
-  if (override) return override;
-  const trimmed = snapshot.replace(/\s+/g, ' ').trim().slice(0, NAME_MAX_CHARS).trim();
-  return trimmed === '' ? fallbackName(jid) : trimmed;
+  const name = boundName(group.names[jid] ?? snapshot);
+  return name === '' ? fallbackName(jid) : name;
 }
 
 export function nameResolver(group: GroupConfig): (d: Declaration) => string {

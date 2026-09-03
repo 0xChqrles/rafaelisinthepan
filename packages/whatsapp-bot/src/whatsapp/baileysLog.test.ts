@@ -29,6 +29,27 @@ describe('the Baileys logger cannot print a payload (#236)', () => {
     });
   });
 
+  it('a string FIRST argument is the message, and a string after it is a dropped payload', () => {
+    // `logger.info('offline preview received', JSON.stringify(node))` — socket.js, verbatim:
+    // the whole node travels in the position a message is usually read from.
+    const node = JSON.stringify({
+      tag: 'ib',
+      attrs: { from: SENDER },
+      content: [{ tag: 'offline_preview', attrs: { count: '3' }, content: 'private body' }],
+    });
+    const line = summarize('offline preview received', node);
+    expect(line).toEqual({ msg: 'offline preview received' });
+    expect(JSON.stringify(line)).not.toContain('private body');
+    expect(JSON.stringify(line)).not.toContain('33612345678');
+  });
+
+  it('reads the error text off a payload that IS the error', () => {
+    expect(summarize(new Error(`no session for ${SENDER}`), 'decrypt failed')).toMatchObject({
+      msg: 'decrypt failed',
+      error: expect.stringMatching(/^Error: no session for /),
+    });
+  });
+
   it('writes nothing but that summary, at the level it was given', () => {
     const lines: string[] = [];
     const log = pino(

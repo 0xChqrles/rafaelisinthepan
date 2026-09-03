@@ -88,6 +88,7 @@ async function main(): Promise<void> {
       onPairingCode: (code) => console.log(`\nPairing code for ${phone}: ${code}\n`),
     });
 
+    let closed = false;
     try {
       // Wait for the socket to open (post-pairing Baileys restarts once, then opens).
       const deadline = Date.now() + 5 * 60_000;
@@ -101,11 +102,19 @@ async function main(): Promise<void> {
       }
       // Give the socket a moment to flush the post-login key/creds updates to the store.
       await wait(5_000);
+      // CLOSE BEFORE DECLARING SUCCESS. Closing drains the credential queue, and the drain
+      // rejects when the last snapshot — the one that registered the device — did not
+      // land. Success printed before that point was a claim about a store that might hold
+      // a session nobody can resume, and the invalidation flag is cleared only once the
+      // store demonstrably holds the new one.
+      const self = client.selfJids();
+      closed = true;
+      await client.close();
       await clearAuthInvalidated(dynamo, env.table);
-      console.log(`Paired as ${client.selfJids().join(' / ')}. Auth state is in ${env.table}.`);
+      console.log(`Paired as ${self.join(' / ')}. Auth state is in ${env.table}.`);
       console.log('You can start the Fargate task now (scale the service back to 1).');
     } finally {
-      await client.close();
+      if (!closed) await client.close().catch((error) => console.error((error as Error).message));
     }
   } finally {
     renew.stop();

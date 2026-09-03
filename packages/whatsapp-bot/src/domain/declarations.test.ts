@@ -35,16 +35,40 @@ describe('declaration precedence (#236)', () => {
     expect(supersedes({ messageTs: 1_000, messageId: 'M2' }, base)).toBe(false);
   });
 
+  it('a same-token re-share moves the row to the later message but is UNCHANGED', async () => {
+    const store = memoryDeclarationStore();
+    expect(await store.record(base)).toBe('recorded');
+    expect(await store.record({ ...base, messageId: 'M2', messageTs: 1_001, name: 'Gab 🔥' })).toBe(
+      'unchanged',
+    );
+    // The bookkeeping follows the latest message — which is what keeps a replay
+    // convergent — while the outcome says nothing material happened.
+    expect((await store.day(base.group, base.dayNumber))[0]).toMatchObject({
+      token: 'AAA',
+      messageId: 'M2',
+      name: 'Gab 🔥',
+    });
+    // The convergence case that ignoring the same-token message would break: A(X) C(Y)
+    // B(X, latest) arriving as A, B, C must end on X, the player's latest statement.
+    const other = memoryDeclarationStore();
+    await other.record(base); // A: X at 1000
+    await other.record({ ...base, messageId: 'B', messageTs: 1_002 }); // B: X at 1002
+    expect(await other.record({ ...base, token: 'YYY', messageId: 'C', messageTs: 1_001 })).toBe(
+      'unchanged',
+    );
+    expect((await other.day(base.group, base.dayNumber))[0].token).toBe('AAA');
+  });
+
   it('the memory store applies it and answers day + range reads in order', async () => {
     const store = memoryDeclarationStore();
     expect(await store.record(base)).toBe('recorded');
     expect(await store.record(base)).toBe('unchanged');
-    expect(await store.record({ ...base, score: 4, messageId: 'M2', messageTs: 1_001 })).toBe(
-      'recorded',
-    );
-    expect(await store.record({ ...base, score: 3, messageId: 'M0', messageTs: 900 })).toBe(
-      'unchanged',
-    );
+    expect(
+      await store.record({ ...base, score: 4, token: 'BBB', messageId: 'M2', messageTs: 1_001 }),
+    ).toBe('recorded');
+    expect(
+      await store.record({ ...base, score: 3, token: 'CCC', messageId: 'M0', messageTs: 900 }),
+    ).toBe('unchanged');
     await store.record({ ...base, sender: '33600000000@s.whatsapp.net', name: 'Zou', score: 5 });
     await store.record({ ...base, dayNumber: 20701, score: 9 });
     const day = await store.day(base.group, 20700);
@@ -80,8 +104,18 @@ describe('DynamoDB declaration keyspace', () => {
     expect(put.input.ConditionExpression).toBe(
       'attribute_not_exists(#sk) OR #ts < :ts OR (#ts = :ts AND #id < :id)',
     );
+    expect(put.input.ReturnValues).toBe('ALL_OLD');
     expect(put.input.Item?.pk).toEqual({ S: `GROUP#${base.group}` });
     expect(fromItem(put.input.Item!)).toEqual(base);
+  });
+
+  it('reads the token it DISPLACED to tell a re-share from a replacement', async () => {
+    const send = vi.fn(async () => ({ Attributes: { token: { S: 'AAA' } } }));
+    const store = dynamoDeclarationStore({ send } as unknown as DynamoDBClient, 'bot');
+    expect(await store.record({ ...base, messageId: 'M2', messageTs: 1_001 })).toBe('unchanged');
+    expect(await store.record({ ...base, token: 'BBB', messageId: 'M3', messageTs: 1_002 })).toBe(
+      'recorded',
+    );
   });
 
   it('reads a refused condition as unchanged and pages a range query', async () => {

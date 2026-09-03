@@ -6,6 +6,8 @@
 // The write is the precedence rule (`supersedes`) spelled as a ConditionExpression, so two
 // replays racing each other cannot interleave into a wrong row: the item is written only if
 // none exists, or the incoming message is strictly later, or equal-time with a greater id.
+// `ALL_OLD` hands back what the write DISPLACED, which is the race-free way to know whether
+// the token changed — a same-token re-share moves the row and answers `unchanged`.
 
 import {
   ConditionalCheckFailedException,
@@ -93,7 +95,7 @@ export function dynamoDeclarationStore(
   return {
     async record(declaration) {
       try {
-        await client.send(
+        const response = await client.send(
           new PutItemCommand({
             TableName: tableName,
             Item: toItem(declaration),
@@ -104,9 +106,10 @@ export function dynamoDeclarationStore(
               ':ts': { N: String(declaration.messageTs) },
               ':id': { S: declaration.messageId },
             },
+            ReturnValues: 'ALL_OLD',
           }),
         );
-        return 'recorded';
+        return response.Attributes?.token?.S === declaration.token ? 'unchanged' : 'recorded';
       } catch (error) {
         if (error instanceof ConditionalCheckFailedException) return 'unchanged';
         throw error;

@@ -110,6 +110,27 @@ describe('durable Baileys auth state (#236)', () => {
     expect(JSON.parse(items.get('AUTH#bot|creds')!.data!.S!).registered).toBe(true);
   });
 
+  it('the drain REPORTS a store left behind the socket by a failed LAST write', async () => {
+    const { client, items } = fakeDynamo();
+    const send = client.send as unknown as ReturnType<typeof vi.fn>;
+    const auth = await useDynamoAuthState(client, 'bot');
+    await auth.saveCreds();
+    // The write that would have registered the device fails, and its own caller — the
+    // socket's `creds.update` handler — has already moved on. The drain is the only place
+    // a pairing can still learn that the stored session is not the one it just made.
+    auth.state.creds.registered = true;
+    send.mockImplementationOnce(async () => {
+      throw new Error('throttled');
+    });
+    await expect(auth.saveCreds()).rejects.toThrow('throttled');
+    await expect(auth.drain()).rejects.toThrow(/not stored: throttled/);
+    expect(JSON.parse(items.get('AUTH#bot|creds')!.data!.S!).registered).toBe(false);
+    // A later snapshot that lands puts the store back in step, and the drain says so.
+    await auth.saveCreds();
+    await expect(auth.drain()).resolves.toBeUndefined();
+    expect(JSON.parse(items.get('AUTH#bot|creds')!.data!.S!).registered).toBe(true);
+  });
+
   it('stores signal keys per (type, id), reads them back, and deletes on null', async () => {
     const { client, items } = fakeDynamo();
     const auth = await useDynamoAuthState(client, 'bot');

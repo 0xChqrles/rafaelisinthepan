@@ -71,9 +71,18 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   finds it outstanding is the only thing that ever notices. Only one renew runs at a time
   (overlapping writes can land out of order, and the older carries an EARLIER expiry), and
   the window is measured from the instant a renew was ISSUED, which is what the record's own
-  expiry is stamped from. `keepLease` is that rule, once, for every entry point — the task,
+  expiry is stamped from. **The ACQUISITION obeys the same rule:** the lease carries the
+  instant its record was stamped from (`acquiredAt`), the keeper's first window runs from
+  it, and an acquisition whose answer arrives after the grace window is REFUSED (handed
+  back, then thrown) rather than trusted — a slow or retried write can land after the
+  record has aged into another process's reach. **Release DELETES the row**, conditioned on
+  the owner: `stop()` does not wait for a renew in flight, and a late renew over an expiry
+  stamp would resurrect the lease for a full TTL, where its owner condition cannot pass on
+  a row that is gone. `keepLease` is that rule, once, for every entry point — the task,
   `bot:pair` AND `bot:cli groups`, whose socket outlives the bare TTL. `wipe()` keeps the
-  lease row.
+  lease row. Every lease write names EXACTLY the expression attributes its condition uses:
+  DynamoDB refuses an unused one with a ValidationException, and no mocked client ever
+  does.
 - **Auth is durable and never auto-replaced.** Creds + Signal keys live in the bot table
   (`whatsapp/authStore.ts`, Baileys' own `BufferJSON`). A logout marks `AUTH#bot / status`
   INVALIDATED and the task idles with the connected gauge at 0; nothing erases or re-mints
@@ -83,12 +92,21 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   concurrent writes race and an OLDER snapshot can land last — the stored state walks
   backwards, and a restart onto a half-registered session costs exactly the re-pairing this
   store exists to avoid. Closing waits for the queue because the last `creds.update` of a
-  pairing is the one that registers the device.
+  pairing is the one that registers the device — **and the drain REJECTS when that last
+  snapshot did not land**: its own caller (the socket's event handler) only logged the
+  failure and moved on, so the drain is the one place a pairing can still learn the stored
+  session is not the one it just made. `bot:pair` closes BEFORE clearing the invalidation
+  flag and printing success; the task logs it on shutdown.
 - **A share is deterministic input.** The token's day and score, decoded with the shared
   codec; the WhatsApp receive date never groups a result. Word-mode tokens are ignored.
   The sender JID (phone-number form preferred over a LID) is the player key; names are a
   snapshot. Precedence: same message twice = no-op; a later message with a different token
-  replaces; order by message timestamp, message id as the tie-break. Not an anti-cheat.
+  replaces; order by message timestamp, message id as the tie-break. **A later message
+  with the SAME token is `unchanged`** — nothing material: no reaction, no leader claim —
+  while the row's message bookkeeping (id, timestamp, name snapshot) still follows it,
+  because a replay arriving in any order must converge on the player's latest statement
+  (`declarations.ts` says why). `recorded` means the token standing for that (group, day,
+  sender) changed. Not an anti-cheat.
 - **The podium is DENSE and the renderer owns everything but the comments.** Never
   `rankBoard` from shared (competition ranks belong to the public board). A model returns
   `{lines:[{id, comment}]}` keyed by line id (= the score); the answer is rejected whole on
@@ -137,9 +155,13 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   discipline at this package's call sites reaches the library's. The adapter keeps the
   level, the library's message and the error text (all through `redactJids`) and reduces a
   payload to its FIELD NAMES — dropped rather than filtered, because a redaction that has to
-  recognise a value is one unrecognised shape away from being none.
+  recognise a value is one unrecognised shape away from being none. Which argument is the
+  message is pino's rule: a string FIRST argument, and anything after it is payload (the
+  pinned release logs `JSON.stringify(node)` in the second position).
   **And a display NAME is bounded and flattened** (`domain/names.ts`): a push name is
   arbitrary text its owner chose, and it lands in a podium line, a tool answer and a prompt.
+  ONE bound for both sources: the config parser refuses an operator override the bound
+  would change, and `displayName` applies it to whichever name it resolves regardless.
 - **Baileys stops at `whatsapp/`.** The rest consumes `InboundMessage` / `OutboundCommand`.
 - **The image is built from the REPO ROOT** against the root `.dockerignore`, whose
   whitelist names every directory it re-includes outright: a re-include rescues an excluded

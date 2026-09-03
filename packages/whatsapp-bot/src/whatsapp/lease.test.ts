@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ConditionalCheckFailedException, PutItemCommand, type DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import {
+  ConditionalCheckFailedException,
+  DeleteItemCommand,
+  PutItemCommand,
+  type DynamoDBClient,
+} from '@aws-sdk/client-dynamodb';
 import {
   LEASE_GRACE_MS,
   LEASE_RENEW_MS,
@@ -14,7 +19,23 @@ import {
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('single-session lease (#236)', () => {
-  it('acquires only when free or expired, renews as owner, releases by expiring', async () => {
+  // Every expression attribute a request names must be used by its expression, or DynamoDB
+  // refuses the whole request — which a mock never does, so the test checks it by hand.
+  function expectExactAttributes(input: {
+    ConditionExpression?: string;
+    ExpressionAttributeNames?: Record<string, string>;
+    ExpressionAttributeValues?: Record<string, unknown>;
+  }) {
+    const used = new Set(input.ConditionExpression?.match(/[#:][a-zA-Z]+/g) ?? []);
+    expect(new Set(Object.keys(input.ExpressionAttributeNames ?? {}))).toEqual(
+      new Set([...used].filter((n) => n.startsWith('#'))),
+    );
+    expect(new Set(Object.keys(input.ExpressionAttributeValues ?? {}))).toEqual(
+      new Set([...used].filter((n) => n.startsWith(':'))),
+    );
+  }
+
+  it('acquires only when free or expired, renews as owner, releases by DELETING', async () => {
     const send = vi
       .fn()
       .mockResolvedValueOnce({})
@@ -22,15 +43,27 @@ describe('single-session lease (#236)', () => {
       .mockResolvedValueOnce({});
     const lease = await acquireLease({ send } as unknown as DynamoDBClient, 'bot', 'test', () => 1_000);
     expect(lease).not.toBeNull();
+    expect(lease!.acquiredAt).toBe(1_000);
     const put = (send.mock.calls[0] as unknown[])[0] as PutItemCommand;
     expect(put.input.ConditionExpression).toBe(
       'attribute_not_exists(#sk) OR #exp < :now OR #owner = :owner',
     );
     expect(put.input.Item?.expiresAtMs).toEqual({ N: '91000' });
+    expectExactAttributes(put.input);
+
     expect(await lease!.renew()).toBe(true);
+    const renew = (send.mock.calls[1] as unknown[])[0] as PutItemCommand;
+    expect(renew.input.ConditionExpression).toBe('#owner = :owner');
+    expectExactAttributes(renew.input);
+
+    // A delete, conditioned on the owner: a renew still in flight when the holder let go
+    // carries the same condition, which cannot pass on a row that is gone — so it cannot
+    // resurrect the lease the way a late write over an expiry stamp could.
     await lease!.release();
-    const release = (send.mock.calls[2] as unknown[])[0] as PutItemCommand;
-    expect(release.input.Item?.expiresAtMs).toEqual({ N: '0' });
+    const release = (send.mock.calls[2] as unknown[])[0] as DeleteItemCommand;
+    expect(release).toBeInstanceOf(DeleteItemCommand);
+    expect(release.input.ConditionExpression).toBe('#owner = :owner');
+    expectExactAttributes(release.input);
   });
 
   it('refuses to start while another holder is alive', async () => {
@@ -39,13 +72,29 @@ describe('single-session lease (#236)', () => {
       .mockRejectedValueOnce(new ConditionalCheckFailedException({ message: 'held', $metadata: {} }));
     expect(await acquireLease({ send } as unknown as DynamoDBClient, 'bot', 'laptop')).toBeNull();
   });
+
+  it('refuses an acquisition whose answer arrived after the grace window', async () => {
+    // The expiry was stamped when the write was BUILT; a slow or retried answer can land
+    // after the record has aged into another process's reach. The keeper's rule applies to
+    // the acquisition too: past the grace window the answer proves nothing.
+    const clock = { ms: 0 };
+    const send = vi.fn(async () => {
+      clock.ms += LEASE_GRACE_MS;
+      return {};
+    });
+    await expect(
+      acquireLease({ send } as unknown as DynamoDBClient, 'bot', 'task', () => clock.ms),
+    ).rejects.toThrow(/cannot be trusted/);
+    // Handed back rather than left to age out on its own.
+    expect((send.mock.calls[1] as unknown[])[0]).toBeInstanceOf(DeleteItemCommand);
+  });
 });
 
 describe('keeping the lease (#236)', () => {
   function keeperFor(renew: () => Promise<boolean>, clock: { ms: number }) {
     const lost: LeaseLoss[] = [];
     const errors: number[] = [];
-    const lease: Lease = { owner: 'test', renew, release: async () => {} };
+    const lease: Lease = { owner: 'test', acquiredAt: clock.ms, renew, release: async () => {} };
     const keeper = keepLease(
       lease,
       { onLost: (reason) => lost.push(reason), onError: (_, staleMs) => errors.push(staleMs) },
@@ -136,6 +185,25 @@ describe('keeping the lease (#236)', () => {
     await keeper.tick();
     expect(lost).toEqual(['stale']);
     expect(LEASE_GRACE_MS).toBeLessThan(LEASE_TTL_MS);
+  });
+
+  it('measures the FIRST window from the acquisition stamp, not from its own construction', async () => {
+    const clock = { ms: 0 };
+    // Acquired at 0; the keeper is built later, once the slow answer came back.
+    const lease: Lease = {
+      owner: 'test',
+      acquiredAt: 0,
+      renew: () => new Promise<boolean>(() => {}),
+      release: async () => {},
+    };
+    clock.ms = LEASE_RENEW_MS;
+    const lost: LeaseLoss[] = [];
+    const keeper = keepLease(lease, { onLost: (reason) => lost.push(reason) }, { now: () => clock.ms, start: false });
+    void keeper.tick(); // hangs
+    clock.ms = LEASE_GRACE_MS;
+    await keeper.tick();
+    // Measured from construction it would still have a renew period to spare here.
+    expect(lost).toEqual(['stale']);
   });
 
   it('a renew that LANDS restarts the window', async () => {

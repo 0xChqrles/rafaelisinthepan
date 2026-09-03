@@ -59,16 +59,29 @@ function clean(text: string): string {
 
 // What one Baileys call becomes: its message, the names of the fields it carried, and the
 // error text if it carried one. Never a value.
+//
+// WHICH ARGUMENT IS THE MESSAGE is pino's rule, not the caller's intent: a string FIRST
+// argument is the message, and everything after it is payload (pino would printf-interpolate
+// it). The pinned release calls `logger.info('offline preview received', JSON.stringify(node))`
+// — a whole protocol node in the SECOND position — so reading the second string as the
+// message printed exactly what this adapter exists to keep out. A string payload has no
+// field names to keep, so it is dropped outright.
 export function summarize(
   obj: unknown,
   msg: string | undefined,
 ): { msg: string; fields?: string[]; error?: string } {
-  const text = typeof obj === 'string' && msg === undefined ? obj : (msg ?? '');
+  if (typeof obj === 'string') return { msg: clean(obj) };
   const payload = typeof obj === 'object' && obj !== null ? (obj as Record<string, unknown>) : null;
-  const out: { msg: string; fields?: string[]; error?: string } = { msg: clean(text) };
+  const out: { msg: string; fields?: string[]; error?: string } = { msg: clean(msg ?? '') };
   if (!payload) return out;
   const keys = Object.keys(payload);
   if (keys.length > 0) out.fields = keys.slice(0, FIELDS_MAX);
+  // The payload may BE the error (`logger.error(err, '…')`), or carry one under a known key.
+  const own = errorText(payload);
+  if (own !== undefined && own !== '') {
+    out.error = clean(own);
+    return out;
+  }
   for (const key of ERROR_KEYS) {
     const found = errorText(payload[key]);
     if (found !== undefined && found !== '') {

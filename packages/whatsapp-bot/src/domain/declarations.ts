@@ -9,6 +9,14 @@
 // break — so a replayed history batch, arriving in any order, converges on the same row.
 // It is deliberately NOT an anti-cheat contract: a token proves a result, not which person
 // produced it.
+//
+// THE ROW FOLLOWS THE LATEST MESSAGE; THE OUTCOME SAYS WHETHER THE DECLARATION CHANGED.
+// A same-token re-share still moves the row's message bookkeeping (id, timestamp, name
+// snapshot) — it has to, or replays stop converging: with A(X) then C(Y) then B(X, latest)
+// arriving as A, B, C, a store that ignored B would let C's Y stand over the player's
+// actual latest statement. But it is `unchanged`: nothing material moved, so nothing
+// reacts to it and no lead is claimed for it. `recorded` means the TOKEN standing for
+// that (group, day, sender) is not the one that stood before.
 
 export interface Declaration {
   group: string; // group JID
@@ -46,7 +54,8 @@ export interface PlayerSummary {
 }
 
 export interface DeclarationStore {
-  // Writes under the precedence rule above; `unchanged` means an equal-or-newer row stood.
+  // Writes under the precedence rule above. `unchanged` means an equal-or-newer row stood,
+  // OR that the row moved to this message without its token changing.
   record(declaration: Declaration): Promise<RecordOutcome>;
   // A day's rows, every sender.
   day(group: string, dayNumber: number): Promise<Declaration[]>;
@@ -86,7 +95,7 @@ export function memoryDeclarationStore(): DeclarationStore & { rows(): Declarati
       const current = rows.get(key(declaration));
       if (!supersedes(current, declaration)) return 'unchanged';
       rows.set(key(declaration), { ...declaration });
-      return 'recorded';
+      return current?.token === declaration.token ? 'unchanged' : 'recorded';
     },
     async day(group, dayNumber) {
       return this.range(group, dayNumber, dayNumber);

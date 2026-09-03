@@ -14,6 +14,7 @@
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { NAME_MAX_CHARS, isBoundName } from '../domain/names';
 
 export type GroupLanguage = 'en' | 'fr';
 
@@ -168,7 +169,13 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
       if (typeof label !== 'string' || label.trim() === '') {
         fail(file, `"names": the name for ${jid} must be a non-empty string`);
       }
-      overrides[jid] = label.trim();
+      // The same bound a push name gets (`domain/names.ts`): an override lands in the same
+      // podium lines and prompts, and a file is where a mistake should be loud.
+      const trimmed = label.trim();
+      if (!isBoundName(trimmed)) {
+        fail(file, `"names": the name for ${jid} must be one line of at most ${NAME_MAX_CHARS} characters`);
+      }
+      overrides[jid] = trimmed;
     }
   }
 

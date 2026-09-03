@@ -44,10 +44,13 @@ export interface DurableAuth {
   // Snapshots the credentials NOW and queues the write. Snapshot-at-call plus a strict
   // queue is what keeps the stored state monotonic — see the implementation.
   saveCreds(): Promise<void>;
-  // Resolves once every queued snapshot has SETTLED. The socket fires `creds.update` and
-  // moves on, so without a drain a shutdown (or the pairing CLI exiting) can leave the
-  // last one — the one that registered the device — unwritten. It never rejects: each
-  // write's own outcome belongs to the `saveCreds()` that asked for it.
+  // Resolves once every queued snapshot has SETTLED, and REJECTS if the last one did not
+  // land. The socket fires `creds.update` and moves on, so without a drain a shutdown (or
+  // the pairing CLI exiting) can leave the last snapshot — the one that registered the
+  // device — unwritten. And a drain that only WAITED could not say so: the failed write
+  // was reported to its own `saveCreds()` caller, which had already moved on, and pairing
+  // then printed success over a store holding a session nobody can resume. A rejection
+  // here means exactly one thing — the stored state is BEHIND what the socket holds.
   drain(): Promise<void>;
   // The session state (creds + Signal keys + the invalidation flag) — the explicit
   // operator reset before a re-pair. It KEEPS the lease: the caller is holding it while
@@ -194,27 +197,39 @@ export async function useDynamoAuthState(client: DynamoDBClient, table: string):
   // Each call snapshots at CALL time and joins the queue, so the writes land in the order
   // they were asked for and the last one to land is the newest.
   let queue: Promise<void> = Promise.resolve();
+  // Why the LATEST snapshot is not in the store, or null while it is. The writes land in
+  // order, so the newest to settle decides: its success means the store holds what the
+  // socket holds, its failure means the store is behind — whatever older writes did.
+  let behind: Error | null = null;
 
   return {
     state,
     saveCreds() {
       const snapshot = serialize(creds);
-      queue = queue.then(async () => {
-        await client.send(
-          new PutItemCommand({
-            TableName: table,
-            Item: { pk: { S: AUTH_PARTITION }, sk: { S: CREDS_SK }, data: snapshot },
-          }),
-        );
+      const attempt = queue.then(async () => {
+        try {
+          await client.send(
+            new PutItemCommand({
+              TableName: table,
+              Item: { pk: { S: AUTH_PARTITION }, sk: { S: CREDS_SK }, data: snapshot },
+            }),
+          );
+          behind = null;
+        } catch (error) {
+          behind = error as Error;
+          throw error;
+        }
       });
       // A failed write must not poison the queue for every save after it: the caller is
       // handed this attempt's rejection, and the chain carries on from a settled promise.
-      const attempt = queue;
-      queue = queue.catch(() => {});
+      queue = attempt.catch(() => {});
       return attempt;
     },
     async drain() {
       await queue;
+      if (behind) {
+        throw new Error(`The last credential snapshot was not stored: ${behind.message}`);
+      }
     },
     async wipe() {
       // The keyspace is small (creds + a few hundred keys); paged Query + batched deletes.

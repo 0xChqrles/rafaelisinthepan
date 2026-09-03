@@ -8,6 +8,7 @@
 
 import {
   ConditionalCheckFailedException,
+  DeleteItemCommand,
   PutItemCommand,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
@@ -27,7 +28,16 @@ const LEASE_SK = LEASE_SORT_KEY;
 
 export interface Lease {
   owner: string;
+  // The instant the acquiring write was STAMPED from: the record expires LEASE_TTL_MS
+  // after it, however long the answer took to arrive. The keeper measures its window from
+  // here, never from the moment it was constructed.
+  acquiredAt: number;
   renew(): Promise<boolean>;
+  // Deletes the record, conditionally on still owning it. A DELETE rather than an expiry
+  // write, because a renew may still be IN FLIGHT when the holder releases — `stop()` does
+  // not wait for it — and a late renew landing on an expired record would resurrect the
+  // lease for a full TTL. Its condition (`#owner = :owner`) cannot pass on a row that no
+  // longer exists, so the delete closes that race without waiting for anything.
   release(): Promise<void>;
 }
 
@@ -65,7 +75,7 @@ export function keepLease(
   options: { now?: () => number; start?: boolean } = {},
 ): LeaseKeeper {
   const now = options.now ?? Date.now;
-  let heldAt = now();
+  let heldAt = lease.acquiredAt;
   let done = false;
   let renewing = false;
 
@@ -129,7 +139,16 @@ export async function acquireLease(
   const owner = `${label}#${randomUUID()}`;
   const key = { pk: { S: AUTH_PARTITION }, sk: { S: LEASE_SK } };
 
-  async function write(condition: string, values: Record<string, { S: string } | { N: string }>) {
+  // Each write names EXACTLY the expression attributes its condition uses: DynamoDB
+  // refuses a request whose ExpressionAttributeNames/Values carry an unused entry
+  // (a ValidationException), and a mocked client never does — so a renew that borrowed
+  // the acquisition's full set failed on every real call and nothing local could show it.
+  async function write(
+    issuedAt: number,
+    condition: string,
+    names: Record<string, string>,
+    values: Record<string, { S: string } | { N: string }>,
+  ) {
     try {
       await client.send(
         new PutItemCommand({
@@ -138,11 +157,11 @@ export async function acquireLease(
             ...key,
             owner: { S: owner },
             label: { S: label },
-            expiresAtMs: { N: String(now() + LEASE_TTL_MS) },
+            expiresAtMs: { N: String(issuedAt + LEASE_TTL_MS) },
           },
           ConditionExpression: condition,
-          ExpressionAttributeNames: { '#sk': 'sk', '#exp': 'expiresAtMs', '#owner': 'owner' },
-          ExpressionAttributeValues: { ':now': { N: String(now()) }, ':owner': { S: owner }, ...values },
+          ExpressionAttributeNames: names,
+          ExpressionAttributeValues: values,
         }),
       );
       return true;
@@ -152,25 +171,47 @@ export async function acquireLease(
     }
   }
 
-  const acquired = await write('attribute_not_exists(#sk) OR #exp < :now OR #owner = :owner', {});
+  async function release() {
+    try {
+      await client.send(
+        new DeleteItemCommand({
+          TableName: table,
+          Key: key,
+          ConditionExpression: '#owner = :owner',
+          ExpressionAttributeNames: { '#owner': 'owner' },
+          ExpressionAttributeValues: { ':owner': { S: owner } },
+        }),
+      );
+    } catch (error) {
+      if (!(error instanceof ConditionalCheckFailedException)) throw error;
+    }
+  }
+
+  const acquiredAt = now();
+  const acquired = await write(
+    acquiredAt,
+    'attribute_not_exists(#sk) OR #exp < :now OR #owner = :owner',
+    { '#sk': 'sk', '#exp': 'expiresAtMs', '#owner': 'owner' },
+    { ':now': { N: String(acquiredAt) }, ':owner': { S: owner } },
+  );
   if (!acquired) return null;
+  // THE ACQUISITION OBEYS THE KEEPER'S OWN RULE. The record's expiry was stamped before the
+  // write was sent, and a slow or retried answer can arrive after it — at which point
+  // another process may already have acquired the row this one believes it holds, and it
+  // would open a socket beside it. Past the grace window the answer proves nothing, so the
+  // acquisition is refused: handed back (best effort; the record ages out regardless) and
+  // reported as the failure it is, never as "somebody else holds it".
+  const took = now() - acquiredAt;
+  if (took >= LEASE_GRACE_MS) {
+    await release().catch(() => {});
+    throw new Error(
+      `Acquiring the session lease took ${took} ms, longer than its ${LEASE_GRACE_MS} ms grace window; the lease cannot be trusted.`,
+    );
+  }
   return {
     owner,
-    renew: () => write('#owner = :owner', {}),
-    async release() {
-      try {
-        await client.send(
-          new PutItemCommand({
-            TableName: table,
-            Item: { ...key, owner: { S: owner }, label: { S: label }, expiresAtMs: { N: '0' } },
-            ConditionExpression: '#owner = :owner',
-            ExpressionAttributeNames: { '#owner': 'owner' },
-            ExpressionAttributeValues: { ':owner': { S: owner } },
-          }),
-        );
-      } catch (error) {
-        if (!(error instanceof ConditionalCheckFailedException)) throw error;
-      }
-    },
+    acquiredAt,
+    renew: () => write(now(), '#owner = :owner', { '#owner': 'owner' }, { ':owner': { S: owner } }),
+    release,
   };
 }

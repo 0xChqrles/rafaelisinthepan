@@ -253,8 +253,9 @@ export async function connectWhatsApp(options: WhatsAppClientOptions): Promise<W
       }
       // The credential writes are queued, so closing has to WAIT for them: the last
       // `creds.update` of a pairing is the one that registers the device, and a process
-      // that exits over it stores a session nobody can resume. A write that FAILED is
-      // already reported by the handler that asked for it, above.
+      // that exits over it stores a session nobody can resume. The drain REJECTS when
+      // that last write failed, and the rejection is passed on: the handler above only
+      // logged it, and a caller about to declare success has to hear it.
       await auth.drain();
     },
   };

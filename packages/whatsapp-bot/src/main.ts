@@ -177,6 +177,11 @@ async function main(): Promise<void> {
     keeper?.stop();
     try {
       await client?.close();
+    } catch (error) {
+      // The drain found the last credential snapshot unstored: the next start resumes an
+      // older session than the one this socket held, and may end up re-pairing. Said
+      // here, where it is the whole reason the exit is not clean.
+      log.error({ event: 'auth.behind', error: (error as Error).message }, 'closing left the stored session behind the socket');
     } finally {
       await lease!.release().catch(() => {});
     }
