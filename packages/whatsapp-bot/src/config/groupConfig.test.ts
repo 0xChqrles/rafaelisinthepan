@@ -1,5 +1,8 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { GroupRegistry, parseGroupConfig } from './groupConfig';
+import { GroupRegistry, parseGroupConfig, readGroupConfigs } from './groupConfig';
 
 const valid = {
   id: '120363000000000001@g.us',
@@ -63,5 +66,23 @@ describe('group configuration (#236)', () => {
   it('refuses two files naming one group', () => {
     const a = parseGroupConfig('a.json', valid);
     expect(() => new GroupRegistry([a, a])).toThrow(/twice/);
+  });
+});
+
+describe('the snapshot directory (#236)', () => {
+  it('reads a directory of configs, and a MISSING one is empty rather than an error', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'whippin-groups-'));
+    expect(readGroupConfigs(join(dir, 'never-pulled'))).toEqual([]);
+    writeFileSync(join(dir, 'a.json'), JSON.stringify(valid));
+    expect(readGroupConfigs(dir).map((g) => g.name)).toEqual(['Whippin FR']);
+  });
+
+  it('refuses two configs for ONE group, whether or not both are enabled', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'whippin-groups-'));
+    writeFileSync(join(dir, 'a.json'), JSON.stringify(valid));
+    // Disabled is not a licence: whichever the registry kept would decide that group's
+    // language and podium, and enabling the second would fail at deploy instead of here.
+    writeFileSync(join(dir, 'b.json'), JSON.stringify({ ...valid, enabled: false }));
+    expect(() => readGroupConfigs(dir)).toThrow(/already configured by a.json/);
   });
 });

@@ -272,6 +272,14 @@ jobs:
       # OPERATOR_EMAIL is the same repository variable the backend needs: it is who the bot's
       # "disconnected" and dead-letter alarms reach. Required here for the same reason as
       # there — an alarm nobody is subscribed to is the failure the alarm exists to remove.
+      # SSM is the source of truth for group configs (#236); the repository holds only a
+      # template. This materializes them into the gitignored snapshot the image, the Lambda
+      # bundle and the podium SCHEDULES are all built from, so one deploy runs on one
+      # coherent set. It validates as it writes, so an unparseable config fails here rather
+      # than shipping. Needs `ssm:GetParametersByPath` on the deploy role (deploy-role-stack).
+      - name: Pull group configs from SSM
+        run: pnpm bot:groups pull
+
       - name: Deploy bot stack
         env:
           OPERATOR_EMAIL: ${{ vars.OPERATOR_EMAIL }}

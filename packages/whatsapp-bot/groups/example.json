@@ -1,6 +1,6 @@
 {
   "id": "120363000000000000@g.us",
-  "name": "Whippin test",
+  "name": "Example group",
   "language": "fr",
   "enabled": false,
   "podium": {
@@ -11,7 +11,7 @@
   "chat": {
     "enabled": true,
     "name": "WhippinBot",
-    "prePrompt": "Groupe de test. Réponds en français naturel, familier mais pas forcé.",
+    "prePrompt": "R\u00e9ponds en fran\u00e7ais naturel, familier mais pas forc\u00e9.",
     "perUserPerDay": 10,
     "perGroupPerDay": 60
   },

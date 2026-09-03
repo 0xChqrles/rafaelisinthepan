@@ -9,7 +9,8 @@
     "build": "node scripts/bundle.mjs",
     "start": "tsx src/main.ts",
     "pair": "tsx src/pair.ts",
-    "cli": "tsx src/cli.ts"
+    "cli": "tsx src/cli.ts",
+    "groups": "tsx src/groupsCli.ts"
   },
   "dependencies": {
     "@aws-sdk/client-cloudwatch": "3.1075.0",

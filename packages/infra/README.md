@@ -175,15 +175,28 @@ built from the repo root by the runner's Docker.
    ```bash
    aws ecs update-service --cluster <ClusterName> --service <ServiceName> --desired-count 0
    BOT_TABLE=<BotTableName> pnpm bot:pair                 # QR; or --phone 33612345678 for a code
-   BOT_TABLE=<BotTableName> pnpm bot:cli groups           # the group JIDs for groups/*.json
+   BOT_TABLE=<BotTableName> pnpm bot:cli groups           # the group JIDs, for step 4
    aws ecs update-service --cluster <ClusterName> --service <ServiceName> --desired-count 1
    ```
    A device WhatsApp logged out is never re-paired automatically: the task idles, the
    `Disconnected` alarm fires, and `pnpm bot:pair --reset` is the way back.
-4. **Configure the test group** in `packages/whatsapp-bot/groups/test.json` (its JID, `enabled:
-   true`) and deploy — the schedule for its podium is created from that file. The production
-   group is a later config change after the test group has exercised reconnect, ingestion,
-   dedup and outbound delivery.
+4. **Configure the test group.** Group configs are NOT committed — a group JID names a real
+   private conversation and this repo is public — so SSM holds them, one `String` parameter
+   per group at `/whippin/bot/groups/<slug>`:
+   ```bash
+   pnpm bot:groups edit test     # $EDITOR on example.json; paste the JID, set enabled: true
+   pnpm bot:groups list          # what SSM now holds
+   ```
+   The CLI takes no session lease, so it runs with the bot connected. **Editing SSM does not
+   change production**: `deploy-bot` runs `pnpm bot:groups pull` into the gitignored
+   `groups/local/` snapshot and builds the image, the Lambda bundle and the podium SCHEDULES
+   from it, so a deploy is what promotes the change. Deploying by hand means pulling first.
+   The production group is a later config change, after the test group has exercised
+   reconnect, ingestion, dedup and outbound delivery.
+
+   This needs `ssm:GetParametersByPath` on that path for the CI deploy role, which lives in
+   the human-deployed `WhippinDeployStack`: run `pnpm --filter @whippin/infra deploy:auth`
+   once, or `deploy-bot`'s pull step fails with `AccessDenied`.
 5. **Replay a podium by hand** if needed: invoke `PodiumFunctionName` with
    `{"group": "<jid>", "date": "YYYY-MM-DD"}` (the command id dedups a day already posted).
 

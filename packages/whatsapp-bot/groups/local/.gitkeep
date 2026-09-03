@@ -1,0 +1,2 @@
+Snapshot of the group configs SSM holds — `pnpm bot:groups pull` writes *.json here.
+Gitignored: a group JID names a real private conversation and this repository is public.

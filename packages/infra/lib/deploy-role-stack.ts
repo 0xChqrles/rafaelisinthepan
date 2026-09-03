@@ -98,6 +98,20 @@ export class DeployRoleStack extends Stack {
           actions: ['cloudfront:CreateInvalidation'],
           resources: [`arn:${Aws.PARTITION}:cloudfront::${Aws.ACCOUNT_ID}:distribution/*`],
         }),
+        // The WhatsApp bot's group configs (#236) live in SSM, and `deploy-bot` pulls them
+        // into the gitignored snapshot it builds the image, the Lambda bundle and the podium
+        // SCHEDULES from. READ-ONLY and confined to that one path: this role deploys, it does
+        // not decide which groups the bot acts in — that stays an operator act through
+        // `pnpm bot:groups`. `GetParametersByPath` is authorized against the PATH itself, so
+        // both it and the parameters beneath it are named.
+        new iam.PolicyStatement({
+          sid: 'ReadBotGroupConfigs',
+          actions: ['ssm:GetParameter', 'ssm:GetParameters', 'ssm:GetParametersByPath'],
+          resources: [
+            `arn:${Aws.PARTITION}:ssm:*:${Aws.ACCOUNT_ID}:parameter/whippin/bot/groups`,
+            `arn:${Aws.PARTITION}:ssm:*:${Aws.ACCOUNT_ID}:parameter/whippin/bot/groups/*`,
+          ],
+        }),
       ],
     });
 
@@ -155,7 +169,7 @@ export class DeployRoleStack extends Stack {
       {
         id: 'AwsSolutions-IAM5',
         reason:
-          'The deploy role assumes the CDK bootstrap roles by their fixed `cdk-hnb659fds-*` prefix (their full names embed account/region and are only known at deploy time) and reads stack metadata (`cloudformation:DescribeStacks` is read-only). `cloudfront:CreateInvalidation` is scoped to this account\'s distributions by wildcard because the distribution id is generated at deploy time and is discovered from the stack output at run time; the action reads nothing, mutates no infrastructure, and cannot escalate privilege. All real infrastructure changes run through the assumed, least-privilege bootstrap roles — not this role.',
+          'The deploy role assumes the CDK bootstrap roles by their fixed `cdk-hnb659fds-*` prefix (their full names embed account/region and are only known at deploy time) and reads stack metadata (`cloudformation:DescribeStacks` is read-only). `cloudfront:CreateInvalidation` is scoped to this account\'s distributions by wildcard because the distribution id is generated at deploy time and is discovered from the stack output at run time; the action reads nothing, mutates no infrastructure, and cannot escalate privilege. The bot group-config read is scoped by path to `/whippin/bot/groups/*`, whose leaf names are operator-chosen slugs unknown at synth; it is read-only over product configuration that carries no secret. All real infrastructure changes run through the assumed, least-privilege bootstrap roles — not this role.',
       },
       {
         id: 'AwsSolutions-IAM4',

@@ -27,6 +27,7 @@ import {
   Duration,
   RemovalPolicy,
   Aws,
+  Annotations,
   ArnFormat,
   TimeZone,
 } from 'aws-cdk-lib';
@@ -54,7 +55,12 @@ const REPO_ROOT = path.resolve(here, '..', '..', '..');
 const BOT_DIR = path.resolve(REPO_ROOT, 'packages', 'whatsapp-bot');
 const BOT_DOCKERFILE = path.join('packages', 'whatsapp-bot', 'Dockerfile'); // relative to the context
 const PODIUM_ENTRY = path.join(BOT_DIR, 'src', 'podiumJob.ts');
-const GROUPS_DIR = path.join(BOT_DIR, 'groups');
+// The pulled SNAPSHOT (`pnpm bot:groups pull`), never the repository: SSM is the source of
+// truth for group configs and this directory is gitignored. Absent or empty is a legitimate
+// synth (every cdk command in this repo constructs this stack, including the ones deploying
+// the web and backend), so the guard against deploying an accidentally empty set is the
+// WARNING below plus the pull step in `deploy.yml` — not a throw here.
+const GROUPS_DIR = path.join(BOT_DIR, 'groups', 'local');
 const REPO_LOCKFILE = path.join(REPO_ROOT, 'pnpm-lock.yaml');
 
 export const BOT_METRICS_NAMESPACE = 'WhippinBot';
@@ -84,6 +90,11 @@ export class BotStack extends Stack {
     const siteOrigin = props.siteOrigin ?? 'https://whippin.ai';
     const groupsDir = props.groupsDir ?? GROUPS_DIR;
     const groups = readGroupConfigs(groupsDir).filter((g) => g.enabled);
+    if (groups.length === 0) {
+      Annotations.of(this).addWarning(
+        'No enabled group in the snapshot: this deploy would leave the bot with no group and no podium schedule. Run `pnpm bot:groups pull` first (deploy.yml does).',
+      );
+    }
 
     // ── DynamoDB: the bot's own table, every keyspace ────────────────────────
     // `AUTH#bot` (Baileys creds + Signal keys, the lease), `GROUP#<jid>` (declarations,
@@ -202,7 +213,7 @@ export class BotStack extends Stack {
       logging: ecs.LogDrivers.awsLogs({ logGroup: taskLogs, streamPrefix: 'bot' }),
       environment: {
         ...commonEnv,
-        BOT_GROUPS_DIR: '/app/packages/whatsapp-bot/groups',
+        BOT_GROUPS_DIR: '/app/packages/whatsapp-bot/groups/local',
         BOT_METRICS_NAMESPACE: BOT_METRICS_NAMESPACE,
       },
       // Baileys' Signal work is bursty but small; the reservation keeps the scheduler honest.

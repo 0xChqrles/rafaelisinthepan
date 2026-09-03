@@ -1,8 +1,15 @@
 // Group behaviour is CONFIGURATION, not code (#236). Every WhatsApp group the bot may act in
-// has one JSON file under `groups/`, and that directory IS the allow-list: no file, no
-// ingestion, no reaction, no conversation and no scheduled message. Nothing about an
-// unknown JID is inferred — the bot receives the whole account's stream (that is how it
-// finds share links) and drops every message whose group is not configured here.
+// has one JSON config, and that set IS the allow-list: no config, no ingestion, no
+// reaction, no conversation and no scheduled message. Nothing about an unknown JID is
+// inferred — the bot receives the whole account's stream (that is how it finds share
+// links) and drops every message whose group is not configured.
+//
+// THE SOURCE OF TRUTH IS SSM, NOT THIS REPOSITORY. A group JID names a real private
+// conversation and this repo is public, so the configs live at `/whippin/bot/groups/<slug>`
+// and `groups/local/` holds a SNAPSHOT of them, pulled immediately before a build or a
+// deploy (`pnpm bot:groups`, `config/groupsStore.ts`). What this module reads is always
+// that snapshot — a directory of files — so nothing at run time depends on SSM being
+// reachable, and one deployment runs on one coherent set.
 //
 // The file carries PRODUCT behaviour and never a secret: WhatsApp auth, provider API keys
 // and the like live in AWS-managed state. Two fields are load-bearing from the start —
@@ -12,7 +19,7 @@
 // tool, widen no data access and bypass no trigger policy, because none of those are
 // decided by prompt text (see chat/agent.ts).
 
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { NAME_MAX_CHARS, isBoundName } from '../domain/names';
 
@@ -223,11 +230,30 @@ export class GroupRegistry {
   }
 }
 
+// ONE JID, ONE CONFIG — enabled or not. `GroupRegistry` refuses a duplicate too, but only
+// among ENABLED configs, so two slugs could name one group as long as one was switched off,
+// and enabling the second would fail at deploy rather than where it was written. Two configs
+// for one conversation is a mistake at any setting: whichever the registry happened to keep
+// would decide that group's language and podium.
+export function assertUniqueGroupIds(configs: readonly { id: string; source: string }[]): void {
+  const seen = new Map<string, string>();
+  for (const { id, source } of configs) {
+    const first = seen.get(id);
+    if (first !== undefined) fail(source, `group ${id} is already configured by ${first}`);
+    seen.set(id, source);
+  }
+}
+
+// The snapshot directory. A MISSING one is empty, not an error: every `cdk synth` in this
+// repo constructs the bot stack, including the ones deploying the web or the backend, and
+// those must not require a pull. What guards against deploying an accidentally empty set is
+// the bot stack's own synth warning plus the pull step in `deploy.yml` — see bot-stack.ts.
 export function readGroupConfigs(dir: string): GroupConfig[] {
+  if (!existsSync(dir)) return [];
   const files = readdirSync(dir)
     .filter((f) => f.endsWith('.json'))
     .sort();
-  return files.map((file) => {
+  const configs = files.map((file) => {
     let raw: unknown;
     try {
       raw = JSON.parse(readFileSync(join(dir, file), 'utf8'));
@@ -236,6 +262,8 @@ export function readGroupConfigs(dir: string): GroupConfig[] {
     }
     return parseGroupConfig(file, raw);
   });
+  assertUniqueGroupIds(configs.map((c, i) => ({ id: c.id, source: files[i] })));
+  return configs;
 }
 
 export function loadGroups(dir: string): GroupRegistry {

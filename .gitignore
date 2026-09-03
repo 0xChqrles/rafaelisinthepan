@@ -15,6 +15,12 @@ dist-ssr
 __pycache__
 *.pyc
 
+# ── WhatsApp bot group configs (#236) ────────────────────────
+# SSM is the source of truth (`/whippin/bot/groups/<slug>`); this directory is a SNAPSHOT
+# pulled from it before a build or a deploy. A group JID names a real private conversation
+# and this repo is public, so the snapshot is never committed — `groups/example.json` is.
+packages/whatsapp-bot/groups/local/*.json
+
 # ── Editor / tooling local state ─────────────────────────────
 .claude/settings.local.json
 

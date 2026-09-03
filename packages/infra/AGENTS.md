@@ -12,7 +12,11 @@
   infra/                      AWS CDK app: backend (#3) + web hosting (#21) + WhatsApp bot (#236) sibling stacks (pkg @whippin/infra)
     bin/app.ts                CDK app entry — WhippinBackendStack + WhippinWebStack + WhippinBotStack (cdk.json runs it via `npx tsx`)
     lib/bot-stack.ts          BotStack (#236): bot table + outbound SQS + ONE Fargate task (public subnet, no NAT, no
-                              ingress) + podium Lambda with one Scheduler schedule per configured group + alarms
+                              ingress) + podium Lambda with one Scheduler schedule per configured group + alarms.
+                              Its groups come from `whatsapp-bot/groups/local/`, the gitignored SNAPSHOT
+                              `pnpm bot:groups pull` writes from SSM (group JIDs are not committed — this repo is
+                              public). Absent/empty is a legitimate synth, since every cdk command here constructs
+                              this stack; an empty one raises a synth WARNING, and `deploy-bot` pulls first.
     lib/bot-stack.test.ts     synthesized contract: one task stop-before-start, no secrets in env, one schedule per
                               enabled group in its own time zone, alarms treat silence as down
     lib/backend-stack.ts      BackendStack: private S3 + DynamoDB + Lambda(Fn URL) + CloudFront; opt api.<domain>; us-east-1
@@ -20,6 +24,7 @@
     lib/mail.ts               MailAlerts (SNS + SES reputation alarms) + MailReceiving (MX, rule set, S3, forwarder) — #230
     lib/web-stack.ts          WebStack (#21): private S3 (SPA) + CloudFront(OAC) + ACM + Route53; apex; us-east-1
     lib/deploy-role-stack.ts  DeployRoleStack (#33): GitHub OIDC provider + the CI deploy role; human-deployed
+                              — also the READ on `/whippin/bot/groups/*`, which `deploy-bot` pulls before it builds
     scripts/guard-local-deploy.mjs  blocks `deploy`/`deploy:app` outside CI (ALLOW_LOCAL_DEPLOY=1 to break glass)
     cdk.json                  CDK config (app command, context)
 ```
