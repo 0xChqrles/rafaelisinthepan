@@ -15,8 +15,6 @@ export interface DecodedShare {
   capped: boolean; // the run ended at ∞ (#214): recorded, never positioned
 }
 
-const TOKEN = /[A-Za-z0-9_-]+/y;
-
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -26,11 +24,15 @@ function escapeRegExp(s: string): string {
 export function findShareTokens(text: string, siteOrigin: string): string[] {
   const host = siteOrigin.replace(/^https?:\/\//, '');
   const link = new RegExp(`https?://${escapeRegExp(host)}/s/`, 'g');
+  // Sticky, so it matches AT the character after a link rather than searching on from
+  // there — and built per call: a module-level sticky regex carries its `lastIndex`
+  // between callers as a hidden parameter.
+  const token = /[A-Za-z0-9_-]+/y;
   const tokens: string[] = [];
   for (const match of text.matchAll(link)) {
-    TOKEN.lastIndex = match.index + match[0].length;
-    const token = TOKEN.exec(text);
-    if (token) tokens.push(token[0]);
+    token.lastIndex = match.index + match[0].length;
+    const found = token.exec(text);
+    if (found) tokens.push(found[0]);
   }
   return tokens;
 }

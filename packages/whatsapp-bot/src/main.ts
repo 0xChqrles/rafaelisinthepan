@@ -61,10 +61,14 @@ async function main(): Promise<void> {
 
   const dynamo = new DynamoDBClient({});
   const ssm = () => new SSMClient({});
+  // DECLARED BEFORE the gauge that reads it: `startConnectedMetric` publishes its first
+  // point synchronously, so a `let` below this line puts that read in its temporal dead
+  // zone — the throw lands in the publisher's own catch and the first tick is lost as a
+  // "metric not published" warning, once per task start, looking like an IAM problem.
+  let client: Awaited<ReturnType<typeof connectWhatsApp>> | null = null;
   const stopMetric = env.metricsNamespace
     ? startConnectedMetric(env.metricsNamespace, () => client?.isOpen() === true, log)
     : () => {};
-  let client: Awaited<ReturnType<typeof connectWhatsApp>> | null = null;
 
   const status = await readAuthStatus(dynamo, env.table);
   if (status.invalidated) {

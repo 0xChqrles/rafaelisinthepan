@@ -25,31 +25,41 @@ async function listGroups(): Promise<void> {
     console.error('Another process holds the WhatsApp session (the Fargate task?). Stop it first.');
     process.exit(1);
   }
-  const auth = await useDynamoAuthState(dynamo, env.table);
-  if (!auth.state.creds.registered) {
-    console.error('No paired device. Run `pnpm bot:pair` first.');
-    await lease.release();
-    process.exit(1);
+  // Past here the lease is HANDED BACK whatever happens — an unpaired store, a socket that
+  // never opens, a fetch that throws. Holding it on the way out makes the next process (the
+  // Fargate task, coming back up) refuse to connect until the full TTL has expired, for a
+  // command that has already finished. `process.exitCode` rather than `process.exit()`
+  // inside the block, because an exit skips the finally that does the handing back.
+  try {
+    const auth = await useDynamoAuthState(dynamo, env.table);
+    if (!auth.state.creds.registered) {
+      console.error('No paired device. Run `pnpm bot:pair` first.');
+      process.exitCode = 1;
+      return;
+    }
+    const client = await connectWhatsApp({
+      auth,
+      log,
+      onMessage: async () => {},
+      onStop: async (reason) => {
+        console.error(`Connection stopped: ${reason}`);
+        await lease.release();
+        process.exit(1);
+      },
+    });
+    try {
+      const deadline = Date.now() + 60_000;
+      while (!client.isOpen() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 300));
+      const groups = await client.groups();
+      for (const g of groups.sort((a, b) => a.subject.localeCompare(b.subject))) {
+        console.log(`${g.id}\t${g.size}\t${g.subject}`);
+      }
+    } finally {
+      await client.close();
+    }
+  } finally {
+    await lease.release().catch(() => {});
   }
-  const client = await connectWhatsApp({
-    auth,
-    log,
-    onMessage: async () => {},
-    onStop: async (reason) => {
-      console.error(`Connection stopped: ${reason}`);
-      await lease.release();
-      process.exit(1);
-    },
-  });
-  const deadline = Date.now() + 60_000;
-  while (!client.isOpen() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 300));
-  const groups = await client.groups();
-  for (const g of groups.sort((a, b) => a.subject.localeCompare(b.subject))) {
-    console.log(`${g.id}\t${g.size}\t${g.subject}`);
-  }
-  await client.close();
-  await lease.release();
-  process.exit(0);
 }
 
 async function forget(group: string | undefined, player: string | undefined): Promise<void> {
@@ -69,7 +79,12 @@ const run =
     : command === 'forget'
       ? forget(rest[0], rest[1])
       : Promise.reject(new Error('usage: bot:cli <groups | forget <group> <player>>'));
-run.catch((error) => {
-  console.error((error as Error).message);
-  process.exit(1);
-});
+// Exit explicitly once the work is done and every `finally` above has run: the AWS SDK's
+// keep-alive sockets would otherwise hold the loop open on a command that has finished.
+run.then(
+  () => process.exit(process.exitCode ?? 0),
+  (error) => {
+    console.error((error as Error).message);
+    process.exit(1);
+  },
+);

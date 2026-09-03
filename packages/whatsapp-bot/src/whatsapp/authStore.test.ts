@@ -4,10 +4,17 @@ import {
   BatchWriteItemCommand,
   GetItemCommand,
   PutItemCommand,
+  QueryCommand,
   type AttributeValue,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
-import { markAuthInvalidated, readAuthStatus, useDynamoAuthState } from './authStore';
+import {
+  AUTH_PARTITION,
+  LEASE_SORT_KEY,
+  markAuthInvalidated,
+  readAuthStatus,
+  useDynamoAuthState,
+} from './authStore';
 
 // A tiny in-memory DynamoDB: enough of Get/Put/BatchGet/BatchWrite for the auth keyspace.
 function fakeDynamo() {
@@ -20,6 +27,10 @@ function fakeDynamo() {
     if (command instanceof PutItemCommand) {
       items.set(k(command.input.Item!), command.input.Item!);
       return {};
+    }
+    if (command instanceof QueryCommand) {
+      const pk = (command.input.ExpressionAttributeValues![':pk'] as { S: string }).S;
+      return { Items: [...items.values()].filter((item) => item.pk.S === pk) };
     }
     if (command instanceof BatchGetItemCommand) {
       const [table, { Keys }] = Object.entries(command.input.RequestItems!)[0];
@@ -86,5 +97,24 @@ describe('durable Baileys auth state (#236)', () => {
       reason: 'loggedOut',
     });
     expect(items.has('AUTH#bot|creds')).toBe(true);
+  });
+
+  it('wipe clears the session and KEEPS the lease its caller is holding', async () => {
+    const { client, items } = fakeDynamo();
+    const auth = await useDynamoAuthState(client, 'bot');
+    await auth.saveCreds();
+    await auth.state.keys.set({ session: { 'a@s.whatsapp.net': Buffer.from([1]) } });
+    await markAuthInvalidated(client, 'bot', 'loggedOut');
+    const lease = { pk: { S: AUTH_PARTITION }, sk: { S: LEASE_SORT_KEY }, owner: { S: 'pair#1' } };
+    items.set(`${AUTH_PARTITION}|${LEASE_SORT_KEY}`, lease);
+
+    await auth.wipe();
+
+    expect(items.has('AUTH#bot|creds')).toBe(false);
+    expect(items.has('AUTH#bot|key#session#a@s.whatsapp.net')).toBe(false);
+    expect(items.has('AUTH#bot|status')).toBe(false);
+    // Deleting it would let a second process open a competing socket mid-pairing, with the
+    // holder's renewals failing unnoticed.
+    expect(items.get(`${AUTH_PARTITION}|${LEASE_SORT_KEY}`)).toEqual(lease);
   });
 });

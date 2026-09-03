@@ -4,7 +4,7 @@
 
 import type { GroupRegistry } from '../config/groupConfig';
 import type { Log } from '../log';
-import { tag } from '../log';
+import { redactJids, tag } from '../log';
 import { parseCommand, type OutboundCommand } from './commands';
 import type { SentStore } from './dedupStore';
 import type { CommandSource } from './sqs';
@@ -38,16 +38,19 @@ export function createDispatcher(deps: {
       }
       // The allow-list holds on the way OUT too: a command for a group that is not (or no
       // longer) configured is not sent, whoever queued it.
+      // A command id embeds the JIDs it addresses, so every log of one goes through
+      // `redactJids` — the ids stay correlatable, the numbers stay out (see log.ts).
+      const commandId = redactJids(command.id);
       if (!deps.groups.get(command.group)) {
         deps.log.warn(
-          { event: 'outbound.unknown_group', command: command.id, group: tag(command.group) },
+          { event: 'outbound.unknown_group', command: commandId, group: tag(command.group) },
           'dropping a command for an unconfigured group',
         );
         return 'dropped';
       }
       const already = await deps.sent.get(command.group, command.id);
       if (already) {
-        deps.log.info({ event: 'outbound.duplicate', command: command.id }, 'already sent');
+        deps.log.info({ event: 'outbound.duplicate', command: commandId }, 'already sent');
         return 'duplicate';
       }
       if (!deps.sender.isOpen()) return 'deferred';
@@ -58,7 +61,7 @@ export function createDispatcher(deps: {
         sentAt: now().toISOString(),
       });
       deps.log.info(
-        { event: 'outbound.sent', command: command.id, kind: command.kind, waMessageId },
+        { event: 'outbound.sent', command: commandId, kind: command.kind, waMessageId },
         'sent',
       );
       return 'sent';

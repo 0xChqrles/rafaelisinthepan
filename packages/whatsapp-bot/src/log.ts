@@ -18,3 +18,19 @@ export function tag(jid: string | undefined | null): string {
   if (!jid) return '-';
   return createHash('sha256').update(jid).digest('hex').slice(0, 10);
 }
+
+// A device suffix (`:12@s.whatsapp.net`) is taken WITH the number, so a JID that reached a
+// log unnormalized is tagged whole rather than half. It is bounded to three digits on
+// purpose: the ids this runs over are themselves colon-separated, so an unbounded suffix
+// reads `…:<day>:<sender>@…` as one long JID and swallows the day with it — a device id is
+// two digits and a sender is eleven, and the bound is what keeps them apart.
+const JID = /\d{5,}(?::\d{1,3})?@(?:g\.us|s\.whatsapp\.net|lid)/g;
+
+// Some strings the bot logs CONTAIN a JID rather than being one: a command id is
+// `podium:<group>:<day>` or `leader:<group>:<day>:<sender>:<score>`, so logging it whole
+// would put in clear exactly the identifiers `tag()` exists to keep out — a phone number
+// among them. This tags every JID inside the string instead, which keeps the id readable
+// and correlatable without carrying anyone's number into CloudWatch.
+export function redactJids(text: string): string {
+  return text.replace(JID, (jid) => tag(jid));
+}

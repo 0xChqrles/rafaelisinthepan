@@ -38,6 +38,18 @@ export interface OutboundQueue {
 
 const KINDS = new Set(['message', 'reaction']);
 
+// BOTH fields, always. The transport builds a WhatsApp message key from the id AND the
+// author, so a ref missing either one addresses nothing: the send throws, the consumer
+// reads that as the transient failure it looks like, and the command retries its way to
+// the dead-letter queue and its alarm — where what it actually was is a malformed body
+// this function is here to drop.
+function isMessageRef(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false;
+  const ref = value as Record<string, unknown>;
+  const filled = (field: unknown) => typeof field === 'string' && field !== '';
+  return filled(ref.id) && filled(ref.participant);
+}
+
 // What the consumer accepts off the wire. A body that is not a command is dropped, not
 // retried: the queue is the bot's own, so a malformed body is a bug, never transient.
 export function parseCommand(body: string): OutboundCommand | null {
@@ -54,9 +66,15 @@ export function parseCommand(body: string): OutboundCommand | null {
   }
   if (c.kind === 'message') {
     if (typeof c.text !== 'string' || c.text === '') return null;
+    if (c.replyTo !== undefined && !isMessageRef(c.replyTo)) return null;
+    if (
+      c.mentions !== undefined &&
+      (!Array.isArray(c.mentions) || c.mentions.some((m) => typeof m !== 'string'))
+    ) {
+      return null;
+    }
     return c as unknown as OutboundCommand;
   }
-  const target = c.target as Record<string, unknown> | undefined;
-  if (typeof c.emoji !== 'string' || !target || typeof target.id !== 'string') return null;
+  if (typeof c.emoji !== 'string' || c.emoji === '' || !isMessageRef(c.target)) return null;
   return c as unknown as OutboundCommand;
 }

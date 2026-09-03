@@ -27,10 +27,10 @@ function registry(over: Record<string, unknown> = {}) {
   ]);
 }
 
-function token(score: number, lang = 'fr', capped = false): string {
+function token(score: number, lang = 'fr', capped = false, day = DAY): string {
   return encodeResult({
     lang,
-    dayNumber: DAY,
+    dayNumber: day,
     score,
     trajectory: Array.from({ length: score }, (_, i) => Math.round(((i + 1) / score) * 100)),
     solvedAt: capped ? [] : [score],
@@ -134,6 +134,27 @@ describe('share ingestion (#236)', () => {
     });
     expect(await dead(message({ id: 'M9' }))).toBe('failed');
     expect(sent).toHaveLength(1);
+  });
+
+  it('a failed write for one day still records the other day in the same message', async () => {
+    const declarations = memoryDeclarationStore();
+    const record = vi.fn((d: Parameters<typeof declarations.record>[0]) =>
+      d.dayNumber === DAY ? Promise.reject(new Error('down')) : declarations.record(d),
+    );
+    const sent: OutboundCommand[] = [];
+    const ingest = createIngest({
+      groups: registry(),
+      declarations: { ...declarations, record },
+      outbound: { enqueue: async (c) => void sent.push(c) },
+      leaders: memoryLeaderStore(),
+      siteOrigin: ORIGIN,
+      log: createLog('silent'),
+      wait: async () => {},
+    });
+    const text = `${ORIGIN}/s/${token(7)} et hier ${ORIGIN}/s/${token(5, 'fr', false, DAY - 1)}`;
+    expect(await ingest(message({ text }))).toBe('failed');
+    expect((await declarations.day(GROUP, DAY - 1))[0].score).toBe(5);
+    expect(await declarations.day(GROUP, DAY)).toEqual([]);
   });
 
   it('announces a lead CHANGE, with the operator name, and never the first share', async () => {

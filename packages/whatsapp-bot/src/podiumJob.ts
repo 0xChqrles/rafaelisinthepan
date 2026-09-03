@@ -16,7 +16,8 @@ import { SSMClient } from '@aws-sdk/client-ssm';
 import { activeDate, dayNumber } from '@whippin/shared';
 import { loadEnv } from './config/env';
 import { loadGroups, type GroupRegistry } from './config/groupConfig';
-import type { DeclarationStore } from './domain/declarations';
+import { parseDay } from './domain/day';
+import { inLanguage, type DeclarationStore } from './domain/declarations';
 import { dynamoDeclarationStore } from './domain/dynamoDeclarationStore';
 import { nameResolver } from './domain/names';
 import { buildPodium } from './domain/podium';
@@ -52,15 +53,22 @@ export interface PodiumJobDeps {
 export async function runPodiumJob(event: PodiumJobEvent, deps: PodiumJobDeps): Promise<PodiumJobResult> {
   const now = deps.now ?? (() => new Date());
   const group = deps.groups.get(event.group);
-  const day =
-    event.date && /^\d{4}-\d{2}-\d{2}$/.test(event.date)
-      ? dayNumber(event.date)
-      : dayNumber(activeDate(now()));
+  // A replay that names a day gets THAT day, and a date that is not a real one is refused
+  // rather than rolled over into a neighbouring day's podium (see `parseDay`).
+  const active = dayNumber(activeDate(now()));
+  const day = event.date == null ? active : parseDay(event.date);
+  if (day === null) {
+    deps.log.warn(
+      { event: 'podium.bad_date', group: tag(event.group) },
+      'not a real calendar date; nothing posted',
+    );
+    return { outcome: 'skipped', group: event.group, dayNumber: active, lines: 0, comments: 0 };
+  }
   if (!group || !group.podium.enabled) {
     deps.log.warn({ event: 'podium.skipped', group: tag(event.group) }, 'group not configured for a podium');
     return { outcome: 'skipped', group: event.group, dayNumber: day, lines: 0, comments: 0 };
   }
-  const rows = await deps.declarations.day(group.id, day);
+  const rows = inLanguage(await deps.declarations.day(group.id, day), group.language);
   const podium = buildPodium(day, rows, nameResolver(group));
   if (podium.lines.length === 0 && podium.capped.length === 0) {
     deps.log.info({ event: 'podium.empty', group: tag(group.id), day }, 'no shares today; nothing posted');

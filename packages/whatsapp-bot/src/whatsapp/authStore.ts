@@ -33,12 +33,20 @@ import {
 export const AUTH_PARTITION = 'AUTH#bot';
 const CREDS_SK = 'creds';
 const STATUS_SK = 'status';
+// The single-session lease (`lease.ts`) lives in this partition too. Its name is declared
+// HERE, with the partition's other sort keys, so `wipe()` below can exclude it by name —
+// and so the two files cannot drift into a cycle over one string.
+export const LEASE_SORT_KEY = 'lease';
 const keySk = (type: string, id: string) => `key#${type}#${id}`;
 
 export interface DurableAuth {
   state: AuthenticationState;
   saveCreds(): Promise<void>;
-  // Everything in the keyspace (creds + keys) — the explicit operator reset before a re-pair.
+  // The session state (creds + Signal keys + the invalidation flag) — the explicit
+  // operator reset before a re-pair. It KEEPS the lease: the caller is holding it while
+  // wiping, and deleting it would leave the pairing to run unleashed (renewing against a
+  // row that no longer exists fails forever, so nothing would notice) with a second
+  // process free to open a competing socket mid-pair.
   wipe(): Promise<void>;
 }
 
@@ -195,7 +203,9 @@ export async function useDynamoAuthState(client: DynamoDBClient, table: string):
             ...(cursor ? { ExclusiveStartKey: cursor } : {}),
           }),
         );
-        const keys = (page.Items ?? []).map((item) => ({ pk: item.pk!, sk: item.sk! }));
+        const keys = (page.Items ?? [])
+          .filter((item) => item.sk?.S !== LEASE_SORT_KEY)
+          .map((item) => ({ pk: item.pk!, sk: item.sk! }));
         for (let i = 0; i < keys.length; i += 25) {
           let batch = keys.slice(i, i + 25).map((Key) => ({ DeleteRequest: { Key } }));
           while (batch.length > 0) {

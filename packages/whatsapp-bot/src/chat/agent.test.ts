@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { dayNumber } from '@whippin/shared';
 import { parseGroupConfig } from '../config/groupConfig';
 import { memoryDeclarationStore } from '../domain/declarations';
@@ -113,6 +113,26 @@ describe('addressed conversation (#236)', () => {
     expect(await answer(message('trois', { id: 'M3' }), group, identity, TODAY)).toEqual({
       kind: 'silent',
       reason: 'user_limit',
+    });
+  });
+
+  it('a bare mention is not a question: no quota, no model call', async () => {
+    const { provider, requests } = scripted([() => ({ text: 'hi' })]);
+    const limits = memoryLimitStore();
+    const take = vi.spyOn(limits, 'take');
+    const answer = agentWith(provider, { limits });
+    for (let i = 0; i < 5; i += 1) {
+      expect(await answer(message('@33700000000', { id: `M${i}` }), group, identity, TODAY)).toEqual({
+        kind: 'silent',
+        reason: 'empty',
+      });
+    }
+    expect(take).not.toHaveBeenCalled();
+    expect(requests).toHaveLength(0);
+    // The two-a-day ceiling was never touched, so a real question still gets an answer.
+    expect(await answer(message('@33700000000 qui mène ?'), group, identity, TODAY)).toEqual({
+      kind: 'reply',
+      text: 'hi',
     });
   });
 

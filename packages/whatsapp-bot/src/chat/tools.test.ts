@@ -127,6 +127,35 @@ describe('Whippin tools are read-only structured answers (#236)', () => {
     });
   });
 
+  it('ranks only the group\'s OWN language, in every read', async () => {
+    const declarations = memoryDeclarationStore();
+    await declarations.record(row(GAB, 'Gab', TODAY, 4));
+    await declarations.record({ ...row(ZOU, 'Zouzou', TODAY, 2), lang: 'en' });
+    const tools = createToolRunner({
+      group,
+      today: TODAY,
+      sender: GAB,
+      declarations,
+      memory: memoryMemoryStore(),
+      now: () => new Date('2026-09-03T12:00:00Z'),
+    });
+    expect(await tools.run('get_today_podium', {})).toMatchObject({
+      lines: [{ position: 1, score: 4, names: ['Gab'] }],
+    });
+    // The filtered-out row is not even a player the group knows.
+    expect(await tools.run('get_player_history', { player: 'Zou' })).toMatchObject({ unknown: true });
+  });
+
+  it('refuses a date that is not a real one instead of answering about its neighbour', async () => {
+    const { tools } = await harness();
+    expect(await tools.run('get_player_score', { player: 'Gab', date: '2026-02-30' })).toEqual({
+      error: 'date must be a real calendar date, YYYY-MM-DD',
+    });
+    expect(await tools.run('get_player_score', { player: 'Gab', date: '2026-09-01' })).toMatchObject({
+      date: '2026-09-01',
+    });
+  });
+
   it('remembers a fact about the SENDER only, bounded, and refuses unknown tools', async () => {
     const { tools, memory } = await harness();
     expect(await tools.run('remember', { fact: '  Préfère qu\'on l\'appelle Gab.  ' })).toEqual({ saved: true, facts: 1 });

@@ -54,6 +54,16 @@ export interface DeclarationStore {
   range(group: string, fromDay: number, toDay: number): Promise<Declaration[]>;
 }
 
+// A read filter for the group's OWN language. Ingestion writes only rows whose share
+// language matches the group's, so this earns its keep in exactly one case — a group whose
+// configured `language` CHANGES — where the rows written under the old one would otherwise
+// be ranked beside the new ones, on a board whose numbers then answer two different
+// puzzles. Every read of the store goes through it; a filter that lives only on the write
+// side is one config edit away from being no filter at all.
+export function inLanguage(rows: readonly Declaration[], lang: string): Declaration[] {
+  return rows.filter((row) => row.lang === lang);
+}
+
 // Who the group has seen play in a window: one entry per sender with their LATEST
 // snapshot name. The resolution universe for the chat tools (chat/tools.ts).
 export function playersIn(rows: readonly Declaration[]): PlayerSummary[] {

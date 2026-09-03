@@ -77,6 +77,13 @@ export function createAgent(deps: AgentDeps) {
     today: number,
   ): Promise<AgentOutcome> {
     const at = now();
+    // A BARE MENTION IS NOT A QUESTION, and it costs nothing. The ceilings bound
+    // CONVERSATIONS; charging one before there is anything to answer lets a tap of the
+    // bot's name — an autocomplete, a mention in passing, a reply carrying only a sticker
+    // — burn a group's whole day of replies without a single model call ever being made.
+    const question = questionText(message, identity);
+    if (question === '') return { kind: 'silent', reason: 'empty' };
+
     const user = limitKeys.user(group.id, message.sender, at);
     if (!(await deps.limits.take(user.scope, user.key, group.chat.perUserPerDay, limitExpiry(at)))) {
       return { kind: 'silent', reason: 'user_limit' };
@@ -88,8 +95,6 @@ export function createAgent(deps: AgentDeps) {
 
     const senderName = displayName(group, message.sender, message.senderName);
     const memory = await deps.memory.get(group.id, message.sender);
-    const question = questionText(message, identity);
-    if (question === '') return { kind: 'silent', reason: 'empty' };
 
     const tools = createToolRunner({
       group,

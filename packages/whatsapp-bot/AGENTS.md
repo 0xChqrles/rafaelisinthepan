@@ -23,7 +23,9 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
     src/domain/                 Whippin-side logic, Baileys-free:
       message.ts                InboundMessage — the bot's own inbound shape
       share.ts                  find + decode share links (sentence tokens only)
-      declarations.ts           Declaration, the PRECEDENCE rule (`supersedes`), store interface, memory impl
+      day.ts                    parseDay — a "YYYY-MM-DD" a human or a model supplied, round-tripped
+                                through the shared pair so "2026-02-30" is refused, not rolled over
+      declarations.ts           Declaration, the PRECEDENCE rule (`supersedes`), `inLanguage`, store interface, memory impl
       dynamoDeclarationStore.ts GROUP#<jid> / DAY#<000000>#PLAYER#<sender>; precedence as a ConditionExpression
       podium.ts                 DENSE podium (1, 2, 2 → 3); ∞ runs listed, never positioned
       podiumText.ts             the renderer (positions/names/scores/framing are ITS; comments keyed by line id)
@@ -51,8 +53,10 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
 - **No config, no behaviour.** `groups/*.json` is the allow-list for ingestion, reactions,
   conversation AND scheduled messages (the stack reads it at synth to create one schedule
   per enabled podium). `language` decides which daily's shares count — an `fr` group ranks
-  the French puzzle and ignores an English token. Files hold product behaviour only; the
-  loader refuses unknown fields so a typo cannot fall back to a default.
+  the French puzzle and ignores an English token — on the way IN and on the way OUT: every
+  read of the declarations goes through `inLanguage`, so a group whose configured language
+  changes does not rank the rows it wrote under the old one. Files hold product behaviour
+  only; the loader refuses unknown fields so a typo cannot fall back to a default.
 - **ONE session.** `desiredCount 1`, stop-before-start deploys, and the DynamoDB LEASE
   (`AUTH#bot / lease`) that a laptop `bot:start`, `bot:pair` or `bot:cli groups` must hold
   to open a socket. Scale the service to 0 before pairing; the lease refusing is the point.
@@ -74,7 +78,10 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
 - **Outbound has one owner.** Every send is a command with an id (`podium:<g>:<day>`,
   `react:<g>:<msg>`, `reply:<g>:<msg>`, `leader:…`) on the SQS queue; the task's
   dispatcher checks the sent record, sends, records the WhatsApp id. The send-then-crash
-  duplicate window is accepted over marking before sending.
+  duplicate window is accepted over marking before sending. The sent record catches a
+  REDELIVERY and nothing longer-lived, so it wears the table's TTL (30 days) rather than
+  accumulating a permanent row per message ever sent. A leader row moves on every
+  improvement; only a change of HOLDER is announced (`leader.ts` says why).
 - **Conversation is opt-in per message**: mention, reply-to-bot, or a leading `chat.name`.
   Nothing else reaches the model. Ceilings: per sender/day, per group/day (config), and a
   global daily call ceiling (`BOT_LLM_DAILY_CALL_CEILING`). The model reads game facts ONLY
@@ -82,7 +89,8 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   answered as such. Memory is bounded facts per (group, JID), written from explicit
   interactions; `bot:cli forget` removes it without touching scoreboard rows.
 - **Privacy:** logs carry event kinds, hashed JIDs (`tag()`), message ids, day/score and
-  provider latency — never a message body. Score-only shares never reach the provider.
+  provider latency — never a message body. A command id EMBEDS the JIDs it addresses, so
+  every log of one goes through `redactJids`. Score-only shares never reach the provider.
 - **Baileys stops at `whatsapp/`.** The rest consumes `InboundMessage` / `OutboundCommand`.
 
 ## Commands

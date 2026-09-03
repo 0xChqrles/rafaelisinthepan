@@ -51,19 +51,33 @@ export function sqsCommandSource(client: SQSClient, queueUrl: string): CommandSo
   };
 }
 
-// Local dry runs: a queue that feeds its own consumer in-process.
+// Local dry runs: a queue that feeds its own consumer in-process. It models the visibility
+// TIMEOUT as well as the delivery, because the dispatcher leans on it — a command deferred
+// while the socket is closed is deliberately left unsettled so the queue brings it back,
+// and a stand-in that simply dropped it would silently lose exactly the podium the real
+// queue exists to keep.
 export function memoryOutbound(): OutboundQueue & CommandSource {
   const pending: QueuedBody[] = [];
+  const inFlight = new Map<string, QueuedBody>();
   let n = 0;
+  const idle = () => new Promise((r) => setTimeout(r, 500));
   return {
     async enqueue(command) {
       pending.push({ body: JSON.stringify(command), receipt: String((n += 1)) });
     },
     async receive() {
+      // Anything received and not settled comes back first, in order.
+      if (inFlight.size > 0) {
+        await idle();
+        return [...inFlight.values()];
+      }
       const batch = pending.splice(0, 5);
-      if (batch.length === 0) await new Promise((r) => setTimeout(r, 500));
+      if (batch.length === 0) await idle();
+      for (const item of batch) inFlight.set(item.receipt, item);
       return batch;
     },
-    async settle() {},
+    async settle(receipt) {
+      inFlight.delete(receipt);
+    },
   };
 }

@@ -3,6 +3,16 @@
 // beats the day's standing leader — never because anything decided the group was quiet.
 // The first share of a day is not a lead change, so it is not announced; each change is
 // announced at most once (the command id carries day, sender and score).
+//
+// THE ROW MOVES ON EVERY IMPROVEMENT; THE ANNOUNCEMENT ONLY WHEN THE HOLDER CHANGES. The
+// leader improving their OWN best is not news, but it is still the day's best — and a row
+// left at the superseded number announces a lead that never happened: the leader goes 10
+// → 5 silently, the row still says 10, and the next player's 7 is read as taking a lead
+// they are two behind. So a better score is always written, and only the outcome is
+// suppressed. The reverse case — someone REPLACING their own declaration with a worse one
+// (precedence is by message time, not by score) — leaves the row holding a number nobody
+// still has, which suppresses a later announcement rather than inventing one. That is the
+// safe direction for anti-spam state, and the declarations remain the authority either way.
 
 import {
   ConditionalCheckFailedException,
@@ -29,9 +39,8 @@ export function dynamoLeaderStore(client: DynamoDBClient, tableName: string): Le
         .Item;
       const previousScore = current ? Number(current.score?.N) : undefined;
       const previousSender = current?.sender?.S;
-      if (previousScore !== undefined && (previousScore <= score || previousSender === sender)) {
-        return 'unchanged';
-      }
+      // Nothing better than what stands: the row already says the truth.
+      if (previousScore !== undefined && previousScore <= score) return 'unchanged';
       try {
         await client.send(
           new PutItemCommand({
@@ -47,7 +56,9 @@ export function dynamoLeaderStore(client: DynamoDBClient, tableName: string): Le
         if (error instanceof ConditionalCheckFailedException) return 'unchanged';
         throw error;
       }
-      return current ? 'took_lead' : 'first';
+      if (!current) return 'first';
+      // Written either way; announced only when the day's best changed HANDS.
+      return previousSender === sender ? 'unchanged' : 'took_lead';
     },
   };
 }
@@ -58,9 +69,10 @@ export function memoryLeaderStore(): LeaderStore {
     async claim(group, dayNumber, sender, score) {
       const key = `${group}#${dayNumber}`;
       const current = rows.get(key);
-      if (current && (current.score <= score || current.sender === sender)) return 'unchanged';
+      if (current && current.score <= score) return 'unchanged';
       rows.set(key, { sender, score });
-      return current ? 'took_lead' : 'first';
+      if (!current) return 'first';
+      return current.sender === sender ? 'unchanged' : 'took_lead';
     },
   };
 }

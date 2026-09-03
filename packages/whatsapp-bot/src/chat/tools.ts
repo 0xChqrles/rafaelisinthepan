@@ -7,7 +7,14 @@
 
 import { dateForDayNumber, dayNumber, fold } from '@whippin/shared';
 import type { GroupConfig } from '../config/groupConfig';
-import { playersIn, type Declaration, type DeclarationStore, type PlayerSummary } from '../domain/declarations';
+import {
+  inLanguage,
+  playersIn,
+  type Declaration,
+  type DeclarationStore,
+  type PlayerSummary,
+} from '../domain/declarations';
+import { parseDay } from '../domain/day';
 import { buildPodium } from '../domain/podium';
 import { displayName } from '../domain/names';
 import type { LlmTool } from '../llm/types';
@@ -163,13 +170,14 @@ export interface ToolRunner {
 
 export function createToolRunner(ctx: ToolContext): ToolRunner {
   const nameOf = (d: Declaration) => displayName(ctx.group, d.sender, d.name);
+  // Every read is the group's own language (see `inLanguage`): a tool must not answer a
+  // question about this group's daily with rows from the one it used to play.
+  const ownLanguage = (rows: readonly Declaration[]) => inLanguage(rows, ctx.group.language);
   let windowRows: Promise<Declaration[]> | undefined;
   const history = () =>
-    (windowRows ??= ctx.declarations.range(
-      ctx.group.id,
-      ctx.today - HISTORY_WINDOW_DAYS,
-      ctx.today,
-    ));
+    (windowRows ??= ctx.declarations
+      .range(ctx.group.id, ctx.today - HISTORY_WINDOW_DAYS, ctx.today)
+      .then(ownLanguage));
   const players = async () => playersIn(await history());
 
   async function resolve(raw: unknown): Promise<Resolution | { error: string }> {
@@ -188,7 +196,8 @@ export function createToolRunner(ctx: ToolContext): ToolRunner {
 
   const handlers: Record<string, (args: Record<string, unknown>) => Promise<unknown>> = {
     async get_today_podium() {
-      const podium = buildPodium(ctx.today, await ctx.declarations.day(ctx.group.id, ctx.today), nameOf);
+      const today = ownLanguage(await ctx.declarations.day(ctx.group.id, ctx.today));
+      const podium = buildPodium(ctx.today, today, nameOf);
       return {
         date: dateForDayNumber(ctx.today),
         lines: podium.lines.map((l) => ({
@@ -204,12 +213,14 @@ export function createToolRunner(ctx: ToolContext): ToolRunner {
       const bad = notOne(r);
       if (bad) return bad;
       const player = (r as { player: PlayerSummary }).player;
-      const day = typeof args.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(args.date)
-        ? dayNumber(args.date)
-        : ctx.today;
-      const rows = day === ctx.today || day < ctx.today - HISTORY_WINDOW_DAYS
-        ? await ctx.declarations.day(ctx.group.id, day)
-        : dayOf(await history(), day);
+      // A date the model invented ("2026-02-30") is refused, not rolled over into a
+      // neighbouring day whose numbers it would then report as the answer.
+      const day = args.date == null ? ctx.today : parseDay(args.date);
+      if (day === null) return { error: 'date must be a real calendar date, YYYY-MM-DD' };
+      const rows =
+        day === ctx.today || day < ctx.today - HISTORY_WINDOW_DAYS
+          ? ownLanguage(await ctx.declarations.day(ctx.group.id, day))
+          : dayOf(await history(), day);
       const row = rows.find((x) => x.sender === player.sender);
       const podium = buildPodium(day, rows, nameOf);
       const line = podium.lines.find((l) => l.players.some((p) => p.jid === player.sender));

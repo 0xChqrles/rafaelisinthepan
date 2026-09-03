@@ -12,11 +12,11 @@ import {
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
 import { randomUUID } from 'node:crypto';
-import { AUTH_PARTITION } from './authStore';
+import { AUTH_PARTITION, LEASE_SORT_KEY } from './authStore';
 
 export const LEASE_TTL_MS = 90_000;
 export const LEASE_RENEW_MS = 30_000;
-const LEASE_SK = 'lease';
+const LEASE_SK = LEASE_SORT_KEY;
 
 export interface Lease {
   owner: string;

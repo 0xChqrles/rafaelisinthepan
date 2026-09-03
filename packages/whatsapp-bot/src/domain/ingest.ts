@@ -68,6 +68,7 @@ export function createIngest(deps: IngestDeps) {
     if (byDay.size === 0) return 'no_share';
 
     let outcome: IngestOutcome = 'unchanged';
+    let failed = false;
     for (const share of byDay.values()) {
       const declaration: Declaration = {
         group: group.id,
@@ -96,7 +97,10 @@ export function createIngest(deps: IngestDeps) {
           },
           'could not record a share; the podium may be incomplete',
         );
-        return 'failed';
+        // One day's write failing is no reason to abandon the other day this same message
+        // carries: WhatsApp delivers it once, so what is skipped here is simply lost.
+        failed = true;
+        continue;
       }
       deps.log.info(
         {
@@ -141,6 +145,6 @@ export function createIngest(deps: IngestDeps) {
         }
       }
     }
-    return outcome;
+    return failed ? 'failed' : outcome;
   };
 }
