@@ -85,6 +85,16 @@ shipped bundle. Web deploys read two repo **variables**:
   Nothing in code or CI can detect the widget type, so it is checked when the key is issued.
 - `VITE_PLAUSIBLE_DOMAIN` is optional (#60): unset means analytics stay inert.
 
+The BACKEND deploy reads one more repo **variable**:
+
+- `OPERATOR_EMAIL` is **required** (#230): the address the SES bounce/complaint alarms
+  notify and inbound mail for the domain (`hello@`, `abuse@`, `postmaster@`, `dmarc@`) is
+  forwarded to. The deploy job **fails before touching AWS** when it is unset: the site
+  publishes a privacy notice saying that inbox works, and a deploy without the variable would
+  build no MX, no alarms and no landing bucket under it. Configure it with
+  `gh variable set OPERATOR_EMAIL --body '<address>'`, then confirm the SNS subscription
+  the first deploy emails (see `packages/infra/README.md`, operator steps).
+
 ### 3. Branch protection — required status check (manual, admin)
 
 To block merging PRs whose tests fail, make CI a required check on `main`. This is a repo

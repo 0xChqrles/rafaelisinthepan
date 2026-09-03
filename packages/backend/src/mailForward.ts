@@ -100,8 +100,25 @@ const DROPPED_HEADERS = new Set([
   'x-google-dkim-signature',
   'authentication-results',
   'received-spf',
-  FORWARD_MARKER.toLowerCase(),
 ]);
+
+// Dropped BY PREFIX, because the exact names are somebody else's to extend.
+//   x-ses-      — SES reads these off a raw message it SENDS as instructions: which
+//                 configuration set to use, which message tags to stamp, which sending
+//                 authorization ARNs to act under, list-management options. Left in place,
+//                 a stranger's headers steer OUR send — into an existing configuration set,
+//                 or into a refusal — because SES cannot tell a header the sender wrote from
+//                 one we meant. The prefix also covers what SES RECEIVING stamped on the
+//                 stored copy (`X-SES-RECEIPT`, its own verdict headers): all of it is about
+//                 a hop this message is no longer on.
+//   x-whippin-  — this function's own headers. The marker is refused on the way in anyway;
+//                 the verdict line is composed from SES's receipt and must not be spoofable
+//                 by a sender who writes one of their own.
+const DROPPED_PREFIXES = ['x-ses-', 'x-whippin-'];
+
+export function isDroppedHeader(name: string): boolean {
+  return DROPPED_HEADERS.has(name) || DROPPED_PREFIXES.some((prefix) => name.startsWith(prefix));
+}
 
 // ── Pure message surgery ─────────────────────────────────────────────────────
 
@@ -237,7 +254,7 @@ export function forwardedMessage(
     `${FORWARD_MARKER}: 1`,
     ...(options.verdicts ? [`${VERDICT_HEADER}: ${safeHeaderValue(options.verdicts, 200)}`] : []),
   ];
-  const kept = fields.filter((field) => !DROPPED_HEADERS.has(fieldName(field)));
+  const kept = fields.filter((field) => !isDroppedHeader(fieldName(field)));
 
   return Buffer.concat([
     Buffer.from(`${[...added, ...kept].join('\r\n')}\r\n\r\n`, 'latin1'),

@@ -26,6 +26,7 @@ import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as cwActions from 'aws-cdk-lib/aws-cloudwatch-actions';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as destinations from 'aws-cdk-lib/aws-lambda-destinations';
 import { NodejsFunction, OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as route53 from 'aws-cdk-lib/aws-route53';
@@ -55,7 +56,12 @@ export const COMPLAINT_RATE_THRESHOLD = 0.001;
 // BUFFER, not an archive — the forward happens within seconds and Lambda retries a failure on
 // its own — but it is the only copy that survives a forwarder that is broken rather than slow,
 // so it has to outlive the time it takes a human to notice the alarm below and go looking.
-// The privacy notice states this number; changing it changes that file (root AGENTS.md).
+//
+// It is an APPROXIMATE bound, and the privacy notice says "about", not "at most": S3 dates an
+// object's expiry N days after its creation ROUNDED UP to the next UTC midnight, and then
+// removes it asynchronously — so a message can be readable a little past N × 24 hours, and
+// no lifecycle value makes a strict cutoff. The notice states this number; changing it
+// changes that file (root AGENTS.md).
 export const INBOUND_RETENTION_DAYS = 30;
 
 // The message SES stores can be up to its own 40 MB receiving cap, which is far more than the
@@ -117,9 +123,17 @@ export class MailAlerts extends Construct {
 
     // Reputation metrics are account-wide and dimensionless. MAXIMUM over an hour rather than
     // Average: the question is whether the rate ever crossed the line AWS acts on, and an
-    // average would smooth exactly the spike that matters. Missing data is NOT breaching —
-    // SES publishes nothing while the account is not sending, and an alarm that goes off
-    // because the game was quiet teaches its reader to ignore it.
+    // average would smooth exactly the spike that matters.
+    //
+    // Missing data is IGNORED — the alarm KEEPS its state — and not "not breaching". SES
+    // publishes nothing while the account is not sending, and it stops sending in exactly
+    // two situations: the game is quiet, or AWS has PAUSED it, which is the very thing this
+    // alarm is for. `notBreaching` reads either silence as good: an alarm that has fired
+    // drops back to OK the moment the metric goes missing and mails a recovery nobody
+    // earned — for a paused account, precisely when the number is worst. Ignoring holds
+    // ALARM until a real data point says the rate is back under, and holds OK (or the
+    // initial insufficient-data state, on which no action fires) while nothing is sent, so
+    // a quiet week still wakes nobody.
     const reputation = (metricName: string) =>
       new cloudwatch.Metric({
         namespace: 'AWS/SES',
@@ -134,12 +148,14 @@ export class MailAlerts extends Construct {
         threshold,
         evaluationPeriods: 1,
         comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
-        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+        treatMissingData: cloudwatch.TreatMissingData.IGNORE,
         alarmDescription: description,
       });
       created.addAlarmAction(new cwActions.SnsAction(this.topic));
       // The recovery matters as much as the breach: a reputation rate falls slowly, so
       // "it is back under the line" is a fact a human otherwise has to go and look up.
+      // (It is only honest because missing data is ignored above: a recovery has to be a
+      // data point, never the absence of one.)
       created.addOkAction(new cwActions.SnsAction(this.topic));
       return created;
     };
@@ -159,26 +175,58 @@ export class MailAlerts extends Construct {
   }
 
   /**
-   * Alarm on a Lambda's own errors, onto this same topic.
+   * Alarm on a Lambda FAILING TO DO ITS JOB, onto this same topic — two alarms, because an
+   * asynchronously invoked function has two ways of not running a message:
    *
-   * NO OK ACTION, unlike the reputation alarms above, and the asymmetry is deliberate. A
-   * reputation rate falls slowly, so "it is back under the line" is a fact somebody would
-   * otherwise have to go and look up. An error alarm returning to OK says only "no error in
-   * the last 15 minutes", which is true after every transient blip and says nothing about
-   * whether the message that failed ever reached anyone — it is still in the landing bucket,
-   * and getting it out is a human act, not a recovery to be congratulated on.
+   *   Errors             — it ran and threw. Lambda retries twice; the alarm says something
+   *                        is wrong NOW, while the retries may still be rescuing it.
+   *   AsyncEventsDropped — it never ran the event at all, and never will: the retries were
+   *                        exhausted, or the event aged out of the queue while the function
+   *                        was THROTTLED (reserved concurrency is 5). A throttle is not an
+   *                        error and shows up in neither `Errors` nor the logs, so without
+   *                        this second alarm a message could sit in the landing bucket until
+   *                        the lifecycle deleted it, with nothing ever having said so — the
+   *                        exact silence #230 exists to remove. Threshold 1: a single dropped
+   *                        message is somebody's mail.
+   *
+   * Throttles themselves are NOT alarmed: the queue absorbs a burst and retries it for hours,
+   * which is the ceiling working as designed. Only the terminal outcome is worth a human.
+   *
+   * NO OK ACTION on either, unlike the reputation alarms above, and the asymmetry is
+   * deliberate. A reputation rate falls slowly, so "it is back under the line" is a fact
+   * somebody would otherwise have to go and look up. An error alarm returning to OK says
+   * only "no error in the last 15 minutes", which is true after every transient blip and
+   * says nothing about whether the message that failed ever reached anyone — it is still in
+   * the landing bucket, and getting it out is a human act, not a recovery to be
+   * congratulated on. Missing data IS "not breaching" here, unlike above: a function that
+   * was not invoked has dropped nothing, and there is no paused-account reading of silence.
    */
-  addFunctionErrorAlarm(id: string, fn: lambda.IFunction, description: string): cloudwatch.Alarm {
-    const created = new cloudwatch.Alarm(this, id, {
-      metric: fn.metricErrors({ period: Duration.minutes(15), statistic: 'Sum' }),
-      threshold: 1,
-      evaluationPeriods: 1,
-      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-      alarmDescription: description,
-    });
-    created.addAlarmAction(new cwActions.SnsAction(this.topic));
-    return created;
+  addFunctionFailureAlarms(
+    id: string,
+    fn: lambda.IFunction,
+    description: string,
+  ): { errors: cloudwatch.Alarm; dropped: cloudwatch.Alarm } {
+    const alarm = (suffix: string, metric: cloudwatch.IMetric, what: string) => {
+      const created = new cloudwatch.Alarm(this, `${id}${suffix}`, {
+        metric,
+        threshold: 1,
+        evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+        alarmDescription: `${what} ${description}`,
+      });
+      created.addAlarmAction(new cwActions.SnsAction(this.topic));
+      return created;
+    };
+    const window = { period: Duration.minutes(15), statistic: 'Sum' };
+    return {
+      errors: alarm('Errors', fn.metricErrors(window), 'The forwarder threw.'),
+      dropped: alarm(
+        'Dropped',
+        fn.metric('AsyncEventsDropped', window),
+        'Lambda dropped an invocation of the forwarder (retries exhausted, or the event aged out while throttled).',
+      ),
+    };
   }
 }
 
@@ -194,8 +242,9 @@ export interface MailReceivingProps {
   readonly mailFrom: string;
   // Where received mail is forwarded. The operator's real inbox.
   readonly forwardTo: string;
-  // Errors in the forwarder are alarmed onto this topic — a mail that arrives and is then
-  // dropped in silence is the same failure as one that never arrives.
+  // Failures in the forwarder — an error, or an invocation Lambda dropped — are alarmed onto
+  // this topic, and the dropped event itself is delivered there: a mail that arrives and is
+  // then lost in silence is the same failure as one that never arrives.
   readonly alerts: MailAlerts;
 }
 
@@ -233,7 +282,8 @@ export class MailReceiving extends Construct {
     // The landing bucket. Private, TLS-enforced, encrypted, and DESTROY rather than RETAIN:
     // this holds other people's mail, so a teardown that ORPHANED it would leave personal
     // correspondence in an account nothing is managing any more. The lifecycle rule is the
-    // real retention story — see INBOUND_RETENTION_DAYS.
+    // real retention story — see INBOUND_RETENTION_DAYS, and its note on why the bound it
+    // enforces is "about" that many days rather than "at most".
     this.bucket = new s3.Bucket(this, 'InboundBucket', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
@@ -263,8 +313,15 @@ export class MailReceiving extends Construct {
       memorySize: 512,
       timeout: Duration.seconds(30),
       // Inbound mail to four aliases on a small domain is a trickle; the ceiling is here so a
-      // mail flood cannot become a compute bill.
+      // mail flood cannot become a compute bill. What it costs is the failure mode alarmed
+      // below: an event Lambda cannot run inside its retry window is DROPPED, not errored.
       reservedConcurrentExecutions: 5,
+      // WHERE A DROPPED EVENT GOES. The alarms say THAT a message was lost; this says WHICH:
+      // when the retries are exhausted or the event ages out, Lambda publishes the failed
+      // invocation — the SES notification, which names the message id, so the S3 key — onto
+      // the alerts topic, and it lands in the operator's inbox beside the alarm. The same
+      // topic rather than a queue, because a queue nobody reads is the silence again.
+      onFailure: new destinations.SnsDestination(props.alerts.topic),
       logGroup,
       tracing: lambda.Tracing.ACTIVE,
       environment: {
@@ -379,10 +436,10 @@ export class MailReceiving extends Construct {
     });
     activation.node.addDependency(ruleSet);
 
-    props.alerts.addFunctionErrorAlarm(
-      'ForwarderErrors',
+    props.alerts.addFunctionFailureAlarms(
+      'Forwarder',
       this.forwarder,
-      `Inbound mail to ${props.domainName} arrived but could not be forwarded. The message is in the landing bucket for ${INBOUND_RETENTION_DAYS} days; after that it is gone.`,
+      `Inbound mail to ${props.domainName} arrived but could not be forwarded. The message is in the landing bucket for about ${INBOUND_RETENTION_DAYS} days; after that it is gone.`,
     );
 
     // ── cdk-nag: accepted exceptions (each justified) ─────────────────────────

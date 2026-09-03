@@ -93,14 +93,19 @@ CNAMEs published into the same hosted zone) and, with `-c operatorEmail=<address
 that handles what comes **back**:
 
 - **SES reputation alarms** on `Reputation.BounceRate` (> 5%) and `Reputation.ComplaintRate`
-  (> 0.1%) — the rates AWS reviews an account at, and can pause its sending over — plus an alarm
-  on the forwarder's own errors, all onto one SNS topic (`MailAlertsTopicArn`).
+  (> 0.1%) — the rates AWS reviews an account at, and can pause its sending over; missing data
+  holds the alarm's state, so a paused (silent) account never reads as recovered — plus two
+  alarms on the forwarder (its `Errors`, and Lambda's `AsyncEventsDropped` for an invocation
+  it gave up on while throttled), all onto one SNS topic (`MailAlertsTopicArn`). A dropped
+  invocation's event is also delivered to that topic, so the notification names the message.
 - **Inbound mail**: an apex `MX` at `inbound-smtp.us-east-1.amazonaws.com`, a receipt rule set
   for `hello@`, `abuse@`, `postmaster@` and `dmarc@`, a private landing bucket (objects expire
-  after 30 days) and a Lambda that forwards each message to `operatorEmail`.
+  after about 30 days — S3 rounds expiry up to the next UTC midnight and deletes asynchronously)
+  and a Lambda that forwards each message to `operatorEmail`.
 
 `operatorEmail` has **no default** — it is a personal address and this repo is public. CI passes
-the `OPERATOR_EMAIL` repository variable and warns when it is unset. Without it the stack builds
+the `OPERATOR_EMAIL` repository variable and **fails the backend deploy when it is unset**: a
+local synth may want the stack without it, production never does. Without it the stack builds
 **none** of the above: an alarm nobody is subscribed to and an MX nobody reads are the failure
 this plumbing removes, not lesser versions of it.
 

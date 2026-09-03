@@ -123,6 +123,35 @@ describe('what a forwarded copy changes', () => {
     expect(readHeader(fields, VERDICT_HEADER)).toBe('spf=PASS dkim=PASS');
   });
 
+  it('STRIPS THE HEADERS SES WOULD OBEY, so a stranger cannot steer our send', () => {
+    // SES reads X-SES-* off a raw message as instructions — which configuration set, which
+    // tags, which sending-authorization ARNs. Forwarded verbatim, the person who wrote to
+    // hello@ is the one choosing them. The verdict header is ours to write, never theirs.
+    const hostile = message([
+      'From: ada@example.com',
+      'X-SES-CONFIGURATION-SET: somebody-elses',
+      'X-SES-MESSAGE-TAGS: campaign=spam',
+      'X-SES-SOURCE-ARN: arn:aws:ses:us-east-1:000000000000:identity/evil.example',
+      'X-SES-FROM-ARN: arn:aws:ses:us-east-1:000000000000:identity/evil.example',
+      'X-SES-RETURN-PATH-ARN: arn:aws:ses:us-east-1:000000000000:identity/evil.example',
+      'X-SES-LIST-MANAGEMENT-OPTIONS: contactListName=x',
+      'X-SES-RECEIPT: AEFBQUFBQUFB',
+      `${VERDICT_HEADER}: spf=PASS dkim=PASS dmarc=PASS spam=PASS virus=PASS`,
+      'Subject: hi',
+    ]);
+    const out = fieldsOf(
+      forwardedMessage(hostile, { mailFrom: MAIL_FROM, verdicts: 'spam=FAIL' }),
+    );
+    for (const field of out) {
+      expect(field.toLowerCase().startsWith('x-ses-')).toBe(false);
+    }
+    // Exactly one verdict line, and it is the one SES gave, not the one the sender wrote.
+    const verdicts = out.filter((f) => f.toLowerCase().startsWith(VERDICT_HEADER.toLowerCase()));
+    expect(verdicts).toHaveLength(1);
+    expect(readHeader(out, VERDICT_HEADER)).toBe('spam=FAIL');
+    expect(readHeader(out, 'subject')).toBe('hi');
+  });
+
   it('falls back to the bare sender when there is no envelope address', () => {
     expect(forwardFrom(undefined, MAIL_FROM)).toBe(`<${MAIL_FROM}>`);
     expect(forwardFrom('', MAIL_FROM)).toBe(`<${MAIL_FROM}>`);

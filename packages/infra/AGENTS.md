@@ -170,23 +170,30 @@
   `SiteBucketName`, `DistributionId`, `DistributionDomainName`.
 - **Mail plumbing (#230):** `lib/mail.ts`, two constructs inside `BackendStack`, both gated on
   `-c operatorEmail=` (no default — a personal address in a public repo; CI passes the
-  `OPERATOR_EMAIL` repository variable and warns when it is unset). **`MailAlerts`** — an SNS
+  `OPERATOR_EMAIL` repository variable and FAILS the backend deploy when it is unset, since
+  2026-09-03's PR-233 review). **`MailAlerts`** — an SNS
   topic (`enforceSSL`, deliberately NOT SSE: a CloudWatch alarm cannot publish through the
   AWS-managed `alias/aws/sns` key, so encryption with the free key would silently break the
   notification), a confirmed-by-hand email subscription, and `AWS/SES`
   `Reputation.BounceRate`/`ComplaintRate` alarms at AWS's own review rates (0.05 / 0.001),
-  Maximum over an hour, `notBreaching` on missing data. The topic policy NAMES
+  Maximum over an hour, missing data IGNORED (state held — `notBreaching` would mail a false
+  recovery the moment a paused account stopped emitting; same review). The topic policy NAMES
   `cloudwatch.amazonaws.com`, because `enforceSSL` replaces the default policy and would
   otherwise leave a lone Deny. **`MailReceiving`** — the apex `MX` at
   `inbound-smtp.<region>.amazonaws.com`, a private `DESTROY` landing bucket whose `inbound/`
-  prefix expires after 30 days (the number the privacy notice states), a receipt rule set for
+  prefix expires after 30 days (the number the privacy notice states as "about" — S3 rounds
+  expiry up to the next UTC midnight and deletes asynchronously), a receipt rule set for
   `hello@`/`abuse@`/`postmaster@`/`dmarc@` running **S3 then Lambda in that order** (the
   forwarder reads what the S3 action wrote), and a second `NodejsFunction` bundling
   `backend/src/mailForward.ts` with `ses:SendEmail` scoped exactly as the code sender's is.
   An `AwsCustomResource` ACTIVATES the rule set — SES holds one active rule set per region and
   exposes no CloudFormation property for it, so a deploy without it receives nothing — and the
-  forwarder's own errors alarm onto the same topic. `backend-stack.test.ts` pins the
-  thresholds, the CloudWatch publish grant, the MX target, the four recipients, the action
-  order, the activation, the retention, and that NONE of it is built without an operator
-  address. Output: `MailAlertsTopicArn`. Operator steps (README): confirm the SNS
+  forwarder's failures alarm onto the same topic: its `Errors`, AND Lambda's
+  `AsyncEventsDropped` (an async event that aged out while THROTTLED under the reserved
+  concurrency of 5 is dropped, not errored — same review), with the topic as the function's
+  `onFailure` destination so the dropped event, which names the message, lands beside the
+  alarm. `backend-stack.test.ts` pins the
+  thresholds, the missing-data policies, the CloudWatch publish grant, the MX target, the
+  four recipients, the action order, the activation, the retention, the dropped-event alarm
+  and destination, and that NONE of it is built without an operator address. Output: `MailAlertsTopicArn`. Operator steps (README): confirm the SNS
   subscription, publish `rua=`, and SES sandbox exit.

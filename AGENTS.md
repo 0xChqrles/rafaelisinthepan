@@ -1835,7 +1835,9 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   one of those was discarded undelivered.
 - **ONE operator address gates ALL of it** (`-c operatorEmail=`, `packages/infra/bin/app.ts`,
   no default because the repo is public; CI passes the `OPERATOR_EMAIL` repository variable and
-  warns when it is unset). It is the confirmed SNS subscription behind the alarms AND the inbox
+  **FAILS the backend deploy when it is unset** — PR-233 review, 2026-09-03: the site publishes a
+  privacy notice saying the inbox works, and a warn-and-continue would deploy no MX, no alarms
+  and no landing bucket under it). It is the confirmed SNS subscription behind the alarms AND the inbox
   received mail is forwarded to, because both are the same job: REACHING A HUMAN. Unset, the
   stack builds NEITHER — an alarm nobody is subscribed to and an MX nobody reads are the same
   bug this plumbing removes, not lesser versions of it. Two knobs where one suffices would have
@@ -1846,10 +1848,15 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   account-wide with no configuration set, so nothing is added to the sending path. Thresholds
   are **AWS's own review rates, not numbers of our choosing** (0.05 / 0.001 — the metric reports
   fractions), MAXIMUM over an hour because the question is whether the rate ever crossed the
-  line an average would smooth away, and `treatMissingData: NOT_BREACHING` because SES publishes
-  nothing while the account is quiet and an alarm that fires for silence teaches its reader to
-  ignore it. OK actions too: a reputation rate falls slowly, so "it is back under" is otherwise
-  a fact somebody has to go and look up.
+  line an average would smooth away, and **missing data IGNORED — the alarm holds its state**
+  (corrected 2026-09-03 on the PR-233 review; it was `NOT_BREACHING`). SES publishes nothing
+  while the account is quiet AND while AWS has paused it, and `notBreaching` reads both as
+  good: an alarm that had fired dropped to OK the moment the metric went missing and mailed a
+  false recovery — for a paused account, exactly when the number was worst. Ignoring holds
+  ALARM until a real data point says otherwise, and a quiet week still wakes nobody (the
+  initial insufficient-data state fires no action). OK actions too: a reputation rate falls
+  slowly, so "it is back under" is otherwise a fact somebody has to go and look up — honest
+  only because a recovery now has to be a data point.
   **The topic NAMES CloudWatch as a publisher.** `enforceSSL` attaches an explicit topic policy,
   and an explicit policy REPLACES the default one SNS applies — leaving a lone Deny and turning
   "can the alarm publish" into a question about implicit service grants. That is the one thing
@@ -1909,6 +1916,12 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     what it declines is exactly the useless half (news about the operator's own mailbox) and a
     bounce of a CODE MAIL — the one this issue exists to surface — carries no marker and
     forwards normally.
+  - **Every `X-SES-*` and `X-Whippin-*` header is STRIPPED on the way out** (PR-233 review,
+    2026-09-03). SES reads `X-SES-*` off a raw message it sends as INSTRUCTIONS — configuration
+    set, message tags, sending-authorization ARNs, list-management options — so a stranger's
+    headers, forwarded verbatim, steered OUR send; and the verdict line is composed from SES's
+    receipt, never from a header the sender could write. Dropped by PREFIX, since the exact
+    names are AWS's to extend.
   - Spam and virus verdicts (scanning is on) are refused rather than relayed into a personal
     inbox from our own verified domain. A message over ~9 MB is not relayed either — SES accepts
     up to 40 MB inbound — but its SIZE becomes the notification: a short notice names the
@@ -1931,10 +1944,18 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   that ORPHANED it would leave correspondence in an account nothing manages any more — and a
   lifecycle rule expiring the `inbound/` prefix after **30 days**. The forward happens in
   seconds with Lambda's own retries, so the window exists for the case the retries do not cover:
-  a forwarder that is BROKEN rather than slow. Which is also why **the forwarder's own errors
-  are alarmed onto the same topic** — a mail that arrives and is then dropped in silence is the
-  same failure as one that never arrives. **That 30 days is stated in the privacy notice**
-  (`web/src/screens/privacyDoc.ts`); changing the number changes that file.
+  a forwarder that is BROKEN rather than slow. Which is also why **the forwarder's failures are
+  alarmed onto the same topic — its `Errors`, and Lambda's `AsyncEventsDropped`** (added
+  2026-09-03 on the PR-233 review): the action is asynchronous under a reserved concurrency of
+  5, and an event Lambda cannot run inside its retry window is DROPPED, which counts as neither
+  an error nor a log line — a mail that arrives and is then lost in silence is the same failure
+  as one that never arrives. The topic is also the function's `onFailure` destination, so the
+  dropped event — which names the message id, so the S3 key — lands beside the alarm; throttles
+  themselves are not alarmed, since the queue absorbing a burst is the ceiling working.
+  **That 30 days is stated in the privacy notice as "ABOUT 30 days"** (`web/src/screens/
+  privacyDoc.ts`; "at most" until the same review): S3 dates expiry N days after creation
+  rounded UP to the next UTC midnight and deletes asynchronously, so no lifecycle value is a
+  strict cutoff. Changing the number changes that file.
 - **The code mailer was NOT widened, and must not be** (the issue's third note, recorded here
   because it is a standing rule now): `backend/src/mailer.ts` is one message shape with a text
   body, deliberately — it addresses PLAYERS, and anything beyond a six-digit code needs its own
@@ -2475,9 +2496,12 @@ publish/inventory/backend:dev (backend), dev/build (web), cdk synth/diff/deploy
   keeps about a player and why: the account row's email, the device item's hashed token and
   parsed user-agent (#216), the round rows' guess logs (#201), scores, friends and the profile,
   the HMAC-of-IP rows the #169 volume floor and #204's send meter write, and — since #230 —
-  mail a player sends US, which passes through the inbound landing bucket for at most 30 days
+  mail a player sends US, which passes through the inbound landing bucket for about 30 days
   (`infra/lib/mail.ts` `INBOUND_RETENTION_DAYS`; the number is stated on the page, so moving it
-  moves that file). **Changing what
+  moves that file) — and, since the PR-233 review, the PROVIDER hosting the inbox it is
+  forwarded to (`PRIVACY_MAILBOX_PROVIDER`, read off `OPERATOR_EMAIL`'s host: that provider
+  receives and stores the whole message, so it is a recipient the page has to name beside AWS,
+  Cloudflare and Plausible). **Changing what
   the server stores — a new field, a new third party, a changed retention — is a change to
   that file**, which is the one place the game makes a promise about any of it. It is
   reachable from `/account` — its ONE door since 2026-09-03 (user-decided): the email flow's

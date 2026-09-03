@@ -115,15 +115,19 @@ jobs:
       # OPERATOR_EMAIL is the address the SES reputation alarms notify and inbound mail for
       # the domain is forwarded to (#230). It is a repository VARIABLE rather than a literal
       # because it is a personal address and this repo is public. Unset, it arrives as an
-      # empty string and the stack builds no mail plumbing at all — deliberate, but it means
-      # a missing variable is a silently unmonitored sender, so it is checked here.
+      # empty string and the stack builds no mail plumbing at all — which a local synth may
+      # want, but PRODUCTION never does: the site publishes a privacy notice saying that
+      # inbox works, and a deploy that removed the MX, the alarms and the landing bucket
+      # would make that a lie while the sender went unmonitored. So the job FAILS here,
+      # before touching AWS, rather than warning and continuing.
       - name: Deploy backend stack
         env:
           OPERATOR_EMAIL: ${{ vars.OPERATOR_EMAIL }}
         run: |
           set -euo pipefail
           if [ -z "$OPERATOR_EMAIL" ]; then
-            echo "::warning::OPERATOR_EMAIL repository variable is unset - deploying without SES bounce/complaint alarms or inbound mail (#230)."
+            echo "::error::OPERATOR_EMAIL repository variable is unset. The backend deploy requires it: it builds the SES bounce/complaint alarms and the domain's inbound mail (#230). Set it under Settings > Secrets and variables > Actions > Variables, then re-run."
+            exit 1
           fi
           pnpm --filter @whippin/infra exec cdk deploy WhippinBackendStack \
             -c "operatorEmail=$OPERATOR_EMAIL" --require-approval never

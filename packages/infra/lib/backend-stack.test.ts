@@ -475,12 +475,40 @@ describe('mail plumbing (#230)', () => {
       Threshold: 0.001,
       ComparisonOperator: 'GreaterThanThreshold',
     });
-    // SES publishes no reputation metric while the account is not sending. An alarm that
-    // fires because the game was quiet is an alarm its reader learns to ignore.
-    for (const alarm of alarms) expect(alarm.TreatMissingData).toBe('notBreaching');
-    // A mail that arrives and is then dropped in silence is the same failure as one that
-    // never arrives, so the forwarder's own errors are alarmed too.
-    expect(byMetric('Errors')).toMatchObject({ Namespace: 'AWS/Lambda' });
+    // SES publishes no reputation metric while the account is not sending — because the game
+    // is quiet, OR because AWS has PAUSED it. `notBreaching` reads both as good, so an alarm
+    // that had fired would drop to OK and mail a false recovery the moment the metric went
+    // missing. Ignoring HOLDS the state: a quiet week wakes nobody, and a paused account is
+    // never congratulated.
+    for (const metricName of ['Reputation.BounceRate', 'Reputation.ComplaintRate']) {
+      expect(byMetric(metricName)?.TreatMissingData).toBe('ignore');
+    }
+    // A mail that arrives and is then lost in silence is the same failure as one that never
+    // arrives, and an ASYNC function has two ways of losing one: it ran and threw, or Lambda
+    // gave up on the event without running it — retries exhausted, or aged out while
+    // THROTTLED under the reserved concurrency, which is neither an error nor a log line.
+    for (const metricName of ['Errors', 'AsyncEventsDropped']) {
+      expect(byMetric(metricName)).toMatchObject({
+        Namespace: 'AWS/Lambda',
+        Threshold: 1,
+        // Here silence IS good: a function that was not invoked dropped nothing.
+        TreatMissingData: 'notBreaching',
+      });
+    }
+  });
+
+  it('delivers a dropped forwarder event to the alerts topic, so the alarm names the message', () => {
+    // The alarm says THAT a message was lost; the failed event (the SES notification, which
+    // carries the message id and so the S3 key) says WHICH. The same topic rather than a
+    // queue, because a queue nobody reads is the silence again.
+    const configs = Object.values(mail.findResources('AWS::Lambda::EventInvokeConfig'));
+    const onFailure = configs.map(
+      (config) =>
+        (config.Properties.DestinationConfig as { OnFailure?: { Destination: unknown } })
+          ?.OnFailure?.Destination,
+    );
+    const [topicId] = Object.keys(mail.findResources('AWS::SNS::Topic'));
+    expect(onFailure).toContainEqual({ Ref: topicId });
   });
 
   it('lets CloudWatch publish to the topic it alarms onto', () => {
@@ -568,7 +596,8 @@ describe('mail plumbing (#230)', () => {
       RestrictPublicBuckets: true,
     });
     // This holds other people's mail, so the retention is a promise the privacy notice
-    // makes on its behalf — 30 days, stated there, enforced here.
+    // makes on its behalf — "about 30 days", stated there, enforced here (S3 rounds expiry
+    // up to the next UTC midnight and deletes asynchronously, which is why "about").
     const rules = inbound!.Properties.LifecycleConfiguration.Rules as Record<string, unknown>[];
     expect(rules[0]).toMatchObject({ Prefix: 'inbound/', ExpirationInDays: 30, Status: 'Enabled' });
   });
