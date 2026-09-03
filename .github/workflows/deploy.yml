@@ -111,8 +111,22 @@ jobs:
           aws-region: us-east-1
 
       # cdk.json's app runs from packages/infra; --filter exec runs there.
+      #
+      # OPERATOR_EMAIL is the address the SES reputation alarms notify and inbound mail for
+      # the domain is forwarded to (#230). It is a repository VARIABLE rather than a literal
+      # because it is a personal address and this repo is public. Unset, it arrives as an
+      # empty string and the stack builds no mail plumbing at all — deliberate, but it means
+      # a missing variable is a silently unmonitored sender, so it is checked here.
       - name: Deploy backend stack
-        run: pnpm --filter @whippin/infra exec cdk deploy WhippinBackendStack --require-approval never
+        env:
+          OPERATOR_EMAIL: ${{ vars.OPERATOR_EMAIL }}
+        run: |
+          set -euo pipefail
+          if [ -z "$OPERATOR_EMAIL" ]; then
+            echo "::warning::OPERATOR_EMAIL repository variable is unset - deploying without SES bounce/complaint alarms or inbound mail (#230)."
+          fi
+          pnpm --filter @whippin/infra exec cdk deploy WhippinBackendStack \
+            -c "operatorEmail=$OPERATOR_EMAIL" --require-approval never
 
       # Deploying the Lambda is NOT enough to change what players receive. Puzzle responses
       # are served with a year-long s-maxage, so every already-cached (date, lang,

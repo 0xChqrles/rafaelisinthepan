@@ -54,6 +54,12 @@ new BackendStack(app, 'WhippinBackendStack', {
     app.node.tryGetContext('turnstileSecretParameter') ?? '/whippin/turnstile-secret',
   ipHmacSecretParameter:
     app.node.tryGetContext('ipHmacSecretParameter') ?? '/whippin/ip-hmac-secret',
+  // Where a human is reached (#230): the confirmed SNS subscription behind the SES
+  // reputation alarms, and the inbox that inbound mail for the domain is forwarded to.
+  // DELIBERATELY WITHOUT A DEFAULT — it is a personal address, and this repo is public.
+  // CI supplies it as a repository variable; unset, the mail plumbing is simply not built
+  // (see lib/mail.ts for why a half-built version would be worse than none).
+  operatorEmail: app.node.tryGetContext('operatorEmail') || undefined,
   env,
 });
 
