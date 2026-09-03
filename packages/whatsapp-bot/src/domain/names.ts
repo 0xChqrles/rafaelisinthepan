@@ -13,10 +13,17 @@ export function fallbackName(jid: string): string {
   return `…${user.slice(-4)}`;
 }
 
+// A snapshot is a push name: arbitrary text its owner chose, and it lands in a podium
+// line, a tool answer and a prompt. So it arrives on ONE line and at a length a name can
+// plausibly be — a name carrying newlines can forge a turn boundary in either, and one
+// carrying a paragraph is not a name at all. The operator's override is trusted and
+// already validated by the config parser.
+export const NAME_MAX_CHARS = 40;
+
 export function displayName(group: GroupConfig, jid: string, snapshot: string): string {
   const override = group.names[jid];
   if (override) return override;
-  const trimmed = snapshot.trim();
+  const trimmed = snapshot.replace(/\s+/g, ' ').trim().slice(0, NAME_MAX_CHARS).trim();
   return trimmed === '' ? fallbackName(jid) : trimmed;
 }
 

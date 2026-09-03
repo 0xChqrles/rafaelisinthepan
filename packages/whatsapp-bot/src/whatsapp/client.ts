@@ -21,11 +21,11 @@ import {
   type WAMessage,
   type WASocket,
 } from 'baileys';
-import pino from 'pino';
 import type { InboundMessage } from '../domain/message';
 import type { Log } from '../log';
 import type { OutboundCommand } from '../outbound/commands';
 import type { DurableAuth } from './authStore';
+import { baileysLogger } from './baileysLog';
 import { toInbound } from './inbound';
 
 export type StopReason = 'logged_out' | 'replaced';
@@ -60,7 +60,9 @@ const GROUP_CACHE_MS = 5 * 60_000;
 
 export async function connectWhatsApp(options: WhatsAppClientOptions): Promise<WhatsAppClient> {
   const { auth, log } = options;
-  const baileysLog = pino({ level: process.env.BOT_BAILEYS_LOG_LEVEL ?? 'warn', base: undefined });
+  // NOT a bare pino instance: Baileys logs raw JIDs and whole protocol nodes on its own
+  // warning paths, so what it is handed must be unable to print a payload (baileysLog.ts).
+  const baileysLog = baileysLogger(log, process.env.BOT_BAILEYS_LOG_LEVEL ?? 'warn');
   const { version } = await fetchLatestBaileysVersion();
   const groupCache = new Map<string, { at: number; meta: GroupMetadata }>();
   const sentMessages = new Map<string, WAMessage['message']>();
@@ -249,6 +251,11 @@ export async function connectWhatsApp(options: WhatsAppClientOptions): Promise<W
       } catch {
         // already closed
       }
+      // The credential writes are queued, so closing has to WAIT for them: the last
+      // `creds.update` of a pairing is the one that registers the device, and a process
+      // that exits over it stores a session nobody can resume. A write that FAILED is
+      // already reported by the handler that asked for it, above.
+      await auth.drain();
     },
   };
 }

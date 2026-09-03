@@ -81,13 +81,24 @@ function timezoneIsValid(tz: string): boolean {
   }
 }
 
-// Strict: every field is checked, unknown top-level keys are refused (a typo like `chatt`
-// would otherwise silently fall back to a default), and a file that fails does not load —
-// a half-read configuration is exactly the "partial/default behaviour" the allow-list rule
-// forbids.
+// Every unknown key is refused AT EVERY LEVEL, not only the top one. `chatt` and
+// `chat.perUserPerDya` fail exactly the same way, and they have to: the nested fields are
+// the ones with DEFAULTS, so a typo there is the case that silently un-configures a group
+// — a pre-prompt that never reaches the model, a ceiling back at ten a day — while a
+// mistyped top-level key mostly loses a whole object the parser then refuses anyway.
+function refuseUnknown(file: string, where: string, raw: Record<string, unknown>, known: readonly string[]): void {
+  const allowed = new Set(known);
+  for (const key of Object.keys(raw)) {
+    if (!allowed.has(key)) fail(file, `unknown field "${where}${key}"`);
+  }
+}
+
+// Strict: every field is checked, unknown keys are refused, and a file that fails does not
+// load — a half-read configuration is exactly the "partial/default behaviour" the
+// allow-list rule forbids.
 export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
   if (!isRecord(raw)) fail(file, 'must be a JSON object');
-  const known = new Set([
+  refuseUnknown(file, '', raw, [
     'id',
     'name',
     'language',
@@ -98,9 +109,6 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
     'leaderAnnouncements',
     'names',
   ]);
-  for (const key of Object.keys(raw)) {
-    if (!known.has(key)) fail(file, `unknown field "${key}"`);
-  }
   const { id, name, language, enabled, podium, chat, reactions, leaderAnnouncements, names } =
     raw;
   if (typeof id !== 'string' || !GROUP_JID.test(id)) fail(file, '"id" must be a group JID');
@@ -111,6 +119,7 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
   if (typeof enabled !== 'boolean') fail(file, '"enabled" must be a boolean');
 
   if (!isRecord(podium)) fail(file, '"podium" must be an object');
+  refuseUnknown(file, 'podium.', podium, ['enabled', 'time', 'timezone']);
   if (typeof podium.enabled !== 'boolean') fail(file, '"podium.enabled" must be a boolean');
   if (typeof podium.time !== 'string' || !TIME.test(podium.time)) {
     fail(file, '"podium.time" must be "HH:MM"');
@@ -120,6 +129,13 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
   }
 
   if (!isRecord(chat)) fail(file, '"chat" must be an object');
+  refuseUnknown(file, 'chat.', chat, [
+    'enabled',
+    'name',
+    'prePrompt',
+    'perUserPerDay',
+    'perGroupPerDay',
+  ]);
   if (typeof chat.enabled !== 'boolean') fail(file, '"chat.enabled" must be a boolean');
   const prePrompt = chat.prePrompt ?? '';
   if (typeof prePrompt !== 'string') fail(file, '"chat.prePrompt" must be a string');

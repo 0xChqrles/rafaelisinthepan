@@ -66,6 +66,50 @@ describe('durable Baileys auth state (#236)', () => {
     );
   });
 
+  it('lands credential snapshots IN ORDER, and drains before a caller exits', async () => {
+    const { client, items } = fakeDynamo();
+    const send = client.send as unknown as ReturnType<typeof vi.fn>;
+    const auth = await useDynamoAuthState(client, 'bot');
+    // The first write is slow. Fired concurrently, the second would overtake it and the
+    // FIRST — the older snapshot — would land last, walking the stored state backwards.
+    let releaseFirst: (() => void) | null = null;
+    const real = send.getMockImplementation()!;
+    send.mockImplementationOnce(async (command: unknown) => {
+      await new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      return real(command);
+    });
+    auth.state.creds.registered = false;
+    const first = auth.saveCreds();
+    auth.state.creds.registered = true;
+    const second = auth.saveCreds();
+
+    // Let the queue start its first write, which then blocks on the mock.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(items.has('AUTH#bot|creds')).toBe(false); // nothing has landed yet
+    releaseFirst!();
+    await Promise.all([first, second]);
+    await auth.drain();
+
+    // The LAST snapshot asked for is the one stored, whatever the network did.
+    expect(JSON.parse(items.get('AUTH#bot|creds')!.data!.S!).registered).toBe(true);
+  });
+
+  it('hands a failed write to its own caller and keeps saving after it', async () => {
+    const { client, items } = fakeDynamo();
+    const send = client.send as unknown as ReturnType<typeof vi.fn>;
+    const auth = await useDynamoAuthState(client, 'bot');
+    send.mockImplementationOnce(async () => {
+      throw new Error('throttled');
+    });
+    await expect(auth.saveCreds()).rejects.toThrow('throttled');
+    auth.state.creds.registered = true;
+    await auth.saveCreds();
+    await auth.drain();
+    expect(JSON.parse(items.get('AUTH#bot|creds')!.data!.S!).registered).toBe(true);
+  });
+
   it('stores signal keys per (type, id), reads them back, and deletes on null', async () => {
     const { client, items } = fakeDynamo();
     const auth = await useDynamoAuthState(client, 'bot');

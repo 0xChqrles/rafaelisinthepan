@@ -127,6 +127,41 @@ describe('Whippin tools are read-only structured answers (#236)', () => {
     });
   });
 
+  it('a tie ENDS the current run rather than skipping it', async () => {
+    const declarations = memoryDeclarationStore();
+    // Gab won yesterday; today they are exactly level. Nobody is "currently ahead".
+    for (const r of [
+      row(GAB, 'Gab', TODAY - 1, 3),
+      row(ZOU, 'Zouzou', TODAY - 1, 7),
+      row(GAB, 'Gab', TODAY, 5),
+      row(ZOU, 'Zouzou', TODAY, 5),
+    ]) {
+      await declarations.record(r);
+    }
+    const tools = createToolRunner({
+      group,
+      today: TODAY,
+      sender: GAB,
+      declarations,
+      memory: memoryMemoryStore(),
+      now: () => new Date('2026-09-03T12:00:00Z'),
+    });
+    expect(await tools.run('get_head_to_head', { left: 'Gab', right: 'Zou' })).toMatchObject({
+      leftWins: 1,
+      rightWins: 0,
+      ties: 1,
+      currentWinner: null,
+      currentStreak: 0,
+    });
+  });
+
+  it('labels a mentioned JID the way the group knows it', async () => {
+    const { tools } = await harness();
+    expect(await tools.labelFor(ZOU)).toBe('Zou'); // operator override
+    expect(await tools.labelFor(GAB)).toBe('Gab 🔥'); // latest snapshot
+    expect(await tools.labelFor('33699998888@s.whatsapp.net')).toBe('…8888'); // never seen
+  });
+
   it('ranks only the group\'s OWN language, in every read', async () => {
     const declarations = memoryDeclarationStore();
     await declarations.record(row(GAB, 'Gab', TODAY, 4));

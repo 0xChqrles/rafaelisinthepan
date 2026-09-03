@@ -33,8 +33,18 @@ export function outboxKey(group: string, commandId: string) {
 export function dynamoSentStore(client: DynamoDBClient, tableName: string): SentStore {
   return {
     async get(group, commandId) {
+      // STRONGLY CONSISTENT, because this read is the whole of the dedup. A redelivery can
+      // follow the send it duplicates by milliseconds, and DynamoDB's default read may
+      // still answer from a replica that has not seen the record the first send just
+      // wrote — so the eventually-consistent version sends the message twice, which is
+      // exactly the case this store exists for. It costs one read unit; the accepted
+      // send-then-crash window is a different thing and is unchanged.
       const response = await client.send(
-        new GetItemCommand({ TableName: tableName, Key: outboxKey(group, commandId) }),
+        new GetItemCommand({
+          TableName: tableName,
+          Key: outboxKey(group, commandId),
+          ConsistentRead: true,
+        }),
       );
       const item = response.Item;
       if (!item) return null;

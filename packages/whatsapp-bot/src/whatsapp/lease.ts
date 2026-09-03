@@ -17,10 +17,11 @@ import { AUTH_PARTITION, LEASE_SORT_KEY } from './authStore';
 export const LEASE_TTL_MS = 90_000;
 export const LEASE_RENEW_MS = 30_000;
 // A holder holds the lease only until LEASE_TTL_MS after the last renew that ACTUALLY
-// LANDED — and a renew that THREW is not a renew. Keep failing for the whole window and
-// the record expires, another process acquires it, and two sockets speak as one device:
-// the one thing this file exists to prevent. So the holder gives up one renew period
-// BEFORE the record can expire, which is the difference between the two constants.
+// LANDED — and a renew that THREW, or that never answered at all, is not a renew. Keep
+// failing for the whole window and the record expires, another process acquires it, and
+// two sockets speak as one device: the one thing this file exists to prevent. So the
+// holder gives up one renew period BEFORE the record can expire, which is the difference
+// between the two constants.
 export const LEASE_GRACE_MS = LEASE_TTL_MS - LEASE_RENEW_MS;
 const LEASE_SK = LEASE_SORT_KEY;
 
@@ -43,8 +44,18 @@ export interface LeaseKeeper {
 
 // Renews on a schedule and tells the holder to STOP when the lease is gone. Both callers
 // use it, because both must obey the same rule and a second copy of it would be a second
-// chance to get it wrong: a refusal is obvious, but a renew that keeps THROWING ends the
-// same way — the record ages out and another process may open a second socket.
+// chance to get it wrong: a refusal is obvious, but a renew that keeps THROWING — or
+// simply never answering — ends the same way: the record ages out and another process may
+// open a second socket.
+//
+// A RENEW STILL IN FLIGHT IS NOT A RENEW EITHER, which is the case the throwing one hides.
+// One that never settles reaches no catch block at all, so a keeper that measured staleness
+// only on failure sat silent while the record expired under it and another process took the
+// session — the two-socket state this file exists to prevent, reached through the one
+// failure mode that raises no error. A tick that finds the previous renew still outstanding
+// therefore checks the deadline itself, and gives up on it. It also declines to start a
+// second one: overlapping writes can land out of order, and the older carries an EARLIER
+// expiry, so the record would age out sooner than the holder believes it had renewed to.
 export function keepLease(
   lease: Lease,
   handlers: {
@@ -56,9 +67,28 @@ export function keepLease(
   const now = options.now ?? Date.now;
   let heldAt = now();
   let done = false;
+  let renewing = false;
+
+  const giveUp = (reason: LeaseLoss) => {
+    done = true;
+    handlers.onLost(reason);
+  };
 
   const tick = async () => {
     if (done) return;
+    if (renewing) {
+      // Nothing else to do while one is outstanding — except notice that it has been
+      // outstanding too long.
+      if (now() - heldAt >= LEASE_GRACE_MS) giveUp('stale');
+      return;
+    }
+    // The record's own expiry is stamped from the instant the write is BUILT, so that is
+    // the instant the holder must measure its window from — not the instant the answer
+    // came back. Measured from the answer, a renew that took longer than a renew period
+    // would push the holder's give-up moment PAST the expiry it just wrote, and it would
+    // still believe it held a lease somebody else could already have taken.
+    const startedAt = now();
+    renewing = true;
     let held: boolean;
     try {
       held = await lease.renew();
@@ -66,17 +96,17 @@ export function keepLease(
       // A blip is not a lost lease; a blip that outlasts the grace window is.
       const staleMs = now() - heldAt;
       handlers.onError?.(error as Error, staleMs);
-      if (staleMs < LEASE_GRACE_MS) return;
-      done = true;
-      handlers.onLost('stale');
+      if (!done && staleMs >= LEASE_GRACE_MS) giveUp('stale');
       return;
+    } finally {
+      renewing = false;
     }
+    if (done) return;
     if (held) {
-      heldAt = now();
+      heldAt = startedAt;
       return;
     }
-    done = true;
-    handlers.onLost('refused');
+    giveUp('refused');
   };
 
   const timer = options.start === false ? null : setInterval(() => void tick(), LEASE_RENEW_MS);

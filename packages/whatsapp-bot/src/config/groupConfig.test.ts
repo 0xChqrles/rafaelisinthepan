@@ -29,6 +29,11 @@ describe('group configuration (#236)', () => {
     ['a malformed podium time', { ...valid, podium: { ...valid.podium, time: '22h' } }],
     ['an unknown time zone', { ...valid, podium: { ...valid.podium, timezone: 'Mars/Olympus' } }],
     ['an unknown field', { ...valid, chatt: {} }],
+    // The NESTED typos are the ones that used to pass, and they are the dangerous half:
+    // these fields have defaults, so a misspelling silently un-configures the group.
+    ['an unknown chat field', { ...valid, chat: { ...valid.chat, prePromt: 'On se chambre.' } }],
+    ['a misspelt ceiling', { ...valid, chat: { ...valid.chat, perUserPerDya: 3 } }],
+    ['an unknown podium field', { ...valid, podium: { ...valid.podium, timzone: 'Europe/Paris' } }],
     ['a non-user override key', { ...valid, names: { 'abc@g.us': 'Zou' } }],
     ['a negative ceiling', { ...valid, chat: { ...valid.chat, perUserPerDay: -1 } }],
   ])('refuses %s', (_, raw) => {

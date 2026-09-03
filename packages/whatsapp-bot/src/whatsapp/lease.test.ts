@@ -3,11 +3,15 @@ import { ConditionalCheckFailedException, PutItemCommand, type DynamoDBClient } 
 import {
   LEASE_GRACE_MS,
   LEASE_RENEW_MS,
+  LEASE_TTL_MS,
   acquireLease,
   keepLease,
   type Lease,
   type LeaseLoss,
 } from './lease';
+
+// Let an already-resolved renew run its continuations before the next tick reads the state.
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('single-session lease (#236)', () => {
   it('acquires only when free or expired, renews as owner, releases by expiring', async () => {
@@ -80,6 +84,58 @@ describe('keeping the lease (#236)', () => {
     expect(errors).toEqual([LEASE_RENEW_MS, LEASE_GRACE_MS - 1, LEASE_GRACE_MS]);
     // It gives up with a renew period to spare, so nobody else can be holding it yet.
     expect(LEASE_GRACE_MS).toBeLessThan(90_000);
+  });
+
+  it('stops when a renew simply HANGS — the failure that raises no error', async () => {
+    const clock = { ms: 0 };
+    // Never settles, so the catch block is never reached: only the tick that finds it
+    // still outstanding can notice the record ageing out under us.
+    const { keeper, lost } = keeperFor(() => new Promise<boolean>(() => {}), clock);
+
+    clock.ms = LEASE_RENEW_MS;
+    void keeper.tick(); // issues the renew that will never answer
+    expect(lost).toEqual([]);
+
+    // The window still runs from the last renew that LANDED, which here is none of them.
+    clock.ms = LEASE_GRACE_MS - 1;
+    await keeper.tick();
+    expect(lost).toEqual([]);
+
+    clock.ms = LEASE_GRACE_MS;
+    await keeper.tick();
+    expect(lost).toEqual(['stale']);
+  });
+
+  it('measures its window from when a renew was ISSUED, and never runs two at once', async () => {
+    const clock = { ms: 0 };
+    let started = 0;
+    let release: ((held: boolean) => void) | null = null;
+    const { keeper, lost } = keeperFor(() => {
+      started += 1;
+      return new Promise<boolean>((resolve) => {
+        release = resolve;
+      });
+    }, clock);
+
+    void keeper.tick(); // issued at 0 — the record it writes expires at LEASE_TTL_MS
+    clock.ms = LEASE_RENEW_MS + 1;
+    await keeper.tick();
+    // Two overlapping writes can land out of order, and the older carries an EARLIER
+    // expiry — so the second tick starts nothing.
+    expect(started).toBe(1);
+
+    release!(true);
+    await flush();
+
+    // It landed, but late. Measured from the ANSWER the holder would carry on past
+    // LEASE_TTL_MS, still believing it held a record that had already expired.
+    clock.ms = LEASE_GRACE_MS - 1;
+    void keeper.tick(); // a renew that will not answer either
+    expect(lost).toEqual([]);
+    clock.ms = LEASE_GRACE_MS;
+    await keeper.tick();
+    expect(lost).toEqual(['stale']);
+    expect(LEASE_GRACE_MS).toBeLessThan(LEASE_TTL_MS);
   });
 
   it('a renew that LANDS restarts the window', async () => {

@@ -14,7 +14,7 @@ import { GROUP_JID, USER_JID } from './config/groupConfig';
 import { createLog } from './log';
 import { useDynamoAuthState } from './whatsapp/authStore';
 import { connectWhatsApp } from './whatsapp/client';
-import { acquireLease } from './whatsapp/lease';
+import { acquireLease, keepLease } from './whatsapp/lease';
 
 async function listGroups(): Promise<void> {
   const log = createLog('warn');
@@ -25,6 +25,21 @@ async function listGroups(): Promise<void> {
     console.error('Another process holds the WhatsApp session (the Fargate task?). Stop it first.');
     process.exit(1);
   }
+  // RENEWED like every other holder's (`lease.ts`): this command waits up to a minute for
+  // the socket and then fetches every group, which can outlast the lease's own TTL — and an
+  // unrenewed lease is one the Fargate task may take while this socket is still open, which
+  // is the two-session state the lease exists to refuse.
+  const renew = keepLease(lease, {
+    onLost(reason) {
+      console.error(
+        reason === 'refused'
+          ? 'Lost the session lease — is the Fargate task running again? Stopping.'
+          : 'The session lease has not renewed for long enough that it may have expired. Stopping.',
+      );
+      process.exit(1);
+    },
+    onError: (error) => console.error(`Could not renew the session lease: ${error.message}`),
+  });
   // Past here the lease is HANDED BACK whatever happens — an unpaired store, a socket that
   // never opens, a fetch that throws. Holding it on the way out makes the next process (the
   // Fargate task, coming back up) refuse to connect until the full TTL has expired, for a
@@ -43,6 +58,7 @@ async function listGroups(): Promise<void> {
       onMessage: async () => {},
       onStop: async (reason) => {
         console.error(`Connection stopped: ${reason}`);
+        renew.stop();
         await lease.release();
         process.exit(1);
       },
@@ -58,6 +74,7 @@ async function listGroups(): Promise<void> {
       await client.close();
     }
   } finally {
+    renew.stop();
     await lease.release().catch(() => {});
   }
 }

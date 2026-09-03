@@ -104,8 +104,13 @@ describe('addressed conversation (#236)', () => {
     const answer = agentWith(provider, { memory });
     await answer(message('salut'), group, identity, TODAY);
     await answer(message('encore', { id: 'M2' }), group, identity, TODAY);
-    expect(requests[0].system).toContain('Préfère Gabounet.');
+    // The notes are CONVERSATION, not system: what a group member said about themselves
+    // must not become a standing instruction of the bot's (prompt injection).
+    expect(requests[0].system).not.toContain('Préfère Gabounet.');
+    expect((requests[0].messages[0] as { content: string }).content).toContain('Préfère Gabounet.');
+    expect(requests[0].messages[0].role).toBe('user');
     expect(requests[1].messages.map((m) => (m as { content: string }).content)).toEqual([
+      expect.stringContaining('Préfère Gabounet.'),
       'Gab: salut',
       'un',
       'Gab: encore',
@@ -158,6 +163,65 @@ describe('addressed conversation (#236)', () => {
     expect(
       await agentWith(ceiling.provider, { dailyCallCeiling: 0 })(message('x'), group, identity, TODAY),
     ).toEqual({ kind: 'silent', reason: 'call_ceiling' });
+  });
+
+  it('keeps another player\'s mention in the question, as the name the group uses', async () => {
+    const declarations = memoryDeclarationStore();
+    await declarations.record({
+      group: GROUP,
+      dayNumber: TODAY - 1,
+      sender: '33611111111@s.whatsapp.net',
+      score: 4,
+      capped: false,
+      token: 't',
+      messageId: 'X',
+      messageTs: 1,
+      name: 'Zou',
+      receivedAt: '',
+      lang: 'fr',
+    });
+    const { provider, requests } = scripted([() => ({ text: 'ok' })]);
+    const answer = agentWith(provider, { declarations });
+    await answer(
+      message('@33700000000 combien de jours que @33611111111 me bat ?', {
+        mentions: ['33700000000@s.whatsapp.net', '33611111111@s.whatsapp.net'],
+      }),
+      group,
+      identity,
+      TODAY,
+    );
+    // The bot's own mention is addressing and goes; the other becomes a name the tools can
+    // look up, and never the phone number behind it.
+    const asked = (requests[0].messages.at(-1) as { content: string }).content;
+    expect(asked).toBe('Gab: combien de jours que Zou me bat ?');
+    expect(asked).not.toContain('33611111111');
+  });
+
+  it('names an unknown mention by its handle, and still charges nothing for a bare one', async () => {
+    const { provider, requests } = scripted([() => ({ text: 'ok' })]);
+    const answer = agentWith(provider);
+    // Nobody the group has seen: the same …last4 handle every other surface shows.
+    await answer(
+      message('@33700000000 et @33699998888 alors ?', {
+        mentions: ['33700000000@s.whatsapp.net', '33699998888@s.whatsapp.net'],
+      }),
+      group,
+      identity,
+      TODAY,
+    );
+    expect((requests[0].messages.at(-1) as { content: string }).content).toBe('Gab: et …8888 alors ?');
+    // Two bare mentions and no words is still not a question.
+    expect(
+      await answer(
+        message('@33700000000 @33699998888', {
+          id: 'M9',
+          mentions: ['33700000000@s.whatsapp.net', '33699998888@s.whatsapp.net'],
+        }),
+        group,
+        identity,
+        TODAY,
+      ),
+    ).toEqual({ kind: 'silent', reason: 'empty' });
   });
 
   it('bounds a reply to plain text of a sane length', () => {

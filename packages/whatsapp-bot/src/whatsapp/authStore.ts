@@ -41,7 +41,14 @@ const keySk = (type: string, id: string) => `key#${type}#${id}`;
 
 export interface DurableAuth {
   state: AuthenticationState;
+  // Snapshots the credentials NOW and queues the write. Snapshot-at-call plus a strict
+  // queue is what keeps the stored state monotonic — see the implementation.
   saveCreds(): Promise<void>;
+  // Resolves once every queued snapshot has SETTLED. The socket fires `creds.update` and
+  // moves on, so without a drain a shutdown (or the pairing CLI exiting) can leave the
+  // last one — the one that registered the device — unwritten. It never rejects: each
+  // write's own outcome belongs to the `saveCreds()` that asked for it.
+  drain(): Promise<void>;
   // The session state (creds + Signal keys + the invalidation flag) — the explicit
   // operator reset before a re-pair. It KEEPS the lease: the caller is holding it while
   // wiping, and deleting it would leave the pairing to run unleashed (renewing against a
@@ -178,15 +185,36 @@ export async function useDynamoAuthState(client: DynamoDBClient, table: string):
     },
   };
 
+  // CREDENTIAL WRITES ARE SERIALIZED, and it is a correctness rule rather than tidiness.
+  // `creds` is ONE mutable object Baileys edits in place, and every `creds.update` writes
+  // the WHOLE of it. Fired concurrently, two writes race, and the loser is whichever the
+  // network delivers last — so an OLDER snapshot can land on top of a newer one and the
+  // stored state goes BACKWARDS. What that costs is exactly what durable auth exists to
+  // buy: a task that restarts onto a half-registered session and has to be paired again.
+  // Each call snapshots at CALL time and joins the queue, so the writes land in the order
+  // they were asked for and the last one to land is the newest.
+  let queue: Promise<void> = Promise.resolve();
+
   return {
     state,
-    async saveCreds() {
-      await client.send(
-        new PutItemCommand({
-          TableName: table,
-          Item: { pk: { S: AUTH_PARTITION }, sk: { S: CREDS_SK }, data: serialize(creds) },
-        }),
-      );
+    saveCreds() {
+      const snapshot = serialize(creds);
+      queue = queue.then(async () => {
+        await client.send(
+          new PutItemCommand({
+            TableName: table,
+            Item: { pk: { S: AUTH_PARTITION }, sk: { S: CREDS_SK }, data: snapshot },
+          }),
+        );
+      });
+      // A failed write must not poison the queue for every save after it: the caller is
+      // handed this attempt's rejection, and the chain carries on from a settled promise.
+      const attempt = queue;
+      queue = queue.catch(() => {});
+      return attempt;
+    },
+    async drain() {
+      await queue;
     },
     async wipe() {
       // The keyspace is small (creds + a few hundred keys); paged Query + batched deletes.

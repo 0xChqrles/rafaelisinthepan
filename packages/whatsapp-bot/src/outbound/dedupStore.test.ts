@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { PutItemCommand, type DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { GetItemCommand, PutItemCommand, type DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { SENT_RECORD_TTL_SECONDS, dynamoSentStore, memorySentStore } from './dedupStore';
 
 const GROUP = '120363000000000001@g.us';
@@ -28,6 +28,16 @@ describe('sent-command records (#236)', () => {
     await store.put(GROUP, record({ sentAt: 'not a date' }));
     const put = (send.mock.calls[0] as unknown[])[0] as PutItemCommand;
     expect(Number(put.input.Item?.expiresAt?.N)).toBeGreaterThan(SENT_RECORD_TTL_SECONDS);
+  });
+
+  it('reads the record CONSISTENTLY — an eventual read sends the message twice', async () => {
+    const send = vi.fn(async () => ({}));
+    const store = dynamoSentStore({ send } as unknown as DynamoDBClient, 'bot');
+    await store.get(GROUP, record().commandId);
+    const get = (send.mock.calls[0] as unknown[])[0] as GetItemCommand;
+    // A redelivery can follow the send it duplicates by milliseconds; a replica that has
+    // not caught up answers "never sent" and the dedup is not a dedup.
+    expect(get.input.ConsistentRead).toBe(true);
   });
 
   it('the memory store keeps the first record of a command', async () => {

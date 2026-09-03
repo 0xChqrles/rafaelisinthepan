@@ -179,6 +179,10 @@ export const TOOL_DEFINITIONS: LlmTool[] = [
 export interface ToolRunner {
   definitions: LlmTool[];
   run(name: string, args: unknown): Promise<unknown>;
+  // What the group calls one JID — the same reading `resolvePlayer` labels its candidates
+  // with, so a name substituted into a question is a name the tools can look up again. It
+  // rides the runner's cached window, so a question that also calls a tool pays one read.
+  labelFor(jid: string): Promise<string>;
 }
 
 export function createToolRunner(ctx: ToolContext): ToolRunner {
@@ -294,7 +298,14 @@ export function createToolRunner(ctx: ToolContext): ToolRunner {
         if (winner === 'left') leftWins += 1;
         else if (winner === 'right') rightWins += 1;
         else ties += 1;
-        if (winner === null) continue;
+        // A TIE ENDS THE RUN, it does not skip it. Skipped, a tie today left yesterday's
+        // winner reported as `currentWinner` with a live streak — "who is ahead" naming
+        // somebody the latest common day says is exactly level.
+        if (winner === null) {
+          streakOwner = null;
+          streak = 0;
+          continue;
+        }
         if (winner === streakOwner) streak += 1;
         else {
           streakOwner = winner;
@@ -372,6 +383,10 @@ export function createToolRunner(ctx: ToolContext): ToolRunner {
 
   return {
     definitions: TOOL_DEFINITIONS,
+    async labelFor(jid) {
+      const known = (await players()).find((p) => p.sender === jid);
+      return displayName(ctx.group, jid, known?.name ?? '');
+    },
     async run(name, args) {
       const handler = Object.prototype.hasOwnProperty.call(handlers, name) ? handlers[name] : undefined;
       if (!handler) return { error: `unknown tool ${name}` };
