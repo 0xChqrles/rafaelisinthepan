@@ -686,7 +686,16 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                 <span className="account-hero-name">{savingFace.name}</span>
               </>
             ) : (
-              <span className={`account-hero-mark${savingPending ? ' skeleton' : ''}`} />
+              // AND THE NAME'S BOX IS HELD TOO (2026-09-03). The 64px mark was reserved and
+              // the name was not, so the account's own name landed into no space and pushed
+              // the field and CONTINUE down as it arrived — the shift the skeleton rule
+              // exists to prevent ("it holds the exact boxes the resolved values take"). Only
+              // while the read is OUT: a settled account with no face has no name coming, and
+              // a placeholder held for one would promise what is not on its way.
+              <>
+                <span className={`account-hero-mark${savingPending ? ' skeleton' : ''}`} />
+                {savingPending && <span className="account-hero-name skeleton">&nbsp;</span>}
+              </>
             )}
           </div>
         )}

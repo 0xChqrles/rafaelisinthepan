@@ -5322,6 +5322,14 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The name's box while the face is still out. It wears the NAME's own class and holds one
+   blank character, so its line box is the one the name will take and the height is not a
+   number anybody has to keep in step — only the WIDTH is a guess, and the stack is centred,
+   so a wrong guess there moves nothing. */
+.account-hero-name.skeleton {
+  width: 8em;
+  max-width: 60%;
+}
 
 /* THE ACCOUNT'S THREE NUMBERS (user-decided 2026-08-28) — the live STREAK, the BEST it has
    ever held, and the total DAYS, across every supported language. A three-up row of equal
