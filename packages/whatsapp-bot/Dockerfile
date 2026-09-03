@@ -22,6 +22,6 @@ RUN rm -rf node_modules packages/*/node_modules \
   && pnpm install --frozen-lockfile --prod --filter @whippin/whatsapp-bot... \
   && pnpm store prune
 ENV NODE_ENV=production \
-    BOT_GROUPS_DIR=/app/packages/whatsapp-bot/groups
+    BOT_GROUPS_DIR=/app/packages/whatsapp-bot/groups/local
 USER node
 CMD ["node", "packages/whatsapp-bot/dist/main.mjs"]

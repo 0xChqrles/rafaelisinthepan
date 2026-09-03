@@ -5,6 +5,7 @@
 //   pnpm bot:groups edit <slug>     pull (or start from example.json), $EDITOR, validate, write back
 //   pnpm bot:groups rm <slug>       remove from SSM
 //   pnpm bot:groups pull [slug]     SSM -> groups/local/, one or all; what deploy runs
+//                                     (full pull owns the directory, single pull owns its file)
 //
 // FOUR COMMANDS, AND THE OMISSIONS ARE THE DESIGN. There is no `disable`, because
 // `enabled: false` through `edit` is already exactly that and a second way to say it is a
@@ -15,6 +16,10 @@
 // It opens NO WhatsApp socket and takes NO session lease — it only reads and writes SSM, so
 // it is safe to run while the bot is connected. Finding a group's JID in the first place is
 // `pnpm bot:cli groups`, which does hold the lease and needs the service scaled to zero.
+//
+// SSM is regional, and a client in the wrong region reads an EMPTY LIST rather than
+// failing — so the region is pinned to the deployment's (`GROUPS_REGION`) instead of being
+// inherited from the shell, and printed with every answer. `BOT_GROUPS_REGION` overrides.
 
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
@@ -24,6 +29,8 @@ import { fileURLToPath } from 'node:url';
 import { SSMClient } from '@aws-sdk/client-ssm';
 import { GroupConfigError } from './config/groupConfig';
 import {
+  GROUPS_PATH,
+  GROUPS_REGION,
   assertSlug,
   ssmGroupsStore,
   validateForStore,
@@ -83,8 +90,12 @@ function editUntilValid(slug: string, initial: string, others: readonly StoredGr
     if (run.error) throw new GroupConfigError(`could not run ${editor}: ${run.error.message}`);
     if (run.status !== 0) throw new GroupConfigError(`${editor} exited ${run.status}; nothing written.`);
     text = readFileSync(file, 'utf8');
+    // The injected header is not JSON: strip it before validating, so the operator can fix
+    // the body while leaving the header in place. The raw text still decides the abort
+    // below — only a byte-identical save aborts.
+    const stripped = text.replace(/^\/\/ (✗|Delete this line).*\n/gm, '');
     try {
-      const canonical = validateForStore(slug, text, others);
+      const canonical = validateForStore(slug, stripped, others);
       rmSync(dir, { recursive: true, force: true });
       return canonical;
     } catch (error) {
@@ -95,9 +106,10 @@ function editUntilValid(slug: string, initial: string, others: readonly StoredGr
       }
       say(`\n  ✗ ${error.message}\n    Fix it in the editor, or save it unchanged to abort.`);
       // The reason travels back INTO the editor: a message printed to a terminal the editor
-      // is about to repaint is a message nobody reads.
-      text = `${text.replace(/^\/\/ ✗ .*\n/gm, '')}`;
-      text = `// ✗ ${error.message}\n// Delete this line; save unchanged to abort.\n${text}`;
+      // is about to repaint is a message nobody reads. Built from the stripped body so a
+      // second failure replaces the header rather than stacking another copy.
+      const headline = error.message.split('\n')[0];
+      text = `// ✗ ${headline}\n// Delete this line; save unchanged to abort.\n${stripped}`;
     }
   }
 }
@@ -107,12 +119,14 @@ export async function run(argv: readonly string[], store: GroupsStore): Promise<
 
   if (command === 'list') {
     const groups = await store.list();
+    // The path AND the region, always: "nothing configured" and "looking in the wrong
+    // place" are the same answer from SSM, so the answer has to say where it looked.
+    say(`${GROUPS_PATH} (${GROUPS_REGION})`);
     if (groups.length === 0) {
-      say('No group is configured in SSM.');
-      say('Add one with: pnpm bot:groups edit <slug>');
+      say('  no group configured — add one with: pnpm bot:groups edit <slug>');
       return 0;
     }
-    for (const group of groups) say(describe(group));
+    for (const group of groups) say(`  ${describe(group)}`);
     return 0;
   }
 
@@ -152,22 +166,38 @@ export async function run(argv: readonly string[], store: GroupsStore): Promise<
   if (command === 'pull') {
     if (argument) assertSlug(argument);
     const all = await store.list();
-    const wanted = argument ? all.filter((g) => g.slug === argument) : all;
-    if (argument && wanted.length === 0) throw new GroupConfigError(`no config named ${argument}`);
-    const written = writeSnapshot(wanted, argument === undefined);
-    say(`${SNAPSHOT_DIR}`);
+    if (argument) {
+      const found = all.find((g) => g.slug === argument);
+      if (!found) {
+        // SSM is the source: a slug gone from SSM must not stay alive in the snapshot.
+        // A full pull owns the directory (see writeSnapshot); a single pull owns its file.
+        const stale = join(SNAPSHOT_DIR, `${argument}.json`);
+        if (existsSync(stale)) {
+          rmSync(stale);
+          say(`Removed ${argument} from the snapshot (no longer in SSM).`);
+          return 0;
+        }
+        throw new GroupConfigError(`no config named ${argument}`);
+      }
+      writeSnapshot([found], false);
+      say(`${SNAPSHOT_DIR}`);
+      say(`  ${describe(found)}`);
+      return 0;
+    }
+    const written = writeSnapshot(all, true);
+    say(`${SNAPSHOT_DIR}  <- ${GROUPS_PATH} (${GROUPS_REGION})`);
     if (written.length === 0) say('  (no group configured in SSM)');
-    for (const group of wanted) say(`  ${describe(group)}`);
+    for (const group of all) say(`  ${describe(group)}`);
     return 0;
   }
 
   say(USAGE);
-  return command === undefined ? 1 : 1;
+  return 1;
 }
 
 const invokedDirectly = process.argv[1] && process.argv[1].endsWith('groupsCli.ts');
 if (invokedDirectly) {
-  run(process.argv.slice(2), ssmGroupsStore(new SSMClient({})))
+  run(process.argv.slice(2), ssmGroupsStore(new SSMClient({ region: GROUPS_REGION })))
     .then((code) => {
       process.exitCode = code;
     })

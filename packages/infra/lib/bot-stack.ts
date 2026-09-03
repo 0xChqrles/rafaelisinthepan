@@ -14,9 +14,10 @@
 // reach it. AWS API access is IAM. Revisit endpoints/NAT only if the wider infra gains
 // private networking for another reason.
 //
-// Group behaviour is CONFIGURATION: the committed `packages/whatsapp-bot/groups/*.json`
-// files are read at synth to create the podium schedules and copied into both the image and
-// the Lambda bundle. Adding a community is a config change, not a code change here.
+// Group behaviour is CONFIGURATION: the pulled `packages/whatsapp-bot/groups/local/*.json`
+// snapshot (from SSM, via `pnpm bot:groups pull`) is read at synth to create the podium
+// schedules and copied into both the image and the Lambda bundle. Adding a community is a
+// config change, not a code change here.
 
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -272,7 +273,7 @@ export class BotStack extends Stack {
         minify: true,
         sourceMap: true,
         externalModules: ['@aws-sdk/*'],
-        // The committed group files travel with the bundle: the job reads its own config.
+        // The pulled snapshot travels with the bundle: the job reads its own config.
         commandHooks: {
           beforeBundling: () => [],
           beforeInstall: () => [],

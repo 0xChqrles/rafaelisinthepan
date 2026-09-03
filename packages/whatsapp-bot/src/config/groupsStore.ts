@@ -7,6 +7,15 @@
 // IAM like everything else in the account, not a SecureString pretending to hold a
 // credential.
 //
+// SSM IS REGIONAL, AND THE WRONG REGION FAILS SILENTLY: `GetParametersByPath` against a
+// path that does not exist there answers an EMPTY LIST, not an error. So a laptop whose
+// ambient region is not the deployment's would read nothing, write somewhere `deploy-bot`
+// never looks, and report success — the snapshot would ship without what was just edited.
+// The region is therefore PINNED here rather than inherited (`GROUPS_REGION`): the stacks
+// are pinned to us-east-1 in `infra/bin/app.ts`, so that is where these parameters are,
+// and it is not a fact a shell variable should be able to get wrong. `BOT_GROUPS_REGION`
+// overrides it for a deployment that moves.
+//
 // WHY A SNAPSHOT RATHER THAN A RUNTIME READ. Neither the task nor the podium Lambda talks
 // to this module: they read files, and those files are pulled from here immediately before
 // a build or a deploy. So one deployment runs on ONE coherent set, a group cannot change
@@ -26,6 +35,9 @@ import {
 import { GroupConfigError, assertUniqueGroupIds, parseGroupConfig, type GroupConfig } from './groupConfig';
 
 export const GROUPS_PATH = '/whippin/bot/groups';
+
+// Where the stacks are (`infra/bin/app.ts` pins every one of them to us-east-1).
+export const GROUPS_REGION = process.env.BOT_GROUPS_REGION || 'us-east-1';
 
 // SSM's Standard tier caps a parameter value at 4 KB. The Advanced tier is a per-parameter
 // monthly charge and a different API, for a value that is one group's settings: a config
@@ -82,36 +94,39 @@ export interface GroupsStore {
 }
 
 export function ssmGroupsStore(client: SSMClient): GroupsStore {
+  // Named closure rather than `this.list()`: the method must keep working destructured.
+  async function list(): Promise<StoredGroup[]> {
+    const found: StoredGroup[] = [];
+    let token: string | undefined;
+    do {
+      const response = await client.send(
+        new GetParametersByPathCommand({
+          Path: GROUPS_PATH,
+          Recursive: false,
+          MaxResults: 10,
+          ...(token ? { NextToken: token } : {}),
+        }),
+      );
+      for (const parameter of response.Parameters ?? []) {
+        const slug = slugOf(parameter);
+        if (slug === '' || parameter.Value === undefined) continue;
+        found.push(toStored(slug, parameter.Value));
+      }
+      token = response.NextToken;
+    } while (token);
+    found.sort((a, b) => a.slug.localeCompare(b.slug));
+    // The set is only valid as a SET: one JID may not be configured twice.
+    assertUniqueGroupIds(found.map((g) => ({ id: g.config.id, source: g.slug })));
+    return found;
+  }
+
   return {
-    async list() {
-      const found: StoredGroup[] = [];
-      let token: string | undefined;
-      do {
-        const response = await client.send(
-          new GetParametersByPathCommand({
-            Path: GROUPS_PATH,
-            Recursive: false,
-            MaxResults: 10,
-            ...(token ? { NextToken: token } : {}),
-          }),
-        );
-        for (const parameter of response.Parameters ?? []) {
-          const slug = slugOf(parameter);
-          if (slug === '' || parameter.Value === undefined) continue;
-          found.push(toStored(slug, parameter.Value));
-        }
-        token = response.NextToken;
-      } while (token);
-      found.sort((a, b) => a.slug.localeCompare(b.slug));
-      // The set is only valid as a SET: one JID may not be configured twice.
-      assertUniqueGroupIds(found.map((g) => ({ id: g.config.id, source: g.slug })));
-      return found;
-    },
+    list,
 
     async get(slug) {
       // Read through the LIST rather than GetParameter: the same one call answers "does it
       // exist" and "what else is configured", which is what an edit has to check anyway.
-      const all = await this.list();
+      const all = await list();
       return all.find((g) => g.slug === slug) ?? null;
     },
 

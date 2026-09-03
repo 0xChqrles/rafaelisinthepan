@@ -185,8 +185,12 @@ built from the repo root by the runner's Docker.
    per group at `/whippin/bot/groups/<slug>`:
    ```bash
    pnpm bot:groups edit test     # $EDITOR on example.json; paste the JID, set enabled: true
-   pnpm bot:groups list          # what SSM now holds
+   pnpm bot:groups list          # what SSM now holds, and the region it read
    ```
+   SSM is regional and the wrong region answers an EMPTY LIST rather than an error, so the
+   CLI PINS the region to `us-east-1` (where every stack is pinned) instead of inheriting
+   the shell's, and prints it with every answer. `BOT_GROUPS_REGION` overrides it if a
+   deployment ever moves.
    The CLI takes no session lease, so it runs with the bot connected. **Editing SSM does not
    change production**: `deploy-bot` runs `pnpm bot:groups pull` into the gitignored
    `groups/local/` snapshot and builds the image, the Lambda bundle and the podium SCHEDULES
