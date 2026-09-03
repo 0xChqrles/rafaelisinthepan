@@ -1816,9 +1816,160 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   EXIT (a new account may only send to verified addresses until AWS lifts it, so a fresh
   deployment sends codes into a void for every address but the operator's own), and the SPF +
   DMARC TXT records, which are the zone's mail policy and not something this stack may silently
-  overwrite. Cost is not a factor: $0.10 per 1,000 sends. Locally, `pnpm backend:dev` PRINTS the
+  overwrite. Cost is not a factor: $0.10 per 1,000 sends. **#230 added everything that handles
+  what comes BACK — the reputation alarms and an inbox at the domain — and left this split
+  exactly as it stands** (see its section below; the MX it adds belongs to the receiver the
+  stack provisions, not to the zone's policy). Locally, `pnpm backend:dev` PRINTS the
   code to its own log (`consoleMailer`) — the accept-all Turnstile verifier's exact pattern, and
   for the same reason: a link flow you cannot complete locally is a link flow nobody tests.
+
+### Mail plumbing: bounces, complaints, and an inbox (#230, decided 2026-09-03)
+
+- **#204 made the game SEND mail and nothing handled what came BACK.** Three gaps, one piece
+  of plumbing. Suppression already stopped a hard-bounced address being mailed twice — that
+  was never the hole; the hole was that NOTHING SAID SO. AWS reviews an account over 5%
+  bounces or 0.1% complaints and can pause its sending, and the first symptom would have been
+  account codes silently failing. Meanwhile `hello@<domain>` — the sender, the address the
+  privacy notice tells players to write to, and the address SES forwards its own bounce
+  notifications to when no Return-Path is set — sat on a domain **with no MX at all**, so every
+  one of those was discarded undelivered.
+- **ONE operator address gates ALL of it** (`-c operatorEmail=`, `packages/infra/bin/app.ts`,
+  no default because the repo is public; CI passes the `OPERATOR_EMAIL` repository variable and
+  **FAILS the backend deploy when it is unset** — PR-233 review, 2026-09-03: the site publishes a
+  privacy notice saying the inbox works, and a warn-and-continue would deploy no MX, no alarms
+  and no landing bucket under it). It is the confirmed SNS subscription behind the alarms AND the inbox
+  received mail is forwarded to, because both are the same job: REACHING A HUMAN. Unset, the
+  stack builds NEITHER — an alarm nobody is subscribed to and an MX nobody reads are the same
+  bug this plumbing removes, not lesser versions of it. Two knobs where one suffices would have
+  been speculative configuration; the day they must differ is a one-line change.
+- **REPUTATION ALARMS ONLY** (user-decided): the issue's cheapest option, and the one it called
+  the real unit of work, since an alarm is worth having only with a topic and a CONFIRMED
+  subscription behind it. `AWS/SES` publishes `Reputation.BounceRate`/`ComplaintRate`
+  account-wide with no configuration set, so nothing is added to the sending path. Thresholds
+  are **AWS's own review rates, not numbers of our choosing** (0.05 / 0.001 — the metric reports
+  fractions), MAXIMUM over an hour because the question is whether the rate ever crossed the
+  line an average would smooth away, and **missing data IGNORED — the alarm holds its state**
+  (corrected 2026-09-03 on the PR-233 review; it was `NOT_BREACHING`). SES publishes nothing
+  while the account is quiet AND while AWS has paused it, and `notBreaching` reads both as
+  good: an alarm that had fired dropped to OK the moment the metric went missing and mailed a
+  false recovery — for a paused account, exactly when the number was worst. Ignoring holds
+  ALARM until a real data point says otherwise, and a quiet week still wakes nobody (the
+  initial insufficient-data state fires no action). OK actions too: a reputation rate falls
+  slowly, so "it is back under" is otherwise a fact somebody has to go and look up — honest
+  only because a recovery now has to be a data point.
+  **The topic NAMES CloudWatch as a publisher.** `enforceSSL` attaches an explicit topic policy,
+  and an explicit policy REPLACES the default one SNS applies — leaving a lone Deny and turning
+  "can the alarm publish" into a question about implicit service grants. That is the one thing
+  here that may not be a question. **And the topic is deliberately NOT encrypted:** a CloudWatch
+  alarm cannot publish through the AWS-managed `alias/aws/sns` key (its policy cannot be edited
+  to grant `cloudwatch.amazonaws.com`), so SSE with the free key would silently break the
+  notification — the exact failure — and a customer managed key costs $1/month to protect a
+  payload that is an alarm state transition carrying nothing about any player.
+  **NOT DONE, deliberately:** the issue's option 3, a configuration set with an SNS event
+  destination into a recorder Lambda. It reports the FIRST bounce rather than the 5% rate, and
+  is genuinely additive (the IAM already permits configuration sets) — it is the next layer if
+  the rates ever prove too coarse, not a thing to build before they have.
+- **SES INBOUND RECEIVING, IN-STACK** (user-decided, over a hosted mailbox): the MX, an S3
+  landing bucket, a receipt rule set and a forwarder, so everything stays in one account and one
+  stack. `packages/infra/lib/mail.ts` (`MailAlerts` + `MailReceiving`) — a construct file rather
+  than 200 more lines in an already-large stack, and NOT a fourth CDK stack, which would have
+  cost a `deploy.yml` change for no isolation the shared zone and identity allow anyway.
+  - **FOUR ALIASES, enumerated, never a catch-all** (a domain that accepts every local part is a
+    spam magnet): `hello@` so a reply to a code mail and a privacy request land somewhere — and
+    so SES's own bounce forwarding finally has a destination that exists; `abuse@` and
+    `postmaster@` because mailbox providers expect them; `dmarc@` so a `rua=` has somewhere to
+    point, which off-domain needs an authorization record only THAT domain's owner can publish.
+  - **THE MX IS IN CDK; SPF AND DMARC STAY BY HAND.** #204's split, applied rather than
+    rewritten: a record that BELONGS TO the identity or receiver this stack provisions is the
+    stack's (the DKIM CNAMEs, and now the MX — a receipt rule set with no MX in front of it
+    receives nothing, so a "complete" deploy would silently receive no mail), while records that
+    state the DOMAIN'S MAIL POLICY are a statement about every sender of this domain and not
+    something this stack may silently overwrite.
+  - **THE RULE SET IS ACTIVATED BY A CUSTOM RESOURCE.** SES holds ONE active receipt rule set
+    per region per account and exposes no CloudFormation property for it. Left as a documented
+    by-hand step, a complete deploy still receives nothing — the shape of bug this whole issue
+    is about — so the deploy either activates or fails. It TAKES OVER the region's single active
+    rule set (this account has no other), and the teardown deactivates rather than leaving a
+    rule set pointing at a deleted bucket.
+  - **ACTION ORDER IS LOAD-BEARING:** S3 then Lambda, because SES runs actions in sequence and
+    the forwarder reads the object the S3 action wrote. The Lambda action is asynchronous — it
+    makes no mail-flow decision, and a slow forward must never become a bounce for the person
+    who wrote.
+- **THE FORWARDER** (`packages/backend/src/mailForward.ts`) fetches the raw MIME and rewrites
+  only what must change. `From` becomes the verified sender (SES sends as nothing else), wearing
+  the ENVELOPE sender as its display name — a `From` display name is routinely an encoded-word,
+  which turns to mojibake once quoted inside another; the original `From` survives untouched as
+  `Reply-To`, so a reply reaches the writer. The original `DKIM-Signature` goes with it: it
+  signed a `From` that no longer stands, and a broken signature reads worse than an absent one.
+  The header block is handled as latin1 and **the body is never decoded at all**, so a DMARC
+  report's gzip and a player's screenshot survive byte for byte.
+  - **THE LOOP GUARD IS THE OPERATIONAL ONE.** Every forwarded copy carries
+    `X-Whippin-Forwarded`, and every message carrying it is refused. Without it: the operator's
+    inbox rejects a forward, SES forwards that bounce to `hello@`, and it is forwarded straight
+    back at the address that just rejected it, for as long as the mailbox stays broken.
+    **It is matched against the WHOLE RAW MESSAGE, not the top-level headers** (corrected
+    2026-09-03 on the PR-233 review), and that is what makes it work at all: the bounce SES
+    forwards is a DSN whose OWN headers are SES's, with the failed message quoted in a
+    `message/rfc822` part — so a header lookup finds nothing and forwards the bounce, which
+    bounces. Deliberately COARSE, and the trade runs the right way: a false positive is a
+    message mentioning that exact header name, logged and left in the landing bucket, while
+    what it declines is exactly the useless half (news about the operator's own mailbox) and a
+    bounce of a CODE MAIL — the one this issue exists to surface — carries no marker and
+    forwards normally.
+  - **Every `X-SES-*` and `X-Whippin-*` header is STRIPPED on the way out** (PR-233 review,
+    2026-09-03). SES reads `X-SES-*` off a raw message it sends as INSTRUCTIONS — configuration
+    set, message tags, sending-authorization ARNs, list-management options — so a stranger's
+    headers, forwarded verbatim, steered OUR send; and the verdict line is composed from SES's
+    receipt, never from a header the sender could write. Dropped by PREFIX, since the exact
+    names are AWS's to extend.
+  - Spam and virus verdicts (scanning is on) are refused rather than relayed into a personal
+    inbox from our own verified domain. A message over ~9 MB is not relayed either — SES accepts
+    up to 40 MB inbound — but its SIZE becomes the notification: a short notice names the
+    sender, the subject and the S3 key, because a message silently never forwarded is this
+    issue's own failure mode.
+  - **REFUSALS COME FIRST, BEFORE ANY SIDE EFFECT** (same review). Size is a question about HOW
+    to deliver a message; spam, a virus and a loop are questions about WHETHER to — and the
+    oversize path SENDS something. Gated the other way round, a large spam lands in the
+    operator's inbox as a notice from our own verified domain, and a large looping bounce is
+    answered with a fresh notice carrying NO marker, which reopens the very loop the marker
+    exists to close. The bounds are read with `Number.isFinite`, too: `Number('9mb')` is NaN
+    and NaN loses every comparison, so a typo in the environment would not fail — it would
+    silently remove the cap.
+  - **`FeedbackForwardingEmailAddress` was NOT added.** The issue offered it as a stopgap for
+    notifications going to an address that did not exist; with `hello@` receiving, SES's default
+    (the From address, no Return-Path being set) now lands in the same inbox as everything else.
+    A second mechanism would be a second thing to keep in step.
+- **THE LANDING BUCKET IS A TRANSIT BUFFER, and its retention is a promise.** Private,
+  TLS-enforced, `DESTROY` rather than `RETAIN` — it holds other people's mail, so a teardown
+  that ORPHANED it would leave correspondence in an account nothing manages any more — and a
+  lifecycle rule expiring the `inbound/` prefix after **30 days**. The forward happens in
+  seconds with Lambda's own retries, so the window exists for the case the retries do not cover:
+  a forwarder that is BROKEN rather than slow. Which is also why **the forwarder's failures are
+  alarmed onto the same topic — its `Errors`, and Lambda's `AsyncEventsDropped`** (added
+  2026-09-03 on the PR-233 review): the action is asynchronous under a reserved concurrency of
+  5, and an event Lambda cannot run inside its retry window is DROPPED, which counts as neither
+  an error nor a log line — a mail that arrives and is then lost in silence is the same failure
+  as one that never arrives. The topic is also the function's `onFailure` destination, so the
+  dropped event — which names the message id, so the S3 key — lands beside the alarm; throttles
+  themselves are not alarmed, since the queue absorbing a burst is the ceiling working.
+  **That 30 days is stated in the privacy notice as "ABOUT 30 days"** (`web/src/screens/
+  privacyDoc.ts`; "at most" until the same review): S3 dates expiry N days after creation
+  rounded UP to the next UTC midnight and deletes asynchronously, so no lifecycle value is a
+  strict cutoff. Changing the number changes that file.
+- **The code mailer was NOT widened, and must not be** (the issue's third note, recorded here
+  because it is a standing rule now): `backend/src/mailer.ts` is one message shape with a text
+  body, deliberately — it addresses PLAYERS, and anything beyond a six-digit code needs its own
+  sender address, its own template and a real unsubscribe story if it is ever non-transactional.
+  The forwarder addresses the OPERATOR, sends raw MIME, and shares no code with it.
+- **OPERATOR STEPS, none of them automatable, all in `packages/infra/README.md`:** CONFIRM the
+  SNS subscription (nothing is delivered until a human clicks it — which is exactly why the
+  subscription, not the alarm, is the unit of work); publish `rua=mailto:dmarc@<domain>` on the
+  existing `_dmarc` TXT; and SES SANDBOX EXIT, which #204 already owed. **Two foot-guns with the
+  by-hand records:** SPF is `-all`, a HARD fail, so any other outbound sender for this domain
+  must have its `include:` added in the same change or its mail hard-fails everywhere; and that
+  SPF string is the apex TXT RRSet's ONLY value, while Route53 replaces an RRSet wholesale — so
+  any later apex TXT (a provider's domain-verification string) must be UPSERTed carrying BOTH
+  values or it silently deletes SPF.
 
 ### Day-addressed routing & the game day
 
@@ -2344,7 +2495,13 @@ publish/inventory/backend:dev (backend), dev/build (web), cdk synth/diff/deploy
   (`web/src/screens/privacyDoc.ts`) states, in both languages, every category the backend
   keeps about a player and why: the account row's email, the device item's hashed token and
   parsed user-agent (#216), the round rows' guess logs (#201), scores, friends and the profile,
-  and the HMAC-of-IP rows the #169 volume floor and #204's send meter write. **Changing what
+  the HMAC-of-IP rows the #169 volume floor and #204's send meter write, and — since #230 —
+  mail a player sends US, which passes through the inbound landing bucket for about 30 days
+  (`infra/lib/mail.ts` `INBOUND_RETENTION_DAYS`; the number is stated on the page, so moving it
+  moves that file) — and, since the PR-233 review, the PROVIDER hosting the inbox it is
+  forwarded to (`PRIVACY_MAILBOX_PROVIDER`, read off `OPERATOR_EMAIL`'s host: that provider
+  receives and stores the whole message, so it is a recipient the page has to name beside AWS,
+  Cloudflare and Plausible). **Changing what
   the server stores — a new field, a new third party, a changed retention — is a change to
   that file**, which is the one place the game makes a promise about any of it. It is
   reachable from `/account` — its ONE door since 2026-09-03 (user-decided): the email flow's

@@ -86,6 +86,72 @@ aws ssm put-parameter --region us-east-1 --type SecureString \
 Use `--overwrite` for an intentional rotation. Alternate parameter names can be supplied
 with `-c turnstileSecretParameter=/path -c ipHmacSecretParameter=/path`.
 
+### Mail: sending, bouncing, and receiving (#204/#230)
+
+The stack verifies the **domain identity** the account codes are sent from (EasyDKIM, its three
+CNAMEs published into the same hosted zone) and, with `-c operatorEmail=<address>`, everything
+that handles what comes **back**:
+
+- **SES reputation alarms** on `Reputation.BounceRate` (> 5%) and `Reputation.ComplaintRate`
+  (> 0.1%) — the rates AWS reviews an account at, and can pause its sending over; missing data
+  holds the alarm's state, so a paused (silent) account never reads as recovered — plus two
+  alarms on the forwarder (its `Errors`, and Lambda's `AsyncEventsDropped` for an invocation
+  it gave up on while throttled), all onto one SNS topic (`MailAlertsTopicArn`). A dropped
+  invocation's event is also delivered to that topic, so the notification names the message.
+- **Inbound mail**: an apex `MX` at `inbound-smtp.us-east-1.amazonaws.com`, a receipt rule set
+  for `hello@`, `abuse@`, `postmaster@` and `dmarc@`, a private landing bucket (objects expire
+  after about 30 days — S3 rounds expiry up to the next UTC midnight and deletes asynchronously)
+  and a Lambda that forwards each message to `operatorEmail`.
+
+`operatorEmail` has **no default** — it is a personal address and this repo is public. CI passes
+the `OPERATOR_EMAIL` repository variable and **fails the backend deploy when it is unset**: a
+local synth may want the stack without it, production never does. Without it the stack builds
+**none** of the above: an alarm nobody is subscribed to and an MX nobody reads are the failure
+this plumbing removes, not lesser versions of it.
+
+#### Operator steps (none of these can be automated)
+
+1. **Confirm the SNS subscription.** The first deploy emails a confirmation link to
+   `operatorEmail`. Until someone clicks it, **no alarm notification is delivered** — the
+   subscription, not the alarm, is what makes this worth having.
+
+   ```bash
+   aws sns list-subscriptions-by-topic --region us-east-1 \
+     --topic-arn "$(aws cloudformation describe-stacks --region us-east-1 \
+       --stack-name WhippinBackendStack \
+       --query "Stacks[0].Outputs[?OutputKey=='MailAlertsTopicArn'].OutputValue" --output text)"
+   # A SubscriptionArn of "PendingConfirmation" means the link is still unclicked.
+   ```
+
+2. **Request SES production access** (sandbox exit). Per **region** — the backend stack is
+   `us-east-1`, so ask there, not in whatever region the CLI defaults to. Until AWS lifts it,
+   codes only reach addresses verified as identities, so a fresh deployment sends into a void
+   for every address but the operator's own.
+
+3. **Publish the DMARC `rua=`.** Now that `dmarc@<domain>` receives, aggregate reports have
+   somewhere to land — which is how you learn your mail is being rejected somewhere, and the
+   prerequisite for ever tightening `p=none` to `quarantine`/`reject`. Pointing `rua` at an
+   off-domain mailbox does not work: the receiving domain has to publish a
+   `<domain>._report._dmarc.<their-domain>` authorization record, which we cannot create.
+
+   ```
+   _dmarc.<domain>  TXT  "v=DMARC1; p=none; rua=mailto:dmarc@<domain>"
+   ```
+
+**SPF and DMARC stay by hand** — they state the zone's mail policy for *every* sender of the
+domain, which is not something this stack may silently overwrite. (The `MX` **is** in the stack:
+it names the receiver these very resources provision, and a receipt rule set with no MX in front
+of it receives nothing.) Two foot-guns with those by-hand records:
+
+- SPF is `v=spf1 include:amazonses.com -all`. The `-all` is a **hard** fail, so any other
+  outbound sender for this domain must have its `include:` added **in the same change**, or its
+  mail hard-fails everywhere.
+- That SPF string is the apex TXT RRSet's only value, and **Route53 replaces an RRSet
+  wholesale**. Any later apex TXT (a provider's domain-verification string, say) must be
+  UPSERTed carrying **both** values, or it silently deletes SPF.
+
+Locally there is no SES at all: `pnpm backend:dev` **prints** the code to its own log.
+
 ## `WhippinWebStack` (#21) — web front hosting
 
 Hosts the built SPA (`packages/web/dist`) on a **private S3 bucket** served only through
@@ -215,6 +281,7 @@ caching the result into `cdk.context.json`.
 | `FunctionUrl`            | the Lambda Function URL (CloudFront origin; not called directly).         |
 | `DistributionDomainName` | the CloudFront default domain (Route53 alias target for `api.<domain>`).   |
 | `DistributionId`         | the distribution the deploy job and `puzzle:publish --s3` invalidate.      |
+| `MailAlertsTopicArn`     | the SNS topic behind the SES bounce/complaint alarms — **confirm its email subscription by hand**. Only with `-c operatorEmail=`. |
 
 **`WhippinWebStack`**
 
@@ -256,6 +323,9 @@ nothing of value remains. Re-publish puzzles to the new bucket with `pnpm puzzle
 
 ## Notes
 
+- The **inbound mail** bucket (#230) uses `DESTROY` with auto-delete, and expires its objects
+  after 30 days: it holds other people's mail, so a teardown that orphaned it would leave
+  correspondence in an account nothing manages any more.
 - The **puzzle** bucket uses `RemovalPolicy.RETAIN` — `destroy` leaves it (and its puzzles)
   in place so a teardown never drops history; delete it manually if you really mean to. The
   **SPA** bucket uses `DESTROY` (the build is reproducible), so it is removed on teardown.

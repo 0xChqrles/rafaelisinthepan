@@ -25,9 +25,11 @@
 // against something: the account row's stored address (`backend/linkStore.ts`), the device
 // item's hashed token and coarse user-agent (#216), the round rows' folded guesses (#201),
 // the HMAC-of-IP dedup and its 48h TTL (`SCORE_DEDUP_TTL_SECONDS`), the 10-minute code
-// (`LINK_CODE_TTL_SECONDS`), the us-east-1 stacks (`infra/bin/app.ts`), Turnstile
+// (`LINK_CODE_TTL_SECONDS`), the inbound-mail buffer and its 30 days (#230,
+// `infra/lib/mail.ts` `INBOUND_RETENTION_DAYS`), the us-east-1 stacks (`infra/bin/app.ts`), Turnstile
 // (`turnstile.ts`) and Plausible's three events (`analytics.ts`). A change to any of those is
-// a change to this file.
+// a change to this file. Two values here are NOT in the code and are read off the world
+// instead — the host's legal entity and the mailbox provider, both below.
 
 type UiLang = 'en' | 'fr';
 
@@ -55,6 +57,13 @@ export const PRIVACY_CONTACT = 'hello@whippin.ai';
 // contracts with another AWS entity, this line is read off the invoice again, never adjusted
 // from memory.
 export const PRIVACY_HOST = 'Amazon Web Services EMEA SARL, 38 avenue John F. Kennedy, L-1855 Luxembourg';
+
+// WHERE A MESSAGE TO US ENDS UP. Mail to `hello@` is forwarded (#230) to the operator's own
+// inbox — `OPERATOR_EMAIL`, a CI variable, so the code cannot know who hosts it — and that
+// provider receives and stores the whole message, which makes it a recipient this page has
+// to name beside AWS, Cloudflare and Plausible. The name is read off the address CI is
+// configured with; the day that inbox moves, this line moves with it.
+export const PRIVACY_MAILBOX_PROVIDER = 'Google';
 
 // WHEN THIS WAS LAST TRUE. An ISO instant rather than a sentence per language: the two would
 // drift, and a date reads differently in the two locales anyway (the screen formats it).
@@ -116,6 +125,10 @@ export const PRIVACY: Record<UiLang, PrivacyDoc> = {
             term: 'A scrambled version of your IP address',
             body: 'Your IP address is scrambled as soon as it reaches the server, in a way that cannot be reversed. We only use it to stop a single machine from flooding the game with scores, or from sending too many codes to one inbox. These traces are deleted automatically and are never kept for more than two days.',
           },
+          {
+            term: 'Anything you write to us',
+            body: 'If you email {mail}, we receive your message and the address it came from, like any inbox. On its way there it passes through our server, which holds it for about 30 days and then deletes it automatically. The copy that reached our inbox stays until we no longer need it, or until you ask us to delete it.',
+          },
         ],
       },
       {
@@ -128,7 +141,7 @@ export const PRIVACY: Record<UiLang, PrivacyDoc> = {
       {
         heading: 'HOW LONG',
         paragraphs: [
-          'Everything listed above is kept for as long as your account exists. A 6-digit code expires after 10 minutes. The scrambled IP traces are deleted within two days.',
+          'Everything listed above is kept for as long as your account exists. A 6-digit code expires after 10 minutes. The scrambled IP traces are deleted within two days. A message you send us passes through our server for about 30 days on its way to the inbox.',
         ],
       },
       {
@@ -152,6 +165,10 @@ export const PRIVACY: Record<UiLang, PrivacyDoc> = {
           {
             term: 'Plausible',
             body: 'Counts visits and three simple events (a puzzle solved, a result shared, the tutorial opened). No cookies, and nothing that can be traced back to you.',
+          },
+          {
+            term: PRIVACY_MAILBOX_PROVIDER,
+            body: `Hosts the inbox that messages sent to {mail} are forwarded to. If you write to us, your message, your address and anything you attach end up in a mailbox run by ${PRIVACY_MAILBOX_PROVIDER}, under its own terms, for as long as we keep the message. Nothing else about you goes there.`,
           },
         ],
         outro: 'That is it. We do not sell anything about you, and there are no ads.',
@@ -196,6 +213,10 @@ export const PRIVACY: Record<UiLang, PrivacyDoc> = {
             term: 'Une version brouillée de votre adresse IP',
             body: "Votre adresse IP est brouillée dès qu'elle arrive sur le serveur, d'une façon impossible à inverser. On s'en sert uniquement pour empêcher une même machine d'inonder le jeu de scores, ou d'envoyer trop de codes vers une même boîte mail. Ces traces sont supprimées automatiquement et ne sont jamais gardées plus de deux jours.",
           },
+          {
+            term: "Ce que vous nous écrivez",
+            body: "Si vous écrivez à {mail}, on reçoit votre message et l'adresse d'où il vient, comme n'importe quelle boîte mail. En chemin, il passe par notre serveur, qui le garde environ 30 jours puis le supprime automatiquement. La copie arrivée dans la boîte reste tant qu'on en a besoin, ou jusqu'à ce que vous nous demandiez de la supprimer.",
+          },
         ],
       },
       {
@@ -208,7 +229,7 @@ export const PRIVACY: Record<UiLang, PrivacyDoc> = {
       {
         heading: 'COMBIEN DE TEMPS',
         paragraphs: [
-          "Tout ce qui est listé ci-dessus est gardé tant que votre compte existe. Un code à 6 chiffres expire au bout de 10 minutes. Les traces d'adresse IP brouillées sont supprimées sous deux jours.",
+          "Tout ce qui est listé ci-dessus est gardé tant que votre compte existe. Un code à 6 chiffres expire au bout de 10 minutes. Les traces d'adresse IP brouillées sont supprimées sous deux jours. Un message que vous nous envoyez passe environ 30 jours par notre serveur avant d'arriver dans la boîte.",
         ],
       },
       {
@@ -232,6 +253,10 @@ export const PRIVACY: Record<UiLang, PrivacyDoc> = {
           {
             term: 'Plausible',
             body: "Compte les visites et trois événements simples (une grille résolue, un résultat partagé, le tutoriel ouvert). Pas de cookies, et rien qui permette de remonter jusqu'à vous.",
+          },
+          {
+            term: PRIVACY_MAILBOX_PROVIDER,
+            body: `Héberge la boîte mail vers laquelle les messages envoyés à {mail} sont transférés. Si vous nous écrivez, votre message, votre adresse et ce que vous y joignez arrivent dans une boîte gérée par ${PRIVACY_MAILBOX_PROVIDER}, selon ses propres conditions, tant qu'on garde le message. Rien d'autre vous concernant n'y va.`,
           },
         ],
         outro: "C'est tout. On ne vend rien qui vous concerne, et il n'y a pas de publicité.",

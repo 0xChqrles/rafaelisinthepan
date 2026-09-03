@@ -432,3 +432,183 @@ describe('per-player score storage (#187)', () => {
     ]);
   });
 });
+
+// ── Mail plumbing (#230) ─────────────────────────────────────────────────────
+// A SECOND template, because all of this hangs off the custom domain's hosted zone and the
+// operator address. `fromLookup` resolves to a dummy zone with no credentials, which is
+// enough: what is pinned below is shape, not zone contents.
+
+const DOMAIN = 'test.invalid';
+const OPERATOR = 'ops@test.invalid';
+
+function mailTemplate(operatorEmail: string | undefined): Template {
+  const app = new App();
+  const stack = new BackendStack(app, 'MailBackendStack', {
+    env: { account: ACCOUNT, region: REGION },
+    turnstileSecretParameter: TURNSTILE_PARAMETER,
+    ipHmacSecretParameter: IP_HMAC_PARAMETER,
+    domainName: DOMAIN,
+    operatorEmail,
+  });
+  return Template.fromStack(stack);
+}
+
+const mail = mailTemplate(OPERATOR);
+
+describe('mail plumbing (#230)', () => {
+  it('alarms on the rates AWS actually acts on, and stays quiet when nothing is sent', () => {
+    const alarms = Object.values(mail.findResources('AWS::CloudWatch::Alarm')).map(
+      (alarm) => alarm.Properties as Record<string, unknown>,
+    );
+    const byMetric = (metricName: string) =>
+      alarms.find((alarm) => alarm.MetricName === metricName);
+
+    // 5% bounce / 0.1% complaint are the rates AWS reviews an account at and can pause
+    // sending over — not thresholds of our own choosing, which is why they are pinned.
+    expect(byMetric('Reputation.BounceRate')).toMatchObject({
+      Namespace: 'AWS/SES',
+      Threshold: 0.05,
+      ComparisonOperator: 'GreaterThanThreshold',
+    });
+    expect(byMetric('Reputation.ComplaintRate')).toMatchObject({
+      Namespace: 'AWS/SES',
+      Threshold: 0.001,
+      ComparisonOperator: 'GreaterThanThreshold',
+    });
+    // SES publishes no reputation metric while the account is not sending — because the game
+    // is quiet, OR because AWS has PAUSED it. `notBreaching` reads both as good, so an alarm
+    // that had fired would drop to OK and mail a false recovery the moment the metric went
+    // missing. Ignoring HOLDS the state: a quiet week wakes nobody, and a paused account is
+    // never congratulated.
+    for (const metricName of ['Reputation.BounceRate', 'Reputation.ComplaintRate']) {
+      expect(byMetric(metricName)?.TreatMissingData).toBe('ignore');
+    }
+    // A mail that arrives and is then lost in silence is the same failure as one that never
+    // arrives, and an ASYNC function has two ways of losing one: it ran and threw, or Lambda
+    // gave up on the event without running it — retries exhausted, or aged out while
+    // THROTTLED under the reserved concurrency, which is neither an error nor a log line.
+    for (const metricName of ['Errors', 'AsyncEventsDropped']) {
+      expect(byMetric(metricName)).toMatchObject({
+        Namespace: 'AWS/Lambda',
+        Threshold: 1,
+        // Here silence IS good: a function that was not invoked dropped nothing.
+        TreatMissingData: 'notBreaching',
+      });
+    }
+  });
+
+  it('delivers a dropped forwarder event to the alerts topic, so the alarm names the message', () => {
+    // The alarm says THAT a message was lost; the failed event (the SES notification, which
+    // carries the message id and so the S3 key) says WHICH. The same topic rather than a
+    // queue, because a queue nobody reads is the silence again.
+    const configs = Object.values(mail.findResources('AWS::Lambda::EventInvokeConfig'));
+    const onFailure = configs.map(
+      (config) =>
+        (config.Properties.DestinationConfig as { OnFailure?: { Destination: unknown } })
+          ?.OnFailure?.Destination,
+    );
+    const [topicId] = Object.keys(mail.findResources('AWS::SNS::Topic'));
+    expect(onFailure).toContainEqual({ Ref: topicId });
+  });
+
+  it('lets CloudWatch publish to the topic it alarms onto', () => {
+    // `enforceSSL` attaches an explicit topic policy, and an explicit policy REPLACES the
+    // default one SNS would apply. Without naming the publisher, all that is left is a Deny
+    // — and an alarm that cannot publish is exactly the silence #230 exists to remove.
+    const policies = Object.values(mail.findResources('AWS::SNS::TopicPolicy'));
+    expect(policies).toHaveLength(1);
+    const statements = policies[0].Properties.PolicyDocument.Statement as Record<
+      string,
+      unknown
+    >[];
+    const allow = statements.find((statement) => statement.Effect === 'Allow');
+    expect(allow).toMatchObject({
+      Action: 'sns:Publish',
+      Principal: { Service: 'cloudwatch.amazonaws.com' },
+      Condition: { StringEquals: { 'aws:SourceAccount': ACCOUNT } },
+    });
+
+    // The alarms are worth having only because a human is on the other end.
+    mail.hasResourceProperties('AWS::SNS::Subscription', {
+      Protocol: 'email',
+      Endpoint: OPERATOR,
+    });
+  });
+
+  it('points the apex MX at SES receiving in THIS stack’s region', () => {
+    // SES receiving is regional and the MX must name the endpoint of the region whose rule
+    // set is active. Naming another region's is mail accepted by nothing.
+    mail.hasResourceProperties('AWS::Route53::RecordSet', {
+      Type: 'MX',
+      Name: `${DOMAIN}.`,
+      ResourceRecords: [`10 inbound-smtp.${REGION}.amazonaws.com`],
+    });
+  });
+
+  it('receives for the four aliases, storing before it forwards', () => {
+    const rules = Object.values(mail.findResources('AWS::SES::ReceiptRule'));
+    expect(rules).toHaveLength(1);
+    const rule = rules[0].Properties.Rule as Record<string, unknown>;
+    expect(rule.Recipients).toEqual([
+      // The sender #204's codes go out as — so a reply lands somewhere, and so does SES's
+      // own bounce forwarding, which with no Return-Path set targets the From address.
+      `hello@${DOMAIN}`,
+      // Mailbox providers expect these two to exist.
+      `abuse@${DOMAIN}`,
+      `postmaster@${DOMAIN}`,
+      // Somewhere for a DMARC `rua=` to point. Off-domain needs an authorization record
+      // only that domain's owner can publish, so it has to be here.
+      `dmarc@${DOMAIN}`,
+    ]);
+    expect(rule.ScanEnabled).toBe(true);
+
+    // ORDER IS LOAD-BEARING: SES runs actions in sequence, and the forwarder reads the
+    // object the S3 action wrote. Reversed, it is invoked before there is anything to read.
+    const actions = rule.Actions as Record<string, unknown>[];
+    expect(Object.keys(actions[0])).toEqual(['S3Action']);
+    expect(Object.keys(actions[1])).toEqual(['LambdaAction']);
+    // Asynchronous: this function makes no mail-flow decision, so a slow forward must never
+    // become a bounce for the person who wrote.
+    expect((actions[1].LambdaAction as Record<string, unknown>).InvocationType).toBe('Event');
+  });
+
+  it('activates the rule set, because an inactive one receives nothing', () => {
+    // SES holds ONE active receipt rule set per region and exposes no CloudFormation
+    // property for it. Left as a by-hand step, a complete deploy still receives no mail.
+    const customs = Object.values(mail.findResources('Custom::AWS'));
+    const activation = customs.find((resource) =>
+      JSON.stringify(resource.Properties.Create ?? '').includes('setActiveReceiptRuleSet'),
+    );
+    expect(activation).toBeDefined();
+    expect(JSON.stringify(activation!.Properties.Delete)).toContain('setActiveReceiptRuleSet');
+  });
+
+  it('holds received mail privately, and only as long as the notice says', () => {
+    const buckets = Object.values(mail.findResources('AWS::S3::Bucket'));
+    const inbound = buckets.find((bucket) =>
+      JSON.stringify(bucket.Properties.LifecycleConfiguration ?? '').includes('inbound/'),
+    );
+    expect(inbound).toBeDefined();
+    expect(inbound!.Properties.PublicAccessBlockConfiguration).toMatchObject({
+      BlockPublicAcls: true,
+      BlockPublicPolicy: true,
+      IgnorePublicAcls: true,
+      RestrictPublicBuckets: true,
+    });
+    // This holds other people's mail, so the retention is a promise the privacy notice
+    // makes on its behalf — "about 30 days", stated there, enforced here (S3 rounds expiry
+    // up to the next UTC midnight and deletes asynchronously, which is why "about").
+    const rules = inbound!.Properties.LifecycleConfiguration.Rules as Record<string, unknown>[];
+    expect(rules[0]).toMatchObject({ Prefix: 'inbound/', ExpirationInDays: 30, Status: 'Enabled' });
+  });
+
+  it('builds none of it without an operator address', () => {
+    // ALL OR NOTHING, deliberately: an alarm nobody is subscribed to and an MX nobody reads
+    // are the failure this plumbing removes, not a lesser version of it.
+    const bare = mailTemplate(undefined);
+    expect(Object.keys(bare.findResources('AWS::CloudWatch::Alarm'))).toHaveLength(0);
+    expect(Object.keys(bare.findResources('AWS::SNS::Topic'))).toHaveLength(0);
+    expect(Object.keys(bare.findResources('AWS::SES::ReceiptRuleSet'))).toHaveLength(0);
+    bare.resourcePropertiesCountIs('AWS::Route53::RecordSet', { Type: 'MX' }, 0);
+  });
+});

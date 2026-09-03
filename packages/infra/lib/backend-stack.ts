@@ -29,6 +29,7 @@ import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as ses from 'aws-cdk-lib/aws-ses';
 import * as targets from 'aws-cdk-lib/aws-route53-targets';
 import { NagSuppressions } from 'cdk-nag';
+import { MailAlerts, MailReceiving } from './mail';
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // packages/infra/lib
 // The Lambda IS the backend package's existing entrypoint (createHandler over the S3 puzzle
@@ -65,6 +66,12 @@ interface BackendStackProps extends StackProps {
   // has to be supplied whole via `mailFrom`.
   mailSender?: string;
   mailFrom?: string;
+  // Where a human is reached (#230). ONE address, because every use of it is the same job:
+  // it is the confirmed SNS subscription behind the SES reputation alarms, AND the inbox
+  // mail received at `<domain>` is forwarded to. With it unset the stack builds neither —
+  // an alarm nobody is subscribed to and an MX nobody reads are the failure this plumbing
+  // exists to remove, not a lesser version of it.
+  operatorEmail?: string;
 }
 
 export class BackendStack extends Stack {
@@ -323,6 +330,24 @@ export class BackendStack extends Stack {
       // nobody owns yet.
       new ses.EmailIdentity(this, 'MailIdentity', {
         identity: ses.Identity.publicHostedZone(zone as route53.IPublicHostedZone),
+      });
+    }
+
+    // ── Mail plumbing: what comes BACK (#230) ────────────────────────────────
+    // #204 gave the game a sender and stopped there. The alarms say a bounce problem
+    // exists; the receiving plumbing says WHAT bounced and lets a player write to us at
+    // the address the privacy notice already points them at. Both live in lib/mail.ts,
+    // which also records why the MX belongs in this stack while SPF and DMARC do not.
+    const mailAlerts = props.operatorEmail
+      ? new MailAlerts(this, 'MailAlerts', { operatorEmail: props.operatorEmail })
+      : undefined;
+    if (zone && mailAlerts && props.domainName && props.operatorEmail) {
+      new MailReceiving(this, 'MailReceiving', {
+        domainName: props.domainName,
+        zone: zone as route53.IPublicHostedZone,
+        mailFrom,
+        forwardTo: props.operatorEmail,
+        alerts: mailAlerts,
       });
     }
 
@@ -715,6 +740,13 @@ export class BackendStack extends Stack {
       description: 'API base URL the web app calls — set as VITE_API_BASE_URL.',
       value: apiDomain ? `https://${apiDomain}` : `https://${distribution.distributionDomainName}`,
     });
+    if (mailAlerts) {
+      new CfnOutput(this, 'MailAlertsTopicArn', {
+        description:
+          'SNS topic behind the SES reputation alarms (#230). Its email subscription must be CONFIRMED by hand before anything is delivered.',
+        value: mailAlerts.topic.topicArn,
+      });
+    }
     new CfnOutput(this, 'PuzzleBucketName', {
       description: 'S3 bucket holding the daily puzzles (upload target for #4).',
       value: bucket.bucketName,

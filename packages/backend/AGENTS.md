@@ -48,6 +48,8 @@
                               ONE transaction that moves the device and deletes the account
       memoryLinkStore.ts      process-local implementation for backend:dev/tests
       mailer.ts               SES sender + the LOCAL console mailer that prints the code
+      mailForward.ts          #230's INBOUND forwarder Lambda: S3 -> rewrite From/Reply-To,
+                              drop the stale DKIM signature, refuse spam/virus/loops -> SES
       deviceStore.ts          device/account storage contract; device#<tokenHash> base key,
                               the account GSI, SHA-256(token) and the once-a-day lastSeenAt
       dynamoDeviceStore.ts    prod GetItem auth + ONE create-only transaction for the pair,
