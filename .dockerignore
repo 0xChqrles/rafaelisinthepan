@@ -1,0 +1,20 @@
+# Build context for packages/whatsapp-bot/Dockerfile (#236), which is built from the REPO
+# ROOT. A WHITELIST: everything is excluded, then exactly what the bot image needs is let
+# back in — the workspace manifests (pnpm resolves the workspace from them), the shared
+# package's sources (inlined into the bundle), and the bot's own sources, groups and
+# scripts. Never the embeddings, the puzzle stores, node_modules or cdk.out. The CDK asset
+# fingerprint honours this file too, so only these paths trigger an image rebuild.
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!packages/*/package.json
+!packages/shared/src/**
+!packages/shared/tsconfig.json
+!packages/whatsapp-bot/src/**
+!packages/whatsapp-bot/groups/**
+!packages/whatsapp-bot/scripts/**
+!packages/whatsapp-bot/tsconfig.json
+packages/**/node_modules
+packages/whatsapp-bot/dist
+!packages/whatsapp-bot/Dockerfile

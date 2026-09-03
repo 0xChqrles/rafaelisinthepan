@@ -1,0 +1,21 @@
+{
+  "id": "120363000000000000@g.us",
+  "name": "Whippin test",
+  "language": "fr",
+  "enabled": false,
+  "podium": {
+    "enabled": true,
+    "time": "22:00",
+    "timezone": "Europe/Paris"
+  },
+  "chat": {
+    "enabled": true,
+    "name": "WhippinBot",
+    "prePrompt": "Groupe de test. Réponds en français naturel, familier mais pas forcé.",
+    "perUserPerDay": 10,
+    "perGroupPerDay": 60
+  },
+  "reactions": true,
+  "leaderAnnouncements": false,
+  "names": {}
+}

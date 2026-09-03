@@ -5,3 +5,7 @@ packages:
 # Build scripts are blocked by default; approve this one explicitly.
 allowBuilds:
   esbuild: true
+  # The WhatsApp bot's transport (#236) ships prebuilt: baileys' `prepare` (its own tsc
+  # build) and protobufjs' postinstall are not needed to run it, so they stay declined.
+  baileys: false
+  protobufjs: false

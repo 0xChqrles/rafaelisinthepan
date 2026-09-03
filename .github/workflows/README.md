@@ -10,26 +10,27 @@ Two workflows drive the pipeline (issue #33):
   out which CDK stack(s) changed and deploys only those, authenticating to AWS via
   **GitHub OIDC** (no long-lived keys).
 
-Both CDK stacks are pinned to **us-east-1**.
+All three app CDK stacks are pinned to **us-east-1**. The bot stack's deploy builds a Docker image on the runner (ubuntu-latest ships Docker) and pushes it through the CDK bootstrap image-publishing role.
 
 ## Selective deploy
 
 `deploy.yml` uses [`dorny/paths-filter`](https://github.com/dorny/paths-filter) to map
 changed paths to stacks:
 
-| Changed path | Backend | Web |
-|---|---|---|
-| `packages/backend/**` | ✅ | — |
-| `packages/web/**` | — | ✅ |
-| `packages/shared/**` | ✅ | ✅ (bundled into the Lambda **and** the SPA) |
-| `packages/infra/**` | ✅ | ✅ (both stack defs) |
-| `pnpm-lock.yaml`, `package.json`, `pnpm-workspace.yaml` | ✅ | ✅ (safe default) |
-| `.github/workflows/deploy.yml` | ✅ | ✅ |
-| `packages/generation/**` | — | — (not deployed; tested in CI only) |
-| `packages/benchmark/**` | — | — (not deployed; tested in CI only) |
+| Changed path | Backend | Web | Bot |
+|---|---|---|---|
+| `packages/backend/**` | ✅ | — | — |
+| `packages/web/**` | — | ✅ | — |
+| `packages/whatsapp-bot/**`, `.dockerignore` | — | — | ✅ (#236) |
+| `packages/shared/**` | ✅ | ✅ | ✅ (bundled into the Lambdas, the SPA **and** the bot image) |
+| `packages/infra/**` | ✅ | ✅ | ✅ (every stack def) |
+| `pnpm-lock.yaml`, `package.json`, `pnpm-workspace.yaml` | ✅ | ✅ | ✅ (safe default) |
+| `.github/workflows/deploy.yml` | ✅ | ✅ | ✅ |
+| `packages/generation/**` | — | — | — (not deployed; tested in CI only) |
+| `packages/benchmark/**` | — | — | — (not deployed; tested in CI only) |
 
 `workflow_dispatch` takes a `stacks` input — `changed` (default) | `web` | `backend` |
-`all` — to force a selection. `changed` on a manual run diffs the tip commit (`HEAD~1`).
+`bot` | `all` — to force a selection. `changed` on a manual run diffs the tip commit (`HEAD~1`).
 
 ## Required repo configuration
 

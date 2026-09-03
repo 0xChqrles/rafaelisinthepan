@@ -152,6 +152,52 @@ of it receives nothing.) Two foot-guns with those by-hand records:
 
 Locally there is no SES at all: `pnpm backend:dev` **prints** the code to its own log.
 
+## `WhippinBotStack` (#236) — the WhatsApp group bot
+
+One Fargate task holding the one Baileys (WhatsApp Web) session, a bot-owned DynamoDB table,
+an SQS outbound queue, a podium Lambda scheduled per configured group, and alarms. Independent
+of the two app stacks. Deployed by `deploy.yml` (`deploy-bot`) like the others; the image is
+built from the repo root by the runner's Docker.
+
+### Operator steps (by hand)
+
+1. **The model key.** Create the SSM SecureString the task and the Lambda read at runtime:
+   ```bash
+   aws ssm put-parameter --name /whippin/bot/llm-api-key --type SecureString --value '<DeepSeek key>'
+   ```
+   Another name: `-c botLlmApiKeyParameter=…`. Provider/model: `-c botLlmProvider=` /
+   `-c botLlmModel=` (defaults `deepseek` / `deepseek-v4-flash`). No key = no comments and no
+   chat; the scoreboard still runs.
+2. **Confirm the alerts subscription** (`AlertsTopicArn`, the `OPERATOR_EMAIL` address) —
+   nothing is delivered until the email is confirmed.
+3. **Pair the dedicated number.** The task must NOT hold the session: scale the service to 0,
+   pair from a laptop with AWS credentials against the deployed table, scale back to 1.
+   ```bash
+   aws ecs update-service --cluster <ClusterName> --service <ServiceName> --desired-count 0
+   BOT_TABLE=<BotTableName> pnpm bot:pair                 # QR; or --phone 33612345678 for a code
+   BOT_TABLE=<BotTableName> pnpm bot:cli groups           # the group JIDs for groups/*.json
+   aws ecs update-service --cluster <ClusterName> --service <ServiceName> --desired-count 1
+   ```
+   A device WhatsApp logged out is never re-paired automatically: the task idles, the
+   `Disconnected` alarm fires, and `pnpm bot:pair --reset` is the way back.
+4. **Configure the test group** in `packages/whatsapp-bot/groups/test.json` (its JID, `enabled:
+   true`) and deploy — the schedule for its podium is created from that file. The production
+   group is a later config change after the test group has exercised reconnect, ingestion,
+   dedup and outbound delivery.
+5. **Replay a podium by hand** if needed: invoke `PodiumFunctionName` with
+   `{"group": "<jid>", "date": "YYYY-MM-DD"}` (the command id dedups a day already posted).
+
+**`WhippinBotStack` outputs**
+
+| output | use |
+| --- | --- |
+| `BotTableName` | `BOT_TABLE` for `pnpm bot:pair` / `pnpm bot:cli`. |
+| `OutboundQueueUrl` | the outbound command queue the task consumes. |
+| `ClusterName`, `ServiceName` | scale to 0 before pairing, back to 1 after. |
+| `PodiumFunctionName` | manual podium replay. |
+| `AlertsTopicArn` | the SNS topic behind the disconnected / dead-letter / podium-error alarms — **confirm its email subscription by hand**. |
+| `ConfiguredGroups` | what the deployed config enables, at a glance. |
+
 ## `WhippinWebStack` (#21) — web front hosting
 
 Hosts the built SPA (`packages/web/dist`) on a **private S3 bucket** served only through
@@ -260,6 +306,7 @@ pnpm --filter @whippin/infra typecheck   # tsc --noEmit
 # Target a single stack (args pass straight through to cdk):
 pnpm --filter @whippin/infra run deploy WhippinBackendStack -c domainName=whippin.ai
 pnpm --filter @whippin/infra run deploy WhippinWebStack     -c domainName=whippin.ai
+pnpm --filter @whippin/infra run deploy WhippinBotStack     -c operatorEmail=you@example.com
 ```
 
 Deploying needs AWS credentials in the environment and a **bootstrapped** account/region

@@ -1,0 +1,157 @@
+import { describe, expect, it, vi } from 'vitest';
+import { dayNumber, encodeResult } from '@whippin/shared';
+import { GroupRegistry, parseGroupConfig } from '../config/groupConfig';
+import { createLog } from '../log';
+import type { OutboundCommand } from '../outbound/commands';
+import { memoryDeclarationStore } from './declarations';
+import { createIngest } from './ingest';
+import { memoryLeaderStore } from './leader';
+import type { InboundMessage } from './message';
+
+const GROUP = '120363000000000001@g.us';
+const DAY = dayNumber('2026-09-03');
+const ORIGIN = 'https://whippin.ai';
+
+function registry(over: Record<string, unknown> = {}) {
+  return new GroupRegistry([
+    parseGroupConfig('g.json', {
+      id: GROUP,
+      name: 'g',
+      language: 'fr',
+      enabled: true,
+      podium: { enabled: true, time: '22:00', timezone: 'Europe/Paris' },
+      chat: { enabled: false },
+      names: { '33600000000@s.whatsapp.net': 'Zou' },
+      ...over,
+    }),
+  ]);
+}
+
+function token(score: number, lang = 'fr', capped = false): string {
+  return encodeResult({
+    lang,
+    dayNumber: DAY,
+    score,
+    trajectory: Array.from({ length: score }, (_, i) => Math.round(((i + 1) / score) * 100)),
+    solvedAt: capped ? [] : [score],
+    capped,
+  });
+}
+
+function message(over: Partial<InboundMessage> = {}): InboundMessage {
+  return {
+    group: GROUP,
+    id: 'M1',
+    sender: '33612345678@s.whatsapp.net',
+    senderName: 'Gab',
+    text: `gg ${ORIGIN}/s/${token(7)}`,
+    timestamp: 1_000,
+    fromMe: false,
+    mentions: [],
+    live: true,
+    ...over,
+  };
+}
+
+function harness(groups = registry()) {
+  const declarations = memoryDeclarationStore();
+  const sent: OutboundCommand[] = [];
+  const ingest = createIngest({
+    groups,
+    declarations,
+    outbound: { enqueue: async (c) => void sent.push(c) },
+    leaders: memoryLeaderStore(),
+    siteOrigin: ORIGIN,
+    log: createLog('silent'),
+    wait: async () => {},
+  });
+  return { ingest, declarations, sent };
+}
+
+describe('share ingestion (#236)', () => {
+  it('records a live share under the token\'s day and reacts once', async () => {
+    const { ingest, declarations, sent } = harness();
+    expect(await ingest(message())).toBe('recorded');
+    expect(await ingest(message())).toBe('unchanged');
+    const rows = await declarations.day(GROUP, DAY);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ score: 7, name: 'Gab', messageId: 'M1' });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ kind: 'reaction', id: `react:${GROUP}:M1`, emoji: '👍' });
+  });
+
+  it('ignores unconfigured groups, its own messages, other languages and plain chatter', async () => {
+    const { ingest, sent } = harness();
+    expect(await ingest(message({ group: '120363999999999999@g.us' }))).toBe('ignored');
+    expect(await ingest(message({ fromMe: true }))).toBe('ignored');
+    expect(await ingest(message({ text: `${ORIGIN}/s/${token(3, 'en')}` }))).toBe('no_share');
+    expect(await ingest(message({ text: 'bonjour' }))).toBe('no_share');
+    expect(sent).toEqual([]);
+  });
+
+  it('a replayed share is recorded but never reacted to', async () => {
+    const { ingest, sent } = harness();
+    expect(await ingest(message({ live: false }))).toBe('recorded');
+    expect(sent).toEqual([]);
+  });
+
+  it('a later message replaces the declaration; an older replay does not', async () => {
+    const { ingest, declarations } = harness();
+    await ingest(message());
+    await ingest(message({ id: 'M2', timestamp: 1_001, text: `${ORIGIN}/s/${token(4)}` }));
+    await ingest(message({ id: 'M0', timestamp: 999, text: `${ORIGIN}/s/${token(2)}` }));
+    expect((await declarations.day(GROUP, DAY))[0].score).toBe(4);
+  });
+
+  it('retries a failing write and reacts only once it succeeded', async () => {
+    const declarations = memoryDeclarationStore();
+    const record = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('throttled'))
+      .mockImplementation(declarations.record);
+    const sent: OutboundCommand[] = [];
+    const ingest = createIngest({
+      groups: registry(),
+      declarations: { ...declarations, record },
+      outbound: { enqueue: async (c) => void sent.push(c) },
+      leaders: memoryLeaderStore(),
+      siteOrigin: ORIGIN,
+      log: createLog('silent'),
+      wait: async () => {},
+    });
+    expect(await ingest(message())).toBe('recorded');
+    expect(record).toHaveBeenCalledTimes(2);
+    expect(sent).toHaveLength(1);
+
+    const dead = createIngest({
+      groups: registry(),
+      declarations: { ...declarations, record: vi.fn().mockRejectedValue(new Error('down')) },
+      outbound: { enqueue: async (c) => void sent.push(c) },
+      leaders: memoryLeaderStore(),
+      siteOrigin: ORIGIN,
+      log: createLog('silent'),
+      wait: async () => {},
+    });
+    expect(await dead(message({ id: 'M9' }))).toBe('failed');
+    expect(sent).toHaveLength(1);
+  });
+
+  it('announces a lead CHANGE, with the operator name, and never the first share', async () => {
+    const { ingest, sent } = harness(registry({ leaderAnnouncements: true, reactions: false }));
+    await ingest(message({ id: 'M1', text: `${ORIGIN}/s/${token(7)}` }));
+    expect(sent).toEqual([]);
+    await ingest(
+      message({
+        id: 'M2',
+        timestamp: 1_001,
+        sender: '33600000000@s.whatsapp.net',
+        senderName: 'Zouzou',
+        text: `${ORIGIN}/s/${token(3)}`,
+      }),
+    );
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ kind: 'message', text: 'Zou prend la tête avec 3.' });
+    await ingest(message({ id: 'M3', timestamp: 1_002, text: `${ORIGIN}/s/${token(5)}` }));
+    expect(sent).toHaveLength(1);
+  });
+});

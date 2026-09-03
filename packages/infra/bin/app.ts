@@ -16,6 +16,7 @@ import { AwsSolutionsChecks } from 'cdk-nag';
 import { BackendStack } from '../lib/backend-stack';
 import { WebStack } from '../lib/web-stack';
 import { DeployRoleStack } from '../lib/deploy-role-stack';
+import { BotStack } from '../lib/bot-stack';
 
 const app = new App();
 
@@ -70,6 +71,20 @@ new WebStack(app, 'WhippinWebStack', {
   // The backend origin the SPA calls — drives the CSP `connect-src`. Mirrors the
   // BackendStack API domain (`api.<domain>`); undefined in the no-domain smoke synth.
   apiOrigin: domainName ? `https://${apiSubdomain}.${domainName}` : undefined,
+  env,
+});
+
+// The WhatsApp bot (#236): a sibling stack that consumes Whippin's public share contract
+// and shares nothing with the two app stacks. Its ONE secret (the model provider's key)
+// is an SSM SecureString read by NAME at runtime; `operatorEmail` is the same repository
+// variable the backend's mail alarms use, and gates who the bot's alarms reach.
+new BotStack(app, 'WhippinBotStack', {
+  operatorEmail: app.node.tryGetContext('operatorEmail') || undefined,
+  llmApiKeyParameter:
+    app.node.tryGetContext('botLlmApiKeyParameter') ?? '/whippin/bot/llm-api-key',
+  llmProvider: app.node.tryGetContext('botLlmProvider') ?? undefined,
+  llmModel: app.node.tryGetContext('botLlmModel') ?? undefined,
+  siteOrigin: `https://${siteHost}`,
   env,
 });
 
