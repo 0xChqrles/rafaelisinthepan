@@ -1,8 +1,15 @@
 // Group behaviour is CONFIGURATION, not code (#236). Every WhatsApp group the bot may act in
-// has one JSON file under `groups/`, and that directory IS the allow-list: no file, no
-// ingestion, no reaction, no conversation and no scheduled message. Nothing about an
-// unknown JID is inferred — the bot receives the whole account's stream (that is how it
-// finds share links) and drops every message whose group is not configured here.
+// has one JSON config, and that set IS the allow-list: no config, no ingestion, no
+// reaction, no conversation and no scheduled message. Nothing about an unknown JID is
+// inferred — the bot receives the whole account's stream (that is how it finds share
+// links) and drops every message whose group is not configured.
+//
+// THE SOURCE OF TRUTH IS SSM, NOT THIS REPOSITORY. A group JID names a real private
+// conversation and this repo is public, so the configs live at `/whippin/bot/groups/<slug>`
+// and `groups/local/` holds a SNAPSHOT of them, pulled immediately before a build or a
+// deploy (`pnpm bot:groups`, `config/groupsStore.ts`). What this module reads is always
+// that snapshot — a directory of files — so nothing at run time depends on SSM being
+// reachable, and one deployment runs on one coherent set.
 //
 // The file carries PRODUCT behaviour and never a secret: WhatsApp auth, provider API keys
 // and the like live in AWS-managed state. Two fields are load-bearing from the start —
@@ -12,7 +19,7 @@
 // tool, widen no data access and bypass no trigger policy, because none of those are
 // decided by prompt text (see chat/agent.ts).
 
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { NAME_MAX_CHARS, isBoundName } from '../domain/names';
 
@@ -56,6 +63,10 @@ export interface GroupConfig {
 
 export const GROUP_JID = /^\d{5,}@g\.us$/;
 export const USER_JID = /^\d{5,}@(s\.whatsapp\.net|lid)$/;
+// The template's placeholder (`groups/example.json`). Format-valid but names no
+// conversation, so it must never reach SSM or a snapshot — a deploy would mint a real
+// schedule against a group that does not exist.
+export const PLACEHOLDER_GROUP_JID = '120363000000000000@g.us';
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const LANGUAGES: readonly GroupLanguage[] = ['en', 'fr'];
 
@@ -113,6 +124,9 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
   const { id, name, language, enabled, podium, chat, reactions, leaderAnnouncements, names } =
     raw;
   if (typeof id !== 'string' || !GROUP_JID.test(id)) fail(file, '"id" must be a group JID');
+  if (id === PLACEHOLDER_GROUP_JID) {
+    fail(file, '"id" is still the example.json placeholder — paste the real JID from `pnpm bot:cli groups`');
+  }
   if (typeof name !== 'string' || name.trim() === '') fail(file, '"name" must be a string');
   if (typeof language !== 'string' || !LANGUAGES.includes(language as GroupLanguage)) {
     fail(file, `"language" must be one of ${LANGUAGES.join(', ')}`);
@@ -164,16 +178,25 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
   const overrides: Record<string, string> = {};
   if (names !== undefined) {
     if (!isRecord(names)) fail(file, '"names" must be an object of JID -> name');
-    for (const [jid, label] of Object.entries(names)) {
-      if (!USER_JID.test(jid)) fail(file, `"names": "${jid}" is not a user JID`);
+    // The key IS a sender JID, so it never appears in an error: this message surfaces in
+    // synth/CI logs via `BrokenParameter.reason` and `readGroupConfigs`, which are readable
+    // beyond the operator (the duplicate-JID rule below). The entry index is what the
+    // operator counts to in `edit`.
+    const entries = Object.entries(names);
+    for (let i = 0; i < entries.length; i++) {
+      const [jid, label] = entries[i];
+      // COUNTED FROM ONE: this is a position a human counts to down the map in `edit`, and
+      // there the first entry is the first one.
+      const at = `entry ${i + 1}`;
+      if (!USER_JID.test(jid)) fail(file, `"names": ${at} is not a user JID`);
       if (typeof label !== 'string' || label.trim() === '') {
-        fail(file, `"names": the name for ${jid} must be a non-empty string`);
+        fail(file, `"names": ${at} must be a non-empty string`);
       }
       // The same bound a push name gets (`domain/names.ts`): an override lands in the same
       // podium lines and prompts, and a file is where a mistake should be loud.
       const trimmed = label.trim();
       if (!isBoundName(trimmed)) {
-        fail(file, `"names": the name for ${jid} must be one line of at most ${NAME_MAX_CHARS} characters`);
+        fail(file, `"names": ${at} must be one line of at most ${NAME_MAX_CHARS} characters`);
       }
       overrides[jid] = trimmed;
     }
@@ -208,7 +231,9 @@ export class GroupRegistry {
     for (const config of configs) {
       if (!config.enabled) continue;
       if (this.byId.has(config.id)) {
-        throw new GroupConfigError(`group ${config.id} is configured twice`);
+        // No JID in the message: a group JID names a private conversation and this
+        // error surfaces in synth/CI logs, which are readable beyond the operator.
+        throw new GroupConfigError('one group is configured twice');
       }
       this.byId.set(config.id, config);
     }
@@ -223,11 +248,41 @@ export class GroupRegistry {
   }
 }
 
+// ONE JID, ONE CONFIG — enabled or not. `GroupRegistry` refuses a duplicate too, but only
+// among ENABLED configs, so two slugs could name one group as long as one was switched off,
+// and enabling the second would fail at deploy rather than where it was written. Two configs
+// for one conversation is a mistake at any setting: whichever the registry happened to keep
+// would decide that group's language and podium.
+//
+// The message names SOURCES, never the JID: a group JID names a private conversation and
+// this error surfaces in synth/CI logs, which are readable beyond the operator. The two
+// slugs are what the operator acts on anyway.
+export function assertUniqueGroupIds(configs: readonly { id: string; source: string }[]): void {
+  const seen = new Map<string, string>();
+  for (const { id, source } of configs) {
+    const first = seen.get(id);
+    if (first !== undefined) fail(source, `already configured by ${first} (one group may have only one config)`);
+    seen.set(id, source);
+  }
+}
+
+// The snapshot directory, as the RUNTIME reads it (the task at boot, the podium Lambda on
+// every invocation). A MISSING one is an ERROR here: the directory is named by
+// `BOT_GROUPS_DIR`, spelled once in the Dockerfile and once in the stack, and the two
+// drifting is exactly the case this has to catch — read as "no groups", the task boots,
+// reports connected, and silently ingests nothing, which no alarm watches. The throw makes
+// it a crash-loop the connected-gauge alarm does see. (An EMPTY directory is a legitimate
+// empty set: `groups/local/` is always present in a checkout.)
 export function readGroupConfigs(dir: string): GroupConfig[] {
+  if (!existsSync(dir)) {
+    throw new GroupConfigError(
+      `no group snapshot at ${dir} — run \`pnpm bot:groups pull\` (a deployment names it in BOT_GROUPS_DIR).`,
+    );
+  }
   const files = readdirSync(dir)
     .filter((f) => f.endsWith('.json'))
     .sort();
-  return files.map((file) => {
+  const configs = files.map((file) => {
     let raw: unknown;
     try {
       raw = JSON.parse(readFileSync(join(dir, file), 'utf8'));
@@ -236,6 +291,18 @@ export function readGroupConfigs(dir: string): GroupConfig[] {
     }
     return parseGroupConfig(file, raw);
   });
+  assertUniqueGroupIds(configs.map((c, i) => ({ id: c.id, source: files[i] })));
+  return configs;
+}
+
+// The same directory as SYNTH reads it, where a MISSING one is legitimately empty: every
+// `cdk synth` in this repo constructs the bot stack, including the ones deploying the web
+// or the backend, and those must not require a pull. What guards against deploying an
+// accidentally empty set is the bot stack's own synth warning plus the pull step in
+// `deploy.yml` — see bot-stack.ts. Its name says who it is for: nothing that RUNS may read
+// through it.
+export function readGroupConfigsForSynth(dir: string): GroupConfig[] {
+  return existsSync(dir) ? readGroupConfigs(dir) : [];
 }
 
 export function loadGroups(dir: string): GroupRegistry {

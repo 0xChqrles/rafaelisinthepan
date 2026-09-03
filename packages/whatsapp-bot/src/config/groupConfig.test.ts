@@ -1,5 +1,14 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { GroupRegistry, parseGroupConfig } from './groupConfig';
+import {
+  GroupRegistry,
+  PLACEHOLDER_GROUP_JID,
+  parseGroupConfig,
+  readGroupConfigs,
+  readGroupConfigsForSynth,
+} from './groupConfig';
 
 const valid = {
   id: '120363000000000001@g.us',
@@ -60,8 +69,79 @@ describe('group configuration (#236)', () => {
     expect(registry.get('120363999999999999@g.us')).toBeUndefined();
   });
 
+  it('refuses the example.json placeholder JID', () => {
+    expect(() => parseGroupConfig('x.json', { ...valid, id: PLACEHOLDER_GROUP_JID })).toThrow(
+      /placeholder/,
+    );
+  });
+
   it('refuses two files naming one group', () => {
     const a = parseGroupConfig('a.json', valid);
     expect(() => new GroupRegistry([a, a])).toThrow(/twice/);
+  });
+
+  it('names sources in duplicate errors, never the group JID', () => {
+    const a = parseGroupConfig('a.json', valid);
+    try {
+      new GroupRegistry([a, a]);
+      expect.unreachable();
+    } catch (error) {
+      expect((error as Error).message).not.toContain(valid.id);
+    }
+  });
+
+  it('never echoes a sender JID in a names error (it surfaces in public CI logs)', () => {
+    const sender = '33612345678@s.whatsapp.net';
+    for (const names of [
+      { 'abc@g.us': 'Zou' },
+      { [sender]: '' },
+      { [sender]: 'Z'.repeat(41) },
+    ]) {
+      try {
+        parseGroupConfig('x.json', { ...valid, names });
+        expect.unreachable();
+      } catch (error) {
+        const message = (error as Error).message;
+        expect(message).toMatch(/x\.json/);
+        expect(message).not.toContain(sender);
+        expect(message).not.toContain('abc@g.us');
+      }
+    }
+  });
+});
+
+describe('the snapshot directory (#236)', () => {
+  it('reads a directory of configs; a MISSING one fails the runtime and is empty for synth', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'whippin-groups-'));
+    const missing = join(dir, 'never-pulled');
+    // The runtime: a missing directory is a wrong BOT_GROUPS_DIR, and a bot that read it as
+    // "no groups" would boot healthy and ingest nothing. It says where it looked and how to
+    // fill it.
+    expect(() => readGroupConfigs(missing)).toThrow(/never-pulled.*bot:groups pull/);
+    // Synth: every cdk command constructs the bot stack, so an un-pulled checkout must
+    // still synthesize — as the empty set the stack warns about.
+    expect(readGroupConfigsForSynth(missing)).toEqual([]);
+    // An EMPTY directory is an empty set for both: `groups/local/` is always checked in.
+    expect(readGroupConfigs(dir)).toEqual([]);
+    writeFileSync(join(dir, 'a.json'), JSON.stringify(valid));
+    expect(readGroupConfigs(dir).map((g) => g.name)).toEqual(['Whippin FR']);
+    expect(readGroupConfigsForSynth(dir).map((g) => g.name)).toEqual(['Whippin FR']);
+  });
+
+  it('refuses two configs for ONE group, whether or not both are enabled', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'whippin-groups-'));
+    writeFileSync(join(dir, 'a.json'), JSON.stringify(valid));
+    // Disabled is not a licence: whichever the registry kept would decide that group's
+    // language and podium, and enabling the second would fail at deploy instead of here.
+    writeFileSync(join(dir, 'b.json'), JSON.stringify({ ...valid, enabled: false }));
+    try {
+      readGroupConfigs(dir);
+      expect.unreachable();
+    } catch (error) {
+      expect((error as Error).message).toMatch(/already configured by a\.json/);
+      // A group JID names a private conversation; synth/CI logs are readable beyond the
+      // operator, so the error names the files, never the JID.
+      expect((error as Error).message).not.toContain(valid.id);
+    }
   });
 });

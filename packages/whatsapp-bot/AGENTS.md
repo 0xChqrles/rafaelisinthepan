@@ -15,8 +15,11 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
 
 ```
   whatsapp-bot/
-    groups/*.json               THE ALLOW-LIST: one committed config per group (product
-                                behaviour, never a secret). No file → the group does not exist.
+    groups/example.json         the committed TEMPLATE (placeholder JID, disabled)
+    groups/local/*.json         THE ALLOW-LIST, as a gitignored SNAPSHOT pulled from SSM.
+                                No config → the group does not exist. Product behaviour, never a secret.
+    src/config/groupsStore.ts   SSM `/whippin/bot/groups/<slug>` — the SOURCE of those configs
+    src/groupsCli.ts            `pnpm bot:groups` — list / edit / rm / pull
     src/config/groupConfig.ts   strict parser + GroupRegistry (enabled groups by JID)
     src/config/env.ts           runtime env: table, queue URL, groups dir, site origin, LLM knobs
     src/log.ts                  pino + `tag()` — the ONE hashing of a JID for logs
@@ -53,7 +56,36 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
 
 ## Invariants (decided in #236)
 
-- **No config, no behaviour.** `groups/*.json` is the allow-list for ingestion, reactions,
+- **SSM IS THE SOURCE, THE SNAPSHOT IS WHAT RUNS** (user-decided 2026-09-04). A group JID
+  names a real private conversation and this repository is public, so configs live in SSM as
+  one `String` parameter per group at `/whippin/bot/groups/<slug>` — not a SecureString,
+  because a config carries product behaviour and no credential. `pnpm bot:groups` is how a
+  human edits them: `list`, `edit <slug>` ($EDITOR on the current value, or `example.json`
+  for a new one, validated before it is written back), `rm <slug>`, and `pull [slug]`, which
+  materializes `groups/local/`. There is deliberately **no `disable`** (that is
+  `enabled: false` through `edit`) and **no `validate`** (validation is not a step anyone can
+  forget: `edit` refuses to write an invalid config and `pull` refuses to produce an invalid
+  snapshot). **`pull` is the ONLY command that judges the set** (PR-239 review): `list`
+  reports a broken parameter — a name that is no slug, a body the parser refuses — beside
+  the usable ones with its way out, and `edit`/`rm` still reach it, because they are how it
+  gets fixed; one bad parameter must never lock the operator out of every command at once.
+  And `pull` prints the FILES it wrote, never a group's name or schedule: it runs in CI,
+  whose log is public on this repository. It opens NO socket and takes NO lease, so it runs
+  while the bot is connected — finding a JID in the first place is `pnpm bot:cli groups`,
+  which does hold the lease.
+  **Nothing reads SSM at run time.** The task, the podium Lambda and the CDK schedules all
+  read the pulled snapshot, so one deployment runs on one coherent set and SSM being
+  unreachable can never make the bot forget a group. A MISSING snapshot directory is an
+  error at RUN TIME (`loadGroups`: a wrong `BOT_GROUPS_DIR`, which read as an empty set
+  would boot a healthy-looking bot that ingests nothing) and an empty set at SYNTH only
+  (`readGroupConfigsForSynth`, since every cdk command constructs the stack). Hence the rule that gives the design its
+  shape: **editing SSM does not change production — a deploy promotes it** (`deploy-bot`
+  pulls before it builds). One JID may have only ONE config, enabled or not: `GroupRegistry`
+  refuses a duplicate among enabled ones, and `assertUniqueGroupIds` refuses it in the set,
+  because whichever copy won would decide that group's language and podium. A config is
+  capped at SSM Standard's 4 KB, checked where it is written — `chat.prePrompt` is the field
+  that will reach it, and the Advanced tier is a per-parameter charge for a group's settings.
+- **No config, no behaviour.** That set is the allow-list for ingestion, reactions,
   conversation AND scheduled messages (the stack reads it at synth to create one schedule
   per enabled podium). `language` decides which daily's shares count — an `fr` group ranks
   the French puzzle and ignores an English token — on the way IN and on the way OUT: every
@@ -198,7 +230,8 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
 ```bash
 pnpm bot:start        # run the task locally (needs AWS creds, BOT_TABLE; takes the lease)
 pnpm bot:pair         # print the QR (or --phone <digits> for a pairing code); --reset to wipe first
-pnpm bot:cli groups   # list the paired account's groups with their JIDs
+pnpm bot:cli groups   # list the paired account's groups with their JIDs (takes the lease)
+pnpm bot:groups list  # what SSM holds  |  edit <slug> | rm <slug> | pull [slug]  (no lease)
 pnpm bot:cli forget <group JID> <player JID>
 pnpm bot:build        # bundle main.ts into dist/ (what the Dockerfile runs)
 pnpm --filter @whippin/whatsapp-bot test
@@ -211,10 +244,11 @@ only), `BOT_GROUPS_DIR`, `BOT_SITE_ORIGIN`, `BOT_METRICS_NAMESPACE`, `BOT_LLM_PR
 
 ## Current state / mutable
 
-- `groups/test.json` is the first target and ships DISABLED with a placeholder JID: fill in
-  the real test-group JID (`pnpm bot:cli groups`) and flip `enabled` once paired. The
-  production group is a later, separate config change after reconnect, ingestion, dedup and
-  outbound behaviour have been exercised there.
+- `test` is the first target and starts from `groups/example.json` DISABLED with a
+  placeholder JID: `pnpm bot:groups edit test`, fill in the real test-group JID
+  (`pnpm bot:cli groups`) and flip `enabled` once paired. The production group is a later,
+  separate config change after reconnect, ingestion, dedup and outbound behaviour have been
+  exercised there.
 - The transport proof (pair → receive → reply → kill the task → reconnect without pairing)
   has NOT been run yet; it needs the dedicated number and a deployed stack.
 - The IMAGE has been built and run (2026-09-03): 113 files / 884 KB of context, identical

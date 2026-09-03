@@ -28,6 +28,7 @@
     "bot:start": "pnpm --filter @whippin/whatsapp-bot start",
     "bot:pair": "pnpm --filter @whippin/whatsapp-bot pair",
     "bot:cli": "pnpm --filter @whippin/whatsapp-bot cli",
+    "bot:groups": "pnpm --filter @whippin/whatsapp-bot groups",
     "bot:build": "pnpm --filter @whippin/whatsapp-bot build",
     "infra:synth": "pnpm --filter @whippin/infra synth",
     "infra:diff": "pnpm --filter @whippin/infra diff",

@@ -1990,7 +1990,15 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   on `packages/whatsapp-bot/**`, `shared`, `infra`, root deps and the root `.dockerignore`
   (the image is built from the repo root). Its one secret — the model provider's key — is
   an SSM SecureString named by `BOT_LLM_API_KEY_PARAMETER`; `operatorEmail` is who its
-  alarms reach. The image is built from the REPO ROOT against the root `.dockerignore`,
+  alarms reach. **GROUP CONFIGS ARE NOT COMMITTED (user-decided 2026-09-04):** a group JID
+  names a real private conversation and this repo is PUBLIC, so SSM holds them — one
+  `String` parameter per group at `/whippin/bot/groups/<slug>`, managed by
+  `pnpm bot:groups` — and `packages/whatsapp-bot/groups/local/` is a gitignored SNAPSHOT
+  pulled from it. `deploy-bot` pulls before it builds, so the image, the Lambda bundle and
+  the podium SCHEDULES all come from ONE coherent set, and nothing reads SSM at run time.
+  The consequence is the design: **editing SSM does not change production — a deploy
+  promotes it.** The CI role therefore needs read on that path (`deploy-role-stack.ts`,
+  human-deployed: `pnpm --filter @whippin/infra deploy:auth`). The image is built from the REPO ROOT against the root `.dockerignore`,
   whose whitelist must name each directory it re-includes OUTRIGHT — a wildcard in the
   middle of a re-include silently drops the directory under the legacy builder — so **a new
   workspace package needs a line there too**, or the image's frozen install fails on a
@@ -2558,7 +2566,11 @@ publish/inventory/backend:dev (backend), dev/build (web), cdk synth/diff/deploy
   `stacks` input forces
   `changed`|`web`|`backend`|`bot`|`all` (default `changed`). **`deploy-bot` (#236)** deploys
   `WhippinBotStack` — a Docker image build on the runner plus a stop-before-start roll of
-  the one Fargate task; it needs `OPERATOR_EMAIL` like the backend job.
+  the one Fargate task; it needs `OPERATOR_EMAIL` like the backend job, and runs
+  `pnpm bot:groups pull` FIRST, since group configs live in SSM rather than the repo (the
+  #236 section says why). A deploy of any other stack constructs the bot stack too, so an
+  absent snapshot is legitimately empty rather than an error; what guards an accidentally
+  empty one is that pull step plus the stack's own synth warning.
   **The backend deploy INVALIDATES `/*` on the API distribution after `cdk deploy`**
   (decided 2026-07-26): puzzle responses carry a year-long `s-maxage`, so shipping the
   Lambda alone leaves every already-cached `(date, lang, Accept-Encoding)` entry answering

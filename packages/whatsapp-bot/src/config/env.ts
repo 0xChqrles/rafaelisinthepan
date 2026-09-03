@@ -18,7 +18,7 @@ export interface LlmEnv {
 export interface BotEnv {
   table: string; // BOT_TABLE — the bot-owned DynamoDB table (every keyspace)
   outboundQueueUrl?: string; // BOT_OUTBOUND_QUEUE_URL — absent on a purely local dry run
-  groupsDir: string; // BOT_GROUPS_DIR — where the committed group files were copied to
+  groupsDir: string; // BOT_GROUPS_DIR — where the pulled snapshot files were copied to
   siteOrigin: string; // BOT_SITE_ORIGIN — the share links to recognise (https://whippin.ai)
   metricsNamespace?: string; // BOT_METRICS_NAMESPACE — unset = no CloudWatch metrics
   llm: LlmEnv;
@@ -30,13 +30,14 @@ function required(env: NodeJS.ProcessEnv, name: string): string {
   return value;
 }
 
-// Where the committed group files are when nobody says otherwise: the SOURCE tree, which
-// is what `pnpm bot:start` and `pnpm bot:pair` run from. Both DEPLOYED forms set
-// BOT_GROUPS_DIR outright — the image copies the files to /app/…, the Lambda bundle keeps
-// them beside its handler — because resolved from a bundle this path lands beside the
-// bundle instead, where there is nothing.
+// Where the pulled snapshot files are when nobody says otherwise: the SOURCE tree, which
+// is what `pnpm bot:start` and `pnpm bot:pair` run from (`groups/local/`, written by
+// `pnpm bot:groups pull` from SSM — never `groups/` itself, which holds only the
+// committed template). Both DEPLOYED forms set BOT_GROUPS_DIR outright — the image copies
+// the files to /app/…, the Lambda bundle keeps them beside its handler — because resolved
+// from a bundle this path lands beside the bundle instead, where there is nothing.
 function sourceGroupsDir(): string {
-  return fileURLToPath(new URL('../../groups', import.meta.url));
+  return fileURLToPath(new URL('../../groups/local', import.meta.url));
 }
 
 export const DEFAULT_DAILY_CALL_CEILING = 500;
