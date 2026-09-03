@@ -333,8 +333,12 @@ export function createToolRunner(ctx: ToolContext): ToolRunner {
       const player = (r as { player: PlayerSummary }).player;
       const rows = await history();
       const won = wonDays(rows, player.sender);
-      // Count back from today, or from yesterday if today has no rows yet.
-      let day = dayOf(rows, ctx.today).length > 0 ? ctx.today : ctx.today - 1;
+      // Count back from today once THIS player has declared today, else from yesterday: a
+      // streak stays live until its holder plays (or the day ends), and what the rest of
+      // the group has posted says nothing about it — anchored on the GROUP's rows, one
+      // early riser turned every unplayed-yet holder's live streak into a 0.
+      const declaredToday = dayOf(rows, ctx.today).some((r) => r.sender === player.sender);
+      let day = declaredToday ? ctx.today : ctx.today - 1;
       let streak = 0;
       while (won.has(day)) {
         streak += 1;

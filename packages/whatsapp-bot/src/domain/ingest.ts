@@ -191,7 +191,7 @@ export function createIngest(deps: IngestDeps) {
           id: commandIds.reaction(group.id, message.id),
           kind: 'reaction',
           group: group.id,
-          target: { id: message.id, participant: message.sender },
+          target: { id: message.id, participant: message.participant },
           emoji: reactionFor(best.score, best.capped),
         },
         group.id,

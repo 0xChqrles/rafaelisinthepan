@@ -114,8 +114,11 @@ export function createAgent(deps: AgentDeps) {
     // most addressed messages point at nobody but the bot.
     const others = mentionedOthers(message, identity);
     const mentionNames = new Map<string, string>();
-    for (const jid of others) {
-      mentionNames.set(jidUser(jid), await tools.labelFor(jid));
+    // Keyed by the digits the text's @token spells (the JID the message carried), labelled
+    // by the PLAYER the mention resolves to — in a LID-addressed group those differ, and
+    // looking the LID up would find nobody the declarations know.
+    for (const mention of others) {
+      mentionNames.set(jidUser(mention.jid), await tools.labelFor(mention.player));
     }
     const question = questionText(message, identity, mentionNames);
 

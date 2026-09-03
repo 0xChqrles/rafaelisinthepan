@@ -38,11 +38,19 @@ function token(score: number, lang = 'fr', capped = false, day = DAY): string {
   });
 }
 
+// Ingest stamps `receivedAt` from this clock, once per call: a real second delivery is a
+// later instant, and two calls in one test must not look like one call's own retry.
+function clock() {
+  let t = 0;
+  return () => new Date((t += 1_000));
+}
+
 function message(over: Partial<InboundMessage> = {}): InboundMessage {
   return {
     group: GROUP,
     id: 'M1',
     sender: '33612345678@s.whatsapp.net',
+    participant: '33612345678@s.whatsapp.net',
     senderName: 'Gab',
     text: `gg ${ORIGIN}/s/${token(7)}`,
     timestamp: 1_000,
@@ -64,6 +72,7 @@ function harness(groups = registry()) {
     siteOrigin: ORIGIN,
     log: createLog('silent'),
     wait: async () => {},
+    now: clock(),
   });
   return { ingest, declarations, sent };
 }
@@ -78,6 +87,49 @@ describe('share ingestion (#236)', () => {
     expect(rows[0]).toMatchObject({ score: 7, name: 'Gab', messageId: 'M1' });
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ kind: 'reaction', id: `react:${GROUP}:M1`, emoji: '👍' });
+  });
+
+  it('the reaction names the message key\'s participant, never the player key', async () => {
+    // A LID-addressed group: the player is filed under their number, the message key
+    // under their LID — and a reaction addressed to the number attaches to nothing.
+    const { ingest, declarations, sent } = harness();
+    await ingest(message({ participant: '123456789012345@lid' }));
+    expect((await declarations.day(GROUP, DAY))[0].sender).toBe('33612345678@s.whatsapp.net');
+    expect(sent[0]).toMatchObject({
+      kind: 'reaction',
+      target: { id: 'M1', participant: '123456789012345@lid' },
+    });
+  });
+
+  it('a write that committed but lost its answer is still acknowledged on the retry', async () => {
+    const declarations = memoryDeclarationStore();
+    // The first attempt lands in the store and its response is lost; the retry sends the
+    // very same declaration and is refused by its own row.
+    const record = vi
+      .fn<typeof declarations.record>()
+      .mockImplementationOnce(async (d) => {
+        await declarations.record(d);
+        throw new Error('socket hang up');
+      })
+      .mockImplementation(declarations.record);
+    const sent: OutboundCommand[] = [];
+    const ingest = createIngest({
+      groups: registry(),
+      declarations: { ...declarations, record },
+      outbound: { enqueue: async (c) => void sent.push(c) },
+      leaders: memoryLeaderStore(),
+      siteOrigin: ORIGIN,
+      log: createLog('silent'),
+      wait: async () => {},
+      now: clock(),
+    });
+    expect(await ingest(message())).toBe('recorded');
+    expect(record).toHaveBeenCalledTimes(2);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ kind: 'reaction', id: `react:${GROUP}:M1` });
+    // A genuine second delivery, later, is still the no-op it always was.
+    expect(await ingest(message())).toBe('unchanged');
+    expect(sent).toHaveLength(1);
   });
 
   it('ignores unconfigured groups, its own messages, other languages and plain chatter', async () => {
@@ -171,6 +223,7 @@ describe('share ingestion (#236)', () => {
       siteOrigin: ORIGIN,
       log: createLog('silent'),
       wait: async () => {},
+      now: clock(),
     });
     expect(await ingest(message())).toBe('recorded');
     expect(record).toHaveBeenCalledTimes(2);
@@ -184,6 +237,7 @@ describe('share ingestion (#236)', () => {
       siteOrigin: ORIGIN,
       log: createLog('silent'),
       wait: async () => {},
+      now: clock(),
     });
     expect(await dead(message({ id: 'M9' }))).toBe('failed');
     expect(sent).toHaveLength(1);
@@ -204,6 +258,7 @@ describe('share ingestion (#236)', () => {
       siteOrigin: ORIGIN,
       log: createLog('silent'),
       wait: async () => {},
+      now: clock(),
     });
     expect(await ingest(message())).toBe('recorded');
     expect(enqueue).toHaveBeenCalledTimes(2);
@@ -219,6 +274,7 @@ describe('share ingestion (#236)', () => {
       siteOrigin: ORIGIN,
       log: createLog('silent'),
       wait: async () => {},
+      now: clock(),
     });
     expect(await dead(message({ id: 'M2', timestamp: 1_001, text: `${ORIGIN}/s/${token(4)}` }))).toBe(
       'recorded',
@@ -240,6 +296,7 @@ describe('share ingestion (#236)', () => {
       siteOrigin: ORIGIN,
       log: createLog('silent'),
       wait: async () => {},
+      now: clock(),
     });
     const text = `${ORIGIN}/s/${token(7)} et hier ${ORIGIN}/s/${token(5, 'fr', false, DAY - 1)}`;
     expect(await ingest(message({ text }))).toBe('failed');
@@ -258,6 +315,7 @@ describe('share ingestion (#236)', () => {
       siteOrigin: ORIGIN,
       log: createLog('silent'),
       wait: async () => {},
+      now: clock(),
     });
     expect(await ingest(message())).toBe('recorded');
     expect((await declarations.day(GROUP, DAY))[0].score).toBe(7);

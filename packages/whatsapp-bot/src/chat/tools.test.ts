@@ -38,20 +38,8 @@ function row(sender: string, name: string, day: number, score: number, capped = 
   };
 }
 
-async function harness() {
+async function harness(rows: Declaration[] = DEFAULT_ROWS) {
   const declarations = memoryDeclarationStore();
-  const rows = [
-    row(GAB, 'Gab', TODAY - 3, 5),
-    row(ZOU, 'Zouzou', TODAY - 3, 4),
-    row(GAB, 'Gab', TODAY - 2, 3),
-    row(ZOU, 'Zouzou', TODAY - 2, 6),
-    row(GAB, 'Gab 🔥', TODAY - 1, 2),
-    row(ZOU, 'Zouzou', TODAY - 1, 2),
-    row(GAB, 'Gab 🔥', TODAY, 4),
-    row(ZOU, 'Zouzou', TODAY, 3),
-    row(BRUNO1, 'Bruno', TODAY, 9),
-    row(BRUNO2, 'Bruno', TODAY, 500, true),
-  ];
   for (const r of rows) await declarations.record(r);
   const memory = memoryMemoryStore();
   const tools = createToolRunner({
@@ -64,6 +52,19 @@ async function harness() {
   });
   return { tools, memory };
 }
+
+const DEFAULT_ROWS = [
+    row(GAB, 'Gab', TODAY - 3, 5),
+    row(ZOU, 'Zouzou', TODAY - 3, 4),
+    row(GAB, 'Gab', TODAY - 2, 3),
+    row(ZOU, 'Zouzou', TODAY - 2, 6),
+    row(GAB, 'Gab 🔥', TODAY - 1, 2),
+    row(ZOU, 'Zouzou', TODAY - 1, 2),
+    row(GAB, 'Gab 🔥', TODAY, 4),
+    row(ZOU, 'Zouzou', TODAY, 3),
+    row(BRUNO1, 'Bruno', TODAY, 9),
+    row(BRUNO2, 'Bruno', TODAY, 500, true),
+];
 
 describe('Whippin tools are read-only structured answers (#236)', () => {
   it('resolves names against known players and overrides, and says when it cannot', () => {
@@ -125,6 +126,31 @@ describe('Whippin tools are read-only structured answers (#236)', () => {
       mostDaysPlayed: { days: 4 },
       playersSeen: 4,
     });
+  });
+
+  it('a win streak stays live until its HOLDER has played today', async () => {
+    // Gab has won two days running; this morning only Zou has posted. The group has rows
+    // today, Gab does not — and Gab's streak is 2, not 0.
+    const { tools } = await harness([
+      row(GAB, 'Gab', TODAY - 2, 3),
+      row(ZOU, 'Zouzou', TODAY - 2, 5),
+      row(GAB, 'Gab', TODAY - 1, 2),
+      row(ZOU, 'Zouzou', TODAY - 1, 4),
+      row(ZOU, 'Zouzou', TODAY, 3),
+    ]);
+    expect(await tools.run('get_win_streak', { player: 'Gab' })).toEqual({ player: 'Gab', streak: 2 });
+    // Zou, alone on today's podium so far, holds today — a run of 1.
+    expect(await tools.run('get_win_streak', { player: 'Zou' })).toEqual({ player: 'Zou', streak: 1 });
+    // Once Gab has played today and lost, the run is over.
+    const played = await harness([
+      row(GAB, 'Gab', TODAY - 2, 3),
+      row(ZOU, 'Zouzou', TODAY - 2, 5),
+      row(GAB, 'Gab', TODAY - 1, 2),
+      row(ZOU, 'Zouzou', TODAY - 1, 4),
+      row(ZOU, 'Zouzou', TODAY, 3),
+      row(GAB, 'Gab', TODAY, 4),
+    ]);
+    expect(await played.tools.run('get_win_streak', { player: 'Gab' })).toEqual({ player: 'Gab', streak: 0 });
   });
 
   it('a tie ENDS the current run rather than skipping it', async () => {

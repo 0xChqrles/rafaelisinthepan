@@ -167,7 +167,7 @@ async function main(): Promise<void> {
       kind: 'message',
       group: group.id,
       text: outcome.text,
-      replyTo: { id: message.id, participant: message.sender },
+      replyTo: { id: message.id, participant: message.participant, text: message.text },
     });
   }
 
@@ -194,8 +194,16 @@ async function main(): Promise<void> {
     onMessage,
     async onStop(reason) {
       if (reason === 'logged_out') {
-        await markAuthInvalidated(dynamo, env.table, 'loggedOut');
-        log.error({ event: 'auth.logged_out' }, 'device logged out: auth marked invalidated, re-pair with `pnpm bot:pair`');
+        // The mark is what keeps the NEXT task idle instead of reconnecting into another
+        // logout; a write that fails is said, and the shutdown below still happens — the
+        // replacement task will be logged out again and mark it then. What must not
+        // happen is this rejection escaping: the task would die holding its lease.
+        try {
+          await markAuthInvalidated(dynamo, env.table, 'loggedOut');
+          log.error({ event: 'auth.logged_out' }, 'device logged out: auth marked invalidated, re-pair with `pnpm bot:pair`');
+        } catch (error) {
+          log.error({ event: 'auth.invalidate_failed', error: (error as Error).message }, 'device logged out, and the auth could NOT be marked invalidated');
+        }
       } else {
         log.error({ event: 'wa.replaced' }, 'another session replaced this device; stopping');
       }

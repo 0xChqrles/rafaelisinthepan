@@ -13,6 +13,9 @@ import { memoryMemoryStore } from './memory';
 const GROUP = '120363000000000001@g.us';
 const TODAY = dayNumber('2026-09-03');
 const identity = { jids: ['33700000000@s.whatsapp.net'], name: 'WhippinBot' };
+// A mention as the transport delivers it: the JID the message carried and the player key
+// it resolved to — the same thing in a phone-number-addressed group.
+const m = (jid: string, player = jid) => ({ jid, player });
 const group = parseGroupConfig('g.json', {
   id: GROUP,
   name: 'g',
@@ -31,7 +34,8 @@ function message(text: string, over: Partial<InboundMessage> = {}): InboundMessa
     text,
     timestamp: 1,
     fromMe: false,
-    mentions: ['33700000000@s.whatsapp.net'],
+    participant: '33612345678@s.whatsapp.net',
+    mentions: [m('33700000000@s.whatsapp.net')],
     live: true,
     ...over,
   };
@@ -184,7 +188,7 @@ describe('addressed conversation (#236)', () => {
     const answer = agentWith(provider, { declarations });
     await answer(
       message('@33700000000 combien de jours que @33611111111 me bat ?', {
-        mentions: ['33700000000@s.whatsapp.net', '33611111111@s.whatsapp.net'],
+        mentions: [m('33700000000@s.whatsapp.net'), m('33611111111@s.whatsapp.net')],
       }),
       group,
       identity,
@@ -195,6 +199,26 @@ describe('addressed conversation (#236)', () => {
     const asked = (requests[0].messages.at(-1) as { content: string }).content;
     expect(asked).toBe('Gab: combien de jours que Zou me bat ?');
     expect(asked).not.toContain('33611111111');
+
+    // In a LID-addressed group the @token spells the LID, and the declarations know the
+    // player by number: the label is looked up by the PLAYER key the mention resolved to,
+    // keyed by the digits the text actually carries.
+    const lid = scripted([() => ({ text: 'ok' })]);
+    await agentWith(lid.provider, { declarations })(
+      message('@99999999999999 combien de jours que @55555555555555 me bat ?', {
+        id: 'M2',
+        mentions: [
+          m('99999999999999@lid', '33700000000@s.whatsapp.net'),
+          m('55555555555555@lid', '33611111111@s.whatsapp.net'),
+        ],
+      }),
+      group,
+      { ...identity, jids: ['33700000000@s.whatsapp.net', '99999999999999@lid'] },
+      TODAY,
+    );
+    expect((lid.requests[0].messages.at(-1) as { content: string }).content).toBe(
+      'Gab: combien de jours que Zou me bat ?',
+    );
   });
 
   it('names an unknown mention by its handle, and still charges nothing for a bare one', async () => {
@@ -203,7 +227,7 @@ describe('addressed conversation (#236)', () => {
     // Nobody the group has seen: the same …last4 handle every other surface shows.
     await answer(
       message('@33700000000 et @33699998888 alors ?', {
-        mentions: ['33700000000@s.whatsapp.net', '33699998888@s.whatsapp.net'],
+        mentions: [m('33700000000@s.whatsapp.net'), m('33699998888@s.whatsapp.net')],
       }),
       group,
       identity,
@@ -215,7 +239,7 @@ describe('addressed conversation (#236)', () => {
       await answer(
         message('@33700000000 @33699998888', {
           id: 'M9',
-          mentions: ['33700000000@s.whatsapp.net', '33699998888@s.whatsapp.net'],
+          mentions: [m('33700000000@s.whatsapp.net'), m('33699998888@s.whatsapp.net')],
         }),
         group,
         identity,

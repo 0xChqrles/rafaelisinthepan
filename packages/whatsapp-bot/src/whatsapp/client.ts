@@ -14,6 +14,7 @@ import {
   DisconnectReason,
   Browsers,
   fetchLatestBaileysVersion,
+  isLidUser,
   jidNormalizedUser,
   makeCacheableSignalKeyStore,
   makeWASocket,
@@ -72,6 +73,52 @@ export async function connectWhatsApp(options: WhatsAppClientOptions): Promise<W
   let stopped = false;
   let attempt = 0;
   let pairingRequested = false;
+
+  // The player key behind a JID (inbound.ts `PlayerKeyResolver`): a LID resolves to its
+  // phone number through the mapping Baileys accumulates in the auth store — from message
+  // envelopes, group metadata and its own sends — which is a local read, never a network
+  // round trip. A LID the mapping does not know stays a LID; the person becomes one key
+  // the moment WhatsApp discloses the number, and until then nothing is invented.
+  async function playerKey(jid: string): Promise<string> {
+    if (!isLidUser(jid) || !sock) return jid;
+    try {
+      const pn = await sock.signalRepository.lidMapping.getPNForLID(jid);
+      return pn ? jidNormalizedUser(pn) : jid;
+    } catch (error) {
+      log.warn({ event: 'lid.resolve_failed', error: (error as Error).message }, 'LID mapping read failed');
+      return jid;
+    }
+  }
+
+  // A stop handler is the process's own shutdown: what it rejects with has nowhere else to
+  // go, and left unhandled it kills the task before the lease is released or the auth is
+  // marked — the restart loop the fail-closed states exist to prevent. Said, then the exit
+  // the handler was going to perform happens anyway.
+  function stop(reason: StopReason): void {
+    stopped = true;
+    options.onStop(reason).catch((error) => {
+      log.fatal({ event: 'wa.stop_failed', reason, error: (error as Error).message }, 'stop handler failed');
+      process.exit(1);
+    });
+  }
+
+  // Sequential per batch, so the messages of one delivery reach the handler in the order
+  // WhatsApp sent them; the handlers themselves still run concurrently.
+  async function deliver(messages: WAMessage[], live: boolean, event: string): Promise<void> {
+    for (const raw of messages) {
+      try {
+        const message = await toInbound(raw, live, playerKey);
+        if (!message) continue;
+        options.onMessage(message).catch((error) =>
+          log.error({ event, messageId: message.id, error: (error as Error).message }, 'message handling failed'),
+        );
+      } catch (error) {
+        // A message the mapping could not read is skipped, never the rest of its batch —
+        // and never an unhandled rejection out of an event handler.
+        log.error({ event, messageId: raw.key?.id, error: (error as Error).message }, 'message mapping failed');
+      }
+    }
+  }
 
   const selfJids = () => {
     const me = auth.state.creds.me;
@@ -141,13 +188,11 @@ export async function connectWhatsApp(options: WhatsAppClientOptions): Promise<W
         log.warn({ event: 'wa.close', status }, 'disconnected');
         if (stopped) return;
         if (status === DisconnectReason.loggedOut) {
-          stopped = true;
-          void options.onStop('logged_out');
+          stop('logged_out');
           return;
         }
         if (status === DisconnectReason.connectionReplaced) {
-          stopped = true;
-          void options.onStop('replaced');
+          stop('replaced');
           return;
         }
         // restartRequired (515) after pairing wants an immediate new socket; everything
@@ -162,29 +207,13 @@ export async function connectWhatsApp(options: WhatsAppClientOptions): Promise<W
     });
 
     socket.ev.on('messages.upsert', ({ messages, type }) => {
-      const live = type === 'notify';
-      for (const raw of messages) {
-        const message = toInbound(raw, live);
-        if (!message) continue;
-        options.onMessage(message).catch((error) =>
-          log.error(
-            { event: 'inbound.failed', messageId: message.id, error: (error as Error).message },
-            'message handling failed',
-          ),
-        );
-      }
+      void deliver(messages, type === 'notify', 'inbound.failed');
     });
 
     // History sync (at pairing, and whatever a resync delivers) may replay shares; they are
     // ingested idempotently and never reacted to — `live` is false.
     socket.ev.on('messaging-history.set', ({ messages }) => {
-      for (const raw of messages) {
-        const message = toInbound(raw, false);
-        if (!message) continue;
-        options.onMessage(message).catch((error) =>
-          log.error({ event: 'history.failed', error: (error as Error).message }, 'history handling'),
-        );
-      }
+      void deliver(messages, false, 'history.failed');
     });
   }
 
@@ -196,6 +225,9 @@ export async function connectWhatsApp(options: WhatsAppClientOptions): Promise<W
     async send(command) {
       if (!sock || !open) throw new Error('WhatsApp socket is not open.');
       let sent: WAMessage | undefined;
+      // Both keys below carry the ref's `participant` VERBATIM: it is the original message
+      // key's own author field (a LID in a LID-addressed group), and Baileys passes it
+      // straight through to the wire — a canonical player key there names nothing.
       if (command.kind === 'reaction') {
         sent = await sock.sendMessage(command.group, {
           react: {
@@ -209,6 +241,8 @@ export async function connectWhatsApp(options: WhatsAppClientOptions): Promise<W
           },
         });
       } else {
+        // The quote bubble is drawn from `quotedMessage`, which Baileys copies from this
+        // stub's content: with nothing there it encodes empty and the reply quotes a blank.
         const quoted = command.replyTo
           ? ({
               key: {
@@ -217,7 +251,7 @@ export async function connectWhatsApp(options: WhatsAppClientOptions): Promise<W
                 participant: command.replyTo.participant,
                 fromMe: command.replyTo.fromMe ?? false,
               },
-              message: {},
+              message: { conversation: command.replyTo.text ?? '' },
             } as WAMessage)
           : undefined;
         sent = await sock.sendMessage(

@@ -7,7 +7,10 @@
 // replays racing each other cannot interleave into a wrong row: the item is written only if
 // none exists, or the incoming message is strictly later, or equal-time with a greater id.
 // `ALL_OLD` hands back what the write DISPLACED, which is the race-free way to know whether
-// the token changed — a same-token re-share moves the row and answers `unchanged`.
+// the token changed — a same-token re-share moves the row and answers `unchanged`. A REFUSED
+// write hands back what STANDS (`ReturnValuesOnConditionCheckFailure`), which is how a
+// retry of a write whose answer was lost recognises its own earlier attempt in the row it
+// is refused by (`ownEarlierAttempt`) — one round trip, no second read.
 
 import {
   ConditionalCheckFailedException,
@@ -16,7 +19,7 @@ import {
   type AttributeValue,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
-import type { Declaration, DeclarationStore } from './declarations';
+import { ownEarlierAttempt, type Declaration, type DeclarationStore } from './declarations';
 
 export function groupPartition(group: string): string {
   return `GROUP#${group}`;
@@ -107,11 +110,15 @@ export function dynamoDeclarationStore(
               ':id': { S: declaration.messageId },
             },
             ReturnValues: 'ALL_OLD',
+            ReturnValuesOnConditionCheckFailure: 'ALL_OLD',
           }),
         );
         return response.Attributes?.token?.S === declaration.token ? 'unchanged' : 'recorded';
       } catch (error) {
-        if (error instanceof ConditionalCheckFailedException) return 'unchanged';
+        if (error instanceof ConditionalCheckFailedException) {
+          const standing = error.Item ? fromItem(error.Item) : undefined;
+          return ownEarlierAttempt(standing, declaration) ? 'recorded' : 'unchanged';
+        }
         throw error;
       }
     },

@@ -17,6 +17,18 @@
 // actual latest statement. But it is `unchanged`: nothing material moved, so nothing
 // reacts to it and no lead is claimed for it. `recorded` means the TOKEN standing for
 // that (group, day, sender) is not the one that stood before.
+//
+// A WRITE WHOSE ANSWER WAS LOST IS RE-SENT, AND THE RE-SEND MUST NOT READ AS THE
+// DUPLICATE. The precedence rule is strictly monotonic, so the same message sent twice is
+// refused the second time — right for a second DELIVERY, wrong for the retry of a write
+// that committed and then lost its response: refused, that retry answered `unchanged`,
+// the share was on the podium and nobody was thanked for it, and the leader row went
+// stale. `receivedAt` is what tells the two apart: it is stamped once per ingest call, so
+// a standing row carrying THIS message id under THIS instant was written by an earlier
+// attempt of the very same call, and the call answers `recorded` for it. What that attempt
+// displaced is unknowable by then; erring towards `recorded` costs at most an emoji for a
+// same-token re-share and a leader claim that is idempotent anyway, where erring the
+// other way loses an acknowledgement for good.
 
 export interface Declaration {
   group: string; // group JID
@@ -33,6 +45,19 @@ export interface Declaration {
 }
 
 export type DeclarationKey = Pick<Declaration, 'group' | 'dayNumber' | 'sender'>;
+
+// The standing row is this very write, landed by an earlier attempt of the same ingest
+// call (the header says why that is `recorded`, not the duplicate it looks like).
+export function ownEarlierAttempt(
+  standing: Pick<Declaration, 'messageId' | 'receivedAt'> | undefined,
+  next: Pick<Declaration, 'messageId' | 'receivedAt'>,
+): boolean {
+  return (
+    standing !== undefined &&
+    standing.messageId === next.messageId &&
+    standing.receivedAt === next.receivedAt
+  );
+}
 
 // Does `next` replace `current`? Strictly later wins; the id breaks an exact tie so two
 // devices' replays agree; anything else (older, or the very same message) leaves the row.
@@ -55,7 +80,8 @@ export interface PlayerSummary {
 
 export interface DeclarationStore {
   // Writes under the precedence rule above. `unchanged` means an equal-or-newer row stood,
-  // OR that the row moved to this message without its token changing.
+  // OR that the row moved to this message without its token changing. A refusal by the
+  // caller's OWN earlier attempt (`ownEarlierAttempt`) is `recorded`.
   record(declaration: Declaration): Promise<RecordOutcome>;
   // A day's rows, every sender.
   day(group: string, dayNumber: number): Promise<Declaration[]>;
@@ -93,7 +119,9 @@ export function memoryDeclarationStore(): DeclarationStore & { rows(): Declarati
   return {
     async record(declaration) {
       const current = rows.get(key(declaration));
-      if (!supersedes(current, declaration)) return 'unchanged';
+      if (!supersedes(current, declaration)) {
+        return ownEarlierAttempt(current, declaration) ? 'recorded' : 'unchanged';
+      }
       rows.set(key(declaration), { ...declaration });
       return current?.token === declaration.token ? 'unchanged' : 'recorded';
     },
