@@ -38,7 +38,13 @@ jobs:
       backend: ${{ steps.decide.outputs.backend }}
       web: ${{ steps.decide.outputs.web }}
     steps:
+      # Depth 2, not the default 1: a manual dispatch diffs against `HEAD~1` below, and on a
+      # single-commit checkout that ref does not exist — `fatal: invalid refspec 'HEAD~1'`,
+      # which failed EVERY workflow_dispatch run, forced selection included, since the plan
+      # job runs the filter before it looks at the input.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       # shared -> both (bundled into the Lambda AND built into the SPA); infra ->
       # both (holds both stack defs); root deps / this workflow -> both (safe default).
