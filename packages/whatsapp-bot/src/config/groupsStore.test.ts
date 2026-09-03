@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GroupConfigError, parseGroupConfig } from './groupConfig';
+import { GroupConfigError, PLACEHOLDER_GROUP_JID, parseGroupConfig } from './groupConfig';
 import { MAX_VALUE_BYTES, assertSlug, parameterName, validateForStore, type StoredGroup } from './groupsStore';
 
 const GROUP = '120363000000000001@g.us';
@@ -51,6 +51,12 @@ describe('the SSM group-config store (#236)', () => {
     // A different group is fine, and so is REPLACING the config that already holds this id.
     expect(validateForStore('test', JSON.stringify(config({ id: OTHER })), others)).toContain(OTHER);
     expect(validateForStore('main', JSON.stringify(config()), others)).toContain(GROUP);
+  });
+
+  it('refuses the example.json placeholder JID: a new slug must paste the real one', () => {
+    expect(() =>
+      validateForStore('test', JSON.stringify(config({ id: PLACEHOLDER_GROUP_JID })), []),
+    ).toThrow(/placeholder/);
   });
 
   it('refuses a config over SSM Standard, and canonicalizes what it stores', () => {

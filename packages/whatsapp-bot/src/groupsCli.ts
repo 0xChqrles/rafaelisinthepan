@@ -61,16 +61,22 @@ const describe = (g: StoredGroup): string =>
 
 // The snapshot a build and a deploy read. Writing it is the ONLY thing that puts a group
 // in front of the bot, which is what makes "editing SSM does not change production" true.
-export function writeSnapshot(groups: readonly StoredGroup[], replaceAll: boolean): string[] {
-  mkdirSync(SNAPSHOT_DIR, { recursive: true });
+// `dir` is a parameter (defaulting to the real snapshot) so tests can pull into a temp
+// directory instead of the checkout — `run` threads its own through.
+export function writeSnapshot(
+  groups: readonly StoredGroup[],
+  replaceAll: boolean,
+  dir: string = SNAPSHOT_DIR,
+): string[] {
+  mkdirSync(dir, { recursive: true });
   if (replaceAll) {
     // A stale file is a group the snapshot would silently keep alive after it was removed
     // from SSM, so a full pull OWNS the directory rather than merging into it.
-    for (const file of readdirSync(SNAPSHOT_DIR).filter((f) => f.endsWith('.json'))) {
-      rmSync(join(SNAPSHOT_DIR, file));
+    for (const file of readdirSync(dir).filter((f) => f.endsWith('.json'))) {
+      rmSync(join(dir, file));
     }
   }
-  for (const group of groups) writeFileSync(join(SNAPSHOT_DIR, `${group.slug}.json`), group.json);
+  for (const group of groups) writeFileSync(join(dir, `${group.slug}.json`), group.json);
   return groups.map((g) => `${g.slug}.json`);
 }
 
@@ -100,11 +106,16 @@ function editUntilValid(slug: string, initial: string, others: readonly StoredGr
       return canonical;
     } catch (error) {
       if (!(error instanceof GroupConfigError)) throw error;
+      // THE REASON FIRST, ALWAYS. On the first round there is no earlier error to refer
+      // back to, so "unchanged" on its own met a newcomer who opened the template, saved
+      // it, and was told nothing about what was wrong with it — which is the one round
+      // where the answer ("that is still the placeholder JID") is the whole help.
+      say(`\n  ✗ ${error.message}`);
       if (text === before) {
-        say(`\nUnchanged after an error — nothing written. Your draft: ${file}`);
+        say(`    Unchanged — nothing written. Your draft: ${file}`);
         return null;
       }
-      say(`\n  ✗ ${error.message}\n    Fix it in the editor, or save it unchanged to abort.`);
+      say('    Fix it in the editor, or save it unchanged to abort.');
       // The reason travels back INTO the editor: a message printed to a terminal the editor
       // is about to repaint is a message nobody reads. Built from the stripped body so a
       // second failure replaces the header rather than stacking another copy.
@@ -114,7 +125,7 @@ function editUntilValid(slug: string, initial: string, others: readonly StoredGr
   }
 }
 
-export async function run(argv: readonly string[], store: GroupsStore): Promise<number> {
+export async function run(argv: readonly string[], store: GroupsStore, snapshotDir: string = SNAPSHOT_DIR): Promise<number> {
   const [command, argument] = argv;
 
   if (command === 'list') {
@@ -171,7 +182,7 @@ export async function run(argv: readonly string[], store: GroupsStore): Promise<
       if (!found) {
         // SSM is the source: a slug gone from SSM must not stay alive in the snapshot.
         // A full pull owns the directory (see writeSnapshot); a single pull owns its file.
-        const stale = join(SNAPSHOT_DIR, `${argument}.json`);
+        const stale = join(snapshotDir, `${argument}.json`);
         if (existsSync(stale)) {
           rmSync(stale);
           say(`Removed ${argument} from the snapshot (no longer in SSM).`);
@@ -179,13 +190,13 @@ export async function run(argv: readonly string[], store: GroupsStore): Promise<
         }
         throw new GroupConfigError(`no config named ${argument}`);
       }
-      writeSnapshot([found], false);
-      say(`${SNAPSHOT_DIR}`);
+      writeSnapshot([found], false, snapshotDir);
+      say(`${snapshotDir}`);
       say(`  ${describe(found)}`);
       return 0;
     }
-    const written = writeSnapshot(all, true);
-    say(`${SNAPSHOT_DIR}  <- ${GROUPS_PATH} (${GROUPS_REGION})`);
+    const written = writeSnapshot(all, true, snapshotDir);
+    say(`${snapshotDir}  <- ${GROUPS_PATH} (${GROUPS_REGION})`);
     if (written.length === 0) say('  (no group configured in SSM)');
     for (const group of all) say(`  ${describe(group)}`);
     return 0;

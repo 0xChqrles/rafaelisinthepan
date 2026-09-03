@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { GroupRegistry, parseGroupConfig, readGroupConfigs } from './groupConfig';
+import { GroupRegistry, PLACEHOLDER_GROUP_JID, parseGroupConfig, readGroupConfigs } from './groupConfig';
 
 const valid = {
   id: '120363000000000001@g.us',
@@ -63,9 +63,25 @@ describe('group configuration (#236)', () => {
     expect(registry.get('120363999999999999@g.us')).toBeUndefined();
   });
 
+  it('refuses the example.json placeholder JID', () => {
+    expect(() => parseGroupConfig('x.json', { ...valid, id: PLACEHOLDER_GROUP_JID })).toThrow(
+      /placeholder/,
+    );
+  });
+
   it('refuses two files naming one group', () => {
     const a = parseGroupConfig('a.json', valid);
     expect(() => new GroupRegistry([a, a])).toThrow(/twice/);
+  });
+
+  it('names sources in duplicate errors, never the group JID', () => {
+    const a = parseGroupConfig('a.json', valid);
+    try {
+      new GroupRegistry([a, a]);
+      expect.unreachable();
+    } catch (error) {
+      expect((error as Error).message).not.toContain(valid.id);
+    }
   });
 });
 
@@ -83,6 +99,14 @@ describe('the snapshot directory (#236)', () => {
     // Disabled is not a licence: whichever the registry kept would decide that group's
     // language and podium, and enabling the second would fail at deploy instead of here.
     writeFileSync(join(dir, 'b.json'), JSON.stringify({ ...valid, enabled: false }));
-    expect(() => readGroupConfigs(dir)).toThrow(/already configured by a.json/);
+    try {
+      readGroupConfigs(dir);
+      expect.unreachable();
+    } catch (error) {
+      expect((error as Error).message).toMatch(/already configured by a\.json/);
+      // A group JID names a private conversation; synth/CI logs are readable beyond the
+      // operator, so the error names the files, never the JID.
+      expect((error as Error).message).not.toContain(valid.id);
+    }
   });
 });

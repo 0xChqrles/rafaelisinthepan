@@ -114,7 +114,9 @@ export function ssmGroupsStore(client: SSMClient): GroupsStore {
       }
       token = response.NextToken;
     } while (token);
-    found.sort((a, b) => a.slug.localeCompare(b.slug));
+    // Byte order, not locale order: slugs are [a-z0-9-] and the list must read the
+    // same on an operator laptop and the CI runner.
+    found.sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
     // The set is only valid as a SET: one JID may not be configured twice.
     assertUniqueGroupIds(found.map((g) => ({ id: g.config.id, source: g.slug })));
     return found;

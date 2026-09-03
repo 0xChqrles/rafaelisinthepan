@@ -63,6 +63,10 @@ export interface GroupConfig {
 
 export const GROUP_JID = /^\d{5,}@g\.us$/;
 export const USER_JID = /^\d{5,}@(s\.whatsapp\.net|lid)$/;
+// The template's placeholder (`groups/example.json`). Format-valid but names no
+// conversation, so it must never reach SSM or a snapshot — a deploy would mint a real
+// schedule against a group that does not exist.
+export const PLACEHOLDER_GROUP_JID = '120363000000000000@g.us';
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const LANGUAGES: readonly GroupLanguage[] = ['en', 'fr'];
 
@@ -120,6 +124,9 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
   const { id, name, language, enabled, podium, chat, reactions, leaderAnnouncements, names } =
     raw;
   if (typeof id !== 'string' || !GROUP_JID.test(id)) fail(file, '"id" must be a group JID');
+  if (id === PLACEHOLDER_GROUP_JID) {
+    fail(file, '"id" is still the example.json placeholder — paste the real JID from `pnpm bot:cli groups`');
+  }
   if (typeof name !== 'string' || name.trim() === '') fail(file, '"name" must be a string');
   if (typeof language !== 'string' || !LANGUAGES.includes(language as GroupLanguage)) {
     fail(file, `"language" must be one of ${LANGUAGES.join(', ')}`);
@@ -215,7 +222,9 @@ export class GroupRegistry {
     for (const config of configs) {
       if (!config.enabled) continue;
       if (this.byId.has(config.id)) {
-        throw new GroupConfigError(`group ${config.id} is configured twice`);
+        // No JID in the message: a group JID names a private conversation and this
+        // error surfaces in synth/CI logs, which are readable beyond the operator.
+        throw new GroupConfigError('one group is configured twice');
       }
       this.byId.set(config.id, config);
     }
@@ -235,11 +244,15 @@ export class GroupRegistry {
 // and enabling the second would fail at deploy rather than where it was written. Two configs
 // for one conversation is a mistake at any setting: whichever the registry happened to keep
 // would decide that group's language and podium.
+//
+// The message names SOURCES, never the JID: a group JID names a private conversation and
+// this error surfaces in synth/CI logs, which are readable beyond the operator. The two
+// slugs are what the operator acts on anyway.
 export function assertUniqueGroupIds(configs: readonly { id: string; source: string }[]): void {
   const seen = new Map<string, string>();
   for (const { id, source } of configs) {
     const first = seen.get(id);
-    if (first !== undefined) fail(source, `group ${id} is already configured by ${first}`);
+    if (first !== undefined) fail(source, `already configured by ${first} (one group may have only one config)`);
     seen.set(id, source);
   }
 }
