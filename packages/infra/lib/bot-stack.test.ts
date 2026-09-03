@@ -1,0 +1,123 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { App } from 'aws-cdk-lib';
+import { Template } from 'aws-cdk-lib/assertions';
+import { describe, expect, it } from 'vitest';
+import { BotStack, BOT_METRICS_NAMESPACE } from './bot-stack';
+
+const ACCOUNT = '111122223333';
+const REGION = 'us-east-1';
+const KEY_PARAMETER = '/test/bot-llm-key';
+const GROUP = '120363000000000001@g.us';
+
+function groupsDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'whippin-groups-'));
+  writeFileSync(
+    join(dir, 'fr.json'),
+    JSON.stringify({
+      id: GROUP,
+      name: 'Whippin FR',
+      language: 'fr',
+      enabled: true,
+      podium: { enabled: true, time: '22:00', timezone: 'Europe/Paris' },
+      chat: { enabled: true, prePrompt: 'x' },
+    }),
+  );
+  writeFileSync(
+    join(dir, 'off.json'),
+    JSON.stringify({
+      id: '120363000000000002@g.us',
+      name: 'Off',
+      language: 'en',
+      enabled: false,
+      podium: { enabled: true, time: '21:30', timezone: 'Europe/London' },
+      chat: { enabled: false },
+    }),
+  );
+  return dir;
+}
+
+function botTemplate(): Template {
+  // Skip asset bundling: the template is what this test reads, and the Lambda bundle
+  // (esbuild via the package manager) is the deploy's business, not the assertions'.
+  const app = new App({ context: { 'aws:cdk:bundling-stacks': [] } });
+  const stack = new BotStack(app, 'TestBotStack', {
+    env: { account: ACCOUNT, region: REGION },
+    llmApiKeyParameter: KEY_PARAMETER,
+    operatorEmail: 'ops@test.invalid',
+    groupsDir: groupsDir(),
+  });
+  return Template.fromStack(stack);
+}
+
+const template = botTemplate();
+
+describe('WhatsApp bot stack (#236)', () => {
+  it('runs exactly one task, stop-before-start, public IP, no ingress, no NAT', () => {
+    const services = Object.values(template.findResources('AWS::ECS::Service'));
+    expect(services).toHaveLength(1);
+    const props = services[0].Properties;
+    expect(props.DesiredCount).toBe(1);
+    expect(props.DeploymentConfiguration).toMatchObject({
+      MinimumHealthyPercent: 0,
+      MaximumPercent: 100,
+    });
+    expect(props.NetworkConfiguration.AwsvpcConfiguration.AssignPublicIp).toBe('ENABLED');
+    expect(template.findResources('AWS::EC2::NatGateway')).toEqual({});
+    expect(template.findResources('AWS::ApplicationAutoScaling::ScalableTarget')).toEqual({});
+    const sgs = Object.values(template.findResources('AWS::EC2::SecurityGroup'));
+    for (const sg of sgs) expect(sg.Properties.SecurityGroupIngress).toBeUndefined();
+  });
+
+  it('keeps secrets out of the environment: parameter NAMES only, read at runtime', () => {
+    const tasks = Object.values(template.findResources('AWS::ECS::TaskDefinition'));
+    expect(tasks).toHaveLength(1);
+    const env = tasks[0].Properties.ContainerDefinitions[0].Environment as { Name: string; Value: unknown }[];
+    const byName = Object.fromEntries(env.map((e) => [e.Name, e.Value]));
+    expect(byName.BOT_LLM_API_KEY_PARAMETER).toBe(KEY_PARAMETER);
+    expect(byName.BOT_LLM_PROVIDER).toBe('deepseek');
+    expect(byName.BOT_LLM_MODEL).toBe('deepseek-v4-flash');
+    expect(byName.BOT_METRICS_NAMESPACE).toBe(BOT_METRICS_NAMESPACE);
+    expect(byName).not.toHaveProperty('BOT_LLM_API_KEY');
+    expect(tasks[0].Properties.ContainerDefinitions[0].Secrets).toBeUndefined();
+
+    const statements = Object.values(template.findResources('AWS::IAM::Policy')).flatMap(
+      (p) => p.Properties.PolicyDocument.Statement as Record<string, unknown>[],
+    );
+    const ssm = statements.filter((s) => s.Action === 'ssm:GetParameter');
+    expect(ssm.length).toBeGreaterThanOrEqual(2);
+    for (const s of ssm) {
+      expect(JSON.stringify(s.Resource)).toContain(`:ssm:${REGION}:${ACCOUNT}:parameter/test/bot-llm-key`);
+    }
+  });
+
+  it('creates one podium schedule per ENABLED group, at its local time zone, targeting the job', () => {
+    const schedules = Object.values(template.findResources('AWS::Scheduler::Schedule'));
+    expect(schedules).toHaveLength(1);
+    const props = schedules[0].Properties;
+    expect(props.ScheduleExpression).toBe('cron(0 22 * * ? *)');
+    expect(props.ScheduleExpressionTimezone).toBe('Europe/Paris');
+    expect(JSON.parse(props.Target.Input)).toEqual({ group: GROUP });
+    expect(Object.values(template.findResources('AWS::Lambda::Function'))).toHaveLength(1);
+  });
+
+  it('owns a table with TTL + PITR, an outbound queue with a DLQ, and alarms that treat silence as down', () => {
+    const tables = Object.values(template.findResources('AWS::DynamoDB::Table'));
+    expect(tables).toHaveLength(1);
+    expect(tables[0].Properties.TimeToLiveSpecification.AttributeName).toBe('expiresAt');
+    expect(tables[0].Properties.PointInTimeRecoverySpecification.PointInTimeRecoveryEnabled).toBe(true);
+    expect(tables[0].DeletionPolicy).toBe('Retain');
+    expect(Object.values(template.findResources('AWS::SQS::Queue'))).toHaveLength(2);
+
+    const alarms = Object.values(template.findResources('AWS::CloudWatch::Alarm'));
+    const disconnected = alarms.find((a) => a.Properties.MetricName === 'Connected');
+    expect(disconnected?.Properties).toMatchObject({
+      Namespace: BOT_METRICS_NAMESPACE,
+      TreatMissingData: 'breaching',
+      ComparisonOperator: 'LessThanThreshold',
+      EvaluationPeriods: 3,
+    });
+    expect(Object.values(template.findResources('AWS::SNS::Subscription'))).toHaveLength(1);
+  });
+});

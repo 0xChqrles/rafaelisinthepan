@@ -17,7 +17,8 @@
     "@whippin/backend": "workspace:*",
     "@whippin/shared": "workspace:*",
     "aws-cdk-lib": "^2.214.0",
-    "constructs": "^10.4.2"
+    "constructs": "^10.4.2",
+    "@whippin/whatsapp-bot": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

@@ -3,8 +3,9 @@ name: Deploy
 # CD: deploy on push to main and on manual dispatch. Only the stack(s) whose code
 # actually changed are redeployed (path-filtered); a manual run can force a selection.
 #
-# Scope: this workflow deploys the two APP stacks only — WhippinBackendStack and
-# WhippinWebStack. The third CDK stack, WhippinDeployStack (the GitHub OIDC provider +
+# Scope: this workflow deploys the APP stacks — WhippinBackendStack, WhippinWebStack and,
+# since #236, WhippinBotStack (the WhatsApp bot: a Fargate service, a table, a queue and a
+# scheduled Lambda; it needs Docker on the runner, which ubuntu-latest has). The third CDK stack, WhippinDeployStack (the GitHub OIDC provider +
 # this workflow's own deploy role), is intentionally NOT deployed here: the deploy role
 # can't edit IAM, so CI cannot provision its own privileges. Deploy that stack by hand
 # with account credentials (see packages/infra/README.md). Do not add a job for it.
@@ -17,7 +18,7 @@ on:
         description: Which stack(s) to deploy
         type: choice
         default: changed
-        options: [changed, web, backend, all]
+        options: [changed, web, backend, bot, all]
 
 # Never overlap deploys to main — queue rather than cancel an in-flight deploy.
 concurrency:
@@ -30,13 +31,14 @@ permissions:
 
 jobs:
   # Decide which stacks to deploy: the changed-path mapping for pushes / a manual
-  # "changed" run, or the forced selection from workflow_dispatch (web|backend|all).
+  # "changed" run, or the forced selection from workflow_dispatch (web|backend|bot|all).
   plan:
     name: Plan stacks
     runs-on: ubuntu-latest
     outputs:
       backend: ${{ steps.decide.outputs.backend }}
       web: ${{ steps.decide.outputs.web }}
+      bot: ${{ steps.decide.outputs.bot }}
     steps:
       # Depth 2, not the default 1: a manual dispatch diffs against `HEAD~1` below, and on a
       # single-commit checkout that ref does not exist — `fatal: invalid refspec 'HEAD~1'`,
@@ -46,8 +48,9 @@ jobs:
         with:
           fetch-depth: 2
 
-      # shared -> both (bundled into the Lambda AND built into the SPA); infra ->
-      # both (holds both stack defs); root deps / this workflow -> both (safe default).
+      # shared -> all three (bundled into the Lambdas, built into the SPA, inlined into the
+      # bot image); infra -> all three (holds every stack def); root deps / this workflow
+      # -> all three (safe default). The bot's own package reaches only its stack.
       - name: Detect changed paths
         id: filter
         uses: dorny/paths-filter@v3
@@ -70,6 +73,15 @@ jobs:
               - 'package.json'
               - 'pnpm-workspace.yaml'
               - '.github/workflows/deploy.yml'
+            bot:
+              - 'packages/whatsapp-bot/**'
+              - 'packages/shared/**'
+              - 'packages/infra/**'
+              - '.dockerignore'
+              - 'pnpm-lock.yaml'
+              - 'package.json'
+              - 'pnpm-workspace.yaml'
+              - '.github/workflows/deploy.yml'
 
       - name: Decide targets
         id: decide
@@ -77,18 +89,22 @@ jobs:
           MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.stacks || 'changed' }}
           CHANGED_BACKEND: ${{ steps.filter.outputs.backend }}
           CHANGED_WEB: ${{ steps.filter.outputs.web }}
+          CHANGED_BOT: ${{ steps.filter.outputs.bot }}
         run: |
           backend=false
           web=false
+          bot=false
           case "$MODE" in
-            all)     backend=true;  web=true ;;
+            all)     backend=true;  web=true; bot=true ;;
             backend) backend=true ;;
             web)     web=true ;;
-            changed) backend="${CHANGED_BACKEND:-false}"; web="${CHANGED_WEB:-false}" ;;
+            bot)     bot=true ;;
+            changed) backend="${CHANGED_BACKEND:-false}"; web="${CHANGED_WEB:-false}"; bot="${CHANGED_BOT:-false}" ;;
           esac
           echo "backend=$backend" >> "$GITHUB_OUTPUT"
           echo "web=$web" >> "$GITHUB_OUTPUT"
-          echo "Deploy plan (mode=$MODE): backend=$backend web=$web"
+          echo "bot=$bot" >> "$GITHUB_OUTPUT"
+          echo "Deploy plan (mode=$MODE): backend=$backend web=$web bot=$bot"
 
   deploy-backend:
     name: Deploy WhippinBackendStack
@@ -223,3 +239,47 @@ jobs:
 
       - name: Deploy web stack
         run: pnpm --filter @whippin/infra exec cdk deploy WhippinWebStack --require-approval never
+
+  deploy-bot:
+    name: Deploy WhippinBotStack
+    needs: plan
+    if: needs.plan.outputs.bot == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install JS deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      # The bot's stack (#236) is independent of the two app stacks: it builds the task
+      # image from the repo root (Docker, present on ubuntu-latest), pushes it through the
+      # CDK bootstrap image-publishing role, and rolls the ONE Fargate task stop-before-start.
+      # OPERATOR_EMAIL is the same repository variable the backend needs: it is who the bot's
+      # "disconnected" and dead-letter alarms reach. Required here for the same reason as
+      # there — an alarm nobody is subscribed to is the failure the alarm exists to remove.
+      - name: Deploy bot stack
+        env:
+          OPERATOR_EMAIL: ${{ vars.OPERATOR_EMAIL }}
+        run: |
+          set -euo pipefail
+          if [ -z "$OPERATOR_EMAIL" ]; then
+            echo "::error::OPERATOR_EMAIL repository variable is unset. The bot deploy requires it: its disconnected/dead-letter alarms notify that address (#236)."
+            exit 1
+          fi
+          pnpm --filter @whippin/infra exec cdk deploy WhippinBotStack \
+            -c "operatorEmail=$OPERATOR_EMAIL" --require-approval never

@@ -1,0 +1,45 @@
+# Build context for packages/whatsapp-bot/Dockerfile (#236), which is built from the REPO
+# ROOT. A WHITELIST: everything is excluded, then exactly what the bot image needs is let
+# back in — the workspace manifests (pnpm resolves the graph from them), the shared
+# package's sources (inlined into the bundle), and the bot's own sources, groups and
+# scripts. Never the embeddings, the puzzle stores, node_modules or cdk.out.
+#
+# **NO WILDCARD IN THE MIDDLE OF A RE-INCLUDE.** A directory excluded by `*` is walked only
+# when some `!` pattern LITERALLY starts with that directory's path — the check is a string
+# prefix, not a match. So `!packages/*/package.json` never rescues `packages/generation/`:
+# the walk skips the whole directory and the manifest disappears, and `pnpm install
+# --frozen-lockfile` then fails because the lockfile names an importer the context does not
+# have. Every path below therefore names its directories outright, which is also why ADDING
+# A WORKSPACE PACKAGE means adding a line here (the same duty as wiring it into deploy.yml).
+#
+# The CDK asset fingerprint honours this file too, so only these paths trigger a rebuild.
+*
+
+# The workspace itself. `tsconfig.base.json` is what every package's tsconfig extends;
+# without it esbuild warns on each build and silently falls back on its own defaults.
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!tsconfig.base.json
+
+# Every member's manifest: a frozen install validates the lockfile against all of them.
+!packages/backend/package.json
+!packages/benchmark/package.json
+!packages/generation/package.json
+!packages/infra/package.json
+!packages/shared/package.json
+!packages/web/package.json
+!packages/whatsapp-bot/package.json
+
+# What the image actually compiles and runs.
+!packages/shared/src
+!packages/shared/tsconfig.json
+!packages/whatsapp-bot/Dockerfile
+!packages/whatsapp-bot/groups
+!packages/whatsapp-bot/scripts
+!packages/whatsapp-bot/src
+!packages/whatsapp-bot/tsconfig.json
+
+# Last word, so nothing above can drag these in.
+**/node_modules
+**/dist

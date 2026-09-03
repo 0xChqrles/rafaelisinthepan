@@ -9,8 +9,12 @@
 ## File map
 
 ```
-  infra/                      AWS CDK app: backend (#3) + web hosting (#21) sibling stacks (pkg @whippin/infra)
-    bin/app.ts                CDK app entry — WhippinBackendStack + WhippinWebStack (cdk.json runs it via `npx tsx`)
+  infra/                      AWS CDK app: backend (#3) + web hosting (#21) + WhatsApp bot (#236) sibling stacks (pkg @whippin/infra)
+    bin/app.ts                CDK app entry — WhippinBackendStack + WhippinWebStack + WhippinBotStack (cdk.json runs it via `npx tsx`)
+    lib/bot-stack.ts          BotStack (#236): bot table + outbound SQS + ONE Fargate task (public subnet, no NAT, no
+                              ingress) + podium Lambda with one Scheduler schedule per configured group + alarms
+    lib/bot-stack.test.ts     synthesized contract: one task stop-before-start, no secrets in env, one schedule per
+                              enabled group in its own time zone, alarms treat silence as down
     lib/backend-stack.ts      BackendStack: private S3 + DynamoDB + Lambda(Fn URL) + CloudFront; opt api.<domain>; us-east-1
     lib/backend-stack.test.ts synthesized score-boundary contract (SSM names/IAM + deployable zero-cache/OAC policies) + the #230 mail shape
     lib/mail.ts               MailAlerts (SNS + SES reputation alarms) + MailReceiving (MX, rule set, S3, forwarder) — #230

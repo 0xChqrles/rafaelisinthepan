@@ -31,6 +31,8 @@ packages/
   shared/       cross-cutting TS: slug/fold contract, game-day logic, schema types,
                 color ramps, share-card codec.
   web/          React + Vite + TS front end (the game).
+  whatsapp-bot/ the WhatsApp group scoreboard bot (#236): ingests share links, posts the
+                daily podium, answers when addressed. Consumes shared; nothing depends on it.
 ```
 
 Each package's detailed file map lives in ITS `AGENTS.md`. Data flow: generation
@@ -1971,6 +1973,34 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   any later apex TXT (a provider's domain-verification string) must be UPSERTed carrying BOTH
   values or it silently deletes SPF.
 
+### The WhatsApp bot boundary (#236, decided 2026-09-03)
+
+- **`packages/whatsapp-bot` lives inside the monorepo and OUTSIDE the game runtime.** It
+  may import `@whippin/shared` (the share codec, the game-day contract, `fold`); the
+  dependency never goes the other way. A broken Baileys release, an expired session, a
+  model outage or a bot deploy has no path to the game, publishing or the public board —
+  the bot is a social consumer of the PUBLIC share-token contract, not a source of game
+  truth: no WhatsApp identity is added to a Whippin account, share encoding does not change
+  for it, and no LLM decides a score, a rank or whether a share is valid.
+- **Its stack is a SIBLING** (`WhippinBotStack`, `infra/lib/bot-stack.ts`): one Fargate
+  task (`desiredCount 1`, stop-before-start — one active Baileys session is a correctness
+  rule), a bot-owned DynamoDB table, an SQS outbound queue, a podium Lambda with one
+  EventBridge schedule per configured group, and alarms on a "connected" gauge (missing
+  data breaching). Public subnets, public IP, no ingress, no NAT. `deploy.yml` deploys it
+  on `packages/whatsapp-bot/**`, `shared`, `infra`, root deps and the root `.dockerignore`
+  (the image is built from the repo root). Its one secret — the model provider's key — is
+  an SSM SecureString named by `BOT_LLM_API_KEY_PARAMETER`; `operatorEmail` is who its
+  alarms reach. The image is built from the REPO ROOT against the root `.dockerignore`,
+  whose whitelist must name each directory it re-includes OUTRIGHT — a wildcard in the
+  middle of a re-include silently drops the directory under the legacy builder — so **a new
+  workspace package needs a line there too**, or the image's frozen install fails on a
+  manifest the lockfile names and the context lacks.
+- **The podium's ranking is the bot's own** — a DENSE ordering of distinct scores grouped
+  onto one line — and deliberately not `shared/src/leaderboard.ts`'s competition ranks.
+  The bot's share reading is `decodeResult` only: sentence tokens, the token's day, ∞ runs
+  recorded but never positioned. Everything else the bot decides is documented in its own
+  `AGENTS.md`.
+
 ### Day-addressed routing & the game day
 
 - **Routing (#6), date-addressed (decided 2026-07-05, replacing the #42 version-in-URL
@@ -2480,7 +2510,8 @@ pnpm typecheck   # tsc --noEmit
 
 Domain commands — wordlist/reduce/gen (generation), bench (benchmark),
 publish/inventory/backend:dev (backend), dev/build (web), cdk synth/diff/deploy
-(infra) — are documented in the owning package's `AGENTS.md`.
+(infra), bot:start/pair/cli (whatsapp-bot) — are documented in the owning package's
+`AGENTS.md`.
 
 ---
 
@@ -2525,7 +2556,9 @@ publish/inventory/backend:dev (backend), dev/build (web), cdk synth/diff/deploy
   repo variable, #60)
   before `cdk deploy WhippinWebStack`. `workflow_dispatch`
   `stacks` input forces
-  `changed`|`web`|`backend`|`all` (default `changed`).
+  `changed`|`web`|`backend`|`bot`|`all` (default `changed`). **`deploy-bot` (#236)** deploys
+  `WhippinBotStack` — a Docker image build on the runner plus a stop-before-start roll of
+  the one Fargate task; it needs `OPERATOR_EMAIL` like the backend job.
   **The backend deploy INVALIDATES `/*` on the API distribution after `cdk deploy`**
   (decided 2026-07-26): puzzle responses carry a year-long `s-maxage`, so shipping the
   Lambda alone leaves every already-cached `(date, lang, Accept-Encoding)` entry answering
