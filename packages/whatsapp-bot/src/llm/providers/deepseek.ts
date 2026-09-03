@@ -95,7 +95,11 @@ export function deepSeekProvider(options: DeepSeekOptions): LlmProvider {
           signal: AbortSignal.timeout(request.timeoutMs ?? DEFAULT_TIMEOUT_MS),
         });
       } catch (error) {
-        throw new LlmUnavailable(`deepseek: ${(error as Error).name}`);
+        // The NAME alone ("TypeError", "AbortError") cannot tell a timeout from a DNS
+        // failure from an aborted request, which is the whole question when the provider
+        // starts misbehaving. The message names no secret: the key travels in a header.
+        const cause = error as Error;
+        throw new LlmUnavailable(`deepseek: ${cause.name}: ${cause.message}`);
       }
       if (response.status === 429 || response.status >= 500) {
         throw new LlmUnavailable(`deepseek: HTTP ${response.status}`);

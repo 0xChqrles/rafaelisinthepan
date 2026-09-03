@@ -45,7 +45,10 @@ describe('podium job (#236)', () => {
     expect((await runPodiumJob({ group: '120363999999999999@g.us' }, deps)).outcome).toBe('skipped');
     expect((await runPodiumJob({ group: GROUP, date: '2026-08-01' }, deps)).dayNumber).toBe(dayNumber('2026-08-01'));
     // A date that is not a real one is refused, not rolled over into March 2nd.
-    expect((await runPodiumJob({ group: GROUP, date: '2026-02-30' }, deps)).outcome).toBe('skipped');
+    expect(await runPodiumJob({ group: GROUP, date: '2026-02-30' }, deps)).toMatchObject({
+      outcome: 'skipped',
+      dayNumber: 0, // no day: it must not name one it did not act on
+    });
     expect(sent).toEqual([]);
   });
 });

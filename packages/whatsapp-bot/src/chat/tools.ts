@@ -217,6 +217,9 @@ export function createToolRunner(ctx: ToolContext): ToolRunner {
       // neighbouring day whose numbers it would then report as the answer.
       const day = args.date == null ? ctx.today : parseDay(args.date);
       if (day === null) return { error: 'date must be a real calendar date, YYYY-MM-DD' };
+      // A day that has not happened has no result, and "played: false" would read as
+      // "they skipped it" about a puzzle nobody has seen.
+      if (day > ctx.today) return { error: 'that day has not been played yet' };
       const rows =
         day === ctx.today || day < ctx.today - HISTORY_WINDOW_DAYS
           ? ownLanguage(await ctx.declarations.day(ctx.group.id, day))

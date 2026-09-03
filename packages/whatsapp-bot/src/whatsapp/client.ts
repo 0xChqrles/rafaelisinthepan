@@ -50,6 +50,10 @@ export interface WhatsAppClient {
   close(): Promise<void>;
 }
 
+// What `getMessage` may be asked to resend. WhatsApp asks within minutes of a send, so
+// this is a short retry buffer, not a transcript — and the task it lives in runs for
+// weeks. Bounded by count, oldest first (a Map iterates in insertion order).
+const SENT_CACHE = 200;
 const RECONNECT_BASE_MS = 2_000;
 const RECONNECT_MAX_MS = 60_000;
 const GROUP_CACHE_MS = 5 * 60_000;
@@ -222,7 +226,14 @@ export async function connectWhatsApp(options: WhatsAppClientOptions): Promise<W
       }
       const id = sent?.key?.id;
       if (!id) throw new Error('WhatsApp returned no message id.');
-      if (sent?.message) sentMessages.set(id, sent.message);
+      if (sent?.message) {
+        sentMessages.set(id, sent.message);
+        while (sentMessages.size > SENT_CACHE) {
+          const oldest = sentMessages.keys().next().value;
+          if (oldest === undefined) break;
+          sentMessages.delete(oldest);
+        }
+      }
       return id;
     },
     async groups() {

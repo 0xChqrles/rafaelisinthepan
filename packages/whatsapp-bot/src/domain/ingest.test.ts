@@ -95,6 +95,46 @@ describe('share ingestion (#236)', () => {
     expect(sent).toEqual([]);
   });
 
+  it('reacts ONCE per message, for the best result that message carried', async () => {
+    const { ingest, sent } = harness();
+    const text = `${ORIGIN}/s/${token(9)} et hier ${ORIGIN}/s/${token(3, 'fr', false, DAY - 1)}`;
+    expect(await ingest(message({ text }))).toBe('recorded');
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ kind: 'reaction', id: `react:${GROUP}:M1`, emoji: '🔥' });
+  });
+
+  it('a REPLAY moves the leader row, so a later live share cannot claim a lead it lacks', async () => {
+    const { ingest, sent } = harness(registry({ leaderAnnouncements: true, reactions: false }));
+    // Replayed history: recorded, and deliberately not announced…
+    expect(await ingest(message({ id: 'M1', text: `${ORIGIN}/s/${token(3)}`, live: false }))).toBe(
+      'recorded',
+    );
+    expect(sent).toEqual([]);
+    // …but it counts: 5 is behind that 3 and takes no lead.
+    await ingest(
+      message({
+        id: 'M2',
+        timestamp: 1_001,
+        sender: '33600000000@s.whatsapp.net',
+        senderName: 'Zouzou',
+        text: `${ORIGIN}/s/${token(5)}`,
+      }),
+    );
+    expect(sent).toEqual([]);
+    // A real lead over the replayed one still is.
+    await ingest(
+      message({
+        id: 'M3',
+        timestamp: 1_002,
+        sender: '33600000000@s.whatsapp.net',
+        senderName: 'Zouzou',
+        text: `${ORIGIN}/s/${token(2)}`,
+      }),
+    );
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ kind: 'message', text: 'Zou prend la tête avec 2.' });
+  });
+
   it('a later message replaces the declaration; an older replay does not', async () => {
     const { ingest, declarations } = harness();
     await ingest(message());

@@ -16,7 +16,7 @@ import { loadEnv } from './config/env';
 import { createLog } from './log';
 import { clearAuthInvalidated, useDynamoAuthState } from './whatsapp/authStore';
 import { connectWhatsApp } from './whatsapp/client';
-import { LEASE_RENEW_MS, acquireLease } from './whatsapp/lease';
+import { acquireLease, keepLease } from './whatsapp/lease';
 
 function flag(name: string): string | undefined {
   const i = process.argv.indexOf(name);
@@ -36,25 +36,24 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   // The lease's own rule (`lease.ts`): a holder that cannot renew STOPS rather than keep
-  // talking. Ignoring the answer would let a pairing that has LOST the lease — to a task
-  // somebody scaled back up mid-pair — carry on writing Signal state beside a second
-  // socket, which is the one thing the lease exists to prevent. A renew that merely FAILED
-  // (a network blip) is not a lost lease and only warns, as it does in the task.
-  const renew = setInterval(() => {
-    lease.renew().then(
-      (held) => {
-        if (held) return;
-        console.error('Lost the session lease — is the Fargate task running again? Stopping.');
-        process.exit(1);
-      },
-      (error) => console.error(`Could not renew the session lease: ${(error as Error).message}`),
-    );
-  }, LEASE_RENEW_MS);
+  // talking. A pairing that carried on after losing the lease would be writing Signal state
+  // beside a second socket, which is the one thing the lease exists to prevent.
+  const renew = keepLease(lease, {
+    onLost(reason) {
+      console.error(
+        reason === 'refused'
+          ? 'Lost the session lease — is the Fargate task running again? Stopping.'
+          : 'The session lease has not renewed for long enough that it may have expired. Stopping.',
+      );
+      process.exit(1);
+    },
+    onError: (error) => console.error(`Could not renew the session lease: ${error.message}`),
+  });
 
   let auth = await useDynamoAuthState(dynamo, env.table);
   if (auth.state.creds.registered && !reset) {
     console.log('A paired device is already stored. Re-run with --reset to pair again.');
-    clearInterval(renew);
+    renew.stop();
     await lease.release();
     return;
   }
@@ -70,7 +69,7 @@ async function main(): Promise<void> {
     onMessage: async () => {},
     async onStop(reason) {
       console.error(`Connection stopped: ${reason}`);
-      clearInterval(renew);
+      renew.stop();
       await lease.release();
       process.exit(1);
     },
@@ -90,7 +89,7 @@ async function main(): Promise<void> {
     if (Date.now() > deadline) {
       console.error('Timed out waiting for the pairing to complete.');
       await client.close();
-      clearInterval(renew);
+      renew.stop();
       await lease.release();
       process.exit(1);
     }
@@ -102,7 +101,7 @@ async function main(): Promise<void> {
   console.log(`Paired as ${client.selfJids().join(' / ')}. Auth state is in ${env.table}.`);
   console.log('You can start the Fargate task now (scale the service back to 1).');
   await client.close();
-  clearInterval(renew);
+  renew.stop();
   await lease.release();
   process.exit(0);
 }

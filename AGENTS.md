@@ -1990,7 +1990,11 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   on `packages/whatsapp-bot/**`, `shared`, `infra`, root deps and the root `.dockerignore`
   (the image is built from the repo root). Its one secret — the model provider's key — is
   an SSM SecureString named by `BOT_LLM_API_KEY_PARAMETER`; `operatorEmail` is who its
-  alarms reach.
+  alarms reach. The image is built from the REPO ROOT against the root `.dockerignore`,
+  whose whitelist must name each directory it re-includes OUTRIGHT — a wildcard in the
+  middle of a re-include silently drops the directory under the legacy builder — so **a new
+  workspace package needs a line there too**, or the image's frozen install fails on a
+  manifest the lockfile names and the context lacks.
 - **The podium's ranking is the bot's own** — a DENSE ordering of distinct scores grouped
   onto one line — and deliberately not `shared/src/leaderboard.ts`'s competition ranks.
   The bot's share reading is `decodeResult` only: sentence tokens, the token's day, ∞ runs

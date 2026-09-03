@@ -9,14 +9,18 @@
 import type { GroupRegistry } from '../config/groupConfig';
 import type { Log } from '../log';
 import { tag } from '../log';
-import { commandIds, type OutboundQueue } from '../outbound/commands';
+import { commandIds, type OutboundCommand, type OutboundQueue } from '../outbound/commands';
 import type { DeclarationStore, Declaration } from './declarations';
 import type { LeaderStore } from './leader';
 import type { InboundMessage } from './message';
 import { displayName } from './names';
 import { renderLeader } from './podiumText';
 import { reactionFor } from './reactions';
-import { sharesIn } from './share';
+import { sharesIn, type DecodedShare } from './share';
+
+// How good a result is, for picking the one a message is acknowledged for: lower is
+// better, and a run that ended at ∞ is behind every finite score.
+const rankOf = (share: DecodedShare) => (share.capped ? Infinity : share.score);
 
 export interface IngestDeps {
   groups: GroupRegistry;
@@ -69,6 +73,8 @@ export function createIngest(deps: IngestDeps) {
 
     let outcome: IngestOutcome = 'unchanged';
     let failed = false;
+    const recorded: DecodedShare[] = [];
+    const announcements: OutboundCommand[] = [];
     for (const share of byDay.values()) {
       const declaration: Declaration = {
         group: group.id,
@@ -116,27 +122,21 @@ export function createIngest(deps: IngestDeps) {
       );
       if (result !== 'recorded') continue;
       outcome = 'recorded';
-      if (!message.live) continue;
+      recorded.push(share);
 
-      if (group.reactions) {
-        await deps.outbound.enqueue({
-          id: commandIds.reaction(group.id, message.id),
-          kind: 'reaction',
-          group: group.id,
-          target: { id: message.id, participant: message.sender },
-          emoji: reactionFor(share.score, share.capped),
-        });
-      }
       if (group.leaderAnnouncements && !share.capped) {
+        // THE CLAIM RUNS ON A REPLAY TOO. The row holds the day's best, so a replayed
+        // share that left it stale would have the next live one announce a lead it does
+        // not hold. Only the ANNOUNCEMENT is live-only: history is not news.
         const lead = await deps.leaders.claim(
           group.id,
           share.dayNumber,
           message.sender,
           share.score,
         );
-        if (lead === 'took_lead') {
+        if (lead === 'took_lead' && message.live) {
           const name = displayName(group, message.sender, message.senderName);
-          await deps.outbound.enqueue({
+          announcements.push({
             id: commandIds.leader(group.id, share.dayNumber, message.sender, share.score),
             kind: 'message',
             group: group.id,
@@ -145,6 +145,26 @@ export function createIngest(deps: IngestDeps) {
         }
       }
     }
+
+    // ONE reaction per MESSAGE, whatever it carried. WhatsApp holds a single reaction per
+    // account per message and the command id is keyed by the message, so queueing one per
+    // DAY would leave an arbitrary survivor to decide the emoji. The best result the
+    // message showed is the one it is acknowledged for; a ∞ run is the worst of them.
+    const best = recorded.reduce<DecodedShare | null>(
+      (kept, share) => (kept && rankOf(kept) <= rankOf(share) ? kept : share),
+      null,
+    );
+    if (group.reactions && message.live && best) {
+      await deps.outbound.enqueue({
+        id: commandIds.reaction(group.id, message.id),
+        kind: 'reaction',
+        group: group.id,
+        target: { id: message.id, participant: message.sender },
+        emoji: reactionFor(best.score, best.capped),
+      });
+    }
+    // After the reaction, so the acknowledgement lands before the commentary.
+    for (const announcement of announcements) await deps.outbound.enqueue(announcement);
     return failed ? 'failed' : outcome;
   };
 }

@@ -55,14 +55,14 @@ export async function runPodiumJob(event: PodiumJobEvent, deps: PodiumJobDeps): 
   const group = deps.groups.get(event.group);
   // A replay that names a day gets THAT day, and a date that is not a real one is refused
   // rather than rolled over into a neighbouring day's podium (see `parseDay`).
-  const active = dayNumber(activeDate(now()));
-  const day = event.date == null ? active : parseDay(event.date);
+  const day = event.date == null ? dayNumber(activeDate(now())) : parseDay(event.date);
   if (day === null) {
     deps.log.warn(
       { event: 'podium.bad_date', group: tag(event.group) },
       'not a real calendar date; nothing posted',
     );
-    return { outcome: 'skipped', group: event.group, dayNumber: active, lines: 0, comments: 0 };
+    // No day: reporting the active one would name a day this call did not act on.
+    return { outcome: 'skipped', group: event.group, dayNumber: 0, lines: 0, comments: 0 };
   }
   if (!group || !group.podium.enabled) {
     deps.log.warn({ event: 'podium.skipped', group: tag(event.group) }, 'group not configured for a podium');

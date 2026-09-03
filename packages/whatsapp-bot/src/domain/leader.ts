@@ -18,6 +18,7 @@ import {
   ConditionalCheckFailedException,
   GetItemCommand,
   PutItemCommand,
+  type AttributeValue,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
 
@@ -38,11 +39,16 @@ export function dynamoLeaderStore(client: DynamoDBClient, tableName: string): Le
       const current = (await client.send(new GetItemCommand({ TableName: tableName, Key: key })))
         .Item;
       const previousScore = current ? Number(current.score?.N) : undefined;
-      const previousSender = current?.sender?.S;
-      // Nothing better than what stands: the row already says the truth.
+      // Nothing better than what stands: the row already says the truth, and this read is
+      // only here to skip a pointless write. THE OUTCOME IS NOT DECIDED FROM IT — see below.
       if (previousScore !== undefined && previousScore <= score) return 'unchanged';
+      let displaced: Record<string, AttributeValue> | undefined;
       try {
-        await client.send(
+        // ALL_OLD: what this write actually DISPLACED, which is the only race-free answer
+        // to "did the lead change hands?". Deciding it from the read above loses the first
+        // shares of a day when two land together — both read nothing, both write, and the
+        // second reports `first` while it has in fact just overtaken the other.
+        const response = await client.send(
           new PutItemCommand({
             TableName: tableName,
             Item: { ...key, sender: { S: sender }, score: { N: String(score) } },
@@ -50,15 +56,17 @@ export function dynamoLeaderStore(client: DynamoDBClient, tableName: string): Le
             ConditionExpression: 'attribute_not_exists(#sk) OR #score > :score',
             ExpressionAttributeNames: { '#sk': 'sk', '#score': 'score' },
             ExpressionAttributeValues: { ':score': { N: String(score) } },
+            ReturnValues: 'ALL_OLD',
           }),
         );
+        displaced = response.Attributes;
       } catch (error) {
         if (error instanceof ConditionalCheckFailedException) return 'unchanged';
         throw error;
       }
-      if (!current) return 'first';
+      if (!displaced) return 'first';
       // Written either way; announced only when the day's best changed HANDS.
-      return previousSender === sender ? 'unchanged' : 'took_lead';
+      return displaced.sender?.S === sender ? 'unchanged' : 'took_lead';
     },
   };
 }

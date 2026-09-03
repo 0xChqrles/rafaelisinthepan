@@ -36,7 +36,7 @@ import { createDispatcher, runConsumer } from './outbound/dispatcher';
 import { memoryOutbound, sqsCommandSource, sqsOutboundQueue, type CommandSource } from './outbound/sqs';
 import { markAuthInvalidated, readAuthStatus, useDynamoAuthState } from './whatsapp/authStore';
 import { connectWhatsApp } from './whatsapp/client';
-import { acquireLease, LEASE_RENEW_MS } from './whatsapp/lease';
+import { acquireLease, keepLease, type LeaseKeeper } from './whatsapp/lease';
 import { startConnectedMetric } from './whatsapp/metrics';
 
 const IDLE_RECHECK_MS = 60_000;
@@ -66,6 +66,7 @@ async function main(): Promise<void> {
   // zone — the throw lands in the publisher's own catch and the first tick is lost as a
   // "metric not published" warning, once per task start, looking like an IAM problem.
   let client: Awaited<ReturnType<typeof connectWhatsApp>> | null = null;
+  let keeper: LeaseKeeper | null = null;
   const stopMetric = env.metricsNamespace
     ? startConnectedMetric(env.metricsNamespace, () => client?.isOpen() === true, log)
     : () => {};
@@ -158,6 +159,7 @@ async function main(): Promise<void> {
   async function shutdown(code: number): Promise<never> {
     abort.abort();
     stopMetric();
+    keeper?.stop();
     try {
       await client?.close();
     } finally {
@@ -189,18 +191,14 @@ async function main(): Promise<void> {
   });
   void runConsumer(source, dispatcher, log, abort.signal);
 
-  const renew = setInterval(() => {
-    lease.renew().then(
-      (ok) => {
-        if (!ok) {
-          log.error({ event: 'lease.lost' }, 'lost the session lease; stopping');
-          void shutdown(1);
-        }
-      },
-      (error) => log.warn({ event: 'lease.renew_failed', error: (error as Error).message }),
-    );
-  }, LEASE_RENEW_MS);
-  renew.unref();
+  keeper = keepLease(lease, {
+    onLost(reason) {
+      log.error({ event: 'lease.lost', reason }, 'the session lease is gone; stopping');
+      void shutdown(1);
+    },
+    onError: (error, staleMs) =>
+      log.warn({ event: 'lease.renew_failed', staleMs, error: error.message }, 'renew failed'),
+  });
 
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     process.on(signal, () => {

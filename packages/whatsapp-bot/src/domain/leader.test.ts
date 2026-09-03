@@ -7,8 +7,12 @@ const DAY = 20700;
 const GAB = '33612345678@s.whatsapp.net';
 const ZOU = '33600000000@s.whatsapp.net';
 
+// The Get answers with the row that stands; the conditional Put answers with what it
+// DISPLACED (`ReturnValues: ALL_OLD`), which is what the outcome is read from.
 function answering(item: Record<string, unknown> | undefined) {
-  return vi.fn(async (command: unknown) => (command instanceof GetItemCommand ? { Item: item } : {}));
+  return vi.fn(async (command: unknown) =>
+    command instanceof GetItemCommand ? { Item: item } : { Attributes: item },
+  );
 }
 
 const puts = (send: ReturnType<typeof answering>) =>
@@ -55,6 +59,19 @@ describe('the new-leader event (#236)', () => {
     const store = dynamoLeaderStore({ send } as unknown as DynamoDBClient, 'bot');
     expect(await store.claim(GROUP, DAY, ZOU, 8)).toBe('unchanged');
     expect(puts(send)).toHaveLength(0);
+  });
+
+  it('reports a lead taken from a row that appeared AFTER its read — the day-start race', async () => {
+    // Two first shares of a day land together: both read an empty day, both write, and
+    // this one lands second. Read from its own pre-read it would report `first` and
+    // announce nothing, though it has just overtaken the other.
+    const send = vi.fn(async (command: unknown) =>
+      command instanceof GetItemCommand
+        ? { Item: undefined }
+        : { Attributes: { sender: { S: GAB }, score: { N: '9' } } },
+    );
+    const store = dynamoLeaderStore({ send } as unknown as DynamoDBClient, 'bot');
+    expect(await store.claim(GROUP, DAY, ZOU, 4)).toBe('took_lead');
   });
 
   it('the DynamoDB store reports a real change of holder', async () => {

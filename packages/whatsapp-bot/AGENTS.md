@@ -40,7 +40,8 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
                                 in-memory recent context, durable social memory, read-only tools + name
                                 resolution, the bounded tool-loop agent
     src/whatsapp/               the Baileys boundary: inbound mapping, durable auth (DynamoDB), the
-                                single-session lease, the socket wrapper (reconnect/stop policy), metrics
+                                single-session lease + the keeper that stops a holder whose renewals
+                                stop landing, the socket wrapper (reconnect/stop policy), metrics
     src/main.ts                 the Fargate task entry
     src/podiumJob.ts            the Lambda entry (EventBridge Scheduler → podium command on the queue)
     src/pair.ts, src/cli.ts     operator paths: pairing (QR / code), `groups` listing, `forget`
@@ -60,6 +61,9 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
 - **ONE session.** `desiredCount 1`, stop-before-start deploys, and the DynamoDB LEASE
   (`AUTH#bot / lease`) that a laptop `bot:start`, `bot:pair` or `bot:cli groups` must hold
   to open a socket. Scale the service to 0 before pairing; the lease refusing is the point.
+  A holder stops when the lease is REFUSED and also when its renewals simply stop landing
+  for `LEASE_GRACE_MS` — a renew that throws is not a renew, and the record ages out either
+  way. `keepLease` is that rule, once, for both entry points. `wipe()` keeps the lease row.
 - **Auth is durable and never auto-replaced.** Creds + Signal keys live in the bot table
   (`whatsapp/authStore.ts`, Baileys' own `BufferJSON`). A logout marks `AUTH#bot / status`
   INVALIDATED and the task idles with the connected gauge at 0; nothing erases or re-mints
@@ -80,8 +84,12 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   dispatcher checks the sent record, sends, records the WhatsApp id. The send-then-crash
   duplicate window is accepted over marking before sending. The sent record catches a
   REDELIVERY and nothing longer-lived, so it wears the table's TTL (30 days) rather than
-  accumulating a permanent row per message ever sent. A leader row moves on every
-  improvement; only a change of HOLDER is announced (`leader.ts` says why).
+  accumulating a permanent row per message ever sent. ONE reaction per MESSAGE, for the
+  best result it carried — the id is keyed by the message, and WhatsApp holds one reaction
+  per account anyway. A leader row moves on every improvement and on a REPLAY, so history
+  cannot make a later share announce a lead it does not hold; only a change of HOLDER is
+  announced, read from what the write DISPLACED rather than from a stale read
+  (`leader.ts` says why).
 - **Conversation is opt-in per message**: mention, reply-to-bot, or a leading `chat.name`.
   Nothing else reaches the model. Ceilings: per sender/day and per group/day (config), each
   charged once per QUESTION and only once there is one to answer; plus
@@ -94,6 +102,12 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   provider latency — never a message body. A command id EMBEDS the JIDs it addresses, so
   every log of one goes through `redactJids`. Score-only shares never reach the provider.
 - **Baileys stops at `whatsapp/`.** The rest consumes `InboundMessage` / `OutboundCommand`.
+- **The image is built from the REPO ROOT** against the root `.dockerignore`, whose
+  whitelist names every directory it re-includes outright: a re-include rescues an excluded
+  directory only when it LITERALLY starts with that directory's path, so a wildcard in the
+  middle silently drops it under the legacy builder (measured: five of the seven workspace
+  manifests, and the frozen install then fails). **A new workspace package needs a line
+  there**, the same duty as wiring it into `deploy.yml`.
 
 ## Commands
 
@@ -119,6 +133,9 @@ only), `BOT_GROUPS_DIR`, `BOT_SITE_ORIGIN`, `BOT_METRICS_NAMESPACE`, `BOT_LLM_PR
   outbound behaviour have been exercised there.
 - The transport proof (pair → receive → reply → kill the task → reconnect without pairing)
   has NOT been run yet; it needs the dedicated number and a deployed stack.
+- The IMAGE has been built and run (2026-09-03): 113 files / 884 KB of context, identical
+  under BuildKit and the legacy builder, and the container starts far enough to refuse its
+  missing `BOT_TABLE`. What that does not cover is WhatsApp itself.
 - Baileys is pinned to `7.0.0-rc14` (its `prepare` build script and protobufjs' postinstall
   are declined in `pnpm-workspace.yaml`; the package ships prebuilt). `sharp` arrives as
   its non-optional peer.
