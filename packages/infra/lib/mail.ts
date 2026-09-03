@@ -345,14 +345,23 @@ export class MailReceiving extends Construct {
     });
 
     this.bucket.grantRead(this.forwarder, `${INBOUND_PREFIX}*`);
-    // The SAME scoping the code sender gets: this stack's own identity, and conditioned on
-    // the ONE address it may send as. A forwarder that could send as anything would be a
-    // better open relay than the thing it replaces.
+    // Conditioned on the ONE address it may send as, like the code sender: a forwarder that
+    // could send as anything would be a better open relay than the thing it replaces. It
+    // differs from the code sender's grant in two ways, both learned from the first real
+    // message through it (2026-09-03):
+    //   - `ses:SendRawEmail` as well as `ses:SendEmail`: SES authorizes a SendEmail call
+    //     carrying RAW content as the raw action, and the forwarded copy IS raw MIME.
+    //   - `identity/*` rather than this domain's identity alone: SES checks the statement
+    //     against the RECIPIENT's identity too whenever that recipient is a verified
+    //     identity of this account — which the operator's own address is, since it is the
+    //     one address a sandboxed account may send to at all. The code sender never meets
+    //     this because players' addresses are not identities. The FromAddress condition is
+    //     what bounds this grant, and it is unchanged.
     this.forwarder.addToRolePolicy(
       new iam.PolicyStatement({
-        actions: ['ses:SendEmail'],
+        actions: ['ses:SendEmail', 'ses:SendRawEmail'],
         resources: [
-          stack.formatArn({ service: 'ses', resource: 'identity', resourceName: props.domainName }),
+          stack.formatArn({ service: 'ses', resource: 'identity', resourceName: '*' }),
           stack.formatArn({ service: 'ses', resource: 'configuration-set', resourceName: '*' }),
         ],
         conditions: { StringEquals: { 'ses:FromAddress': props.mailFrom } },
@@ -461,7 +470,7 @@ export class MailReceiving extends Construct {
         {
           id: 'AwsSolutions-IAM5',
           reason:
-            "S3 read is scoped to the inbound prefix of this construct's own bucket. ses:SendEmail names this stack's own domain identity and is additionally conditioned on the single ses:FromAddress it may send as; the configuration-set wildcard is required by SES on every SendEmail call and grants nothing on its own.",
+            "S3 read is scoped to the inbound prefix of this construct's own bucket. ses:SendEmail/SendRawEmail is conditioned on the single ses:FromAddress it may send as, which is the bound that matters; the identity wildcard is required because SES also evaluates the statement against a RECIPIENT that is a verified identity of this account (the operator's address), and the configuration-set wildcard is required by SES on every send call and grants nothing on its own.",
         },
         {
           id: 'AwsSolutions-L1',

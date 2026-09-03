@@ -185,7 +185,11 @@
   expiry up to the next UTC midnight and deletes asynchronously), a receipt rule set for
   `hello@`/`abuse@`/`postmaster@`/`dmarc@` running **S3 then Lambda in that order** (the
   forwarder reads what the S3 action wrote), and a second `NodejsFunction` bundling
-  `backend/src/mailForward.ts` with `ses:SendEmail` scoped exactly as the code sender's is.
+  `backend/src/mailForward.ts` with `ses:SendEmail` + `ses:SendRawEmail` on `identity/*`,
+  conditioned on the one `ses:FromAddress` like the code sender's (NOT "scoped exactly" as
+  it was — corrected 2026-09-03 by the first real message: a raw send is authorized as the
+  raw action, and SES evaluates the statement against a recipient that is a verified
+  identity, which the operator's address is).
   An `AwsCustomResource` ACTIVATES the rule set — SES holds one active rule set per region and
   exposes no CloudFormation property for it, so a deploy without it receives nothing — and the
   forwarder's failures alarm onto the same topic: its `Errors`, AND Lambda's
