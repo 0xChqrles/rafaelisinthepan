@@ -5,7 +5,7 @@
 // bot's concern: a name is matched against the JIDs the group has seen and the operator's
 // overrides, and an ambiguous or unknown one is answered as exactly that, never guessed.
 
-import { dateForDayNumber, dayNumber, fold } from '@whippin/shared';
+import { dateForDayNumber, fold } from '@whippin/shared';
 import type { GroupConfig } from '../config/groupConfig';
 import {
   inLanguage,

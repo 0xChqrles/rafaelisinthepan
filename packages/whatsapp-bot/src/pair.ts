@@ -16,7 +16,7 @@ import { loadEnv } from './config/env';
 import { createLog } from './log';
 import { clearAuthInvalidated, useDynamoAuthState } from './whatsapp/authStore';
 import { connectWhatsApp } from './whatsapp/client';
-import { acquireLease } from './whatsapp/lease';
+import { LEASE_RENEW_MS, acquireLease } from './whatsapp/lease';
 
 function flag(name: string): string | undefined {
   const i = process.argv.indexOf(name);
@@ -35,7 +35,21 @@ async function main(): Promise<void> {
     console.error('Another process holds the WhatsApp session (the Fargate task?). Stop it first.');
     process.exit(1);
   }
-  const renew = setInterval(() => void lease.renew(), 30_000);
+  // The lease's own rule (`lease.ts`): a holder that cannot renew STOPS rather than keep
+  // talking. Ignoring the answer would let a pairing that has LOST the lease — to a task
+  // somebody scaled back up mid-pair — carry on writing Signal state beside a second
+  // socket, which is the one thing the lease exists to prevent. A renew that merely FAILED
+  // (a network blip) is not a lost lease and only warns, as it does in the task.
+  const renew = setInterval(() => {
+    lease.renew().then(
+      (held) => {
+        if (held) return;
+        console.error('Lost the session lease — is the Fargate task running again? Stopping.');
+        process.exit(1);
+      },
+      (error) => console.error(`Could not renew the session lease: ${(error as Error).message}`),
+    );
+  }, LEASE_RENEW_MS);
 
   let auth = await useDynamoAuthState(dynamo, env.table);
   if (auth.state.creds.registered && !reset) {

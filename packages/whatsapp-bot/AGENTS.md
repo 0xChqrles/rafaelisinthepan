@@ -83,8 +83,10 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   accumulating a permanent row per message ever sent. A leader row moves on every
   improvement; only a change of HOLDER is announced (`leader.ts` says why).
 - **Conversation is opt-in per message**: mention, reply-to-bot, or a leading `chat.name`.
-  Nothing else reaches the model. Ceilings: per sender/day, per group/day (config), and a
-  global daily call ceiling (`BOT_LLM_DAILY_CALL_CEILING`). The model reads game facts ONLY
+  Nothing else reaches the model. Ceilings: per sender/day and per group/day (config), each
+  charged once per QUESTION and only once there is one to answer; plus
+  `BOT_LLM_DAILY_CALL_CEILING`, which counts model CALLS, so one question spends as many of
+  it as its tool rounds take. The model reads game facts ONLY
   through the allow-listed tools; name resolution is the tool runner's, and ambiguity is
   answered as such. Memory is bounded facts per (group, JID), written from explicit
   interactions; `bot:cli forget` removes it without touching scoreboard rows.
