@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { parseGroupConfig } from './config/groupConfig';
-import type { GroupsStore, StoredGroup } from './config/groupsStore';
+import type { BrokenParameter, GroupsStore, StoredGroup } from './config/groupsStore';
 import { run } from './groupsCli';
 
 const raw = (id: string) => ({
@@ -20,14 +20,33 @@ const stored = (slug: string, id: string): StoredGroup => {
   return { slug, json: JSON.stringify(body), config: parseGroupConfig(slug, body) };
 };
 
-const memoryStore = (groups: StoredGroup[]): GroupsStore => ({
-  list: async () => groups,
-  get: async (slug) => groups.find((g) => g.slug === slug) ?? null,
+const memoryStore = (groups: StoredGroup[], broken: BrokenParameter[] = []): GroupsStore => ({
+  list: async () => ({ groups, broken }),
   put: async () => {},
   remove: async () => false,
 });
 
 const tempDir = (): string => mkdtempSync(join(tmpdir(), 'whippin-groups-cli-'));
+
+// The editor's drafts live under this prefix; counting them is how a test sees whether an
+// exit cleaned up after itself.
+const drafts = (slug: string): number =>
+  readdirSync(tmpdir()).filter((f) => f.startsWith(`whippin-group-${slug}-`)).length;
+
+// Runs `body` with stdout captured, and returns what was said.
+async function saying(body: () => Promise<unknown>): Promise<string> {
+  const said: string[] = [];
+  const log = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+    said.push(String(chunk));
+    return true;
+  });
+  try {
+    await body();
+  } finally {
+    log.mockRestore();
+  }
+  return said.join('');
+}
 
 // $EDITOR is spawned through a shell with the file appended, so a plain command stands in
 // for one without a fixture script: `true` opens and changes nothing, `cp <src>` replaces
@@ -79,6 +98,45 @@ describe('bot:groups edit (#236)', () => {
     expect(JSON.parse(written[0]).id).toBe('120363000000000007@g.us');
     expect(written[0]).toMatch(/^\{\n  "id"/); // pretty-printed, as stored
   });
+
+  it('opens a parameter the bot would refuse, reason on top, so it can be fixed rather than locking out', async () => {
+    const dir = tempDir();
+    const source = join(dir, 'fixed.json');
+    writeFileSync(source, JSON.stringify(raw('120363000000000007@g.us')));
+    const written: string[] = [];
+    const broken: BrokenParameter[] = [{ name: 'test', json: '{oops', reason: 'test: invalid JSON in SSM' }];
+    const store: GroupsStore = { ...memoryStore([], broken), put: async (_s, json) => void written.push(json) };
+    // Saved unchanged: aborts — and the reason was already on screen, since the body was
+    // known to be invalid before the editor opened.
+    const said = await saying(() => expect(withEditor('true', () => run(['edit', 'test'], store))).resolves.toBe(1));
+    expect(said).toMatch(/invalid JSON/);
+    expect(written).toEqual([]);
+    // Replaced wholesale: stored.
+    await saying(() => expect(withEditor(`cp ${source}`, () => run(['edit', 'test'], store))).resolves.toBe(0));
+    expect(written).toHaveLength(1);
+    expect(JSON.parse(written[0]).id).toBe('120363000000000007@g.us');
+  });
+
+  it('removes its draft on every exit but a deliberate abort, and names a signal that killed the editor', async () => {
+    const store = memoryStore([]);
+    const before = drafts('gone');
+    // A valid save cleans up.
+    const dir = tempDir();
+    const source = join(dir, 'ok.json');
+    writeFileSync(source, JSON.stringify(raw('120363000000000008@g.us')));
+    await saying(() => expect(withEditor(`cp ${source}`, () => run(['edit', 'gone'], store))).resolves.toBe(0));
+    expect(drafts('gone')).toBe(before);
+    // An editor that failed cleans up too: the draft holds a JID, and $TMPDIR is not
+    // where one sits indefinitely.
+    await saying(() => expect(withEditor('false', () => run(['edit', 'gone'], store))).rejects.toThrow(/exited 1/));
+    expect(drafts('gone')).toBe(before);
+    // Killed by a signal, `status` is null; the message says what actually happened.
+    // (`#` swallows the file path the CLI appends, so the shell kills itself.)
+    await saying(() =>
+      expect(withEditor('kill -TERM $$ #', () => run(['edit', 'gone'], store))).rejects.toThrow(/killed by SIGTERM/),
+    );
+    expect(drafts('gone')).toBe(before);
+  });
 });
 
 describe('bot:groups pull (#236)', () => {
@@ -121,5 +179,45 @@ describe('bot:groups pull (#236)', () => {
     await expect(run(['pull', 'gone'], memoryStore([]), dir)).resolves.toBe(0);
 
     expect(readdirSync(dir).filter((f) => f.endsWith('.json'))).toEqual([]);
+  });
+
+  it('refuses to write a snapshot while anything under the path is broken', async () => {
+    const dir = tempDir();
+    const groups = [stored('a', '120363000000000001@g.us')];
+    const broken: BrokenParameter[] = [{ name: 'Main', json: '{}', reason: '"Main" is not a valid slug' }];
+    // The deploy's own gate: `pull` is the ONE command that judges the set, so `list`,
+    // `edit` and `rm` stay usable to fix what it names.
+    await expect(run(['pull'], memoryStore(groups, broken), dir)).rejects.toThrow(/Main/);
+    await expect(run(['pull', 'a'], memoryStore(groups, broken), dir)).rejects.toThrow(/Main/);
+    expect(readdirSync(dir)).toEqual([]);
+  });
+
+  it('names the files it wrote and nothing a group is: its log is CI, public on this repository', async () => {
+    const dir = tempDir();
+    const groups = [stored('a', '120363000000000001@g.us')];
+    const said = await saying(() => expect(run(['pull'], memoryStore(groups), dir)).resolves.toBe(0));
+    expect(said).toContain('a.json');
+    for (const secret of ['Whippin test', '22:00', 'Europe/Paris', '120363000000000001']) {
+      expect(said).not.toContain(secret);
+    }
+    const single = await saying(() => expect(run(['pull', 'a'], memoryStore(groups), dir)).resolves.toBe(0));
+    expect(single).toContain('a.json');
+    expect(single).not.toContain('Whippin test');
+  });
+});
+
+describe('bot:groups list (#236)', () => {
+  it('lists a broken parameter with its way out, without stopping the listing', async () => {
+    const groups = [stored('a', '120363000000000001@g.us'), stored('b', '120363000000000001@g.us')];
+    const broken: BrokenParameter[] = [
+      { name: 'Main', json: '{}', reason: '"Main" is not a valid slug' },
+      { name: 'junk', json: '{oops', reason: 'junk: invalid JSON in SSM' },
+    ];
+    const said = await saying(() => expect(run(['list'], memoryStore(groups, broken))).resolves.toBe(0));
+    expect(said).toContain('Whippin test'); // the usable rows, on the operator's own terminal
+    expect(said).toMatch(/junk: invalid JSON[\s\S]*bot:groups edit junk[\s\S]*bot:groups rm junk/);
+    expect(said).toMatch(/Main[\s\S]*aws ssm delete-parameter/);
+    // Two usable configs for one group: said here, since `pull` will refuse them.
+    expect(said).toMatch(/b: already configured by a/);
   });
 });

@@ -1,6 +1,16 @@
+import { GetParametersByPathCommand, type SSMClient } from '@aws-sdk/client-ssm';
 import { describe, expect, it } from 'vitest';
 import { GroupConfigError, PLACEHOLDER_GROUP_JID, parseGroupConfig } from './groupConfig';
-import { MAX_VALUE_BYTES, assertSlug, parameterName, validateForStore, type StoredGroup } from './groupsStore';
+import {
+  GROUPS_PATH,
+  MAX_VALUE_BYTES,
+  assertDeployable,
+  assertSlug,
+  parameterName,
+  ssmGroupsStore,
+  validateForStore,
+  type StoredGroup,
+} from './groupsStore';
 
 const GROUP = '120363000000000001@g.us';
 const OTHER = '120363000000000002@g.us';
@@ -67,5 +77,49 @@ describe('the SSM group-config store (#236)', () => {
     expect(text).toMatch(/^\{\n  "id"/);
     expect(text.endsWith('\n')).toBe(true);
     expect(Buffer.byteLength(text, 'utf8')).toBeLessThanOrEqual(MAX_VALUE_BYTES);
+  });
+});
+
+// An SSM client that answers the one read the store issues, in one page.
+const fakeClient = (parameters: { Name: string; Value: string }[]): SSMClient =>
+  ({
+    send: async (command: unknown) => {
+      expect(command).toBeInstanceOf(GetParametersByPathCommand);
+      return { Parameters: parameters };
+    },
+  }) as unknown as SSMClient;
+
+describe('reading the path (#236)', () => {
+  it('reports a broken parameter beside the usable ones rather than refusing the whole read', async () => {
+    const store = ssmGroupsStore(
+      fakeClient([
+        { Name: `${GROUPS_PATH}/typo`, Value: JSON.stringify(config({ id: OTHER, language: 'de' })) },
+        { Name: `${GROUPS_PATH}/main`, Value: JSON.stringify(config()) },
+        // Made by hand in the console: a name that is no slug, so no filename.
+        { Name: `${GROUPS_PATH}/Main`, Value: JSON.stringify(config({ id: OTHER })) },
+        { Name: `${GROUPS_PATH}/junk`, Value: '{oops' },
+      ]),
+    );
+    const { groups, broken } = await store.list();
+    // One bad parameter used to throw here, which is the read behind `edit` and `rm` —
+    // the two commands that fix it — so the operator was locked out of every command at once.
+    expect(groups.map((g) => g.slug)).toEqual(['main']);
+    expect(broken.map((b) => b.name)).toEqual(['Main', 'junk', 'typo']);
+    const reason = (name: string) => broken.find((b) => b.name === name)?.reason;
+    expect(reason('Main')).toMatch(/not a valid slug/);
+    expect(reason('junk')).toMatch(/invalid JSON/);
+    expect(reason('typo')).toMatch(/language/);
+    // The body travels with it: `edit` opens it as it is.
+    expect(broken.find((b) => b.name === 'junk')?.json).toBe('{oops');
+  });
+
+  it('refuses a snapshot while anything under the path is broken, or two configs name one group', () => {
+    expect(() =>
+      assertDeployable({ groups: [], broken: [{ name: 'junk', json: '{oops', reason: 'junk: invalid JSON' }] }),
+    ).toThrow(/junk: invalid JSON/);
+    expect(() => assertDeployable({ groups: [stored('a', GROUP), stored('b', GROUP)], broken: [] })).toThrow(
+      /already configured by a/,
+    );
+    expect(() => assertDeployable({ groups: [stored('a', GROUP), stored('b', OTHER)], broken: [] })).not.toThrow();
   });
 });

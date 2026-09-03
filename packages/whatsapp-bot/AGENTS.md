@@ -65,11 +65,20 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   materializes `groups/local/`. There is deliberately **no `disable`** (that is
   `enabled: false` through `edit`) and **no `validate`** (validation is not a step anyone can
   forget: `edit` refuses to write an invalid config and `pull` refuses to produce an invalid
-  snapshot). It opens NO socket and takes NO lease, so it runs while the bot is connected —
-  finding a JID in the first place is `pnpm bot:cli groups`, which does hold the lease.
+  snapshot). **`pull` is the ONLY command that judges the set** (PR-239 review): `list`
+  reports a broken parameter — a name that is no slug, a body the parser refuses — beside
+  the usable ones with its way out, and `edit`/`rm` still reach it, because they are how it
+  gets fixed; one bad parameter must never lock the operator out of every command at once.
+  And `pull` prints the FILES it wrote, never a group's name or schedule: it runs in CI,
+  whose log is public on this repository. It opens NO socket and takes NO lease, so it runs
+  while the bot is connected — finding a JID in the first place is `pnpm bot:cli groups`,
+  which does hold the lease.
   **Nothing reads SSM at run time.** The task, the podium Lambda and the CDK schedules all
   read the pulled snapshot, so one deployment runs on one coherent set and SSM being
-  unreachable can never make the bot forget a group. Hence the rule that gives the design its
+  unreachable can never make the bot forget a group. A MISSING snapshot directory is an
+  error at RUN TIME (`loadGroups`: a wrong `BOT_GROUPS_DIR`, which read as an empty set
+  would boot a healthy-looking bot that ingests nothing) and an empty set at SYNTH only
+  (`readGroupConfigsForSynth`, since every cdk command constructs the stack). Hence the rule that gives the design its
   shape: **editing SSM does not change production — a deploy promotes it** (`deploy-bot`
   pulls before it builds). One JID may have only ONE config, enabled or not: `GroupRegistry`
   refuses a duplicate among enabled ones, and `assertUniqueGroupIds` refuses it in the set,
@@ -235,10 +244,11 @@ only), `BOT_GROUPS_DIR`, `BOT_SITE_ORIGIN`, `BOT_METRICS_NAMESPACE`, `BOT_LLM_PR
 
 ## Current state / mutable
 
-- `groups/test.json` is the first target and ships DISABLED with a placeholder JID: fill in
-  the real test-group JID (`pnpm bot:cli groups`) and flip `enabled` once paired. The
-  production group is a later, separate config change after reconnect, ingestion, dedup and
-  outbound behaviour have been exercised there.
+- `test` is the first target and starts from `groups/example.json` DISABLED with a
+  placeholder JID: `pnpm bot:groups edit test`, fill in the real test-group JID
+  (`pnpm bot:cli groups`) and flip `enabled` once paired. The production group is a later,
+  separate config change after reconnect, ingestion, dedup and outbound behaviour have been
+  exercised there.
 - The transport proof (pair → receive → reply → kill the task → reconnect without pairing)
   has NOT been run yet; it needs the dedicated number and a deployed stack.
 - The IMAGE has been built and run (2026-09-03): 113 files / 884 KB of context, identical

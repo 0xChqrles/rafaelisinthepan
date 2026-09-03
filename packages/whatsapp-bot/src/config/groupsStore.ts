@@ -49,8 +49,10 @@ export const MAX_VALUE_BYTES = 4096;
 // either — no dots, no slashes, no spaces.
 const SLUG = /^[a-z0-9][a-z0-9-]*$/;
 
+export const isSlug = (name: string): boolean => SLUG.test(name);
+
 export function assertSlug(slug: string): void {
-  if (!SLUG.test(slug)) {
+  if (!isSlug(slug)) {
     throw new GroupConfigError(
       `"${slug}" is not a valid slug: lowercase letters, digits and dashes, starting with a letter or digit.`,
     );
@@ -68,68 +70,100 @@ export interface StoredGroup {
   config: GroupConfig;
 }
 
-const slugOf = (parameter: Parameter): string => (parameter.Name ?? '').slice(GROUPS_PATH.length + 1);
+// A parameter under the path that is NOT a usable group: a name that is no slug (made by
+// hand in the console — `Main`, `main.fr`), or a body the parser refuses (hand-edited, or
+// written before a rule the parser has since gained). It is REPORTED, never silently
+// skipped — somebody put it there meaning it to be a group — and never fatal to a read.
+export interface BrokenParameter {
+  name: string; // the child name under GROUPS_PATH, exactly as SSM holds it
+  json: string;
+  reason: string;
+}
 
-// Parse + validate one stored value under the SAME parser the bot and the stack use. A
-// config that does not parse is an error wherever it is met — reading it is not the place
-// to start being lenient, since the next reader is a deploy.
-function toStored(slug: string, json: string): StoredGroup {
-  // The slug becomes a FILENAME in the snapshot, so it is checked coming OUT of the store
-  // as well as going in — this module owns that rule, and never trusts a name it read.
-  assertSlug(slug);
+// What the path holds, sorted, with the unusable ones set apart. A read does NOT throw on
+// a broken parameter and does NOT judge the set (duplicate JIDs): it is the read behind
+// `edit` and `rm`, which are how a broken parameter gets FIXED, and a read that refused it
+// would lock the operator out of every command at once, the console being the only way
+// back in. `assertDeployable` judges the set, and `pull` — the deploy's door — is the one
+// command that asks.
+export interface GroupsListing {
+  groups: StoredGroup[];
+  broken: BrokenParameter[];
+}
+
+const childName = (parameter: Parameter): string => (parameter.Name ?? '').slice(GROUPS_PATH.length + 1);
+
+// Parse + validate one stored value under the SAME parser the bot and the stack use. The
+// name becomes a FILENAME in the snapshot, so it is checked coming OUT of the store as
+// well as going in — this module owns that rule, and never trusts a name it read.
+function toStored(name: string, json: string): StoredGroup {
+  assertSlug(name);
   let raw: unknown;
   try {
     raw = JSON.parse(json);
   } catch (error) {
-    throw new GroupConfigError(`${slug}: invalid JSON in SSM (${(error as Error).message})`);
+    throw new GroupConfigError(`${name}: invalid JSON in SSM (${(error as Error).message})`);
   }
-  return { slug, json, config: parseGroupConfig(slug, raw) };
+  return { slug: name, json, config: parseGroupConfig(name, raw) };
+}
+
+// A parameter whose name is no slug cannot be named by `rm` — a slug is what `rm` accepts,
+// and that rule is not loosened for the one case — so it is removed where it was made.
+export const removeByHand = (name: string): string =>
+  `aws ssm delete-parameter --region ${GROUPS_REGION} --name "${GROUPS_PATH}/${name}"`;
+
+// What a SNAPSHOT may be built from: every parameter usable, and the set valid as a set.
+// The message names sources and reasons, never a JID (it reaches CI logs).
+export function assertDeployable(listing: GroupsListing): void {
+  if (listing.broken.length > 0) {
+    const lines = listing.broken.map((b) => `  ${b.name}: ${b.reason}`).join('\n');
+    throw new GroupConfigError(
+      `${listing.broken.length} parameter(s) under ${GROUPS_PATH} cannot be deployed:\n${lines}\nSee \`pnpm bot:groups list\` for the way out of each.`,
+    );
+  }
+  assertUniqueGroupIds(listing.groups.map((g) => ({ id: g.config.id, source: g.slug })));
 }
 
 export interface GroupsStore {
-  list(): Promise<StoredGroup[]>;
-  get(slug: string): Promise<StoredGroup | null>;
+  list(): Promise<GroupsListing>;
   put(slug: string, json: string): Promise<void>;
   remove(slug: string): Promise<boolean>;
 }
 
+const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
 export function ssmGroupsStore(client: SSMClient): GroupsStore {
-  // Named closure rather than `this.list()`: the method must keep working destructured.
-  async function list(): Promise<StoredGroup[]> {
-    const found: StoredGroup[] = [];
-    let token: string | undefined;
-    do {
-      const response = await client.send(
-        new GetParametersByPathCommand({
-          Path: GROUPS_PATH,
-          Recursive: false,
-          MaxResults: 10,
-          ...(token ? { NextToken: token } : {}),
-        }),
-      );
-      for (const parameter of response.Parameters ?? []) {
-        const slug = slugOf(parameter);
-        if (slug === '' || parameter.Value === undefined) continue;
-        found.push(toStored(slug, parameter.Value));
-      }
-      token = response.NextToken;
-    } while (token);
-    // Byte order, not locale order: slugs are [a-z0-9-] and the list must read the
-    // same on an operator laptop and the CI runner.
-    found.sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
-    // The set is only valid as a SET: one JID may not be configured twice.
-    assertUniqueGroupIds(found.map((g) => ({ id: g.config.id, source: g.slug })));
-    return found;
-  }
-
   return {
-    list,
-
-    async get(slug) {
-      // Read through the LIST rather than GetParameter: the same one call answers "does it
-      // exist" and "what else is configured", which is what an edit has to check anyway.
-      const all = await list();
-      return all.find((g) => g.slug === slug) ?? null;
+    async list() {
+      const groups: StoredGroup[] = [];
+      const broken: BrokenParameter[] = [];
+      let token: string | undefined;
+      do {
+        const response = await client.send(
+          new GetParametersByPathCommand({
+            Path: GROUPS_PATH,
+            Recursive: false,
+            MaxResults: 10,
+            ...(token ? { NextToken: token } : {}),
+          }),
+        );
+        for (const parameter of response.Parameters ?? []) {
+          const name = childName(parameter);
+          if (name === '' || parameter.Value === undefined) continue;
+          try {
+            groups.push(toStored(name, parameter.Value));
+          } catch (error) {
+            if (!(error instanceof GroupConfigError)) throw error;
+            broken.push({ name, json: parameter.Value, reason: error.message });
+          }
+        }
+        token = response.NextToken;
+      } while (token);
+      // Byte order, not locale order: the list must read the same on an operator laptop
+      // and the CI runner.
+      groups.sort((a, b) => compare(a.slug, b.slug));
+      broken.sort((a, b) => compare(a.name, b.name));
+      return { groups, broken };
     },
 
     async put(slug, json) {

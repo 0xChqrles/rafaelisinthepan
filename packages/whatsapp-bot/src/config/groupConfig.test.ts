@@ -2,7 +2,13 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { GroupRegistry, PLACEHOLDER_GROUP_JID, parseGroupConfig, readGroupConfigs } from './groupConfig';
+import {
+  GroupRegistry,
+  PLACEHOLDER_GROUP_JID,
+  parseGroupConfig,
+  readGroupConfigs,
+  readGroupConfigsForSynth,
+} from './groupConfig';
 
 const valid = {
   id: '120363000000000001@g.us',
@@ -83,14 +89,43 @@ describe('group configuration (#236)', () => {
       expect((error as Error).message).not.toContain(valid.id);
     }
   });
+
+  it('never echoes a sender JID in a names error (it surfaces in public CI logs)', () => {
+    const sender = '33612345678@s.whatsapp.net';
+    for (const names of [
+      { 'abc@g.us': 'Zou' },
+      { [sender]: '' },
+      { [sender]: 'Z'.repeat(41) },
+    ]) {
+      try {
+        parseGroupConfig('x.json', { ...valid, names });
+        expect.unreachable();
+      } catch (error) {
+        const message = (error as Error).message;
+        expect(message).toMatch(/x\.json/);
+        expect(message).not.toContain(sender);
+        expect(message).not.toContain('abc@g.us');
+      }
+    }
+  });
 });
 
 describe('the snapshot directory (#236)', () => {
-  it('reads a directory of configs, and a MISSING one is empty rather than an error', () => {
+  it('reads a directory of configs; a MISSING one fails the runtime and is empty for synth', () => {
     const dir = mkdtempSync(join(tmpdir(), 'whippin-groups-'));
-    expect(readGroupConfigs(join(dir, 'never-pulled'))).toEqual([]);
+    const missing = join(dir, 'never-pulled');
+    // The runtime: a missing directory is a wrong BOT_GROUPS_DIR, and a bot that read it as
+    // "no groups" would boot healthy and ingest nothing. It says where it looked and how to
+    // fill it.
+    expect(() => readGroupConfigs(missing)).toThrow(/never-pulled.*bot:groups pull/);
+    // Synth: every cdk command constructs the bot stack, so an un-pulled checkout must
+    // still synthesize — as the empty set the stack warns about.
+    expect(readGroupConfigsForSynth(missing)).toEqual([]);
+    // An EMPTY directory is an empty set for both: `groups/local/` is always checked in.
+    expect(readGroupConfigs(dir)).toEqual([]);
     writeFileSync(join(dir, 'a.json'), JSON.stringify(valid));
     expect(readGroupConfigs(dir).map((g) => g.name)).toEqual(['Whippin FR']);
+    expect(readGroupConfigsForSynth(dir).map((g) => g.name)).toEqual(['Whippin FR']);
   });
 
   it('refuses two configs for ONE group, whether or not both are enabled', () => {

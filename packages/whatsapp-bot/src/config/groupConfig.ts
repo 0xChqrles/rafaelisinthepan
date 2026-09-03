@@ -178,16 +178,25 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
   const overrides: Record<string, string> = {};
   if (names !== undefined) {
     if (!isRecord(names)) fail(file, '"names" must be an object of JID -> name');
-    for (const [jid, label] of Object.entries(names)) {
-      if (!USER_JID.test(jid)) fail(file, `"names": "${jid}" is not a user JID`);
+    // The key IS a sender JID, so it never appears in an error: this message surfaces in
+    // synth/CI logs via `BrokenParameter.reason` and `readGroupConfigs`, which are readable
+    // beyond the operator (the duplicate-JID rule below). The entry index is what the
+    // operator counts to in `edit`.
+    const entries = Object.entries(names);
+    for (let i = 0; i < entries.length; i++) {
+      const [jid, label] = entries[i];
+      // COUNTED FROM ONE: this is a position a human counts to down the map in `edit`, and
+      // there the first entry is the first one.
+      const at = `entry ${i + 1}`;
+      if (!USER_JID.test(jid)) fail(file, `"names": ${at} is not a user JID`);
       if (typeof label !== 'string' || label.trim() === '') {
-        fail(file, `"names": the name for ${jid} must be a non-empty string`);
+        fail(file, `"names": ${at} must be a non-empty string`);
       }
       // The same bound a push name gets (`domain/names.ts`): an override lands in the same
       // podium lines and prompts, and a file is where a mistake should be loud.
       const trimmed = label.trim();
       if (!isBoundName(trimmed)) {
-        fail(file, `"names": the name for ${jid} must be one line of at most ${NAME_MAX_CHARS} characters`);
+        fail(file, `"names": ${at} must be one line of at most ${NAME_MAX_CHARS} characters`);
       }
       overrides[jid] = trimmed;
     }
@@ -257,12 +266,19 @@ export function assertUniqueGroupIds(configs: readonly { id: string; source: str
   }
 }
 
-// The snapshot directory. A MISSING one is empty, not an error: every `cdk synth` in this
-// repo constructs the bot stack, including the ones deploying the web or the backend, and
-// those must not require a pull. What guards against deploying an accidentally empty set is
-// the bot stack's own synth warning plus the pull step in `deploy.yml` — see bot-stack.ts.
+// The snapshot directory, as the RUNTIME reads it (the task at boot, the podium Lambda on
+// every invocation). A MISSING one is an ERROR here: the directory is named by
+// `BOT_GROUPS_DIR`, spelled once in the Dockerfile and once in the stack, and the two
+// drifting is exactly the case this has to catch — read as "no groups", the task boots,
+// reports connected, and silently ingests nothing, which no alarm watches. The throw makes
+// it a crash-loop the connected-gauge alarm does see. (An EMPTY directory is a legitimate
+// empty set: `groups/local/` is always present in a checkout.)
 export function readGroupConfigs(dir: string): GroupConfig[] {
-  if (!existsSync(dir)) return [];
+  if (!existsSync(dir)) {
+    throw new GroupConfigError(
+      `no group snapshot at ${dir} — run \`pnpm bot:groups pull\` (a deployment names it in BOT_GROUPS_DIR).`,
+    );
+  }
   const files = readdirSync(dir)
     .filter((f) => f.endsWith('.json'))
     .sort();
@@ -277,6 +293,16 @@ export function readGroupConfigs(dir: string): GroupConfig[] {
   });
   assertUniqueGroupIds(configs.map((c, i) => ({ id: c.id, source: files[i] })));
   return configs;
+}
+
+// The same directory as SYNTH reads it, where a MISSING one is legitimately empty: every
+// `cdk synth` in this repo constructs the bot stack, including the ones deploying the web
+// or the backend, and those must not require a pull. What guards against deploying an
+// accidentally empty set is the bot stack's own synth warning plus the pull step in
+// `deploy.yml` — see bot-stack.ts. Its name says who it is for: nothing that RUNS may read
+// through it.
+export function readGroupConfigsForSynth(dir: string): GroupConfig[] {
+  return existsSync(dir) ? readGroupConfigs(dir) : [];
 }
 
 export function loadGroups(dir: string): GroupRegistry {
