@@ -1537,11 +1537,17 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
     the client already holds: unsaved, leaving DESTROYS this account; SAVED, leaving is
     reversible (*SIGN IN TO ANOTHER ACCOUNT*), because the account stays reachable by its own
     address. It is held back until the summary settles, the same explicit-loading rule the
-    action above it follows. **The address step states the COST only when there is one**
-    (user-decided 2026-08-28): the reversible case said *"You can come back to this one
-    anytime"* there and it was cut — no decision is pending on that step, so a reassurance
-    about a consequence nobody has met yet is noise. It is said where it is load-bearing
-    instead, on the switch confirmation, which IS a decision. **RECONNECT now lands on `/account/signin`** — a signed-out
+    action above it follows. **The address step states NO COST at all** (user-decided
+    2026-09-03, completing a cut begun 2026-08-28): the reversible case went first
+    (*"You can come back to this one anytime"*) and the irreversible one followed
+    (*"This device's account will be replaced."* / *"Le compte de cet appareil sera
+    remplacé."*). One reasoning covers both halves — no decision is pending on the address
+    step, so a consequence stated there is met before there is anything to answer with. The
+    stakes are said on the CROSSROADS instead, which IS the decision, and which the server
+    refuses to pass without (`would_erase` / `would_switch`). **What this does NOT change,
+    and it is worth naming:** that dialog is still gated on `stakes.days > 0`, so a player
+    with no solved day meets no statement of the cost anywhere at all — the open item
+    already flagged at the end of this section, now with nothing in front of it. **RECONNECT now lands on `/account/signin`** — a signed-out
     player is a returning player by definition, and the SAVE door's every word is about
     keeping an account they no longer hold.
   - **THE WORDLESS TELL IS THE FACE, and there is deliberately NO SECOND INK**
@@ -2341,8 +2347,9 @@ publish/inventory/backend:dev (backend), dev/build (web), cdk synth/diff/deploy
   and the HMAC-of-IP rows the #169 volume floor and #204's send meter write. **Changing what
   the server stores — a new field, a new third party, a changed retention — is a change to
   that file**, which is the one place the game makes a promise about any of it. It is
-  reachable from `/account` and from the email flow's address step, and it is what the SES
-  production-access review is pointed at.
+  reachable from `/account` — its ONE door since 2026-09-03 (user-decided): the email flow's
+  address step carried a second one, *WHAT WE DO WITH IT* / *CE QU'ON EN FAIT*, cut together
+  with that step's cost line. It is what the SES production-access review is pointed at.
 
 - **CI/CD (#33):** two GitHub Actions workflows under `.github/workflows/`
   (docs in `.github/workflows/README.md`). `ci.yml` — on PRs into `main` or `dev` and pushes to both (the `dev`

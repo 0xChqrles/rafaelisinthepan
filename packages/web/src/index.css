@@ -5322,6 +5322,14 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The name's box while the face is still out. It wears the NAME's own class and holds one
+   blank character, so its line box is the one the name will take and the height is not a
+   number anybody has to keep in step — only the WIDTH is a guess, and the stack is centred,
+   so a wrong guess there moves nothing. */
+.account-hero-name.skeleton {
+  width: 8em;
+  max-width: 60%;
+}
 
 /* THE ACCOUNT'S THREE NUMBERS (user-decided 2026-08-28) — the live STREAK, the BEST it has
    ever held, and the total DAYS, across every supported language. A three-up row of equal
@@ -5641,18 +5649,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   border-color: transparent;
 }
 .btn + .link-quiet-btn:hover:not(:disabled) {
-  border-color: transparent;
-}
-/* THE SAME RULE, one wrapper further out. The bare dress belongs to a quiet control that
-   FOLLOWS the screen's action rather than standing as an alternative to it — the crossroads'
-   CANCEL — and the address step's privacy control is exactly that: it sits under CONTINUE,
-   and boxed it read as a second button competing with the lit one. The adjacency above
-   cannot reach it, because it lives in the centring `.link-quiet` row (with the cost and
-   refusal captions between them on the door that shows one), so it says so itself. */
-.link-aside {
-  border-color: transparent;
-}
-.link-aside:hover:not(:disabled) {
   border-color: transparent;
 }
 /* A CONTROL THAT IS NOT A CONTROL YET LOSES ITS BOX (2026-08-30). RESEND spends its first

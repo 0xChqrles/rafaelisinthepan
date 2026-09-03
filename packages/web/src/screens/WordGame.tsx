@@ -409,9 +409,18 @@ function WordRound({
   // The post-mortem's scroller. It arrives parked at the bottom, where the closest words
   // sit next to the pinned day's word below it — the grid is read up from that end.
   // Nothing scrolls it during play: there IS no board during play.
-  const scrollRef = useRef<HTMLDivElement>(null);
+  //
+  // THE NODE IS STATE, NOT A REF (2026-09-03). `postMortem` can be true before this element
+  // exists, and on a RELOAD of a finished day it always is: `settled` is read off the LOCAL
+  // persisted run (#214 kept Word mode's), so the post-mortem is the opening frame, while
+  // `roundLoad` is still out and the screen is the loading branch above. The effect then ran
+  // at mount against a null ref, bailed, and never ran again — its one dependency never
+  // changed after that — so the grid sat at the TOP for the rest of the visit, on the one
+  // path where the beats that used to rescue it (the keyboard dropping, the result rising)
+  // never happen. Keying it on the NODE runs it when the scroller actually mounts, whatever
+  // gated it, and needs no dependency on the gate itself.
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   useLayoutEffect(() => {
-    const scroller = scrollRef.current;
     if (!scroller || !postMortem) return undefined;
     // Parked at the bottom — and KEPT there while the ending's beats resize the window
     // around it (the keyboard drops, the result rises), until the player takes the wheel.
@@ -432,7 +441,7 @@ function WordRound({
       scroller.removeEventListener('wheel', unpark);
       scroller.removeEventListener('pointerdown', unpark);
     };
-  }, [postMortem]);
+  }, [postMortem, scroller]);
 
   // Same prefix rule as the sentence game: a dead-end char shakes the prompt instead of
   // being silently dropped (physical typing has no greyed key to look at). Read off the
@@ -592,7 +601,7 @@ function WordRound({
           run and the reveal. */}
       <div className={`word-window${postMortem ? ' wb-open' : ''}`}>
         {postMortem && (
-          <div className="word-scroll pixel-scroll" ref={scrollRef}>
+          <div className="word-scroll pixel-scroll" ref={setScroller}>
             <WordBoard model={board} lang={lang} />
             {/* The day's word is the grid's LAST row (user-decided 2026-09-01: "the
                 starting word should be in the scrollable view too"): parked at the bottom
