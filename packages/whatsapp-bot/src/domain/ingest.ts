@@ -44,14 +44,32 @@ export function createIngest(deps: IngestDeps) {
   const now = deps.now ?? (() => new Date());
   const wait = deps.wait ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms)));
 
-  async function recordWithRetry(declaration: Declaration) {
+  // Every write on this path gets the same short backoff: the durable row, and the
+  // commands that acknowledge it. A transient refusal from either store is not a reason to
+  // lose a share, or to lose the emoji a recorded share was owed.
+  async function withRetry<T>(write: () => Promise<T>): Promise<T> {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        return await deps.declarations.record(declaration);
+        return await write();
       } catch (error) {
         if (attempt + 1 >= WRITE_ATTEMPTS) throw error;
         await wait(200 * 2 ** attempt * (0.5 + Math.random()));
       }
+    }
+  }
+
+  // The acknowledgement is queued AFTER the row is durable, and its failure is its own:
+  // the share is recorded and on the podium whatever happens here, so a queue that
+  // refuses for good costs the emoji or the line, logged, and never the outcome — an
+  // `ingest` that threw past a recorded share would report a loss that did not happen.
+  async function enqueue(command: OutboundCommand, group: string) {
+    try {
+      await withRetry(() => deps.outbound.enqueue(command));
+    } catch (error) {
+      deps.log.error(
+        { event: 'outbound.enqueue_failed', group: tag(group), kind: command.kind, error: (error as Error).message },
+        'could not queue an acknowledgement; the share itself is recorded',
+      );
     }
   }
 
@@ -94,7 +112,7 @@ export function createIngest(deps: IngestDeps) {
       };
       let result;
       try {
-        result = await recordWithRetry(declaration);
+        result = await withRetry(() => deps.declarations.record(declaration));
       } catch (error) {
         deps.log.error(
           {
@@ -168,16 +186,19 @@ export function createIngest(deps: IngestDeps) {
       null,
     );
     if (group.reactions && message.live && best) {
-      await deps.outbound.enqueue({
-        id: commandIds.reaction(group.id, message.id),
-        kind: 'reaction',
-        group: group.id,
-        target: { id: message.id, participant: message.sender },
-        emoji: reactionFor(best.score, best.capped),
-      });
+      await enqueue(
+        {
+          id: commandIds.reaction(group.id, message.id),
+          kind: 'reaction',
+          group: group.id,
+          target: { id: message.id, participant: message.sender },
+          emoji: reactionFor(best.score, best.capped),
+        },
+        group.id,
+      );
     }
     // After the reaction, so the acknowledgement lands before the commentary.
-    for (const announcement of announcements) await deps.outbound.enqueue(announcement);
+    for (const announcement of announcements) await enqueue(announcement, group.id);
     return failed ? 'failed' : outcome;
   };
 }

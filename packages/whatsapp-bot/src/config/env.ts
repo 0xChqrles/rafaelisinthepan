@@ -39,8 +39,15 @@ function sourceGroupsDir(): string {
   return fileURLToPath(new URL('../../groups', import.meta.url));
 }
 
+export const DEFAULT_DAILY_CALL_CEILING = 500;
+
 export function loadEnv(env: NodeJS.ProcessEnv = process.env): BotEnv {
-  const ceiling = Number(env.BOT_LLM_DAILY_CALL_CEILING ?? 500);
+  // An EMPTY value is unset, as it is for every other knob here — `Number('')` is 0, which
+  // passes the check below and silences every model reply while the per-user and
+  // per-group quotas keep being spent, and an empty variable is the easiest thing to
+  // leave behind in a task definition.
+  const rawCeiling = env.BOT_LLM_DAILY_CALL_CEILING?.trim();
+  const ceiling = rawCeiling ? Number(rawCeiling) : DEFAULT_DAILY_CALL_CEILING;
   if (!Number.isFinite(ceiling) || ceiling < 0) {
     throw new Error('BOT_LLM_DAILY_CALL_CEILING must be a non-negative number.');
   }

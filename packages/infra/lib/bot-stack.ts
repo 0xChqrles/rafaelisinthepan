@@ -107,9 +107,13 @@ export class BotStack extends Stack {
     // DLQ, which is alarmed — a podium that could not go out must not vanish quietly.
     //
     // Five is a count of REAL failures, not of disconnected polls: the consumer does not
-    // receive at all while the socket is down (`runConsumer`'s ready gate), so a
-    // reconnection does not spend a message's deliveries and push a perfectly good podium
-    // into the dead-letter queue while the disconnection alarm is already ringing.
+    // receive at all while the socket is down (`runConsumer`'s ready gate), and a message
+    // already in hand when the socket drops is hidden for `DEFER_SECONDS` (five minutes)
+    // rather than left to this timeout — so a reconnection does not spend a message's
+    // deliveries and push a perfectly good podium into the dead-letter queue while the
+    // disconnection alarm is already ringing. Five deferrals span about 25 minutes; a
+    // disconnection longer than that is the alarm's business, and the message's arrival
+    // in the DLQ then says a podium was missed, which is true.
     const deadLetter = new sqs.Queue(this, 'OutboundDlq', {
       retentionPeriod: Duration.days(14),
       enforceSSL: true,

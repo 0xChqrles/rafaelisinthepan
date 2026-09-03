@@ -3,7 +3,7 @@ import { GroupRegistry, parseGroupConfig } from '../config/groupConfig';
 import { createLog, redactJids, type Log } from '../log';
 import { commandIds, parseCommand, type OutboundCommand } from './commands';
 import { memorySentStore } from './dedupStore';
-import { createDispatcher, runConsumer } from './dispatcher';
+import { DEFER_SECONDS, createDispatcher, runConsumer } from './dispatcher';
 
 const GROUP = '120363000000000001@g.us';
 const groups = new GroupRegistry([
@@ -113,7 +113,7 @@ describe('outbound dispatcher (#236)', () => {
     const abort = new AbortController();
     let open = false;
     const consumer = runConsumer(
-      { receive, settle: async () => {} },
+      { receive, settle: async () => {}, defer: async () => {} },
       { dispatch: async () => 'sent' as const },
       log,
       abort.signal,
@@ -127,4 +127,31 @@ describe('outbound dispatcher (#236)', () => {
     abort.abort();
     await consumer;
   }, 10_000);
+
+  it('HIDES a command deferred in hand rather than letting it burn deliveries', async () => {
+    // The socket dropped between the receive and the send: the gate could not help, and a
+    // 60-second visibility timeout would redeliver it into the DLQ within five minutes.
+    let delivered = false;
+    const receive = vi.fn(async () => {
+      if (delivered) return [];
+      delivered = true;
+      return [{ body: JSON.stringify(podium()), receipt: 'R1' }];
+    });
+    const settle = vi.fn(async () => {});
+    const defer = vi.fn(async () => {});
+    const abort = new AbortController();
+    const consumer = runConsumer(
+      { receive, settle, defer },
+      { dispatch: async () => 'deferred' as const },
+      log,
+      abort.signal,
+    );
+    await new Promise((r) => setTimeout(r, 100));
+    abort.abort();
+    await consumer;
+    expect(settle).not.toHaveBeenCalled();
+    expect(defer).toHaveBeenCalledWith('R1', DEFER_SECONDS);
+    // Long enough that five deliveries outlast any reconnection backoff several times over.
+    expect(DEFER_SECONDS * 5).toBeGreaterThanOrEqual(20 * 60);
+  });
 });

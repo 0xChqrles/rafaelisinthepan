@@ -126,10 +126,15 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   improvement and on a REPLAY, so history cannot make a later share announce a lead it does
   not hold; only a change of HOLDER is announced, read from what the write DISPLACED rather
   than from a stale read (`leader.ts` says why). A claim that fails is logged and dropped —
-  the announcement is decoration, the acknowledgement is not. **The consumer does not
+  the announcement is decoration, the acknowledgement is not — so its ENQUEUE is retried
+  like the durable write, and a queue that refuses for good costs the emoji, logged, never
+  the outcome: the share is recorded either way. **The consumer does not
   receive while the socket is down**: a redelivery counts against the queue's
   `maxReceiveCount`, so pulling what cannot be sent turns a reconnection into a
-  dead-letter alarm.
+  dead-letter alarm. The one message the gate cannot cover — already in hand when the
+  socket drops — is DEFERRED (`ChangeMessageVisibility`, `DEFER_SECONDS` = 5 min) rather
+  than left to the 60-second timeout, so five deliveries span ~25 minutes of outage
+  instead of five.
 - **Conversation is opt-in per message**: mention, reply-to-bot, or a leading `chat.name`.
   Nothing else reaches the model. **Only the BOT's mention is addressing**: everybody else's
   is part of the question, and is replaced by the name the group uses (the tool runner's

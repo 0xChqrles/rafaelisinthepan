@@ -20,6 +20,15 @@ export type DispatchOutcome = 'sent' | 'duplicate' | 'dropped' | 'deferred';
 // What the consumer waits when there is nothing to do — negligible beside a 20-second
 // long poll, and the difference between a paced loop and a hot one.
 const IDLE_MS = 250;
+// How long a DEFERRED command stays hidden. The ready gate below keeps the consumer from
+// pulling while the socket is down, but a socket can drop between a receive and its send,
+// and the message in hand is then a command nothing was wrong with. Left to its ordinary
+// visibility timeout (60s) it would come back, be deferred again, and reach the queue's
+// `maxReceiveCount` inside five minutes — a dead-letter alarm on top of the disconnection
+// alarm already ringing. Hidden for this long instead, five deliveries span the better
+// part of half an hour, and a podium it delays lands a few minutes late in the one race
+// where it can happen at all.
+export const DEFER_SECONDS = 300;
 
 export interface Dispatcher {
   dispatch(body: string): Promise<DispatchOutcome>;
@@ -74,7 +83,9 @@ export function createDispatcher(deps: {
 }
 
 // The consumer loop: runs until `stop()` resolves the signal. A deferred command (socket
-// closed) is left unsettled so the queue redelivers it once the connection is back.
+// closed between the receive and the send) is left unsettled and HIDDEN for
+// `DEFER_SECONDS`, so the queue brings it back without spending its deliveries on a
+// connection that is simply not there yet.
 export function runConsumer(
   source: CommandSource,
   dispatcher: Dispatcher,
@@ -90,6 +101,8 @@ export function runConsumer(
       // `maxReceiveCount` — so a few minutes of disconnection would push a podium into the
       // dead-letter queue, raising ITS alarm on top of the disconnection alarm already
       // firing, for a message nothing was wrong with. Waiting leaves the work in the queue.
+      // What the gate cannot cover is the message already in hand when the socket drops;
+      // that one is deferred (below) rather than left to its short visibility timeout.
       if (!ready()) {
         await new Promise((r) => setTimeout(r, 1_000));
         continue;
@@ -113,7 +126,8 @@ export function runConsumer(
       for (const item of batch) {
         try {
           const outcome = await dispatcher.dispatch(item.body);
-          if (outcome !== 'deferred') await source.settle(item.receipt);
+          if (outcome === 'deferred') await source.defer(item.receipt, DEFER_SECONDS);
+          else await source.settle(item.receipt);
         } catch (error) {
           // Transient: leave the message for redelivery.
           log.error({ event: 'outbound.dispatch_failed', error: (error as Error).message });

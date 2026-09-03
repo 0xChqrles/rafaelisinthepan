@@ -189,6 +189,43 @@ describe('share ingestion (#236)', () => {
     expect(sent).toHaveLength(1);
   });
 
+  it('retries a refused acknowledgement, and a lost one never un-records the share', async () => {
+    const declarations = memoryDeclarationStore();
+    const sent: OutboundCommand[] = [];
+    const enqueue = vi
+      .fn<(c: OutboundCommand) => Promise<void>>()
+      .mockRejectedValueOnce(new Error('sqs 503'))
+      .mockImplementation(async (c) => void sent.push(c));
+    const ingest = createIngest({
+      groups: registry(),
+      declarations,
+      outbound: { enqueue },
+      leaders: memoryLeaderStore(),
+      siteOrigin: ORIGIN,
+      log: createLog('silent'),
+      wait: async () => {},
+    });
+    expect(await ingest(message())).toBe('recorded');
+    expect(enqueue).toHaveBeenCalledTimes(2);
+    expect(sent).toHaveLength(1);
+
+    // The queue refuses for good: the row is durable and the outcome says so — the emoji
+    // is what was lost, not the share.
+    const dead = createIngest({
+      groups: registry(),
+      declarations,
+      outbound: { enqueue: vi.fn().mockRejectedValue(new Error('sqs down')) },
+      leaders: memoryLeaderStore(),
+      siteOrigin: ORIGIN,
+      log: createLog('silent'),
+      wait: async () => {},
+    });
+    expect(await dead(message({ id: 'M2', timestamp: 1_001, text: `${ORIGIN}/s/${token(4)}` }))).toBe(
+      'recorded',
+    );
+    expect((await declarations.day(GROUP, DAY))[0].score).toBe(4);
+  });
+
   it('a failed write for one day still records the other day in the same message', async () => {
     const declarations = memoryDeclarationStore();
     const record = vi.fn((d: Parameters<typeof declarations.record>[0]) =>

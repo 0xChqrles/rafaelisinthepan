@@ -16,4 +16,13 @@ describe('the in-process outbound queue (local dry runs)', () => {
     await queue.settle(first[0].receipt);
     expect(await queue.receive()).toEqual([]);
   }, 10_000);
+
+  it('a deferred command stays hidden for its window, then comes back', async () => {
+    const queue = memoryOutbound();
+    await queue.enqueue(command);
+    const [first] = await queue.receive();
+    await queue.defer(first.receipt, 0.8);
+    expect(await queue.receive()).toEqual([]); // ~500ms in: still hidden
+    expect((await queue.receive()).map((m) => m.body)).toEqual([first.body]); // ~1s: back
+  }, 10_000);
 });

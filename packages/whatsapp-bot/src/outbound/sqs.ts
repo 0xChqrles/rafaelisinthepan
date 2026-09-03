@@ -4,6 +4,7 @@
 // leaves the message to reappear after its visibility timeout — SQS's own retry.
 
 import {
+  ChangeMessageVisibilityCommand,
   DeleteMessageCommand,
   ReceiveMessageCommand,
   SendMessageCommand,
@@ -29,6 +30,10 @@ export interface QueuedBody {
 export interface CommandSource {
   receive(): Promise<QueuedBody[]>;
   settle(receipt: string): Promise<void>;
+  // Hide a received message for `seconds` instead of letting its visibility timeout bring
+  // it straight back. A command the socket cannot carry right now is not a failed delivery,
+  // and every redelivery counts toward the dead-letter queue (dispatcher.ts says why).
+  defer(receipt: string, seconds: number): Promise<void>;
 }
 
 export function sqsCommandSource(client: SQSClient, queueUrl: string): CommandSource {
@@ -48,6 +53,15 @@ export function sqsCommandSource(client: SQSClient, queueUrl: string): CommandSo
     async settle(receipt) {
       await client.send(new DeleteMessageCommand({ QueueUrl: queueUrl, ReceiptHandle: receipt }));
     },
+    async defer(receipt, seconds) {
+      await client.send(
+        new ChangeMessageVisibilityCommand({
+          QueueUrl: queueUrl,
+          ReceiptHandle: receipt,
+          VisibilityTimeout: seconds,
+        }),
+      );
+    },
   };
 }
 
@@ -58,7 +72,8 @@ export function sqsCommandSource(client: SQSClient, queueUrl: string): CommandSo
 // queue exists to keep.
 export function memoryOutbound(): OutboundQueue & CommandSource {
   const pending: QueuedBody[] = [];
-  const inFlight = new Map<string, QueuedBody>();
+  // Received and not settled, each with the instant it becomes visible again.
+  const inFlight = new Map<string, { item: QueuedBody; visibleAt: number }>();
   let n = 0;
   const idle = () => new Promise((r) => setTimeout(r, 500));
   return {
@@ -66,18 +81,23 @@ export function memoryOutbound(): OutboundQueue & CommandSource {
       pending.push({ body: JSON.stringify(command), receipt: String((n += 1)) });
     },
     async receive() {
-      // Anything received and not settled comes back first, in order.
+      // Anything received and not settled comes back first, in order — once visible.
       if (inFlight.size > 0) {
         await idle();
-        return [...inFlight.values()];
+        const now = Date.now();
+        return [...inFlight.values()].filter((f) => f.visibleAt <= now).map((f) => f.item);
       }
       const batch = pending.splice(0, 5);
       if (batch.length === 0) await idle();
-      for (const item of batch) inFlight.set(item.receipt, item);
+      for (const item of batch) inFlight.set(item.receipt, { item, visibleAt: 0 });
       return batch;
     },
     async settle(receipt) {
       inFlight.delete(receipt);
+    },
+    async defer(receipt, seconds) {
+      const held = inFlight.get(receipt);
+      if (held) held.visibleAt = Date.now() + seconds * 1_000;
     },
   };
 }

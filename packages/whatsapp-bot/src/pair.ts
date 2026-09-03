@@ -31,6 +31,13 @@ async function main(): Promise<void> {
   const dynamo = new DynamoDBClient({});
   const phone = flag('--phone');
   const reset = process.argv.includes('--reset');
+  // Checked BEFORE the lease and the socket: a malformed number only ever surfaces as a
+  // `pairing.failed` log from inside the connection, while the CLI sits on its five-minute
+  // deadline waiting for a pairing that was never requested.
+  if (phone !== undefined && !/^\d{6,15}$/.test(phone)) {
+    console.error('usage: pnpm bot:pair [--phone <digits only, country code first, no +>] [--reset]');
+    process.exit(2);
+  }
 
   const lease = await acquireLease(dynamo, env.table, 'pair');
   if (!lease) {
