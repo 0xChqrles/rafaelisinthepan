@@ -14,7 +14,7 @@ import { SQSClient } from '@aws-sdk/client-sqs';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { SSMClient } from '@aws-sdk/client-ssm';
 import { activeDate, dayNumber } from '@whippin/shared';
-import { BOT_REGION, loadEnv } from './config/env';
+import { botRegion, loadEnv } from './config/env';
 import { loadGroups, type GroupRegistry } from './config/groupConfig';
 import { parseDay } from './domain/day';
 import { inLanguage, type DeclarationStore } from './domain/declarations';
@@ -99,17 +99,17 @@ async function buildDeps(): Promise<PodiumJobDeps> {
   const log = createLog();
   const env = loadEnv();
   if (!env.outboundQueueUrl) throw new Error('BOT_OUTBOUND_QUEUE_URL env var is required.');
-  const dynamo = new DynamoDBClient({ region: BOT_REGION });
+  const dynamo = new DynamoDBClient({ region: botRegion() });
   let provider: LlmProvider | null = null;
   try {
-    provider = await createLlmProvider(env.llm, () => new SSMClient({ region: BOT_REGION }));
+    provider = await createLlmProvider(env.llm, () => new SSMClient({ region: botRegion() }));
   } catch (error) {
     log.error({ event: 'llm.unconfigured', error: (error as Error).message }, 'podium without comments');
   }
   return {
     groups: loadGroups(env.groupsDir),
     declarations: dynamoDeclarationStore(dynamo, env.table),
-    outbound: sqsOutboundQueue(new SQSClient({ region: BOT_REGION }), env.outboundQueueUrl),
+    outbound: sqsOutboundQueue(new SQSClient({ region: botRegion() }), env.outboundQueueUrl),
     provider,
     log,
   };

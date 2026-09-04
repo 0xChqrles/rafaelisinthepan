@@ -22,7 +22,7 @@ import { RecentContext } from './chat/context';
 import { dynamoLimitStore } from './chat/limits';
 import { dynamoMemoryStore } from './chat/memory';
 import { addressedTo } from './chat/trigger';
-import { BOT_REGION, loadEnv } from './config/env';
+import { botRegion, loadEnv } from './config/env';
 import { loadGroups } from './config/groupConfig';
 import { dynamoDeclarationStore } from './domain/dynamoDeclarationStore';
 import { createIngest } from './domain/ingest';
@@ -34,7 +34,7 @@ import { commandIds, type OutboundQueue } from './outbound/commands';
 import { dynamoSentStore } from './outbound/dedupStore';
 import { createDispatcher, runConsumer } from './outbound/dispatcher';
 import { memoryOutbound, sqsCommandSource, sqsOutboundQueue, type CommandSource } from './outbound/sqs';
-import { markAuthInvalidated, readAuthStatus, useDynamoAuthState } from './whatsapp/authStore';
+import { hasPairedDevice, markAuthInvalidated, readAuthStatus, useDynamoAuthState } from './whatsapp/authStore';
 import { connectWhatsApp } from './whatsapp/client';
 import { acquireLease, keepLease, type LeaseKeeper } from './whatsapp/lease';
 import { startConnectedMetric } from './whatsapp/metrics';
@@ -59,8 +59,8 @@ async function main(): Promise<void> {
   const groups = loadGroups(env.groupsDir);
   log.info({ event: 'boot', groups: groups.all().map((g) => tag(g.id)) }, 'starting');
 
-  const dynamo = new DynamoDBClient({ region: BOT_REGION });
-  const ssm = () => new SSMClient({ region: BOT_REGION });
+  const dynamo = new DynamoDBClient({ region: botRegion() });
+  const ssm = () => new SSMClient({ region: botRegion() });
   // DECLARED BEFORE the gauge that reads it: `startConnectedMetric` publishes its first
   // point synchronously, so a `let` below this line puts that read in its temporal dead
   // zone — the throw lands in the publisher's own catch and the first tick is lost as a
@@ -97,14 +97,14 @@ async function main(): Promise<void> {
   });
 
   const auth = await useDynamoAuthState(dynamo, env.table);
-  if (!auth.state.creds.registered) {
+  if (!hasPairedDevice(auth.state.creds)) {
     log.error({ event: 'auth.unpaired' }, 'no paired device in the durable store; run `pnpm bot:pair`');
     // Stopped BEFORE the release, or the next renew would take back the lease this idle
     // process has just given up.
     keeper.stop();
     await lease.release();
     await idleUntilOperator(
-      async () => (await useDynamoAuthState(dynamo, env.table)).state.creds.registered,
+      async () => hasPairedDevice((await useDynamoAuthState(dynamo, env.table)).state.creds),
       log,
     );
     return;
@@ -112,10 +112,10 @@ async function main(): Promise<void> {
 
   const declarations = dynamoDeclarationStore(dynamo, env.table);
   const outbound: OutboundQueue & Partial<CommandSource> = env.outboundQueueUrl
-    ? sqsOutboundQueue(new SQSClient({ region: BOT_REGION }), env.outboundQueueUrl)
+    ? sqsOutboundQueue(new SQSClient({ region: botRegion() }), env.outboundQueueUrl)
     : memoryOutbound();
   const source: CommandSource = env.outboundQueueUrl
-    ? sqsCommandSource(new SQSClient({ region: BOT_REGION }), env.outboundQueueUrl)
+    ? sqsCommandSource(new SQSClient({ region: botRegion() }), env.outboundQueueUrl)
     : (outbound as CommandSource);
   if (!env.outboundQueueUrl) log.warn({ event: 'outbound.local' }, 'no BOT_OUTBOUND_QUEUE_URL: in-process outbound queue');
 

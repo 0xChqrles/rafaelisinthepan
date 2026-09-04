@@ -9,17 +9,17 @@
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { dynamoMemoryStore } from './chat/memory';
-import { BOT_REGION, loadEnv } from './config/env';
+import { botRegion, loadEnv } from './config/env';
 import { GROUP_JID, USER_JID } from './config/groupConfig';
 import { createLog } from './log';
-import { useDynamoAuthState } from './whatsapp/authStore';
+import { hasPairedDevice, useDynamoAuthState } from './whatsapp/authStore';
 import { connectWhatsApp } from './whatsapp/client';
 import { acquireLease, keepLease } from './whatsapp/lease';
 
 async function listGroups(): Promise<void> {
   const log = createLog('warn');
   const env = loadEnv();
-  const dynamo = new DynamoDBClient({ region: BOT_REGION });
+  const dynamo = new DynamoDBClient({ region: botRegion() });
   const lease = await acquireLease(dynamo, env.table, 'cli');
   if (!lease) {
     console.error('Another process holds the WhatsApp session (the Fargate task?). Stop it first.');
@@ -47,7 +47,7 @@ async function listGroups(): Promise<void> {
   // inside the block, because an exit skips the finally that does the handing back.
   try {
     const auth = await useDynamoAuthState(dynamo, env.table);
-    if (!auth.state.creds.registered) {
+    if (!hasPairedDevice(auth.state.creds)) {
       console.error('No paired device. Run `pnpm bot:pair` first.');
       process.exitCode = 1;
       return;
@@ -85,7 +85,7 @@ async function forget(group: string | undefined, player: string | undefined): Pr
     process.exit(2);
   }
   const env = loadEnv();
-  await dynamoMemoryStore(new DynamoDBClient({ region: BOT_REGION }), env.table).forget(group, player);
+  await dynamoMemoryStore(new DynamoDBClient({ region: botRegion() }), env.table).forget(group, player);
   console.log('Forgotten.');
 }
 

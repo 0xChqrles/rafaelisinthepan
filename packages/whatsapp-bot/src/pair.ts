@@ -12,9 +12,9 @@
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import qrcode from 'qrcode-terminal';
-import { BOT_REGION, loadEnv } from './config/env';
+import { botRegion, loadEnv } from './config/env';
 import { createLog } from './log';
-import { clearAuthInvalidated, useDynamoAuthState } from './whatsapp/authStore';
+import { hasPairedDevice, clearAuthInvalidated, useDynamoAuthState } from './whatsapp/authStore';
 import { connectWhatsApp } from './whatsapp/client';
 import { acquireLease, keepLease } from './whatsapp/lease';
 
@@ -28,7 +28,7 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 async function main(): Promise<void> {
   const log = createLog();
   const env = loadEnv({ ...process.env, BOT_TABLE: process.env.BOT_TABLE });
-  const dynamo = new DynamoDBClient({ region: BOT_REGION });
+  const dynamo = new DynamoDBClient({ region: botRegion() });
   const phone = flag('--phone');
   const reset = process.argv.includes('--reset');
   // Checked BEFORE the lease and the socket: a malformed number only ever surfaces as a
@@ -65,7 +65,7 @@ async function main(): Promise<void> {
   // finally that does the handing back.
   try {
     let auth = await useDynamoAuthState(dynamo, env.table);
-    if (auth.state.creds.registered && !reset) {
+    if (hasPairedDevice(auth.state.creds) && !reset) {
       console.log('A paired device is already stored. Re-run with --reset to pair again.');
       return;
     }
