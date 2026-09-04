@@ -37,8 +37,10 @@ export const REPLY_MAX_CHARS = 700;
 const REPLY_MAX_TOKENS = 2000;
 
 // What a TENTATIVE message's model answer says when the message was not for the bot. Read
-// off the RAW text, before `plainReply` strips the underscore.
-const NO_REPLY = /^\W*NO_REPLY\b/i;
+// off the RAW text, before `plainReply` strips the underscore. The leading class and the
+// lookahead treat `_` as a separator (unlike `\W`/`\b`, which see it as a word char), so
+// markdown-wrapped declines (`_NO_REPLY_`, `**NO_REPLY**`) still match.
+const NO_REPLY = /^[\W_]*NO_REPLY(?![A-Za-z0-9])/i;
 
 export interface AgentDeps {
   provider: LlmProvider;

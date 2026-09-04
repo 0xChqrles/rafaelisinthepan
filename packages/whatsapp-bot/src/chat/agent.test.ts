@@ -172,18 +172,20 @@ describe('addressed conversation (#236)', () => {
   it('a TENTATIVE message is offered to the model, which may decline it — for free', async () => {
     // Not aimed at the bot, merely the first thing said after its own line. The model is
     // told so; NO_REPLY is silence, and a declined follow-up spends nobody's day of
-    // questions (the ceiling here is two): three declines, then a real question still gets
+    // questions (the ceiling here is two): five declines, then a real question still gets
     // its answer.
     const { provider, requests } = scripted([
       () => ({ text: 'NO_REPLY' }),
       () => ({ text: 'no_reply.' }),
       () => ({ text: ' NO_REPLY\n' }),
+      () => ({ text: '_NO_REPLY_' }),
+      () => ({ text: '**NO_REPLY**' }),
       () => ({ text: 'de rien' }),
     ]);
     const context = new RecentContext();
     const answer = agentWith(provider, { context });
     const follow = (text: string, id: string) => message(text, { id, mentions: [] });
-    for (const [i, text] of ['ok', 'lol', 'bon'].entries()) {
+    for (const [i, text] of ['ok', 'lol', 'bon', 'hein', 'quoi'].entries()) {
       expect(await answer(follow(text, `F${i}`), group, identity, TODAY, { tentative: true })).toEqual({
         kind: 'silent',
         reason: 'not_for_me',
@@ -193,7 +195,7 @@ describe('addressed conversation (#236)', () => {
     expect(requests[0].system).toContain('NO_REPLY');
     // Declined: not a turn the agent records (main.ts remembers it as chatter instead).
     expect(context.recent(GROUP, new Date('2026-09-03T12:00:00Z').getTime())).toEqual([]);
-    expect(await answer(follow('merci', 'F3'), group, identity, TODAY, { tentative: true })).toEqual({
+    expect(await answer(follow('merci', 'F5'), group, identity, TODAY, { tentative: true })).toEqual({
       kind: 'reply',
       text: 'de rien',
     });
@@ -201,7 +203,7 @@ describe('addressed conversation (#236)', () => {
     expect(context.recent(GROUP, new Date('2026-09-03T12:00:00Z').getTime()).map((t) => t.text)).toEqual(['merci', 'de rien']);
     // A message aimed at the bot is never told it might not be.
     await answer(message('@33700000000 et hier ?', { id: 'Q' }), group, identity, TODAY);
-    expect(requests[4].system).not.toContain('NO_REPLY');
+    expect(requests[6].system).not.toContain('NO_REPLY');
   });
 
   it('a tentative reply still honours the ceilings, charged once the model has answered', async () => {
