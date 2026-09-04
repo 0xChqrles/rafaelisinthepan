@@ -497,6 +497,28 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   arbitrary text its owner chose, and it lands in a podium line, a tool answer and a prompt.
   ONE bound for both sources: the config parser refuses an operator override the bound
   would change, and `displayName` applies it to whichever name it resolves regardless.
+- **THE PODIUM LAMBDA'S BUNDLE IS ESM AND INLINES A CommonJS DEPENDENCY, SO IT NEEDS A
+  `require` GIVEN TO IT** (2026-09-04, after a production outage). esbuild replaces a
+  `require` it cannot resolve with a stub that THROWS — `Dynamic require of "node:os" is
+  not supported` — and `pino`, which every module here reaches through `log.ts`, requires
+  `node:os` at load. The function therefore died in INIT on EVERY invocation, before the
+  handler existed. It had never worked: the first 22:00 after deployment fired both
+  schedules, all six attempts failed (`MaximumRetryAttempts: 2`), and the visible symptom
+  was a group that got no podium — no alarm, no error anyone was watching, and a bot that
+  answered questions normally because the TASK was healthy the whole time.
+  `infra/lib/bot-stack.ts` now carries the `createRequire` banner that
+  `scripts/bundle.mjs` has carried for the TASK all along; the Lambda was the one bundle
+  without it, and also the one nothing ever loaded outside production.
+  - **A TEMPLATE ASSERTION CANNOT SEE THIS.** `bot-stack.test.ts` builds its template with
+    `'aws:cdk:bundling-stacks': []` — "the Lambda bundle is the deploy's business, not the
+    assertions'" — which is the reasoning that let it ship. The guard is therefore a test
+    that LOADS what CDK actually produced.
+  - **AND IT LOADS IT IN A SEPARATE NODE PROCESS, WHICH IS THE WHOLE TEST.** Vitest's
+    module runner puts a `require` in scope, and esbuild's stub reads
+    `typeof require !== "undefined"` before throwing — so an in-process `import()` of the
+    broken bundle SUCCEEDS. Written that way the test passed with the banner deleted and
+    `cdk.out` wiped: it could not fail, which is worse than not existing. Spawned, it
+    fails with the production error verbatim.
 - **Baileys stops at `whatsapp/`.** The rest consumes `InboundMessage` / `OutboundCommand`.
 - **The image is built from the REPO ROOT** against the root `.dockerignore`, whose
   whitelist names every directory it re-includes outright: a re-include rescues an excluded
