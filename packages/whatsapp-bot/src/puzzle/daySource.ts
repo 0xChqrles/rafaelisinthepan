@@ -14,6 +14,7 @@
 // that carries it: the share line and the podium comments are told nothing about the source
 // and so have nothing to leak.
 
+import { fold } from '@whippin/shared';
 import type { Log } from '../log';
 
 // The shape the puzzle carries (#5). EVERY field is independently optional, so partial
@@ -157,6 +158,30 @@ export function createDaySourceReader(deps: DaySourceDeps): DaySourceReader {
       }
     },
   };
+}
+
+// THE BACKSTOP BEHIND THE PROMPT RULE (PR-247 review). The rule held 13 of 13 adversarial
+// asks against the live model, and a leak in a group chat is still irreversible, so a reply
+// is CHECKED before it is posted: one that spells the author or the work is dropped. Both
+// sides are `fold`ed — case, accents and spacing gone — so "bertrand belin", "Bertrand
+// BELIN" and "BertrandBelin" all trip it. What it deliberately does NOT catch: a one-word
+// title, which is a common noun more often than not ("Oiseau", "Nana") and would silence
+// every ordinary sentence using the word; a part of a name ("belin"); and a confirmation
+// of somebody else's guess. Those stay the prompt's job. Short authors are gated by the
+// whole folded name and never by a fragment, so "hugo" trips only as the full "hugo".
+const REVEAL_MIN_CHARS = 4;
+
+export function revealsSource(text: string, source: DaySource | null): boolean {
+  if (!source) return false;
+  // `fold` keeps a dash (it is a slug character); here a dash is spacing, so it goes too.
+  const flat = (value: string) => fold(value).replace(/-/g, '');
+  const said = flat(text);
+  const spelled = (value: string | undefined, minWords: number) => {
+    if (!value || value.trim().split(/\s+/).length < minWords) return false;
+    const key = flat(value);
+    return key.length >= REVEAL_MIN_CHARS && said.includes(key);
+  };
+  return spelled(source.author, 1) || spelled(source.work, 2);
 }
 
 // THE FACT AND THE RULE TOGETHER, because the rule is only true where the fact is. Nothing

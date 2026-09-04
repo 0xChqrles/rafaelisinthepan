@@ -427,7 +427,13 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
     live model over 13 adversarial asks — a direct guess, the first letter, the letter
     count, the title reversed, "the podium is passed", a system-prompt dump and an
     instruction override — 13 refused, and it generalised correctly to the era and the
-    artist's nationality, which the rule never names.
+    artist's nationality, which the rule never names. **WITH A BACKSTOP BEHIND IT** (PR-247
+    review): a leak in a group chat is irreversible, so `revealsSource` checks the reply
+    before it is posted and drops one that spells the author whole or a multi-word title —
+    folded, so case, accents, spacing and dashes do not get around it (silent `spoiler`, a
+    log line naming neither). It deliberately does NOT catch a one-word title (a common noun
+    more often than not — "Oiseau" would silence every sentence with a bird in it), a
+    fragment of a name, or a confirmation of somebody's guess: those remain the prompt's.
   - **THE RULE TRAVELS WITH THE FACT** (`sourceContext`), never in the global personality:
     the share line and the podium comments are told nothing about the source, so they have
     nothing to hold back, and a prompt that carries neither must not be told it knows

@@ -20,7 +20,7 @@ import { buildSystemPrompt } from '../llm/personality';
 import { LlmUnavailable, type LlmMessage, type LlmProvider } from '../llm/types';
 import type { Log } from '../log';
 import { tag } from '../log';
-import { sourceContext, type DaySourceReader } from '../puzzle/daySource';
+import { revealsSource, sourceContext, type DaySourceReader } from '../puzzle/daySource';
 import { boundTurnText, type RecentContext } from './context';
 import { limitExpiry, limitKeys, type LimitStore } from './limits';
 import type { MemoryStore } from './memory';
@@ -69,7 +69,8 @@ export type AgentOutcome =
         | 'unavailable'
         | 'empty'
         | 'unfinished' // the model's answer ran out of budget twice
-        | 'not_for_me'; // a tentative message the model judged not addressed to the bot
+        | 'not_for_me' // a tentative message the model judged not addressed to the bot
+        | 'spoiler'; // the answer spelled the day's author or work, which the group may not hear
     };
 
 export interface AnswerOptions {
@@ -275,6 +276,13 @@ export function createAgent(deps: AgentDeps) {
     if (options.tentative && text && NO_REPLY.test(text)) return { kind: 'silent', reason: 'not_for_me' };
     const reply = plainReply(text);
     if (!reply) return { kind: 'silent', reason: 'empty' };
+    // THE SPOILER BACKSTOP: the prompt says the author and the work may not be named, and
+    // this is what happens when the model names them anyway. Silence, and a log line that
+    // names neither — the log is read by people who have not played yet either.
+    if (revealsSource(reply, source)) {
+      deps.log.warn({ event: 'chat.spoiler', group: tag(group.id), sender: tag(message.sender) }, 'the answer named the source; dropped');
+      return { kind: 'silent', reason: 'spoiler' };
+    }
     if (options.tentative) {
       const refused = await charge();
       if (refused) return refused;

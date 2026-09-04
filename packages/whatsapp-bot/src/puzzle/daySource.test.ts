@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createLog } from '../log';
-import { createDaySourceReader, sourceContext } from './daySource';
+import { createDaySourceReader, revealsSource, sourceContext } from './daySource';
 
 const log = createLog('silent');
 
@@ -161,6 +161,23 @@ describe('the KIND may be said; the author and the work may not', () => {
     expect(facts({ kind: 'quote' })).toBe('kind: quote');
     expect(facts({ author: 'Victor Hugo' })).toBe('author: Victor Hugo');
     expect(facts({ kind: 'book', work: 'Les Misérables' })).toBe('kind: book, work: Les Misérables');
+  });
+});
+
+describe('a reply that spells the source is caught (PR-247 review)', () => {
+  it('matches the author whole and a multi-word title, through case, accents and spacing', () => {
+    const belin = { kind: 'music', author: 'Bertrand Belin', work: 'Oiseau' };
+    expect(revealsSource("c'est du Bertrand Belin", belin)).toBe(true);
+    expect(revealsSource('BERTRAND-BELIN', belin)).toBe(true);
+    expect(revealsSource("c'est du Belin", belin)).toBe(false); // a fragment is the prompt's job
+    expect(revealsSource('un oiseau sur la branche', belin)).toBe(false); // one-word title: a common noun
+    const hugo = { kind: 'book', author: 'Victor Hugo', work: 'Les Misérables' };
+    expect(revealsSource('ça sent les miserables', hugo)).toBe(true);
+    expect(revealsSource('Les Misérables, non ?', hugo)).toBe(true);
+    expect(revealsSource('victorhugo', hugo)).toBe(true);
+    expect(revealsSource('hugo', hugo)).toBe(false);
+    expect(revealsSource('rien à voir', null)).toBe(false);
+    expect(revealsSource('rien à voir', { kind: 'music' })).toBe(false);
   });
 });
 
