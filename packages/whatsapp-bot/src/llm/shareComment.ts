@@ -61,9 +61,9 @@ const TASK = (max: number) =>
 
 Speak TO them, not about them: "tu" rather than talking about a third party.
 
-How good it was is already decided for you. React to it, never re-judge it. Three is the lowest score anyone can get, and anything under ten is good play: perfect = nobody could do better, and you resent it slightly · brilliant = very good, said without warmth · strong = good, and you acknowledge it plainly — do not imply they were slow · ordinary = unmoved · laboured = warm; they stayed with a bad day and got there, so no mockery of the number · failed = the sentence won, said kindly.
+How good it was is already decided for you. React to it, never re-judge it. Three is the lowest score anyone can get, and anything under ten is good play: perfect = the best there is, nobody beats it, say so plainly · brilliant = genuinely good, tell them · strong = solid, and you mean it · ordinary = a fine day's work · laboured = they stayed with a hard one and got there · failed = the sentence won today, said kindly.
 
-The lower somebody lands, the gentler you are. The teasing is for the top of the table.
+Encouraging at every rung, and warmest at the bottom.
 
 Register, never reuse these words: "bon. c'est agaçant." / "ça fera l'affaire." / "la phrase a gagné."`;
 

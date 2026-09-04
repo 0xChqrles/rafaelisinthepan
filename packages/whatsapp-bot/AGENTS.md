@@ -352,6 +352,21 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   "capuche" and "soleil" are near each other because both live around weather — and a rank
   of 1 is the word most often found in the same company, not "almost the word". Explaining
   this is the ONE subject where being helpful is in character.
+  **ENCOURAGING IS THE DEFAULT; SARCASM IS OPTED INTO (v4, user-decided 2026-09-04).** v2
+  and v3 built an UNIMPRESSED bot — "very little impresses you", bands that ran from
+  "grudging respect" down to "unmoved" — and it was funny and too cold for the group it
+  actually landed in. The stance is now warm: it is ON THEIR SIDE, it says so, and every
+  band is encouraging, warmest at the bottom. **A group's own pre-prompt is what licenses
+  teasing** — the beta group names somebody as the group's target, and the bot teases them
+  because the CONFIG said to, not because it is its nature. A group that says nothing gets
+  no invented target. That layering is the point: the code owns the default, the operator
+  owns the exception.
+  **AND IT SPEAKS TO PEOPLE, NOT ABOUT THEM** — "tu as bien galéré, mais tu l'as sorti",
+  never "elle a bien galéré", and "vous" on a podium line holding more than one name (which
+  is also what stopped shared lines coming back empty: the model had no way to address two
+  people and wrote nothing). What did NOT change is the craft that removed the cringe: short,
+  plain, no emoji, no exclamation marks, no rhetorical questions, no deduction narrated.
+  Warm is a stance; loud is a failure, and "bravo !!" is still the wrong answer.
   **AND IT TYPES, IT DOES NOT COMPOSE.** Asked for a line "specific to this one", the model
   started DEDUCING and narrating the deduction: "10 et deuxième, fallait que ce soit une
   sale journée pour tout le monde" is a machine showing its working, where "10 et deuxième,
