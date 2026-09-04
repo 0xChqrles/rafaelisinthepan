@@ -110,6 +110,27 @@ describe('group configuration (#236)', () => {
   });
 });
 
+describe('how a share is acknowledged (#236)', () => {
+  it('accepts the three shapes and refuses anything else', () => {
+    for (const acknowledge of ['react', 'say', 'none']) {
+      expect(parseGroupConfig('g.json', { ...valid, acknowledge }).acknowledge).toBe(acknowledge);
+    }
+    expect(parseGroupConfig('g.json', valid).acknowledge).toBe('react'); // absent = today's behaviour
+    for (const bad of ['REACT', 'speak', true, 1, null]) {
+      expect(() => parseGroupConfig('g.json', { ...valid, acknowledge: bad })).toThrow(/acknowledge/);
+    }
+  });
+
+  it('refuses the field it REPLACED, rather than ignoring it', () => {
+    // `reactions: true` was the old spelling. Unknown fields fail closed, so a config that
+    // still carries it is refused where it is read — loudly, and not as silent default
+    // behaviour that would leave a group acknowledging differently than its file says.
+    expect(() => parseGroupConfig('g.json', { ...valid, reactions: true })).toThrow(
+      /unknown field "reactions"/,
+    );
+  });
+});
+
 describe('the snapshot directory (#236)', () => {
   it('reads a directory of configs; a MISSING one fails the runtime and is empty for synth', () => {
     const dir = mkdtempSync(join(tmpdir(), 'whippin-groups-'));

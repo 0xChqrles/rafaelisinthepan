@@ -87,7 +87,32 @@ describe('share ingestion (#236)', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ score: 7, name: 'Gab', messageId: 'M1' });
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ kind: 'reaction', id: `react:${GROUP}:M1`, emoji: '👏' });
+    expect(sent[0]).toMatchObject({ kind: 'reaction', id: `ack:${GROUP}:M1`, emoji: '👏' });
+  });
+
+  it('uses ONE id for the line and the emoji, so a message is acknowledged once', async () => {
+    // Two prefixes would let a message ingested twice send the line on the run where the
+    // model answered AND the emoji on the run where it did not: the sent-record dedups by
+    // command id, and two ids are two commands.
+    const said = harness(registry({ acknowledge: 'say' }), { comment: async () => 'une ligne.' });
+    await said.ingest(message());
+    const fell = harness(registry({ acknowledge: 'say' }), { comment: async () => null });
+    await fell.ingest(message());
+    expect(said.sent[0].kind).toBe('message');
+    expect(fell.sent[0].kind).toBe('reaction');
+    expect(said.sent[0].id).toBe(fell.sent[0].id);
+  });
+
+  it('says a line for a CAPPED run too, and tells the writer it failed', async () => {
+    const comment = vi.fn(async () => 'la phrase a gagné.');
+    const capped = `${ORIGIN}/s/${token(500, 'fr', true)}`;
+    const { ingest, sent } = harness(registry({ acknowledge: 'say' }), { comment });
+    expect(await ingest(message({ text: capped }))).toBe('recorded');
+    expect(comment).toHaveBeenCalledWith(
+      expect.objectContaining({ id: GROUP }),
+      expect.objectContaining({ capped: true, player: 'Gab' }),
+    );
+    expect(sent[0]).toMatchObject({ kind: 'message', text: 'la phrase a gagné.' });
   });
 
   it('SAYS a line instead of reacting, quoting the share', async () => {
@@ -115,7 +140,7 @@ describe('share ingestion (#236)', () => {
       const { ingest, sent } = harness(registry({ acknowledge: 'say' }), { comment });
       expect(await ingest(message())).toBe('recorded');
       expect(sent).toHaveLength(1);
-      expect(sent[0]).toMatchObject({ kind: 'reaction', id: `react:${GROUP}:M1`, emoji: '👏' });
+      expect(sent[0]).toMatchObject({ kind: 'reaction', id: `ack:${GROUP}:M1`, emoji: '👏' });
     }
     // Configured to say, but nothing wired to say it (no model at all): the emoji too.
     const { ingest, sent } = harness(registry({ acknowledge: 'say' }));
@@ -178,7 +203,7 @@ describe('share ingestion (#236)', () => {
     expect(await ingest(message())).toBe('recorded');
     expect(record).toHaveBeenCalledTimes(2);
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ kind: 'reaction', id: `react:${GROUP}:M1` });
+    expect(sent[0]).toMatchObject({ kind: 'reaction', id: `ack:${GROUP}:M1` });
     // A genuine second delivery, later, is still the no-op it always was.
     expect(await ingest(message())).toBe('unchanged');
     expect(sent).toHaveLength(1);
@@ -204,7 +229,7 @@ describe('share ingestion (#236)', () => {
     const text = `${ORIGIN}/s/${token(9)} et hier ${ORIGIN}/s/${token(3, 'fr', false, DAY - 1)}`;
     expect(await ingest(message({ text }))).toBe('recorded');
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ kind: 'reaction', id: `react:${GROUP}:M1`, emoji: '💯' });
+    expect(sent[0]).toMatchObject({ kind: 'reaction', id: `ack:${GROUP}:M1`, emoji: '💯' });
   });
 
   it('a REPLAY moves the leader row, so a later live share cannot claim a lead it lacks', async () => {
@@ -249,7 +274,7 @@ describe('share ingestion (#236)', () => {
     expect((await declarations.day(GROUP, DAY))[0]).toMatchObject({ score: 7, messageId: 'M2', name: 'Gab 🔥' });
     // …but the result was acknowledged once, on the message that first declared it.
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ kind: 'reaction', id: `react:${GROUP}:M1` });
+    expect(sent[0]).toMatchObject({ kind: 'reaction', id: `ack:${GROUP}:M1` });
   });
 
   it('a later message replaces the declaration; an older replay does not', async () => {

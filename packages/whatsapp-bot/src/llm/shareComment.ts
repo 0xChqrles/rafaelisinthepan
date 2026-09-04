@@ -31,6 +31,14 @@ const MAX_TOKENS = 2000;
 // is one that started explaining itself, which is the failure this register exists to avoid
 // — rejecting it costs a retry, where posting it costs the joke.
 const LINE_MAX_CHARS = 90;
+// THE EMOJI IS WAITING BEHIND THIS, so the wait is bounded well under the provider's own
+// 30s default: `ingest` awaits the line, and two attempts at that default put the
+// acknowledgement of a share up to a minute after it — long enough to read as broken.
+// Measured over eight live calls: median 6.4s, with a tail at 28-29s, so the cut sits above
+// the ordinary case and inside the tail. A call past it is treated as unavailable, which is
+// retried once and then falls back — worst case ~40s rather than ~60s, the common case
+// unchanged.
+const TIMEOUT_MS = 20_000;
 
 export interface ShareFacts {
   player: string; // the display name the group knows them by
@@ -63,6 +71,11 @@ export async function generateShareComment(
   group: GroupConfig,
   facts: ShareFacts,
   log: Log,
+  // Spends one unit of the daily CALL ceiling, per attempt — the conversation charges per
+  // call too, and a retry that cost nothing would leave the ceiling bounding acknowledgements
+  // rather than the spend it exists to bound. Refusing is the emoji, like every other way
+  // this can fail to produce words.
+  takeCall: () => Promise<boolean> = async () => true,
 ): Promise<string | null> {
   const system = buildSystemPrompt({
     language: group.language,
@@ -79,15 +92,22 @@ export async function generateShareComment(
     verdict: scoreBand(facts.score, facts.capped),
   });
   for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
+    if (!(await takeCall())) {
+      log.info({ event: 'share.comment_ceiling', attempt }, 'daily call ceiling reached');
+      return null;
+    }
     let text: string | null;
+    let finish: string | undefined;
     try {
       const response = await provider.generate({
         system,
         messages: [{ role: 'user', content }],
         maxTokens: MAX_TOKENS,
         temperature: 1.1,
+        timeoutMs: TIMEOUT_MS,
       });
       text = response.text;
+      finish = response.finish;
       log.info(
         { event: 'share.comment_generated', attempt, finish: response.finish, latencyMs: response.latencyMs, tokens: response.usage },
         'llm answered',
@@ -112,7 +132,10 @@ export async function generateShareComment(
     }
     const line = sanitizeComment(text);
     if (line && line.length <= LINE_MAX_CHARS) return line;
-    log.warn({ event: 'share.comment_invalid', attempt }, 'rejecting an unusable line');
+    log.warn(
+      { event: 'share.comment_invalid', attempt, finish, length: line?.length ?? 0 },
+      'rejecting an unusable line',
+    );
   }
   return null;
 }

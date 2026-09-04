@@ -1,6 +1,12 @@
 // The per-message pipeline (#236): allow-list → share links → durable declaration →
-// deterministic reaction → (optionally) the new-leader line. No model anywhere here; a
-// message that carries no valid share for this group's language does nothing at all.
+// acknowledgement → (optionally) the new-leader line. A message that carries no valid share
+// for this group's language does nothing at all.
+//
+// The model reaches this path through ONE injected function (`deps.comment`) and only for a
+// group configured `acknowledge: "say"`. Everything that DECIDES anything here is still
+// model-free — the share decodes deterministically, the row is written before a word is
+// composed, and the band is the bot's — so a model that is slow, wrong or absent costs the
+// words and nothing else.
 //
 // A Dynamo failure is RETRIED, not reacted past: "Do not react as though the score was
 // recorded." Baileys delivers a live message once, so a write that fails for good is a
@@ -220,7 +226,7 @@ export function createIngest(deps: IngestDeps) {
               replyTo: { id: message.id, participant: message.participant, text: message.text },
             }
           : {
-              id: commandIds.reaction(group.id, message.id),
+              id: commandIds.ack(group.id, message.id),
               kind: 'reaction',
               group: group.id,
               target: { id: message.id, participant: message.participant },

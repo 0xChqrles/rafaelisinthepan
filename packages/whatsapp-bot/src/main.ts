@@ -139,15 +139,12 @@ async function main(): Promise<void> {
   // day, and a second model path outside it would leave it bounding half the spend. Out of
   // budget answers null, which is the emoji — the share is still acknowledged.
   const comment = provider
-    ? async (group: GroupConfig, facts: ShareFacts) => {
-        const at = new Date();
-        const { scope, key } = limitKeys.calls(at);
-        if (!(await limits.take(scope, key, env.llm.dailyCallCeiling, limitExpiry(at)))) {
-          log.info({ event: 'share.comment_ceiling', group: tag(group.id) }, 'daily call ceiling reached');
-          return null;
-        }
-        return generateShareComment(provider, group, facts, log);
-      }
+    ? (group: GroupConfig, facts: ShareFacts) =>
+        generateShareComment(provider, group, facts, log, async () => {
+          const at = new Date();
+          const { scope, key } = limitKeys.calls(at);
+          return limits.take(scope, key, env.llm.dailyCallCeiling, limitExpiry(at));
+        })
     : undefined;
 
   const ingest = createIngest({

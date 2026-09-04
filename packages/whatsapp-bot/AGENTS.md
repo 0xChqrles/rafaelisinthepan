@@ -35,7 +35,9 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
       names.ts                  display name = operator override ?? latest snapshot ?? …last4
       reactions.ts              score band → emoji, no model (the `acknowledge: "react"` shape)
       leader.ts                 the new-leader event + its anti-spam row (LEAD#<day>)
-      ingest.ts                 the per-message pipeline: allow-list → share → durable row → reaction/leader
+      ingest.ts                 the per-message pipeline: allow-list → share → durable row → acknowledgement/leader.
+                                The ONE place a model touches this path, through an injected `comment` — everything
+                                that DECIDES anything here (the decode, the row, the band) stays model-free.
     src/outbound/               ONE owner of sends: commands (ids), SQS transport, sent-record dedup, dispatcher
     src/llm/                    provider-neutral contract (types.ts), providers/deepseek.ts, the versioned
                                 personality, podium comments (validated, retried, degrade to none),
