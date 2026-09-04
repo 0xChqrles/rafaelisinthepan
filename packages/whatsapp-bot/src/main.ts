@@ -34,7 +34,7 @@ import { commandIds, type OutboundQueue } from './outbound/commands';
 import { dynamoSentStore } from './outbound/dedupStore';
 import { createDispatcher, runConsumer } from './outbound/dispatcher';
 import { memoryOutbound, sqsCommandSource, sqsOutboundQueue, type CommandSource } from './outbound/sqs';
-import { markAuthInvalidated, readAuthStatus, useDynamoAuthState } from './whatsapp/authStore';
+import { hasPairedDevice, markAuthInvalidated, readAuthStatus, useDynamoAuthState } from './whatsapp/authStore';
 import { connectWhatsApp } from './whatsapp/client';
 import { acquireLease, keepLease, type LeaseKeeper } from './whatsapp/lease';
 import { startConnectedMetric } from './whatsapp/metrics';
@@ -97,14 +97,14 @@ async function main(): Promise<void> {
   });
 
   const auth = await useDynamoAuthState(dynamo, env.table);
-  if (!auth.state.creds.registered) {
+  if (!hasPairedDevice(auth.state.creds)) {
     log.error({ event: 'auth.unpaired' }, 'no paired device in the durable store; run `pnpm bot:pair`');
     // Stopped BEFORE the release, or the next renew would take back the lease this idle
     // process has just given up.
     keeper.stop();
     await lease.release();
     await idleUntilOperator(
-      async () => (await useDynamoAuthState(dynamo, env.table)).state.creds.registered,
+      async () => hasPairedDevice((await useDynamoAuthState(dynamo, env.table)).state.creds),
       log,
     );
     return;

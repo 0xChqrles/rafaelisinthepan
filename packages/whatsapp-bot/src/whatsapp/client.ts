@@ -25,7 +25,7 @@ import {
 import type { InboundMessage } from '../domain/message';
 import type { Log } from '../log';
 import type { OutboundCommand } from '../outbound/commands';
-import type { DurableAuth } from './authStore';
+import { hasPairedDevice, type DurableAuth } from './authStore';
 import { baileysLogger } from './baileysLog';
 import { toInbound } from './inbound';
 
@@ -168,7 +168,7 @@ export async function connectWhatsApp(options: WhatsAppClientOptions): Promise<W
     socket.ev.on('connection.update', (update) => {
       const { connection, lastDisconnect, qr } = update;
       if (qr && options.onQr) options.onQr(qr);
-      if (options.pairingPhone && !pairingRequested && !auth.state.creds.registered && qr) {
+      if (options.pairingPhone && !pairingRequested && !hasPairedDevice(auth.state.creds) && qr) {
         pairingRequested = true;
         socket
           .requestPairingCode(options.pairingPhone)

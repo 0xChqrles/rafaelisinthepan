@@ -75,6 +75,24 @@ function deserialize<T>(attr: AttributeValue | undefined): T | null {
   return JSON.parse(attr.S, BufferJSON.reviver) as T;
 }
 
+// IS THERE A SESSION TO RESUME? `creds.me` — the identity WhatsApp assigns when the device
+// links — and NOT `creds.registered`.
+//
+// Baileys sets `registered` in exactly ONE place: the `link_code_pairing_ref` branch of
+// `messages-recv`, which is the PAIRING-CODE flow. A device linked by QR never gets it, and
+// nothing in the library ever READS the flag. What Baileys itself branches on is `creds.me`
+// (`Socket/socket.js`: `if (!creds.me)` register, else `generateLoginNode(creds.me.id)`),
+// so that is the question actually being asked here — "can this state log in?" — and it is
+// the one the task, the pairing CLI and the operator CLI all have to agree on. Gating on
+// `registered` meant a QR-paired bot reported `auth.unpaired` forever over a session that
+// worked, and `bot:pair` would have offered to pair again over a good one.
+//
+// A `me` that WhatsApp no longer honours is not this predicate's problem: the socket is
+// refused, the close comes back `loggedOut`, and the status row goes INVALIDATED — the
+// fail-closed path, which is the honest place for that answer.
+export const hasPairedDevice = (creds: { me?: { id?: string } }): boolean =>
+  typeof creds.me?.id === 'string' && creds.me.id !== '';
+
 export async function readAuthStatus(client: DynamoDBClient, table: string): Promise<AuthStatus> {
   const item = (
     await client.send(

@@ -12,7 +12,7 @@ import { dynamoMemoryStore } from './chat/memory';
 import { BOT_REGION, loadEnv } from './config/env';
 import { GROUP_JID, USER_JID } from './config/groupConfig';
 import { createLog } from './log';
-import { useDynamoAuthState } from './whatsapp/authStore';
+import { hasPairedDevice, useDynamoAuthState } from './whatsapp/authStore';
 import { connectWhatsApp } from './whatsapp/client';
 import { acquireLease, keepLease } from './whatsapp/lease';
 
@@ -47,7 +47,7 @@ async function listGroups(): Promise<void> {
   // inside the block, because an exit skips the finally that does the handing back.
   try {
     const auth = await useDynamoAuthState(dynamo, env.table);
-    if (!auth.state.creds.registered) {
+    if (!hasPairedDevice(auth.state.creds)) {
       console.error('No paired device. Run `pnpm bot:pair` first.');
       process.exitCode = 1;
       return;

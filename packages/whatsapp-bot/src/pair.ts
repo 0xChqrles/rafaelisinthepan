@@ -14,7 +14,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import qrcode from 'qrcode-terminal';
 import { BOT_REGION, loadEnv } from './config/env';
 import { createLog } from './log';
-import { clearAuthInvalidated, useDynamoAuthState } from './whatsapp/authStore';
+import { hasPairedDevice, clearAuthInvalidated, useDynamoAuthState } from './whatsapp/authStore';
 import { connectWhatsApp } from './whatsapp/client';
 import { acquireLease, keepLease } from './whatsapp/lease';
 
@@ -65,7 +65,7 @@ async function main(): Promise<void> {
   // finally that does the handing back.
   try {
     let auth = await useDynamoAuthState(dynamo, env.table);
-    if (auth.state.creds.registered && !reset) {
+    if (hasPairedDevice(auth.state.creds) && !reset) {
       console.log('A paired device is already stored. Re-run with --reset to pair again.');
       return;
     }

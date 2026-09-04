@@ -8,13 +8,8 @@ import {
   type AttributeValue,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
-import {
-  AUTH_PARTITION,
-  LEASE_SORT_KEY,
-  markAuthInvalidated,
-  readAuthStatus,
-  useDynamoAuthState,
-} from './authStore';
+import { AUTH_PARTITION, LEASE_SORT_KEY, hasPairedDevice, markAuthInvalidated, readAuthStatus, useDynamoAuthState } from './authStore';
+import { initAuthCreds } from 'baileys';
 
 // A tiny in-memory DynamoDB: enough of Get/Put/BatchGet/BatchWrite for the auth keyspace.
 function fakeDynamo() {
@@ -48,6 +43,24 @@ function fakeDynamo() {
   });
   return { client: { send } as unknown as DynamoDBClient, items };
 }
+
+describe('is there a session to resume? (#236)', () => {
+  it('reads creds.me, NOT the pairing-code-only `registered` flag', () => {
+    // Baileys sets `registered` in ONE place — the `link_code_pairing_ref` branch, i.e. the
+    // PAIRING-CODE flow — and never reads it. A device linked by QR is fully usable with
+    // the flag still false, which is what Baileys itself branches on (`if (!creds.me)`).
+    // Gating on `registered` reported `auth.unpaired` forever over a working session.
+    expect(hasPairedDevice(initAuthCreds())).toBe(false);
+    expect(hasPairedDevice({ me: { id: '33600000000@s.whatsapp.net' } })).toBe(true);
+    // The exact production shape: QR-paired, identity assigned, flag never set.
+    const qrPaired = { ...initAuthCreds(), me: { id: '33600000000@s.whatsapp.net' }, registered: false };
+    expect(qrPaired.registered).toBe(false);
+    expect(hasPairedDevice(qrPaired)).toBe(true);
+    // Nothing usable in an empty or absent identity.
+    expect(hasPairedDevice({})).toBe(false);
+    expect(hasPairedDevice({ me: { id: '' } })).toBe(false);
+  });
+});
 
 describe('durable Baileys auth state (#236)', () => {
   it('starts fresh, persists creds, and reloads them byte-identical (Buffers included)', async () => {
