@@ -207,7 +207,6 @@ export function createIngest(deps: IngestDeps) {
               player: displayName(group, message.sender, message.senderName),
               score: best.score,
               capped: best.capped,
-              dayNumber: best.dayNumber,
             }).catch((error) => {
               deps.log.warn(
                 { event: 'share.comment_threw', group: tag(group.id), error: (error as Error).message },
@@ -235,7 +234,9 @@ export function createIngest(deps: IngestDeps) {
         group.id,
       );
     }
-    // After the reaction, so the acknowledgement lands before the commentary.
+    // Queued after the acknowledgement. The queue is standard SQS and promises no order, so
+    // this buys a tendency and not a guarantee — worth having, since the two are usually
+    // seconds apart and the acknowledgement reading second is merely odd, never wrong.
     for (const announcement of announcements) await enqueue(announcement, group.id);
     return failed ? 'failed' : outcome;
   };

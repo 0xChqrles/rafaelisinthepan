@@ -44,7 +44,6 @@ export interface ShareFacts {
   player: string; // the display name the group knows them by
   score: number;
   capped: boolean; // a run that ended at ∞
-  dayNumber: number;
 }
 
 // HOW GOOD IT WAS IS ALREADY DECIDED. The band comes from `domain/reactions.ts` — the same

@@ -139,12 +139,19 @@ async function main(): Promise<void> {
   // day, and a second model path outside it would leave it bounding half the spend. Out of
   // budget answers null, which is the emoji — the share is still acknowledged.
   const comment = provider
-    ? (group: GroupConfig, facts: ShareFacts) =>
-        generateShareComment(provider, group, facts, log, async () => {
+    ? async (group: GroupConfig, facts: ShareFacts) => {
+        const line = await generateShareComment(provider, group, facts, log, async () => {
           const at = new Date();
           const { scope, key } = limitKeys.calls(at);
           return limits.take(scope, key, env.llm.dailyCallCeiling, limitExpiry(at));
-        })
+        });
+        // A spoken acknowledgement is something the bot SAID in the group, so it belongs in
+        // the window like any other turn — otherwise "pourquoi tu dis ça ?" a minute later
+        // is a question about a message the bot cannot see. The emoji is not a turn: there
+        // is nothing to remember about it.
+        if (line) context.push(group.id, { role: 'assistant', name: '', text: line, at: Date.now() });
+        return line;
+      }
     : undefined;
 
   const ingest = createIngest({
@@ -196,7 +203,13 @@ async function main(): Promise<void> {
     }
     log.info({ event: 'chat.addressed', how: address, group: tag(group.id), sender: tag(message.sender) }, 'addressed');
     const today = dayNumber(activeDate(new Date()));
-    const outcome = await answer(message, group, identity, today);
+    // STRIPPED HERE TOO, not only on the ambient path. An addressed message can carry a
+    // share ("gg 7 essais <link> @bot qui mène ?"), and this one goes to the provider at
+    // once AND into the window as the turn the agent records — so leaving the token on it
+    // would send exactly what the ambient path is careful not to. The token is opaque; the
+    // question loses nothing by having it removed.
+    const asked = { ...message, text: withoutShareLinks(message.text, env.siteOrigin) };
+    const outcome = await answer(asked, group, identity, today);
     if (outcome.kind === 'silent') {
       log.info({ event: 'chat.silent', reason: outcome.reason, group: tag(group.id) }, 'no reply');
       return;

@@ -35,6 +35,17 @@ describe('the recent window (#236)', () => {
 });
 
 describe('what a share message contributes (#236)', () => {
+  it('strips the token whether the message was addressed to the bot or not', () => {
+    // Both paths reach the provider: the ambient one when somebody later addresses the bot,
+    // the addressed one immediately AND as the turn the agent records. A share carried by an
+    // addressed message ("gg 7 essais <link> @bot qui mène ?") must not be the exception.
+    const addressed = `gg 7 essais ${ORIGIN}/s/ZBXg-ISaks2-fA @WhippinBot qui mène ?`;
+    const stripped = withoutShareLinks(addressed, ORIGIN);
+    expect(stripped).toBe('gg 7 essais @WhippinBot qui mène ?');
+    expect(stripped).not.toContain('ZBXg');
+  });
+
+
   it('drops the token and keeps the words around it', () => {
     // A token is base64 noise no conversation can use; the sentence beside it is not.
     expect(withoutShareLinks(`gg 7 essais ${ORIGIN}/s/ZBXg-ISaks2-fA`, ORIGIN)).toBe('gg 7 essais');

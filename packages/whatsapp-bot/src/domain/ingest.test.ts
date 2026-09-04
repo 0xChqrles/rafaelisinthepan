@@ -110,7 +110,7 @@ describe('share ingestion (#236)', () => {
     expect(await ingest(message({ text: capped }))).toBe('recorded');
     expect(comment).toHaveBeenCalledWith(
       expect.objectContaining({ id: GROUP }),
-      expect.objectContaining({ capped: true, player: 'Gab' }),
+      expect.objectContaining({ capped: true, player: 'Gab', score: 500 }),
     );
     expect(sent[0]).toMatchObject({ kind: 'message', text: 'la phrase a gagné.' });
   });
@@ -121,7 +121,7 @@ describe('share ingestion (#236)', () => {
     expect(await ingest(message())).toBe('recorded');
     expect(comment).toHaveBeenCalledWith(
       expect.objectContaining({ id: GROUP }),
-      { player: 'Gab', score: 7, capped: false, dayNumber: DAY },
+      { player: 'Gab', score: 7, capped: false },
     );
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({

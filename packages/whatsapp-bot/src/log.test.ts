@@ -13,8 +13,8 @@ describe('logs carry tags, never numbers (#236)', () => {
   });
 
   it('covers the LID form and leaves a string with no JID alone', () => {
-    expect(redactJids('react:123456789012345@lid:3EB0')).toBe(
-      `react:${tag('123456789012345@lid')}:3EB0`,
+    expect(redactJids('ack:123456789012345@lid:3EB0')).toBe(
+      `ack:${tag('123456789012345@lid')}:3EB0`,
     );
     expect(redactJids('podium: nothing personal here')).toBe('podium: nothing personal here');
   });

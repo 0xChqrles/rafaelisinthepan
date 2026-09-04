@@ -162,7 +162,7 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   podium ships with no comments. Unavailable model = scoreboard without jokes, never no
   scoreboard.
 - **Outbound has one owner.** Every send is a command with an id (`podium:<g>:<day>`,
-  `react:<g>:<msg>`, `reply:<g>:<msg>`, `leader:…`) on the SQS queue; the task's
+  `ack:<g>:<msg>`, `reply:<g>:<msg>`, `leader:…`) on the SQS queue; the task's
   dispatcher checks the sent record (a STRONGLY CONSISTENT read — a redelivery can follow
   the send it duplicates by milliseconds, and an eventual read answers "never sent"), sends,
   records the WhatsApp id. The send-then-crash duplicate window is accepted over marking
