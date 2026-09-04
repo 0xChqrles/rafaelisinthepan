@@ -233,8 +233,19 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   same two things — a received message hidden for the visibility window, and pending
   messages delivered beside one still in flight — so a deferred command cannot make a dry
   run look hung.
-- **Conversation is opt-in per message**: mention, reply-to-bot, or a leading `chat.name`.
-  Nothing else reaches the model. **Only the BOT's mention is addressing**: everybody else's
+- **REPLYING is opt-in per message; CONTEXT is not** (user-decided 2026-09-04). The bot
+  answers only a mention, a reply-to-bot, or a leading `chat.name` — that half is unchanged.
+  What changed is what it BRINGS to that answer: a window of the group's ordinary chatter
+  (`chat/context.ts`, 25 messages, nothing older than 30 minutes) rather than only the
+  exchanges it took part in. It had to: "je pense au nombre 67" followed by "@bot quel
+  nombre ?" was unanswerable, because the first message was never prompt material. The
+  window is sized for AMBIENT traffic — eight addressed turns spanned hours, where eight
+  messages of a lively group can be under a minute.
+  **The cost was accepted deliberately: that window reaches the provider** whenever somebody
+  addresses the bot. Two things still never travel — a share TOKEN, stripped by
+  `withoutShareLinks` so a score-only message leaves nothing to remember, and anything at all
+  in a group where nobody speaks to the bot, since the window is only ever SENT on an
+  addressed message. No config field: the user chose one behaviour everywhere over a switch. **Only the BOT's mention is addressing**: everybody else's
   is part of the question, and is replaced by the name the group uses (the tool runner's
   `labelFor`, so the model gets a name the tools can look up again, and never the phone
   number behind it) — looked up by the PLAYER key the mention resolved to, keyed by the
@@ -254,7 +265,9 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   interactions; `bot:cli forget` removes it without touching scoreboard rows.
 - **Privacy:** logs carry event kinds, hashed JIDs (`tag()`), message ids, day/score and
   provider latency — never a message body. A command id EMBEDS the JIDs it addresses, so
-  every log of one goes through `redactJids`. Score-only shares never reach the provider.
+  every log of one goes through `redactJids`. Score-only shares never reach the provider —
+  still true once ordinary chatter does (above), because the TOKEN is stripped from a
+  remembered message and a message that was only a link is remembered not at all.
   **BAILEYS GETS A LOGGER THAT CANNOT PRINT A PAYLOAD** (`whatsapp/baileysLog.ts`): its own
   warning paths log `{ jid, err }`, `{ msgId, from }` and whole binary nodes, and no
   discipline at this package's call sites reaches the library's. The adapter keeps the

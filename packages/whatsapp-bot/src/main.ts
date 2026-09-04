@@ -26,6 +26,8 @@ import { botRegion, loadEnv } from './config/env';
 import { loadGroups, type GroupConfig } from './config/groupConfig';
 import { dynamoDeclarationStore } from './domain/dynamoDeclarationStore';
 import { createIngest } from './domain/ingest';
+import { displayName } from './domain/names';
+import { withoutShareLinks } from './domain/share';
 import { dynamoLeaderStore } from './domain/leader';
 import type { InboundMessage } from './domain/message';
 import { createLlmProvider } from './llm';
@@ -120,6 +122,10 @@ async function main(): Promise<void> {
     : (outbound as CommandSource);
   if (!env.outboundQueueUrl) log.warn({ event: 'outbound.local' }, 'no BOT_OUTBOUND_QUEUE_URL: in-process outbound queue');
 
+  // ONE window per task, shared by the agent that reads it and `onMessage`, which fills
+  // it with everything the group says that was not aimed at the bot.
+  const context = new RecentContext();
+
   let provider = null;
   try {
     provider = await createLlmProvider(env.llm, ssm);
@@ -159,7 +165,7 @@ async function main(): Promise<void> {
         declarations,
         memory: dynamoMemoryStore(dynamo, env.table),
         limits,
-        context: new RecentContext(),
+        context,
         dailyCallCeiling: env.llm.dailyCallCeiling,
         log,
       })
@@ -173,7 +179,24 @@ async function main(): Promise<void> {
     if (!group || !group.chat.enabled || !message.live || message.fromMe || !answer || !client) return;
     const identity = { jids: client.selfJids(), name: group.chat.name };
     const address = addressedTo(message, identity);
-    if (!address) return;
+    if (!address) {
+      // NOT FOR THE BOT, BUT STILL THE CONVERSATION. Ordinary chatter is remembered so a
+      // later question can be answered in the room it was asked in — "I'm thinking of 67"
+      // has to be on the record before "@bot what number?" can mean anything. It reaches
+      // the provider only if somebody DOES address the bot while it is still in the window.
+      // The share link is stripped: a token is base64 noise that no conversation can use,
+      // and a message that was only a link leaves nothing to remember.
+      const text = withoutShareLinks(message.text, env.siteOrigin);
+      if (text) {
+        context.push(group.id, {
+          role: 'user',
+          name: displayName(group, message.sender, message.senderName),
+          text,
+          at: Date.now(),
+        });
+      }
+      return;
+    }
     log.info({ event: 'chat.addressed', how: address, group: tag(group.id), sender: tag(message.sender) }, 'addressed');
     const today = dayNumber(activeDate(new Date()));
     const outcome = await answer(message, group, identity, today);

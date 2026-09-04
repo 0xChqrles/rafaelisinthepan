@@ -37,6 +37,16 @@ export function findShareTokens(text: string, siteOrigin: string): string[] {
   return tokens;
 }
 
+// The text WITHOUT its share links. A share token is base64 noise that says nothing a
+// conversation can use, and keeping it out is what lets ambient context reach the model
+// while "a score-only share never does" stays true: a message that was ONLY a link comes
+// back empty and becomes no context at all.
+export function withoutShareLinks(text: string, siteOrigin: string): string {
+  const host = siteOrigin.replace(/^https?:\/\//, '');
+  const link = new RegExp(`https?://${escapeRegExp(host)}/s/[A-Za-z0-9_-]*`, 'g');
+  return text.replace(link, ' ').replace(/\s+/g, ' ').trim();
+}
+
 export function decodeShare(token: string): DecodedShare | null {
   const result: ShareResult | null = decodeResult(token);
   if (!result) return null;
