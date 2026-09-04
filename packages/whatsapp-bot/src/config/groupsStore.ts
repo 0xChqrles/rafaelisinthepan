@@ -32,12 +32,13 @@ import {
   SSMClient,
   type Parameter,
 } from '@aws-sdk/client-ssm';
+import { BOT_REGION } from './env';
 import { GroupConfigError, assertUniqueGroupIds, parseGroupConfig, type GroupConfig } from './groupConfig';
 
 export const GROUPS_PATH = '/whippin/bot/groups';
 
-// Where the stacks are (`infra/bin/app.ts` pins every one of them to us-east-1).
-export const GROUPS_REGION = process.env.BOT_GROUPS_REGION || 'us-east-1';
+// Where the stacks are — the package's one region (`config/env.ts` says why it is pinned).
+export const GROUPS_REGION = BOT_REGION;
 
 // SSM's Standard tier caps a parameter value at 4 KB. The Advanced tier is a per-parameter
 // monthly charge and a different API, for a value that is one group's settings: a config

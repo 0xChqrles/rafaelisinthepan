@@ -40,6 +40,16 @@ function sourceGroupsDir(): string {
   return fileURLToPath(new URL('../../groups/local', import.meta.url));
 }
 
+// EVERY AWS CLIENT IN THIS PACKAGE IS BUILT AGAINST THIS REGION, and it is PINNED rather
+// than inherited from the shell. The stacks are all pinned to us-east-1 (`infra/bin/app.ts`),
+// so that is where the table, the queue and the parameters are — not a fact a laptop's
+// default region should be able to get wrong. Inside ECS and Lambda the runtime's own
+// AWS_REGION is this same value, so pinning changes nothing there; what it fixes is the
+// OPERATOR path, where `pnpm bot:pair` against a default of eu-west-1 answered
+// `ResourceNotFoundException: Requested resource not found` — true, unhelpful, and naming
+// nothing that would lead anyone to the region. `BOT_AWS_REGION` overrides it.
+export const BOT_REGION = process.env.BOT_AWS_REGION || 'us-east-1';
+
 export const DEFAULT_DAILY_CALL_CEILING = 500;
 
 export function loadEnv(env: NodeJS.ProcessEnv = process.env): BotEnv {

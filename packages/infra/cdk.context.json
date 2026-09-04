@@ -2,5 +2,13 @@
   "hosted-zone:account=879381243389:domainName=whippin.ai:region=us-east-1": {
     "Id": "/hostedzone/Z06528974ECKQGQKN7CH",
     "Name": "whippin.ai."
-  }
+  },
+  "availability-zones:account=879381243389:region=us-east-1": [
+    "us-east-1a",
+    "us-east-1b",
+    "us-east-1c",
+    "us-east-1d",
+    "us-east-1e",
+    "us-east-1f"
+  ]
 }
