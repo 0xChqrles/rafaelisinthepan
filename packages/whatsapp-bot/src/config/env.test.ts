@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_DAILY_CALL_CEILING, loadEnv } from './env';
+import { DEFAULT_DAILY_CALL_CEILING, DEFAULT_REGION, botRegion, loadEnv } from './env';
 
 const base = { BOT_TABLE: 'bot' };
 
@@ -22,5 +22,18 @@ describe('runtime env (#236)', () => {
   it('refuses a ceiling that is not a non-negative number', () => {
     expect(() => loadEnv({ ...base, BOT_LLM_DAILY_CALL_CEILING: 'lots' })).toThrow(/non-negative/);
     expect(() => loadEnv({ ...base, BOT_LLM_DAILY_CALL_CEILING: '-1' })).toThrow(/non-negative/);
+  });
+
+  it('pins the AWS region, trimming before it falls back', () => {
+    // The same trim-then-fallback shape as the ceiling above: `' '` is truthy, and a stray
+    // space in a task definition would otherwise be handed to the SDK as a region name.
+    expect(botRegion({})).toBe(DEFAULT_REGION);
+    expect(botRegion({ BOT_AWS_REGION: 'eu-west-1' })).toBe('eu-west-1');
+    expect(botRegion({ BOT_AWS_REGION: '  eu-west-1  ' })).toBe('eu-west-1');
+    expect(botRegion({ BOT_AWS_REGION: '' })).toBe(DEFAULT_REGION);
+    expect(botRegion({ BOT_AWS_REGION: '   ' })).toBe(DEFAULT_REGION);
+    // AWS_REGION is deliberately NOT read: a laptop's own default is the thing being
+    // pinned away from, so only the explicit override moves it.
+    expect(botRegion({ AWS_REGION: 'eu-west-1' })).toBe(DEFAULT_REGION);
   });
 });

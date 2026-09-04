@@ -48,7 +48,15 @@ function sourceGroupsDir(): string {
 // OPERATOR path, where `pnpm bot:pair` against a default of eu-west-1 answered
 // `ResourceNotFoundException: Requested resource not found` — true, unhelpful, and naming
 // nothing that would lead anyone to the region. `BOT_AWS_REGION` overrides it.
-export const BOT_REGION = process.env.BOT_AWS_REGION || 'us-east-1';
+// A FUNCTION taking its environment, like `loadEnv` below, and trimming before it falls
+// back, like the ceiling does: a const frozen at import cannot be exercised per-case
+// without re-importing the module, and `' '` is truthy, so a stray space in a task
+// definition would have been handed to the SDK as a region name.
+export const DEFAULT_REGION = 'us-east-1';
+
+export function botRegion(env: NodeJS.ProcessEnv = process.env): string {
+  return env.BOT_AWS_REGION?.trim() || DEFAULT_REGION;
+}
 
 export const DEFAULT_DAILY_CALL_CEILING = 500;
 

@@ -32,13 +32,13 @@ import {
   SSMClient,
   type Parameter,
 } from '@aws-sdk/client-ssm';
-import { BOT_REGION } from './env';
+import { botRegion } from './env';
 import { GroupConfigError, assertUniqueGroupIds, parseGroupConfig, type GroupConfig } from './groupConfig';
 
 export const GROUPS_PATH = '/whippin/bot/groups';
 
 // Where the stacks are — the package's one region (`config/env.ts` says why it is pinned).
-export const GROUPS_REGION = BOT_REGION;
+export const groupsRegion = (): string => botRegion();
 
 // SSM's Standard tier caps a parameter value at 4 KB. The Advanced tier is a per-parameter
 // monthly charge and a different API, for a value that is one group's settings: a config
@@ -111,7 +111,7 @@ function toStored(name: string, json: string): StoredGroup {
 // A parameter whose name is no slug cannot be named by `rm` — a slug is what `rm` accepts,
 // and that rule is not loosened for the one case — so it is removed where it was made.
 export const removeByHand = (name: string): string =>
-  `aws ssm delete-parameter --region ${GROUPS_REGION} --name "${GROUPS_PATH}/${name}"`;
+  `aws ssm delete-parameter --region ${groupsRegion()} --name "${GROUPS_PATH}/${name}"`;
 
 // What a SNAPSHOT may be built from: every parameter usable, and the set valid as a set.
 // The message names sources and reasons, never a JID (it reaches CI logs).

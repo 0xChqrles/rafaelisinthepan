@@ -18,7 +18,7 @@
 // `pnpm bot:cli groups`, which does hold the lease and needs the service scaled to zero.
 //
 // SSM is regional, and a client in the wrong region reads an EMPTY LIST rather than
-// failing — so the region is pinned to the deployment's (`GROUPS_REGION`) instead of being
+// failing — so the region is pinned to the deployment's (`groupsRegion`) instead of being
 // inherited from the shell, and printed with every answer. `BOT_AWS_REGION` overrides.
 
 import { spawnSync } from 'node:child_process';
@@ -30,7 +30,7 @@ import { SSMClient } from '@aws-sdk/client-ssm';
 import { GroupConfigError, assertUniqueGroupIds } from './config/groupConfig';
 import {
   GROUPS_PATH,
-  GROUPS_REGION,
+  groupsRegion,
   assertDeployable,
   assertSlug,
   isSlug,
@@ -158,7 +158,7 @@ export async function run(argv: readonly string[], store: GroupsStore, snapshotD
     const { groups, broken } = await store.list();
     // The path AND the region, always: "nothing configured" and "looking in the wrong
     // place" are the same answer from SSM, so the answer has to say where it looked.
-    say(`${GROUPS_PATH} (${GROUPS_REGION})`);
+    say(`${GROUPS_PATH} (${groupsRegion()})`);
     if (groups.length === 0 && broken.length === 0) {
       say('  no group configured — add one with: pnpm bot:groups edit <slug>');
       return 0;
@@ -257,7 +257,7 @@ export async function run(argv: readonly string[], store: GroupsStore, snapshotD
       return 0;
     }
     const written = writeSnapshot(all, true, snapshotDir);
-    say(`${snapshotDir}  <- ${GROUPS_PATH} (${GROUPS_REGION})`);
+    say(`${snapshotDir}  <- ${GROUPS_PATH} (${groupsRegion()})`);
     if (written.length === 0) say('  (no group configured in SSM)');
     for (const file of written) say(`  ${file}`);
     return 0;
@@ -269,7 +269,7 @@ export async function run(argv: readonly string[], store: GroupsStore, snapshotD
 
 const invokedDirectly = process.argv[1] && process.argv[1].endsWith('groupsCli.ts');
 if (invokedDirectly) {
-  run(process.argv.slice(2), ssmGroupsStore(new SSMClient({ region: GROUPS_REGION })))
+  run(process.argv.slice(2), ssmGroupsStore(new SSMClient({ region: groupsRegion() })))
     .then((code) => {
       process.exitCode = code;
     })

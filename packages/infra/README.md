@@ -190,7 +190,7 @@ built from the repo root by the runner's Docker.
    SSM is regional and the wrong region answers an EMPTY LIST rather than an error, so the
    CLI PINS the region to `us-east-1` (where every stack is pinned) instead of inheriting
    the shell's, and prints it with every answer. **Every AWS client the bot builds is pinned
-   the same way** (`BOT_REGION`, `whatsapp-bot/src/config/env.ts`) — `pnpm bot:pair` and
+   the same way** (`botRegion()`, `whatsapp-bot/src/config/env.ts`) — `pnpm bot:pair` and
    `pnpm bot:cli` included, where a laptop on another region met
    `ResourceNotFoundException: Requested resource not found`, which is true and points
    nowhere near the cause. `BOT_AWS_REGION` overrides it if a deployment ever moves.

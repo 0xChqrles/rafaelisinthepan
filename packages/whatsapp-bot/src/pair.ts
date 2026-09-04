@@ -12,7 +12,7 @@
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import qrcode from 'qrcode-terminal';
-import { BOT_REGION, loadEnv } from './config/env';
+import { botRegion, loadEnv } from './config/env';
 import { createLog } from './log';
 import { hasPairedDevice, clearAuthInvalidated, useDynamoAuthState } from './whatsapp/authStore';
 import { connectWhatsApp } from './whatsapp/client';
@@ -28,7 +28,7 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 async function main(): Promise<void> {
   const log = createLog();
   const env = loadEnv({ ...process.env, BOT_TABLE: process.env.BOT_TABLE });
-  const dynamo = new DynamoDBClient({ region: BOT_REGION });
+  const dynamo = new DynamoDBClient({ region: botRegion() });
   const phone = flag('--phone');
   const reset = process.argv.includes('--reset');
   // Checked BEFORE the lease and the socket: a malformed number only ever surfaces as a
