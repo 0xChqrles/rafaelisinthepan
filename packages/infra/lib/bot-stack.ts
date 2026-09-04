@@ -419,12 +419,22 @@ export class BotStack extends Stack {
     ]);
     // The schedules' generated invoke role: LambdaInvoke grants the function ARN plus its
     // versions (`<arn>:*`) — the standard shape of a Lambda invoke grant.
+    //
+    // A REGEX, NOT A GLOB. `appliesTo` compares a plain string to the finding with `===`
+    // (cdk-nag `NagSuppressionHelper.doesApply`), so `Resource::<PodiumJob*.Arn>:*` matched
+    // nothing: the real finding names the function's generated logical id
+    // (`<PodiumJob54CFAD77.Arn>`), which is exactly the part that cannot be written out
+    // here. Only the `{ regex }` form is matched by pattern.
+    //
+    // It went unnoticed because the finding needs a SCHEDULE to exist, and a schedule needs
+    // an enabled group — so every synth run against an empty snapshot passed, and the first
+    // real group in SSM was also the first time this suppression was ever consulted.
     NagSuppressions.addStackSuppressions(this, [
       {
         id: 'AwsSolutions-IAM5',
         reason:
           'The EventBridge Scheduler target role may invoke the podium function and its versions (`<function arn>:*`), which is the standard invoke grant shape.',
-        appliesTo: ['Resource::<PodiumJob*.Arn>:*'],
+        appliesTo: [{ regex: String.raw`/^Resource::<PodiumJob[0-9A-F]*\.Arn>:\*$/` }],
       },
     ]);
 

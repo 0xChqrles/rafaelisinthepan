@@ -18,7 +18,10 @@
                               public). Absent/empty is a legitimate synth, since every cdk command here constructs
                               this stack; an empty one raises a synth WARNING, and `deploy-bot` pulls first.
     lib/bot-stack.test.ts     synthesized contract: one task stop-before-start, no secrets in env, one schedule per
-                              enabled group in its own time zone, alarms treat silence as down
+                              enabled group in its own time zone, alarms treat silence as down, and NO cdk-nag
+                              finding — `bin/app.ts` runs nag, where a finding is a failed synth
+    vitest.config.ts          excludes `cdk.out/**`: the image asset stages the repo root, so a local synth
+                              leaves copies of other packages' tests there for the default glob to collect
     lib/backend-stack.ts      BackendStack: private S3 + DynamoDB + Lambda(Fn URL) + CloudFront; opt api.<domain>; us-east-1
     lib/backend-stack.test.ts synthesized score-boundary contract (SSM names/IAM + deployable zero-cache/OAC policies) + the #230 mail shape
     lib/mail.ts               MailAlerts (SNS + SES reputation alarms) + MailReceiving (MX, rule set, S3, forwarder) — #230
