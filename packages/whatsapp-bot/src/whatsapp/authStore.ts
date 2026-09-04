@@ -75,23 +75,38 @@ function deserialize<T>(attr: AttributeValue | undefined): T | null {
   return JSON.parse(attr.S, BufferJSON.reviver) as T;
 }
 
-// IS THERE A SESSION TO RESUME? `creds.me` — the identity WhatsApp assigns when the device
-// links — and NOT `creds.registered`.
+// IS THERE A SESSION TO RESUME? `creds.me` PLUS proof a flow COMPLETED — `registered`
+// for pairing-code, `account` for QR — and NOT `me` alone.
 //
 // Baileys sets `registered` in exactly ONE place: the `link_code_pairing_ref` branch of
-// `messages-recv`, which is the PAIRING-CODE flow. A device linked by QR never gets it, and
-// nothing in the library ever READS the flag. What Baileys itself branches on is `creds.me`
-// (`Socket/socket.js`: `if (!creds.me)` register, else `generateLoginNode(creds.me.id)`),
-// so that is the question actually being asked here — "can this state log in?" — and it is
-// the one the task, the pairing CLI and the operator CLI all have to agree on. Gating on
-// `registered` meant a QR-paired bot reported `auth.unpaired` forever over a session that
-// worked, and `bot:pair` would have offered to pair again over a good one.
+// `messages-recv`, which is the PAIRING-CODE flow's completion. A device linked by QR
+// never gets it, and nothing in the library ever READS the flag. What Baileys itself
+// branches on is `creds.me` (`Socket/socket.js`: `if (!creds.me)` register, else
+// `generateLoginNode(creds.me.id)`), so gating on `registered` alone reported
+// `auth.unpaired` forever over a working QR session.
+//
+// But `me` alone over-claims the other way: `requestPairingCode` sets `creds.me`
+// OPTIMISTICALLY before the user approves anything (`Socket/socket.js`), and `registered`
+// is what marks that flow's completion. Between "code requested" and "code entered" the
+// stored state is `me` set / `registered: false` / no `account` — a session the server
+// never registered. Gating on `me` alone would refuse a retry without `--reset` over a
+// session that was never linked, and send the task to log in with an identity nobody
+// honours. Both completed flows are distinguishable from requested-only: QR/pair-success
+// sets `account` (`configureSuccessfulPairing`), pairing-code completion sets
+// `registered`.
 //
 // A `me` that WhatsApp no longer honours is not this predicate's problem: the socket is
 // refused, the close comes back `loggedOut`, and the status row goes INVALIDATED — the
 // fail-closed path, which is the honest place for that answer.
-export const hasPairedDevice = (creds: { me?: { id?: string } }): boolean =>
-  typeof creds.me?.id === 'string' && creds.me.id !== '';
+export const hasPairedDevice = (
+  creds:
+    | { me?: { id?: string } | null; registered?: boolean; account?: unknown }
+    | null
+    | undefined,
+): boolean =>
+  typeof creds?.me?.id === 'string' &&
+  creds.me.id !== '' &&
+  (creds.registered === true || creds.account != null);
 
 export async function readAuthStatus(client: DynamoDBClient, table: string): Promise<AuthStatus> {
   const item = (

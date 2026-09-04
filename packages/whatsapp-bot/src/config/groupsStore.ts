@@ -13,7 +13,7 @@
 // never looks, and report success — the snapshot would ship without what was just edited.
 // The region is therefore PINNED here rather than inherited (`GROUPS_REGION`): the stacks
 // are pinned to us-east-1 in `infra/bin/app.ts`, so that is where these parameters are,
-// and it is not a fact a shell variable should be able to get wrong. `BOT_GROUPS_REGION`
+// and it is not a fact a shell variable should be able to get wrong. `BOT_AWS_REGION`
 // overrides it for a deployment that moves.
 //
 // WHY A SNAPSHOT RATHER THAN A RUNTIME READ. Neither the task nor the podium Lambda talks

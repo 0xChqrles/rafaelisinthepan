@@ -19,7 +19,7 @@
 //
 // SSM is regional, and a client in the wrong region reads an EMPTY LIST rather than
 // failing — so the region is pinned to the deployment's (`GROUPS_REGION`) instead of being
-// inherited from the shell, and printed with every answer. `BOT_GROUPS_REGION` overrides.
+// inherited from the shell, and printed with every answer. `BOT_AWS_REGION` overrides.
 
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';

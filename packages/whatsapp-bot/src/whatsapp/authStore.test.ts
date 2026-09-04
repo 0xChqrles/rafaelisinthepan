@@ -45,20 +45,35 @@ function fakeDynamo() {
 }
 
 describe('is there a session to resume? (#236)', () => {
-  it('reads creds.me, NOT the pairing-code-only `registered` flag', () => {
+  it('reads a COMPLETED pairing, NOT the pairing-code-only `registered` flag nor `me` alone', () => {
     // Baileys sets `registered` in ONE place — the `link_code_pairing_ref` branch, i.e. the
-    // PAIRING-CODE flow — and never reads it. A device linked by QR is fully usable with
-    // the flag still false, which is what Baileys itself branches on (`if (!creds.me)`).
-    // Gating on `registered` reported `auth.unpaired` forever over a working session.
+    // PAIRING-CODE flow's completion — and never reads it. A device linked by QR is fully
+    // usable with the flag still false, which is why gating on `registered` reported
+    // `auth.unpaired` forever over a working session. But `requestPairingCode` sets
+    // `creds.me` OPTIMISTICALLY before approval, so `me` alone reads a requested-but-never-
+    // completed code as paired. QR/pair-success sets `account`; pairing-code completion
+    // sets `registered`.
     expect(hasPairedDevice(initAuthCreds())).toBe(false);
-    expect(hasPairedDevice({ me: { id: '33600000000@s.whatsapp.net' } })).toBe(true);
-    // The exact production shape: QR-paired, identity assigned, flag never set.
-    const qrPaired = { ...initAuthCreds(), me: { id: '33600000000@s.whatsapp.net' }, registered: false };
+    // Pairing code requested but never completed: `me` set, neither completion mark.
+    expect(hasPairedDevice({ me: { id: '33600000000@s.whatsapp.net' } })).toBe(false);
+    expect(hasPairedDevice({ me: { id: '33600000000@s.whatsapp.net' }, registered: false })).toBe(false);
+    // Pairing-code flow completed.
+    expect(hasPairedDevice({ me: { id: '33600000000@s.whatsapp.net' }, registered: true })).toBe(true);
+    // The exact production QR shape: identity + account assigned, flag never set.
+    const qrPaired = {
+      ...initAuthCreds(),
+      me: { id: '33600000000@s.whatsapp.net' },
+      registered: false,
+      account: {},
+    };
     expect(qrPaired.registered).toBe(false);
     expect(hasPairedDevice(qrPaired)).toBe(true);
     // Nothing usable in an empty or absent identity.
     expect(hasPairedDevice({})).toBe(false);
     expect(hasPairedDevice({ me: { id: '' } })).toBe(false);
+    expect(hasPairedDevice({ me: { id: '' }, registered: true })).toBe(false);
+    expect(hasPairedDevice(null)).toBe(false);
+    expect(hasPairedDevice(undefined)).toBe(false);
   });
 });
 
