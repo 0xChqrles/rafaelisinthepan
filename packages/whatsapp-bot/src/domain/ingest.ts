@@ -1,12 +1,19 @@
 // The per-message pipeline (#236): allow-list → share links → durable declaration →
-// deterministic reaction → (optionally) the new-leader line. No model anywhere here; a
-// message that carries no valid share for this group's language does nothing at all.
+// acknowledgement → (optionally) the new-leader line. A message that carries no valid share
+// for this group's language does nothing at all.
+//
+// The model reaches this path through ONE injected function (`deps.comment`) and only for a
+// group configured `acknowledge: "say"`. Everything that DECIDES anything here is still
+// model-free — the share decodes deterministically, the row is written before a word is
+// composed, and the band is the bot's — so a model that is slow, wrong or absent costs the
+// words and nothing else.
 //
 // A Dynamo failure is RETRIED, not reacted past: "Do not react as though the score was
 // recorded." Baileys delivers a live message once, so a write that fails for good is a
 // lost share the log says so about — the accepted integration failure, made visible.
 
-import type { GroupRegistry } from '../config/groupConfig';
+import type { GroupConfig, GroupRegistry } from '../config/groupConfig';
+import type { ShareFacts } from '../llm/shareComment';
 import type { Log } from '../log';
 import { tag } from '../log';
 import { commandIds, type OutboundCommand, type OutboundQueue } from '../outbound/commands';
@@ -31,6 +38,15 @@ export interface IngestDeps {
   log: Log;
   now?: () => Date;
   wait?: (ms: number) => Promise<void>;
+  // Writes the line for `acknowledge: "say"`. A function rather than a provider, so the
+  // domain stays model-free and testable: whoever supplies it owns the prompt, the ceiling
+  // and the retries (`llm/shareComment.ts`, wired in main.ts). Absent, or answering null,
+  // means the emoji stands in.
+  comment?: (group: GroupConfig, facts: ShareFacts) => Promise<string | null>;
+  // Told a line ONCE IT IS QUEUED — the line is a turn in the group's conversation and the
+  // caller remembers it as one (main.ts) — and never for a line the queue refused for
+  // good: remembered, that would be a message the bot believes it sent and nobody read.
+  spoken?: (group: GroupConfig, line: string) => void;
 }
 
 // `failed` WINS over `recorded`: a message carrying two days, one of which could not be
@@ -62,14 +78,16 @@ export function createIngest(deps: IngestDeps) {
   // the share is recorded and on the podium whatever happens here, so a queue that
   // refuses for good costs the emoji or the line, logged, and never the outcome — an
   // `ingest` that threw past a recorded share would report a loss that did not happen.
-  async function enqueue(command: OutboundCommand, group: string) {
+  async function enqueue(command: OutboundCommand, group: string): Promise<boolean> {
     try {
       await withRetry(() => deps.outbound.enqueue(command));
+      return true;
     } catch (error) {
       deps.log.error(
         { event: 'outbound.enqueue_failed', group: tag(group), kind: command.kind, error: (error as Error).message },
         'could not queue an acknowledgement; the share itself is recorded',
       );
+      return false;
     }
   }
 
@@ -177,27 +195,55 @@ export function createIngest(deps: IngestDeps) {
       }
     }
 
-    // ONE reaction per MESSAGE, whatever it carried. WhatsApp holds a single reaction per
-    // account per message and the command id is keyed by the message, so queueing one per
-    // DAY would leave an arbitrary survivor to decide the emoji. The best result the
-    // message showed is the one it is acknowledged for; a ∞ run is the worst of them.
+    // ONE acknowledgement per MESSAGE, whatever it carried. WhatsApp holds a single
+    // reaction per account per message and the command id is keyed by the message, so
+    // queueing one per DAY would leave an arbitrary survivor to decide it. The best result
+    // the message showed is the one it is acknowledged for; a ∞ run is the worst of them.
     const best = recorded.reduce<DecodedShare | null>(
       (kept, share) => (kept && rankOf(kept) <= rankOf(share) ? kept : share),
       null,
     );
-    if (group.reactions && message.live && best) {
-      await enqueue(
-        {
-          id: commandIds.reaction(group.id, message.id),
-          kind: 'reaction',
-          group: group.id,
-          target: { id: message.id, participant: message.participant },
-          emoji: reactionFor(best.score, best.capped),
-        },
+    if (group.acknowledge !== 'none' && message.live && best) {
+      // A LINE WHEN ASKED FOR ONE, THE EMOJI WHEN THERE IS NONE. The share is already
+      // durable; what is being chosen here is only how it is acknowledged, and an
+      // unavailable model may cost the words but never the acknowledgement itself.
+      const line =
+        group.acknowledge === 'say' && deps.comment
+          ? await deps.comment(group, {
+              player: displayName(group, message.sender, message.senderName),
+              score: best.score,
+              capped: best.capped,
+            }).catch((error) => {
+              deps.log.warn(
+                { event: 'share.comment_threw', group: tag(group.id), error: (error as Error).message },
+                'the line failed; acknowledging with the emoji',
+              );
+              return null;
+            })
+          : null;
+      const queued = await enqueue(
+        line
+          ? {
+              id: commandIds.ack(group.id, message.id),
+              kind: 'message',
+              group: group.id,
+              text: line,
+              replyTo: { id: message.id, participant: message.participant, text: message.text },
+            }
+          : {
+              id: commandIds.ack(group.id, message.id),
+              kind: 'reaction',
+              group: group.id,
+              target: { id: message.id, participant: message.participant },
+              emoji: reactionFor(best.score, best.capped),
+            },
         group.id,
       );
+      if (line && queued) deps.spoken?.(group, line);
     }
-    // After the reaction, so the acknowledgement lands before the commentary.
+    // Queued after the acknowledgement. The queue is standard SQS and promises no order, so
+    // this buys a tendency and not a guarantee — worth having, since the two are usually
+    // seconds apart and the acknowledgement reading second is merely odd, never wrong.
     for (const announcement of announcements) await enqueue(announcement, group.id);
     return failed ? 'failed' : outcome;
   };

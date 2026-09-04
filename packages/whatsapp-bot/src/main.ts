@@ -19,16 +19,20 @@ import { SSMClient } from '@aws-sdk/client-ssm';
 import { activeDate, dayNumber } from '@whippin/shared';
 import { createAgent } from './chat/agent';
 import { RecentContext } from './chat/context';
-import { dynamoLimitStore } from './chat/limits';
+import { dynamoLimitStore, limitExpiry, limitKeys } from './chat/limits';
 import { dynamoMemoryStore } from './chat/memory';
-import { addressedTo } from './chat/trigger';
+import { labelPlayers } from './chat/tools';
+import { addressedTo, jidUser, withMentionNames } from './chat/trigger';
 import { botRegion, loadEnv } from './config/env';
-import { loadGroups } from './config/groupConfig';
+import { loadGroups, type GroupConfig } from './config/groupConfig';
 import { dynamoDeclarationStore } from './domain/dynamoDeclarationStore';
 import { createIngest } from './domain/ingest';
+import { displayName } from './domain/names';
+import { withoutShares } from './domain/share';
 import { dynamoLeaderStore } from './domain/leader';
-import type { InboundMessage } from './domain/message';
+import type { InboundMessage, Mention } from './domain/message';
 import { createLlmProvider } from './llm';
+import { generateShareComment, type ShareFacts } from './llm/shareComment';
 import { createLog, tag } from './log';
 import { commandIds, type OutboundQueue } from './outbound/commands';
 import { dynamoSentStore } from './outbound/dedupStore';
@@ -119,14 +123,9 @@ async function main(): Promise<void> {
     : (outbound as CommandSource);
   if (!env.outboundQueueUrl) log.warn({ event: 'outbound.local' }, 'no BOT_OUTBOUND_QUEUE_URL: in-process outbound queue');
 
-  const ingest = createIngest({
-    groups,
-    declarations,
-    outbound,
-    leaders: dynamoLeaderStore(dynamo, env.table),
-    siteOrigin: env.siteOrigin,
-    log,
-  });
+  // ONE window per task, shared by the agent that reads it and `onMessage`, which fills
+  // it with everything the group says that was not aimed at the bot.
+  const context = new RecentContext();
 
   let provider = null;
   try {
@@ -134,13 +133,44 @@ async function main(): Promise<void> {
   } catch (error) {
     log.error({ event: 'llm.unconfigured', error: (error as Error).message }, 'no LLM provider; chat disabled');
   }
+  const limits = dynamoLimitStore(dynamo, env.table);
+  const memory = dynamoMemoryStore(dynamo, env.table);
+
+  // The spoken acknowledgement (`acknowledge: "say"`), and it SPENDS THE SAME DAILY CALL
+  // CEILING the conversation does. That ceiling exists to bound what the bot can cost in a
+  // day, and a second model path outside it would leave it bounding half the spend. Out of
+  // budget answers null, which is the emoji — the share is still acknowledged.
+  const comment = provider
+    ? (group: GroupConfig, facts: ShareFacts) =>
+        generateShareComment(provider, group, facts, log, async () => {
+          const at = new Date();
+          const { scope, key } = limitKeys.calls(at);
+          return limits.take(scope, key, env.llm.dailyCallCeiling, limitExpiry(at));
+        })
+    : undefined;
+
+  const ingest = createIngest({
+    groups,
+    declarations,
+    outbound,
+    leaders: dynamoLeaderStore(dynamo, env.table),
+    siteOrigin: env.siteOrigin,
+    log,
+    comment,
+    // A spoken acknowledgement is something the bot SAID in the group, so it belongs in the
+    // window like any other turn — otherwise "pourquoi tu dis ça ?" a minute later is a
+    // question about a message the bot cannot see. Remembered once it is QUEUED, not once
+    // it is composed: a line the queue refused for good was never said. The emoji is not a
+    // turn — there is nothing to remember about it.
+    spoken: (group, line) => context.push(group.id, { role: 'assistant', name: '', text: line, at: Date.now() }),
+  });
   const answer = provider
     ? createAgent({
         provider,
         declarations,
-        memory: dynamoMemoryStore(dynamo, env.table),
-        limits: dynamoLimitStore(dynamo, env.table),
-        context: new RecentContext(),
+        memory,
+        limits,
+        context,
         dailyCallCeiling: env.llm.dailyCallCeiling,
         log,
       })
@@ -148,24 +178,76 @@ async function main(): Promise<void> {
 
   const abort = new AbortController();
 
+  // The group's name for whoever a remembered message's mentions point at — off the same
+  // window the tools resolve names in (`labelPlayers`), so the window and a later question
+  // agree on who "Zou" is. Keyed by the digits the text's @token spells, labelled by the
+  // PLAYER the mention resolves to (a LID-addressed group's tokens spell LIDs the
+  // declarations know nobody by). A read that fails costs the names, never the message:
+  // the operator's override or the `…last4` handle stands in, which is the one thing the
+  // token may become — never stay as.
+  async function mentionNames(group: GroupConfig, mentions: Mention[]): Promise<Map<string, string>> {
+    const names = new Map<string, string>();
+    if (mentions.length === 0) return names;
+    let labels = new Map<string, string>();
+    try {
+      const today = dayNumber(activeDate(new Date()));
+      labels = await labelPlayers({ group, today, declarations }, mentions.map((m) => m.player));
+    } catch (error) {
+      log.warn({ event: 'chat.labels_failed', group: tag(group.id), error: (error as Error).message }, 'could not name the mentioned players');
+    }
+    for (const m of mentions) names.set(jidUser(m.jid), labels.get(m.player) ?? displayName(group, m.player, ''));
+    return names;
+  }
+
   async function onMessage(message: InboundMessage): Promise<void> {
-    await ingest(message);
     const group = groups.get(message.group);
-    if (!group || !group.chat.enabled || !message.live || message.fromMe || !answer || !client) return;
-    const identity = { jids: client.selfJids(), name: group.chat.name };
-    const address = addressedTo(message, identity);
-    if (!address) return;
-    log.info({ event: 'chat.addressed', how: address, group: tag(group.id), sender: tag(message.sender) }, 'addressed');
+    const listening =
+      group && group.chat.enabled && message.live && !message.fromMe && answer && client
+        ? { group, answer, identity: { jids: client.selfJids(), name: group.chat.name } }
+        : null;
+    const address = listening ? addressedTo(message, listening.identity) : null;
+    if (listening && !address) {
+      // NOT FOR THE BOT, BUT STILL THE CONVERSATION. Ordinary chatter is remembered so a
+      // later question can be answered in the room it was asked in — "I'm thinking of 67"
+      // has to be on the record before "@bot what number?" can mean anything. It reaches
+      // the provider only if somebody DOES address the bot while it is still in the window.
+      // What is remembered is what a conversation can use and nothing that identifies
+      // anyone: the share is stripped — the link AND the generated block around it, so a
+      // score-only message leaves nothing to remember — and every mention becomes the name
+      // the group uses, since the token spells a phone number.
+      // REMEMBERED BEFORE `ingest` RUNS: a share is acknowledged inside it, and a spoken
+      // acknowledgement is a turn too (`spoken`, above) — recorded the other way round,
+      // every such exchange read as the bot answering before the player had spoken.
+      const text = withoutShares(message.text, env.siteOrigin);
+      if (text) {
+        context.push(listening.group.id, {
+          role: 'user',
+          name: displayName(listening.group, message.sender, message.senderName),
+          text: withMentionNames(text, await mentionNames(listening.group, message.mentions)),
+          at: Date.now(),
+        });
+      }
+    }
+    await ingest(message);
+    if (!listening || !address) return;
+    const { identity } = listening;
+    log.info({ event: 'chat.addressed', how: address, group: tag(listening.group.id), sender: tag(message.sender) }, 'addressed');
     const today = dayNumber(activeDate(new Date()));
-    const outcome = await answer(message, group, identity, today);
+    // STRIPPED HERE TOO, not only on the ambient path. An addressed message can carry a
+    // share ("gg 7 essais <link> @bot qui mène ?"), and this one goes to the provider at
+    // once AND into the window as the turn the agent records — so leaving the share on it
+    // would send exactly what the ambient path is careful not to. The question loses
+    // nothing by having it removed; the agent names the mentions itself.
+    const asked = { ...message, text: withoutShares(message.text, env.siteOrigin) };
+    const outcome = await listening.answer(asked, listening.group, identity, today);
     if (outcome.kind === 'silent') {
-      log.info({ event: 'chat.silent', reason: outcome.reason, group: tag(group.id) }, 'no reply');
+      log.info({ event: 'chat.silent', reason: outcome.reason, group: tag(listening.group.id) }, 'no reply');
       return;
     }
     await outbound.enqueue({
-      id: commandIds.reply(group.id, message.id),
+      id: commandIds.reply(listening.group.id, message.id),
       kind: 'message',
-      group: group.id,
+      group: listening.group.id,
       text: outcome.text,
       replyTo: { id: message.id, participant: message.participant, text: message.text },
     });

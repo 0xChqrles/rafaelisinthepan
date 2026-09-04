@@ -20,7 +20,7 @@ import { buildSystemPrompt } from '../llm/personality';
 import { LlmUnavailable, type LlmMessage, type LlmProvider } from '../llm/types';
 import type { Log } from '../log';
 import { tag } from '../log';
-import type { RecentContext } from './context';
+import { boundTurnText, type RecentContext } from './context';
 import { limitExpiry, limitKeys, type LimitStore } from './limits';
 import type { MemoryStore } from './memory';
 import { createToolRunner } from './tools';
@@ -120,7 +120,10 @@ export function createAgent(deps: AgentDeps) {
     for (const mention of others) {
       mentionNames.set(jidUser(mention.jid), await tools.labelFor(mention.player));
     }
-    const question = questionText(message, identity, mentionNames);
+    // Bounded like a remembered turn (`context.ts`): a pasted article with "@bot résume"
+    // at the end is one message, and the window's budget protects nothing if the question
+    // beside it is unbounded.
+    const question = boundTurnText(questionText(message, identity, mentionNames));
 
     // THE SYSTEM PROMPT IS CODE- AND OPERATOR-AUTHORED, AND NOTHING ELSE. What a group
     // member typed — their push name, their message, and the notes the `remember` tool

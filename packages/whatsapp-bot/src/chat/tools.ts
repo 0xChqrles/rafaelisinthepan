@@ -185,6 +185,21 @@ export interface ToolRunner {
   labelFor(jid: string): Promise<string>;
 }
 
+// What the group calls each of some player keys, off the same window the tools resolve
+// names in — ONE read for the lot. The ambient path (main.ts) rewrites a remembered
+// message's mentions through it, so a name in the window is a name the tools can look up
+// again when the question about it comes.
+export async function labelPlayers(
+  ctx: Pick<ToolContext, 'group' | 'today' | 'declarations'>,
+  jids: readonly string[],
+): Promise<Map<string, string>> {
+  const rows = await ctx.declarations.range(ctx.group.id, ctx.today - HISTORY_WINDOW_DAYS, ctx.today);
+  const players = playersIn(inLanguage(rows, ctx.group.language));
+  return new Map(
+    jids.map((jid) => [jid, displayName(ctx.group, jid, players.find((p) => p.sender === jid)?.name ?? '')]),
+  );
+}
+
 export function createToolRunner(ctx: ToolContext): ToolRunner {
   const nameOf = (d: Declaration) => displayName(ctx.group, d.sender, d.name);
   // Every read is the group's own language (see `inLanguage`): a tool must not answer a

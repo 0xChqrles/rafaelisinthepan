@@ -27,7 +27,7 @@ describe('group configuration (#236)', () => {
     expect(config.podium).toEqual({ enabled: true, time: '22:00', timezone: 'Europe/Paris' });
     expect(config.chat.name).toBe('WhippinBot');
     expect(config.chat.prePrompt).toBe('Ce groupe aime se chambrer.');
-    expect(config.reactions).toBe(true);
+    expect(config.acknowledge).toBe('react');
     expect(config.leaderAnnouncements).toBe(false);
     expect(config.names).toEqual({});
   });
@@ -107,6 +107,27 @@ describe('group configuration (#236)', () => {
         expect(message).not.toContain('abc@g.us');
       }
     }
+  });
+});
+
+describe('how a share is acknowledged (#236)', () => {
+  it('accepts the three shapes and refuses anything else', () => {
+    for (const acknowledge of ['react', 'say', 'none']) {
+      expect(parseGroupConfig('g.json', { ...valid, acknowledge }).acknowledge).toBe(acknowledge);
+    }
+    expect(parseGroupConfig('g.json', valid).acknowledge).toBe('react'); // absent = today's behaviour
+    for (const bad of ['REACT', 'speak', true, 1, null]) {
+      expect(() => parseGroupConfig('g.json', { ...valid, acknowledge: bad })).toThrow(/acknowledge/);
+    }
+  });
+
+  it('refuses the field it REPLACED, rather than ignoring it', () => {
+    // `reactions: true` was the old spelling. Unknown fields fail closed, so a config that
+    // still carries it is refused where it is read — loudly, and not as silent default
+    // behaviour that would leave a group acknowledging differently than its file says.
+    expect(() => parseGroupConfig('g.json', { ...valid, reactions: true })).toThrow(
+      /unknown field "reactions"/,
+    );
   });
 });
 

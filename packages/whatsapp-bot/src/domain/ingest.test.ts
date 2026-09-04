@@ -61,7 +61,7 @@ function message(over: Partial<InboundMessage> = {}): InboundMessage {
   };
 }
 
-function harness(groups = registry()) {
+function harness(groups = registry(), over: Partial<Parameters<typeof createIngest>[0]> = {}) {
   const declarations = memoryDeclarationStore();
   const sent: OutboundCommand[] = [];
   const ingest = createIngest({
@@ -73,6 +73,7 @@ function harness(groups = registry()) {
     log: createLog('silent'),
     wait: async () => {},
     now: clock(),
+    ...over,
   });
   return { ingest, declarations, sent };
 }
@@ -86,7 +87,108 @@ describe('share ingestion (#236)', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ score: 7, name: 'Gab', messageId: 'M1' });
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ kind: 'reaction', id: `react:${GROUP}:M1`, emoji: '👍' });
+    expect(sent[0]).toMatchObject({ kind: 'reaction', id: `ack:${GROUP}:M1`, emoji: '👏' });
+  });
+
+  it('uses ONE id for the line and the emoji, so a message is acknowledged once', async () => {
+    // Two prefixes would let a message ingested twice send the line on the run where the
+    // model answered AND the emoji on the run where it did not: the sent-record dedups by
+    // command id, and two ids are two commands.
+    const said = harness(registry({ acknowledge: 'say' }), { comment: async () => 'une ligne.' });
+    await said.ingest(message());
+    const fell = harness(registry({ acknowledge: 'say' }), { comment: async () => null });
+    await fell.ingest(message());
+    expect(said.sent[0].kind).toBe('message');
+    expect(fell.sent[0].kind).toBe('reaction');
+    expect(said.sent[0].id).toBe(fell.sent[0].id);
+  });
+
+  it('says a line for a CAPPED run too, and tells the writer it failed', async () => {
+    const comment = vi.fn(async () => 'la phrase a gagné.');
+    const capped = `${ORIGIN}/s/${token(500, 'fr', true)}`;
+    const { ingest, sent } = harness(registry({ acknowledge: 'say' }), { comment });
+    expect(await ingest(message({ text: capped }))).toBe('recorded');
+    expect(comment).toHaveBeenCalledWith(
+      expect.objectContaining({ id: GROUP }),
+      expect.objectContaining({ capped: true, player: 'Gab', score: 500 }),
+    );
+    expect(sent[0]).toMatchObject({ kind: 'message', text: 'la phrase a gagné.' });
+  });
+
+  it('SAYS a line instead of reacting, quoting the share', async () => {
+    const comment = vi.fn(async () => 'Sept coups, honnête.');
+    const { ingest, sent } = harness(registry({ acknowledge: 'say' }), { comment });
+    expect(await ingest(message())).toBe('recorded');
+    expect(comment).toHaveBeenCalledWith(
+      expect.objectContaining({ id: GROUP }),
+      { player: 'Gab', score: 7, capped: false },
+    );
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      kind: 'message',
+      id: `ack:${GROUP}:M1`,
+      text: 'Sept coups, honnête.',
+      // Quotes the share, so which result it is about is never ambiguous in a busy group.
+      replyTo: { id: 'M1', participant: '33612345678@s.whatsapp.net' },
+    });
+  });
+
+  it('falls back to the emoji when the line cannot be written — never silence', async () => {
+    // The share is already durable; an unavailable model costs the words, not the
+    // acknowledgement. Both shapes of "no line" behave the same.
+    for (const comment of [vi.fn(async () => null), vi.fn(async () => { throw new Error('502'); })]) {
+      const { ingest, sent } = harness(registry({ acknowledge: 'say' }), { comment });
+      expect(await ingest(message())).toBe('recorded');
+      expect(sent).toHaveLength(1);
+      expect(sent[0]).toMatchObject({ kind: 'reaction', id: `ack:${GROUP}:M1`, emoji: '👏' });
+    }
+    // Configured to say, but nothing wired to say it (no model at all): the emoji too.
+    const { ingest, sent } = harness(registry({ acknowledge: 'say' }));
+    expect(await ingest(message())).toBe('recorded');
+    expect(sent[0]).toMatchObject({ kind: 'reaction' });
+  });
+
+  it('reports a line as SPOKEN only once it is queued — a refused line was never said', async () => {
+    // The caller remembers the line as a turn in the conversation (main.ts). Told before
+    // the queue accepted it, a line the queue refused for good would be a message the bot
+    // believes it sent and nobody read.
+    const spoken = vi.fn();
+    const said = harness(registry({ acknowledge: 'say' }), { comment: async () => 'une ligne.', spoken });
+    expect(await said.ingest(message())).toBe('recorded');
+    expect(spoken).toHaveBeenCalledWith(expect.objectContaining({ id: GROUP }), 'une ligne.');
+
+    const refused = vi.fn();
+    const dead = harness(registry({ acknowledge: 'say' }), {
+      comment: async () => 'une ligne.',
+      spoken: refused,
+      outbound: { enqueue: vi.fn().mockRejectedValue(new Error('sqs down')) },
+    });
+    expect(await dead.ingest(message({ id: 'M2', timestamp: 1_001 }))).toBe('recorded');
+    expect(refused).not.toHaveBeenCalled();
+
+    // The emoji is not a turn: nothing to remember about it.
+    const emoji = vi.fn();
+    const fell = harness(registry({ acknowledge: 'say' }), { comment: async () => null, spoken: emoji });
+    expect(await fell.ingest(message({ id: 'M3', timestamp: 1_002 }))).toBe('recorded');
+    expect(emoji).not.toHaveBeenCalled();
+  });
+
+  it('acknowledges nothing when the group asked for nothing', async () => {
+    const comment = vi.fn(async () => 'never');
+    const { ingest, declarations, sent } = harness(registry({ acknowledge: 'none' }), { comment });
+    expect(await ingest(message())).toBe('recorded');
+    // Recorded all the same — the podium does not depend on the acknowledgement.
+    expect((await declarations.day(GROUP, DAY))[0].score).toBe(7);
+    expect(sent).toEqual([]);
+    expect(comment).not.toHaveBeenCalled();
+  });
+
+  it('says nothing for a REPLAY, exactly as it reacts to none', async () => {
+    const comment = vi.fn(async () => 'x');
+    const { ingest, sent } = harness(registry({ acknowledge: 'say' }), { comment });
+    expect(await ingest(message({ live: false }))).toBe('recorded');
+    expect(sent).toEqual([]);
+    expect(comment).not.toHaveBeenCalled();
   });
 
   it('the reaction names the message key\'s participant, never the player key', async () => {
@@ -126,7 +228,7 @@ describe('share ingestion (#236)', () => {
     expect(await ingest(message())).toBe('recorded');
     expect(record).toHaveBeenCalledTimes(2);
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ kind: 'reaction', id: `react:${GROUP}:M1` });
+    expect(sent[0]).toMatchObject({ kind: 'reaction', id: `ack:${GROUP}:M1` });
     // A genuine second delivery, later, is still the no-op it always was.
     expect(await ingest(message())).toBe('unchanged');
     expect(sent).toHaveLength(1);
@@ -152,11 +254,11 @@ describe('share ingestion (#236)', () => {
     const text = `${ORIGIN}/s/${token(9)} et hier ${ORIGIN}/s/${token(3, 'fr', false, DAY - 1)}`;
     expect(await ingest(message({ text }))).toBe('recorded');
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ kind: 'reaction', id: `react:${GROUP}:M1`, emoji: '🔥' });
+    expect(sent[0]).toMatchObject({ kind: 'reaction', id: `ack:${GROUP}:M1`, emoji: '💯' });
   });
 
   it('a REPLAY moves the leader row, so a later live share cannot claim a lead it lacks', async () => {
-    const { ingest, sent } = harness(registry({ leaderAnnouncements: true, reactions: false }));
+    const { ingest, sent } = harness(registry({ leaderAnnouncements: true, acknowledge: 'none' }));
     // Replayed history: recorded, and deliberately not announced…
     expect(await ingest(message({ id: 'M1', text: `${ORIGIN}/s/${token(3)}`, live: false }))).toBe(
       'recorded',
@@ -197,7 +299,7 @@ describe('share ingestion (#236)', () => {
     expect((await declarations.day(GROUP, DAY))[0]).toMatchObject({ score: 7, messageId: 'M2', name: 'Gab 🔥' });
     // …but the result was acknowledged once, on the message that first declared it.
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ kind: 'reaction', id: `react:${GROUP}:M1` });
+    expect(sent[0]).toMatchObject({ kind: 'reaction', id: `ack:${GROUP}:M1` });
   });
 
   it('a later message replaces the declaration; an older replay does not', async () => {
@@ -324,7 +426,7 @@ describe('share ingestion (#236)', () => {
   });
 
   it('announces a lead CHANGE, with the operator name, and never the first share', async () => {
-    const { ingest, sent } = harness(registry({ leaderAnnouncements: true, reactions: false }));
+    const { ingest, sent } = harness(registry({ leaderAnnouncements: true, acknowledge: 'none' }));
     await ingest(message({ id: 'M1', text: `${ORIGIN}/s/${token(7)}` }));
     expect(sent).toEqual([]);
     await ingest(

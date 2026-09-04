@@ -15,7 +15,7 @@
     "perUserPerDay": 10,
     "perGroupPerDay": 60
   },
-  "reactions": true,
+  "acknowledge": "react",
   "leaderAnnouncements": false,
   "names": {}
 }

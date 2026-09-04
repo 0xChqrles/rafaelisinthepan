@@ -31,8 +31,15 @@ export type OutboundCommand =
 // The id conventions — one place, so two producers can never collide by accident.
 export const commandIds = {
   podium: (group: string, dayNumber: number) => `podium:${group}:${dayNumber}`,
-  reaction: (group: string, messageId: string) => `react:${group}:${messageId}`,
   reply: (group: string, messageId: string) => `reply:${group}:${messageId}`,
+  // THE acknowledgement of a share — ONE id whichever shape it takes, a written line or the
+  // emoji it falls back to. The id is keyed by the MESSAGE because that is the thing being
+  // acknowledged once; a prefix per shape would let a message ingested twice send the line
+  // on the run where the model answered AND the emoji on the run where it did not, which is
+  // exactly the double acknowledgement the sent-record exists to prevent. Distinct from
+  // `reply:` because one message can be both a share and a question, and those are two
+  // different things to say.
+  ack: (group: string, messageId: string) => `ack:${group}:${messageId}`,
   leader: (group: string, dayNumber: number, sender: string, score: number) =>
     `leader:${group}:${dayNumber}:${sender}:${score}`,
 };
