@@ -19,16 +19,17 @@ import { SSMClient } from '@aws-sdk/client-ssm';
 import { activeDate, dayNumber } from '@whippin/shared';
 import { createAgent } from './chat/agent';
 import { RecentContext } from './chat/context';
-import { dynamoLimitStore } from './chat/limits';
+import { dynamoLimitStore, limitExpiry, limitKeys } from './chat/limits';
 import { dynamoMemoryStore } from './chat/memory';
 import { addressedTo } from './chat/trigger';
 import { botRegion, loadEnv } from './config/env';
-import { loadGroups } from './config/groupConfig';
+import { loadGroups, type GroupConfig } from './config/groupConfig';
 import { dynamoDeclarationStore } from './domain/dynamoDeclarationStore';
 import { createIngest } from './domain/ingest';
 import { dynamoLeaderStore } from './domain/leader';
 import type { InboundMessage } from './domain/message';
 import { createLlmProvider } from './llm';
+import { generateShareComment, type ShareFacts } from './llm/shareComment';
 import { createLog, tag } from './log';
 import { commandIds, type OutboundQueue } from './outbound/commands';
 import { dynamoSentStore } from './outbound/dedupStore';
@@ -119,6 +120,30 @@ async function main(): Promise<void> {
     : (outbound as CommandSource);
   if (!env.outboundQueueUrl) log.warn({ event: 'outbound.local' }, 'no BOT_OUTBOUND_QUEUE_URL: in-process outbound queue');
 
+  let provider = null;
+  try {
+    provider = await createLlmProvider(env.llm, ssm);
+  } catch (error) {
+    log.error({ event: 'llm.unconfigured', error: (error as Error).message }, 'no LLM provider; chat disabled');
+  }
+  const limits = dynamoLimitStore(dynamo, env.table);
+
+  // The spoken acknowledgement (`acknowledge: "say"`), and it SPENDS THE SAME DAILY CALL
+  // CEILING the conversation does. That ceiling exists to bound what the bot can cost in a
+  // day, and a second model path outside it would leave it bounding half the spend. Out of
+  // budget answers null, which is the emoji — the share is still acknowledged.
+  const comment = provider
+    ? async (group: GroupConfig, facts: ShareFacts) => {
+        const at = new Date();
+        const { scope, key } = limitKeys.calls(at);
+        if (!(await limits.take(scope, key, env.llm.dailyCallCeiling, limitExpiry(at)))) {
+          log.info({ event: 'share.comment_ceiling', group: tag(group.id) }, 'daily call ceiling reached');
+          return null;
+        }
+        return generateShareComment(provider, group, facts, log);
+      }
+    : undefined;
+
   const ingest = createIngest({
     groups,
     declarations,
@@ -126,20 +151,14 @@ async function main(): Promise<void> {
     leaders: dynamoLeaderStore(dynamo, env.table),
     siteOrigin: env.siteOrigin,
     log,
+    comment,
   });
-
-  let provider = null;
-  try {
-    provider = await createLlmProvider(env.llm, ssm);
-  } catch (error) {
-    log.error({ event: 'llm.unconfigured', error: (error as Error).message }, 'no LLM provider; chat disabled');
-  }
   const answer = provider
     ? createAgent({
         provider,
         declarations,
         memory: dynamoMemoryStore(dynamo, env.table),
-        limits: dynamoLimitStore(dynamo, env.table),
+        limits,
         context: new RecentContext(),
         dailyCallCeiling: env.llm.dailyCallCeiling,
         log,

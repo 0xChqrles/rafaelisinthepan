@@ -51,8 +51,13 @@ export interface GroupConfig {
   enabled: boolean;
   podium: PodiumConfig;
   chat: ChatConfig;
-  // Deterministic reactions to a valid share (no model call). Off = acknowledge nothing.
-  reactions: boolean;
+  // HOW a recorded share is acknowledged (user-decided 2026-09-04). `react` is the
+  // deterministic emoji, no model call; `say` is one short written line the model composes,
+  // which falls back to the emoji when the model cannot answer — an acknowledgement is owed
+  // and is never dropped for want of a joke; `none` acknowledges nothing. It replaced a
+  // `reactions` boolean: a second flag beside it would have made "both off" and "both on"
+  // two ways of saying one thing, and the choice is one axis, not two.
+  acknowledge: Acknowledge;
   // Proactive "X takes the lead with N" text on the deterministic new-leader event. Off by
   // default: it is a second policy with its own anti-spam state (domain/leader.ts).
   leaderAnnouncements: boolean;
@@ -60,6 +65,10 @@ export interface GroupConfig {
   // NAMES a JID; it never creates another player identity, and nothing fuzzy-merges names.
   names: Record<string, string>;
 }
+
+// How a share is acknowledged in a group — see `GroupConfig.acknowledge`.
+export type Acknowledge = 'react' | 'say' | 'none';
+const ACKNOWLEDGE: readonly Acknowledge[] = ['react', 'say', 'none'];
 
 export const GROUP_JID = /^\d{5,}@g\.us$/;
 export const USER_JID = /^\d{5,}@(s\.whatsapp\.net|lid)$/;
@@ -117,11 +126,11 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
     'enabled',
     'podium',
     'chat',
-    'reactions',
+    'acknowledge',
     'leaderAnnouncements',
     'names',
   ]);
-  const { id, name, language, enabled, podium, chat, reactions, leaderAnnouncements, names } =
+  const { id, name, language, enabled, podium, chat, acknowledge, leaderAnnouncements, names } =
     raw;
   if (typeof id !== 'string' || !GROUP_JID.test(id)) fail(file, '"id" must be a group JID');
   if (id === PLACEHOLDER_GROUP_JID) {
@@ -169,8 +178,8 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
     }
   }
 
-  if (reactions !== undefined && typeof reactions !== 'boolean') {
-    fail(file, '"reactions" must be a boolean');
+  if (acknowledge !== undefined && !ACKNOWLEDGE.includes(acknowledge as Acknowledge)) {
+    fail(file, `"acknowledge" must be one of ${ACKNOWLEDGE.join(', ')}`);
   }
   if (leaderAnnouncements !== undefined && typeof leaderAnnouncements !== 'boolean') {
     fail(file, '"leaderAnnouncements" must be a boolean');
@@ -215,7 +224,7 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
       perUserPerDay: perUserPerDay as number,
       perGroupPerDay: perGroupPerDay as number,
     },
-    reactions: reactions ?? true,
+    acknowledge: (acknowledge as Acknowledge | undefined) ?? 'react',
     leaderAnnouncements: leaderAnnouncements ?? false,
     names: overrides,
   };

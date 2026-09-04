@@ -33,6 +33,10 @@ export const commandIds = {
   podium: (group: string, dayNumber: number) => `podium:${group}:${dayNumber}`,
   reaction: (group: string, messageId: string) => `react:${group}:${messageId}`,
   reply: (group: string, messageId: string) => `reply:${group}:${messageId}`,
+  // The spoken acknowledgement of a share. Its own prefix, not `reply:`: the same message
+  // can be both a share and a question addressed to the bot, and two commands keyed alike
+  // would have the dispatcher's sent-record swallow the second as a duplicate.
+  ack: (group: string, messageId: string) => `ack:${group}:${messageId}`,
   leader: (group: string, dayNumber: number, sender: string, score: number) =>
     `leader:${group}:${dayNumber}:${sender}:${score}`,
 };

@@ -6,7 +6,8 @@
 // recorded." Baileys delivers a live message once, so a write that fails for good is a
 // lost share the log says so about — the accepted integration failure, made visible.
 
-import type { GroupRegistry } from '../config/groupConfig';
+import type { GroupConfig, GroupRegistry } from '../config/groupConfig';
+import type { ShareFacts } from '../llm/shareComment';
 import type { Log } from '../log';
 import { tag } from '../log';
 import { commandIds, type OutboundCommand, type OutboundQueue } from '../outbound/commands';
@@ -31,6 +32,11 @@ export interface IngestDeps {
   log: Log;
   now?: () => Date;
   wait?: (ms: number) => Promise<void>;
+  // Writes the line for `acknowledge: "say"`. A function rather than a provider, so the
+  // domain stays model-free and testable: whoever supplies it owns the prompt, the ceiling
+  // and the retries (`llm/shareComment.ts`, wired in main.ts). Absent, or answering null,
+  // means the emoji stands in.
+  comment?: (group: GroupConfig, facts: ShareFacts) => Promise<string | null>;
 }
 
 // `failed` WINS over `recorded`: a message carrying two days, one of which could not be
@@ -177,23 +183,49 @@ export function createIngest(deps: IngestDeps) {
       }
     }
 
-    // ONE reaction per MESSAGE, whatever it carried. WhatsApp holds a single reaction per
-    // account per message and the command id is keyed by the message, so queueing one per
-    // DAY would leave an arbitrary survivor to decide the emoji. The best result the
-    // message showed is the one it is acknowledged for; a ∞ run is the worst of them.
+    // ONE acknowledgement per MESSAGE, whatever it carried. WhatsApp holds a single
+    // reaction per account per message and the command id is keyed by the message, so
+    // queueing one per DAY would leave an arbitrary survivor to decide it. The best result
+    // the message showed is the one it is acknowledged for; a ∞ run is the worst of them.
     const best = recorded.reduce<DecodedShare | null>(
       (kept, share) => (kept && rankOf(kept) <= rankOf(share) ? kept : share),
       null,
     );
-    if (group.reactions && message.live && best) {
+    if (group.acknowledge !== 'none' && message.live && best) {
+      // A LINE WHEN ASKED FOR ONE, THE EMOJI WHEN THERE IS NONE. The share is already
+      // durable; what is being chosen here is only how it is acknowledged, and an
+      // unavailable model may cost the words but never the acknowledgement itself.
+      const line =
+        group.acknowledge === 'say' && deps.comment
+          ? await deps.comment(group, {
+              player: displayName(group, message.sender, message.senderName),
+              score: best.score,
+              capped: best.capped,
+              dayNumber: best.dayNumber,
+            }).catch((error) => {
+              deps.log.warn(
+                { event: 'share.comment_threw', group: tag(group.id), error: (error as Error).message },
+                'the line failed; acknowledging with the emoji',
+              );
+              return null;
+            })
+          : null;
       await enqueue(
-        {
-          id: commandIds.reaction(group.id, message.id),
-          kind: 'reaction',
-          group: group.id,
-          target: { id: message.id, participant: message.participant },
-          emoji: reactionFor(best.score, best.capped),
-        },
+        line
+          ? {
+              id: commandIds.ack(group.id, message.id),
+              kind: 'message',
+              group: group.id,
+              text: line,
+              replyTo: { id: message.id, participant: message.participant, text: message.text },
+            }
+          : {
+              id: commandIds.reaction(group.id, message.id),
+              kind: 'reaction',
+              group: group.id,
+              target: { id: message.id, participant: message.participant },
+              emoji: reactionFor(best.score, best.capped),
+            },
         group.id,
       );
     }

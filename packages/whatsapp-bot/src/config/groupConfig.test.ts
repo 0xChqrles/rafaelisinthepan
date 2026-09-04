@@ -27,7 +27,7 @@ describe('group configuration (#236)', () => {
     expect(config.podium).toEqual({ enabled: true, time: '22:00', timezone: 'Europe/Paris' });
     expect(config.chat.name).toBe('WhippinBot');
     expect(config.chat.prePrompt).toBe('Ce groupe aime se chambrer.');
-    expect(config.reactions).toBe(true);
+    expect(config.acknowledge).toBe('react');
     expect(config.leaderAnnouncements).toBe(false);
     expect(config.names).toEqual({});
   });

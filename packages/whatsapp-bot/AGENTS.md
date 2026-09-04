@@ -33,12 +33,13 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
       podium.ts                 DENSE podium (1, 2, 2 → 3); ∞ runs listed, never positioned
       podiumText.ts             the renderer (positions/names/scores/framing are ITS; comments keyed by line id)
       names.ts                  display name = operator override ?? latest snapshot ?? …last4
-      reactions.ts              score band → emoji, no model
+      reactions.ts              score band → emoji, no model (the `acknowledge: "react"` shape)
       leader.ts                 the new-leader event + its anti-spam row (LEAD#<day>)
       ingest.ts                 the per-message pipeline: allow-list → share → durable row → reaction/leader
     src/outbound/               ONE owner of sends: commands (ids), SQS transport, sent-record dedup, dispatcher
     src/llm/                    provider-neutral contract (types.ts), providers/deepseek.ts, the versioned
-                                personality, podium comments (validated, retried, degrade to none)
+                                personality, podium comments (validated, retried, degrade to none),
+                                shareComment.ts — the spoken acknowledgement, degrading to the emoji
     src/chat/                   addressed conversation: trigger (mention/reply/name), ceilings (limits),
                                 in-memory recent context, durable social memory, read-only tools + name
                                 resolution (one window constant: a tool never promises days it
@@ -165,9 +166,29 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   records the WhatsApp id. The send-then-crash duplicate window is accepted over marking
   before sending. The sent record catches a
   REDELIVERY and nothing longer-lived, so it wears the table's TTL (30 days) rather than
-  accumulating a permanent row per message ever sent. ONE reaction per MESSAGE, for the
+  accumulating a permanent row per message ever sent. ONE acknowledgement per MESSAGE, for the
   best result it carried — the id is keyed by the message, and WhatsApp holds one reaction
-  per account anyway. A leader row is keyed by (group, LANGUAGE, day) and moves on every
+  per account anyway.
+  **HOW a share is acknowledged is `acknowledge` in the group config (user-decided
+  2026-09-04):** `react` is the deterministic emoji, `say` is one short line the model
+  writes (`llm/shareComment.ts`, quoting the share so a busy group can tell whose result it
+  is about), `none` is silence. It REPLACED a `reactions` boolean — the choice is one axis,
+  and a second flag beside it would have spelled "both off" two ways. **A `say` group still
+  falls back to the EMOJI** whenever the line does not arrive: the share is durable by then
+  and is owed a sign that it landed, so an unavailable model, an unusable answer or a spent
+  ceiling costs the words and never the acknowledgement. The line is COMMENTARY over facts
+  the bot decides — score, cap and player go IN — and it spends the same
+  `BOT_LLM_DAILY_CALL_CEILING` the conversation does, because a second model path outside
+  that ceiling would leave it bounding half the spend.
+  **A TRUNCATED ANSWER IS REFUSED ON ITS FINISH REASON, not inspected.** `deepseek-v4-flash`
+  is a reasoning model and its thinking is spent from `max_tokens`, so a tight budget returns
+  a FRAGMENT — and a short fragment passes every length check (the observed one was
+  "Gab, 7 ess"). Measured: 300 tokens truncated 1 run in 4, 800 none, 1500 still one, since
+  the thinking length has no ceiling worth trusting. Hence a generous budget AND the
+  `finish === 'length'` check. **The same hazard is unfixed elsewhere** (`chat/agent.ts`
+  posts `plainReply` of whatever came back, so a cut-off reply reaches the group as a
+  fragment; `llm/podiumComments.ts` is protected only incidentally, because truncated JSON
+  fails to parse). A leader row is keyed by (group, LANGUAGE, day) and moves on every
   improvement and on a REPLAY, so history cannot make a later share announce a lead it does
   not hold; only a change of HOLDER is announced, read from what the write DISPLACED rather
   than from a stale read (`leader.ts` says why). A claim that fails is logged and dropped —
