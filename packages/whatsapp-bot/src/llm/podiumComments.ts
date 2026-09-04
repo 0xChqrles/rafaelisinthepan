@@ -19,6 +19,7 @@
 // retries would not fit; and each comment is composed knowing only its own line, which is
 // what it was asked to talk about anyway.
 
+import { fold } from '@whippin/shared';
 import type { GroupConfig } from '../config/groupConfig';
 import type { Podium } from '../domain/podium';
 import { scoreBand } from '../domain/reactions';
@@ -152,6 +153,48 @@ async function commentForLine(
   return null;
 }
 
+// ONE WORD, ONCE PER PODIUM (user-decided 2026-09-04). The lines are written independently
+// and in parallel, and identical verdicts converge on identical prose: a real podium came
+// back telling almost everybody they had sweated ("suer" — a verb the prompt itself had
+// leaked through a negative example, since removed). The prompt asks for variety and
+// cannot see the other lines; this can. Read top to bottom, a comment that repeats a
+// DISTINCTIVE word an earlier one already used is dropped, and its podium line goes bare,
+// which the renderer already prints. Distinctive: six letters or more once folded, not a
+// name on the podium, and not the game's own vocabulary, which every line may share.
+const ECHO_MIN_CHARS = 6;
+const SHARED_VOCABULARY = new Set(['phrase', 'journee', 'aujourdhui', 'essais', 'podium', 'whippin', 'secret', 'secrets', 'premier', 'premiere', 'dernier', 'derniere']);
+
+function distinctiveWords(text: string, names: ReadonlySet<string>): Set<string> {
+  const words = new Set<string>();
+  for (const raw of text.split(/[^\p{L}\p{M}'’-]+/u)) {
+    const word = fold(raw).replace(/-/g, '');
+    if (word.length >= ECHO_MIN_CHARS && !SHARED_VOCABULARY.has(word) && !names.has(word)) words.add(word);
+  }
+  return words;
+}
+
+export function dropEchoes(
+  lines: readonly PodiumCommentLine[],
+  comments: ReadonlyMap<string, string>,
+): { kept: Map<string, string>; dropped: string[] } {
+  const names = new Set(lines.flatMap((l) => l.names).flatMap((n) => n.split(/\s+/)).map((n) => fold(n).replace(/-/g, '')));
+  const used = new Set<string>();
+  const kept = new Map<string, string>();
+  const dropped: string[] = [];
+  for (const line of lines) {
+    const comment = comments.get(line.id);
+    if (!comment) continue;
+    const words = distinctiveWords(comment, names);
+    if ([...words].some((w) => used.has(w))) {
+      dropped.push(line.id);
+      continue;
+    }
+    for (const w of words) used.add(w);
+    kept.set(line.id, comment);
+  }
+  return { kept, dropped };
+}
+
 export async function generatePodiumComments(
   provider: LlmProvider,
   group: GroupConfig,
@@ -172,9 +215,11 @@ export async function generatePodiumComments(
   );
   const comments = new Map<string, string>();
   for (const [id, comment] of written) if (comment) comments.set(id, comment);
+  const { kept, dropped } = dropEchoes(lines, comments);
+  if (dropped.length > 0) log.info({ event: 'podium.comment_echo', ids: dropped }, 'dropped comments echoing an earlier line');
   log.info(
-    { event: 'podium.comments_generated', lines: lines.length, written: comments.size },
+    { event: 'podium.comments_generated', lines: lines.length, written: comments.size, kept: kept.size },
     'podium comments',
   );
-  return comments;
+  return kept;
 }
