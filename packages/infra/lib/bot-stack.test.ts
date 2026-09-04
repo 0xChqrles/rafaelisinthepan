@@ -1,6 +1,8 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import { App, Aspects } from 'aws-cdk-lib';
 import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
 import { AwsSolutionsChecks } from 'cdk-nag';
@@ -141,4 +143,49 @@ describe('WhatsApp bot stack (#236)', () => {
       Annotations.fromStack(stack).findError('*', Match.stringLikeRegexp('AwsSolutions-.*')),
     ).toEqual([]);
   });
+});
+
+describe('the podium Lambda BUNDLE, not just its template (2026-09-04 outage)', () => {
+  // THE TEMPLATE CANNOT SEE THIS BUG, and the test above deliberately skips bundling —
+  // "the deploy's business, not the assertions'" — so nothing loaded the Lambda until a
+  // schedule loaded it in production. pino requires `node:os` at load; esbuild's ESM
+  // output replaces a `require` it cannot resolve with a stub that THROWS, so the
+  // function died in INIT on every invocation. Both schedules fired at 22:00, all six
+  // attempts failed, and the only visible symptom was a group that got no podium.
+  // `scripts/bundle.mjs` had carried the createRequire banner for the TASK all along.
+  it('loads under Node ESM, with a working require for its CommonJS dependencies', async () => {
+    const app = new App(); // bundling ON, unlike botTemplate() above
+    new BotStack(app, 'BundledBotStack', {
+      env: { account: ACCOUNT, region: REGION },
+      llmApiKeyParameter: KEY_PARAMETER,
+      operatorEmail: 'ops@test.invalid',
+      groupsDir: groupsDir(),
+    });
+    const asm = app.synth();
+    // The podium asset is the one carrying the group snapshot its handler reads.
+    const bundles = readdirSync(asm.directory)
+      .map((entry) => join(asm.directory, entry, 'index.mjs'))
+      .filter((file) => existsSync(file) && existsSync(join(dirname(file), 'groups')));
+    expect(bundles).toHaveLength(1);
+
+    // IN A REAL NODE ESM PROCESS, NOT THIS ONE. Vitest's module runner puts a `require`
+    // in scope, and esbuild's stub checks `typeof require !== "undefined"` before it
+    // throws — so importing the bundle here SUCCEEDS even when the banner is missing, and
+    // the test could never fail. (Verified: banner removed, cdk.out wiped, still green.)
+    // Loaded from INSIDE the bot package, where `@aws-sdk/*` resolves — it is external to
+    // the bundle, exactly as in the Lambda, whose runtime provides it.
+    const probe = join(__dirname, '..', '..', 'whatsapp-bot', `bundle-probe-${process.pid}.mjs`);
+    try {
+      copyFileSync(bundles[0], probe);
+      const out = spawnSync(
+        process.execPath,
+        ['--input-type=module', '-e', `const m = await import(${JSON.stringify(pathToFileURL(probe).href)}); if (typeof m.handler !== 'function') { throw new Error('no handler export'); } console.log('ok');`],
+        { encoding: 'utf8' },
+      );
+      expect(`${out.stdout}${out.stderr}`.trim()).toContain('ok');
+      expect(out.status).toBe(0);
+    } finally {
+      rmSync(probe, { force: true });
+    }
+  }, 120_000);
 });
