@@ -351,11 +351,20 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   **THE BOT KNOWS HOW THE GAME WORKS, AND EXPLAINS IT (personality v3, user-decided
   2026-09-04).** The first thing a new group asked was how the words are ranked, and the bot
   could not say — it knew the rules of scoring and nothing about the SEMANTICS. The global
-  personality now carries it: ranks come from usage over an enormous corpus (books,
-  Wikipedia), so closeness is the company a word keeps and not synonymy or spelling —
-  "capuche" and "soleil" are near each other because both live around weather — and a rank
-  of 1 is the word most often found in the same company, not "almost the word". Explaining
-  this is the ONE subject where being helpful is in character.
+  personality now carries it: ranks come from usage over an enormous corpus (the web and
+  Wikipedia — fastText's Common Crawl build for fr, GloVe's Wikipedia + news for en), so
+  closeness is the company a word keeps and not synonymy or spelling, and a rank of 1 is
+  the word most often found in the same company, not "almost the word". Explaining this is
+  the ONE subject where being helpful is in character. **THE WORKED EXAMPLE IS CHECKED
+  AGAINST THE REAL VECTORS** (PR-246 review, v5): the first draft taught "capuche" /
+  "soleil", which in `cc.fr.300_reduced` have a similarity of 0.20 and are outside each
+  other's top 3000 — the bot would have explained the game with a pair the game itself
+  calls a MISS. It now teaches "soleil" / "vent" (rank 3 of each other's neighbourhood,
+  measured), and any future example goes through the same `KeyedVectors` check before it is
+  written. v5 also gives it the facts a player actually asks about: a guess lands on every
+  hole it improves, holes start with a hint word, a MISS has no rank and still costs a try,
+  an unknown word is refused for free, 500 unsolved is ∞, and Word mode exists (timed,
+  higher is better) while the podium ranks the sentence alone.
   **ENCOURAGING IS THE DEFAULT; SARCASM IS OPTED INTO (v4, user-decided 2026-09-04).** v2
   and v3 built an UNIMPRESSED bot — "very little impresses you", bands that ran from
   "grudging respect" down to "unmoved" — and it was funny and too cold for the group it
