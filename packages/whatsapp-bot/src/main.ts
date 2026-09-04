@@ -22,7 +22,7 @@ import { RecentContext } from './chat/context';
 import { dynamoLimitStore, limitExpiry, limitKeys } from './chat/limits';
 import { dynamoMemoryStore } from './chat/memory';
 import { labelPlayers } from './chat/tools';
-import { addressedTo, jidUser, withMentionNames } from './chat/trigger';
+import { addressedTo, followsBot, jidUser, withMentionNames, type LastSpeaker } from './chat/trigger';
 import { botRegion, loadEnv } from './config/env';
 import { loadGroups, type GroupConfig } from './config/groupConfig';
 import { dynamoDeclarationStore } from './domain/dynamoDeclarationStore';
@@ -199,34 +199,51 @@ async function main(): Promise<void> {
     return names;
   }
 
+  // THE FLOOR: who spoke last in each group, off every message the group delivers — the
+  // bot's own sends included, which WhatsApp echoes back as `fromMe` — so a message that
+  // follows the bot's line can be offered to the model as a possible reply to it
+  // (`followsBot`). Stamped with the message's OWN timestamp and never moved backwards: an
+  // offline delivery or a history replay arrives out of order.
+  const lastSpeaker = new Map<string, LastSpeaker>();
+
+  // What the window keeps of an ordinary message — what a conversation can use and nothing
+  // that identifies anyone: the share stripped, the link AND the generated block around
+  // it, so a score-only message leaves nothing to remember; and every mention as the name
+  // the group uses, since the token spells a phone number.
+  async function remember(group: GroupConfig, message: InboundMessage): Promise<void> {
+    const text = withoutShares(message.text, env.siteOrigin);
+    if (!text) return;
+    context.push(group.id, {
+      role: 'user',
+      name: displayName(group, message.sender, message.senderName),
+      text: withMentionNames(text, await mentionNames(group, message.mentions)),
+      at: Date.now(),
+    });
+  }
+
   async function onMessage(message: InboundMessage): Promise<void> {
     const group = groups.get(message.group);
+    const at = message.timestamp * 1000;
+    const last = group ? lastSpeaker.get(group.id) : undefined;
+    if (group && (!last || at >= last.at)) lastSpeaker.set(group.id, { bot: message.fromMe, at });
     const listening =
       group && group.chat.enabled && message.live && !message.fromMe && answer && client
         ? { group, answer, identity: { jids: client.selfJids(), name: group.chat.name } }
         : null;
-    const address = listening ? addressedTo(message, listening.identity) : null;
+    // Aimed at the bot — or, failing that, the first thing said after the bot's own last
+    // line, which MAY be: offered to the model as tentative, and declinable.
+    const address = listening
+      ? (addressedTo(message, listening.identity) ?? (followsBot(last, at) ? 'follow' : null))
+      : null;
     if (listening && !address) {
       // NOT FOR THE BOT, BUT STILL THE CONVERSATION. Ordinary chatter is remembered so a
       // later question can be answered in the room it was asked in — "I'm thinking of 67"
       // has to be on the record before "@bot what number?" can mean anything. It reaches
       // the provider only if somebody DOES address the bot while it is still in the window.
-      // What is remembered is what a conversation can use and nothing that identifies
-      // anyone: the share is stripped — the link AND the generated block around it, so a
-      // score-only message leaves nothing to remember — and every mention becomes the name
-      // the group uses, since the token spells a phone number.
       // REMEMBERED BEFORE `ingest` RUNS: a share is acknowledged inside it, and a spoken
       // acknowledgement is a turn too (`spoken`, above) — recorded the other way round,
       // every such exchange read as the bot answering before the player had spoken.
-      const text = withoutShares(message.text, env.siteOrigin);
-      if (text) {
-        context.push(listening.group.id, {
-          role: 'user',
-          name: displayName(listening.group, message.sender, message.senderName),
-          text: withMentionNames(text, await mentionNames(listening.group, message.mentions)),
-          at: Date.now(),
-        });
-      }
+      await remember(listening.group, message);
     }
     await ingest(message);
     if (!listening || !address) return;
@@ -239,9 +256,12 @@ async function main(): Promise<void> {
     // would send exactly what the ambient path is careful not to. The question loses
     // nothing by having it removed; the agent names the mentions itself.
     const asked = { ...message, text: withoutShares(message.text, env.siteOrigin) };
-    const outcome = await listening.answer(asked, listening.group, identity, today);
+    const outcome = await listening.answer(asked, listening.group, identity, today, { tentative: address === 'follow' });
     if (outcome.kind === 'silent') {
-      log.info({ event: 'chat.silent', reason: outcome.reason, group: tag(listening.group.id) }, 'no reply');
+      log.info({ event: 'chat.silent', reason: outcome.reason, how: address, group: tag(listening.group.id) }, 'no reply');
+      // A follow-up the model declined was ordinary chatter after all, and is remembered
+      // as such — the agent records a turn only when it answers one.
+      if (outcome.reason === 'not_for_me') await remember(listening.group, message);
       return;
     }
     await outbound.enqueue({

@@ -55,10 +55,25 @@ function contextInfo(message: WAMessage) {
   );
 }
 
-function seconds(ts: WAMessage['messageTimestamp']): number {
+export function messageSeconds(ts: WAMessage['messageTimestamp']): number {
   if (ts == null) return 0;
   if (typeof ts === 'number') return ts;
   return Number(ts.toString());
+}
+
+// WHAT COUNTS AS LIVE. Baileys marks a `messages.upsert` `notify` for a message that has
+// just arrived and `append` for one delivered from WhatsApp's OFFLINE queue on reconnect
+// (and for the socket's own sends). The task restarts on every deploy, and a mention sent
+// during that minute came back as `append` — recorded, never answered, its share never
+// acknowledged (observed 2026-09-04: a share logged `live: false` two seconds after
+// `wa.open`). So an offline delivery is live too when the message is RECENT: an answer to a
+// question asked a minute ago is an answer, one to a question asked last night is noise,
+// and an emoji on last night's share is a bot waking up confused. History sync
+// (`messaging-history.set`) is a different event and is never live.
+export const OFFLINE_LIVE_S = 10 * 60;
+
+export function isLive(type: 'notify' | 'append', timestampS: number, nowS: number): boolean {
+  return type === 'notify' || nowS - timestampS <= OFFLINE_LIVE_S;
 }
 
 export async function toInbound(
@@ -96,7 +111,7 @@ export async function toInbound(
     participant,
     senderName: message.pushName ?? '',
     text: messageText(message),
-    timestamp: seconds(message.messageTimestamp),
+    timestamp: messageSeconds(message.messageTimestamp),
     fromMe: key.fromMe === true,
     mentions,
     ...(quoted ? { quoted } : {}),

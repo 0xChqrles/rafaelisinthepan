@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { WAMessage } from 'baileys';
-import { canonicalSender, toInbound } from './inbound';
+import { OFFLINE_LIVE_S, canonicalSender, isLive, toInbound } from './inbound';
 
 const GROUP = '120363000000000001@g.us';
 // The transport's LID → number mapping, as the socket would answer it.
@@ -126,5 +126,16 @@ describe('Baileys stops at the inbound boundary (#236)', () => {
     expect(await toInbound(wa({ key: { remoteJid: '33612345678@s.whatsapp.net' } }), true, resolve)).toBeNull();
     expect(await toInbound(wa({ key: { id: undefined } }), true, resolve)).toBeNull();
     expect(await toInbound(wa({ key: { fromMe: true, participant: undefined }, message: { conversation: 'x' } }), true, resolve)).toMatchObject({ fromMe: true, sender: 'me' });
+  });
+
+  it('treats an OFFLINE delivery as live while the message is recent', () => {
+    // Baileys marks what WhatsApp queued during a disconnection `append`, not `notify` —
+    // and the task restarts on every deploy. A question asked during that minute is still
+    // a question; a share from last night is not owed an emoji at breakfast.
+    const now = 1_700_000_000;
+    expect(isLive('notify', now - 3 * 3600, now)).toBe(true);
+    expect(isLive('append', now - 60, now)).toBe(true);
+    expect(isLive('append', now - OFFLINE_LIVE_S, now)).toBe(true);
+    expect(isLive('append', now - OFFLINE_LIVE_S - 1, now)).toBe(false);
   });
 });

@@ -42,7 +42,27 @@ function nameForm(name: string, trailing = ''): RegExp {
   return new RegExp(`^\\s*@?${escapeRegExp(name)}${nameBoundary(name)}${trailing}`, 'iu');
 }
 
-export type Address = 'mention' | 'reply' | 'name' | null;
+export type Address = 'mention' | 'reply' | 'name' | 'follow' | null;
+
+// THE FLOOR: who spoke last in a group, and when — main.ts keeps one per group off every
+// message the group delivers, the bot's own sends included (WhatsApp echoes them back as
+// `fromMe`). `at` is the message's OWN timestamp, so an offline delivery orders correctly.
+export interface LastSpeaker {
+  bot: boolean;
+  at: number; // ms
+}
+
+export const FOLLOW_UP_WINDOW_MS = 2 * 60_000;
+
+// A message that FOLLOWS the bot's own last line, soon after it, MAY be a reply to it
+// (user-decided 2026-09-04): a person answering a line does not @-mention its author, and
+// a "merci" or an "et hier ?" seconds after the bot spoke reads as one. It is offered to
+// the model as TENTATIVE — the agent tells it so and asks it to decline what was not for
+// it — never treated as certain. Bounded by construction: the moment anybody else speaks
+// the floor is theirs, so at most ONE candidate follows each thing the bot says.
+export function followsBot(last: LastSpeaker | undefined, at: number): boolean {
+  return last !== undefined && last.bot && at >= last.at && at - last.at <= FOLLOW_UP_WINDOW_MS;
+}
 
 // Either spelling of a reference may be the bot's: the JID the message carried, or the
 // player key it resolved to (the bot's own LID may be unknown to `identity` while the

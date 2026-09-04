@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { InboundMessage } from '../domain/message';
-import { addressedTo, questionText, withMentionNames } from './trigger';
+import { FOLLOW_UP_WINDOW_MS, addressedTo, followsBot, questionText, withMentionNames } from './trigger';
 
 const identity = { jids: ['33700000000@s.whatsapp.net', '99999999999999@lid'], name: 'WhippinBot' };
 const m = (jid: string, player = jid) => ({ jid, player });
@@ -83,5 +83,19 @@ describe('conversation triggers (#236)', () => {
     expect(withMentionNames('@33659018262 tu confirmes ?', names)).toBe('…8262 tu confirmes ?');
     expect(withMentionNames('gg @33600000000 et @33659018262 !', names)).toBe('gg Zou et …8262 !');
     expect(withMentionNames('rien à voir', names)).toBe('rien à voir');
+  });
+
+  it('offers the first message after the bot\'s own line as a possible reply, briefly', () => {
+    // A person answering the bot does not @-mention it. The floor is the bot's until
+    // somebody else speaks, so at most one candidate follows each thing it says.
+    const said = { bot: true, at: 1_000_000 };
+    expect(followsBot(said, said.at + 5_000)).toBe(true);
+    expect(followsBot(said, said.at + FOLLOW_UP_WINDOW_MS)).toBe(true);
+    expect(followsBot(said, said.at + FOLLOW_UP_WINDOW_MS + 1)).toBe(false);
+    // Out of order (an offline delivery from before the bot spoke) is not a follow-up.
+    expect(followsBot(said, said.at - 1)).toBe(false);
+    // Somebody else has the floor, or nobody has spoken yet.
+    expect(followsBot({ bot: false, at: said.at }, said.at + 5_000)).toBe(false);
+    expect(followsBot(undefined, said.at)).toBe(false);
   });
 });

@@ -27,7 +27,7 @@ import type { Log } from '../log';
 import type { OutboundCommand } from '../outbound/commands';
 import { hasPairedDevice, type DurableAuth } from './authStore';
 import { baileysLogger } from './baileysLog';
-import { toInbound } from './inbound';
+import { isLive, messageSeconds, toInbound } from './inbound';
 
 export type StopReason = 'logged_out' | 'replaced';
 
@@ -104,10 +104,10 @@ export async function connectWhatsApp(options: WhatsAppClientOptions): Promise<W
 
   // Sequential per batch, so the messages of one delivery reach the handler in the order
   // WhatsApp sent them; the handlers themselves still run concurrently.
-  async function deliver(messages: WAMessage[], live: boolean, event: string): Promise<void> {
+  async function deliver(messages: WAMessage[], live: (raw: WAMessage) => boolean, event: string): Promise<void> {
     for (const raw of messages) {
       try {
-        const message = await toInbound(raw, live, playerKey);
+        const message = await toInbound(raw, live(raw), playerKey);
         if (!message) continue;
         options.onMessage(message).catch((error) =>
           log.error({ event, messageId: message.id, error: (error as Error).message }, 'message handling failed'),
@@ -206,14 +206,17 @@ export async function connectWhatsApp(options: WhatsAppClientOptions): Promise<W
       }
     });
 
+    // `notify` is live; `append` — WhatsApp's offline queue, delivered on reconnect — is
+    // live while the message is recent (`isLive`), so the minute a deploy costs does not
+    // cost the questions asked during it.
     socket.ev.on('messages.upsert', ({ messages, type }) => {
-      void deliver(messages, type === 'notify', 'inbound.failed');
+      void deliver(messages, (raw) => isLive(type, messageSeconds(raw.messageTimestamp), Date.now() / 1000), 'inbound.failed');
     });
 
     // History sync (at pairing, and whatever a resync delivers) may replay shares; they are
     // ingested idempotently and never reacted to — `live` is false.
     socket.ev.on('messaging-history.set', ({ messages }) => {
-      void deliver(messages, false, 'history.failed');
+      void deliver(messages, () => false, 'history.failed');
     });
   }
 

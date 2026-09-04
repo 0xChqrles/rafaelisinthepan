@@ -169,6 +169,75 @@ describe('addressed conversation (#236)', () => {
     ).toEqual({ kind: 'silent', reason: 'call_ceiling' });
   });
 
+  it('a TENTATIVE message is offered to the model, which may decline it — for free', async () => {
+    // Not aimed at the bot, merely the first thing said after its own line. The model is
+    // told so; NO_REPLY is silence, and a declined follow-up spends nobody's day of
+    // questions (the ceiling here is two): five declines, then a real question still gets
+    // its answer.
+    const { provider, requests } = scripted([
+      () => ({ text: 'NO_REPLY' }),
+      () => ({ text: 'no_reply.' }),
+      () => ({ text: ' NO_REPLY\n' }),
+      () => ({ text: '_NO_REPLY_' }),
+      () => ({ text: '**NO_REPLY**' }),
+      () => ({ text: 'de rien' }),
+    ]);
+    const context = new RecentContext();
+    const answer = agentWith(provider, { context });
+    const follow = (text: string, id: string) => message(text, { id, mentions: [] });
+    for (const [i, text] of ['ok', 'lol', 'bon', 'hein', 'quoi'].entries()) {
+      expect(await answer(follow(text, `F${i}`), group, identity, TODAY, { tentative: true })).toEqual({
+        kind: 'silent',
+        reason: 'not_for_me',
+      });
+    }
+    expect(requests[0].system).toContain('NOT addressed to you');
+    expect(requests[0].system).toContain('NO_REPLY');
+    // Declined: not a turn the agent records (main.ts remembers it as chatter instead).
+    expect(context.recent(GROUP, new Date('2026-09-03T12:00:00Z').getTime())).toEqual([]);
+    expect(await answer(follow('merci', 'F5'), group, identity, TODAY, { tentative: true })).toEqual({
+      kind: 'reply',
+      text: 'de rien',
+    });
+    // Answered, so charged like any question — and the exchange is a turn.
+    expect(context.recent(GROUP, new Date('2026-09-03T12:00:00Z').getTime()).map((t) => t.text)).toEqual(['merci', 'de rien']);
+    // A message aimed at the bot is never told it might not be.
+    await answer(message('@33700000000 et hier ?', { id: 'Q' }), group, identity, TODAY);
+    expect(requests[6].system).not.toContain('NO_REPLY');
+  });
+
+  it('a tentative reply still honours the ceilings, charged once the model has answered', async () => {
+    const { provider } = scripted([() => ({ text: 'a' }), () => ({ text: 'b' }), () => ({ text: 'c' })]);
+    const answer = agentWith(provider);
+    const follow = (text: string, id: string) => message(text, { id, mentions: [] });
+    expect((await answer(follow('un', 'F1'), group, identity, TODAY, { tentative: true })).kind).toBe('reply');
+    expect((await answer(follow('deux', 'F2'), group, identity, TODAY, { tentative: true })).kind).toBe('reply');
+    expect(await answer(follow('trois', 'F3'), group, identity, TODAY, { tentative: true })).toEqual({
+      kind: 'silent',
+      reason: 'user_limit',
+    });
+  });
+
+  it('retries an answer that did not FINISH once, then stays silent rather than posting a fragment', async () => {
+    // The reasoning model spends its thinking from the reply budget: a `length` finish is a
+    // fragment, or nothing at all — both observed in production as a question that was
+    // plainly asked and never answered.
+    const once = scripted([() => ({ text: 'Gab, 7 ess', finish: 'length' }), () => ({ text: 'Sept, correct.' })]);
+    expect(await agentWith(once.provider)(message('x'), group, identity, TODAY)).toEqual({
+      kind: 'reply',
+      text: 'Sept, correct.',
+    });
+    expect(once.requests).toHaveLength(2);
+    const twice = scripted([() => ({ text: null, finish: 'length' }), () => ({ text: 'Gab,', finish: 'other' })]);
+    expect(await agentWith(twice.provider)(message('x'), group, identity, TODAY)).toEqual({
+      kind: 'silent',
+      reason: 'unfinished',
+    });
+    expect(twice.requests).toHaveLength(2);
+    // The budget is sized for the thinking, not for the line.
+    expect(once.requests[0].maxTokens).toBeGreaterThanOrEqual(2000);
+  });
+
   it('keeps another player\'s mention in the question, as the name the group uses', async () => {
     const declarations = memoryDeclarationStore();
     await declarations.record({
