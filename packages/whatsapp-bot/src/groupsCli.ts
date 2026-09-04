@@ -1,16 +1,23 @@
 // Managing group configurations (#236). SSM is the source of truth; this is how a human
-// edits it and how a deploy materializes it.
+// changes it and how a deploy materializes it.
 //
 //   pnpm bot:groups list            what SSM holds
-//   pnpm bot:groups edit <slug>     pull (or start from example.json), $EDITOR, validate, write back
+//   pnpm bot:groups push <slug>     groups/local/<slug>.json -> SSM, validated first
 //   pnpm bot:groups rm <slug>       remove from SSM
 //   pnpm bot:groups pull [slug]     SSM -> groups/local/, one or all; what deploy runs
 //                                     (full pull owns the directory, single pull owns its file)
 //
+// THE WORKFLOW IS EDIT THE FILE, THEN PUSH IT (user-decided 2026-09-05, replacing `edit`,
+// which opened $EDITOR on a temp copy): the snapshot directory is where a config is read
+// from anyway, so it is where one is written — `pull`, change `groups/local/<slug>.json` in
+// whatever you like, `push`. A new group starts from `groups/example.json` copied to its
+// slug. The file the deploy reads and the file the operator edits are the same file, so
+// there is no draft to lose and no editor to configure.
+//
 // FOUR COMMANDS, AND THE OMISSIONS ARE THE DESIGN. There is no `disable`, because
-// `enabled: false` through `edit` is already exactly that and a second way to say it is a
-// second thing to keep in step. There is no `validate`, because validation must not be a
-// step somebody can forget: `edit` refuses to write an invalid config and `pull` refuses to
+// `enabled: false` pushed is already exactly that and a second way to say it is a second
+// thing to keep in step. There is no `validate`, because validation must not be a step
+// somebody can forget: `push` refuses to write an invalid config and `pull` refuses to
 // produce an invalid snapshot, so nothing invalid can reach a deploy through either door.
 //
 // It opens NO WhatsApp socket and takes NO session lease — it only reads and writes SSM, so
@@ -21,9 +28,7 @@
 // failing — so the region is pinned to the deployment's (`groupsRegion`) instead of being
 // inherited from the shell, and printed with every answer. `BOT_AWS_REGION` overrides.
 
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SSMClient } from '@aws-sdk/client-ssm';
@@ -48,9 +53,9 @@ export const SNAPSHOT_DIR = join(GROUPS_DIR, 'local');
 
 const USAGE = `Usage:
   pnpm bot:groups list
-  pnpm bot:groups edit <slug>
+  pnpm bot:groups push <slug>     groups/local/<slug>.json -> SSM
   pnpm bot:groups rm <slug>
-  pnpm bot:groups pull [slug]
+  pnpm bot:groups pull [slug]     SSM -> groups/local/
 `;
 
 function say(line = ''): void {
@@ -86,71 +91,6 @@ export function writeSnapshot(
   return groups.map((g) => `${g.slug}.json`);
 }
 
-// $EDITOR on a temp file, looped until what comes back is valid. An invalid config is
-// re-opened with the reason at the top rather than thrown away, and leaving it UNCHANGED
-// after an error is how you abort — otherwise a typo in a pre-prompt would cost the whole
-// edit and there would be no way out but to close the terminal.
-//
-// `problem` is a reason known BEFORE the editor opens — a stored body the parser already
-// refuses — and it opens with that reason on top, exactly as a failed draft reopens.
-function editUntilValid(
-  slug: string,
-  initial: string,
-  others: readonly StoredGroup[],
-  problem?: string,
-): string | null {
-  const dir = mkdtempSync(join(tmpdir(), `whippin-group-${slug}-`));
-  const file = join(dir, `${slug}.json`);
-  const editor = process.env.VISUAL || process.env.EDITOR || 'vi';
-  // The reason travels INTO the editor: a message printed to a terminal the editor is
-  // about to repaint is a message nobody reads. Built from the stripped body so a second
-  // failure replaces the header rather than stacking another copy.
-  const withReason = (message: string, body: string): string =>
-    `// ✗ ${message.split('\n')[0]}\n// Delete this line; save unchanged to abort.\n${body}`;
-  let text = problem === undefined ? initial : withReason(problem, initial);
-  // The draft outlives ONLY a deliberate abort, where its path is printed as the way back
-  // in. Every other exit — a valid save, an editor that failed, an error of ours — removes
-  // it: it holds a group's JID, which does not get left sitting in $TMPDIR.
-  let keepDraft = false;
-  try {
-    for (;;) {
-      writeFileSync(file, text);
-      const before = text;
-      const run = spawnSync(`${editor} "${file}"`, { stdio: 'inherit', shell: true });
-      if (run.error) throw new GroupConfigError(`could not run ${editor}: ${run.error.message}`);
-      if (run.status !== 0) {
-        // Killed by a signal (Ctrl-C, a kill), `status` is null and `signal` says what happened.
-        const how = run.signal ? `was killed by ${run.signal}` : `exited ${run.status}`;
-        throw new GroupConfigError(`${editor} ${how}; nothing written.`);
-      }
-      text = readFileSync(file, 'utf8');
-      // The injected header is not JSON: strip it before validating, so the operator can
-      // fix the body while leaving the header in place. The raw text still decides the
-      // abort below — only a byte-identical save aborts.
-      const stripped = text.replace(/^\/\/ (✗|Delete this line).*\n/gm, '');
-      try {
-        return validateForStore(slug, stripped, others);
-      } catch (error) {
-        if (!(error instanceof GroupConfigError)) throw error;
-        // THE REASON FIRST, ALWAYS. On the first round there is no earlier error to refer
-        // back to, so "unchanged" on its own met a newcomer who opened the template, saved
-        // it, and was told nothing about what was wrong with it — which is the one round
-        // where the answer ("that is still the placeholder JID") is the whole help.
-        say(`\n  ✗ ${error.message}`);
-        if (text === before) {
-          keepDraft = true;
-          say(`    Unchanged — nothing written. Your draft: ${file}`);
-          return null;
-        }
-        say('    Fix it in the editor, or save it unchanged to abort.');
-        text = withReason(error.message, stripped);
-      }
-    }
-  } finally {
-    if (!keepDraft) rmSync(dir, { recursive: true, force: true });
-  }
-}
-
 export async function run(argv: readonly string[], store: GroupsStore, snapshotDir: string = SNAPSHOT_DIR): Promise<number> {
   const [command, argument] = argv;
 
@@ -160,19 +100,20 @@ export async function run(argv: readonly string[], store: GroupsStore, snapshotD
     // place" are the same answer from SSM, so the answer has to say where it looked.
     say(`${GROUPS_PATH} (${groupsRegion()})`);
     if (groups.length === 0 && broken.length === 0) {
-      say('  no group configured — add one with: pnpm bot:groups edit <slug>');
+      say(`  no group configured — copy ${EXAMPLE} to groups/local/<slug>.json, fill it in, then: pnpm bot:groups push <slug>`);
       return 0;
     }
     for (const group of groups) say(`  ${describe(group)}`);
     // A broken parameter is listed WITH its way out, and it never stops the listing: this
     // is the screen an operator reads to find out what to fix, so it has to be readable
-    // exactly when something is wrong. A slug's body is fixed through `edit` (which opens
-    // it as it is) or dropped through `rm`; a name that is no slug is removed by hand.
+    // exactly when something is wrong. A slug's body is replaced by pushing a good file
+    // over it (`pull` will not hand it back — it refuses a broken set — so the file is
+    // written afresh) or dropped through `rm`; a name that is no slug is removed by hand.
     for (const b of broken) {
       say(`  ✗ ${b.name}: ${b.reason}`);
       say(
         isSlug(b.name)
-          ? `    fix it: pnpm bot:groups edit ${b.name}   or drop it: pnpm bot:groups rm ${b.name}`
+          ? `    fix it: write groups/local/${b.name}.json and: pnpm bot:groups push ${b.name}   or drop it: pnpm bot:groups rm ${b.name}`
           : `    rm cannot name it; drop it by hand: ${removeByHand(b.name)}`,
       );
     }
@@ -187,33 +128,30 @@ export async function run(argv: readonly string[], store: GroupsStore, snapshotD
     return 0;
   }
 
-  if (command === 'edit') {
+  if (command === 'push') {
     if (!argument) return say(USAGE), 1;
     assertSlug(argument);
-    const { groups, broken } = await store.list();
-    const current = groups.find((g) => g.slug === argument);
-    // A body the parser refuses is still THIS slug's, and editing it is how it gets fixed:
-    // it opens as it is, with the reason on top, exactly like a draft that failed.
-    const damaged = broken.find((b) => b.name === argument);
-    if (!current && !damaged && !existsSync(EXAMPLE)) {
-      throw new GroupConfigError(`no config for "${argument}" and no template at ${EXAMPLE}`);
+    const file = join(snapshotDir, `${argument}.json`);
+    if (!existsSync(file)) {
+      throw new GroupConfigError(
+        `no ${file}. Pull it first (pnpm bot:groups pull ${argument}), or for a new group copy ${EXAMPLE} there and fill it in.`,
+      );
     }
-    say(
-      current
-        ? `Editing ${argument}.`
-        : damaged
-          ? `Editing ${argument}, which SSM holds in a form the bot would refuse.`
-          : `New group "${argument}", starting from example.json.`,
-    );
-    const initial = current?.json ?? damaged?.json ?? readFileSync(EXAMPLE, 'utf8');
-    const next = editUntilValid(argument, initial, groups, damaged?.reason);
-    if (next === null) return 1;
+    const { groups } = await store.list();
+    // Validated against the OTHER stored groups — a second config for one JID is refused
+    // here, before SSM holds two — and canonicalized, so what is stored is what `pull`
+    // would hand back and the file is rewritten to match it: the file and SSM say the
+    // same thing byte for byte after a push, which is what lets a diff of the file mean
+    // something.
+    const next = validateForStore(argument, readFileSync(file, 'utf8'), groups);
+    const current = groups.find((g) => g.slug === argument);
     if (current && next === current.json) {
       say('No change.');
       return 0;
     }
     await store.put(argument, next);
-    say(`Wrote ${argument} to SSM. It reaches the bot on the next deploy.`);
+    writeFileSync(file, next);
+    say(`Pushed ${argument} to SSM. It reaches the bot on the next deploy.`);
     return 0;
   }
 

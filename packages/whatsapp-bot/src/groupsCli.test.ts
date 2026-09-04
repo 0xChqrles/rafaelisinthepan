@@ -28,11 +28,6 @@ const memoryStore = (groups: StoredGroup[], broken: BrokenParameter[] = []): Gro
 
 const tempDir = (): string => mkdtempSync(join(tmpdir(), 'whippin-groups-cli-'));
 
-// The editor's drafts live under this prefix; counting them is how a test sees whether an
-// exit cleaned up after itself.
-const drafts = (slug: string): number =>
-  readdirSync(tmpdir()).filter((f) => f.startsWith(`whippin-group-${slug}-`)).length;
-
 // Runs `body` with stdout captured, and returns what was said.
 async function saying(body: () => Promise<unknown>): Promise<string> {
   const said: string[] = [];
@@ -48,94 +43,58 @@ async function saying(body: () => Promise<unknown>): Promise<string> {
   return said.join('');
 }
 
-// $EDITOR is spawned through a shell with the file appended, so a plain command stands in
-// for one without a fixture script: `true` opens and changes nothing, `cp <src>` replaces
-// the draft wholesale.
-function withEditor<T>(command: string, body: () => Promise<T>): Promise<T> {
-  const before = { editor: process.env.EDITOR, visual: process.env.VISUAL };
-  process.env.EDITOR = command;
-  delete process.env.VISUAL; // VISUAL wins over EDITOR; a developer's own must not decide the test
-  return body().finally(() => {
-    process.env.EDITOR = before.editor;
-    if (before.visual !== undefined) process.env.VISUAL = before.visual;
-  });
-}
+describe('bot:groups push (user-decided 2026-09-05)', () => {
+  // The workflow: pull, change groups/local/<slug>.json in anything, push. The file the
+  // deploy reads and the file the operator edits are the same file.
+  const withFile = (dir: string, slug: string, body: unknown) =>
+    writeFileSync(join(dir, `${slug}.json`), typeof body === 'string' ? body : JSON.stringify(body));
 
-describe('bot:groups edit (#236)', () => {
-  it('refuses the template saved unchanged, says why, and writes nothing to SSM', async () => {
-    const written: string[] = [];
-    const store: GroupsStore = { ...memoryStore([]), put: async (_s, json) => void written.push(json) };
-    const said: string[] = [];
-    const log = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
-      said.push(String(chunk));
-      return true;
-    });
-    try {
-      // `true` exits 0 having touched nothing: the operator opened example.json and saved it.
-      await expect(withEditor('true', () => run(['edit', 'test'], store))).resolves.toBe(1);
-    } finally {
-      log.mockRestore();
-    }
-    expect(written).toEqual([]);
-    // The REASON has to be on screen: on the first round there is no earlier error to
-    // refer back to, and "unchanged" alone tells a newcomer nothing.
-    expect(said.join('')).toMatch(/placeholder/);
-  });
-
-  it('stores what the editor left, canonicalized', async () => {
+  it('pushes the local file to SSM, canonicalized, and rewrites the file to match', async () => {
     const dir = tempDir();
-    const source = join(dir, 'edited.json');
-    writeFileSync(source, JSON.stringify(raw('120363000000000007@g.us')));
+    withFile(dir, 'test', raw('120363000000000007@g.us'));
     const written: string[] = [];
     const store: GroupsStore = { ...memoryStore([]), put: async (_s, json) => void written.push(json) };
-    const log = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
-    try {
-      await expect(withEditor(`cp ${source}`, () => run(['edit', 'test'], store))).resolves.toBe(0);
-    } finally {
-      log.mockRestore();
-    }
+    const said = await saying(() => expect(run(['push', 'test'], store, dir)).resolves.toBe(0));
     expect(written).toHaveLength(1);
     expect(JSON.parse(written[0]).id).toBe('120363000000000007@g.us');
     expect(written[0]).toMatch(/^\{\n  "id"/); // pretty-printed, as stored
+    expect(readFileSync(join(dir, 'test.json'), 'utf8')).toBe(written[0]); // file == SSM
+    expect(said).toMatch(/next deploy/);
   });
 
-  it('opens a parameter the bot would refuse, reason on top, so it can be fixed rather than locking out', async () => {
+  it('refuses a missing file, the template as it comes, and a second config for one JID — writing nothing', async () => {
     const dir = tempDir();
-    const source = join(dir, 'fixed.json');
-    writeFileSync(source, JSON.stringify(raw('120363000000000007@g.us')));
     const written: string[] = [];
-    const broken: BrokenParameter[] = [{ name: 'test', json: '{oops', reason: 'test: invalid JSON in SSM' }];
-    const store: GroupsStore = { ...memoryStore([], broken), put: async (_s, json) => void written.push(json) };
-    // Saved unchanged: aborts — and the reason was already on screen, since the body was
-    // known to be invalid before the editor opened.
-    const said = await saying(() => expect(withEditor('true', () => run(['edit', 'test'], store))).resolves.toBe(1));
-    expect(said).toMatch(/invalid JSON/);
+    const store: GroupsStore = {
+      ...memoryStore([stored('beta', '120363000000000009@g.us')]),
+      put: async (_s, json) => void written.push(json),
+    };
+    await expect(run(['push', 'test'], store, dir)).rejects.toThrow(/no .*test\.json/);
+    withFile(dir, 'test', readFileSync(join(__dirname, '..', 'groups', 'example.json'), 'utf8'));
+    await expect(run(['push', 'test'], store, dir)).rejects.toThrow(/placeholder/);
+    withFile(dir, 'test', raw('120363000000000009@g.us')); // beta's JID
+    await expect(run(['push', 'test'], store, dir)).rejects.toThrow(/beta/);
+    withFile(dir, 'test', '{oops');
+    await expect(run(['push', 'test'], store, dir)).rejects.toThrow(/invalid JSON/);
+    await expect(run(['push', 'Not A Slug'], store, dir)).rejects.toThrow(/slug/);
     expect(written).toEqual([]);
-    // Replaced wholesale: stored.
-    await saying(() => expect(withEditor(`cp ${source}`, () => run(['edit', 'test'], store))).resolves.toBe(0));
-    expect(written).toHaveLength(1);
-    expect(JSON.parse(written[0]).id).toBe('120363000000000007@g.us');
   });
 
-  it('removes its draft on every exit but a deliberate abort, and names a signal that killed the editor', async () => {
-    const store = memoryStore([]);
-    const before = drafts('gone');
-    // A valid save cleans up.
+  it('says "No change." for a file SSM already holds, and replaces a parameter the bot would refuse', async () => {
     const dir = tempDir();
-    const source = join(dir, 'ok.json');
-    writeFileSync(source, JSON.stringify(raw('120363000000000008@g.us')));
-    await saying(() => expect(withEditor(`cp ${source}`, () => run(['edit', 'gone'], store))).resolves.toBe(0));
-    expect(drafts('gone')).toBe(before);
-    // An editor that failed cleans up too: the draft holds a JID, and $TMPDIR is not
-    // where one sits indefinitely.
-    await saying(() => expect(withEditor('false', () => run(['edit', 'gone'], store))).rejects.toThrow(/exited 1/));
-    expect(drafts('gone')).toBe(before);
-    // Killed by a signal, `status` is null; the message says what actually happened.
-    // (`#` swallows the file path the CLI appends, so the shell kills itself.)
-    await saying(() =>
-      expect(withEditor('kill -TERM $$ #', () => run(['edit', 'gone'], store))).rejects.toThrow(/killed by SIGTERM/),
-    );
-    expect(drafts('gone')).toBe(before);
+    // SSM holds the CANONICAL form (pretty-printed); the file is the compact one.
+    const held = { ...stored('test', '120363000000000007@g.us'), json: `${JSON.stringify(raw('120363000000000007@g.us'), null, 2)}\n` };
+    withFile(dir, 'test', raw('120363000000000007@g.us'));
+    const written: string[] = [];
+    const same: GroupsStore = { ...memoryStore([held]), put: async (_s, json) => void written.push(json) };
+    // Byte-different (compact), same canonical form: nothing to write.
+    expect(await saying(() => run(['push', 'test'], same, dir))).toMatch(/No change/);
+    expect(written).toEqual([]);
+    // A broken parameter is fixed by pushing a good file over it.
+    const broken: BrokenParameter[] = [{ name: 'test', json: '{oops', reason: 'test: invalid JSON in SSM' }];
+    const damaged: GroupsStore = { ...memoryStore([], broken), put: async (_s, json) => void written.push(json) };
+    await saying(() => expect(run(['push', 'test'], damaged, dir)).resolves.toBe(0));
+    expect(written).toHaveLength(1);
   });
 });
 
@@ -215,7 +174,7 @@ describe('bot:groups list (#236)', () => {
     ];
     const said = await saying(() => expect(run(['list'], memoryStore(groups, broken))).resolves.toBe(0));
     expect(said).toContain('Whippin test'); // the usable rows, on the operator's own terminal
-    expect(said).toMatch(/junk: invalid JSON[\s\S]*bot:groups edit junk[\s\S]*bot:groups rm junk/);
+    expect(said).toMatch(/junk: invalid JSON[\s\S]*bot:groups push junk[\s\S]*bot:groups rm junk/);
     expect(said).toMatch(/Main[\s\S]*aws ssm delete-parameter/);
     // Two usable configs for one group: said here, since `pull` will refuse them.
     expect(said).toMatch(/b: already configured by a/);

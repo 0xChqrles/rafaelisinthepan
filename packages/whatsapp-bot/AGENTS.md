@@ -68,15 +68,23 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   names a real private conversation and this repository is public, so configs live in SSM as
   one `String` parameter per group at `/whippin/bot/groups/<slug>` — not a SecureString,
   because a config carries product behaviour and no credential. `pnpm bot:groups` is how a
-  human edits them: `list`, `edit <slug>` ($EDITOR on the current value, or `example.json`
-  for a new one, validated before it is written back), `rm <slug>`, and `pull [slug]`, which
-  materializes `groups/local/`. There is deliberately **no `disable`** (that is
-  `enabled: false` through `edit`) and **no `validate`** (validation is not a step anyone can
-  forget: `edit` refuses to write an invalid config and `pull` refuses to produce an invalid
+  human changes them, and **the workflow is EDIT THE FILE, THEN PUSH IT** (user-decided
+  2026-09-05, replacing an `edit` command that opened `$EDITOR` on a temp copy): `pull`,
+  change `groups/local/<slug>.json` in anything, `push <slug>` — validated against the other
+  stored groups, canonicalized, and the file rewritten to match SSM byte for byte. A new
+  group is `groups/example.json` copied to its slug and pushed. The file the deploy reads
+  and the file the operator edits are the same file, so there is no draft to lose and no
+  editor to configure; what a full `pull` costs is that it OWNS the directory, so an
+  unpushed new file is wiped by it — push before pulling. The four commands: `list`,
+  `push <slug>`, `rm <slug>`, `pull [slug]`. There is deliberately **no `disable`** (that is
+  `enabled: false` pushed) and **no `validate`** (validation is not a step anyone can
+  forget: `push` refuses to write an invalid config and `pull` refuses to produce an invalid
   snapshot). **`pull` is the ONLY command that judges the set** (PR-239 review): `list`
   reports a broken parameter — a name that is no slug, a body the parser refuses — beside
-  the usable ones with its way out, and `edit`/`rm` still reach it, because they are how it
-  gets fixed; one bad parameter must never lock the operator out of every command at once.
+  the usable ones with its way out, and `push`/`rm` still reach it (`pull` will not hand a
+  broken body back, so the fix is a file written afresh and pushed over it), because they
+  are how it gets fixed; one bad parameter must never lock the operator out of every
+  command at once.
   And `pull` prints the FILES it wrote, never a group's name or schedule: it runs in CI,
   whose log is public on this repository. It opens NO socket and takes NO lease, so it runs
   while the bot is connected — finding a JID in the first place is `pnpm bot:cli groups`,
@@ -580,7 +588,7 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
 pnpm bot:start        # run the task locally (needs AWS creds, BOT_TABLE; takes the lease)
 pnpm bot:pair         # print the QR (or --phone <digits> for a pairing code); --reset to wipe first
 pnpm bot:cli groups   # list the paired account's groups with their JIDs (takes the lease)
-pnpm bot:groups list  # what SSM holds  |  edit <slug> | rm <slug> | pull [slug]  (no lease)
+pnpm bot:groups list  # what SSM holds  |  push <slug> | rm <slug> | pull [slug]  (no lease)
 pnpm bot:cli forget <group JID> <player JID>
 pnpm bot:build        # bundle main.ts into dist/ (what the Dockerfile runs)
 pnpm --filter @whippin/whatsapp-bot test
@@ -603,7 +611,7 @@ there is one region knob and not two.
 ## Current state / mutable
 
 - `test` is the first target and starts from `groups/example.json` DISABLED with a
-  placeholder JID: `pnpm bot:groups edit test`, fill in the real test-group JID
+  placeholder JID: copy it to `groups/local/test.json`, fill in the real test-group JID
   (`pnpm bot:cli groups`) and flip `enabled` once paired. The production group is a later,
   separate config change after reconnect, ingestion, dedup and outbound behaviour have been
   exercised there.
@@ -621,7 +629,7 @@ there is one region knob and not two.
 - The test group's `chat.perUserPerDay` is 10, and on 2026-09-04 it silenced four addressed
   messages of the one tester (`chat.silent` `user_limit`) — the third of three causes found
   behind "the bot misses messages" (with the offline-delivery and the reply-budget rules
-  above). It is a config knob in SSM (`pnpm bot:groups edit test`), not code.
+  above). It is a config knob in SSM (edit `groups/local/test.json`, `pnpm bot:groups push test`), not code.
 
 ## Do NOT
 

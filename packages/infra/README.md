@@ -184,7 +184,9 @@ built from the repo root by the runner's Docker.
    private conversation and this repo is public — so SSM holds them, one `String` parameter
    per group at `/whippin/bot/groups/<slug>`:
    ```bash
-   pnpm bot:groups edit test     # $EDITOR on example.json; paste the JID, set enabled: true
+   cp packages/whatsapp-bot/groups/example.json packages/whatsapp-bot/groups/local/test.json
+   # paste the JID, set enabled: true, then:
+   pnpm bot:groups push test     # validated, then written to SSM
    pnpm bot:groups list          # what SSM now holds, and the region it read
    ```
    SSM is regional and the wrong region answers an EMPTY LIST rather than an error, so the
