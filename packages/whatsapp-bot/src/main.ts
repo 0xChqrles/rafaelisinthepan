@@ -22,7 +22,7 @@ import { RecentContext } from './chat/context';
 import { dynamoLimitStore } from './chat/limits';
 import { dynamoMemoryStore } from './chat/memory';
 import { addressedTo } from './chat/trigger';
-import { loadEnv } from './config/env';
+import { BOT_REGION, loadEnv } from './config/env';
 import { loadGroups } from './config/groupConfig';
 import { dynamoDeclarationStore } from './domain/dynamoDeclarationStore';
 import { createIngest } from './domain/ingest';
@@ -59,8 +59,8 @@ async function main(): Promise<void> {
   const groups = loadGroups(env.groupsDir);
   log.info({ event: 'boot', groups: groups.all().map((g) => tag(g.id)) }, 'starting');
 
-  const dynamo = new DynamoDBClient({});
-  const ssm = () => new SSMClient({});
+  const dynamo = new DynamoDBClient({ region: BOT_REGION });
+  const ssm = () => new SSMClient({ region: BOT_REGION });
   // DECLARED BEFORE the gauge that reads it: `startConnectedMetric` publishes its first
   // point synchronously, so a `let` below this line puts that read in its temporal dead
   // zone — the throw lands in the publisher's own catch and the first tick is lost as a
@@ -112,10 +112,10 @@ async function main(): Promise<void> {
 
   const declarations = dynamoDeclarationStore(dynamo, env.table);
   const outbound: OutboundQueue & Partial<CommandSource> = env.outboundQueueUrl
-    ? sqsOutboundQueue(new SQSClient({}), env.outboundQueueUrl)
+    ? sqsOutboundQueue(new SQSClient({ region: BOT_REGION }), env.outboundQueueUrl)
     : memoryOutbound();
   const source: CommandSource = env.outboundQueueUrl
-    ? sqsCommandSource(new SQSClient({}), env.outboundQueueUrl)
+    ? sqsCommandSource(new SQSClient({ region: BOT_REGION }), env.outboundQueueUrl)
     : (outbound as CommandSource);
   if (!env.outboundQueueUrl) log.warn({ event: 'outbound.local' }, 'no BOT_OUTBOUND_QUEUE_URL: in-process outbound queue');
 

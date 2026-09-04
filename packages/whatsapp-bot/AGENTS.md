@@ -240,7 +240,16 @@ pnpm --filter @whippin/whatsapp-bot test
 Env: `BOT_TABLE` (required), `BOT_OUTBOUND_QUEUE_URL` (absent = in-process queue, local
 only), `BOT_GROUPS_DIR`, `BOT_SITE_ORIGIN`, `BOT_METRICS_NAMESPACE`, `BOT_LLM_PROVIDER`,
 `BOT_LLM_MODEL`, `BOT_LLM_API_KEY_PARAMETER` (SSM) or `BOT_LLM_API_KEY` (local only),
-`BOT_LLM_DAILY_CALL_CEILING`, `BOT_LOG_LEVEL`, `BOT_BAILEYS_LOG_LEVEL`.
+`BOT_LLM_DAILY_CALL_CEILING`, `BOT_LOG_LEVEL`, `BOT_BAILEYS_LOG_LEVEL`, `BOT_AWS_REGION`.
+
+**EVERY AWS client in this package is built against `BOT_REGION` (`config/env.ts`), PINNED
+to the deployment's `us-east-1` rather than inherited from the shell.** In ECS and Lambda
+the runtime's own region is that same value, so it changes nothing there; what it fixes is
+the OPERATOR path, where a laptop configured for another region ran `pnpm bot:pair` against
+a table that does not exist there and got `ResourceNotFoundException: Requested resource not
+found` — true, and naming nothing that leads anyone to the region. `BOT_AWS_REGION`
+overrides it if a deployment moves; the SSM group store defers to the same constant, so
+there is one region knob and not two.
 
 ## Current state / mutable
 
