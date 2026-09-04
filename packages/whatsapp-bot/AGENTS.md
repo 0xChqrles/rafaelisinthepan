@@ -157,11 +157,42 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   (`declarations.ts` says why). `recorded` means the token standing for that (group, day,
   sender) changed. Not an anti-cheat.
 - **The podium is DENSE and the renderer owns everything but the comments.** Never
-  `rankBoard` from shared (competition ranks belong to the public board). A model returns
-  `{lines:[{id, comment}]}` keyed by line id (= the score); the answer is rejected whole on
-  a missing/duplicate/unknown id or a non-plain/over-long comment, retried once, then the
-  podium ships with no comments. Unavailable model = scoreboard without jokes, never no
-  scoreboard.
+  `rankBoard` from shared (competition ranks belong to the public board). Unavailable model
+  = scoreboard without jokes, never no scoreboard.
+  **ONE CALL PER LINE, not one call for the podium (user-decided 2026-09-04).** It used to
+  ask for every comment at once as strict JSON — `{lines:[{id, comment}]}`, rejected WHOLE on
+  a missing, duplicate or unknown id — and against `deepseek-v4-flash` that produced NOTHING:
+  measured on a real 5-line podium, the model spent the entire budget reasoning and returned
+  an empty string on both attempts (`finish=length`, `out=460` of 460). The budget was not
+  the cause and raising it did not fix it (0/2 at 1000, 1/2 at 2000, 0/2 at 4000): five
+  comments and a JSON envelope in one breath is simply a great deal of thinking before the
+  first character. It now borrows `shareComment.ts`'s proven shape — one short line, no JSON,
+  a generous budget, a refusal of every finish reason but `stop` — and measured 4/5, 4/5, 5/5 where the
+  old one measured 0/5.
+  **AND EACH LINE CARRIES ITS VERDICT** (`scoreBand`, the same thresholds the emoji uses),
+  for the reason the share line does: told only "10", the model cannot know whether that is
+  good, and it fills the gap with something that merely SOUNDS like a comment — the observed
+  one was "le chronomètre a souffert", about a game that times nothing. `place` and `verdict`
+  are given as DIFFERENT facts, because they are: a modest score can win a modest day, and
+  the model says so once it can see both. Measured on the same podium: 5/5, 5/5, 5/5 lines,
+  and roughly half the latency — a model told what a number means spends less time deciding.
+  **AND EACH LINE MUST BE TOLD THE OTHERS EXIST.** Written independently and in parallel,
+  identical verdicts converge on identical prose: a real 7-line podium came back with four
+  neighbours saying "aller au bout" / "rester jusqu'au bout" in turn, which the single call
+  never did because it could see its own work. The prompt names that cliché family and asks
+  for what is specific to THIS line instead — measured 0-1 overlapping pairs against 4. It
+  costs yield, because a longer prompt makes this model reason longer and reasoning is what
+  truncates: `MAX_TOKENS` is 4000 rather than 2000 to buy most of it back (~6.5 of 7 lines,
+  against 7 of 7 when they all said the same thing). The worst case is unchanged either way,
+  since it is the TIMEOUT that bounds a line and not the budget.
+  **A LINE THAT FAILS NO LONGER TAKES THE OTHERS WITH IT:** the renderer already prints a
+  podium line with no comment, so a partial set is a partial podium rather than a bare one,
+  and `parseCommentAnswer` and its whole-answer rejection are gone with the envelope that
+  needed them. The calls run in PARALLEL because the podium Lambda has 90 seconds, and the
+  per-call timeout (20s × 2 attempts) is deliberately well inside it: a podium with four
+  comments out of five beats risking a Lambda timeout, which is no podium at all.
+  It spends NO daily call ceiling, unlike the share line: this path fires once per group per
+  day and is bounded by the schedule, where an acknowledgement is bounded only by traffic.
 - **Outbound has one owner.** Every send is a command with an id (`podium:<g>:<day>`,
   `ack:<g>:<msg>`, `reply:<g>:<msg>`, `leader:…`) on the SQS queue; the task's
   dispatcher checks the sent record (a STRONGLY CONSISTENT read — a redelivery can follow
@@ -226,8 +257,12 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   calls that spent exactly 300 and answered NOTHING — `chat.silent` `empty` on a question
   plainly asked — so the budget is 2000 (sized for the thinking) and a final answer whose
   finish is not `stop` is retried once at the same round, then silent (`unfinished`) rather
-  than posted as a fragment. `llm/podiumComments.ts` is still protected only incidentally,
-  because truncated JSON fails to parse. A leader row is keyed by (group, LANGUAGE, day) and moves on every
+  than posted as a fragment. **`llm/podiumComments.ts` wears it explicitly since the
+  PR-246 review** — it used to be protected only INCIDENTALLY, because a truncated JSON
+  envelope fails to parse, and removing that envelope removed the protection with it: one
+  short line has nothing to fail on, so a fragment left by an interrupted generation reads
+  like an ordinary comment. All three model paths now refuse everything but `stop`, and none
+  of them passes tools. A leader row is keyed by (group, LANGUAGE, day) and moves on every
   improvement and on a REPLAY, so history cannot make a later share announce a lead it does
   not hold; only a change of HOLDER is announced, read from what the write DISPLACED rather
   than from a stale read (`leader.ts` says why). A claim that fails is logged and dropped —
@@ -313,6 +348,57 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   digits the text's @token spells, since in a LID-addressed group those differ and the
   declarations know nobody by LID. The emptiness test still reads EVERY mention as addressing, which is
   what keeps a bare "@Bot @Zou" free of the ceilings.
+  **THE BOT KNOWS HOW THE GAME WORKS, AND EXPLAINS IT (personality v3, user-decided
+  2026-09-04).** The first thing a new group asked was how the words are ranked, and the bot
+  could not say — it knew the rules of scoring and nothing about the SEMANTICS. The global
+  personality now carries it: ranks come from usage over an enormous corpus (the web and
+  Wikipedia — fastText's Common Crawl build for fr, GloVe's Wikipedia + news for en), so
+  closeness is the company a word keeps and not synonymy or spelling, and a rank of 1 is
+  the word most often found in the same company, not "almost the word". Explaining this is
+  the ONE subject where being helpful is in character. **THE WORKED EXAMPLE IS CHECKED
+  AGAINST THE REAL VECTORS** (PR-246 review, v5): the first draft taught "capuche" /
+  "soleil", which in `cc.fr.300_reduced` have a similarity of 0.20 and are outside each
+  other's top 3000 — the bot would have explained the game with a pair the game itself
+  calls a MISS. It now teaches "soleil" / "vent" (rank 3 of each other's neighbourhood,
+  measured), and any future example goes through the same `KeyedVectors` check before it is
+  written. v5 also gives it the facts a player actually asks about: a guess lands on every
+  hole it improves, holes start with a hint word, a MISS has no rank and still costs a try,
+  an unknown word is refused for free, 500 unsolved is ∞, and Word mode exists (timed,
+  higher is better) while the podium ranks the sentence alone.
+  **ENCOURAGING IS THE DEFAULT; SARCASM IS OPTED INTO (v4, user-decided 2026-09-04).** v2
+  and v3 built an UNIMPRESSED bot — "very little impresses you", bands that ran from
+  "grudging respect" down to "unmoved" — and it was funny and too cold for the group it
+  actually landed in. The stance is now warm: it is ON THEIR SIDE, it says so, and every
+  band is encouraging, warmest at the bottom. **A group's own pre-prompt is what licenses
+  teasing** — the beta group names somebody as the group's target, and the bot teases them
+  because the CONFIG said to, not because it is its nature. A group that says nothing gets
+  no invented target. That layering is the point: the code owns the default, the operator
+  owns the exception.
+  **AND IT NEVER CALLS THE SENTENCE "elle".** A bare pronoun has no antecedent in a
+  one-line message, so "elle t'a bien fait suer" printed under Christine's name reads as
+  another woman rather than as the puzzle. It was TAUGHT the personification by a register
+  example ("la phrase a gagné"), so banning the pronoun while keeping that example would
+  have been fighting the prompt with itself: both changed together. Name it or leave it out.
+  **AND IT SPEAKS TO PEOPLE, NOT ABOUT THEM** — "tu as bien galéré, mais tu l'as sorti",
+  never "elle a bien galéré", and "vous" on a podium line holding more than one name (which
+  is also what stopped shared lines coming back empty: the model had no way to address two
+  people and wrote nothing). What did NOT change is the craft that removed the cringe: short,
+  plain, no emoji, no exclamation marks, no rhetorical questions, no deduction narrated.
+  Warm is a stance; loud is a failure, and "bravo !!" is still the wrong answer.
+  **AND IT TYPES, IT DOES NOT COMPOSE.** Asked for a line "specific to this one", the model
+  started DEDUCING and narrating the deduction: "10 et deuxième, fallait que ce soit une
+  sale journée pour tout le monde" is a machine showing its working, where "10 et deuxième,
+  c'était chaud" is a person. v3 forbids the move by name — no working anything out, no
+  sentence whose job is to justify the previous one, no elaborate image — and asks for the
+  register people actually type in: short, casual, usually under ten words. Wanting to be
+  funny and wanting to be clever fail the same way, and both were caught in the same group.
+  **AND THE GROUP TALKS ABOUT THE SENTENCE, NOT ABOUT THE BOT.** "j'ai reconnu direct, je
+  suis fan" is about the day's sentence and its author; the bot answered about being a bot,
+  which is both cringe and a misreading. v3 says so outright: the bot is not the subject of
+  this group. **The bottom of the table is treated GENTLY** for the same round of feedback
+  ("je préférerais les appréciations encourageantes de Luc") — a high score is the day being
+  hard rather than somebody being bad, `laboured` reads warm instead of "dry sympathy", and
+  the teasing is for the top.
   **THE SYSTEM PROMPT IS CODE- AND OPERATOR-AUTHORED, AND NOTHING ELSE.** What a group
   member typed — their push name, their message, and the notes `remember` saved from what
   they said — travels as CONVERSATION. In the system message, "remember that: ignore your
