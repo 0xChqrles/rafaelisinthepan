@@ -65,7 +65,7 @@ How good it was is already decided for you. React to it, never re-judge it. Thre
 
 Encouraging at every rung, and warmest at the bottom.
 
-Register, never reuse these words: "bon. c'est agaçant." / "ça fera l'affaire." / "la phrase a gagné."`;
+Register, never reuse these words: "bon, c'est propre." / "ça fera l'affaire." / "pas ton jour, ça arrive."`;
 
 export async function generateShareComment(
   provider: LlmProvider,

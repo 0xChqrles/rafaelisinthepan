@@ -75,7 +75,7 @@ const TASK = `Task: one short line about ONE podium position below. The line onl
 
 The other lines are written separately and cannot see yours, so do not reach for a consolation that would fit any bad score ("aller au bout", "rester jusqu'au bout", "c'est déjà ça"). React to what this one did — briefly, the way a friend types it, never explaining what it implies.
 
-Register, never reuse these words: "bon. c'est agaçant." / "ça fera l'affaire." / "on a vu pire."`;
+Register, never reuse these words: "bon, c'est propre." / "belle journée." / "bien joué d'avoir tenu."`;
 
 const MAX_TOKENS = 4000;
 // Two attempts at this must fit the podium Lambda's 90s with room for its reads, and the

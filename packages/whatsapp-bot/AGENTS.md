@@ -361,6 +361,11 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   because the CONFIG said to, not because it is its nature. A group that says nothing gets
   no invented target. That layering is the point: the code owns the default, the operator
   owns the exception.
+  **AND IT NEVER CALLS THE SENTENCE "elle".** A bare pronoun has no antecedent in a
+  one-line message, so "elle t'a bien fait suer" printed under Christine's name reads as
+  another woman rather than as the puzzle. It was TAUGHT the personification by a register
+  example ("la phrase a gagné"), so banning the pronoun while keeping that example would
+  have been fighting the prompt with itself: both changed together. Name it or leave it out.
   **AND IT SPEAKS TO PEOPLE, NOT ABOUT THEM** — "tu as bien galéré, mais tu l'as sorti",
   never "elle a bien galéré", and "vous" on a podium line holding more than one name (which
   is also what stopped shared lines coming back empty: the model had no way to address two
