@@ -33,7 +33,8 @@ const group = parseGroupConfig('g.json', {
 });
 const log = createLog('silent');
 
-type Answer = string | Error | { text: string | null; finish: 'stop' | 'length' };
+type Finish = 'stop' | 'length' | 'tool_calls' | 'other';
+type Answer = string | Error | { text: string | null; finish: Finish };
 
 // Answers BY LINE, never by call order: the lines are generated in parallel, so which
 // request arrives second is the scheduler's business and not a thing to assert against.
@@ -68,6 +69,15 @@ function answering(byPlace: Record<number, Answer[]>): LlmProvider & {
   return provider as unknown as LlmProvider & { calls: number; requests: { messages: { content: string }[] }[] };
 }
 
+// The payloads the provider received, BY PLACE. Arrival order is the scheduler's business —
+// the lines are generated in parallel, and reading `requests` in insertion order only
+// happens to work while the fake resolves synchronously.
+function sentByPlace(provider: { requests: { messages: { content: string }[] }[] }) {
+  return provider.requests
+    .map((r) => JSON.parse(r.messages[0].content as string))
+    .sort((a, b) => a.place - b.place);
+}
+
 describe('podium comments are prose keyed to immutable lines (#236)', () => {
   it('hands the model one line at a time, and never the id it keys the answer by', async () => {
     expect(podiumCommentLines(podium)).toEqual([
@@ -82,7 +92,7 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
     expect(comments.get('4')).toBe('Duo.');
     // Each call carries only ITS line, plus how many there were — never the whole podium,
     // and never an `id` the model could echo back as prose.
-    const sent = JSON.parse(provider.requests[0].messages[0].content as string);
+    const sent = sentByPlace(provider)[0];
     // The VERDICT travels with the line, from the same thresholds the emoji uses. Without
     // it the model cannot tell whether 10 is good and invents something that merely sounds
     // like a comment — the observed one was "le chronomètre a souffert", about a game that
@@ -99,8 +109,7 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
     ] };
     const provider = answering({ 1: ['a.'], 2: ['b.'] });
     await generatePodiumComments(provider, group, wide, log);
-    const sent = provider.requests.map((r) => JSON.parse(r.messages[0].content as string));
-    expect(sent.map((x) => [x.place, x.tries, x.verdict])).toEqual([
+    expect(sentByPlace(provider).map((x) => [x.place, x.tries, x.verdict])).toEqual([
       [1, 10, 'ordinary'],
       [2, 30, 'laboured'],
     ]);
@@ -121,14 +130,31 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
     expect(comments.get('4')).toBe('La deuxième tient.');
   });
 
-  it('refuses a TRUNCATED answer however short the fragment reads', async () => {
+  it('publishes ONLY a finished answer, whatever cut it short', async () => {
     // The budget is shared with this model's reasoning, so running out returns a fragment.
-    const provider = answering({
+    const truncated = answering({
       1: [{ text: 'Brigade anti', finish: 'length' }, { text: 'Brigade antidopage.', finish: 'stop' }],
       2: [{ text: 'Duo.', finish: 'stop' }],
     });
-    const comments = await generatePodiumComments(provider, group, podium, log);
-    expect(comments.get('3')).toBe('Brigade antidopage.');
+    expect((await generatePodiumComments(truncated, group, podium, log)).get('3')).toBe('Brigade antidopage.');
+
+    // And `length` is not the only early stop: DeepSeek's `insufficient_system_resource`
+    // and `content_filter` both arrive as `other`, and the partial they leave behind reads
+    // like an ordinary short line. Refused on the REASON, never inspected.
+    const interrupted = answering({
+      1: [{ text: 'Brigade anti', finish: 'other' }, { text: 'Brigade antidopage.', finish: 'stop' }],
+      2: [{ text: 'Duo.', finish: 'stop' }],
+    });
+    expect((await generatePodiumComments(interrupted, group, podium, log)).get('3')).toBe('Brigade antidopage.');
+
+    // Twice unfinished is a bare line, not a fragment posted to the group.
+    const never = answering({
+      1: [{ text: 'Brigade anti', finish: 'other' }, { text: 'Brigade anti', finish: 'length' }],
+      2: [{ text: 'Duo.', finish: 'stop' }],
+    });
+    const comments = await generatePodiumComments(never, group, podium, log);
+    expect(comments.has('3')).toBe(false);
+    expect(comments.get('4')).toBe('Duo.');
   });
 
   it('retries an unusable answer once per line, then leaves that line bare', async () => {

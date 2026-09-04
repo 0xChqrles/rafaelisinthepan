@@ -111,6 +111,21 @@ async function commentForLine(
       });
       text = response.text;
       finish = response.finish;
+      // PER LINE AND PER ATTEMPT, because this is now the only place the cost of a podium
+      // is visible: it makes up to `ATTEMPTS × lines` calls at 4000 tokens where the old
+      // shape made one, and the latency measurements the design rests on (ordinary case
+      // against the Lambda's 90s) cannot be reproduced from an aggregate.
+      log.info(
+        {
+          event: 'podium.comment_generated',
+          id: line.id,
+          attempt,
+          finish: response.finish,
+          latencyMs: response.latencyMs,
+          tokens: response.usage,
+        },
+        'llm answered',
+      );
     } catch (error) {
       const unavailable = error instanceof LlmUnavailable;
       log.warn(
@@ -120,9 +135,14 @@ async function commentForLine(
       if (!unavailable) return null;
       continue;
     }
-    // A cut-off answer is a FRAGMENT, and a short fragment passes every length check.
-    if (finish === 'length') {
-      log.warn({ event: 'podium.comment_truncated', id: line.id, attempt }, 'the line ran out of budget');
+    // ONLY A FINISHED ANSWER IS AN ANSWER — `shareComment.ts`'s gate, whole, because this
+    // borrows its shape and inherits its hazards. `length` is the budget running out and
+    // what comes back is a FRAGMENT that passes every length check; `other` is DeepSeek's
+    // `insufficient_system_resource` or `content_filter`, an interrupted or cut generation,
+    // which arrives looking exactly the same. This call passes no tools, so `stop` is the
+    // one reason that means the model said what it meant.
+    if (finish !== 'stop') {
+      log.warn({ event: 'podium.comment_unfinished', id: line.id, attempt, finish }, 'the line did not finish');
       continue;
     }
     const comment = sanitizeComment(text);

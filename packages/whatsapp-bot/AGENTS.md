@@ -167,7 +167,7 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   the cause and raising it did not fix it (0/2 at 1000, 1/2 at 2000, 0/2 at 4000): five
   comments and a JSON envelope in one breath is simply a great deal of thinking before the
   first character. It now borrows `shareComment.ts`'s proven shape — one short line, no JSON,
-  a generous budget, a `finish === 'length'` refusal — and measured 4/5, 4/5, 5/5 where the
+  a generous budget, a refusal of every finish reason but `stop` — and measured 4/5, 4/5, 5/5 where the
   old one measured 0/5.
   **AND EACH LINE CARRIES ITS VERDICT** (`scoreBand`, the same thresholds the emoji uses),
   for the reason the share line does: told only "10", the model cannot know whether that is
@@ -257,8 +257,12 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   calls that spent exactly 300 and answered NOTHING — `chat.silent` `empty` on a question
   plainly asked — so the budget is 2000 (sized for the thinking) and a final answer whose
   finish is not `stop` is retried once at the same round, then silent (`unfinished`) rather
-  than posted as a fragment. `llm/podiumComments.ts` is still protected only incidentally,
-  because truncated JSON fails to parse. A leader row is keyed by (group, LANGUAGE, day) and moves on every
+  than posted as a fragment. **`llm/podiumComments.ts` wears it explicitly since the
+  PR-246 review** — it used to be protected only INCIDENTALLY, because a truncated JSON
+  envelope fails to parse, and removing that envelope removed the protection with it: one
+  short line has nothing to fail on, so a fragment left by an interrupted generation reads
+  like an ordinary comment. All three model paths now refuse everything but `stop`, and none
+  of them passes tools. A leader row is keyed by (group, LANGUAGE, day) and moves on every
   improvement and on a REPLAY, so history cannot make a later share announce a lead it does
   not hold; only a change of HOLDER is announced, read from what the write DISPLACED rather
   than from a stale read (`leader.ts` says why). A claim that fails is logged and dropped —
