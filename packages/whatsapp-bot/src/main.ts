@@ -18,6 +18,7 @@ import { SQSClient } from '@aws-sdk/client-sqs';
 import { SSMClient } from '@aws-sdk/client-ssm';
 import { activeDate, dayNumber } from '@whippin/shared';
 import { createAgent } from './chat/agent';
+import { createDaySourceReader } from './puzzle/daySource';
 import { RecentContext } from './chat/context';
 import { dynamoLimitStore, limitExpiry, limitKeys } from './chat/limits';
 import { dynamoMemoryStore } from './chat/memory';
@@ -172,6 +173,9 @@ async function main(): Promise<void> {
         limits,
         context,
         dailyCallCeiling: env.llm.dailyCallCeiling,
+        // Read once per (language, day) and held for the process's life: the task is
+        // long-lived, so the group pays one 4-6 MB read a day and not one per question.
+        daySource: createDaySourceReader({ apiBaseUrl: env.apiBaseUrl, log }),
         log,
       })
     : null;
