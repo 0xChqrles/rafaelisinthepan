@@ -325,3 +325,39 @@ describe('addressed conversation (#236)', () => {
     expect(plainReply('   ')).toBeNull();
   });
 });
+
+describe("the day's source rides in the system prompt, never as a tool (#236)", () => {
+  const source = { kind: 'music', author: 'Bertrand Belin', work: 'Oiseau' };
+
+  it('is ambient: it is there before the question is read, and costs no tool round', async () => {
+    const { provider, requests } = scripted([() => ({ text: "Ça vient d'une chanson." })]);
+    const answer = agentWith(provider, {
+      daySource: { get: async () => source },
+    });
+    const out = await answer(message('@33700000000 ça vient d’où ?'), group, identity, TODAY);
+    expect(out).toEqual({ kind: 'reply', text: "Ça vient d'une chanson." });
+    // ONE call — the fact was in hand, so nothing had to be fetched mid-conversation.
+    expect(requests).toHaveLength(1);
+    expect(requests[0].tools?.map((t) => t.name) ?? []).not.toContain('get_day_source');
+    // The whole object is KNOWN, so the bot can tell what it is holding back.
+    expect(requests[0].system).toContain('kind: music');
+    expect(requests[0].system).toContain('author: Bertrand Belin');
+    // And the rule that only the kind may be said travels with it.
+    expect(requests[0].system).toMatch(/NOT name the author or the work/);
+  });
+
+  it('a reader that says nothing leaves the prompt with no source at all', async () => {
+    const { provider, requests } = scripted([() => ({ text: 'Aucune idée.' })]);
+    // An unpublished day, a puzzle with no metadata and a failed read are one answer here.
+    const answer = agentWith(provider, { daySource: { get: async () => null } });
+    await answer(message('@33700000000 ça vient d’où ?'), group, identity, TODAY);
+    expect(requests[0].system).not.toContain("Where today's sentence comes from");
+  });
+
+  it('answers normally with no reader configured', async () => {
+    const { provider, requests } = scripted([() => ({ text: 'Salut.' })]);
+    const out = await agentWith(provider)(message('@33700000000 salut'), group, identity, TODAY);
+    expect(out).toEqual({ kind: 'reply', text: 'Salut.' });
+    expect(requests[0].system).not.toContain("Where today's sentence comes from");
+  });
+});

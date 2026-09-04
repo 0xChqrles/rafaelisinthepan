@@ -20,6 +20,10 @@ export interface BotEnv {
   outboundQueueUrl?: string; // BOT_OUTBOUND_QUEUE_URL — absent on a purely local dry run
   groupsDir: string; // BOT_GROUPS_DIR — where the pulled snapshot files were copied to
   siteOrigin: string; // BOT_SITE_ORIGIN — the share links to recognise (https://whippin.ai)
+  // BOT_API_BASE_URL — the game's BACKEND (https://api.whippin.ai), a different host from
+  // the site above: `siteOrigin` is only ever a pattern for spotting share links, where
+  // this one is actually called, to read the day's source (`puzzle/daySource.ts`).
+  apiBaseUrl: string;
   metricsNamespace?: string; // BOT_METRICS_NAMESPACE — unset = no CloudWatch metrics
   llm: LlmEnv;
 }
@@ -75,6 +79,7 @@ export function loadEnv(env: NodeJS.ProcessEnv = process.env): BotEnv {
     outboundQueueUrl: env.BOT_OUTBOUND_QUEUE_URL || undefined,
     groupsDir: env.BOT_GROUPS_DIR || sourceGroupsDir(),
     siteOrigin: (env.BOT_SITE_ORIGIN || 'https://whippin.ai').replace(/\/+$/, ''),
+    apiBaseUrl: (env.BOT_API_BASE_URL || 'https://api.whippin.ai').replace(/\/+$/, ''),
     metricsNamespace: env.BOT_METRICS_NAMESPACE || undefined,
     llm: {
       provider: env.BOT_LLM_PROVIDER || 'deepseek',

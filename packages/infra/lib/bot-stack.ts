@@ -79,6 +79,9 @@ interface BotStackProps extends StackProps {
   llmModel?: string;
   // The site whose share links the bot recognises.
   siteOrigin?: string;
+  // The game's BACKEND, which the bot READS (the day's source metadata) — a different host
+  // from the site above, whose origin is only ever a pattern for spotting share links.
+  apiBaseUrl?: string;
   // Override for tests: the directory of group configs read at synth.
   groupsDir?: string;
 }
@@ -91,6 +94,7 @@ export class BotStack extends Stack {
     const llmProvider = props.llmProvider ?? 'deepseek';
     const llmModel = props.llmModel ?? 'deepseek-v4-flash';
     const siteOrigin = props.siteOrigin ?? 'https://whippin.ai';
+    const apiBaseUrl = props.apiBaseUrl ?? 'https://api.whippin.ai';
     const groupsDir = props.groupsDir ?? GROUPS_DIR;
     const groups = readGroupConfigsForSynth(groupsDir).filter((g) => g.enabled);
     if (groups.length === 0) {
@@ -157,6 +161,7 @@ export class BotStack extends Stack {
       BOT_TABLE: table.tableName,
       BOT_OUTBOUND_QUEUE_URL: outbound.queueUrl,
       BOT_SITE_ORIGIN: siteOrigin,
+      BOT_API_BASE_URL: apiBaseUrl,
       BOT_LLM_PROVIDER: llmProvider,
       BOT_LLM_MODEL: llmModel,
       BOT_LLM_API_KEY_PARAMETER: llmApiKeyParameter,

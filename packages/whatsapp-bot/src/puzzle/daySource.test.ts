@@ -1,0 +1,152 @@
+import { describe, expect, it, vi } from 'vitest';
+import { createLog } from '../log';
+import { createDaySourceReader, sourceContext } from './daySource';
+
+const log = createLog('silent');
+
+function reader(responses: (() => Promise<Response> | Response)[], now = () => 1_000) {
+  let n = 0;
+  const calls: string[] = [];
+  const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+    calls.push(String(url));
+    const next = responses[Math.min(n, responses.length - 1)];
+    n += 1;
+    return next();
+  });
+  return {
+    calls,
+    fetchImpl,
+    reader: createDaySourceReader({
+      apiBaseUrl: 'https://api.whippin.ai',
+      log,
+      now,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    }),
+  };
+}
+
+const ok = (body: unknown) =>
+  new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+
+describe("the day's source is ambient context, not a tool (#236)", () => {
+  it('reads the day once and holds it, however often the group speaks', async () => {
+    const r = reader([() => ok({ source: { kind: 'music', author: 'Bertrand Belin', work: 'Oiseau' } })]);
+    expect(await r.reader.get('fr', 20700, '2026-09-03')).toEqual({
+      kind: 'music',
+      author: 'Bertrand Belin',
+      work: 'Oiseau',
+    });
+    await r.reader.get('fr', 20700, '2026-09-03');
+    await r.reader.get('fr', 20700, '2026-09-03');
+    // One 4-6 MB read a day, not one per question.
+    expect(r.fetchImpl).toHaveBeenCalledTimes(1);
+    expect(r.calls[0]).toBe('https://api.whippin.ai/?lang=fr&date=2026-09-03');
+  });
+
+  it('shares ONE flight when a lively group asks during the read', async () => {
+    let release: (v: Response) => void = () => {};
+    const pending = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    const r = reader([() => pending]);
+    const all = Promise.all([
+      r.reader.get('fr', 20700, '2026-09-03'),
+      r.reader.get('fr', 20700, '2026-09-03'),
+      r.reader.get('fr', 20700, '2026-09-03'),
+    ]);
+    release(ok({ source: { kind: 'book' } }));
+    expect(await all).toEqual([{ kind: 'book' }, { kind: 'book' }, { kind: 'book' }]);
+    expect(r.fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('keys the cache by DAY and by LANGUAGE — two dailies are two sources', async () => {
+    const r = reader([() => ok({ source: { kind: 'music' } }), () => ok({ source: { kind: 'poem' } })]);
+    expect(await r.reader.get('fr', 20700, '2026-09-03')).toEqual({ kind: 'music' });
+    expect(await r.reader.get('en', 20700, '2026-09-03')).toEqual({ kind: 'poem' });
+    expect(r.fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('PARSES the puzzle, because "source" is also an ordinary French word', async () => {
+    // A real fr artifact holds `"source"` three times: twice as a RANK-MAP KEY and once as
+    // the object wanted. A regex for it reports the sentence comes from a work called
+    // "sources" — confidently, and wrongly.
+    const r = reader([
+      () =>
+        ok({
+          lang: 'fr',
+          ranks: {
+            serpent: { source: { word: 'sources', rank: 1452, dq: 66 } },
+            pierres: { source: { word: 'sources', rank: 6188, dq: 20 } },
+          },
+          source: { kind: 'music', author: 'Bertrand Belin', work: 'Oiseau' },
+        }),
+    ]);
+    expect(await r.reader.get('fr', 20700, '2026-09-03')).toEqual({
+      kind: 'music',
+      author: 'Bertrand Belin',
+      work: 'Oiseau',
+    });
+  });
+
+  it('an unpublished day is an ANSWER and is never re-read; a failure is retried later', async () => {
+    const missing = reader([() => new Response('', { status: 404 })]);
+    expect(await missing.reader.get('fr', 20700, '2026-09-03')).toBeNull();
+    await missing.reader.get('fr', 20700, '2026-09-03');
+    expect(missing.fetchImpl).toHaveBeenCalledTimes(1); // settled: no puzzle that day
+
+    let clock = 1_000;
+    const down = reader(
+      [() => new Response('', { status: 503 }), () => ok({ source: { kind: 'music' } })],
+      () => clock,
+    );
+    expect(await down.reader.get('fr', 20700, '2026-09-03')).toBeNull();
+    await down.reader.get('fr', 20700, '2026-09-03');
+    expect(down.fetchImpl).toHaveBeenCalledTimes(1); // not re-read at the rate the group talks
+    clock += 6 * 60_000;
+    expect(await down.reader.get('fr', 20700, '2026-09-03')).toEqual({ kind: 'music' });
+  });
+
+  it('a puzzle with no source, an unreachable API and a broken body all read as NOTHING', async () => {
+    const none = reader([() => ok({ lang: 'fr', words: [] })]);
+    expect(await none.reader.get('fr', 20700, '2026-09-03')).toBeNull();
+    const dead = reader([
+      () => {
+        throw new Error('ECONNREFUSED');
+      },
+    ]);
+    expect(await dead.reader.get('fr', 20700, '2026-09-03')).toBeNull();
+    const junk = reader([() => new Response('<html>', { status: 200 })]);
+    expect(await junk.reader.get('fr', 20700, '2026-09-03')).toBeNull();
+  });
+});
+
+describe('the KIND may be said; the author and the work may not', () => {
+  it('carries the whole source, and the rule that only the kind is sayable', () => {
+    const text = sourceContext({ kind: 'music', author: 'Bertrand Belin', work: 'Oiseau' });
+    // The model KNOWS all of it — it has to, to know what it is holding back, and to say
+    // so after the day is over.
+    expect(text).toContain('kind: music');
+    expect(text).toContain('author: Bertrand Belin');
+    expect(text).toContain('work: Oiseau');
+    // The kind is colour and narrows nothing; the title is one search from the sentence.
+    expect(text).toContain('say the KIND freely');
+    expect(text).toMatch(/NOT name the author or the work/);
+    // The sneaky leak is agreeing with somebody else's guess, so it is named.
+    expect(text).toMatch(/confirm or deny/);
+  });
+
+  it('says nothing at all when there is nothing to say', () => {
+    expect(sourceContext(null)).toBe('');
+    expect(sourceContext({})).toBe('');
+  });
+
+  it('states only the fields the day actually carries — every one is optional (#5)', () => {
+    // The FACTS are what varies; the rule below them always names the author and the work,
+    // because it forbids them whether or not this day has any.
+    const facts = (s: Parameters<typeof sourceContext>[0]) =>
+      /\(([^)]*)\)/.exec(sourceContext(s))?.[1] ?? '';
+    expect(facts({ kind: 'quote' })).toBe('kind: quote');
+    expect(facts({ author: 'Victor Hugo' })).toBe('author: Victor Hugo');
+    expect(facts({ kind: 'book', work: 'Les Misérables' })).toBe('kind: book, work: Les Misérables');
+  });
+});

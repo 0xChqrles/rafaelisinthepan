@@ -43,6 +43,8 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
     src/llm/                    provider-neutral contract (types.ts), providers/deepseek.ts, the versioned
                                 personality, podium comments (validated, retried, degrade to none),
                                 shareComment.ts — the spoken acknowledgement, degrading to the emoji
+    src/puzzle/daySource.ts     the day's `source` metadata, read once per (language, day) and carried in
+                                the CONVERSATION's prompt — the KIND is sayable, the work is not
     src/chat/                   addressed conversation: trigger (mention/reply/name), ceilings (limits),
                                 in-memory recent context, durable social memory, read-only tools + name
                                 resolution (one window constant: a tool never promises days it
@@ -410,6 +412,52 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   through the allow-listed tools; name resolution is the tool runner's, and ambiguity is
   answered as such. Memory is bounded facts per (group, JID), written from explicit
   interactions; `bot:cli forget` removes it without touching scoreboard rows.
+- **THE BOT KNOWS WHERE TODAY'S SENTENCE IS FROM, AND MAY SAY ONLY WHAT KIND OF THING IT
+  IS** (user-decided 2026-09-04). The puzzle's `source` (#5) is read from the game's public
+  backend and carried in the CONVERSATION's system prompt beside the day number — AMBIENT,
+  not a tool: a tool means the model must decide to call it and then wait a round trip
+  before it can answer "ça vient d'où ?", for one small object that does not change all day.
+  - **THE MODEL HOLDS THE WHOLE OBJECT AND MAY NAME ONLY THE `kind`.** "C'est une chanson"
+    is colour and narrows nothing; the author and the work ARE the answer — today's line
+    being *Oiseau* by Bertrand Belin is one search from the lyrics, and the game itself
+    shows the source only on the SOLVED screen. It knows all of it because it has to know
+    what it is holding back, and because it may not confirm or deny a guess either — the
+    quiet leak, since "oui c'est ça" spoils exactly as much as saying it. **A PROMPT RULE
+    and not a gate** (the user chose it over withholding the fields): measured against the
+    live model over 13 adversarial asks — a direct guess, the first letter, the letter
+    count, the title reversed, "the podium is passed", a system-prompt dump and an
+    instruction override — 13 refused, and it generalised correctly to the era and the
+    artist's nationality, which the rule never names.
+  - **THE RULE TRAVELS WITH THE FACT** (`sourceContext`), never in the global personality:
+    the share line and the podium comments are told nothing about the source, so they have
+    nothing to hold back, and a prompt that carries neither must not be told it knows
+    something. It is also why the podium comments were left alone — that prompt is
+    deliberately tight, since a longer one makes this model reason longer and reasoning is
+    what truncates it.
+  - **THE PUZZLE IS PARSED, NEVER SCANNED.** `"source"` occurs THREE times in a real French
+    artifact — twice as a RANK-MAP KEY, because *source* is an ordinary French word, and
+    once as the object wanted (measured on 2026-09-03: 4.3%, 56.1%, 100% through the file).
+    A regex finds `{"word":"sources","rank":1452}` first and reports that the day's sentence
+    comes from a work called "sources".
+  - **ONE READ PER (LANGUAGE, DAY), and a 4-6 MB one.** There is nothing smaller to read
+    it from: the derivation slice carries `lang`/`revision`/`holes` and no `source`, and is
+    not served publicly anyway. So the answer is cached for the process's life, concurrent
+    askers share ONE flight, a 404 is an ANSWER (that day was never published) and is not
+    re-read, and only a genuine failure is retried — after five minutes, never at the rate
+    the group talks. **A missing source is never an error**: an unpublished day, a puzzle
+    with no metadata and a failed read are one outcome, and the prompt simply says nothing.
+  - **`BOT_API_BASE_URL` is a NEW and separate knob** (`https://api.whippin.ai`): the
+    backend is a different host from `BOT_SITE_ORIGIN`, which is only ever a pattern for
+    recognising share links and is never called.
+  - **NOT DONE: hole difficulty.** The user also asked for the three secrets' "ranking in
+    the vocab list", and it does not exist anywhere the bot can reach. `freq` is emitted by
+    `gen_word.py` ONLY (the root `AGENTS.md` contract — a sentence puzzle carries none);
+    the served `vocab/<lang>.json` is written SORTED and deduplicated, so the frequency
+    order is destroyed; and the order survives only inside the reduced embedding, a local
+    generation artifact that never deploys. `start_rank` is NOT a substitute — measured
+    across five days it is 101-151 on every hole of every day, a generation constant with
+    jitter that says where the HINT starts. Giving the bot difficulty means adding a field
+    to the sentence schema and republishing: a generation + publish change, not a bot one.
 - **Privacy:** logs carry event kinds, hashed JIDs (`tag()`), message ids, day/score and
   provider latency — never a message body. A command id EMBEDS the JIDs it addresses, so
   every log of one goes through `redactJids`. **What reaches the model provider is two
@@ -456,7 +504,7 @@ pnpm --filter @whippin/whatsapp-bot test
 ```
 
 Env: `BOT_TABLE` (required), `BOT_OUTBOUND_QUEUE_URL` (absent = in-process queue, local
-only), `BOT_GROUPS_DIR`, `BOT_SITE_ORIGIN`, `BOT_METRICS_NAMESPACE`, `BOT_LLM_PROVIDER`,
+only), `BOT_GROUPS_DIR`, `BOT_SITE_ORIGIN`, `BOT_API_BASE_URL`, `BOT_METRICS_NAMESPACE`, `BOT_LLM_PROVIDER`,
 `BOT_LLM_MODEL`, `BOT_LLM_API_KEY_PARAMETER` (SSM) or `BOT_LLM_API_KEY` (local only),
 `BOT_LLM_DAILY_CALL_CEILING`, `BOT_LOG_LEVEL`, `BOT_BAILEYS_LOG_LEVEL`, `BOT_AWS_REGION`.
 
