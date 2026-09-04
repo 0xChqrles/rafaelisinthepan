@@ -221,10 +221,13 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   early stop — DeepSeek answers `insufficient_system_resource` for an interrupted generation
   and `content_filter` for an omitted one, the provider folds both into `other`, and a short
   partial passes every text check; this call has no tools, so `stop` is the one reason that
-  means the model said what it meant. **The same hazard is unfixed elsewhere** (`chat/agent.ts`
-  posts `plainReply` of whatever came back, so a cut-off reply reaches the group as a
-  fragment; `llm/podiumComments.ts` is protected only incidentally, because truncated JSON
-  fails to parse). A leader row is keyed by (group, LANGUAGE, day) and moves on every
+  means the model said what it meant. **The conversation agent wears the same gate since
+  2026-09-04** (`chat/agent.ts`): its reply budget was 300 tokens, and the day's logs show
+  calls that spent exactly 300 and answered NOTHING — `chat.silent` `empty` on a question
+  plainly asked — so the budget is 2000 (sized for the thinking) and a final answer whose
+  finish is not `stop` is retried once at the same round, then silent (`unfinished`) rather
+  than posted as a fragment. `llm/podiumComments.ts` is still protected only incidentally,
+  because truncated JSON fails to parse. A leader row is keyed by (group, LANGUAGE, day) and moves on every
   improvement and on a REPLAY, so history cannot make a later share announce a lead it does
   not hold; only a change of HOLDER is announced, read from what the write DISPLACED rather
   than from a stale read (`leader.ts` says why). A claim that fails is logged and dropped —
@@ -240,8 +243,29 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   same two things — a received message hidden for the visibility window, and pending
   messages delivered beside one still in flight — so a deferred command cannot make a dry
   run look hung.
+- **LIVE MEANS RECENT, not "arrived over an open socket"** (2026-09-04). Baileys marks a
+  `messages.upsert` `notify` for a message that just arrived and `append` for one WhatsApp
+  queued while the bot was disconnected — and the task restarts on every deploy, so every
+  question asked during that minute came back as `append`, was recorded, and was never
+  answered (a share logged `live: false` two seconds after `wa.open`). `whatsapp/inbound.ts`
+  `isLive`: `notify` is live, `append` is live while the message is under `OFFLINE_LIVE_S`
+  (10 min) old. An answer to a question asked a minute ago is an answer; an emoji on last
+  night's share is a bot waking up confused. History sync stays a different event, never live.
 - **REPLYING is opt-in per message; CONTEXT is not** (user-decided 2026-09-04). The bot
-  answers only a mention, a reply-to-bot, or a leading `chat.name` — that half is unchanged.
+  answers a mention, a reply-to-bot, or a leading `chat.name` — **and, since later the same
+  day, the FIRST message after its own last line, TENTATIVELY** (user-decided 2026-09-04):
+  a person answering the bot does not @-mention it, and a "merci" or an "et hier ?" seconds
+  after it spoke reads as a reply. `main.ts` keeps THE FLOOR per group — who spoke last, off
+  every message the group delivers, the bot's own sends included since WhatsApp echoes them
+  back `fromMe`, stamped with the message's own timestamp and never moved backwards — and
+  `trigger.ts` `followsBot` offers a message within `FOLLOW_UP_WINDOW_MS` (2 min) of the
+  bot's line as address `follow`. The agent is TOLD it may not be for the bot and asked to
+  answer exactly `NO_REPLY` when it is not (silent `not_for_me`, and the message is then
+  remembered as ordinary chatter). A declined follow-up spends the CALL ceiling and NOT the
+  per-sender/per-group question ceilings — those are charged only once the model has
+  answered — or chatter after a podium would burn a person's whole day of replies. Bounded
+  by construction: the floor is the bot's only until anybody else speaks, so at most ONE
+  candidate follows each thing it says.
   What changed is what it BRINGS to that answer: a window of the group's ordinary chatter
   (`chat/context.ts`, 25 messages, nothing older than 30 minutes) rather than only the
   exchanges it took part in. It had to: "je pense au nombre 67" followed by "@bot quel
@@ -377,6 +401,10 @@ there is one region knob and not two.
 - Proactive new-leader lines are implemented behind `leaderAnnouncements` (default off).
 - Not built: the eval fixture for comparing models, a manual replay/rebuild of ingestion,
   bot commands beyond addressing, durable interaction records for summarisation.
+- The test group's `chat.perUserPerDay` is 10, and on 2026-09-04 it silenced four addressed
+  messages of the one tester (`chat.silent` `user_limit`) — the third of three causes found
+  behind "the bot misses messages" (with the offline-delivery and the reply-budget rules
+  above). It is a config knob in SSM (`pnpm bot:groups edit test`), not code.
 
 ## Do NOT
 
