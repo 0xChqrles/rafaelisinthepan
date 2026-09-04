@@ -180,6 +180,21 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   the bot decides — score, cap and player go IN — and it spends the same
   `BOT_LLM_DAILY_CALL_CEILING` the conversation does, because a second model path outside
   that ceiling would leave it bounding half the spend.
+  **HOW GOOD IT WAS IS THE BOT'S JUDGEMENT** (`domain/reactions.ts` `scoreBand`): one set of
+  thresholds serves both acknowledgements, so `react`'s emoji and `say`'s line cannot
+  disagree about a score. The band reaches the model as a settled `verdict` it dresses in
+  words and may never revise — and without it the model cannot calibrate AT ALL, since
+  nothing tells it whether 7 is good: measured, it answered one flat line to a 3, a 7 and a
+  42 alike.
+  **THE VOICE IS SHOWN, NOT NAMED (v2, user-decided 2026-09-04).** v1 asked for "playful and
+  lightly teasing" and got precisely that: every line opened with the player's name, restated
+  the score, ended in a rhetorical tag and wore a 😏. The register now bans those tics by
+  name, states that the bot is NOT trying to be funny — which is what removes the visible
+  effort — and describes each band as an ATTITUDE. Its examples are marked as register and
+  forbidden to reuse, because copyable one-liners are treated as a MENU: an early draft
+  answered "acceptable." to three different scores in a row. Field names in the payload are
+  neutral for the same reason (`band` produced "le band a gagné"), and shortness is
+  ENFORCED rather than requested, a long line being one that started explaining itself.
   **A TRUNCATED ANSWER IS REFUSED ON ITS FINISH REASON, not inspected.** `deepseek-v4-flash`
   is a reasoning model and its thinking is spent from `max_tokens`, so a tight budget returns
   a FRAGMENT — and a short fragment passes every length check (the observed one was

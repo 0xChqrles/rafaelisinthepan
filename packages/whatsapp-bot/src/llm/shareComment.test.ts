@@ -43,7 +43,10 @@ describe('the spoken acknowledgement of a share (#236)', () => {
     expect(await generateShareComment(p.provider, group, facts, log)).toBe('Sept coups, honnête.');
     // The numbers are given, never asked for: the model comments, it does not decide.
     const sent = JSON.parse((p.calls[0] as { messages: { content: string }[] }).messages[0].content);
-    expect(sent).toEqual({ player: 'Gab', score: 7, capped: false, date: '2026-09-04' });
+    // The VERDICT is the bot's, from the same thresholds the emoji uses; the model dresses
+    // it. And no field name is a word the answer may borrow (an early draft called this
+    // `band` and produced "le band a gagné").
+    expect(sent).toEqual({ player: 'Gab', tries: 7, solved: true, verdict: 'ordinary' });
     // The group's own voice reaches it.
     expect((p.calls[0] as { system: string }).system).toContain('On se chambre.');
   });
@@ -52,7 +55,7 @@ describe('the spoken acknowledgement of a share (#236)', () => {
     const p = provider([{ text: 'Aïe.' }]);
     await generateShareComment(p.provider, group, { ...facts, capped: true }, log);
     const sent = JSON.parse((p.calls[0] as { messages: { content: string }[] }).messages[0].content);
-    expect(sent).toMatchObject({ capped: true, score: null });
+    expect(sent).toMatchObject({ tries: null, solved: false, verdict: 'failed' });
   });
 
   it('retries an UNAVAILABLE model once, then gives the caller the emoji', async () => {
@@ -84,8 +87,24 @@ describe('the spoken acknowledgement of a share (#236)', () => {
     expect(await generateShareComment(both.provider, group, facts, log)).toBeNull();
   });
 
+  it('carries the verdict for every band, so the model never has to calibrate', async () => {
+    // Told only a number the model cannot know whether 7 is good, and answers the same flat
+    // line to a 3, a 7 and a 42 — measured against the real provider.
+    for (const [score, capped, verdict] of [
+      [1, false, 'brilliant'], [3, false, 'brilliant'], [5, false, 'strong'],
+      [12, false, 'ordinary'], [13, false, 'laboured'], [0, true, 'failed'],
+    ] as const) {
+      const p = provider([{ text: 'ok.' }]);
+      await generateShareComment(p.provider, group, { ...facts, score, capped }, log);
+      const sent = JSON.parse((p.calls[0] as { messages: { content: string }[] }).messages[0].content);
+      expect(sent.verdict).toBe(verdict);
+    }
+  });
+
   it('rejects an unusable line rather than posting it', async () => {
-    for (const text of [null, '', '   ', 'x'.repeat(141)]) {
+    // Long is the failure this register exists to avoid: a line that runs on is one that
+    // started explaining itself.
+    for (const text of [null, '', '   ', 'x'.repeat(91)]) {
       const p = provider([{ text }, { text }]);
       expect(await generateShareComment(p.provider, group, facts, log)).toBeNull();
     }

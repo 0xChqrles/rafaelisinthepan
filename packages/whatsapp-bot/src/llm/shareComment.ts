@@ -11,8 +11,8 @@
 // its ceiling costs the JOKE and not the acknowledgement: `null` here means the caller
 // sends the deterministic emoji instead (`domain/ingest.ts`). Never silence.
 
-import { dateForDayNumber } from '@whippin/shared';
 import type { GroupConfig } from '../config/groupConfig';
+import { scoreBand } from '../domain/reactions';
 import type { Log } from '../log';
 import { buildSystemPrompt } from './personality';
 import { sanitizeComment } from './podiumComments';
@@ -26,7 +26,11 @@ const ATTEMPTS = 2;
 // — and 1500 still truncated one, because the thinking length has no ceiling worth trusting.
 // Hence a comfortable budget AND the finish-reason check below; the retry and the emoji
 // cover what neither catches.
-const MAX_TOKENS = 800;
+const MAX_TOKENS = 2000;
+// SHORTNESS IS THE VOICE, so it is enforced and not merely asked for. A line that runs long
+// is one that started explaining itself, which is the failure this register exists to avoid
+// — rejecting it costs a retry, where posting it costs the joke.
+const LINE_MAX_CHARS = 90;
 
 export interface ShareFacts {
   player: string; // the display name the group knows them by
@@ -35,10 +39,22 @@ export interface ShareFacts {
   dayNumber: number;
 }
 
-// The model gets the facts and the group's voice; the TASK forbids it inventing any of the
-// numbers back, because the renderer does not print them — this line IS the whole message.
+// HOW GOOD IT WAS IS ALREADY DECIDED. The band comes from `domain/reactions.ts` — the same
+// thresholds the emoji uses — and reaches the model as a settled `verdict` it dresses in
+// words but may never revise. Without it the model cannot calibrate at all: told only "7",
+// it has no idea whether that is good, and answers the same flat line to a 3, a 7 and a 42
+// (measured). It is also the invariant: the bot judges, the model writes.
+//
+// THE BANDS ARE DESCRIBED AS ATTITUDES, AND THE EXAMPLES ARE MARKED AS REGISTER. Given
+// copyable one-liners the model treats them as a menu — an early draft answered
+// "acceptable." to three different scores in a row — so the examples say what the voice
+// SOUNDS like and the prompt forbids reusing their words.
 const TASK = (max: number) =>
-  `Task: one short line reacting to a Whippin result somebody just shared in this group. You receive the facts as JSON (player, score, capped, date). Lower scores are better; "capped": true means they ran out of guesses and did not finish. Reply with the LINE ONLY — plain text, one sentence, no line breaks, no markdown, no quotes around it, at most ${max} characters, in the group's language. Tease or congratulate. You may mention the player and the score, but never invent a rank, a comparison with another player, or any number you were not given.`;
+  `Task: react in ONE line to the Whippin result below, as a message in the group. The line only — plain text, no markdown, no quotes around it, under ${max} characters and often far less; two words is a whole message. Do not open with the player's name and do not restate their score.
+
+How good it was is already decided for you. React to it, never re-judge it: brilliant = grudging respect, never gushing · strong = approval, undercut · ordinary = unmoved · laboured = dry sympathy · failed = the sentence beat them.
+
+Register, never reuse these words: "bon. c'est agaçant." / "ça fera l'affaire." / "la phrase a gagné."`;
 
 export async function generateShareComment(
   provider: LlmProvider,
@@ -49,13 +65,16 @@ export async function generateShareComment(
   const system = buildSystemPrompt({
     language: group.language,
     groupPrePrompt: group.chat.prePrompt,
-    extra: TASK(140),
+    extra: TASK(70),
   });
+  // NEUTRAL FIELD NAMES, because the model writes with whatever vocabulary is in front of
+  // it: an earlier draft called this `band` and produced "le band a gagné." Nothing here is
+  // a word the answer may borrow.
   const content = JSON.stringify({
     player: facts.player,
-    score: facts.capped ? null : facts.score,
-    capped: facts.capped,
-    date: dateForDayNumber(facts.dayNumber),
+    tries: facts.capped ? null : facts.score,
+    solved: !facts.capped,
+    verdict: scoreBand(facts.score, facts.capped),
   });
   for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
     let text: string | null;
@@ -90,7 +109,7 @@ export async function generateShareComment(
       continue;
     }
     const line = sanitizeComment(text);
-    if (line) return line;
+    if (line && line.length <= LINE_MAX_CHARS) return line;
     log.warn({ event: 'share.comment_invalid', attempt }, 'rejecting an unusable line');
   }
   return null;
