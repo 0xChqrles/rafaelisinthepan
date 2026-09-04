@@ -83,7 +83,27 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
     // Each call carries only ITS line, plus how many there were — never the whole podium,
     // and never an `id` the model could echo back as prose.
     const sent = JSON.parse(provider.requests[0].messages[0].content as string);
-    expect(sent).toEqual({ place: 1, tries: 3, who: ['Gab'], outOf: 2 });
+    // The VERDICT travels with the line, from the same thresholds the emoji uses. Without
+    // it the model cannot tell whether 10 is good and invents something that merely sounds
+    // like a comment — the observed one was "le chronomètre a souffert", about a game that
+    // times nothing.
+    expect(sent).toEqual({ place: 1, tries: 3, who: ['Gab'], outOf: 2, verdict: 'perfect' });
+  });
+
+  it('bands every podium line, so a winning score can still be an ordinary one', async () => {
+    // Today's real beta podium: 10 wins the day and is `ordinary` in absolute terms. The
+    // model is told both, because they are different facts.
+    const wide = { ...podium, lines: [
+      { ...podium.lines[0], score: 10, position: 1 },
+      { ...podium.lines[1], score: 30, position: 2 },
+    ] };
+    const provider = answering({ 1: ['a.'], 2: ['b.'] });
+    await generatePodiumComments(provider, group, wide, log);
+    const sent = provider.requests.map((r) => JSON.parse(r.messages[0].content as string));
+    expect(sent.map((x) => [x.place, x.tries, x.verdict])).toEqual([
+      [1, 10, 'ordinary'],
+      [2, 30, 'laboured'],
+    ]);
   });
 
   it('keeps comments plain text', () => {

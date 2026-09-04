@@ -169,6 +169,13 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   first character. It now borrows `shareComment.ts`'s proven shape — one short line, no JSON,
   a generous budget, a `finish === 'length'` refusal — and measured 4/5, 4/5, 5/5 where the
   old one measured 0/5.
+  **AND EACH LINE CARRIES ITS VERDICT** (`scoreBand`, the same thresholds the emoji uses),
+  for the reason the share line does: told only "10", the model cannot know whether that is
+  good, and it fills the gap with something that merely SOUNDS like a comment — the observed
+  one was "le chronomètre a souffert", about a game that times nothing. `place` and `verdict`
+  are given as DIFFERENT facts, because they are: a modest score can win a modest day, and
+  the model says so once it can see both. Measured on the same podium: 5/5, 5/5, 5/5 lines,
+  and roughly half the latency — a model told what a number means spends less time deciding.
   **A LINE THAT FAILS NO LONGER TAKES THE OTHERS WITH IT:** the renderer already prints a
   podium line with no comment, so a partial set is a partial podium rather than a bare one,
   and `parseCommentAnswer` and its whole-answer rejection are gone with the envelope that

@@ -21,6 +21,7 @@
 
 import type { GroupConfig } from '../config/groupConfig';
 import type { Podium } from '../domain/podium';
+import { scoreBand } from '../domain/reactions';
 import { lineId, type Comments } from '../domain/podiumText';
 import type { Log } from '../log';
 import { buildSystemPrompt } from './personality';
@@ -62,7 +63,17 @@ export function podiumCommentLines(podium: Podium): PodiumCommentLine[] {
 
 // Tight on purpose: a longer prompt makes this model deliberate longer, and it pays for
 // that thinking out of the same budget the answer needs (`shareComment.ts` measures it).
-const TASK = `Task: one short line about ONE podium position below. The line only — plain text, no markdown, no quotes around it, under ${COMMENT_MAX_CHARS} characters and often far less. Do not restate the placing, the number of tries or the names: they are printed directly above your line. Tease or acknowledge, and never invent a comparison you were not given.`;
+//
+// IT CARRIES THE VERDICT, for the reason the share line does: told only "10", the model
+// cannot know whether that is good, and it fills the gap with something that sounds like a
+// comment — "le chronomètre a souffert", about a game that times nothing. The band comes
+// from the same `scoreBand` the emoji uses, and the number is NAMED as tries so the model
+// has no room to imagine a clock.
+const TASK = `Task: one short line about ONE podium position below. The line only — plain text, no markdown, no quotes around it, under ${COMMENT_MAX_CHARS} characters and often far less. Do not restate the placing, the number of tries or the names: they are printed directly above your line.
+
+"tries" is how many guesses it took — fewer is better, three is the floor, and nothing in this game is timed. How good it was is already decided for you: react to the verdict, never re-judge it. perfect = the floor, unbeatable · brilliant = grudging respect · strong = approval, undercut · ordinary = unmoved · laboured = dry sympathy. "place" is where that lands them today, which is a separate thing: a modest score can still win a modest day.
+
+Register, never reuse these words: "bon. c'est agaçant." / "ça fera l'affaire." / "on a vu pire."`;
 
 const MAX_TOKENS = 2000;
 // Two attempts at this must fit the podium Lambda's 90s with room for its reads, and the
@@ -78,7 +89,13 @@ async function commentForLine(
 ): Promise<string | null> {
   // Neutral field names: the model writes with whatever vocabulary is in front of it, and
   // these are words it may borrow (`shareComment.ts` learned this as "le band a gagné").
-  const content = JSON.stringify({ place: line.position, tries: line.score, who: line.names, outOf });
+  const content = JSON.stringify({
+    place: line.position,
+    tries: line.score,
+    who: line.names,
+    outOf,
+    verdict: scoreBand(line.score, false), // a podium line is always a finished run
+  });
   for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
     let text: string | null;
     let finish: string | undefined;
