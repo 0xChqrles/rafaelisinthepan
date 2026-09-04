@@ -72,6 +72,20 @@ export function mentionedOthers(message: InboundMessage, identity: BotIdentity):
 
 const MENTION = /@(\d{5,})/g;
 
+// EVERY mention replaced by a name, for a message that was NOT addressed to the bot and is
+// being remembered (main.ts). The window reaches the provider on a later question, and a
+// mention token spells the phone number (or LID) of whoever it points at — the identifier
+// the addressed path is careful to resolve before the model reads it. Same rule here, same
+// fallback: the name the group uses, or the `…last4` handle every other surface shows for
+// a nameless JID, so a full number never travels — not even one typed by hand, since the
+// token is matched in the TEXT and not in the message's mention list.
+export function withMentionNames(text: string, names: ReadonlyMap<string, string>): string {
+  return text
+    .replace(MENTION, (_whole, digits: string) => ` ${names.get(digits) ?? fallbackName(digits)} `)
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 // What the model reads: the BOT's mention tokens and a leading name form removed, so the
 // prompt holds the question and not the addressing.
 //

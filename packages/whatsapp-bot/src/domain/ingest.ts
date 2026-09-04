@@ -43,6 +43,10 @@ export interface IngestDeps {
   // and the retries (`llm/shareComment.ts`, wired in main.ts). Absent, or answering null,
   // means the emoji stands in.
   comment?: (group: GroupConfig, facts: ShareFacts) => Promise<string | null>;
+  // Told a line ONCE IT IS QUEUED — the line is a turn in the group's conversation and the
+  // caller remembers it as one (main.ts) — and never for a line the queue refused for
+  // good: remembered, that would be a message the bot believes it sent and nobody read.
+  spoken?: (group: GroupConfig, line: string) => void;
 }
 
 // `failed` WINS over `recorded`: a message carrying two days, one of which could not be
@@ -74,14 +78,16 @@ export function createIngest(deps: IngestDeps) {
   // the share is recorded and on the podium whatever happens here, so a queue that
   // refuses for good costs the emoji or the line, logged, and never the outcome — an
   // `ingest` that threw past a recorded share would report a loss that did not happen.
-  async function enqueue(command: OutboundCommand, group: string) {
+  async function enqueue(command: OutboundCommand, group: string): Promise<boolean> {
     try {
       await withRetry(() => deps.outbound.enqueue(command));
+      return true;
     } catch (error) {
       deps.log.error(
         { event: 'outbound.enqueue_failed', group: tag(group), kind: command.kind, error: (error as Error).message },
         'could not queue an acknowledgement; the share itself is recorded',
       );
+      return false;
     }
   }
 
@@ -215,7 +221,7 @@ export function createIngest(deps: IngestDeps) {
               return null;
             })
           : null;
-      await enqueue(
+      const queued = await enqueue(
         line
           ? {
               id: commandIds.ack(group.id, message.id),
@@ -233,6 +239,7 @@ export function createIngest(deps: IngestDeps) {
             },
         group.id,
       );
+      if (line && queued) deps.spoken?.(group, line);
     }
     // Queued after the acknowledgement. The queue is standard SQS and promises no order, so
     // this buys a tendency and not a guarantee — worth having, since the two are usually

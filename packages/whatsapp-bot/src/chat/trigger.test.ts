@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { InboundMessage } from '../domain/message';
-import { addressedTo, questionText } from './trigger';
+import { addressedTo, questionText, withMentionNames } from './trigger';
 
 const identity = { jids: ['33700000000@s.whatsapp.net', '99999999999999@lid'], name: 'WhippinBot' };
 const m = (jid: string, player = jid) => ({ jid, player });
@@ -71,5 +71,17 @@ describe('conversation triggers (#236)', () => {
     });
     expect(questionText(lid, unlisted, new Map([['33600000000', 'Zou']]))).toBe('combien de jours que Zou me bat ?');
     expect(questionText(lid, unlisted)).toBe('combien de jours que me bat ?');
+  });
+
+  it('names EVERY mention of a remembered message, so no number reaches the provider later', () => {
+    // The ambient path (main.ts): the message was not for the bot, but it enters the window
+    // the next question carries. "@336… tu confirmes ?" spells a phone number; what is
+    // remembered is the name the group uses, or the `…last4` handle when nobody is known —
+    // and a number typed by hand, absent from the mention list, gets the same treatment.
+    const names = new Map([['33600000000', 'Zou']]);
+    expect(withMentionNames('@33600000000 tu confirmes ?', names)).toBe('Zou tu confirmes ?');
+    expect(withMentionNames('@33659018262 tu confirmes ?', names)).toBe('…8262 tu confirmes ?');
+    expect(withMentionNames('gg @33600000000 et @33659018262 !', names)).toBe('gg Zou et …8262 !');
+    expect(withMentionNames('rien à voir', names)).toBe('rien à voir');
   });
 });

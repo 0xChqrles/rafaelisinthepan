@@ -148,6 +148,31 @@ describe('share ingestion (#236)', () => {
     expect(sent[0]).toMatchObject({ kind: 'reaction' });
   });
 
+  it('reports a line as SPOKEN only once it is queued — a refused line was never said', async () => {
+    // The caller remembers the line as a turn in the conversation (main.ts). Told before
+    // the queue accepted it, a line the queue refused for good would be a message the bot
+    // believes it sent and nobody read.
+    const spoken = vi.fn();
+    const said = harness(registry({ acknowledge: 'say' }), { comment: async () => 'une ligne.', spoken });
+    expect(await said.ingest(message())).toBe('recorded');
+    expect(spoken).toHaveBeenCalledWith(expect.objectContaining({ id: GROUP }), 'une ligne.');
+
+    const refused = vi.fn();
+    const dead = harness(registry({ acknowledge: 'say' }), {
+      comment: async () => 'une ligne.',
+      spoken: refused,
+      outbound: { enqueue: vi.fn().mockRejectedValue(new Error('sqs down')) },
+    });
+    expect(await dead.ingest(message({ id: 'M2', timestamp: 1_001 }))).toBe('recorded');
+    expect(refused).not.toHaveBeenCalled();
+
+    // The emoji is not a turn: nothing to remember about it.
+    const emoji = vi.fn();
+    const fell = harness(registry({ acknowledge: 'say' }), { comment: async () => null, spoken: emoji });
+    expect(await fell.ingest(message({ id: 'M3', timestamp: 1_002 }))).toBe('recorded');
+    expect(emoji).not.toHaveBeenCalled();
+  });
+
   it('acknowledges nothing when the group asked for nothing', async () => {
     const comment = vi.fn(async () => 'never');
     const { ingest, declarations, sent } = harness(registry({ acknowledge: 'none' }), { comment });

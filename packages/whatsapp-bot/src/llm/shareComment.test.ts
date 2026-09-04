@@ -87,6 +87,21 @@ describe('the spoken acknowledgement of a share (#236)', () => {
     expect(await generateShareComment(both.provider, group, facts, log)).toBeNull();
   });
 
+  it('publishes ONLY a completion that finished — any other reason is a line the model did not mean', async () => {
+    // `length` is not the only early stop: DeepSeek answers `insufficient_system_resource`
+    // for an interrupted generation and `content_filter` for an omitted one, which the
+    // provider folds into `other`. A short partial passes every text check, so the gate is
+    // the reason itself: this call has no tools, and `stop` is the one reason that means
+    // "said what it meant".
+    for (const finish of ['other', 'tool_calls'] as const) {
+      const p = provider([{ text: 'Sept coups, honnête.', finish }, { text: 'Sept coups, honnête.', finish }]);
+      expect(await generateShareComment(p.provider, group, facts, log)).toBeNull();
+      expect(p.calls).toHaveLength(2);
+    }
+    const recovered = provider([{ text: 'Sept coups, hon', finish: 'other' }, { text: 'Sept coups, honnête.', finish: 'stop' }]);
+    expect(await generateShareComment(recovered.provider, group, facts, log)).toBe('Sept coups, honnête.');
+  });
+
   it('carries the verdict for every band, so the model never has to calibrate', async () => {
     // Told only a number the model cannot know whether 7 is good, and answers the same flat
     // line to a 3, a 7 and a 42 — measured against the real provider.

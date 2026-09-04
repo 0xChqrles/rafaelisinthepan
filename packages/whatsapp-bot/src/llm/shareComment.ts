@@ -24,8 +24,8 @@ const ATTEMPTS = 2;
 // `message.content`, so a tight budget buys a truncated line or an empty one. Measured over
 // repeated calls for a 140-character sentence: 300 truncated 1 run in 4, 800 truncated none
 // — and 1500 still truncated one, because the thinking length has no ceiling worth trusting.
-// Hence a comfortable budget AND the finish-reason check below; the retry and the emoji
-// cover what neither catches.
+// Hence a comfortable budget AND the finish-reason check below (which refuses every reason
+// but `stop`); the retry and the emoji cover what neither catches.
 const MAX_TOKENS = 2000;
 // SHORTNESS IS THE VOICE, so it is enforced and not merely asked for. A line that runs long
 // is one that started explaining itself, which is the failure this register exists to avoid
@@ -111,12 +111,17 @@ export async function generateShareComment(
         { event: 'share.comment_generated', attempt, finish: response.finish, latencyMs: response.latencyMs, tokens: response.usage },
         'llm answered',
       );
-      // A CUT-OFF ANSWER IS NOT AN ANSWER. What comes back when the budget runs out is a
-      // FRAGMENT, and a short enough fragment passes every length check there is — the
-      // observed one was "Gab, 7 ess". Length is what the model had left to say, not what
-      // it meant to, so the whole response is refused on the reason rather than inspected.
-      if (response.finish === 'length') {
-        log.warn({ event: 'share.comment_truncated', attempt }, 'the line ran out of budget');
+      // ONLY A FINISHED ANSWER IS AN ANSWER. `length` is the budget running out — what
+      // comes back is a FRAGMENT, and a short enough fragment passes every length check
+      // there is ("Gab, 7 ess" was a real one). And it is not the only way a completion
+      // stops early: DeepSeek answers `insufficient_system_resource` for a generation it
+      // interrupted and `content_filter` for one it cut, both of which the provider folds
+      // into `other`. This call uses no tools, so the one reason that means "the model
+      // said what it meant" is `stop`; anything else is refused on the REASON rather than
+      // inspected, since what came back is what the model had left to say, not what it
+      // meant to.
+      if (response.finish !== 'stop') {
+        log.warn({ event: 'share.comment_unfinished', attempt, finish: response.finish }, 'the line did not finish');
         continue;
       }
     } catch (error) {

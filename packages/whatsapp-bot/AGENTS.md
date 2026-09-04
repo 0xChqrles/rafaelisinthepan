@@ -25,7 +25,8 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
     src/log.ts                  pino + `tag()` — the ONE hashing of a JID for logs
     src/domain/                 Whippin-side logic, Baileys-free:
       message.ts                InboundMessage — the bot's own inbound shape
-      share.ts                  find + decode share links (sentence tokens only)
+      share.ts                  find + decode share links (sentence tokens only); `withoutShares` — the text
+                                minus the whole generated share block (what may be remembered)
       day.ts                    parseDay — a "YYYY-MM-DD" a human or a model supplied, round-tripped
                                 through the shared pair so "2026-02-30" is refused, not rolled over
       declarations.ts           Declaration, the PRECEDENCE rule (`supersedes`), `inLanguage`, store interface, memory impl
@@ -215,8 +216,12 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   is a reasoning model and its thinking is spent from `max_tokens`, so a tight budget returns
   a FRAGMENT — and a short fragment passes every length check (the observed one was
   "Gab, 7 ess"). Measured: 300 tokens truncated 1 run in 4, 800 none, 1500 still one, since
-  the thinking length has no ceiling worth trusting. Hence a generous budget AND the
-  `finish === 'length'` check. **The same hazard is unfixed elsewhere** (`chat/agent.ts`
+  the thinking length has no ceiling worth trusting. Hence a generous budget AND a gate on
+  the finish reason that publishes ONLY `stop` (PR-243 review): `length` is not the only
+  early stop — DeepSeek answers `insufficient_system_resource` for an interrupted generation
+  and `content_filter` for an omitted one, the provider folds both into `other`, and a short
+  partial passes every text check; this call has no tools, so `stop` is the one reason that
+  means the model said what it meant. **The same hazard is unfixed elsewhere** (`chat/agent.ts`
   posts `plainReply` of whatever came back, so a cut-off reply reaches the group as a
   fragment; `llm/podiumComments.ts` is protected only incidentally, because truncated JSON
   fails to parse). A leader row is keyed by (group, LANGUAGE, day) and moves on every
@@ -244,15 +249,39 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   window is sized for AMBIENT traffic — eight addressed turns spanned hours, where eight
   messages of a lively group can be under a minute.
   **The cost was accepted deliberately: that window reaches the provider** whenever somebody
-  addresses the bot. Two things still never travel — a share TOKEN, stripped by
-  `withoutShareLinks` so a score-only message leaves nothing to remember, and anything at all
-  in a group where nobody speaks to the bot, since the window is only ever SENT on an
-  addressed message. No config field: the user chose one behaviour everywhere over a switch.
+  addresses the bot. What a remembered message may hold is bounded by WHAT IT IS, not by
+  who typed it (PR-243 review, three rules):
+  - **A SHARE'S RAW CONTENTS never travel.** `withoutShares` strips the whole GENERATED
+    block the web composes — the headline (`Whippin AI <date> — 7 essais`), the emoji row,
+    the word-mode WORD and its beads, and the link — not only the token: the block spells
+    the same score out in words, and it entered the window on every share in every group,
+    `react` groups included. A message that was ONLY a share leaves nothing to remember;
+    what the player typed around it is the conversation and stays. The shape is restated
+    in the bot (it cannot import the web) and pinned by tests against the web's own output.
+  - **EVERY MENTION IS NAMED BEFORE IT IS REMEMBERED** (`withMentionNames`): a mention token
+    spells the phone number or LID of whoever it points at, so "@336… tu confirmes ?"
+    stored verbatim leaked the number the addressed path is careful to resolve. The ambient
+    path resolves through the same window the tools name players from (`labelPlayers`,
+    keyed by the token's digits, labelled by the PLAYER key), and falls back to the
+    override or the `…last4` handle — a read that fails costs the names, never the message.
+  - **THE WINDOW IS BOUNDED IN TEXT, not only in messages** (`TURN_MAX_CHARS` 500,
+    `WINDOW_MAX_CHARS` 4000): a pasted article is one message, and a few of them are a
+    prompt the provider refuses or bills for, with the next question going unanswered
+    either way. A turn is cut on the way in (head kept), the window hands out the NEWEST
+    turns that fit, and the agent bounds the question itself the same way.
+  Beyond those, nothing at all travels from a group where nobody speaks to the bot — with
+  ONE deliberate exception, `acknowledge: "say"` (the Privacy bullet below). No config
+  field: the user chose one behaviour everywhere over a switch.
   **The stripping covers BOTH paths** — an addressed message can carry a share too, and that
   one reaches the provider IMMEDIATELY as well as entering the window, so it is stripped
   before the agent ever sees it (`main.ts`). And what the bot SAYS as an acknowledgement is
   pushed to the window as well: it is a turn in the group, and a later "pourquoi tu dis ça ?"
-  is otherwise a question about a message the bot cannot see. The emoji is not a turn —
+  is otherwise a question about a message the bot cannot see. **In ORDER, and only once
+  QUEUED** (PR-243 review): the player's turn is remembered BEFORE `ingest` runs, since the
+  line is composed inside it — recorded the other way round, every exchange read as the bot
+  answering before the player spoke — and the line is remembered through ingest's `spoken`
+  hook, which fires after the queue accepted it, so a line the queue refused for good is
+  never a message the bot believes it sent. The emoji is not a turn —
   there is nothing to remember about it. **Only the BOT's mention is addressing**: everybody else's
   is part of the question, and is replaced by the name the group uses (the tool runner's
   `labelFor`, so the model gets a name the tools can look up again, and never the phone
@@ -273,9 +302,17 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   interactions; `bot:cli forget` removes it without touching scoreboard rows.
 - **Privacy:** logs carry event kinds, hashed JIDs (`tag()`), message ids, day/score and
   provider latency — never a message body. A command id EMBEDS the JIDs it addresses, so
-  every log of one goes through `redactJids`. Score-only shares never reach the provider —
-  still true once ordinary chatter does (above), because the TOKEN is stripped from a
-  remembered message and a message that was only a link is remembered not at all.
+  every log of one goes through `redactJids`. **What reaches the model provider is two
+  different things, and the invariant names both** (PR-243 review): a share's RAW CONTENTS
+  — the token, the headline, the emoji row, anything the web generated — never do, in any
+  group, because `withoutShares` removes the whole block from a remembered or an addressed
+  message and a message that was only a share is remembered not at all. What a `say` group
+  DOES send, deliberately and without anyone addressing the bot, is a set of DERIVED FACTS
+  the bot decided: the player's display name, the try count (or none for a ∞ run), whether
+  it was solved, and the bot's own verdict band — the input the line is commentary over
+  (`llm/shareComment.ts`). A `react` or `none` group sends nothing on a share. The old
+  wording, "score-only shares never reach the provider", was true of the raw share and
+  false of `say`, which is why it is gone.
   **BAILEYS GETS A LOGGER THAT CANNOT PRINT A PAYLOAD** (`whatsapp/baileysLog.ts`): its own
   warning paths log `{ jid, err }`, `{ msgId, from }` and whole binary nodes, and no
   discipline at this package's call sites reaches the library's. The adapter keeps the
