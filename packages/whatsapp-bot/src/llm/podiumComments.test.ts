@@ -24,7 +24,7 @@ const group = parseGroupConfig('g.json', {
   name: 'g',
   language: 'fr',
   enabled: true,
-  podium: { enabled: true, time: '22:00', timezone: 'Europe/Paris' },
+  timezone: 'Europe/Paris', podium: { enabled: true, time: '22:00' },
   chat: { enabled: true, prePrompt: 'On se chambre.' },
 });
 const log = createLog('silent');
