@@ -1,11 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parseGroupConfig } from '../config/groupConfig';
 import { createLog } from '../log';
-import {
-  generatePodiumComments,
-  podiumCommentLines,
-  sanitizeComment,
-} from './podiumComments';
+import { dropEchoes, generatePodiumComments, podiumCommentLines, sanitizeComment } from './podiumComments';
 import { LlmUnavailable, type LlmProvider, type LlmResponse } from './types';
 
 const podium = {
@@ -175,5 +171,30 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
     const spy = vi.spyOn(empty, 'generate');
     await generatePodiumComments(empty, group, { ...podium, lines: [] }, log);
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('drops a comment that echoes a distinctive word an earlier line already used', () => {
+    // Written apart and in parallel, identical verdicts converge on identical prose: a real
+    // podium told almost everybody they had sweated. One word, once per podium.
+    const lines = [
+      { id: '10', position: 1, score: 10, names: ['Delphine'] },
+      { id: '17', position: 2, score: 17, names: ['Marielle Durand'] },
+      { id: '21', position: 3, score: 21, names: ['Bruno', 'Gab'] },
+      { id: '30', position: 4, score: 30, names: ['Christine'] },
+    ];
+    const { kept, dropped } = dropEchoes(
+      lines,
+      new Map([
+        ['10', 'Tu as bien transpiré, mais tu es devant.'],
+        ['17', 'Ça a transpiré aussi, Marielle.'], // "transpire" again: dropped
+        ['21', "Vous avez tenu la phrase jusqu'au bout."], // game vocabulary may repeat
+        ['30', 'La phrase était dure, Christine, belle journée.'], // a name is never an echo
+      ]),
+    );
+    expect(dropped).toEqual(['17']);
+    expect([...kept.keys()]).toEqual(['10', '21', '30']);
+    // Accents and case do not hide an echo.
+    const again = dropEchoes(lines, new Map([['10', 'Résisté, hein.'], ['17', 'Bien RESISTE aussi.']]));
+    expect(again.dropped).toEqual(['17']);
   });
 });

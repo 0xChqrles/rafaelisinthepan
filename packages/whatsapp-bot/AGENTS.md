@@ -289,20 +289,28 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   (10 min) old. An answer to a question asked a minute ago is an answer; an emoji on last
   night's share is a bot waking up confused. History sync stays a different event, never live.
 - **REPLYING is opt-in per message; CONTEXT is not** (user-decided 2026-09-04). The bot
-  answers a mention, a reply-to-bot, or a leading `chat.name` — **and, since later the same
-  day, the FIRST message after its own last line, TENTATIVELY** (user-decided 2026-09-04):
-  a person answering the bot does not @-mention it, and a "merci" or an "et hier ?" seconds
-  after it spoke reads as a reply. `main.ts` keeps THE FLOOR per group — who spoke last, off
-  every message the group delivers, the bot's own sends included since WhatsApp echoes them
-  back `fromMe`, stamped with the message's own timestamp and never moved backwards — and
-  `trigger.ts` `followsBot` offers a message within `FOLLOW_UP_WINDOW_MS` (2 min) of the
-  bot's line as address `follow`. The agent is TOLD it may not be for the bot and asked to
-  answer exactly `NO_REPLY` when it is not (silent `not_for_me`, and the message is then
-  remembered as ordinary chatter). A declined follow-up spends the CALL ceiling and NOT the
-  per-sender/per-group question ceilings — those are charged only once the model has
-  answered — or chatter after a podium would burn a person's whole day of replies. Bounded
-  by construction: the floor is the bot's only until anybody else speaks, so at most ONE
-  candidate follows each thing it says.
+  answers a mention, a reply-to-bot, or its `chat.name` **anywhere in the message as a whole
+  word** (user-decided 2026-09-04 — it was the LEADING form only, which missed "salut
+  whippinbot, tu fais quoi" and left no log line to show it; only the leading form is
+  stripped from the question, since mid-sentence the name is part of what was said) —
+  **and the first few messages after its own last line, TENTATIVELY** (user-decided
+  2026-09-04): a person answering the bot does not @-mention it, and a "merci" or an "et
+  hier ?" after it spoke reads as a reply. `main.ts` keeps THE FLOOR per group — when the
+  bot last spoke and how many messages the group has said since, off every message the
+  group delivers, the bot's own sends included since WhatsApp echoes them back `fromMe`,
+  stamped with the message's own timestamp, an out-of-order arrival moving nothing — and
+  `trigger.ts` `followsBot` offers the first `FOLLOW_UP_MESSAGES` (3) messages inside
+  `FOLLOW_UP_WINDOW_MS` (5 min) of the bot's line as address `follow`. *(It was ONE message
+  inside two minutes, which missed the second person reacting to the same line and anybody
+  who took more than two minutes to type.)* The agent is TOLD it was not addressed by name
+  and is probably a reply, and asked to answer exactly `NO_REPLY` ONLY when it is clearly
+  the group talking among themselves (silent `not_for_me`, and the message is then
+  remembered as ordinary chatter) — the first wording, "or it needs nothing from you",
+  had it declining reactions it should have answered. A declined follow-up spends the CALL
+  ceiling and NOT the per-sender/per-group question ceilings — those are charged only once
+  the model has answered — or chatter after a podium would burn a person's whole day of
+  replies. Bounded by construction: three candidates per thing the bot says, then the room
+  is talking among itself.
   What changed is what it BRINGS to that answer: a window of the group's ordinary chatter
   (`chat/context.ts`, 25 messages, nothing older than 30 minutes) rather than only the
   exchanges it took part in. It had to: "je pense au nombre 67" followed by "@bot quel
@@ -381,6 +389,15 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   another woman rather than as the puzzle. It was TAUGHT the personification by a register
   example ("la phrase a gagné"), so banning the pronoun while keeping that example would
   have been fighting the prompt with itself: both changed together. Name it or leave it out.
+  **A NEGATIVE EXAMPLE SEEDS VOCABULARY TOO (v6, user-reported 2026-09-04):** that very
+  rule's example put "suer" in front of the model, and the next podium told almost everybody
+  they had sweated. The example now reads "elle t'a eu" — nothing in it a line can borrow —
+  and the rule for any future example is the same: no word in an example that would be
+  wrong in a comment. **And ONE WORD, ONCE PER PODIUM** (`podiumComments.ts` `dropEchoes`):
+  the lines are written apart and in parallel, so the prompt's plea for variety cannot see
+  the other lines; the post-pass can. Read top to bottom, a comment repeating a DISTINCTIVE
+  word an earlier one used (six letters or more once folded, not a podium name, not the
+  game's own vocabulary) is dropped and its line goes bare — which the renderer prints.
   **AND IT SPEAKS TO PEOPLE, NOT ABOUT THEM** — "tu as bien galéré, mais tu l'as sorti",
   never "elle a bien galéré", and "vous" on a podium line holding more than one name (which
   is also what stopped shared lines coming back empty: the model had no way to address two

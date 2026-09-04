@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { InboundMessage } from '../domain/message';
-import { FOLLOW_UP_WINDOW_MS, addressedTo, followsBot, questionText, withMentionNames } from './trigger';
+import { EMPTY_FLOOR, FOLLOW_UP_MESSAGES, FOLLOW_UP_WINDOW_MS, addressedTo, advanceFloor, followsBot, questionText, withMentionNames } from './trigger';
 
 const identity = { jids: ['33700000000@s.whatsapp.net', '99999999999999@lid'], name: 'WhippinBot' };
 const m = (jid: string, player = jid) => ({ jid, player });
@@ -41,10 +41,11 @@ describe('conversation triggers (#236)', () => {
     expect(addressedTo(message({ quoted: q('99999999999999@lid') }), unlisted)).toBeNull();
   });
 
-  it('fires on the conservative direct-name form only', () => {
+  it('fires on the name, leading or not, and never on a longer word', () => {
     expect(addressedTo(message({ text: 'WhippinBot, ça fait combien ?' }), identity)).toBe('name');
     expect(addressedTo(message({ text: 'whippinbot t\'es là ?' }), identity)).toBe('name');
-    expect(addressedTo(message({ text: 'je crois que WhippinBot dort' }), identity)).toBeNull();
+    // Mid-sentence too (user-decided 2026-09-04): a friend is addressed like this in a group.
+    expect(addressedTo(message({ text: 'je crois que WhippinBot dort' }), identity)).toBe('name');
     expect(addressedTo(message({ text: 'WhippinBotte' }), identity)).toBeNull();
   });
 
@@ -85,17 +86,36 @@ describe('conversation triggers (#236)', () => {
     expect(withMentionNames('rien à voir', names)).toBe('rien à voir');
   });
 
-  it('offers the first message after the bot\'s own line as a possible reply, briefly', () => {
-    // A person answering the bot does not @-mention it. The floor is the bot's until
-    // somebody else speaks, so at most one candidate follows each thing it says.
-    const said = { bot: true, at: 1_000_000 };
-    expect(followsBot(said, said.at + 5_000)).toBe(true);
-    expect(followsBot(said, said.at + FOLLOW_UP_WINDOW_MS)).toBe(true);
-    expect(followsBot(said, said.at + FOLLOW_UP_WINDOW_MS + 1)).toBe(false);
-    // Out of order (an offline delivery from before the bot spoke) is not a follow-up.
-    expect(followsBot(said, said.at - 1)).toBe(false);
-    // Somebody else has the floor, or nobody has spoken yet.
-    expect(followsBot({ bot: false, at: said.at }, said.at + 5_000)).toBe(false);
-    expect(followsBot(undefined, said.at)).toBe(false);
+  it('offers the first few messages after the bot\'s own line as possible replies, for a while', () => {
+    // A person answering the bot does not @-mention it. The first FOLLOW_UP_MESSAGES
+    // messages inside the window are candidates — the second person reacting to the same
+    // line counts too — and then the room is talking among itself.
+    const said = advanceFloor(EMPTY_FLOOR, { fromMe: true, at: 1_000_000 });
+    expect(followsBot(EMPTY_FLOOR, 5)).toBe(false);
+    expect(followsBot(said, said.botAt! + 5_000)).toBe(true);
+    expect(followsBot(said, said.botAt! + FOLLOW_UP_WINDOW_MS)).toBe(true);
+    expect(followsBot(said, said.botAt! + FOLLOW_UP_WINDOW_MS + 1)).toBe(false);
+    // Out of order (an offline delivery from before the bot spoke) is not a follow-up, and
+    // does not count as "since" either.
+    expect(followsBot(said, said.botAt! - 1)).toBe(false);
+    expect(advanceFloor(said, { fromMe: false, at: said.botAt! - 1 })).toEqual(said);
+    let floor = said;
+    for (let i = 0; i < FOLLOW_UP_MESSAGES; i += 1) {
+      expect(followsBot(floor, said.botAt! + 1_000 * (i + 1))).toBe(true);
+      floor = advanceFloor(floor, { fromMe: false, at: said.botAt! + 1_000 * (i + 1) });
+    }
+    expect(followsBot(floor, said.botAt! + 10_000)).toBe(false);
+    // The bot speaking again resets the count; an older echo of its own does not move it.
+    expect(advanceFloor(floor, { fromMe: true, at: said.botAt! + 20_000 })).toEqual({ botAt: said.botAt! + 20_000, since: 0 });
+    expect(advanceFloor(floor, { fromMe: true, at: said.botAt! - 20_000 })).toEqual(floor);
   });
+
+  it('fires on the name anywhere in the message, as a whole word', () => {
+    expect(addressedTo(message({ text: 'salut whippinbot, tu fais quoi' }), identity)).toBe('name');
+    expect(addressedTo(message({ text: 'je crois que WhippinBot se trompe' }), identity)).toBe('name');
+    expect(addressedTo(message({ text: 'ok @whippinbot' }), identity)).toBe('name');
+    expect(addressedTo(message({ text: 'les whippinbottes sont là' }), identity)).toBe(null);
+    // Mid-sentence the name is part of what was said; only the leading form is stripped.
+    expect(questionText(message({ text: 'salut whippinbot, tu fais quoi' }), identity)).toBe('salut whippinbot, tu fais quoi');
+});
 });

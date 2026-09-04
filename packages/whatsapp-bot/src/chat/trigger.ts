@@ -42,26 +42,51 @@ function nameForm(name: string, trailing = ''): RegExp {
   return new RegExp(`^\\s*@?${escapeRegExp(name)}${nameBoundary(name)}${trailing}`, 'iu');
 }
 
-export type Address = 'mention' | 'reply' | 'name' | 'follow' | null;
-
-// THE FLOOR: who spoke last in a group, and when — main.ts keeps one per group off every
-// message the group delivers, the bot's own sends included (WhatsApp echoes them back as
-// `fromMe`). `at` is the message's OWN timestamp, so an offline delivery orders correctly.
-export interface LastSpeaker {
-  bot: boolean;
-  at: number; // ms
+// THE NAME FIRES ANYWHERE IN THE MESSAGE (user-decided 2026-09-04), as a whole word: the
+// leading form alone missed "salut whippinbot, tu fais quoi" and "je crois que WhippinBot
+// s'est trompé", which are both addressed to the bot the way a person addresses a friend
+// in a group. Case-insensitive, and bounded on both sides so "WhippinBotte" still does not
+// fire. Only the LEADING form is stripped from the question (`questionText`): mid-sentence
+// the name is part of what was said.
+function namedAnywhere(name: string): RegExp {
+  return new RegExp(`(?<![\\p{L}\\p{N}_])@?${escapeRegExp(name)}${nameBoundary(name)}`, 'iu');
 }
 
-export const FOLLOW_UP_WINDOW_MS = 2 * 60_000;
+export type Address = 'mention' | 'reply' | 'name' | 'follow' | null;
+
+// THE FLOOR: when the bot last spoke in a group, and how many messages the group has said
+// since — main.ts keeps one per group off every message the group delivers, the bot's own
+// sends included (WhatsApp echoes them back as `fromMe`). `at` is the message's OWN
+// timestamp, so an offline delivery orders correctly.
+export interface Floor {
+  botAt: number | null; // ms; null until the bot has said anything
+  since: number; // messages by anybody else since that line
+}
+
+export const EMPTY_FLOOR: Floor = { botAt: null, since: 0 };
+
+export function advanceFloor(floor: Floor, message: { fromMe: boolean; at: number }): Floor {
+  if (message.fromMe) return floor.botAt !== null && message.at < floor.botAt ? floor : { botAt: message.at, since: 0 };
+  // A message from before the bot's line (an offline delivery, a replay) is not "since".
+  if (floor.botAt !== null && message.at < floor.botAt) return floor;
+  return { botAt: floor.botAt, since: floor.since + 1 };
+}
+
+export const FOLLOW_UP_WINDOW_MS = 5 * 60_000;
+export const FOLLOW_UP_MESSAGES = 3;
 
 // A message that FOLLOWS the bot's own last line, soon after it, MAY be a reply to it
 // (user-decided 2026-09-04): a person answering a line does not @-mention its author, and
-// a "merci" or an "et hier ?" seconds after the bot spoke reads as one. It is offered to
-// the model as TENTATIVE — the agent tells it so and asks it to decline what was not for
-// it — never treated as certain. Bounded by construction: the moment anybody else speaks
-// the floor is theirs, so at most ONE candidate follows each thing the bot says.
-export function followsBot(last: LastSpeaker | undefined, at: number): boolean {
-  return last !== undefined && last.bot && at >= last.at && at - last.at <= FOLLOW_UP_WINDOW_MS;
+// a "merci" or an "et hier ?" after the bot spoke reads as one. It is offered to the model
+// as TENTATIVE — the agent tells it so and asks it to decline what was clearly not for it —
+// never treated as certain. Bounded: the first FOLLOW_UP_MESSAGES messages inside
+// FOLLOW_UP_WINDOW_MS of the bot's line, and no more, so a lively room after a podium
+// costs a few declined calls and not one per message. (It was ONE message inside two
+// minutes, and that missed the second person reacting to the same line, and anybody who
+// took more than two minutes to type.)
+export function followsBot(floor: Floor | undefined, at: number): boolean {
+  if (!floor || floor.botAt === null) return false;
+  return at >= floor.botAt && at - floor.botAt <= FOLLOW_UP_WINDOW_MS && floor.since < FOLLOW_UP_MESSAGES;
 }
 
 // Either spelling of a reference may be the bot's: the JID the message carried, or the
@@ -77,7 +102,7 @@ function namesBot(ref: Mention | QuotedRef, identity: BotIdentity): boolean {
 export function addressedTo(message: InboundMessage, identity: BotIdentity): Address {
   if (message.mentions.some((m) => namesBot(m, identity))) return 'mention';
   if (message.quoted && namesBot(message.quoted, identity)) return 'reply';
-  if (nameForm(identity.name).test(message.text)) return 'name';
+  if (namedAnywhere(identity.name).test(message.text)) return 'name';
   return null;
 }
 

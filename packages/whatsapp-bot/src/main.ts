@@ -23,7 +23,7 @@ import { RecentContext } from './chat/context';
 import { dynamoLimitStore, limitExpiry, limitKeys } from './chat/limits';
 import { dynamoMemoryStore } from './chat/memory';
 import { labelPlayers } from './chat/tools';
-import { addressedTo, followsBot, jidUser, withMentionNames, type LastSpeaker } from './chat/trigger';
+import { EMPTY_FLOOR, addressedTo, advanceFloor, followsBot, jidUser, withMentionNames, type Floor } from './chat/trigger';
 import { botRegion, loadEnv } from './config/env';
 import { loadGroups, type GroupConfig } from './config/groupConfig';
 import { dynamoDeclarationStore } from './domain/dynamoDeclarationStore';
@@ -203,12 +203,12 @@ async function main(): Promise<void> {
     return names;
   }
 
-  // THE FLOOR: who spoke last in each group, off every message the group delivers — the
-  // bot's own sends included, which WhatsApp echoes back as `fromMe` — so a message that
-  // follows the bot's line can be offered to the model as a possible reply to it
-  // (`followsBot`). Stamped with the message's OWN timestamp and never moved backwards: an
-  // offline delivery or a history replay arrives out of order.
-  const lastSpeaker = new Map<string, LastSpeaker>();
+  // THE FLOOR: when the bot last spoke in each group and how much has been said since, off
+  // every message the group delivers — the bot's own sends included, which WhatsApp echoes
+  // back as `fromMe` — so a message that follows the bot's line can be offered to the model
+  // as a possible reply to it (`followsBot`). Stamped with the message's OWN timestamp, and
+  // an out-of-order arrival (an offline delivery, a history replay) moves nothing.
+  const floors = new Map<string, Floor>();
 
   // What the window keeps of an ordinary message — what a conversation can use and nothing
   // that identifies anyone: the share stripped, the link AND the generated block around
@@ -228,16 +228,16 @@ async function main(): Promise<void> {
   async function onMessage(message: InboundMessage): Promise<void> {
     const group = groups.get(message.group);
     const at = message.timestamp * 1000;
-    const last = group ? lastSpeaker.get(group.id) : undefined;
-    if (group && (!last || at >= last.at)) lastSpeaker.set(group.id, { bot: message.fromMe, at });
+    const floor = group ? floors.get(group.id) : undefined;
+    if (group) floors.set(group.id, advanceFloor(floor ?? EMPTY_FLOOR, { fromMe: message.fromMe, at }));
     const listening =
       group && group.chat.enabled && message.live && !message.fromMe && answer && client
         ? { group, answer, identity: { jids: client.selfJids(), name: group.chat.name } }
         : null;
-    // Aimed at the bot — or, failing that, the first thing said after the bot's own last
-    // line, which MAY be: offered to the model as tentative, and declinable.
+    // Aimed at the bot — or, failing that, one of the first things said after the bot's
+    // own last line, which MAY be: offered to the model as tentative, and declinable.
     const address = listening
-      ? (addressedTo(message, listening.identity) ?? (followsBot(last, at) ? 'follow' : null))
+      ? (addressedTo(message, listening.identity) ?? (followsBot(floor, at) ? 'follow' : null))
       : null;
     if (listening && !address) {
       // NOT FOR THE BOT, BUT STILL THE CONVERSATION. Ordinary chatter is remembered so a
