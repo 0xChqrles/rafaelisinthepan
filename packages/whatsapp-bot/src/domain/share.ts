@@ -2,18 +2,31 @@
 // the day and the score, decoded with the game's own codec. No model is anywhere on this
 // path, and the token's day — never the WhatsApp receive date — is what groups the result.
 //
-// Only SENTENCE results take part: a word-mode token decodes to nothing here, since the
-// group has no product rule for what ranking a rarity score against a try count would mean.
+// BOTH dailies decode (user-decided 2026-09-05; it was sentence-only until then). A
+// SENTENCE result is RECORDED — it is what the podium ranks. A WORD result is ACKNOWLEDGED
+// and nothing more: the group has no product rule yet for a Word podium, and nothing is
+// stored for one — the declarations key a (group, day, sender) and a word row there would
+// collide with the sentence row of the same day. When a Word podium is decided, its rows
+// get their own key; until then a Word share earns the emoji or the line, and no history.
 
-import { decodeResult, type ShareResult } from '@whippin/shared';
+import { decodeResult, decodeWordResult, type ShareResult } from '@whippin/shared';
 
-export interface DecodedShare {
-  token: string;
-  lang: string;
-  dayNumber: number;
-  score: number; // unique tries — lower is better
-  capped: boolean; // the run ended at ∞ (#214): recorded, never positioned
-}
+export type DecodedShare =
+  | {
+      mode: 'sentence';
+      token: string;
+      lang: string;
+      dayNumber: number;
+      score: number; // unique tries — lower is better
+      capped: boolean; // the run ended at ∞ (#214): recorded, never positioned
+    }
+  | {
+      mode: 'word';
+      token: string;
+      lang: string;
+      dayNumber: number;
+      claims: number; // words found — higher is better
+    };
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -97,18 +110,31 @@ export function withoutShares(text: string, siteOrigin: string): string {
 
 export function decodeShare(token: string): DecodedShare | null {
   const result: ShareResult | null = decodeResult(token);
-  if (!result) return null;
+  if (result) {
+    return {
+      mode: 'sentence',
+      token,
+      lang: result.lang,
+      dayNumber: result.dayNumber,
+      score: result.score,
+      capped: result.capped === true,
+    };
+  }
+  // The WORD itself is decoded and dropped: the share text prints it in capitals anyway,
+  // and nothing here has a use for it — least of all a prompt.
+  const word = decodeWordResult(token);
+  if (!word) return null;
   return {
+    mode: 'word',
     token,
-    lang: result.lang,
-    dayNumber: result.dayNumber,
-    score: result.score,
-    capped: result.capped === true,
+    lang: word.lang,
+    dayNumber: word.dayNumber,
+    claims: word.counts.reduce((n, c) => n + c, 0),
   };
 }
 
-// The sentence shares a message carries. A malformed token is simply not a share — it is
-// never a reason to do anything else with the message.
+// The shares a message carries, either daily. A malformed token is simply not a share — it
+// is never a reason to do anything else with the message.
 export function sharesIn(text: string, siteOrigin: string): DecodedShare[] {
   const shares: DecodedShare[] = [];
   for (const token of findShareTokens(text, siteOrigin)) {

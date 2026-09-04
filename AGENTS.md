@@ -2005,9 +2005,10 @@ to get one used to be authoring a 3-secret sentence and throwing two thirds of i
   manifest the lockfile names and the context lacks.
 - **The podium's ranking is the bot's own** — a DENSE ordering of distinct scores grouped
   onto one line — and deliberately not `shared/src/leaderboard.ts`'s competition ranks.
-  The bot's share reading is `decodeResult` only: sentence tokens, the token's day, ∞ runs
-  recorded but never positioned. Everything else the bot decides is documented in its own
-  `AGENTS.md`.
+  The bot reads BOTH share codecs (`decodeResult` and `decodeWordResult`, since 2026-09-05)
+  but RECORDS only the sentence: the token's day, ∞ runs recorded but never positioned; a
+  Word result is acknowledged and stored nowhere, there being no Word podium yet.
+  Everything else the bot decides is documented in its own `AGENTS.md`.
 
 ### Day-addressed routing & the game day
 

@@ -31,6 +31,9 @@ export type OutboundCommand =
 // The id conventions — one place, so two producers can never collide by accident.
 export const commandIds = {
   podium: (group: string, dayNumber: number) => `podium:${group}:${dayNumber}`,
+  // The morning line with the link (user-decided 2026-09-05): ONE per group per day, so a
+  // retried schedule can never post it twice.
+  reminder: (group: string, dayNumber: number) => `reminder:${group}:${dayNumber}`,
   reply: (group: string, messageId: string) => `reply:${group}:${messageId}`,
   // THE acknowledgement of a share — ONE id whichever shape it takes, a written line or the
   // emoji it falls back to. The id is keyed by the MESSAGE because that is the thing being

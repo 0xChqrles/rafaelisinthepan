@@ -332,7 +332,7 @@ describe("the day's source rides in the system prompt, never as a tool (#236)", 
   it('is ambient: it is there before the question is read, and costs no tool round', async () => {
     const { provider, requests } = scripted([() => ({ text: "Ça vient d'une chanson." })]);
     const answer = agentWith(provider, {
-      daySource: { get: async () => source },
+      daySource: { get: async () => source, read: async () => ({ published: true, source }) },
     });
     const out = await answer(message('@33700000000 ça vient d’où ?'), group, identity, TODAY);
     expect(out).toEqual({ kind: 'reply', text: "Ça vient d'une chanson." });
@@ -351,7 +351,7 @@ describe("the day's source rides in the system prompt, never as a tool (#236)", 
     const leaks = ["C'est Oiseau, de Bertrand Belin.", 'bertrand BELIN, évidemment', 'BertrandBelin'];
     for (const [i, text] of leaks.entries()) {
       const { provider } = scripted([() => ({ text })]);
-      const answer = agentWith(provider, { daySource: { get: async () => source } });
+      const answer = agentWith(provider, { daySource: { get: async () => source, read: async () => ({ published: true, source }) } });
       expect(await answer(message('@33700000000 ça vient d’où ?', { id: `L${i}` }), group, identity, TODAY)).toEqual({
         kind: 'silent',
         reason: 'spoiler',
@@ -360,14 +360,14 @@ describe("the day's source rides in the system prompt, never as a tool (#236)", 
     // A one-word title is a common noun: "un oiseau" in an ordinary sentence is not a leak,
     // and neither is a fragment of the name — those stay the prompt's job.
     const { provider } = scripted([() => ({ text: "Je sais, c'est une chanson, et je dirai pas laquelle. Pas un oiseau en vue." })]);
-    const answer = agentWith(provider, { daySource: { get: async () => source } });
+    const answer = agentWith(provider, { daySource: { get: async () => source, read: async () => ({ published: true, source }) } });
     expect((await answer(message('@33700000000 alors ?'), group, identity, TODAY)).kind).toBe('reply');
   });
 
   it('a reader that says nothing leaves the prompt with no source at all', async () => {
     const { provider, requests } = scripted([() => ({ text: 'Aucune idée.' })]);
     // An unpublished day, a puzzle with no metadata and a failed read are one answer here.
-    const answer = agentWith(provider, { daySource: { get: async () => null } });
+    const answer = agentWith(provider, { daySource: { get: async () => null, read: async () => null } });
     await answer(message('@33700000000 ça vient d’où ?'), group, identity, TODAY);
     expect(requests[0].system).not.toContain("Where today's sentence comes from");
   });

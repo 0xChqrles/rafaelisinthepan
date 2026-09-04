@@ -42,15 +42,28 @@ const FAILURE_TTL_MS = 5 * 60_000;
 
 interface Entry {
   source: DaySource | null;
+  published: boolean; // false = the day-addressed 404, and for a failed read
   // Absent = settled for good. Set = a failure that may be retried after this instant.
   retryAfter?: number;
+}
+
+// What a day IS, for a caller that has to know whether there is a puzzle at all (the
+// morning reminder: nothing is worse than inviting people to a 404). `null` is a read that
+// FAILED — not an answer, and not "unpublished".
+export interface DayRead {
+  published: boolean;
+  source: DaySource | null;
 }
 
 export interface DaySourceReader {
   // The day's source, or null when there is none to have — an unpublished day, a puzzle
   // with no metadata, or a read that failed. A caller never distinguishes those: all three
-  // mean the prompt says nothing about where the sentence came from.
+  // mean the prompt says nothing about where the sentence came from. Waits at most
+  // `WAIT_BUDGET_MS`: the conversation must not stall on decoration.
   get(lang: string, day: number, date: string): Promise<DaySource | null>;
+  // The whole answer, WAITED FOR: whether the day is published and what its source is, or
+  // null for a read that failed. For a caller with nothing better to do meanwhile.
+  read(lang: string, day: number, date: string): Promise<DayRead | null>;
 }
 
 export interface DaySourceDeps {
@@ -83,17 +96,17 @@ export function createDaySourceReader(deps: DaySourceDeps): DaySourceReader {
         { event: 'source.unreachable', lang, date, error: (error as Error).message },
         'could not read the day; the bot simply will not know where the sentence is from',
       );
-      return { source: null, retryAfter: now() + FAILURE_TTL_MS };
+      return { source: null, published: false, retryAfter: now() + FAILURE_TTL_MS };
     }
     // 404 is the day-addressed answer for a day that was never published — settled, not a
     // failure, so it is not retried every five minutes for the rest of the day.
     if (response.status === 404) {
       deps.log.info({ event: 'source.none', lang, date }, 'no puzzle published for this day');
-      return { source: null };
+      return { source: null, published: false };
     }
     if (!response.ok) {
       deps.log.warn({ event: 'source.failed', lang, date, status: response.status }, 'the day did not load');
-      return { source: null, retryAfter: now() + FAILURE_TTL_MS };
+      return { source: null, published: false, retryAfter: now() + FAILURE_TTL_MS };
     }
     let source: DaySource | null;
     try {
@@ -108,42 +121,49 @@ export function createDaySourceReader(deps: DaySourceDeps): DaySourceReader {
         { event: 'source.unparseable', lang, date, error: (error as Error).message },
         'the day did not parse',
       );
-      return { source: null, retryAfter: now() + FAILURE_TTL_MS };
+      return { source: null, published: false, retryAfter: now() + FAILURE_TTL_MS };
     }
     // Never the author or the work: this is a log, and a log of what today's answer is
     // from would spoil the day for whoever reads it.
     deps.log.info({ event: 'source.loaded', lang, date, kind: source?.kind ?? null }, 'day source loaded');
-    return { source };
+    return { source, published: true };
   }
 
   // One flight per (language, day), shared: a lively group can address the bot several
   // times inside one 4-6 MB read, and each of those must not start its own.
   const flights = new Map<string, Promise<Entry>>();
 
+  // The cached entry when it is still good, else ONE flight for it (shared).
+  function entryFor(lang: string, day: number, date: string): { held: Entry } | { flight: Promise<Entry> } {
+    const key = `${lang}#${day}`;
+    const held = cache.get(key);
+    if (held && (held.retryAfter === undefined || held.retryAfter > now())) return { held };
+    const flight =
+      flights.get(key) ??
+      load(lang, date)
+        // `load` answers rather than throwing, so this is the belt-and-braces path. It
+        // matters because a caller may STOP WAITING (`get`) and leave nobody to catch: a
+        // rejected flight left in the map would poison that day for the process.
+        .catch((error: unknown) => {
+          deps.log.warn(
+            { event: 'source.failed', lang, date, error: (error as Error).message },
+            'the day did not load',
+          );
+          return { source: null, published: false, retryAfter: now() + FAILURE_TTL_MS } satisfies Entry;
+        })
+        .then((entry) => {
+          cache.set(key, entry);
+          flights.delete(key);
+          return entry;
+        });
+    flights.set(key, flight);
+    return { flight };
+  }
+
   return {
     async get(lang, day, date) {
-      const key = `${lang}#${day}`;
-      const held = cache.get(key);
-      if (held && (held.retryAfter === undefined || held.retryAfter > now())) return held.source;
-      const flight =
-        flights.get(key) ??
-        load(lang, date)
-          // `load` answers rather than throwing, so this is the belt-and-braces path. It
-          // matters because a caller may now STOP WAITING (below) and leave nobody to
-          // catch: a rejected flight left in the map would poison that day for the process.
-          .catch((error: unknown) => {
-            deps.log.warn(
-              { event: 'source.failed', lang, date, error: (error as Error).message },
-              'the day did not load',
-            );
-            return { source: null, retryAfter: now() + FAILURE_TTL_MS } satisfies Entry;
-          })
-          .then((entry) => {
-            cache.set(key, entry);
-            flights.delete(key);
-            return entry;
-          });
-      flights.set(key, flight);
+      const found = entryFor(lang, day, date);
+      if ('held' in found) return found.held.source;
       // The reply does not wait on this past its budget. The flight is NOT cancelled — it
       // finishes into the cache — so a cold first message answers without the source and
       // every message after it has it.
@@ -152,10 +172,15 @@ export function createDaySourceReader(deps: DaySourceDeps): DaySourceReader {
         timer = setTimeout(() => resolve(null), WAIT_BUDGET_MS);
       });
       try {
-        return await Promise.race([flight.then((entry) => entry.source), gaveUp]);
+        return await Promise.race([found.flight.then((entry) => entry.source), gaveUp]);
       } finally {
         clearTimeout(timer);
       }
+    },
+    async read(lang, day, date) {
+      const found = entryFor(lang, day, date);
+      const entry = 'held' in found ? found.held : await found.flight;
+      return entry.retryAfter === undefined ? { published: entry.published, source: entry.source } : null;
     },
   };
 }

@@ -32,9 +32,11 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
       declarations.ts           Declaration, the PRECEDENCE rule (`supersedes`), `inLanguage`, store interface, memory impl
       dynamoDeclarationStore.ts GROUP#<jid> / DAY#<000000>#PLAYER#<sender>; precedence as a ConditionExpression
       podium.ts                 DENSE podium (1, 2, 2 → 3); ∞ runs listed, never positioned
-      podiumText.ts             the renderer (positions/names/scores/framing are ITS; comments keyed by line id)
+      podiumText.ts             the renderer (positions/names/scores/framing are ITS; comments keyed by line id),
+                                and `renderReminder`, the morning line
       names.ts                  display name = operator override ?? latest snapshot ?? …last4
-      reactions.ts              score band → emoji, no model (the `acknowledge: "react"` shape)
+      reactions.ts              score band → emoji, no model (the `acknowledge: "react"` shape); BOTH ladders
+                                (sentence: lower is better; word: higher is better) and the `ShareFacts` they judge
       leader.ts                 the new-leader event + its anti-spam row (LEAD#<day>)
       ingest.ts                 the per-message pipeline: allow-list → share → durable row → acknowledgement/leader.
                                 The ONE place a model touches this path, through an injected `comment` — everything
@@ -93,7 +95,22 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   that will reach it, and the Advanced tier is a per-parameter charge for a group's settings.
 - **No config, no behaviour.** That set is the allow-list for ingestion, reactions,
   conversation AND scheduled messages (the stack reads it at synth to create one schedule
-  per enabled podium). `language` decides which daily's shares count — an `fr` group ranks
+  per enabled podium, and one per enabled reminder).
+- **THE MORNING REMINDER (user-decided 2026-09-05).** One bubble, once a day, saying the
+  day's puzzle is up, what KIND of thing it is when the day's source says so (the one half
+  of the source the bot may say), when the podium lands, and the link — `reminder:
+  {enabled, time[, timezone]}` in the group config, OFF by default because a daily ping is
+  a thing a group opts into, the zone defaulting to the podium's since one group lives in
+  one place. It rides the podium's own path — a per-group EventBridge schedule, the SAME
+  Lambda told `kind: "reminder"`, one `reminder:<group>:<day>` command on the queue, so a
+  retried schedule can never post it twice — because a second function would be a second
+  bundle to keep from breaking the way the first one did. DETERMINISTIC text
+  (`renderReminder`): a model has nothing to add at nine in the morning. **It never invites
+  the group to a 404**: the job READS the day first (`daySource.read`, the whole answer
+  waited for, unlike the conversation's budgeted `get`) and posts nothing for an unpublished
+  day AND for a read that failed — a morning without a reminder costs nothing, a link to
+  nothing costs trust. The day flips at 22:00 Eastern (04:00 Paris), so any morning hour
+  points at a fresh puzzle. `language` decides which daily's shares count — an `fr` group ranks
   the French puzzle and ignores an English token — on the way IN and on the way OUT: every
   read of the declarations goes through `inLanguage`, so a group whose configured language
   changes does not rank the rows it wrote under the old one. Files hold product behaviour
@@ -136,7 +153,18 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   session is not the one it just made. `bot:pair` closes BEFORE clearing the invalidation
   flag and printing success; the task logs it on shutdown.
 - **A share is deterministic input.** The token's day and score, decoded with the shared
-  codec; the WhatsApp receive date never groups a result. Word-mode tokens are ignored.
+  codec; the WhatsApp receive date never groups a result. **BOTH dailies decode, and only
+  the SENTENCE is recorded** (user-decided 2026-09-05; Word tokens were ignored until then).
+  A WORD share is ACKNOWLEDGED — the emoji or the line, by its own ladder (`reactions.ts`
+  `wordBand`: claims, MORE is better, no floor and no cap, so no `failed` and no exact
+  `perfect`; cut on the ~50 recorded French runs of 2026-08-28 → 09-04, median ~10, upper
+  quartile ~17, best 58) — and NOTHING is stored for it: there is no Word podium yet, and
+  the declarations key a (group, day, sender) where a word row would collide with the
+  sentence row of the same day. When a Word podium is decided its rows get their own key;
+  until then a Word share earns the acknowledgement and no history (`ingest` answers
+  `acknowledged`). A message carrying both dailies is acknowledged for the SENTENCE, the
+  one on the podium. The word itself is decoded and dropped — nothing has a use for it,
+  least of all a prompt, and the share text prints it anyway.
   The sender JID (phone-number form preferred over a LID) is the player key; names are a
   snapshot. **A person is one key, a message keeps its own** (PR-237 review): a LID that
   came without its number is mapped through the LID↔PN store Baileys keeps in the auth
@@ -208,7 +236,9 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   **HOW a share is acknowledged is `acknowledge` in the group config (user-decided
   2026-09-04):** `react` is the deterministic emoji, `say` is one short line the model
   writes (`llm/shareComment.ts`, quoting the share so a busy group can tell whose result it
-  is about), `none` is silence. It REPLACED a `reactions` boolean — the choice is one axis,
+  is about), `none` is silence — for EITHER daily since 2026-09-05, the line's prompt
+  branching on the mode (a Word result is "found" words, more is better, and the word is
+  never named). It REPLACED a `reactions` boolean — the choice is one axis,
   and a second flag beside it would have spelled "both off" two ways. **A `say` group still
   falls back to the EMOJI** whenever the line does not arrive: the share is durable by then
   and is owed a sign that it landed, so an unavailable model, an unusable answer or a spent

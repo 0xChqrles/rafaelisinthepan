@@ -22,12 +22,15 @@ import type { LeaderStore } from './leader';
 import type { InboundMessage } from './message';
 import { displayName } from './names';
 import { renderLeader } from './podiumText';
-import { reactionFor } from './reactions';
+import { reactionForShare } from './reactions';
 import { sharesIn, type DecodedShare } from './share';
+
+type SentenceShare = Extract<DecodedShare, { mode: 'sentence' }>;
+type WordShare = Extract<DecodedShare, { mode: 'word' }>;
 
 // How good a result is, for picking the one a message is acknowledged for: lower is
 // better, and a run that ended at ∞ is behind every finite score.
-const rankOf = (share: DecodedShare) => (share.capped ? Infinity : share.score);
+const rankOf = (share: SentenceShare) => (share.capped ? Infinity : share.score);
 
 export interface IngestDeps {
   groups: GroupRegistry;
@@ -51,8 +54,9 @@ export interface IngestDeps {
 
 // `failed` WINS over `recorded`: a message carrying two days, one of which could not be
 // written, reports the LOSS, because the loss is the half a caller must not miss — the
-// share that did land is already durable and needs nobody's attention.
-export type IngestOutcome = 'ignored' | 'no_share' | 'recorded' | 'unchanged' | 'failed';
+// share that did land is already durable and needs nobody's attention. `acknowledged` is
+// a WORD share's outcome: nothing recorded, the acknowledgement owed and sent.
+export type IngestOutcome = 'ignored' | 'no_share' | 'recorded' | 'unchanged' | 'failed' | 'acknowledged';
 
 const WRITE_ATTEMPTS = 3;
 
@@ -97,7 +101,10 @@ export function createIngest(deps: IngestDeps) {
     const shares = sharesIn(message.text, deps.siteOrigin);
     // One declaration per day per message: a message pasting two tokens of one day means
     // the last one (the same message id cannot supersede itself).
-    const byDay = new Map<number, (typeof shares)[number]>();
+    const byDay = new Map<number, SentenceShare>();
+    // A WORD share is acknowledged and never recorded (share.ts says why); a message
+    // pasting several is acknowledged for the best of them.
+    let word: WordShare | null = null;
     for (const share of shares) {
       if (share.lang !== group.language) {
         deps.log.info(
@@ -106,13 +113,23 @@ export function createIngest(deps: IngestDeps) {
         );
         continue;
       }
+      if (share.mode === 'word') {
+        if (!word || share.claims > word.claims) word = share;
+        continue;
+      }
       byDay.set(share.dayNumber, share);
     }
-    if (byDay.size === 0) return 'no_share';
+    if (byDay.size === 0 && !word) return 'no_share';
+    if (word) {
+      deps.log.info(
+        { event: 'share.word', group: tag(group.id), sender: tag(message.sender), messageId: message.id, day: word.dayNumber, claims: word.claims, live: message.live },
+        'word share',
+      );
+    }
 
-    let outcome: IngestOutcome = 'unchanged';
+    let outcome: IngestOutcome = byDay.size === 0 ? 'acknowledged' : 'unchanged';
     let failed = false;
-    const recorded: DecodedShare[] = [];
+    const recorded: SentenceShare[] = [];
     const announcements: OutboundCommand[] = [];
     for (const share of byDay.values()) {
       const declaration: Declaration = {
@@ -199,21 +216,25 @@ export function createIngest(deps: IngestDeps) {
     // reaction per account per message and the command id is keyed by the message, so
     // queueing one per DAY would leave an arbitrary survivor to decide it. The best result
     // the message showed is the one it is acknowledged for; a ∞ run is the worst of them.
-    const best = recorded.reduce<DecodedShare | null>(
+    // A SENTENCE result that was recorded comes first — it is the one on the podium — and
+    // a Word result is acknowledged when the message carried nothing else to record.
+    const best = recorded.reduce<SentenceShare | null>(
       (kept, share) => (kept && rankOf(kept) <= rankOf(share) ? kept : share),
       null,
     );
-    if (group.acknowledge !== 'none' && message.live && best) {
+    const player = displayName(group, message.sender, message.senderName);
+    const facts: ShareFacts | null = best
+      ? { mode: 'sentence', player, score: best.score, capped: best.capped }
+      : word && byDay.size === 0
+        ? { mode: 'word', player, claims: word.claims }
+        : null;
+    if (group.acknowledge !== 'none' && message.live && facts) {
       // A LINE WHEN ASKED FOR ONE, THE EMOJI WHEN THERE IS NONE. The share is already
       // durable; what is being chosen here is only how it is acknowledged, and an
       // unavailable model may cost the words but never the acknowledgement itself.
       const line =
         group.acknowledge === 'say' && deps.comment
-          ? await deps.comment(group, {
-              player: displayName(group, message.sender, message.senderName),
-              score: best.score,
-              capped: best.capped,
-            }).catch((error) => {
+          ? await deps.comment(group, facts).catch((error) => {
               deps.log.warn(
                 { event: 'share.comment_threw', group: tag(group.id), error: (error as Error).message },
                 'the line failed; acknowledging with the emoji',
@@ -235,7 +256,7 @@ export function createIngest(deps: IngestDeps) {
               kind: 'reaction',
               group: group.id,
               target: { id: message.id, participant: message.participant },
-              emoji: reactionFor(best.score, best.capped),
+              emoji: reactionForShare(facts),
             },
         group.id,
       );

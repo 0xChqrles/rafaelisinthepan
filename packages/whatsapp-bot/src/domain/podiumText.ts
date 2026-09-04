@@ -92,3 +92,26 @@ export function renderLeader(name: string, score: number, language: GroupLanguag
     ? `${name} prend la tête avec ${score}.`
     : `${name} takes the lead with ${score}.`;
 }
+
+// THE MORNING LINE (user-decided 2026-09-05): one bubble saying the day's puzzle is up,
+// what KIND of thing it is when the day's source says so (the one half of the source the
+// bot may say — `puzzle/daySource.ts`), when the podium lands, and the link. Deterministic:
+// a model has nothing to add at nine in the morning. One line, because anything longer
+// reads as a notification and not as a friend saying "c'est parti".
+const KIND_FR: Record<string, string> = { music: 'une chanson', book: 'un livre', movie: 'un film', poem: 'un poème', quote: 'une citation' };
+const KIND_EN: Record<string, string> = { music: 'a song', book: 'a book', movie: 'a film', poem: 'a poem', quote: 'a quote' };
+
+export function renderReminder(
+  language: GroupLanguage,
+  siteOrigin: string,
+  kind: string | null,
+  podiumTime: string | null, // "HH:MM" in the group's own zone, or null when no podium
+): string {
+  const what = kind ? (language === 'fr' ? KIND_FR[kind] : KIND_EN[kind]) : undefined;
+  const time = podiumTime ? (language === 'fr' ? podiumTime.replace(':', 'h') : podiumTime) : null;
+  const head =
+    language === 'fr'
+      ? `Le Whippin du jour est en ligne${what ? `, c'est ${what} aujourd'hui` : ''}.${time ? ` Podium à ${time}.` : ''}`
+      : `Today's Whippin is up${what ? `, it's ${what} today` : ''}.${time ? ` Podium at ${time}.` : ''}`;
+  return `${head}\n${siteOrigin}`;
+}

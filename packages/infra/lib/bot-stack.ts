@@ -314,22 +314,43 @@ export class BotStack extends Stack {
     outbound.grantSendMessages(podium);
     podium.addToRolePolicy(readLlmKey);
 
-    for (const group of groups) {
-      if (!group.podium.enabled) continue;
-      const [hour, minute] = group.podium.time.split(':');
-      new scheduler.Schedule(this, `Podium${scheduleId(group)}`, {
-        description: `Whippin podium for ${group.name} at ${group.podium.time} ${group.podium.timezone}`,
+    // One schedule per group per scheduled message: the evening podium, and the morning
+    // reminder (user-decided 2026-09-05) — the same Lambda, told which by `kind`.
+    const daily = (id: string, description: string, time: string, timezone: string, input: object) => {
+      const [hour, minute] = time.split(':');
+      new scheduler.Schedule(this, id, {
+        description,
         schedule: scheduler.ScheduleExpression.cron({
           minute: String(Number(minute)),
           hour: String(Number(hour)),
-          timeZone: TimeZone.of(group.podium.timezone),
+          timeZone: TimeZone.of(timezone),
         }),
         target: new LambdaInvoke(podium, {
-          input: scheduler.ScheduleTargetInput.fromObject({ group: group.id }),
+          input: scheduler.ScheduleTargetInput.fromObject(input),
           retryAttempts: 2,
           maxEventAge: Duration.hours(1),
         }),
       });
+    };
+    for (const group of groups) {
+      if (group.podium.enabled) {
+        daily(
+          `Podium${scheduleId(group)}`,
+          `Whippin podium for ${group.name} at ${group.podium.time} ${group.podium.timezone}`,
+          group.podium.time,
+          group.podium.timezone,
+          { group: group.id },
+        );
+      }
+      if (group.reminder.enabled) {
+        daily(
+          `Reminder${scheduleId(group)}`,
+          `Whippin reminder for ${group.name} at ${group.reminder.time} ${group.reminder.timezone}`,
+          group.reminder.time,
+          group.reminder.timezone,
+          { group: group.id, kind: 'reminder' },
+        );
+      }
     }
 
     // ── Alarms ───────────────────────────────────────────────────────────────

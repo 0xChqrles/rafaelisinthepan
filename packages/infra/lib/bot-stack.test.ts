@@ -24,6 +24,7 @@ function groupsDir(): string {
       language: 'fr',
       enabled: true,
       podium: { enabled: true, time: '22:00', timezone: 'Europe/Paris' },
+      reminder: { enabled: true, time: '09:00' },
       chat: { enabled: true, prePrompt: 'x' },
     }),
   );
@@ -95,13 +96,15 @@ describe('WhatsApp bot stack (#236)', () => {
     }
   });
 
-  it('creates one podium schedule per ENABLED group, at its local time zone, targeting the job', () => {
-    const schedules = Object.values(template.findResources('AWS::Scheduler::Schedule'));
-    expect(schedules).toHaveLength(1);
-    const props = schedules[0].Properties;
-    expect(props.ScheduleExpression).toBe('cron(0 22 * * ? *)');
-    expect(props.ScheduleExpressionTimezone).toBe('Europe/Paris');
-    expect(JSON.parse(props.Target.Input)).toEqual({ group: GROUP });
+  it('creates a podium schedule and a reminder schedule per ENABLED group, at its zone, on ONE job', () => {
+    const schedules = Object.values(template.findResources('AWS::Scheduler::Schedule')).map((s) => s.Properties);
+    expect(schedules).toHaveLength(2);
+    const byInput = new Map(schedules.map((p) => [JSON.stringify(JSON.parse(p.Target.Input)), p]));
+    const podium = byInput.get(JSON.stringify({ group: GROUP }));
+    const reminder = byInput.get(JSON.stringify({ group: GROUP, kind: 'reminder' }));
+    expect(podium?.ScheduleExpression).toBe('cron(0 22 * * ? *)');
+    expect(reminder?.ScheduleExpression).toBe('cron(0 9 * * ? *)');
+    for (const p of schedules) expect(p.ScheduleExpressionTimezone).toBe('Europe/Paris');
     expect(Object.values(template.findResources('AWS::Lambda::Function'))).toHaveLength(1);
   });
 

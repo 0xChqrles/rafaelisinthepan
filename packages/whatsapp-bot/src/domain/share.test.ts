@@ -36,17 +36,23 @@ describe('share links are deterministic input (#236)', () => {
 
   it('keeps a capped (∞) run as a share with its flag', () => {
     const t = sentenceToken({ capped: true, solvedAt: [] });
-    expect(sharesIn(`https://whippin.ai/s/${t}`, ORIGIN)[0]?.capped).toBe(true);
+    const [share] = sharesIn(`https://whippin.ai/s/${t}`, ORIGIN);
+    expect(share?.mode === 'sentence' && share.capped).toBe(true);
   });
 
-  it('ignores word-mode tokens and garbage', () => {
+  it('decodes a WORD token to its day and claim count, and never carries the word', () => {
     const word = encodeWordResult({
       lang: 'fr',
       dayNumber: dayNumber('2026-09-03'),
       word: 'phare',
       counts: [1, 2, 3, 0, 0],
     });
-    expect(sharesIn(`https://whippin.ai/s/${word}`, ORIGIN)).toEqual([]);
+    expect(sharesIn(`https://whippin.ai/s/${word}`, ORIGIN)).toEqual([
+      { mode: 'word', token: word, lang: 'fr', dayNumber: dayNumber('2026-09-03'), claims: 6 },
+    ]);
+  });
+
+  it('ignores garbage', () => {
     expect(sharesIn('https://whippin.ai/s/not-a-token!!', ORIGIN)).toEqual([]);
     expect(sharesIn('no link here', ORIGIN)).toEqual([]);
   });

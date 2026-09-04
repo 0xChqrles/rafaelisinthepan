@@ -12,7 +12,7 @@
 // sends the deterministic emoji instead (`domain/ingest.ts`). Never silence.
 
 import type { GroupConfig } from '../config/groupConfig';
-import { scoreBand } from '../domain/reactions';
+import { verdictOf, type ShareFacts } from '../domain/reactions';
 import type { Log } from '../log';
 import { buildSystemPrompt } from './personality';
 import { sanitizeComment } from './podiumComments';
@@ -40,11 +40,7 @@ const LINE_MAX_CHARS = 90;
 // unchanged.
 const TIMEOUT_MS = 20_000;
 
-export interface ShareFacts {
-  player: string; // the display name the group knows them by
-  score: number;
-  capped: boolean; // a run that ended at ∞
-}
+export type { ShareFacts } from '../domain/reactions';
 
 // HOW GOOD IT WAS IS ALREADY DECIDED. The band comes from `domain/reactions.ts` — the same
 // thresholds the emoji uses — and reaches the model as a settled `verdict` it dresses in
@@ -56,12 +52,18 @@ export interface ShareFacts {
 // copyable one-liners the model treats them as a menu — an early draft answered
 // "acceptable." to three different scores in a row — so the examples say what the voice
 // SOUNDS like and the prompt forbids reusing their words.
-const TASK = (max: number) =>
+const TASK = (max: number, mode: ShareFacts['mode']) =>
   `Task: react in ONE line to the Whippin result below, as a message in the group. The line only — plain text, no markdown, no quotes around it, under ${max} characters and often far less; two words is a whole message. Do not open with the player's name and do not restate their score.
 
 Speak TO them, not about them: "tu" rather than talking about a third party.
 
-How good it was is already decided for you. React to it, never re-judge it. Three is the lowest score anyone can get, and anything under ten is good play: perfect = the best there is, nobody beats it, say so plainly · brilliant = genuinely good, tell them · strong = solid, and you mean it · ordinary = a fine day's work · laboured = they stayed with a hard one and got there · failed = the sentence won today, said kindly.
+` +
+  (mode === 'word'
+    ? // WORD MODE: the other daily. "found" is how many words they named from one word's
+      // neighbourhood against the clock — MORE is better, there is no cap and no floor.
+      `This is a WORD MODE result: "found" is how many words they named from one word's neighbourhood against a countdown, where rarer words earn more time. MORE is better; there is no cap and no perfect score. How good it was is already decided for you. React to it, never re-judge it: perfect = a huge run, say so plainly · brilliant = genuinely good, tell them · strong = solid, and you mean it · ordinary = a fine run · laboured = the clock won this time, said kindly. Never name the word.`
+    : `How good it was is already decided for you. React to it, never re-judge it. Three is the lowest score anyone can get, and anything under ten is good play: perfect = the best there is, nobody beats it, say so plainly · brilliant = genuinely good, tell them · strong = solid, and you mean it · ordinary = a fine day's work · laboured = they stayed with a hard one and got there · failed = the sentence won today, said kindly.`) +
+  `
 
 Encouraging at every rung, and warmest at the bottom.
 
@@ -81,17 +83,21 @@ export async function generateShareComment(
   const system = buildSystemPrompt({
     language: group.language,
     groupPrePrompt: group.chat.prePrompt,
-    extra: TASK(70),
+    extra: TASK(70, facts.mode),
   });
   // NEUTRAL FIELD NAMES, because the model writes with whatever vocabulary is in front of
   // it: an earlier draft called this `band` and produced "le band a gagné." Nothing here is
   // a word the answer may borrow.
-  const content = JSON.stringify({
-    player: facts.player,
-    tries: facts.capped ? null : facts.score,
-    solved: !facts.capped,
-    verdict: scoreBand(facts.score, facts.capped),
-  });
+  const content = JSON.stringify(
+    facts.mode === 'word'
+      ? { player: facts.player, found: facts.claims, verdict: verdictOf(facts) }
+      : {
+          player: facts.player,
+          tries: facts.capped ? null : facts.score,
+          solved: !facts.capped,
+          verdict: verdictOf(facts),
+        },
+  );
   for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
     if (!(await takeCall())) {
       log.info({ event: 'share.comment_ceiling', attempt }, 'daily call ceiling reached');

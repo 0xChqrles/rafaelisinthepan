@@ -28,6 +28,30 @@ export function scoreBand(score: number, capped: boolean): ScoreBand {
   return 'laboured';
 }
 
+// WORD MODE'S LADDER (user-decided 2026-09-05: the bot acknowledges a Word share too). The
+// score is the number of words CLAIMED from one word's neighbourhood against a countdown,
+// so HIGHER is better and there is no floor and no cap — hence no `failed` and no exact
+// `perfect`. Cut on the recorded French scores of 2026-08-28 → 09-04 (about fifty runs):
+// median ~10, upper quartile ~17, five runs over 30, the best 58. Same six words as the
+// sentence ladder, so one verdict vocabulary serves both prompts and one emoji map both
+// acknowledgements.
+export function wordBand(claims: number): ScoreBand {
+  if (claims >= 40) return 'perfect';
+  if (claims >= 25) return 'brilliant';
+  if (claims >= 15) return 'strong';
+  if (claims >= 8) return 'ordinary';
+  return 'laboured';
+}
+
+// What a share is acknowledged AS: the two dailies' results, each judged by its own ladder.
+export type ShareFacts =
+  | { mode: 'sentence'; player: string; score: number; capped: boolean }
+  | { mode: 'word'; player: string; claims: number };
+
+export function verdictOf(facts: ShareFacts): ScoreBand {
+  return facts.mode === 'word' ? wordBand(facts.claims) : scoreBand(facts.score, facts.capped);
+}
+
 const EMOJI: Record<ScoreBand, string> = {
   perfect: '💯',
   brilliant: '🔥',
@@ -39,4 +63,8 @@ const EMOJI: Record<ScoreBand, string> = {
 
 export function reactionFor(score: number, capped: boolean): string {
   return EMOJI[scoreBand(score, capped)];
+}
+
+export function reactionForShare(facts: ShareFacts): string {
+  return EMOJI[verdictOf(facts)];
 }
