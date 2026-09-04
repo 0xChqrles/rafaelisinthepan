@@ -40,22 +40,35 @@ jobs:
       web: ${{ steps.decide.outputs.web }}
       bot: ${{ steps.decide.outputs.bot }}
     steps:
-      # Depth 2, not the default 1: a manual dispatch diffs against `HEAD~1` below, and on a
-      # single-commit checkout that ref does not exist — `fatal: invalid refspec 'HEAD~1'`,
-      # which failed EVERY workflow_dispatch run, forced selection included, since the plan
-      # job runs the filter before it looks at the input.
+      # Depth 2, not the default 1: a manual dispatch diffs against the commit before HEAD,
+      # which a single-commit checkout does not have.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
+      # `HEAD~1` IS NOT A REFSPEC. paths-filter FETCHES its base by name
+      # (`git fetch origin <base> main`), and git refuses a revision expression there —
+      # `fatal: invalid refspec 'HEAD~1'`, which failed every workflow_dispatch run,
+      # forced selection included, because the filter runs before the input is read.
+      # Depth alone could not fix it: the ref existed locally and the fetch still asked
+      # origin for it by that name. Resolved to a SHA, which IS one.
+      - name: Resolve the dispatch base
+        id: base
+        if: github.event_name == 'workflow_dispatch'
+        run: echo "sha=$(git rev-parse HEAD~1)" >> "$GITHUB_OUTPUT"
+
       # shared -> all three (bundled into the Lambdas, built into the SPA, inlined into the
       # bot image); infra -> all three (holds every stack def); root deps / this workflow
       # -> all three (safe default). The bot's own package reaches only its stack.
+      # SKIPPED when a dispatch already names its stack: there is nothing for it to decide,
+      # and it is the step that fails. `changed` still needs it, on either trigger, which is
+      # why the base above exists rather than the whole step being conditional on a push.
       - name: Detect changed paths
         id: filter
+        if: github.event_name != 'workflow_dispatch' || inputs.stacks == 'changed'
         uses: dorny/paths-filter@v3
         with:
-          base: ${{ github.event_name == 'workflow_dispatch' && 'HEAD~1' || github.event.before }}
+          base: ${{ github.event_name == 'workflow_dispatch' && steps.base.outputs.sha || github.event.before }}
           filters: |
             backend:
               - 'packages/backend/**'
