@@ -1,8 +1,9 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { App } from 'aws-cdk-lib';
-import { Template } from 'aws-cdk-lib/assertions';
+import { App, Aspects } from 'aws-cdk-lib';
+import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
+import { AwsSolutionsChecks } from 'cdk-nag';
 import { describe, expect, it } from 'vitest';
 import { BotStack, BOT_METRICS_NAMESPACE } from './bot-stack';
 
@@ -119,5 +120,25 @@ describe('WhatsApp bot stack (#236)', () => {
       EvaluationPeriods: 3,
     });
     expect(Object.values(template.findResources('AWS::SNS::Subscription'))).toHaveLength(1);
+  });
+
+  // THE SUITE HAS TO RUN cdk-nag, because `bin/app.ts` does and a finding there is a
+  // FAILED SYNTH — a deploy that dies before it starts. It was not run here, and that is
+  // how a suppression whose `appliesTo` used `*` as a glob (cdk-nag compares a plain
+  // string with `===`) reached production. It was invisible twice over: the finding needs
+  // a SCHEDULE, a schedule needs an ENABLED GROUP, and the snapshot this stack reads is
+  // gitignored — so every CI synth until the first real group in SSM had nothing to check.
+  it('synthesizes with NO cdk-nag findings, with a real group configured', () => {
+    const app = new App({ context: { 'aws:cdk:bundling-stacks': [] } });
+    const stack = new BotStack(app, 'NagBotStack', {
+      env: { account: ACCOUNT, region: REGION },
+      llmApiKeyParameter: KEY_PARAMETER,
+      operatorEmail: 'ops@test.invalid',
+      groupsDir: groupsDir(),
+    });
+    Aspects.of(app).add(new AwsSolutionsChecks());
+    expect(
+      Annotations.fromStack(stack).findError('*', Match.stringLikeRegexp('AwsSolutions-.*')),
+    ).toEqual([]);
   });
 });
