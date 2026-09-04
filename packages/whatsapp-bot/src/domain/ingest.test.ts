@@ -87,7 +87,7 @@ describe('share ingestion (#236)', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ score: 7, name: 'Gab', messageId: 'M1' });
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ kind: 'reaction', id: `react:${GROUP}:M1`, emoji: '👍' });
+    expect(sent[0]).toMatchObject({ kind: 'reaction', id: `react:${GROUP}:M1`, emoji: '👏' });
   });
 
   it('SAYS a line instead of reacting, quoting the share', async () => {
@@ -115,7 +115,7 @@ describe('share ingestion (#236)', () => {
       const { ingest, sent } = harness(registry({ acknowledge: 'say' }), { comment });
       expect(await ingest(message())).toBe('recorded');
       expect(sent).toHaveLength(1);
-      expect(sent[0]).toMatchObject({ kind: 'reaction', id: `react:${GROUP}:M1`, emoji: '👍' });
+      expect(sent[0]).toMatchObject({ kind: 'reaction', id: `react:${GROUP}:M1`, emoji: '👏' });
     }
     // Configured to say, but nothing wired to say it (no model at all): the emoji too.
     const { ingest, sent } = harness(registry({ acknowledge: 'say' }));
@@ -204,7 +204,7 @@ describe('share ingestion (#236)', () => {
     const text = `${ORIGIN}/s/${token(9)} et hier ${ORIGIN}/s/${token(3, 'fr', false, DAY - 1)}`;
     expect(await ingest(message({ text }))).toBe('recorded');
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ kind: 'reaction', id: `react:${GROUP}:M1`, emoji: '🔥' });
+    expect(sent[0]).toMatchObject({ kind: 'reaction', id: `react:${GROUP}:M1`, emoji: '💯' });
   });
 
   it('a REPLAY moves the leader row, so a later live share cannot claim a lead it lacks', async () => {

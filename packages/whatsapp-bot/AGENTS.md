@@ -182,7 +182,21 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   that ceiling would leave it bounding half the spend.
   **HOW GOOD IT WAS IS THE BOT'S JUDGEMENT** (`domain/reactions.ts` `scoreBand`): one set of
   thresholds serves both acknowledgements, so `react`'s emoji and `say`'s line cannot
-  disagree about a score. The band reaches the model as a settled `verdict` it dresses in
+  disagree about a score. **THE LADDER STARTS AT 3** (user-corrected 2026-09-04): a sentence
+  hides three words, so three tries is the FLOOR — the only perfect score, not merely a very
+  good one — and anything under ten is good play. The first cut was written as though 0 were
+  reachable, which collapsed perfect into "≤3 brilliant" and called a 12 `ordinary`.
+  **A BAND MAY NOT READ AS CRITICISM OF A GOOD SCORE**: `strong` (7–9) said "tu as mis le
+  temps" while it was told to undercut, which contradicts the ladder it sits in.
+  **THE BOT MAY GUESS A GENDER, for now** (user-decided 2026-09-04, reversing the rule added
+  hours earlier the same day). A gender-safety rule briefly lived in the GLOBAL personality:
+  never "il"/"elle" about a player, and — because in French pronouns are only half the
+  hazard — no ÊTRE participle or adjective either ("tu es sorti/sortie", "content/contente"),
+  since only AVOIR participles are invariable. It was REMOVED: the model infers gender from a
+  display name well enough, and getting it wrong is acceptable while the bot is in one test
+  group of friends. A config flag was floated for later and is NOT decided. What survives is
+  a VOICE rule and not a safety one — the bot addresses a player as "tu" rather than
+  discussing them in the third person, which is simply how somebody in the group talks. The band reaches the model as a settled `verdict` it dresses in
   words and may never revise — and without it the model cannot calibrate AT ALL, since
   nothing tells it whether 7 is good: measured, it answered one flat line to a 3, a 7 and a
   42 alike.

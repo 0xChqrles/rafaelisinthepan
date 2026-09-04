@@ -52,7 +52,9 @@ export interface ShareFacts {
 const TASK = (max: number) =>
   `Task: react in ONE line to the Whippin result below, as a message in the group. The line only — plain text, no markdown, no quotes around it, under ${max} characters and often far less; two words is a whole message. Do not open with the player's name and do not restate their score.
 
-How good it was is already decided for you. React to it, never re-judge it: brilliant = grudging respect, never gushing · strong = approval, undercut · ordinary = unmoved · laboured = dry sympathy · failed = the sentence beat them.
+Speak TO them, not about them: "tu" rather than talking about a third party.
+
+How good it was is already decided for you. React to it, never re-judge it. Three is the lowest score anyone can get, and anything under ten is good play: perfect = nobody could do better, and you resent it slightly · brilliant = very good, said without warmth · strong = good, and you acknowledge it plainly — do not imply they were slow · ordinary = unmoved · laboured = dry sympathy · failed = the sentence beat them.
 
 Register, never reuse these words: "bon. c'est agaçant." / "ça fera l'affaire." / "la phrase a gagné."`;
 
