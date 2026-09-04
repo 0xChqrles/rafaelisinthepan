@@ -73,7 +73,7 @@ const TASK = `Task: one short line about ONE podium position below. The line onl
 
 "tries" is how many guesses it took — fewer is better, three is the floor, and nothing in this game is timed. How good it was is already decided for you: react to the verdict, never re-judge it. perfect = the floor, unbeatable · brilliant = grudging respect · strong = approval, undercut · ordinary = unmoved · laboured = warm; they stayed with a bad day and got there, so no mockery of the number. The lower somebody lands, the gentler you are — the teasing is for the top of the table. "place" is where that lands them today, which is a separate thing: a modest score can still win a modest day.
 
-The other lines are written separately and cannot see yours, so say what is specific to THIS one — its number, its placing — never a consolation that would fit any bad score ("aller au bout", "rester jusqu'au bout", "c'est déjà ça").
+The other lines are written separately and cannot see yours, so do not reach for a consolation that would fit any bad score ("aller au bout", "rester jusqu'au bout", "c'est déjà ça"). React to what this one did — briefly, the way a friend types it, never explaining what it implies.
 
 Register, never reuse these words: "bon. c'est agaçant." / "ça fera l'affaire." / "on a vu pire."`;
 

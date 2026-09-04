@@ -352,6 +352,13 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   "capuche" and "soleil" are near each other because both live around weather — and a rank
   of 1 is the word most often found in the same company, not "almost the word". Explaining
   this is the ONE subject where being helpful is in character.
+  **AND IT TYPES, IT DOES NOT COMPOSE.** Asked for a line "specific to this one", the model
+  started DEDUCING and narrating the deduction: "10 et deuxième, fallait que ce soit une
+  sale journée pour tout le monde" is a machine showing its working, where "10 et deuxième,
+  c'était chaud" is a person. v3 forbids the move by name — no working anything out, no
+  sentence whose job is to justify the previous one, no elaborate image — and asks for the
+  register people actually type in: short, casual, usually under ten words. Wanting to be
+  funny and wanting to be clever fail the same way, and both were caught in the same group.
   **AND THE GROUP TALKS ABOUT THE SENTENCE, NOT ABOUT THE BOT.** "j'ai reconnu direct, je
   suis fan" is about the day's sentence and its author; the bot answered about being a bot,
   which is both cringe and a misreading. v3 says so outright: the bot is not the subject of
