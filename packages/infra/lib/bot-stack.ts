@@ -280,6 +280,17 @@ export class BotStack extends Stack {
         minify: true,
         sourceMap: true,
         externalModules: ['@aws-sdk/*'],
+        // AN ESM BUNDLE THAT INLINES A CommonJS DEPENDENCY NEEDS A `require` TO GIVE IT.
+        // esbuild replaces one it cannot resolve with a stub that THROWS — "Dynamic require
+        // of X is not supported" — and pino, which every module here reaches through
+        // `log.ts`, requires `node:os` at load. So the function died in INIT on every
+        // invocation, before the handler existed: measured 2026-09-04, the first 22:00
+        // after deployment fired both schedules, all six attempts failed, and the group got
+        // no podium and no error anyone could see.
+        // `scripts/bundle.mjs` has carried this same banner for the TASK all along. The
+        // Lambda is the bundle that never got it, and also the one nothing ever loaded
+        // until a schedule loaded it in production.
+        banner: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);",
         // The pulled snapshot travels with the bundle: the job reads its own config. The
         // bundle's `groups/` directory ALWAYS exists — the runtime loader treats a missing
         // one as a misconfigured BOT_GROUPS_DIR and refuses to run — and an absent
