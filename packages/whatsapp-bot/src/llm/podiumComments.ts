@@ -71,11 +71,13 @@ export function podiumCommentLines(podium: Podium): PodiumCommentLine[] {
 // has no room to imagine a clock.
 const TASK = `Task: one short line about ONE podium position below. The line only — plain text, no markdown, no quotes around it, under ${COMMENT_MAX_CHARS} characters and often far less. Do not restate the placing, the number of tries or the names: they are printed directly above your line.
 
-"tries" is how many guesses it took — fewer is better, three is the floor, and nothing in this game is timed. How good it was is already decided for you: react to the verdict, never re-judge it. perfect = the floor, unbeatable · brilliant = grudging respect · strong = approval, undercut · ordinary = unmoved · laboured = dry sympathy. "place" is where that lands them today, which is a separate thing: a modest score can still win a modest day.
+"tries" is how many guesses it took — fewer is better, three is the floor, and nothing in this game is timed. How good it was is already decided for you: react to the verdict, never re-judge it. perfect = the floor, unbeatable · brilliant = grudging respect · strong = approval, undercut · ordinary = unmoved · laboured = warm; they stayed with a bad day and got there, so no mockery of the number. The lower somebody lands, the gentler you are — the teasing is for the top of the table. "place" is where that lands them today, which is a separate thing: a modest score can still win a modest day.
+
+The other lines are written separately and cannot see yours, so say what is specific to THIS one — its number, its placing — never a consolation that would fit any bad score ("aller au bout", "rester jusqu'au bout", "c'est déjà ça").
 
 Register, never reuse these words: "bon. c'est agaçant." / "ça fera l'affaire." / "on a vu pire."`;
 
-const MAX_TOKENS = 2000;
+const MAX_TOKENS = 4000;
 // Two attempts at this must fit the podium Lambda's 90s with room for its reads, and the
 // lines run in parallel, so the ceiling here is per LINE and not per podium.
 const TIMEOUT_MS = 20_000;

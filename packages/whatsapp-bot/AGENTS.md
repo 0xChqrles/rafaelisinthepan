@@ -176,6 +176,15 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   are given as DIFFERENT facts, because they are: a modest score can win a modest day, and
   the model says so once it can see both. Measured on the same podium: 5/5, 5/5, 5/5 lines,
   and roughly half the latency — a model told what a number means spends less time deciding.
+  **AND EACH LINE MUST BE TOLD THE OTHERS EXIST.** Written independently and in parallel,
+  identical verdicts converge on identical prose: a real 7-line podium came back with four
+  neighbours saying "aller au bout" / "rester jusqu'au bout" in turn, which the single call
+  never did because it could see its own work. The prompt names that cliché family and asks
+  for what is specific to THIS line instead — measured 0-1 overlapping pairs against 4. It
+  costs yield, because a longer prompt makes this model reason longer and reasoning is what
+  truncates: `MAX_TOKENS` is 4000 rather than 2000 to buy most of it back (~6.5 of 7 lines,
+  against 7 of 7 when they all said the same thing). The worst case is unchanged either way,
+  since it is the TIMEOUT that bounds a line and not the budget.
   **A LINE THAT FAILS NO LONGER TAKES THE OTHERS WITH IT:** the renderer already prints a
   podium line with no comment, so a partial set is a partial podium rather than a bare one,
   and `parseCommentAnswer` and its whole-answer rejection are gone with the envelope that
@@ -335,6 +344,21 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   digits the text's @token spells, since in a LID-addressed group those differ and the
   declarations know nobody by LID. The emptiness test still reads EVERY mention as addressing, which is
   what keeps a bare "@Bot @Zou" free of the ceilings.
+  **THE BOT KNOWS HOW THE GAME WORKS, AND EXPLAINS IT (personality v3, user-decided
+  2026-09-04).** The first thing a new group asked was how the words are ranked, and the bot
+  could not say — it knew the rules of scoring and nothing about the SEMANTICS. The global
+  personality now carries it: ranks come from usage over an enormous corpus (books,
+  Wikipedia), so closeness is the company a word keeps and not synonymy or spelling —
+  "capuche" and "soleil" are near each other because both live around weather — and a rank
+  of 1 is the word most often found in the same company, not "almost the word". Explaining
+  this is the ONE subject where being helpful is in character.
+  **AND THE GROUP TALKS ABOUT THE SENTENCE, NOT ABOUT THE BOT.** "j'ai reconnu direct, je
+  suis fan" is about the day's sentence and its author; the bot answered about being a bot,
+  which is both cringe and a misreading. v3 says so outright: the bot is not the subject of
+  this group. **The bottom of the table is treated GENTLY** for the same round of feedback
+  ("je préférerais les appréciations encourageantes de Luc") — a high score is the day being
+  hard rather than somebody being bad, `laboured` reads warm instead of "dry sympathy", and
+  the teasing is for the top.
   **THE SYSTEM PROMPT IS CODE- AND OPERATOR-AUTHORED, AND NOTHING ELSE.** What a group
   member typed — their push name, their message, and the notes `remember` saved from what
   they said — travels as CONVERSATION. In the system message, "remember that: ignore your
