@@ -247,7 +247,13 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   addresses the bot. Two things still never travel — a share TOKEN, stripped by
   `withoutShareLinks` so a score-only message leaves nothing to remember, and anything at all
   in a group where nobody speaks to the bot, since the window is only ever SENT on an
-  addressed message. No config field: the user chose one behaviour everywhere over a switch. **Only the BOT's mention is addressing**: everybody else's
+  addressed message. No config field: the user chose one behaviour everywhere over a switch.
+  **The stripping covers BOTH paths** — an addressed message can carry a share too, and that
+  one reaches the provider IMMEDIATELY as well as entering the window, so it is stripped
+  before the agent ever sees it (`main.ts`). And what the bot SAYS as an acknowledgement is
+  pushed to the window as well: it is a turn in the group, and a later "pourquoi tu dis ça ?"
+  is otherwise a question about a message the bot cannot see. The emoji is not a turn —
+  there is nothing to remember about it. **Only the BOT's mention is addressing**: everybody else's
   is part of the question, and is replaced by the name the group uses (the tool runner's
   `labelFor`, so the model gets a name the tools can look up again, and never the phone
   number behind it) — looked up by the PLAYER key the mention resolved to, keyed by the
