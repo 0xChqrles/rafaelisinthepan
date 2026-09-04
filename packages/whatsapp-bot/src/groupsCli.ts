@@ -67,7 +67,7 @@ function say(line = ''): void {
 // group is (the JID is kept out of every message for the same reason).
 const describe = (g: StoredGroup): string =>
   `${g.slug.padEnd(14)} ${g.config.enabled ? 'on ' : 'off'}  ${g.config.language}  ${
-    g.config.podium.enabled ? `podium ${g.config.podium.time} ${g.config.podium.timezone}` : 'no podium'
+    g.config.podium.enabled ? `podium ${g.config.podium.time} ${g.config.timezone}` : 'no podium'
   }  ${g.config.name}`;
 
 // The snapshot a build and a deploy read. Writing it is the ONLY thing that puts a group

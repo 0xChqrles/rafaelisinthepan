@@ -11,7 +11,7 @@ const raw = (id: string) => ({
   name: 'Whippin test',
   language: 'fr',
   enabled: true,
-  podium: { enabled: true, time: '22:00', timezone: 'Europe/Paris' },
+  timezone: 'Europe/Paris', podium: { enabled: true, time: '22:00' },
   chat: { enabled: true },
 });
 

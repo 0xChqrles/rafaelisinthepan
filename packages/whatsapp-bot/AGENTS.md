@@ -107,9 +107,13 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
 - **THE MORNING REMINDER (user-decided 2026-09-05).** One bubble, once a day, saying the
   day's puzzle is up, what KIND of thing it is when the day's source says so (the one half
   of the source the bot may say), when the podium lands, and the link — `reminder:
-  {enabled, time[, timezone]}` in the group config, OFF by default because a daily ping is
-  a thing a group opts into, the zone defaulting to the podium's since one group lives in
-  one place. It rides the podium's own path — a per-group EventBridge schedule, the SAME
+  {enabled, time}` in the group config, OFF by default because a daily ping is a thing a
+  group opts into. **The zone is the GROUP's, stated once at the root as `timezone`**
+  (user-decided 2026-09-05): it lived on `podium` until then and the reminder was about to
+  grow its own, and a group lives in one place — so every scheduled message is a
+  wall-clock time in the one zone, and a `timezone` on `podium` or `reminder` is refused as
+  the unknown field it now is. Existing SSM configs carry the old shape and must be pushed
+  in the new one before the deploy that follows this change, or its `pull` refuses them. It rides the podium's own path — a per-group EventBridge schedule, the SAME
   Lambda told `kind: "reminder"`, one `reminder:<group>:<day>` command on the queue, so a
   retried schedule can never post it twice — because a second function would be a second
   bundle to keep from breaking the way the first one did. DETERMINISTIC text

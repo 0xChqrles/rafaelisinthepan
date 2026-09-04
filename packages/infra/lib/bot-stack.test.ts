@@ -23,7 +23,7 @@ function groupsDir(): string {
       name: 'Whippin FR',
       language: 'fr',
       enabled: true,
-      podium: { enabled: true, time: '22:00', timezone: 'Europe/Paris' },
+      timezone: 'Europe/Paris', podium: { enabled: true, time: '22:00' },
       reminder: { enabled: true, time: '09:00' },
       chat: { enabled: true, prePrompt: 'x' },
     }),
@@ -35,7 +35,7 @@ function groupsDir(): string {
       name: 'Off',
       language: 'en',
       enabled: false,
-      podium: { enabled: true, time: '21:30', timezone: 'Europe/London' },
+      timezone: 'Europe/London', podium: { enabled: true, time: '21:30' },
       chat: { enabled: false },
     }),
   );
