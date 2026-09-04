@@ -157,11 +157,26 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   (`declarations.ts` says why). `recorded` means the token standing for that (group, day,
   sender) changed. Not an anti-cheat.
 - **The podium is DENSE and the renderer owns everything but the comments.** Never
-  `rankBoard` from shared (competition ranks belong to the public board). A model returns
-  `{lines:[{id, comment}]}` keyed by line id (= the score); the answer is rejected whole on
-  a missing/duplicate/unknown id or a non-plain/over-long comment, retried once, then the
-  podium ships with no comments. Unavailable model = scoreboard without jokes, never no
-  scoreboard.
+  `rankBoard` from shared (competition ranks belong to the public board). Unavailable model
+  = scoreboard without jokes, never no scoreboard.
+  **ONE CALL PER LINE, not one call for the podium (user-decided 2026-09-04).** It used to
+  ask for every comment at once as strict JSON — `{lines:[{id, comment}]}`, rejected WHOLE on
+  a missing, duplicate or unknown id — and against `deepseek-v4-flash` that produced NOTHING:
+  measured on a real 5-line podium, the model spent the entire budget reasoning and returned
+  an empty string on both attempts (`finish=length`, `out=460` of 460). The budget was not
+  the cause and raising it did not fix it (0/2 at 1000, 1/2 at 2000, 0/2 at 4000): five
+  comments and a JSON envelope in one breath is simply a great deal of thinking before the
+  first character. It now borrows `shareComment.ts`'s proven shape — one short line, no JSON,
+  a generous budget, a `finish === 'length'` refusal — and measured 4/5, 4/5, 5/5 where the
+  old one measured 0/5.
+  **A LINE THAT FAILS NO LONGER TAKES THE OTHERS WITH IT:** the renderer already prints a
+  podium line with no comment, so a partial set is a partial podium rather than a bare one,
+  and `parseCommentAnswer` and its whole-answer rejection are gone with the envelope that
+  needed them. The calls run in PARALLEL because the podium Lambda has 90 seconds, and the
+  per-call timeout (20s × 2 attempts) is deliberately well inside it: a podium with four
+  comments out of five beats risking a Lambda timeout, which is no podium at all.
+  It spends NO daily call ceiling, unlike the share line: this path fires once per group per
+  day and is bounded by the schedule, where an acknowledgement is bounded only by traffic.
 - **Outbound has one owner.** Every send is a command with an id (`podium:<g>:<day>`,
   `ack:<g>:<msg>`, `reply:<g>:<msg>`, `leader:…`) on the SQS queue; the task's
   dispatcher checks the sent record (a STRONGLY CONSISTENT read — a redelivery can follow
