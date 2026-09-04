@@ -471,6 +471,14 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   (`llm/shareComment.ts`). A `react` or `none` group sends nothing on a share. The old
   wording, "score-only shares never reach the provider", was true of the raw share and
   false of `say`, which is why it is gone.
+  **And since 2026-09-04 an ADDRESSED message also carries the day's SOURCE** — its `kind`,
+  `author` and `work` (`puzzle/daySource.ts`). It is the one thing here that is not about a
+  player at all: it is the game's own published metadata, served publicly by the backend and
+  shown to every solver, so it is neither personal data nor a secret from the provider. What
+  it IS is a spoiler for the group, which is why the prompt forbids saying it — a different
+  concern from this bullet, kept in its own invariant above. Recorded here because this
+  bullet ENUMERATES what leaves for the provider, and an enumeration with a gap is worse
+  than none.
   **BAILEYS GETS A LOGGER THAT CANNOT PRINT A PAYLOAD** (`whatsapp/baileysLog.ts`): its own
   warning paths log `{ jid, err }`, `{ msgId, from }` and whole binary nodes, and no
   discipline at this package's call sites reaches the library's. The adapter keeps the

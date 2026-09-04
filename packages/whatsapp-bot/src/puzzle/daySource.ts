@@ -25,6 +25,13 @@ export interface DaySource {
 }
 
 const FETCH_TIMEOUT_MS = 15_000;
+// HOW LONG A REPLY MAY WAIT ON DECORATION, which is a different question from how long the
+// read may take. The first question after a restart or a deploy finds an empty cache, and
+// that read is several megabytes: made to block, it puts the whole fetch — up to
+// FETCH_TIMEOUT_MS of it on a bad network — in front of the model call, so the group waits
+// for the bot to answer "salut". The read is not abandoned when this passes; it goes on and
+// fills the cache, so what a slow one costs is that ONE message not knowing the source.
+const WAIT_BUDGET_MS = 1_500;
 // A FAILURE IS REMEMBERED BRIEFLY, an ANSWER for the process's life. A 404 is an answer —
 // that day was never published — and a source does not change while a day is live, so
 // re-reading it would be several megabytes per conversation. A network failure is not an
@@ -87,9 +94,14 @@ export function createDaySourceReader(deps: DaySourceDeps): DaySourceReader {
       deps.log.warn({ event: 'source.failed', lang, date, status: response.status }, 'the day did not load');
       return { source: null, retryAfter: now() + FAILURE_TTL_MS };
     }
-    let puzzle: { source?: DaySource };
+    let source: DaySource | null;
     try {
-      puzzle = (await response.json()) as { source?: DaySource };
+      // A valid JSON body need not be an OBJECT — `null` and `[]` both parse, and reading
+      // `.source` off the first throws. Inside the try so that lands on the same warning
+      // and the same five-minute backoff as a body that did not parse at all, rather than
+      // escaping to the caller and being retried at the rate the group talks.
+      const puzzle = (await response.json()) as { source?: DaySource } | null;
+      source = puzzle?.source ?? null;
     } catch (error) {
       deps.log.warn(
         { event: 'source.unparseable', lang, date, error: (error as Error).message },
@@ -97,7 +109,6 @@ export function createDaySourceReader(deps: DaySourceDeps): DaySourceReader {
       );
       return { source: null, retryAfter: now() + FAILURE_TTL_MS };
     }
-    const source = puzzle.source ?? null;
     // Never the author or the work: this is a log, and a log of what today's answer is
     // from would spoil the day for whoever reads it.
     deps.log.info({ event: 'source.loaded', lang, date, kind: source?.kind ?? null }, 'day source loaded');
@@ -115,17 +126,34 @@ export function createDaySourceReader(deps: DaySourceDeps): DaySourceReader {
       if (held && (held.retryAfter === undefined || held.retryAfter > now())) return held.source;
       const flight =
         flights.get(key) ??
-        load(lang, date).then((entry) => {
-          cache.set(key, entry);
-          flights.delete(key);
-          return entry;
-        });
+        load(lang, date)
+          // `load` answers rather than throwing, so this is the belt-and-braces path. It
+          // matters because a caller may now STOP WAITING (below) and leave nobody to
+          // catch: a rejected flight left in the map would poison that day for the process.
+          .catch((error: unknown) => {
+            deps.log.warn(
+              { event: 'source.failed', lang, date, error: (error as Error).message },
+              'the day did not load',
+            );
+            return { source: null, retryAfter: now() + FAILURE_TTL_MS } satisfies Entry;
+          })
+          .then((entry) => {
+            cache.set(key, entry);
+            flights.delete(key);
+            return entry;
+          });
       flights.set(key, flight);
+      // The reply does not wait on this past its budget. The flight is NOT cancelled — it
+      // finishes into the cache — so a cold first message answers without the source and
+      // every message after it has it.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const gaveUp = new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), WAIT_BUDGET_MS);
+      });
       try {
-        return (await flight).source;
-      } catch {
-        flights.delete(key);
-        return null;
+        return await Promise.race([flight.then((entry) => entry.source), gaveUp]);
+      } finally {
+        clearTimeout(timer);
       }
     },
   };

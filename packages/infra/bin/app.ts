@@ -85,6 +85,12 @@ new BotStack(app, 'WhippinBotStack', {
   llmProvider: app.node.tryGetContext('botLlmProvider') ?? undefined,
   llmModel: app.node.tryGetContext('botLlmModel') ?? undefined,
   siteOrigin: `https://${siteHost}`,
+  // The BACKEND the bot reads the day's source from. Mirrors the web stack's `apiOrigin`
+  // above, off the SAME domain knobs — passed rather than left to the stack's default,
+  // because a deploy with a custom domain would otherwise take its share-link pattern from
+  // this deploy and read its puzzles from production. Undefined in the no-domain smoke
+  // synth, where the stack's own default stands.
+  apiBaseUrl: domainName ? `https://${apiSubdomain}.${domainName}` : undefined,
   env,
 });
 

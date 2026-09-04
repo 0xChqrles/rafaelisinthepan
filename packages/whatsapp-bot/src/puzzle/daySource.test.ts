@@ -118,6 +118,19 @@ describe("the day's source is ambient context, not a tool (#236)", () => {
     const junk = reader([() => new Response('<html>', { status: 200 })]);
     expect(await junk.reader.get('fr', 20700, '2026-09-03')).toBeNull();
   });
+
+  it('a body that PARSES but is not an object is an answer, not a thrown error', async () => {
+    // `null`, `[]` and a bare string are all valid JSON, so the parse SUCCEEDS — and
+    // reading `.source` off `null` then throws. Outside the try that TypeError escaped the
+    // whole caching path, so a backend answering `200 null` was re-read at the rate the
+    // group talks. Read safely it is simply a day with no source: settled, quiet, one read.
+    for (const body of ['null', '[]', '"whippin"']) {
+      const r = reader([() => new Response(body, { status: 200 })]);
+      expect(await r.reader.get('fr', 20700, '2026-09-03')).toBeNull();
+      await r.reader.get('fr', 20700, '2026-09-03');
+      expect(r.fetchImpl).toHaveBeenCalledTimes(1);
+    }
+  });
 });
 
 describe('the KIND may be said; the author and the work may not', () => {
@@ -148,5 +161,52 @@ describe('the KIND may be said; the author and the work may not', () => {
     expect(facts({ kind: 'quote' })).toBe('kind: quote');
     expect(facts({ author: 'Victor Hugo' })).toBe('author: Victor Hugo');
     expect(facts({ kind: 'book', work: 'Les Misérables' })).toBe('kind: book, work: Les Misérables');
+  });
+});
+
+describe('a reply never waits on decoration (PR-247 review)', () => {
+  it('gives up waiting, then has the answer for the next message', async () => {
+    vi.useFakeTimers();
+    try {
+      let release: (v: Response) => void = () => {};
+      const slow = new Promise<Response>((resolve) => {
+        release = resolve;
+      });
+      const r = reader([() => slow]);
+
+      // The first question after a restart finds an empty cache and a multi-megabyte read.
+      // It answers without the source rather than putting that read in front of the model.
+      const first = r.reader.get('fr', 20700, '2026-09-03');
+      await vi.advanceTimersByTimeAsync(1_600);
+      expect(await first).toBeNull();
+
+      // The read was never abandoned: it lands, and the group's next message has it.
+      release(ok({ source: { kind: 'music', author: 'Bertrand Belin', work: 'Oiseau' } }));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(await r.reader.get('fr', 20700, '2026-09-03')).toEqual({
+        kind: 'music',
+        author: 'Bertrand Belin',
+        work: 'Oiseau',
+      });
+      expect(r.fetchImpl).toHaveBeenCalledTimes(1); // and it is not read a second time
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a rejected read does not poison the day for the process', async () => {
+    // `load` answers rather than throwing, so this is the path that only opens once a
+    // caller may stop waiting: nobody is left awaiting the flight to clean it up.
+    let clock = 1_000;
+    const r = reader(
+      [
+        () => Promise.reject(new Error('boom')),
+        () => ok({ source: { kind: 'poem' } }),
+      ],
+      () => clock,
+    );
+    expect(await r.reader.get('fr', 20700, '2026-09-03')).toBeNull();
+    clock += 6 * 60_000;
+    expect(await r.reader.get('fr', 20700, '2026-09-03')).toEqual({ kind: 'poem' });
   });
 });
