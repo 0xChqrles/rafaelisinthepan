@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { dayNumber, encodeResult } from '@whippin/shared';
+import { dayNumber, encodeResult, encodeWordResult } from '@whippin/shared';
 import { GroupRegistry, parseGroupConfig } from '../config/groupConfig';
 import { createLog } from '../log';
 import type { OutboundCommand } from '../outbound/commands';
@@ -121,7 +121,7 @@ describe('share ingestion (#236)', () => {
     expect(await ingest(message())).toBe('recorded');
     expect(comment).toHaveBeenCalledWith(
       expect.objectContaining({ id: GROUP }),
-      { player: 'Gab', score: 7, capped: false },
+      { mode: 'sentence', player: 'Gab', score: 7, capped: false },
     );
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({
@@ -442,5 +442,32 @@ describe('share ingestion (#236)', () => {
     expect(sent[0]).toMatchObject({ kind: 'message', text: 'Zou prend la tête avec 3.' });
     await ingest(message({ id: 'M3', timestamp: 1_002, text: `${ORIGIN}/s/${token(5)}` }));
     expect(sent).toHaveLength(1);
+  });
+
+  it('acknowledges a WORD share by its own ladder, and records nothing for it', async () => {
+    // The group has no Word podium yet (share.ts says why), so a Word result earns the
+    // acknowledgement and no row — the emoji, or the line when the group says so.
+    const wordToken = (counts: number[]) => encodeWordResult({ lang: 'fr', dayNumber: DAY, word: 'phare', counts });
+    const comment = vi.fn(async () => 'Vingt-six, joli.');
+    const { ingest, declarations, sent } = harness(registry({ acknowledge: 'say' }), { comment });
+    expect(await ingest(message({ text: `gg ${ORIGIN}/s/${wordToken([10, 8, 5, 2, 1])}` }))).toBe('acknowledged');
+    expect(comment).toHaveBeenCalledWith(expect.objectContaining({ id: GROUP }), { mode: 'word', player: 'Gab', claims: 26 });
+    expect(sent[0]).toMatchObject({ kind: 'message', id: `ack:${GROUP}:M1`, text: 'Vingt-six, joli.' });
+    expect(await declarations.day(GROUP, DAY)).toEqual([]);
+    // The emoji follows the Word ladder, not the sentence one: 26 found is brilliant.
+    const react = harness(registry());
+    expect(await react.ingest(message({ id: 'M2', text: `${ORIGIN}/s/${wordToken([10, 8, 5, 2, 1])}` }))).toBe('acknowledged');
+    expect(react.sent[0]).toMatchObject({ kind: 'reaction', emoji: '🔥' });
+    // Two word tokens: acknowledged for the best; another language: ignored entirely.
+    const both = harness(registry({ acknowledge: 'say' }), { comment: vi.fn(async () => 'x') });
+    await both.ingest(message({ id: 'M3', text: `${ORIGIN}/s/${wordToken([1, 0, 0, 0, 0])} ${ORIGIN}/s/${wordToken([3, 3, 0, 0, 0])}` }));
+    expect((both.sent[0] as { text: string }).text).toBe('x');
+    const en = harness(registry());
+    expect(await en.ingest(message({ id: 'M4', text: `${ORIGIN}/s/${encodeWordResult({ lang: 'en', dayNumber: DAY, word: 'beacon', counts: [5, 0, 0, 0, 0] })}` }))).toBe('no_share');
+    // A message carrying BOTH dailies is acknowledged for the sentence: that is the one on the podium.
+    const mixed = vi.fn(async () => 'y');
+    const two = harness(registry({ acknowledge: 'say' }), { comment: mixed });
+    expect(await two.ingest(message({ id: 'M5', text: `${ORIGIN}/s/${token(7)} ${ORIGIN}/s/${wordToken([9, 9, 9, 0, 0])}` }))).toBe('recorded');
+    expect(mixed).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ mode: 'sentence', score: 7 }));
   });
 });

@@ -13,7 +13,7 @@
 import { SQSClient } from '@aws-sdk/client-sqs';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { SSMClient } from '@aws-sdk/client-ssm';
-import { activeDate, dayNumber } from '@whippin/shared';
+import { activeDate, dateForDayNumber, dayNumber } from '@whippin/shared';
 import { botRegion, loadEnv } from './config/env';
 import { loadGroups, type GroupRegistry } from './config/groupConfig';
 import { parseDay } from './domain/day';
@@ -21,7 +21,8 @@ import { inLanguage, type DeclarationStore } from './domain/declarations';
 import { dynamoDeclarationStore } from './domain/dynamoDeclarationStore';
 import { nameResolver } from './domain/names';
 import { buildPodium } from './domain/podium';
-import { renderPodium, type Comments } from './domain/podiumText';
+import { renderPodium, renderReminder, type Comments } from './domain/podiumText';
+import { createDaySourceReader, type DaySourceReader } from './puzzle/daySource';
 import { createLlmProvider, type LlmProvider } from './llm';
 import { generatePodiumComments } from './llm/podiumComments';
 import { createLog, tag, type Log } from './log';
@@ -31,6 +32,11 @@ import { sqsOutboundQueue } from './outbound/sqs';
 export interface PodiumJobEvent {
   group: string;
   date?: string; // YYYY-MM-DD, for a manual replay
+  // What the schedule asked for: the evening PODIUM (absent, the original) or the morning
+  // REMINDER (user-decided 2026-09-05) — ONE Lambda, since both are "a schedule fires, one
+  // command lands on the queue", and a second function would be a second bundle to keep
+  // from breaking the way the first one did.
+  kind?: 'podium' | 'reminder';
 }
 
 export interface PodiumJobResult {
@@ -48,6 +54,46 @@ export interface PodiumJobDeps {
   provider: LlmProvider | null;
   log: Log;
   now?: () => Date;
+  // For the REMINDER: the link it carries, and the read that says whether there is a
+  // puzzle to link to at all. Absent (the podium-only tests), a reminder is skipped.
+  siteOrigin?: string;
+  daySource?: DaySourceReader;
+}
+
+// THE MORNING REMINDER. Skipped — never a bare link — when the day is not published, and
+// when the read that would say so failed: inviting a group to a 404 is the one thing this
+// must not do, and a morning with no reminder costs nothing. The scheduler's own retries
+// cover a Lambda that fails outright; a skip is a decision, not a failure.
+export async function runReminderJob(event: PodiumJobEvent, deps: PodiumJobDeps): Promise<PodiumJobResult> {
+  const now = deps.now ?? (() => new Date());
+  const group = deps.groups.get(event.group);
+  const day = event.date == null ? dayNumber(activeDate(now())) : parseDay(event.date);
+  const skipped = (dayNumber: number): PodiumJobResult => ({ outcome: 'skipped', group: event.group, dayNumber, lines: 0, comments: 0 });
+  if (day === null) {
+    deps.log.warn({ event: 'reminder.bad_date', group: tag(event.group) }, 'not a real calendar date; nothing posted');
+    return skipped(0);
+  }
+  if (!group || !group.reminder.enabled) {
+    deps.log.warn({ event: 'reminder.skipped', group: tag(event.group) }, 'group not configured for a reminder');
+    return skipped(day);
+  }
+  if (!deps.siteOrigin || !deps.daySource) {
+    deps.log.warn({ event: 'reminder.unwired', group: tag(group.id) }, 'no site or no day reader; nothing posted');
+    return skipped(day);
+  }
+  const read = await deps.daySource.read(group.language, day, dateForDayNumber(day));
+  if (!read || !read.published) {
+    deps.log.info({ event: read ? 'reminder.unpublished' : 'reminder.unread', group: tag(group.id), day }, 'no puzzle to point at; nothing posted');
+    return skipped(day);
+  }
+  await deps.outbound.enqueue({
+    id: commandIds.reminder(group.id, day),
+    kind: 'message',
+    group: group.id,
+    text: renderReminder(group.language, deps.siteOrigin, read.source?.kind ?? null, group.podium.enabled ? group.podium.time : null),
+  });
+  deps.log.info({ event: 'reminder.queued', group: tag(group.id), day }, 'reminder queued');
+  return { outcome: 'posted', group: group.id, dayNumber: day, lines: 0, comments: 0 };
 }
 
 export async function runPodiumJob(event: PodiumJobEvent, deps: PodiumJobDeps): Promise<PodiumJobResult> {
@@ -112,6 +158,8 @@ async function buildDeps(): Promise<PodiumJobDeps> {
     outbound: sqsOutboundQueue(new SQSClient({ region: botRegion() }), env.outboundQueueUrl),
     provider,
     log,
+    siteOrigin: env.siteOrigin,
+    daySource: createDaySourceReader({ apiBaseUrl: env.apiBaseUrl, log }),
   };
 }
 
@@ -122,5 +170,5 @@ export async function handler(event: PodiumJobEvent): Promise<PodiumJobResult> {
     deps = undefined;
     throw error;
   });
-  return runPodiumJob(event, await deps);
+  return (event.kind === 'reminder' ? runReminderJob : runPodiumJob)(event, await deps);
 }

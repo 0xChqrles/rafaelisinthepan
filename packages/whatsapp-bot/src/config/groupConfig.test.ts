@@ -165,4 +165,17 @@ describe('the snapshot directory (#236)', () => {
       expect((error as Error).message).not.toContain(valid.id);
     }
   });
+
+  it('reads the optional morning reminder: off by default, strict inside, the podium\'s zone unless told', () => {
+    expect(parseGroupConfig('g.json', valid).reminder).toEqual({ enabled: false, time: '09:00', timezone: 'Europe/Paris' });
+    expect(parseGroupConfig('g.json', { ...valid, reminder: { enabled: true, time: '08:30' } }).reminder).toEqual({
+      enabled: true,
+      time: '08:30',
+      timezone: 'Europe/Paris',
+    });
+    expect(parseGroupConfig('g.json', { ...valid, reminder: { enabled: true, time: '08:30', timezone: 'America/Montreal' } }).reminder.timezone).toBe('America/Montreal');
+    for (const reminder of [{ enabled: true }, { enabled: 'yes', time: '08:30' }, { enabled: true, time: '8h30' }, { enabled: true, time: '08:30', tz: 'Europe/Paris' }, { enabled: true, time: '08:30', timezone: 'Mars/Olympus' }]) {
+      expect(() => parseGroupConfig('g.json', { ...valid, reminder })).toThrow();
+    }
+  });
 });

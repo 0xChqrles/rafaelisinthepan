@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { dayNumber } from '@whippin/shared';
-import { dayLabel, joinNames, renderPodium } from './podiumText';
+import { dayLabel, joinNames, renderPodium, renderReminder } from './podiumText';
 
 const podium = {
   dayNumber: dayNumber('2026-09-01'),
@@ -52,5 +52,18 @@ describe('podium rendering (#236)', () => {
     );
     expect(dayLabel(dayNumber('2026-03-12'), 'fr')).toBe('12 mars 2026');
     expect(joinNames(['a', 'b', 'c'], 'en')).toBe('a, b and c');
+  });
+
+  it('renders the morning line: what is up, what kind of thing it is, when the podium lands, the link', () => {
+    expect(renderReminder('fr', 'https://whippin.ai', 'music', '22:30')).toBe(
+      "Le Whippin du jour est en ligne, c'est une chanson aujourd'hui. Podium à 22h30.\nhttps://whippin.ai",
+    );
+    expect(renderReminder('en', 'https://whippin.ai', 'book', '22:30')).toBe(
+      "Today's Whippin is up, it's a book today. Podium at 22:30.\nhttps://whippin.ai",
+    );
+    // No source kind, no podium: the line still says the one thing it exists to say.
+    expect(renderReminder('fr', 'https://whippin.ai', null, null)).toBe('Le Whippin du jour est en ligne.\nhttps://whippin.ai');
+    // An unknown kind (the set is open) is left unsaid rather than guessed at.
+    expect(renderReminder('en', 'https://whippin.ai', 'podcast', null)).toBe("Today's Whippin is up.\nhttps://whippin.ai");
   });
 });

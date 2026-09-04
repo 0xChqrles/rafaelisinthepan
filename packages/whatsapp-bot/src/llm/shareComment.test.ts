@@ -1,12 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { dayNumber } from '@whippin/shared';
 import { parseGroupConfig } from '../config/groupConfig';
 import { createLog } from '../log';
 import { LlmUnavailable, type LlmProvider, type LlmResponse } from './types';
 import { generateShareComment } from './shareComment';
 
 const GROUP = '120363000000000001@g.us';
-const DAY = dayNumber('2026-09-04');
 const group = parseGroupConfig('g.json', {
   id: GROUP,
   name: 'g',
@@ -16,7 +14,7 @@ const group = parseGroupConfig('g.json', {
   chat: { enabled: true, prePrompt: 'On se chambre.' },
   acknowledge: 'say',
 });
-const facts = { player: 'Gab', score: 7, capped: false, dayNumber: DAY };
+const facts = { mode: 'sentence' as const, player: 'Gab', score: 7, capped: false };
 
 function provider(steps: (Partial<LlmResponse> | Error)[]): { provider: LlmProvider; calls: unknown[] } {
   const calls: unknown[] = [];
@@ -126,5 +124,16 @@ describe('the spoken acknowledgement of a share (#236)', () => {
       const p = provider([{ text }, { text }]);
       expect(await generateShareComment(p.provider, group, facts, log)).toBeNull();
     }
+  });
+
+  it('tells the model a WORD result by its own rules: found words, more is better, never the word', async () => {
+    const p = provider([{ text: 'Vingt-six, joli.' }]);
+    expect(await generateShareComment(p.provider, group, { mode: 'word', player: 'Gab', claims: 26 }, log)).toBe('Vingt-six, joli.');
+    const sent = JSON.parse((p.calls[0] as { messages: { content: string }[] }).messages[0].content);
+    expect(sent).toEqual({ player: 'Gab', found: 26, verdict: 'brilliant' });
+    const system = (p.calls[0] as { system: string }).system;
+    expect(system).toContain('WORD MODE');
+    expect(system).toContain('MORE is better');
+    expect(system).not.toContain('Three is the lowest');
   });
 });

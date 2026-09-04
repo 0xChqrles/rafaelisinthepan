@@ -8,6 +8,10 @@
     "time": "22:00",
     "timezone": "Europe/Paris"
   },
+  "reminder": {
+    "enabled": false,
+    "time": "09:00"
+  },
   "chat": {
     "enabled": true,
     "name": "WhippinBot",

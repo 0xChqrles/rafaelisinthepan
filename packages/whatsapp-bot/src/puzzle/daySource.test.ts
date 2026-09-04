@@ -226,4 +226,21 @@ describe('a reply never waits on decoration (PR-247 review)', () => {
     clock += 6 * 60_000;
     expect(await r.reader.get('fr', 20700, '2026-09-03')).toEqual({ kind: 'poem' });
   });
+
+});
+
+describe('the whole answer, waited for (the reminder)', () => {
+  it('says whether the day is published, and null for a read that failed', async () => {
+    const published = reader([() => ok({ lang: 'fr', source: { kind: 'music' } })]);
+    expect(await published.reader.read('fr', 20700, '2026-09-04')).toEqual({ published: true, source: { kind: 'music' } });
+    const bare = reader([() => ok({ lang: 'fr' })]);
+    expect(await bare.reader.read('fr', 20700, '2026-09-04')).toEqual({ published: true, source: null });
+    const missing = reader([() => new Response('', { status: 404 })]);
+    expect(await missing.reader.read('fr', 20700, '2026-09-04')).toEqual({ published: false, source: null });
+    const down = reader([() => new Response('', { status: 503 })]);
+    expect(await down.reader.read('fr', 20700, '2026-09-04')).toBeNull();
+    // And it shares the cache with `get`: one read serves both.
+    expect(await published.reader.get('fr', 20700, '2026-09-04')).toEqual({ kind: 'music' });
+    expect(published.fetchImpl).toHaveBeenCalledTimes(1);
+  });
 });
