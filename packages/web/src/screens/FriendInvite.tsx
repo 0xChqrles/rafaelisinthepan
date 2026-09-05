@@ -254,6 +254,10 @@ export default function FriendInvite({
     // a stranger and learn it is signed out only when it taps. Any other refusal, and any
     // failure, shows the landing: the skip is a courtesy, never a gate.
     const epoch = identityEpoch();
+    if (epoch === null) {
+      setSkip(false);
+      return undefined;
+    }
     let cancelled = false;
     (async () => {
       try {
