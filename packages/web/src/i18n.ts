@@ -367,6 +367,10 @@ const STRINGS = {
   // public — on the board already).
   wordRepeat: { en: 'already played', fr: 'déjà joué' },
   wordItself: { en: "that's the word itself", fr: "c'est le mot lui-même" },
+  // The run's end, said ON THE CLOCK in place of its dead `0.0` (#175): the clock is what
+  // ended the run, so it is the surface that says so. Uppercase like MISS — a statement
+  // in the game's own pixel voice, not chrome.
+  wordTimeUp: { en: 'TIME UP', fr: 'TEMPS ÉCOULÉ' },
   // The pre-run GATE (#163): the timer needs a start control anyway, and the control is
   // where the rules belong — so this screen is also where a first-time player learns the
   // game. TWO sentences, one idea each: what to do, and what buys more of it. Terse, in

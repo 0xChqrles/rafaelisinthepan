@@ -320,6 +320,7 @@ function WordRound({
       // The typed guess, the strike in the air and the seconds it bought belong to that run
       // too: a fresh run must open on an empty prompt, not on the dead one's last word.
       setInput('');
+      setFeedback(null);
       setHit(null);
       setGain(null);
       return undefined;
@@ -367,10 +368,17 @@ function WordRound({
 
   const [input, setInput] = useState('');
   const [invalidAt, setInvalidAt] = useState(0);
+  // The message line under the prompt (#175) — the sentence game's own feedback line, in
+  // the same place: info about WHAT YOU TYPED. A repeat, a non-word and the day's word
+  // itself are FREE non-events (no count, no log entry — unchanged), but on a clock a
+  // non-event with nothing on screen reads as a dropped keystroke, and the natural
+  // reaction is to type the word again. Until #175 all three spoke only to the sr live
+  // region. Cleared by the next edit, like the sentence game's.
+  const [feedback, setFeedback] = useState<string | null>(null);
 
   // The feedback on the day's word: every counted guess reports there — its RARITY GRADE,
-  // or MISS. Free guesses (repeats, invalid words, the day's word itself) change no state
-  // and show nothing, exactly as they float nothing in the sentence game.
+  // or MISS. Free guesses change no state and float nothing on the word, exactly as they
+  // float nothing in the sentence game; they speak on the prompt's line instead.
   const [hit, setHit] = useState<WordHit | null>(null);
   const hitId = useRef(0);
   // When the label currently on screen goes. The ending's first beat waits for it (see
@@ -448,9 +456,12 @@ function WordRound({
   // current input rather than from inside a `setInput` updater — an updater has to be pure
   // (React runs it twice under StrictMode and may re-run it while rendering), and the
   // sentence game's own appendChar is written exactly this way.
+  // Every edit clears the prompt's message line, the sentence game's own rule: the line is
+  // about the word that was submitted, and the player has moved on from it.
   const appendChar = useCallback(
     (char: string) => {
       if (!playing) return;
+      setFeedback(null);
       if (canExtend(prefixSet, input, char)) setInput(input + char);
       else setInvalidAt(Date.now());
     },
@@ -459,12 +470,14 @@ function WordRound({
 
   const deleteChar = useCallback(() => {
     if (!playing) return;
+    setFeedback(null);
     setInput((cur) => cur.slice(0, -1));
   }, [playing]);
 
   const replaceInput = useCallback(
     (v: string) => {
       if (!playing) return;
+      setFeedback(null);
       setInput(v);
     },
     [playing],
@@ -480,28 +493,40 @@ function WordRound({
       }
 
       // Existence is decided by the fixed vocabulary, never by the rank map. Invalid is
-      // FREE — shake + message — and the timer is what charges for it: the seconds it
-      // took to type. That is the whole of what the strike system used to legislate.
+      // FREE — shake + a visible message (#175; it was sr-only here where the sentence
+      // game showed it) — and the timer is what charges for it: the seconds it took to
+      // type. That is the whole of what the strike system used to legislate. The word is
+      // KEPT, so a typo can be corrected.
       if (!vocabSet.has(typed)) {
         setInvalidAt(Date.now());
+        setFeedback(t(lang, 'notAWord'));
         say(t(lang, 'notAWord'));
         return;
       }
 
       setInput('');
+      setFeedback(null);
 
       // Repeats are FREE, deduped at GROUP level (#104): an inflection or accent alias
       // of an already-counted guess shares its group's rank, so it never re-counts —
-      // and never enters the persisted log.
+      // and never enters the persisted log. It SAYS so and SHAKES (#175): this was the
+      // single worst first-timer stumble in the mode — the prompt cleared and nothing
+      // else moved, so the word looked eaten and got typed again. The prompt still
+      // clears (unlike a typo there is nothing to correct, and on a clock a ten-letter
+      // repeat must not cost ten backspaces), so it is the empty line that shakes.
       const key = wordGuessKey(ranks, typed);
       if (tried.some((prev) => wordGuessKey(ranks, prev) === key)) {
+        setInvalidAt(Date.now());
+        setFeedback(t(lang, 'wordRepeat'));
         say(t(lang, 'wordRepeat'));
         return;
       }
 
       const judged = judgeWordGuess(ranks, typed);
-      // The day's word itself is public — typing it is free, not a claim.
+      // The day's word itself is public — typing it is free, not a claim. Said on the
+      // line (#175), no shake: nothing was wrong, it just counts for nothing.
       if (judged.kind === 'zero') {
+        setFeedback(t(lang, 'wordItself'));
         say(t(lang, 'wordItself'));
         return;
       }
@@ -522,7 +547,10 @@ function WordRound({
       // timer types in — where this handler still runs and the store correctly refuses.
       // Showing the feedback anyway would float a grade, pay a `+21s` gain and announce
       // "claimed …" for a find the run never took. The store checks the real clock at the
-      // instant of the write, and this defers to it.
+      // instant of the write, and this defers to it. The guess is not SILENTLY dropped
+      // either (#175): the clock lands on TIME UP in the same beat (`WordTimer`), which
+      // is what tells "the run ended" apart from "the app ate my Enter" — the refused
+      // guess itself still gets no grade, no bonus and no announcement.
       if (!landed) return;
 
       // This render's own view of the same walk, for the feedback THIS guess speaks.
@@ -612,10 +640,13 @@ function WordRound({
         {/* The SCORE watermark, anchored on the word rather than the viewport — the
             standing rule for this number, and the mode's own reading of it: the count is
             what the end screen will name, so during the run it is the thing behind
-            everything. It goes with the reveal: the board is what fills that space then,
-            and the tray states the count for real. */}
+            everything. It goes with the REVEAL, not with the clock (#175): it used to
+            unmount the frame the clock died in, so for the whole ending hold the screen
+            showed LESS than a second earlier. Now it stands through the hold — under the
+            clock's TIME UP — until the board takes its place and the tray states the
+            count for real: the number hands off, it does not vanish. */}
         <div className="word-anchor">
-          {playing && (
+          {underway && !postMortem && (
             <div className="progress-background" aria-hidden="true">
               <CellDigits value={score} />
             </div>
@@ -631,7 +662,11 @@ function WordRound({
                   right where the playing eye lives — idle preview on the gate, live
                   countdown during the run; the post-mortem needs no clock at all. */}
               <div className="word-clock">
-                <WordTimer lang={lang} deadline={deadline} gain={gain} />
+                {/* The GATE previews an idle clock whatever this device still holds:
+                    a stale local deadline (a run started elsewhere, #217) is not a run
+                    this screen is timing, and now that a spent clock SAYS the run is
+                    over (#175) it must never say so over the offer to start one. */}
+                <WordTimer lang={lang} deadline={underway ? deadline : null} gain={gain} />
               </div>
             </>
           )}
@@ -710,6 +745,11 @@ function WordRound({
                   invalidSignal={invalidAt}
                   active={playing}
                 />
+                {/* The message line (#175): the sentence game's own, in its own place —
+                    what the last submit was, when it counted for nothing. Its box is
+                    reserved (`.hint`'s min-height), so a message arriving moves nothing;
+                    `.input-area.word-prompt`'s seam was already sized for it. */}
+                <p className="hint">{feedback || ' '}</p>
               </div>
 
               <div className={`tray${keyboardLeaving ? ' kb-leaving' : ''}`}>
