@@ -338,7 +338,8 @@ describe('the bot knows its own schedule in this group (user-decided 2026-09-05)
       name: 'g',
       language: 'fr',
       enabled: true,
-      podium: { enabled: false, time: '22:00', timezone: 'Europe/Paris' },
+      timezone: 'Europe/Paris',
+      podium: { enabled: false, time: '22:00' },
       reminder: { enabled: true, time: '08:30' },
       chat: { enabled: true },
     });
