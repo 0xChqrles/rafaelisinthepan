@@ -113,7 +113,13 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   grow its own, and a group lives in one place — so every scheduled message is a
   wall-clock time in the one zone, and a `timezone` on `podium` or `reminder` is refused as
   the unknown field it now is. Existing SSM configs carry the old shape and must be pushed
-  in the new one before the deploy that follows this change, or its `pull` refuses them. It rides the podium's own path — a per-group EventBridge schedule, the SAME
+  in the new one before the deploy that follows this change, or its `pull` refuses them.
+  **And a scheduled message asks for a `time` only when it is ON** (user-decided
+  2026-09-05, `groupConfig.ts` `parseScheduled`, one reading for `podium` and `reminder`):
+  a disabled block needs none and may keep one, so switching it back on is one flag; a
+  time that IS present is validated wherever it sits. The parsed shape says the same —
+  `{enabled: false} | {enabled: true, time}` — so no reader can reach a time nobody will
+  fire at. It rides the podium's own path — a per-group EventBridge schedule, the SAME
   Lambda told `kind: "reminder"`, one `reminder:<group>:<day>` command on the queue, so a
   retried schedule can never post it twice — because a second function would be a second
   bundle to keep from breaking the way the first one did. DETERMINISTIC text

@@ -25,22 +25,22 @@ import { NAME_MAX_CHARS, isBoundName } from '../domain/names';
 
 export type GroupLanguage = 'en' | 'fr';
 
-export interface PodiumConfig {
-  enabled: boolean;
-  // Local wall-clock "HH:MM" in the GROUP's `timezone` — a SOCIAL convention of the group
-  // (a Paris group follows French DST), which is why it is not the Whippin reset. The
-  // Whippin day the podium ranks is still the shared day contract's (`activeDate` at the
-  // fire instant).
-  time: string;
-}
+// A SCHEDULED MESSAGE IS ON OR OFF, AND ONLY ON HAS A TIME (user-decided 2026-09-05): a
+// disabled podium needs no `time`, so the type does not ask for one — every reader gates on
+// `enabled` first and the narrowing hands it the time only where one exists.
+//
+// `time` is a local wall-clock "HH:MM" in the GROUP's `timezone` — a SOCIAL convention of
+// the group (a Paris group follows French DST), which is why it is not the Whippin reset.
+// The Whippin day the podium ranks is still the shared day contract's (`activeDate` at the
+// fire instant).
+export type Scheduled = { enabled: false } | { enabled: true; time: string };
+
+export type PodiumConfig = Scheduled;
 
 // The MORNING REMINDER (user-decided 2026-09-05): one line with the link when the day's
 // puzzle is up, at a local time of the group's own — off by default, because a daily ping is
 // a thing a group opts into. Same time semantics as the podium, in the same zone.
-export interface ReminderConfig {
-  enabled: boolean;
-  time: string;
-}
+export type ReminderConfig = Scheduled;
 
 export interface ChatConfig {
   enabled: boolean;
@@ -120,6 +120,21 @@ function timezoneIsValid(tz: string): boolean {
 // the ones with DEFAULTS, so a typo there is the case that silently un-configures a group
 // — a pre-prompt that never reaches the model, a ceiling back at ten a day — while a
 // mistyped top-level key mostly loses a whole object the parser then refuses anyway.
+// ONE reading for both scheduled messages. `time` is REQUIRED when enabled and OPTIONAL
+// when not — a disabled block may keep the time it had, so switching it back on is one
+// flag, but nothing asks for a time nobody will fire at. Present, it is validated either
+// way: a malformed time is a mistake wherever it sits.
+function parseScheduled(file: string, name: string, raw: Record<string, unknown>): Scheduled {
+  refuseUnknown(file, `${name}.`, raw, ['enabled', 'time']);
+  if (typeof raw.enabled !== 'boolean') fail(file, `"${name}.enabled" must be a boolean`);
+  if (raw.time !== undefined && (typeof raw.time !== 'string' || !TIME.test(raw.time))) {
+    fail(file, `"${name}.time" must be "HH:MM"`);
+  }
+  if (!raw.enabled) return { enabled: false };
+  if (typeof raw.time !== 'string') fail(file, `"${name}.time" is required when "${name}.enabled" is true`);
+  return { enabled: true, time: raw.time };
+}
+
 function refuseUnknown(file: string, where: string, raw: Record<string, unknown>, known: readonly string[]): void {
   const allowed = new Set(known);
   for (const key of Object.keys(raw)) {
@@ -161,23 +176,13 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
   }
 
   if (!isRecord(podium)) fail(file, '"podium" must be an object');
-  refuseUnknown(file, 'podium.', podium, ['enabled', 'time']);
-  if (typeof podium.enabled !== 'boolean') fail(file, '"podium.enabled" must be a boolean');
-  if (typeof podium.time !== 'string' || !TIME.test(podium.time)) {
-    fail(file, '"podium.time" must be "HH:MM"');
-  }
+  const podiumConfig = parseScheduled(file, 'podium', podium);
 
-  // Optional as a BLOCK (absent = off), strict inside it: `time` is required once the block
-  // exists.
-  let reminderConfig: ReminderConfig = { enabled: false, time: '09:00' };
+  // Optional as a BLOCK (absent = off), strict inside it.
+  let reminderConfig: ReminderConfig = { enabled: false };
   if (reminder !== undefined) {
     if (!isRecord(reminder)) fail(file, '"reminder" must be an object');
-    refuseUnknown(file, 'reminder.', reminder, ['enabled', 'time']);
-    if (typeof reminder.enabled !== 'boolean') fail(file, '"reminder.enabled" must be a boolean');
-    if (typeof reminder.time !== 'string' || !TIME.test(reminder.time)) {
-      fail(file, '"reminder.time" must be "HH:MM"');
-    }
-    reminderConfig = { enabled: reminder.enabled, time: reminder.time };
+    reminderConfig = parseScheduled(file, 'reminder', reminder);
   }
 
   if (!isRecord(chat)) fail(file, '"chat" must be an object');
@@ -245,7 +250,7 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
     language: language as GroupLanguage,
     enabled,
     timezone,
-    podium: { enabled: podium.enabled, time: podium.time },
+    podium: podiumConfig,
     reminder: reminderConfig,
     chat: {
       enabled: chat.enabled,

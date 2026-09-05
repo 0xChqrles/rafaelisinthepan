@@ -169,7 +169,7 @@ describe('the snapshot directory (#236)', () => {
   });
 
   it('reads the optional morning reminder: off by default, strict inside, in the GROUP\'s zone', () => {
-    expect(parseGroupConfig('g.json', valid).reminder).toEqual({ enabled: false, time: '09:00' });
+    expect(parseGroupConfig('g.json', valid).reminder).toEqual({ enabled: false });
     expect(parseGroupConfig('g.json', { ...valid, reminder: { enabled: true, time: '08:30' } }).reminder).toEqual({
       enabled: true,
       time: '08:30',
@@ -178,5 +178,16 @@ describe('the snapshot directory (#236)', () => {
     for (const reminder of [{ enabled: true }, { enabled: 'yes', time: '08:30' }, { enabled: true, time: '8h30' }, { enabled: true, time: '08:30', tz: 'Europe/Paris' }, { enabled: true, time: '08:30', timezone: 'Europe/Paris' }]) {
       expect(() => parseGroupConfig('g.json', { ...valid, reminder })).toThrow();
     }
+  });
+
+  it('asks for a time only when the message is ON (user-decided 2026-09-05)', () => {
+    // Off needs no time; off may keep one (switching back on is one flag); on must have one;
+    // and a time that is present is validated wherever it sits.
+    expect(parseGroupConfig('g.json', { ...valid, podium: { enabled: false } }).podium).toEqual({ enabled: false });
+    expect(parseGroupConfig('g.json', { ...valid, podium: { enabled: false, time: '22:00' } }).podium).toEqual({ enabled: false });
+    expect(parseGroupConfig('g.json', { ...valid, reminder: { enabled: false } }).reminder).toEqual({ enabled: false });
+    expect(() => parseGroupConfig('g.json', { ...valid, podium: { enabled: true } })).toThrow(/podium\.time.*required/);
+    expect(() => parseGroupConfig('g.json', { ...valid, podium: { enabled: false, time: '22h' } })).toThrow(/HH:MM/);
+    expect(() => parseGroupConfig('g.json', { ...valid, reminder: { enabled: false, time: 'soon' } })).toThrow(/HH:MM/);
   });
 });
