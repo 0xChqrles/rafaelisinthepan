@@ -423,13 +423,18 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   rule's example put "suer" in front of the model, and the next podium told almost everybody
   they had sweated. The example now reads "elle t'a eu" — nothing in it a line can borrow —
   and the rule for any future example is the same: no word in an example that would be
-  wrong in a comment. **And ONE WORD, ONCE PER PODIUM** (`podiumComments.ts` `dropEchoes`):
+  wrong in a comment. **It happened again with "tu l'as sorti" (v7, user-reported
+  2026-09-05):** the speak-to-people rule illustrated itself with a complete comment, and
+  the bot said "tu l'as bien sortie" to everybody. That example is now a bare SHAPE
+  ("tu …", never "elle …"), the global rule says outright that an example is a shape and
+  never a line to reuse, and the audit is simple: no example in any prompt may be a
+  sentence a comment could be. **And ONE WORD, ONCE PER PODIUM** (`podiumComments.ts` `dropEchoes`):
   the lines are written apart and in parallel, so the prompt's plea for variety cannot see
   the other lines; the post-pass can. Read top to bottom, a comment repeating a DISTINCTIVE
   word an earlier one used (six letters or more once folded, not a podium name, not the
   game's own vocabulary) is dropped and its line goes bare — which the renderer prints.
-  **AND IT SPEAKS TO PEOPLE, NOT ABOUT THEM** — "tu as bien galéré, mais tu l'as sorti",
-  never "elle a bien galéré", and "vous" on a podium line holding more than one name (which
+  **AND IT SPEAKS TO PEOPLE, NOT ABOUT THEM** — "tu …" to the person, never "elle …" about
+  them, and "vous" on a podium line holding more than one name (which
   is also what stopped shared lines coming back empty: the model had no way to address two
   people and wrote nothing). What did NOT change is the craft that removed the cringe: short,
   plain, no emoji, no exclamation marks, no rhetorical questions, no deduction narrated.
