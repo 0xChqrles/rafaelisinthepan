@@ -3,10 +3,10 @@
   "name": "Example group",
   "language": "fr",
   "enabled": false,
+  "timezone": "Europe/Paris",
   "podium": {
     "enabled": true,
-    "time": "22:00",
-    "timezone": "Europe/Paris"
+    "time": "22:00"
   },
   "reminder": {
     "enabled": false,

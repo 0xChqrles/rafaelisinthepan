@@ -336,18 +336,18 @@ export class BotStack extends Stack {
       if (group.podium.enabled) {
         daily(
           `Podium${scheduleId(group)}`,
-          `Whippin podium for ${group.name} at ${group.podium.time} ${group.podium.timezone}`,
+          `Whippin podium for ${group.name} at ${group.podium.time} ${group.timezone}`,
           group.podium.time,
-          group.podium.timezone,
+          group.timezone,
           { group: group.id },
         );
       }
       if (group.reminder.enabled) {
         daily(
           `Reminder${scheduleId(group)}`,
-          `Whippin reminder for ${group.name} at ${group.reminder.time} ${group.reminder.timezone}`,
+          `Whippin reminder for ${group.name} at ${group.reminder.time} ${group.timezone}`,
           group.reminder.time,
-          group.reminder.timezone,
+          group.timezone,
           { group: group.id, kind: 'reminder' },
         );
       }
@@ -492,7 +492,7 @@ export class BotStack extends Stack {
     });
     new CfnOutput(this, 'AlertsTopicArn', { value: topic.topicArn });
     new CfnOutput(this, 'ConfiguredGroups', {
-      value: groups.map((g) => `${g.name} (${g.language}${g.podium.enabled ? `, podium ${g.podium.time} ${g.podium.timezone}` : ''})`).join('; ') || 'none',
+      value: groups.map((g) => `${g.name} (${g.language}${g.podium.enabled ? `, podium ${g.podium.time} ${g.timezone}` : ''})`).join('; ') || 'none',
     });
     void Aws.REGION;
   }

@@ -27,20 +27,19 @@ export type GroupLanguage = 'en' | 'fr';
 
 export interface PodiumConfig {
   enabled: boolean;
-  // Local wall-clock "HH:MM" in `timezone` — a SOCIAL convention of the group (a Paris group
-  // follows French DST), which is why it is not the Whippin reset. The Whippin day the
-  // podium ranks is still the shared day contract's (`activeDate` at the fire instant).
+  // Local wall-clock "HH:MM" in the GROUP's `timezone` — a SOCIAL convention of the group
+  // (a Paris group follows French DST), which is why it is not the Whippin reset. The
+  // Whippin day the podium ranks is still the shared day contract's (`activeDate` at the
+  // fire instant).
   time: string;
-  timezone: string;
 }
 
 // The MORNING REMINDER (user-decided 2026-09-05): one line with the link when the day's
 // puzzle is up, at a local time of the group's own — off by default, because a daily ping is
-// a thing a group opts into. Same time semantics as the podium.
+// a thing a group opts into. Same time semantics as the podium, in the same zone.
 export interface ReminderConfig {
   enabled: boolean;
   time: string;
-  timezone: string;
 }
 
 export interface ChatConfig {
@@ -58,6 +57,10 @@ export interface GroupConfig {
   name: string;
   language: GroupLanguage;
   enabled: boolean;
+  // THE GROUP'S ONE TIME ZONE (user-decided 2026-09-05): every scheduled message — the
+  // podium, the reminder — is a wall-clock time in it. It lived on `podium` until then, and
+  // the reminder was about to grow its own; a group lives in one place, so it is stated once.
+  timezone: string;
   podium: PodiumConfig;
   reminder: ReminderConfig;
   chat: ChatConfig;
@@ -134,6 +137,7 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
     'name',
     'language',
     'enabled',
+    'timezone',
     'podium',
     'reminder',
     'chat',
@@ -141,7 +145,7 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
     'leaderAnnouncements',
     'names',
   ]);
-  const { id, name, language, enabled, podium, reminder, chat, acknowledge, leaderAnnouncements, names } =
+  const { id, name, language, enabled, timezone, podium, reminder, chat, acknowledge, leaderAnnouncements, names } =
     raw;
   if (typeof id !== 'string' || !GROUP_JID.test(id)) fail(file, '"id" must be a group JID');
   if (id === PLACEHOLDER_GROUP_JID) {
@@ -152,32 +156,28 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
     fail(file, `"language" must be one of ${LANGUAGES.join(', ')}`);
   }
   if (typeof enabled !== 'boolean') fail(file, '"enabled" must be a boolean');
+  if (typeof timezone !== 'string' || !timezoneIsValid(timezone)) {
+    fail(file, '"timezone" must be an IANA time zone');
+  }
 
   if (!isRecord(podium)) fail(file, '"podium" must be an object');
-  refuseUnknown(file, 'podium.', podium, ['enabled', 'time', 'timezone']);
+  refuseUnknown(file, 'podium.', podium, ['enabled', 'time']);
   if (typeof podium.enabled !== 'boolean') fail(file, '"podium.enabled" must be a boolean');
   if (typeof podium.time !== 'string' || !TIME.test(podium.time)) {
     fail(file, '"podium.time" must be "HH:MM"');
   }
-  if (typeof podium.timezone !== 'string' || !timezoneIsValid(podium.timezone)) {
-    fail(file, '"podium.timezone" must be an IANA time zone');
-  }
 
   // Optional as a BLOCK (absent = off), strict inside it: `time` is required once the block
-  // exists, the zone defaults to the podium's — one group lives in one place.
-  let reminderConfig: ReminderConfig = { enabled: false, time: '09:00', timezone: podium.timezone };
+  // exists.
+  let reminderConfig: ReminderConfig = { enabled: false, time: '09:00' };
   if (reminder !== undefined) {
     if (!isRecord(reminder)) fail(file, '"reminder" must be an object');
-    refuseUnknown(file, 'reminder.', reminder, ['enabled', 'time', 'timezone']);
+    refuseUnknown(file, 'reminder.', reminder, ['enabled', 'time']);
     if (typeof reminder.enabled !== 'boolean') fail(file, '"reminder.enabled" must be a boolean');
     if (typeof reminder.time !== 'string' || !TIME.test(reminder.time)) {
       fail(file, '"reminder.time" must be "HH:MM"');
     }
-    const timezone = reminder.timezone ?? podium.timezone;
-    if (typeof timezone !== 'string' || !timezoneIsValid(timezone)) {
-      fail(file, '"reminder.timezone" must be an IANA time zone');
-    }
-    reminderConfig = { enabled: reminder.enabled, time: reminder.time, timezone };
+    reminderConfig = { enabled: reminder.enabled, time: reminder.time };
   }
 
   if (!isRecord(chat)) fail(file, '"chat" must be an object');
@@ -244,7 +244,8 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
     name: name.trim(),
     language: language as GroupLanguage,
     enabled,
-    podium: { enabled: podium.enabled, time: podium.time, timezone: podium.timezone },
+    timezone,
+    podium: { enabled: podium.enabled, time: podium.time },
     reminder: reminderConfig,
     chat: {
       enabled: chat.enabled,
