@@ -6677,6 +6677,15 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   letter-spacing: 0.06em;
   color: var(--solve);
 }
+/* The date, in the CARD's own face (user-decided 2026-09-05: "the same font for the date on
+   the og preview and the score screen"), a little clear of the bar's own lane. */
+.invite-result-date {
+  margin-top: 8px;
+  font-family: var(--pixel-font);
+  font-size: 12px;
+  line-height: 1;
+  color: var(--muted);
+}
 
 /* ---- The signed-out screen (#216, reshaped 2026-08-26 on user feedback: the
    sentence-only frame was hard to understand). The invite landing's own shape — the

@@ -172,47 +172,48 @@ export function landingAfter(shared: SharedResult | null): string {
     : `/${shared.result.lang}/${date}`;
 }
 
-// The shared result, drawn IN THE RESULT SCREENS' OWN DRESS (`.solved-score`: the pixel
-// number over its named unit — lower is better on the sentence, higher on the word, and
-// the unit is what tells a stranger which; user feedback 2026-09-05, the first cut set it
-// in the chrome face and "the layout seems broken"), the run ruler for a sentence, the
-// day's word for the word game, and the calendar date. Settled, replaying nothing: this is
-// someone else's finished round. A capped round prints the literal `∞` — this is ordinary
-// text in the unit's own face, not the pixel number the result screen draws from path data.
+// The shared result, drawn IN THE RESULT SCREENS' OWN DRESS: ONE template for both modes
+// (user-decided 2026-09-05) — the number over its NAMED unit (`.solved-score`: lower is
+// better on the sentence, higher on the word, and the unit is what tells a stranger which),
+// the mode's VISUAL under it (the run ruler for a sentence, the rarity bar for a word), and
+// the calendar date in the card's own pixel face. What differs by mode is exactly three
+// values — a headline (the day's word, sentence has none), the number's unit, the visual —
+// so it is three values, not two layouts. Settled, replaying nothing: this is someone
+// else's finished round. A capped round prints the literal `∞` — ordinary text in the
+// unit's own face, not the pixel number the result screen draws from path data.
 function SharedResultBlock({ shared, lang }: { shared: SharedResult; lang: string }) {
-  if (shared.mode === 'sentence') {
-    const { score, capped, trajectory, solvedAt, dayNumber } = shared.result;
-    const unit = t(lang, !capped && score === 1 ? 'try' : 'tries');
-    return (
-      <div className="invite-result">
-        <span className="solved-score">
-          <span className="solved-score-num">{capped ? '∞' : score}</span>
-          <span className="solved-score-unit">{unit}</span>
-        </span>
-        <div className="run-ruler-frame" aria-hidden="true">
-          <RunRuler
-            trajectory={trajectory}
-            solvedAt={capped ? [] : solvedAt}
-            stagger={rulerStagger(1)}
-            shown
-            colorized
-          />
-        </div>
-        <span className="invite-done-line">{dateForDayNumber(dayNumber)}</span>
+  const { result } = shared;
+  const headline =
+    shared.mode === 'word' ? shared.result.word.toLocaleUpperCase(shared.result.lang) : null;
+  const score = shared.mode === 'word' ? wordShareScore(shared.result.counts) : shared.result.score;
+  const capped = shared.mode === 'sentence' && shared.result.capped === true;
+  const unit =
+    shared.mode === 'word'
+      ? t(lang, score === 1 ? 'foundWord' : 'foundWords')
+      : t(lang, !capped && score === 1 ? 'try' : 'tries');
+  const visual =
+    shared.mode === 'word' ? (
+      <WordRarityBar counts={shared.result.counts} lang={lang} />
+    ) : (
+      <div className="run-ruler-frame" aria-hidden="true">
+        <RunRuler
+          trajectory={shared.result.trajectory}
+          solvedAt={capped ? [] : shared.result.solvedAt}
+          stagger={rulerStagger(1)}
+          shown
+          colorized
+        />
       </div>
     );
-  }
-  const { counts, word, dayNumber } = shared.result;
-  const score = wordShareScore(counts);
   return (
     <div className="invite-result">
-      <span className="invite-result-word">{word.toLocaleUpperCase(shared.result.lang)}</span>
+      {headline !== null && <span className="invite-result-word">{headline}</span>}
       <span className="solved-score">
-        <span className="solved-score-num">{score}</span>
-        <span className="solved-score-unit">{t(lang, score === 1 ? 'foundWord' : 'foundWords')}</span>
+        <span className="solved-score-num">{capped ? '∞' : score}</span>
+        <span className="solved-score-unit">{unit}</span>
       </span>
-      <WordRarityBar counts={counts} lang={lang} />
-      <span className="invite-done-line">{dateForDayNumber(dayNumber)}</span>
+      {visual}
+      <span className="invite-result-date">{dateForDayNumber(result.dayNumber)}</span>
     </div>
   );
 }
