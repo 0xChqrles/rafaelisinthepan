@@ -183,8 +183,9 @@ export function landingAfter(shared: SharedResult | null): string {
 // unit's own face, not the pixel number the result screen draws from path data.
 function SharedResultBlock({ shared, lang }: { shared: SharedResult; lang: string }) {
   const { result } = shared;
-  const headline =
-    shared.mode === 'word' ? shared.result.word.toLocaleUpperCase(shared.result.lang) : null;
+  // The word as the CARD draws it — the accented display form, never uppercased (the
+  // share TEXT shouts it; the card and this block show it as the puzzle spells it).
+  const headline = shared.mode === 'word' ? shared.result.word : null;
   const score = shared.mode === 'word' ? wordShareScore(shared.result.counts) : shared.result.score;
   const capped = shared.mode === 'sentence' && shared.result.capped === true;
   const unit =
