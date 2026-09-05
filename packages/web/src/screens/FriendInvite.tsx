@@ -248,11 +248,21 @@ export default function FriendInvite({
       setSkip(false);
       return undefined;
     }
+    // A PRIVATE call like any other (#216): the answer is fenced on the identity epoch it
+    // was sent under, and an `unknown_device` refusal is the sign-out verdict, adopted here
+    // exactly as the accept path adopts it — a revoked device must not read the landing as
+    // a stranger and learn it is signed out only when it taps. Any other refusal, and any
+    // failure, shows the landing: the skip is a courtesy, never a gate.
+    const epoch = identityEpoch();
     let cancelled = false;
     (async () => {
       try {
         const response = await postFriendsBody(friendsUrl(), { token: identity.token });
-        if (cancelled) return;
+        if (cancelled || identityEpoch() !== epoch) return;
+        if (await adoptSignedOutVerdict(response, epoch)) {
+          setSkip(false);
+          return;
+        }
         const friends = response.ok ? parseFriends(await response.json()) : [];
         if (!cancelled) setSkip(friends.includes(publicId));
       } catch {
