@@ -326,6 +326,30 @@ describe('addressed conversation (#236)', () => {
   });
 });
 
+describe('the bot knows its own schedule in this group (user-decided 2026-09-05)', () => {
+  it('states the podium time and the reminder when the group has them, and says so when it does not', async () => {
+    const { provider, requests } = scripted([() => ({ text: 'À 22h.' })]);
+    await agentWith(provider)(message('@33700000000 le podium c\'est quand ?'), group, identity, TODAY);
+    expect(requests[0].system).toContain('at 22:00');
+    expect(requests[0].system).toContain('podium');
+    expect(requests[0].system).not.toContain('Every morning'); // no reminder configured here
+    const reminding = parseGroupConfig('r.json', {
+      id: GROUP,
+      name: 'g',
+      language: 'fr',
+      enabled: true,
+      timezone: 'Europe/Paris',
+      podium: { enabled: false, time: '22:00' },
+      reminder: { enabled: true, time: '08:30' },
+      chat: { enabled: true },
+    });
+    const again = scripted([() => ({ text: 'Le matin.' })]);
+    await agentWith(again.provider)(message('@33700000000 et le rappel ?'), reminding, identity, TODAY);
+    expect(again.requests[0].system).toContain('no daily podium');
+    expect(again.requests[0].system).toContain('Every morning at 08:30');
+  });
+});
+
 describe("the day's source rides in the system prompt, never as a tool (#236)", () => {
   const source = { kind: 'music', author: 'Bertrand Belin', work: 'Oiseau' };
 
