@@ -50,7 +50,11 @@ const BASE32_ALPHABET = 'abcdefghijklmnopqrstuvwxyz234567';
 // out of reach for any real player population.
 const ID_BYTES = 10;
 
-export const PUBLIC_ID_PATTERN = /^[a-z2-7]{16}$/;
+// The alphabet as a fragment, for a reader that embeds it in a larger expression (the
+// bot's share scanner strips a signed share's id with its link); the PATTERN tests a
+// whole value. One spelling, two shapes.
+export const PUBLIC_ID_SOURCE = '[a-z2-7]{16}';
+export const PUBLIC_ID_PATTERN = new RegExp(`^${PUBLIC_ID_SOURCE}$`);
 // A device id is the same shape as an account id and read in exactly the same places (a
 // body field, a GSI sort key), so it is the same rule rather than a second one.
 export const DEVICE_ID_PATTERN = PUBLIC_ID_PATTERN;

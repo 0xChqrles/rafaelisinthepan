@@ -6,7 +6,11 @@
 > caching) — plus the testing policy and the issue/PR workflow. Read it first.
 > The share routes (`/s/<token>`, `/og/<token>.png`) render tokens from the shared
 > `shareCard` codec; their product behavior is described in the solved-result bullet
-> of `packages/web/AGENTS.md`. Since #214 a SENTENCE token is **v6** and may be CAPPED:
+> of `packages/web/AGENTS.md`. A SIGNED share (`/s/<token>/<publicId>`, root `AGENTS.md`
+> 2026-09-05) reads the signer's profile through the same best-effort `readFace` the
+> invite preview uses (`no-store` on a failed read, the invite's 300s otherwise), hands
+> the face to the renderers as a second argument, and bounces to the landing WITH the
+> token; a deleted signer renders the PLAIN share. Since #214 a SENTENCE token is **v6** and may be CAPPED:
 > `ogCard.renderShareHtml` then titles the result `∞` (the literal character — this page is
 > ordinary HTML in the reader's own fonts) while `renderCardSvg` draws the shared PATH data,
 > because the one font in the Lambda bundle has no such glyph and the rasterizer runs with

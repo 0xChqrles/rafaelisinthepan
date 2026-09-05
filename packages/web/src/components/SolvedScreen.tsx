@@ -5,11 +5,12 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 import { shareHeadline, shareText, shareUrl } from '../game/share';
 import type { ScorePlacementState } from '../hooks/useScoreHistogram';
 import RunRuler, { rulerStagger } from './RunRuler';
-import ScoreRank from './ScoreRank';
+import ScoreTop from './ScoreTop';
 import SolvedCaption, { captionDurationMs } from './SolvedCaption';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useLetterWave, { WAVE_VARS } from '../hooks/useLetterWave';
 import useShare from '../hooks/useShare';
+import ShareAs, { useShareSigner } from './ShareAs';
 import { ariaHoleHistory, t } from '../i18n';
 import { SCORE_COUNT_MS } from './resultAnimation';
 
@@ -60,7 +61,7 @@ const CAPTION_FALLBACK_SLACK_MS = 4_000;
 // The reveal's closing beats: the standing waits out the tally-and-colorize beat plus a
 // breath, and SHARE waits out the standing's own rung-in plus another.
 const RANK_LEAD_MS = 260;
-// `.score-slot.in`'s rung-in — keep aligned with the CSS.
+// `.score-top.in`'s rung-in — keep aligned with the CSS.
 const RANK_IN_MS = 220;
 const SHARE_LEAD_MS = 180;
 
@@ -330,17 +331,24 @@ export default function SolvedScreen({
   // Delivery (native sheet / clipboard + the "COPIED" confirmation) is the shared hook's;
   // this screen only composes the sentence result's text.
   const { share, copied } = useShare();
+  // The AS drum under SHARE: on the player's row, the link is signed with this account
+  // (see ShareAs). Fresh on every mount — never remembered from one result to the next.
+  const signer = useShareSigner();
 
   const onShare = useCallback(async () => {
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const url = shareUrl(origin, {
-      lang,
-      dayNumber,
-      score: guessCount,
-      trajectory,
-      solvedAt: solvedAt ?? [],
-      capped,
-    });
+    const url = shareUrl(
+      origin,
+      {
+        lang,
+        dayNumber,
+        score: guessCount,
+        trajectory,
+        solvedAt: solvedAt ?? [],
+        capped,
+      },
+      signer.by,
+    );
     // This screen owns only its localized UNIT; the line's shape is share.ts's, shared
     // with Word mode so the two modes' messages cannot drift apart. A capped round names
     // no count — `∞` stands where the number would, exactly as the card draws it — and
@@ -351,7 +359,7 @@ export default function SolvedScreen({
     // summary of that SAME run — trajectory and solve moments both — so the link and its
     // fallback can't disagree.
     await share(shareText(headline, trajectory, solvedAt ?? [], url));
-  }, [lang, dayNumber, guessCount, trajectory, solvedAt, capped, share]);
+  }, [lang, dayNumber, guessCount, trajectory, solvedAt, capped, share, signer.by]);
 
   return (
     <div className={`solved-stage${stageIn ? ' in' : ''}${animate ? '' : ' settled'}`}>
@@ -397,36 +405,34 @@ export default function SolvedScreen({
       {/* ---- the SCORE block, on the bottom edge: how the round went, and what you do
            with it. */}
       <div className={`solved-numbers${scoreIn ? ' in' : ''}`}>
-        {/* Where this run stands among the day's players (#170) — the standing first,
-            then YOUR number and the run that made it, so SHARE ends up next to exactly
-            what the card it shares draws (user-decided 2026-08-15). Always mounted: the
-            slot reserves its footprint, so the line arriving — or never arriving, on a
-            silent failure — moves nothing under it. */}
-        <ScoreRank
-          placement={placement}
-          mode="sentence"
-          lang={lang}
-          animate={animate}
-          start={rankIn}
-        />
-
         {/* The primary sentence metric. The hidden final value reserves the count's width
             so its tally never moves the content below it — a capped round has no tally to
-            reserve for, since `∞` is one fixed shape. */}
+            reserve for, since `∞` is one fixed shape. Where this run stands among the
+            day's players (#170) is the TOP badge BESIDE the number (user-decided
+            2026-09-05), absolutely placed so its arrival moves nothing. */}
         <span className="solved-score">
-          {capped ? (
-            <span className="solved-score-num">
-              <InfinityScore />
-              <span className="sr-only">∞</span>
-            </span>
-          ) : (
-            <span className="solved-score-num">
-              <span className="solved-score-ghost" aria-hidden="true">
-                {guessCount}
+          <span className="solved-score-line">
+            {capped ? (
+              <span className="solved-score-num">
+                <InfinityScore />
+                <span className="sr-only">∞</span>
               </span>
-              <span className="solved-score-live">{Math.round(shownScore)}</span>
-            </span>
-          )}
+            ) : (
+              <span className="solved-score-num">
+                <span className="solved-score-ghost" aria-hidden="true">
+                  {guessCount}
+                </span>
+                <span className="solved-score-live">{Math.round(shownScore)}</span>
+              </span>
+            )}
+            <ScoreTop
+              placement={placement}
+              mode="sentence"
+              lang={lang}
+              animate={animate}
+              start={rankIn}
+            />
+          </span>
           <span className="solved-score-unit">
             {t(lang, !capped && guessCount === 1 ? 'try' : 'tries')}
           </span>
@@ -454,6 +460,7 @@ export default function SolvedScreen({
           >
             {copied ? t(lang, 'copied') : t(lang, 'share')}
           </button>
+          <ShareAs lang={lang} signer={signer} />
         </div>
       </div>
     </div>

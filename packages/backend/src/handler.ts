@@ -9,8 +9,10 @@ import {
   secondsUntilNextReset,
   INVITE_SEGMENT,
   PUBLIC_ID_PATTERN,
+  SHARE_TOKEN_SOURCE,
   RESET_HOUR,
   TIME_ZONE,
+  type InviteCardData,
 } from '@whippin/shared';
 import {
   type FnUrlEvent,
@@ -34,6 +36,7 @@ import {
   renderShareHtml,
   renderWordCardPng,
   renderWordShareHtml,
+  type ShareSigner,
 } from './ogCard';
 import { isValidDate } from './layout';
 import { handleBoard } from './board';
@@ -113,8 +116,13 @@ const LANG_RE = /^[a-z]{2}$/;
 // Cache it hard; a render-changing deploy (a card redesign) is covered because the backend
 // deploy job invalidates `/*` on the API distribution.
 const SHARE_MAX_AGE = 31_536_000;
-const OG_PNG_RE = /^\/og\/([A-Za-z0-9_-]+)\.png$/;
-const SHARE_RE = /^\/s\/([A-Za-z0-9_-]+)$/;
+// A SIGNED share (user-decided 2026-09-05) carries the player's publicId as a second
+// segment — `/s/<token>/<publicId>`, card `/og/<token>/<publicId>.png` (`shared/invite.ts`
+// spells both). The token is read exactly as before; the id is validated with the SHARED
+// pattern, and the page is served under the invite preview's short TTL because, like the
+// invite, it names a player who can rename or redraw.
+const OG_PNG_RE = new RegExp(`^/og/(${SHARE_TOKEN_SOURCE})(?:/([^/]+))?\\.png$`);
+const SHARE_RE = new RegExp(`^/s/(${SHARE_TOKEN_SOURCE})(?:/([^/]+))?$`);
 
 // The #189 invite link and its card. Unlike a share token these are NOT content-addressed
 // — the player behind the id can rename themselves or redraw their mark — so they carry a
@@ -139,6 +147,26 @@ export function createHandler(deps: HandlerDeps) {
   const now = deps.now ?? (() => new Date());
   const origin = deps.allowedOrigin ?? '*';
   const cors = corsHeaders(origin);
+
+  // The face a PUBLIC page draws for a player — the invite preview's, and a signed
+  // share's. Best-effort, exactly like a board row's dressing: the preview must always
+  // draw a face, so a failed read falls back to the ASSIGNED identity (`anonName` /
+  // `defaultAvatar`, which the renderers resolve) rather than failing the link. That
+  // fallback is the one answer NOT cached — an assigned face held at the edge for a
+  // player who has drawn a real one is simply wrong, where a 404 ("never customized") is
+  // the right answer and caches like any other. `live` is false for an account an email
+  // link deleted (#204): each page decides what that means for it.
+  async function readFace(
+    publicId: string,
+  ): Promise<{ profile: ProfileRecord | null; answered: boolean; live: boolean }> {
+    if (!deps.profiles) throw new Error('Player profiles are not configured.');
+    try {
+      const found = await deps.profiles.get(publicId);
+      return { profile: found.profile, answered: true, live: found.live };
+    } catch {
+      return { profile: null, answered: false, live: true };
+    }
+  }
 
   return async function handler(event: FnUrlEvent): Promise<FnUrlResult> {
     const method = event.requestContext?.http?.method ?? 'GET';
@@ -204,23 +232,7 @@ export function createHandler(deps: HandlerDeps) {
         if (!PUBLIC_ID_PATTERN.test(publicId)) {
           return errorResponse(404, 'not_found', 'Invalid invite link.', cors);
         }
-        if (!deps.profiles) throw new Error('Player profiles are not configured.');
-        // Best-effort, exactly like a board row's dressing: the preview must always draw
-        // a face, so a failed read falls back to the ASSIGNED identity (`anonName` /
-        // `defaultAvatar`, which the renderers resolve) rather than failing the link.
-        // That fallback is the one answer NOT cached — an assigned face held at the edge
-        // for a player who has drawn a real one is simply wrong, where a 404 ("never
-        // customized") is the right answer and caches like any other.
-        let profile: ProfileRecord | null = null;
-        let answered = true;
-        let live = true;
-        try {
-          const found = await deps.profiles.get(publicId);
-          profile = found.profile;
-          live = found.live;
-        } catch {
-          answered = false;
-        }
+        const { profile, answered, live } = await readFace(publicId);
         // An invite link carries the SENDER's account id, and an email link can delete
         // that account (#204). The link then names nobody: it expires rather than
         // unfurling as the assigned face of a player who is gone, and the SPA landing it
@@ -251,55 +263,64 @@ export function createHandler(deps: HandlerDeps) {
       // Share-card routes (issue #8) are keyed only on the token — no lang/day/store — so
       // they resolve BEFORE the puzzle logic (which would otherwise 400 on the missing lang).
       const ogMatch = OG_PNG_RE.exec(rawPath);
-      if (ogMatch) {
-        const result = decodeResult(ogMatch[1]);
-        if (result) {
+      const shareMatch = ogMatch ? null : SHARE_RE.exec(rawPath);
+      const routeMatch = ogMatch ?? shareMatch;
+      if (routeMatch) {
+        const token = routeMatch[1];
+        const signedBy = routeMatch[2];
+        if (signedBy !== undefined && !PUBLIC_ID_PATTERN.test(signedBy)) {
+          return errorResponse(404, 'not_found', 'Invalid share link.', cors);
+        }
+        // WHO signed it. An account an email link deleted (#204) signs nothing: the
+        // result is still real, so the page falls back to the PLAIN share — the card
+        // without a face, the click into the game — rather than expiring like an invite
+        // does, since the score was never the part that went away. A failed read draws
+        // the assigned identity and, like the invite preview, is the one answer not
+        // cached; an answered one is held for the invite preview's minutes.
+        let by: (InviteCardData & ShareSigner) | null = null;
+        let cacheControl = `public, max-age=${SHARE_MAX_AGE}, immutable`;
+        if (signedBy !== undefined) {
+          const { profile, answered, live } = await readFace(signedBy);
+          cacheControl = answered ? `public, max-age=${INVITE_MAX_AGE}` : 'no-store';
+          if (!answered || live) {
+            by = { publicId: signedBy, name: profile?.name ?? '', avatar: profile?.avatar || null };
+          }
+        }
+        const result = decodeResult(token);
+        const word = result ? null : decodeWordResult(token);
+        if (ogMatch) {
           // The DECODED result is handed straight to the renderer: `CardData` IS
           // `ShareResult`, so re-listing its fields here is a second declaration of the
           // same shape — and one that silently drops whatever the codec learns next. It
           // did exactly that with #214's `capped`, drawing a try count on a card whose own
           // share page already said `∞`.
-          const buffer = await renderCardPng(result);
-          return png(200, buffer, {
-            'Cache-Control': `public, max-age=${SHARE_MAX_AGE}, immutable`,
-          });
+          if (result) {
+            return png(200, await renderCardPng(result, by), { 'Cache-Control': cacheControl });
+          }
+          // Word mode's token (#156): its own format in the same version namespace.
+          if (word) {
+            return png(200, await renderWordCardPng(word, by), { 'Cache-Control': cacheControl });
+          }
+          return errorResponse(404, 'not_found', 'Invalid share token.', cors);
         }
-        // Word mode's token (#156): its own format in the same version namespace.
-        const word = decodeWordResult(ogMatch[1]);
-        if (word) {
-          const buffer = await renderWordCardPng(word);
-          return png(200, buffer, {
-            'Cache-Control': `public, max-age=${SHARE_MAX_AGE}, immutable`,
-          });
-        }
-        return errorResponse(404, 'not_found', 'Invalid share token.', cors);
-      }
-      const shareMatch = SHARE_RE.exec(rawPath);
-      if (shareMatch) {
         // Canonical apex origin for both the og:image and the game redirect (so they never
         // depend on the CloudFront-to-CloudFront Host); the request origin is the local-dev
         // fallback.
         const base = deps.siteOrigin ?? requestOrigin(event);
-        const result = decodeResult(shareMatch[1]);
         if (result) {
-          const body = renderShareHtml(shareMatch[1], result, base);
-          return html(200, body, {
-            'Cache-Control': `public, max-age=${SHARE_MAX_AGE}, immutable`,
-          });
+          const body = renderShareHtml(token, result, base, by);
+          return html(200, body, { 'Cache-Control': cacheControl });
         }
         // Word mode's token (#156): its own share page, click-through to the word route.
-        const word = decodeWordResult(shareMatch[1]);
         if (word) {
-          const body = renderWordShareHtml(shareMatch[1], word, base);
-          return html(200, body, {
-            'Cache-Control': `public, max-age=${SHARE_MAX_AGE}, immutable`,
-          });
+          const body = renderWordShareHtml(token, word, base, by);
+          return html(200, body, { 'Cache-Control': cacheControl });
         }
         // A SUPERSEDED token (v1's bucketed squares can't feed the v2 ruler) still names a
         // real lang + day in the header every version shares, so send the reader to that
         // archived day instead of a dead end. Only the card is unrecoverable, and a
         // pre-bump link's preview has long since been cached by whatever unfurled it.
-        const legacy = decodeLegacyShareTarget(shareMatch[1]);
+        const legacy = decodeLegacyShareTarget(token);
         if (legacy) {
           return redirect(301, `${base}/${legacy.lang}/${dateForDayNumber(legacy.dayNumber)}`, {
             'Cache-Control': `public, max-age=${SHARE_MAX_AGE}, immutable`,

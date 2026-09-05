@@ -14,10 +14,12 @@ import {
   encodeWordResult,
   inviteCardPath,
   inviteLandingPath,
+  shareCardPath,
+  sharePath,
   INVITE_SEGMENT,
 } from '@whippin/shared';
 import { createHandler, type HandlerDeps } from './handler';
-import { renderCardPng, renderInviteCardPng } from './ogCard';
+import { renderCardPng, renderInviteCardPng, renderWordCardPng } from './ogCard';
 import type { ProfileRecord, ProfileStore } from './profileStore';
 import { LAMBDA_MAX_RESPONSE_BYTES, envelopeBytes, type FnUrlEvent } from './respond';
 import type { PuzzleStore } from './store';
@@ -27,7 +29,7 @@ import type { PuzzleStore } from './store';
 vi.mock('./ogCard', async () => {
   const actual = await vi.importActual<typeof import('./ogCard')>('./ogCard');
   const stub = () => vi.fn(async () => Buffer.from([0x89, 0x50, 0x4e, 0x47]));
-  return { ...actual, renderCardPng: stub(), renderInviteCardPng: stub() };
+  return { ...actual, renderCardPng: stub(), renderInviteCardPng: stub(), renderWordCardPng: stub() };
 });
 
 // A minimal but schema-valid puzzle, keyed by the date the fixed clock resolves to.
@@ -434,7 +436,7 @@ describe('share-card /og route — lang passthrough (#59)', () => {
     });
     const res = await makeHandler()(event({ path: `/og/${token}.png` }));
     expect(res.statusCode).toBe(200);
-    expect(renderCardPng).toHaveBeenCalledWith(expect.objectContaining({ lang: 'fr' }));
+    expect(renderCardPng).toHaveBeenCalledWith(expect.objectContaining({ lang: 'fr' }), null);
   });
 
   // The route hands the DECODED result straight to the renderer. It used to re-list the
@@ -451,7 +453,7 @@ describe('share-card /og route — lang passthrough (#59)', () => {
     });
     const res = await makeHandler()(event({ path: `/og/${token}.png` }));
     expect(res.statusCode).toBe(200);
-    expect(renderCardPng).toHaveBeenCalledWith(expect.objectContaining({ capped: true }));
+    expect(renderCardPng).toHaveBeenCalledWith(expect.objectContaining({ capped: true }), null);
     // And the share PAGE agrees with the card it points at.
     const page = await makeHandler()(event({ path: `/s/${token}` }));
     expect(page.body).toContain('∞ tries');
@@ -570,6 +572,111 @@ describe('invite link (#189) — the shared link, its preview page and its card'
     })(event({ path: `/${INVITE_SEGMENT}/${ID}` }));
     expect(failed.statusCode).toBe(200);
     expect(failed.headers['Cache-Control']).toBe('no-store');
+  });
+});
+
+// CONTRACT (user-decided 2026-09-05): a SIGNED share, `/s/<token>/<publicId>`, is the
+// result share carrying its player's invite. The token is read exactly as a plain share's;
+// the page unfurls as the player's own card (mark + name over the result), names them in
+// its title, and bounces the click onto the invite landing WITH the token, where ADD FRIEND
+// records the edge. It is served with the invite preview's short TTL, never the plain
+// share's year. A deleted signer falls back to the PLAIN share — the score was never the
+// part that went away.
+describe('a signed share (#8 + #189 in one link)', () => {
+  const ID = 'abcdefghij234567';
+  const token = encodeResult({
+    lang: 'en',
+    dayNumber: 20638,
+    score: 6,
+    trajectory: [8, 8, 33, 33, 70, 100],
+    solvedAt: [3, 6, 5],
+  });
+  const wordToken = encodeWordResult({ lang: 'fr', dayNumber: 20638, counts: [7, 3, 1, 1, 0], word: 'forêt' });
+  const stored = (row: ProfileRecord | null, fails = false, live = true): ProfileStore => ({
+    async get() {
+      if (fails) throw new Error('profile store is down');
+      return { live, profile: row };
+    },
+    async create() {
+      return false;
+    },
+    async upsert() {},
+  });
+
+  it('serves the page: the player named, THEIR card, the landing carrying the result', async () => {
+    const res = await makeHandler({
+      siteOrigin: ORIGIN,
+      profiles: stored({ publicId: ID, name: 'Chqrles', avatar: '' }),
+    })(event({ path: sharePath(token, ID) }));
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('<title>Chqrles · Whippin AI 2026-07-04 — 6 tries</title>');
+    expect(res.body).toContain(`${ORIGIN}${shareCardPath(token, ID)}`);
+    expect(res.body).toContain(`${ORIGIN}${inviteLandingPath(ID, token)}`);
+    expect(res.body).not.toContain(`${ORIGIN}/en/2026-07-04`);
+    expect(res.headers['Cache-Control']).toBe('public, max-age=300');
+  });
+
+  it('renders the signed card from the stored profile, both modes', async () => {
+    const profiles = stored({ publicId: ID, name: 'Chqrles', avatar: '' });
+    const handler = makeHandler({ profiles });
+    const sentence = await handler(event({ path: shareCardPath(token, ID) }));
+    expect(sentence.statusCode).toBe(200);
+    expect(sentence.headers['Content-Type']).toMatch(/image\/png/);
+    expect(renderCardPng).toHaveBeenLastCalledWith(expect.objectContaining({ score: 6 }), {
+      publicId: ID,
+      name: 'Chqrles',
+      avatar: null,
+    });
+    const word = await handler(event({ path: shareCardPath(wordToken, ID) }));
+    expect(word.statusCode).toBe(200);
+    expect(renderWordCardPng).toHaveBeenLastCalledWith(expect.objectContaining({ word: 'forêt' }), {
+      publicId: ID,
+      name: 'Chqrles',
+      avatar: null,
+    });
+  });
+
+  it('names the ASSIGNED identity for a signer who never customized one', async () => {
+    const res = await makeHandler({ siteOrigin: ORIGIN, profiles: stored(null) })(
+      event({ path: sharePath(wordToken, ID) }),
+    );
+    expect(res.body).toContain(`<title>${anonName(ID)} · Whippin AI 2026-07-04 — 12 mots</title>`);
+    expect(res.body).toContain(`${ORIGIN}${inviteLandingPath(ID, wordToken)}`);
+  });
+
+  it('a deleted signer leaves the PLAIN share: no face, the click into the game', async () => {
+    const handler = makeHandler({ siteOrigin: ORIGIN, profiles: stored(null, false, false) });
+    const page = await handler(event({ path: sharePath(token, ID) }));
+    expect(page.statusCode).toBe(200);
+    expect(page.body).toContain('<title>Whippin AI 2026-07-04 — 6 tries</title>');
+    expect(page.body).toContain(`${ORIGIN}${shareCardPath(token)}`);
+    expect(page.body).toContain(`${ORIGIN}/en/2026-07-04`);
+    const card = await handler(event({ path: shareCardPath(token, ID) }));
+    expect(card.statusCode).toBe(200);
+    expect(renderCardPng).toHaveBeenLastCalledWith(expect.objectContaining({ score: 6 }), null);
+  });
+
+  it('a failed read still draws a face, and is the one answer not cached', async () => {
+    const res = await makeHandler({ siteOrigin: ORIGIN, profiles: stored(null, true) })(
+      event({ path: sharePath(token, ID) }),
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain(`<title>${anonName(ID)} · `);
+    expect(res.headers['Cache-Control']).toBe('no-store');
+  });
+
+  it('a malformed signature is a 404 — never a lookup; a plain share is untouched', async () => {
+    const profiles = stored(null);
+    const get = vi.spyOn(profiles, 'get');
+    const handler = makeHandler({ siteOrigin: ORIGIN, profiles });
+    for (const bad of ['nope', 'abcdefghij234560', `${ID}x`]) {
+      expect((await handler(event({ path: sharePath(token, bad) }))).statusCode).toBe(404);
+      expect((await handler(event({ path: shareCardPath(token, bad) }))).statusCode).toBe(404);
+    }
+    expect(get).not.toHaveBeenCalled();
+    const plain = await handler(event({ path: sharePath(token) }));
+    expect(plain.headers['Cache-Control']).toBe('public, max-age=31536000, immutable');
+    expect(get).not.toHaveBeenCalled();
   });
 });
 

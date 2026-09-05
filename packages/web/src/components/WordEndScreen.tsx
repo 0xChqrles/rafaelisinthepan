@@ -6,8 +6,9 @@ import { RARITY_NAMES } from '../game/wordGame';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import type { ScorePlacementState } from '../hooks/useScoreHistogram';
 import useShare from '../hooks/useShare';
+import ShareAs, { useShareSigner } from './ShareAs';
 import { RARITY_COLORS } from './rarity';
-import ScoreRank from './ScoreRank';
+import ScoreTop from './ScoreTop';
 import { shareHeadline, wordShareText, wordShareUrl, wordShareScore } from '../game/share';
 import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 
@@ -116,39 +117,35 @@ export default function WordEndScreen({
   // Delivery (native sheet / clipboard + the "COPIED" confirmation) is the shared hook's;
   // this screen only composes the word result's text.
   const { share, copied } = useShare();
+  // The AS drum under SHARE (see ShareAs): fresh on every mount, never remembered.
+  const signer = useShareSigner();
 
   // This screen owns only the LOCALIZED headline; the body's composition — the word, its
   // bead row, the blank lines — is `game/share.ts`'s, next to the sentence twin it mirrors.
   const onShare = useCallback(async () => {
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const url = wordShareUrl(origin, { lang, dayNumber, counts, word });
+    const url = wordShareUrl(origin, { lang, dayNumber, counts, word }, signer.by);
     const unit = t(lang, score === 1 ? 'word' : 'words').toLowerCase();
     const headline = shareHeadline(dayNumber, score, unit);
     await share(wordShareText(headline, word, lang, counts, url));
-  }, [lang, dayNumber, counts, score, share, word]);
+  }, [lang, dayNumber, counts, score, share, word, signer.by]);
 
   return (
     <div className={`solved-results${resultsIn ? ' in' : ''}`}>
-      {/* Where this run stands among the day's players (#170) — FIRST, then the run's own
-          number, then SHARE: the sentence result's exact stack (user-decided 2026-08-15,
-          "the exact same layout and sizing"). Always mounted: the slot reserves its
-          footprint, so the line arriving — or never arriving, on a silent failure — moves
-          nothing under it. */}
-      <ScoreRank
-        placement={placement}
-        mode="word"
-        lang={lang}
-        animate={animate}
-        start={chartStart}
-      />
-
+      {/* The run's own number, then SHARE: the sentence result's exact stack (user-decided
+          2026-08-15, "the exact same layout and sizing"). Where this run stands among the
+          day's players (#170) is the TOP badge BESIDE the number (user-decided 2026-09-05),
+          absolutely placed so its arrival moves nothing. */}
       <span className="solved-score">
-        <span className={`solved-score-num${landed ? ' landed' : ''}`}>
-          {/* Reserve the final width while the live number counts, matching Sentence mode. */}
-          <span className="solved-score-ghost" aria-hidden="true">
-            {score}
+        <span className="solved-score-line">
+          <span className={`solved-score-num${landed ? ' landed' : ''}`}>
+            {/* Reserve the final width while the live number counts, matching Sentence mode. */}
+            <span className="solved-score-ghost" aria-hidden="true">
+              {score}
+            </span>
+            <span className="solved-score-live">{Math.round(shownScore)}</span>
           </span>
-          <span className="solved-score-live">{Math.round(shownScore)}</span>
+          <ScoreTop placement={placement} mode="word" lang={lang} animate={animate} start={chartStart} />
         </span>
         <span className="solved-score-unit">
           {t(lang, score === 1 ? 'foundWord' : 'foundWords')}
@@ -181,6 +178,7 @@ export default function WordEndScreen({
         >
           {copied ? t(lang, 'copied') : t(lang, 'share')}
         </button>
+        <ShareAs lang={lang} signer={signer} />
       </div>
     </div>
   );

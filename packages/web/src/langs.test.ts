@@ -1,5 +1,5 @@
 // CONTRACT: the /<lang> deep-link routing (packages/web/src/langs.ts). A language is
-// one path segment; /select is the picker; / (or any unknown path) is a `home`
+// one path segment; / (or any unknown path) is a `home`
 // redirect to the user's language. parseRoute and the pathFor* builders round-trip, so a
 // shared link or a refresh lands in the right language AND the right mode.
 
@@ -41,9 +41,11 @@ describe('parseRoute', () => {
     expect(parseRoute('/en')).toEqual({ view: 'game', lang: 'en', mode: 'sentence' });
     expect(parseRoute('/fr/')).toEqual({ view: 'game', lang: 'fr', mode: 'sentence' });
   });
-  it('routes /select to the language picker', () => {
-    expect(parseRoute('/select')).toEqual({ view: 'select' });
-    expect(parseRoute('/select/')).toEqual({ view: 'select' });
+  // The language chooser SCREEN was retired 2026-09-05 (the header's selection drums open
+  // on every page), the way `/mode` was: an old link is a home redirect, never a screen.
+  it('treats the retired /select like /mode: a home redirect', () => {
+    expect(parseRoute('/select')).toEqual({ view: 'home' });
+    expect(parseRoute('/select/')).toEqual({ view: 'home' });
   });
   // The #189 invite link is a bearer "add me" token in a path segment, so the id is
   // validated HERE: a mistyped or truncated link must go home rather than send the
@@ -67,6 +69,19 @@ describe('parseRoute', () => {
     // The shared link itself never reaches the SPA in production (CloudFront hands
     // `/i/*` to the API), and it must not be a second spelling of the landing here.
     expect(parseRoute(pathForInvite(id))).toEqual({ view: 'home' });
+  });
+
+  // A SIGNED share (user-decided 2026-09-05) bounces onto the landing WITH its token:
+  // shape-checked here (a base64url token, one segment), decoded by the landing itself.
+  it('routes /join/<publicId>/<token> to the invite landing carrying the shared result', () => {
+    const id = 'abcdefghij234567';
+    const token = 'BqN_lM-9';
+    expect(inviteLandingPath(id, token)).toBe(`/join/${id}/${token}`);
+    expect(parseRoute(inviteLandingPath(id, token))).toEqual({ view: 'invite', publicId: id, token });
+    expect(parseRoute(`/join/${id}/${token}/`)).toEqual({ view: 'invite', publicId: id, token });
+    // A third segment that is not token-shaped is ignored, not a reason to bounce home.
+    expect(parseRoute(`/join/${id}/not a token`)).toEqual({ view: 'invite', publicId: id });
+    expect(parseRoute(`/join/nope/${token}`)).toEqual({ view: 'home' });
   });
   // The two choosers sit ABOVE /<lang>: neither is language- or mode-scoped, and /mode
   // must never be read as a language segment or shadow Word mode's /<lang>/word.
@@ -277,7 +292,7 @@ describe('resolveHomeLang', () => {
 
 // CONTRACT (#204's UX rework): the ACCOUNT AREA is FOUR global routes, because it answers
 // four different questions and one screen may only answer one. They sit above /<lang> like
-// /select — an identity is not language-scoped — and the flow's steps are one segment deeper
+// /profile — an identity is not language-scoped — and the flow's steps are one segment deeper
 // than the account itself, which is what makes RECONNECT able to land straight on one.
 //
 // TWO DOORS ONTO ONE ENGINE (vol. 2): `/account/email` SAVES the account this device holds

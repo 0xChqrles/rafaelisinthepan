@@ -1,7 +1,8 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import Button from './Button';
+import PuzzleSelect from './PuzzleSelect';
 import { navigate } from '../routing';
-import { SELECT_PATH, pathForArchive, type Mode } from '../langs';
+import { pathForArchive, type LangCode, type Mode } from '../langs';
 import { t } from '../i18n';
 
 // Shown when the backend has no puzzle for the requested day in this language (404 ->
@@ -17,16 +18,23 @@ import { t } from '../i18n';
 //     It says so plainly and sends the player back to the calendar they came from.
 //
 // Neither is a failure to RETRY (nothing transient to re-fetch), so both offer only
-// navigation. Renders WITHOUT the HUD, on the shared .load-error surface.
+// navigation. Renders WITHOUT the HUD, on the shared .load-error surface — which is why
+// CHANGE LANGUAGE opens the header's own selection drums (`PuzzleSelect`, the daily and
+// the language, folding onto the pick) right here: the `/select` screen it used to send
+// the player to was retired 2026-09-05 (user-decided) for exactly that dialog.
 export default function NoPuzzle({
   lang,
   mode,
   date,
 }: {
-  lang: string;
+  lang: LangCode;
   mode: Mode;
   date?: string;
 }) {
+  const [selecting, setSelecting] = useState(false);
+  const select = selecting && (
+    <PuzzleSelect lang={lang} mode={mode} onClose={() => setSelecting(false)} />
+  );
   // The day is worth naming: nothing else on this screen says WHICH day is missing (the
   // header carries no date). `parseRoute` only ever yields a real calendar date, but the
   // prop is a plain string — an unparseable one drops the line rather than printing NaN.
@@ -43,9 +51,10 @@ export default function NoPuzzle({
       <div className="load-error">
         <p className="status error">{t(lang, 'noPuzzle')}</p>
         <p className="no-puzzle-note">{t(lang, 'noPuzzleNote')}</p>
-        <Button variant="secondary" onClick={() => navigate(SELECT_PATH)}>
+        <Button variant="secondary" onClick={() => setSelecting(true)}>
           {t(lang, 'changeLanguage')}
         </Button>
+        {select}
       </div>
     );
   }
@@ -66,9 +75,10 @@ export default function NoPuzzle({
       <Button variant="secondary" onClick={() => navigate(pathForArchive(lang, mode))}>
         {t(lang, 'backToArchive')}
       </Button>
-      <Button variant="secondary" onClick={() => navigate(SELECT_PATH)}>
+      <Button variant="secondary" onClick={() => setSelecting(true)}>
         {t(lang, 'changeLanguage')}
       </Button>
+      {select}
     </div>
   );
 }

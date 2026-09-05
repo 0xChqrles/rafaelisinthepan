@@ -6,34 +6,35 @@
 // through a crown. ONE PURPOSE PER SCREEN: the editor keeps `/profile`, the email flow gets
 // its own steps, and what is left here is the account itself:
 //
-//   THE ROW   the mark, the name, the account's age, and EDIT — the identity as a header,
-//             the UX research's own strip (user-decided 2026-08-26, rolling back the hero:
-//             a page's identity is a masthead, not a monument).
+//   THE ROW   the mark, the name, the saved ADDRESS under it, and EDIT — the identity as a
+//             header, the UX research's own strip (user-decided 2026-08-26, rolling back
+//             the hero: a page's identity is a masthead, not a monument). The address took
+//             the place and the dress of the account's AGE on 2026-09-05 (user-decided:
+//             "the email should be displayed at the location and with the style of the
+//             account date of creation, and we should just drop the date").
 //   STATS     the three numbers the account IS — the live STREAK (moved here from the
 //             archive, user-decided 2026-08-28: a streak is a fact about the ACCOUNT, and
 //             the archive is one language's calendar), the BEST it has ever held, and the
 //             total DAYS. Across every supported language, which is what makes them the
 //             same numbers the erase confirmation names when it asks whether to delete one.
-//   SAVED     one lit button while the account is unsaved; the ADDRESS ITSELF once it is —
-//             a fact with no chip, because an account carries at most ONE address and the
-//             server refuses a second, so a CHANGE control would promise what the route
-//             refuses.
+//   SAVED     one lit button while the account is unsaved; the address under the name once
+//             it is — a fact with no chip, because an account carries at most ONE address
+//             and the server refuses a second, so a CHANGE control would promise what the
+//             route refuses.
 //   DEVICES   the #216 rows, acted on in place — and ONLY once an email is saved: an
 //             unlinked account can only ever hold the one device reading the screen, and a
 //             list of yourself is noise. (It is also half of the next rule.)
 //
 // **THE SCREEN IS THE SAME SCREEN FOR EVERY ACCOUNT** (user-decided 2026-08-28, widening
-// 2026-08-26's rule rather than dropping it). The stats and the account's AGE are drawn
-// whatever state it is in — unsaved, brand new, nothing played — because a screen that
-// hides what it has nothing to show of teaches a new player that the area is broken, where
-// three zeros and a date teach them what there is to fill.
+// 2026-08-26's rule rather than dropping it). The stats are drawn whatever state it is in
+// — unsaved, brand new, nothing played — because a screen that hides what it has nothing
+// to show of teaches a new player that the area is broken, where three zeros teach them
+// what there is to fill.
 //
 // **AND NOTHING HERE STILL TELLS YOU WHETHER THE ACCOUNT IS DEPLOYED YET** (2026-08-26).
 // The pseudonym and the mark are derived locally before deployment and stored as the
 // account's first profile at it (`localIdentityDeploy`), so `useOwnFace` answers the same
-// face either way; the AGE is the account's `createdAt` or — with no account yet — the
-// local seed's own instant, which is honest about the identity on screen and is the one
-// that gets deployed; the STATS are zero for a tokenless device by the same fact that makes
+// face either way; the STATS are zero for a tokenless device by the same fact that makes
 // them zero for a deployed one that has not played (#216: no token, no rows, no request);
 // the DEVICES still appear only once SAVED, because an unlinked account can only ever hold
 // the one device reading the screen; and the action holds its box while the summary is out
@@ -61,18 +62,8 @@ import {
 import { navigate } from '../routing';
 import { loadAccountSummary, useAccountSummary } from '../state/account';
 import { useAccountStats } from '../state/history';
-import { useGameStore } from '../state/gameStore';
 import useToday from '../hooks/useToday';
 import useUiLang from '../hooks/useUiLang';
-
-// "since 12 aug" — the identity's own age, in the reader's locale. An unparseable or absent
-// instant renders as NO line rather than a placeholder: the device list's rule, for the same
-// reason (a label must not be able to fail the block it decorates).
-function began(createdAt: string | null, lang: string): string | null {
-  const at = createdAt === null ? NaN : Date.parse(createdAt);
-  if (!Number.isFinite(at)) return null;
-  return new Intl.DateTimeFormat(lang, { day: 'numeric', month: 'short' }).format(new Date(at));
-}
 
 export default function Account() {
   const lang = useUiLang();
@@ -84,7 +75,6 @@ export default function Account() {
   // (#204's 410) settles with no face, and a shimmer over it promises an arrival that is
   // not coming — that device is one private call away from the signed-out screen.
   const facePending = !faceSettled(faceState);
-  const localSeedAt = useGameStore((state) => state.localSeedAt);
   // The day the streak is measured against, off the app's ONE day signal — which re-fires
   // at the 22:00 reset, so a screen left open overnight cannot keep showing an expired one.
   const stats = useAccountStats(useToday());
@@ -96,10 +86,6 @@ export default function Account() {
   }, [identity]);
 
   const saved = summary?.email ?? null;
-  // WHEN this identity began. The account's own instant once there is one; the local seed's
-  // before that, which is honest about the face on screen and keeps the line from being the
-  // one thing that tells a deployed device from a tokenless one.
-  const since = began(summary?.createdAt ?? localSeedAt, lang);
   // The ACTION is unknown until the summary settles: offering SAVE while we do not yet know
   // whether it is already saved is the guessed-empty claim #211's rule forbids — it would
   // flash SAVE and swap it for the address on every visit of a linked player.
@@ -135,9 +121,10 @@ export default function Account() {
             ) : (
               facePending && <span className="skeleton skeleton-name" aria-hidden="true" />
             )}
-            {since && (
-              <span className="account-id-since">{`${t(lang, 'accountSince')} ${since}`}</span>
-            )}
+            {/* The saved ADDRESS, in the caption line under the name (2026-09-05, in the
+                place the account's age held): a fact, no control — an account carries at
+                most one address and the server refuses a second. */}
+            {saved !== null && <span className="account-id-mail">{saved}</span>}
           </span>
           <button
             type="button"
@@ -163,8 +150,7 @@ export default function Account() {
             near the stats"). Every action is a full-width row in the device list's own
             dress — a hairline glass box, a label, a chevron pointing where it leads — so
             the screen reads top-down as one settings page: who you are, what you hold,
-            where to go. The saved address is a row too, a fact rather than a control (no
-            chevron); the door to another account is a row that leads somewhere.
+            where to go. The door to another account is a row that leads somewhere.
             Unknown holds a row's box, so nothing moves when the summary lands and nothing
             claims "unsaved" before it knows (#211's explicit-loading rule). */}
         <div className="account-list">
@@ -180,11 +166,6 @@ export default function Account() {
             <span className="account-link skeleton" aria-hidden="true" />
           ) : accountUnknown ? null : (
             <>
-              {saved !== null && (
-                <div className="account-link static">
-                  <span className="account-link-value">{saved}</span>
-                </div>
-              )}
               {/* THE SECOND DOOR (#204's UX rework vol. 2). Saving an account and signing
                   into another one are OPPOSITE acts; a returning player was looking for a
                   word that was not on screen. Its WORDS change with what it would cost:

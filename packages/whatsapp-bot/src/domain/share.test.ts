@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { dayNumber, encodeResult, encodeWordResult } from '@whippin/shared';
-import { findShareTokens, sharesIn } from './share';
+import { findShareTokens, sharesIn, withoutShares } from './share';
 
 const ORIGIN = 'https://whippin.ai';
 
@@ -20,6 +20,18 @@ describe('share links are deterministic input (#236)', () => {
     const t = sentenceToken();
     const text = `gg https://whippin.ai/s/${t} et https://example.com/s/${t} https://whippin.ai/s/${t}.`;
     expect(findShareTokens(text, ORIGIN)).toEqual([t, t]);
+  });
+
+  // A SIGNED share (user-decided 2026-09-05) carries the sharer's publicId as a second
+  // path segment. The token stops at the slash, so the bot reads a signed share exactly
+  // as it reads a plain one — and the id is never attributed to anyone: the sender is the
+  // WhatsApp member, as always.
+  it('reads a SIGNED share link as the same token, and strips its signature with the link', () => {
+    const t = sentenceToken();
+    const signed = `https://whippin.ai/s/${t}/abcdefghij234567`;
+    expect(findShareTokens(signed, ORIGIN)).toEqual([t]);
+    expect(sharesIn(signed, ORIGIN)[0]?.token).toBe(t);
+    expect(withoutShares(`gg ${signed} bravo`, ORIGIN)).toBe('gg bravo');
   });
 
   it('decodes a sentence result to the token\'s own day and score', () => {

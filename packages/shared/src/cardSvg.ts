@@ -147,6 +147,81 @@ const INVITE_APP_Y = 528; // baseline
 const INVITE_APP_SIZE = 28;
 const APP_NAME = 'WHIPPIN AI';
 
+// The mark is the app's ONE avatar drawing: the palette's ground, the union outline of
+// the filled cells on top, and only the tile's outer corners rounded (the web's `Avatar`,
+// whose renderer this shares). A stored string that will not decode falls back to the
+// assigned mark rather than leaving a hole — a card must always draw a face, and the store
+// only ever holds validated avatars anyway. Drawn by the invite card at its full size and
+// by a SIGNED result card's strip at a small one; `id` names the clip, which must be unique
+// within one SVG.
+function markTile(
+  id: string,
+  publicId: string,
+  avatar: string | null,
+  x: number,
+  y: number,
+  px: number,
+): string {
+  const cell = px / AVATAR_SIZE;
+  let drawing: { bg: string; fg: string; outline: string };
+  try {
+    const { palette, cells } = decodeAvatar(avatar ?? defaultAvatar(publicId));
+    drawing = { ...AVATAR_PALETTES[palette], outline: avatarOutlinePath(cells, cell) };
+  } catch {
+    const { palette, cells } = decodeAvatar(defaultAvatar(publicId));
+    drawing = { ...AVATAR_PALETTES[palette], outline: avatarOutlinePath(cells, cell) };
+  }
+  const radius = Math.round(px * 0.036); // the web tile's proportion
+  return (
+    `<clipPath id="${id}"><rect x="${x}" y="${y}" width="${px}" height="${px}" rx="${radius}"/></clipPath>` +
+    // The clip sits on an UNtransformed group, in the same absolute space its rect is
+    // written in, and the translate goes on a group inside it: whether a rasterizer
+    // resolves a clip path before or after the referencing element's own transform is
+    // exactly the kind of thing renderers disagree about, and this nesting has no
+    // opinion to disagree with.
+    `<g clip-path="url(#${id})"><g transform="translate(${x} ${y})">` +
+    `<rect width="${px}" height="${px}" fill="${drawing.bg}"/>` +
+    (drawing.outline ? `<path d="${drawing.outline}" fill="${drawing.fg}"/>` : '') +
+    `</g></g>`
+  );
+}
+
+// A SIGNED result card's strip (user-decided 2026-09-05): the player's mark and name as
+// one centred lockup above the result. The name is set small and held to the profile's
+// own 16-glyph cap, so the widest signature still clears the margins; the RESULT stays the
+// card's subject. Absent on a plain (unsigned) share.
+//
+// SPACING (user feedback the same day, "improve the spacing on the og preview when the
+// user infos are on"): the strip is not pinned to the top edge with the result left where
+// it was — that read as a face floating over a card. Each card names where its strip sits
+// and how far its RESULT moves down to make room, so strip + gap + result is ONE block
+// centred on the card, top and bottom margins alike. The plain card is untouched (shift 0).
+const SIGN_AVATAR_PX = 64;
+const SIGN_GAP = 22;
+const SIGN_NAME_SIZE = 28;
+// Sentence: the ruler's tick tops start at BAR_Y − TICK_OVERHANG = 171 and the date sits
+// at 500; moved down 30 the result runs 201..538, and the strip at 97..161 leaves 40 to
+// the ticks — 97 above, 92 below.
+const SENTENCE_SIGN_Y = 97;
+const SENTENCE_SIGN_SHIFT = 30;
+// Word: the word row's glyphs top out near 137 and the date sits at 555; moved down 14 the
+// word starts at 151, the strip at 44..108 leaves 43 to it, and ~55 stays under the date.
+const WORD_SIGN_Y = 44;
+const WORD_SIGN_SHIFT = 14;
+
+function signatureStrip({ publicId, name, avatar }: InviteCardData, y: number): string {
+  const shown = name || anonName(publicId);
+  const glyphs = Math.max(1, Array.from(shown).length);
+  const width = SIGN_AVATAR_PX + SIGN_GAP + glyphs * SIGN_NAME_SIZE;
+  const x = Math.round(CARD_WIDTH / 2 - width / 2);
+  const nameX = x + SIGN_AVATAR_PX + SIGN_GAP;
+  const cy = y + SIGN_AVATAR_PX / 2;
+  return (
+    markTile('sign', publicId, avatar, x, y, SIGN_AVATAR_PX) +
+    `<text x="${nameX}" y="${cy}" dy="0.16em" dominant-baseline="middle" font-family="${CARD_FONT}" font-size="${SIGN_NAME_SIZE}" font-variant-ligatures="none" fill="${FG}">${escapeSvgText(shown)}</text>`
+  );
+}
+
 export interface InviteCardData {
   publicId: string;
   // The STORED profile: '' / null when the player never customized one. The card
@@ -168,43 +243,22 @@ export function renderInviteCardSvg({ publicId, name, avatar }: InviteCardData):
     Math.max(1, Math.floor(INVITE_NAME_WIDTH / glyphs)),
   );
 
-  // The mark is the app's ONE avatar drawing: the palette's ground, the union outline of
-  // the filled cells on top, and only the tile's outer corners rounded (the web's
-  // `Avatar`, whose renderer this shares). A stored string that will not decode falls
-  // back to the assigned mark rather than leaving a hole — the card must always draw a
-  // face, and the store only ever holds validated avatars anyway.
-  const cell = INVITE_AVATAR_PX / AVATAR_SIZE;
   const x = Math.round(cx - INVITE_AVATAR_PX / 2);
-  let drawing: { bg: string; fg: string; outline: string };
-  try {
-    const { palette, cells } = decodeAvatar(avatar ?? defaultAvatar(publicId));
-    drawing = { ...AVATAR_PALETTES[palette], outline: avatarOutlinePath(cells, cell) };
-  } catch {
-    const { palette, cells } = decodeAvatar(defaultAvatar(publicId));
-    drawing = { ...AVATAR_PALETTES[palette], outline: avatarOutlinePath(cells, cell) };
-  }
-  const radius = Math.round(INVITE_AVATAR_PX * 0.036); // the web tile's proportion
 
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}">`,
     `<rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="${BG}"/>`,
-    `<clipPath id="mark"><rect x="${x}" y="${INVITE_AVATAR_Y}" width="${INVITE_AVATAR_PX}" height="${INVITE_AVATAR_PX}" rx="${radius}"/></clipPath>`,
-    // The clip sits on an UNtransformed group, in the same absolute space its rect is
-    // written in, and the translate goes on a group inside it: whether a rasterizer
-    // resolves a clip path before or after the referencing element's own transform is
-    // exactly the kind of thing renderers disagree about, and this nesting has no
-    // opinion to disagree with.
-    `<g clip-path="url(#mark)"><g transform="translate(${x} ${INVITE_AVATAR_Y})">`,
-    `<rect width="${INVITE_AVATAR_PX}" height="${INVITE_AVATAR_PX}" fill="${drawing.bg}"/>`,
-    drawing.outline ? `<path d="${drawing.outline}" fill="${drawing.fg}"/>` : '',
-    `</g></g>`,
+    markTile('mark', publicId, avatar, x, INVITE_AVATAR_Y, INVITE_AVATAR_PX),
     `<text x="${cx}" y="${INVITE_NAME_Y}" text-anchor="middle" font-family="${CARD_FONT}" font-size="${nameSize}" font-variant-ligatures="none" fill="${FG}">${escapeSvgText(shown)}</text>`,
     `<text x="${cx}" y="${INVITE_APP_Y}" text-anchor="middle" font-family="${CARD_FONT}" font-size="${INVITE_APP_SIZE}" fill="${MUTED}">${APP_NAME}</text>`,
     `</svg>`,
   ].join('');
 }
 
-export function renderWordCardSvg({ lang, dayNumber, counts, word }: WordCardData): string {
+export function renderWordCardSvg(
+  { lang, dayNumber, counts, word }: WordCardData,
+  by: InviteCardData | null = null,
+): string {
   const unit = WORD_UNITS[lang] ?? WORD_UNITS.en;
   const score = counts.reduce((sum, n) => sum + n, 0);
   const cx = CARD_WIDTH / 2;
@@ -246,10 +300,13 @@ export function renderWordCardSvg({ lang, dayNumber, counts, word }: WordCardDat
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}">`,
     `<rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="${BG}"/>`,
+    by ? signatureStrip(by, WORD_SIGN_Y) : '',
+    `<g transform="translate(0 ${by ? WORD_SIGN_SHIFT : 0})">`,
     `<text x="${cx}" y="${WORD_ROW_Y}" dy="0.16em" dominant-baseline="middle" text-anchor="middle" font-family="${CARD_FONT}" font-size="${wordSize}" font-variant-ligatures="none" fill="${SOLVE}">${escapeSvgText(word)}</text>`,
     `<text x="${cx}" y="${WORD_SCORE_Y}" text-anchor="middle" font-family="${CARD_FONT}" font-size="76" fill="${FG}">${score} ${score === 1 ? unit.one : unit.many}</text>`,
     chipRow,
     `<text x="${cx}" y="${WORD_DATE_Y}" text-anchor="middle" font-family="${CARD_FONT}" font-size="30" fill="${MUTED}">${dateForDayNumber(dayNumber)}</text>`,
+    `</g>`,
     `</svg>`,
   ].join('');
 }
@@ -285,14 +342,10 @@ function scoreLockup(score: number, capped: boolean, unit: { one: string; many: 
   );
 }
 
-export function renderCardSvg({
-  lang,
-  dayNumber,
-  score,
-  trajectory,
-  solvedAt,
-  capped = false,
-}: CardData): string {
+export function renderCardSvg(
+  { lang, dayNumber, score, trajectory, solvedAt, capped = false }: CardData,
+  by: InviteCardData | null = null,
+): string {
   const n = Math.max(1, trajectory.length);
 
   // Integer cell boundaries so adjacent cells share an edge EXACTLY — no hairline seams
@@ -344,6 +397,8 @@ export function renderCardSvg({
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}">`,
     `<rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="${BG}"/>`,
+    by ? signatureStrip(by, SENTENCE_SIGN_Y) : '',
+    `<g transform="translate(0 ${by ? SENTENCE_SIGN_SHIFT : 0})">`,
     `<g shape-rendering="crispEdges">${cells}</g>`,
     marks,
     // "N TRIES", not "SCORE N": naming the unit is what tells a stranger seeing the
@@ -351,6 +406,7 @@ export function renderCardSvg({
     // draws `∞ TRIES` instead — same band, same unit, no number (#214).
     scoreLockup(score, capped, unit),
     `<text x="${cx}" y="500" text-anchor="middle" font-family="${CARD_FONT}" font-size="30" fill="${MUTED}">${dateForDayNumber(dayNumber)}</text>`,
+    `</g>`,
     `</svg>`,
   ].join('');
 }

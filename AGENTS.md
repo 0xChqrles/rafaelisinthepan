@@ -247,7 +247,8 @@ packages agree on each list; `backend:dev` has no CDN and cannot show a drift.
 - **The share page (`/s/*`), the cards (`/og/*`) and the invite preview (`/i/*`) are NOT
   live routes**: they are CACHED behaviors on the WEB distribution (`infra/lib/web-stack.ts`)
   handed to the API origin — a year for content-addressed share tokens, 300s for the invite
-  preview.
+  preview AND for a SIGNED share (`/s/<token>/<publicId>`, `/og/<token>/<publicId>.png`),
+  which names a player who can rename or redraw.
 
 The live routes then share:
 
@@ -427,9 +428,9 @@ The live routes then share:
 ### Server-backed player history (#211, decided 2026-08-23)
 
 - **`POST /history?lang=&mode=[&month=]` → `{ days, solvedDays }`** serves the archive
-  calendar, the language chooser and the streak for EVERY identity. `month` optional (the game
-  screen wants only the collection); body `collection: false` skips the solved-day read (the
-  chooser and, since 2026-08-28, the archive). No `date` in its allowList.
+  calendar and the streak for EVERY identity. `month` optional (the game screen wants only
+  the collection); body `collection: false` skips the solved-day read (the archive, since
+  2026-08-28). No `date` in its allowList.
 - **The calendar has no storage of its own**: one Query over `<lang>#<mode>#<month>-`,
   projected to `progress`/`solved`, PAGED, never revision-scoped. Client keeps an IN-MEMORY
   cache only and revalidates when a month comes on screen. **Loading is a THIRD status
@@ -582,8 +583,24 @@ The live routes then share:
   cached 300s; `GET /og/i/<publicId>.png`) that `location.replace`s onto the SPA landing
   `/join/<publicId>`, whose ADD FRIEND tap records the edge (never the load). Paths live in
   `shared/src/invite.ts` (infra routes `/i/*` to the API origin, backend serves, web builds).
-  The result share link `/s/<token>` is NOT the carrier (year-long cache). A deleted sender's
-  link expires (404).
+  A deleted sender's link expires (404).
+- **A RESULT SHARE CARRIES THE INVITE BY DEFAULT (decided 2026-09-05).** The result
+  screens' AS drum — under SHARE, opening on the player, NEVER persisted
+  (fresh on every result) — signs the link `/s/<token>/<publicId>` (`shared/src/invite.ts`
+  `sharePath`).
+  The TOKEN is untouched (no codec change; the bot reads a signed share as a plain one and
+  strips the id with the link); the card wears the player's mark and name; the page is
+  served at the invite's 300s TTL; the click lands on `/join/<publicId>/<token>`, the
+  invite landing showing the result, whose ADD FRIEND records the edge and whose PLAY
+  opens the shared day. A deleted signer falls back to the PLAIN share (the score was
+  never the part that went away). Toggle OFF = the plain `/s/<token>`, byte for byte,
+  still content-addressed and year-cached. The control is the label AS and a ONE-ROW-TALL
+  two-row DRUM with a flip chevron (the app's one picker physics) holding the player's mark
+  + name or ANONYMOUS, opening on the player, directly under SHARE (a taller drum lost the
+  link to the button); never a "share my profile" checkbox (scary), an `AS` checkbox beside a face
+  (two squares), a "don't share" opt-out, or an INVITE chip (each tried and retired the same
+  day). The signed card centres strip + gap + result as ONE block (the result moves down;
+  the plain card is untouched).
 - **`POST /friends`**: `{token}` reads, `{token, add}` links, `{token, remove}` unlinks;
   every answer `{ friends: [publicId] }`. Storage: one row per DIRECTION,
   `friends#<publicId>` / friend id, `createdAt` from the first link; both rows written (and
