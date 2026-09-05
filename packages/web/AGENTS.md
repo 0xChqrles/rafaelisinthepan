@@ -715,9 +715,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
       server shapes the DESTINATION · the ending tells the TRUTH about what happened. Nothing
       is detected or routed, and a player who picks the "wrong" door is never blocked and never
       lied to (the one ending a door cannot reach is BIND from SIGN IN — below). `/account` keeps
-      its lit SAVE and a QUIET second door under it, worded by cost — *I ALREADY HAVE AN
-      ACCOUNT* while unsaved, *SIGN IN TO ANOTHER ACCOUNT* once saved — held back until the
-      summary settles. **The address step states NO COST** (2026-09-03): the stakes are said
+      its lit SAVE. **Its second door is GONE** (user-decided 2026-09-05: "if you want to sign
+      in again, just log out your session and sign in, everybody knows this flow") — the quiet
+      row under SAVE that read *I ALREADY HAVE AN ACCOUNT* / *SIGN IN TO ANOTHER ACCOUNT*, its
+      two strings and its skeleton box with it; `/account/signin` is reached through the
+      signed-out screen's RECONNECT alone (revoke this device in the list to get there), and
+      SAVE with a known address ADOPTS that account anyway. **The address step states NO
+      COST** (2026-09-03): the stakes are said
       on the crossroads, which IS the decision.
     - **THE WORDLESS TELL IS THE FACE; there is NO SECOND INK.** Saving keeps the real face
       on screen from the first step (it is the OBJECT of the sentence). Returning opens on an
@@ -1702,7 +1706,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   default, so every result screen asks afresh; `by` is the account's publicId or null) and,
   under SHARE in both `SolvedScreen` and `WordEndScreen`, the label AS beside a two-row
   drum on `useDrum` — ONE ROW TALL: the slot with a 7px sliver of the other row in the fade,
-  the pick wearing `.ps-row.on`'s inverted chip, a flip CHEVRON on its LEFT, between the label and the slot (and a tap on the
+  the pick wearing `.ps-row.on`'s inverted fill with the MARK OUTSIDE the chip, beside it at the row's full height (2026-09-05: inside the fill a white-pixel mark vanished; a hairline frame instead lost the wheel's dress) — a flip CHEVRON on its LEFT, between the label and the slot (and a tap on the
   slot row flips too); rows are `role=radio`; arrow keys turn it — holding the player's mark
   + name (`useOwnFace`, rendered once the face has settled) or ANONYMOUS. Five passes the
   same day: a glass chip reading INVITE ("looks like a button", "the term invite is weird"),

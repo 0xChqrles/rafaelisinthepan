@@ -2525,33 +2525,12 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 /* Reduced motion: the arrival collapses with every other duration; the snap and the
    glide are the scroller's own and honour `behavior: auto` from the component. */
 
-/* Result action: a modern glass pill — the result is the hero, the action is quietly
-   available beside it (chrome, since 2026-08-18). */
+/* SHARE is a SECONDARY BUTTON (user-decided 2026-09-05: "neither primary nor secondary —
+   it looks like a secondary but on hover it becomes white; let's not reinvent the wheel
+   on every button"): `Button variant="secondary"`, the app's one boxed secondary — hairline
+   that turns `--fg` on hover — with only its floor width and the COPIED ink of its own. */
 .result-action {
   min-width: 180px;
-  font-family: var(--ui);
-  font-size: clamp(14px, 1.9vh, 16px);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--fg);
-  background: var(--glass);
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  padding: 16px 32px;
-  cursor: pointer;
-  text-shadow: none;
-  transition: filter 0.08s linear, color 0.08s linear, border-color 0.12s linear;
-}
-/* Hover INVERTS — the selection-box gesture as the interaction language of the one
-   chrome action. */
-.result-action:hover {
-  background: var(--fg);
-  color: var(--bg);
-  border-color: var(--fg);
-}
-.result-action:active {
-  filter: brightness(1.2);
 }
 .result-action.copied {
   color: var(--accent);
@@ -2621,6 +2600,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .share-as-row {
   display: flex;
   align-items: center;
+  gap: 8px;
   margin: 0;
   padding: 0;
   border: 0;
@@ -2643,11 +2623,15 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   line-height: 1;
   text-transform: uppercase;
   white-space: nowrap;
+  box-sizing: border-box;
   transition: background-color 120ms linear, color 120ms linear;
 }
 .share-as-row.on {
   color: var(--fg);
 }
+/* The pick wears the header wheel's inverted fill (`.ps-row.on`). The mark is NOT inside
+   it (user-decided 2026-09-05: white pixels vanished into the white chip) — it stands
+   beside the chip at the row's full height, its own tile. */
 .share-as-row.on .share-as-chip {
   background: var(--fg);
   color: var(--bg);
@@ -2655,10 +2639,10 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .share-as-row.on:active .share-as-chip {
   background: color-mix(in srgb, var(--fg) 68%, var(--bg));
 }
+/* As tall as the chip beside it (the row's height, set inline on the mark). */
 .share-as-face {
   display: inline-flex;
-  width: 16px;
-  height: 16px;
+  flex: none;
 }
 .share-as-name {
   text-transform: none;
@@ -5070,16 +5054,17 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    where those buttons sit on their screens.
    ON DESKTOP IT STANDS OFF (user-decided 2026-09-03: the column is centred there, and at
    the rows' own 20px the call read as one more row — "everything is packed in the middle
-   of the screen"). 96px over the column's 20px gap is a real break — 48 was tried first
-   and read as no change at all at 1280×900, a 28px difference in a centred column — so
-   the call is plainly a different kind of thing from the list above it, not its last row.
-   A phone never sees this margin: its block replaces it with the auto margin that parks
-   the call on the bottom edge, where the gap was already right. */
+   of the screen"). That break was 96px while a list of rows sat between the numbers and
+   the call; with the rows gone (2026-09-05, the sign-in door removed) the same 96px read
+   as "a huge gap between the save button and the stats", so it is 32px now — still more
+   than the column's 20px, so the call is not the numbers' last row, and no more. A phone
+   never sees this margin: its block replaces it with the auto margin that parks the call
+   on the bottom edge, where the gap was already right. */
 .account-cta {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  margin-top: 96px;
+  margin-top: 32px;
 }
 .account-cta .account-note.caption {
   margin: 0;

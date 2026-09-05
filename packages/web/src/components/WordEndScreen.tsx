@@ -6,6 +6,7 @@ import { RARITY_NAMES } from '../game/wordGame';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import type { ScorePlacementState } from '../hooks/useScoreHistogram';
 import useShare from '../hooks/useShare';
+import Button from './Button';
 import ShareAs, { useShareSigner } from './ShareAs';
 import { RARITY_COLORS } from './rarity';
 import ScoreTop from './ScoreTop';
@@ -171,13 +172,13 @@ export default function WordEndScreen({
       </span>
 
       <div className="result-actions">
-        <button
-          type="button"
+        <Button
+          variant="secondary"
           className={`result-action${copied ? ' copied' : ''}`}
           onClick={onShare}
         >
           {copied ? t(lang, 'copied') : t(lang, 'share')}
-        </button>
+        </Button>
         <ShareAs lang={lang} signer={signer} />
       </div>
     </div>

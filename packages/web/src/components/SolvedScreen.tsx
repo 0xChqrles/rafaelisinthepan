@@ -10,6 +10,7 @@ import SolvedCaption, { captionDurationMs } from './SolvedCaption';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useLetterWave, { WAVE_VARS } from '../hooks/useLetterWave';
 import useShare from '../hooks/useShare';
+import Button from './Button';
 import ShareAs, { useShareSigner } from './ShareAs';
 import { ariaHoleHistory, t } from '../i18n';
 import { SCORE_COUNT_MS } from './resultAnimation';
@@ -453,13 +454,13 @@ export default function SolvedScreen({
         {/* SHARE closes the reveal: hidden in place (footprint kept) until the standing
             has landed. */}
         <div className={`result-actions${shareIn ? ' in' : ''}`}>
-          <button
-            type="button"
+          <Button
+            variant="secondary"
             className={`result-action${copied ? ' copied' : ''}`}
             onClick={onShare}
           >
             {copied ? t(lang, 'copied') : t(lang, 'share')}
-          </button>
+          </Button>
           <ShareAs lang={lang} signer={signer} />
         </div>
       </div>

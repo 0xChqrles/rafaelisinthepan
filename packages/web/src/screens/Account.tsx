@@ -47,7 +47,6 @@ import { faceSettled, shownFace, useOwnFace } from '../components/AccountFace';
 import AccountStats from '../components/AccountStats';
 import Avatar from '../components/Avatar';
 import Button from '../components/Button';
-import ChevronRightIcon from '../assets/icons/chevron-right.svg?react';
 import DeviceList from '../components/DeviceList';
 import LangTitle from '../components/LangTitle';
 import { HeaderLeft } from '../components/TopBar';
@@ -55,7 +54,6 @@ import { useDeviceIdentity } from '../identity';
 import { t } from '../i18n';
 import {
   ACCOUNT_EMAIL_PATH,
-  ACCOUNT_SIGNIN_PATH,
   PRIVACY_PATH,
   PROFILE_PATH,
 } from '../langs';
@@ -150,41 +148,22 @@ export default function Account() {
             near the stats"). Every action is a full-width row in the device list's own
             dress — a hairline glass box, a label, a chevron pointing where it leads — so
             the screen reads top-down as one settings page: who you are, what you hold,
-            where to go. The door to another account is a row that leads somewhere.
-            Unknown holds a row's box, so nothing moves when the summary lands and nothing
-            claims "unsaved" before it knows (#211's explicit-loading rule). */}
-        <div className="account-list">
-          {phase === 'failed' && (
+            where to go. THE SECOND DOOR — *I ALREADY HAVE AN ACCOUNT* / *SIGN IN TO
+            ANOTHER ACCOUNT*, onto `/account/signin` — is GONE (user-decided 2026-09-05:
+            "if you want to sign in again, just log out your session and sign in,
+            everybody knows this flow"). Signing out is revoking this device in the list
+            below; the signed-out screen's RECONNECT is the way to the returning door, and
+            SAVE with a known address ADOPTS that account anyway. */}
+        {phase === 'failed' && (
+          <div className="account-list">
             <div className="account-load-error">
               <p className="status error">{t(lang, 'failedAccountLoad')}</p>
               <Button variant="secondary" onClick={() => loadAccountSummary(true)}>
                 {t(lang, 'retry')}
               </Button>
             </div>
-          )}
-          {!known ? (
-            <span className="account-link skeleton" aria-hidden="true" />
-          ) : accountUnknown ? null : (
-            <>
-              {/* THE SECOND DOOR (#204's UX rework vol. 2). Saving an account and signing
-                  into another one are OPPOSITE acts; a returning player was looking for a
-                  word that was not on screen. Its WORDS change with what it would cost:
-                  unsaved, leaving destroys this account, so the door names the intention
-                  plainly; saved, the account stays reachable by its own address, so the
-                  door simply says what it does. */}
-              <button
-                type="button"
-                className="account-link"
-                onClick={() => navigate(ACCOUNT_SIGNIN_PATH)}
-              >
-                <span className="account-link-label">
-                  {t(lang, saved !== null ? 'accountSwitch' : 'accountHaveAccount')}
-                </span>
-                <ChevronRightIcon className="ui-icon" aria-hidden />
-              </button>
-            </>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* DEVICES — its own SECTION, after everything there is to DO with this account
             (2026-08-30). ONLY once SAVED: an unlinked account holds exactly the device
