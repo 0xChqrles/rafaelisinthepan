@@ -10,6 +10,7 @@ import {
   type WordShareResult,
 } from '@whippin/shared';
 import Avatar from '../components/Avatar';
+import Button from '../components/Button';
 import RunRuler, { rulerStagger } from '../components/RunRuler';
 import WordRarityBar from '../components/WordRarityBar';
 import LoadingWave from '../components/LoadingWave';
@@ -343,25 +344,38 @@ export default function FriendInvite({
       </p>
     );
   }
+  // TWO GROUPS with a gap between them (user-decided 2026-09-05: the face at the top and
+  // the button at the bottom "feel like both have no link"): the RESULT first, on its own —
+  // what was shared — then the PERSON with what you can do about them: their mark and
+  // name directly over ADD FRIEND, and PLAY under it as the way out for a reader who wants
+  // the game and not the friend (a landing with one door is a wall). A plain invite has
+  // no first group and is the person alone.
   return (
     <div className="invite-done">
-      <Avatar avatar={inviter.avatar ?? defaultAvatar(publicId)} size={64} />
-      <span className="invite-done-name">{inviter.name}</span>
       {shared && <SharedResultBlock shared={shared} lang={lang} />}
-      {phase === 'done' ? (
-        <>
-          <p className="invite-done-line" role="status">
-            {t(lang, 'inviteAdded')}
-          </p>
-          <button type="button" className="mix-btn" onClick={continueToGame}>
-            {t(lang, 'gatePlay')}
-          </button>
-        </>
-      ) : (
-        <button type="button" className="mix-btn" onClick={accept} disabled={phase === 'busy'}>
-          {phase === 'busy' ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'inviteAccept')}
-        </button>
-      )}
+      <div className="invite-person">
+        <Avatar avatar={inviter.avatar ?? defaultAvatar(publicId)} size={64} />
+        <span className="invite-done-name">{inviter.name}</span>
+        {phase === 'done' ? (
+          <>
+            <p className="invite-done-line" role="status">
+              {t(lang, 'inviteAdded')}
+            </p>
+            <button type="button" className="mix-btn" onClick={continueToGame}>
+              {t(lang, 'gatePlay')}
+            </button>
+          </>
+        ) : (
+          <>
+            <button type="button" className="mix-btn" onClick={accept} disabled={phase === 'busy'}>
+              {phase === 'busy' ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'inviteAccept')}
+            </button>
+            <Button variant="secondary" onClick={continueToGame}>
+              {t(lang, 'gatePlay')}
+            </Button>
+          </>
+        )}
+      </div>
 
       {failed && (
         <ErrorScreen

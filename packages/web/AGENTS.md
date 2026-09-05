@@ -1719,8 +1719,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   landing
   takes the token as `/join/<publicId>/<token>` (`parseRoute` shape-checks it with
   `SHARE_TOKEN_PATTERN`, `FriendInvite` decodes it — `sharedResultFrom`), draws the shared
-  result over the inviter's face (`SharedResultBlock`: number + named unit, the run ruler
-  settled or the day's word, the date) and continues into the SHARED DAY (`landingAfter`).
+  result FIRST and alone (`SharedResultBlock`: number + named unit, the run ruler settled
+  or the day's word and its bar, the date), then — after a 40px break — the PERSON as one
+  group (`.invite-person`: mark, name, ADD FRIEND, and PLAY as the bare secondary under
+  it, the way out for a reader who wants the game and not the friend; user-decided
+  2026-09-05, "group relevant items together"), and continues into the SHARED DAY
+  (`landingAfter`). `useLocation` re-reads the URL once it subscribes, because this
+  landing's skip navigates from a mount effect that runs BEFORE App's subscription.
   **The signer's own device never sees it, and neither does a FRIEND's** (user-decided
   2026-09-05): a signed link opened by the account that signed it (`isOwnLink`, known
   locally) or by an account already holding the edge (one `POST /friends {token}` read

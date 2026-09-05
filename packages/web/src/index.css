@@ -6616,8 +6616,19 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  /* Between the RESULT and the PERSON (user-decided 2026-09-05): a real break, so the two
+     read as what was shared and who shared it, not one stack. */
+  gap: 40px;
   text-align: center;
+}
+/* The person and what you can do about them: mark, name, ADD FRIEND, PLAY — one group at
+   the landing's own 14px rhythm, so the button sits under the face it is about. */
+.invite-person {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
 }
 .invite-done .avatar {
   border: 1px solid var(--line);
@@ -6642,18 +6653,22 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   width: 100%;
   margin-top: 12px;
 }
+/* PLAY under ADD FRIEND wears the bare secondary dress (`.mix-btn + .btn-secondary`, the
+   one position that earns it); the pair's seam is the group's own gap. */
+.invite-done .btn-secondary {
+  width: 100%;
+}
 
 /* The shared RESULT on the landing (user-decided 2026-09-05): what a signed share link
-   was about, under the inviter's face and over ADD FRIEND — the result screens' own score
-   dress (`.solved-score`: pixel number over its named unit), the run ruler (sentence) or
-   the day's word (word game), the date. */
+   was about, FIRST and on its own — the result screens' own score dress (`.solved-score`:
+   pixel number over its named unit), the run ruler (sentence) or the day's word and its
+   rarity bar (word game), the date. */
 .invite-result {
   width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  padding: 8px 0 4px;
 }
 .invite-result-word {
   font-family: var(--ui);
