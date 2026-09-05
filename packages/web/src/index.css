@@ -2600,6 +2600,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .share-as-row {
   display: flex;
   align-items: center;
+  gap: 8px;
   margin: 0;
   padding: 0;
   border: 0;
@@ -2623,25 +2624,25 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   text-transform: uppercase;
   white-space: nowrap;
   box-sizing: border-box;
-  /* The slot's frame is a hairline, NOT the header wheel's inverted fill (user-decided
-     2026-09-05): a mark drawn in white pixels vanished into a white chip. Reserved on every
-     row as transparent, so the pick's frame moves nothing. */
-  border: 1px solid transparent;
-  transition: border-color 120ms linear, background-color 120ms linear, color 120ms linear;
+  transition: background-color 120ms linear, color 120ms linear;
 }
 .share-as-row.on {
   color: var(--fg);
 }
+/* The pick wears the header wheel's inverted fill (`.ps-row.on`). The mark is NOT inside
+   it (user-decided 2026-09-05: white pixels vanished into the white chip) — it stands
+   beside the chip at the row's full height, its own tile. */
 .share-as-row.on .share-as-chip {
-  border-color: var(--fg);
+  background: var(--fg);
+  color: var(--bg);
 }
 .share-as-row.on:active .share-as-chip {
-  background: color-mix(in srgb, var(--fg) 12%, transparent);
+  background: color-mix(in srgb, var(--fg) 68%, var(--bg));
 }
+/* As tall as the chip beside it (the row's height, set inline on the mark). */
 .share-as-face {
   display: inline-flex;
-  width: 16px;
-  height: 16px;
+  flex: none;
 }
 .share-as-name {
   text-transform: none;
@@ -5053,16 +5054,17 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    where those buttons sit on their screens.
    ON DESKTOP IT STANDS OFF (user-decided 2026-09-03: the column is centred there, and at
    the rows' own 20px the call read as one more row — "everything is packed in the middle
-   of the screen"). 96px over the column's 20px gap is a real break — 48 was tried first
-   and read as no change at all at 1280×900, a 28px difference in a centred column — so
-   the call is plainly a different kind of thing from the list above it, not its last row.
-   A phone never sees this margin: its block replaces it with the auto margin that parks
-   the call on the bottom edge, where the gap was already right. */
+   of the screen"). That break was 96px while a list of rows sat between the numbers and
+   the call; with the rows gone (2026-09-05, the sign-in door removed) the same 96px read
+   as "a huge gap between the save button and the stats", so it is 32px now — still more
+   than the column's 20px, so the call is not the numbers' last row, and no more. A phone
+   never sees this margin: its block replaces it with the auto margin that parks the call
+   on the bottom edge, where the gap was already right. */
 .account-cta {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  margin-top: 96px;
+  margin-top: 32px;
 }
 .account-cta .account-note.caption {
   margin: 0;

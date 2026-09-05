@@ -154,16 +154,16 @@ export default function Account() {
             everybody knows this flow"). Signing out is revoking this device in the list
             below; the signed-out screen's RECONNECT is the way to the returning door, and
             SAVE with a known address ADOPTS that account anyway. */}
-        <div className="account-list">
-          {phase === 'failed' && (
+        {phase === 'failed' && (
+          <div className="account-list">
             <div className="account-load-error">
               <p className="status error">{t(lang, 'failedAccountLoad')}</p>
               <Button variant="secondary" onClick={() => loadAccountSummary(true)}>
                 {t(lang, 'retry')}
               </Button>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* DEVICES — its own SECTION, after everything there is to DO with this account
             (2026-08-30). ONLY once SAVED: an unlinked account holds exactly the device

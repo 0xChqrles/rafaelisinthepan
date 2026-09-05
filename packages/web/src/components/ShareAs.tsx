@@ -91,20 +91,22 @@ export default function ShareAs({ lang, signer }: { lang: string; signer: ShareS
 
   if (signer.signer === null || face === null) return null;
 
+  // The mark stands OUTSIDE the chip, at the row's full height (user-decided 2026-09-05):
+  // inside the inverted chip a mark drawn in white pixels vanished, and a hairline frame
+  // instead of the fill lost the wheel's own dress. So the chip keeps the fill and holds
+  // only the name; the mark is its own tile beside it, as tall as the chip.
   const rows = [
     {
       key: 'me',
       label: face.name,
-      chip: (
-        <>
-          <span className="share-as-face" aria-hidden="true">
-            <Avatar avatar={face.avatar ?? defaultAvatar(signer.signer)} size={16} sharp />
-          </span>
-          <span className="share-as-name">{face.name}</span>
-        </>
+      face: (
+        <span className="share-as-face" aria-hidden="true">
+          <Avatar avatar={face.avatar ?? defaultAvatar(signer.signer)} size={ROW_H} sharp />
+        </span>
       ),
+      chip: <span className="share-as-name">{face.name}</span>,
     },
-    { key: 'anon', label: t(lang, 'shareAnon'), chip: t(lang, 'shareAnon') },
+    { key: 'anon', label: t(lang, 'shareAnon'), face: null, chip: t(lang, 'shareAnon') },
   ];
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -155,6 +157,7 @@ export default function ShareAs({ lang, signer }: { lang: string; signer: ShareS
                   if (drum.tap(i) === 'slot') flip();
                 }}
               >
+                {row.face}
                 <span className="share-as-chip">{row.chip}</span>
               </button>
             );

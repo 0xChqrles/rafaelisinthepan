@@ -1706,7 +1706,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   default, so every result screen asks afresh; `by` is the account's publicId or null) and,
   under SHARE in both `SolvedScreen` and `WordEndScreen`, the label AS beside a two-row
   drum on `useDrum` — ONE ROW TALL: the slot with a 7px sliver of the other row in the fade,
-  the pick framed by a hairline `--fg` border — not `.ps-row.on`'s inverted fill, which swallowed a mark's white pixels (2026-09-05) — a flip CHEVRON on its LEFT, between the label and the slot (and a tap on the
+  the pick wearing `.ps-row.on`'s inverted fill with the MARK OUTSIDE the chip, beside it at the row's full height (2026-09-05: inside the fill a white-pixel mark vanished; a hairline frame instead lost the wheel's dress) — a flip CHEVRON on its LEFT, between the label and the slot (and a tap on the
   slot row flips too); rows are `role=radio`; arrow keys turn it — holding the player's mark
   + name (`useOwnFace`, rendered once the face has settled) or ANONYMOUS. Five passes the
   same day: a glass chip reading INVITE ("looks like a button", "the term invite is weird"),
