@@ -2525,33 +2525,12 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 /* Reduced motion: the arrival collapses with every other duration; the snap and the
    glide are the scroller's own and honour `behavior: auto` from the component. */
 
-/* Result action: a modern glass pill — the result is the hero, the action is quietly
-   available beside it (chrome, since 2026-08-18). */
+/* SHARE is a SECONDARY BUTTON (user-decided 2026-09-05: "neither primary nor secondary —
+   it looks like a secondary but on hover it becomes white; let's not reinvent the wheel
+   on every button"): `Button variant="secondary"`, the app's one boxed secondary — hairline
+   that turns `--fg` on hover — with only its floor width and the COPIED ink of its own. */
 .result-action {
   min-width: 180px;
-  font-family: var(--ui);
-  font-size: clamp(14px, 1.9vh, 16px);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--fg);
-  background: var(--glass);
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  padding: 16px 32px;
-  cursor: pointer;
-  text-shadow: none;
-  transition: filter 0.08s linear, color 0.08s linear, border-color 0.12s linear;
-}
-/* Hover INVERTS — the selection-box gesture as the interaction language of the one
-   chrome action. */
-.result-action:hover {
-  background: var(--fg);
-  color: var(--bg);
-  border-color: var(--fg);
-}
-.result-action:active {
-  filter: brightness(1.2);
 }
 .result-action.copied {
   color: var(--accent);
@@ -2643,17 +2622,21 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   line-height: 1;
   text-transform: uppercase;
   white-space: nowrap;
-  transition: background-color 120ms linear, color 120ms linear;
+  box-sizing: border-box;
+  /* The slot's frame is a hairline, NOT the header wheel's inverted fill (user-decided
+     2026-09-05): a mark drawn in white pixels vanished into a white chip. Reserved on every
+     row as transparent, so the pick's frame moves nothing. */
+  border: 1px solid transparent;
+  transition: border-color 120ms linear, background-color 120ms linear, color 120ms linear;
 }
 .share-as-row.on {
   color: var(--fg);
 }
 .share-as-row.on .share-as-chip {
-  background: var(--fg);
-  color: var(--bg);
+  border-color: var(--fg);
 }
 .share-as-row.on:active .share-as-chip {
-  background: color-mix(in srgb, var(--fg) 68%, var(--bg));
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
 }
 .share-as-face {
   display: inline-flex;

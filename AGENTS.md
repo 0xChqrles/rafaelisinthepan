@@ -511,7 +511,8 @@ The live routes then share:
   RETURN) onto one engine where the declared intention shapes the JOURNEY and the server the
   DESTINATION; the crossroads confirmation; the five endings; one purpose per screen
   (`/account`, `/profile`, the flow); the code prompt; the copy rule — are recorded in the
-  web `AGENTS.md` (#204 bullet). Repo-wide consequences: RECONNECT lands on
+  web `AGENTS.md` (#204 bullet). Since 2026-09-05 the RETURN door has no row on `/account`
+  (sign out, then sign in); it is reached through RECONNECT. Repo-wide consequences: RECONNECT lands on
   `/account/signin`; SEND CODE is the sixth deploy trigger; **a link signs the account's
   OTHER devices out** when the left account is deleted (they fail the account-existence check).
 - **Infra**: SES domain identity with EasyDKIM in the API's hosted zone; `ses:SendEmail`

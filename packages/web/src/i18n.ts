@@ -156,15 +156,6 @@ const STRINGS = {
     en: 'To get your account back on another device.',
     fr: 'Pour retrouver votre compte sur un autre appareil.',
   },
-  // THE SECOND DOOR (#204's UX rework vol. 2). Saving an account and signing into another
-  // one were one button, one dress and one set of taps — and opposite acts. A returning
-  // player was looking for a word that was not on screen, and had to infer that "save" also
-  // meant "get it back" on the one screen where guessing wrong deletes something. It is a
-  // QUIET door, never a second primary: most visitors to /account came to save.
-  accountHaveAccount: { en: 'I ALREADY HAVE AN ACCOUNT', fr: "J'AI DÉJÀ UN COMPTE" },
-  // The same door once THIS account is saved, where it means something milder: leaving is
-  // reversible, because the account stays reachable by its own address.
-  accountSwitch: { en: 'SIGN IN TO ANOTHER ACCOUNT', fr: 'SE CONNECTER À UN AUTRE COMPTE' },
   // THE PRIVACY NOTICE (#229). ONE word for one thing: it names the screen in the header,
   // and it names the row on `/account` that leads there — a row whose label and its
   // destination's title should be the same word, or the tap reads as going somewhere else.
