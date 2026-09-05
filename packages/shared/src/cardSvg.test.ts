@@ -336,9 +336,25 @@ describe('a signed result card (the share link carrying an invite)', () => {
     expect(svg).toContain('5 MOTS');
   });
 
-  it('draws no face on a plain share', () => {
+  it('draws no face on a plain share, and moves nothing', () => {
     expect(renderCardSvg(sentence)).not.toContain('clipPath');
     expect(renderWordCardSvg(word)).not.toContain('clipPath');
+    expect(renderCardSvg(sentence)).toContain('translate(0 0)');
+    expect(renderWordCardSvg(word)).toContain('translate(0 0)');
+  });
+
+  it('makes room for the strip by moving the whole RESULT down, never by squeezing it', () => {
+    const signed = renderCardSvg(sentence, { publicId: id, name: 'Chqrles', avatar: null });
+    const shift = /<g transform="translate\(0 (\d+)\)">/.exec(signed)!;
+    expect(Number(shift[1])).toBeGreaterThan(0);
+    // The strip sits ABOVE the moved result with a gap: its bottom edge is clear of the
+    // ruler's tick tops (BAR_Y − TICK_OVERHANG = 171, plus the shift).
+    const tile = /<clipPath id="sign"><rect x="-?\d+" y="(\d+)" width="(\d+)"/.exec(signed)!;
+    expect(Number(tile[1]) + Number(tile[2])).toBeLessThan(171 + Number(shift[1]));
+    // Inside the moved group the result is the plain card's, coordinate for coordinate.
+    const plain = renderCardSvg(sentence);
+    const inner = (svg: string) => svg.slice(svg.indexOf('<g shape-rendering'), svg.lastIndexOf('</g>'));
+    expect(inner(signed)).toBe(inner(plain));
   });
 
   it('keeps the widest signature inside the card margins', () => {

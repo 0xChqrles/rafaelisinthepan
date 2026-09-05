@@ -2556,17 +2556,18 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .result-action.copied {
   color: var(--accent);
 }
-/* SHARE MY PROFILE (user-decided 2026-09-05, ShareProfile.tsx): a plain CHECKBOX under
+/* `AS <mark> <name>` (user-decided 2026-09-05, ShareProfile.tsx): a plain CHECKBOX under
    SHARE — its own row of the actions flow, small and muted so the button stays the action.
    A native input (hidden but focusable, so keyboard and screen readers get the real
    control) with the app's square drawn over it: hairline when clear, accent-filled with
-   its tick when checked. Nothing is remembered. */
+   its tick when checked. The face and name are the label; unticked, they dim — the reader
+   would see nobody. Nothing is remembered. */
 .share-profile {
   flex-basis: 100%;
   display: inline-flex;
   justify-content: center;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   font-family: var(--ui);
   font-size: 12px;
   font-weight: 500;
@@ -2575,6 +2576,23 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   color: var(--muted);
   cursor: pointer;
   user-select: none;
+}
+.share-profile-face {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  transition: opacity 0.12s linear;
+}
+.share-profile-name {
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: none;
+  color: var(--fg);
+  transition: opacity 0.12s linear;
+}
+.share-profile input:not(:checked) ~ .share-profile-face,
+.share-profile input:not(:checked) ~ .share-profile-name {
+  opacity: 0.4;
 }
 .share-profile input {
   position: absolute;
@@ -2595,6 +2613,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   border: 1px solid var(--line-strong);
   border-radius: 3px;
   background: var(--glass);
+  flex: 0 0 auto;
+  margin-right: 2px;
   transition: background-color 0.12s linear, border-color 0.12s linear;
 }
 /* The tick: two arms of one bordered corner, turned — no glyph, no font. */
@@ -2617,9 +2637,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 .share-profile input:checked + .share-profile-box::after {
   opacity: 1;
-}
-.share-profile input:checked ~ .share-profile-label {
-  color: var(--fg);
 }
 .share-profile input:focus-visible + .share-profile-box {
   outline: 2px solid var(--fg);

@@ -1703,10 +1703,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **THE SHARE'S PROFILE CHECKBOX (user-decided 2026-09-05, root `AGENTS.md`):**
   `components/ShareProfile.tsx` — `useShareSigner` (component state, checked by default, so
   every result screen asks afresh; `by` is the account's publicId or null) and a plain
-  checkbox reading SHARE MY PROFILE under SHARE in both `SolvedScreen` and `WordEndScreen`
-  (a native input under the app's own square; the first cut was a glass chip with the
-  player's mark and the word INVITE — retired the same day: "looks like a button, not like a
-  checkbox", "the term invite is weird"; no account, no checkbox). The landing
+  checkbox reading `AS <mark> <name>` (`useOwnFace`, rendered once the face has settled)
+  under SHARE in both `SolvedScreen` and `WordEndScreen` — a native input under the app's
+  own square; unticked, the face and name dim. Three passes the same day: a glass chip
+  reading INVITE ("looks like a button", "the term invite is weird"), then SHARE MY PROFILE
+  ("can be scary"), then the user's own `as <pfp> <username>`. No account, no checkbox. The
+  landing
   takes the token as `/join/<publicId>/<token>` (`parseRoute` shape-checks it with
   `SHARE_TOKEN_PATTERN`, `FriendInvite` decodes it — `sharedResultFrom`), draws the shared
   result over the inviter's face (`SharedResultBlock`: number + named unit, the run ruler

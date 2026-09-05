@@ -187,24 +187,37 @@ function markTile(
 }
 
 // A SIGNED result card's strip (user-decided 2026-09-05): the player's mark and name as
-// one centred lockup across the top band, which both result layouts leave empty — the
-// sentence ruler starts at BAR_Y, the word row at WORD_ROW_Y. The name is set small and
-// held to the profile's own 16-glyph cap, so the widest signature still clears the margins;
-// the RESULT stays the card's subject. Absent on a plain (unsigned) share.
-const SIGN_Y = 44;
+// one centred lockup above the result. The name is set small and held to the profile's
+// own 16-glyph cap, so the widest signature still clears the margins; the RESULT stays the
+// card's subject. Absent on a plain (unsigned) share.
+//
+// SPACING (user feedback the same day, "improve the spacing on the og preview when the
+// user infos are on"): the strip is not pinned to the top edge with the result left where
+// it was — that read as a face floating over a card. Each card names where its strip sits
+// and how far its RESULT moves down to make room, so strip + gap + result is ONE block
+// centred on the card, top and bottom margins alike. The plain card is untouched (shift 0).
 const SIGN_AVATAR_PX = 64;
 const SIGN_GAP = 22;
 const SIGN_NAME_SIZE = 28;
+// Sentence: the ruler's tick tops start at BAR_Y − TICK_OVERHANG = 171 and the date sits
+// at 500; moved down 30 the result runs 201..538, and the strip at 97..161 leaves 40 to
+// the ticks — 97 above, 92 below.
+const SENTENCE_SIGN_Y = 97;
+const SENTENCE_SIGN_SHIFT = 30;
+// Word: the word row's glyphs top out near 137 and the date sits at 555; moved down 14 the
+// word starts at 151, the strip at 44..108 leaves 43 to it, and ~55 stays under the date.
+const WORD_SIGN_Y = 44;
+const WORD_SIGN_SHIFT = 14;
 
-function signatureStrip({ publicId, name, avatar }: InviteCardData): string {
+function signatureStrip({ publicId, name, avatar }: InviteCardData, y: number): string {
   const shown = name || anonName(publicId);
   const glyphs = Math.max(1, Array.from(shown).length);
   const width = SIGN_AVATAR_PX + SIGN_GAP + glyphs * SIGN_NAME_SIZE;
   const x = Math.round(CARD_WIDTH / 2 - width / 2);
   const nameX = x + SIGN_AVATAR_PX + SIGN_GAP;
-  const cy = SIGN_Y + SIGN_AVATAR_PX / 2;
+  const cy = y + SIGN_AVATAR_PX / 2;
   return (
-    markTile('sign', publicId, avatar, x, SIGN_Y, SIGN_AVATAR_PX) +
+    markTile('sign', publicId, avatar, x, y, SIGN_AVATAR_PX) +
     `<text x="${nameX}" y="${cy}" dy="0.16em" dominant-baseline="middle" font-family="${CARD_FONT}" font-size="${SIGN_NAME_SIZE}" font-variant-ligatures="none" fill="${FG}">${escapeSvgText(shown)}</text>`
   );
 }
@@ -287,11 +300,13 @@ export function renderWordCardSvg(
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}">`,
     `<rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="${BG}"/>`,
-    by ? signatureStrip(by) : '',
+    by ? signatureStrip(by, WORD_SIGN_Y) : '',
+    `<g transform="translate(0 ${by ? WORD_SIGN_SHIFT : 0})">`,
     `<text x="${cx}" y="${WORD_ROW_Y}" dy="0.16em" dominant-baseline="middle" text-anchor="middle" font-family="${CARD_FONT}" font-size="${wordSize}" font-variant-ligatures="none" fill="${SOLVE}">${escapeSvgText(word)}</text>`,
     `<text x="${cx}" y="${WORD_SCORE_Y}" text-anchor="middle" font-family="${CARD_FONT}" font-size="76" fill="${FG}">${score} ${score === 1 ? unit.one : unit.many}</text>`,
     chipRow,
     `<text x="${cx}" y="${WORD_DATE_Y}" text-anchor="middle" font-family="${CARD_FONT}" font-size="30" fill="${MUTED}">${dateForDayNumber(dayNumber)}</text>`,
+    `</g>`,
     `</svg>`,
   ].join('');
 }
@@ -382,7 +397,8 @@ export function renderCardSvg(
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}">`,
     `<rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="${BG}"/>`,
-    by ? signatureStrip(by) : '',
+    by ? signatureStrip(by, SENTENCE_SIGN_Y) : '',
+    `<g transform="translate(0 ${by ? SENTENCE_SIGN_SHIFT : 0})">`,
     `<g shape-rendering="crispEdges">${cells}</g>`,
     marks,
     // "N TRIES", not "SCORE N": naming the unit is what tells a stranger seeing the
@@ -390,6 +406,7 @@ export function renderCardSvg(
     // draws `∞ TRIES` instead — same band, same unit, no number (#214).
     scoreLockup(score, capped, unit),
     `<text x="${cx}" y="500" text-anchor="middle" font-family="${CARD_FONT}" font-size="30" fill="${MUTED}">${dateForDayNumber(dayNumber)}</text>`,
+    `</g>`,
     `</svg>`,
   ].join('');
 }

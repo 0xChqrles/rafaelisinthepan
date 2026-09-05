@@ -442,9 +442,10 @@ const STRINGS = {
   // day) it offers the way back to the live one.
   share: { en: 'SHARE', fr: 'PARTAGER' },
   copied: { en: 'COPIED', fr: 'COPIÉ' },
-  // The SHARE MY PROFILE checkbox under SHARE (user-decided 2026-09-05): the user's own
-  // words, positive and ticked by default. Never a "don't share my profile" opt-out.
-  shareProfile: { en: 'SHARE MY PROFILE', fr: 'PARTAGER MON PROFIL' },
+  // The checkbox under SHARE (user-decided 2026-09-05, third pass): `AS <mark> <name>` —
+  // what the READER will see, never what the player gives up ("share my profile" read as
+  // scary; "anonymously" names an absence). Ticked by default.
+  shareAs: { en: 'AS', fr: 'EN TANT QUE' },
   // ---- the solved screen's STANDING (#170): ONE badge, `TOP 25%`, beside the score
   // (user-decided 2026-09-05, dropping the `RANK #6 OF 60` line). `TOP` is untranslated in
   // every language, like MISS and the rarity grades — one word, identical everywhere.
