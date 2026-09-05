@@ -2635,7 +2635,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   gap: 8px;
   height: 100%;
   padding: 0 10px;
-  border-radius: 4px;
+  /* Square, like the header selection's rows (`.ps-chip`): the slot chip is that chip. */
+  border-radius: 0;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.1em;
