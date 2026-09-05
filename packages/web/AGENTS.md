@@ -2688,15 +2688,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   Its tally lands on a one-shot scale pop (`score-land`, 2026-08-07 — never at 0, never on
   rehydration, collapsed under reduced motion), and **the BREAKDOWN is the result's LAST
   beat since 2026-08-11** (superseding "the count is the last beat"): the screen draws the
-  claims per grade under the unit — the OG card's chip row on screen (`.word-rarities`, a
-  coloured square + count per grade CLAIMED, commonest first, zeroes absent, each chip in
-  its `RARITY_COLORS` colour) — and once the count settles (the pop's own moment) each chip
-  rises in on its own delay via the tutorial ladder's `rung-in`, unpacking the number that
-  just landed. The row holds its layout space while invisible, so its arrival moves
-  nothing; a rehydrated result wears `.settled` and replays nothing; reduced motion
-  collapses the rise and keeps the delays (the floating numbers' degradation). It is
-  decorative (`role="img"`) with `srWordBreakdown` as its accessible line — grade names
-  untranslated, as everywhere. Identity is mode-addressed everywhere: `roundKeyForDay(day, lang,
+  claims per grade under the unit AS A BAR (`.word-bar`, user-decided 2026-09-05 over the
+  chip row: "too many centered informations" — the sentence result's run ruler in this
+  mode's terms: the same 16px band in the same frame, one segment per grade CLAIMED with
+  `flex-grow` = its count, in its `RARITY_COLORS` colour, commonest first, zeroes absent,
+  the count under its segment the way a tick is numbered) — and once the count settles (the
+  pop's own moment) each segment rises in on its own delay via the tutorial ladder's
+  `rung-in`, unpacking the number that just landed. The frame holds its layout space while
+  invisible, so its arrival moves nothing; a rehydrated result wears `.settled` and replays
+  nothing; reduced motion collapses the rise and keeps the delays (the floating numbers'
+  degradation). It is decorative (`role="img"`) with `srWordBreakdown` as its accessible
+  line — grade names untranslated, as everywhere. The OG card and the share text keep
+  their chip row and bead row; the bar is the screen's alone. Identity is mode-addressed everywhere: `roundKeyForDay(day, lang,
   'word')` = `w:` keys into the store's own `wordRounds` map (persist **v8** since the
   sentence gate flag, 2026-08-11; the word rounds' own shape is v7's, #163;
   `ensureWordRound` resets on a republished different word), `lastMode` decides where `/` lands (like

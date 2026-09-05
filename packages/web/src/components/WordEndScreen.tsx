@@ -151,25 +151,39 @@ export default function WordEndScreen({
         <span className="solved-score-unit">
           {t(lang, score === 1 ? 'foundWord' : 'foundWords')}
         </span>
-        {claimedGrades.length > 0 && (
-          <span
-            className={`word-rarities${animate ? '' : ' settled'}`}
+      </span>
+
+      {/* The tally's BREAKDOWN as a BAR (user-decided 2026-09-05, replacing the row of
+          chips: "too many centered informations"): the sentence result's run ruler, in
+          this mode's own terms — one segment per grade CLAIMED, as wide as its share of
+          the claims, in the grade's colour, commonest first, with its count under it the
+          way the ruler numbers its ticks. A picture where there was a line of text. It
+          rises in segment by segment once the count has landed. */}
+      {claimedGrades.length > 0 && (
+        <div className="run-ruler-frame">
+          <div
+            className={`word-bar${breakdownIn ? ' in' : ''}${animate ? '' : ' settled'}`}
             role="img"
             aria-label={srWordBreakdown(lang, claimedGrades)}
           >
             {claimedGrades.map(({ grade, count }, step) => (
               <span
                 key={grade}
-                className={`word-rarity${breakdownIn ? ' in' : ''}`}
-                style={{ '--step': step, color: RARITY_COLORS[grade] } as CSSProperties}
+                className="word-bar-seg"
+                style={
+                  {
+                    '--step': step,
+                    flexGrow: count,
+                    color: RARITY_COLORS[grade],
+                  } as CSSProperties
+                }
               >
-                <i className="word-rarity-square" />
-                {count}
+                <span className="word-bar-num">{count}</span>
               </span>
             ))}
-          </span>
-        )}
-      </span>
+          </div>
+        </div>
+      )}
 
       <div className="result-actions">
         <Button
