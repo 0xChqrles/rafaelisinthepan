@@ -686,6 +686,40 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   re-sending), and the BIND, which had no retry at all. The friend and score stores keep
   their existing policy of not retrying, but a mixed or malformed cancellation now surfaces
   instead of being read as `gone` or `capped`.
+- **The inbound mail FORWARDER (#230, `src/mailForward.ts`; rules recorded here since the
+  root compaction of 2026-09-05 — infra's half is in `infra/AGENTS.md`).** A separate Lambda
+  fed by the SES receipt rule (S3 action first, then this): it fetches the raw MIME the S3
+  action wrote and forwards it to the operator, rewriting only what must change.
+  - **`From` becomes the verified sender** (SES sends as nothing else), wearing the ENVELOPE
+    sender as its display name (a `From` display name is routinely an encoded-word that turns
+    to mojibake once re-quoted); the original `From` survives as `Reply-To`; the original
+    `DKIM-Signature` is dropped (it signed a `From` that no longer stands). The header block is
+    handled as latin1 and **the body is never decoded** — a DMARC report's gzip and a
+    screenshot survive byte for byte.
+  - **The LOOP GUARD is the operational one:** every forwarded copy carries
+    `X-Whippin-Forwarded` (`FORWARD_MARKER`) and every message carrying it is refused —
+    **matched against the WHOLE RAW MESSAGE, not the top-level headers** (PR-233 review): the
+    bounce SES forwards is a DSN whose own headers are SES's, with the failed message quoted
+    in a `message/rfc822` part, so a header lookup finds nothing and forwards the bounce, which
+    bounces, forever. Deliberately coarse; a bounce of a CODE MAIL carries no marker and
+    forwards normally.
+  - **Every `X-SES-*` and `X-Whippin-*` header is STRIPPED on the way out**, by PREFIX (the
+    exact names are AWS's to extend): SES reads `X-SES-*` off a raw send as INSTRUCTIONS, so a
+    stranger's headers would steer OUR send; the verdict line is composed from SES's receipt,
+    never from a header the sender wrote.
+  - **REFUSALS COME FIRST, BEFORE ANY SIDE EFFECT:** spam, virus (scanning is on) and loop
+    are questions about WHETHER to deliver and are decided before size, which is a question
+    about HOW — the oversize path SENDS a notice. A message over ~9 MB is not relayed; a short
+    notice naming the sender, the subject and the S3 key is sent instead (a message silently
+    never forwarded is this plumbing's own failure mode). The bounds are read with
+    `Number.isFinite`: `Number('9mb')` is NaN and NaN loses every comparison, so a typo in the
+    environment would silently remove the cap.
+  - **Not done, deliberately:** `FeedbackForwardingEmailAddress` — with `hello@` receiving,
+    SES's default (the From address) already lands bounce notifications in the same inbox. And
+    **`mailer.ts` was NOT widened and must not be**: one message shape with a text body,
+    addressed to PLAYERS; anything beyond a six-digit code needs its own sender, template and
+    unsubscribe story. The forwarder addresses the OPERATOR, sends raw MIME, shares no code
+    with it.
 - **Word mode's daily artifact (#154/#156):** the ONE puzzle endpoint also serves the
   single-word artifact under `mode=word` (`GET /?lang=&date=&mode=word`; absent/
   `sentence` = the sentence puzzle, anything else = 400) with identical day-addressing,

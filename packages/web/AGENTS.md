@@ -706,9 +706,84 @@ it to the local store — see `packages/backend/AGENTS.md`).
     cannot bootstrap. That boundary is older than #216 and unchanged by it.
 
 - **Email account linking (#204), reworked to ONE PURPOSE PER SCREEN on 2026-08-26.** The
-  product contract — the one flow and its three endings, the three screens and why, the code
-  prompt's shape, the copy rule, when the account being left is deleted, the transfers —
-  lives in the root `AGENTS.md`. What is this package's:
+  SERVER-side contract — the one flow and its endings, when the account being left is
+  deleted, the confirmations the route demands, the transfers, the allowances and codes —
+  lives in the root `AGENTS.md`. The ACCOUNT AREA's product decisions are recorded HERE,
+  first (moved from the root on its 2026-09-05 compaction), then what is this package's
+  implementation:
+  - **ACCOUNT-AREA PRODUCT DECISIONS (each user-decided on the date given):**
+    - **ONE PURPOSE PER SCREEN (2026-08-26):** `/account` — *is this account mine, and
+      safe?* (mark, name, when it began, EDIT out to the editor; SAVED or not; where it is
+      signed in) · `/profile` — *how do others see me?* (the editor, nothing else) ·
+      `/account/email` — *save it* / `/account/signin` — *get another one back*, one input
+      per step. All GLOBAL routes like `/select`. A flat `/account` over a 3-card hub. The
+      leaderboard's EDIT chip is gone. RECONNECT lands on `/account/signin` directly.
+    - **TWO DOORS ONTO ONE ENGINE (2026-08-27):** the declaration shapes the JOURNEY · the
+      server shapes the DESTINATION · the ending tells the TRUTH about what happened. Nothing
+      is detected or routed; every ending stays reachable from either door. `/account` keeps
+      its lit SAVE and a QUIET second door under it, worded by cost — *I ALREADY HAVE AN
+      ACCOUNT* while unsaved, *SIGN IN TO ANOTHER ACCOUNT* once saved — held back until the
+      summary settles. **The address step states NO COST** (2026-09-03): the stakes are said
+      on the crossroads, which IS the decision.
+    - **THE WORDLESS TELL IS THE FACE; there is NO SECOND INK.** Saving keeps the real face
+      on screen from the first step (it is the OBJECT of the sentence). Returning opens on an
+      EMPTY 10×10 tile that churns through `AVATAR_PALETTES` on a slow value-noise field —
+      every frame inside the palette, none of them yours yet — stays up THROUGH the code step,
+      and RESOLVES in place, cell by cell, when the code lands, then hands off to `Avatar`;
+      reduced motion holds one frame. The ending's copy follows the face in on a short
+      cascade. The vol. 2 research's second flow ink was NOT taken.
+    - **THE CODE PROMPT:** six drawn cells over ONE real input (paste, `one-time-code`
+      autofill, screen readers); the SIXTH DIGIT SUBMITS — no CONFIRM anywhere in the flow. A
+      filled cell lights in one of six avatar-palette inks (`CODE_INKS`, addressed into
+      `AVATAR_PALETTES`), the next cell previewed at half strength; a refusal takes the WHOLE
+      row red. A wrong code stays at the input (shake, clear, one attempts-left line). RESEND
+      is quiet and countdown-gated (~30s), alone under the cells — CHANGE ADDRESS is gone,
+      the header's back goes code → address.
+    - **THE CROSSROADS, NOT A WARNING:** both accounts drawn — the one being left dimmed,
+      under DELETED (the area's one red) or under its own NAME when merely left — the one
+      being joined lit and NAMED; one sentence carries what survives (*Today's game and your
+      friends come with you. The rest is lost.*); from the SAVE door it gains the lead *That
+      address already has an account.* Skipped when nothing is at stake. `would_switch` is
+      the same crossroads with the red taken out: no stakes, *Nothing is deleted — this
+      account stays saved under its own address.*, an ordinary lit SWITCH ACCOUNT.
+      **DESTRUCTION NEVER GLOWS:** the erase button is the quiet variant in the danger ink.
+    - **BINDING IS A CONSENT the RETURN door does not give** (2026-08-28): `no_account` is a
+      note at the address field. **`account_linked` is a fact at the field, not a modal**,
+      worded per door — SAVE: *This account is already saved under another address.*; SIGN
+      IN: *No account is saved at that address.*
+    - **THE ENDINGS, one per door × outcome:** SAVE+bound *Account saved.* with the address
+      under the face · SAVE+already_bound *Already saved to this address.* · RETURN+adopted
+      *We found your account.* with the RECEIPT and PLAY · RETURN+bound *No account was tied
+      to that address — so we saved this one there.* (reachable only with `bind`) ·
+      RETURN+already_bound *You're already on this account.* · an adopt from either door
+      composes the new face. **The recovery ending prints the same three numbers `/account`
+      prints** (`AccountStats`). **Every successful ending is a DEAD STOP** — no TRY ANOTHER
+      ADDRESS.
+    - **THE ACCOUNT SCREEN STATES WHAT THE ACCOUNT IS (2026-08-28):** the live STREAK, the
+      BEST it has held, its total DAYS, and the date it began — ACROSS EVERY LANGUAGE, the
+      server's own reading (`accountStakes`; `bestStreak` beside `currentStreak` in
+      `shared/src/history.ts`), so the screen and the confirmations print one number. Zeros
+      are DRAWN, never hidden; values are withheld only while collections are in flight; the
+      AGE falls back to `gameStore.localSeedAt`; the DEVICES stay gated on SAVED. One word per
+      number, shared with the confirmations (STREAK untranslated, `statDays`). The streak
+      moved here FROM the archive, which now reads its month with `collection: false`.
+    - **SMALL TYPE HAS THREE ROLES (2026-08-29):** INFO sentence case · muted · regular · no
+      mark; ERROR sentence case · danger · medium · a danger LED before it; ACTION uppercase ·
+      `--fg` · bold · a finger's target. `.btn-secondary` grew a button's padding and weight
+      APP-WIDE for the same reason.
+    - **A TITLED SCREEN GOES BACK FROM ITS TITLE (2026-08-29):** a `HeaderBack` in the LEFT
+      slot, replacing the title. `/account` is a PLACE (plain name, lit on the row's face
+      key); the steps inside it keep the back control, and in the flow it is a STEP, not an
+      exit (code → address).
+    - **A SECTION IS SPACE AND A TITLE (2026-08-29):** generous room between blocks, a real
+      title at the chrome's own ink and size on a block that needs naming, no invented titles.
+    - **THE COPY SAYS ONLY WHAT THE SCREEN DOES NOT SHOW:** `YOUR ACCOUNT`, `SAVED AS`,
+      `6-DIGIT CODE` are cut; the ONE line kept is why a word game wants an address, said once
+      where the decision is made (*Pour qu'un téléphone perdu ne perde pas tout.*). The privacy
+      door on the address step was cut 2026-09-03; `/account`'s footnote is the notice's one
+      door.
+    - **NOT DONE, the user's call:** the erase confirmation is gated on `stakes.days > 0`
+      (solved days), so a player with rounds but no solve is erased with no dialog.
   - **TWO DOORS ONTO ONE ENGINE (vol. 2, 2026-08-27).** `/account/email` and
     `/account/signin` mount the SAME `AccountEmail` with an `intent` the ROUTE declares
     (`langs.ts` `LinkIntent`); it never reaches the server, and every request the flow makes
@@ -759,7 +834,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     equal-width sides around the arrow, because the two labels differ in length and a row that
     merely centres its content puts the pivot off by half that difference.
   - **THE AREA'S TYPE ROLES AND ITS BACK CONTROL (2026-08-29)** — the product contract is
-    the root `AGENTS.md`'s. What is this package's: `.account-note` is INFO, `.account-note
+    in the decisions list above. What is this package's: `.account-note` is INFO, `.account-note
     .danger` is an ERROR and carries an `::before` LED in the danger ink, `.link-quiet-btn`
     is an ACTION in `--fg` at a finger's size; the back control is `TopBar`'s exported
     `HeaderBack`, which a screen mounts inside its own `HeaderLeft` (a `back` PROP on
