@@ -222,18 +222,35 @@ The second puzzle type: one word and its ranked neighborhood. Produced by
   `VITE_API_BASE_URL` is required for `pnpm dev` / `pnpm build`; the front never falls back
   to its own origin.
 
-### Live routes: the shared shape
+### API routes: two CloudFront policies, and the live routes' shared shape
 
-Every non-puzzle route is LIVE: its own zero-TTL CloudFront behavior over the shared
-`allExcept: Host` origin-request shape, `no-store` responses, and:
+The API distribution (`infra/lib/backend-stack.ts`) serves its routes under TWO different
+policies, and a query parameter a handler reads has to be named in the right one — three
+packages agree on each list; `backend:dev` has no CDN and cannot show a drift.
 
-- **The cache-policy query allowList is EXACTLY the params the handler reads** — three
-  packages agree on one list (`infra/lib/backend-stack.ts`): an unlisted param never reaches
-  the Lambda AND collapses distinct responses onto one edge entry; `backend:dev` has no CDN and
-  cannot show it. Puzzle `/` `lang,date,mode` · `/scores` `lang,date,mode,id` · `/board`
-  `lang,date,mode,id` · `/round` `lang,date,mode` · `/history` `lang,mode,month` · `/profile`
-  `id` · `/friends`, `/devices`, `/link` **none**. The day a handler reads a new param, name
-  it there too.
+| Route | Forwarded query | Policy |
+| --- | --- | --- |
+| `/` (puzzle, both modes) | `lang`, `date`, `mode` | **CACHE POLICY** allowList: the cache key, and — with no origin-request policy — exactly what reaches the Lambda |
+| `/scores` | `lang`, `date`, `mode`, `id` | origin-request allowList, **caching DISABLED** |
+| `/board` | `lang`, `date`, `mode`, `id` | same |
+| `/round` | `lang`, `date`, `mode` | same |
+| `/history` | `lang`, `mode`, `month` | same |
+| `/profile` | `id` | same |
+| `/friends`, `/devices`, `/link` | none (empty allowList) | same |
+
+- **The PUZZLE route is CACHED** (`max-age=300, s-maxage=31536000`): an unlisted parameter
+  both collapses two responses onto one year-long edge entry and never reaches the origin.
+- **The eight LIVE routes have caching disabled**, each with its own origin-request policy
+  (its query allowList plus the Lambda-URL-safe `allExcept: Host` headers) and `no-store`
+  answers; an unlisted parameter never reaches the origin. The day a handler reads a new
+  parameter, name it in that policy too.
+- **The share page (`/s/*`), the cards (`/og/*`) and the invite preview (`/i/*`) are NOT
+  live routes**: they are CACHED behaviors on the WEB distribution (`infra/lib/web-stack.ts`)
+  handed to the API origin — a year for content-addressed share tokens, 300s for the invite
+  preview.
+
+The live routes then share:
+
 - **Auth is the DEVICE TOKEN in the BODY** (`{token}`, #216), never a query string — so every
   private route is POST-only (a GET is a named 405), the READ included. `id`/`publicId` in a
   query is always a PUBLIC id and grants nothing.
@@ -249,9 +266,12 @@ Every non-puzzle route is LIVE: its own zero-TTL CloudFront behavior over the sh
   (Word START; the sentence append whose pre-read finds nothing), the link code SEND. Tokens
   are prefetched into a two-slot single-use queue so a brand-new player's first PLAY (bootstrap
   + round start = two challenges, deliberately) costs no visible wait. Local: accept-all verifier.
-- **Clients read the error CODE, not the status.** A 4xx is a VERDICT that closes a
-  conversation; a 5xx / transport error is never a verdict (never signs anyone out, never
-  resets a round).
+- **Clients act on the error CODE, never on the status alone.** What a given code means —
+  a verdict that closes a conversation (`round_solved`), a wait (`too_early`), an input to
+  correct (`bad_code`), a confirmation to advance to (`would_erase`, `would_switch`) — is each
+  route's own contract, recorded in its section below. What is universal: a 5xx, a transport
+  failure or an unparseable body is NEVER a verdict — it never signs anyone out, never resets
+  a round, and on a write whose outcome is unknown the client re-reads before writing again.
 
 ### Devices, accounts, and where an account is created (#216, decided 2026-08-23)
 
@@ -479,9 +499,16 @@ Every non-puzzle route is LIVE: its own zero-TTL CloudFront behavior over the sh
 - **`normalizeEmail` is a cross-package contract** (`shared/src/email.ts`): trim, NFKC,
   lowercase WHOLE; nothing cleverer. `currentStreak`/`bestStreak` live in
   `shared/src/history.ts` so the confirmation and the streak screen print one number.
+- **The account's THREE NUMBERS are ONE aggregation over the per-language solved-day
+  collections, computed independently by both ends** (`backend/src/accountLink.ts`
+  `accountStakes`; `web/src/state/history.ts` `useAccountStats`), and they must agree:
+  **`streak` = the MAXIMUM of the per-language live streaks · `best` = the MAXIMUM of the
+  per-language best streaks · `days` = the SUM of the collections' sizes.** Never a sum of
+  streaks (a streak is a run of days in ONE language). `best` takes no active day: a record
+  is a fact about days already played.
 - **The account area's product rules** — two doors (`/account/email` SAVE, `/account/signin`
   RETURN) onto one engine where the declared intention shapes the JOURNEY and the server the
-  DESTINATION; the crossroads confirmation; the six endings; one purpose per screen
+  DESTINATION; the crossroads confirmation; the five endings; one purpose per screen
   (`/account`, `/profile`, the flow); the code prompt; the copy rule — are recorded in the
   web `AGENTS.md` (#204 bullet). Repo-wide consequences: RECONNECT lands on
   `/account/signin`; SEND CODE is the sixth deploy trigger; **a link signs the account's

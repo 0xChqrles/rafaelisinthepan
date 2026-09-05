@@ -720,7 +720,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
       leaderboard's EDIT chip is gone. RECONNECT lands on `/account/signin` directly.
     - **TWO DOORS ONTO ONE ENGINE (2026-08-27):** the declaration shapes the JOURNEY · the
       server shapes the DESTINATION · the ending tells the TRUTH about what happened. Nothing
-      is detected or routed; every ending stays reachable from either door. `/account` keeps
+      is detected or routed, and a player who picks the "wrong" door is never blocked and never
+      lied to (the one ending a door cannot reach is BIND from SIGN IN — below). `/account` keeps
       its lit SAVE and a QUIET second door under it, worded by cost — *I ALREADY HAVE AN
       ACCOUNT* while unsaved, *SIGN IN TO ANOTHER ACCOUNT* once saved — held back until the
       summary settles. **The address step states NO COST** (2026-09-03): the stakes are said
@@ -751,18 +752,21 @@ it to the local store — see `packages/backend/AGENTS.md`).
       note at the address field. **`account_linked` is a fact at the field, not a modal**,
       worded per door — SAVE: *This account is already saved under another address.*; SIGN
       IN: *No account is saved at that address.*
-    - **THE ENDINGS, one per door × outcome:** SAVE+bound *Account saved.* with the address
-      under the face · SAVE+already_bound *Already saved to this address.* · RETURN+adopted
-      *We found your account.* with the RECEIPT and PLAY · RETURN+bound *No account was tied
-      to that address — so we saved this one there.* (reachable only with `bind`) ·
+    - **FIVE ENDINGS, not six** (2026-08-28, when binding became a consent): SAVE+bound
+      *Account saved.* with the address under the face · SAVE+already_bound *Already saved to
+      this address.* · RETURN+adopted *We found your account.* with the RECEIPT and PLAY ·
       RETURN+already_bound *You're already on this account.* · an adopt from either door
-      composes the new face. **The recovery ending prints the same three numbers `/account`
-      prints** (`AccountStats`). **Every successful ending is a DEAD STOP** — no TRY ANOTHER
-      ADDRESS.
+      composes the new face. **RETURN+bound does not exist**: `AccountEmail` sends
+      `bind: !returning`, so the SIGN IN door never reaches the bind branch and an unknown
+      address there is `no_account` at the field. **The recovery ending prints the same three
+      numbers `/account` prints** (`AccountStats`). **Every successful ending is a DEAD
+      STOP** — no TRY ANOTHER ADDRESS.
     - **THE ACCOUNT SCREEN STATES WHAT THE ACCOUNT IS (2026-08-28):** the live STREAK, the
-      BEST it has held, its total DAYS, and the date it began — ACROSS EVERY LANGUAGE, the
-      server's own reading (`accountStakes`; `bestStreak` beside `currentStreak` in
-      `shared/src/history.ts`), so the screen and the confirmations print one number. Zeros
+      BEST it has held, its total DAYS, and the date it began — ACROSS EVERY LANGUAGE, by the
+      ONE aggregation the root `AGENTS.md` records for `accountStakes` (streak = MAX of the
+      live streaks, best = MAX of the best streaks, days = SUM of the collections; never a sum
+      of streaks), computed here by `useAccountStats` from `bestStreak`/`currentStreak` in
+      `shared/src/history.ts`, so the screen and the confirmations print one number. Zeros
       are DRAWN, never hidden; values are withheld only while collections are in flight; the
       AGE falls back to `gameStore.localSeedAt`; the DEVICES stay gated on SAVED. One word per
       number, shared with the confirmations (STREAK untranslated, `statDays`). The streak
