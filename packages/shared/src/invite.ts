@@ -27,11 +27,13 @@ export const INVITE_SEGMENT = 'i';
 export const INVITE_LANDING_SEGMENT = 'join';
 export const SHARE_SEGMENT = 's';
 
-// A share token's alphabet (base64url), the one spelling every reader of a share PATH
-// uses to pick the token out of it: the backend's route regexes, the SPA's landing parser,
-// the bot's message scanner. It stops at `/`, which is what lets a SIGNED share carry its
-// second segment (below) without any of them re-reading the link.
-export const SHARE_TOKEN_PATTERN = /^[A-Za-z0-9_-]+$/;
+// A share token's alphabet (base64url), the ONE spelling every reader of a share PATH
+// uses to pick the token out of it: the backend's route regexes and the bot's message
+// scanner embed `SHARE_TOKEN_SOURCE` in their own expressions, the SPA's landing parser
+// tests a whole segment with `SHARE_TOKEN_PATTERN`. It stops at `/`, which is what lets a
+// SIGNED share carry its second segment (below) without any of them re-reading the link.
+export const SHARE_TOKEN_SOURCE = '[A-Za-z0-9_-]+';
+export const SHARE_TOKEN_PATTERN = new RegExp(`^${SHARE_TOKEN_SOURCE}$`);
 
 // A RESULT SHARE, and the SIGNED share it can become (user-decided 2026-09-05):
 //

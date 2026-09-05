@@ -9,6 +9,7 @@ import {
   secondsUntilNextReset,
   INVITE_SEGMENT,
   PUBLIC_ID_PATTERN,
+  SHARE_TOKEN_SOURCE,
   RESET_HOUR,
   TIME_ZONE,
   type InviteCardData,
@@ -120,8 +121,8 @@ const SHARE_MAX_AGE = 31_536_000;
 // spells both). The token is read exactly as before; the id is validated with the SHARED
 // pattern, and the page is served under the invite preview's short TTL because, like the
 // invite, it names a player who can rename or redraw.
-const OG_PNG_RE = /^\/og\/([A-Za-z0-9_-]+)(?:\/([^/]+))?\.png$/;
-const SHARE_RE = /^\/s\/([A-Za-z0-9_-]+)(?:\/([^/]+))?$/;
+const OG_PNG_RE = new RegExp(`^/og/(${SHARE_TOKEN_SOURCE})(?:/([^/]+))?\\.png$`);
+const SHARE_RE = new RegExp(`^/s/(${SHARE_TOKEN_SOURCE})(?:/([^/]+))?$`);
 
 // The #189 invite link and its card. Unlike a share token these are NOT content-addressed
 // — the player behind the id can rename themselves or redraw their mark — so they carry a

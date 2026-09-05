@@ -9,7 +9,7 @@
 // collide with the sentence row of the same day. When a Word podium is decided, its rows
 // get their own key; until then a Word share earns the emoji or the line, and no history.
 
-import { decodeResult, decodeWordResult, type ShareResult } from '@whippin/shared';
+import { PUBLIC_ID_SOURCE, SHARE_TOKEN_SOURCE, decodeResult, decodeWordResult, type ShareResult } from '@whippin/shared';
 
 export type DecodedShare =
   | {
@@ -45,7 +45,7 @@ export function findShareTokens(text: string, siteOrigin: string): string[] {
   // Sticky, so it matches AT the character after a link rather than searching on from
   // there — and built per call: a module-level sticky regex carries its `lastIndex`
   // between callers as a hidden parameter.
-  const token = /[A-Za-z0-9_-]+/y;
+  const token = new RegExp(SHARE_TOKEN_SOURCE, 'y');
   const tokens: string[] = [];
   for (const match of text.matchAll(link)) {
     token.lastIndex = match.index + match[0].length;
@@ -106,7 +106,7 @@ export function withoutShares(text: string, siteOrigin: string): string {
     // The link, and a SIGNED share's second segment with it (`/s/<token>/<publicId>`,
     // shared/invite.ts): the id names the sharer's account, which is nothing the player
     // typed and nothing a prompt should ever see.
-    .replace(new RegExp(`${shareLink(siteOrigin, 'gu').source}[A-Za-z0-9_-]*(?:/[a-z2-7]{16})?`, 'gu'), ' ')
+    .replace(new RegExp(`${shareLink(siteOrigin, 'gu').source}(?:${SHARE_TOKEN_SOURCE})?(?:/${PUBLIC_ID_SOURCE})?`, 'gu'), ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
