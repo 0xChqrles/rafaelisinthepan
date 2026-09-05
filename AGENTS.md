@@ -593,7 +593,8 @@ The live routes then share:
   strips the id with the link); the card wears the player's mark and name; the page is
   served at the invite's 300s TTL; the click lands on `/join/<publicId>/<token>`, the
   invite landing showing the result, whose ADD FRIEND records the edge and whose PLAY
-  opens the shared day. A deleted signer falls back to the PLAIN share (the score was
+  opens the shared day; the SIGNER's own device skips the landing and opens the day, like a
+  plain link. A deleted signer falls back to the PLAIN share (the score was
   never the part that went away). Toggle OFF = the plain `/s/<token>`, byte for byte,
   still content-addressed and year-cached. The control is the label AS and a ONE-ROW-TALL
   two-row DRUM with a flip chevron (the app's one picker physics) holding the player's mark

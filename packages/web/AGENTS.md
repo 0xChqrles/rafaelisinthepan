@@ -1721,6 +1721,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `SHARE_TOKEN_PATTERN`, `FriendInvite` decodes it — `sharedResultFrom`), draws the shared
   result over the inviter's face (`SharedResultBlock`: number + named unit, the run ruler
   settled or the day's word, the date) and continues into the SHARED DAY (`landingAfter`).
+  **The signer's own device never sees it** (`isOwnLink`, user-decided 2026-09-05): a
+  signed link opened by the account that signed it goes straight to the shared day, as a
+  plain link would — the landing is for a reader, and the sender is not one.
   **ACCEPTING IS A BUTTON, for everyone** (#216 trigger rework, user-decided 2026-08-24,
   superseding the auto-add on page load): the landing shows the INVITER's mark and name
   (a best-effort bounded profile read, the assigned identity as fallback) over ONE primary

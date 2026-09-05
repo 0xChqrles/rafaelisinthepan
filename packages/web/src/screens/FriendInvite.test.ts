@@ -11,7 +11,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { anonName, encodeResult, encodeWordResult } from '@whippin/shared';
-import { inviterFrom, landingAfter, sendInvite, sharedResultFrom } from './FriendInvite';
+import { inviterFrom, isOwnLink, landingAfter, sendInvite, sharedResultFrom } from './FriendInvite';
 
 const postFriendsBody = vi.hoisted(() => vi.fn());
 const identityState = vi.hoisted(() => ({ present: true, revision: 0 }));
@@ -137,6 +137,15 @@ describe('sharedResultFrom / landingAfter — the shared result on the landing',
     const shared = sharedResultFrom(token);
     expect(shared?.mode).toBe('word');
     expect(landingAfter(shared)).toBe('/en/word/2026-07-04');
+  });
+
+  // The sender's own signed link is the plain share to them: no landing, the day itself.
+  it('recognises the device\'s own account as the signer', () => {
+    expect(isOwnLink('lfd5pqz5pa7zjm5u')).toBe(true);
+    expect(isOwnLink(INVITER)).toBe(false);
+    identityState.present = false;
+    expect(isOwnLink('lfd5pqz5pa7zjm5u')).toBe(false);
+    identityState.present = true;
   });
 
   it('a missing or unreadable token is a plain invite, home onward', () => {

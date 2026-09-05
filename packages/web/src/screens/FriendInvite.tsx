@@ -146,6 +146,15 @@ export function sharedResultFrom(token: string | undefined): SharedResult | null
   return word ? { mode: 'word', result: word } : null;
 }
 
+// YOUR OWN signed link is the plain share to you (user-decided 2026-09-05: "when you click
+// on your own link you should not have the score screen, it should behave like an
+// anonymous link"): the landing exists to show a READER who sent a result and let them
+// add that person — neither applies to the sender — so the sender's device skips it and
+// opens the shared day directly, exactly where a plain `/s/<token>` sends everyone.
+export function isOwnLink(publicId: string): boolean {
+  return deviceIdentity()?.accountId === publicId;
+}
+
 // Where the landing continues: a plain invite hands the destination to App's own home
 // redirect; a shared result opens the DAY it was played (the plain share page's own
 // click-through), so "come play" means the same round the reader was just shown.
@@ -215,6 +224,11 @@ export default function FriendInvite({
   // Replace this landing in history so a back tap leaves the game instead of re-offering
   // the invite; the destination is the shared day's, or App's own home redirect.
   const continueToGame = () => navigate(landingAfter(shared), { replace: true });
+  // The sender's own signed link: no landing at all, straight to the day (`isOwnLink`).
+  const own = shared !== null && isOwnLink(publicId);
+  useEffect(() => {
+    if (own) navigate(landingAfter(shared), { replace: true });
+  }, [own, shared]);
   // The accept's own lifecycle: idle on the landing, busy while the tap's chain runs,
   // done on the confirmation. `full` is the one refusal with its own screen.
   const [phase, setPhase] = useState<'idle' | 'busy' | 'done' | 'full' | 'expired'>('idle');
@@ -227,6 +241,7 @@ export default function FriendInvite({
   // the way out. After a few seconds the assigned fallback IS the answer. It resolves
   // ONCE and holds — never swapped under the button.
   useEffect(() => {
+    if (own) return undefined;
     let mounted = true;
     (async () => {
       const read = await readProfile(publicId, timeoutSignal(6_000));
@@ -238,12 +253,14 @@ export default function FriendInvite({
     return () => {
       mounted = false;
     };
-  }, [publicId]);
+  }, [publicId, own]);
 
   // The bootstrap challenge a tokenless accept will spend, in hand before the tap.
   useEffect(() => {
     if (deviceIdentity() === null) prefetchTurnstileTokens(1);
   }, [publicId]);
+
+  if (own) return null;
 
   const accept = () => {
     if (phase === 'busy') return;
