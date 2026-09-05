@@ -14,7 +14,7 @@ import RunRuler, { rulerStagger } from '../components/RunRuler';
 import LoadingWave from '../components/LoadingWave';
 import LoadError from '../components/LoadError';
 import ErrorScreen from '../components/ErrorScreen';
-import { friendsUrl, postFriendsBody, readProfile, type ProfileRead } from '../api';
+import { friendsUrl, parseFriends, postFriendsBody, readProfile, type ProfileRead } from '../api';
 import {
   deviceIdentity,
   ensureRequestIdentity,
@@ -148,9 +148,13 @@ export function sharedResultFrom(token: string | undefined): SharedResult | null
 
 // YOUR OWN signed link is the plain share to you (user-decided 2026-09-05: "when you click
 // on your own link you should not have the score screen, it should behave like an
-// anonymous link"): the landing exists to show a READER who sent a result and let them
-// add that person — neither applies to the sender — so the sender's device skips it and
-// opens the shared day directly, exactly where a plain `/s/<token>` sends everyone.
+// anonymous link") — AND SO IS A FRIEND'S ("same if you're already friend with the
+// person"): the landing exists to show a READER who sent a result and let them add that
+// person, and neither applies to the sender or to someone who already holds the edge. Both
+// skip it and open the shared day directly, exactly where a plain `/s/<token>` sends
+// everyone. The sender is known locally; a friend takes one private read of the list
+// (`POST /friends {token}`) while the loading frame stands — a failed read shows the
+// landing, whose ADD FRIEND on an existing edge is a harmless "you ARE friends".
 export function isOwnLink(publicId: string): boolean {
   return deviceIdentity()?.accountId === publicId;
 }
@@ -224,11 +228,39 @@ export default function FriendInvite({
   // Replace this landing in history so a back tap leaves the game instead of re-offering
   // the invite; the destination is the shared day's, or App's own home redirect.
   const continueToGame = () => navigate(landingAfter(shared), { replace: true });
-  // The sender's own signed link: no landing at all, straight to the day (`isOwnLink`).
-  const own = shared !== null && isOwnLink(publicId);
+  // Whether this device SKIPS the landing — the sender's own signed link, or a friend's
+  // (see `isOwnLink`). `null` while the friends read is out; a plain invite and a tokenless
+  // device never skip.
+  const [skip, setSkip] = useState<boolean | null>(() => {
+    if (shared === null) return false;
+    if (isOwnLink(publicId)) return true;
+    return deviceIdentity() === null ? false : null;
+  });
   useEffect(() => {
-    if (own) navigate(landingAfter(shared), { replace: true });
-  }, [own, shared]);
+    if (skip !== null) return undefined;
+    const identity = deviceIdentity();
+    if (identity === null) {
+      setSkip(false);
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await postFriendsBody(friendsUrl(), { token: identity.token });
+        if (cancelled) return;
+        const friends = response.ok ? parseFriends(await response.json()) : [];
+        if (!cancelled) setSkip(friends.includes(publicId));
+      } catch {
+        if (!cancelled) setSkip(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [skip, publicId]);
+  useEffect(() => {
+    if (skip) navigate(landingAfter(shared), { replace: true });
+  }, [skip, shared]);
   // The accept's own lifecycle: idle on the landing, busy while the tap's chain runs,
   // done on the confirmation. `full` is the one refusal with its own screen.
   const [phase, setPhase] = useState<'idle' | 'busy' | 'done' | 'full' | 'expired'>('idle');
@@ -241,7 +273,6 @@ export default function FriendInvite({
   // the way out. After a few seconds the assigned fallback IS the answer. It resolves
   // ONCE and holds — never swapped under the button.
   useEffect(() => {
-    if (own) return undefined;
     let mounted = true;
     (async () => {
       const read = await readProfile(publicId, timeoutSignal(6_000));
@@ -253,14 +284,14 @@ export default function FriendInvite({
     return () => {
       mounted = false;
     };
-  }, [publicId, own]);
+  }, [publicId]);
 
   // The bootstrap challenge a tokenless accept will spend, in hand before the tap.
   useEffect(() => {
     if (deviceIdentity() === null) prefetchTurnstileTokens(1);
   }, [publicId]);
 
-  if (own) return null;
+  if (skip) return null;
 
   const accept = () => {
     if (phase === 'busy') return;
@@ -303,7 +334,7 @@ export default function FriendInvite({
       />
     );
   }
-  if (!inviter) {
+  if (!inviter || skip === null) {
     return (
       <p className="status">
         <LoadingWave text={t(lang, 'loading')} />
