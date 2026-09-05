@@ -442,24 +442,13 @@ const STRINGS = {
   // day) it offers the way back to the live one.
   share: { en: 'SHARE', fr: 'PARTAGER' },
   copied: { en: 'COPIED', fr: 'COPIÉ' },
-  // The INVITE toggle beside SHARE (user-decided 2026-09-05): positive, one word, the
-  // player's own mark in the chip saying the rest. Never "don't share my profile".
-  shareInvite: { en: 'INVITE', fr: 'INVITER' },
-  shareInviteHint: {
-    en: 'Add your invite to the link',
-    fr: 'Ajouter votre invitation au lien',
-  },
-  // ---- the solved screen's STANDING (#170, user-decided 2026-08-15, replacing the
-  // population histogram): ONE line — `RANK #6 OF 60` with a `TOP 25%` badge beside it.
-  // The rank NUMBER is drawn by the component (it wears its own size and colour), so the
-  // words here are only what surrounds it. `TOP` is untranslated in every language, like
-  // MISS and the rarity grades — one word, identical everywhere.
-  scoreRank: { en: 'RANK', fr: 'RANG' },
-  scoreOf: { en: 'OF {n}', fr: 'SUR {n}' },
+  // The SHARE MY PROFILE checkbox under SHARE (user-decided 2026-09-05): the user's own
+  // words, positive and ticked by default. Never a "don't share my profile" opt-out.
+  shareProfile: { en: 'SHARE MY PROFILE', fr: 'PARTAGER MON PROFIL' },
+  // ---- the solved screen's STANDING (#170): ONE badge, `TOP 25%`, beside the score
+  // (user-decided 2026-09-05, dropping the `RANK #6 OF 60` line). `TOP` is untranslated in
+  // every language, like MISS and the rarity grades — one word, identical everywhere.
   scoreTop: { en: 'TOP', fr: 'TOP' },
-  // Untranslated on purpose (the user's call): one word in every language, like the
-  // rarity grades.
-  scoreRanking: { en: 'RANKING...', fr: 'RANKING...' },
   // The solved credit block's one function word (user-decided 2026-08-15): it binds the
   // author to the work in the line under it — `Les Misérables` / `BOOK by Victor Hugo` can
   // only be read one way, where two stacked names could be read either. LOWERCASE, unlike

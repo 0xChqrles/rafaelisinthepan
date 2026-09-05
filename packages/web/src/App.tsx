@@ -3,7 +3,6 @@ import { activeDate } from '@whippin/shared';
 import LoadingWave from './components/LoadingWave';
 import usePuzzle from './hooks/usePuzzle';
 import useWordPuzzle from './hooks/useWordPuzzle';
-import LanguageSelect from './screens/LanguageSelect';
 import Account from './screens/Account';
 import AccountEmail from './screens/AccountEmail';
 import Profile from './screens/Profile';
@@ -202,9 +201,8 @@ export default function App() {
             }
           />
         )}
-        {/* The living backdrop — every screen (game, archive, select, tutorial) sits on it. */}
+        {/* The living backdrop — every screen (game, archive, tutorial) sits on it. */}
         {blocked && <SignedOut lang={homeLang} />}
-        {!blocked && route.view === 'select' && <LanguageSelect />}
         {/* The ACCOUNT area (#204's UX rework): three routes, three questions — the
             account itself, the editor, and the email flow. One purpose per screen. */}
         {!blocked && route.view === 'account' && <Account />}
@@ -340,14 +338,14 @@ function GameRoute({
   // the question for good (either sets the flag). The header's book re-opens the tutorial
   // as a `replay`; leaving the lesson by any other key skips it.
   // The open-tutorial state lives in the STORE (transient) so the tutorial's flag can
-  // round-trip through the /select screen — this route unmounts, and picking a
-  // language re-mounts it with the tutorial still open, now in that language.
+  // survive a language pick — the route changes, this component remounts, and the
+  // tutorial is still open, now in that language.
   // The tutorial is MODE-AGNOSTIC on purpose: it teaches the rank mechanic both dailies
   // share, and its routes ending is Word mode's primer (#155/#156).
   const openTutorial = useGameStore((s) => s.openTutorial);
 
-  // key={lang}: switching language mid-tutorial (via /select) restarts it in that
-  // language.
+  // key={lang}: switching language mid-tutorial (the header's drums) restarts it in
+  // that language.
   if (surface === 'tutorial') {
     return <LazyTutorial key={lang} lang={lang} mode={mode} onDone={closeTutorial} />;
   }

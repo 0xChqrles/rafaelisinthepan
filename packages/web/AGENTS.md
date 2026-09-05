@@ -347,8 +347,7 @@ These are decided and verified against the code. Treat them as load-bearing.
     calendar, streak, rarity chip counts, statuses, and every moment the retired serif
     used to headline (chooser names, the invite title — the credit, the result numbers
     and the streak digits all moved ON to the pixel face the same day, see above). A monospace is tabular by construction, so everything that ticks is stable
-    for free, and `ScoreRank.standingUnits`'s glyphs-as-width estimate is literally true
-    again. **The chrome is ALL-CAPS (user-decided 2026-08-18) — every mono surface wears
+    for free. **The chrome is ALL-CAPS (user-decided 2026-08-18) — every mono surface wears
     `text-transform: uppercase` EXCEPT the coach/dialog copy**, which stays sentence
     case and quotes its in-game words — `[[b:]]`, `[[w:]]` AND `[[m:]]` (the MISS words
     joined the same day, `.rt-miss`) — in the pixel face at 0.82em; the `.solved-by`
@@ -446,12 +445,6 @@ These are decided and verified against the code. Treat them as load-bearing.
       `frameTagline` key is gone), and `.app`'s desktop side padding is 52px so content
       clears the frame's vertical rail. Coach copy is 16px at weight 350 (14px on
       phones).
-    - **The CHOOSER cards are MEMBER CARDS** (superseding the aura tiles the same day):
-      name bold left with an index TAG under it (a language's code EN/FR, a daily's
-      01/02 — the `tag` prop each screen passes), and a deterministic LED-CELL MOSAIC
-      on the right (`Chooser.cellsFor`, an FNV hash of the name; 8×3 cells lit in the
-      card's ink — cobalt/violet/orange by nth-child). Decorative; the aria-label
-      carries everything.
   - **The RUN RULER kept its PER-TRY STEPPED CELLS (settled 2026-08-18 after a round
     trip):** a gradient-filament version and then a colourless flat rule each lived for
     part of the day and both were rejected — "remove the gradient, put back the old
@@ -716,7 +709,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
       safe?* (mark, name, when it began, EDIT out to the editor; SAVED or not; where it is
       signed in) · `/profile` — *how do others see me?* (the editor, nothing else) ·
       `/account/email` — *save it* / `/account/signin` — *get another one back*, one input
-      per step. All GLOBAL routes like `/select`. A flat `/account` over a 3-card hub. The
+      per step. All GLOBAL routes. A flat `/account` over a 3-card hub. The
       leaderboard's EDIT chip is gone. RECONNECT lands on `/account/signin` directly.
     - **TWO DOORS ONTO ONE ENGINE (2026-08-27):** the declaration shapes the JOURNEY · the
       server shapes the DESTINATION · the ending tells the TRUTH about what happened. Nothing
@@ -1259,8 +1252,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
       reload. Found in a browser, not in a test.
   - **THE TUTORIAL SWITCHES TOO** (user-decided: "even on the tutorial"). Its left slot was a
     plain name; it is a `LangTitle` whose pick NAVIGATES — the lesson sits on `/fr` or `/en`,
-    and `App` keys it on that language, so it restarts in the one it lands in (the trip
-    `/select` already made, without leaving the header). `Tutorial` takes a `mode` for that
+    and `App` keys it on that language, so it restarts in the one it lands in. `Tutorial` takes a `mode` for that
     one reason: the lesson is mode-agnostic, but the pick should put the player back on the
     daily they came from. **`PuzzleSelect`'s language-only fold is a CALLBACK** (`onLang`)
     rather than a store write, because the two screens that mount that face answer it
@@ -1273,10 +1265,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `pathForArchive` / `pathForBoard`. A selection answers "which daily am I looking at",
     never "take me somewhere else" — the rule the archive already followed, said once for
     all three.
-  - **FOUR SURFACES STILL CANNOT SWITCH FROM WITHIN, each by an older decision**: `/select`
-    (it IS the picker), the invite landing, the onboarding invitation and the signed-out
-    screen — all four wear no header at all, being surfaces "with nowhere else to be". They
-    do honour `?lang=`, so a link sent in a language renders them in it.
+  - **THREE SURFACES STILL CANNOT SWITCH FROM WITHIN, each by an older decision**: the
+    invite landing, the onboarding invitation and the signed-out screen — all three wear no
+    header at all, being surfaces "with nowhere else to be". They do honour `?lang=`, so a
+    link sent in a language renders them in it. (The missing-puzzle screen, headerless too,
+    opens the SAME drums from its CHANGE LANGUAGE button — `NoPuzzle`, since 2026-09-05.)
 
 - **Local storage is an OUTBOX; a capped round ends at ∞ (#214).** The product contract —
   the three values, the load order, what the cap means, the share token, what was removed —
@@ -1582,8 +1575,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     The backend reads a submitted log the same way, so both ends agree on what a claim is.
 
 - **Profile editor (#188; two-colour rework + key-UI removal user-decided
-  2026-08-19):** `/profile` (`screens/Profile.tsx`), a global route like `/select` (an
-  identity is not language-scoped; chrome language = the `/` redirect's resolution).
+  2026-08-19):** `/profile` (`screens/Profile.tsx`), a global route (an identity is not
+  language-scoped; chrome language = the `/` redirect's resolution).
   Name input — the charset rule is the SHARED one the server enforces too
   (`@whippin/shared` `sanitizeName`, root `AGENTS.md`), applied on every path that
   writes the value: the initial read, keystrokes, a composition's commit and the save
@@ -1707,11 +1700,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `additionalBehaviors`, and `changeOrigin`/`xfwd` are pinned OFF (Vite's string shorthand
   does not leave them off) so the backend, which has no `siteOrigin` locally, reads the
   BROWSER's Host and bounces to the app rather than to itself.
-  **THE SHARE'S INVITE TOGGLE (user-decided 2026-09-05, root `AGENTS.md`):**
-  `components/ShareInvite.tsx` — `useShareSigner` (component state, ON by default, so
-  every result screen asks afresh; `by` is the account's publicId or null) and the chip
-  beside SHARE in both `SolvedScreen` and `WordEndScreen` (a `role=switch` glass chip:
-  box + the player's OWN mark via `useOwnFace` + INVITE; no account, no chip). The landing
+  **THE SHARE'S PROFILE CHECKBOX (user-decided 2026-09-05, root `AGENTS.md`):**
+  `components/ShareProfile.tsx` — `useShareSigner` (component state, checked by default, so
+  every result screen asks afresh; `by` is the account's publicId or null) and a plain
+  checkbox reading SHARE MY PROFILE under SHARE in both `SolvedScreen` and `WordEndScreen`
+  (a native input under the app's own square; the first cut was a glass chip with the
+  player's mark and the word INVITE — retired the same day: "looks like a button, not like a
+  checkbox", "the term invite is weird"; no account, no checkbox). The landing
   takes the token as `/join/<publicId>/<token>` (`parseRoute` shape-checks it with
   `SHARE_TOKEN_PATTERN`, `FriendInvite` decodes it — `sharedResultFrom`), draws the shared
   result over the inviter's face (`SharedResultBlock`: number + named unit, the run ruler
@@ -2714,8 +2709,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   kinds, they render as the SAME gold, and only the spoken status distinguishes them
   (`srWordDone`, en "done" / fr « terminé ») — a timed-out run is finished, and calling it
   solved would claim an achievement this mode does not have. The visual surfaces read
-  `isComplete(status)` so the strip (`Chooser`) and the calendar cell (`Archive`) do not
-  each restate the pair. Word runs never touch the streak and fire no new analytics
+  `isComplete(status)` so the calendar cell (`Archive`) does not restate the pair. Word runs never touch the streak and fire no new analytics
   events.
 - **Hole WHEEL (user-decided 2026-09-01, REPLACING the history modal below):** tapping a
   HOLE no longer opens a screen — its place in the sentence becomes a fixed SLOT, and the
@@ -3099,8 +3093,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
       `by Victor Hugo` under nothing is a sentence missing its subject) with its kind alone
       beneath it, and a source carrying only a kind is just that word. The typewriter is
       unchanged: one character run across whatever lines exist.
-    - **SCORE** (`.solved-numbers`) — the #170 STANDING line, then the named
-      `<tries> TRIES` headline over the run ruler, **then SHARE**, which belongs to this
+    - **SCORE** (`.solved-numbers`) — the named `<tries> TRIES` headline (the #170 TOP
+      badge beside the number since 2026-09-05) over the run ruler, **then SHARE**, which belongs to this
       block (user-decided 2026-08-14, third pass: sharing is what you do with a RESULT).
       **The standing leads and the score follows** (user-decided 2026-08-15): where you
       placed, then YOUR number and the run that made it, which puts SHARE directly under
@@ -3356,124 +3350,38 @@ it to the local store — see `packages/backend/AGENTS.md`).
   is a DAY's competition and a late finish is not competing in it, so the server records no
   row and answers `bucket: null`, which this slot already draws as nothing. The read still
   fires — the client does not second-guess which days have a population, and that guess is
-  exactly the kind of local rule the same decision removed from the streak. **What it shows is ONE LINE — the player's RANK** (`components/ScoreRank`,
-  user-decided 2026-08-15, replacing the brick histogram that replaced the first cut's
-  bars: "the histogram is actually ugly" — a field of bars asks to be decoded, where the
-  rank is the answer already given):
+  exactly the kind of local rule the same decision removed from the streak. **What it shows is ONE BADGE — `TOP 25%` — BESIDE THE SCORE** (`components/ScoreTop`,
+  user-decided 2026-09-05: "the rank # line should be dropped, we could keep the TOP% only,
+  displayed next to the score, above the score bar" — superseding the `RANK #16 OF 100`
+  line of 2026-08-15, which itself replaced the brick histogram):
 
-  ```
-  RANK #16 OF 100   [ TOP 25% ]
-  ```
-
-  - **RANK is COMPETITION RANKING — everyone strictly ahead, plus one** (`game/scores.ts`
-    `scoreStanding`, contract-tested), so a whole band shares its rank. That is the only
-    honest number at bucket granularity — the API reports BANDS and never an order inside
-    one — and it is the convention every scoreboard already uses for a tie. Which
-    direction is "ahead" is the mode's: sentence counts tries (the bands BEFORE mine),
-    Word counts claims (the bands AFTER mine). The rank is clamped to the population, so
-    a stale read racing a write can never rank anyone past the field they stand in.
+  - **The rank is still COMPUTED, never drawn** (`game/scores.ts` `scoreStanding`,
+    contract-tested): competition ranking — everyone strictly ahead, plus one — in the
+    mode's own direction (sentence: the bands BEFORE mine; Word: the bands AFTER mine),
+    clamped to the population. It exists because the second gate below reads it.
   - **TOP uses the MIDPOINT of the shared bucket** (user-decided 2026-08-16):
     `(strictly ahead + bucket count / 2) / total`, the standard percentile-rank treatment
-    for ties. It deliberately does NOT derive from the competition rank: with 15 ahead and
-    20 in the player's bucket out of 100, the honest claims are `RANK #16 OF 100` and
-    `TOP 25%`. An empty bucket carries no badge, and a stale inconsistent snapshot is
-    capped at 100% — where the median gate below now silences it outright, since the
-    clamp only ever bites at the very bottom of the field. (The midpoint's own all-tied
-    answer, 50%, is the largest number the badge can print, and it is unreachable from an
-    all-tied field anyway: that field ranks everyone #1, which the rank gate silences.)
-  - **The RANK NUMBER is the headline**: 24px against the 12px words around it, in the
-    global ACCENT — the game's own word colour. The words are `--muted`, and
-    the whole phrase hangs off ONE baseline (`.score-rank-text`), since centring the small
-    type against the number left it floating. **A shared baseline is not yet a shared
-    LINE** (user-decided 2026-08-15): the pixel font reserves a gap under its glyphs and
-    that gap scales with the type, so the big number rides visually high off a baseline it
-    shares — it takes `translate: 0 2px` to put the ink back on one line, and the badge
-    `translate: 0 4px` for the same reason, more of it (its box is centred on the smallest
-    type on the line). Whole pixels, and a `translate` rather than a margin, so nothing
-    moves because of it.
-  - **TOP is an OUTLINED BADGE — a 1px `--fg` rule around `--fg` type, no ground at all**
-    (user-decided 2026-08-17, superseding the filled chip: a solid block of foreground
-    beside the line shouted louder than the rank it qualifies, where an outline still
-    frames the claim as a stamp). The foreground on both the rule and the type is the kept
-    half of the earlier decision (2026-08-15, superseding the gold: gold is the colour of
-    what the round REACHED, and a percentile is not one of its words). **Nothing else in
-    the badge moved** — the padding, the explicit height, the drop and the type sizes are
-    all the filled version's, and `box-sizing: border-box` is what keeps them that way:
-    the rule is drawn INSIDE the same `--top-h` box rather than growing it. It has an
-    EXPLICIT height with its ink centred by flex: the pixel font overruns its own line
-    box, so padding alone left the glyph tops and tails outside the box. (And never
-    `calc(<length> + var(--text-shift))` — that variable is a UNITLESS zero, which voids
-    the whole declaration; the same trap that silently zeroed `.word-input`'s padding.)
-    Three details make it a stamp rather than a clipped box (user-decided 2026-08-15,
-    "very ugly"): the page's global `text-shadow` is OFF on it — a drop shadow is
-    legibility for type sitting on the page itself, and inside a framed chip it only
-    smears small type against its own frame; the height is generous (30px around 10px
-    type) rather than the tightest box that fits; and the right inset is ONE PIXEL SHORT
-    of the left, because `letter-spacing` applies after the LAST glyph too and equal
-    padding leaves the box reading off-centre around its own word.
-  - **The line is sized from ONE set of custom properties, in three tiers plus a trigger
-    that is not a width at all.** Pixel type does not reflow and `body` is
-    `overflow: hidden`, so a line that outruns its column is CUT OFF rather than scrolled
-    to — and the sizes the line is TUNED at (12px words, 24px number, 30px badge; the
-    user's own numbers, given for "the smallest devices") land within a few pixels of what
-    a 390px phone holds. So:
-    - **base** — the tuned set scaled up (14 / 28 / 36px), for real desktop room;
-    - **≤600px** — the tuned set itself. It reaches that high because a 430px handset only
-      leaves 402px of column and the scaled-up line wants ~430;
-    - **`.tight`** — the same step down, asked for by the CONTENT: `ScoreRank` estimates
-      the line's length in LABEL GLYPHS (`standingUnits` — the font is monospace, so a
-      glyph count IS a width, and the number counts double at twice the label size) and
-      marks it tight past `TIGHT_STANDING_UNITS`. `RANG #12 SUR 599` + `TOP 20.3%`
-      measures exactly the 362px a 390px screen leaves, and one more glyph would clip, so
-      the LONG line steps down and the common one keeps the big type (the measurement was
-      taken on the two-decimal badge, which is a glyph longer against a shorter
-      population — it calibrates UNITS to pixels, so it survives the one-decimal cut);
-    - **≤380px** — every line steps down (9 / 16 / 24px): a 320px screen holds 292px,
-      which not even the short line fits at the tuned sizes.
-    The slot's reserved HEIGHT is the width tier's alone and never `.tight`'s — the empty
-    slot is reserved before the population has answered, so it cannot know whether the line
-    it holds space for will be a long one. A four-digit population (`SUR 1024`) still
-    outruns a 320px screen even stepped down; that is a day this game has not had yet, and
-    the answer then is the line's copy, not another pixel of type.
-  - **The number and the badge each ride a WHOLE PIXEL BAND below the shared baseline**
-    (user-decided 2026-08-15; 2px and 4px at the tuned sizes, scaled per tier). The pixel
-    font reserves descender room under every glyph and that band grows with the type, so
-    type sharing a baseline with much smaller type sits visibly HIGH against it. Whole
-    pixels only, via `translate` rather than a margin: a fractional offset resamples pixel
-    type (the sprites' integer-scale rule), and nothing may MOVE because of it.
-  - **The badge is gated THREE times, and every gate only ever silences it** — the rank
-    line itself is honest at every size and always drawn, so the only player of the day
-    reads `RANK #1 OF 1` and nothing more. The line is SHORTER without the badge, which the
-    length estimate above reads off the badge actually drawn rather than assuming one.
-    - **above `PERCENT_MIN_TOTAL` (10) recorded scores** (user-decided 2026-08-15,
-      reinstating a floor after a day without one — the first cut of the line had gated it
-      at 25): below that, `TOP 33.33%` of three players is arithmetic on a handful rather
-      than a standing;
-    - **from `PERCENT_MIN_RANK` (10) on — a SINGLE-DIGIT rank carries no percentage**
-      (user-decided 2026-08-17): `RANK #6 OF 60` names an exact position a reader takes in
-      at a glance, and a percentage beside it restates in blur what the number already
-      said outright. From two digits on the rank stops being that legible and the
-      percentage is what carries the standing;
-    - **at or above the MEDIAN — `PERCENT_MAX` (50) is the largest number it prints**
-      (#176, user-decided 2026-08-16): TOP is a claim, and the last player of a 60-player
-      day reading `RANK #60 OF 60  TOP 99.17%` is that claim turned against the one
-      standing it cannot flatter. The boundary is INCLUSIVE — a player exactly at the
-      median is in the top half of the field being measured. Below it the rank line
-      stands alone, exactly as a small-population day already renders it.
-    The three floors OVERLAP, and gate different claims: whether there is a field at all,
-    whether the percentage adds anything to the rank beside it, and whether it has
-    anything to claim. Since rank 10 already implies nine players ahead, the smallest
-    field that can still reach the median is 19 — so the population floor is currently
-    implied by the other two. It stays because it states its own claim (user-decided in
-    #176), not because it is load-bearing arithmetic.
-  - `formatTopPct` prints at most ONE decimal with the trailing zero stripped (`8.5`,
-    `12.5`, `50`) — user-decided 2026-08-17, from two. On a real population the first
-    decimal still carries a claim; the second is precision nobody reads, and `50.0` reads
-    as a machine talking.
-  - **The slot is fixed-height and ALWAYS mounted** (the `.word-rarities` rule): the line
-    arriving — or never arriving — moves nothing under it, SHARE included. It arrives on
-    the app's one `rung-in` gesture; a rehydrated result renders `.settled` and replays
-    nothing.
+    for ties; an empty bucket carries no badge, and an inconsistent stale snapshot is
+    capped at 100% and silenced by the median gate.
+  - **The badge is gated THREE times, and every gate only ever silences it**: above
+    `PERCENT_MIN_TOTAL` (10) recorded scores (a percentage of a handful is arithmetic, not
+    a standing); from `PERCENT_MIN_RANK` (10) on (a single-digit standing is too small a
+    field to blur into a percentage); at or above the MEDIAN — `PERCENT_MAX` (50) is the
+    largest number it prints (#176: TOP is a claim, and `TOP 99%` is that claim turned
+    against the player wearing it; the boundary is inclusive). The population floor is
+    implied by the other two and stays because it states its own claim.
+  - `formatTopPct` prints at most ONE decimal with the trailing zero stripped (`8.5`, `50`).
+  - **It is an OUTLINED stamp — a hairline `--line-strong` rule around `--fg` pixel type,
+    no ground** (user-decided 2026-08-17 over the filled chip), ABSOLUTELY placed off the
+    number's right edge (`.solved-score-line` is the box, `.score-top` the badge): the
+    number stays centred over its unit and the ruler, and the badge arriving — on the
+    `rung-in` gesture, at the reveal's standing beat — or never arriving (a silent failure,
+    a pending read, a gated standing) moves NOTHING. A rehydrated result renders `.settled`
+    and replays nothing. There is no RANKING... placeholder any more: a badge that may not
+    come is not announced. **REMOVED with the line** (no-back-compat): `ScoreRank`, the
+    `.score-slot`/`.score-rank-*` CSS and its three size tiers, `standingUnits` /
+    `TIGHT_STANDING_UNITS`, `LoadingWave`'s `letterClass`, and the `scoreRank` / `scoreOf`
+    / `scoreRanking` strings.
   **REMOVED with it** (no-back-compat): the whole chart — `ScoreChart`, `chartField`,
   `chartUnits`, `MAX_CHART_BANDS`, `MAX_COLUMN_UNITS`, the band-merging and its `+N`
   legend, the `.score-field`/`.score-col`/`.score-brick`/`.score-stub`/`.score-plot`/
@@ -3533,8 +3441,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   language-switching gesture everywhere** (no per-context flag behavior; decided
   2026-07-06 superseding a brief direct-toggle). The open-tutorial state is
   **transient store state** (`tutorialOpen: 'first' | 'replay' | null`, NOT
-  persisted), so it survives the /select round-trip: picking a language returns INTO
-  the tutorial in that language. The left slot reads **"TUTORIAL"**, and the right
+  persisted), so it survives a language pick: the lesson reopens in that language. The left slot reads **"TUTORIAL"**, and the right
   group is the header's FIXED ROW with the BOOK lit (2026-08-31; see the header bullet
   — it replaced a fast-forward SKIP control, `skip.svg`, in that slot): any other key
   leaves the lesson through `onDone`, tracked as a `skip`, on the first run and replays
@@ -3926,7 +3833,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   full-width progress BAR is gone — and since 2026-08-16 so is the number that replaced
   it. **RIGHT is the one action
   group** (`.topbar-right`), in two halves: the CHOOSERS the bar itself owns — the
-  **Whippin mark** (which daily, `/mode`) then the **globe** (which language, `/select`),
+  **Whippin mark** (which daily) then the **globe** (which language),
   in that order because which GAME you are playing is the larger choice and the mark is the
   app's own logo — then the
   screen's contextual controls — every one a `.home-btn` (a transparent `--hud-height` square)
@@ -4007,25 +3914,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   undated tab held open across the 22:00 flip therefore still keeps its fetched puzzle/day;
   the puzzle itself does not silently swap. The topbar is the extension point for future
   chrome (streaks, stats, …).
-- **The CHOOSER screen (language, 2026-07-06; the MODE chooser was RETIRED 2026-08-18
-  for the header's segmented tabs — `/mode` parses as an unknown path now, and
-  `screens/ModeSelect` + `components/ModeButton` are deleted):** the app asks "which
-  language do you want to play?" at `/select`, reached from the header's language chip —
-  a ROUTE, never a modal, sitting ABOVE `/<lang>` since it is not language-scoped.
-  `components/Chooser.tsx` holds the shell, the member card and the status strip;
-  `screens/LanguageSelect.tsx` supplies the options (built as ONE reusable pair when two
-  choosers existed, and kept that shape — a future chooser screen reuses it rather than
-  copying it).
-  Headed by the **logo** (the user-drawn SVG mark since 2026-08-18, cobalt with its aura
-  glow — language-neutral, and the app's ONE in-app branding spot), NOT a "select
-  language" title (the cards self-explain, and a title would have to guess the user's
-  language on the one screen where it is unknown). One MEMBER CARD per language (see the
-  instrument bullet above): the language's **native** name (`LANGS[].native`; never
-  translated) bold left, its code tag under it, the LED mosaic right. Today's status is
-  the thin **strip on the card's bottom edge** — absent = not started, partial =
-  progress on the ramp, full = solved / done for the day (the solve cobalt); the card's
-  aria-label speaks it. **A language card lands in the last-played MODE** and reads that
-  mode's status — the day the tap actually opens.
+- **The CHOOSER screens are RETIRED — both of them.** The MODE chooser (`/mode`) went
+  2026-08-18 for the header's tabs; the LANGUAGE chooser (`/select`, `screens/LanguageSelect`
+  + `components/Chooser` and their CSS) went 2026-09-05 (user-decided: "get rid of the
+  /select page; change lang should open the select modal") — every header title already
+  opens the selection drums (`PuzzleSelect`), so a page of its own answered a question every
+  page answers. Both paths parse as `home`. The one headerless surface that offered CHANGE
+  LANGUAGE, the missing-puzzle screen, opens those drums itself (`NoPuzzle`).
 - **UI chrome is localized + a11y'd (decided 2026-07-06):** `web/src/i18n.ts` holds every
   UI string in **en + fr** (`t(lang, key)`; the `satisfies` clause makes a missing
   translation a type error, so parity needs no test). Game screens resolve strings with

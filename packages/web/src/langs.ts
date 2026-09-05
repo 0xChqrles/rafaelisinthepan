@@ -56,11 +56,6 @@ export function pathForBoard(lang: string | null, mode: Mode = 'sentence'): stri
   return mode === 'word' ? `/${lang}/${WORD_SEGMENT}/${BOARD_SEGMENT}` : `/${lang}/${BOARD_SEGMENT}`;
 }
 
-// The language chooser lives at its own route (not a modal), opened by the header's
-// language chip. It sits above /<lang> since it is not language-scoped. (The /mode
-// chooser was RETIRED 2026-08-18 for the header's segmented mode tabs.)
-export const SELECT_PATH = '/select';
-
 // The ACCOUNT area (#204's UX rework, 2026-08-26). FOUR routes, because they answer four
 // different questions and one screen may only answer one:
 //
@@ -84,7 +79,7 @@ export const SELECT_PATH = '/select';
 // picks the "wrong" door is never blocked and never lied to — they get an ending that names
 // the turn.
 //
-// All four are GLOBAL, like /select: an identity is not language-scoped. The leaderboard's
+// All four are GLOBAL: an identity is not language-scoped. The leaderboard's
 // identity strip is the ONE door into the area (a player's own face is the natural handle
 // for "my account"), and the signed-out screen's RECONNECT lands straight on `/account/signin`
 // — a player who has just been signed out is a RETURNING player by definition, and landing
@@ -122,8 +117,8 @@ export type LinkIntent = 'save' | 'return';
 export { invitePath as pathForInvite } from '@whippin/shared';
 
 // A parsed route. The game IS the home: /<lang> plays today's puzzle, /<lang>/<date>
-// plays a past day (archive, #55), /<lang>/archive is the calendar, /select is the
-// language picker, /privacy is the data notice, and anything else (/, unknown paths) is
+// plays a past day (archive, #55), /<lang>/archive is the calendar, /privacy is the data
+// notice, and anything else (/, unknown paths) is
 // a `home` redirect that bounces to the user's language (see resolveHomeLang). Word
 // mode (#156) mirrors the whole grammar under /<lang>/word: today's word,
 // /word/<date>, /word/archive.
@@ -131,7 +126,6 @@ export type Route =
   | { view: 'game'; lang: LangCode; mode: Mode; date?: string }
   | { view: 'archive'; lang: LangCode; mode: Mode }
   | { view: 'board'; lang: LangCode; mode: Mode }
-  | { view: 'select' }
   | { view: 'account' }
   | { view: 'accountEmail'; intent: LinkIntent }
   | { view: 'profile' }
@@ -167,7 +161,6 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
   const firstDate = bounds.firstDate ?? FIRST_PUZZLE_DATE;
   const segs = pathname.replace(/^\/+/, '').replace(/\/+$/, '').split('/');
   const [seg, second, third] = segs;
-  if (seg === 'select') return { view: 'select' };
   if (seg === 'profile') return { view: 'profile' };
   if (seg === 'privacy') return { view: 'privacy' };
   // `/account` and its one step deeper. An unknown third form keeps the game routes'
@@ -185,6 +178,9 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
       ? { view: 'invite', publicId: second, token: third }
       : { view: 'invite', publicId: second };
   }
+  // `/select`, the language chooser SCREEN, was retired 2026-09-05 (user-decided): every
+  // header title opens the selection drums (`PuzzleSelect`), so a page of its own answered
+  // a question every page already answers. It falls through to `home` like `/mode`.
   if (!isLang(seg)) return { view: 'home' };
 
   // A dated deep link is honored only when it is a real calendar date within range; a

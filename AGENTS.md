@@ -428,9 +428,9 @@ The live routes then share:
 ### Server-backed player history (#211, decided 2026-08-23)
 
 - **`POST /history?lang=&mode=[&month=]` → `{ days, solvedDays }`** serves the archive
-  calendar, the language chooser and the streak for EVERY identity. `month` optional (the game
-  screen wants only the collection); body `collection: false` skips the solved-day read (the
-  chooser and, since 2026-08-28, the archive). No `date` in its allowList.
+  calendar and the streak for EVERY identity. `month` optional (the game screen wants only
+  the collection); body `collection: false` skips the solved-day read (the archive, since
+  2026-08-28). No `date` in its allowList.
 - **The calendar has no storage of its own**: one Query over `<lang>#<mode>#<month>-`,
   projected to `progress`/`solved`, PAGED, never revision-scoped. Client keeps an IN-MEMORY
   cache only and revalidates when a month comes on screen. **Loading is a THIRD status
@@ -585,16 +585,18 @@ The live routes then share:
   `shared/src/invite.ts` (infra routes `/i/*` to the API origin, backend serves, web builds).
   A deleted sender's link expires (404).
 - **A RESULT SHARE CARRIES THE INVITE BY DEFAULT (decided 2026-09-05).** The result
-  screens' INVITE toggle — beside SHARE, ON by default, NEVER persisted (fresh on every
-  result) — signs the link `/s/<token>/<publicId>` (`shared/src/invite.ts` `sharePath`).
+  screens' SHARE MY PROFILE checkbox — under SHARE, checked by default, NEVER persisted
+  (fresh on every result) — signs the link `/s/<token>/<publicId>` (`shared/src/invite.ts`
+  `sharePath`).
   The TOKEN is untouched (no codec change; the bot reads a signed share as a plain one and
   strips the id with the link); the card wears the player's mark and name; the page is
   served at the invite's 300s TTL; the click lands on `/join/<publicId>/<token>`, the
   invite landing showing the result, whose ADD FRIEND records the edge and whose PLAY
   opens the shared day. A deleted signer falls back to the PLAIN share (the score was
   never the part that went away). Toggle OFF = the plain `/s/<token>`, byte for byte,
-  still content-addressed and year-cached. Wording: positive ("INVITE" with the player's
-  own mark in the chip), never a "don't share my profile" opt-out.
+  still content-addressed and year-cached. The control is a plain CHECKBOX in the user's
+  own words, positive and ticked — never a "don't share my profile" opt-out, and not a
+  chip or button (the first cut, retired the same day).
 - **`POST /friends`**: `{token}` reads, `{token, add}` links, `{token, remove}` unlinks;
   every answer `{ friends: [publicId] }`. Storage: one row per DIRECTION,
   `friends#<publicId>` / friend id, `createdAt` from the first link; both rows written (and

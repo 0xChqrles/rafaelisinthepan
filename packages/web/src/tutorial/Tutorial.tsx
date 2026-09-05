@@ -373,8 +373,7 @@ export default function Tutorial({
       {/* The lesson's own name, and the language it is being taught in (2026-09-03: every
           page of the game can change language, "even on the tutorial"). The pick NAVIGATES
           — the lesson is on a language-scoped route — and `App` keys it on that language,
-          so it restarts in the one it lands in. That was already true through `/select`;
-          this is the same trip without leaving the header. */}
+          so it restarts in the one it lands in. */}
       <HeaderLeft>
         <LangTitle
           lang={lang}

@@ -105,24 +105,3 @@ export function formatTopPct(pct: number): string {
 // exactly when the server says it holds the round (`RoundProgress.recorded`, the word
 // round's `submitted`). The cap needs no rule of its own either: a capped round's appends
 // were refused, so its solve never reached the server and no row exists to find.
-
-// The standing is FIXED-WIDTH TYPE — the pixel font does not reflow, and `body` is
-// `overflow: hidden`, so a line that outruns its column is CUT OFF rather than scrolled to.
-// A phone column holds the tuned sizes comfortably for a short standing and lands exactly
-// on the edge for a long one (`RANG #12 SUR 59  TOP 20.34%` measures 362px against the
-// 362px a 390px screen leaves), so the line asks for its own step down by LENGTH, in
-// addition to the width tiers in the CSS. That measurement calibrates UNITS to pixels and
-// so outlives the badge it was taken on: the one-decimal percentage is a glyph shorter,
-// which only means the same 26 units are now reached by a longer population
-// (`RANG #12 SUR 599  TOP 20.3%`).
-//
-// The estimate is in LABEL GLYPHS: every character of the small type counts one, and the
-// rank number counts DOUBLE — the whole line is the PIXEL face since 2026-08-18 (labels,
-// number and badge alike), so one unit is one label glyph at the pixel's 1em advance and
-// the rank digits weigh rank-size/label-size ≈ 2. That is all the precision this needs —
-// the face is monospace, so a glyph count IS a width.
-export const TIGHT_STANDING_UNITS = 26;
-
-export function standingUnits(rankLabel: string, ofLabel: string, rank: number, topLabel: string): number {
-  return rankLabel.length + ofLabel.length + topLabel.length + 2 * (String(rank).length + 1);
-}

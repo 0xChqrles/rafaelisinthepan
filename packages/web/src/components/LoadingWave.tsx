@@ -7,21 +7,13 @@ import type { CSSProperties } from 'react';
 // accent mono, the standing slot's RANKING... stays the pixel label it resolves into
 // (via `letterClass`). Screen readers get the plain string; the letter boxes are
 // decoration.
-export default function LoadingWave({
-  text,
-  letterClass,
-}: {
-  text: string;
-  // Worn by every letter, so a host can hand the wave the exact class of the text the
-  // shimmer stands in for (the standing line's `score-rank-label`).
-  letterClass?: string;
-}) {
+export default function LoadingWave({ text }: { text: string }) {
   return (
     <>
       <span className="sr-only">{text}</span>
       <span className="loading-wave" aria-hidden="true">
         {Array.from(text).map((ch, i) => (
-          <span key={i} className={letterClass} style={{ '--i': i } as CSSProperties}>
+          <span key={i} style={{ '--i': i } as CSSProperties}>
             {ch}
           </span>
         ))}

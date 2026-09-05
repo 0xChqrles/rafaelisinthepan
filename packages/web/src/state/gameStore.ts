@@ -284,9 +284,9 @@ interface GameState extends PersistedState {
 
   // The tutorial currently on screen (transient, NOT persisted): 'first' = the run a
   // newcomer accepted from the invitation, 'replay' = summoned via the header's "?".
-  // It lives in the store (not GameRoute state) so it survives the /select
-  // round-trip — the tutorial's flag goes through the REAL language screen, and
-  // picking a language there returns INTO the tutorial in that language.
+  // It lives in the store (not GameRoute state) so it survives a language pick —
+  // the route changes under the lesson, and it reopens INTO the tutorial in that
+  // language.
   tutorialOpen: 'first' | 'replay' | null;
   openTutorial: (kind: 'first' | 'replay') => void;
   closeTutorial: () => void;
