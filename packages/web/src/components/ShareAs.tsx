@@ -120,6 +120,16 @@ export default function ShareAs({ lang, signer }: { lang: string; signer: ShareS
       <span className="share-as-label" id="share-as-label">
         {t(lang, 'shareAs')}
       </span>
+      {/* The flip sits LEFT of the drum, between the label and the slot (user feedback
+          2026-09-05: on the right it hung off the end as padding). */}
+      <button
+        type="button"
+        className={`share-as-flip${drum.current === 1 ? ' up' : ''}`}
+        aria-label={rows[drum.current === 0 ? 1 : 0].label}
+        onClick={flip}
+      >
+        <ChevronDownIcon className="ui-icon" aria-hidden />
+      </button>
       <div
         className="share-as-drum"
         ref={box}
@@ -152,14 +162,6 @@ export default function ShareAs({ lang, signer }: { lang: string; signer: ShareS
           <div style={{ height: PEEK }} />
         </div>
       </div>
-      <button
-        type="button"
-        className={`share-as-flip${drum.current === 1 ? ' up' : ''}`}
-        aria-label={rows[drum.current === 0 ? 1 : 0].label}
-        onClick={flip}
-      >
-        <ChevronDownIcon className="ui-icon" aria-hidden />
-      </button>
     </div>
   );
 }

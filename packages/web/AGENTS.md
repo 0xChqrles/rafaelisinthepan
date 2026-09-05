@@ -1702,7 +1702,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   default, so every result screen asks afresh; `by` is the account's publicId or null) and,
   under SHARE in both `SolvedScreen` and `WordEndScreen`, the label AS beside a two-row
   drum on `useDrum` — ONE ROW TALL: the slot with a 7px sliver of the other row in the fade,
-  the pick wearing `.ps-row.on`'s inverted chip, a flip CHEVRON beside it (and a tap on the
+  the pick wearing `.ps-row.on`'s inverted chip, a flip CHEVRON on its LEFT, between the label and the slot (and a tap on the
   slot row flips too); rows are `role=radio`; arrow keys turn it — holding the player's mark
   + name (`useOwnFace`, rendered once the face has settled) or ANONYMOUS. Five passes the
   same day: a glass chip reading INVITE ("looks like a button", "the term invite is weird"),

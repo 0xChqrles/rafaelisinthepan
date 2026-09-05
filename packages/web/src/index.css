@@ -2588,13 +2588,14 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 9px, #000 calc(100% - 9px), transparent);
   mask-image: linear-gradient(to bottom, transparent, #000 9px, #000 calc(100% - 9px), transparent);
 }
-/* The flip: the header title's own chevron, pointing at the row it would bring — down to
-   ANONYMOUS, up (turned) back to the player. */
+/* The flip: the header title's own chevron, LEFT of the slot between the label and the
+   drum, pointing at the row it would bring — down to ANONYMOUS, up (turned) back to the
+   player. No padding of its own: the row's gap is its spacing. */
 .share-as-flip {
   display: inline-flex;
   align-items: center;
   margin: 0;
-  padding: 4px;
+  padding: 0;
   border: 0;
   background: none;
   color: var(--muted);
