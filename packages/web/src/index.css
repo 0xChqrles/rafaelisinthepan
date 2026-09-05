@@ -3992,48 +3992,45 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     transform: scale(1);
   }
 }
-/* The tally's BREAKDOWN (2026-08-11): the claims per rarity grade — the OG card's chip
-   row and the share text's bead row, on screen. One chip per grade CLAIMED (a coloured
-   square + its count, both in the grade's own RARITY_COLORS colour, set inline), commonest
-   first, zero grades absent. It is the beat AFTER the landing: once the count settles (the
-   pop's own moment) each chip rises in on its own delay — the tutorial ladder's `rung-in`
-   entrance, the app's one "list arriving" gesture — so the row reads as the number
-   unpacking. Reduced motion collapses the rise via the global rule and keeps the delays;
-   a rehydrated result wears `.settled` and replays nothing. The counts are PIXEL
-   (2026-08-18): a claim tally is game data, the same voice as the score above it, in
-   the grade's light like the ladder's example words. */
-.word-rarities {
+/* The tally's BREAKDOWN as a BAR (user-decided 2026-09-05, superseding the chip row of
+   2026-08-11 — "too many centered informations"): the run ruler's geometry (the same 16px
+   band in the same 340px frame, the same padded lane under it for numbers) holding one
+   segment per grade CLAIMED, `flex-grow` = its count so a segment is as wide as its share,
+   in the grade's own RARITY_COLORS colour set inline, commonest first. The count sits
+   under its segment in the pixel face, like a tick's number. Segments arrive one by one
+   once the tally lands (the `--step` delay); a rehydrated result wears `.settled`. */
+.word-bar {
   display: flex;
-  justify-content: center;
-  align-items: center;
-  flex-wrap: wrap; /* five 2-digit chips still fit 320px, but never let a forgery overflow */
-  gap: clamp(14px, 2.6vw, 22px);
-  margin-top: clamp(6px, 1.2vh, 12px); /* a seam above the score's own rhythm: detail, not headline */
-  font-family: var(--pixel-font);
-  font-size: clamp(12px, 1.8vh, 14px);
-  font-weight: 400;
+  gap: 2px;
+  height: 16px;
+  padding: 15px 0;
+  box-sizing: content-box;
 }
-.word-rarity {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+.word-bar-seg {
+  position: relative;
+  flex: 0 1 0;
+  min-width: 10px;
+  background: currentColor;
   opacity: 0;
 }
-.word-rarity.in {
+.word-bar.in .word-bar-seg {
   animation: rung-in 200ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
   animation-delay: calc(var(--step, 0) * 90ms);
 }
-.word-rarities.settled .word-rarity {
+.word-bar.settled .word-bar-seg {
   opacity: 1;
   animation: none;
 }
-/* The chip's mark: painted with currentColor, so a chip is ONE colour decision — the
-   same square-beside-the-count lockup the card draws, with a soft self-glow. SQUARE:
-   the sharp read (2026-08-18, third pass), and the card's own shape. */
-.word-rarity-square {
-  width: 0.8em;
-  height: 0.8em;
-  background: currentColor;
+.word-bar-num {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  translate: -50% 0;
+  margin-top: 7px;
+  font-family: var(--pixel-font);
+  font-size: clamp(11px, 1.6vh, 13px);
+  line-height: 1;
+  color: currentColor;
 }
 .word-footer-result .result-actions {
   flex: 0 0 auto;
@@ -6619,8 +6616,19 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  /* Between the RESULT and the PERSON (user-decided 2026-09-05): a real break, so the two
+     read as what was shared and who shared it, not one stack. */
+  gap: 40px;
   text-align: center;
+}
+/* The person and what you can do about them: mark, name, ADD FRIEND, PLAY — one group at
+   the landing's own 14px rhythm, so the button sits under the face it is about. */
+.invite-person {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
 }
 .invite-done .avatar {
   border: 1px solid var(--line);
@@ -6645,25 +6653,48 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   width: 100%;
   margin-top: 12px;
 }
+/* PLAY under ADD FRIEND wears the bare secondary dress (`.mix-btn + .btn-secondary`, the
+   one position that earns it); the pair's seam is the group's own gap. */
+.invite-done .btn-secondary {
+  width: 100%;
+}
 
 /* The shared RESULT on the landing (user-decided 2026-09-05): what a signed share link
-   was about, under the inviter's face and over ADD FRIEND — the result screens' own score
-   dress (`.solved-score`: pixel number over its named unit), the run ruler (sentence) or
-   the day's word (word game), the date. */
+   was about, FIRST and on its own — the result screens' own score dress (`.solved-score`:
+   pixel number over its named unit), the run ruler (sentence) or the day's word and its
+   rarity bar (word game), the date. */
 .invite-result {
   width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  padding: 8px 0 4px;
 }
+/* The day's WORD, as the card draws it (user-decided 2026-09-05: "bigger, and the pixel
+   font, like in the preview"): the pixel face in the solve cobalt, the headline of the
+   block, on one line — a long word steps down rather than wrapping. */
 .invite-result-word {
-  font-family: var(--ui);
-  font-size: 20px;
-  font-weight: 650;
-  letter-spacing: 0.06em;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--pixel-font);
+  font-size: clamp(22px, 4vh, 30px);
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: 0;
   color: var(--solve);
+  /* Clear of the score under it: the headline is its own line, not the number's cap. */
+  margin-bottom: 10px;
+}
+/* The date, in the CARD's own face (user-decided 2026-09-05: "the same font for the date on
+   the og preview and the score screen"), a little clear of the bar's own lane. */
+.invite-result-date {
+  margin-top: 8px;
+  font-family: var(--pixel-font);
+  font-size: 12px;
+  line-height: 1;
+  color: var(--muted);
 }
 
 /* ---- The signed-out screen (#216, reshaped 2026-08-26 on user feedback: the

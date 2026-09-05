@@ -1719,8 +1719,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
   landing
   takes the token as `/join/<publicId>/<token>` (`parseRoute` shape-checks it with
   `SHARE_TOKEN_PATTERN`, `FriendInvite` decodes it — `sharedResultFrom`), draws the shared
-  result over the inviter's face (`SharedResultBlock`: number + named unit, the run ruler
-  settled or the day's word, the date) and continues into the SHARED DAY (`landingAfter`).
+  result FIRST and alone (`SharedResultBlock`, ONE template for both modes — a headline
+  only Word has, the number + named unit, the mode's visual: the run ruler settled or the
+  rarity bar, and the date in the card's pixel face), then — after a 40px break — the PERSON as one
+  group (`.invite-person`: mark, name, ADD FRIEND, and PLAY as the bare secondary under
+  it, the way out for a reader who wants the game and not the friend; user-decided
+  2026-09-05, "group relevant items together"), and continues into the SHARED DAY
+  (`landingAfter`). `useLocation` re-reads the URL once it subscribes, because this
+  landing's skip navigates from a mount effect that runs BEFORE App's subscription.
+  **The signer's own device never sees it, and neither does a FRIEND's** (user-decided
+  2026-09-05): a signed link opened by the account that signed it (`isOwnLink`, known
+  locally) or by an account already holding the edge (one `POST /friends {token}` read
+  while the loading frame stands; a failed read shows the landing) goes straight to the
+  shared day, as a plain link would — the landing is for a reader who could add the
+  sender, and neither of them is one.
   **ACCEPTING IS A BUTTON, for everyone** (#216 trigger rework, user-decided 2026-08-24,
   superseding the auto-add on page load): the landing shows the INVITER's mark and name
   (a best-effort bounded profile read, the assigned identity as fallback) over ONE primary
@@ -2688,15 +2700,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
   Its tally lands on a one-shot scale pop (`score-land`, 2026-08-07 — never at 0, never on
   rehydration, collapsed under reduced motion), and **the BREAKDOWN is the result's LAST
   beat since 2026-08-11** (superseding "the count is the last beat"): the screen draws the
-  claims per grade under the unit — the OG card's chip row on screen (`.word-rarities`, a
-  coloured square + count per grade CLAIMED, commonest first, zeroes absent, each chip in
-  its `RARITY_COLORS` colour) — and once the count settles (the pop's own moment) each chip
-  rises in on its own delay via the tutorial ladder's `rung-in`, unpacking the number that
-  just landed. The row holds its layout space while invisible, so its arrival moves
-  nothing; a rehydrated result wears `.settled` and replays nothing; reduced motion
-  collapses the rise and keeps the delays (the floating numbers' degradation). It is
-  decorative (`role="img"`) with `srWordBreakdown` as its accessible line — grade names
-  untranslated, as everywhere. Identity is mode-addressed everywhere: `roundKeyForDay(day, lang,
+  claims per grade under the unit AS A BAR (`.word-bar`, user-decided 2026-09-05 over the
+  chip row: "too many centered informations" — the sentence result's run ruler in this
+  mode's terms: the same 16px band in the same frame, one segment per grade CLAIMED with
+  `flex-grow` = its count, in its `RARITY_COLORS` colour, commonest first, zeroes absent,
+  the count under its segment the way a tick is numbered) — and once the count settles (the
+  pop's own moment) each segment rises in on its own delay via the tutorial ladder's
+  `rung-in`, unpacking the number that just landed. The frame holds its layout space while
+  invisible, so its arrival moves nothing; a rehydrated result wears `.settled` and replays
+  nothing; reduced motion collapses the rise and keeps the delays (the floating numbers'
+  degradation). It is decorative (`role="img"`) with `srWordBreakdown` as its accessible
+  line — grade names untranslated, as everywhere. ONE component, `WordRarityBar`, draws it
+  on the result screen AND the invite landing; the OG card draws the same bar in SVG
+  (`shared/cardSvg.ts`, floor-width segments over the ruler's column); only the share
+  TEXT keeps its bead row. Identity is mode-addressed everywhere: `roundKeyForDay(day, lang,
   'word')` = `w:` keys into the store's own `wordRounds` map (persist **v8** since the
   sentence gate flag, 2026-08-11; the word rounds' own shape is v7's, #163;
   `ensureWordRound` resets on a republished different word), `lastMode` decides where `/` lands (like

@@ -10,11 +10,13 @@ import {
   type WordShareResult,
 } from '@whippin/shared';
 import Avatar from '../components/Avatar';
+import Button from '../components/Button';
 import RunRuler, { rulerStagger } from '../components/RunRuler';
+import WordRarityBar from '../components/WordRarityBar';
 import LoadingWave from '../components/LoadingWave';
 import LoadError from '../components/LoadError';
 import ErrorScreen from '../components/ErrorScreen';
-import { friendsUrl, postFriendsBody, readProfile, type ProfileRead } from '../api';
+import { friendsUrl, parseFriends, postFriendsBody, readProfile, type ProfileRead } from '../api';
 import {
   deviceIdentity,
   ensureRequestIdentity,
@@ -146,6 +148,19 @@ export function sharedResultFrom(token: string | undefined): SharedResult | null
   return word ? { mode: 'word', result: word } : null;
 }
 
+// YOUR OWN signed link is the plain share to you (user-decided 2026-09-05: "when you click
+// on your own link you should not have the score screen, it should behave like an
+// anonymous link") — AND SO IS A FRIEND'S ("same if you're already friend with the
+// person"): the landing exists to show a READER who sent a result and let them add that
+// person, and neither applies to the sender or to someone who already holds the edge. Both
+// skip it and open the shared day directly, exactly where a plain `/s/<token>` sends
+// everyone. The sender is known locally; a friend takes one private read of the list
+// (`POST /friends {token}`) while the loading frame stands — a failed read shows the
+// landing, whose ADD FRIEND on an existing edge is a harmless "you ARE friends".
+export function isOwnLink(publicId: string): boolean {
+  return deviceIdentity()?.accountId === publicId;
+}
+
 // Where the landing continues: a plain invite hands the destination to App's own home
 // redirect; a shared result opens the DAY it was played (the plain share page's own
 // click-through), so "come play" means the same round the reader was just shown.
@@ -157,46 +172,49 @@ export function landingAfter(shared: SharedResult | null): string {
     : `/${shared.result.lang}/${date}`;
 }
 
-// The shared result, drawn IN THE RESULT SCREENS' OWN DRESS (`.solved-score`: the pixel
-// number over its named unit — lower is better on the sentence, higher on the word, and
-// the unit is what tells a stranger which; user feedback 2026-09-05, the first cut set it
-// in the chrome face and "the layout seems broken"), the run ruler for a sentence, the
-// day's word for the word game, and the calendar date. Settled, replaying nothing: this is
-// someone else's finished round. A capped round prints the literal `∞` — this is ordinary
-// text in the unit's own face, not the pixel number the result screen draws from path data.
+// The shared result, drawn IN THE RESULT SCREENS' OWN DRESS: ONE template for both modes
+// (user-decided 2026-09-05) — the number over its NAMED unit (`.solved-score`: lower is
+// better on the sentence, higher on the word, and the unit is what tells a stranger which),
+// the mode's VISUAL under it (the run ruler for a sentence, the rarity bar for a word), and
+// the calendar date in the card's own pixel face. What differs by mode is exactly three
+// values — a headline (the day's word, sentence has none), the number's unit, the visual —
+// so it is three values, not two layouts. Settled, replaying nothing: this is someone
+// else's finished round. A capped round prints the literal `∞` — ordinary text in the
+// unit's own face, not the pixel number the result screen draws from path data.
 function SharedResultBlock({ shared, lang }: { shared: SharedResult; lang: string }) {
-  if (shared.mode === 'sentence') {
-    const { score, capped, trajectory, solvedAt, dayNumber } = shared.result;
-    const unit = t(lang, !capped && score === 1 ? 'try' : 'tries');
-    return (
-      <div className="invite-result">
-        <span className="solved-score">
-          <span className="solved-score-num">{capped ? '∞' : score}</span>
-          <span className="solved-score-unit">{unit}</span>
-        </span>
-        <div className="run-ruler-frame" aria-hidden="true">
-          <RunRuler
-            trajectory={trajectory}
-            solvedAt={capped ? [] : solvedAt}
-            stagger={rulerStagger(1)}
-            shown
-            colorized
-          />
-        </div>
-        <span className="invite-done-line">{dateForDayNumber(dayNumber)}</span>
+  const { result } = shared;
+  // The word as the CARD draws it — the accented display form, never uppercased (the
+  // share TEXT shouts it; the card and this block show it as the puzzle spells it).
+  const headline = shared.mode === 'word' ? shared.result.word : null;
+  const score = shared.mode === 'word' ? wordShareScore(shared.result.counts) : shared.result.score;
+  const capped = shared.mode === 'sentence' && shared.result.capped === true;
+  const unit =
+    shared.mode === 'word'
+      ? t(lang, score === 1 ? 'foundWord' : 'foundWords')
+      : t(lang, !capped && score === 1 ? 'try' : 'tries');
+  const visual =
+    shared.mode === 'word' ? (
+      <WordRarityBar counts={shared.result.counts} lang={lang} />
+    ) : (
+      <div className="run-ruler-frame" aria-hidden="true">
+        <RunRuler
+          trajectory={shared.result.trajectory}
+          solvedAt={capped ? [] : shared.result.solvedAt}
+          stagger={rulerStagger(1)}
+          shown
+          colorized
+        />
       </div>
     );
-  }
-  const { counts, word, dayNumber } = shared.result;
-  const score = wordShareScore(counts);
   return (
     <div className="invite-result">
-      <span className="invite-result-word">{word.toLocaleUpperCase(shared.result.lang)}</span>
+      {headline !== null && <span className="invite-result-word">{headline}</span>}
       <span className="solved-score">
-        <span className="solved-score-num">{score}</span>
-        <span className="solved-score-unit">{t(lang, score === 1 ? 'foundWord' : 'foundWords')}</span>
+        <span className="solved-score-num">{capped ? '∞' : score}</span>
+        <span className="solved-score-unit">{unit}</span>
       </span>
-      <span className="invite-done-line">{dateForDayNumber(dayNumber)}</span>
+      {visual}
+      <span className="invite-result-date">{dateForDayNumber(result.dayNumber)}</span>
     </div>
   );
 }
@@ -215,6 +233,53 @@ export default function FriendInvite({
   // Replace this landing in history so a back tap leaves the game instead of re-offering
   // the invite; the destination is the shared day's, or App's own home redirect.
   const continueToGame = () => navigate(landingAfter(shared), { replace: true });
+  // Whether this device SKIPS the landing — the sender's own signed link, or a friend's
+  // (see `isOwnLink`). `null` while the friends read is out; a plain invite and a tokenless
+  // device never skip.
+  const [skip, setSkip] = useState<boolean | null>(() => {
+    if (shared === null) return false;
+    if (isOwnLink(publicId)) return true;
+    return deviceIdentity() === null ? false : null;
+  });
+  useEffect(() => {
+    if (skip !== null) return undefined;
+    const identity = deviceIdentity();
+    if (identity === null) {
+      setSkip(false);
+      return undefined;
+    }
+    // A PRIVATE call like any other (#216): the answer is fenced on the identity epoch it
+    // was sent under, and an `unknown_device` refusal is the sign-out verdict, adopted here
+    // exactly as the accept path adopts it — a revoked device must not read the landing as
+    // a stranger and learn it is signed out only when it taps. Any other refusal, and any
+    // failure, shows the landing: the skip is a courtesy, never a gate.
+    const epoch = identityEpoch();
+    if (epoch === null) {
+      setSkip(false);
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await postFriendsBody(friendsUrl(), { token: identity.token });
+        if (cancelled || identityEpoch() !== epoch) return;
+        if (await adoptSignedOutVerdict(response, epoch)) {
+          setSkip(false);
+          return;
+        }
+        const friends = response.ok ? parseFriends(await response.json()) : [];
+        if (!cancelled) setSkip(friends.includes(publicId));
+      } catch {
+        if (!cancelled) setSkip(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [skip, publicId]);
+  useEffect(() => {
+    if (skip) navigate(landingAfter(shared), { replace: true });
+  }, [skip, shared]);
   // The accept's own lifecycle: idle on the landing, busy while the tap's chain runs,
   // done on the confirmation. `full` is the one refusal with its own screen.
   const [phase, setPhase] = useState<'idle' | 'busy' | 'done' | 'full' | 'expired'>('idle');
@@ -244,6 +309,8 @@ export default function FriendInvite({
   useEffect(() => {
     if (deviceIdentity() === null) prefetchTurnstileTokens(1);
   }, [publicId]);
+
+  if (skip) return null;
 
   const accept = () => {
     if (phase === 'busy') return;
@@ -286,32 +353,45 @@ export default function FriendInvite({
       />
     );
   }
-  if (!inviter) {
+  if (!inviter || skip === null) {
     return (
       <p className="status">
         <LoadingWave text={t(lang, 'loading')} />
       </p>
     );
   }
+  // TWO GROUPS with a gap between them (user-decided 2026-09-05: the face at the top and
+  // the button at the bottom "feel like both have no link"): the RESULT first, on its own —
+  // what was shared — then the PERSON with what you can do about them: their mark and
+  // name directly over ADD FRIEND, and PLAY under it as the way out for a reader who wants
+  // the game and not the friend (a landing with one door is a wall). A plain invite has
+  // no first group and is the person alone.
   return (
     <div className="invite-done">
-      <Avatar avatar={inviter.avatar ?? defaultAvatar(publicId)} size={64} />
-      <span className="invite-done-name">{inviter.name}</span>
       {shared && <SharedResultBlock shared={shared} lang={lang} />}
-      {phase === 'done' ? (
-        <>
-          <p className="invite-done-line" role="status">
-            {t(lang, 'inviteAdded')}
-          </p>
-          <button type="button" className="mix-btn" onClick={continueToGame}>
-            {t(lang, 'gatePlay')}
-          </button>
-        </>
-      ) : (
-        <button type="button" className="mix-btn" onClick={accept} disabled={phase === 'busy'}>
-          {phase === 'busy' ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'inviteAccept')}
-        </button>
-      )}
+      <div className="invite-person">
+        <Avatar avatar={inviter.avatar ?? defaultAvatar(publicId)} size={64} />
+        <span className="invite-done-name">{inviter.name}</span>
+        {phase === 'done' ? (
+          <>
+            <p className="invite-done-line" role="status">
+              {t(lang, 'inviteAdded')}
+            </p>
+            <button type="button" className="mix-btn" onClick={continueToGame}>
+              {t(lang, 'gatePlay')}
+            </button>
+          </>
+        ) : (
+          <>
+            <button type="button" className="mix-btn" onClick={accept} disabled={phase === 'busy'}>
+              {phase === 'busy' ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'inviteAccept')}
+            </button>
+            <Button variant="secondary" onClick={continueToGame}>
+              {t(lang, 'gatePlay')}
+            </Button>
+          </>
+        )}
+      </div>
 
       {failed && (
         <ErrorScreen
