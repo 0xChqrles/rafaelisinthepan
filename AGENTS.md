@@ -594,9 +594,10 @@ The live routes then share:
   invite landing showing the result, whose ADD FRIEND records the edge and whose PLAY
   opens the shared day. A deleted signer falls back to the PLAIN share (the score was
   never the part that went away). Toggle OFF = the plain `/s/<token>`, byte for byte,
-  still content-addressed and year-cached. The control is the label AS and a two-row DRUM
-  (the app's one picker physics) holding the player's mark + name or ANONYMOUS, opening on
-  the player; never a "share my profile" checkbox (scary), an `AS` checkbox beside a face
+  still content-addressed and year-cached. The control is the label AS and a ONE-ROW-TALL
+  two-row DRUM with a flip chevron (the app's one picker physics) holding the player's mark
+  + name or ANONYMOUS, opening on the player, directly under SHARE (a taller drum lost the
+  link to the button); never a "share my profile" checkbox (scary), an `AS` checkbox beside a face
   (two squares), a "don't share" opt-out, or an INVITE chip (each tried and retired the same
   day). The signed card centres strip + gap + result as ONE block (the result moves down;
   the plain card is untouched).

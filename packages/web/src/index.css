@@ -2556,18 +2556,19 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .result-action.copied {
   color: var(--accent);
 }
-/* WHO A SHARE IS FROM (user-decided 2026-09-05, ShareAs.tsx): the label AS and a small DRUM
-   under SHARE — its own row of the actions flow, with the room the rank line left. Two rows
-   turn through a slot in the middle (`useDrum`, the app's one picker physics); the row in
-   the slot wears the inverted chip the header selection's rows wear (`.ps-row.on`), the
-   other stands plain and dim through the drum's fade. The player's row is their mark and
-   name, kept in their own case; the other is ANONYMOUS. Nothing is remembered. */
+/* WHO A SHARE IS FROM (user-decided 2026-09-05, ShareAs.tsx): the label AS, a ONE-ROW drum
+   and a flip chevron, directly under SHARE in the actions' own gap — a line, not a block
+   (the three-row drum "put it too far from the share button"). The two rows turn through
+   the slot (`useDrum`, the app's one picker physics) with a sliver of the other showing in
+   the fade; the row in the slot wears the inverted chip the header selection's rows wear
+   (`.ps-row.on`). The player's row is their mark and name, kept in their own case; the
+   other is ANONYMOUS. Nothing is remembered. */
 .share-as {
   flex-basis: 100%;
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   font-family: var(--ui);
 }
 .share-as-label {
@@ -2584,8 +2585,31 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   overscroll-behavior: contain;
   user-select: none;
   -webkit-user-select: none;
-  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 22px, #000 calc(100% - 22px), transparent);
-  mask-image: linear-gradient(to bottom, transparent, #000 22px, #000 calc(100% - 22px), transparent);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 9px, #000 calc(100% - 9px), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 9px, #000 calc(100% - 9px), transparent);
+}
+/* The flip: the header title's own chevron, pointing at the row it would bring — down to
+   ANONYMOUS, up (turned) back to the player. */
+.share-as-flip {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  padding: 4px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition: rotate 160ms ease-out, color 120ms linear;
+}
+.share-as-flip.up {
+  rotate: 180deg;
+}
+.share-as-flip:hover {
+  color: var(--fg);
+}
+.share-as-flip:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
 }
 .share-as-track {
   display: flex;

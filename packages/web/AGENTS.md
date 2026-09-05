@@ -1701,13 +1701,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `components/ShareAs.tsx` — `useShareSigner` (component state, the player's row by
   default, so every result screen asks afresh; `by` is the account's publicId or null) and,
   under SHARE in both `SolvedScreen` and `WordEndScreen`, the label AS beside a two-row
-  drum on `useDrum` (three rows visible, the pick in the middle slot wearing `.ps-row.on`'s
-  inverted chip; rows are `role=radio`; arrow keys turn it): the player's mark + name
-  (`useOwnFace`, rendered once the face has settled) or ANONYMOUS. Four passes the same
-  day: a glass chip reading INVITE ("looks like a button", "the term invite is weird"), a
-  checkbox reading SHARE MY PROFILE ("can be scary"), a checkbox reading `AS <mark> <name>`
-  ("the checkbox already looks like a pfp, so on the same line it feels weird"), then the
-  drum, in the room the rank line left. No account, no drum. The landing draws the shared
+  drum on `useDrum` — ONE ROW TALL: the slot with a 7px sliver of the other row in the fade,
+  the pick wearing `.ps-row.on`'s inverted chip, a flip CHEVRON beside it (and a tap on the
+  slot row flips too); rows are `role=radio`; arrow keys turn it — holding the player's mark
+  + name (`useOwnFace`, rendered once the face has settled) or ANONYMOUS. Five passes the
+  same day: a glass chip reading INVITE ("looks like a button", "the term invite is weird"),
+  a checkbox reading SHARE MY PROFILE ("can be scary"), a checkbox reading `AS <mark> <name>`
+  ("the checkbox already looks like a pfp, so on the same line it feels weird"), a three-row
+  drum ("too far from the share button — we don't get the link between them"), then this
+  line directly under SHARE. No account, no drum. The landing draws the shared
   score in `.solved-score`'s own dress (pixel number over its unit — the first cut used the
   chrome face and broke the layout). The
   landing

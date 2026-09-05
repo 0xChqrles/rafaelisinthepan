@@ -1,9 +1,17 @@
-// WHO a share is FROM (user-decided 2026-09-05, four passes the same day): under SHARE on
+// WHO a share is FROM (user-decided 2026-09-05, five passes the same day): under SHARE on
 // both result screens, the label AS and a small DRUM holding two rows — the player's own
 // mark and name, or ANONYMOUS — turned like every wheel in the app (`useDrum`, the hole
 // wheel's and the header selection's physics). The row in the slot is the pick; it opens on
 // the player, so a share left alone is signed. NEVER persisted: every result screen mounts
 // it fresh, so a player who turned it to ANONYMOUS for one share is asked again by the next.
+//
+// ONE ROW TALL. The first drum showed three rows and stood 90px high, which put the label
+// "too far from the share button — we don't get the link between them anymore" (user
+// feedback, fifth pass). So the drum is the SLOT alone, with a sliver of the other row
+// showing through the fade above or below it — enough to read as a wheel, no taller than a
+// line — and a CHEVRON beside it that flips the two rows for anyone who would rather tap
+// than turn; a tap on the slot row flips it too, since with two rows "the other one" is
+// unambiguous. It sits directly under SHARE in the actions' own gap.
 //
 // Signed, the share link carries the player's publicId as a second segment
 // (`/s/<token>/<publicId>`, `shared/invite.ts`): the card wears the mark and name, and the
@@ -23,6 +31,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent } from 'react';
 import { defaultAvatar } from '@whippin/shared';
+import ChevronDownIcon from '../assets/icons/chevron-down.svg?react';
 import Avatar from './Avatar';
 import { shownFace, useOwnFace } from './AccountFace';
 import useDrum from '../hooks/useDrum';
@@ -45,12 +54,12 @@ export function useShareSigner(): ShareSigner {
   return { by: on ? signer : null, signer, on, setOn };
 }
 
-// Three rows show: the pick in the middle, the other option standing plain beside it.
+// The slot alone shows, with PEEK px of the neighbouring row fading in above or below.
 const ROW_H = 26;
 const GAP = 6;
 const PITCH = ROW_H + GAP;
-const VISIBLE = 3;
-const HALF = Math.floor(VISIBLE / 2);
+const PEEK = 7;
+const BOX_H = ROW_H + 2 * PEEK;
 
 export default function ShareAs({ lang, signer }: { lang: string; signer: ShareSigner }) {
   const face = shownFace(useOwnFace());
@@ -103,6 +112,8 @@ export default function ShareAs({ lang, signer }: { lang: string; signer: ShareS
       drum.glideBy(e.key === 'ArrowDown' ? 1 : -1);
     }
   };
+  // The other row — the only place a two-row drum can go.
+  const flip = () => drum.glideBy(drum.current === 0 ? 1 : -1);
 
   return (
     <div className="share-as">
@@ -114,11 +125,11 @@ export default function ShareAs({ lang, signer }: { lang: string; signer: ShareS
         ref={box}
         role="radiogroup"
         aria-labelledby="share-as-label"
-        style={{ height: VISIBLE * PITCH - GAP }}
+        style={{ height: BOX_H }}
         onKeyDown={onKeyDown}
       >
         <div className="share-as-track" ref={track}>
-          <div style={{ height: HALF * PITCH }} />
+          <div style={{ height: PEEK }} />
           {rows.map((row, i) => {
             const inSlot = i === drum.current;
             return (
@@ -130,15 +141,25 @@ export default function ShareAs({ lang, signer }: { lang: string; signer: ShareS
                 aria-label={row.label}
                 className={`share-as-row${inSlot ? ' on' : ''}`}
                 style={{ height: ROW_H, marginBottom: GAP } as CSSProperties}
-                onClick={() => drum.tap(i)}
+                onClick={() => {
+                  if (drum.tap(i) === 'slot') flip();
+                }}
               >
                 <span className="share-as-chip">{row.chip}</span>
               </button>
             );
           })}
-          <div style={{ height: HALF * PITCH - GAP }} />
+          <div style={{ height: PEEK }} />
         </div>
       </div>
+      <button
+        type="button"
+        className={`share-as-flip${drum.current === 1 ? ' up' : ''}`}
+        aria-label={rows[drum.current === 0 ? 1 : 0].label}
+        onClick={flip}
+      >
+        <ChevronDownIcon className="ui-icon" aria-hidden />
+      </button>
     </div>
   );
 }
