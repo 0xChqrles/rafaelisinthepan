@@ -1,6 +1,6 @@
 // The podium job (#236): BOUNDED work, so it is a Lambda — never a second WhatsApp
 // session. EventBridge Scheduler fires it per group at that group's own local time
-// (`podium.time` in `podium.timezone`, a social convention), with `{ group }` as input.
+// (`podium.time` in the group's `timezone`, a social convention), with `{ group }` as input.
 //
 //   read the group's rows for the Whippin day → dense podium → (optional) model comments
 //   → render → ONE outbound command on the queue the connected task consumes.

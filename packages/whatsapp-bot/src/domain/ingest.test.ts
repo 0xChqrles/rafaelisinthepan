@@ -19,7 +19,7 @@ function registry(over: Record<string, unknown> = {}) {
       name: 'g',
       language: 'fr',
       enabled: true,
-      podium: { enabled: true, time: '22:00', timezone: 'Europe/Paris' },
+      timezone: 'Europe/Paris', podium: { enabled: true, time: '22:00' },
       chat: { enabled: false },
       names: { '33600000000@s.whatsapp.net': 'Zou' },
       ...over,

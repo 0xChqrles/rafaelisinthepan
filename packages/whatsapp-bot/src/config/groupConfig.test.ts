@@ -15,7 +15,7 @@ const valid = {
   name: 'Whippin FR',
   language: 'fr',
   enabled: true,
-  podium: { enabled: true, time: '22:00', timezone: 'Europe/Paris' },
+  timezone: 'Europe/Paris', podium: { enabled: true, time: '22:00' },
   chat: { enabled: true, prePrompt: 'Ce groupe aime se chambrer.' },
 };
 
@@ -24,7 +24,8 @@ describe('group configuration (#236)', () => {
     const config = parseGroupConfig('main-fr.json', valid);
     expect(config.id).toBe(valid.id);
     expect(config.language).toBe('fr');
-    expect(config.podium).toEqual({ enabled: true, time: '22:00', timezone: 'Europe/Paris' });
+    expect(config.timezone).toBe('Europe/Paris');
+    expect(config.podium).toEqual({ enabled: true, time: '22:00' });
     expect(config.chat.name).toBe('WhippinBot');
     expect(config.chat.prePrompt).toBe('Ce groupe aime se chambrer.');
     expect(config.acknowledge).toBe('react');
@@ -36,7 +37,8 @@ describe('group configuration (#236)', () => {
     ['a non-group id', { ...valid, id: '33612345678@s.whatsapp.net' }],
     ['an unsupported language', { ...valid, language: 'de' }],
     ['a malformed podium time', { ...valid, podium: { ...valid.podium, time: '22h' } }],
-    ['an unknown time zone', { ...valid, podium: { ...valid.podium, timezone: 'Mars/Olympus' } }],
+    ['an unknown time zone', { ...valid, timezone: 'Mars/Olympus' }],
+    ['a time zone on the podium, where it no longer lives', { ...valid, podium: { ...valid.podium, timezone: 'Europe/Paris' } }],
     ['an unknown field', { ...valid, chatt: {} }],
     // The NESTED typos are the ones that used to pass, and they are the dangerous half:
     // these fields have defaults, so a misspelling silently un-configures the group.
@@ -166,15 +168,14 @@ describe('the snapshot directory (#236)', () => {
     }
   });
 
-  it('reads the optional morning reminder: off by default, strict inside, the podium\'s zone unless told', () => {
-    expect(parseGroupConfig('g.json', valid).reminder).toEqual({ enabled: false, time: '09:00', timezone: 'Europe/Paris' });
+  it('reads the optional morning reminder: off by default, strict inside, in the GROUP\'s zone', () => {
+    expect(parseGroupConfig('g.json', valid).reminder).toEqual({ enabled: false, time: '09:00' });
     expect(parseGroupConfig('g.json', { ...valid, reminder: { enabled: true, time: '08:30' } }).reminder).toEqual({
       enabled: true,
       time: '08:30',
-      timezone: 'Europe/Paris',
     });
-    expect(parseGroupConfig('g.json', { ...valid, reminder: { enabled: true, time: '08:30', timezone: 'America/Montreal' } }).reminder.timezone).toBe('America/Montreal');
-    for (const reminder of [{ enabled: true }, { enabled: 'yes', time: '08:30' }, { enabled: true, time: '8h30' }, { enabled: true, time: '08:30', tz: 'Europe/Paris' }, { enabled: true, time: '08:30', timezone: 'Mars/Olympus' }]) {
+    // The zone is the group's, stated once at the root: a reminder may not carry its own.
+    for (const reminder of [{ enabled: true }, { enabled: 'yes', time: '08:30' }, { enabled: true, time: '8h30' }, { enabled: true, time: '08:30', tz: 'Europe/Paris' }, { enabled: true, time: '08:30', timezone: 'Europe/Paris' }]) {
       expect(() => parseGroupConfig('g.json', { ...valid, reminder })).toThrow();
     }
   });
