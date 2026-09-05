@@ -2704,8 +2704,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   invisible, so its arrival moves nothing; a rehydrated result wears `.settled` and replays
   nothing; reduced motion collapses the rise and keeps the delays (the floating numbers'
   degradation). It is decorative (`role="img"`) with `srWordBreakdown` as its accessible
-  line — grade names untranslated, as everywhere. The OG card and the share text keep
-  their chip row and bead row; the bar is the screen's alone. Identity is mode-addressed everywhere: `roundKeyForDay(day, lang,
+  line — grade names untranslated, as everywhere. ONE component, `WordRarityBar`, draws it
+  on the result screen AND the invite landing; the OG card draws the same bar in SVG
+  (`shared/cardSvg.ts`, floor-width segments over the ruler's column); only the share
+  TEXT keeps its bead row. Identity is mode-addressed everywhere: `roundKeyForDay(day, lang,
   'word')` = `w:` keys into the store's own `wordRounds` map (persist **v8** since the
   sentence gate flag, 2026-08-11; the word rounds' own shape is v7's, #163;
   `ensureWordRound` resets on a republished different word), `lastMode` decides where `/` lands (like

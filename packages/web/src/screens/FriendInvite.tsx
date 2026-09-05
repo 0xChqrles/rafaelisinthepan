@@ -11,6 +11,7 @@ import {
 } from '@whippin/shared';
 import Avatar from '../components/Avatar';
 import RunRuler, { rulerStagger } from '../components/RunRuler';
+import WordRarityBar from '../components/WordRarityBar';
 import LoadingWave from '../components/LoadingWave';
 import LoadError from '../components/LoadError';
 import ErrorScreen from '../components/ErrorScreen';
@@ -209,6 +210,7 @@ function SharedResultBlock({ shared, lang }: { shared: SharedResult; lang: strin
         <span className="solved-score-num">{score}</span>
         <span className="solved-score-unit">{t(lang, score === 1 ? 'foundWord' : 'foundWords')}</span>
       </span>
+      <WordRarityBar counts={counts} lang={lang} />
       <span className="invite-done-line">{dateForDayNumber(dayNumber)}</span>
     </div>
   );

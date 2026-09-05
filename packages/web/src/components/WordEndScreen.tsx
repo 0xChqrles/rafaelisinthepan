@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { CSSProperties } from 'react';
 import { prefersReducedMotion } from '../hooks/useScramble';
-import { t, srWordBreakdown } from '../i18n';
-import { RARITY_NAMES } from '../game/wordGame';
+import { t } from '../i18n';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import type { ScorePlacementState } from '../hooks/useScoreHistogram';
 import useShare from '../hooks/useShare';
 import Button from './Button';
 import ShareAs, { useShareSigner } from './ShareAs';
-import { RARITY_COLORS } from './rarity';
+import WordRarityBar from './WordRarityBar';
 import ScoreTop from './ScoreTop';
 import { shareHeadline, wordShareText, wordShareUrl, wordShareScore } from '../game/share';
 import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
@@ -82,17 +80,6 @@ export default function WordEndScreen({
     return () => window.clearTimeout(id);
   }, [animate, reduceMotion, countTarget, score]);
 
-  // The grades the run claimed, ladder order, zeroes absent — the OG card's chip row and
-  // the share text's bead row, on screen. One derivation for the whole row, so what the
-  // chips say is exactly what the message will.
-  const claimedGrades = useMemo(
-    () =>
-      RARITY_NAMES.map((grade, step) => ({ grade, count: counts[step] ?? 0 })).filter(
-        (g) => g.count > 0,
-      ),
-    [counts],
-  );
-
   // The breakdown is the result's LAST beat: it unpacks the number the tally just landed,
   // so it waits for that landing (the pop's own moment) and then each chip rises in on its
   // own delay, commonest first. Under reduced motion the count lands immediately and the
@@ -154,36 +141,9 @@ export default function WordEndScreen({
       </span>
 
       {/* The tally's BREAKDOWN as a BAR (user-decided 2026-09-05, replacing the row of
-          chips: "too many centered informations"): the sentence result's run ruler, in
-          this mode's own terms — one segment per grade CLAIMED, as wide as its share of
-          the claims, in the grade's colour, commonest first, with its count under it the
-          way the ruler numbers its ticks. A picture where there was a line of text. It
-          rises in segment by segment once the count has landed. */}
-      {claimedGrades.length > 0 && (
-        <div className="run-ruler-frame">
-          <div
-            className={`word-bar${breakdownIn ? ' in' : ''}${animate ? '' : ' settled'}`}
-            role="img"
-            aria-label={srWordBreakdown(lang, claimedGrades)}
-          >
-            {claimedGrades.map(({ grade, count }, step) => (
-              <span
-                key={grade}
-                className="word-bar-seg"
-                style={
-                  {
-                    '--step': step,
-                    flexGrow: count,
-                    color: RARITY_COLORS[grade],
-                  } as CSSProperties
-                }
-              >
-                <span className="word-bar-num">{count}</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
+          chips: "too many centered informations") — `WordRarityBar`, the one drawing every
+          surface shares. It rises in segment by segment once the count has landed. */}
+      <WordRarityBar counts={counts} lang={lang} shown={breakdownIn} animate={animate} />
 
       <div className="result-actions">
         <Button
