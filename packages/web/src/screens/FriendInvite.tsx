@@ -157,19 +157,22 @@ export function landingAfter(shared: SharedResult | null): string {
     : `/${shared.result.lang}/${date}`;
 }
 
-// The shared result, drawn the way the result screens draw it: the number with its unit
-// NAMED (lower is better on the sentence, higher on the word — the unit is what tells a
-// stranger which), the run ruler for a sentence, the day's word for the word game, and the
-// calendar date. Settled, replaying nothing: this is someone else's finished round.
+// The shared result, drawn IN THE RESULT SCREENS' OWN DRESS (`.solved-score`: the pixel
+// number over its named unit — lower is better on the sentence, higher on the word, and
+// the unit is what tells a stranger which; user feedback 2026-09-05, the first cut set it
+// in the chrome face and "the layout seems broken"), the run ruler for a sentence, the
+// day's word for the word game, and the calendar date. Settled, replaying nothing: this is
+// someone else's finished round. A capped round prints the literal `∞` — this is ordinary
+// text in the unit's own face, not the pixel number the result screen draws from path data.
 function SharedResultBlock({ shared, lang }: { shared: SharedResult; lang: string }) {
   if (shared.mode === 'sentence') {
     const { score, capped, trajectory, solvedAt, dayNumber } = shared.result;
     const unit = t(lang, !capped && score === 1 ? 'try' : 'tries');
     return (
       <div className="invite-result">
-        <span className="invite-result-score">
-          <span className="invite-result-num">{capped ? '∞' : score}</span>
-          <span className="invite-result-unit">{unit}</span>
+        <span className="solved-score">
+          <span className="solved-score-num">{capped ? '∞' : score}</span>
+          <span className="solved-score-unit">{unit}</span>
         </span>
         <div className="run-ruler-frame" aria-hidden="true">
           <RunRuler
@@ -189,9 +192,9 @@ function SharedResultBlock({ shared, lang }: { shared: SharedResult; lang: strin
   return (
     <div className="invite-result">
       <span className="invite-result-word">{word.toLocaleUpperCase(shared.result.lang)}</span>
-      <span className="invite-result-score">
-        <span className="invite-result-num">{score}</span>
-        <span className="invite-result-unit">{t(lang, score === 1 ? 'foundWord' : 'foundWords')}</span>
+      <span className="solved-score">
+        <span className="solved-score-num">{score}</span>
+        <span className="solved-score-unit">{t(lang, score === 1 ? 'foundWord' : 'foundWords')}</span>
       </span>
       <span className="invite-done-line">{dateForDayNumber(dayNumber)}</span>
     </div>

@@ -10,7 +10,7 @@ import SolvedCaption, { captionDurationMs } from './SolvedCaption';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useLetterWave, { WAVE_VARS } from '../hooks/useLetterWave';
 import useShare from '../hooks/useShare';
-import ShareProfile, { useShareSigner } from './ShareProfile';
+import ShareAs, { useShareSigner } from './ShareAs';
 import { ariaHoleHistory, t } from '../i18n';
 import { SCORE_COUNT_MS } from './resultAnimation';
 
@@ -331,8 +331,8 @@ export default function SolvedScreen({
   // Delivery (native sheet / clipboard + the "COPIED" confirmation) is the shared hook's;
   // this screen only composes the sentence result's text.
   const { share, copied } = useShare();
-  // The SHARE MY PROFILE box under SHARE: checked, the link is signed with this account
-  // (see ShareProfile). Fresh on every mount — never remembered from one result to the next.
+  // The AS drum under SHARE: on the player's row, the link is signed with this account
+  // (see ShareAs). Fresh on every mount — never remembered from one result to the next.
   const signer = useShareSigner();
 
   const onShare = useCallback(async () => {
@@ -460,7 +460,7 @@ export default function SolvedScreen({
           >
             {copied ? t(lang, 'copied') : t(lang, 'share')}
           </button>
-          <ShareProfile lang={lang} signer={signer} />
+          <ShareAs lang={lang} signer={signer} />
         </div>
       </div>
     </div>

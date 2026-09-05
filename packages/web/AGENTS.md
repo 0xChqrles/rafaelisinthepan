@@ -755,13 +755,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
       numbers `/account` prints** (`AccountStats`). **Every successful ending is a DEAD
       STOP** — no TRY ANOTHER ADDRESS.
     - **THE ACCOUNT SCREEN STATES WHAT THE ACCOUNT IS (2026-08-28):** the live STREAK, the
-      BEST it has held, its total DAYS, and the date it began — ACROSS EVERY LANGUAGE, by the
+      BEST it has held, its total DAYS — ACROSS EVERY LANGUAGE, by the
       ONE aggregation the root `AGENTS.md` records for `accountStakes` (streak = MAX of the
       live streaks, best = MAX of the best streaks, days = SUM of the collections; never a sum
       of streaks), computed here by `useAccountStats` from `bestStreak`/`currentStreak` in
       `shared/src/history.ts`, so the screen and the confirmations print one number. Zeros
       are DRAWN, never hidden; values are withheld only while collections are in flight; the
-      AGE falls back to `gameStore.localSeedAt`; the DEVICES stay gated on SAVED. One word per
+      DEVICES stay gated on SAVED. (The account's AGE line — `createdAt`, falling back to
+      `gameStore.localSeedAt` — was DROPPED 2026-09-05, user-decided, and the saved ADDRESS
+      took its place and dress under the name, `.account-id-mail`; `localSeedAt` left the
+      store with it.) One word per
       number, shared with the confirmations (STREAK untranslated, `statDays`). The streak
       moved here FROM the archive, which now reads its month with `collection: false`.
     - **SMALL TYPE HAS THREE ROLES (2026-08-29):** INFO sentence case · muted · regular · no
@@ -918,24 +921,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
       wait — the same rule that holds the second door back until the summary settles: a
       control drawn before it can be pressed is a false offer. Counting it is a STATUS
       line; when the clock runs out the box arrives with the offer.
-  - **`gameStore.localSeedAt`** stamps the placeholder identity's own instant, so the screen
-    can state an age before an account exists. The instant travels IN the mutation, never
-    read inside the reducer: mutations are applied against the latest committed state inside
-    the persistence transaction, and one that reads a clock of its own is not the same
-    mutation twice. A seed persisted before the field existed keeps NO date rather than being
-    given a made-up one.
   - **DEVICES appear only once an email is SAVED** (user-decided 2026-08-26): an unlinked
     account can only ever hold the one device reading the screen — multi-device arrives
     through the email link and no other way — so the list would be a list of yourself.
     The unsaved account screen is exactly three things: the row, EDIT, and SAVE WITH
-    EMAIL. The account's AGE joins the row on the same gate, for the indistinguishability
-    rule below.
+    EMAIL. The saved address joins the row on the same gate (in the age's former place,
+    2026-09-05), for the indistinguishability rule below.
   - **NOTHING IN THE AREA REVEALS WHETHER THE ACCOUNT EXISTS ON THE SERVER YET**
     (user-decided 2026-08-26). The pseudonym and the mark are derived locally from the
     persisted seed before deployment and stored as the account's first profile AT it
     (`localIdentityDeploy`), so `useOwnFace` — the ONE hook every screen of the area leads
     with — answers the same face either way. What used to leak it is gone: the devices and
-    the account's AGE appear only once SAVED, which a tokenless and a deployed-unsaved
+    the saved address appear only once SAVED, which a tokenless and a deployed-unsaved
     device equally are not; the email flow's address step led with the app MARK for a
     tokenless device and now leads with that same face — HELD across the deploy
     (`AccountEmail`'s `lead`), because CONTINUE swaps the id from the seed to the account
@@ -1700,14 +1697,19 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `additionalBehaviors`, and `changeOrigin`/`xfwd` are pinned OFF (Vite's string shorthand
   does not leave them off) so the backend, which has no `siteOrigin` locally, reads the
   BROWSER's Host and bounces to the app rather than to itself.
-  **THE SHARE'S PROFILE CHECKBOX (user-decided 2026-09-05, root `AGENTS.md`):**
-  `components/ShareProfile.tsx` — `useShareSigner` (component state, checked by default, so
-  every result screen asks afresh; `by` is the account's publicId or null) and a plain
-  checkbox reading `AS <mark> <name>` (`useOwnFace`, rendered once the face has settled)
-  under SHARE in both `SolvedScreen` and `WordEndScreen` — a native input under the app's
-  own square; unticked, the face and name dim. Three passes the same day: a glass chip
-  reading INVITE ("looks like a button", "the term invite is weird"), then SHARE MY PROFILE
-  ("can be scary"), then the user's own `as <pfp> <username>`. No account, no checkbox. The
+  **THE SHARE'S AS DRUM (user-decided 2026-09-05, root `AGENTS.md`):**
+  `components/ShareAs.tsx` — `useShareSigner` (component state, the player's row by
+  default, so every result screen asks afresh; `by` is the account's publicId or null) and,
+  under SHARE in both `SolvedScreen` and `WordEndScreen`, the label AS beside a two-row
+  drum on `useDrum` (three rows visible, the pick in the middle slot wearing `.ps-row.on`'s
+  inverted chip; rows are `role=radio`; arrow keys turn it): the player's mark + name
+  (`useOwnFace`, rendered once the face has settled) or ANONYMOUS. Four passes the same
+  day: a glass chip reading INVITE ("looks like a button", "the term invite is weird"), a
+  checkbox reading SHARE MY PROFILE ("can be scary"), a checkbox reading `AS <mark> <name>`
+  ("the checkbox already looks like a pfp, so on the same line it feels weird"), then the
+  drum, in the room the rank line left. No account, no drum. The landing draws the shared
+  score in `.solved-score`'s own dress (pixel number over its unit — the first cut used the
+  chrome face and broke the layout). The
   landing
   takes the token as `/join/<publicId>/<token>` (`parseRoute` shape-checks it with
   `SHARE_TOKEN_PATTERN`, `FriendInvite` decodes it — `sharedResultFrom`), draws the shared

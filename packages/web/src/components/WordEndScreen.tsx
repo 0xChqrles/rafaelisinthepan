@@ -6,7 +6,7 @@ import { RARITY_NAMES } from '../game/wordGame';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import type { ScorePlacementState } from '../hooks/useScoreHistogram';
 import useShare from '../hooks/useShare';
-import ShareProfile, { useShareSigner } from './ShareProfile';
+import ShareAs, { useShareSigner } from './ShareAs';
 import { RARITY_COLORS } from './rarity';
 import ScoreTop from './ScoreTop';
 import { shareHeadline, wordShareText, wordShareUrl, wordShareScore } from '../game/share';
@@ -117,7 +117,7 @@ export default function WordEndScreen({
   // Delivery (native sheet / clipboard + the "COPIED" confirmation) is the shared hook's;
   // this screen only composes the word result's text.
   const { share, copied } = useShare();
-  // The SHARE MY PROFILE box under SHARE (see ShareProfile): fresh on every mount, never remembered.
+  // The AS drum under SHARE (see ShareAs): fresh on every mount, never remembered.
   const signer = useShareSigner();
 
   // This screen owns only the LOCALIZED headline; the body's composition — the word, its
@@ -178,7 +178,7 @@ export default function WordEndScreen({
         >
           {copied ? t(lang, 'copied') : t(lang, 'share')}
         </button>
-        <ShareProfile lang={lang} signer={signer} />
+        <ShareAs lang={lang} signer={signer} />
       </div>
     </div>
   );

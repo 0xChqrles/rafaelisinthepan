@@ -2556,89 +2556,89 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .result-action.copied {
   color: var(--accent);
 }
-/* `AS <mark> <name>` (user-decided 2026-09-05, ShareProfile.tsx): a plain CHECKBOX under
-   SHARE — its own row of the actions flow, small and muted so the button stays the action.
-   A native input (hidden but focusable, so keyboard and screen readers get the real
-   control) with the app's square drawn over it: hairline when clear, accent-filled with
-   its tick when checked. The face and name are the label; unticked, they dim — the reader
-   would see nobody. Nothing is remembered. */
-.share-profile {
+/* WHO A SHARE IS FROM (user-decided 2026-09-05, ShareAs.tsx): the label AS and a small DRUM
+   under SHARE — its own row of the actions flow, with the room the rank line left. Two rows
+   turn through a slot in the middle (`useDrum`, the app's one picker physics); the row in
+   the slot wears the inverted chip the header selection's rows wear (`.ps-row.on`), the
+   other stands plain and dim through the drum's fade. The player's row is their mark and
+   name, kept in their own case; the other is ANONYMOUS. Nothing is remembered. */
+.share-as {
   flex-basis: 100%;
-  display: inline-flex;
+  display: flex;
   justify-content: center;
   align-items: center;
-  gap: 8px;
+  gap: 14px;
   font-family: var(--ui);
+}
+.share-as-label {
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted);
-  cursor: pointer;
+}
+.share-as-drum {
+  position: relative;
+  overflow: hidden;
+  touch-action: none;
+  overscroll-behavior: contain;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 22px, #000 calc(100% - 22px), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 22px, #000 calc(100% - 22px), transparent);
 }
-.share-profile-face {
-  display: inline-flex;
-  width: 18px;
-  height: 18px;
-  transition: opacity 0.12s linear;
+.share-as-track {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  will-change: translate;
 }
-.share-profile-name {
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: none;
-  color: var(--fg);
-  transition: opacity 0.12s linear;
-}
-.share-profile input:not(:checked) ~ .share-profile-face,
-.share-profile input:not(:checked) ~ .share-profile-name {
-  opacity: 0.4;
-}
-.share-profile input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
+.share-as-row {
+  display: flex;
+  align-items: center;
+  margin: 0;
   padding: 0;
   border: 0;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
+  background: none;
+  font: inherit;
+  color: var(--muted);
+  cursor: pointer;
 }
-.share-profile-box {
-  position: relative;
+.share-as-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: background-color 120ms linear, color 120ms linear;
+}
+.share-as-row.on {
+  color: var(--fg);
+}
+.share-as-row.on .share-as-chip {
+  background: var(--fg);
+  color: var(--bg);
+}
+.share-as-row.on:active .share-as-chip {
+  background: color-mix(in srgb, var(--fg) 68%, var(--bg));
+}
+.share-as-face {
+  display: inline-flex;
   width: 16px;
   height: 16px;
-  box-sizing: border-box;
-  border: 1px solid var(--line-strong);
-  border-radius: 3px;
-  background: var(--glass);
-  flex: 0 0 auto;
-  margin-right: 2px;
-  transition: background-color 0.12s linear, border-color 0.12s linear;
 }
-/* The tick: two arms of one bordered corner, turned — no glyph, no font. */
-.share-profile-box::after {
-  content: '';
-  position: absolute;
-  left: 4px;
-  top: 1px;
-  width: 4px;
-  height: 8px;
-  border: solid var(--bg);
-  border-width: 0 2px 2px 0;
-  rotate: 45deg;
-  opacity: 0;
-  transition: opacity 0.08s linear;
+.share-as-name {
+  text-transform: none;
+  letter-spacing: 0.04em;
 }
-.share-profile input:checked + .share-profile-box {
-  background: var(--accent);
-  border-color: var(--accent);
-}
-.share-profile input:checked + .share-profile-box::after {
-  opacity: 1;
-}
-.share-profile input:focus-visible + .share-profile-box {
+.share-as-row:focus-visible {
   outline: 2px solid var(--fg);
   outline-offset: 2px;
 }
@@ -5033,35 +5033,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   border-color: var(--line-strong);
 }
 /* A row that is a FACT, not a control: the saved address, plainly. */
-.account-link.static {
-  cursor: default;
-}
-.account-link.static:hover {
-  border-color: var(--line);
-}
-/* Held while the summary is out: a row's own box, so the screen does not resize when the
-   answer lands — and does not CLAIM "unsaved" before it knows (#211's rule). */
-.account-link.skeleton {
-  border-color: transparent;
-}
-/* The label is an ACTION (uppercase, bold, `--fg` — the area's three-roles rule); the
-   value is a fact in its own case. */
-.account-link-label {
-  font-size: 12px;
-  font-weight: 650;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.account-link-value {
-  font-size: 13px;
-  letter-spacing: 0.02em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 /* The chevron says the row LEADS somewhere — the title's own 7×7 mark, pointing on. */
 .account-link .ui-icon {
   flex: none;
@@ -5148,13 +5119,15 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.account-id-since {
+.account-id-mail {
   font-family: var(--ui);
   font-size: 10px;
   font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  letter-spacing: 0.08em;
   color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* The FLOW'S centered face — the endings, the erase confirmation and the address step's
@@ -6663,33 +6636,16 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 
 /* The shared RESULT on the landing (user-decided 2026-09-05): what a signed share link
-   was about, under the inviter's face and over ADD FRIEND — the number with its unit named,
-   the run ruler (sentence) or the day's word (word game), the date. */
+   was about, under the inviter's face and over ADD FRIEND — the result screens' own score
+   dress (`.solved-score`: pixel number over its named unit), the run ruler (sentence) or
+   the day's word (word game), the date. */
 .invite-result {
   width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 6px 0 2px;
-}
-.invite-result-score {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-  font-family: var(--ui);
-}
-.invite-result-num {
-  font-size: 32px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-.invite-result-unit {
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted);
+  gap: 10px;
+  padding: 8px 0 4px;
 }
 .invite-result-word {
   font-family: var(--ui);

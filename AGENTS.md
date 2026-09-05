@@ -585,7 +585,7 @@ The live routes then share:
   `shared/src/invite.ts` (infra routes `/i/*` to the API origin, backend serves, web builds).
   A deleted sender's link expires (404).
 - **A RESULT SHARE CARRIES THE INVITE BY DEFAULT (decided 2026-09-05).** The result
-  screens' `AS <mark> <name>` checkbox — under SHARE, checked by default, NEVER persisted
+  screens' AS drum — under SHARE, opening on the player, NEVER persisted
   (fresh on every result) — signs the link `/s/<token>/<publicId>` (`shared/src/invite.ts`
   `sharePath`).
   The TOKEN is untouched (no codec change; the bot reads a signed share as a plain one and
@@ -594,11 +594,12 @@ The live routes then share:
   invite landing showing the result, whose ADD FRIEND records the edge and whose PLAY
   opens the shared day. A deleted signer falls back to the PLAIN share (the score was
   never the part that went away). Toggle OFF = the plain `/s/<token>`, byte for byte,
-  still content-addressed and year-cached. The control is a plain CHECKBOX reading
-  `AS <mark> <name>` — what the READER will see, ticked by default; never "share my
-  profile" (scary), "anonymously" (names an absence), a "don't share" opt-out, or a
-  chip/button (each tried and retired the same day). The signed card centres strip + gap +
-  result as ONE block (the result moves down; the plain card is untouched).
+  still content-addressed and year-cached. The control is the label AS and a two-row DRUM
+  (the app's one picker physics) holding the player's mark + name or ANONYMOUS, opening on
+  the player; never a "share my profile" checkbox (scary), an `AS` checkbox beside a face
+  (two squares), a "don't share" opt-out, or an INVITE chip (each tried and retired the same
+  day). The signed card centres strip + gap + result as ONE block (the result moves down;
+  the plain card is untouched).
 - **`POST /friends`**: `{token}` reads, `{token, add}` links, `{token, remove}` unlinks;
   every answer `{ friends: [publicId] }`. Storage: one row per DIRECTION,
   `friends#<publicId>` / friend id, `createdAt` from the first link; both rows written (and

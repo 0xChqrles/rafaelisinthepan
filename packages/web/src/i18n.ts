@@ -135,7 +135,6 @@ const STRINGS = {
   accountTitle: { en: 'ACCOUNT', fr: 'COMPTE' },
   // The account's own age, prefixed once — the only thing this screen can say about an
   // identity whose name and mark it already draws.
-  accountSince: { en: 'SINCE', fr: 'DEPUIS' },
   accountSave: { en: 'SAVE WITH EMAIL', fr: 'SAUVEGARDER PAR E-MAIL' },
   // THE ONE LINE THAT EARNS ITS PLACE: why a word game wants an email is genuinely not
   // obvious, so it is said once, where the decision is made — and it says it PLAINLY.
@@ -442,10 +441,10 @@ const STRINGS = {
   // day) it offers the way back to the live one.
   share: { en: 'SHARE', fr: 'PARTAGER' },
   copied: { en: 'COPIED', fr: 'COPIÉ' },
-  // The checkbox under SHARE (user-decided 2026-09-05, third pass): `AS <mark> <name>` —
-  // what the READER will see, never what the player gives up ("share my profile" read as
-  // scary; "anonymously" names an absence). Ticked by default.
+  // The AS drum under SHARE (user-decided 2026-09-05, fourth pass): the label, and the
+  // other row's name — the player's own row is their mark and name. Opens on the player.
   shareAs: { en: 'AS', fr: 'EN TANT QUE' },
+  shareAnon: { en: 'ANONYMOUS', fr: 'ANONYME' },
   // ---- the solved screen's STANDING (#170): ONE badge, `TOP 25%`, beside the score
   // (user-decided 2026-09-05, dropping the `RANK #6 OF 60` line). `TOP` is untranslated in
   // every language, like MISS and the rarity grades — one word, identical everywhere.
