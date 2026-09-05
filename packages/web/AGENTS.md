@@ -1707,6 +1707,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `additionalBehaviors`, and `changeOrigin`/`xfwd` are pinned OFF (Vite's string shorthand
   does not leave them off) so the backend, which has no `siteOrigin` locally, reads the
   BROWSER's Host and bounces to the app rather than to itself.
+  **THE SHARE'S INVITE TOGGLE (user-decided 2026-09-05, root `AGENTS.md`):**
+  `components/ShareInvite.tsx` — `useShareSigner` (component state, ON by default, so
+  every result screen asks afresh; `by` is the account's publicId or null) and the chip
+  beside SHARE in both `SolvedScreen` and `WordEndScreen` (a `role=switch` glass chip:
+  box + the player's OWN mark via `useOwnFace` + INVITE; no account, no chip). The landing
+  takes the token as `/join/<publicId>/<token>` (`parseRoute` shape-checks it with
+  `SHARE_TOKEN_PATTERN`, `FriendInvite` decodes it — `sharedResultFrom`), draws the shared
+  result over the inviter's face (`SharedResultBlock`: number + named unit, the run ruler
+  settled or the day's word, the date) and continues into the SHARED DAY (`landingAfter`).
   **ACCEPTING IS A BUTTON, for everyone** (#216 trigger rework, user-decided 2026-08-24,
   superseding the auto-add on page load): the landing shows the INVITER's mark and name
   (a best-effort bounded profile read, the assigned identity as fallback) over ONE primary

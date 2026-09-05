@@ -2802,6 +2802,50 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .result-action.copied {
   color: var(--accent);
 }
+/* The INVITE toggle beside SHARE (user-decided 2026-09-05, ShareInvite.tsx): a glass chip
+   in the action's own dress, wearing the player's OWN mark — that face is what says "this
+   travels with the link". Off, the box empties and the face dims; nothing is remembered. */
+.share-invite {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--ui);
+  font-size: clamp(14px, 1.9vh, 16px);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg);
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 0 20px 0 16px;
+  cursor: pointer;
+  transition: color 0.12s linear, border-color 0.12s linear;
+}
+.share-invite-box {
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  border: 2px solid currentColor;
+  transition: background-color 0.12s linear, border-color 0.12s linear;
+}
+.share-invite.on .share-invite-box {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.share-invite-face {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  transition: opacity 0.12s linear;
+}
+.share-invite:not(.on) {
+  color: var(--muted);
+}
+.share-invite:not(.on) .share-invite-face {
+  opacity: 0.4;
+}
+
 /* Player-progression celebration: the native dialog IS the borderless full-screen surface.
    React Spring owns every staged entrance/bounce; fixed rows reserve the final composition
    so the flame, number, week, and action never move each other as they appear. */
@@ -6831,6 +6875,43 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .invite-done .mix-btn {
   width: 100%;
   margin-top: 12px;
+}
+
+/* The shared RESULT on the landing (user-decided 2026-09-05): what a signed share link
+   was about, under the inviter's face and over ADD FRIEND — the number with its unit named,
+   the run ruler (sentence) or the day's word (word game), the date. */
+.invite-result {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 0 2px;
+}
+.invite-result-score {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--ui);
+}
+.invite-result-num {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.invite-result-unit {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.invite-result-word {
+  font-family: var(--ui);
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  color: var(--solve);
 }
 
 /* ---- The signed-out screen (#216, reshaped 2026-08-26 on user feedback: the

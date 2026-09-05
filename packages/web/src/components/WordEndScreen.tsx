@@ -6,6 +6,7 @@ import { RARITY_NAMES } from '../game/wordGame';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import type { ScorePlacementState } from '../hooks/useScoreHistogram';
 import useShare from '../hooks/useShare';
+import ShareInvite, { useShareSigner } from './ShareInvite';
 import { RARITY_COLORS } from './rarity';
 import ScoreRank from './ScoreRank';
 import { shareHeadline, wordShareText, wordShareUrl, wordShareScore } from '../game/share';
@@ -116,16 +117,18 @@ export default function WordEndScreen({
   // Delivery (native sheet / clipboard + the "COPIED" confirmation) is the shared hook's;
   // this screen only composes the word result's text.
   const { share, copied } = useShare();
+  // The INVITE toggle beside SHARE (see ShareInvite): fresh on every mount, never remembered.
+  const signer = useShareSigner();
 
   // This screen owns only the LOCALIZED headline; the body's composition — the word, its
   // bead row, the blank lines — is `game/share.ts`'s, next to the sentence twin it mirrors.
   const onShare = useCallback(async () => {
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const url = wordShareUrl(origin, { lang, dayNumber, counts, word });
+    const url = wordShareUrl(origin, { lang, dayNumber, counts, word }, signer.by);
     const unit = t(lang, score === 1 ? 'word' : 'words').toLowerCase();
     const headline = shareHeadline(dayNumber, score, unit);
     await share(wordShareText(headline, word, lang, counts, url));
-  }, [lang, dayNumber, counts, score, share, word]);
+  }, [lang, dayNumber, counts, score, share, word, signer.by]);
 
   return (
     <div className={`solved-results${resultsIn ? ' in' : ''}`}>
@@ -181,6 +184,7 @@ export default function WordEndScreen({
         >
           {copied ? t(lang, 'copied') : t(lang, 'share')}
         </button>
+        <ShareInvite lang={lang} signer={signer} />
       </div>
     </div>
   );

@@ -302,3 +302,52 @@ describe('renderInviteCardSvg', () => {
     expect(svg.match(/<text /g)).toHaveLength(2);
   });
 });
+
+// CONTRACT (user-decided 2026-09-05): a SIGNED share — the solved screen's INVITE toggle
+// left on — draws the player's mark and name on the result card, both modes, and a plain
+// share draws neither. The strip sits in the top band the result leaves empty, and the
+// name is bounded by the profile's own cap so the widest signature clears the margins.
+describe('a signed result card (the share link carrying an invite)', () => {
+  const id = 'abcdefghij234567';
+  const sentence = {
+    lang: 'en',
+    dayNumber: 123,
+    score: 6,
+    trajectory: [8, 8, 33, 33, 70, 100],
+    solvedAt: [3, 6, 5],
+  };
+  const word = { lang: 'fr', dayNumber: 123, counts: [3, 2, 0, 0, 0], word: 'forêt' };
+
+  it('draws the stored name and mark on the sentence card', () => {
+    const avatar = encodeAvatar(2, new Array<number>(AVATAR_CELLS).fill(0).map((_, i) => (i % 3 === 0 ? 1 : 0)));
+    const svg = renderCardSvg(sentence, { publicId: id, name: 'Chqrles', avatar });
+    expect(svg).toContain('>Chqrles<');
+    expect(svg).toContain(AVATAR_PALETTES[2].fg);
+    // The result is still the card's subject: the count and the date are untouched.
+    expect(svg).toContain('6 TRIES');
+    expect(svg).toContain(dateForDayNumber(123));
+  });
+
+  it('draws the ASSIGNED identity on the word card for a player who never customized', () => {
+    const svg = renderWordCardSvg(word, { publicId: id, name: '', avatar: null });
+    expect(svg).toContain(`>${anonName(id)}<`);
+    const { palette } = decodeAvatar(defaultAvatar(id));
+    expect(svg).toContain(AVATAR_PALETTES[palette].bg);
+    expect(svg).toContain('5 MOTS');
+  });
+
+  it('draws no face on a plain share', () => {
+    expect(renderCardSvg(sentence)).not.toContain('clipPath');
+    expect(renderWordCardSvg(word)).not.toContain('clipPath');
+  });
+
+  it('keeps the widest signature inside the card margins', () => {
+    const name = 'W'.repeat(NAME_MAX_LENGTH);
+    const svg = renderCardSvg(sentence, { publicId: id, name, avatar: null });
+    const text = /<text x="(\d+)"[^>]*font-size="(\d+)"[^>]*>W+<\/text>/.exec(svg)!;
+    const right = Number(text[1]) + NAME_MAX_LENGTH * Number(text[2]);
+    expect(right).toBeLessThanOrEqual(CARD_WIDTH - 90);
+    const tile = /<clipPath id="sign"><rect x="(-?\d+)"/.exec(svg)!;
+    expect(Number(tile[1])).toBeGreaterThanOrEqual(90);
+  });
+});

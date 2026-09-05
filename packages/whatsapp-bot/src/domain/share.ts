@@ -103,7 +103,10 @@ export function withoutShares(text: string, siteOrigin: string): string {
   }
   return kept
     .join('\n')
-    .replace(new RegExp(`${shareLink(siteOrigin, 'gu').source}[A-Za-z0-9_-]*`, 'gu'), ' ')
+    // The link, and a SIGNED share's second segment with it (`/s/<token>/<publicId>`,
+    // shared/invite.ts): the id names the sharer's account, which is nothing the player
+    // typed and nothing a prompt should ever see.
+    .replace(new RegExp(`${shareLink(siteOrigin, 'gu').source}[A-Za-z0-9_-]*(?:/[a-z2-7]{16})?`, 'gu'), ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }

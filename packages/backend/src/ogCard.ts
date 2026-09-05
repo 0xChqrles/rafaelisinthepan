@@ -17,6 +17,7 @@ import {
   renderCardSvg,
   renderInviteCardSvg,
   renderWordCardSvg,
+  shareCardPath,
   dateForDayNumber,
   wordShareScore,
   type CardData,
@@ -54,15 +55,20 @@ async function rasterize(svg: string): Promise<Buffer> {
   return Buffer.from(resvg.render().asPng());
 }
 
-export async function renderCardPng(data: CardData): Promise<Buffer> {
-  return rasterize(renderCardSvg(data));
+// `by` is the SIGNATURE (user-decided 2026-09-05): the player's mark and name on the
+// card when the share carries their invite, nothing when it does not.
+export async function renderCardPng(data: CardData, by: InviteCardData | null = null): Promise<Buffer> {
+  return rasterize(renderCardSvg(data, by));
 }
 
 // Word mode's card (#156): same rasterizer, its own SVG (blue terminus + claim count + the
 // per-rarity chip row + date, no ruler). The display word and the rarity breakdown travel
 // in the word token, so this render stays self-contained.
-export async function renderWordCardPng(data: WordCardData): Promise<Buffer> {
-  return rasterize(renderWordCardSvg(data));
+export async function renderWordCardPng(
+  data: WordCardData,
+  by: InviteCardData | null = null,
+): Promise<Buffer> {
+  return rasterize(renderWordCardSvg(data, by));
 }
 
 // The #189 invite link's card: the same rasterizer, its own SVG — the player's mark,
@@ -73,10 +79,34 @@ export async function renderInviteCardPng(data: InviteCardData): Promise<Buffer>
 
 const escapeAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
+// WHO signed a share, for the page: the id the link carries and the name the card shows
+// (the STORED one, '' when never customized — the title resolves the same assigned
+// pseudonym the card does, so the two halves of a preview cannot disagree).
+export interface ShareSigner {
+  publicId: string;
+  name: string;
+}
+
+// A SIGNED share (user-decided 2026-09-05) unfurls as the player's own card and lands on
+// the invite landing WITH the result, where ADD FRIEND records the edge; its title names
+// the player before the score. A plain share is unchanged: the result's card, the game.
+function shareTitle(result: string, by: ShareSigner | null): string {
+  return by ? `${by.name || anonName(by.publicId)} · ${result}` : result;
+}
+
+function shareTarget(base: string, token: string, gameUrl: string, by: ShareSigner | null): string {
+  return by ? `${base}${inviteLandingPath(by.publicId, token)}` : gameUrl;
+}
+
 // A solved sentence's share page: the card at /og/<token>.png, and a click-through into
 // the day it names. `base` is the canonical site origin (the apex), so the URLs are
 // absolute as crawlers need. The page template itself is `previewPage` below.
-export function renderShareHtml(token: string, result: ShareResult, base: string): string {
+export function renderShareHtml(
+  token: string,
+  result: ShareResult,
+  base: string,
+  by: ShareSigner | null = null,
+): string {
   const lang = /^[a-z]{2}$/.test(result.lang) ? result.lang : 'en'; // sanitize (token-sourced)
   // Localized by the token's language (#59). Fixed per-lang constants (never interpolated
   // input), so the title stays escape-safe. Unknown lang already normalized to 'en' above.
@@ -103,13 +133,24 @@ export function renderShareHtml(token: string, result: ShareResult, base: string
   // which the front routes identically to /<lang>). Safe: base is server-set, lang is
   // /^[a-z]{2}$/, and dateForDayNumber emits only digits + hyphens.
   const gameUrl = `${base}/${lang}/${dateForDayNumber(result.dayNumber)}`;
-  return previewPage(lang, title, `${base}/og/${token}.png`, gameUrl, L.play);
+  return previewPage(
+    lang,
+    shareTitle(title, by),
+    `${base}${shareCardPath(token, by?.publicId)}`,
+    shareTarget(base, token, gameUrl, by),
+    L.play,
+  );
 }
 
 // Word mode's share page (#156): the same template, its own title ("N words" — higher is
 // better here) and click-through, which lands on the shared day's WORD route so the link
 // opens the daily the result belongs to.
-export function renderWordShareHtml(token: string, result: WordShareResult, base: string): string {
+export function renderWordShareHtml(
+  token: string,
+  result: WordShareResult,
+  base: string,
+  by: ShareSigner | null = null,
+): string {
   const lang = /^[a-z]{2}$/.test(result.lang) ? result.lang : 'en'; // sanitize (token-sourced)
   const L =
     lang === 'fr'
@@ -121,7 +162,13 @@ export function renderWordShareHtml(token: string, result: WordShareResult, base
     score === 1 ? L.one : L.many
   }`;
   const gameUrl = `${base}/${lang}/word/${dateForDayNumber(result.dayNumber)}`;
-  return previewPage(lang, title, `${base}/og/${token}.png`, gameUrl, L.play);
+  return previewPage(
+    lang,
+    shareTitle(title, by),
+    `${base}${shareCardPath(token, by?.publicId)}`,
+    shareTarget(base, token, gameUrl, by),
+    L.play,
+  );
 }
 
 // The #189 invite page: `/i/<publicId>` is the link a player SHARES, so it is the page a

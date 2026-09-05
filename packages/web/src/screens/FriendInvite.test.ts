@@ -10,8 +10,8 @@
 // effect-replay hazard it guarded no longer exists once the POST rides a click.)
 
 import { describe, expect, it, vi } from 'vitest';
-import { anonName } from '@whippin/shared';
-import { inviterFrom, sendInvite } from './FriendInvite';
+import { anonName, encodeResult, encodeWordResult } from '@whippin/shared';
+import { inviterFrom, landingAfter, sendInvite, sharedResultFrom } from './FriendInvite';
 
 const postFriendsBody = vi.hoisted(() => vi.fn());
 const identityState = vi.hoisted(() => ({ present: true, revision: 0 }));
@@ -110,5 +110,38 @@ describe('inviterFrom — what each profile answer means on the landing', () => 
     const assigned = { name: anonName(INVITER), avatar: null };
     expect(inviterFrom({ status: 'blank' }, INVITER)).toEqual(assigned);
     expect(inviterFrom({ status: 'failed' }, INVITER)).toEqual(assigned);
+  });
+});
+
+// A SIGNED share's landing (user-decided 2026-09-05): the token the link carries is the
+// share codec's own — read here, shown over the face — and the way onward is the DAY it
+// was played, both modes; a plain invite (no token, or one this build cannot read) still
+// hands the destination to the home redirect.
+describe('sharedResultFrom / landingAfter — the shared result on the landing', () => {
+  it('decodes a sentence share and continues into that day', () => {
+    const token = encodeResult({
+      lang: 'fr',
+      dayNumber: 20638,
+      score: 3,
+      trajectory: [40, 70, 100],
+      solvedAt: [1, 2, 3],
+    });
+    const shared = sharedResultFrom(token);
+    expect(shared?.mode).toBe('sentence');
+    expect(shared?.result.dayNumber).toBe(20638);
+    expect(landingAfter(shared)).toBe('/fr/2026-07-04');
+  });
+
+  it('decodes a word share and continues into that day\'s WORD route', () => {
+    const token = encodeWordResult({ lang: 'en', dayNumber: 20638, counts: [2, 1, 0, 0, 0], word: 'phare' });
+    const shared = sharedResultFrom(token);
+    expect(shared?.mode).toBe('word');
+    expect(landingAfter(shared)).toBe('/en/word/2026-07-04');
+  });
+
+  it('a missing or unreadable token is a plain invite, home onward', () => {
+    expect(sharedResultFrom(undefined)).toBeNull();
+    expect(sharedResultFrom('not-a-token')).toBeNull();
+    expect(landingAfter(null)).toBe('/');
   });
 });

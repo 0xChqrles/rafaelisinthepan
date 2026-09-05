@@ -68,6 +68,19 @@ describe('parseRoute', () => {
     // `/i/*` to the API), and it must not be a second spelling of the landing here.
     expect(parseRoute(pathForInvite(id))).toEqual({ view: 'home' });
   });
+
+  // A SIGNED share (user-decided 2026-09-05) bounces onto the landing WITH its token:
+  // shape-checked here (a base64url token, one segment), decoded by the landing itself.
+  it('routes /join/<publicId>/<token> to the invite landing carrying the shared result', () => {
+    const id = 'abcdefghij234567';
+    const token = 'BqN_lM-9';
+    expect(inviteLandingPath(id, token)).toBe(`/join/${id}/${token}`);
+    expect(parseRoute(inviteLandingPath(id, token))).toEqual({ view: 'invite', publicId: id, token });
+    expect(parseRoute(`/join/${id}/${token}/`)).toEqual({ view: 'invite', publicId: id, token });
+    // A third segment that is not token-shaped is ignored, not a reason to bounce home.
+    expect(parseRoute(`/join/${id}/not a token`)).toEqual({ view: 'invite', publicId: id });
+    expect(parseRoute(`/join/nope/${token}`)).toEqual({ view: 'home' });
+  });
   // The two choosers sit ABOVE /<lang>: neither is language- or mode-scoped, and /mode
   // must never be read as a language segment or shadow Word mode's /<lang>/word.
   it('routes /mode to the game-mode picker, without touching the mode grammar', () => {

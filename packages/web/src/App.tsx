@@ -217,7 +217,7 @@ export default function App() {
         {/* The invite link (#189) is a beat, not a screen: it lands the mutual edge and
             hands over to the home redirect above. */}
         {!blocked && route.view === 'invite' && (
-          <FriendInvite publicId={route.publicId} lang={homeLang} />
+          <FriendInvite publicId={route.publicId} token={route.token} lang={homeLang} />
         )}
         {!blocked && route.view === 'archive' && <Archive lang={route.lang} mode={route.mode} />}
         {/* The leaderboard screen (#190) — keyed so switching daily/language drops the

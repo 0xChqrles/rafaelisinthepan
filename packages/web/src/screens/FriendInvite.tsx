@@ -1,6 +1,16 @@
-import { useEffect, useState } from 'react';
-import { anonName, defaultAvatar } from '@whippin/shared';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  anonName,
+  dateForDayNumber,
+  decodeResult,
+  decodeWordResult,
+  defaultAvatar,
+  wordShareScore,
+  type ShareResult,
+  type WordShareResult,
+} from '@whippin/shared';
 import Avatar from '../components/Avatar';
+import RunRuler, { rulerStagger } from '../components/RunRuler';
 import LoadingWave from '../components/LoadingWave';
 import LoadError from '../components/LoadError';
 import ErrorScreen from '../components/ErrorScreen';
@@ -13,6 +23,7 @@ import {
 import { adoptSignedOutVerdict } from '../state/signedOutVerdict';
 import { prefetchTurnstileTokens } from '../turnstile';
 import { t } from '../i18n';
+import { isLang } from '../langs';
 import { navigate } from '../routing';
 import { timeoutSignal } from '../timeout';
 
@@ -118,12 +129,89 @@ export function inviterFrom(read: ProfileRead, publicId: string): Exclude<Invite
   return { name: anonName(publicId), avatar: null };
 }
 
-// Hand the destination to App's own home redirect, and replace this landing in history so a
-// back tap leaves the game instead of re-offering the invite.
-const continueToGame = () => navigate('/', { replace: true });
+// A SIGNED share's result (user-decided 2026-09-05): `/join/<publicId>/<token>` is the
+// landing a signed share link bounces to, and it shows what was shared — the score and
+// the run, or the word count — over the inviter's face, so the reader sees the result
+// they were sent AND the person who sent it, then ADD FRIEND. The token is the share
+// codec's own; one this build cannot read is simply a plain invite.
+export type SharedResult =
+  | { mode: 'sentence'; result: ShareResult }
+  | { mode: 'word'; result: WordShareResult };
 
-export default function FriendInvite({ publicId, lang }: { publicId: string; lang: string }) {
+export function sharedResultFrom(token: string | undefined): SharedResult | null {
+  if (!token) return null;
+  const sentence = decodeResult(token);
+  if (sentence) return { mode: 'sentence', result: sentence };
+  const word = decodeWordResult(token);
+  return word ? { mode: 'word', result: word } : null;
+}
+
+// Where the landing continues: a plain invite hands the destination to App's own home
+// redirect; a shared result opens the DAY it was played (the plain share page's own
+// click-through), so "come play" means the same round the reader was just shown.
+export function landingAfter(shared: SharedResult | null): string {
+  if (!shared || !isLang(shared.result.lang)) return '/';
+  const date = dateForDayNumber(shared.result.dayNumber);
+  return shared.mode === 'word'
+    ? `/${shared.result.lang}/word/${date}`
+    : `/${shared.result.lang}/${date}`;
+}
+
+// The shared result, drawn the way the result screens draw it: the number with its unit
+// NAMED (lower is better on the sentence, higher on the word — the unit is what tells a
+// stranger which), the run ruler for a sentence, the day's word for the word game, and the
+// calendar date. Settled, replaying nothing: this is someone else's finished round.
+function SharedResultBlock({ shared, lang }: { shared: SharedResult; lang: string }) {
+  if (shared.mode === 'sentence') {
+    const { score, capped, trajectory, solvedAt, dayNumber } = shared.result;
+    const unit = t(lang, !capped && score === 1 ? 'try' : 'tries');
+    return (
+      <div className="invite-result">
+        <span className="invite-result-score">
+          <span className="invite-result-num">{capped ? '∞' : score}</span>
+          <span className="invite-result-unit">{unit}</span>
+        </span>
+        <div className="run-ruler-frame" aria-hidden="true">
+          <RunRuler
+            trajectory={trajectory}
+            solvedAt={capped ? [] : solvedAt}
+            stagger={rulerStagger(1)}
+            shown
+            colorized
+          />
+        </div>
+        <span className="invite-done-line">{dateForDayNumber(dayNumber)}</span>
+      </div>
+    );
+  }
+  const { counts, word, dayNumber } = shared.result;
+  const score = wordShareScore(counts);
+  return (
+    <div className="invite-result">
+      <span className="invite-result-word">{word.toLocaleUpperCase(shared.result.lang)}</span>
+      <span className="invite-result-score">
+        <span className="invite-result-num">{score}</span>
+        <span className="invite-result-unit">{t(lang, score === 1 ? 'foundWord' : 'foundWords')}</span>
+      </span>
+      <span className="invite-done-line">{dateForDayNumber(dayNumber)}</span>
+    </div>
+  );
+}
+
+export default function FriendInvite({
+  publicId,
+  token,
+  lang,
+}: {
+  publicId: string;
+  token?: string;
+  lang: string;
+}) {
   const [inviter, setInviter] = useState<InviterState>(null);
+  const shared = useMemo(() => sharedResultFrom(token), [token]);
+  // Replace this landing in history so a back tap leaves the game instead of re-offering
+  // the invite; the destination is the shared day's, or App's own home redirect.
+  const continueToGame = () => navigate(landingAfter(shared), { replace: true });
   // The accept's own lifecycle: idle on the landing, busy while the tap's chain runs,
   // done on the confirmation. `full` is the one refusal with its own screen.
   const [phase, setPhase] = useState<'idle' | 'busy' | 'done' | 'full' | 'expired'>('idle');
@@ -206,6 +294,7 @@ export default function FriendInvite({ publicId, lang }: { publicId: string; lan
     <div className="invite-done">
       <Avatar avatar={inviter.avatar ?? defaultAvatar(publicId)} size={64} />
       <span className="invite-done-name">{inviter.name}</span>
+      {shared && <SharedResultBlock shared={shared} lang={lang} />}
       {phase === 'done' ? (
         <>
           <p className="invite-done-line" role="status">

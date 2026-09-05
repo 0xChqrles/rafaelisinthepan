@@ -10,6 +10,7 @@ import SolvedCaption, { captionDurationMs } from './SolvedCaption';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useLetterWave, { WAVE_VARS } from '../hooks/useLetterWave';
 import useShare from '../hooks/useShare';
+import ShareInvite, { useShareSigner } from './ShareInvite';
 import { ariaHoleHistory, t } from '../i18n';
 import { SCORE_COUNT_MS } from './resultAnimation';
 
@@ -330,17 +331,24 @@ export default function SolvedScreen({
   // Delivery (native sheet / clipboard + the "COPIED" confirmation) is the shared hook's;
   // this screen only composes the sentence result's text.
   const { share, copied } = useShare();
+  // The INVITE toggle beside SHARE: on, the link is signed with this account (see
+  // ShareInvite). Fresh on every mount — never remembered from one result to the next.
+  const signer = useShareSigner();
 
   const onShare = useCallback(async () => {
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const url = shareUrl(origin, {
-      lang,
-      dayNumber,
-      score: guessCount,
-      trajectory,
-      solvedAt: solvedAt ?? [],
-      capped,
-    });
+    const url = shareUrl(
+      origin,
+      {
+        lang,
+        dayNumber,
+        score: guessCount,
+        trajectory,
+        solvedAt: solvedAt ?? [],
+        capped,
+      },
+      signer.by,
+    );
     // This screen owns only its localized UNIT; the line's shape is share.ts's, shared
     // with Word mode so the two modes' messages cannot drift apart. A capped round names
     // no count — `∞` stands where the number would, exactly as the card draws it — and
@@ -351,7 +359,7 @@ export default function SolvedScreen({
     // summary of that SAME run — trajectory and solve moments both — so the link and its
     // fallback can't disagree.
     await share(shareText(headline, trajectory, solvedAt ?? [], url));
-  }, [lang, dayNumber, guessCount, trajectory, solvedAt, capped, share]);
+  }, [lang, dayNumber, guessCount, trajectory, solvedAt, capped, share, signer.by]);
 
   return (
     <div className={`solved-stage${stageIn ? ' in' : ''}${animate ? '' : ' settled'}`}>
@@ -454,6 +462,7 @@ export default function SolvedScreen({
           >
             {copied ? t(lang, 'copied') : t(lang, 'share')}
           </button>
+          <ShareInvite lang={lang} signer={signer} />
         </div>
       </div>
     </div>

@@ -13,6 +13,7 @@ import {
   encodeResult,
   encodeWordResult,
   progressEmoji,
+  sharePath,
   wordShareScore,
   type RankMap,
   type RuntimeHole,
@@ -63,8 +64,11 @@ export function replayRun(freshHoles: RuntimeHole[], ranks: RankMap, tried: stri
 // The shareable link: the result packed into a URL-safe token at `<origin>/s/<token>` (the
 // codec lives in @whippin/shared, so the backend decodes the same token to render the card).
 // Pasting the link unfurls into the OG image instead of a string of emoji.
-export function shareUrl(origin: string, result: ShareResult): string {
-  return `${origin}/s/${encodeResult(result)}`;
+// `by` SIGNS the link (user-decided 2026-09-05; the result screens' INVITE toggle): the
+// player's publicId as a second path segment, so the card wears their face and the click
+// lands on the invite landing with the result. Null is the plain link, unchanged.
+export function shareUrl(origin: string, result: ShareResult, by: string | null = null): string {
+  return `${origin}${sharePath(encodeResult(result), by)}`;
 }
 
 // --- the shared TEXT's bounded row ------------------------------------------------------
@@ -230,8 +234,12 @@ export function rarityRow(counts: readonly number[]): string {
     .join(' ');
 }
 
-export function wordShareUrl(origin: string, result: WordShareResult): string {
-  return `${origin}/s/${encodeWordResult(result)}`;
+export function wordShareUrl(
+  origin: string,
+  result: WordShareResult,
+  by: string | null = null,
+): string {
+  return `${origin}${sharePath(encodeWordResult(result), by)}`;
 }
 
 // Word mode's plain text: the headline, then the RESULT BLOCK — the day's word in

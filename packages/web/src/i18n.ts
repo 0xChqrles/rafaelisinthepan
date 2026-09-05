@@ -442,6 +442,13 @@ const STRINGS = {
   // day) it offers the way back to the live one.
   share: { en: 'SHARE', fr: 'PARTAGER' },
   copied: { en: 'COPIED', fr: 'COPIÉ' },
+  // The INVITE toggle beside SHARE (user-decided 2026-09-05): positive, one word, the
+  // player's own mark in the chip saying the rest. Never "don't share my profile".
+  shareInvite: { en: 'INVITE', fr: 'INVITER' },
+  shareInviteHint: {
+    en: 'Add your invite to the link',
+    fr: 'Ajouter votre invitation au lien',
+  },
   // ---- the solved screen's STANDING (#170, user-decided 2026-08-15, replacing the
   // population histogram): ONE line — `RANK #6 OF 60` with a `TOP 25%` badge beside it.
   // The rank NUMBER is drawn by the component (it wears its own size and colour), so the

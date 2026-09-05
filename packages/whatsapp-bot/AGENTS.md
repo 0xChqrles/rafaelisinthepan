@@ -5,7 +5,8 @@
 > this bot** (its own section there). Read it first.
 
 The bot is a SOCIAL CONSUMER of Whippin's public share-token contract: one always-on
-WhatsApp account that records valid `…/s/<token>` shares as they arrive in configured
+WhatsApp account that records valid `…/s/<token>` shares (a signed share's trailing
+`/<publicId>` is ignored, and stripped with the link) as they arrive in configured
 groups, posts each group's daily podium, reacts deterministically, and answers when
 addressed — using the group's Whippin history as TOOLS, never as prose the model
 remembers. It lives inside the monorepo and outside the game runtime: it imports

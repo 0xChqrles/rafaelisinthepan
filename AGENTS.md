@@ -247,7 +247,8 @@ packages agree on each list; `backend:dev` has no CDN and cannot show a drift.
 - **The share page (`/s/*`), the cards (`/og/*`) and the invite preview (`/i/*`) are NOT
   live routes**: they are CACHED behaviors on the WEB distribution (`infra/lib/web-stack.ts`)
   handed to the API origin — a year for content-addressed share tokens, 300s for the invite
-  preview.
+  preview AND for a SIGNED share (`/s/<token>/<publicId>`, `/og/<token>/<publicId>.png`),
+  which names a player who can rename or redraw.
 
 The live routes then share:
 
@@ -582,8 +583,18 @@ The live routes then share:
   cached 300s; `GET /og/i/<publicId>.png`) that `location.replace`s onto the SPA landing
   `/join/<publicId>`, whose ADD FRIEND tap records the edge (never the load). Paths live in
   `shared/src/invite.ts` (infra routes `/i/*` to the API origin, backend serves, web builds).
-  The result share link `/s/<token>` is NOT the carrier (year-long cache). A deleted sender's
-  link expires (404).
+  A deleted sender's link expires (404).
+- **A RESULT SHARE CARRIES THE INVITE BY DEFAULT (decided 2026-09-05).** The result
+  screens' INVITE toggle — beside SHARE, ON by default, NEVER persisted (fresh on every
+  result) — signs the link `/s/<token>/<publicId>` (`shared/src/invite.ts` `sharePath`).
+  The TOKEN is untouched (no codec change; the bot reads a signed share as a plain one and
+  strips the id with the link); the card wears the player's mark and name; the page is
+  served at the invite's 300s TTL; the click lands on `/join/<publicId>/<token>`, the
+  invite landing showing the result, whose ADD FRIEND records the edge and whose PLAY
+  opens the shared day. A deleted signer falls back to the PLAIN share (the score was
+  never the part that went away). Toggle OFF = the plain `/s/<token>`, byte for byte,
+  still content-addressed and year-cached. Wording: positive ("INVITE" with the player's
+  own mark in the chip), never a "don't share my profile" opt-out.
 - **`POST /friends`**: `{token}` reads, `{token, add}` links, `{token, remove}` unlinks;
   every answer `{ friends: [publicId] }`. Storage: one row per DIRECTION,
   `friends#<publicId>` / friend id, `createdAt` from the first link; both rows written (and

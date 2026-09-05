@@ -417,6 +417,20 @@ describe('shareUrl — result packed into a /s/<token> link', () => {
     // Only the origin, the /s/ path, and a base64url token.
     expect(url).toMatch(/^https:\/\/whippin\.ai\/s\/[A-Za-z0-9_-]+$/);
   });
+
+  // The INVITE toggle (user-decided 2026-09-05): on, the link is SIGNED with the player's
+  // publicId as a second segment; the token itself is the same bytes either way, so the
+  // plain link is exactly the signed one minus the signature.
+  it('signs the link with the player id as a second segment, leaving the token untouched', () => {
+    const plain = shareUrl('https://whippin.ai', result);
+    const signed = shareUrl('https://whippin.ai', result, 'abcdefghij234567');
+    expect(signed).toBe(`${plain}/abcdefghij234567`);
+    expect(shareUrl('https://whippin.ai', result, null)).toBe(plain);
+    const word = { lang: 'fr', dayNumber: 20638, counts: [3, 1, 0, 0, 0], word: 'forêt' };
+    expect(wordShareUrl('https://whippin.ai', word, 'abcdefghij234567')).toBe(
+      `${wordShareUrl('https://whippin.ai', word)}/abcdefghij234567`,
+    );
+  });
 });
 
 // CONTRACT: Word mode's share (#156; the rarity breakdown 2026-08-11). The plain text is
