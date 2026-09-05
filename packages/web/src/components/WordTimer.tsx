@@ -1,6 +1,6 @@
 import useCountdown from '../hooks/useCountdown';
 import { START_SECONDS } from '../game/wordGame';
-import { srWordClock, srWordClockIdle } from '../i18n';
+import { srWordClock, srWordClockIdle, t } from '../i18n';
 
 // Word mode's clock, as the HUD (#163). It is the resource the whole game is played
 // against, so it takes the header's status corner — where the sentence game shows its
@@ -65,14 +65,31 @@ export default function WordTimer({
         idle ? srWordClockIdle(lang, START_SECONDS) : srWordClock(lang, Math.ceil(tenths / 10))
       }
     >
-      <span aria-hidden="true">{whole}</span>
-      {/* The tenth rides SMALLER than the seconds, and that is width and not taste: the
-          header corner holds about 104px at 320px before it reaches the icon group, and a
-          three-digit clock plus a full-size `.0` does not fit in it. Smaller also reads
-          right — the seconds are the number, the tenth is the number moving. */}
-      <span className="timer-dec" aria-hidden="true">
-        {`.${tenths % 10}`}
-      </span>
+      {spent ? (
+        // At zero the clock STATES the run's end instead of sitting on a dead `0.0` (#175):
+        // the number has nothing left to say and the words do. It is the one visible
+        // statement of the end during the hold before the board — and it is what tells a
+        // guess that died on the buzzer apart from a dropped keystroke: the store refuses
+        // that guess silently (correctly — no grade, no `+s`), and this landing in the
+        // same beat is its whole explanation. Pops in like a gain rather than swapping,
+        // so it reads as an event. The label is still the clock's (sr: "0 seconds left")
+        // — the run's end is announced once by the screen, not by this live-off region.
+        <span className="timer-up" aria-hidden="true">
+          {t(lang, 'wordTimeUp')}
+        </span>
+      ) : (
+        <>
+          <span aria-hidden="true">{whole}</span>
+          {/* The tenth rides SMALLER than the seconds, and that is width and not taste:
+              the header corner holds about 104px at 320px before it reaches the icon
+              group, and a three-digit clock plus a full-size `.0` does not fit in it.
+              Smaller also reads right — the seconds are the number, the tenth is the
+              number moving. */}
+          <span className="timer-dec" aria-hidden="true">
+            {`.${tenths % 10}`}
+          </span>
+        </>
+      )}
       {gain && (
         <span key={gain.id} className="timer-gain" aria-hidden="true">
           {`+${gain.seconds}s`}

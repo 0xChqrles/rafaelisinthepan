@@ -4381,15 +4381,21 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .word-subject .floating-hit {
   letter-spacing: normal;
 }
-/* The word RECOILS from a strike — and only from a strike. A MISS leaves it alone: nothing
-   was cut, so nothing flinches. The sentence game's own shake vocabulary (`word-shake`),
-   run for the BLOW's own length: `--shake-ms` is handed down by `WordSubject` (STRUCK_MS,
-   a frame short of the shortest sheet), so the JS that ends the recoil and the CSS that
-   draws it cannot disagree about how long a blow is.
-   It also wears the STRIKE'S COLOUR while the strike is on it, returning to the brand accent
-   when it goes: a plain state, like everything else here, not a transition. */
+/* The word RECOILS from every judged guess. The sentence game's own shake vocabulary
+   (`word-shake`), run for the BLOW's own length: `--shake-ms` is handed down by
+   `WordSubject` (STRUCK_MS, a frame short of the shortest sheet), so the JS that ends the
+   recoil and the CSS that draws it cannot disagree about how long a blow is.
+   A STRIKE (a claim) also wears the strike's COLOUR while it is on the word, returning to
+   the solve blue when it goes: a plain state, like everything else here, not a transition.
+   A JOLT (a MISS — #175, decided 2026-08-16: every action has a physical feel) is the same
+   recoil and NOTHING else: no colour (red stays the MISS float's own), no sheet, no loot —
+   a miss must stay visibly LESSER than a claim, and until #175 it left the word perfectly
+   still, which on a clock read as nothing having happened. */
 .word-subject-text.struck {
   color: var(--struck-c, var(--solve));
+  animation: word-shake var(--shake-ms, 0.4s) ease-in-out;
+}
+.word-subject-text.jolted {
   animation: word-shake var(--shake-ms, 0.4s) ease-in-out;
 }
 @keyframes word-float {
@@ -4853,6 +4859,24 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .word-timer.spent {
   color: var(--danger);
   animation: none;
+}
+/* At zero the clock SAYS it (#175): TIME UP / TEMPS ÉCOULÉ in place of the dead `0.0`,
+   the clock's own face and size, so the run's end is stated where the thing that ended it
+   is — and it is what absorbs a guess that died on the buzzer, which the store refuses
+   without a word. It POPS IN like a gain rather than swapping — an event, not a redraw —
+   and stays, since the clock leaves with the reveal. The pop is one animation with no
+   fade-out; reduced motion collapses it to the label simply being there.
+   Width: the longest label is 12 glyphs — 288px at the desktop 24px, inside the 430px
+   column; 240px at the phone's 20px, inside a 320px screen's 292. */
+.word-timer .timer-up {
+  display: inline-block;
+  white-space: nowrap;
+  animation: timer-gain-in 0.4s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .word-timer .timer-up {
+    animation: none;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .word-timer.warn {

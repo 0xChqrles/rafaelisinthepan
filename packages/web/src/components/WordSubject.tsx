@@ -44,8 +44,12 @@ function fitWord(word: string, max: number): string {
 //           exponent and its grade's name pop off the word and fall away, the run's one
 //           statement of either number. No text ever PARKS on the screen — the loot is in
 //           the air for under a second; the board still reads the run back at the end.
-//   miss  — the sentence game's MISS float, its own animation, and the word does NOT move.
-//           Nothing was struck, so nothing recoils and nothing drops.
+//   miss  — the sentence game's MISS float, its own animation, and the word takes a
+//           HIT (#175, decided 2026-08-16: every action has a physical feel): the same
+//           recoil a claim makes, with NO grade colour, no sheet and no loot — red stays
+//           the float's alone, and a miss stays visibly LESSER than a claim. Until #175
+//           the word stood perfectly still under the float, which on a clock read as
+//           nothing having happened.
 //
 // Presentation state, owned by the screen.
 export type WordHit =
@@ -85,16 +89,17 @@ const FAN_ARC_PX = 3;
 // three surfaces came to want it; what stays here is this surface's own answer to "free to
 // ripple?" — never a one-letter word, since there is nothing to ripple.
 
-// --- what the word does WHILE it is being struck ------------------------------------------
-// It recoils and takes the strike's colour — for the BLOW, not for the length of the sheet
-// (decided 2026-08-09; a strike is one blow since 2026-08-11, when the RARE cross retired).
-// It lets go a frame BEFORE the stroke ends (`STRUCK_MS`, one frame short of the shortest
-// sheet), which is what makes a longer sheet's remaining frames read as dissipation over a
-// word already back at rest. A miss lands no blow at all: nothing was struck, so nothing
-// recoils.
-function useStruck(hit: WordHit | null): boolean {
-  const [struck, setStruck] = useState(false);
-  const id = hit?.kind === 'claim' ? hit.id : null;
+// --- what the word does WHILE it is being hit ---------------------------------------------
+// It recoils — for the BLOW, not for the length of the sheet (decided 2026-08-09; a strike
+// is one blow since 2026-08-11, when the RARE cross retired). It lets go a frame BEFORE the
+// stroke ends (`STRUCK_MS`, one frame short of the shortest sheet), which is what makes a
+// longer sheet's remaining frames read as dissipation over a word already back at rest.
+// A claim's blow also paints the word in the strike's colour; a MISS's blow (#175) is the
+// same recoil for the same length and NOTHING else — one shake vocabulary, and the colour
+// is what says which of the two just landed.
+function useBlow(hit: WordHit | null): boolean {
+  const [blown, setBlown] = useState(false);
+  const id = hit?.id ?? null;
 
   // Layout effect, not a passive one, and that is the whole point of the hook: the blow
   // must land BEFORE the strike's first frame paints. A passive effect runs after paint,
@@ -102,15 +107,15 @@ function useStruck(hit: WordHit | null): boolean {
   // the recoil exists for. (A 0ms timer would cost the same frame for the same reason.)
   useLayoutEffect(() => {
     if (id === null) {
-      setStruck(false);
+      setBlown(false);
       return undefined;
     }
-    setStruck(true);
-    const t = window.setTimeout(() => setStruck(false), STRUCK_MS);
+    setBlown(true);
+    const t = window.setTimeout(() => setBlown(false), STRUCK_MS);
     return () => window.clearTimeout(t);
   }, [id]);
 
-  return struck;
+  return blown;
 }
 
 // Where one letter of the fan sits: how far it leans, and how far it has fallen from the
@@ -141,7 +146,11 @@ export default function WordSubject({
 }) {
   const letters = [...word];
   const waving = useLetterWave(letters.length >= 2, letters.length);
-  const struck = useStruck(hit) && hit?.kind === 'claim' ? hit : null;
+  // The hit the word is answering right now, of either kind — or null once the blow is
+  // over. A claim STRIKES (recoil + its colour), a miss JOLTS (recoil alone).
+  const blow = useBlow(hit) ? hit : null;
+  const struck = blow?.kind === 'claim' ? blow : null;
+  const jolted = blow?.kind === 'miss' ? blow : null;
 
   return (
     <div className="word-subject">
@@ -157,18 +166,19 @@ export default function WordSubject({
         aria-hidden="true"
         style={{ fontSize: fitWord(word, SUBJECT_PX) } as CSSProperties}
       >
-        {/* The word RECOILS from a strike and from nothing else: a claim shakes it, a MISS
-            leaves it alone, because nothing was struck. Both the recoil and the colour last
-            exactly the BLOW (see `useStruck`), a frame short of the sheet. Keyed per hit so
-            a claim landing on top of another restarts the shake (Hole's trick). */}
+        {/* The word RECOILS from every judged guess: a claim STRIKES it (the shake in the
+            grade's colour), a MISS JOLTS it (the same shake, its own colour kept — #175).
+            Both last exactly the BLOW (see `useBlow`), a frame short of the sheet. Keyed
+            per hit so a hit landing on top of another restarts the shake (Hole's trick). */}
         <span
-          key={struck ? `struck-${struck.id}` : 'word'}
-          className={`word-subject-text${struck ? ' struck' : ''}${waving ? ' wave' : ''}`}
+          key={blow ? `blow-${blow.id}` : 'word'}
+          className={`word-subject-text${struck ? ' struck' : ''}${jolted ? ' jolted' : ''}${
+            waving ? ' wave' : ''
+          }`}
           style={
             {
-              ...(struck
-                ? { '--struck-c': struck.color, '--shake-ms': `${STRUCK_MS}ms` }
-                : null),
+              ...(blow ? { '--shake-ms': `${STRUCK_MS}ms` } : null),
+              ...(struck ? { '--struck-c': struck.color } : null),
               // Handed down rather than repeated in CSS, so the JS that ends the wave and
               // the CSS that draws it cannot disagree about how long it is.
               ...WAVE_VARS,

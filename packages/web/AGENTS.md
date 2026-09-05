@@ -1955,7 +1955,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the seconds spent typing. It survives where it still teaches: the post-mortem draws that
   guess on the trunk at its real rank, showing the form the player TYPED (per the naming rule
   in the route-map bullet below). `srWordMiss` says the same thing the screen does.
-  Not-in-vocab, group-level repeats (#104) and the day's word itself stay free non-events.
+  Not-in-vocab, group-level repeats (#104) and the day's word itself stay free non-events —
+  **and since #175 (2026-09-05) they are VISIBLE non-events**: each says what it was on
+  the prompt's message line (the sentence game's `.hint`, in its own place under the
+  prompt; `notAWord` / `wordRepeat` / `wordItself`, cleared by the next edit), a non-word
+  and a repeat also shake the prompt (a repeat still CLEARS it — nothing to correct, and a
+  ten-letter repeat must not cost ten backspaces on a clock — so the empty line shakes),
+  the day's word only speaks. Nothing counts, nothing enters the log, the sr announcements
+  are unchanged: #175 added the visible channel, it moved nothing. On a clock silence had
+  read as a dropped keystroke, and the natural reaction was to type the word again.
   The pure rules live in `game/wordGame.ts` (`judgeWordGuess` / `wordGuessKey` /
   `replayWordRun` / `bonusSeconds` / `runMs` — a round replays from its counted-guess log
   exactly like the sentence game), the board model in `game/wordBoard.ts` (a SIBLING of
@@ -2118,9 +2126,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   icon group, and a three-digit clock plus a full-size `.0` does not fit it (measured: it
   pushed the help icon off the screen). `useCountdown` ticks at 50ms so the last digit does
   not stutter.
-  **A CLAIM SLASHES THE WORD; A MISS DOES NOT TOUCH IT** (decided 2026-08-09). The two
-  outcomes are different EVENTS and look nothing alike, which is the point: before reading
-  anything you know which one happened.
+  **A CLAIM SLASHES THE WORD; A MISS JOLTS IT** (decided 2026-08-09 as "a miss does not
+  touch it"; AMENDED by #175 on 2026-09-05 — user-decided 2026-08-16, every action has a
+  physical feel). The two outcomes are different EVENTS and look nothing alike, which is
+  the point: before reading anything you know which one happened. A MISS takes the same
+  recoil a claim takes (`word-shake` for `STRUCK_MS`, `WordSubject.useBlow` — one shake
+  vocabulary, `.jolted`) and NOTHING else: no grade colour (red stays the MISS float's
+  own), no sheet, no loot — a miss stays visibly LESSER than a claim.
   A claim HITS the word with one of three sheets in `assets/hits/` (see the ladder below) —
   the default being `slash.png`, a 5-frame 36x46 stroke landing and dissipating, 50ms a frame
   — in the claimed grade's COLOUR wherever the sheet is a mask, **and while a stroke is on
@@ -2199,8 +2211,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   right for 50ms and wrong to park on. The masked pair hold their second, which is the fullest
   frame of both.
   A miss shows the SENTENCE game's `FloatingHit`, unparameterised — the same MISS, the same
-  red, the same pop and rise it has everywhere else — and **the word does not move**, because
-  nothing was struck, so nothing recoils.
+  red, the same pop and rise it has everywhere else — and, since #175, **the word JOLTS
+  under it** (the claim's recoil with no colour — see the bullet's heading; until then it
+  stood perfectly still, on the reasoning that nothing was struck).
   **Three things about how the strike is drawn**, each of which was a decision:
   it is a MASK, not an image — the sheet is pure white, so painting `currentColor` through it
   gives one sheet in five grade colours (the header globe's technique, for the same reason);
@@ -2328,7 +2341,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `WARN_SECONDS` (**20**, not the 10 this line claimed until 2026-08-11 — the code is
   ground truth and `WordTimer` has read 20 throughout), and
   at ZERO goes `.spent` — red but STILL, because an alarm about time running out has nothing
-  left to say once it has, and it would otherwise beat under the whole result screen. No
+  left to say once it has, and it would otherwise beat under the whole result screen —
+  **and since #175 (2026-09-05) it SAYS the end: `TIME UP` / `TEMPS ÉCOULÉ` (`wordTimeUp`)
+  pops in IN PLACE OF the dead `0.0`** (`.timer-up`, the gain's own pop-in, no fade-out —
+  the clock leaves with the reveal), the one visible statement of the run's end during the
+  ending hold. Two things ride on it: the SCORE WATERMARK now stays up through that hold
+  (`underway && !postMortem`, where it went with `playing`) so the number HANDS OFF to the
+  board rather than vanishing the frame the clock dies; and a guess entered in the dead
+  window — which the store rightly refuses with no grade, no `+s`, no announcement — is
+  absorbed by that same beat instead of silently disappearing. The GATE's clock is passed a
+  null deadline whatever the device still holds, so a stale local clock can never read TIME
+  UP over PLAY. The sr announcement (`srWordTimeUp`) is unchanged. No
   ramp colour is borrowed for it: the heat ramp means DISTANCE (and, since 2026-08-16,
   progress read as the distance still to go), and a clock is neither. `role="timer"` is a live region defaulting to OFF, which is the point — the
   number must be readable on demand and never announced every second; the run's END is
@@ -2390,8 +2413,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   but since #163 it lands on `WordSubject`'s bare centred word, NOT on this row, which by
   then is not on screen: a guess and the post-mortem board never coexist. Every counted
   guess floats its rarity GRADE (or MISS) plus the word's shake; free guesses (repeats,
-  invalid words, the day's word itself) land nothing, exactly as they float nothing in the
-  sentence game. A single target means a single hit: no stagger, and the lone-hit fade delay
+  invalid words, the day's word itself) land nothing ON THE WORD, exactly as they float
+  nothing in the sentence game — they speak on the prompt's message line since #175 (see
+  the MISS bullet above). A single target means a single hit: no stagger, and the lone-hit fade delay
   (`FLOATING_HIT_INTRO_MS`) plus whatever hold the grade buys. The hit state is `WordGame`'s.
   **Only a CLAIM scrambles its station** (decided 2026-08-06): the slot-machine reveal is the
   beat that says "you found this", and the run's END reveals the whole ~150-row field at once
