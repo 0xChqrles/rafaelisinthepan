@@ -6684,6 +6684,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   line-height: 1.2;
   letter-spacing: 0;
   color: var(--solve);
+  /* Clear of the score under it: the headline is its own line, not the number's cap. */
+  margin-bottom: 10px;
 }
 /* The date, in the CARD's own face (user-decided 2026-09-05: "the same font for the date on
    the og preview and the score screen"), a little clear of the bar's own lane. */
