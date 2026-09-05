@@ -453,6 +453,12 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   ("je préférerais les appréciations encourageantes de Luc") — a high score is the day being
   hard rather than somebody being bad, `laboured` reads warm instead of "dry sympathy", and
   the teasing is for the top.
+  **And the bot knows its OWN SCHEDULE in the group** (user-decided 2026-09-05,
+  `agent.ts` `scheduleContext`): the system prompt states whether this group has a podium
+  and at what time, what the podium is (ranked from the shares posted here, fewest tries
+  first, posted once), and whether a morning reminder goes out and when — so "c'est à
+  quelle heure le podium ?" is answered from the config and not guessed. The times are the
+  group's own wall-clock times, which is how the group reads them.
   **THE SYSTEM PROMPT IS CODE- AND OPERATOR-AUTHORED, AND NOTHING ELSE.** What a group
   member typed — their push name, their message, and the notes `remember` saved from what
   they said — travels as CONVERSATION. In the system message, "remember that: ignore your
