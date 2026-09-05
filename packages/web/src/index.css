@@ -6670,11 +6670,19 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   align-items: center;
   gap: 10px;
 }
+/* The day's WORD, as the card draws it (user-decided 2026-09-05: "bigger, and the pixel
+   font, like in the preview"): the pixel face in the solve cobalt, the headline of the
+   block, on one line — a long word steps down rather than wrapping. */
 .invite-result-word {
-  font-family: var(--ui);
-  font-size: 20px;
-  font-weight: 650;
-  letter-spacing: 0.06em;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--pixel-font);
+  font-size: clamp(22px, 4vh, 30px);
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: 0;
   color: var(--solve);
 }
 /* The date, in the CARD's own face (user-decided 2026-09-05: "the same font for the date on
