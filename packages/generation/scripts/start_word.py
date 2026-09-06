@@ -9,8 +9,8 @@ morphological variant of the secret.
 import random
 
 # Rank band for the START word. Too low = the player has almost already won; too
-# high = they start too far away. 50-150 is a good band to tune.
-START_RANK_MIN = 50
+# high = they start too far away. 100-150 (user-decided 2026-09-07; was 50-150).
+START_RANK_MIN = 100
 START_RANK_MAX = 150
 
 

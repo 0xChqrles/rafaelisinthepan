@@ -61,7 +61,7 @@ concentrated on one word.
 
 ## The start word (the user's daily craft, recorded 2026-09-07)
 
-Each hole shows a START word, ranked 50–150 from the secret (lower rank = closer =
+Each hole shows a START word, ranked 100–150 from the secret (lower rank = closer =
 easier). Choosing it takes as much taste as the trio, and the three are chosen
 TOGETHER, never one at a time and never at random:
 

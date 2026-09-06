@@ -35,15 +35,16 @@ def test_start_candidates_are_the_band_minus_variants_and_elision_failures():
     ranks = {
         "savoir": {"word": "savoir", "rank": 0},
         "savoirs": {"word": "savoirs", "rank": 3},
-        "usage": {"word": "usage", "rank": 60},
-        "esprit": {"word": "esprit", "rank": 55},
-        "monde": {"word": "monde", "rank": 80},
+        "usage": {"word": "usage", "rank": 110},
+        "esprit": {"word": "esprit", "rank": 105},
+        "monde": {"word": "monde", "rank": 120},
         "effet": {"word": "effet", "rank": 104},
+        "proche": {"word": "proche", "rank": 60},
         "loin": {"word": "loin", "rank": 400},
     }
     words = [e["word"] for e in start_candidates(ranks, "savoir", "le", exclude={"effet"})]
-    assert words == ["monde"]        # usage/esprit elide after « le », savoirs is a variant, loin is off-band
-    assert [e["word"] for e in start_candidates(ranks, "savoir", "du")] == ["esprit", "usage", "monde", "effet"]
+    assert words == ["monde"]        # usage/esprit elide after « le », savoirs is a variant, proche/loin are off-band
+    assert [e["word"] for e in start_candidates(ranks, "savoir", "du")] == ["effet", "esprit", "usage", "monde"]
     # a word too rare for a player is out; an unknown frequency is kept
     rare = lambda w: {"esprit": 90000, "usage": 500}.get(w)  # noqa: E731
-    assert [e["word"] for e in start_candidates(ranks, "savoir", "du", frequency_rank=rare)] == ["usage", "monde", "effet"]
+    assert [e["word"] for e in start_candidates(ranks, "savoir", "du", frequency_rank=rare)] == ["effet", "usage", "monde"]
