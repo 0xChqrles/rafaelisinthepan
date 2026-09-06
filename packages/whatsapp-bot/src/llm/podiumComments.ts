@@ -124,7 +124,7 @@ export const KINDS: Readonly<Record<Move, readonly string[]>> = {
     'a rule you just made up, stated as if it had always existed',
     'an honour or a title you award on your own authority',
     'a decision about tomorrow that nobody asked for',
-    'a prediction about their future, stated as certain', // ('a fact about the world' gave "le monde tourne rond" every time)
+    'something that will now happen in their life, stated as already decided', // ('a fact about the world' gave "le monde tourne rond", 'a prediction' gave "tu vas finir par" every time)
   ],
   2: [
     'something you already did today because of it',
@@ -133,18 +133,20 @@ export const KINDS: Readonly<Record<Move, readonly string[]>> = {
     'a small sacrifice you are making for them',
     'a debt one of you now owes the other',
   ],
-  // Only two kinds of state survive: "its age" and "the weather it is standing in" gave
-  // "un chien trop vieux" and "un chien sous la pluie" — ordinary things, the failure the
-  // move exists to avoid — and the noun is drawn with it, or it is a dog every time. And
-  // the state must strike the noun's PURPOSE (user-corrected 2026-09-06: "forgeron affamé"
-  // is a regular blacksmith who happens to be hungry; "cheval fourbu" cannot run).
-  // The frame is in the kind text because it is what a line without thinking reads: told
-  // it only in the system prompt, the model dropped it on half the lines.
+  // THE STATE IS BESIDE THE POINT (user-explained 2026-09-06, third correction of this
+  // move): "faucon myope" is the one word anyone would pick to defeat a falcon, a joke
+  // being made; "requin en béton", "faucon en 2D", "chirurgien obèse" are properties
+  // nobody ever had a reason to attach, and that is the absurd. Passing conditions
+  // (hungry, tired, wet) and situations (a strike) are out: they gave "forgeron affamé"
+  // and "cheval en grève". The frame is in the kind text because it is what a line
+  // without thinking reads: told it only in the system prompt, the model dropped it on
+  // half the lines.
   3: [
-    'write "la <quality> d\'un <noun> <state>"; the noun is an animal; the state is a bodily condition that stops it doing the one thing it is known for',
-    'write "la <quality> d\'un <noun> <state>"; the noun is somebody with a job; the state is a bodily condition that stops them doing that job',
-    'write "la <quality> d\'un <noun> en <material>"; the noun is an animal; the material is one it could not be alive in',
-    'write "la <quality> d\'un <noun> en <material>"; the noun is a tool, an object or a vehicle; the material is one it could not work in',
+    'write "la <quality> d\'un <noun> en <material>"; the noun is an animal; the material is one nobody would make an animal out of',
+    'write "la <quality> d\'un <noun> en <material>"; the noun is a tool, an object or a vehicle; the material is one it was never made of',
+    'write "la <quality> d\'un <noun> <adjective>"; the noun is somebody with a job; the adjective is a permanent, visible property of their body that has nothing to do with the job',
+    'write "la <quality> d\'un <noun> <adjective>"; the noun is an animal; the adjective is a clinical condition, the medical word, one nobody has attached to that animal',
+    'write "la <quality> d\'un <noun> <adjective>"; the noun is an animal or an object; the adjective is a geometry it never had — flat, in two dimensions, hollow, cubic',
   ],
   4: ['an animal a child admires', 'a big machine', 'a famous kind of person', 'a force of nature'],
 };

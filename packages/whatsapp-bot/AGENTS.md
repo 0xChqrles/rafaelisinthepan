@@ -510,26 +510,34 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   LOGIC (a conclusion that does not follow, stated as proof), WHAT IT DID TO YOU (the
   result's effect on the bot, first person, far too big, one clause), THE QUALITY OF A
   SOMETHING (the shape "la <quality> d'un <noun> <state>": the quality the score is
-  about, the obvious noun, ONE state that TAKES AWAY THE ONE THING THE NOUN IS FOR —
-  a body that can no longer do what it exists to do, or a material it could not work
-  in, written "en <material>" ("de marbre" already means something). User-explained
-  2026-09-06: "cheval fourbu" cannot run and "sanglier en marbre" is no longer alive,
-  where "forgeron affamé" is a regular blacksmith who happens to be hungry — not funny,
-  not absurd; and "un cheval en grève" is not a state a horse can be in, where "un
-  cheval rachitique" is), and THE NAIVE LABEL (ALWAYS "tu es un <noun>", never the bare
+  about, the obvious noun, ONE state that is a strong, visible, PERMANENT property
+  nobody ever had a reason to attach to that noun — a material it was never made of,
+  written "en <material>" ("de marbre" already means something), a geometry it never
+  had, a build or a clinical condition of its body — and that has NOTHING to do with the
+  quality: the detail beside the point, said as if it mattered, is the absurd. The user
+  explained it in three corrections on 2026-09-06 and each is a failure to avoid:
+  "forgeron affamé" is a blacksmith who happens to be hungry (a passing condition is
+  nothing); "cheval en grève" is not a state a horse can be in; "faucon myope" is the
+  one word anyone would pick to defeat a falcon (a joke being made) where "faucon en
+  2D", "requin en béton" and "chirurgien obèse" are properties nobody ever cared to
+  name. Not "the state defeats the noun's purpose" — that reading produced the myopic
+  falcon), and THE NAIVE LABEL (ALWAYS "tu es un <noun>", never the bare
   noun — "wow" may precede it — one impressive word chosen for sound over fit, never a
   rank word like champion/hero/legend). The sentence stays plain but ONE word in it may
   be rare and exact — the veterinary, trade or legal term — and that word is where the
   line lives (user-asked: "more creative, less common words").
-  Measured: "Tu as la patience d'un boulanger sans bras.", "Un percheron en guimauve.",
-  "Tu es un métronome en mousse.", "Tu es un tyrannosaure.", "J'ai instauré une heure de
-  sieste après tes parties.", "Je vous fais chevalières de l'ordinaire." **A MOVE IS AN IDEA, NEVER A SENTENCE TEMPLATE (user-corrected
+  Measured: "La précision d'un faucon en béton.", "La régularité d'un renard en
+  porcelaine.", "La patience d'un pêcheur astigmate.", "Tu es un tyrannosaure.", "J'ai
+  instauré une heure de sieste après tes parties.", "Je vous fais chevalières de
+  l'ordinaire.", "Tu as prouvé que les dictionnaires mentent." **A MOVE IS AN IDEA, NEVER A SENTENCE TEMPLATE (user-corrected
   2026-09-06: "it should not always come up with the same sentence construction").**
   Each move's KINDS are enumerated in code (`podiumComments.ts` `KINDS` — five ways of
-  reasoning, five things the result did to the bot, for the image the noun's realm × a
-  real state — a physical condition or a material, since "its age" and "the weather"
-  gave "un chien trop vieux" and "un chien sous la pluie", ordinary things — and for the
-  label the realm of the word, or it is a bulldozer every time) and the line is
+  reasoning, five things the result did to the bot, for the image the noun's realm × the
+  kind of property — a material, a body property beside the point, a clinical word, a
+  geometry; "its age" and "the weather" once gave "un chien trop vieux" and "un chien
+  sous la pluie", ordinary things — and for the label the realm of the word, or it is a
+  bulldozer every time; the image's "la … d'un" frame is spelled in the kind text, since
+  told only in the system prompt the model dropped it on half the lines) and the line is
   told the move AND one kind (`lineRules`, named in the user turn): asked to vary, the
   model cannot — each line is its own call with no memory of the others — and told a
   shape it came back with one template per move. The two image moves read as templates
