@@ -431,13 +431,17 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   "unmoved" — and it was funny and too cold for the group it landed in; v4 answered with a
   bot encouraging at every band and warmest at the bottom, and by v7 that read generic.
   The stance now: ON THEIR SIDE, which is what licenses the teasing, and PLAYFUL ABOUT
-  EVERY SCORE, the bad ones included — a slow day's precision, speed or method is fair
-  game, in the three moves — while the PERSON is never the joke: nothing about their
-  intelligence, worth, looks or life, no "you always", nothing they could read as an
-  insult with a straight face. The bands say so (`laboured` = slow, and fair game for the
-  joke; `failed` = the sentence won, fair game too). **A group's own pre-prompt still
-  singles somebody out for harder teasing**; a group that says nothing gets no favourite
-  target — the scores are teased evenly.
+  EVERY SCORE, the bad ones included. **THE TEASING IS EXAGGERATION, NEVER JUDGEMENT
+  (user-corrected the same day: "it clearly became insulting")** — the first wording,
+  "the score is fair game for the joke, the person never", read to the model as licence
+  for verdicts ("tu es la fierté de personne", "réfléchi pour pas grand-chose", "t'as
+  même pas eu à forcer"). A slow day is teased by making it absurdly SLOWER, a fast one
+  absurdly faster; never by calling it pointless, lucky, easy, useless or the fault of the
+  method, never "even you" / "as usual", never a word about intelligence, worth, effort or
+  life; a grim detail only as the exaggeration step. The test in the prompt: stings from a
+  stranger = wrong, laughs from a friend = right. The bands say so (`laboured` = slow,
+  teased by exaggerating the slowness). **A group's own pre-prompt still singles somebody
+  out for harder teasing**; a group that says nothing gets no favourite target.
   **AND IT NEVER CALLS THE SENTENCE "elle".** A bare pronoun has no antecedent in a
   one-line message, so "elle t'a bien fait suer" printed under Christine's name reads as
   another woman rather than as the puzzle. It was TAUGHT the personification by a register
@@ -493,13 +497,21 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   *"tu es un véritable tigre" / "la précision d'un escargot en soins palliatifs" /
   "l'information me plaît donc elle est vraie"* — so the character is also not very bright
   and completely sure of itself, DECLARES rather than describes, and has exactly THREE
-  MOVES: the LABEL (a flat verdict on what somebody is), the QUALITY WITH A WRONG DETAIL
-  (a quality pinned to an absurdly specific, slightly grim owner), and ITS OWN LOGIC (a
-  conclusion that does not follow, stated as proof; it may laugh at the score, never
-  accuse the person). Dark is fine, cruel is not. **THE MOVE IS ASSIGNED BY CODE** (`podiumComments.ts` `lineRules`,
-  named in the user turn): asked to rotate, the model cannot — each line is its own call
-  with no memory of the others, and left alone it reached for the label every time. A
-  podium walks the three from a day-dependent start; a share draws one. No example LINES
+  MOVES: the LABEL (what somebody IS today, the obvious animal/object/profession one size
+  too big, a compliment every time), the OBVIOUS IMAGE PUSHED ONE STEP TOO FAR (the
+  quality the result shows, given the owner a child would pick, then pushed further in
+  the SAME direction — the snail made slower), and ITS OWN LOGIC (a conclusion that does
+  not follow, stated as proof, on their side). **The image is the OBVIOUS one, never a
+  clever twist**: the first cut asked for "an absurdly specific, slightly grim owner" and
+  got random gluings ("des écluses en fin de course", "chronomètre de cantine un jour de
+  grève") that nobody could decode. **THE MOVE AND THE IMAGE'S REALM ARE ASSIGNED BY
+  CODE** (`podiumComments.ts` `lineRules`, named in the user turn): asked to rotate, the
+  model cannot — each line is its own call with no memory of the others, and left alone
+  it reached for the label every time and for the tortoise under every slow score. A
+  podium walks the three moves from a day-dependent start, a share draws one; the realm
+  (`REALMS`: animal, machine, somebody with a job, vehicle, plant) is drawn per line for
+  the two moves that carry an image. **No quoted word either**: "officiellement", offered
+  as the word that makes a label too big, was in half the lines the next run. No example LINES
   anywhere: the register is described, and the moves are shapes with placeholders.
   Three mechanics came with it, all measured on the real provider:
   - **THE COMMENT PATHS THINK NOT AT ALL** (`effort: 'none'` on `LlmRequest`, mapped by
@@ -508,7 +520,9 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
     IS the timeout; the v8 voice pushed every line past it and the podium came back bare.
     With thinking off a line takes ~1s and reads no worse; `reasoning_effort: low` still
     ran to 19s and truncated. It also makes `temperature` count, which DeepSeek ignores
-    while thinking. The conversation agent keeps the default (it reasons over tools).
+    while thinking — and at the 1.1 set under thinking it produced word salad, so the
+    comment paths run at **`TEMPERATURE` = 0.8** (`podiumComments.ts`), measured clean at
+    no cost in strangeness. The conversation agent keeps the default (it reasons over tools).
   - **THE SCORE IS NOT SENT to the comment paths** (`tries`/`found` gone from the facts;
     `place`, `verdict`, `solved` stay). Asked not to read the number back, a model with its
     thinking off did so on half the lines; a number it never saw is one it cannot repeat.
