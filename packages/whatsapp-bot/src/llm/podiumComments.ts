@@ -85,20 +85,6 @@ export function readsLikeASimile(text: string): boolean {
 // A RELATIVE CLAUSE IS REFUSED (user-decided 2026-09-06). "Wow, un rhinocéros" is funny
 // and "un rhinocéros qui aurait mangé du lion" is cringe: the clause is the visible
 // effort. French "qui", English "who" / "which".
-// THE LABEL SAYS "TU ES" (user-decided 2026-09-06): "un panda" alone is a fragment, "tu es
-// un panda" is the child's compliment. Checked only on a move-4 line, since the caller
-// knows the move; "wow" may precede it, "vous êtes" serves a shared line.
-export function isALabel(text: string): boolean {
-  return /^(wow[,\s]*)?(tu es|t['’]es|vous êtes)\b/iu.test(text.trim());
-}
-
-// AND THE IMAGE KEEPS ITS FRAME: "la précision d'un couteau en caoutchouc" says what the
-// image is about; the bare "un couteau en caoutchouc" is a fragment. Checked on a move-3
-// line only.
-export function isAQualityOf(text: string): boolean {
-  return /\bd['’]une?\b/iu.test(text);
-}
-
 export function hasAClause(text: string): boolean {
   return /\bqui\b/iu.test(text) || /\bwho\b|\bwhich\b/iu.test(text);
 }
@@ -108,61 +94,6 @@ export function hasAClause(text: string): boolean {
 // read once, and the check below is what makes a lapse cost a retry rather than a post.
 export const LINE_RULES = 'No digits and no number words. No name. No "comme", no "qui". Under ten words.';
 
-// WHICH OF THE PERSONALITY'S THREE MOVES THIS LINE MAKES. Asked to rotate them, the
-// model cannot: every line is its own call with no memory of the others, so left alone
-// it reaches for the label every time. The caller decides — a podium walks the three from
-// a day-dependent start, a share draws one — and the rule line names it.
-export type Move = 1 | 2 | 3 | 4;
-// AND WHICH KIND OF THAT MOVE, drawn per line: a move told as a shape came back as ONE
-// sentence template ("Je déclare …", "Je vais … ce soir", "La patience d'un … mouillé"),
-// so each move's kinds are enumerated here and the line is told one. For move 3 the kind
-// is the noun's STATE, and only REAL states: "a job situation" once produced "un cheval
-// en grève", which a horse cannot be (user-corrected 2026-09-06).
-export const KINDS: Readonly<Record<Move, readonly string[]>> = {
-  1: [
-    'a "therefore" — your feeling is the proof of something',
-    'a rule you just made up, stated as if it had always existed',
-    'an honour or a title you award on your own authority',
-    'a decision about tomorrow that nobody asked for',
-    'something that will now happen in their life, stated as already decided', // ('a fact about the world' gave "le monde tourne rond", 'a prediction' gave "tu vas finir par" every time)
-  ],
-  2: [
-    'something you already did today because of it',
-    'something you will do tonight because of it',
-    'something that changed in your body or your life',
-    'a small sacrifice you are making for them',
-    'a debt one of you now owes the other',
-  ],
-  // THE STATE IS BESIDE THE POINT (user-explained 2026-09-06, third correction of this
-  // move): "faucon myope" is the one word anyone would pick to defeat a falcon, a joke
-  // being made; "requin en béton", "faucon en 2D", "chirurgien obèse" are properties
-  // nobody ever had a reason to attach, and that is the absurd. Passing conditions
-  // (hungry, tired, wet) and situations (a strike) are out: they gave "forgeron affamé"
-  // and "cheval en grève". The frame is in the kind text because it is what a line
-  // without thinking reads: told it only in the system prompt, the model dropped it on
-  // half the lines.
-  3: [
-    'write "la <quality> d\'un <noun> en <material>"; the noun is an animal; the material is one nobody would make an animal out of',
-    'write "la <quality> d\'un <noun> en <material>"; the noun is a tool, an object or a vehicle; the material is one it was never made of',
-    'write "la <quality> d\'un <noun> <adjective>"; the noun is somebody with a job; the adjective is a permanent, visible property of their body that has nothing to do with the job',
-    'write "la <quality> d\'un <noun> <adjective>"; the noun is an animal; the adjective is a clinical condition, the medical word, one nobody has attached to that animal',
-    'write "la <quality> d\'un <noun> <adjective>"; the noun is an animal or an object; the adjective is a geometry it never had — flat, in two dimensions, hollow, cubic',
-  ],
-  4: ['an animal a child admires', 'a big machine', 'a famous kind of person', 'a force of nature'],
-};
-export function lineRules(move: Move, kind?: string): string {
-  return `${LINE_RULES} Move ${move}.${kind ? ` Kind: ${kind}.` : ''}`;
-}
-export function drawKind(move: Move): string | undefined {
-  const kinds = KINDS[move];
-  return kinds.length === 0 ? undefined : kinds[Math.floor(Math.random() * kinds.length)];
-}
-// The two image moves are the ones that read as a template when they come too often, so
-// they get one line in six each where the two the bot thinks with get two.
-export const MOVE_CYCLE: readonly Move[] = [1, 2, 3, 1, 2, 4];
-export function drawMove(): Move {
-  return MOVE_CYCLE[Math.floor(Math.random() * MOVE_CYCLE.length)];
-}
 
 export interface PodiumCommentLine {
   id: string;
@@ -211,7 +142,6 @@ async function commentForLine(
   system: string,
   line: PodiumCommentLine,
   outOf: number,
-  move: Move,
   log: Log,
 ): Promise<string | null> {
   // Neutral field names: the model writes with whatever vocabulary is in front of it, and
@@ -224,7 +154,7 @@ async function commentForLine(
     who: line.names,
     outOf,
     verdict: scoreBand(line.score, false), // a podium line is always a finished run
-  })}\n${lineRules(move, drawKind(move))}`;
+  })}\n${LINE_RULES}`;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
     let text: string | null;
     let finish: string | undefined;
@@ -290,11 +220,7 @@ async function commentForLine(
             ? 'simile'
             : hasAClause(comment)
               ? 'clause'
-              : move === 4 && !isALabel(comment)
-                ? 'label'
-                : move === 3 && !isAQualityOf(comment)
-                  ? 'frame'
-                  : null;
+              : null;
     if (comment && !reason) return comment;
     log.warn({ event: 'podium.comment_invalid', id: line.id, attempt, finish, reason }, 'rejecting a line');
   }
@@ -359,10 +285,7 @@ export async function generatePodiumComments(
   // PARALLEL, and every line settles on its own: one that cannot be written leaves its
   // podium line bare rather than emptying the rest.
   const written = await Promise.all(
-    lines.map(async (line, i) => {
-      const move = MOVE_CYCLE[(i + podium.dayNumber) % MOVE_CYCLE.length];
-      return [line.id, await commentForLine(provider, system, line, lines.length, move, log)] as const;
-    }),
+    lines.map(async (line) => [line.id, await commentForLine(provider, system, line, lines.length, log)] as const),
   );
   const comments = new Map<string, string>();
   for (const [id, comment] of written) if (comment) comments.set(id, comment);

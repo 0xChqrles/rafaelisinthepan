@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parseGroupConfig } from '../config/groupConfig';
 import { createLog } from '../log';
 import { LlmUnavailable, type LlmProvider, type LlmResponse } from './types';
@@ -8,8 +8,7 @@ import { LINE_RULES } from './podiumComments';
 // The user turn is the FACTS as JSON, then the rules a line is checked against.
 function sentIn(call: unknown) {
   const [facts, rules] = (call as { messages: { content: string }[] }).messages[0].content.split('\n');
-  expect(rules).toMatch(/ Move [1234]\.( Kind: .+\.)?$/);
-  expect(rules.startsWith(LINE_RULES)).toBe(true);
+  expect(rules).toBe(LINE_RULES);
   return JSON.parse(facts);
 }
 
@@ -43,15 +42,6 @@ function provider(steps: (Partial<LlmResponse> | Error)[]): { provider: LlmProvi
 }
 
 const log = createLog('silent');
-
-// The share DRAWS its move and kind; the fixtures below are written for move 1, so the
-// draw is pinned (the label and image moves refuse a line that is not shaped like them).
-beforeEach(() => {
-  vi.spyOn(Math, 'random').mockReturnValue(0);
-});
-afterEach(() => {
-  vi.restoreAllMocks();
-});
 
 describe('the spoken acknowledgement of a share (#236)', () => {
   it('hands the model the FACTS and returns its line, cleaned', async () => {

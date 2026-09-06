@@ -506,45 +506,25 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   and the sentence is long; "un TGV avec des ailes" fails because nobody knows what the
   wings mean, where "l'efficacité d'un TGV de bois" is instantly a train that would not
   work, in wording slightly off the way people type. So: one flat statement, under ten
-  words, no relative clause, no second idea, no twist — and exactly FOUR MOVES: ITS OWN
-  LOGIC (a conclusion that does not follow, stated as proof), WHAT IT DID TO YOU (the
-  result's effect on the bot, first person, far too big, one clause), THE QUALITY OF A
-  SOMETHING (the shape "la <quality> d'un <noun> <state>": the quality the score is
-  about, the obvious noun, ONE state that is a strong, visible, PERMANENT property
-  nobody ever had a reason to attach to that noun — a material it was never made of,
-  written "en <material>" ("de marbre" already means something), a geometry it never
-  had, a build or a clinical condition of its body — and that has NOTHING to do with the
-  quality: the detail beside the point, said as if it mattered, is the absurd. The user
-  explained it in three corrections on 2026-09-06 and each is a failure to avoid:
-  "forgeron affamé" is a blacksmith who happens to be hungry (a passing condition is
-  nothing); "cheval en grève" is not a state a horse can be in; "faucon myope" is the
-  one word anyone would pick to defeat a falcon (a joke being made) where "faucon en
-  2D", "requin en béton" and "chirurgien obèse" are properties nobody ever cared to
-  name. Not "the state defeats the noun's purpose" — that reading produced the myopic
-  falcon), and THE NAIVE LABEL (ALWAYS "tu es un <noun>", never the bare
-  noun — "wow" may precede it — one impressive word chosen for sound over fit, never a
-  rank word like champion/hero/legend). The sentence stays plain but ONE word in it may
-  be rare and exact — the veterinary, trade or legal term — and that word is where the
-  line lives (user-asked: "more creative, less common words").
-  Measured: "La précision d'un faucon en béton.", "La régularité d'un renard en
-  porcelaine.", "La patience d'un pêcheur astigmate.", "Tu es un tyrannosaure.", "J'ai
-  instauré une heure de sieste après tes parties.", "Je vous fais chevalières de
-  l'ordinaire.", "Tu as prouvé que les dictionnaires mentent." **A MOVE IS AN IDEA, NEVER A SENTENCE TEMPLATE (user-corrected
-  2026-09-06: "it should not always come up with the same sentence construction").**
-  Each move's KINDS are enumerated in code (`podiumComments.ts` `KINDS` — five ways of
-  reasoning, five things the result did to the bot, for the image the noun's realm × the
-  kind of property — a material, a body property beside the point, a clinical word, a
-  geometry; "its age" and "the weather" once gave "un chien trop vieux" and "un chien
-  sous la pluie", ordinary things — and for the label the realm of the word, or it is a
-  bulldozer every time; the image's "la … d'un" frame is spelled in the kind text, since
-  told only in the system prompt the model dropped it on half the lines) and the line is
-  told the move AND one kind (`lineRules`, named in the user turn): asked to vary, the
-  model cannot — each line is its own call with no memory of the others — and told a
-  shape it came back with one template per move. The two image moves read as templates
-  soonest, so `MOVE_CYCLE` = [1, 2, 3, 1, 2, 4]: one line in six each. A podium walks the
-  cycle from a day-dependent start, a share draws. No example LINES anywhere, and no
-  quoted word ("officiellement", offered once, was in half the lines the next run): the
-  register is described, and the moves are shapes.
+  words, no relative clause, no second idea, no twist, no tail after a comma. **GUIDELINES,
+  NOT CONSTRUCTION (user-decided 2026-09-06: "don't try to over-engineer him, just tell
+  him how to be funny, and let it be creative").** Between the two came a cut with FOUR
+  MOVES (its own logic, what the result did to it, "la <quality> d'un <noun> <state>", the
+  naive label "tu es un <noun>"), each with KINDS enumerated in code and drawn per line,
+  the image's state redefined three times on the user's corrections, and shape checks per
+  move; the user found it "worse than the last try — always a material now, or just
+  something that doesn't make sense", and the machinery is what read as trying. It is
+  gone: the personality describes what is funny about the bot — conclusions that do not
+  follow stated as proof, feelings out of all proportion reported as normal, a child's
+  compliment ("tu es un <big animal>"), and, RARELY, an image that is absurd in one exact
+  way: a thing nobody ever had a reason to say that can still be pictured at once, whose
+  detail is beside the point (a creature in a material it was never made of; never the
+  obvious weak spot, which is a joke being made; never a passing state, which is nothing)
+  — and lets the model build the sentence. The user's own examples of the bar: "requin
+  en béton", "faucon en 2D", "chirurgien obèse" — where "faucon myope", "forgeron
+  affamé", "cheval en grève" and "pêcheur astigmate" all failed it. NO CONCRETE EXAMPLE
+  IN THE PROMPT: "a surgeon who happens to be obese" came back as "chirurgien obese" the
+  next run. No quoted word either ("officiellement", offered once, was in half the lines).
   Three mechanics came with it, all measured on the real provider:
   - **THE COMMENT PATHS THINK NOT AT ALL** (`effort: 'none'` on `LlmRequest`, mapped by
     `providers/deepseek.ts` onto `thinking: {type: 'disabled'}`; `low`/`high` map onto
@@ -563,9 +543,7 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
     up in either language, folded; `namesSomebody` — a podium/share name anywhere in the
     line, since allowed mid-line it became a tic; `readsLikeASimile` — French "comme",
     English "like a" / "as if"; `hasAClause` — French "qui", English "who" / "which", the
-    relative clause being the effort showing; `isALabel` on a move-4 line — it starts
-    "tu es" / "vous êtes", "wow" allowed before; `isAQualityOf` on a move-3 line — it
-    keeps its "d'un" frame, the bare noun phrase being a fragment; and
+    relative clause being the effort showing; and
     `COMMENT_MAX_CHARS` = 80 on both paths, a line past it being one with work in it), on both paths, the way shortness is enforced: asked not
     to, a model with its thinking off complied about half the time. The rules are also
     restated in the USER turn beside the facts (`LINE_RULES`): with thinking off, what sits
