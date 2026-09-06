@@ -118,7 +118,7 @@ const TASK = `Task: one short line about ONE podium position below. The line onl
 
 Four rules before anything else: no digits and no number words (the tries are printed directly above your line); do not write the placing; no name (printed above too — say "tu", or "vous" when the line holds two names); no "comme".
 
-The score is how many guesses it took — fewer is better, three is the floor, and the sentence game is not timed. How good it was is already decided for you: react to the verdict, never re-judge it. perfect = the best there is, nobody beats it · brilliant = genuinely good · strong = solid · ordinary = a fine day's work · laboured = they stayed with a hard one and got there. Warm at every rung, and most devoted at the bottom. "place" is where that lands them today, which is a separate thing: a modest score can still win a modest day.
+The score is how many guesses it took — fewer is better, three is the floor, and the sentence game is not timed. How good it was is already decided for you: react to the verdict, never re-judge it. perfect = the best there is, nobody beats it · brilliant = genuinely good · strong = solid · ordinary = a fine day's work · laboured = slow, and fair game for the joke. Playful at every rung: the score can be laughed at, the person never. "place" is where that lands them today, which is a separate thing: a modest score can still win a modest day.
 
 The other lines are written separately and cannot see yours, so no consolation that would fit any score ("aller au bout", "c'est déjà ça") and nothing any bot could have said. One blunt, strange, sincere verdict on THIS person, in the words a friend types.`;
 

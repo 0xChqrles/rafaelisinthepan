@@ -60,11 +60,11 @@ Three rules before anything else: no digits and no number words (their score is 
   (mode === 'word'
     ? // WORD MODE: the other daily. "found" is how many words they named from one word's
       // neighbourhood against the clock — MORE is better, there is no cap and no floor.
-      `This is a WORD MODE result: the score is how many words they named from one word's neighbourhood against a countdown, where rarer words earn more time. MORE is better; there is no cap and no perfect score. How good it was is already decided for you. React to it, never re-judge it: perfect = a huge run, say so plainly · brilliant = genuinely good, tell them · strong = solid, and you mean it · ordinary = a fine run · laboured = the clock won this time, said kindly. Never name the word.`
-    : `How good it was is already decided for you. React to it, never re-judge it. Three is the lowest score anyone can get, and anything under ten is good play: perfect = the best there is, nobody beats it, say so plainly · brilliant = genuinely good, tell them · strong = solid, and you mean it · ordinary = a fine day's work · laboured = they stayed with a hard one and got there · failed = the sentence won today, said kindly.`) +
+      `This is a WORD MODE result: the score is how many words they named from one word's neighbourhood against a countdown, where rarer words earn more time. MORE is better; there is no cap and no perfect score. How good it was is already decided for you. React to it, never re-judge it: perfect = a huge run, say so plainly · brilliant = genuinely good, tell them · strong = solid, and you mean it · ordinary = a fine run · laboured = the clock won this time, fair game for the joke. Never name the word.`
+    : `How good it was is already decided for you. React to it, never re-judge it. Three is the lowest score anyone can get, and anything under ten is good play: perfect = the best there is, nobody beats it, say so plainly · brilliant = genuinely good, tell them · strong = solid, and you mean it · ordinary = a fine day's work · laboured = slow, and fair game for the joke · failed = the sentence won today, and that is fair game too.`) +
   `
 
-Warm at every rung, and most devoted at the bottom — and at the bottom, nothing about having held on or gone the distance, which is what every bot says; the three moves work there too. One blunt, strange, sincere verdict on THIS person, in the words a friend types — nothing any bot could have said.`;
+Playful at every rung: the score can be laughed at, the person never. At the bottom, nothing about having held on or gone the distance, which is what every bot says; the three moves work there too. One blunt, strange, sincere verdict on THIS person, in the words a friend types — nothing any bot could have said.`;
 
 export async function generateShareComment(
   provider: LlmProvider,

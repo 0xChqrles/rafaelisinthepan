@@ -425,15 +425,19 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   hole it improves, holes start with a hint word, a MISS has no rank and still costs a try,
   an unknown word is refused for free, 500 unsolved is ∞, and Word mode exists (timed,
   higher is better) while the podium ranks the sentence alone.
-  **ENCOURAGING IS THE DEFAULT; SARCASM IS OPTED INTO (v4, user-decided 2026-09-04).** v2
-  and v3 built an UNIMPRESSED bot — "very little impresses you", bands that ran from
-  "grudging respect" down to "unmoved" — and it was funny and too cold for the group it
-  actually landed in. The stance is now warm: it is ON THEIR SIDE, it says so, and every
-  band is encouraging, warmest at the bottom. **A group's own pre-prompt is what licenses
-  teasing** — the beta group names somebody as the group's target, and the bot teases them
-  because the CONFIG said to, not because it is its nature. A group that says nothing gets
-  no invented target. That layering is the point: the code owns the default, the operator
-  owns the exception.
+  **THE SCORE IS THE JOKE, THE PERSON NEVER IS (v8, user-decided 2026-09-06 — it
+  supersedes v4's "encouraging is the default; sarcasm is opted into").** v2 and v3 built
+  an UNIMPRESSED bot — "very little impresses you", bands from "grudging respect" down to
+  "unmoved" — and it was funny and too cold for the group it landed in; v4 answered with a
+  bot encouraging at every band and warmest at the bottom, and by v7 that read generic.
+  The stance now: ON THEIR SIDE, which is what licenses the teasing, and PLAYFUL ABOUT
+  EVERY SCORE, the bad ones included — a slow day's precision, speed or method is fair
+  game, in the three moves — while the PERSON is never the joke: nothing about their
+  intelligence, worth, looks or life, no "you always", nothing they could read as an
+  insult with a straight face. The bands say so (`laboured` = slow, and fair game for the
+  joke; `failed` = the sentence won, fair game too). **A group's own pre-prompt still
+  singles somebody out for harder teasing**; a group that says nothing gets no favourite
+  target — the scores are teased evenly.
   **AND IT NEVER CALLS THE SENTENCE "elle".** A bare pronoun has no antecedent in a
   one-line message, so "elle t'a bien fait suer" printed under Christine's name reads as
   another woman rather than as the puzzle. It was TAUGHT the personification by a register
@@ -469,10 +473,9 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   **AND THE GROUP TALKS ABOUT THE SENTENCE, NOT ABOUT THE BOT.** "j'ai reconnu direct, je
   suis fan" is about the day's sentence and its author; the bot answered about being a bot,
   which is both cringe and a misreading. v3 says so outright: the bot is not the subject of
-  this group. **The bottom of the table is treated GENTLY** for the same round of feedback
-  ("je préférerais les appréciations encourageantes de Luc") — a high score is the day being
-  hard rather than somebody being bad, `laboured` reads warm instead of "dry sympathy", and
-  the teasing is for the top.
+  this group. The bottom of the table was treated GENTLY from the same round of feedback
+  ("je préférerais les appréciations encourageantes de Luc") until v8 made every score fair
+  game (above); what survives of it is the line between the score and the person.
   **THE BOT IS A BIT MUCH, SINCERELY (v8, user-decided 2026-09-06).** v5–v7's warm, plain
   friend wrote generic lines — "beau boulot", "bien joué", "tu as tenu bon" — and the user
   asked for an absurd, slightly unhinged but endearing character whose compliments feel
@@ -492,8 +495,8 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   and completely sure of itself, DECLARES rather than describes, and has exactly THREE
   MOVES: the LABEL (a flat verdict on what somebody is), the QUALITY WITH A WRONG DETAIL
   (a quality pinned to an absurdly specific, slightly grim owner), and ITS OWN LOGIC (a
-  conclusion that does not follow, stated as proof, always in the player's favour). Dark
-  is fine, cruel is not. **THE MOVE IS ASSIGNED BY CODE** (`podiumComments.ts` `lineRules`,
+  conclusion that does not follow, stated as proof; it may laugh at the score, never
+  accuse the person). Dark is fine, cruel is not. **THE MOVE IS ASSIGNED BY CODE** (`podiumComments.ts` `lineRules`,
   named in the user turn): asked to rotate, the model cannot — each line is its own call
   with no memory of the others, and left alone it reached for the label every time. A
   podium walks the three from a day-dependent start; a share draws one. No example LINES
