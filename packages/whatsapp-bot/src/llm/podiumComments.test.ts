@@ -1,12 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parseGroupConfig } from '../config/groupConfig';
 import { createLog } from '../log';
-import { LINE_RULES, dropEchoes, generatePodiumComments, opensWithAName, podiumCommentLines, sanitizeComment, spellsANumber } from './podiumComments';
+import { LINE_RULES, lineRules, dropEchoes, generatePodiumComments, namesSomebody, podiumCommentLines, readsLikeASimile, sanitizeComment, spellsANumber } from './podiumComments';
 
 // The user turn is the FACTS as JSON, then the rules a line is checked against.
 function factsIn(content: string) {
   const [facts, rules] = content.split('\n');
-  expect(rules).toBe(LINE_RULES);
+  expect(rules).toMatch(/ Move [123]\.$/);
+  expect(rules.startsWith(LINE_RULES)).toBe(true);
   return JSON.parse(facts);
 }
 import { LlmUnavailable, type LlmProvider, type LlmResponse } from './types';
@@ -105,6 +106,10 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
     expect(sent).toEqual({ place: 1, who: ['Gab'], outOf: 2, verdict: 'perfect' });
     // No thinking: a deliberated line ran past the timeout under the v8 voice.
     expect((provider.requests[0] as { effort?: string }).effort).toBe('none');
+    // Each line is told which of the three moves to make, since it cannot see the others.
+    expect(lineRules(2)).toBe(`${LINE_RULES} Move 2.`);
+    const moves = provider.requests.map((r) => r.messages[0].content.slice(-2, -1));
+    expect(new Set(moves).size).toBe(2);
   });
 
   it('bands every podium line, so a winning score can still be an ordinary one', async () => {
@@ -122,7 +127,7 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
     ]);
   });
 
-  it('refuses a line that spells a number or opens with a name, and tries again (v8)', async () => {
+  it('refuses a line that spells a number, names somebody or leans on a simile, and tries again (v8)', async () => {
     // Any digit, and any number word from three up in either language; "un/une/deux" stay,
     // being articles and "vous deux". The check is folded, so accents and case do not hide one.
     expect(spellsANumber('Trois essais, propre.')).toBe(true);
@@ -130,9 +135,18 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
     expect(spellsANumber('QUATORZE coups')).toBe(true);
     expect(spellsANumber('Vingt-sept et debout.')).toBe(true);
     expect(spellsANumber('Une patience de luthier, vous deux.')).toBe(false);
-    expect(opensWithAName('Gab, je vais encadrer ça.', ['Gab'])).toBe(true);
-    expect(opensWithAName('zou tu me tues', ['Delphine', 'Zou'])).toBe(true);
-    expect(opensWithAName('Je vais encadrer ça, Gab.', ['Gab'])).toBe(false);
+    // Anywhere in the line: allowed mid-line, the name became a tic ("Tu es un tracteur, Quentin").
+    expect(namesSomebody('Gab, je vais encadrer ça.', ['Gab'])).toBe(true);
+    expect(namesSomebody('Tu es un tracteur, zou.', ['Delphine', 'Zou'])).toBe(true);
+    expect(namesSomebody('Je vais encadrer ça.', ['Gab'])).toBe(false);
+    expect(namesSomebody('Un gabarit de champion.', ['Gab'])).toBe(false); // whole words only
+    // The voice declares; a simile is the lyrical move it was asked to drop.
+    expect(readsLikeASimile('Tu es un tigre.')).toBe(false);
+    expect(readsLikeASimile('Tu avances comme un tracteur.')).toBe(true);
+    expect(readsLikeASimile('Comme si de rien.')).toBe(true);
+    expect(readsLikeASimile('You are a tiger.')).toBe(false);
+    expect(readsLikeASimile('Solid, like a fridge.')).toBe(true);
+    expect(readsLikeASimile('I like that.')).toBe(false);
     const provider = answering({
       1: ['Trois essais, propre.', 'Je vais encadrer ça.'],
       2: ['Delphine et Zou, un duo.', 'Vous deux, un duo.'],
@@ -141,6 +155,12 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
     expect(comments.get('3')).toBe('Je vais encadrer ça.');
     expect(comments.get('4')).toBe('Vous deux, un duo.');
     expect(provider.calls).toBe(4);
+    // Three attempts now that one costs a second; then the line goes bare.
+    const stubborn = answering({ 1: ['Trois.', 'Quatre.', 'Cinq.'], 2: ['Vous deux, un duo.'] });
+    expect((await generatePodiumComments(stubborn, group, podium, log)).has('3')).toBe(false);
+    expect(stubborn.calls).toBe(4);
+    const simile = answering({ 1: ['Un tigre, comme toujours.', 'Un tigre absolu.'], 2: ['Vous deux, un duo.'] });
+    expect((await generatePodiumComments(simile, group, podium, log)).get('3')).toBe('Un tigre absolu.');
   });
 
   it('keeps comments plain text', () => {
@@ -185,17 +205,17 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
     expect(comments.get('4')).toBe('Duo.');
   });
 
-  it('retries an unusable answer once per line, then leaves that line bare', async () => {
-    const provider = answering({ 1: ['', ''], 2: ['', ''] });
+  it('retries an unusable answer twice per line, then leaves that line bare', async () => {
+    const provider = answering({ 1: ['', '', ''], 2: ['', '', ''] });
     expect((await generatePodiumComments(provider, group, podium, log)).size).toBe(0);
-    expect(provider.calls).toBe(4); // two lines, two attempts each
+    expect(provider.calls).toBe(6); // two lines, three attempts each
   });
 
   it('an unavailable provider degrades to no comments; a bug stops after one call per line', async () => {
     const err = () => new LlmUnavailable('503');
-    const down = answering({ 1: [err(), err()], 2: [err(), err()] });
+    const down = answering({ 1: [err(), err(), err()], 2: [err(), err(), err()] });
     expect((await generatePodiumComments(down, group, podium, log)).size).toBe(0);
-    expect(down.calls).toBe(4);
+    expect(down.calls).toBe(6);
     const bug = answering({ 1: [new Error('HTTP 401')], 2: [new Error('HTTP 401')] });
     expect((await generatePodiumComments(bug, group, podium, log)).size).toBe(0);
     expect(bug.calls).toBe(2); // one per line, not retried

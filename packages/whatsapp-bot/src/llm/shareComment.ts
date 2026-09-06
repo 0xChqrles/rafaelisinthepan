@@ -15,10 +15,10 @@ import type { GroupConfig } from '../config/groupConfig';
 import { verdictOf, type ShareFacts } from '../domain/reactions';
 import type { Log } from '../log';
 import { buildSystemPrompt } from './personality';
-import { LINE_RULES, opensWithAName, sanitizeComment, spellsANumber } from './podiumComments';
+import { lineRules, namesSomebody, readsLikeASimile, sanitizeComment, spellsANumber, type Move } from './podiumComments';
 import { LlmUnavailable, type LlmProvider } from './types';
 
-const ATTEMPTS = 2;
+const ATTEMPTS = 3;
 // GENEROUS, BECAUSE THE BUDGET WAS SHARED WITH THINKING. `deepseek-v4-flash` is a reasoning
 // model: its reasoning tokens are spent from `max_tokens` and the provider only ever reads
 // `message.content`, so a tight budget bought a truncated line or an empty one (measured:
@@ -32,13 +32,12 @@ const MAX_TOKENS = 2000;
 // — rejecting it costs a retry, where posting it costs the joke.
 const LINE_MAX_CHARS = 90;
 // THE EMOJI IS WAITING BEHIND THIS, so the wait is bounded well under the provider's own
-// 30s default: `ingest` awaits the line, and two attempts at that default put the
-// acknowledgement of a share up to a minute after it — long enough to read as broken.
-// Measured over eight live calls: median 6.4s, with a tail at 28-29s, so the cut sits above
-// the ordinary case and inside the tail. A call past it is treated as unavailable, which is
-// retried once and then falls back — worst case ~40s rather than ~60s, the common case
-// unchanged.
-const TIMEOUT_MS = 20_000;
+// 30s default: `ingest` awaits the line, and a long wait puts the acknowledgement of a
+// share far enough after it to read as broken. With thinking off (v8) a line answers in
+// about a second — the 20s this used to be covered the deliberation, whose tail ran to
+// 29s — so the cut is 10s, and the refusals above can afford a third attempt: worst case
+// 30s, the common case a second or two.
+const TIMEOUT_MS = 10_000;
 
 export type { ShareFacts } from '../domain/reactions';
 
@@ -55,7 +54,7 @@ export type { ShareFacts } from '../domain/reactions';
 const TASK = (max: number, mode: ShareFacts['mode']) =>
   `Task: react in ONE line to the Whippin result below, as a message in the group. The line only — plain text, no markdown, no quotes around it, under ${max} characters and often far less; two words is a whole message.
 
-Two rules before anything else: no digits and no number words (their score is in the share they just posted); do not open with their name. Speak TO them — "tu" — never about them.
+Three rules before anything else: no digits and no number words (their score is in the share they just posted); no name (it is on the share too); no "comme". Speak TO them — "tu" — never about them.
 
 ` +
   (mode === 'word'
@@ -65,7 +64,7 @@ Two rules before anything else: no digits and no number words (their score is in
     : `How good it was is already decided for you. React to it, never re-judge it. Three is the lowest score anyone can get, and anything under ten is good play: perfect = the best there is, nobody beats it, say so plainly · brilliant = genuinely good, tell them · strong = solid, and you mean it · ordinary = a fine day's work · laboured = they stayed with a hard one and got there · failed = the sentence won today, said kindly.`) +
   `
 
-Warm at every rung, and most devoted at the bottom. One precise, strange, sincere thing about what THIS person did today, in the words a friend types — nothing any bot could have said.`;
+Warm at every rung, and most devoted at the bottom — and at the bottom, nothing about having held on or gone the distance, which is what every bot says; the three moves work there too. One blunt, strange, sincere verdict on THIS person, in the words a friend types — nothing any bot could have said.`;
 
 export async function generateShareComment(
   provider: LlmProvider,
@@ -93,7 +92,7 @@ export async function generateShareComment(
     facts.mode === 'word'
       ? { player: facts.player, verdict: verdictOf(facts) }
       : { player: facts.player, solved: !facts.capped, verdict: verdictOf(facts) },
-  )}\n${LINE_RULES}`;
+  )}\n${lineRules((Math.floor(Math.random() * 3) + 1) as Move)}`;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
     if (!(await takeCall())) {
       log.info({ event: 'share.comment_ceiling', attempt }, 'daily call ceiling reached');
@@ -142,17 +141,19 @@ export async function generateShareComment(
       continue;
     }
     const line = sanitizeComment(text);
-    // The number and name checks are `podiumComments.ts`'s, for its reason: the share the
-    // player posted already shows the score and the name.
+    // The number, name and simile checks are `podiumComments.ts`'s, for its reasons: the
+    // share the player posted already shows the score and the name.
     const reason = !line
       ? 'unusable'
       : line.length > LINE_MAX_CHARS
         ? 'long'
         : spellsANumber(line)
           ? 'number'
-          : opensWithAName(line, [facts.player])
+          : namesSomebody(line, [facts.player])
             ? 'name'
-            : null;
+            : readsLikeASimile(line)
+              ? 'simile'
+              : null;
     if (line && !reason) return line;
     log.warn(
       { event: 'share.comment_invalid', attempt, finish, reason, length: line?.length ?? 0 },

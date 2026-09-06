@@ -8,7 +8,8 @@ import { LINE_RULES } from './podiumComments';
 // The user turn is the FACTS as JSON, then the rules a line is checked against.
 function sentIn(call: unknown) {
   const [facts, rules] = (call as { messages: { content: string }[] }).messages[0].content.split('\n');
-  expect(rules).toBe(LINE_RULES);
+  expect(rules).toMatch(/ Move [123]\.$/);
+  expect(rules.startsWith(LINE_RULES)).toBe(true);
   return JSON.parse(facts);
 }
 
@@ -69,9 +70,9 @@ describe('the spoken acknowledgement of a share (#236)', () => {
   it('retries an UNAVAILABLE model once, then gives the caller the emoji', async () => {
     const flaky = provider([new LlmUnavailable('503'), { text: 'Deuxième essai.' }]);
     expect(await generateShareComment(flaky.provider, group, facts, log)).toBe('Deuxième essai.');
-    const dead = provider([new LlmUnavailable('503'), new LlmUnavailable('503')]);
+    const dead = provider([new LlmUnavailable('503'), new LlmUnavailable('503'), new LlmUnavailable('503')]);
     expect(await generateShareComment(dead.provider, group, facts, log)).toBeNull();
-    expect(dead.calls).toHaveLength(2);
+    expect(dead.calls).toHaveLength(3);
   });
 
   it('does not retry a non-availability failure — it would only recur', async () => {
@@ -88,11 +89,12 @@ describe('the spoken acknowledgement of a share (#236)', () => {
       { text: 'Correct, et je le pense.', finish: 'stop' },
     ]);
     expect(await generateShareComment(p.provider, group, facts, log)).toBe('Correct, et je le pense.');
-    const both = provider([
+    const all = provider([
       { text: 'Gab, 7 ess', finish: 'length' },
       { text: 'Gab, 7 es', finish: 'length' },
+      { text: 'Gab, 7 e', finish: 'length' },
     ]);
-    expect(await generateShareComment(both.provider, group, facts, log)).toBeNull();
+    expect(await generateShareComment(all.provider, group, facts, log)).toBeNull();
   });
 
   it('publishes ONLY a completion that finished — any other reason is a line the model did not mean', async () => {
@@ -102,9 +104,9 @@ describe('the spoken acknowledgement of a share (#236)', () => {
     // the reason itself: this call has no tools, and `stop` is the one reason that means
     // "said what it meant".
     for (const finish of ['other', 'tool_calls'] as const) {
-      const p = provider([{ text: 'Propre, honnête.', finish }, { text: 'Propre, honnête.', finish }]);
+      const p = provider([{ text: 'Propre, honnête.', finish }, { text: 'Propre, honnête.', finish }, { text: 'Propre, honnête.', finish }]);
       expect(await generateShareComment(p.provider, group, facts, log)).toBeNull();
-      expect(p.calls).toHaveLength(2);
+      expect(p.calls).toHaveLength(3);
     }
     const recovered = provider([{ text: 'Propre, hon', finish: 'other' }, { text: 'Propre, honnête.', finish: 'stop' }]);
     expect(await generateShareComment(recovered.provider, group, facts, log)).toBe('Propre, honnête.');
@@ -130,22 +132,20 @@ describe('the spoken acknowledgement of a share (#236)', () => {
     // Long is the failure this register exists to avoid: a line that runs on is one that
     // started explaining itself.
     for (const text of [null, '', '   ', 'x'.repeat(91)]) {
-      const p = provider([{ text }, { text }]);
+      const p = provider([{ text }, { text }, { text }]);
       expect(await generateShareComment(p.provider, group, facts, log)).toBeNull();
     }
   });
 
-  it('refuses a line that reads the score back, or opens with the name, and tries again (v8)', async () => {
-    // The share the player posted already shows both; a line repeating them is padding,
-    // and asked not to, a model with its thinking off complied about half the time.
-    for (const text of ['Sept coups, honnête.', 'Un 7 bien rangé.', 'Gab, je vais encadrer ça.', 'gab tu me tues']) {
+  it('refuses a line that reads the score back, names them, or leans on a simile, and tries again (v8)', async () => {
+    // The share the player posted already shows the score and the name; a line repeating
+    // them is padding, and asked not to, a model with its thinking off complied about half
+    // the time. A simile is the lyrical move the voice was asked to drop.
+    for (const text of ['Sept coups, honnête.', 'Un 7 bien rangé.', 'Gab, je vais encadrer ça.', 'Tu es un tigre, Gab.', 'Rapide comme un tigre.']) {
       const p = provider([{ text }, { text: 'Je vais encadrer ça.' }]);
       expect(await generateShareComment(p.provider, group, facts, log)).toBe('Je vais encadrer ça.');
       expect(p.calls).toHaveLength(2);
     }
-    // A name mid-line is fine — it is the OPENING the podium and the share already print.
-    const p = provider([{ text: 'Je vais encadrer ça, Gab.' }]);
-    expect(await generateShareComment(p.provider, group, facts, log)).toBe('Je vais encadrer ça, Gab.');
   });
 
   it('tells the model a WORD result by its own rules: found words, more is better, never the word', async () => {

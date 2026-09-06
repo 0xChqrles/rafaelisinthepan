@@ -29,7 +29,7 @@ import { buildSystemPrompt } from './personality';
 import { LlmUnavailable, type LlmProvider } from './types';
 
 export const COMMENT_MAX_CHARS = 140;
-const ATTEMPTS = 2;
+const ATTEMPTS = 3;
 
 // Plain text only: no line breaks, no markdown emphasis marks (the renderer italicises the
 // line itself), no control characters, collapsed whitespace, quotes the model wrapped it in
@@ -46,7 +46,7 @@ export function sanitizeComment(raw: unknown): string | null {
   return text;
 }
 
-// A LINE THAT SPELLS A NUMBER OR OPENS WITH A NAME IS REFUSED (v8, 2026-09-06). The podium
+// A LINE THAT SPELLS A NUMBER, NAMES SOMEBODY OR LEANS ON A SIMILE IS REFUSED (v8, 2026-09-06). The podium
 // prints the tries, the placing and the names directly above the comment, and the share
 // carries the score; a line that repeats one of them is padding. Asked, the model complied
 // about half the time once its thinking was turned off (see `effort` below), so the rule is
@@ -64,15 +64,33 @@ export function spellsANumber(text: string): boolean {
   return text.split(/[^\p{L}\p{M}]+/u).some((w) => NUMBER_WORDS.has(fold(w)));
 }
 
-export function opensWithAName(text: string, names: readonly string[]): boolean {
-  const start = fold(text.split(/\s+/)[0] ?? '');
-  return names.some((n) => n.split(/\s+/).some((part) => fold(part) !== '' && fold(part) === start));
+// A NAME ANYWHERE, not only first: allowed mid-line, the name became a tic ("Tu es un
+// tracteur, Quentin") on most lines. The podium prints it above and the share quotes it.
+export function namesSomebody(text: string, names: readonly string[]): boolean {
+  const words = new Set(text.split(/[^\p{L}\p{M}]+/u).map(fold).filter((w) => w !== ''));
+  return names.some((n) => n.split(/\s+/).some((part) => fold(part) !== '' && words.has(fold(part))));
+}
+
+// A SIMILE IS REFUSED (user-decided 2026-09-06: "instead of metaphors"). The voice
+// declares — "tu es un tigre" — and asked not to, the model still reached for "comme un
+// chat dans un carton" on a line in four. French "comme", English "like a" / "as if".
+export function readsLikeASimile(text: string): boolean {
+  return /\bcomme\b/iu.test(text) || /\blike an?\b|\bas if\b/iu.test(text);
 }
 
 // The rules a line is checked against, restated in the USER turn beside the facts: with
 // thinking off, the model weighs what sits next to the question more than a system prompt
 // read once, and the check below is what makes a lapse cost a retry rather than a post.
-export const LINE_RULES = 'No digits and no number words. Do not open with a name.';
+export const LINE_RULES = 'No digits and no number words. No name. No "comme".';
+
+// WHICH OF THE PERSONALITY'S THREE MOVES THIS LINE MAKES. Asked to rotate them, the
+// model cannot: every line is its own call with no memory of the others, so left alone
+// it reaches for the label every time. The caller decides — a podium walks the three from
+// a day-dependent start, a share draws one — and the rule line names it.
+export type Move = 1 | 2 | 3;
+export function lineRules(move: Move): string {
+  return `${LINE_RULES} Move ${move}.`;
+}
 
 export interface PodiumCommentLine {
   id: string;
@@ -98,22 +116,25 @@ export function podiumCommentLines(podium: Podium): PodiumCommentLine[] {
 // its thinking off (see `effort` below) the model weighs the opening of a prompt most.
 const TASK = `Task: one short line about ONE podium position below. The line only — plain text, no markdown, no quotes around it, under ${COMMENT_MAX_CHARS} characters and usually far less.
 
-Three rules before anything else: no digits and no number words (the tries are printed directly above your line); do not write the placing; do not open with a name (printed above too — say "tu", or "vous" when the line holds two names).
+Four rules before anything else: no digits and no number words (the tries are printed directly above your line); do not write the placing; no name (printed above too — say "tu", or "vous" when the line holds two names); no "comme".
 
 The score is how many guesses it took — fewer is better, three is the floor, and the sentence game is not timed. How good it was is already decided for you: react to the verdict, never re-judge it. perfect = the best there is, nobody beats it · brilliant = genuinely good · strong = solid · ordinary = a fine day's work · laboured = they stayed with a hard one and got there. Warm at every rung, and most devoted at the bottom. "place" is where that lands them today, which is a separate thing: a modest score can still win a modest day.
 
-The other lines are written separately and cannot see yours, so no consolation that would fit any score ("aller au bout", "c'est déjà ça") and nothing any bot could have said. One precise, strange, sincere thing about what THIS person did today, in the words a friend types.`;
+The other lines are written separately and cannot see yours, so no consolation that would fit any score ("aller au bout", "c'est déjà ça") and nothing any bot could have said. One blunt, strange, sincere verdict on THIS person, in the words a friend types.`;
 
 const MAX_TOKENS = 4000;
-// Two attempts at this must fit the podium Lambda's 90s with room for its reads, and the
-// lines run in parallel, so the ceiling here is per LINE and not per podium.
-const TIMEOUT_MS = 20_000;
+// The attempts at this must fit the podium Lambda's 90s with room for its reads, and the
+// lines run in parallel, so the ceiling here is per LINE and not per podium. With thinking
+// off a line answers in about a second (the 20s here used to cover the deliberation), so
+// the cut is 10s and the refusals above can afford a third attempt: 30s worst case.
+const TIMEOUT_MS = 10_000;
 
 async function commentForLine(
   provider: LlmProvider,
   system: string,
   line: PodiumCommentLine,
   outOf: number,
+  move: Move,
   log: Log,
 ): Promise<string | null> {
   // Neutral field names: the model writes with whatever vocabulary is in front of it, and
@@ -126,7 +147,7 @@ async function commentForLine(
     who: line.names,
     outOf,
     verdict: scoreBand(line.score, false), // a podium line is always a finished run
-  })}\n${LINE_RULES}`;
+  })}\n${lineRules(move)}`;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
     let text: string | null;
     let finish: string | undefined;
@@ -182,7 +203,15 @@ async function commentForLine(
       continue;
     }
     const comment = sanitizeComment(text);
-    const reason = !comment ? 'unusable' : spellsANumber(comment) ? 'number' : opensWithAName(comment, line.names) ? 'name' : null;
+    const reason = !comment
+      ? 'unusable'
+      : spellsANumber(comment)
+        ? 'number'
+        : namesSomebody(comment, line.names)
+          ? 'name'
+          : readsLikeASimile(comment)
+            ? 'simile'
+            : null;
     if (comment && !reason) return comment;
     log.warn({ event: 'podium.comment_invalid', id: line.id, attempt, finish, reason }, 'rejecting a line');
   }
@@ -247,7 +276,10 @@ export async function generatePodiumComments(
   // PARALLEL, and every line settles on its own: one that cannot be written leaves its
   // podium line bare rather than emptying the rest.
   const written = await Promise.all(
-    lines.map(async (line) => [line.id, await commentForLine(provider, system, line, lines.length, log)] as const),
+    lines.map(async (line, i) => {
+      const move = (((i + podium.dayNumber) % 3) + 1) as Move;
+      return [line.id, await commentForLine(provider, system, line, lines.length, move, log)] as const;
+    }),
   );
   const comments = new Map<string, string>();
   for (const [id, comment] of written) if (comment) comments.set(id, comment);

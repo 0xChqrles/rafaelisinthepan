@@ -238,8 +238,9 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   podium line with no comment, so a partial set is a partial podium rather than a bare one,
   and `parseCommentAnswer` and its whole-answer rejection are gone with the envelope that
   needed them. The calls run in PARALLEL because the podium Lambda has 90 seconds, and the
-  per-call timeout (20s × 2 attempts) is deliberately well inside it: a podium with four
-  comments out of five beats risking a Lambda timeout, which is no podium at all.
+  per-call timeout (10s × 3 attempts since v8 — a line answers in ~1s with thinking off,
+  the 20s × 2 before it covered the deliberation) is deliberately well inside it: a podium
+  with four comments out of five beats risking a Lambda timeout, which is no podium at all.
   It spends NO daily call ceiling, unlike the share line: this path fires once per group per
   day and is bounded by the schedule, where an acknowledgement is bounded only by traffic.
 - **Outbound has one owner.** Every send is a command with an id (`podium:<g>:<day>`,
@@ -479,12 +480,24 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   a tone: it takes the game with a seriousness nobody else does and loves the group out of
   all proportion, and everything odd follows — DISPROPORTION (a good score is a life
   event), CONVICTIONS stated as fact (a precise, unexpected comparison that is plainly
-  praise), DEVOTION (vows and offers it cannot deliver and means), DEADPAN (it never
-  signals a joke; sincerity at that intensity is the humour), SIMPLE WORDS (the strangeness
-  is the idea, never the vocabulary), and ALWAYS ABOUT THE RESULT (a line that could go
-  under any score is worthless) and about the PERSON (the sentence is at most the villain
-  in passing — with a "grievance against the sentence" bullet every line was about the
-  sentence, so it went). No example lines at all: the register is described, not shown.
+  praise), DEVOTION, DEADPAN (it never signals a joke; sincerity at that intensity is the
+  humour), SIMPLE WORDS (the strangeness is the idea, never the vocabulary), ALWAYS ABOUT
+  THE RESULT (a line that could go under any score is worthless) and about the PERSON (the
+  sentence is at most the villain in passing — with a "grievance against the sentence"
+  bullet every line was about the sentence, so it went). **BLUNT, NOT LYRICAL (user-refined
+  the same day):** the first cut wrote crafted similes ("comme on tient une porte ouverte
+  pour quelqu'un de pressé", "une patience de luthier") and the user wanted the mood of
+  *"tu es un véritable tigre" / "la précision d'un escargot en soins palliatifs" /
+  "l'information me plaît donc elle est vraie"* — so the character is also not very bright
+  and completely sure of itself, DECLARES rather than describes, and has exactly THREE
+  MOVES: the LABEL (a flat verdict on what somebody is), the QUALITY WITH A WRONG DETAIL
+  (a quality pinned to an absurdly specific, slightly grim owner), and ITS OWN LOGIC (a
+  conclusion that does not follow, stated as proof, always in the player's favour). Dark
+  is fine, cruel is not. **THE MOVE IS ASSIGNED BY CODE** (`podiumComments.ts` `lineRules`,
+  named in the user turn): asked to rotate, the model cannot — each line is its own call
+  with no memory of the others, and left alone it reached for the label every time. A
+  podium walks the three from a day-dependent start; a share draws one. No example LINES
+  anywhere: the register is described, and the moves are shapes with placeholders.
   Three mechanics came with it, all measured on the real provider:
   - **THE COMMENT PATHS THINK NOT AT ALL** (`effort: 'none'` on `LlmRequest`, mapped by
     `providers/deepseek.ts` onto `thinking: {type: 'disabled'}`; `low`/`high` map onto
@@ -496,13 +509,16 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   - **THE SCORE IS NOT SENT to the comment paths** (`tries`/`found` gone from the facts;
     `place`, `verdict`, `solved` stay). Asked not to read the number back, a model with its
     thinking off did so on half the lines; a number it never saw is one it cannot repeat.
-  - **A LINE THAT SPELLS A NUMBER OR OPENS WITH A NAME IS REFUSED AND RETRIED**
-    (`podiumComments.ts` `spellsANumber` — any digit, any number word from three up in
-    either language, folded; `opensWithAName` — first word equals a name on the line), on
-    both paths, the way shortness is enforced. The two rules are also restated in the USER
-    turn beside the facts (`LINE_RULES`): with thinking off, what sits next to the question
-    weighs more than a system prompt read once. Measured: ~10 refusals per 39 lines, nearly
-    all recovered by the retry.
+  - **A LINE THAT SPELLS A NUMBER, NAMES SOMEBODY OR LEANS ON A SIMILE IS REFUSED AND
+    RETRIED** (`podiumComments.ts` `spellsANumber` — any digit, any number word from three
+    up in either language, folded; `namesSomebody` — a podium/share name anywhere in the
+    line, since allowed mid-line it became a tic; `readsLikeASimile` — French "comme",
+    English "like a" / "as if"), on both paths, the way shortness is enforced: asked not
+    to, a model with its thinking off complied about half the time. The rules are also
+    restated in the USER turn beside the facts (`LINE_RULES`): with thinking off, what sits
+    next to the question weighs more than a system prompt read once. Three attempts at 10s
+    (a line costs ~1s), then the line goes bare. Measured on the final cut: 1 refusal per
+    39 lines.
   **And the bot knows its OWN SCHEDULE in the group** (user-decided 2026-09-05,
   `agent.ts` `scheduleContext`): the system prompt states whether this group has a podium
   and at what time, what the podium is (ranked from the shares posted here, fewest tries
