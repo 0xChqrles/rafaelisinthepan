@@ -19,6 +19,8 @@
       lyrics.py              song files (#262): header format, Genius cleanup, couplet UNITS,
                              the famous-single cut, the artist cooldown (stdlib, tested)
       shelf_lyrics.py        the Genius fetch (lyricsgenius): artist list -> song files on the shelf
+      starts.py              the start-word rule (valid French): displayed sentence, elision,
+                             band candidates (stdlib, tested)
       parse.py               spaCy adapter (fr_core_news_md) -> rules.Token
       llm.py                 the questions asked of Claude + JSON parsing; the taste profile and
                              the secret rules are READ FROM THE SKILL FILE at run time
@@ -98,8 +100,18 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   `claude-opus-5`, adaptive thinking, effort `high`. No second spelling of it here.
 - **`gen_phrase` is the only writer of a puzzle**, run headless from this package with
   `--words` and, when it demands one, `--form` answered by the model from the sentence
-  (`curate.generate` parses the #133 error's analysis list). The start word is the band's
-  random pick. Nothing here publishes.
+  (`curate.generate` parses the #133 error's analysis list). Nothing here publishes.
+- **The start word must leave the displayed sentence VALID FRENCH** (user rule
+  2026-09-06: « l'effet », never « le effet »; the user always picks starts that way).
+  After every successful generation `curate.check_starts` reads the artifact, applies the
+  one rule code can apply with certainty (`starts.elision_problem`: an eliding word before
+  a vowel, an elided one before a consonant; `h` is left to the model), then asks the
+  model whether the displayed sentence is grammatical (`llm.grammar_check`, naming the
+  faulty inserted words). A refused start is re-picked by the model from the hole's band
+  (`starts.start_candidates`: rank `START_RANK_MIN..MAX`, no variant, elision-clean,
+  nearest first) and gen_phrase reruns with `--start MOT=DEPART` — a flag added for this
+  (#260), the headless twin of typing a word at the start prompt. At most
+  `START_ROUNDS` (3) rounds; what is still doubtful is logged for the reviewer.
 - **Tests are dependency-free** (`uv run --no-project --with pytest`, like generation and
   benchmark): the rules take plain `Token`s and injected callables, so they run without
   spaCy, vectors or a model.

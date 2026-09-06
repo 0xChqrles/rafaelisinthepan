@@ -51,6 +51,9 @@ concentrated on one word.
 - Three secrets in the same part of the sentence, or describing the same thing (a verb
   and its subject) → replace one. Spread them across the sentence.
 - At most one verb.
+- **The start word must leave the displayed sentence valid French**: elision (« l'effet »,
+  never « le effet »), gender, number, verb form. A hint that breaks the grammar is
+  replaced by another band word, never kept.
 - No trio possible under these rules → next sentence. Never bend a rule to save a
   sentence you like.
 - A slug repeated in the sentence makes one hole per occurrence sharing one rank map: a

@@ -309,3 +309,35 @@ Return {{"choice": <1-based number>}}.""")
     if not 1 <= choice <= len(choices):
         raise LLMError(f"form choice out of range: {choice}")
     return choice
+
+
+def grammar_check(claude: Claude, sentence: str, start_words: list[str]) -> dict:
+    """Is the displayed sentence valid French? The start words are the only things that
+    can be wrong (elision, gender, number, agreement); the model names the faulty ones."""
+    answer = claude.json(f"""Is this French sentence grammatically valid — elision, gender and number
+agreement, verb forms? The words {', '.join(f'« {w} »' for w in start_words)} were inserted
+into an existing sentence; only they can be wrong. Judge the grammar only, not the meaning.
+
+« {sentence} »
+
+Return {{"valid": true/false, "faulty": ["<inserted word that breaks the grammar>", ...], "why": "<one line>"}}.""")
+    faulty = [w for w in answer.get("faulty", []) if isinstance(w, str)]
+    return {"valid": bool(answer.get("valid")) and not faulty, "faulty": faulty,
+            "why": answer.get("why", "")}
+
+
+def pick_start(claude: Claude, sentence_marked: str, secret: str, options: list[str]) -> str | None:
+    listing = ", ".join(options)
+    answer = claude.json(f"""In this French sentence, [____] is a hole; the player sees a hint word there and
+must find the hidden word by getting closer to it. Choose the hint: it must make the
+sentence grammatically VALID French (elision, gender, number, verb form), and be a
+plain word, not a trick. The options are ordered from closest to the hidden word to
+farthest; prefer an earlier one when several are valid.
+
+{sentence_marked}
+
+Options: {listing}
+
+Return {{"word": "<one option, exactly>"}} or {{"word": null}} if none makes valid French.""")
+    word = answer.get("word")
+    return word if isinstance(word, str) and word in options else None

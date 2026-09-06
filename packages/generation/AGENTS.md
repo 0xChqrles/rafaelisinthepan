@@ -360,7 +360,11 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json + shared/src/vocab.
 #    word identities ranked by their homograph-free representative, and no-clean
 #    groups are surfaced in the playability report (#135, printed per secret on
 #    stdout, observation only). Every ranked group is annotated with its dq distance
-#    (#115); dq has no opt-out.
+#    (#115); dq has no opt-out. --start MOT=DEPART names a hole's start (hint) word
+#    outright — the headless twin of typing a word at the start prompt (#260: the
+#    curator re-picks a start that leaves the displayed sentence valid French); a word
+#    of the hole's vocabulary, never the secret; the other holes keep the seeded band
+#    pick.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct words; all occurrences hole (no `--`)
 
 # 4. Generate a SINGLE-WORD artifact (#154): one word + its ranked neighborhood, no

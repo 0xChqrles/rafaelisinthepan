@@ -1438,6 +1438,25 @@ def alias_start_display(rank_map, start, display, start_rank):
 # the committed inventory (build_forms.py, Morphalou-derived since #132 — the same
 # artifact the merge walk groups by, so display and grouping cannot disagree).
 
+def parse_start_args(pairs):
+    """`--start MOT=DEPART` -> {slug(mot): depart}: the hole's start (hint) word named
+    explicitly, off a TTY as on one — the headless equivalent of typing a word at the
+    choose_start prompt (#260: the curator re-picks a start that leaves the displayed
+    sentence valid French). Validated where the start is settled: the word must be in
+    the hole's own vocabulary and not its secret."""
+    mapping = {}
+    for raw in pairs or ():
+        word, sep, value = raw.partition("=")
+        word, value = word.strip().lower(), value.strip().lower()
+        if not sep or not word or not value:
+            die(f"--start attend 'MOT=DEPART' (reçu : '{raw}').")
+        key = slug(word)
+        if not key:
+            die(f"--start : '{word}' ne contient aucune lettre exploitable.")
+        mapping[key] = value
+    return mapping
+
+
 def parse_form_args(pairs):
     """`--form MOT=TRAIT` / `MOT=LEXÈME/TRAIT` -> {slug(mot): (lexème|None, trait)}.
 
@@ -2655,7 +2674,7 @@ def filename_slugs_from_holes(holes):
 
 def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
                      lemma_table, forms_by_lemma, donors=None, forms=None,
-                     reporter=None):
+                     reporter=None, starts=None):
     """Resolve three distinct ``--words`` selectors into all matching holes.
 
     Matching is slug-based. Each selected slug gets one ranking and one start hint, then
@@ -2728,7 +2747,18 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
             rank_by_display.setdefault(w, r + 1)
 
         ranks[target_slug] = rank_map
-        start = choose_start(canonical_secret, merged, rank_map, rank_by_display)
+        explicit_start = (starts or {}).get(target_slug)
+        if explicit_start is not None:
+            # --start names the hint outright (the typed-word branch of the prompt,
+            # off a TTY): a word of this hole's vocabulary, never its secret.
+            entry = rank_map.get(slug(explicit_start))
+            if entry is None or entry["rank"] == 0:
+                die(f"--start : « {explicit_start} » n'est pas un mot de départ possible "
+                    f"pour « {canonical_secret} » (absent du vocabulaire du trou, ou le "
+                    f"secret lui-même).")
+            start = entry["word"]
+        else:
+            start = choose_start(canonical_secret, merged, rank_map, rank_by_display)
         start_rank = rank_map[slug(start)]["rank"]
         # Agree the whole map with the sentence (#133), the start word included — it
         # is just the rank == start_rank group. Realization is keyed by each group's
@@ -3061,6 +3091,10 @@ def parse_args():
                         "déduite. Un trait porté par plusieurs lexèmes du secret "
                         "exige la forme qualifiée MOT=LEXÈME/TRAIT (#144), ex. "
                         "--form fils=fils:nc/n:p")
+    p.add_argument("--start", action="append", metavar="MOT=DEPART",
+                   help="mot de départ (indice) d'un secret, nommé explicitement, ex. "
+                        "--start savoir=usage ; répétable ; un mot du vocabulaire du "
+                        "trou, jamais le secret (sinon le tirage aléatoire de la bande)")
     p.add_argument("--kind", help="type d'œuvre (book, movie, music, quote, poem, …)")
     p.add_argument("--author", help="auteur / autrice")
     p.add_argument("--work", help="titre de l'œuvre")
@@ -3128,7 +3162,8 @@ def main():
     if words_arg is not None:
         holes, ranks = holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
                                         lemma_table, forms_by_lemma, donors, forms,
-                                        reporter=reporter)
+                                        reporter=reporter,
+                                        starts=parse_start_args(args.start))
     else:
         holes, ranks = select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                                                 lemma_table, forms_by_lemma, donors,

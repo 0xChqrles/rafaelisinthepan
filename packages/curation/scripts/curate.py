@@ -25,6 +25,7 @@ import llm
 import lyrics as lyr
 import rules
 import shelf as shelf_mod
+import starts as st
 from epub import epub_text
 from parse import parse
 from sentences import candidate_sentences
@@ -95,13 +96,16 @@ _SHARED = re.compile(r"Précise : (.+?)\.\s*$", re.S)
 _WRITTEN = re.compile(r"écrite dans (\S+) :")
 
 
-def run_gen_phrase(sentence: str, words: list[str], source: dict, forms: dict[str, str], lang: str):
+def run_gen_phrase(sentence: str, words: list[str], source: dict, forms: dict[str, str], lang: str,
+                   starts: dict[str, str] | None = None):
     cmd = ["uv", "run", "scripts/gen_phrase.py", sentence, "--lang", lang, "--words", *words]
     for key in ("kind", "author", "work"):
         if source.get(key):
             cmd += [f"--{key}", source[key]]
     for word, form in forms.items():
         cmd += ["--form", f"{word}={form}"]
+    for word, start in (starts or {}).items():
+        cmd += ["--start", f"{word}={start}"]
     completed = subprocess.run(
         cmd, cwd=_paths.GENERATION_DIR, stdin=subprocess.DEVNULL,
         capture_output=True, text=True,
@@ -110,14 +114,26 @@ def run_gen_phrase(sentence: str, words: list[str], source: dict, forms: dict[st
 
 
 def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], source: dict, lang: str):
-    """Returns the written puzzle path, or None with the reason logged."""
+    """Returns the written puzzle path, or None with the reason logged. The forms are
+    answered by the model as gen_phrase asks; then the START WORDS are checked (the
+    displayed sentence must be valid French) and re-picked from the band, at most
+    START_ROUNDS times."""
     forms: dict[str, str] = {}
-    for _ in range(MAX_GEN_RUNS):
-        completed, cmd = run_gen_phrase(sentence, words, source, forms, lang)
+    starts: dict[str, str] = {}
+    rounds = 0
+    for _ in range(MAX_GEN_RUNS + st.START_ROUNDS):
+        completed, cmd = run_gen_phrase(sentence, words, source, forms, lang, starts)
         if completed.returncode == 0:
             m = _WRITTEN.search(completed.stdout)
+            path = m.group(1) if m else None
+            if path and rounds < st.START_ROUNDS:
+                repick = check_starts(claude, log, path, starts)
+                if repick:
+                    starts.update(repick)
+                    rounds += 1
+                    continue
             log(f"- gen:phrase command: `{' '.join(_quote(c) for c in cmd[2:])}`")
-            return m.group(1) if m else "(path not found in output)"
+            return path or "(path not found in output)"
         err = completed.stderr.strip()
         needed = _FORM_NEEDED.search(err)
         shared = _SHARED.search(err)
@@ -151,6 +167,54 @@ def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], sour
         return None
     log("- gen:phrase: too many form rounds")
     return None
+
+
+def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, str]) -> dict[str, str]:
+    """The displayed sentence with its start words: the elision rule, then the model's
+    grammar check. Returns {secret slug: new start} for every faulty hole (empty = all
+    good, or nothing better to offer)."""
+    puzzle = json.loads(open(path, encoding="utf-8").read())
+    words, holes = puzzle["words"], puzzle["holes"]
+    shown = st.displayed(words, holes)
+    by_secret: dict[str, dict] = {}
+    for h in holes:
+        by_secret.setdefault(h["secret"]["slug"], h)
+    faulty: dict[str, str] = {}
+    for key, h in by_secret.items():
+        problem = st.elision_problem(st.previous_token(words, h), h["start"]["word"])
+        if problem:
+            faulty[key] = problem
+    if not faulty:
+        verdict = llm.grammar_check(claude, shown, [h["start"]["word"] for h in by_secret.values()])
+        if verdict["valid"]:
+            log(f"- start words check: « {shown} » → valid")
+            return {}
+        for key, h in by_secret.items():
+            if h["start"]["word"] in verdict["faulty"]:
+                faulty[key] = verdict.get("why", "the model finds it ungrammatical")
+        if not faulty:
+            log(f"- start words check: the model doubts « {shown} » ({verdict.get('why', '')}) "
+                "but names no start word — left to the reviewer")
+            return {}
+    repick: dict[str, str] = {}
+    for key, problem in faulty.items():
+        h = by_secret[key]
+        log(f"- start « {h['start']['word']} » for « {h['secret']['word']} » refused: {problem}")
+        prev = st.previous_token(words, h)
+        options = [e["word"] for e in st.start_candidates(puzzle["ranks"][key], key, prev,
+                                                          exclude={h["start"]["word"], tried.get(key, "")})]
+        options = options[:st.START_OPTIONS]
+        if not options:
+            log(f"- no other start in the band for « {h['secret']['word']} » — left to the reviewer")
+            continue
+        marked = st.displayed(words, holes, {key: "[____]"})
+        choice = llm.pick_start(claude, marked, h["secret"]["word"], options)
+        if choice is None:
+            log(f"- the model finds no valid start for « {h['secret']['word']} » — left to the reviewer")
+            continue
+        repick[key] = choice
+        log(f"- start for « {h['secret']['word']} » re-picked: « {choice} »")
+    return repick
 
 
 def _quote(arg: str) -> str:
