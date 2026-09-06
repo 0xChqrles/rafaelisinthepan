@@ -296,19 +296,23 @@ def choose_work(claude: llm.Claude, log: Log, args, archive: dict, index: dict, 
         if work is None:
             die(f"{args.work} is not on the shelf")
         return work
+    # Eligible: not in the archive (never the same work twice), not inside the artist
+    # cooldown. A work mined by an earlier run stays eligible — its proposed sentences
+    # are excluded, the rest of the book is not — but the model is told and prefers an
+    # unread one.
     fresh = []
     cooled = set()
     for w in works:
-        if shelf_mod.in_archive(w, archive["works"]) or w["file"] in index["books"]:
+        if shelf_mod.in_archive(w, archive["works"]):
             continue
         if in_cooldown(w, archive, index, today):
             cooled.add(w.get("author", ""))
             continue
-        fresh.append(w)
+        fresh.append({**w, "read": w["file"] in index["books"]})
     if cooled:
         log(f"- artist cooldown ({lyr.ARTIST_COOLDOWN_DAYS} days) skips: {', '.join(sorted(cooled))}")
     if not fresh:
-        die("every work on the shelf was read, is in the archive, or is inside the artist cooldown")
+        die("every work on the shelf is in the archive or inside the artist cooldown")
     work = llm.pick_book(claude, fresh, archive["works"])
     log(f"- work: {work.get('author')} — {work.get('title')} ({work['kind']}, {work['file']}): {work.get('why', '')}")
     return work
