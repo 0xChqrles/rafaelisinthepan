@@ -472,6 +472,37 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   ("je préférerais les appréciations encourageantes de Luc") — a high score is the day being
   hard rather than somebody being bad, `laboured` reads warm instead of "dry sympathy", and
   the teasing is for the top.
+  **THE BOT IS A BIT MUCH, SINCERELY (v8, user-decided 2026-09-06).** v5–v7's warm, plain
+  friend wrote generic lines — "beau boulot", "bien joué", "tu as tenu bon" — and the user
+  asked for an absurd, slightly unhinged but endearing character whose compliments feel
+  strange yet land on the first read. The personality now describes a PERSON rather than
+  a tone: it takes the game with a seriousness nobody else does and loves the group out of
+  all proportion, and everything odd follows — DISPROPORTION (a good score is a life
+  event), CONVICTIONS stated as fact (a precise, unexpected comparison that is plainly
+  praise), DEVOTION (vows and offers it cannot deliver and means), DEADPAN (it never
+  signals a joke; sincerity at that intensity is the humour), SIMPLE WORDS (the strangeness
+  is the idea, never the vocabulary), and ALWAYS ABOUT THE RESULT (a line that could go
+  under any score is worthless) and about the PERSON (the sentence is at most the villain
+  in passing — with a "grievance against the sentence" bullet every line was about the
+  sentence, so it went). No example lines at all: the register is described, not shown.
+  Three mechanics came with it, all measured on the real provider:
+  - **THE COMMENT PATHS THINK NOT AT ALL** (`effort: 'none'` on `LlmRequest`, mapped by
+    `providers/deepseek.ts` onto `thinking: {type: 'disabled'}`; `low`/`high` map onto
+    `reasoning_effort`). Under v7 a podium line already deliberated 5–19s, the last of which
+    IS the timeout; the v8 voice pushed every line past it and the podium came back bare.
+    With thinking off a line takes ~1s and reads no worse; `reasoning_effort: low` still
+    ran to 19s and truncated. It also makes `temperature` count, which DeepSeek ignores
+    while thinking. The conversation agent keeps the default (it reasons over tools).
+  - **THE SCORE IS NOT SENT to the comment paths** (`tries`/`found` gone from the facts;
+    `place`, `verdict`, `solved` stay). Asked not to read the number back, a model with its
+    thinking off did so on half the lines; a number it never saw is one it cannot repeat.
+  - **A LINE THAT SPELLS A NUMBER OR OPENS WITH A NAME IS REFUSED AND RETRIED**
+    (`podiumComments.ts` `spellsANumber` — any digit, any number word from three up in
+    either language, folded; `opensWithAName` — first word equals a name on the line), on
+    both paths, the way shortness is enforced. The two rules are also restated in the USER
+    turn beside the facts (`LINE_RULES`): with thinking off, what sits next to the question
+    weighs more than a system prompt read once. Measured: ~10 refusals per 39 lines, nearly
+    all recovered by the retry.
   **And the bot knows its OWN SCHEDULE in the group** (user-decided 2026-09-05,
   `agent.ts` `scheduleContext`): the system prompt states whether this group has a podium
   and at what time, what the podium is (ranked from the shares posted here, fewest tries

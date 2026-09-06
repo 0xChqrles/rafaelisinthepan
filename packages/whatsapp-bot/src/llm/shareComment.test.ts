@@ -3,6 +3,14 @@ import { parseGroupConfig } from '../config/groupConfig';
 import { createLog } from '../log';
 import { LlmUnavailable, type LlmProvider, type LlmResponse } from './types';
 import { generateShareComment } from './shareComment';
+import { LINE_RULES } from './podiumComments';
+
+// The user turn is the FACTS as JSON, then the rules a line is checked against.
+function sentIn(call: unknown) {
+  const [facts, rules] = (call as { messages: { content: string }[] }).messages[0].content.split('\n');
+  expect(rules).toBe(LINE_RULES);
+  return JSON.parse(facts);
+}
 
 const GROUP = '120363000000000001@g.us';
 const group = parseGroupConfig('g.json', {
@@ -37,14 +45,17 @@ const log = createLog('silent');
 
 describe('the spoken acknowledgement of a share (#236)', () => {
   it('hands the model the FACTS and returns its line, cleaned', async () => {
-    const p = provider([{ text: '  **Sept** coups,\n honnête.  ' }]);
-    expect(await generateShareComment(p.provider, group, facts, log)).toBe('Sept coups, honnête.');
-    // The numbers are given, never asked for: the model comments, it does not decide.
-    const sent = JSON.parse((p.calls[0] as { messages: { content: string }[] }).messages[0].content);
+    const p = provider([{ text: '  **Propre**,\n honnête.  ' }]);
+    expect(await generateShareComment(p.provider, group, facts, log)).toBe('Propre, honnête.');
     // The VERDICT is the bot's, from the same thresholds the emoji uses; the model dresses
-    // it. And no field name is a word the answer may borrow (an early draft called this
-    // `band` and produced "le band a gagné").
-    expect(sent).toEqual({ player: 'Gab', tries: 7, solved: true, verdict: 'strong' });
+    // it. THE SCORE ITSELF IS NOT SENT (v8): a number the model never saw is one it cannot
+    // read back, and the verdict is the whole of what the line reacts to. And no field name
+    // is a word the answer may borrow (an early draft called this `band` and produced "le
+    // band a gagné").
+    expect(sentIn(p.calls[0])).toEqual({ player: 'Gab', solved: true, verdict: 'strong' });
+    // No thinking: a deliberated line ran past the timeout under the v8 voice, and an
+    // undeliberated one takes about a second.
+    expect((p.calls[0] as { effort: string }).effort).toBe('none');
     // The group's own voice reaches it.
     expect((p.calls[0] as { system: string }).system).toContain('On se chambre.');
   });
@@ -52,8 +63,7 @@ describe('the spoken acknowledgement of a share (#236)', () => {
   it('sends no score for a capped run — there is none to comment on', async () => {
     const p = provider([{ text: 'Aïe.' }]);
     await generateShareComment(p.provider, group, { ...facts, capped: true }, log);
-    const sent = JSON.parse((p.calls[0] as { messages: { content: string }[] }).messages[0].content);
-    expect(sent).toMatchObject({ tries: null, solved: false, verdict: 'failed' });
+    expect(sentIn(p.calls[0])).toEqual({ player: 'Gab', solved: false, verdict: 'failed' });
   });
 
   it('retries an UNAVAILABLE model once, then gives the caller the emoji', async () => {
@@ -75,9 +85,9 @@ describe('the spoken acknowledgement of a share (#236)', () => {
     // and a short fragment passes every length check. "Gab, 7 ess" was a real one.
     const p = provider([
       { text: 'Gab, 7 ess', finish: 'length' },
-      { text: 'Sept coups pour Gab, correct.', finish: 'stop' },
+      { text: 'Correct, et je le pense.', finish: 'stop' },
     ]);
-    expect(await generateShareComment(p.provider, group, facts, log)).toBe('Sept coups pour Gab, correct.');
+    expect(await generateShareComment(p.provider, group, facts, log)).toBe('Correct, et je le pense.');
     const both = provider([
       { text: 'Gab, 7 ess', finish: 'length' },
       { text: 'Gab, 7 es', finish: 'length' },
@@ -92,12 +102,12 @@ describe('the spoken acknowledgement of a share (#236)', () => {
     // the reason itself: this call has no tools, and `stop` is the one reason that means
     // "said what it meant".
     for (const finish of ['other', 'tool_calls'] as const) {
-      const p = provider([{ text: 'Sept coups, honnête.', finish }, { text: 'Sept coups, honnête.', finish }]);
+      const p = provider([{ text: 'Propre, honnête.', finish }, { text: 'Propre, honnête.', finish }]);
       expect(await generateShareComment(p.provider, group, facts, log)).toBeNull();
       expect(p.calls).toHaveLength(2);
     }
-    const recovered = provider([{ text: 'Sept coups, hon', finish: 'other' }, { text: 'Sept coups, honnête.', finish: 'stop' }]);
-    expect(await generateShareComment(recovered.provider, group, facts, log)).toBe('Sept coups, honnête.');
+    const recovered = provider([{ text: 'Propre, hon', finish: 'other' }, { text: 'Propre, honnête.', finish: 'stop' }]);
+    expect(await generateShareComment(recovered.provider, group, facts, log)).toBe('Propre, honnête.');
   });
 
   it('carries the verdict for every band, so the model never has to calibrate', async () => {
@@ -112,8 +122,7 @@ describe('the spoken acknowledgement of a share (#236)', () => {
     ] as const) {
       const p = provider([{ text: 'ok.' }]);
       await generateShareComment(p.provider, group, { ...facts, score, capped }, log);
-      const sent = JSON.parse((p.calls[0] as { messages: { content: string }[] }).messages[0].content);
-      expect(sent.verdict).toBe(verdict);
+      expect(sentIn(p.calls[0]).verdict).toBe(verdict);
     }
   });
 
@@ -126,11 +135,23 @@ describe('the spoken acknowledgement of a share (#236)', () => {
     }
   });
 
+  it('refuses a line that reads the score back, or opens with the name, and tries again (v8)', async () => {
+    // The share the player posted already shows both; a line repeating them is padding,
+    // and asked not to, a model with its thinking off complied about half the time.
+    for (const text of ['Sept coups, honnête.', 'Un 7 bien rangé.', 'Gab, je vais encadrer ça.', 'gab tu me tues']) {
+      const p = provider([{ text }, { text: 'Je vais encadrer ça.' }]);
+      expect(await generateShareComment(p.provider, group, facts, log)).toBe('Je vais encadrer ça.');
+      expect(p.calls).toHaveLength(2);
+    }
+    // A name mid-line is fine — it is the OPENING the podium and the share already print.
+    const p = provider([{ text: 'Je vais encadrer ça, Gab.' }]);
+    expect(await generateShareComment(p.provider, group, facts, log)).toBe('Je vais encadrer ça, Gab.');
+  });
+
   it('tells the model a WORD result by its own rules: found words, more is better, never the word', async () => {
-    const p = provider([{ text: 'Vingt-six, joli.' }]);
-    expect(await generateShareComment(p.provider, group, { mode: 'word', player: 'Gab', claims: 26 }, log)).toBe('Vingt-six, joli.');
-    const sent = JSON.parse((p.calls[0] as { messages: { content: string }[] }).messages[0].content);
-    expect(sent).toEqual({ player: 'Gab', found: 26, verdict: 'brilliant' });
+    const p = provider([{ text: 'Le dictionnaire te doit des royalties.' }]);
+    expect(await generateShareComment(p.provider, group, { mode: 'word', player: 'Gab', claims: 26 }, log)).toBe('Le dictionnaire te doit des royalties.');
+    expect(sentIn(p.calls[0])).toEqual({ player: 'Gab', verdict: 'brilliant' });
     const system = (p.calls[0] as { system: string }).system;
     expect(system).toContain('WORD MODE');
     expect(system).toContain('MORE is better');

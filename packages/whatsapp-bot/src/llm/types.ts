@@ -27,6 +27,9 @@ export interface LlmRequest {
   maxTokens: number;
   json?: boolean; // ask for a JSON object answer
   temperature?: number;
+  // How much the model may THINK before answering, for a reasoning model: `none` turns the
+  // thinking off, `low` bounds it. Absent = the provider's default.
+  effort?: 'none' | 'low' | 'high';
   timeoutMs?: number;
 }
 

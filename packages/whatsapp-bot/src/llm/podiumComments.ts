@@ -46,6 +46,34 @@ export function sanitizeComment(raw: unknown): string | null {
   return text;
 }
 
+// A LINE THAT SPELLS A NUMBER OR OPENS WITH A NAME IS REFUSED (v8, 2026-09-06). The podium
+// prints the tries, the placing and the names directly above the comment, and the share
+// carries the score; a line that repeats one of them is padding. Asked, the model complied
+// about half the time once its thinking was turned off (see `effort` below), so the rule is
+// checked here and a violation costs a retry, the way shortness is enforced. Any digit
+// counts, and any number word from three up in either language — "un/une/deux" stay
+// allowed, since they are articles and "vous deux" (and no sentence score is under three).
+const NUMBER_WORDS = new Set(
+  'trois quatre cinq six sept huit neuf dix onze douze treize quatorze quinze seize vingt trente quarante cinquante soixante cent cents mille three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty thirty forty fifty sixty seventy eighty ninety hundred thousand'.split(
+    ' ',
+  ),
+);
+
+export function spellsANumber(text: string): boolean {
+  if (/\d/.test(text)) return true;
+  return text.split(/[^\p{L}\p{M}]+/u).some((w) => NUMBER_WORDS.has(fold(w)));
+}
+
+export function opensWithAName(text: string, names: readonly string[]): boolean {
+  const start = fold(text.split(/\s+/)[0] ?? '');
+  return names.some((n) => n.split(/\s+/).some((part) => fold(part) !== '' && fold(part) === start));
+}
+
+// The rules a line is checked against, restated in the USER turn beside the facts: with
+// thinking off, the model weighs what sits next to the question more than a system prompt
+// read once, and the check below is what makes a lapse cost a retry rather than a post.
+export const LINE_RULES = 'No digits and no number words. Do not open with a name.';
+
 export interface PodiumCommentLine {
   id: string;
   position: number;
@@ -62,21 +90,19 @@ export function podiumCommentLines(podium: Podium): PodiumCommentLine[] {
   }));
 }
 
-// Tight on purpose: a longer prompt makes this model deliberate longer, and it pays for
-// that thinking out of the same budget the answer needs (`shareComment.ts` measures it).
-//
 // IT CARRIES THE VERDICT, for the reason the share line does: told only "10", the model
 // cannot know whether that is good, and it fills the gap with something that sounds like a
 // comment — "le chronomètre a souffert", about a game that times nothing. The band comes
-// from the same `scoreBand` the emoji uses, and the number is NAMED as tries so the model
-// has no room to imagine a clock.
-const TASK = `Task: one short line about ONE podium position below. The line only — plain text, no markdown, no quotes around it, under ${COMMENT_MAX_CHARS} characters and often far less. Do not restate the placing, the number of tries or the names: they are printed directly above your line.
+// from the same `scoreBand` the emoji uses, and the prompt says outright that the game is
+// not timed so the model has no room to imagine a clock. The hard rules come FIRST: with
+// its thinking off (see `effort` below) the model weighs the opening of a prompt most.
+const TASK = `Task: one short line about ONE podium position below. The line only — plain text, no markdown, no quotes around it, under ${COMMENT_MAX_CHARS} characters and usually far less.
 
-"tries" is how many guesses it took — fewer is better, three is the floor, and the sentence game is not timed. How good it was is already decided for you: react to the verdict, never re-judge it. perfect = the best there is, nobody beats it · brilliant = genuinely good · strong = solid · ordinary = a fine day's work · laboured = they stayed with a hard one and got there. Encouraging at every rung, and warmest at the bottom. "place" is where that lands them today, which is a separate thing: a modest score can still win a modest day.
+Three rules before anything else: no digits and no number words (the tries are printed directly above your line); do not write the placing; do not open with a name (printed above too — say "tu", or "vous" when the line holds two names).
 
-The other lines are written separately and cannot see yours, so do not reach for a consolation that would fit any bad score ("aller au bout", "rester jusqu'au bout", "c'est déjà ça"). React to what this one did — briefly, the way a friend types it, never explaining what it implies.
+The score is how many guesses it took — fewer is better, three is the floor, and the sentence game is not timed. How good it was is already decided for you: react to the verdict, never re-judge it. perfect = the best there is, nobody beats it · brilliant = genuinely good · strong = solid · ordinary = a fine day's work · laboured = they stayed with a hard one and got there. Warm at every rung, and most devoted at the bottom. "place" is where that lands them today, which is a separate thing: a modest score can still win a modest day.
 
-Register, never reuse these words: "bon, c'est propre." / "belle journée." / "bien joué d'avoir tenu."`;
+The other lines are written separately and cannot see yours, so no consolation that would fit any score ("aller au bout", "c'est déjà ça") and nothing any bot could have said. One precise, strange, sincere thing about what THIS person did today, in the words a friend types.`;
 
 const MAX_TOKENS = 4000;
 // Two attempts at this must fit the podium Lambda's 90s with room for its reads, and the
@@ -92,22 +118,31 @@ async function commentForLine(
 ): Promise<string | null> {
   // Neutral field names: the model writes with whatever vocabulary is in front of it, and
   // these are words it may borrow (`shareComment.ts` learned this as "le band a gagné").
-  const content = JSON.stringify({
+  // THE SCORE ITSELF IS NOT SENT (v8): the verdict is the whole of what the line reacts
+  // to, and a number the model never saw is a number it cannot repeat — with it in the
+  // facts, half the lines opened by reading it back, whatever the rules said.
+  const content = `${JSON.stringify({
     place: line.position,
-    tries: line.score,
     who: line.names,
     outOf,
     verdict: scoreBand(line.score, false), // a podium line is always a finished run
-  });
+  })}\n${LINE_RULES}`;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
     let text: string | null;
     let finish: string | undefined;
     try {
+      // NO THINKING (v8, 2026-09-06). This is a reasoning model and it spent 5–19 seconds
+      // deliberating over one line under v7, the last of which is the timeout; the v8 voice
+      // pushed every line past it and the podium came back bare. With thinking off a line
+      // takes about a second and reads no worse — the deliberation was buying nothing a
+      // one-liner needs. (`reasoning_effort: low` was measured too: still up to 19s.) It
+      // also makes `temperature` count, which DeepSeek ignores while thinking.
       const response = await provider.generate({
         system,
         messages: [{ role: 'user', content }],
         maxTokens: MAX_TOKENS,
         temperature: 1.1,
+        effort: 'none',
         timeoutMs: TIMEOUT_MS,
       });
       text = response.text;
@@ -147,8 +182,9 @@ async function commentForLine(
       continue;
     }
     const comment = sanitizeComment(text);
-    if (comment) return comment;
-    log.warn({ event: 'podium.comment_invalid', id: line.id, attempt, finish }, 'rejecting an unusable line');
+    const reason = !comment ? 'unusable' : spellsANumber(comment) ? 'number' : opensWithAName(comment, line.names) ? 'name' : null;
+    if (comment && !reason) return comment;
+    log.warn({ event: 'podium.comment_invalid', id: line.id, attempt, finish, reason }, 'rejecting a line');
   }
   return null;
 }

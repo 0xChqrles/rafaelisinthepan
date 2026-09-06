@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parseGroupConfig } from '../config/groupConfig';
 import { createLog } from '../log';
-import { dropEchoes, generatePodiumComments, podiumCommentLines, sanitizeComment } from './podiumComments';
+import { LINE_RULES, dropEchoes, generatePodiumComments, opensWithAName, podiumCommentLines, sanitizeComment, spellsANumber } from './podiumComments';
+
+// The user turn is the FACTS as JSON, then the rules a line is checked against.
+function factsIn(content: string) {
+  const [facts, rules] = content.split('\n');
+  expect(rules).toBe(LINE_RULES);
+  return JSON.parse(facts);
+}
 import { LlmUnavailable, type LlmProvider, type LlmResponse } from './types';
 
 const podium = {
@@ -47,7 +54,7 @@ function answering(byPlace: Record<number, Answer[]>): LlmProvider & {
     async generate(request: { messages: { content: string }[] }): Promise<LlmResponse> {
       provider.calls += 1;
       provider.requests.push(request);
-      const place = JSON.parse(request.messages[0].content).place as number;
+      const place = factsIn(request.messages[0].content).place as number;
       const n = (used[place] ??= 0);
       used[place] += 1;
       const next = (byPlace[place] ?? [])[n];
@@ -70,7 +77,7 @@ function answering(byPlace: Record<number, Answer[]>): LlmProvider & {
 // happens to work while the fake resolves synchronously.
 function sentByPlace(provider: { requests: { messages: { content: string }[] }[] }) {
   return provider.requests
-    .map((r) => JSON.parse(r.messages[0].content as string))
+    .map((r) => factsIn(r.messages[0].content as string))
     .sort((a, b) => a.place - b.place);
 }
 
@@ -93,7 +100,11 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
     // it the model cannot tell whether 10 is good and invents something that merely sounds
     // like a comment — the observed one was "le chronomètre a souffert", about a game that
     // times nothing.
-    expect(sent).toEqual({ place: 1, tries: 3, who: ['Gab'], outOf: 2, verdict: 'perfect' });
+    // THE SCORE ITSELF IS NOT SENT (v8): it is printed above the line, and a number the
+    // model never saw is one it cannot read back.
+    expect(sent).toEqual({ place: 1, who: ['Gab'], outOf: 2, verdict: 'perfect' });
+    // No thinking: a deliberated line ran past the timeout under the v8 voice.
+    expect((provider.requests[0] as { effort?: string }).effort).toBe('none');
   });
 
   it('bands every podium line, so a winning score can still be an ordinary one', async () => {
@@ -105,10 +116,31 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
     ] };
     const provider = answering({ 1: ['a.'], 2: ['b.'] });
     await generatePodiumComments(provider, group, wide, log);
-    expect(sentByPlace(provider).map((x) => [x.place, x.tries, x.verdict])).toEqual([
-      [1, 10, 'ordinary'],
-      [2, 30, 'laboured'],
+    expect(sentByPlace(provider).map((x) => [x.place, x.verdict])).toEqual([
+      [1, 'ordinary'],
+      [2, 'laboured'],
     ]);
+  });
+
+  it('refuses a line that spells a number or opens with a name, and tries again (v8)', async () => {
+    // Any digit, and any number word from three up in either language; "un/une/deux" stay,
+    // being articles and "vous deux". The check is folded, so accents and case do not hide one.
+    expect(spellsANumber('Trois essais, propre.')).toBe(true);
+    expect(spellsANumber('un 4 sans un bruit')).toBe(true);
+    expect(spellsANumber('QUATORZE coups')).toBe(true);
+    expect(spellsANumber('Vingt-sept et debout.')).toBe(true);
+    expect(spellsANumber('Une patience de luthier, vous deux.')).toBe(false);
+    expect(opensWithAName('Gab, je vais encadrer ça.', ['Gab'])).toBe(true);
+    expect(opensWithAName('zou tu me tues', ['Delphine', 'Zou'])).toBe(true);
+    expect(opensWithAName('Je vais encadrer ça, Gab.', ['Gab'])).toBe(false);
+    const provider = answering({
+      1: ['Trois essais, propre.', 'Je vais encadrer ça.'],
+      2: ['Delphine et Zou, un duo.', 'Vous deux, un duo.'],
+    });
+    const comments = await generatePodiumComments(provider, group, podium, log);
+    expect(comments.get('3')).toBe('Je vais encadrer ça.');
+    expect(comments.get('4')).toBe('Vous deux, un duo.');
+    expect(provider.calls).toBe(4);
   });
 
   it('keeps comments plain text', () => {

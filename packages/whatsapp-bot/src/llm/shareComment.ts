@@ -15,17 +15,17 @@ import type { GroupConfig } from '../config/groupConfig';
 import { verdictOf, type ShareFacts } from '../domain/reactions';
 import type { Log } from '../log';
 import { buildSystemPrompt } from './personality';
-import { sanitizeComment } from './podiumComments';
+import { LINE_RULES, opensWithAName, sanitizeComment, spellsANumber } from './podiumComments';
 import { LlmUnavailable, type LlmProvider } from './types';
 
 const ATTEMPTS = 2;
-// GENEROUS, BECAUSE THE BUDGET IS SHARED WITH THINKING. `deepseek-v4-flash` is a reasoning
+// GENEROUS, BECAUSE THE BUDGET WAS SHARED WITH THINKING. `deepseek-v4-flash` is a reasoning
 // model: its reasoning tokens are spent from `max_tokens` and the provider only ever reads
-// `message.content`, so a tight budget buys a truncated line or an empty one. Measured over
-// repeated calls for a 140-character sentence: 300 truncated 1 run in 4, 800 truncated none
-// — and 1500 still truncated one, because the thinking length has no ceiling worth trusting.
-// Hence a comfortable budget AND the finish-reason check below (which refuses every reason
-// but `stop`); the retry and the emoji cover what neither catches.
+// `message.content`, so a tight budget bought a truncated line or an empty one (measured:
+// 300 truncated 1 run in 4, 800 none, 1500 still one). Since v8 this call turns the
+// thinking OFF (`effort: 'none'` below) and a line costs a few dozen tokens; the budget
+// stays where it was because it costs nothing, and the finish-reason check (which refuses
+// every reason but `stop`) stays because a provider can still cut a generation short.
 const MAX_TOKENS = 2000;
 // SHORTNESS IS THE VOICE, so it is enforced and not merely asked for. A line that runs long
 // is one that started explaining itself, which is the failure this register exists to avoid
@@ -53,21 +53,19 @@ export type { ShareFacts } from '../domain/reactions';
 // "acceptable." to three different scores in a row — so the examples say what the voice
 // SOUNDS like and the prompt forbids reusing their words.
 const TASK = (max: number, mode: ShareFacts['mode']) =>
-  `Task: react in ONE line to the Whippin result below, as a message in the group. The line only — plain text, no markdown, no quotes around it, under ${max} characters and often far less; two words is a whole message. Do not open with the player's name and do not restate their score.
+  `Task: react in ONE line to the Whippin result below, as a message in the group. The line only — plain text, no markdown, no quotes around it, under ${max} characters and often far less; two words is a whole message.
 
-Speak TO them, not about them: "tu" rather than talking about a third party.
+Two rules before anything else: no digits and no number words (their score is in the share they just posted); do not open with their name. Speak TO them — "tu" — never about them.
 
 ` +
   (mode === 'word'
     ? // WORD MODE: the other daily. "found" is how many words they named from one word's
       // neighbourhood against the clock — MORE is better, there is no cap and no floor.
-      `This is a WORD MODE result: "found" is how many words they named from one word's neighbourhood against a countdown, where rarer words earn more time. MORE is better; there is no cap and no perfect score. How good it was is already decided for you. React to it, never re-judge it: perfect = a huge run, say so plainly · brilliant = genuinely good, tell them · strong = solid, and you mean it · ordinary = a fine run · laboured = the clock won this time, said kindly. Never name the word.`
+      `This is a WORD MODE result: the score is how many words they named from one word's neighbourhood against a countdown, where rarer words earn more time. MORE is better; there is no cap and no perfect score. How good it was is already decided for you. React to it, never re-judge it: perfect = a huge run, say so plainly · brilliant = genuinely good, tell them · strong = solid, and you mean it · ordinary = a fine run · laboured = the clock won this time, said kindly. Never name the word.`
     : `How good it was is already decided for you. React to it, never re-judge it. Three is the lowest score anyone can get, and anything under ten is good play: perfect = the best there is, nobody beats it, say so plainly · brilliant = genuinely good, tell them · strong = solid, and you mean it · ordinary = a fine day's work · laboured = they stayed with a hard one and got there · failed = the sentence won today, said kindly.`) +
   `
 
-Encouraging at every rung, and warmest at the bottom.
-
-Register, never reuse these words: "bon, c'est propre." / "ça fera l'affaire." / "pas ton jour, ça arrive."`;
+Warm at every rung, and most devoted at the bottom. One precise, strange, sincere thing about what THIS person did today, in the words a friend types — nothing any bot could have said.`;
 
 export async function generateShareComment(
   provider: LlmProvider,
@@ -88,16 +86,14 @@ export async function generateShareComment(
   // NEUTRAL FIELD NAMES, because the model writes with whatever vocabulary is in front of
   // it: an earlier draft called this `band` and produced "le band a gagné." Nothing here is
   // a word the answer may borrow.
-  const content = JSON.stringify(
+  //
+  // AND THE SCORE ITSELF IS NOT SENT (v8, `podiumComments.ts` says why): the verdict is
+  // what the line reacts to, and a number the model never saw is one it cannot read back.
+  const content = `${JSON.stringify(
     facts.mode === 'word'
-      ? { player: facts.player, found: facts.claims, verdict: verdictOf(facts) }
-      : {
-          player: facts.player,
-          tries: facts.capped ? null : facts.score,
-          solved: !facts.capped,
-          verdict: verdictOf(facts),
-        },
-  );
+      ? { player: facts.player, verdict: verdictOf(facts) }
+      : { player: facts.player, solved: !facts.capped, verdict: verdictOf(facts) },
+  )}\n${LINE_RULES}`;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
     if (!(await takeCall())) {
       log.info({ event: 'share.comment_ceiling', attempt }, 'daily call ceiling reached');
@@ -106,11 +102,14 @@ export async function generateShareComment(
     let text: string | null;
     let finish: string | undefined;
     try {
+      // NO THINKING, for the reason `podiumComments.ts` gives: the v8 voice pushed a
+      // deliberated line past the timeout, and an undeliberated one takes about a second.
       const response = await provider.generate({
         system,
         messages: [{ role: 'user', content }],
         maxTokens: MAX_TOKENS,
         temperature: 1.1,
+        effort: 'none',
         timeoutMs: TIMEOUT_MS,
       });
       text = response.text;
@@ -143,10 +142,21 @@ export async function generateShareComment(
       continue;
     }
     const line = sanitizeComment(text);
-    if (line && line.length <= LINE_MAX_CHARS) return line;
+    // The number and name checks are `podiumComments.ts`'s, for its reason: the share the
+    // player posted already shows the score and the name.
+    const reason = !line
+      ? 'unusable'
+      : line.length > LINE_MAX_CHARS
+        ? 'long'
+        : spellsANumber(line)
+          ? 'number'
+          : opensWithAName(line, [facts.player])
+            ? 'name'
+            : null;
+    if (line && !reason) return line;
     log.warn(
-      { event: 'share.comment_invalid', attempt, finish, length: line?.length ?? 0 },
-      'rejecting an unusable line',
+      { event: 'share.comment_invalid', attempt, finish, reason, length: line?.length ?? 0 },
+      'rejecting a line',
     );
   }
   return null;

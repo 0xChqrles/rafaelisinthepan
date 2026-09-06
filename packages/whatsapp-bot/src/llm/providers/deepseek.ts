@@ -72,6 +72,11 @@ export function deepSeekProvider(options: DeepSeekOptions): LlmProvider {
         messages: [{ role: 'system', content: request.system }, ...request.messages.map(toWire)],
         max_tokens: request.maxTokens,
         temperature: request.temperature ?? 1,
+        ...(request.effort === 'none'
+          ? { thinking: { type: 'disabled' } }
+          : request.effort
+            ? { reasoning_effort: request.effort }
+            : {}),
         ...(request.json ? { response_format: { type: 'json_object' } } : {}),
         ...(request.tools && request.tools.length > 0
           ? {

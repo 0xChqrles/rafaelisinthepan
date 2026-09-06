@@ -52,6 +52,24 @@ describe('DeepSeek provider boundary (#236)', () => {
     expect(sent.max_tokens).toBe(50);
   });
 
+  it('maps `effort` onto DeepSeek\'s thinking controls, and sends nothing when absent', async () => {
+    // `none` is the thinking switch, off; `low`/`high` are `reasoning_effort` (the docs'
+    // own names). No effort = the provider's default, which is thinking on at high.
+    for (const [effort, expected] of [
+      ['none', { thinking: { type: 'disabled' } }],
+      ['low', { reasoning_effort: 'low' }],
+      ['high', { reasoning_effort: 'high' }],
+      [undefined, {}],
+    ] as const) {
+      const doFetch = fetchReturning(200, { choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] });
+      const provider = deepSeekProvider({ apiKey: 'k', model: 'm', fetch: doFetch });
+      await provider.generate({ system: '', messages: [], maxTokens: 1, effort });
+      const sent = JSON.parse(((doFetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit])[1].body as string);
+      const { model: _m, messages: _ms, max_tokens: _t, temperature: _p, ...rest } = sent;
+      expect(rest).toEqual(expected);
+    }
+  });
+
   it('reads outages as LlmUnavailable and a 4xx as a bug', async () => {
     const down = deepSeekProvider({ apiKey: 'k', model: 'm', fetch: fetchReturning(503, {}) });
     await expect(down.generate({ system: '', messages: [], maxTokens: 1 })).rejects.toBeInstanceOf(
