@@ -112,7 +112,6 @@ def start_rules() -> str:
 def pick_book(claude: Claude, books: list[dict], archive_works: list[dict]) -> dict:
     listing = "\n".join(f"{i}. [{b.get('kind', 'book')}] {b.get('author') or '?'} — {b.get('title') or b['file']}"
                         + (f" ({b['album']})" if b.get('album') else "")
-                        + (" — already mined once; prefer an unread work when one fits" if b.get("read") else "")
                         for i, b in enumerate(books))
     used = "\n".join(f"- {w['author']} — {w['work']}" for w in archive_works) or "- (none yet)"
     answer = claude.json(f"""You curate a daily French word game: one sentence from a book or a song, three

@@ -296,23 +296,22 @@ def choose_work(claude: llm.Claude, log: Log, args, archive: dict, index: dict, 
         if work is None:
             die(f"{args.work} is not on the shelf")
         return work
-    # Eligible: not in the archive (never the same work twice), not inside the artist
-    # cooldown. A work mined by an earlier run stays eligible — its proposed sentences
-    # are excluded, the rest of the book is not — but the model is told and prefers an
-    # unread one.
+    # Eligible: not in the archive and not mined by an earlier run (never the same work
+    # twice — `--retry` erases an attempt), not inside the artist cooldown.
     fresh = []
     cooled = set()
     for w in works:
-        if shelf_mod.in_archive(w, archive["works"]):
+        if shelf_mod.in_archive(w, archive["works"]) or w["file"] in index["books"]:
             continue
         if in_cooldown(w, archive, index, today):
             cooled.add(w.get("author", ""))
             continue
-        fresh.append({**w, "read": w["file"] in index["books"]})
+        fresh.append(w)
     if cooled:
         log(f"- artist cooldown ({lyr.ARTIST_COOLDOWN_DAYS} days) skips: {', '.join(sorted(cooled))}")
     if not fresh:
-        die("every work on the shelf is in the archive or inside the artist cooldown")
+        die("every work on the shelf was mined, is in the archive, or is inside the artist cooldown "
+            "(--retry <file> erases an attempt)")
     work = llm.pick_book(claude, fresh, archive["works"])
     log(f"- work: {work.get('author')} — {work.get('title')} ({work['kind']}, {work['file']}): {work.get('why', '')}")
     return work
@@ -400,6 +399,9 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--lang", choices=LANGS, default="fr")
     p.add_argument("--work", help="a file name on the shelf, epub or song (skips the model's pick)")
+    p.add_argument("--retry", metavar="FILE",
+                   help="erase a previous attempt on this shelf file — its index entry and the "
+                        "candidate puzzle(s) it wrote under the generation output — then run on it")
     p.add_argument("--seed", type=int, default=None, help="sample seed (default: today)")
     args = p.parse_args()
 
@@ -412,8 +414,16 @@ def main():
     log(f"- model: {llm.MODEL} (effort {llm.EFFORT}) on the {plan} subscription")
 
     vocab = set(json.loads((_paths.VOCAB_DIR / f"{args.lang}.json").read_text(encoding="utf-8")))
-    archive = shelf_mod.archive(args.lang)
     index = shelf_mod.load_index()
+    if args.retry:
+        work = next((w for w in shelf_mod.list_works() if w["file"] == args.retry), None)
+        if work is None:
+            die(f"{args.retry} is not on the shelf")
+        for path in shelf_mod.forget(index, work, args.lang):
+            log(f"- erased: {path}")
+        shelf_mod.save_index(index)
+        args.work = args.retry
+    archive = shelf_mod.archive(args.lang)
     claude = llm.Claude()
 
     today = datetime.now(timezone.utc).date()

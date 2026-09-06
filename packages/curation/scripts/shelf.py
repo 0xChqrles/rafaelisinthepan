@@ -117,3 +117,25 @@ def in_archive(book: dict, works: list[dict]) -> bool:
         if archived and (archived == title or archived in title or title in archived):
             return True
     return False
+
+
+def forget(index: dict, work: dict, lang: str) -> list[str]:
+    """Erase an attempt: the work's index entry and every candidate puzzle written for it
+    under the GENERATION OUTPUT (never the store — a published day is not an attempt).
+    Returns what was deleted."""
+    index["books"].pop(work["file"], None)
+    author, title = slug(work.get("author", "")), slug(work.get("title", ""))
+    deleted = []
+    for path in (_paths.GENERATION_OUTPUT_DIR / lang).rglob("*.json"):
+        try:
+            src = json.loads(path.read_text(encoding="utf-8")).get("source") or {}
+        except (OSError, ValueError):
+            continue
+        if slug(src.get("author", "")) == author and slug(src.get("work", "")) == title:
+            path.unlink()
+            deleted.append(str(path))
+            parent = path.parent
+            while parent != _paths.GENERATION_OUTPUT_DIR and not any(parent.iterdir()):
+                parent.rmdir()
+                parent = parent.parent
+    return deleted

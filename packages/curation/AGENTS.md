@@ -37,9 +37,11 @@
 ## Commands
 
 ```bash
-pnpm curate [--lang fr] [--work <file on the shelf>] [--seed N]
+pnpm curate [--lang fr] [--work <file on the shelf>] [--retry <file>] [--seed N]
 #   Picks a work (the model, off the shelf minus the archive minus index.json minus the
-#   artist cooldown; --work forces one), mines it, and writes the first sentence that
+#   artist cooldown; --work forces one; --retry erases a previous attempt on a file — its
+#   index entry and the candidate puzzle(s) it wrote under the generation output, never
+#   the store — then runs on it), mines it, and writes the first sentence that
 #   survives every rule as a puzzle under packages/generation/output/word/fr/... via
 #   gen_phrase — headless, the start word is the band's random pick, the #133 form question
 #   is answered by the model from the sentence. Exit 0 = a candidate was written (publish it
