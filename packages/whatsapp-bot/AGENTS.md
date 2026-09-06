@@ -510,15 +510,20 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   LOGIC (a conclusion that does not follow, stated as proof), WHAT IT DID TO YOU (the
   result's effect on the bot, first person, far too big, one clause), THE QUALITY OF A
   SOMETHING (the shape "la <quality> d'un <noun> <state>": the quality the score is
-  about, the obvious noun, ONE adjective or "de <material>" for a REAL state — a
-  condition a body or an object can actually be in, never a situation: "un cheval en
-  grève" makes no sense where "un cheval rachitique" does — and a pairing nobody has had
-  a reason to say: "un détecteur de fumée éteint" is an ordinary thing, "un guépard en
-  porcelaine" is not), and THE NAIVE LABEL ("wow" + one impressive word chosen for sound
-  over fit, nothing after the noun, never a rank word like champion/hero/legend).
-  Measured: "La précision d'un guépard en porcelaine.", "J'ai vieilli d'un an pendant
-  que tu cherchais.", "Tu me dois une après-midi entière.", "Je déclare ce jour férié.",
-  "Wow un rhinocéros." **A MOVE IS AN IDEA, NEVER A SENTENCE TEMPLATE (user-corrected
+  about, the obvious noun, ONE state that TAKES AWAY THE ONE THING THE NOUN IS FOR —
+  a body that can no longer do what it exists to do, or a material it could not work
+  in, written "en <material>" ("de marbre" already means something). User-explained
+  2026-09-06: "cheval fourbu" cannot run and "sanglier en marbre" is no longer alive,
+  where "forgeron affamé" is a regular blacksmith who happens to be hungry — not funny,
+  not absurd; and "un cheval en grève" is not a state a horse can be in, where "un
+  cheval rachitique" is), and THE NAIVE LABEL (ALWAYS "tu es un <noun>", never the bare
+  noun — "wow" may precede it — one impressive word chosen for sound over fit, never a
+  rank word like champion/hero/legend). The sentence stays plain but ONE word in it may
+  be rare and exact — the veterinary, trade or legal term — and that word is where the
+  line lives (user-asked: "more creative, less common words").
+  Measured: "Tu as la patience d'un boulanger sans bras.", "Un percheron en guimauve.",
+  "Tu es un métronome en mousse.", "Tu es un tyrannosaure.", "J'ai instauré une heure de
+  sieste après tes parties.", "Je vous fais chevalières de l'ordinaire." **A MOVE IS AN IDEA, NEVER A SENTENCE TEMPLATE (user-corrected
   2026-09-06: "it should not always come up with the same sentence construction").**
   Each move's KINDS are enumerated in code (`podiumComments.ts` `KINDS` — five ways of
   reasoning, five things the result did to the bot, for the image the noun's realm × a
@@ -550,8 +555,10 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
     up in either language, folded; `namesSomebody` — a podium/share name anywhere in the
     line, since allowed mid-line it became a tic; `readsLikeASimile` — French "comme",
     English "like a" / "as if"; `hasAClause` — French "qui", English "who" / "which", the
-    relative clause being the effort showing; and `COMMENT_MAX_CHARS` = 80 on both paths,
-    a line past it being one with work in it), on both paths, the way shortness is enforced: asked not
+    relative clause being the effort showing; `isALabel` on a move-4 line — it starts
+    "tu es" / "vous êtes", "wow" allowed before; `isAQualityOf` on a move-3 line — it
+    keeps its "d'un" frame, the bare noun phrase being a fragment; and
+    `COMMENT_MAX_CHARS` = 80 on both paths, a line past it being one with work in it), on both paths, the way shortness is enforced: asked not
     to, a model with its thinking off complied about half the time. The rules are also
     restated in the USER turn beside the facts (`LINE_RULES`): with thinking off, what sits
     next to the question weighs more than a system prompt read once. Three attempts at 10s

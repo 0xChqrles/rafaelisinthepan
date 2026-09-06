@@ -85,6 +85,20 @@ export function readsLikeASimile(text: string): boolean {
 // A RELATIVE CLAUSE IS REFUSED (user-decided 2026-09-06). "Wow, un rhinocéros" is funny
 // and "un rhinocéros qui aurait mangé du lion" is cringe: the clause is the visible
 // effort. French "qui", English "who" / "which".
+// THE LABEL SAYS "TU ES" (user-decided 2026-09-06): "un panda" alone is a fragment, "tu es
+// un panda" is the child's compliment. Checked only on a move-4 line, since the caller
+// knows the move; "wow" may precede it, "vous êtes" serves a shared line.
+export function isALabel(text: string): boolean {
+  return /^(wow[,\s]*)?(tu es|t['’]es|vous êtes)\b/iu.test(text.trim());
+}
+
+// AND THE IMAGE KEEPS ITS FRAME: "la précision d'un couteau en caoutchouc" says what the
+// image is about; the bare "un couteau en caoutchouc" is a fragment. Checked on a move-3
+// line only.
+export function isAQualityOf(text: string): boolean {
+  return /\bd['’]une?\b/iu.test(text);
+}
+
 export function hasAClause(text: string): boolean {
   return /\bqui\b/iu.test(text) || /\bwho\b|\bwhich\b/iu.test(text);
 }
@@ -121,12 +135,16 @@ export const KINDS: Readonly<Record<Move, readonly string[]>> = {
   ],
   // Only two kinds of state survive: "its age" and "the weather it is standing in" gave
   // "un chien trop vieux" and "un chien sous la pluie" — ordinary things, the failure the
-  // move exists to avoid — and the noun is drawn with it, or it is a dog every time.
+  // move exists to avoid — and the noun is drawn with it, or it is a dog every time. And
+  // the state must strike the noun's PURPOSE (user-corrected 2026-09-06: "forgeron affamé"
+  // is a regular blacksmith who happens to be hungry; "cheval fourbu" cannot run).
+  // The frame is in the kind text because it is what a line without thinking reads: told
+  // it only in the system prompt, the model dropped it on half the lines.
   3: [
-    'the noun is an animal; its state is a physical condition — underfed, sick, injured, exhausted',
-    'the noun is somebody with a job; their state is a physical condition — underfed, sick, injured, exhausted',
-    'the noun is an animal; its state is the material it is made of',
-    'the noun is a tool, an object or a vehicle; its state is the material it is made of',
+    'write "la <quality> d\'un <noun> <state>"; the noun is an animal; the state is a bodily condition that stops it doing the one thing it is known for',
+    'write "la <quality> d\'un <noun> <state>"; the noun is somebody with a job; the state is a bodily condition that stops them doing that job',
+    'write "la <quality> d\'un <noun> en <material>"; the noun is an animal; the material is one it could not be alive in',
+    'write "la <quality> d\'un <noun> en <material>"; the noun is a tool, an object or a vehicle; the material is one it could not work in',
   ],
   4: ['an animal a child admires', 'a big machine', 'a famous kind of person', 'a force of nature'],
 };
@@ -270,7 +288,11 @@ async function commentForLine(
             ? 'simile'
             : hasAClause(comment)
               ? 'clause'
-              : null;
+              : move === 4 && !isALabel(comment)
+                ? 'label'
+                : move === 3 && !isAQualityOf(comment)
+                  ? 'frame'
+                  : null;
     if (comment && !reason) return comment;
     log.warn({ event: 'podium.comment_invalid', id: line.id, attempt, finish, reason }, 'rejecting a line');
   }

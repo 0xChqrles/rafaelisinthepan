@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parseGroupConfig } from '../config/groupConfig';
 import { createLog } from '../log';
-import { LINE_RULES, lineRules, dropEchoes, generatePodiumComments, hasAClause, namesSomebody, podiumCommentLines, readsLikeASimile, sanitizeComment, spellsANumber } from './podiumComments';
+import { LINE_RULES, lineRules, dropEchoes, generatePodiumComments, hasAClause, isALabel, isAQualityOf, namesSomebody, podiumCommentLines, readsLikeASimile, sanitizeComment, spellsANumber } from './podiumComments';
 
 // The user turn is the FACTS as JSON, then the rules a line is checked against.
 function factsIn(content: string) {
@@ -155,6 +155,15 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
     expect(hasAClause('Un rhinocéros qui aurait mangé du lion.')).toBe(true);
     expect(hasAClause("Tu as fini, c'est pour ça que je t'aime.")).toBe(false);
     expect(hasAClause('A rhino who ate a lion.')).toBe(true);
+    // The label says "tu es": the bare noun is a fragment.
+    expect(isALabel('Un panda.')).toBe(false);
+    expect(isALabel('Tu es un panda.')).toBe(true);
+    expect(isALabel("Wow, t'es un panda.")).toBe(true);
+    expect(isALabel('Vous êtes des pandas.')).toBe(true);
+    // The image keeps its frame: the bare noun phrase is a fragment.
+    expect(isAQualityOf("La précision d'un couteau en caoutchouc.")).toBe(true);
+    expect(isAQualityOf("la patience d'une tortue affamée")).toBe(true);
+    expect(isAQualityOf('Un couteau en caoutchouc.')).toBe(false);
     const provider = answering({
       1: ['Trois essais, propre.', 'Je vais encadrer ça.'],
       2: ['Delphine et Zou, un duo.', 'Vous deux, un duo.'],

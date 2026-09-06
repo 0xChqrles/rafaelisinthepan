@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseGroupConfig } from '../config/groupConfig';
 import { createLog } from '../log';
 import { LlmUnavailable, type LlmProvider, type LlmResponse } from './types';
@@ -43,6 +43,15 @@ function provider(steps: (Partial<LlmResponse> | Error)[]): { provider: LlmProvi
 }
 
 const log = createLog('silent');
+
+// The share DRAWS its move and kind; the fixtures below are written for move 1, so the
+// draw is pinned (the label and image moves refuse a line that is not shaped like them).
+beforeEach(() => {
+  vi.spyOn(Math, 'random').mockReturnValue(0);
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('the spoken acknowledgement of a share (#236)', () => {
   it('hands the model the FACTS and returns its line, cleaned', async () => {

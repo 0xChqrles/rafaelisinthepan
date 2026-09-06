@@ -15,7 +15,7 @@ import type { GroupConfig } from '../config/groupConfig';
 import { verdictOf, type ShareFacts } from '../domain/reactions';
 import type { Log } from '../log';
 import { buildSystemPrompt } from './personality';
-import { COMMENT_MAX_CHARS, TEMPERATURE, drawKind, drawMove, hasAClause, lineRules, namesSomebody, readsLikeASimile, sanitizeComment, spellsANumber } from './podiumComments';
+import { COMMENT_MAX_CHARS, TEMPERATURE, drawKind, drawMove, hasAClause, isALabel, isAQualityOf, lineRules, namesSomebody, readsLikeASimile, sanitizeComment, spellsANumber } from './podiumComments';
 import { LlmUnavailable, type LlmProvider } from './types';
 
 const ATTEMPTS = 3;
@@ -155,7 +155,11 @@ export async function generateShareComment(
               ? 'simile'
               : hasAClause(line)
                 ? 'clause'
-                : null;
+                : move === 4 && !isALabel(line)
+                  ? 'label'
+                  : move === 3 && !isAQualityOf(line)
+                    ? 'frame'
+                    : null;
     if (line && !reason) return line;
     log.warn(
       { event: 'share.comment_invalid', attempt, finish, reason, length: line?.length ?? 0 },
