@@ -238,8 +238,9 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   podium line with no comment, so a partial set is a partial podium rather than a bare one,
   and `parseCommentAnswer` and its whole-answer rejection are gone with the envelope that
   needed them. The calls run in PARALLEL because the podium Lambda has 90 seconds, and the
-  per-call timeout (20s × 2 attempts) is deliberately well inside it: a podium with four
-  comments out of five beats risking a Lambda timeout, which is no podium at all.
+  per-call timeout (10s × 3 attempts since v8 — a line answers in ~1s with thinking off,
+  the 20s × 2 before it covered the deliberation) is deliberately well inside it: a podium
+  with four comments out of five beats risking a Lambda timeout, which is no podium at all.
   It spends NO daily call ceiling, unlike the share line: this path fires once per group per
   day and is bounded by the schedule, where an acknowledgement is bounded only by traffic.
 - **Outbound has one owner.** Every send is a command with an id (`podium:<g>:<day>`,
@@ -424,15 +425,22 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   hole it improves, holes start with a hint word, a MISS has no rank and still costs a try,
   an unknown word is refused for free, 500 unsolved is ∞, and Word mode exists (timed,
   higher is better) while the podium ranks the sentence alone.
-  **ENCOURAGING IS THE DEFAULT; SARCASM IS OPTED INTO (v4, user-decided 2026-09-04).** v2
-  and v3 built an UNIMPRESSED bot — "very little impresses you", bands that ran from
-  "grudging respect" down to "unmoved" — and it was funny and too cold for the group it
-  actually landed in. The stance is now warm: it is ON THEIR SIDE, it says so, and every
-  band is encouraging, warmest at the bottom. **A group's own pre-prompt is what licenses
-  teasing** — the beta group names somebody as the group's target, and the bot teases them
-  because the CONFIG said to, not because it is its nature. A group that says nothing gets
-  no invented target. That layering is the point: the code owns the default, the operator
-  owns the exception.
+  **THE SCORE IS THE JOKE, THE PERSON NEVER IS (v8, user-decided 2026-09-06 — it
+  supersedes v4's "encouraging is the default; sarcasm is opted into").** v2 and v3 built
+  an UNIMPRESSED bot — "very little impresses you", bands from "grudging respect" down to
+  "unmoved" — and it was funny and too cold for the group it landed in; v4 answered with a
+  bot encouraging at every band and warmest at the bottom, and by v7 that read generic.
+  The stance now: ON THEIR SIDE, which is what licenses the teasing, and PLAYFUL ABOUT
+  EVERY SCORE, the bad ones included. **THE TEASING IS EXAGGERATION, NEVER JUDGEMENT
+  (user-corrected the same day: "it clearly became insulting")** — the first wording,
+  "the score is fair game for the joke, the person never", read to the model as licence
+  for verdicts ("tu es la fierté de personne", "réfléchi pour pas grand-chose", "t'as
+  même pas eu à forcer"). A slow day is teased through what the wait did to the BOT
+  and the conclusion it draws from it; never by calling it pointless, lucky, easy, useless
+  or the fault of the method, never "even you" / "as usual", never a word about
+  intelligence, worth, effort or life; dark only when it is about the bot. The test in
+  the prompt: stings from a stranger = wrong, laughs from a friend = right. **A group's own pre-prompt still singles somebody
+  out for harder teasing**; a group that says nothing gets no favourite target.
   **AND IT NEVER CALLS THE SENTENCE "elle".** A bare pronoun has no antecedent in a
   one-line message, so "elle t'a bien fait suer" printed under Christine's name reads as
   another woman rather than as the puzzle. It was TAUGHT the personification by a register
@@ -468,10 +476,80 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   **AND THE GROUP TALKS ABOUT THE SENTENCE, NOT ABOUT THE BOT.** "j'ai reconnu direct, je
   suis fan" is about the day's sentence and its author; the bot answered about being a bot,
   which is both cringe and a misreading. v3 says so outright: the bot is not the subject of
-  this group. **The bottom of the table is treated GENTLY** for the same round of feedback
-  ("je préférerais les appréciations encourageantes de Luc") — a high score is the day being
-  hard rather than somebody being bad, `laboured` reads warm instead of "dry sympathy", and
-  the teasing is for the top.
+  this group. The bottom of the table was treated GENTLY from the same round of feedback
+  ("je préférerais les appréciations encourageantes de Luc") until v8 made every score fair
+  game (above); what survives of it is the line between the score and the person.
+  **THE BOT IS A BIT MUCH, SINCERELY (v8, user-decided 2026-09-06).** v5–v7's warm, plain
+  friend wrote generic lines — "beau boulot", "bien joué", "tu as tenu bon" — and the user
+  asked for an absurd, slightly unhinged but endearing character whose compliments feel
+  strange yet land on the first read. The personality now describes a PERSON rather than
+  a tone: it takes the game with a seriousness nobody else does and loves the group out of
+  all proportion, and everything odd follows — DISPROPORTION (a good score is a life
+  event), CONVICTIONS stated as fact (a precise, unexpected comparison that is plainly
+  praise), DEVOTION, DEADPAN (it never signals a joke; sincerity at that intensity is the
+  humour), SIMPLE WORDS (the strangeness is the idea, never the vocabulary), ALWAYS ABOUT
+  THE RESULT (a line that could go under any score is worthless) and about the PERSON (the
+  sentence is at most the villain in passing — with a "grievance against the sentence"
+  bullet every line was about the sentence, so it went). **BLUNT, NOT LYRICAL (user-refined
+  the same day):** the first cut wrote crafted similes ("comme on tient une porte ouverte
+  pour quelqu'un de pressé", "une patience de luthier") and the user wanted the mood of
+  *"tu es un véritable tigre" / "la précision d'un escargot en soins palliatifs" /
+  "l'information me plaît donc elle est vraie"* — so the character is also not very bright
+  and completely sure of itself. **NOTHING IT SAYS LOOKS LIKE AN ATTEMPT AT A JOKE
+  (user-explained 2026-09-06, after two cuts of comparisons the user called lame and
+  "GPT 3.5 in 2022").** The rule the user put words on: "Wow tu es un rhinocéros" is
+  funny because it makes no sense and shows no effort; "un rhinocéros qui aurait mangé
+  du lion" is cringe because the clause is the effort showing. "La précision d'un
+  escargot malnutri" works because it is about the quality the score measures, it is TWO
+  WORDS, the state can genuinely be true of a snail, and the picture is seen at once as a
+  weaker snail; "un baobab qui aurait appris à courir" fails because a baobab cannot run
+  and the sentence is long; "un TGV avec des ailes" fails because nobody knows what the
+  wings mean, where "l'efficacité d'un TGV de bois" is instantly a train that would not
+  work, in wording slightly off the way people type. So: one flat statement, under ten
+  words, no relative clause, no second idea, no twist, no tail after a comma. **GUIDELINES,
+  NOT CONSTRUCTION (user-decided 2026-09-06: "don't try to over-engineer him, just tell
+  him how to be funny, and let it be creative").** Between the two came a cut with FOUR
+  MOVES (its own logic, what the result did to it, "la <quality> d'un <noun> <state>", the
+  naive label "tu es un <noun>"), each with KINDS enumerated in code and drawn per line,
+  the image's state redefined three times on the user's corrections, and shape checks per
+  move; the user found it "worse than the last try — always a material now, or just
+  something that doesn't make sense", and the machinery is what read as trying. It is
+  gone: the personality describes what is funny about the bot — conclusions that do not
+  follow stated as proof, feelings out of all proportion reported as normal, a child's
+  compliment ("tu es un <big animal>"), and, RARELY, an image that is absurd in one exact
+  way: a thing nobody ever had a reason to say that can still be pictured at once, whose
+  detail is beside the point (a creature in a material it was never made of; never the
+  obvious weak spot, which is a joke being made; never a passing state, which is nothing)
+  — and lets the model build the sentence. The user's own examples of the bar: "requin
+  en béton", "faucon en 2D", "chirurgien obèse" — where "faucon myope", "forgeron
+  affamé", "cheval en grève" and "pêcheur astigmate" all failed it. NO CONCRETE EXAMPLE
+  IN THE PROMPT: "a surgeon who happens to be obese" came back as "chirurgien obese" the
+  next run. No quoted word either ("officiellement", offered once, was in half the lines).
+  Three mechanics came with it, all measured on the real provider:
+  - **THE COMMENT PATHS THINK NOT AT ALL** (`effort: 'none'` on `LlmRequest`, mapped by
+    `providers/deepseek.ts` onto `thinking: {type: 'disabled'}`; `low`/`high` map onto
+    `reasoning_effort`). Under v7 a podium line already deliberated 5–19s, the last of which
+    IS the timeout; the v8 voice pushed every line past it and the podium came back bare.
+    With thinking off a line takes ~1s and reads no worse; `reasoning_effort: low` still
+    ran to 19s and truncated. It also makes `temperature` count, which DeepSeek ignores
+    while thinking — and at the 1.1 set under thinking it produced word salad, so the
+    comment paths run at **`TEMPERATURE` = 0.8** (`podiumComments.ts`), measured clean at
+    no cost in strangeness. The conversation agent keeps the default (it reasons over tools).
+  - **THE SCORE IS NOT SENT to the comment paths** (`tries`/`found` gone from the facts;
+    `place`, `verdict`, `solved` stay). Asked not to read the number back, a model with its
+    thinking off did so on half the lines; a number it never saw is one it cannot repeat.
+  - **A LINE THAT SPELLS A NUMBER, NAMES SOMEBODY OR LEANS ON A SIMILE IS REFUSED AND
+    RETRIED** (`podiumComments.ts` `spellsANumber` — any digit, any number word from three
+    up in either language, folded; `namesSomebody` — a podium/share name anywhere in the
+    line, since allowed mid-line it became a tic; `readsLikeASimile` — French "comme",
+    English "like a" / "as if"; `hasAClause` — French "qui", English "who" / "which", the
+    relative clause being the effort showing; and
+    `COMMENT_MAX_CHARS` = 80 on both paths, a line past it being one with work in it), on both paths, the way shortness is enforced: asked not
+    to, a model with its thinking off complied about half the time. The rules are also
+    restated in the USER turn beside the facts (`LINE_RULES`): with thinking off, what sits
+    next to the question weighs more than a system prompt read once. Three attempts at 10s
+    (a line costs ~1s), then the line goes bare. Measured on the final cut: 1 refusal per
+    39 lines.
   **And the bot knows its OWN SCHEDULE in the group** (user-decided 2026-09-05,
   `agent.ts` `scheduleContext`): the system prompt states whether this group has a podium
   and at what time, what the podium is (ranked from the shares posted here, fewest tries
