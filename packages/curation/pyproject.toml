@@ -1,0 +1,14 @@
+[project]
+name = "whippin-curation"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "claude-agent-sdk>=0.2.116",
+    "gensim>=4.4.0",
+    "numpy>=2.4.6",
+    "spacy>=3.8.0",
+    "fr-core-news-md",
+]
+
+[tool.uv.sources]
+fr-core-news-md = { url = "https://github.com/explosion/spacy-models/releases/download/fr_core_news_md-3.8.0/fr_core_news_md-3.8.0-py3-none-any.whl" }

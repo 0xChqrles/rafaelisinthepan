@@ -1,0 +1,9 @@
+{
+  "name": "@whippin/curation",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "curate": "uv run scripts/curate.py",
+    "test": "uv run --no-project --with pytest pytest -q tests"
+  }
+}

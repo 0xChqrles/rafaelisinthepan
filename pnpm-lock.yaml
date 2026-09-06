@@ -51,6 +51,8 @@ importers:
 
   packages/benchmark: {}
 
+  packages/curation: {}
+
   packages/generation: {}
 
   packages/infra:

@@ -23,6 +23,8 @@ packages/
   generation/   Python puzzle generation (uv): embeddings -> reduced vectors -> puzzles;
                 also writes the vocab existence set into web/public.
   benchmark/    offline LLM puzzle benchmark harness (#68) — LAB-ONLY: never writes into a puzzle.
+  curation/     headless sentence curation (#260): a shelf of epubs -> ONE candidate puzzle via
+                gen_phrase, Claude on the subscription choosing, code enforcing. Never publishes.
   backend/      daily-puzzle backend (#2): ONE handler for Lambda + local serve; puzzle store
                 (S3/FS) + publish; every live route (/scores /profile /friends /board /round
                 /history /devices /link) and the share/invite preview pages.
@@ -657,7 +659,7 @@ The live routes then share:
 - **DON'T add tests for cosmetic/visual work**, trivial wiring or config.
 - **A failing invariant test is a real regression — fix the CODE, never weaken the test.**
 - **Run `pnpm test` before a contract-touching task is done**: Vitest (`shared`, `web`,
-  `backend`, `infra`) + pytest (`generation`, `benchmark`). Slug cases go in the ONE shared
+  `backend`, `infra`) + pytest (`generation`, `benchmark`, `curation`). Slug cases go in the ONE shared
   fixture, never on one side only.
 
 ## Working an issue
@@ -706,7 +708,7 @@ pnpm test        # invariant tests: Vitest (web + shared + backend + infra) + py
 pnpm typecheck   # tsc --noEmit
 ```
 
-Domain commands — wordlist/reduce/gen (generation), bench (benchmark),
+Domain commands — wordlist/reduce/gen (generation), bench (benchmark), curate (curation),
 publish/inventory/backend:dev (backend), dev/build (web), cdk synth/diff/deploy (infra),
 bot:start/pair/cli/groups (whatsapp-bot) — are documented in the owning package's `AGENTS.md`.
 
