@@ -24,7 +24,8 @@
       parse.py               spaCy adapter (fr_core_news_md) -> rules.Token
       llm.py                 the questions asked of Claude + JSON parsing; the taste profile and
                              the secret rules are READ FROM THE SKILL FILE at run time
-      shelf.py               the shelf, its index, and what the archive already holds
+      shelf.py               the shelf, its index, and what the archive already holds (read off
+                             the generation output; the backend's local store is a test bed)
       _paths.py              path wiring (generation + benchmark scripts on sys.path)
     shelf/                   GITIGNORED: the epubs and song files to mine (copyrighted),
                              artists.txt (the user's hand-written whitelist), index.json (state)
@@ -40,8 +41,8 @@
 pnpm curate [--lang fr] [--work <file on the shelf>] [--retry <file>] [--seed N]
 #   Picks a work (the model, off the shelf minus the archive minus index.json minus the
 #   artist cooldown; --work forces one; --retry erases a previous attempt on a file — its
-#   index entry and the candidate puzzle(s) it wrote under the generation output, never
-#   the store — then runs on it), mines it, and writes the first sentence that
+#   index entry and the candidate puzzle(s) it wrote under the generation output — then
+#   runs on it), mines it, and writes the first sentence that
 #   survives every rule as a puzzle under packages/generation/output/word/fr/... via
 #   gen_phrase — headless, the start word is the band's random pick, the #133 form question
 #   is answered by the model from the sentence. Exit 0 = a candidate was written (publish it
@@ -145,11 +146,16 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   lose their capital and a comma bridges a line with no punctuation. The capital and
   terminal-punctuation rules of the sentence filter do not apply to verse.
 - **Artist cooldown, not "never twice"**: the same artist at most once every
-  `ARTIST_COOLDOWN_DAYS` (30) on the calendar, never the same song. Judged on the DATED
-  store files (`backend/.local-store/<date>.<lang>.json`, `shelf.archive().last_used`) and
-  on the run index (`shelf.last_proposed`). Books keep "never the same book twice".
+  `ARTIST_COOLDOWN_DAYS` (30) on the calendar, never the same song. Judged on the
+  generation output's file dates (`shelf.archive().last_used`; a puzzle is generated the
+  day it is curated) and on the run index (`shelf.last_proposed`). Books keep "never the
+  same book twice".
 - Music is a minority stream (one or two days a week); the pick prompt says so.
 - `source` is `{kind: music, author: <artist>, work: <song title>}`, like the archive.
+
+- **The archive the curator reads is the GENERATION OUTPUT** (`packages/generation/output/
+  word/<lang>/…`, every puzzle generated for publishing, works + secrets + sentences),
+  never the backend's local store — that one is a test bed (user-decided 2026-09-07).
 
 ## Do NOT
 

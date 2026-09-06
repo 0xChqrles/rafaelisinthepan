@@ -1,11 +1,11 @@
 """The shelf (`packages/curation/shelf/`, gitignored), its state file, and what the
-archive already holds (works and secrets), read off the local store and the generation
-output — the two places a puzzle exists on this machine before it is published."""
+archive already holds (works and secrets), read off the GENERATION OUTPUT — the one
+local record of every puzzle generated for publishing. The backend's local store is a
+test bed and is never read (user-decided 2026-09-07)."""
 
 from datetime import date, datetime, timezone
 import json
 from pathlib import Path
-import re
 
 import _paths
 from slug import slug
@@ -71,17 +71,14 @@ def last_proposed(index: dict, author: str) -> date | None:
 
 
 def _puzzle_files(lang: str):
-    yield from _paths.LOCAL_STORE_DIR.glob(f"*.{lang}.json")
     yield from (_paths.GENERATION_OUTPUT_DIR / lang).rglob("*.json")
-
-
-_DATED = re.compile(r"^(\d{4}-\d{2}-\d{2})\.")
 
 
 def archive(lang: str) -> dict:
     """What exists already: {works: [{author, work}], secrets: {slug}, sentences: {..},
-    last_used: {author slug: date}} — the last date read off the DATED store files
-    (`<date>.<lang>.json`), the calendar the artist cooldown is judged on."""
+    last_used: {author slug: date}} — the last date being the newest puzzle file's own
+    date (a puzzle is generated the day it is curated), what the artist cooldown is
+    judged on."""
     works, secrets, sentences = [], set(), set()
     last_used: dict[str, date] = {}
     seen = set()
@@ -98,9 +95,8 @@ def archive(lang: str) -> dict:
         if src and key not in seen:
             seen.add(key)
             works.append({"author": src.get("author", ""), "work": src.get("work", "")})
-        dated = _DATED.match(path.name)
-        if src and dated and key[0]:
-            day = date.fromisoformat(dated.group(1))
+        if src and key[0]:
+            day = date.fromtimestamp(path.stat().st_mtime)
             if key[0] not in last_used or day > last_used[key[0]]:
                 last_used[key[0]] = day
     return {"works": works, "secrets": secrets, "sentences": sentences, "last_used": last_used}

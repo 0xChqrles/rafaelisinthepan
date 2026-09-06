@@ -16,7 +16,6 @@ BENCHMARK_SCRIPTS_DIR = REPO_ROOT / "packages" / "benchmark" / "scripts"
 SHELF_DIR = CURATION_DIR / "shelf"
 RUNS_DIR = CURATION_DIR / "runs"
 SKILL_FILE = REPO_ROOT / ".claude" / "skills" / "find-sentences" / "SKILL.md"
-LOCAL_STORE_DIR = REPO_ROOT / "packages" / "backend" / ".local-store"
 GENERATION_OUTPUT_DIR = GENERATION_DIR / "output" / "word"
 VOCAB_DIR = REPO_ROOT / "packages" / "web" / "public" / "vocab"
 

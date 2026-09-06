@@ -168,8 +168,9 @@ can act on:
   book (see law 1); what excludes is a wrong register, poetry the vocab cannot carry, or
   a text so short it holds no sentence.
 - **Exclude** works already in the archive (`source.work` across
-  `packages/backend/.local-store/*.fr.json` and `packages/generation/output/`) and
-  already on the shelf. Check both before delivering.
+  `packages/generation/output/word/fr/`, the record of every generated puzzle; the
+  backend's local store is a test bed, never a reference) and already on the shelf.
+  Check both before delivering.
 - Prefer works that exist as a French epub; no self-published or out-of-print
   obscurities the user cannot find.
 
@@ -199,7 +200,7 @@ can act on:
    - every secret's slug ∈ `packages/web/public/vocab/fr.json` (slug = lowercase,
      ligatures expanded, accents stripped, keep `[a-z-]`);
    - secret not already used: inspect `holes[].secret.slug` across
-     `packages/backend/.local-store/*.fr.json`.
+     `packages/generation/output/word/fr/**/*.json`.
 6. **Deliver 3–5 candidates**, each with: the exact sentence (accents/punctuation
    kept), recommended trio + alternates, source metadata (`kind` book/music/poem/movie
    + author + work), memorization-risk flag, and a ready command:
