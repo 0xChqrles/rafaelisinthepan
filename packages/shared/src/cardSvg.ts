@@ -107,16 +107,21 @@ export const WORD_RARITY_COLORS: readonly string[] = [
 
 export type WordCardData = WordShareResult;
 
-const WORD_ROW_Y = 175;
+const WORD_ROW_Y = 165;
 const WORD_MAX_SIZE = 76;
-const WORD_SCORE_Y = 355;
-// The breakdown row: a colour square + its count per claimed grade. Sized as ONE unit —
-// every measure is a multiple of the chip size (Press Start 2P advances exactly 1em per
-// glyph), so the whole row shrinks together when a forged token's counts would overflow.
-const CHIP_ROW_Y = 458;
-const CHIP_MAX_SIZE = 44;
-const CHIP_TEXT_GAP = 0.45; // square -> count, in chip sizes
-const CHIP_SPACING = 1.5; // between chips, in chip sizes
+const WORD_SCORE_Y = 335;
+// The breakdown AS A BAR (user-decided 2026-09-05, superseding the chip row): the
+// sentence ruler's band in this mode's terms — one segment per grade CLAIMED across the
+// ruler's own column, as wide as its share of the claims, in the grade's colour, its count
+// centred under it like a tick's number. Every segment keeps a FLOOR width, so one claim
+// beside two hundred still shows and still fits its count (five 5-digit forgeries fit
+// five floors), and the remainder is shared by count — the bar always fills the column.
+const WORD_BAR_Y = 408;
+const WORD_BAR_H = 40;
+const WORD_BAR_GAP = 6;
+const WORD_BAR_MIN_W = 140; // five digits at WORD_NUM_SIZE, with air
+const WORD_NUM_SIZE = 26;
+const WORD_NUM_TOP = WORD_BAR_Y + WORD_BAR_H + 10 + WORD_NUM_SIZE; // baseline
 const WORD_DATE_Y = 555;
 
 function escapeSvgText(value: string): string {
@@ -204,8 +209,8 @@ const SIGN_NAME_SIZE = 28;
 // the ticks — 97 above, 92 below.
 const SENTENCE_SIGN_Y = 97;
 const SENTENCE_SIGN_SHIFT = 30;
-// Word: the word row's glyphs top out near 137 and the date sits at 555; moved down 14 the
-// word starts at 151, the strip at 44..108 leaves 43 to it, and ~55 stays under the date.
+// Word: the word row's glyphs top out near 127 and the date sits at 555; moved down 14 the
+// word starts at 141, the strip at 44..108 leaves 33 to it, and ~55 stays under the date.
 const WORD_SIGN_Y = 44;
 const WORD_SIGN_SHIFT = 14;
 
@@ -271,27 +276,27 @@ export function renderWordCardSvg(
     Math.max(1, Math.floor((CARD_WIDTH - 2 * MARGIN) / glyphs)),
   );
 
-  // One chip per grade the run actually claimed, commonest first, zero grades omitted —
-  // the same row the share text's beads make. The whole row is centered as one lockup;
-  // positions are rounded so the crisp-edged squares land on whole pixels.
-  const chips = counts
+  // One segment per grade the run actually claimed, commonest first, zero grades omitted —
+  // the same breakdown the share text's beads make. Segment edges are rounded to whole
+  // pixels so the crisp-edged rects never seam.
+  const segments = counts
     .map((count, step) => ({ count, color: WORD_RARITY_COLORS[step] ?? MUTED }))
-    .filter((chip) => chip.count > 0);
-  let chipRow = '';
-  if (chips.length > 0) {
-    const units =
-      chips.reduce((sum, chip) => sum + 1 + CHIP_TEXT_GAP + String(chip.count).length, 0) +
-      CHIP_SPACING * (chips.length - 1);
-    const size = Math.min(CHIP_MAX_SIZE, Math.max(1, Math.floor((CARD_WIDTH - 2 * MARGIN) / units)));
-    let x = (CARD_WIDTH - units * size) / 2;
-    chipRow = chips
-      .map((chip) => {
-        const squareX = Math.round(x);
-        const countX = Math.round(x + size * (1 + CHIP_TEXT_GAP));
-        x += size * (1 + CHIP_TEXT_GAP + String(chip.count).length + CHIP_SPACING);
+    .filter((seg) => seg.count > 0);
+  let bar = '';
+  if (segments.length > 0) {
+    const total = segments.reduce((sum, seg) => sum + seg.count, 0);
+    const free = BAR_W - WORD_BAR_GAP * (segments.length - 1) - WORD_BAR_MIN_W * segments.length;
+    let x = BAR_X;
+    bar = segments
+      .map((seg) => {
+        const w = WORD_BAR_MIN_W + (free * seg.count) / total;
+        const left = Math.round(x);
+        const right = Math.round(x + w);
+        x += w + WORD_BAR_GAP;
+        const cx = Math.round((left + right) / 2);
         return (
-          `<rect x="${squareX}" y="${Math.round(CHIP_ROW_Y - size / 2)}" width="${size}" height="${size}" fill="${chip.color}" shape-rendering="crispEdges"/>` +
-          `<text x="${countX}" y="${CHIP_ROW_Y}" dy="0.16em" dominant-baseline="middle" font-family="${CARD_FONT}" font-size="${size}" fill="${chip.color}">${chip.count}</text>`
+          `<rect x="${left}" y="${WORD_BAR_Y}" width="${right - left}" height="${WORD_BAR_H}" fill="${seg.color}" shape-rendering="crispEdges"/>` +
+          `<text x="${cx}" y="${WORD_NUM_TOP}" text-anchor="middle" font-family="${CARD_FONT}" font-size="${WORD_NUM_SIZE}" fill="${seg.color}">${seg.count}</text>`
         );
       })
       .join('');
@@ -304,7 +309,7 @@ export function renderWordCardSvg(
     `<g transform="translate(0 ${by ? WORD_SIGN_SHIFT : 0})">`,
     `<text x="${cx}" y="${WORD_ROW_Y}" dy="0.16em" dominant-baseline="middle" text-anchor="middle" font-family="${CARD_FONT}" font-size="${wordSize}" font-variant-ligatures="none" fill="${SOLVE}">${escapeSvgText(word)}</text>`,
     `<text x="${cx}" y="${WORD_SCORE_Y}" text-anchor="middle" font-family="${CARD_FONT}" font-size="76" fill="${FG}">${score} ${score === 1 ? unit.one : unit.many}</text>`,
-    chipRow,
+    bar,
     `<text x="${cx}" y="${WORD_DATE_Y}" text-anchor="middle" font-family="${CARD_FONT}" font-size="30" fill="${MUTED}">${dateForDayNumber(dayNumber)}</text>`,
     `</g>`,
     `</svg>`,

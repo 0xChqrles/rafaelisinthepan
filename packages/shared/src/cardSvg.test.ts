@@ -198,7 +198,7 @@ describe('renderWordCardSvg', () => {
     expect(svg).toMatch(/<text[^>]+fill="#4a6aff">forêt<\/text>/);
     expect(svg).not.toContain('foret');
     // The in-game square marks the end of a LINE and this card draws none; the only
-    // rects left are the background and the rarity chips.
+    // rects left are the background and the rarity bar's segments.
     expect(svg).not.toMatch(/<rect[^>]+fill="#4a6aff"/);
   });
 
@@ -208,46 +208,67 @@ describe('renderWordCardSvg', () => {
     expect(svg).toContain(dateForDayNumber(data.dayNumber));
   });
 
-  // A chip's SQUARE is the tell (COMMON's grey doubles as the date's muted text colour,
-  // so the raw hex alone cannot prove a chip's absence).
-  const chipSquare = (color: string) => new RegExp(`<rect[^>]+fill="${color}"`);
+  // A segment's RECT is the tell (COMMON's grey doubles as the date's muted text colour,
+  // so the raw hex alone cannot prove a grade's absence).
+  const segment = (color: string) => new RegExp(`<rect[^>]+fill="${color}"`);
 
-  it('draws one chip per CLAIMED grade — its colour square + its count, zero grades omitted', () => {
+  it('draws one BAR segment per CLAIMED grade — its colour + its count under it, zero grades omitted', () => {
     const svg = renderWordCardSvg(data);
     for (const [step, count] of data.counts.entries()) {
       const color = WORD_RARITY_COLORS[step];
       if (count > 0) {
-        expect(svg, color).toMatch(chipSquare(color));
+        expect(svg, color).toMatch(segment(color));
         expect(svg, color).toMatch(new RegExp(`<text[^>]+fill="${color}">${count}</text>`));
       } else {
-        expect(svg, color).not.toMatch(chipSquare(color)); // an unclaimed grade draws nothing
+        expect(svg, color).not.toMatch(segment(color)); // an unclaimed grade draws nothing
       }
     }
   });
 
-  it('draws no chip row at all for a scoreless run', () => {
-    const svg = renderWordCardSvg({ ...data, counts: [0, 0, 0, 0, 0] });
-    expect(svg).toContain('0 MOTS');
-    for (const color of WORD_RARITY_COLORS) expect(svg).not.toMatch(chipSquare(color));
+  it('sizes each segment by its share of the claims, over the ruler\'s own column', () => {
+    const svg = renderWordCardSvg(data);
+    const widths = [...svg.matchAll(/<rect x="(\d+)" y="408" width="(\d+)"/g)].map((m) => ({
+      x: Number(m[1]),
+      w: Number(m[2]),
+    }));
+    expect(widths).toHaveLength(4);
+    // Commonest first, and a bigger count is a wider segment.
+    expect(widths[0].w).toBeGreaterThan(widths[1].w);
+    expect(widths[1].w).toBeGreaterThan(widths[2].w);
+    expect(widths[2].w).toBe(widths[3].w);
+    // The bar fills the sentence ruler's column exactly: from its left edge to its right.
+    expect(widths[0].x).toBe(90);
+    expect(widths[3].x + widths[3].w).toBe(CARD_WIDTH - 90);
   });
 
-  it('pins the chip colours to the rarity ladder they were copied from', () => {
+  it('draws no bar at all for a scoreless run', () => {
+    const svg = renderWordCardSvg({ ...data, counts: [0, 0, 0, 0, 0] });
+    expect(svg).toContain('0 MOTS');
+    for (const color of WORD_RARITY_COLORS) expect(svg).not.toMatch(segment(color));
+  });
+
+  it('pins the grade colours to the rarity ladder they were copied from', () => {
     // One colour per grade, commonest first — pinned copies of the web's RARITY_COLORS
     // (components/rarity.ts); the web's rarity.test.ts asserts the identity from its side,
     // so this pins the shape and the exact values the card is allowed to speak.
     expect(WORD_RARITY_COLORS).toEqual(['#97a3c9', '#4fd2e8', '#64a0ff', '#bd68ff', '#ff5ce0']);
   });
 
-  it('keeps a forged token\'s huge counts inside the card (the row shrinks as one unit)', () => {
-    // Every decoded count fits 15 bits, so a hand-built token can declare five 32767s.
-    const svg = renderWordCardSvg({ ...data, counts: [32767, 32767, 32767, 32767, 32767] });
-    const chips = [...svg.matchAll(/<text x="(\d+)"[^>]*font-size="(\d+)"[^>]*fill="(#[0-9a-f]{6})">(\d+)<\/text>/g)]
+  it('keeps a forged token\'s huge counts inside the card (every segment keeps a floor)', () => {
+    // Every decoded count fits 15 bits, so a hand-built token can declare five 32767s — and
+    // one claim beside them must still show and still carry its count.
+    const svg = renderWordCardSvg({ ...data, counts: [32767, 32767, 1, 32767, 32767] });
+    const nums = [...svg.matchAll(/<text x="(\d+)"[^>]*font-size="(\d+)"[^>]*fill="(#[0-9a-f]{6})">(\d+)<\/text>/g)]
       .filter((m) => WORD_RARITY_COLORS.includes(m[3]));
-    expect(chips).toHaveLength(5);
-    for (const [, x, size, , count] of chips) {
-      // Press Start 2P advances 1em per glyph, so the count's right edge is x + digits × size.
-      expect(Number(x) + String(count).length * Number(size)).toBeLessThanOrEqual(CARD_WIDTH);
+    expect(nums).toHaveLength(5);
+    for (const [, x, size, , count] of nums) {
+      // Centred under its segment; Press Start 2P advances 1em per glyph.
+      const half = (String(count).length * Number(size)) / 2;
+      expect(Number(x) - half).toBeGreaterThanOrEqual(0);
+      expect(Number(x) + half).toBeLessThanOrEqual(CARD_WIDTH);
     }
+    const widths = [...svg.matchAll(/<rect x="\d+" y="408" width="(\d+)"/g)].map((m) => Number(m[1]));
+    expect(Math.min(...widths)).toBeGreaterThanOrEqual(140);
   });
 
   it('escapes the display word before interpolating it into the SVG', () => {
