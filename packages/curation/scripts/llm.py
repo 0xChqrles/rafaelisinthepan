@@ -106,19 +106,21 @@ def secret_rules() -> str:
 # Questions
 
 def pick_book(claude: Claude, books: list[dict], archive_works: list[dict]) -> dict:
-    listing = "\n".join(f"{i}. {b.get('author') or '?'} — {b.get('title') or b['file']}"
+    listing = "\n".join(f"{i}. [{b.get('kind', 'book')}] {b.get('author') or '?'} — {b.get('title') or b['file']}"
+                        + (f" ({b['album']})" if b.get('album') else "")
                         for i, b in enumerate(books))
     used = "\n".join(f"- {w['author']} — {w['work']}" for w in archive_works) or "- (none yet)"
-    answer = claude.json(f"""You curate a daily French word game: one sentence from a book, three words
-removed, the player rediscovers them. Pick the next book to mine from the shelf below,
-following this editorial line:
+    answer = claude.json(f"""You curate a daily French word game: one sentence from a book or a song, three
+words removed, the player rediscovers them. Pick the next work to mine from the shelf
+below, following this editorial line:
 
 {taste_profile()}
 
-Works already used in the archive (never the same book twice; vary authors and eras):
+Works already used in the archive (never the same work twice; vary authors, artists
+and eras — music is a minority stream, one or two days a week):
 {used}
 
-The shelf (index. author — title):
+The shelf (index. [kind] author — title):
 {listing}
 
 Return {{"index": <int>, "why": "<one line>"}}.""")

@@ -1,16 +1,17 @@
 """One book in, one candidate puzzle out (issue #260). Never publishes.
 
-    pnpm curate [--lang fr] [--book <file on the shelf>]
+    pnpm curate [--lang fr] [--work <file on the shelf>]
 
-Greedy and linear: the LLM picks a book off the shelf, then sentences, then the
-secrets one at a time from a list that code keeps valid (`rules.py`); a sentence
-with no trio is abandoned for the next; the first sentence that survives is handed
-to `gen_phrase` headless. The run's log — every rejection and its rule — is written
-to `runs/<stamp>.md`, the puzzle to generation's output directory.
+Greedy and linear: the LLM picks a work off the shelf (an epub, or a song file put
+there by `shelf:lyrics`), then sentences, then the secrets one at a time from a list
+that code keeps valid (`rules.py`); a sentence with no trio is abandoned for the next;
+the first sentence that survives is handed to `gen_phrase` headless. The run's log —
+every rejection and its rule — is written to `runs/<stamp>.md`, the puzzle to
+generation's output directory.
 """
 
 import argparse
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import json
 import random
 import re
@@ -21,8 +22,10 @@ import _paths
 from slug import slug
 
 import llm
+import lyrics as lyr
 import rules
 import shelf as shelf_mod
+from epub import epub_text
 from parse import parse
 from sentences import candidate_sentences
 
@@ -156,29 +159,60 @@ def _quote(arg: str) -> str:
 
 # ---------------------------------------------------------------------------
 
-def choose_book(claude: llm.Claude, log: Log, args, archive: dict, index: dict) -> dict:
-    books = shelf_mod.list_books()
-    if not books:
-        die(f"no epub on the shelf ({_paths.SHELF_DIR})")
-    if args.book:
-        book = next((b for b in books if b["file"] == args.book), None)
-        if book is None:
-            die(f"{args.book} is not on the shelf")
-        return book
-    fresh = [b for b in books
-             if not shelf_mod.in_archive(b, archive["works"]) and b["file"] not in index["books"]]
+def in_cooldown(work: dict, archive: dict, index: dict, today: date) -> bool:
+    """The artist cooldown (music only): used on the calendar, or proposed by a run,
+    within ARTIST_COOLDOWN_DAYS."""
+    if work["kind"] != "music":
+        return False
+    key = slug(work.get("author", ""))
+    return lyr.within_cooldown(archive["last_used"].get(key), today) or \
+        lyr.within_cooldown(shelf_mod.last_proposed(index, work.get("author", "")), today)
+
+
+def choose_work(claude: llm.Claude, log: Log, args, archive: dict, index: dict, today: date) -> dict:
+    works = shelf_mod.list_works()
+    if not works:
+        die(f"nothing on the shelf ({_paths.SHELF_DIR})")
+    if args.work:
+        work = next((w for w in works if w["file"] == args.work), None)
+        if work is None:
+            die(f"{args.work} is not on the shelf")
+        return work
+    fresh = []
+    cooled = set()
+    for w in works:
+        if shelf_mod.in_archive(w, archive["works"]) or w["file"] in index["books"]:
+            continue
+        if in_cooldown(w, archive, index, today):
+            cooled.add(w.get("author", ""))
+            continue
+        fresh.append(w)
+    if cooled:
+        log(f"- artist cooldown ({lyr.ARTIST_COOLDOWN_DAYS} days) skips: {', '.join(sorted(cooled))}")
     if not fresh:
-        die("every book on the shelf was read or is in the archive already")
-    book = llm.pick_book(claude, fresh, archive["works"])
-    log(f"- book: {book.get('author')} — {book.get('title')} ({book['file']}): {book.get('why', '')}")
-    return book
+        die("every work on the shelf was read, is in the archive, or is inside the artist cooldown")
+    work = llm.pick_book(claude, fresh, archive["works"])
+    log(f"- work: {work.get('author')} — {work.get('title')} ({work['kind']}, {work['file']}): {work.get('why', '')}")
+    return work
 
 
-def shortlist(claude: llm.Claude, log: Log, text: str, exclude: set[str], seed: int) -> list[dict]:
-    sentences = [s for s in candidate_sentences(text) if s not in exclude]
+def mine(work: dict, text: str, log: Log) -> list[str]:
+    """The mechanical half of the selection: sentences for a book, joined lines for a song."""
+    if work["kind"] == "music":
+        _, body = lyr.parse_song(text)
+        units = [u for u in lyr.candidate_units(lyr.clean_lines(body)) if lyr.is_unit_candidate(u)]
+        log(f"- lyric units (joined lines) after the mechanical filter: {len(units)}")
+        return units
+    log(f"- text: {len(text.split())} words")
+    sentences = candidate_sentences(text)
     log(f"- candidate sentences after the mechanical filter: {len(sentences)}")
+    return sentences
+
+
+def shortlist(claude: llm.Claude, log: Log, mined: list[str], exclude: set[str], seed: int) -> list[dict]:
+    sentences = [s for s in mined if s not in exclude]
     if not sentences:
-        die("no candidate sentence in this book")
+        die("no candidate sentence in this work")
     if len(sentences) > MAX_SENTENCES:
         sentences = random.Random(seed).sample(sentences, MAX_SENTENCES)
         log(f"- sampled {MAX_SENTENCES} of them")
@@ -233,14 +267,14 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
                      if slug(g) == t.slug or (slug(g) and rules.is_variant(slug(g), t.slug))), None)
         log(f"- context check '{t.text}': {', '.join(guesses) or '(no guess)'}"
             + (f" → guessed #{rank}" if rank else " → not guessed"))
-    source = {"kind": "book", "author": book.get("author", ""), "work": book.get("title", "")}
+    source = {"kind": book["kind"], "author": book.get("author", ""), "work": book.get("title", "")}
     return generate(claude, log, sentence, words, source, lang)
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--lang", choices=LANGS, default="fr")
-    p.add_argument("--book", help="an epub file name on the shelf (skips the model's pick)")
+    p.add_argument("--work", help="a file name on the shelf, epub or song (skips the model's pick)")
     p.add_argument("--seed", type=int, default=None, help="sample seed (default: today)")
     args = p.parse_args()
 
@@ -257,14 +291,13 @@ def main():
     index = shelf_mod.load_index()
     claude = llm.Claude()
 
-    book = choose_book(claude, log, args, archive, index)
-    from epub import epub_text
-
-    text = epub_text(_paths.SHELF_DIR / book["file"])
-    log(f"- text: {len(text.split())} words")
+    today = datetime.now(timezone.utc).date()
+    book = choose_work(claude, log, args, archive, index, today)
+    path = _paths.SHELF_DIR / book["file"]
+    text = epub_text(path) if book["kind"] == "book" else path.read_text(encoding="utf-8")
     proposed = set(index["books"].get(book["file"], {}).get("sentences", ())) | archive["sentences"]
     seed = args.seed if args.seed is not None else int(stamp[:10].replace("-", ""))
-    ranked = shortlist(claude, log, text, proposed, seed)
+    ranked = shortlist(claude, log, mine(book, text, log), proposed, seed)
 
     similarity, frequency_rank = load_similarity(args.lang)
     tried: list[str] = []
@@ -275,7 +308,7 @@ def main():
                          similarity, frequency_rank, args.lang)
         if result:
             break
-    shelf_mod.record(index, book["file"], tried)
+    shelf_mod.record(index, book["file"], tried, author=book.get("author", ""))
     shelf_mod.save_index(index)
     log("")
     if result:

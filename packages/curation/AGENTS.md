@@ -1,4 +1,4 @@
-# AGENTS.md — @whippin/curation (headless sentence curation, #260)
+# AGENTS.md — @whippin/curation (headless sentence curation, #260 / music #262)
 
 > Package-scoped guidance. The root `AGENTS.md` applies here too (engineering
 > principles, the per-puzzle schema, testing policy, the issue/PR workflow). This
@@ -9,38 +9,50 @@
 ## File map
 
 ```
-  curation/                  one book in, one CANDIDATE puzzle out (uv); never publishes
+  curation/                  one work in, one CANDIDATE puzzle out (uv); never publishes
     scripts/
-      curate.py              the CLI + the linear pipeline (book -> sentences -> trio -> gen_phrase)
+      curate.py              the CLI + the linear pipeline (work -> sentences -> trio -> gen_phrase)
       rules.py               the trio rules as PURE functions over parsed tokens (+ the tunables)
       sentences.py           text -> candidate sentences (length band, self-contained; stdlib)
       epub.py                epub -> text + metadata (stdlib)
+      lyrics.py              song files (#262): header format, Genius cleanup, couplet UNITS,
+                             the famous-single cut, the artist cooldown (stdlib, tested)
+      shelf_lyrics.py        the Genius fetch (lyricsgenius): artist list -> song files on the shelf
       parse.py               spaCy adapter (fr_core_news_md) -> rules.Token
       llm.py                 the questions asked of Claude + JSON parsing; the taste profile and
                              the secret rules are READ FROM THE SKILL FILE at run time
       shelf.py               the shelf, its index, and what the archive already holds
       _paths.py              path wiring (generation + benchmark scripts on sys.path)
-    shelf/                   GITIGNORED: the epubs to mine (copyrighted) + index.json (state)
+    shelf/                   GITIGNORED: the epubs and song files to mine (copyrighted),
+                             artists.txt (the user's hand-written whitelist), index.json (state)
     runs/                    GITIGNORED: one markdown log per run (every rejection names its rule)
-    tests/                   pytest, dependency-free (rules, sentences, epub); the LLM never runs
-    pyproject.toml, uv.lock  claude-agent-sdk, spacy + fr_core_news_md (URL wheel), gensim/numpy
+    tests/                   pytest, dependency-free (rules, sentences, epub, lyrics); the LLM never runs
+    pyproject.toml, uv.lock  claude-agent-sdk, spacy + fr_core_news_md (URL wheel), gensim/numpy,
+                             lyricsgenius
 ```
 
 ## Commands
 
 ```bash
-pnpm curate [--lang fr] [--book <file on the shelf>] [--seed N]
-#   Picks a book (the model, off the shelf minus the archive minus index.json; --book forces
-#   one), mines it, and writes the first sentence that survives every rule as a puzzle under
-#   packages/generation/output/word/fr/... via gen_phrase — headless, the start word is the
-#   band's random pick, the #133 form question is answered by the model from the sentence.
-#   Exit 0 = a candidate was written (publish it yourself), 2 = every shortlisted sentence
-#   was rejected (rerun: another sample, or another book). The log is runs/<stamp>.md.
+pnpm curate [--lang fr] [--work <file on the shelf>] [--seed N]
+#   Picks a work (the model, off the shelf minus the archive minus index.json minus the
+#   artist cooldown; --work forces one), mines it, and writes the first sentence that
+#   survives every rule as a puzzle under packages/generation/output/word/fr/... via
+#   gen_phrase — headless, the start word is the band's random pick, the #133 form question
+#   is answered by the model from the sentence. Exit 0 = a candidate was written (publish it
+#   yourself), 2 = every shortlisted sentence was rejected (rerun: another sample, or
+#   another work). The log is runs/<stamp>.md.
+pnpm shelf:lyrics [--artists shelf/artists.txt] [--max-songs N]
+#   The music source (#262): for each artist of the user's hand-written list, the songs
+#   from Genius most viewed first, minus the top FAMOUS_SHARE (the singles), minus what
+#   is on the shelf; one .txt per song with a header. Needs GENIUS_ACCESS_TOKEN (a free
+#   client token, genius.com/api-clients; never a file in the repo). The only step that
+#   touches the network; the curator never does.
 pnpm --filter @whippin/curation test
 ```
 
 Needs: a paid Claude.ai login in Claude Code (`claude auth status`), the French reduced
-vectors (`pnpm reduce:fr` done once), and epubs on the shelf.
+vectors (`pnpm reduce:fr` done once), and works on the shelf.
 
 ## Stable invariants
 
@@ -91,16 +103,39 @@ vectors (`pnpm reduce:fr` done once), and epubs on the shelf.
   benchmark): the rules take plain `Token`s and injected callables, so they run without
   spaCy, vectors or a model.
 
+### Music (#262, user-decided 2026-09-06)
+
+- **The artist list is the whole gate**: `shelf/artists.txt`, the user's, by hand, one
+  name per line, gitignored. The fetch reads it and nothing else; the model proposes no
+  artist for the fetch. There is NO exclusion list: dropping a name and deleting the
+  artist's files is the whole removal.
+- **The famous single is cut by pageviews**: `FAMOUS_SHARE` (0.25) of each artist's songs,
+  most viewed first, is dropped before any lyric is read (`lyrics.famous_cut`). Features
+  are skipped (the line belongs to someone else's song).
+- **A song is mined as UNITS, not sentences** (`lyrics.candidate_units`): per starting
+  line, the shortest run of consecutive lines within a stanza (never across a blank line,
+  at most `MAX_LINES_PER_UNIT` = 4) that reaches the sentence band; lines after the first
+  lose their capital and a comma bridges a line with no punctuation. The capital and
+  terminal-punctuation rules of the sentence filter do not apply to verse.
+- **Artist cooldown, not "never twice"**: the same artist at most once every
+  `ARTIST_COOLDOWN_DAYS` (30) on the calendar, never the same song. Judged on the DATED
+  store files (`backend/.local-store/<date>.<lang>.json`, `shelf.archive().last_used`) and
+  on the run index (`shelf.last_proposed`). Books keep "never the same book twice".
+- Music is a minority stream (one or two days a week); the pick prompt says so.
+- `source` is `{kind: music, author: <artist>, work: <song title>}`, like the archive.
+
 ## Do NOT
 
 - Don't publish, and don't write a puzzle by any path but `gen_phrase`.
 - Don't put a rule in a prompt that code can enforce; don't ask the model "is this
   valid?" — give it a valid list.
 - Don't copy the taste profile into this package; read the skill.
-- Don't commit the shelf (copyrighted files) or the runs.
+- Don't commit the shelf (copyrighted files, the artist list) or the runs.
+- Don't put a Genius token anywhere but the environment.
 
 ## Not in V1 (deliberately)
 
 Publishing; the benchmark as a difficulty gate; difficulty prediction from player logs;
 a harder start word when the context helps a little; English (`LANGS` is `fr`);
-multi-sentence micro-stories; per-token guess counting.
+multi-sentence micro-stories in BOOKS (songs have units); movies/subtitles (explicitly
+out, #262); per-token guess counting.
