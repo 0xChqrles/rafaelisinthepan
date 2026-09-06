@@ -102,6 +102,10 @@ def secret_rules() -> str:
     return skill_section("## The two laws") + "\n\n" + skill_section("## The trio rules")
 
 
+def start_rules() -> str:
+    return skill_section("## The start word")
+
+
 # ---------------------------------------------------------------------------
 # Questions
 
@@ -320,24 +324,72 @@ into an existing sentence; only they can be wrong. Judge the grammar only, not t
 
 « {sentence} »
 
-Return {{"valid": true/false, "faulty": ["<inserted word that breaks the grammar>", ...], "why": "<one line>"}}.""")
-    faulty = [w for w in answer.get("faulty", []) if isinstance(w, str)]
-    return {"valid": bool(answer.get("valid")) and not faulty, "faulty": faulty,
-            "why": answer.get("why", "")}
+Return {{"valid": true/false, "faulty": [{{"word": "<inserted word that breaks the grammar>", "why": "<one line>"}}, ...]}}.""")
+    faulty: dict[str, str] = {}
+    for item in answer.get("faulty", []) or []:
+        if isinstance(item, dict) and isinstance(item.get("word"), str):
+            faulty[item["word"]] = item.get("why", "") or "ungrammatical"
+        elif isinstance(item, str):
+            faulty[item] = "ungrammatical"
+    return {"valid": bool(answer.get("valid")) and not faulty, "faulty": faulty}
 
 
-def pick_start(claude: Claude, sentence_marked: str, secret: str, options: list[str]) -> str | None:
-    listing = ", ".join(options)
-    answer = claude.json(f"""In this French sentence, [____] is a hole; the player sees a hint word there and
-must find the hidden word by getting closer to it. Choose the hint: it must make the
-sentence grammatically VALID French (elision, gender, number, verb form), and be a
-plain word, not a trick. The options are ordered from closest to the hidden word to
-farthest; prefer an earlier one when several are valid.
+def pick_starts(claude: Claude, sentence_marked: str, holes: list[dict]) -> dict[str, str]:
+    """The three start words chosen TOGETHER. `holes`: [{secret, slug, context, options:
+    [{word, rank}]}] — `context` is the context-check annotation (where the model's own
+    guess of the blank landed, or "not guessed"). Returns {slug: word}, only words from
+    the options."""
+    blocks = []
+    for h in holes:
+        opts = ", ".join(f"{o['word']} ({o['rank']})" for o in h["options"])
+        blocks.append(f"Hole « {h['secret']} » (slot: {h.get('slot', 'as the hidden word')}) — "
+                      f"context check: {h['context']}.\n"
+                      f"Candidates (word (rank), closest first): {opts}")
+    answer = claude.json(f"""You curate a daily French word game: three words of a sentence are hidden and the
+player rediscovers each from embedding-neighbour feedback. Each hole shows a START word
+as its first clue, IN PLACE of the hidden word. Choose the three start words, together.
 
+{start_rules()}
+
+The start word replaces the hidden word in the sentence: it must be the same part of
+speech and agree with its surroundings (gender, number, verb form, elision). Before
+answering, read the sentence with each choice in place and reject what does not read as
+correct French — an infinitive where a noun stands, a feminine noun after « un ».
+
+The sentence, holes marked with the hidden word in brackets:
 {sentence_marked}
 
-Options: {listing}
+{chr(10).join(blocks)}
 
-Return {{"word": "<one option, exactly>"}} or {{"word": null}} if none makes valid French.""")
+Return {{"starts": {{"<hidden word>": "<chosen candidate, exactly>", ...}}, "why": "<one line per hole>"}}.""")
+    chosen = answer.get("starts", {}) if isinstance(answer.get("starts"), dict) else {}
+    out: dict[str, str] = {}
+    for h in holes:
+        word = chosen.get(h["secret"]) or chosen.get(h["slug"])
+        if isinstance(word, str) and word in {o["word"] for o in h["options"]}:
+            out[h["slug"]] = word
+    return out
+
+
+def pick_start(claude: Claude, sentence_marked: str, secret: str, options: list[dict],
+               refused: str = "", context: str = "unknown") -> str | None:
+    listing = ", ".join(f"{o['word']} ({o['rank']})" for o in options)
+    answer = claude.json(f"""You curate a daily French word game: three words of a sentence are hidden and the
+player rediscovers each from embedding-neighbour feedback. One hole's START word (its
+first clue, shown in place of the hidden word « {secret} ») was refused: {refused or 'it broke the grammar'}.
+Choose another, following these rules:
+
+{start_rules()}
+
+The start word replaces the hidden word: same part of speech, agreeing with its
+surroundings (gender, number, verb form, elision). Read the sentence with your choice in
+place before answering. Context check for this hole: {context}.
+
+The sentence, the hole marked [____]:
+{sentence_marked}
+
+Candidates (word (rank), closest first): {listing}
+
+Return {{"word": "<one candidate, exactly>"}} or {{"word": null}} if none makes valid French.""")
     word = answer.get("word")
-    return word if isinstance(word, str) and word in options else None
+    return word if isinstance(word, str) and word in {o["word"] for o in options} else None

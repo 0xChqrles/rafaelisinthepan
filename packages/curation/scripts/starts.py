@@ -17,6 +17,9 @@ _PUNCT = "«»\"'’“”(),.;:!?…"
 START_ROUNDS = 3
 # Candidates shown to the model for one re-pick.
 START_OPTIONS = 40
+# A start word past this place in the corpus frequency order is too rare to be a plain
+# word a player knows (« hétéroptère » is out, « bestiole » is in).
+MAX_START_FREQ_RANK = 40000
 
 
 def displayed(words: list[str], holes: list[dict], starts: dict[str, str] | None = None) -> str:
@@ -52,10 +55,12 @@ def elision_problem(prev: str, word: str) -> str | None:
     return None
 
 
-def start_candidates(rank_map: dict, secret_slug: str, prev: str, exclude=()) -> list[dict]:
+def start_candidates(rank_map: dict, secret_slug: str, prev: str, exclude=(),
+                     frequency_rank=lambda word: None) -> list[dict]:
     """The band's words for one hole (rank START_RANK_MIN..MAX, one per display word,
-    no variant of the secret) that pass the elision rule, nearest first:
-    [{word, rank}]."""
+    no variant of the secret, not too rare) that pass the elision rule, nearest first:
+    [{word, rank}]. `frequency_rank(word)` reads the corpus order (None = unknown,
+    kept)."""
     seen: set[str] = set()
     out = []
     for key, entry in rank_map.items():
@@ -66,6 +71,9 @@ def start_candidates(rank_map: dict, secret_slug: str, prev: str, exclude=()) ->
         if is_variant(slug(word), secret_slug) or word in exclude:
             continue
         if elision_problem(prev, word) is not None:
+            continue
+        freq = frequency_rank(word)
+        if freq is not None and freq > MAX_START_FREQ_RANK:
             continue
         seen.add(word)
         out.append({"word": word, "rank": rank})

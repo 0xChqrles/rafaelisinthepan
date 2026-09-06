@@ -44,3 +44,6 @@ def test_start_candidates_are_the_band_minus_variants_and_elision_failures():
     words = [e["word"] for e in start_candidates(ranks, "savoir", "le", exclude={"effet"})]
     assert words == ["monde"]        # usage/esprit elide after « le », savoirs is a variant, loin is off-band
     assert [e["word"] for e in start_candidates(ranks, "savoir", "du")] == ["esprit", "usage", "monde", "effet"]
+    # a word too rare for a player is out; an unknown frequency is kept
+    rare = lambda w: {"esprit": 90000, "usage": 500}.get(w)  # noqa: E731
+    assert [e["word"] for e in start_candidates(ranks, "savoir", "du", frequency_rank=rare)] == ["usage", "monde", "effet"]

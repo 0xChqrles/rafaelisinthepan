@@ -59,6 +59,23 @@ concentrated on one word.
 - A slug repeated in the sentence makes one hole per occurrence sharing one rank map: a
   feature the user likes (their Marx *vermine* day), not a bug.
 
+## The start word (the user's daily craft, recorded 2026-09-07)
+
+Each hole shows a START word, ranked 50–150 from the secret (lower rank = closer =
+easier). Choosing it takes as much taste as the trio, and the three are chosen
+TOGETHER, never one at a time and never at random:
+
+- Read the context first. When the sentence already helps a lot with a hole, do not
+  hand it over: avoid a near-synonym or an immediate neighbour, go farther in the band.
+  When the context is hard, or another hole is already hard, go easier (closer).
+- Think about the CHAIN OF GUESSES the start sets off: a good start leads by
+  association toward the secret in a few natural steps; a start whose neighbourhood
+  pulls elsewhere (another sense of the word, a stronger collocation) is a trap.
+- Balance the three: comparable difficulty across holes, the whole puzzle landing
+  around a median of 10–20 tries. One trivial hole or one impossible hole spoils the day.
+- Not too tricky: a plain word a player knows, never an obscure term or a proper noun.
+- The displayed sentence must stay valid French (elision, gender, number, verb form).
+
 ## Taste profile
 
 The canonical references are **Houellebecq, Murakami, and Kundera**. The editorial

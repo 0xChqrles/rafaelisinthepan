@@ -113,21 +113,31 @@ def run_gen_phrase(sentence: str, words: list[str], source: dict, forms: dict[st
     return completed, cmd
 
 
-def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], source: dict, lang: str):
+def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], source: dict, lang: str,
+             context: dict[str, str] | None = None, frequency_rank=lambda t: None):
     """Returns the written puzzle path, or None with the reason logged. The forms are
-    answered by the model as gen_phrase asks; then the START WORDS are checked (the
-    displayed sentence must be valid French) and re-picked from the band, at most
-    START_ROUNDS times."""
+    answered by the model as gen_phrase asks. The first successful run only supplies the
+    rank maps: the START WORDS are then chosen by the model, the three together, from
+    each hole's band (`choose_starts`), and the puzzle is regenerated with them; every
+    result is checked (the displayed sentence must be valid French) and a refused start
+    re-picked, at most START_ROUNDS times."""
     forms: dict[str, str] = {}
     starts: dict[str, str] = {}
+    chosen = False
     rounds = 0
-    for _ in range(MAX_GEN_RUNS + st.START_ROUNDS):
+    for _ in range(MAX_GEN_RUNS + st.START_ROUNDS + 1):
         completed, cmd = run_gen_phrase(sentence, words, source, forms, lang, starts)
         if completed.returncode == 0:
             m = _WRITTEN.search(completed.stdout)
             path = m.group(1) if m else None
+            if path and not chosen:
+                chosen = True
+                picked = choose_starts(claude, log, path, context or {}, forms, frequency_rank)
+                if picked:
+                    starts.update(picked)
+                    continue
             if path and rounds < st.START_ROUNDS:
-                repick = check_starts(claude, log, path, starts)
+                repick = check_starts(claude, log, path, starts, context or {}, frequency_rank)
                 if repick:
                     starts.update(repick)
                     rounds += 1
@@ -169,7 +179,50 @@ def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], sour
     return None
 
 
-def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, str]) -> dict[str, str]:
+def _word_rank(frequency_rank):
+    """A frequency reader over display words for the start candidates (the curator's
+    reader takes tokens)."""
+    def read(word: str):
+        return frequency_rank(rules.Token(-1, word, word.lower(), "", "", -1, slug(word)))
+    return read
+
+
+def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, str],
+                  forms: dict[str, str], frequency_rank) -> dict[str, str]:
+    """The model picks the three start words together, from each hole's band (elision-
+    clean, not too rare, nearest first), reading the sentence, each slot's form and the
+    context annotations."""
+    puzzle = json.loads(open(path, encoding="utf-8").read())
+    words, holes = puzzle["words"], puzzle["holes"]
+    by_secret: dict[str, dict] = {}
+    for h in holes:
+        by_secret.setdefault(h["secret"]["slug"], h)
+    marked = st.displayed(words, holes, {k: f"[{h['secret']['word']}]" for k, h in by_secret.items()})
+    info = []
+    for key, h in by_secret.items():
+        options = st.start_candidates(puzzle["ranks"][key], key, st.previous_token(words, h),
+                                      frequency_rank=_word_rank(frequency_rank))[:st.START_OPTIONS]
+        if not options:
+            log(f"- no elision-clean start in the band for « {h['secret']['word']} »; the band pick stays")
+            continue
+        info.append({"secret": h["secret"]["word"], "slug": key, "options": options,
+                     "context": context.get(key, "unknown"),
+                     "slot": f"form {forms.get(h['secret']['word'], '?')}, after « {st.previous_token(words, h) or '—'} »"})
+    if not info:
+        return {}
+    picked = llm.pick_starts(claude, marked, info)
+    for h in info:
+        word = picked.get(h["slug"])
+        rank = next((o["rank"] for o in h["options"] if o["word"] == word), None)
+        if word:
+            log(f"- start for « {h['secret']} »: « {word} » (rank {rank})")
+        else:
+            log(f"- the model named no valid start for « {h['secret']} »; the band pick stays")
+    return picked
+
+
+def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, str],
+                 context: dict[str, str], frequency_rank) -> dict[str, str]:
     """The displayed sentence with its start words: the elision rule, then the model's
     grammar check. Returns {secret slug: new start} for every faulty hole (empty = all
     good, or nothing better to offer)."""
@@ -191,24 +244,25 @@ def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, str])
             return {}
         for key, h in by_secret.items():
             if h["start"]["word"] in verdict["faulty"]:
-                faulty[key] = verdict.get("why", "the model finds it ungrammatical")
+                faulty[key] = verdict["faulty"][h["start"]["word"]]
         if not faulty:
-            log(f"- start words check: the model doubts « {shown} » ({verdict.get('why', '')}) "
-                "but names no start word — left to the reviewer")
+            log(f"- start words check: the model doubts « {shown} » but names no start word — "
+                "left to the reviewer")
             return {}
     repick: dict[str, str] = {}
     for key, problem in faulty.items():
         h = by_secret[key]
         log(f"- start « {h['start']['word']} » for « {h['secret']['word']} » refused: {problem}")
         prev = st.previous_token(words, h)
-        options = [e["word"] for e in st.start_candidates(puzzle["ranks"][key], key, prev,
-                                                          exclude={h["start"]["word"], tried.get(key, "")})]
-        options = options[:st.START_OPTIONS]
+        options = st.start_candidates(puzzle["ranks"][key], key, prev,
+                                      exclude={h["start"]["word"], tried.get(key, "")},
+                                      frequency_rank=_word_rank(frequency_rank))[:st.START_OPTIONS]
         if not options:
             log(f"- no other start in the band for « {h['secret']['word']} » — left to the reviewer")
             continue
         marked = st.displayed(words, holes, {key: "[____]"})
-        choice = llm.pick_start(claude, marked, h["secret"]["word"], options)
+        choice = llm.pick_start(claude, marked, h["secret"]["word"], options,
+                                refused=problem, context=context.get(key, "unknown"))
         if choice is None:
             log(f"- the model finds no valid start for « {h['secret']['word']} » — left to the reviewer")
             continue
@@ -325,14 +379,17 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
     # The context check, as the player sees the sentence (all three blanks): an
     # annotation for the reviewer, never a strike (see rules.CONTEXT_GUESSES).
     blanks = {t.i for t in trio}
+    context: dict[str, str] = {}
     for t in trio:
         guesses = llm.context_guesses(claude, tokens, blanks - {t.i}, t.i, rules.CONTEXT_GUESSES)
         rank = next((k + 1 for k, g in enumerate(guesses)
                      if slug(g) == t.slug or (slug(g) and rules.is_variant(slug(g), t.slug))), None)
-        log(f"- context check '{t.text}': {', '.join(guesses) or '(no guess)'}"
-            + (f" → guessed #{rank}" if rank else " → not guessed"))
+        verdict = f"guessed #{rank} from context (guesses: {', '.join(guesses)})" if rank \
+            else f"not guessed from context (guesses: {', '.join(guesses) or 'none'})"
+        context[t.slug] = verdict
+        log(f"- context check '{t.text}': {verdict}")
     source = {"kind": book["kind"], "author": book.get("author", ""), "work": book.get("title", "")}
-    return generate(claude, log, sentence, words, source, lang)
+    return generate(claude, log, sentence, words, source, lang, context, frequency_rank)
 
 
 def main():

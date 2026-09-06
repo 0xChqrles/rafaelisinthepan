@@ -101,17 +101,25 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
 - **`gen_phrase` is the only writer of a puzzle**, run headless from this package with
   `--words` and, when it demands one, `--form` answered by the model from the sentence
   (`curate.generate` parses the #133 error's analysis list). Nothing here publishes.
-- **The start word must leave the displayed sentence VALID FRENCH** (user rule
-  2026-09-06: « l'effet », never « le effet »; the user always picks starts that way).
-  After every successful generation `curate.check_starts` reads the artifact, applies the
-  one rule code can apply with certainty (`starts.elision_problem`: an eliding word before
-  a vowel, an elided one before a consonant; `h` is left to the model), then asks the
-  model whether the displayed sentence is grammatical (`llm.grammar_check`, naming the
-  faulty inserted words). A refused start is re-picked by the model from the hole's band
-  (`starts.start_candidates`: rank `START_RANK_MIN..MAX`, no variant, elision-clean,
-  nearest first) and gen_phrase reruns with `--start MOT=DEPART` — a flag added for this
-  (#260), the headless twin of typing a word at the start prompt. At most
-  `START_ROUNDS` (3) rounds; what is still doubtful is logged for the reviewer.
+- **The START WORDS are CHOSEN by the model, the three together, never at random**
+  (user rule 2026-09-07: the start is the user's daily craft — read the context, avoid a
+  synonym when the context helps, go easier when a hole or the context is hard, think of
+  the chain of guesses, balance the three; the rules live in the skill's `## The start
+  word` section, read by `llm.start_rules`). The first successful gen_phrase run only
+  supplies the rank maps; `curate.choose_starts` then shows the model, per hole, the
+  slot (form + preceding word), the context-check annotation, and the band candidates
+  with ranks (`starts.start_candidates`: rank `START_RANK_MIN..MAX`, no variant,
+  elision-clean, not past `MAX_START_FREQ_RANK` = 40000 in the corpus order — « hétéroptère »
+  is out), and gen_phrase reruns with `--start MOT=DEPART` per hole — a flag added for
+  this (#260), the headless twin of typing a word at the start prompt.
+- **The displayed sentence must be VALID FRENCH** (user rule 2026-09-06: « l'effet »,
+  never « le effet »). After every generation `curate.check_starts` applies the one rule
+  code can apply with certainty (`starts.elision_problem`: an eliding word before a
+  vowel, an elided one before a consonant; `h` is left to the model), then asks the model
+  whether the displayed sentence is grammatical (`llm.grammar_check`, one reason per
+  faulty inserted word). A refused start is re-picked under the same start rules
+  (`llm.pick_start`) and gen_phrase reruns; at most `START_ROUNDS` (3) rounds; what is
+  still doubtful is logged for the reviewer.
 - **Tests are dependency-free** (`uv run --no-project --with pytest`, like generation and
   benchmark): the rules take plain `Token`s and injected callables, so they run without
   spaCy, vectors or a model.
@@ -153,5 +161,5 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
 ## Not in V1 (deliberately)
 
 Publishing; the benchmark as a difficulty gate; difficulty prediction from player logs;
-a harder start word when the context helps a little; English (`LANGS` is `fr`);
+English (`LANGS` is `fr`);
 movies/subtitles (explicitly out, #262); per-token guess counting.
