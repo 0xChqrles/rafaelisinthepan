@@ -15,7 +15,7 @@ import type { GroupConfig } from '../config/groupConfig';
 import { verdictOf, type ShareFacts } from '../domain/reactions';
 import type { Log } from '../log';
 import { buildSystemPrompt } from './personality';
-import { COMMENT_MAX_CHARS, TEMPERATURE, drawMove, drawState, hasAClause, lineRules, namesSomebody, readsLikeASimile, sanitizeComment, spellsANumber } from './podiumComments';
+import { COMMENT_MAX_CHARS, TEMPERATURE, drawKind, drawMove, hasAClause, lineRules, namesSomebody, readsLikeASimile, sanitizeComment, spellsANumber } from './podiumComments';
 import { LlmUnavailable, type LlmProvider } from './types';
 
 const ATTEMPTS = 3;
@@ -87,11 +87,12 @@ export async function generateShareComment(
   //
   // AND THE SCORE ITSELF IS NOT SENT (v8, `podiumComments.ts` says why): the verdict is
   // what the line reacts to, and a number the model never saw is one it cannot read back.
+  const move = drawMove();
   const content = `${JSON.stringify(
     facts.mode === 'word'
       ? { player: facts.player, verdict: verdictOf(facts) }
       : { player: facts.player, solved: !facts.capped, verdict: verdictOf(facts) },
-  )}\n${lineRules(drawMove(), drawState())}`;
+  )}\n${lineRules(move, drawKind(move))}`;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
     if (!(await takeCall())) {
       log.info({ event: 'share.comment_ceiling', attempt }, 'daily call ceiling reached');

@@ -509,18 +509,26 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   words, no relative clause, no second idea, no twist — and exactly FOUR MOVES: ITS OWN
   LOGIC (a conclusion that does not follow, stated as proof), WHAT IT DID TO YOU (the
   result's effect on the bot, first person, far too big, one clause), THE QUALITY OF A
-  SOMETHING (the fixed shape "la <quality> d'un <noun> <state>": the quality the score is
-  about, the obvious noun, ONE plain state that is physically possible for that noun and
-  never said of it, readable at a glance as a weaker version), and THE NAIVE LABEL
-  ("wow" + one impressive word chosen for sound over fit, nothing after the noun, never a
-  rank word like champion/hero/legend). Measured: "La patience d'un chat mouillé.", "La
-  précision d'un détecteur de fumée éteint.", "Je vais déménager pour être plus près de
-  ton cerveau.", "Tu m'as fait vieillir d'une semaine.", "Je déclare ce jour férié.",
-  "Wow un rhinocéros." **THE MOVE, AND FOR MOVE 3 THE KIND OF STATE, ARE ASSIGNED BY
-  CODE** (`podiumComments.ts` `lineRules`, `MOVE_CYCLE` = [1, 2, 3, 4], `STATES`; named
-  in the user turn): asked to rotate, the model cannot — each line is its own call with
-  no memory of the others — and left alone it reached for one move every time and for
-  the same two adjectives ("mouillé", "endormi") on most image lines. A podium walks the
+  SOMETHING (the shape "la <quality> d'un <noun> <state>": the quality the score is
+  about, the obvious noun, ONE adjective or "de <material>" for a REAL state — a
+  condition a body or an object can actually be in, never a situation: "un cheval en
+  grève" makes no sense where "un cheval rachitique" does — and a pairing nobody has had
+  a reason to say: "un détecteur de fumée éteint" is an ordinary thing, "un guépard en
+  porcelaine" is not), and THE NAIVE LABEL ("wow" + one impressive word chosen for sound
+  over fit, nothing after the noun, never a rank word like champion/hero/legend).
+  Measured: "La précision d'un guépard en porcelaine.", "J'ai vieilli d'un an pendant
+  que tu cherchais.", "Tu me dois une après-midi entière.", "Je déclare ce jour férié.",
+  "Wow un rhinocéros." **A MOVE IS AN IDEA, NEVER A SENTENCE TEMPLATE (user-corrected
+  2026-09-06: "it should not always come up with the same sentence construction").**
+  Each move's KINDS are enumerated in code (`podiumComments.ts` `KINDS` — five ways of
+  reasoning, five things the result did to the bot, for the image the noun's realm × a
+  real state — a physical condition or a material, since "its age" and "the weather"
+  gave "un chien trop vieux" and "un chien sous la pluie", ordinary things — and for the
+  label the realm of the word, or it is a bulldozer every time) and the line is
+  told the move AND one kind (`lineRules`, named in the user turn): asked to vary, the
+  model cannot — each line is its own call with no memory of the others — and told a
+  shape it came back with one template per move. The two image moves read as templates
+  soonest, so `MOVE_CYCLE` = [1, 2, 3, 1, 2, 4]: one line in six each. A podium walks the
   cycle from a day-dependent start, a share draws. No example LINES anywhere, and no
   quoted word ("officiellement", offered once, was in half the lines the next run): the
   register is described, and the moves are shapes.

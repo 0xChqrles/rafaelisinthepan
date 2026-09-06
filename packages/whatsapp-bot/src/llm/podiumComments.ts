@@ -99,18 +99,47 @@ export const LINE_RULES = 'No digits and no number words. No name. No "comme", n
 // it reaches for the label every time. The caller decides — a podium walks the three from
 // a day-dependent start, a share draws one — and the rule line names it.
 export type Move = 1 | 2 | 3 | 4;
-// AND, FOR MOVE 3, WHAT KIND OF STATE THE NOUN IS IN: left to itself the model converges
-// on the same two adjectives ("mouillé" on three lines of a run, "endormi" on four), so
-// the kind is drawn per line, the way the move is.
-export const STATES = ['a diet', 'a material', 'an age', 'a mood', 'the weather it is in', 'a job situation', 'an illness'] as const;
-export function lineRules(move: Move, state?: (typeof STATES)[number]): string {
-  return `${LINE_RULES} Move ${move}.${move === 3 && state ? ` State: ${state}.` : ''}`;
+// AND WHICH KIND OF THAT MOVE, drawn per line: a move told as a shape came back as ONE
+// sentence template ("Je déclare …", "Je vais … ce soir", "La patience d'un … mouillé"),
+// so each move's kinds are enumerated here and the line is told one. For move 3 the kind
+// is the noun's STATE, and only REAL states: "a job situation" once produced "un cheval
+// en grève", which a horse cannot be (user-corrected 2026-09-06).
+export const KINDS: Readonly<Record<Move, readonly string[]>> = {
+  1: [
+    'a "therefore" — your feeling is the proof of something',
+    'a rule you just made up, stated as if it had always existed',
+    'an honour or a title you award on your own authority',
+    'a decision about tomorrow that nobody asked for',
+    'a prediction about their future, stated as certain', // ('a fact about the world' gave "le monde tourne rond" every time)
+  ],
+  2: [
+    'something you already did today because of it',
+    'something you will do tonight because of it',
+    'something that changed in your body or your life',
+    'a small sacrifice you are making for them',
+    'a debt one of you now owes the other',
+  ],
+  // Only two kinds of state survive: "its age" and "the weather it is standing in" gave
+  // "un chien trop vieux" and "un chien sous la pluie" — ordinary things, the failure the
+  // move exists to avoid — and the noun is drawn with it, or it is a dog every time.
+  3: [
+    'the noun is an animal; its state is a physical condition — underfed, sick, injured, exhausted',
+    'the noun is somebody with a job; their state is a physical condition — underfed, sick, injured, exhausted',
+    'the noun is an animal; its state is the material it is made of',
+    'the noun is a tool, an object or a vehicle; its state is the material it is made of',
+  ],
+  4: ['an animal a child admires', 'a big machine', 'a famous kind of person', 'a force of nature'],
+};
+export function lineRules(move: Move, kind?: string): string {
+  return `${LINE_RULES} Move ${move}.${kind ? ` Kind: ${kind}.` : ''}`;
 }
-export function drawState(): (typeof STATES)[number] {
-  return STATES[Math.floor(Math.random() * STATES.length)];
+export function drawKind(move: Move): string | undefined {
+  const kinds = KINDS[move];
+  return kinds.length === 0 ? undefined : kinds[Math.floor(Math.random() * kinds.length)];
 }
-// A podium walks this cycle from a day-dependent start, a share draws a position in it.
-export const MOVE_CYCLE: readonly Move[] = [1, 2, 3, 4];
+// The two image moves are the ones that read as a template when they come too often, so
+// they get one line in six each where the two the bot thinks with get two.
+export const MOVE_CYCLE: readonly Move[] = [1, 2, 3, 1, 2, 4];
 export function drawMove(): Move {
   return MOVE_CYCLE[Math.floor(Math.random() * MOVE_CYCLE.length)];
 }
@@ -175,7 +204,7 @@ async function commentForLine(
     who: line.names,
     outOf,
     verdict: scoreBand(line.score, false), // a podium line is always a finished run
-  })}\n${lineRules(move, drawState())}`;
+  })}\n${lineRules(move, drawKind(move))}`;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
     let text: string | null;
     let finish: string | undefined;

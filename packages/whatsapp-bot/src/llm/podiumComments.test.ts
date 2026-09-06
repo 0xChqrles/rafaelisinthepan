@@ -6,7 +6,7 @@ import { LINE_RULES, lineRules, dropEchoes, generatePodiumComments, hasAClause, 
 // The user turn is the FACTS as JSON, then the rules a line is checked against.
 function factsIn(content: string) {
   const [facts, rules] = content.split('\n');
-  expect(rules).toMatch(/ Move [1234]\.( State: [a-z ]+\.)?$/);
+  expect(rules).toMatch(/ Move [1234]\.( Kind: .+\.)?$/);
   expect(rules.startsWith(LINE_RULES)).toBe(true);
   return JSON.parse(facts);
 }
@@ -107,9 +107,9 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
     // No thinking: a deliberated line ran past the timeout under the v8 voice.
     expect((provider.requests[0] as { effort?: string }).effort).toBe('none');
     // Each line is told which of the three moves to make, since it cannot see the others.
-    expect(lineRules(2, 'a diet')).toBe(`${LINE_RULES} Move 2.`);
-    // Move 3 is "la <quality> d'un <noun> <state>", and the kind of state is drawn too.
-    expect(lineRules(3, 'a diet')).toBe(`${LINE_RULES} Move 3. State: a diet.`);
+    // — and which KIND of that move, so a move is an idea and not a sentence template.
+    expect(lineRules(2, 'a debt one of you now owes the other')).toBe(`${LINE_RULES} Move 2. Kind: a debt one of you now owes the other.`);
+    expect(lineRules(4, 'a big machine')).toBe(`${LINE_RULES} Move 4. Kind: a big machine.`);
     const moves = provider.requests.map((r) => /Move (\d)/.exec(r.messages[0].content)?.[1]);
     expect(new Set(moves).size).toBe(2);
   });
