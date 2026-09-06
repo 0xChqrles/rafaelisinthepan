@@ -15,7 +15,7 @@ import type { GroupConfig } from '../config/groupConfig';
 import { verdictOf, type ShareFacts } from '../domain/reactions';
 import type { Log } from '../log';
 import { buildSystemPrompt } from './personality';
-import { TEMPERATURE, drawMove, drawRealm, lineRules, namesSomebody, readsLikeASimile, sanitizeComment, spellsANumber } from './podiumComments';
+import { TEMPERATURE, drawMove, lineRules, namesSomebody, readsLikeASimile, sanitizeComment, spellsANumber } from './podiumComments';
 import { LlmUnavailable, type LlmProvider } from './types';
 
 const ATTEMPTS = 3;
@@ -54,7 +54,7 @@ export type { ShareFacts } from '../domain/reactions';
 const TASK = (max: number, mode: ShareFacts['mode']) =>
   `Task: react in ONE line to the Whippin result below, as a message in the group. The line only — plain text, no markdown, no quotes around it, under ${max} characters and often far less; two words is a whole message.
 
-Three rules before anything else: no digits and no number words (their score is in the share they just posted); no name (it is on the share too); no "comme". Speak TO them — "tu" — never about them.
+Three rules before anything else: no digits and no number words (their score is in the share they just posted); no name (it is on the share too); no comparison and no image. Speak TO them — "tu" — never about them.
 
 ` +
   (mode === 'word'
@@ -92,7 +92,7 @@ export async function generateShareComment(
     facts.mode === 'word'
       ? { player: facts.player, verdict: verdictOf(facts) }
       : { player: facts.player, solved: !facts.capped, verdict: verdictOf(facts) },
-  )}\n${lineRules(drawMove(), drawRealm())}`;
+  )}\n${lineRules(drawMove())}`;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
     if (!(await takeCall())) {
       log.info({ event: 'share.comment_ceiling', attempt }, 'daily call ceiling reached');

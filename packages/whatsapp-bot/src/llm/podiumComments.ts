@@ -71,9 +71,10 @@ export function namesSomebody(text: string, names: readonly string[]): boolean {
   return names.some((n) => n.split(/\s+/).some((part) => fold(part) !== '' && words.has(fold(part))));
 }
 
-// A SIMILE IS REFUSED (user-decided 2026-09-06: "instead of metaphors"). The voice
-// declares — "tu es un tigre" — and asked not to, the model still reached for "comme un
-// chat dans un carton" on a line in four. French "comme", English "like a" / "as if".
+// A SIMILE IS REFUSED (user-decided 2026-09-06: "instead of metaphors", then "the
+// comparisons are still lame"). The joke is the bot's logic and feelings, never a picture,
+// and asked not to, the model still reached for "comme un chat dans un carton" on a line
+// in four. French "comme", English "like a" / "as if".
 export function readsLikeASimile(text: string): boolean {
   return /\bcomme\b/iu.test(text) || /\blike an?\b|\bas if\b/iu.test(text);
 }
@@ -81,25 +82,22 @@ export function readsLikeASimile(text: string): boolean {
 // The rules a line is checked against, restated in the USER turn beside the facts: with
 // thinking off, the model weighs what sits next to the question more than a system prompt
 // read once, and the check below is what makes a lapse cost a retry rather than a post.
-export const LINE_RULES = 'No digits and no number words. No name. No "comme".';
+export const LINE_RULES = 'No digits and no number words. No name. No comparison, no image.';
 
 // WHICH OF THE PERSONALITY'S THREE MOVES THIS LINE MAKES. Asked to rotate them, the
 // model cannot: every line is its own call with no memory of the others, so left alone
 // it reaches for the label every time. The caller decides — a podium walks the three from
 // a day-dependent start, a share draws one — and the rule line names it.
 export type Move = 1 | 2 | 3;
-// AND WHICH REALM THE IMAGE COMES FROM, for moves 1 and 2, since "the most obvious owner
-// of that quality" is the same tortoise under every slow score when nothing varies it;
-// move 3 carries no image. Drawn at random per line.
-export const REALMS = ['an animal', 'a machine or an appliance', 'somebody with a job', 'a vehicle', 'a plant or a tree'] as const;
-export function lineRules(move: Move, realm?: (typeof REALMS)[number]): string {
-  return `${LINE_RULES} Move ${move}.${move === 3 || !realm ? '' : ` Image: ${realm}.`}`;
+export function lineRules(move: Move): string {
+  return `${LINE_RULES} Move ${move}.`;
 }
+// The label (move 3) is the weakest of the three when it lands flat, so it gets one line
+// in five rather than one in three: a podium walks this cycle from a day-dependent start,
+// a share draws a position in it.
+export const MOVE_CYCLE: readonly Move[] = [1, 2, 1, 2, 3];
 export function drawMove(): Move {
-  return (Math.floor(Math.random() * 3) + 1) as Move;
-}
-export function drawRealm(): (typeof REALMS)[number] {
-  return REALMS[Math.floor(Math.random() * REALMS.length)];
+  return MOVE_CYCLE[Math.floor(Math.random() * MOVE_CYCLE.length)];
 }
 
 export interface PodiumCommentLine {
@@ -126,7 +124,7 @@ export function podiumCommentLines(podium: Podium): PodiumCommentLine[] {
 // its thinking off (see `effort` below) the model weighs the opening of a prompt most.
 const TASK = `Task: one short line about ONE podium position below. The line only — plain text, no markdown, no quotes around it, under ${COMMENT_MAX_CHARS} characters and usually far less.
 
-Four rules before anything else: no digits and no number words (the tries are printed directly above your line); do not write the placing; no name (printed above too — say "tu", or "vous" when the line holds two names); no "comme".
+Four rules before anything else: no digits and no number words (the tries are printed directly above your line); do not write the placing; no name (printed above too — say "tu", or "vous" when the line holds two names); no comparison and no image.
 
 The score is how many guesses it took — fewer is better, three is the floor, and the sentence game is not timed. How good it was is already decided for you: react to the verdict, never re-judge it. perfect = the best there is, nobody beats it · brilliant = genuinely good · strong = solid · ordinary = a fine day's work · laboured = slow, and fair game for the joke. Playful at every rung: a slow score is teased by exaggerating the slowness, never by judging it. "place" is where that lands them today, which is a separate thing: a modest score can still win a modest day.
 
@@ -162,7 +160,7 @@ async function commentForLine(
     who: line.names,
     outOf,
     verdict: scoreBand(line.score, false), // a podium line is always a finished run
-  })}\n${lineRules(move, drawRealm())}`;
+  })}\n${lineRules(move)}`;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
     let text: string | null;
     let finish: string | undefined;
@@ -292,7 +290,7 @@ export async function generatePodiumComments(
   // podium line bare rather than emptying the rest.
   const written = await Promise.all(
     lines.map(async (line, i) => {
-      const move = (((i + podium.dayNumber) % 3) + 1) as Move;
+      const move = MOVE_CYCLE[(i + podium.dayNumber) % MOVE_CYCLE.length];
       return [line.id, await commentForLine(provider, system, line, lines.length, move, log)] as const;
     }),
   );

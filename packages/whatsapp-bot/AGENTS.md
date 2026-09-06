@@ -435,12 +435,11 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   (user-corrected the same day: "it clearly became insulting")** — the first wording,
   "the score is fair game for the joke, the person never", read to the model as licence
   for verdicts ("tu es la fierté de personne", "réfléchi pour pas grand-chose", "t'as
-  même pas eu à forcer"). A slow day is teased by making it absurdly SLOWER, a fast one
-  absurdly faster; never by calling it pointless, lucky, easy, useless or the fault of the
-  method, never "even you" / "as usual", never a word about intelligence, worth, effort or
-  life; a grim detail only as the exaggeration step. The test in the prompt: stings from a
-  stranger = wrong, laughs from a friend = right. The bands say so (`laboured` = slow,
-  teased by exaggerating the slowness). **A group's own pre-prompt still singles somebody
+  même pas eu à forcer"). A slow day is teased through what the wait did to the BOT
+  and the conclusion it draws from it; never by calling it pointless, lucky, easy, useless
+  or the fault of the method, never "even you" / "as usual", never a word about
+  intelligence, worth, effort or life; dark only when it is about the bot. The test in
+  the prompt: stings from a stranger = wrong, laughs from a friend = right. **A group's own pre-prompt still singles somebody
   out for harder teasing**; a group that says nothing gets no favourite target.
   **AND IT NEVER CALLS THE SENTENCE "elle".** A bare pronoun has no antecedent in a
   one-line message, so "elle t'a bien fait suer" printed under Christine's name reads as
@@ -496,23 +495,29 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   pour quelqu'un de pressé", "une patience de luthier") and the user wanted the mood of
   *"tu es un véritable tigre" / "la précision d'un escargot en soins palliatifs" /
   "l'information me plaît donc elle est vraie"* — so the character is also not very bright
-  and completely sure of itself, DECLARES rather than describes, and has exactly THREE
-  MOVES: the LABEL (what somebody IS today, the obvious animal/object/profession one size
-  too big, a compliment every time), the OBVIOUS IMAGE PUSHED ONE STEP TOO FAR (the
-  quality the result shows, given the owner a child would pick, then pushed further in
-  the SAME direction — the snail made slower), and ITS OWN LOGIC (a conclusion that does
-  not follow, stated as proof, on their side). **The image is the OBVIOUS one, never a
-  clever twist**: the first cut asked for "an absurdly specific, slightly grim owner" and
-  got random gluings ("des écluses en fin de course", "chronomètre de cantine un jour de
-  grève") that nobody could decode. **THE MOVE AND THE IMAGE'S REALM ARE ASSIGNED BY
-  CODE** (`podiumComments.ts` `lineRules`, named in the user turn): asked to rotate, the
-  model cannot — each line is its own call with no memory of the others, and left alone
-  it reached for the label every time and for the tortoise under every slow score. A
-  podium walks the three moves from a day-dependent start, a share draws one; the realm
-  (`REALMS`: animal, machine, somebody with a job, vehicle, plant) is drawn per line for
-  the two moves that carry an image. **No quoted word either**: "officiellement", offered
-  as the word that makes a label too big, was in half the lines the next run. No example LINES
-  anywhere: the register is described, and the moves are shapes with placeholders.
+  and completely sure of itself. **THE JOKE IS THE BOT, NEVER AN IMAGE (user-corrected
+  twice the same day: "the comparisons are still lame … feels like GPT 3.5 in 2022").**
+  Two cuts built the humour on comparisons — first crafted similes, then "the obvious
+  image pushed one step too far" (the snail made slower) — and the lines the user kept
+  were never those: they were "Tu as fini, c'est pour ça que je t'aime" and "Ce podium
+  me plaît donc c'est un podium officiel", the bot's own warped logic and oversized
+  feelings. So it never compares anybody to anything (no "comme", no "plus … que", no
+  animal with a detail attached, no metaphor, no scene) and has exactly THREE MOVES:
+  ITS OWN LOGIC (a conclusion that does not follow, stated as proof — feelings as
+  evidence, a rule it just invented, an honour awarded on its own authority), WHAT IT DID
+  TO YOU (the result's effect on the bot in the first person, far too big — a vow, a
+  sacrifice, a change to its evening, varied), and THE NAIVE LABEL (a small child's
+  compliment: one impressive word chosen for sound over fit — an admired animal, a big
+  machine — with a flat "wow" allowed; NEVER a rank word like champion/hero/legend, which
+  is what the model wrote until told). Measured: "Wow, un rhinocéros.", "J'ai annulé mon
+  footing pour surveiller ton score.", "Je te nomme gardien officiel de la phrase".
+  **THE MOVE IS ASSIGNED BY CODE** (`podiumComments.ts` `lineRules`, named in the user
+  turn): asked to rotate, the model cannot — each line is its own call with no memory of
+  the others, and left alone it reached for one move every time. The label is the
+  weakest when it lands flat, so `MOVE_CYCLE` = [1, 2, 1, 2, 3]: a podium walks it from a
+  day-dependent start, a share draws a position. No example LINES anywhere, and no quoted
+  word ("officiellement", offered once as the word that makes a label too big, was in half
+  the lines the next run): the register is described, and the moves are shapes.
   Three mechanics came with it, all measured on the real provider:
   - **THE COMMENT PATHS THINK NOT AT ALL** (`effort: 'none'` on `LlmRequest`, mapped by
     `providers/deepseek.ts` onto `thinking: {type: 'disabled'}`; `low`/`high` map onto
@@ -530,7 +535,7 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
     RETRIED** (`podiumComments.ts` `spellsANumber` — any digit, any number word from three
     up in either language, folded; `namesSomebody` — a podium/share name anywhere in the
     line, since allowed mid-line it became a tic; `readsLikeASimile` — French "comme",
-    English "like a" / "as if"), on both paths, the way shortness is enforced: asked not
+    English "like a" / "as if", the comparison the voice forbids), on both paths, the way shortness is enforced: asked not
     to, a model with its thinking off complied about half the time. The rules are also
     restated in the USER turn beside the facts (`LINE_RULES`): with thinking off, what sits
     next to the question weighs more than a system prompt read once. Three attempts at 10s
