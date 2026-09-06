@@ -28,7 +28,9 @@ import type { Log } from '../log';
 import { buildSystemPrompt } from './personality';
 import { LlmUnavailable, type LlmProvider } from './types';
 
-export const COMMENT_MAX_CHARS = 140;
+// EIGHTY, since v8: the voice is a flat short statement, and a line that runs past this
+// is one with work in it (user-decided 2026-09-06: visible effort is the cringe).
+export const COMMENT_MAX_CHARS = 80;
 const ATTEMPTS = 3;
 
 // Plain text only: no line breaks, no markdown emphasis marks (the renderer italicises the
@@ -39,6 +41,7 @@ export function sanitizeComment(raw: unknown): string | null {
   let text = raw
     .replace(/[\u0000-\u001f\u007f]/g, " ")
     .replace(/[*_~`]/g, '')
+    .replace(/\s*!+/g, '') // the voice has no exclamation marks; a stray one is dropped, not posted
     .replace(/\s+/g, ' ')
     .trim();
   if (/^["'«“].*["'»”]$/.test(text)) text = text.slice(1, -1).trim();
@@ -79,23 +82,35 @@ export function readsLikeASimile(text: string): boolean {
   return /\bcomme\b/iu.test(text) || /\blike an?\b|\bas if\b/iu.test(text);
 }
 
+// A RELATIVE CLAUSE IS REFUSED (user-decided 2026-09-06). "Wow, un rhinocéros" is funny
+// and "un rhinocéros qui aurait mangé du lion" is cringe: the clause is the visible
+// effort. French "qui", English "who" / "which".
+export function hasAClause(text: string): boolean {
+  return /\bqui\b/iu.test(text) || /\bwho\b|\bwhich\b/iu.test(text);
+}
+
 // The rules a line is checked against, restated in the USER turn beside the facts: with
 // thinking off, the model weighs what sits next to the question more than a system prompt
 // read once, and the check below is what makes a lapse cost a retry rather than a post.
-export const LINE_RULES = 'No digits and no number words. No name. No comparison, no image.';
+export const LINE_RULES = 'No digits and no number words. No name. No "comme", no "qui". Under ten words.';
 
 // WHICH OF THE PERSONALITY'S THREE MOVES THIS LINE MAKES. Asked to rotate them, the
 // model cannot: every line is its own call with no memory of the others, so left alone
 // it reaches for the label every time. The caller decides — a podium walks the three from
 // a day-dependent start, a share draws one — and the rule line names it.
-export type Move = 1 | 2 | 3;
-export function lineRules(move: Move): string {
-  return `${LINE_RULES} Move ${move}.`;
+export type Move = 1 | 2 | 3 | 4;
+// AND, FOR MOVE 3, WHAT KIND OF STATE THE NOUN IS IN: left to itself the model converges
+// on the same two adjectives ("mouillé" on three lines of a run, "endormi" on four), so
+// the kind is drawn per line, the way the move is.
+export const STATES = ['a diet', 'a material', 'an age', 'a mood', 'the weather it is in', 'a job situation', 'an illness'] as const;
+export function lineRules(move: Move, state?: (typeof STATES)[number]): string {
+  return `${LINE_RULES} Move ${move}.${move === 3 && state ? ` State: ${state}.` : ''}`;
 }
-// The label (move 3) is the weakest of the three when it lands flat, so it gets one line
-// in five rather than one in three: a podium walks this cycle from a day-dependent start,
-// a share draws a position in it.
-export const MOVE_CYCLE: readonly Move[] = [1, 2, 1, 2, 3];
+export function drawState(): (typeof STATES)[number] {
+  return STATES[Math.floor(Math.random() * STATES.length)];
+}
+// A podium walks this cycle from a day-dependent start, a share draws a position in it.
+export const MOVE_CYCLE: readonly Move[] = [1, 2, 3, 4];
 export function drawMove(): Move {
   return MOVE_CYCLE[Math.floor(Math.random() * MOVE_CYCLE.length)];
 }
@@ -124,7 +139,7 @@ export function podiumCommentLines(podium: Podium): PodiumCommentLine[] {
 // its thinking off (see `effort` below) the model weighs the opening of a prompt most.
 const TASK = `Task: one short line about ONE podium position below. The line only — plain text, no markdown, no quotes around it, under ${COMMENT_MAX_CHARS} characters and usually far less.
 
-Four rules before anything else: no digits and no number words (the tries are printed directly above your line); do not write the placing; no name (printed above too — say "tu", or "vous" when the line holds two names); no comparison and no image.
+Four rules before anything else: no digits and no number words (the tries are printed directly above your line); do not write the placing; no name (printed above too — say "tu", or "vous" when the line holds two names); no "comme", no "qui".
 
 The score is how many guesses it took — fewer is better, three is the floor, and the sentence game is not timed. How good it was is already decided for you: react to the verdict, never re-judge it. perfect = the best there is, nobody beats it · brilliant = genuinely good · strong = solid · ordinary = a fine day's work · laboured = slow, and fair game for the joke. Playful at every rung: a slow score is teased by exaggerating the slowness, never by judging it. "place" is where that lands them today, which is a separate thing: a modest score can still win a modest day.
 
@@ -160,7 +175,7 @@ async function commentForLine(
     who: line.names,
     outOf,
     verdict: scoreBand(line.score, false), // a podium line is always a finished run
-  })}\n${lineRules(move)}`;
+  })}\n${lineRules(move, drawState())}`;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
     let text: string | null;
     let finish: string | undefined;
@@ -224,7 +239,9 @@ async function commentForLine(
           ? 'name'
           : readsLikeASimile(comment)
             ? 'simile'
-            : null;
+            : hasAClause(comment)
+              ? 'clause'
+              : null;
     if (comment && !reason) return comment;
     log.warn({ event: 'podium.comment_invalid', id: line.id, attempt, finish, reason }, 'rejecting a line');
   }

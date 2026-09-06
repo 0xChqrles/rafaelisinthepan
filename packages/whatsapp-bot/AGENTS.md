@@ -495,29 +495,35 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   pour quelqu'un de pressé", "une patience de luthier") and the user wanted the mood of
   *"tu es un véritable tigre" / "la précision d'un escargot en soins palliatifs" /
   "l'information me plaît donc elle est vraie"* — so the character is also not very bright
-  and completely sure of itself. **THE JOKE IS THE BOT, NEVER AN IMAGE (user-corrected
-  twice the same day: "the comparisons are still lame … feels like GPT 3.5 in 2022").**
-  Two cuts built the humour on comparisons — first crafted similes, then "the obvious
-  image pushed one step too far" (the snail made slower) — and the lines the user kept
-  were never those: they were "Tu as fini, c'est pour ça que je t'aime" and "Ce podium
-  me plaît donc c'est un podium officiel", the bot's own warped logic and oversized
-  feelings. So it never compares anybody to anything (no "comme", no "plus … que", no
-  animal with a detail attached, no metaphor, no scene) and has exactly THREE MOVES:
-  ITS OWN LOGIC (a conclusion that does not follow, stated as proof — feelings as
-  evidence, a rule it just invented, an honour awarded on its own authority), WHAT IT DID
-  TO YOU (the result's effect on the bot in the first person, far too big — a vow, a
-  sacrifice, a change to its evening, varied), and THE NAIVE LABEL (a small child's
-  compliment: one impressive word chosen for sound over fit — an admired animal, a big
-  machine — with a flat "wow" allowed; NEVER a rank word like champion/hero/legend, which
-  is what the model wrote until told). Measured: "Wow, un rhinocéros.", "J'ai annulé mon
-  footing pour surveiller ton score.", "Je te nomme gardien officiel de la phrase".
-  **THE MOVE IS ASSIGNED BY CODE** (`podiumComments.ts` `lineRules`, named in the user
-  turn): asked to rotate, the model cannot — each line is its own call with no memory of
-  the others, and left alone it reached for one move every time. The label is the
-  weakest when it lands flat, so `MOVE_CYCLE` = [1, 2, 1, 2, 3]: a podium walks it from a
-  day-dependent start, a share draws a position. No example LINES anywhere, and no quoted
-  word ("officiellement", offered once as the word that makes a label too big, was in half
-  the lines the next run): the register is described, and the moves are shapes.
+  and completely sure of itself. **NOTHING IT SAYS LOOKS LIKE AN ATTEMPT AT A JOKE
+  (user-explained 2026-09-06, after two cuts of comparisons the user called lame and
+  "GPT 3.5 in 2022").** The rule the user put words on: "Wow tu es un rhinocéros" is
+  funny because it makes no sense and shows no effort; "un rhinocéros qui aurait mangé
+  du lion" is cringe because the clause is the effort showing. "La précision d'un
+  escargot malnutri" works because it is about the quality the score measures, it is TWO
+  WORDS, the state can genuinely be true of a snail, and the picture is seen at once as a
+  weaker snail; "un baobab qui aurait appris à courir" fails because a baobab cannot run
+  and the sentence is long; "un TGV avec des ailes" fails because nobody knows what the
+  wings mean, where "l'efficacité d'un TGV de bois" is instantly a train that would not
+  work, in wording slightly off the way people type. So: one flat statement, under ten
+  words, no relative clause, no second idea, no twist — and exactly FOUR MOVES: ITS OWN
+  LOGIC (a conclusion that does not follow, stated as proof), WHAT IT DID TO YOU (the
+  result's effect on the bot, first person, far too big, one clause), THE QUALITY OF A
+  SOMETHING (the fixed shape "la <quality> d'un <noun> <state>": the quality the score is
+  about, the obvious noun, ONE plain state that is physically possible for that noun and
+  never said of it, readable at a glance as a weaker version), and THE NAIVE LABEL
+  ("wow" + one impressive word chosen for sound over fit, nothing after the noun, never a
+  rank word like champion/hero/legend). Measured: "La patience d'un chat mouillé.", "La
+  précision d'un détecteur de fumée éteint.", "Je vais déménager pour être plus près de
+  ton cerveau.", "Tu m'as fait vieillir d'une semaine.", "Je déclare ce jour férié.",
+  "Wow un rhinocéros." **THE MOVE, AND FOR MOVE 3 THE KIND OF STATE, ARE ASSIGNED BY
+  CODE** (`podiumComments.ts` `lineRules`, `MOVE_CYCLE` = [1, 2, 3, 4], `STATES`; named
+  in the user turn): asked to rotate, the model cannot — each line is its own call with
+  no memory of the others — and left alone it reached for one move every time and for
+  the same two adjectives ("mouillé", "endormi") on most image lines. A podium walks the
+  cycle from a day-dependent start, a share draws. No example LINES anywhere, and no
+  quoted word ("officiellement", offered once, was in half the lines the next run): the
+  register is described, and the moves are shapes.
   Three mechanics came with it, all measured on the real provider:
   - **THE COMMENT PATHS THINK NOT AT ALL** (`effort: 'none'` on `LlmRequest`, mapped by
     `providers/deepseek.ts` onto `thinking: {type: 'disabled'}`; `low`/`high` map onto
@@ -535,7 +541,9 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
     RETRIED** (`podiumComments.ts` `spellsANumber` — any digit, any number word from three
     up in either language, folded; `namesSomebody` — a podium/share name anywhere in the
     line, since allowed mid-line it became a tic; `readsLikeASimile` — French "comme",
-    English "like a" / "as if", the comparison the voice forbids), on both paths, the way shortness is enforced: asked not
+    English "like a" / "as if"; `hasAClause` — French "qui", English "who" / "which", the
+    relative clause being the effort showing; and `COMMENT_MAX_CHARS` = 80 on both paths,
+    a line past it being one with work in it), on both paths, the way shortness is enforced: asked not
     to, a model with its thinking off complied about half the time. The rules are also
     restated in the USER turn beside the facts (`LINE_RULES`): with thinking off, what sits
     next to the question weighs more than a system prompt read once. Three attempts at 10s

@@ -15,7 +15,7 @@ import type { GroupConfig } from '../config/groupConfig';
 import { verdictOf, type ShareFacts } from '../domain/reactions';
 import type { Log } from '../log';
 import { buildSystemPrompt } from './personality';
-import { TEMPERATURE, drawMove, lineRules, namesSomebody, readsLikeASimile, sanitizeComment, spellsANumber } from './podiumComments';
+import { COMMENT_MAX_CHARS, TEMPERATURE, drawMove, drawState, hasAClause, lineRules, namesSomebody, readsLikeASimile, sanitizeComment, spellsANumber } from './podiumComments';
 import { LlmUnavailable, type LlmProvider } from './types';
 
 const ATTEMPTS = 3;
@@ -27,10 +27,9 @@ const ATTEMPTS = 3;
 // stays where it was because it costs nothing, and the finish-reason check (which refuses
 // every reason but `stop`) stays because a provider can still cut a generation short.
 const MAX_TOKENS = 2000;
-// SHORTNESS IS THE VOICE, so it is enforced and not merely asked for. A line that runs long
-// is one that started explaining itself, which is the failure this register exists to avoid
-// — rejecting it costs a retry, where posting it costs the joke.
-const LINE_MAX_CHARS = 90;
+// SHORTNESS IS THE VOICE, so it is enforced and not merely asked for — the podium's cap,
+// one spelling (`COMMENT_MAX_CHARS`): a line that runs long is one with work in it.
+const LINE_MAX_CHARS = COMMENT_MAX_CHARS;
 // THE EMOJI IS WAITING BEHIND THIS, so the wait is bounded well under the provider's own
 // 30s default: `ingest` awaits the line, and a long wait puts the acknowledgement of a
 // share far enough after it to read as broken. With thinking off (v8) a line answers in
@@ -52,9 +51,9 @@ export type { ShareFacts } from '../domain/reactions';
 // "acceptable." to three different scores in a row — so the examples say what the voice
 // SOUNDS like and the prompt forbids reusing their words.
 const TASK = (max: number, mode: ShareFacts['mode']) =>
-  `Task: react in ONE line to the Whippin result below, as a message in the group. The line only — plain text, no markdown, no quotes around it, under ${max} characters and often far less; two words is a whole message.
+  `Task: react in ONE line to the Whippin result below, as a message in the group. The line only — plain text, no markdown, no quotes around it, under ${max} characters and usually far less; two words is a whole message.
 
-Three rules before anything else: no digits and no number words (their score is in the share they just posted); no name (it is on the share too); no comparison and no image. Speak TO them — "tu" — never about them.
+Three rules before anything else: no digits and no number words (their score is in the share they just posted); no name (it is on the share too); no "comme", no "qui". Speak TO them — "tu" — never about them.
 
 ` +
   (mode === 'word'
@@ -80,7 +79,7 @@ export async function generateShareComment(
   const system = buildSystemPrompt({
     language: group.language,
     groupPrePrompt: group.chat.prePrompt,
-    extra: TASK(70, facts.mode),
+    extra: TASK(COMMENT_MAX_CHARS, facts.mode),
   });
   // NEUTRAL FIELD NAMES, because the model writes with whatever vocabulary is in front of
   // it: an earlier draft called this `band` and produced "le band a gagné." Nothing here is
@@ -92,7 +91,7 @@ export async function generateShareComment(
     facts.mode === 'word'
       ? { player: facts.player, verdict: verdictOf(facts) }
       : { player: facts.player, solved: !facts.capped, verdict: verdictOf(facts) },
-  )}\n${lineRules(drawMove())}`;
+  )}\n${lineRules(drawMove(), drawState())}`;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
     if (!(await takeCall())) {
       log.info({ event: 'share.comment_ceiling', attempt }, 'daily call ceiling reached');
@@ -153,7 +152,9 @@ export async function generateShareComment(
             ? 'name'
             : readsLikeASimile(line)
               ? 'simile'
-              : null;
+              : hasAClause(line)
+                ? 'clause'
+                : null;
     if (line && !reason) return line;
     log.warn(
       { event: 'share.comment_invalid', attempt, finish, reason, length: line?.length ?? 0 },

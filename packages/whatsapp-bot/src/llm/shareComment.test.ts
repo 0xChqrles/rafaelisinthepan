@@ -8,7 +8,7 @@ import { LINE_RULES } from './podiumComments';
 // The user turn is the FACTS as JSON, then the rules a line is checked against.
 function sentIn(call: unknown) {
   const [facts, rules] = (call as { messages: { content: string }[] }).messages[0].content.split('\n');
-  expect(rules).toMatch(/ Move [123]\.$/);
+  expect(rules).toMatch(/ Move [1234]\.( State: [a-z ]+\.)?$/);
   expect(rules.startsWith(LINE_RULES)).toBe(true);
   return JSON.parse(facts);
 }

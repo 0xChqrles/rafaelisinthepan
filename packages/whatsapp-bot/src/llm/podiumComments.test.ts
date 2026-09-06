@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parseGroupConfig } from '../config/groupConfig';
 import { createLog } from '../log';
-import { LINE_RULES, lineRules, dropEchoes, generatePodiumComments, namesSomebody, podiumCommentLines, readsLikeASimile, sanitizeComment, spellsANumber } from './podiumComments';
+import { LINE_RULES, lineRules, dropEchoes, generatePodiumComments, hasAClause, namesSomebody, podiumCommentLines, readsLikeASimile, sanitizeComment, spellsANumber } from './podiumComments';
 
 // The user turn is the FACTS as JSON, then the rules a line is checked against.
 function factsIn(content: string) {
   const [facts, rules] = content.split('\n');
-  expect(rules).toMatch(/ Move [123]\.$/);
+  expect(rules).toMatch(/ Move [1234]\.( State: [a-z ]+\.)?$/);
   expect(rules.startsWith(LINE_RULES)).toBe(true);
   return JSON.parse(facts);
 }
@@ -107,7 +107,9 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
     // No thinking: a deliberated line ran past the timeout under the v8 voice.
     expect((provider.requests[0] as { effort?: string }).effort).toBe('none');
     // Each line is told which of the three moves to make, since it cannot see the others.
-    expect(lineRules(2)).toBe(`${LINE_RULES} Move 2.`);
+    expect(lineRules(2, 'a diet')).toBe(`${LINE_RULES} Move 2.`);
+    // Move 3 is "la <quality> d'un <noun> <state>", and the kind of state is drawn too.
+    expect(lineRules(3, 'a diet')).toBe(`${LINE_RULES} Move 3. State: a diet.`);
     const moves = provider.requests.map((r) => /Move (\d)/.exec(r.messages[0].content)?.[1]);
     expect(new Set(moves).size).toBe(2);
   });
@@ -147,6 +149,12 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
     expect(readsLikeASimile('You are a tiger.')).toBe(false);
     expect(readsLikeASimile('Solid, like a fridge.')).toBe(true);
     expect(readsLikeASimile('I like that.')).toBe(false);
+    // A relative clause is the visible effort: "un rhinocéros" is funny, "un rhinocéros
+    // qui aurait mangé du lion" is cringe.
+    expect(hasAClause('Wow, un rhinocéros.')).toBe(false);
+    expect(hasAClause('Un rhinocéros qui aurait mangé du lion.')).toBe(true);
+    expect(hasAClause("Tu as fini, c'est pour ça que je t'aime.")).toBe(false);
+    expect(hasAClause('A rhino who ate a lion.')).toBe(true);
     const provider = answering({
       1: ['Trois essais, propre.', 'Je vais encadrer ça.'],
       2: ['Delphine et Zou, un duo.', 'Vous deux, un duo.'],
@@ -159,13 +167,14 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
     const stubborn = answering({ 1: ['Trois.', 'Quatre.', 'Cinq.'], 2: ['Vous deux, un duo.'] });
     expect((await generatePodiumComments(stubborn, group, podium, log)).has('3')).toBe(false);
     expect(stubborn.calls).toBe(4);
-    const simile = answering({ 1: ['Un tigre, comme toujours.', 'Un tigre absolu.'], 2: ['Vous deux, un duo.'] });
+    const simile = answering({ 1: ['Un tigre, comme toujours.', 'Un tigre qui dort.', 'Un tigre absolu.'], 2: ['Vous deux, un duo.'] });
     expect((await generatePodiumComments(simile, group, podium, log)).get('3')).toBe('Un tigre absolu.');
   });
 
   it('keeps comments plain text', () => {
     expect(sanitizeComment(' *La* _brigade_\n antidopage. ')).toBe('La brigade antidopage.');
     expect(sanitizeComment('"Quoted."')).toBe('Quoted.');
+    expect(sanitizeComment('Wow un sous-marin !')).toBe('Wow un sous-marin');
     expect(sanitizeComment(42)).toBeNull();
   });
 
