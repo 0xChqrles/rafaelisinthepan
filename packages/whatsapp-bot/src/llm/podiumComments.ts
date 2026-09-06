@@ -88,8 +88,18 @@ export const LINE_RULES = 'No digits and no number words. No name. No "comme".';
 // it reaches for the label every time. The caller decides — a podium walks the three from
 // a day-dependent start, a share draws one — and the rule line names it.
 export type Move = 1 | 2 | 3;
-export function lineRules(move: Move): string {
-  return `${LINE_RULES} Move ${move}.`;
+// AND WHICH REALM THE IMAGE COMES FROM, for moves 1 and 2, since "the most obvious owner
+// of that quality" is the same tortoise under every slow score when nothing varies it;
+// move 3 carries no image. Drawn at random per line.
+export const REALMS = ['an animal', 'a machine or an appliance', 'somebody with a job', 'a vehicle', 'a plant or a tree'] as const;
+export function lineRules(move: Move, realm?: (typeof REALMS)[number]): string {
+  return `${LINE_RULES} Move ${move}.${move === 3 || !realm ? '' : ` Image: ${realm}.`}`;
+}
+export function drawMove(): Move {
+  return (Math.floor(Math.random() * 3) + 1) as Move;
+}
+export function drawRealm(): (typeof REALMS)[number] {
+  return REALMS[Math.floor(Math.random() * REALMS.length)];
 }
 
 export interface PodiumCommentLine {
@@ -118,11 +128,16 @@ const TASK = `Task: one short line about ONE podium position below. The line onl
 
 Four rules before anything else: no digits and no number words (the tries are printed directly above your line); do not write the placing; no name (printed above too — say "tu", or "vous" when the line holds two names); no "comme".
 
-The score is how many guesses it took — fewer is better, three is the floor, and the sentence game is not timed. How good it was is already decided for you: react to the verdict, never re-judge it. perfect = the best there is, nobody beats it · brilliant = genuinely good · strong = solid · ordinary = a fine day's work · laboured = slow, and fair game for the joke. Playful at every rung: the score can be laughed at, the person never. "place" is where that lands them today, which is a separate thing: a modest score can still win a modest day.
+The score is how many guesses it took — fewer is better, three is the floor, and the sentence game is not timed. How good it was is already decided for you: react to the verdict, never re-judge it. perfect = the best there is, nobody beats it · brilliant = genuinely good · strong = solid · ordinary = a fine day's work · laboured = slow, and fair game for the joke. Playful at every rung: a slow score is teased by exaggerating the slowness, never by judging it. "place" is where that lands them today, which is a separate thing: a modest score can still win a modest day.
 
 The other lines are written separately and cannot see yours, so no consolation that would fit any score ("aller au bout", "c'est déjà ça") and nothing any bot could have said. One blunt, strange, sincere verdict on THIS person, in the words a friend types.`;
 
 const MAX_TOKENS = 4000;
+// COUNTS NOW THAT THINKING IS OFF (DeepSeek ignores it while thinking). 1.1 was the
+// setting under thinking, and without it that much sampling produced word salad ("des
+// écluses en fin de course, ça tire encore mais ça râle à chaque cran"); 0.8 measured
+// clean on the same podium, at no visible cost in strangeness.
+export const TEMPERATURE = 0.8;
 // The attempts at this must fit the podium Lambda's 90s with room for its reads, and the
 // lines run in parallel, so the ceiling here is per LINE and not per podium. With thinking
 // off a line answers in about a second (the 20s here used to cover the deliberation), so
@@ -147,7 +162,7 @@ async function commentForLine(
     who: line.names,
     outOf,
     verdict: scoreBand(line.score, false), // a podium line is always a finished run
-  })}\n${lineRules(move)}`;
+  })}\n${lineRules(move, drawRealm())}`;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
     let text: string | null;
     let finish: string | undefined;
@@ -162,7 +177,7 @@ async function commentForLine(
         system,
         messages: [{ role: 'user', content }],
         maxTokens: MAX_TOKENS,
-        temperature: 1.1,
+        temperature: TEMPERATURE,
         effort: 'none',
         timeoutMs: TIMEOUT_MS,
       });

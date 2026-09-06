@@ -15,7 +15,7 @@ import type { GroupConfig } from '../config/groupConfig';
 import { verdictOf, type ShareFacts } from '../domain/reactions';
 import type { Log } from '../log';
 import { buildSystemPrompt } from './personality';
-import { lineRules, namesSomebody, readsLikeASimile, sanitizeComment, spellsANumber, type Move } from './podiumComments';
+import { TEMPERATURE, drawMove, drawRealm, lineRules, namesSomebody, readsLikeASimile, sanitizeComment, spellsANumber } from './podiumComments';
 import { LlmUnavailable, type LlmProvider } from './types';
 
 const ATTEMPTS = 3;
@@ -64,7 +64,7 @@ Three rules before anything else: no digits and no number words (their score is 
     : `How good it was is already decided for you. React to it, never re-judge it. Three is the lowest score anyone can get, and anything under ten is good play: perfect = the best there is, nobody beats it, say so plainly · brilliant = genuinely good, tell them · strong = solid, and you mean it · ordinary = a fine day's work · laboured = slow, and fair game for the joke · failed = the sentence won today, and that is fair game too.`) +
   `
 
-Playful at every rung: the score can be laughed at, the person never. At the bottom, nothing about having held on or gone the distance, which is what every bot says; the three moves work there too. One blunt, strange, sincere verdict on THIS person, in the words a friend types — nothing any bot could have said.`;
+Playful at every rung: a slow score is teased by exaggerating the slowness, never by judging it. At the bottom, nothing about having held on or gone the distance, which is what every bot says; the three moves work there too. One blunt, strange, sincere verdict on THIS person, in the words a friend types — nothing any bot could have said.`;
 
 export async function generateShareComment(
   provider: LlmProvider,
@@ -92,7 +92,7 @@ export async function generateShareComment(
     facts.mode === 'word'
       ? { player: facts.player, verdict: verdictOf(facts) }
       : { player: facts.player, solved: !facts.capped, verdict: verdictOf(facts) },
-  )}\n${lineRules((Math.floor(Math.random() * 3) + 1) as Move)}`;
+  )}\n${lineRules(drawMove(), drawRealm())}`;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
     if (!(await takeCall())) {
       log.info({ event: 'share.comment_ceiling', attempt }, 'daily call ceiling reached');
@@ -107,7 +107,7 @@ export async function generateShareComment(
         system,
         messages: [{ role: 'user', content }],
         maxTokens: MAX_TOKENS,
-        temperature: 1.1,
+        temperature: TEMPERATURE, // `podiumComments.ts` says why
         effort: 'none',
         timeoutMs: TIMEOUT_MS,
       });

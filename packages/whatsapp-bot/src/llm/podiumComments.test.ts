@@ -6,7 +6,7 @@ import { LINE_RULES, lineRules, dropEchoes, generatePodiumComments, namesSomebod
 // The user turn is the FACTS as JSON, then the rules a line is checked against.
 function factsIn(content: string) {
   const [facts, rules] = content.split('\n');
-  expect(rules).toMatch(/ Move [123]\.$/);
+  expect(rules).toMatch(/ Move [123]\.( Image: [a-z ]+\.)?$/);
   expect(rules.startsWith(LINE_RULES)).toBe(true);
   return JSON.parse(facts);
 }
@@ -107,8 +107,11 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
     // No thinking: a deliberated line ran past the timeout under the v8 voice.
     expect((provider.requests[0] as { effort?: string }).effort).toBe('none');
     // Each line is told which of the three moves to make, since it cannot see the others.
-    expect(lineRules(2)).toBe(`${LINE_RULES} Move 2.`);
-    const moves = provider.requests.map((r) => r.messages[0].content.slice(-2, -1));
+    // — and, for the two moves that carry an image, which realm it comes from, so the
+    // obvious owner of a quality is not the same tortoise under every slow score.
+    expect(lineRules(2, 'a vehicle')).toBe(`${LINE_RULES} Move 2. Image: a vehicle.`);
+    expect(lineRules(3, 'a vehicle')).toBe(`${LINE_RULES} Move 3.`);
+    const moves = provider.requests.map((r) => /Move (\d)/.exec(r.messages[0].content)?.[1]);
     expect(new Set(moves).size).toBe(2);
   });
 
