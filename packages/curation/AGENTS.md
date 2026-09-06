@@ -13,7 +13,8 @@
     scripts/
       curate.py              the CLI + the linear pipeline (work -> sentences -> trio -> gen_phrase)
       rules.py               the trio rules as PURE functions over parsed tokens (+ the tunables)
-      sentences.py           text -> candidate sentences (length band, self-contained; stdlib)
+      sentences.py           text -> candidate UNITS: a sentence, or up to 3 consecutive short
+                             sentences of one paragraph (length band, self-contained; stdlib)
       epub.py                epub -> text + metadata (stdlib)
       lyrics.py              song files (#262): header format, Genius cleanup, couplet UNITS,
                              the famous-single cut, the artist cooldown (stdlib, tested)
@@ -112,7 +113,11 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
 - **The famous single is cut by pageviews**: `FAMOUS_SHARE` (0.25) of each artist's songs,
   most viewed first, is dropped before any lyric is read (`lyrics.famous_cut`). Features
   are skipped (the line belongs to someone else's song).
-- **A song is mined as UNITS, not sentences** (`lyrics.candidate_units`): per starting
+- **A puzzle is a UNIT, not necessarily one sentence** (user rule 2026-09-06): a book is
+  mined per starting sentence as the shortest run of consecutive sentences of one
+  paragraph (at most `MAX_SENTENCES_PER_UNIT` = 3) that reaches the length band — the
+  micro-story the archive already holds (the Hagakure day is two sentences).
+- **A song is mined the same way, over lines** (`lyrics.candidate_units`): per starting
   line, the shortest run of consecutive lines within a stanza (never across a blank line,
   at most `MAX_LINES_PER_UNIT` = 4) that reaches the sentence band; lines after the first
   lose their capital and a comma bridges a line with no punctuation. The capital and
@@ -137,5 +142,4 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
 
 Publishing; the benchmark as a difficulty gate; difficulty prediction from player logs;
 a harder start word when the context helps a little; English (`LANGS` is `fr`);
-multi-sentence micro-stories in BOOKS (songs have units); movies/subtitles (explicitly
-out, #262); per-token guess counting.
+movies/subtitles (explicitly out, #262); per-token guess counting.

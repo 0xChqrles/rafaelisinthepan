@@ -6,8 +6,10 @@ description: Source French puzzle material for Whippin. Two requests — (1) pic
 # Find puzzle sentences
 
 You are sourcing material for the daily sentence-reconstruction game. A puzzle = one
-sentence + 3 secret words the player rediscovers via embedding-neighbor feedback, so a
-good sentence must survive having its three best words removed WITHOUT the remaining
+short text + 3 secret words the player rediscovers via embedding-neighbor feedback. "A
+sentence" here means the puzzle's text: one sentence, or a few short consecutive ones
+read as one (a micro-story, ≤ ~33 words) — what matters is a short run of words with a
+meaning. It must survive having its three best words removed WITHOUT the remaining
 context giving them back, to a human or to an LLM. The automated curator (#260) applies
 the same rules headlessly; this skill is the interactive version.
 
