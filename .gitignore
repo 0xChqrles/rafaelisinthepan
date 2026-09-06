@@ -14,6 +14,7 @@ dist-ssr
 .venv
 __pycache__
 *.pyc
+.pytest_cache
 
 # ── WhatsApp bot group configs (#236) ────────────────────────
 # SSM is the source of truth (`/whippin/bot/groups/<slug>`); this directory is a SNAPSHOT
@@ -38,6 +39,12 @@ packages/backend/.local-store
 # `pnpm puzzle:publish`. Regenerable artifacts — not tracked. (vocab/<lang>.json
 # is a web asset and stays under packages/web/public/vocab.)
 packages/generation/output
+
+# ── Curation shelf + run logs (issue #260) ───────────────────
+# The shelf holds the epubs to mine (copyrighted) and index.json (which books were
+# read, which sentences were proposed); runs/ holds one log per run. Never committed.
+packages/curation/shelf
+packages/curation/runs
 
 # ── Offline benchmark lab output (issue #80) ─────────────────
 # Full paid-run session records (transcripts, transport, timing, token usage) stay

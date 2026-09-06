@@ -28,7 +28,7 @@ relative to `packages/generation/` unless prefixed.
       embedding_neighbors.py  shared load/vocab/matrix/cosine-rank logic
       glove_neighbors.py      en paths + derived .kv cache (thin wrapper over the above)
       french_neighbors.py     fr paths + derived .kv cache (thin wrapper)
-      start_word.py           start/hint-word selection (rank band 50-150)
+      start_word.py           start/hint-word selection (rank band 100-150)
       distances.py            stdlib-only: dq quantization (#115)
       gen_phrase.py           one sentence -> one self-contained puzzle JSON; also owns the
                               per-secret pipeline (walk_secret) both entry points share
@@ -360,7 +360,11 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json + shared/src/vocab.
 #    word identities ranked by their homograph-free representative, and no-clean
 #    groups are surfaced in the playability report (#135, printed per secret on
 #    stdout, observation only). Every ranked group is annotated with its dq distance
-#    (#115); dq has no opt-out.
+#    (#115); dq has no opt-out. --start MOT=DEPART names a hole's start (hint) word
+#    outright — the headless twin of typing a word at the start prompt (#260: the
+#    curator re-picks a start that leaves the displayed sentence valid French); a word
+#    of the hole's vocabulary, never the secret; the other holes keep the seeded band
+#    pick.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct words; all occurrences hole (no `--`)
 
 # 4. Generate a SINGLE-WORD artifact (#154): one word + its ranked neighborhood, no
@@ -386,7 +390,7 @@ output filename contains the three distinct secret slugs in sentence order.
 
 - All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` (reduce),
   `TOP_K = 10000` / curator report window `PLAYABILITY_TOP = 150` (gen),
-  start-rank band `50–150` (`start_word.py`). Note `PLAYABILITY_TOP` stayed at 150: it is
+  start-rank band `100–150` (`start_word.py`, user-decided 2026-09-07; was 50–150). Note `PLAYABILITY_TOP` stayed at 150: it is
   a curator report window sized for a sentence hole's near field, not the word game's field.
 - **Playability report (#135):** `build_playability_report` reads (never mutates)
   the final groups at ranks 1..`PLAYABILITY_TOP`; both `--words` and the raw-mode
@@ -424,7 +428,7 @@ output filename contains the three distinct secret slugs in sentence order.
   because reduction already strips stopwords / single letters / non-dictionary tokens,
   "in `V`" **is** the content-word filter (no separate stopword list), so `l'animal` offers
   only `animal` and punctuation/stopwords are non-selectable. ←/→ navigate the content
-  words; the hovered word's **full start-word band** (`start_band`, ranks 50–150) is
+  words; the hovered word's **full start-word band** (`start_band`, ranks 100–150) is
   previewed live (its neighbor ranking computed once per secret slug and **cached**).
   **Enter** commits the hovered occurrence's whole repeated-word group, then a **number +
   Enter** picks its shared start word (**Esc** cancels back to navigation, **Ctrl-C**
