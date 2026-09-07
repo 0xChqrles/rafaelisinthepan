@@ -24,6 +24,7 @@ import CellDigits from '../components/CellDigits';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import SolvedScreen from '../components/SolvedScreen';
+import type { SolvedHole } from '../components/SolvedScreen';
 import LazyStreakDialog, { preloadStreakDialog } from '../components/LazyStreakDialog';
 import HistoryWheel from '../components/HistoryWheel';
 import HistoryModal from '../components/HistoryModal';
@@ -586,6 +587,47 @@ function Round({
     setDissolved(true);
   }, []);
 
+  // --- #179: A TAP FAST-FORWARDS THE REVEAL, AND STILL LANDS ON WHAT IT HIT
+  // (user-decided 2026-08-16). The solved reveal is several seconds of choreography a
+  // returning player has already seen, and a daily's player wants the number; the streak
+  // celebration got its own skip for exactly this reason. One gesture settles the WHOLE
+  // remainder at once — the tray released, the sentence's erosion done, the stage drawn
+  // with `animate` off, which IS the frame a rehydrated solve renders. Reusing that
+  // rendering rather than inventing a parallel fast path is the decision's own
+  // instruction, and it is what keeps the skip from drifting behind the beats.
+  const settleReveal = useCallback(() => {
+    setKeyboardLeaving(false); // the drop is over, the tray is handed back
+    setDissolved(true); // the sentence has finished going out
+    setAnimateResults(false); // and the stage draws its settled frame
+  }, []);
+  // The reveal is on screen AND still playing: the solving beats have handed it over, no
+  // full-screen celebration stands in front of it, and it has not settled yet.
+  const revealPlaying =
+    showResults && !showStreakDialog && animateResults && !deferResultsAnimation;
+  // It listens in the CAPTURE phase and neither cancels nor stops the event, so the
+  // gesture is never swallowed: a tap on a found word settles the stage AND opens that
+  // word's history, Enter on a focused control settles AND activates it, natively.
+  // `click` rather than `pointerdown`, for two reasons: a click's target is fixed before
+  // this runs, so settling can never pull the control out from under the finger between
+  // press and release — and a SCROLL, which #266's full sentence makes a real gesture
+  // here, produces no click and must not read as a skip.
+  //
+  // The streak celebration is excluded above because it keeps its OWN fast-forward →
+  // dismiss handling: the tap that dismisses it must not also spend the reveal it is
+  // handing over to. (Its dismissal only lands 200ms later, past its exit fade, so the
+  // arming cannot catch that same gesture either.) The dev `?streak=N` preview holds the
+  // stage at frame zero behind a modal this round never sees, so it is excluded by the
+  // same prop that gates `start`.
+  useEffect(() => {
+    if (!revealPlaying) return undefined;
+    window.addEventListener('click', settleReveal, true);
+    window.addEventListener('keydown', settleReveal, true);
+    return () => {
+      window.removeEventListener('click', settleReveal, true);
+      window.removeEventListener('keydown', settleReveal, true);
+    };
+  }, [revealPlaying, settleReveal]);
+
   // --- the hole WHEEL (2026-09-01, replacing the history modal; 2026-08-10's own
   // replacement of the #117 route map): each hole opens the round's guess log ranked against
   // its own secret, as one column scrolling through the word's own place. Numbering is by DISTINCT secret in sentence
@@ -641,17 +683,22 @@ function Round({
     () => holeNumbers.map((n) => ariaHoleHistory(lang, n)),
     [holeNumbers, lang],
   );
-  // The solved stage's word row (2026-08-14): the DISTINCT secrets in sentence order —
-  // the ruler ticks' own numbering — each carrying the first hole index of its secret,
-  // which is all the history modal needs (occurrences of one secret share a rank map and
-  // a log).
-  const solvedWords = useMemo(
+  // The solved stage's secrets (#266, replacing the distinct-word ROW of 2026-08-14): one
+  // entry per OCCURRENCE now, because the stage draws the whole sentence and a secret
+  // appearing twice appears twice in it. Each carries its OWN hole index — the tap opens
+  // the history of the word that was tapped — and the shared distinct-secret `number`, so
+  // two occurrences still pop on one beat and share one history line (they share a rank
+  // map, so the two logs are the same log).
+  const solvedHoles = useMemo<SolvedHole[]>(
     () =>
-      puzzleHoles.flatMap((h, holeIndex) =>
-        puzzleHoles.findIndex((p) => p.secret.slug === h.secret.slug) === holeIndex
-          ? [{ word: h.secret.word, holeIndex, number: holeNumbers[holeIndex] }]
-          : [],
-      ),
+      puzzleHoles.map((h, holeIndex) => ({
+        pos: h.pos,
+        word: h.secret.word,
+        holeIndex,
+        number: holeNumbers[holeIndex],
+        prefix: h.prefix,
+        suffix: h.suffix,
+      })),
     [puzzleHoles, holeNumbers],
   );
   const historyModel = useMemo(() => {
@@ -875,9 +922,10 @@ function Round({
       {showResults && dissolved ? (
         /* The SOLVED STAGE (user-decided 2026-08-14): the sentence has dissolved, so the
            result takes the WHOLE column the play area and the tray used to split — the
-           source typed big, the guessed words (still the history tap), the score over its
-           ruler, the day's population, SHARE on the bottom edge. The tray goes with the
-           keyboard: nothing left down there to reserve a footprint for. */
+           SENTENCE the player rebuilt (#266, its secrets still the history tap), the
+           source under it, the score over its ruler, the day's population, SHARE on the
+           bottom edge. The tray goes with the keyboard: nothing left down there to
+           reserve a footprint for. */
         <SolvedScreen
           guessCount={guessCount}
           trajectory={trajectory}
@@ -888,7 +936,8 @@ function Round({
           solvedAt={capped ? undefined : solvedAt}
           capped={capped}
           source={source}
-          words={solvedWords}
+          words={words}
+          holes={solvedHoles}
           onExplore={openHistory}
           veiledHole={wheelOpen ? historyHole : null}
           placement={placement}
