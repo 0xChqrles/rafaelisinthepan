@@ -36,13 +36,13 @@ export interface ShareCommentDeps {
 // Two short sentences of numbers and names need room the one-liner never had. Still a
 // WhatsApp bubble, never a paragraph.
 export const COMMENTARY_MAX_CHARS = 220;
-// THE WRITER THINKS HERE. The facts are a small table and the line is a reading of it —
-// which is ahead of whom, how far from the usual — and that is a reasoning task where the
-// one-liner was not. Measured under the v7 voice, `low` ran to 19s on a 2,500-token
-// prompt; this prompt is a third of that, and the emoji waits behind it, so the cut is
-// 20s and three candidates run in parallel (measured: 11–31s a share, judge included).
+// THE WRITER DOES NOT THINK; THE JUDGE DOES. Measured on the same seeded day: with its
+// thinking on the writer took 15–29s a share (46s once, two candidates lost to the cut)
+// and read no better than with it off (12–21s), because the facts already carry every
+// comparison — the writer phrases a table, and the arithmetic slips it makes either way
+// ("deux points sous" for 1.1) are the judge's to catch. Three candidates in parallel.
 const CANDIDATES = 3;
-const SHAPE: CandidateShape = { maxChars: COMMENTARY_MAX_CHARS, refuse: () => null, effort: 'low', timeoutMs: 20_000 };
+const SHAPE: CandidateShape = { maxChars: COMMENTARY_MAX_CHARS, refuse: () => null, effort: 'none', timeoutMs: 15_000 };
 
 const TASK = (mode: ShareFacts['mode']) =>
   mode === 'word'

@@ -28,6 +28,7 @@ describe('the facts a share is commented from (user-decided 2026-09-07)', () => 
     expect(ctx!.score).toBe(12);
     expect(ctx!.typical).toEqual(TYPICAL_SCORE);
     expect(ctx!.habitDays).toBe(HABIT_DAYS);
+    expect(ctx!.reading).toContain('BEFORE today');
     expect(ctx!.today.board).toEqual([
       { position: 1, score: 4, names: ['LUC'] },
       { position: 2, score: 12, names: ['CAMI', 'ZOU'] },

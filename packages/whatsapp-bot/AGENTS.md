@@ -540,20 +540,28 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   `llm/shareComment.ts` hands it ALL to the writer as JSON, with the rule that every number,
   name and comparison comes from it. **No band word travels** (the user: "not a word like
   strong, just the score"); **numbers and names are the point**, so none of the one-liner
-  refusals apply to this path (`CandidateShape`); **the writer THINKS** (`effort: low`,
-  20s, three candidates in parallel — a reading of a table is a reasoning task where the
-  one-liner was not); and **the judge is a FACT CHECK** (`FACT_JUDGE_SYSTEM`: every claim
-  backed by the facts, worth reading, one or two plain sentences), because a line that
-  misplaces somebody is the bot deciding a rank. What brings value is described, never
+  refusals apply to this path (`CandidateShape`); **the writer does NOT think, the judge does**
+  (measured on the seeded day: thinking on, 15–29s a share and no better; off, 12–21s —
+  the facts carry every comparison, the writer phrases a table); three candidates in
+  parallel; and **the judge is a FACT CHECK** (`FACT_JUDGE_SYSTEM`: every claim backed by
+  the facts, worth reading — or a plain acknowledgement when nothing is notable — one or
+  two plain sentences; it answers the digit then its reason, so a trial can read why; the
+  facts carry a `reading` note saying the habit window EXCLUDES today, which both the
+  writer and the judge needed), because a line that misplaces somebody is the bot deciding
+  a rank. What brings value is described, never
   shown — no example line — and the model writes its own: measured on a seeded day, "t'es
   seul à avoir posté, on saura pas avant que les autres jouent si la journée est facile",
   "Bruno passe devant avec son 6, la lecture est encore partielle", "ton pire score depuis
   le début, cinquième, toi qui tournes à 9,4 de moyenne" — every number checked against
-  the seed. 11–31s a share, judge included; the emoji stands in when the facts cannot be
+  the seed. 12–21s a share, judge included; the emoji stands in when the facts cannot be
   read (`share.facts_failed`). The ingest callback now names WHICH share (`{dayNumber,
   sender}`) so the writer can read the board. Word shares keep the claims alone (nothing
-  is recorded for them). The voice is v10, the one who follows the scores like a sports
-  desk: measured, a little dry, names and numbers, never a formula, never a put-down. **The
+  is recorded for them). **The voice is v11: v3's, back by the group's request** (the user,
+  2026-09-07: "users are telling me that they liked the v3 voice more") — unimpressed,
+  understating, no emoji, teases the top and stays with the bottom — over v10's facts,
+  with the two v3 rules the facts contradict changed: the score and the names are said
+  (they are the content), and a second short sentence is allowed. v4–v10's voices stay
+  retired; v10's one paragraph lasted a day. **The
   podium path is NOT yet fact-based** — it still writes one-liners from a band under the
   v9 mechanics below — and that is the next step, not a decision.
   **LESS IS BETTER (v9, user-decided 2026-09-07: "a pretty short and concise prompt just

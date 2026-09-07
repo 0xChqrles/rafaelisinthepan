@@ -75,8 +75,8 @@ describe('the spoken acknowledgement of a share is commentary from the numbers (
     expect(sent.habit).toMatchObject({ daysPlayed: 1, averageScore: 12, averagePosition: 2 });
     expect(sent.others[0]).toMatchObject({ name: 'Zou', averageScore: 9 });
     expect(JSON.stringify(sent)).not.toMatch(/strong|brilliant|verdict/);
-    // The writer THINKS over the facts, and the judge reads the line back against them.
-    expect(p.written()[0].effort).toBe('low');
+    // The writer phrases the facts with its thinking off; the judge reasons over them.
+    expect(p.written()[0].effort).toBe('none');
     expect(p.written()[0].system).toContain('On se chambre.');
     const judgeCall = p.calls.find((c) => c.system === FACT_JUDGE_SYSTEM)!;
     expect(judgeCall.messages[0].content).toContain('"score":7');

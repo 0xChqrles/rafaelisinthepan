@@ -38,6 +38,7 @@ export interface PlayerHabit {
 }
 
 export interface ShareContext {
+  reading: string; // how to read the rest — the one sentence both the writer and the judge need
   date: string;
   player: string;
   score: Score;
@@ -120,6 +121,7 @@ export function buildShareContext(input: {
     habitOf(name, window.filter((r) => r.sender === jid).sort((a, b) => b.dayNumber - a.dayNumber), positionsByDay);
 
   return {
+    reading: `today's score is "score"; "habit", "recent" and "others" cover the ${HABIT_DAYS} days BEFORE today and do not include it, so today's score compared to habit.best / habit.worst tells whether today is this player's best or worst of the window, today included; "today" is the board with this share on it`,
     date: dateForDayNumber(dayNumber),
     player: nameOf(mine),
     score,
