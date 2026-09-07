@@ -26,7 +26,7 @@ import { scoreBand } from '../domain/reactions';
 import { lineId, type Comments } from '../domain/podiumText';
 import type { Log } from '../log';
 import { buildSystemPrompt } from './personality';
-import { chooseLine } from './lineJudge';
+import { JUDGE_SYSTEM, chooseLine } from './lineJudge';
 import { LlmUnavailable, type LlmProvider } from './types';
 
 // EIGHTY, since v8: the voice is a flat short statement, and a line that runs past this
@@ -41,7 +41,7 @@ export const CANDIDATES = 8;
 // Plain text only: no line breaks, no markdown emphasis marks (the renderer italicises the
 // line itself), no control characters, collapsed whitespace, quotes the model wrapped it in
 // removed. Null when nothing usable is left or it is too long.
-export function sanitizeComment(raw: unknown): string | null {
+export function sanitizeComment(raw: unknown, maxChars: number = COMMENT_MAX_CHARS): string | null {
   if (typeof raw !== 'string') return null;
   let text = raw
     .replace(/[\u0000-\u001f\u007f]/g, " ")
@@ -50,7 +50,7 @@ export function sanitizeComment(raw: unknown): string | null {
     .replace(/\s+/g, ' ')
     .trim();
   if (/^["'«“].*["'»”]$/.test(text)) text = text.slice(1, -1).trim();
-  if (text === '' || text.length > COMMENT_MAX_CHARS) return null;
+  if (text === '' || text.length > maxChars) return null;
   return text;
 }
 
@@ -140,10 +140,8 @@ export const TEMPERATURE = 0.8;
 const TIMEOUT_MS = 10_000;
 
 // What the checks below refuse, by name, for the log.
-export function refusalOf(line: string | null, names: readonly string[]): string | null {
-  return !line
-    ? 'unusable'
-    : spellsANumber(line)
+export function refusalOf(line: string, names: readonly string[]): string | null {
+  return spellsANumber(line)
       ? 'number'
       : namesSomebody(line, names)
         ? 'name'
@@ -156,11 +154,27 @@ export function refusalOf(line: string | null, names: readonly string[]): string
 
 // ONE CANDIDATE: one writer call with its thinking off, one set of checks. Null when it
 // yielded nothing usable — a candidate is never retried, the others are its retry.
+export interface CandidateShape {
+  maxChars: number;
+  refuse: (line: string) => string | null; // a reason, or null when the line stands
+  // How much the writer may think: the podium's one-liners think not at all (below); the
+  // share commentary reasons over its facts (`shareComment.ts`).
+  effort: 'none' | 'low';
+  timeoutMs: number;
+}
+
+export const PODIUM_SHAPE = (names: readonly string[]): CandidateShape => ({
+  maxChars: COMMENT_MAX_CHARS,
+  refuse: (line) => refusalOf(line, names),
+  effort: 'none',
+  timeoutMs: TIMEOUT_MS,
+});
+
 export async function writeCandidate(
   provider: LlmProvider,
   system: string,
   content: string,
-  names: readonly string[],
+  shape: CandidateShape,
   event: string,
   log: Log,
 ): Promise<string | null> {
@@ -179,8 +193,8 @@ export async function writeCandidate(
       messages: [{ role: 'user', content }],
       maxTokens: MAX_TOKENS,
       temperature: TEMPERATURE,
-      effort: 'none',
-      timeoutMs: TIMEOUT_MS,
+      effort: shape.effort,
+      timeoutMs: shape.timeoutMs,
     });
     text = response.text;
     finish = response.finish;
@@ -204,8 +218,8 @@ export async function writeCandidate(
     log.warn({ event: `${event}_unfinished`, finish }, 'the line did not finish');
     return null;
   }
-  const line = sanitizeComment(text);
-  const reason = refusalOf(line, names);
+  const line = sanitizeComment(text, shape.maxChars);
+  const reason = line ? shape.refuse(line) : 'unusable';
   if (line && !reason) return line;
   log.warn({ event: `${event}_invalid`, finish, reason }, 'rejecting a candidate');
   return null;
@@ -231,12 +245,12 @@ async function commentForLine(
   });
   const written = await Promise.all(
     Array.from({ length: CANDIDATES }, () =>
-      writeCandidate(provider, system, `${facts}\n${LINE_RULES}`, line.names, 'podium.comment', log),
+      writeCandidate(provider, system, `${facts}\n${LINE_RULES}`, PODIUM_SHAPE(line.names), 'podium.comment', log),
     ),
   );
   const candidates = written.filter((c): c is string => c !== null);
   log.info({ event: 'podium.candidates', id: line.id, written: candidates.length, of: CANDIDATES }, 'candidates written');
-  return chooseLine(provider, `a podium line, ${facts}`, candidates, log);
+  return chooseLine(provider, { system: JUDGE_SYSTEM, occasion: `a podium line, ${facts}` }, candidates, log);
 }
 
 // ONE WORD, ONCE PER PODIUM (user-decided 2026-09-04). The lines are written independently

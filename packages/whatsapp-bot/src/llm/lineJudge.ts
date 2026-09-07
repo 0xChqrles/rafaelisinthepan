@@ -30,6 +30,22 @@ Post it only if all of this holds: one short flat sentence in plain words; it ma
 
 Answer 1 to post, 0 to drop. No line is better than a weak one: be strict. Only the digit.`;
 
+// THE FACT CHECK (user-decided 2026-09-07): the share commentary is written FROM numbers —
+// the score, the day's board, the player's habit — so what its judge asks is not whether
+// the line is dry but whether it is TRUE to those numbers, and worth saying. A line that
+// misplaces somebody or invents an average is worse than no line: it is the bot deciding
+// a rank, which is the one thing the boundary forbids.
+export const FACT_JUDGE_SYSTEM = `You check a one-line comment a WhatsApp bot is about to post in a group of friends who play a daily word game, against the FACTS the comment was written from. The facts are the truth; the comment may only phrase them.
+
+Post it only if all of this holds: every number, name, position, comparison and claim in it is supported by the facts exactly (a player said to be ahead is ahead in the facts; an average said is the average given; "usually" is backed by the habit given); it says something the facts support that a friend in the group would find worth reading — how the score sits against a typical day, against who has posted, against this player's habit — rather than a bare restatement or filler; it is one or two short plain sentences with no gushing, no consolation formula, no praise formula, and nothing against the person. Drop it for any invented or wrong number, any claim the facts do not back, or nonsense.
+
+Answer 1 to post, 0 to drop. Only the digit.`;
+
+export interface JudgeBrief {
+  system: string; // which reading: `JUDGE_SYSTEM` (the voice) or `FACT_JUDGE_SYSTEM` (the numbers)
+  occasion: string; // what the line is about — for the fact check, the facts themselves
+}
+
 export type Verdict = 'keep' | 'drop' | 'unknown';
 
 // Sized to the measurement above: a verdict at `low` is a few hundred reasoning tokens and
@@ -41,14 +57,14 @@ const TIMEOUT_MS = 20_000;
 
 export async function judgeLine(
   provider: LlmProvider,
-  occasion: string,
+  brief: JudgeBrief,
   line: string,
   log: Log,
 ): Promise<Verdict> {
   try {
     const response = await provider.generate({
-      system: JUDGE_SYSTEM,
-      messages: [{ role: 'user', content: `Occasion: ${occasion}\nLine: ${line}\n\nAnswer 1 or 0.` }],
+      system: brief.system,
+      messages: [{ role: 'user', content: `Occasion: ${brief.occasion}\nLine: ${line}\n\nAnswer 1 or 0.` }],
       maxTokens: MAX_TOKENS,
       effort: 'low',
       timeoutMs: TIMEOUT_MS,
@@ -76,14 +92,14 @@ export async function judgeLine(
 // bot ran before the judge existed.
 export async function chooseLine(
   provider: LlmProvider,
-  occasion: string,
+  brief: JudgeBrief,
   candidates: readonly string[],
   log: Log,
   takeCall: () => Promise<boolean> = async () => true,
 ): Promise<string | null> {
   if (candidates.length === 0) return null;
   const verdicts = await Promise.all(
-    candidates.map(async (line) => ((await takeCall()) ? judgeLine(provider, occasion, line, log) : ('unknown' as const))),
+    candidates.map(async (line) => ((await takeCall()) ? judgeLine(provider, brief, line, log) : ('unknown' as const))),
   );
   const kept = candidates.find((_, i) => verdicts[i] === 'keep');
   if (kept) return kept;
