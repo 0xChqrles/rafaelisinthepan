@@ -13,6 +13,10 @@ export interface QuotedRef {
   id: string;
   participant: string; // JID of the quoted message's author, as the quote names it
   player: string; // the canonical player key it resolves to (phone-number form when known)
+  // What the quoted message SAID, flattened like `text` (a media caption counts; '' when it
+  // had no words). A reply's meaning is in it: "merci" or "et hier ?" under one of the
+  // bot's lines is about THAT line, and the agent cannot tell which without it.
+  text: string;
 }
 
 export interface Mention {

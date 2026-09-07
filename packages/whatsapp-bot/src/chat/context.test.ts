@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { withoutShares } from '../domain/share';
-import { RecentContext, TURN_MAX_CHARS, WINDOW_MAX_CHARS, boundTurnText } from './context';
+import { QUOTE_MAX_CHARS, RecentContext, TURN_MAX_CHARS, WINDOW_MAX_CHARS, boundTurnText, quoteLead } from './context';
 
 const GROUP = '120363000000000001@g.us';
 const ORIGIN = 'https://whippin.ai';
@@ -13,6 +13,22 @@ describe('the recent window (#236)', () => {
     context.push(GROUP, { role: 'user', name: 'Gab', text: 'je pense au nombre 67', at: at(1) });
     context.push(GROUP, { role: 'user', name: 'Zou', text: 'ok', at: at(1) });
     expect(context.recent(GROUP).map((t) => t.text)).toEqual(['je pense au nombre 67', 'ok']);
+  });
+
+  it('spells a quote out at the head of a turn, bounded, and names the author of a wordless one', () => {
+    expect(quoteLead('you', 'Podium du jour')).toBe('[replying to you: "Podium du jour"] ');
+    expect(quoteLead('Zou', '')).toBe('[replying to a message from Zou] ');
+    const long = quoteLead('Zou', 'x'.repeat(QUOTE_MAX_CHARS + 50));
+    expect(long.length).toBeLessThan(QUOTE_MAX_CHARS + 30);
+    expect(long.endsWith('…"] ')).toBe(true);
+  });
+
+  it('remembers the bot\'s echoed line once: composed here already, it is not repeated; the podium enters', () => {
+    const context = new RecentContext();
+    context.push(GROUP, { role: 'assistant', name: '', text: 'Sept, derrière Zou.', at: at(1) });
+    context.pushUnlessSaid(GROUP, { role: 'assistant', name: '', text: 'Sept, derrière Zou.', at: at(0) });
+    context.pushUnlessSaid(GROUP, { role: 'assistant', name: '', text: 'Podium du jour', at: at(0) });
+    expect(context.recent(GROUP).map((t) => t.text)).toEqual(['Sept, derrière Zou.', 'Podium du jour']);
   });
 
   it('holds 25 messages and forgets anything older than half an hour', () => {

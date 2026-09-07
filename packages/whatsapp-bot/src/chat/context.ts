@@ -36,6 +36,18 @@ export function boundTurnText(text: string): string {
   return text.length > TURN_MAX_CHARS ? `${text.slice(0, TURN_MAX_CHARS - 1).trimEnd()}…` : text;
 }
 
+// A REPLY NAMES WHAT IT ANSWERS (2026-09-07). WhatsApp draws the quoted bubble; the model
+// reads text, so the quote is spelled out at the head of the turn — who said it, and what.
+// Bounded harder than a turn: it is orientation, not content, and the head of a long
+// message is enough to recognise it by. A quote with no words left (a photo, a share the
+// caller stripped) still names its author, which is most of what a reply to it means.
+export const QUOTE_MAX_CHARS = 200;
+
+export function quoteLead(author: string, text: string): string {
+  const said = text.length > QUOTE_MAX_CHARS ? `${text.slice(0, QUOTE_MAX_CHARS - 1).trimEnd()}…` : text;
+  return said === '' ? `[replying to a message from ${author}] ` : `[replying to ${author}: "${said}"] `;
+}
+
 export class RecentContext {
   private readonly turns = new Map<string, ContextTurn[]>();
 
@@ -44,6 +56,15 @@ export class RecentContext {
     list.push({ ...turn, text: boundTurnText(turn.text) });
     while (list.length > WINDOW) list.shift();
     this.turns.set(group, list);
+  }
+
+  // The bot's own line as WhatsApp echoes it back (main.ts). One already remembered when it
+  // was composed — an answer, a spoken acknowledgement — is not remembered twice; one
+  // nothing here composed (the podium, the reminder, sent from the queue) enters.
+  pushUnlessSaid(group: string, turn: ContextTurn): void {
+    const text = boundTurnText(turn.text);
+    const said = (this.turns.get(group) ?? []).some((t) => t.role === 'assistant' && t.text === text);
+    if (!said) this.push(group, turn);
   }
 
   recent(group: string, now = Date.now()): ContextTurn[] {

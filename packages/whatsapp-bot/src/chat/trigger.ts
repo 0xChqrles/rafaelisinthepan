@@ -106,6 +106,21 @@ export function addressedTo(message: InboundMessage, identity: BotIdentity): Add
   return null;
 }
 
+// Whether the quote under a reply is one of the bot's own lines: the quoted author is then
+// spelled "you" for the model, and by name otherwise.
+export function quotesBot(message: InboundMessage, identity: BotIdentity): boolean {
+  return message.quoted !== undefined && namesBot(message.quoted, identity);
+}
+
+// The names a QUOTED text is rewritten with: the message's own resolved mentions, plus the
+// bot under its name — a reply often quotes a line that @-mentioned the bot, and the token
+// would otherwise come back as the `…last4` handle of the bot's own number.
+export function namesWithBot(names: ReadonlyMap<string, string>, identity: BotIdentity): Map<string, string> {
+  const all = new Map(names);
+  for (const jid of identity.jids) all.set(jidUser(jid), identity.name);
+  return all;
+}
+
 // Who else this message points at. Only the BOT's mention is addressing; everybody else's
 // is part of the question ("how many days has @Zou beaten me?"), and the agent resolves
 // these to the names the group uses before any of it reaches the model — by their PLAYER

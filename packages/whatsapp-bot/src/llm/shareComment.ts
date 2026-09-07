@@ -42,6 +42,13 @@ export const COMMENTARY_MAX_CHARS = 220;
 // comparison — the writer phrases a table, and the arithmetic slips it makes either way
 // ("deux points sous" for 1.1) are the judge's to catch. Three candidates in parallel.
 const CANDIDATES = 3;
+// ONE MORE ROUND WHEN THE JUDGE KEPT NOTHING (2026-09-07). Three candidates against a fact
+// check that drops about two in five left one share in eight with the emoji where a line
+// was owed (live, the day the fact check shipped: two of sixteen, all three dropped each
+// time). The judge says WHY it dropped each line, so the second round writes with those
+// reasons in front of it — and is the last: an acknowledgement half a minute after the
+// share reads as broken, and eight candidates a round would spend the day's ceiling.
+const ROUNDS = 2;
 const SHAPE: CandidateShape = { maxChars: COMMENTARY_MAX_CHARS, refuse: () => null, effort: 'none', timeoutMs: 15_000 };
 
 const TASK = (mode: ShareFacts['mode']) =>
@@ -92,16 +99,29 @@ export async function generateShareComment(
     }
     shown = JSON.stringify(context);
   }
-  const written = await Promise.all(
-    Array.from({ length: CANDIDATES }, async () => {
-      if (!(await takeCall())) {
-        log.info({ event: 'share.comment_ceiling' }, 'daily call ceiling reached');
-        return null;
-      }
-      return writeCandidate(provider, system, shown, SHAPE, 'share.comment', log);
-    }),
-  );
-  const candidates = written.filter((c): c is string => c !== null);
-  log.info({ event: 'share.candidates', written: candidates.length, of: CANDIDATES }, 'candidates written');
-  return chooseLine(provider, { system: FACT_JUDGE_SYSTEM, occasion: shown }, candidates, log, takeCall);
+  let refused: string[] = [];
+  for (let round = 1; round <= ROUNDS; round += 1) {
+    const content =
+      round === 1
+        ? shown
+        : `${shown}\n\nYour previous lines were refused by the fact check${refused.length > 0 ? ' for these reasons' : ''}. Write a new one that avoids them.${refused.map((r) => `\n- ${r}`).join('')}`;
+    const written = await Promise.all(
+      Array.from({ length: CANDIDATES }, async () => {
+        if (!(await takeCall())) {
+          log.info({ event: 'share.comment_ceiling' }, 'daily call ceiling reached');
+          return null;
+        }
+        return writeCandidate(provider, system, content, SHAPE, 'share.comment', log);
+      }),
+    );
+    const candidates = written.filter((c): c is string => c !== null);
+    log.info({ event: 'share.candidates', round, written: candidates.length, of: CANDIDATES }, 'candidates written');
+    const choice = await chooseLine(provider, { system: FACT_JUDGE_SYSTEM, occasion: shown }, candidates, log, takeCall);
+    if (choice.line) return choice.line;
+    // Nothing written, or nothing judged, is not the judge's doing: no second try.
+    if (choice.dropped === 0) return null;
+    refused = choice.reasons;
+    if (round < ROUNDS) log.info({ event: 'share.comment_retry', reasons: refused }, 'the judge kept none; writing again with its reasons');
+  }
+  return null;
 }

@@ -250,7 +250,7 @@ async function commentForLine(
   );
   const candidates = written.filter((c): c is string => c !== null);
   log.info({ event: 'podium.candidates', id: line.id, written: candidates.length, of: CANDIDATES }, 'candidates written');
-  return chooseLine(provider, { system: JUDGE_SYSTEM, occasion: `a podium line, ${facts}` }, candidates, log);
+  return (await chooseLine(provider, { system: JUDGE_SYSTEM, occasion: `a podium line, ${facts}` }, candidates, log)).line;
 }
 
 // ONE WORD, ONCE PER PODIUM (user-decided 2026-09-04). The lines are written independently

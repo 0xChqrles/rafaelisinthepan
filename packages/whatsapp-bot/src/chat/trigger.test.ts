@@ -32,7 +32,7 @@ describe('conversation triggers (#236)', () => {
   });
 
   it('fires on a reply to the bot, not on a reply to somebody else', () => {
-    const q = (participant: string, player = participant) => ({ id: 'B', participant, player });
+    const q = (participant: string, player = participant) => ({ id: 'B', participant, player, text: '' });
     expect(addressedTo(message({ quoted: q('33700000000:12@s.whatsapp.net') }), identity)).toBe('reply');
     expect(addressedTo(message({ quoted: q('33600000000@s.whatsapp.net') }), identity)).toBeNull();
     // The quote names the bot's LID, which `identity` does not list; the mapping does.
