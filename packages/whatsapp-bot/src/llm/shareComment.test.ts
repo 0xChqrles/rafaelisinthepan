@@ -1,17 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { parseGroupConfig } from '../config/groupConfig';
 import { createLog } from '../log';
+import { memoryDeclarationStore, type Declaration } from '../domain/declarations';
 import { LlmUnavailable, type LlmProvider, type LlmResponse } from './types';
-import { generateShareComment } from './shareComment';
-import { CANDIDATES, LINE_RULES } from './podiumComments';
-import { JUDGE_SYSTEM } from './lineJudge';
-
-// The user turn is the FACTS as JSON, then the rules a line is checked against.
-function sentIn(call: unknown) {
-  const [facts, rules] = (call as { messages: { content: string }[] }).messages[0].content.split('\n');
-  expect(rules).toBe(LINE_RULES);
-  return JSON.parse(facts);
-}
+import { COMMENTARY_MAX_CHARS, generateShareComment } from './shareComment';
+import { FACT_JUDGE_SYSTEM } from './lineJudge';
 
 const GROUP = '120363000000000001@g.us';
 const group = parseGroupConfig('g.json', {
@@ -23,172 +16,124 @@ const group = parseGroupConfig('g.json', {
   chat: { enabled: true, prePrompt: 'On se chambre.' },
   acknowledge: 'say',
 });
+const DAY = 20700;
 const facts = { mode: 'sentence' as const, player: 'Gab', score: 7, capped: false };
+const log = createLog('silent');
 
-// Writer calls consume `steps` in call order (a step past the end is 'fin', a usable line);
-// a JUDGE call — told apart by its own system prompt — is answered by `judge`, default keep.
+function row(day: number, sender: string, score: number, capped = false): Declaration {
+  return {
+    group: GROUP, dayNumber: day, sender, score, capped, token: `t-${day}-${sender}`, messageId: `m-${day}-${sender}`,
+    messageTs: 1, name: sender, receivedAt: '2026-09-07T10:00:00.000Z', lang: 'fr',
+  };
+}
+// Gab's 7 today behind Zou's 5; yesterday Gab did 12 and Zou 9.
+async function store(rows: Declaration[] = [row(DAY, 'Zou', 5), row(DAY, 'Gab', 7), row(DAY - 1, 'Gab', 12), row(DAY - 1, 'Zou', 9)]) {
+  const s = memoryDeclarationStore();
+  for (const r of rows) await s.record(r);
+  return s;
+}
+const depsFor = (declarations: Awaited<ReturnType<typeof store>>, sender = 'Gab') => ({ declarations, dayNumber: DAY, sender });
+
+// Writer calls consume `steps` in call order (a step past the end is a usable line); a
+// JUDGE call — told apart by its own system prompt — is answered by `judge`, default keep.
 function provider(
   steps: (Partial<LlmResponse> | Error)[],
   judge: (line: string) => Partial<LlmResponse> | Error = () => ({ text: '1' }),
-): { provider: LlmProvider; calls: unknown[]; written: () => unknown[]; judged: string[] } {
-  const calls: unknown[] = [];
+) {
+  const calls: { system: string; messages: { content: string }[]; effort?: string }[] = [];
   const judged: string[] = [];
   let writes = 0;
-  return {
-    calls,
-    judged,
-    written: () => calls.filter((c) => (c as { system: string }).system !== JUDGE_SYSTEM),
-    provider: {
-      name: 'fake',
-      model: 'fake',
-      async generate(request) {
-        calls.push(request);
-        let step: Partial<LlmResponse> | Error;
-        if (request.system === JUDGE_SYSTEM) {
-          const line = /\nLine: (.*)\n/.exec(request.messages[0].content as string)?.[1] ?? '';
-          judged.push(line);
-          step = judge(line);
-        } else {
-          step = steps[writes] ?? { text: 'fin' };
-          writes += 1;
-        }
-        if (step instanceof Error) throw step;
-        return { text: null, toolCalls: [], finish: 'stop', usage: { inputTokens: 1, outputTokens: 1 }, latencyMs: 1, ...step };
-      },
+  const p: LlmProvider = {
+    name: 'fake',
+    model: 'fake',
+    async generate(request) {
+      calls.push(request as (typeof calls)[number]);
+      let step: Partial<LlmResponse> | Error;
+      if (request.system === FACT_JUDGE_SYSTEM) {
+        judged.push(/\nLine: (.*)\n/.exec(request.messages[0].content as string)?.[1] ?? '');
+        step = judge(judged[judged.length - 1]);
+      } else {
+        step = steps[writes] ?? { text: 'Cinq pour Zou, sept pour toi.' };
+        writes += 1;
+      }
+      if (step instanceof Error) throw step;
+      return { text: null, toolCalls: [], finish: 'stop', usage: { inputTokens: 1, outputTokens: 1 }, latencyMs: 1, ...step };
     },
   };
+  return { provider: p, calls, judged, written: () => calls.filter((c) => c.system !== FACT_JUDGE_SYSTEM) };
 }
 
-const log = createLog('silent');
-
-describe('the spoken acknowledgement of a share (#236)', () => {
-  it('hands the model the FACTS and returns its line, cleaned', async () => {
-    const p = provider([{ text: '  **Propre**,\n honnête.  ' }]);
-    expect(await generateShareComment(p.provider, group, facts, log)).toBe('Propre, honnête.');
-    // The VERDICT is the bot's, from the same thresholds the emoji uses; the model dresses
-    // it. THE SCORE ITSELF IS NOT SENT (v8): a number the model never saw is one it cannot
-    // read back, and the verdict is the whole of what the line reacts to. And no field name
-    // is a word the answer may borrow (an early draft called this `band` and produced "le
-    // band a gagné").
-    expect(sentIn(p.calls[0])).toEqual({ player: 'Gab', solved: true, verdict: 'strong' });
-    // No thinking: a deliberated line ran past the timeout under the v8 voice, and an
-    // undeliberated one takes about a second.
-    expect((p.calls[0] as { effort: string }).effort).toBe('none');
-    // The group's own voice reaches it.
-    expect((p.calls[0] as { system: string }).system).toContain('On se chambre.');
+describe('the spoken acknowledgement of a share is commentary from the numbers (user-decided 2026-09-07)', () => {
+  it('hands the model the FACTS of the day and the habit, reasons, and returns the line cleaned', async () => {
+    const p = provider([{ text: '  **Sept**,\n derrière Zou.  ' }]);
+    expect(await generateShareComment(p.provider, group, facts, depsFor(await store()), log)).toBe('Sept, derrière Zou.');
+    // The user turn is the facts as JSON — the exact score, the board with this share
+    // placed, who is ahead, the habit — and no band word anywhere.
+    const sent = JSON.parse(p.written()[0].messages[0].content);
+    expect(sent.score).toBe(7);
+    expect(sent.today).toMatchObject({ postedSoFar: 2, firstOfDay: false, position: 2, ahead: ['Zou'], behind: [] });
+    expect(sent.habit).toMatchObject({ daysPlayed: 1, averageScore: 12, averagePosition: 2 });
+    expect(sent.others[0]).toMatchObject({ name: 'Zou', averageScore: 9 });
+    expect(JSON.stringify(sent)).not.toMatch(/strong|brilliant|verdict/);
+    // The writer phrases the facts with its thinking off; the judge reasons over them.
+    expect(p.written()[0].effort).toBe('none');
+    expect(p.written()[0].system).toContain('On se chambre.');
+    const judgeCall = p.calls.find((c) => c.system === FACT_JUDGE_SYSTEM)!;
+    expect(judgeCall.messages[0].content).toContain('"score":7');
   });
 
-  it('sends no score for a capped run — there is none to comment on', async () => {
-    const p = provider([{ text: 'Aïe.' }]);
-    await generateShareComment(p.provider, group, { ...facts, capped: true }, log);
-    expect(sentIn(p.calls[0])).toEqual({ player: 'Gab', solved: false, verdict: 'failed' });
+  it('the emoji stands in when the facts cannot be read, or the share is not on the board', async () => {
+    const broken = await store();
+    broken.day = async () => { throw new Error('dynamo down'); };
+    const p = provider([]);
+    expect(await generateShareComment(p.provider, group, facts, depsFor(broken), log)).toBeNull();
+    expect(p.calls).toHaveLength(0); // no facts, no words
+    const stranger = provider([]);
+    expect(await generateShareComment(stranger.provider, group, facts, depsFor(await store(), 'Nobody'), log)).toBeNull();
+    expect(stranger.calls).toHaveLength(0);
   });
 
-  it('writes every candidate at once; a failed one is dropped and the others stand', async () => {
-    const flaky = provider([new LlmUnavailable('503'), { text: 'Nouvel essai.' }]);
-    expect(await generateShareComment(flaky.provider, group, facts, log)).toBe('Nouvel essai.');
-    const dead = provider(Array.from({ length: CANDIDATES }, () => new LlmUnavailable('503')));
-    expect(await generateShareComment(dead.provider, group, facts, log)).toBeNull();
-    expect(dead.calls).toHaveLength(CANDIDATES); // and nothing reached the judge
-    const bug = provider([new Error('bad request'), { text: 'Nouvel essai.' }]);
-    expect(await generateShareComment(bug.provider, group, facts, log)).toBe('Nouvel essai.');
-    expect(bug.written()).toHaveLength(CANDIDATES);
+  it('writes every candidate at once; a failed or unfinished one is dropped and the others stand', async () => {
+    const flaky = provider([new LlmUnavailable('503'), { text: 'Sept, derrière Zou.' }]);
+    expect(await generateShareComment(flaky.provider, group, facts, depsFor(await store()), log)).toBe('Sept, derrière Zou.');
+    const dead = provider([new LlmUnavailable('503'), new LlmUnavailable('503'), new LlmUnavailable('503')]);
+    expect(await generateShareComment(dead.provider, group, facts, depsFor(await store()), log)).toBeNull();
+    expect(dead.calls).toHaveLength(3); // and nothing reached the judge
+    // A truncated or interrupted answer is a fragment, refused on the reason.
+    const cut = provider([{ text: 'Sept, derr', finish: 'length' }, { text: 'Sept, derr', finish: 'other' }, { text: 'Sept, derrière Zou.' }]);
+    expect(await generateShareComment(cut.provider, group, facts, depsFor(await store()), log)).toBe('Sept, derrière Zou.');
+    // Too long is a paragraph, not a bubble.
+    const long = provider([{ text: 'x'.repeat(COMMENTARY_MAX_CHARS + 1) }, { text: 'x'.repeat(COMMENTARY_MAX_CHARS + 1) }, { text: 'x'.repeat(COMMENTARY_MAX_CHARS + 1) }]);
+    expect(await generateShareComment(long.provider, group, facts, depsFor(await store()), log)).toBeNull();
   });
 
-  it('THE JUDGE DECIDES WHAT IS POSTED, and the ceiling is spent per call', async () => {
-    const picky = provider(
-      [{ text: 'Un phare dans la brume.' }, { text: 'Tu es un rhinocéros.' }],
-      (line) => ({ text: line === 'Tu es un rhinocéros.' ? '1' : '0' }),
-    );
-    expect(await generateShareComment(picky.provider, group, facts, log)).toBe('Tu es un rhinocéros.');
-    expect(picky.judged).toHaveLength(CANDIDATES); // every usable candidate was judged
-    // All dropped is the emoji.
-    const strict = provider([{ text: 'Un phare dans la brume.' }], () => ({ text: '0' }));
-    expect(await generateShareComment(strict.provider, group, facts, log)).toBeNull();
-    // The judge unreachable posts the first candidate unjudged.
-    const down = provider([{ text: 'Un phare dans la brume.' }], () => new LlmUnavailable('503'));
-    expect(await generateShareComment(down.provider, group, facts, log)).toBe('Un phare dans la brume.');
-    // Every candidate and every verdict spends one unit of the daily ceiling; refused
-    // units are candidates not written or not judged, and none at all is the emoji.
+  it('THE JUDGE reads each line against the facts: the first kept is posted, none kept is the emoji, no verdict posts the first', async () => {
+    const picky = provider([{ text: 'Zou est derrière toi.' }, { text: 'Sept, derrière Zou.' }], (line) => ({ text: line === 'Sept, derrière Zou.' ? '1' : '0' }));
+    expect(await generateShareComment(picky.provider, group, facts, depsFor(await store()), log)).toBe('Sept, derrière Zou.');
+    expect(picky.judged).toHaveLength(3);
+    const strict = provider([{ text: 'Zou est derrière toi.' }], () => ({ text: '0' }));
+    expect(await generateShareComment(strict.provider, group, facts, depsFor(await store()), log)).toBeNull();
+    const down = provider([{ text: 'Sept, derrière Zou.' }], () => new LlmUnavailable('503'));
+    expect(await generateShareComment(down.provider, group, facts, depsFor(await store()), log)).toBe('Sept, derrière Zou.');
+  });
+
+  it('spends the daily ceiling per call — candidates and verdicts — and none at all is the emoji', async () => {
     let units = 0;
-    const metered = provider([{ text: 'Tu es un rhinocéros.' }]);
-    expect(await generateShareComment(metered.provider, group, facts, log, async () => (units += 1) <= 1)).toBe('Tu es un rhinocéros.');
+    const metered = provider([{ text: 'Sept, derrière Zou.' }]);
+    expect(await generateShareComment(metered.provider, group, facts, depsFor(await store()), log, async () => (units += 1) <= 1)).toBe('Sept, derrière Zou.');
     expect(metered.written()).toHaveLength(1);
-    const closed = provider([{ text: 'Tu es un rhinocéros.' }]);
-    expect(await generateShareComment(closed.provider, group, facts, log, async () => false)).toBeNull();
+    const closed = provider([{ text: 'Sept, derrière Zou.' }]);
+    expect(await generateShareComment(closed.provider, group, facts, depsFor(await store()), log, async () => false)).toBeNull();
     expect(closed.calls).toHaveLength(0);
   });
 
-  it('refuses a TRUNCATED answer, however short the fragment reads', async () => {
-    // The budget is shared with the reasoning tokens, so running out returns a fragment —
-    // and a short fragment passes every length check. "Gab, 7 ess" was a real one.
-    const p = provider([
-      { text: 'Gab, 7 ess', finish: 'length' },
-      { text: 'Correct, et je le pense.', finish: 'stop' },
-    ]);
-    expect(await generateShareComment(p.provider, group, facts, log)).toBe('Correct, et je le pense.');
-    const all = provider(Array.from({ length: CANDIDATES }, () => ({ text: 'Gab, 7 ess', finish: 'length' as const })));
-    expect(await generateShareComment(all.provider, group, facts, log)).toBeNull();
-  });
-
-  it('publishes ONLY a completion that finished — any other reason is a line the model did not mean', async () => {
-    // `length` is not the only early stop: DeepSeek answers `insufficient_system_resource`
-    // for an interrupted generation and `content_filter` for an omitted one, which the
-    // provider folds into `other`. A short partial passes every text check, so the gate is
-    // the reason itself: this call has no tools, and `stop` is the one reason that means
-    // "said what it meant".
-    for (const finish of ['other', 'tool_calls'] as const) {
-      const p = provider(Array.from({ length: CANDIDATES }, () => ({ text: 'Propre, honnête.', finish })));
-      expect(await generateShareComment(p.provider, group, facts, log)).toBeNull();
-      expect(p.calls).toHaveLength(CANDIDATES);
-    }
-    const recovered = provider([{ text: 'Propre, hon', finish: 'other' }, { text: 'Propre, honnête.', finish: 'stop' }]);
-    expect(await generateShareComment(recovered.provider, group, facts, log)).toBe('Propre, honnête.');
-  });
-
-  it('carries the verdict for every band, so the model never has to calibrate', async () => {
-    // Told only a number the model cannot know whether 7 is good, and answers the same flat
-    // line to a 3, a 7 and a 42 — measured against the real provider.
-    // Three is the FLOOR — a sentence hides three words — so it is the only perfect score,
-    // and "under ten is really good" spans brilliant and strong.
-    for (const [score, capped, verdict] of [
-      [3, false, 'perfect'], [4, false, 'brilliant'], [6, false, 'brilliant'],
-      [7, false, 'strong'], [9, false, 'strong'], [10, false, 'ordinary'],
-      [19, false, 'ordinary'], [20, false, 'laboured'], [0, true, 'failed'],
-    ] as const) {
-      const p = provider([{ text: 'ok.' }]);
-      await generateShareComment(p.provider, group, { ...facts, score, capped }, log);
-      expect(sentIn(p.calls[0]).verdict).toBe(verdict);
-    }
-  });
-
-  it('rejects an unusable line rather than posting it', async () => {
-    // Long is the failure this register exists to avoid: a line that runs on is one that
-    // started explaining itself.
-    for (const text of [null, '', '   ', 'x'.repeat(91)]) {
-      const p = provider(Array.from({ length: CANDIDATES }, () => ({ text })));
-      expect(await generateShareComment(p.provider, group, facts, log)).toBeNull();
-    }
-  });
-
-  it('refuses a line that reads the score back, names them, or leans on a simile, and tries again (v8)', async () => {
-    // The share the player posted already shows the score and the name; a line repeating
-    // them is padding, and asked not to, a model with its thinking off complied about half
-    // the time. A simile is the lyrical move the voice was asked to drop.
-    for (const text of ['Sept coups, honnête.', 'Un 7 bien rangé.', 'Gab, je vais encadrer ça.', 'Tu es un tigre, Gab.', 'Rapide comme un tigre.']) {
-      const p = provider([{ text }, { text: 'Je vais encadrer ça.' }]);
-      expect(await generateShareComment(p.provider, group, facts, log)).toBe('Je vais encadrer ça.');
-      expect(p.judged[0]).toBe('Je vais encadrer ça.'); // the refused one never reached the judge
-    }
-  });
-
-  it('tells the model a WORD result by its own rules: found words, more is better, never the word', async () => {
-    const p = provider([{ text: 'Le dictionnaire te doit des royalties.' }]);
-    expect(await generateShareComment(p.provider, group, { mode: 'word', player: 'Gab', claims: 26 }, log)).toBe('Le dictionnaire te doit des royalties.');
-    expect(sentIn(p.calls[0])).toEqual({ player: 'Gab', verdict: 'brilliant' });
-    const system = (p.calls[0] as { system: string }).system;
-    expect(system).toContain('WORD MODE');
-    expect(system).toContain('MORE is better');
-    expect(system).not.toContain('Three is the lowest');
+  it('tells the model a WORD result by its own rules, from the claims alone — nothing is recorded to read', async () => {
+    const p = provider([{ text: 'Vingt-six, joli.' }]);
+    const s = await store();
+    s.day = async () => { throw new Error('must not be read'); };
+    expect(await generateShareComment(p.provider, group, { mode: 'word', player: 'Gab', claims: 26 }, depsFor(s), log)).toBe('Vingt-six, joli.');
+    expect(JSON.parse(p.written()[0].messages[0].content)).toEqual({ player: 'Gab', found: 26 });
+    expect(p.written()[0].system).toContain('WORD MODE');
+    expect(p.written()[0].system).toContain('MORE is better');
   });
 });
