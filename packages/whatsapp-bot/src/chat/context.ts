@@ -48,6 +48,8 @@ export function quoteLead(author: string, text: string): string {
   return said === '' ? `[replying to a message from ${author}] ` : `[replying to ${author}: "${said}"] `;
 }
 
+const collapse = (text: string) => text.replace(/\s+/g, ' ').trim();
+
 export class RecentContext {
   private readonly turns = new Map<string, ContextTurn[]>();
 
@@ -61,9 +63,11 @@ export class RecentContext {
   // The bot's own line as WhatsApp echoes it back (main.ts). One already remembered when it
   // was composed — an answer, a spoken acknowledgement — is not remembered twice; one
   // nothing here composed (the podium, the reminder, sent from the queue) enters.
+  // Compared with whitespace collapsed: the echo comes through `withoutShares`, which
+  // collapses it, while the composed line was remembered as written, newlines and all.
   pushUnlessSaid(group: string, turn: ContextTurn): void {
-    const text = boundTurnText(turn.text);
-    const said = (this.turns.get(group) ?? []).some((t) => t.role === 'assistant' && t.text === text);
+    const text = collapse(boundTurnText(turn.text));
+    const said = (this.turns.get(group) ?? []).some((t) => t.role === 'assistant' && collapse(t.text) === text);
     if (!said) this.push(group, turn);
   }
 

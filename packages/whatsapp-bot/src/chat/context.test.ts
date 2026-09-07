@@ -25,10 +25,11 @@ describe('the recent window (#236)', () => {
 
   it('remembers the bot\'s echoed line once: composed here already, it is not repeated; the podium enters', () => {
     const context = new RecentContext();
-    context.push(GROUP, { role: 'assistant', name: '', text: 'Sept, derrière Zou.', at: at(1) });
+    // Composed with a line break, echoed back with its whitespace collapsed: the same line.
+    context.push(GROUP, { role: 'assistant', name: '', text: 'Sept,\nderrière Zou.', at: at(1) });
     context.pushUnlessSaid(GROUP, { role: 'assistant', name: '', text: 'Sept, derrière Zou.', at: at(0) });
     context.pushUnlessSaid(GROUP, { role: 'assistant', name: '', text: 'Podium du jour', at: at(0) });
-    expect(context.recent(GROUP).map((t) => t.text)).toEqual(['Sept, derrière Zou.', 'Podium du jour']);
+    expect(context.recent(GROUP).map((t) => t.text)).toEqual(['Sept,\nderrière Zou.', 'Podium du jour']);
   });
 
   it('holds 25 messages and forgets anything older than half an hour', () => {

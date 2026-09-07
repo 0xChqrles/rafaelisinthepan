@@ -119,7 +119,6 @@ describe('the spoken acknowledgement of a share is commentary from the numbers (
   });
 
   it('writes ONE more round when the judge kept nothing, with the judge\'s reasons in front of the writer', async () => {
-    let round = 0;
     const second = provider(
       [{ text: 'Zou est derrière toi.' }, { text: 'Zou est derrière toi.' }, { text: 'Zou est derrière toi.' }, { text: 'Sept, derrière Zou.' }],
       (line) => ({ text: line === 'Sept, derrière Zou.' ? '1: placing right' : '0: Zou is ahead in the facts, not behind' }),
@@ -130,7 +129,6 @@ describe('the spoken acknowledgement of a share is commentary from the numbers (
     expect(writes[0].messages[0].content).not.toContain('refused');
     expect(writes[3].messages[0].content).toContain('Zou is ahead in the facts, not behind');
     expect(writes[3].messages[0].content).toContain('"score":7'); // the facts, still
-    void round;
   });
 
   it('spends the daily ceiling per call — candidates and verdicts — and none at all is the emoji', async () => {

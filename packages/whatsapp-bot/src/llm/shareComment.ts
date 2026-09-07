@@ -104,7 +104,7 @@ export async function generateShareComment(
     const content =
       round === 1
         ? shown
-        : `${shown}\n\nYour previous lines were refused by the fact check${refused.length > 0 ? ' for these reasons' : ''}. Write a new one that avoids them.${refused.map((r) => `\n- ${r}`).join('')}`;
+        : `${shown}\n\nYour previous lines were refused by the fact check${refused.length > 0 ? ' for these reasons:' : '.'}${refused.map((r) => `\n- ${r}`).join('')}\nWrite a new one that avoids them.`;
     const written = await Promise.all(
       Array.from({ length: CANDIDATES }, async () => {
         if (!(await takeCall())) {
