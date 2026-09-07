@@ -40,8 +40,9 @@ relative to `packages/generation/` unless prefixed.
     wordlist/fr.forms.tsv.gz  versioned fr word-group inventory (#132/#146): source entries +
                               playable grouping + homography + display agreement; fr only
     wordlist/fr.forms.LICENSE the LGPL-LR text governing the Morphalou data it derives from
-    output/word/<lang>/<kind>/<author>/<work>/<s1>_<s2>_<s3>.json   generated puzzles
-                              filed under their source (#137); gitignored; publish to store/S3
+    output/word/<lang>/<kind>/<author>/<work>/<start1>_<start2>_<start3>.json   generated puzzles
+                              filed under their source (#137), NAMED AFTER THE START WORDS (never
+                              the secrets, 2026-09-07); gitignored; publish to store/S3
     output/single-word/<lang>/<slug>.json   generated single-word artifacts (#154);
                               gitignored; one flat directory per language
     pyproject.toml, uv.lock   Python project (uv)

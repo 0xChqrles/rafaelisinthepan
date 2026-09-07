@@ -41,15 +41,49 @@ MAX_GEN_RUNS = 6
 
 
 class Log:
-    def __init__(self, stamp: str):
+    """The run log, printed as it goes. In BLIND mode (`--blind`, user rule 2026-09-07:
+    the curator must be readable without spoiling the puzzle) an attempt's lines are
+    held back: a failed attempt's are then written in full (a rejected sentence is not
+    the puzzle), a successful attempt's go to `<stamp>.spoilers.md` and the main log
+    gets only what the player sees."""
+
+    def __init__(self, stamp: str, blind: bool = False):
         _paths.RUNS_DIR.mkdir(parents=True, exist_ok=True)
         self.path = _paths.RUNS_DIR / f"{stamp}.md"
-        self.lines: list[str] = [f"# Curation run {stamp}", ""]
+        self.spoilers = _paths.RUNS_DIR / f"{stamp}.spoilers.md"
+        self.blind = blind
+        self.lines: list[str] = [f"# Curation run {stamp}" + (" (blind)" if blind else ""), ""]
+        self._held: list[str] | None = None
 
     def __call__(self, line: str = "") -> None:
+        if self._held is not None:
+            self._held.append(line)
+            return
+        self._emit(line)
+
+    def _emit(self, line: str) -> None:
         print(line, flush=True)
         self.lines.append(line)
         self.path.write_text("\n".join(self.lines) + "\n", encoding="utf-8")
+
+    def begin_attempt(self, n: int) -> None:
+        if self.blind:
+            self._held = []
+            self._emit(f"\n## Attempt {n} (details withheld)")
+
+    def end_attempt(self, success: bool, summary: list[str] = ()) -> None:
+        held, self._held = self._held, None
+        if held is None:
+            return
+        if not success:
+            for line in held:
+                self._emit(line)
+            return
+        with open(self.spoilers, "a", encoding="utf-8") as f:
+            f.write("\n".join(held) + "\n")
+        for line in summary:
+            self._emit(line)
+        self._emit(f"- full detail (SPOILERS): `{self.spoilers}`")
 
 
 def die(msg: str) -> None:
@@ -271,6 +305,24 @@ def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, str],
     return repick
 
 
+def player_view(path: str, book: dict) -> list[str]:
+    """What the blind log may show of a written puzzle: the sentence as the player
+    first sees it, the start words with their ranks, the source, the path."""
+    try:
+        puzzle = json.loads(open(path, encoding="utf-8").read())
+    except (OSError, ValueError):
+        return [f"- written: `{path}`"]
+    seen, starts = set(), []
+    for h in puzzle["holes"]:
+        if h["secret"]["slug"] not in seen:
+            seen.add(h["secret"]["slug"])
+            starts.append(f"{h['start']['word']} ({h['start_rank']})")
+    return [f"- player view: « {st.displayed(puzzle['words'], puzzle['holes'])} »",
+            f"- start words: {', '.join(starts)}",
+            f"- source: {book.get('author', '')} — {book.get('title', '')}",
+            f"- written: `{path}`"]
+
+
 def _quote(arg: str) -> str:
     return f'"{arg}"' if " " in arg or "'" in arg else arg
 
@@ -399,6 +451,10 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--lang", choices=LANGS, default="fr")
     p.add_argument("--work", help="a file name on the shelf, epub or song (skips the model's pick)")
+    p.add_argument("--blind", action="store_true",
+                   help="withhold the winning sentence, its secrets and their handling from the "
+                        "log and stdout (they go to runs/<stamp>.spoilers.md), so the run can be "
+                        "read and the puzzle played before being spoiled")
     p.add_argument("--retry", metavar="FILE",
                    help="erase a previous attempt on this shelf file — its index entry and the "
                         "candidate puzzle(s) it wrote under the generation output — then run on it")
@@ -406,7 +462,7 @@ def main():
     args = p.parse_args()
 
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M")
-    log = Log(stamp)
+    log = Log(stamp, blind=args.blind)
     try:
         plan = llm.validate()
     except RuntimeError as exc:
@@ -437,10 +493,12 @@ def main():
     similarity, frequency_rank = load_similarity(args.lang)
     tried: list[str] = []
     result = None
-    for pick in ranked:
+    for n, pick in enumerate(ranked, 1):
         tried.append(pick["sentence"])
+        log.begin_attempt(n)
         result = attempt(claude, log, pick["sentence"], book, archive, vocab.__contains__,
                          similarity, frequency_rank, args.lang)
+        log.end_attempt(bool(result), player_view(result, book) if result else ())
         if result:
             break
     shelf_mod.record(index, book["file"], tried, author=book.get("author", ""))

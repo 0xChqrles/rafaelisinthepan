@@ -2660,7 +2660,9 @@ def _resolve_word_selectors(words_arg, cfg, lang):
 
 
 def filename_slugs_from_holes(holes):
-    """Return distinct secret slugs in first-occurrence sentence order."""
+    """The START-word slugs, one per distinct secret in first-occurrence sentence order
+    (user-decided 2026-09-07: the file is named after what the player SEES, never after
+    the secrets, so a path can be read without being spoiled)."""
     seen = set()
     ordered = []
     for hole in sorted(holes, key=lambda h: h["pos"]):
@@ -2668,7 +2670,7 @@ def filename_slugs_from_holes(holes):
         if secret_slug in seen:
             continue
         seen.add(secret_slug)
-        ordered.append(secret_slug)
+        ordered.append(slug(hole["start"]["word"]))
     return ordered
 
 

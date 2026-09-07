@@ -1,6 +1,6 @@
 """CONTRACT: a puzzle is filed under its SOURCE (issue #137).
 
-gen_phrase writes to <out-dir>/<lang>/<kind>/<author>/<work>/<s1>_<s2>_<s3>.json.
+gen_phrase writes to <out-dir>/<lang>/<kind>/<author>/<work>/<start1>_<start2>_<start3>.json.
 The rules those directory levels obey:
 
   - segments are path_slug()s — READABLE ASCII names, a different question from
@@ -183,7 +183,7 @@ def test_main_files_the_puzzle_under_its_source(monkeypatch, tmp_path):
         / "book"
         / "michel-houellebecq"
         / "la-carte-et-le-territoire"
-        / "chat_poursuit_jardin.json"
+        / "indice_indice_indice.json"
     )
     assert output.is_file()
     # The JSON keeps the DISPLAY forms; only the path is slugged.
@@ -198,12 +198,12 @@ def test_main_files_the_puzzle_under_its_source(monkeypatch, tmp_path):
 def test_main_keeps_a_source_less_puzzle_at_the_language_root(monkeypatch, tmp_path):
     _run_main(monkeypatch, tmp_path, [])
 
-    assert (tmp_path / "fr" / "chat_poursuit_jardin.json").is_file()
+    assert (tmp_path / "fr" / "indice_indice_indice.json").is_file()
 
 
 def test_main_stops_at_the_last_provided_level(monkeypatch, tmp_path):
     _run_main(monkeypatch, tmp_path, ["--kind", "quote", "--author", "Nicolas Sarkozy"])
 
     assert (
-        tmp_path / "fr" / "quote" / "nicolas-sarkozy" / "chat_poursuit_jardin.json"
+        tmp_path / "fr" / "quote" / "nicolas-sarkozy" / "indice_indice_indice.json"
     ).is_file()

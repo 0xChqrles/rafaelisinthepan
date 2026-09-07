@@ -38,7 +38,7 @@
 ## Commands
 
 ```bash
-pnpm curate [--lang fr] [--work <file on the shelf>] [--retry <file>] [--seed N]
+pnpm curate [--lang fr] [--work <file on the shelf>] [--retry <file>] [--blind] [--seed N]
 #   Picks a work (the model, off the shelf minus the archive minus index.json minus the
 #   artist cooldown; --work forces one; --retry erases a previous attempt on a file — its
 #   index entry and the candidate puzzle(s) it wrote under the generation output — then
@@ -47,7 +47,12 @@ pnpm curate [--lang fr] [--work <file on the shelf>] [--retry <file>] [--seed N]
 #   gen_phrase — headless, the start word is the band's random pick, the #133 form question
 #   is answered by the model from the sentence. Exit 0 = a candidate was written (publish it
 #   yourself), 2 = every shortlisted sentence was rejected (rerun: another sample, or
-#   another work). The log is runs/<stamp>.md.
+#   another work). The log is runs/<stamp>.md. --blind withholds the winning sentence,
+#   its secrets and their handling from the log and stdout (a failed attempt is still
+#   logged in full; the puzzle file is named after its START words, so its path spoils
+#   nothing): the main log gets the player's view, the start words, the source and the
+#   path, and everything else goes to runs/<stamp>.spoilers.md — so the run can be read
+#   and the puzzle played before being spoiled (user rule 2026-09-07).
 pnpm shelf:lyrics [--artists shelf/artists.txt] [--max-songs N]
 #   The music source (#262): for each artist of the user's hand-written list, the songs
 #   from Genius most viewed first, minus the top FAMOUS_SHARE (the singles), minus what
