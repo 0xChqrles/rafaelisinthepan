@@ -12,6 +12,7 @@ file in the repo. The curator itself never touches the network.
 
 import argparse
 import os
+from pathlib import Path
 import sys
 
 import _paths
@@ -76,7 +77,7 @@ def main():
     genius = Genius(token, remove_section_headers=True, skip_non_songs=True, retries=2, timeout=15)
     genius.verbose = False
 
-    artists = read_artists(_paths.CURATION_DIR / args.artists if not os.path.isabs(args.artists) else args.artists)
+    artists = read_artists(Path(args.artists) if os.path.isabs(args.artists) else _paths.CURATION_DIR / args.artists)
     _paths.SHELF_DIR.mkdir(parents=True, exist_ok=True)
     written = 0
     for name in artists:

@@ -12,6 +12,7 @@ import tempfile
 
 import _paths  # noqa: F401
 from slug import slug
+from start_word import START_RANK_MAX, START_RANK_MIN
 from llm_play import (
     SUBSCRIPTION_CONFLICT_ENV,
     _agent_sdk_turn,
@@ -267,8 +268,9 @@ def pick_secret(claude: Claude, tokens, remaining, picked) -> str | None:
     options = ", ".join(f"{t.text} ({t.pos.lower()})" for t in remaining)
     already = ", ".join(t.text for t in picked) or "none yet"
     answer = claude.json(f"""You curate a daily French word game: three words of a sentence are hidden and the
-player rediscovers each from embedding-neighbour feedback (a hint word ranked 50–150
-from the secret, then warm/cold ranks on every guess). Pick the NEXT secret word.
+player rediscovers each from embedding-neighbour feedback (a hint word ranked
+{START_RANK_MIN}–{START_RANK_MAX} from the secret, then warm/cold ranks on every guess).
+Pick the NEXT secret word.
 
 The sentence as the player sees it so far (____ = already hidden):
 {shown}

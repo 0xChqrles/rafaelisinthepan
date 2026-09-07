@@ -13,6 +13,7 @@ generation's output directory.
 import argparse
 from datetime import date, datetime, timezone
 import json
+from pathlib import Path
 import random
 import re
 import subprocess
@@ -157,23 +158,28 @@ def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], sour
     re-picked, at most START_ROUNDS times."""
     forms: dict[str, str] = {}
     starts: dict[str, str] = {}
+    tried: dict[str, set[str]] = {}  # every start a hole has shown, secret slug -> words
     chosen = False
     rounds = 0
+    prev = None
     for _ in range(MAX_GEN_RUNS + st.START_ROUNDS + 1):
         completed, cmd = run_gen_phrase(sentence, words, source, forms, lang, starts)
         if completed.returncode == 0:
             m = _WRITTEN.search(completed.stdout)
             path = m.group(1) if m else None
+            if path and prev and path != prev:  # the file is named after its starts: a rerun leaves no orphan
+                Path(prev).unlink(missing_ok=True)
+            prev = path or prev
             if path and not chosen:
                 chosen = True
                 picked = choose_starts(claude, log, path, context or {}, forms, frequency_rank)
                 if picked:
-                    starts.update(picked)
+                    _adopt(starts, tried, picked)
                     continue
             if path and rounds < st.START_ROUNDS:
-                repick = check_starts(claude, log, path, starts, context or {}, frequency_rank)
+                repick = check_starts(claude, log, path, tried, context or {}, frequency_rank)
                 if repick:
-                    starts.update(repick)
+                    _adopt(starts, tried, repick)
                     rounds += 1
                     continue
             log(f"- gen:phrase command: `{' '.join(_quote(c) for c in cmd[2:])}`")
@@ -211,6 +217,12 @@ def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], sour
         return None
     log("- gen:phrase: too many form rounds")
     return None
+
+
+def _adopt(starts: dict[str, str], tried: dict[str, set[str]], picked: dict[str, str]) -> None:
+    for key, word in picked.items():
+        starts[key] = word
+        tried.setdefault(key, set()).add(word)
 
 
 def _word_rank(frequency_rank):
@@ -255,11 +267,12 @@ def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, st
     return picked
 
 
-def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, str],
+def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, set[str]],
                  context: dict[str, str], frequency_rank) -> dict[str, str]:
     """The displayed sentence with its start words: the elision rule, then the model's
     grammar check. Returns {secret slug: new start} for every faulty hole (empty = all
-    good, or nothing better to offer)."""
+    good, or nothing better to offer). `tried` holds every start a hole has shown so far;
+    none is offered again."""
     puzzle = json.loads(open(path, encoding="utf-8").read())
     words, holes = puzzle["words"], puzzle["holes"]
     shown = st.displayed(words, holes)
@@ -289,7 +302,7 @@ def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, str],
         log(f"- start « {h['start']['word']} » for « {h['secret']['word']} » refused: {problem}")
         prev = st.previous_token(words, h)
         options = st.start_candidates(puzzle["ranks"][key], key, prev,
-                                      exclude={h["start"]["word"], tried.get(key, "")},
+                                      exclude={h["start"]["word"], *tried.get(key, ())},
                                       frequency_rank=_word_rank(frequency_rank))[:st.START_OPTIONS]
         if not options:
             log(f"- no other start in the band for « {h['secret']['word']} » — left to the reviewer")
@@ -383,7 +396,7 @@ def mine(work: dict, text: str, log: Log) -> list[str]:
 
 
 def shortlist(claude: llm.Claude, log: Log, mined: list[str], exclude: set[str], seed: int) -> list[dict]:
-    sentences = [s for s in mined if s not in exclude]
+    sentences = [s for s in mined if shelf_mod.sentence_key(s) not in exclude]
     if not sentences:
         die("no candidate sentence in this work")
     if len(sentences) > MAX_SENTENCES:
@@ -486,7 +499,8 @@ def main():
     book = choose_work(claude, log, args, archive, index, today)
     path = _paths.SHELF_DIR / book["file"]
     text = epub_text(path) if book["kind"] == "book" else path.read_text(encoding="utf-8")
-    proposed = set(index["books"].get(book["file"], {}).get("sentences", ())) | archive["sentences"]
+    proposed = {shelf_mod.sentence_key(s) for s in index["books"].get(book["file"], {}).get("sentences", ())}
+    proposed |= archive["sentences"]
     seed = args.seed if args.seed is not None else int(stamp[:10].replace("-", ""))
     ranked = shortlist(claude, log, mine(book, text, log), proposed, seed)
 

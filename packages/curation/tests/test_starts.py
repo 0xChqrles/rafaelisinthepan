@@ -48,3 +48,9 @@ def test_start_candidates_are_the_band_minus_variants_and_elision_failures():
     # a word too rare for a player is out; an unknown frequency is kept
     rare = lambda w: {"esprit": 90000, "usage": 500}.get(w)  # noqa: E731
     assert [e["word"] for e in start_candidates(ranks, "savoir", "du", frequency_rank=rare)] == ["effet", "usage", "monde"]
+
+
+def test_y_initial_is_the_models_call_like_h():
+    assert elision_problem("le", "yaourt") is None       # « le yaourt » is right; « l'yeuse » too
+    assert elision_problem("l’", "yeuse") is None
+    assert [e["word"] for e in start_candidates({"yoga": {"word": "yoga", "rank": 120}}, "savoir", "le")] == ["yoga"]

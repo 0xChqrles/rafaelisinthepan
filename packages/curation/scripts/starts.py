@@ -11,7 +11,10 @@ from start_word import START_RANK_MAX, START_RANK_MIN, is_variant
 # Words that elide before a vowel: « le effet » is never French.
 ELIDING = frozenset({"le", "la", "de", "ne", "que", "se", "ce", "je", "me", "te",
                      "jusque", "lorsque", "puisque", "quoique"})
-_VOWELS = "aeiouyàâäéèêëíìîïóòôöúùûüœæ"
+_VOWELS = "aeiouàâäéèêëíìîïóòôöúùûüœæ"
+# Initials whose elision the letter does not decide (« l'homme », « le hasard »; « le yaourt »,
+# « l'yeuse »): left to the model's grammar check.
+_MODEL_JUDGED = "hy"
 _PUNCT = "«»\"'’“”(),.;:!?…"
 # Re-pick rounds before the run gives the start up to the reviewer.
 START_ROUNDS = 3
@@ -42,15 +45,15 @@ def previous_token(words: list[str], hole: dict) -> str:
 
 
 def elision_problem(prev: str, word: str) -> str | None:
-    """The one grammar rule code can apply with certainty. An `h` is left to the model
-    (h muet elides, h aspiré does not)."""
+    """The one grammar rule code can apply with certainty. An `h` or a `y` is left to
+    the model (h muet elides, h aspiré does not; « le yaourt » but « l'yeuse »)."""
     if not word:
         return None
     p = prev.lower().strip(_PUNCT)
     first = word[0].lower()
     if p in ELIDING and first in _VOWELS:
         return f"« {prev} {word} » : « {prev} » s'élide devant une voyelle"
-    if prev.rstrip().endswith(("'", "’")) and first not in _VOWELS and first != "h":
+    if prev.rstrip().endswith(("'", "’")) and first not in _VOWELS and first not in _MODEL_JUDGED:
         return f"« {prev}{word} » : l'élision demande une voyelle"
     return None
 

@@ -70,12 +70,18 @@ def last_proposed(index: dict, author: str) -> date | None:
     return latest
 
 
+def sentence_key(sentence: str) -> str:
+    """One spelling for the dedup sets: a puzzle stores its sentence as lowercased
+    whitespace tokens (`gen_phrase.display_token`), the miner keeps the source's case."""
+    return " ".join(sentence.split()).lower()
+
+
 def _puzzle_files(lang: str):
     yield from (_paths.GENERATION_OUTPUT_DIR / lang).rglob("*.json")
 
 
 def archive(lang: str) -> dict:
-    """What exists already: {works: [{author, work}], secrets: {slug}, sentences: {..},
+    """What exists already: {works: [{author, work}], secrets: {slug}, sentences: {key},
     last_used: {author slug: date}} — the last date being the newest puzzle file's own
     date (a puzzle is generated the day it is curated), what the artist cooldown is
     judged on."""
@@ -89,7 +95,7 @@ def archive(lang: str) -> dict:
             continue
         for hole in puzzle.get("holes", ()):
             secrets.add(hole["secret"]["slug"])
-        sentences.add(" ".join(puzzle.get("words", ())))
+        sentences.add(sentence_key(" ".join(puzzle.get("words", ()))))
         src = puzzle.get("source") or {}
         key = (slug(src.get("author", "")), slug(src.get("work", "")))
         if src and key not in seen:
@@ -121,6 +127,8 @@ def forget(index: dict, work: dict, lang: str) -> list[str]:
     Returns what was deleted."""
     index["books"].pop(work["file"], None)
     author, title = slug(work.get("author", "")), slug(work.get("title", ""))
+    if not title:  # an untitled work would match every source-less puzzle
+        return []
     deleted = []
     for path in (_paths.GENERATION_OUTPUT_DIR / lang).rglob("*.json"):
         try:

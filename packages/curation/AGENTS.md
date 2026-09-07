@@ -123,7 +123,7 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
 - **The displayed sentence must be VALID FRENCH** (user rule 2026-09-06: « l'effet »,
   never « le effet »). After every generation `curate.check_starts` applies the one rule
   code can apply with certainty (`starts.elision_problem`: an eliding word before a
-  vowel, an elided one before a consonant; `h` is left to the model), then asks the model
+  vowel, an elided one before a consonant; `h` and `y` are left to the model), then asks the model
   whether the displayed sentence is grammatical (`llm.grammar_check`, one reason per
   faulty inserted word). A refused start is re-picked under the same start rules
   (`llm.pick_start`) and gen_phrase reruns; at most `START_ROUNDS` (3) rounds; what is
