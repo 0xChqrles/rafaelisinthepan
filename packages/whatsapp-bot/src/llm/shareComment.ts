@@ -15,28 +15,13 @@ import type { GroupConfig } from '../config/groupConfig';
 import { verdictOf, type ShareFacts } from '../domain/reactions';
 import type { Log } from '../log';
 import { buildSystemPrompt } from './personality';
-import { COMMENT_MAX_CHARS, LINE_RULES, TEMPERATURE, hasAClause, namesSomebody, readsLikeASimile, sanitizeComment, spellsANumber } from './podiumComments';
-import { LlmUnavailable, type LlmProvider } from './types';
+import { CANDIDATES, COMMENT_MAX_CHARS, LINE_RULES, writeCandidate } from './podiumComments';
+import { chooseLine } from './lineJudge';
+import type { LlmProvider } from './types';
 
-const ATTEMPTS = 3;
-// GENEROUS, BECAUSE THE BUDGET WAS SHARED WITH THINKING. `deepseek-v4-flash` is a reasoning
-// model: its reasoning tokens are spent from `max_tokens` and the provider only ever reads
-// `message.content`, so a tight budget bought a truncated line or an empty one (measured:
-// 300 truncated 1 run in 4, 800 none, 1500 still one). Since v8 this call turns the
-// thinking OFF (`effort: 'none'` below) and a line costs a few dozen tokens; the budget
-// stays where it was because it costs nothing, and the finish-reason check (which refuses
-// every reason but `stop`) stays because a provider can still cut a generation short.
-const MAX_TOKENS = 2000;
-// SHORTNESS IS THE VOICE, so it is enforced and not merely asked for — the podium's cap,
-// one spelling (`COMMENT_MAX_CHARS`): a line that runs long is one with work in it.
-const LINE_MAX_CHARS = COMMENT_MAX_CHARS;
-// THE EMOJI IS WAITING BEHIND THIS, so the wait is bounded well under the provider's own
-// 30s default: `ingest` awaits the line, and a long wait puts the acknowledgement of a
-// share far enough after it to read as broken. With thinking off (v8) a line answers in
-// about a second — the 20s this used to be covered the deliberation, whose tail ran to
-// 29s — so the cut is 10s, and the refusals above can afford a third attempt: worst case
-// 30s, the common case a second or two.
-const TIMEOUT_MS = 10_000;
+// The writer's budget, cut and checks are `podiumComments.ts`'s (`writeCandidate`): one
+// spelling of the voice for both acknowledgements. What differs here is only who waits —
+// the emoji is behind this, so the candidates are written in parallel and never retried.
 
 export type { ShareFacts } from '../domain/reactions';
 
@@ -51,29 +36,22 @@ export type { ShareFacts } from '../domain/reactions';
 // "acceptable." to three different scores in a row — so the examples say what the voice
 // SOUNDS like and the prompt forbids reusing their words.
 const TASK = (max: number, mode: ShareFacts['mode']) =>
-  `Task: react in ONE line to the Whippin result below, as a message in the group. The line only — plain text, no markdown, no quotes around it, under ${max} characters and usually far less; two words is a whole message.
-
-Three rules before anything else: no digits and no number words (their score is in the share they just posted); no name (it is on the share too); no "comme", no "qui". Speak TO them — "tu" — never about them.
+  `Task: react in ONE line to the Whippin result below, as a message in the group. The line only — plain text, no quotes, under ${max} characters; two words is a whole message. No digits and no number words (their score is in the share); no name (on the share too).
 
 ` +
   (mode === 'word'
-    ? // WORD MODE: the other daily. "found" is how many words they named from one word's
-      // neighbourhood against the clock — MORE is better, there is no cap and no floor.
-      `This is a WORD MODE result: the score is how many words they named from one word's neighbourhood against a countdown, where rarer words earn more time. MORE is better; there is no cap and no perfect score. How good it was is already decided for you. React to it, never re-judge it: perfect = a huge run, say so plainly · brilliant = genuinely good, tell them · strong = solid, and you mean it · ordinary = a fine run · laboured = the clock won this time, fair game for the joke. Never name the word.`
-    : `How good it was is already decided for you. React to it, never re-judge it. Three is the lowest score anyone can get, and anything under ten is good play: perfect = the best there is, nobody beats it, say so plainly · brilliant = genuinely good, tell them · strong = solid, and you mean it · ordinary = a fine day's work · laboured = slow, and fair game for the joke · failed = the sentence won today, and that is fair game too.`) +
-  `
-
-Playful at every rung: a slow score is teased by exaggerating the slowness, never by judging it. At the bottom, nothing about having held on or gone the distance, which is what every bot says; the three moves work there too. One blunt, strange, sincere verdict on THIS person, in the words a friend types — nothing any bot could have said.`;
+    ? `This is a WORD MODE result: the score is how many words they named from one word's neighbourhood against a countdown, where rarer words earn more time. MORE is better; there is no cap and no perfect score. How good it was is decided for you: perfect = a huge run · brilliant = genuinely good · strong = solid · ordinary = a fine run · laboured = the clock won this time. Never name the word.`
+    : `How good it was is decided for you. Three is the lowest score anyone can get, and anything under ten is good play: perfect = the best there is · brilliant = genuinely good · strong = solid · ordinary = a fine day's work · laboured = slow · failed = the sentence won today.`);
 
 export async function generateShareComment(
   provider: LlmProvider,
   group: GroupConfig,
   facts: ShareFacts,
   log: Log,
-  // Spends one unit of the daily CALL ceiling, per attempt — the conversation charges per
-  // call too, and a retry that cost nothing would leave the ceiling bounding acknowledgements
-  // rather than the spend it exists to bound. Refusing is the emoji, like every other way
-  // this can fail to produce words.
+  // Spends one unit of the daily CALL ceiling per model call — every candidate and every
+  // verdict — as the conversation does: a call that cost nothing would leave the ceiling
+  // bounding acknowledgements rather than the spend it exists to bound. A refused call is
+  // one candidate fewer, or one candidate unjudged; refusing them all is the emoji.
   takeCall: () => Promise<boolean> = async () => true,
 ): Promise<string | null> {
   const system = buildSystemPrompt({
@@ -87,79 +65,24 @@ export async function generateShareComment(
   //
   // AND THE SCORE ITSELF IS NOT SENT (v8, `podiumComments.ts` says why): the verdict is
   // what the line reacts to, and a number the model never saw is one it cannot read back.
-  const content = `${JSON.stringify(
+  const shown = JSON.stringify(
     facts.mode === 'word'
       ? { player: facts.player, verdict: verdictOf(facts) }
       : { player: facts.player, solved: !facts.capped, verdict: verdictOf(facts) },
-  )}\n${LINE_RULES}`;
-  for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
-    if (!(await takeCall())) {
-      log.info({ event: 'share.comment_ceiling', attempt }, 'daily call ceiling reached');
-      return null;
-    }
-    let text: string | null;
-    let finish: string | undefined;
-    try {
-      // NO THINKING, for the reason `podiumComments.ts` gives: the v8 voice pushed a
-      // deliberated line past the timeout, and an undeliberated one takes about a second.
-      const response = await provider.generate({
-        system,
-        messages: [{ role: 'user', content }],
-        maxTokens: MAX_TOKENS,
-        temperature: TEMPERATURE, // `podiumComments.ts` says why
-        effort: 'none',
-        timeoutMs: TIMEOUT_MS,
-      });
-      text = response.text;
-      finish = response.finish;
-      log.info(
-        { event: 'share.comment_generated', attempt, finish: response.finish, latencyMs: response.latencyMs, tokens: response.usage },
-        'llm answered',
-      );
-      // ONLY A FINISHED ANSWER IS AN ANSWER. `length` is the budget running out — what
-      // comes back is a FRAGMENT, and a short enough fragment passes every length check
-      // there is ("Gab, 7 ess" was a real one). And it is not the only way a completion
-      // stops early: DeepSeek answers `insufficient_system_resource` for a generation it
-      // interrupted and `content_filter` for one it cut, both of which the provider folds
-      // into `other`. This call uses no tools, so the one reason that means "the model
-      // said what it meant" is `stop`; anything else is refused on the REASON rather than
-      // inspected, since what came back is what the model had left to say, not what it
-      // meant to.
-      if (response.finish !== 'stop') {
-        log.warn({ event: 'share.comment_unfinished', attempt, finish: response.finish }, 'the line did not finish');
-        continue;
+  );
+  // The candidates are written in PARALLEL — the emoji is waiting behind this, and six
+  // sequential seconds would read as a bot thinking — each behind its own unit of the
+  // ceiling.
+  const written = await Promise.all(
+    Array.from({ length: CANDIDATES }, async () => {
+      if (!(await takeCall())) {
+        log.info({ event: 'share.comment_ceiling' }, 'daily call ceiling reached');
+        return null;
       }
-    } catch (error) {
-      const unavailable = error instanceof LlmUnavailable;
-      log.warn(
-        { event: 'share.comment_failed', attempt, unavailable, error: (error as Error).message },
-        'no line for this share; the emoji stands in',
-      );
-      // Only an availability problem is worth a second call; anything else recurs.
-      if (!unavailable) return null;
-      continue;
-    }
-    const line = sanitizeComment(text);
-    // The number, name and simile checks are `podiumComments.ts`'s, for its reasons: the
-    // share the player posted already shows the score and the name.
-    const reason = !line
-      ? 'unusable'
-      : line.length > LINE_MAX_CHARS
-        ? 'long'
-        : spellsANumber(line)
-          ? 'number'
-          : namesSomebody(line, [facts.player])
-            ? 'name'
-            : readsLikeASimile(line)
-              ? 'simile'
-              : hasAClause(line)
-                ? 'clause'
-                : null;
-    if (line && !reason) return line;
-    log.warn(
-      { event: 'share.comment_invalid', attempt, finish, reason, length: line?.length ?? 0 },
-      'rejecting a line',
-    );
-  }
-  return null;
+      return writeCandidate(provider, system, `${shown}\n${LINE_RULES}`, [facts.player], 'share.comment', log);
+    }),
+  );
+  const candidates = written.filter((c): c is string => c !== null);
+  log.info({ event: 'share.candidates', written: candidates.length, of: CANDIDATES }, 'candidates written');
+  return chooseLine(provider, `a friend posted a result, ${shown}`, candidates, log, takeCall);
 }
