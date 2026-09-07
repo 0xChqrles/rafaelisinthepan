@@ -97,7 +97,10 @@ export async function toInbound(
   let quoted: InboundMessage['quoted'];
   if (info?.stanzaId && info.participant) {
     const participant = jidNormalizedUser(info.participant);
-    quoted = { id: info.stanzaId, participant, player: await resolve(participant) };
+    // The quoted content rides along with the reply (`quotedMessage`): no lookup, and a
+    // quote of a message this process never saw (before a restart) still has its words.
+    const text = info.quotedMessage ? messageText({ message: info.quotedMessage } as WAMessage) : '';
+    quoted = { id: info.stanzaId, participant, player: await resolve(participant), text };
   }
   const mentions: Mention[] = [];
   for (const raw of info?.mentionedJid ?? []) {

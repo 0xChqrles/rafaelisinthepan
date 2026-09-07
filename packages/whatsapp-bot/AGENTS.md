@@ -33,6 +33,8 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
       declarations.ts           Declaration, the PRECEDENCE rule (`supersedes`), `inLanguage`, store interface, memory impl
       dynamoDeclarationStore.ts GROUP#<jid> / DAY#<000000>#PLAYER#<sender>; precedence as a ConditionExpression
       podium.ts                 DENSE podium (1, 2, 2 → 3); ∞ runs listed, never positioned
+      shareContext.ts           the FACTS a share is commented from: score, typical day, the board so far,
+                                who is ahead/behind, the player's habit and recent days, the others' habits
       podiumText.ts             the renderer (positions/names/scores/framing are ITS; comments keyed by line id),
                                 and `renderReminder`, the morning line
       names.ts                  display name = operator override ?? latest snapshot ?? …last4
@@ -44,8 +46,9 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
                                 that DECIDES anything here (the decode, the row, the band) stays model-free.
     src/outbound/               ONE owner of sends: commands (ids), SQS transport, sent-record dedup, dispatcher
     src/llm/                    provider-neutral contract (types.ts), providers/deepseek.ts, the versioned
-                                personality, podium comments (validated, retried, degrade to none),
-                                shareComment.ts — the spoken acknowledgement, degrading to the emoji
+                                personality, podium comments (candidates, checked, judged, degrade to none),
+                                shareComment.ts — the spoken acknowledgement, degrading to the emoji,
+                                lineJudge.ts — the reasoning reader that keeps or drops a candidate
     src/puzzle/daySource.ts     the day's `source` metadata, read once per (language, day) and carried in
                                 the CONVERSATION's prompt — the KIND is sayable, the work is not
     src/chat/                   addressed conversation: trigger (mention/reply/name), ceilings (limits),
@@ -401,7 +404,20 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   answering before the player spoke — and the line is remembered through ingest's `spoken`
   hook, which fires after the queue accepted it, so a line the queue refused for good is
   never a message the bot believes it sent. The emoji is not a turn —
-  there is nothing to remember about it. **Only the BOT's mention is addressing**: everybody else's
+  there is nothing to remember about it. **THE BOT'S OWN QUEUED LINES enter the window
+  through WhatsApp's `fromMe` echo** (2026-09-07): the podium and the reminder are composed
+  in the Lambda and were in no window, so a "merci" under the podium answered a line the
+  model could not see. `RecentContext.pushUnlessSaid` skips an echo whose text an assistant
+  turn already holds (an answer, a spoken acknowledgement — remembered when composed).
+  **A QUOTE IS SPELLED OUT** (2026-09-07): `QuotedRef.text` carries the quoted message's
+  words (`inbound.ts`, off `contextInfo.quotedMessage`; a caption for media; `''` for
+  none), and the turn — the agent's question and an ambient message alike — opens with
+  `quoteLead`: `[replying to you: "…"]` for the bot's own line, `[replying to Zou: "…"]`
+  otherwise, the author named like a mention (`labelFor` / `mentionNames`, the bot under
+  its `chat.name` via `namesWithBot`), the words cut at `QUOTE_MAX_CHARS` (200), shares
+  stripped and mentions named like any turn. Before it, a reply to the bot reached the
+  model as a bare "merci", and it guessed the line — usually the last, never the podium.
+  **Only the BOT's mention is addressing**: everybody else's
   is part of the question, and is replaced by the name the group uses (the tool runner's
   `labelFor`, so the model gets a name the tools can look up again, and never the phone
   number behind it) — looked up by the PLAYER key the mention resolved to, keyed by the
@@ -525,7 +541,90 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   affamé", "cheval en grève" and "pêcheur astigmate" all failed it. NO CONCRETE EXAMPLE
   IN THE PROMPT: "a surgeon who happens to be obese" came back as "chirurgien obese" the
   next run. No quoted word either ("officiellement", offered once, was in half the lines).
-  Three mechanics came with it, all measured on the real provider:
+  **THE SHARE LINE IS COMMENTARY FROM THE NUMBERS (user-decided 2026-09-07, the approach
+  that replaced voice-tuning).** Every voice from v5 to v9 wrote empty lines for the same
+  reason: the writer was handed a band word and nothing to react to. Now
+  `domain/shareContext.ts` computes, from the group's own declarations, what a friend
+  reacts to — the exact score; what a day typically costs (`TYPICAL_SCORE` 10–20, median
+  14); the day's board so far with this share placed, who is ahead, level and behind, how
+  many have posted against how many usually do, whether this is the first share of the
+  day; this player's habit over `HABIT_DAYS` = 14 (average score and dense position,
+  best, worst) and their recent days; and the habit of everybody else on the board — and
+  `llm/shareComment.ts` hands it ALL to the writer as JSON, with the rule that every number,
+  name and comparison comes from it. **No band word travels** (the user: "not a word like
+  strong, just the score"); **numbers and names are the point**, so none of the one-liner
+  refusals apply to this path (`CandidateShape`); **the writer does NOT think, the judge does**
+  (measured on the seeded day: thinking on, 15–29s a share and no better; off, 12–21s —
+  the facts carry every comparison, the writer phrases a table); three candidates in
+  parallel; and **the judge is a FACT CHECK** (`FACT_JUDGE_SYSTEM`: every claim backed by
+  the facts, worth reading — or a plain acknowledgement when nothing is notable — one or
+  two plain sentences; it answers the digit then its reason, so a trial can read why; the
+  facts carry a `reading` note saying the habit window EXCLUDES today, which both the
+  writer and the judge needed), because a line that misplaces somebody is the bot deciding
+  a rank. What brings value is described, never
+  shown — no example line — and the model writes its own: measured on a seeded day, "t'es
+  seul à avoir posté, on saura pas avant que les autres jouent si la journée est facile",
+  "Bruno passe devant avec son 6, la lecture est encore partielle", "ton pire score depuis
+  le début, cinquième, toi qui tournes à 9,4 de moyenne" — every number checked against
+  the seed. 12–21s a share, judge included; the emoji stands in when the facts cannot be
+  read (`share.facts_failed`). The ingest callback now names WHICH share (`{dayNumber,
+  sender}`) so the writer can read the board. Word shares keep the claims alone (nothing
+  is recorded for them). **The voice is v11: v3's, back by the group's request** (the user,
+  2026-09-07: "users are telling me that they liked the v3 voice more") — unimpressed,
+  understating, no emoji, teases the top and stays with the bottom — over v10's facts,
+  with the two v3 rules the facts contradict changed: the score and the names are said
+  (they are the content), and a second short sentence is allowed. v4–v10's voices stay
+  retired; v10's one paragraph lasted a day. **The
+  podium path is NOT yet fact-based** — it still writes one-liners from a band under the
+  v9 mechanics below — and that is the next step, not a decision.
+  **LESS IS BETTER (v9, user-decided 2026-09-07: "a pretty short and concise prompt just
+  saying what is funny and what is not, without giving examples that might pollute its
+  answers … a nonchalant cynic but serious tone").** After v8's judge the user still found
+  it "very cringe". The voice is now ONE short paragraph (`personality.ts`, ~150 words
+  where v8 had ~900): the dry one in the group — nonchalant, a little cynical, entirely
+  serious, one flat short sentence, understatement over enthusiasm, never trying to be
+  funny; the game, the day, the sentence and the bot are the targets and the person never
+  is; the same short list of don'ts. No example line anywhere, in the writer OR the judge
+  (the judge's calibration lines leaned its picks toward their kind), no moves, no shapes.
+  The two task prompts were cut to the facts and the verdict ladder, and the ordinals were
+  added to the refused number words (the placing read back). Measured, three live rounds:
+  no cringe and no nonsense in 39 lines; the judge keeps three candidates in four with
+  this register — it is a safety net now, not the filter it was — and the costs are
+  repetition ("Impeccable." for every perfect score) and a dryness that can read as a
+  verdict on the score ("sans gloire"). v2/v3's "unimpressed" bot was retired in 2026-09-04
+  as "too cold for the group"; this is the user choosing it back with the put-down line
+  drawn, and the group's feedback decides next.
+  **THE JUDGE (user-reported 2026-09-07: in production "perfect 40% of the time, the rest
+  cringe or nonsense").** No wording of the writer's prompt moved that without making it
+  worse, so the lever is SELECTION, not construction (`lineJudge.ts`): each line is written
+  as **`CANDIDATES` = 8** parallel candidates with the writer's thinking off (about a
+  second), each candidate that passes the checks is read by a second call with its
+  thinking ON (`reasoning_effort: low`, 20s cut) under its own strict prompt — which MAY
+  quote the user's canonical lines and the named failures, since a reader does not copy
+  what it reads — and the first candidate the judge keeps, in candidate order, is posted.
+  All dropped = a bare podium line / the emoji, by design ("no line at all is better than a
+  cringe one"); no verdict at all (the judge unreachable) = the first candidate, unjudged,
+  so an outage of the judge does not blank every podium it lasts through. The podium
+  retries nothing: its eight candidates are the retry. **The SHARE path writes ONE more
+  round of `CANDIDATES` (3) when the fact check dropped every candidate** (2026-09-07;
+  `shareComment.ts` `ROUNDS` = 2), with the judge's reasons in front of the writer — the
+  fact check answers `digit: reason`, `parseVerdict` reads it, `line.judged` and
+  `line.all_dropped` LOG it (a run of drops was unreadable without it), and `chooseLine`
+  hands it back as `Choice.reasons`. Live the day the fact check shipped it dropped about
+  two lines in five, so three candidates left one share in eight with the emoji where a
+  line was owed (the user: "sometimes the bot just adds a react to a score instead of
+  making a comment"); a second round costs six calls on that share alone, where eight
+  candidates a round would cost every share ten more. Nothing written, or nothing judged,
+  earns no second round. Measured against 41 lines the user
+  had rated: single verdicts at `low` reject 23 of 23 bad lines and keep about half the
+  good ones, median 4s (p90 9s); "pick the best of four" reasoned 12–25s, truncated and
+  landed at half accuracy, and `high` truncated a third of its verdicts — so ONE LINE PER
+  CALL, precision over recall, and the candidates supply the recall. Live: the judge keeps
+  about one candidate in seven. The share path spends one unit of the daily call ceiling
+  per candidate AND per verdict (up to 6 a round, 12 a share, against
+  `DEFAULT_DAILY_CALL_CEILING` = 500), which is the honest count the ceiling exists for;
+  raise the ceiling, not the accounting, if a group outgrows it.
+  Three mechanics came with v8, all measured on the real provider:
   - **THE COMMENT PATHS THINK NOT AT ALL** (`effort: 'none'` on `LlmRequest`, mapped by
     `providers/deepseek.ts` onto `thinking: {type: 'disabled'}`; `low`/`high` map onto
     `reasoning_effort`). Under v7 a podium line already deliberated 5–19s, the last of which

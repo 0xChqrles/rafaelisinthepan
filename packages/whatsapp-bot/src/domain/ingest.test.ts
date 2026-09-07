@@ -111,6 +111,7 @@ describe('share ingestion (#236)', () => {
     expect(comment).toHaveBeenCalledWith(
       expect.objectContaining({ id: GROUP }),
       expect.objectContaining({ capped: true, player: 'Gab', score: 500 }),
+      expect.objectContaining({ sender: expect.any(String), dayNumber: expect.any(Number) }),
     );
     expect(sent[0]).toMatchObject({ kind: 'message', text: 'la phrase a gagné.' });
   });
@@ -119,9 +120,11 @@ describe('share ingestion (#236)', () => {
     const comment = vi.fn(async () => 'Sept coups, honnête.');
     const { ingest, sent } = harness(registry({ acknowledge: 'say' }), { comment });
     expect(await ingest(message())).toBe('recorded');
+    // — and WHICH share, so the writer can read the day's board and the player's habit.
     expect(comment).toHaveBeenCalledWith(
       expect.objectContaining({ id: GROUP }),
       { mode: 'sentence', player: 'Gab', score: 7, capped: false },
+      expect.objectContaining({ sender: expect.any(String), dayNumber: expect.any(Number) }),
     );
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({
@@ -451,7 +454,7 @@ describe('share ingestion (#236)', () => {
     const comment = vi.fn(async () => 'Vingt-six, joli.');
     const { ingest, declarations, sent } = harness(registry({ acknowledge: 'say' }), { comment });
     expect(await ingest(message({ text: `gg ${ORIGIN}/s/${wordToken([10, 8, 5, 2, 1])}` }))).toBe('acknowledged');
-    expect(comment).toHaveBeenCalledWith(expect.objectContaining({ id: GROUP }), { mode: 'word', player: 'Gab', claims: 26 });
+    expect(comment).toHaveBeenCalledWith(expect.objectContaining({ id: GROUP }), { mode: 'word', player: 'Gab', claims: 26 }, expect.objectContaining({ sender: expect.any(String), dayNumber: expect.any(Number) }));
     expect(sent[0]).toMatchObject({ kind: 'message', id: `ack:${GROUP}:M1`, text: 'Vingt-six, joli.' });
     expect(await declarations.day(GROUP, DAY)).toEqual([]);
     // The emoji follows the Word ladder, not the sentence one: 26 found is brilliant.
@@ -468,6 +471,6 @@ describe('share ingestion (#236)', () => {
     const mixed = vi.fn(async () => 'y');
     const two = harness(registry({ acknowledge: 'say' }), { comment: mixed });
     expect(await two.ingest(message({ id: 'M5', text: `${ORIGIN}/s/${token(7)} ${ORIGIN}/s/${wordToken([9, 9, 9, 0, 0])}` }))).toBe('recorded');
-    expect(mixed).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ mode: 'sentence', score: 7 }));
+    expect(mixed).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ mode: 'sentence', score: 7 }), expect.anything());
   });
 });

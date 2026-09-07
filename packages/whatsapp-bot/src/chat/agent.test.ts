@@ -97,6 +97,32 @@ describe('addressed conversation (#236)', () => {
     expect(JSON.parse((requests[1].messages[2] as { content: string }).content)).toMatchObject({ lines: [] });
   });
 
+  it('spells the quote out: a reply to the bot names its line as yours, one to a player by name (2026-09-07)', async () => {
+    const bot = '33700000000@s.whatsapp.net';
+    const { provider, requests } = scripted([() => ({ text: 'de rien' }), () => ({ text: 'oui' })]);
+    const context = new RecentContext();
+    const answer = agentWith(provider, { context });
+    await answer(
+      message('merci', { mentions: [], quoted: { id: 'B1', participant: bot, player: bot, text: 'Podium du jour : Zou 5, Gab 7' } }),
+      group,
+      identity,
+      TODAY,
+    );
+    expect(requests[0].messages).toEqual([{ role: 'user', content: 'Gab: [replying to you: "Podium du jour : Zou 5, Gab 7"] merci' }]);
+    // The window keeps the same turn, so the exchange reads right later.
+    expect(context.recent(GROUP, new Date('2026-09-03T12:00:00Z').getTime())[0].text).toBe('[replying to you: "Podium du jour : Zou 5, Gab 7"] merci');
+    // Another player's line: named like a mention (nobody on the board yet, so the handle),
+    // and a mention of the bot inside it is the bot's name, never its number.
+    const zou = '33698765432@s.whatsapp.net';
+    await answer(
+      message('@33700000000 il a raison ?', { id: 'M2', quoted: { id: 'B2', participant: zou, player: zou, text: '@33700000000 t’es sûr ?' } }),
+      group,
+      identity,
+      TODAY,
+    );
+    expect(requests[1].messages.at(-1)).toEqual({ role: 'user', content: 'Gab: [replying to …5432: "WhippinBot t’es sûr ?"] il a raison ?' });
+  });
+
   it('carries recent context and the sender\'s notes; stays silent on the ceilings', async () => {
     const memory = memoryMemoryStore();
     await memory.put(GROUP, '33612345678@s.whatsapp.net', {

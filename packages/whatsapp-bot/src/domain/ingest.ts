@@ -45,7 +45,7 @@ export interface IngestDeps {
   // domain stays model-free and testable: whoever supplies it owns the prompt, the ceiling
   // and the retries (`llm/shareComment.ts`, wired in main.ts). Absent, or answering null,
   // means the emoji stands in.
-  comment?: (group: GroupConfig, facts: ShareFacts) => Promise<string | null>;
+  comment?: (group: GroupConfig, facts: ShareFacts, key: { dayNumber: number; sender: string }) => Promise<string | null>;
   // Told a line ONCE IT IS QUEUED — the line is a turn in the group's conversation and the
   // caller remembers it as one (main.ts) — and never for a line the queue refused for
   // good: remembered, that would be a message the bot believes it sent and nobody read.
@@ -234,7 +234,7 @@ export function createIngest(deps: IngestDeps) {
       // unavailable model may cost the words but never the acknowledgement itself.
       const line =
         group.acknowledge === 'say' && deps.comment
-          ? await deps.comment(group, facts).catch((error) => {
+          ? await deps.comment(group, facts, { dayNumber: best?.dayNumber ?? word!.dayNumber, sender: message.sender }).catch((error) => {
               deps.log.warn(
                 { event: 'share.comment_threw', group: tag(group.id), error: (error as Error).message },
                 'the line failed; acknowledging with the emoji',

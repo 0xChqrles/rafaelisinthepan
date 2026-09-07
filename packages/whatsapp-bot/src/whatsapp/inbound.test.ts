@@ -30,6 +30,7 @@ describe('Baileys stops at the inbound boundary (#236)', () => {
               mentionedJid: ['33700000000@s.whatsapp.net'],
               stanzaId: 'B1',
               participant: '33700000000:3@s.whatsapp.net',
+              quotedMessage: { conversation: 'Podium du jour' },
             },
           },
         },
@@ -47,7 +48,7 @@ describe('Baileys stops at the inbound boundary (#236)', () => {
       timestamp: 1_700_000_000,
       fromMe: false,
       mentions: [{ jid: '33700000000@s.whatsapp.net', player: '33700000000@s.whatsapp.net' }],
-      quoted: { id: 'B1', participant: '33700000000@s.whatsapp.net', player: '33700000000@s.whatsapp.net' },
+      quoted: { id: 'B1', participant: '33700000000@s.whatsapp.net', player: '33700000000@s.whatsapp.net', text: 'Podium du jour' },
       live: true,
     });
   });
@@ -85,7 +86,21 @@ describe('Baileys stops at the inbound boundary (#236)', () => {
       true,
       resolve,
     );
-    expect(reply?.quoted).toEqual({ id: 'B2', participant: '55555555555555@lid', player: '33700000000@s.whatsapp.net' });
+    expect(reply?.quoted).toEqual({ id: 'B2', participant: '55555555555555@lid', player: '33700000000@s.whatsapp.net', text: '' });
+    // What was quoted travels as its text — a caption for media — flattened like the message's own.
+    const overPhoto = await toInbound(
+      wa({
+        message: {
+          extendedTextMessage: {
+            text: 'joli',
+            contextInfo: { stanzaId: 'B3', participant: '33700000000@s.whatsapp.net', quotedMessage: { imageMessage: { caption: 'regarde' } } },
+          },
+        },
+      }),
+      true,
+      resolve,
+    );
+    expect(overPhoto?.quoted?.text).toBe('regarde');
     // No `…Alt` beside the LID (a history replay): the mapping still names the player.
     const replayed = await toInbound(
       wa({ key: { participant: '123456789012345@lid' }, message: { conversation: 'x' } }),
