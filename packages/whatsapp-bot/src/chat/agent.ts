@@ -21,11 +21,11 @@ import { LlmUnavailable, type LlmMessage, type LlmProvider } from '../llm/types'
 import type { Log } from '../log';
 import { tag } from '../log';
 import { revealsSource, sourceContext, type DaySourceReader } from '../puzzle/daySource';
-import { boundTurnText, type RecentContext } from './context';
+import { boundTurnText, quoteLead, type RecentContext } from './context';
 import { limitExpiry, limitKeys, type LimitStore } from './limits';
 import type { MemoryStore } from './memory';
 import { createToolRunner } from './tools';
-import { jidUser, mentionedOthers, questionText, type BotIdentity } from './trigger';
+import { jidUser, mentionedOthers, namesWithBot, questionText, quotesBot, withMentionNames, type BotIdentity } from './trigger';
 
 export const MAX_TOOL_ROUNDS = 4;
 export const REPLY_MAX_CHARS = 700;
@@ -182,6 +182,20 @@ export function createAgent(deps: AgentDeps) {
     // at the end is one message, and the window's budget protects nothing if the question
     // beside it is unbounded.
     const question = boundTurnText(questionText(message, identity, mentionNames));
+    // THE QUOTE IS SPELLED OUT (2026-09-07). A reply to one of the bot's lines reached the
+    // model as a bare "merci" or "et hier ?": WhatsApp draws the quoted bubble, the prompt
+    // did not, and the model guessed which line was meant — usually the last, sometimes
+    // wrong, never the podium. The quoted words ride in the ref (`QuotedRef.text`, its
+    // shares already stripped by main.ts) and are named like a mention: "you" for the
+    // bot's own line, else the name the group uses; a mention token inside them becomes a
+    // name or the `…last4` handle, never a number.
+    const lead = message.quoted
+      ? quoteLead(
+          quotesBot(message, identity) ? 'you' : await tools.labelFor(message.quoted.player),
+          withMentionNames(message.quoted.text, namesWithBot(mentionNames, identity)),
+        )
+      : '';
+    const asked = `${lead}${question}`;
 
     // THE SYSTEM PROMPT IS CODE- AND OPERATOR-AUTHORED, AND NOTHING ELSE. What a group
     // member typed — their push name, their message, and the notes the `remember` tool
@@ -221,7 +235,7 @@ export function createAgent(deps: AgentDeps) {
           : { role: 'user', content: `${turn.name}: ${turn.text}` },
       );
     }
-    messages.push({ role: 'user', content: `${senderName}: ${question}` });
+    messages.push({ role: 'user', content: `${senderName}: ${asked}` });
 
     let text: string | null = null;
     let retried = false;
@@ -303,7 +317,7 @@ export function createAgent(deps: AgentDeps) {
       const refused = await charge();
       if (refused) return refused;
     }
-    deps.context.push(group.id, { role: 'user', name: senderName, text: question, at: at.getTime() });
+    deps.context.push(group.id, { role: 'user', name: senderName, text: asked, at: at.getTime() });
     deps.context.push(group.id, { role: 'assistant', name: '', text: reply, at: at.getTime() });
     return { kind: 'reply', text: reply };
   };

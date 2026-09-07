@@ -48,6 +48,29 @@ export interface JudgeBrief {
 
 export type Verdict = 'keep' | 'drop' | 'unknown';
 
+export interface Judgement {
+  verdict: Verdict;
+  // The judge's few words after the digit (the fact check asks for them; the voice judge
+  // answers the digit alone). Logged, and handed back to the writer when nothing was kept.
+  reason?: string;
+}
+
+const REASON_MAX_CHARS = 200;
+
+// "1: the placing is right" → keep; "0 — Zou is ahead in the facts" → drop with the reason;
+// "sure, 1" → keep (the first digit anywhere, as before); no digit → nothing.
+export function parseVerdict(text: string): Judgement | null {
+  const at = text.search(/[01]/);
+  if (at < 0) return null;
+  const reason = text
+    .slice(at + 1)
+    .replace(/^[\s:\-–—.]+/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, REASON_MAX_CHARS);
+  return { verdict: text[at] === '1' ? 'keep' : 'drop', ...(reason ? { reason } : {}) };
+}
+
 // Sized to the measurement above: a verdict at `low` is a few hundred reasoning tokens and
 // about 4s, with a tail to 12s; the budget refuses nothing it needs, and the cut sits above
 // the tail. `unknown` is a verdict that never arrived — a timeout, an outage, a truncated
@@ -60,7 +83,7 @@ export async function judgeLine(
   brief: JudgeBrief,
   line: string,
   log: Log,
-): Promise<Verdict> {
+): Promise<Judgement> {
   try {
     const response = await provider.generate({
       system: brief.system,
@@ -69,20 +92,30 @@ export async function judgeLine(
       effort: 'low',
       timeoutMs: TIMEOUT_MS,
     });
-    const digit = /[01]/.exec((response.text ?? '').trim())?.[0];
-    const verdict: Verdict = response.finish !== 'stop' || !digit ? 'unknown' : digit === '1' ? 'keep' : 'drop';
+    const parsed = response.finish === 'stop' ? parseVerdict(response.text ?? '') : null;
+    const judgement: Judgement = parsed ?? { verdict: 'unknown' };
+    // The reason is logged with the verdict (2026-09-07): a run of drops was unreadable
+    // without it — two shares fell back to the emoji and the log said only "drop" thrice.
     log.info(
-      { event: 'line.judged', verdict, finish: response.finish, latencyMs: response.latencyMs, tokens: response.usage },
+      { event: 'line.judged', ...judgement, finish: response.finish, latencyMs: response.latencyMs, tokens: response.usage },
       'the judge answered',
     );
-    return verdict;
+    return judgement;
   } catch (error) {
     log.warn(
       { event: 'line.judge_failed', unavailable: error instanceof LlmUnavailable, error: (error as Error).message },
       'no verdict for this line',
     );
-    return 'unknown';
+    return { verdict: 'unknown' };
   }
+}
+
+export interface Choice {
+  line: string | null;
+  // How many candidates the judge DROPPED (an `unknown` is not a drop), and the reasons it
+  // gave for those — what a caller that writes again has to go on.
+  dropped: number;
+  reasons: string[];
 }
 
 // The candidates are judged in PARALLEL and the first kept one, in candidate order, is
@@ -96,17 +129,19 @@ export async function chooseLine(
   candidates: readonly string[],
   log: Log,
   takeCall: () => Promise<boolean> = async () => true,
-): Promise<string | null> {
-  if (candidates.length === 0) return null;
-  const verdicts = await Promise.all(
-    candidates.map(async (line) => ((await takeCall()) ? judgeLine(provider, brief, line, log) : ('unknown' as const))),
+): Promise<Choice> {
+  if (candidates.length === 0) return { line: null, dropped: 0, reasons: [] };
+  const judgements = await Promise.all(
+    candidates.map(async (line) => ((await takeCall()) ? judgeLine(provider, brief, line, log) : { verdict: 'unknown' as const })),
   );
+  const verdicts = judgements.map((j) => j.verdict);
   const kept = candidates.find((_, i) => verdicts[i] === 'keep');
-  if (kept) return kept;
+  if (kept) return { line: kept, dropped: 0, reasons: [] };
   if (verdicts.every((v) => v === 'unknown')) {
     log.warn({ event: 'line.unjudged', candidates: candidates.length }, 'no verdict came back; posting the first candidate');
-    return candidates[0];
+    return { line: candidates[0], dropped: 0, reasons: [] };
   }
-  log.info({ event: 'line.all_dropped', candidates: candidates.length, verdicts }, 'the judge kept none of them');
-  return null;
+  const reasons = judgements.flatMap((j) => (j.verdict === 'drop' && j.reason ? [j.reason] : []));
+  log.info({ event: 'line.all_dropped', candidates: candidates.length, verdicts, reasons }, 'the judge kept none of them');
+  return { line: null, dropped: verdicts.filter((v) => v === 'drop').length, reasons };
 }

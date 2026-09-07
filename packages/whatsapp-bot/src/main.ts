@@ -19,11 +19,11 @@ import { SSMClient } from '@aws-sdk/client-ssm';
 import { activeDate, dayNumber } from '@whippin/shared';
 import { createAgent } from './chat/agent';
 import { createDaySourceReader } from './puzzle/daySource';
-import { RecentContext } from './chat/context';
+import { RecentContext, quoteLead } from './chat/context';
 import { dynamoLimitStore, limitExpiry, limitKeys } from './chat/limits';
 import { dynamoMemoryStore } from './chat/memory';
 import { labelPlayers } from './chat/tools';
-import { EMPTY_FLOOR, addressedTo, advanceFloor, followsBot, jidUser, withMentionNames, type Floor } from './chat/trigger';
+import { EMPTY_FLOOR, addressedTo, advanceFloor, followsBot, jidUser, namesWithBot, quotesBot, withMentionNames, type BotIdentity, type Floor } from './chat/trigger';
 import { botRegion, loadEnv } from './config/env';
 import { loadGroups, type GroupConfig } from './config/groupConfig';
 import { dynamoDeclarationStore } from './domain/dynamoDeclarationStore';
@@ -214,13 +214,26 @@ async function main(): Promise<void> {
   // that identifies anyone: the share stripped, the link AND the generated block around
   // it, so a score-only message leaves nothing to remember; and every mention as the name
   // the group uses, since the token spells a phone number.
-  async function remember(group: GroupConfig, message: InboundMessage): Promise<void> {
+  async function remember(group: GroupConfig, message: InboundMessage, identity: BotIdentity): Promise<void> {
     const text = withoutShares(message.text, env.siteOrigin);
     if (!text) return;
+    // A quote is named like a mention — the quoted author is one more player to label —
+    // and spelled out at the head of the turn (`quoteLead`), so "oui" under "on joue ce
+    // soir ?" reads in the window as the answer it was. The quoted words are stripped of
+    // shares like the message's own.
+    const quoted = message.quoted;
+    const refs = quoted ? [...message.mentions, { jid: quoted.participant, player: quoted.player }] : message.mentions;
+    const names = await mentionNames(group, refs);
+    const lead = quoted
+      ? quoteLead(
+          quotesBot(message, identity) ? 'you' : (names.get(jidUser(quoted.participant)) ?? displayName(group, quoted.player, '')),
+          withMentionNames(withoutShares(quoted.text, env.siteOrigin), namesWithBot(names, identity)),
+        )
+      : '';
     context.push(group.id, {
       role: 'user',
       name: displayName(group, message.sender, message.senderName),
-      text: withMentionNames(text, await mentionNames(group, message.mentions)),
+      text: `${lead}${withMentionNames(text, names)}`,
       at: Date.now(),
     });
   }
@@ -230,6 +243,16 @@ async function main(): Promise<void> {
     const at = message.timestamp * 1000;
     const floor = group ? floors.get(group.id) : undefined;
     if (group) floors.set(group.id, advanceFloor(floor ?? EMPTY_FLOOR, { fromMe: message.fromMe, at }));
+    // THE BOT'S OWN LINES ENTER THE WINDOW AS WHATSAPP ECHOES THEM BACK (`fromMe`,
+    // 2026-09-07): the podium and the reminder are sent from the queue and composed
+    // nowhere near here, so a "merci" under the podium was a reply to a line the model
+    // could not see. A line already remembered when it was composed — an answer, a spoken
+    // acknowledgement — is not remembered twice (`pushUnlessSaid`); the echo of a share
+    // block, should the bot ever forward one, leaves nothing.
+    if (group && group.chat.enabled && message.fromMe && message.live) {
+      const said = withoutShares(message.text, env.siteOrigin);
+      if (said) context.pushUnlessSaid(group.id, { role: 'assistant', name: '', text: said, at });
+    }
     const listening =
       group && group.chat.enabled && message.live && !message.fromMe && answer && client
         ? { group, answer, identity: { jids: client.selfJids(), name: group.chat.name } }
@@ -247,7 +270,7 @@ async function main(): Promise<void> {
       // REMEMBERED BEFORE `ingest` RUNS: a share is acknowledged inside it, and a spoken
       // acknowledgement is a turn too (`spoken`, above) — recorded the other way round,
       // every such exchange read as the bot answering before the player had spoken.
-      await remember(listening.group, message);
+      await remember(listening.group, message, listening.identity);
     }
     await ingest(message);
     if (!listening || !address) return;
@@ -259,13 +282,17 @@ async function main(): Promise<void> {
     // once AND into the window as the turn the agent records — so leaving the share on it
     // would send exactly what the ambient path is careful not to. The question loses
     // nothing by having it removed; the agent names the mentions itself.
-    const asked = { ...message, text: withoutShares(message.text, env.siteOrigin) };
+    const asked = {
+      ...message,
+      text: withoutShares(message.text, env.siteOrigin),
+      ...(message.quoted ? { quoted: { ...message.quoted, text: withoutShares(message.quoted.text, env.siteOrigin) } } : {}),
+    };
     const outcome = await listening.answer(asked, listening.group, identity, today, { tentative: address === 'follow' });
     if (outcome.kind === 'silent') {
       log.info({ event: 'chat.silent', reason: outcome.reason, how: address, group: tag(listening.group.id) }, 'no reply');
       // A follow-up the model declined was ordinary chatter after all, and is remembered
       // as such — the agent records a turn only when it answers one.
-      if (outcome.reason === 'not_for_me') await remember(listening.group, message);
+      if (outcome.reason === 'not_for_me') await remember(listening.group, message, identity);
       return;
     }
     await outbound.enqueue({

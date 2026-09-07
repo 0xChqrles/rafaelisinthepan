@@ -404,7 +404,20 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   answering before the player spoke — and the line is remembered through ingest's `spoken`
   hook, which fires after the queue accepted it, so a line the queue refused for good is
   never a message the bot believes it sent. The emoji is not a turn —
-  there is nothing to remember about it. **Only the BOT's mention is addressing**: everybody else's
+  there is nothing to remember about it. **THE BOT'S OWN QUEUED LINES enter the window
+  through WhatsApp's `fromMe` echo** (2026-09-07): the podium and the reminder are composed
+  in the Lambda and were in no window, so a "merci" under the podium answered a line the
+  model could not see. `RecentContext.pushUnlessSaid` skips an echo whose text an assistant
+  turn already holds (an answer, a spoken acknowledgement — remembered when composed).
+  **A QUOTE IS SPELLED OUT** (2026-09-07): `QuotedRef.text` carries the quoted message's
+  words (`inbound.ts`, off `contextInfo.quotedMessage`; a caption for media; `''` for
+  none), and the turn — the agent's question and an ambient message alike — opens with
+  `quoteLead`: `[replying to you: "…"]` for the bot's own line, `[replying to Zou: "…"]`
+  otherwise, the author named like a mention (`labelFor` / `mentionNames`, the bot under
+  its `chat.name` via `namesWithBot`), the words cut at `QUOTE_MAX_CHARS` (200), shares
+  stripped and mentions named like any turn. Before it, a reply to the bot reached the
+  model as a bare "merci", and it guessed the line — usually the last, never the podium.
+  **Only the BOT's mention is addressing**: everybody else's
   is part of the question, and is replaced by the name the group uses (the tool runner's
   `labelFor`, so the model gets a name the tools can look up again, and never the phone
   number behind it) — looked up by the PLAYER key the mention resolved to, keyed by the
@@ -591,16 +604,26 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   what it reads — and the first candidate the judge keeps, in candidate order, is posted.
   All dropped = a bare podium line / the emoji, by design ("no line at all is better than a
   cringe one"); no verdict at all (the judge unreachable) = the first candidate, unjudged,
-  so an outage of the judge does not blank every podium it lasts through. Nothing is
-  retried any more: the other candidates are the retry. Measured against 41 lines the user
+  so an outage of the judge does not blank every podium it lasts through. The podium
+  retries nothing: its eight candidates are the retry. **The SHARE path writes ONE more
+  round of `CANDIDATES` (3) when the fact check dropped every candidate** (2026-09-07;
+  `shareComment.ts` `ROUNDS` = 2), with the judge's reasons in front of the writer — the
+  fact check answers `digit: reason`, `parseVerdict` reads it, `line.judged` and
+  `line.all_dropped` LOG it (a run of drops was unreadable without it), and `chooseLine`
+  hands it back as `Choice.reasons`. Live the day the fact check shipped it dropped about
+  two lines in five, so three candidates left one share in eight with the emoji where a
+  line was owed (the user: "sometimes the bot just adds a react to a score instead of
+  making a comment"); a second round costs six calls on that share alone, where eight
+  candidates a round would cost every share ten more. Nothing written, or nothing judged,
+  earns no second round. Measured against 41 lines the user
   had rated: single verdicts at `low` reject 23 of 23 bad lines and keep about half the
   good ones, median 4s (p90 9s); "pick the best of four" reasoned 12–25s, truncated and
   landed at half accuracy, and `high` truncated a third of its verdicts — so ONE LINE PER
   CALL, precision over recall, and the candidates supply the recall. Live: the judge keeps
   about one candidate in seven. The share path spends one unit of the daily call ceiling
-  per candidate AND per verdict (up to 16 per share against `DEFAULT_DAILY_CALL_CEILING`
-  = 500), which is the honest count the ceiling exists for; raise the ceiling, not the
-  accounting, if a group outgrows it.
+  per candidate AND per verdict (up to 6 a round, 12 a share, against
+  `DEFAULT_DAILY_CALL_CEILING` = 500), which is the honest count the ceiling exists for;
+  raise the ceiling, not the accounting, if a group outgrows it.
   Three mechanics came with v8, all measured on the real provider:
   - **THE COMMENT PATHS THINK NOT AT ALL** (`effort: 'none'` on `LlmRequest`, mapped by
     `providers/deepseek.ts` onto `thinking: {type: 'disabled'}`; `low`/`high` map onto
