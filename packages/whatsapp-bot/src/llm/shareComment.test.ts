@@ -3,7 +3,8 @@ import { parseGroupConfig } from '../config/groupConfig';
 import { createLog } from '../log';
 import { LlmUnavailable, type LlmProvider, type LlmResponse } from './types';
 import { generateShareComment } from './shareComment';
-import { LINE_RULES } from './podiumComments';
+import { CANDIDATES, LINE_RULES } from './podiumComments';
+import { JUDGE_SYSTEM } from './lineJudge';
 
 // The user turn is the FACTS as JSON, then the rules a line is checked against.
 function sentIn(call: unknown) {
@@ -24,16 +25,33 @@ const group = parseGroupConfig('g.json', {
 });
 const facts = { mode: 'sentence' as const, player: 'Gab', score: 7, capped: false };
 
-function provider(steps: (Partial<LlmResponse> | Error)[]): { provider: LlmProvider; calls: unknown[] } {
+// Writer calls consume `steps` in call order (a step past the end is 'fin', a usable line);
+// a JUDGE call — told apart by its own system prompt — is answered by `judge`, default keep.
+function provider(
+  steps: (Partial<LlmResponse> | Error)[],
+  judge: (line: string) => Partial<LlmResponse> | Error = () => ({ text: '1' }),
+): { provider: LlmProvider; calls: unknown[]; written: () => unknown[]; judged: string[] } {
   const calls: unknown[] = [];
+  const judged: string[] = [];
+  let writes = 0;
   return {
     calls,
+    judged,
+    written: () => calls.filter((c) => (c as { system: string }).system !== JUDGE_SYSTEM),
     provider: {
       name: 'fake',
       model: 'fake',
       async generate(request) {
         calls.push(request);
-        const step = steps[calls.length - 1] ?? { text: 'fin' };
+        let step: Partial<LlmResponse> | Error;
+        if (request.system === JUDGE_SYSTEM) {
+          const line = /\nLine: (.*)\n/.exec(request.messages[0].content as string)?.[1] ?? '';
+          judged.push(line);
+          step = judge(line);
+        } else {
+          step = steps[writes] ?? { text: 'fin' };
+          writes += 1;
+        }
         if (step instanceof Error) throw step;
         return { text: null, toolCalls: [], finish: 'stop', usage: { inputTokens: 1, outputTokens: 1 }, latencyMs: 1, ...step };
       },
@@ -66,18 +84,39 @@ describe('the spoken acknowledgement of a share (#236)', () => {
     expect(sentIn(p.calls[0])).toEqual({ player: 'Gab', solved: false, verdict: 'failed' });
   });
 
-  it('retries an UNAVAILABLE model once, then gives the caller the emoji', async () => {
+  it('writes every candidate at once; a failed one is dropped and the others stand', async () => {
     const flaky = provider([new LlmUnavailable('503'), { text: 'Deuxième essai.' }]);
     expect(await generateShareComment(flaky.provider, group, facts, log)).toBe('Deuxième essai.');
-    const dead = provider([new LlmUnavailable('503'), new LlmUnavailable('503'), new LlmUnavailable('503')]);
+    const dead = provider(Array.from({ length: CANDIDATES }, () => new LlmUnavailable('503')));
     expect(await generateShareComment(dead.provider, group, facts, log)).toBeNull();
-    expect(dead.calls).toHaveLength(3);
+    expect(dead.calls).toHaveLength(CANDIDATES); // and nothing reached the judge
+    const bug = provider([new Error('bad request'), { text: 'Deuxième essai.' }]);
+    expect(await generateShareComment(bug.provider, group, facts, log)).toBe('Deuxième essai.');
+    expect(bug.written()).toHaveLength(CANDIDATES);
   });
 
-  it('does not retry a non-availability failure — it would only recur', async () => {
-    const p = provider([new Error('bad request')]);
-    expect(await generateShareComment(p.provider, group, facts, log)).toBeNull();
-    expect(p.calls).toHaveLength(1);
+  it('THE JUDGE DECIDES WHAT IS POSTED, and the ceiling is spent per call', async () => {
+    const picky = provider(
+      [{ text: 'Un phare dans la brume.' }, { text: 'Tu es un rhinocéros.' }],
+      (line) => ({ text: line === 'Tu es un rhinocéros.' ? '1' : '0' }),
+    );
+    expect(await generateShareComment(picky.provider, group, facts, log)).toBe('Tu es un rhinocéros.');
+    expect(picky.judged).toHaveLength(CANDIDATES); // every usable candidate was judged
+    // All dropped is the emoji.
+    const strict = provider([{ text: 'Un phare dans la brume.' }], () => ({ text: '0' }));
+    expect(await generateShareComment(strict.provider, group, facts, log)).toBeNull();
+    // The judge unreachable posts the first candidate unjudged.
+    const down = provider([{ text: 'Un phare dans la brume.' }], () => new LlmUnavailable('503'));
+    expect(await generateShareComment(down.provider, group, facts, log)).toBe('Un phare dans la brume.');
+    // Every candidate and every verdict spends one unit of the daily ceiling; refused
+    // units are candidates not written or not judged, and none at all is the emoji.
+    let units = 0;
+    const metered = provider([{ text: 'Tu es un rhinocéros.' }]);
+    expect(await generateShareComment(metered.provider, group, facts, log, async () => (units += 1) <= 1)).toBe('Tu es un rhinocéros.');
+    expect(metered.written()).toHaveLength(1);
+    const closed = provider([{ text: 'Tu es un rhinocéros.' }]);
+    expect(await generateShareComment(closed.provider, group, facts, log, async () => false)).toBeNull();
+    expect(closed.calls).toHaveLength(0);
   });
 
   it('refuses a TRUNCATED answer, however short the fragment reads', async () => {
@@ -88,11 +127,7 @@ describe('the spoken acknowledgement of a share (#236)', () => {
       { text: 'Correct, et je le pense.', finish: 'stop' },
     ]);
     expect(await generateShareComment(p.provider, group, facts, log)).toBe('Correct, et je le pense.');
-    const all = provider([
-      { text: 'Gab, 7 ess', finish: 'length' },
-      { text: 'Gab, 7 es', finish: 'length' },
-      { text: 'Gab, 7 e', finish: 'length' },
-    ]);
+    const all = provider(Array.from({ length: CANDIDATES }, () => ({ text: 'Gab, 7 ess', finish: 'length' as const })));
     expect(await generateShareComment(all.provider, group, facts, log)).toBeNull();
   });
 
@@ -103,9 +138,9 @@ describe('the spoken acknowledgement of a share (#236)', () => {
     // the reason itself: this call has no tools, and `stop` is the one reason that means
     // "said what it meant".
     for (const finish of ['other', 'tool_calls'] as const) {
-      const p = provider([{ text: 'Propre, honnête.', finish }, { text: 'Propre, honnête.', finish }, { text: 'Propre, honnête.', finish }]);
+      const p = provider(Array.from({ length: CANDIDATES }, () => ({ text: 'Propre, honnête.', finish })));
       expect(await generateShareComment(p.provider, group, facts, log)).toBeNull();
-      expect(p.calls).toHaveLength(3);
+      expect(p.calls).toHaveLength(CANDIDATES);
     }
     const recovered = provider([{ text: 'Propre, hon', finish: 'other' }, { text: 'Propre, honnête.', finish: 'stop' }]);
     expect(await generateShareComment(recovered.provider, group, facts, log)).toBe('Propre, honnête.');
@@ -131,7 +166,7 @@ describe('the spoken acknowledgement of a share (#236)', () => {
     // Long is the failure this register exists to avoid: a line that runs on is one that
     // started explaining itself.
     for (const text of [null, '', '   ', 'x'.repeat(91)]) {
-      const p = provider([{ text }, { text }, { text }]);
+      const p = provider(Array.from({ length: CANDIDATES }, () => ({ text })));
       expect(await generateShareComment(p.provider, group, facts, log)).toBeNull();
     }
   });
@@ -143,7 +178,7 @@ describe('the spoken acknowledgement of a share (#236)', () => {
     for (const text of ['Sept coups, honnête.', 'Un 7 bien rangé.', 'Gab, je vais encadrer ça.', 'Tu es un tigre, Gab.', 'Rapide comme un tigre.']) {
       const p = provider([{ text }, { text: 'Je vais encadrer ça.' }]);
       expect(await generateShareComment(p.provider, group, facts, log)).toBe('Je vais encadrer ça.');
-      expect(p.calls).toHaveLength(2);
+      expect(p.judged[0]).toBe('Je vais encadrer ça.'); // the refused one never reached the judge
     }
   });
 

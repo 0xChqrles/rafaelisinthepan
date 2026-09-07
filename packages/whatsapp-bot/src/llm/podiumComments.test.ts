@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parseGroupConfig } from '../config/groupConfig';
 import { createLog } from '../log';
-import { LINE_RULES, dropEchoes, generatePodiumComments, hasAClause, namesSomebody, podiumCommentLines, readsLikeASimile, sanitizeComment, spellsANumber } from './podiumComments';
+import { CANDIDATES, LINE_RULES, dropEchoes, generatePodiumComments, hasAClause, namesSomebody, podiumCommentLines, readsLikeASimile, sanitizeComment, spellsANumber } from './podiumComments';
+import { JUDGE_SYSTEM } from './lineJudge';
 
 // The user turn is the FACTS as JSON, then the rules a line is checked against.
 function factsIn(content: string) {
@@ -41,8 +42,14 @@ type Answer = string | Error | { text: string | null; finish: Finish };
 
 // Answers BY LINE, never by call order: the lines are generated in parallel, so which
 // request arrives second is the scheduler's business and not a thing to assert against.
-function answering(byPlace: Record<number, Answer[]>): LlmProvider & {
+// Every line gets CANDIDATES writer calls; the list for a place answers them in order, and
+// a candidate past the list's end is '' (unusable). A JUDGE call — told apart by its own
+// system prompt — is answered by `judge`, given the line, default keep.
+type Judge = (line: string) => Answer;
+function answering(byPlace: Record<number, Answer[]>, judge: Judge = () => '1'): LlmProvider & {
   calls: number;
+  written: number;
+  judged: string[];
   requests: { messages: { content: string }[] }[];
 } {
   const used: Record<number, number> = {};
@@ -50,14 +57,24 @@ function answering(byPlace: Record<number, Answer[]>): LlmProvider & {
     name: 'fake',
     model: 'fake',
     calls: 0,
+    written: 0,
+    judged: [] as string[],
     requests: [] as { messages: { content: string }[] }[],
-    async generate(request: { messages: { content: string }[] }): Promise<LlmResponse> {
+    async generate(request: { system: string; messages: { content: string }[] }): Promise<LlmResponse> {
       provider.calls += 1;
-      provider.requests.push(request);
-      const place = factsIn(request.messages[0].content).place as number;
-      const n = (used[place] ??= 0);
-      used[place] += 1;
-      const next = (byPlace[place] ?? [])[n];
+      let next: Answer | undefined;
+      if (request.system === JUDGE_SYSTEM) {
+        const line = /\nLine: (.*)\n/.exec(request.messages[0].content)?.[1] ?? '';
+        provider.judged.push(line);
+        next = judge(line);
+      } else {
+        provider.written += 1;
+        provider.requests.push(request);
+        const place = factsIn(request.messages[0].content).place as number;
+        const n = (used[place] ??= 0);
+        used[place] += 1;
+        next = (byPlace[place] ?? [])[n];
+      }
       if (next instanceof Error) throw next;
       const shaped = typeof next === 'object' && next !== null ? next : { text: next ?? '', finish: 'stop' as const };
       return {
@@ -69,16 +86,20 @@ function answering(byPlace: Record<number, Answer[]>): LlmProvider & {
       };
     },
   };
-  return provider as unknown as LlmProvider & { calls: number; requests: { messages: { content: string }[] }[] };
+  return provider as unknown as ReturnType<typeof answering>;
 }
 
 // The payloads the provider received, BY PLACE. Arrival order is the scheduler's business —
 // the lines are generated in parallel, and reading `requests` in insertion order only
 // happens to work while the fake resolves synchronously.
+// Every candidate of a line carries the same payload, so one per place is reported.
 function sentByPlace(provider: { requests: { messages: { content: string }[] }[] }) {
-  return provider.requests
-    .map((r) => factsIn(r.messages[0].content as string))
-    .sort((a, b) => a.place - b.place);
+  const byPlace = new Map<number, ReturnType<typeof factsIn>>();
+  for (const r of provider.requests) {
+    const sent = factsIn(r.messages[0].content as string);
+    if (!byPlace.has(sent.place)) byPlace.set(sent.place, sent);
+  }
+  return [...byPlace.values()].sort((a, b) => a.place - b.place);
 }
 
 describe('podium comments are prose keyed to immutable lines (#236)', () => {
@@ -89,8 +110,8 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
     ]);
     const provider = answering({ 1: ['Brigade antidopage.'], 2: ['Duo.'] });
     const comments = await generatePodiumComments(provider, group, podium, log);
-    // One call per line, and the comments come back keyed to their own lines.
-    expect(provider.calls).toBe(2);
+    // CANDIDATES writer calls per line, and the comments come back keyed to their own lines.
+    expect(provider.written).toBe(2 * CANDIDATES);
     expect(comments.get('3')).toBe('Brigade antidopage.');
     expect(comments.get('4')).toBe('Duo.');
     // Each call carries only ITS line, plus how many there were — never the whole podium,
@@ -156,11 +177,12 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
     const comments = await generatePodiumComments(provider, group, podium, log);
     expect(comments.get('3')).toBe('Je vais encadrer ça.');
     expect(comments.get('4')).toBe('Vous deux, un duo.');
-    expect(provider.calls).toBe(4);
-    // Three attempts now that one costs a second; then the line goes bare.
-    const stubborn = answering({ 1: ['Trois.', 'Quatre.', 'Cinq.'], 2: ['Vous deux, un duo.'] });
+    // Only the candidates that passed reach the judge.
+    expect(provider.judged.sort()).toEqual(['Je vais encadrer ça.', 'Vous deux, un duo.']);
+    // Six refused candidates leave the line bare; nothing is retried.
+    const stubborn = answering({ 1: ['Trois.', 'Quatre.', 'Cinq.', 'Six.', 'Sept.', 'Huit.'], 2: ['Vous deux, un duo.'] });
     expect((await generatePodiumComments(stubborn, group, podium, log)).has('3')).toBe(false);
-    expect(stubborn.calls).toBe(4);
+    expect(stubborn.written).toBe(2 * CANDIDATES);
     const simile = answering({ 1: ['Un tigre, comme toujours.', 'Un tigre qui dort.', 'Un tigre absolu.'], 2: ['Vous deux, un duo.'] });
     expect((await generatePodiumComments(simile, group, podium, log)).get('3')).toBe('Un tigre absolu.');
   });
@@ -177,7 +199,7 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
     // comment, so a partial set is a partial podium rather than a bare one.
     const provider = answering({ 1: ['', ''], 2: ['La deuxième tient.'] });
     const comments = await generatePodiumComments(provider, group, podium, log);
-    expect(comments.has('3')).toBe(false); // both attempts unusable, given up on
+    expect(comments.has('3')).toBe(false); // every candidate unusable, given up on
     expect(comments.get('4')).toBe('La deuxième tient.');
   });
 
@@ -198,9 +220,9 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
     });
     expect((await generatePodiumComments(interrupted, group, podium, log)).get('3')).toBe('Brigade antidopage.');
 
-    // Twice unfinished is a bare line, not a fragment posted to the group.
+    // Unfinished on every candidate is a bare line, not a fragment posted to the group.
     const never = answering({
-      1: [{ text: 'Brigade anti', finish: 'other' }, { text: 'Brigade anti', finish: 'length' }],
+      1: Array.from({ length: CANDIDATES }, (_, i) => ({ text: 'Brigade anti', finish: i % 2 ? 'other' : 'length' })),
       2: [{ text: 'Duo.', finish: 'stop' }],
     });
     const comments = await generatePodiumComments(never, group, podium, log);
@@ -208,24 +230,53 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
     expect(comments.get('4')).toBe('Duo.');
   });
 
-  it('retries an unusable answer twice per line, then leaves that line bare', async () => {
+  it('writes every candidate at once and retries none of them', async () => {
     const provider = answering({ 1: ['', '', ''], 2: ['', '', ''] });
     expect((await generatePodiumComments(provider, group, podium, log)).size).toBe(0);
-    expect(provider.calls).toBe(6); // two lines, three attempts each
+    expect(provider.written).toBe(2 * CANDIDATES);
+    expect(provider.judged).toEqual([]); // nothing usable reached the judge
   });
 
-  it('an unavailable provider degrades to no comments; a bug stops after one call per line', async () => {
+  it('an unavailable provider degrades to no comments; a bug drops its own candidate only', async () => {
     const err = () => new LlmUnavailable('503');
-    const down = answering({ 1: [err(), err(), err()], 2: [err(), err(), err()] });
+    const down = answering({ 1: Array.from({ length: CANDIDATES }, err), 2: Array.from({ length: CANDIDATES }, err) });
     expect((await generatePodiumComments(down, group, podium, log)).size).toBe(0);
-    expect(down.calls).toBe(6);
-    const bug = answering({ 1: [new Error('HTTP 401')], 2: [new Error('HTTP 401')] });
-    expect((await generatePodiumComments(bug, group, podium, log)).size).toBe(0);
-    expect(bug.calls).toBe(2); // one per line, not retried
+    expect(down.written).toBe(2 * CANDIDATES);
+    const bug = answering({ 1: [new Error('HTTP 401'), 'Brigade antidopage.'], 2: [new Error('HTTP 401')] });
+    const comments = await generatePodiumComments(bug, group, podium, log);
+    expect(comments.get('3')).toBe('Brigade antidopage.');
+    expect(comments.has('4')).toBe(false);
     const empty = answering({});
     const spy = vi.spyOn(empty, 'generate');
     await generatePodiumComments(empty, group, { ...podium, lines: [] }, log);
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('THE JUDGE DECIDES WHAT IS POSTED: the first kept candidate, or nothing, or the first when it never answered', async () => {
+    // A reasoning reader keeps or drops each candidate on its own; the first kept one, in
+    // candidate order, is the line. Dropped by the judge is as bare as refused by a check.
+    const picky = answering(
+      { 1: ['Un phare dans la brume.', 'Tu es un rhinocéros.', 'Bravo.'], 2: ['Vous deux, un duo.'] },
+      (line) => (line === 'Tu es un rhinocéros.' ? '1' : '0'),
+    );
+    const comments = await generatePodiumComments(picky, group, podium, log);
+    expect(comments.get('3')).toBe('Tu es un rhinocéros.');
+    expect(comments.has('4')).toBe(false);
+    // The judge reads with its thinking ON, under its own prompt; the writer with it OFF.
+    const judgeCalls = (picky.requests as { effort?: string }[]).map((r) => r.effort);
+    expect(new Set(judgeCalls)).toEqual(new Set(['none']));
+    // All dropped = nothing posted, by design.
+    const strict = answering({ 1: ['Un phare dans la brume.', 'Bravo.'] }, () => '0');
+    expect((await generatePodiumComments(strict, group, podium, log)).size).toBe(0);
+    // No verdict at all — the judge down, or cut short — posts the first candidate
+    // unjudged, so an outage of the judge does not blank every podium it lasts through.
+    const down = answering({ 1: ['Un phare dans la brume.', 'Tu es un rhinocéros.'] }, () => new LlmUnavailable('503'));
+    expect((await generatePodiumComments(down, group, podium, log)).get('3')).toBe('Un phare dans la brume.');
+    const cut = answering({ 1: ['Tu es un rhinocéros.'] }, () => ({ text: '1', finish: 'length' }));
+    expect((await generatePodiumComments(cut, group, podium, log)).get('3')).toBe('Tu es un rhinocéros.');
+    // A mix of unknown and dropped is dropped: a verdict was given, and it was no.
+    const mixed = answering({ 1: ['Un phare dans la brume.', 'Bravo.'] }, (line) => (line === 'Bravo.' ? '0' : new LlmUnavailable('503')));
+    expect((await generatePodiumComments(mixed, group, podium, log)).size).toBe(0);
   });
 
   it('drops a comment that echoes a distinctive word an earlier line already used', () => {

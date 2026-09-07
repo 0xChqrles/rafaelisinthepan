@@ -26,12 +26,17 @@ import { scoreBand } from '../domain/reactions';
 import { lineId, type Comments } from '../domain/podiumText';
 import type { Log } from '../log';
 import { buildSystemPrompt } from './personality';
+import { chooseLine } from './lineJudge';
 import { LlmUnavailable, type LlmProvider } from './types';
 
 // EIGHTY, since v8: the voice is a flat short statement, and a line that runs past this
 // is one with work in it (user-decided 2026-09-06: visible effort is the cringe).
 export const COMMENT_MAX_CHARS = 80;
-const ATTEMPTS = 3;
+// EIGHT CANDIDATES per line, written in parallel, judged in parallel (`lineJudge.ts`).
+// Measured live: the judge keeps about one candidate in seven (31 of 207), so six left
+// nearly half the lines bare and eight leaves about a quarter; the writes cost a second
+// in parallel whatever their number, and the calls are cheap where a cringe line is not.
+export const CANDIDATES = 8;
 
 // Plain text only: no line breaks, no markdown emphasis marks (the renderer italicises the
 // line itself), no control characters, collapsed whitespace, quotes the model wrapped it in
@@ -137,6 +142,78 @@ export const TEMPERATURE = 0.8;
 // the cut is 10s and the refusals above can afford a third attempt: 30s worst case.
 const TIMEOUT_MS = 10_000;
 
+// What the checks below refuse, by name, for the log.
+export function refusalOf(line: string | null, names: readonly string[]): string | null {
+  return !line
+    ? 'unusable'
+    : spellsANumber(line)
+      ? 'number'
+      : namesSomebody(line, names)
+        ? 'name'
+        : readsLikeASimile(line)
+          ? 'simile'
+          : hasAClause(line)
+            ? 'clause'
+            : null;
+}
+
+// ONE CANDIDATE: one writer call with its thinking off, one set of checks. Null when it
+// yielded nothing usable — a candidate is never retried, the others are its retry.
+export async function writeCandidate(
+  provider: LlmProvider,
+  system: string,
+  content: string,
+  names: readonly string[],
+  event: string,
+  log: Log,
+): Promise<string | null> {
+  let text: string | null;
+  let finish: string | undefined;
+  try {
+    // NO THINKING (v8, 2026-09-06). This is a reasoning model and it spent 5–19 seconds
+    // deliberating over one line under v7, the last of which is the timeout; the v8 voice
+    // pushed every line past it and the podium came back bare. With thinking off a line
+    // takes about a second and reads no worse — the deliberation was buying nothing a
+    // one-liner needs. (`reasoning_effort: low` was measured too: still up to 19s.) It
+    // also makes `temperature` count, which DeepSeek ignores while thinking. The judge
+    // (`lineJudge.ts`) is where the thinking went.
+    const response = await provider.generate({
+      system,
+      messages: [{ role: 'user', content }],
+      maxTokens: MAX_TOKENS,
+      temperature: TEMPERATURE,
+      effort: 'none',
+      timeoutMs: TIMEOUT_MS,
+    });
+    text = response.text;
+    finish = response.finish;
+    log.info(
+      { event: `${event}_generated`, finish: response.finish, latencyMs: response.latencyMs, tokens: response.usage },
+      'llm answered',
+    );
+  } catch (error) {
+    log.warn(
+      { event: `${event}_failed`, unavailable: error instanceof LlmUnavailable, error: (error as Error).message },
+      'no candidate from this call',
+    );
+    return null;
+  }
+  // ONLY A FINISHED ANSWER IS AN ANSWER — `length` is the budget running out and what
+  // comes back is a FRAGMENT that passes every length check; `other` is DeepSeek's
+  // `insufficient_system_resource` or `content_filter`, an interrupted or cut generation,
+  // which arrives looking exactly the same. This call passes no tools, so `stop` is the
+  // one reason that means the model said what it meant.
+  if (finish !== 'stop') {
+    log.warn({ event: `${event}_unfinished`, finish }, 'the line did not finish');
+    return null;
+  }
+  const line = sanitizeComment(text);
+  const reason = refusalOf(line, names);
+  if (line && !reason) return line;
+  log.warn({ event: `${event}_invalid`, finish, reason }, 'rejecting a candidate');
+  return null;
+}
+
 async function commentForLine(
   provider: LlmProvider,
   system: string,
@@ -149,82 +226,20 @@ async function commentForLine(
   // THE SCORE ITSELF IS NOT SENT (v8): the verdict is the whole of what the line reacts
   // to, and a number the model never saw is a number it cannot repeat — with it in the
   // facts, half the lines opened by reading it back, whatever the rules said.
-  const content = `${JSON.stringify({
+  const facts = JSON.stringify({
     place: line.position,
     who: line.names,
     outOf,
     verdict: scoreBand(line.score, false), // a podium line is always a finished run
-  })}\n${LINE_RULES}`;
-  for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
-    let text: string | null;
-    let finish: string | undefined;
-    try {
-      // NO THINKING (v8, 2026-09-06). This is a reasoning model and it spent 5–19 seconds
-      // deliberating over one line under v7, the last of which is the timeout; the v8 voice
-      // pushed every line past it and the podium came back bare. With thinking off a line
-      // takes about a second and reads no worse — the deliberation was buying nothing a
-      // one-liner needs. (`reasoning_effort: low` was measured too: still up to 19s.) It
-      // also makes `temperature` count, which DeepSeek ignores while thinking.
-      const response = await provider.generate({
-        system,
-        messages: [{ role: 'user', content }],
-        maxTokens: MAX_TOKENS,
-        temperature: TEMPERATURE,
-        effort: 'none',
-        timeoutMs: TIMEOUT_MS,
-      });
-      text = response.text;
-      finish = response.finish;
-      // PER LINE AND PER ATTEMPT, because this is now the only place the cost of a podium
-      // is visible: it makes up to `ATTEMPTS × lines` calls at 4000 tokens where the old
-      // shape made one, and the latency measurements the design rests on (ordinary case
-      // against the Lambda's 90s) cannot be reproduced from an aggregate.
-      log.info(
-        {
-          event: 'podium.comment_generated',
-          id: line.id,
-          attempt,
-          finish: response.finish,
-          latencyMs: response.latencyMs,
-          tokens: response.usage,
-        },
-        'llm answered',
-      );
-    } catch (error) {
-      const unavailable = error instanceof LlmUnavailable;
-      log.warn(
-        { event: 'podium.comment_failed', id: line.id, attempt, unavailable, error: (error as Error).message },
-        'no comment for this line',
-      );
-      if (!unavailable) return null;
-      continue;
-    }
-    // ONLY A FINISHED ANSWER IS AN ANSWER — `shareComment.ts`'s gate, whole, because this
-    // borrows its shape and inherits its hazards. `length` is the budget running out and
-    // what comes back is a FRAGMENT that passes every length check; `other` is DeepSeek's
-    // `insufficient_system_resource` or `content_filter`, an interrupted or cut generation,
-    // which arrives looking exactly the same. This call passes no tools, so `stop` is the
-    // one reason that means the model said what it meant.
-    if (finish !== 'stop') {
-      log.warn({ event: 'podium.comment_unfinished', id: line.id, attempt, finish }, 'the line did not finish');
-      continue;
-    }
-    const comment = sanitizeComment(text);
-    const reason = !comment
-      ? 'unusable'
-      : spellsANumber(comment)
-        ? 'number'
-        : namesSomebody(comment, line.names)
-          ? 'name'
-          : readsLikeASimile(comment)
-            ? 'simile'
-            : hasAClause(comment)
-              ? 'clause'
-              : null;
-    if (comment && !reason) return comment;
-    log.warn({ event: 'podium.comment_invalid', id: line.id, attempt, finish, reason }, 'rejecting a line');
-  }
-  return null;
+  });
+  const written = await Promise.all(
+    Array.from({ length: CANDIDATES }, () =>
+      writeCandidate(provider, system, `${facts}\n${LINE_RULES}`, line.names, 'podium.comment', log),
+    ),
+  );
+  const candidates = written.filter((c): c is string => c !== null);
+  log.info({ event: 'podium.candidates', id: line.id, written: candidates.length, of: CANDIDATES }, 'candidates written');
+  return chooseLine(provider, `a podium line, ${facts}`, candidates, log);
 }
 
 // ONE WORD, ONCE PER PODIUM (user-decided 2026-09-04). The lines are written independently

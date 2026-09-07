@@ -44,8 +44,9 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
                                 that DECIDES anything here (the decode, the row, the band) stays model-free.
     src/outbound/               ONE owner of sends: commands (ids), SQS transport, sent-record dedup, dispatcher
     src/llm/                    provider-neutral contract (types.ts), providers/deepseek.ts, the versioned
-                                personality, podium comments (validated, retried, degrade to none),
-                                shareComment.ts — the spoken acknowledgement, degrading to the emoji
+                                personality, podium comments (candidates, checked, judged, degrade to none),
+                                shareComment.ts — the spoken acknowledgement, degrading to the emoji,
+                                lineJudge.ts — the reasoning reader that keeps or drops a candidate
     src/puzzle/daySource.ts     the day's `source` metadata, read once per (language, day) and carried in
                                 the CONVERSATION's prompt — the KIND is sayable, the work is not
     src/chat/                   addressed conversation: trigger (mention/reply/name), ceilings (limits),
@@ -525,7 +526,27 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   affamé", "cheval en grève" and "pêcheur astigmate" all failed it. NO CONCRETE EXAMPLE
   IN THE PROMPT: "a surgeon who happens to be obese" came back as "chirurgien obese" the
   next run. No quoted word either ("officiellement", offered once, was in half the lines).
-  Three mechanics came with it, all measured on the real provider:
+  **THE JUDGE (user-reported 2026-09-07: in production "perfect 40% of the time, the rest
+  cringe or nonsense").** No wording of the writer's prompt moved that without making it
+  worse, so the lever is SELECTION, not construction (`lineJudge.ts`): each line is written
+  as **`CANDIDATES` = 8** parallel candidates with the writer's thinking off (about a
+  second), each candidate that passes the checks is read by a second call with its
+  thinking ON (`reasoning_effort: low`, 20s cut) under its own strict prompt — which MAY
+  quote the user's canonical lines and the named failures, since a reader does not copy
+  what it reads — and the first candidate the judge keeps, in candidate order, is posted.
+  All dropped = a bare podium line / the emoji, by design ("no line at all is better than a
+  cringe one"); no verdict at all (the judge unreachable) = the first candidate, unjudged,
+  so an outage of the judge does not blank every podium it lasts through. Nothing is
+  retried any more: the other candidates are the retry. Measured against 41 lines the user
+  had rated: single verdicts at `low` reject 23 of 23 bad lines and keep about half the
+  good ones, median 4s (p90 9s); "pick the best of four" reasoned 12–25s, truncated and
+  landed at half accuracy, and `high` truncated a third of its verdicts — so ONE LINE PER
+  CALL, precision over recall, and the candidates supply the recall. Live: the judge keeps
+  about one candidate in seven. The share path spends one unit of the daily call ceiling
+  per candidate AND per verdict (up to 16 per share against `DEFAULT_DAILY_CALL_CEILING`
+  = 500), which is the honest count the ceiling exists for; raise the ceiling, not the
+  accounting, if a group outgrows it.
+  Three mechanics came with v8, all measured on the real provider:
   - **THE COMMENT PATHS THINK NOT AT ALL** (`effort: 'none'` on `LlmRequest`, mapped by
     `providers/deepseek.ts` onto `thinking: {type: 'disabled'}`; `low`/`high` map onto
     `reasoning_effort`). Under v7 a podium line already deliberated 5–19s, the last of which
