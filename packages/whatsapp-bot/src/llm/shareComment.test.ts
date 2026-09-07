@@ -85,13 +85,13 @@ describe('the spoken acknowledgement of a share (#236)', () => {
   });
 
   it('writes every candidate at once; a failed one is dropped and the others stand', async () => {
-    const flaky = provider([new LlmUnavailable('503'), { text: 'Deuxième essai.' }]);
-    expect(await generateShareComment(flaky.provider, group, facts, log)).toBe('Deuxième essai.');
+    const flaky = provider([new LlmUnavailable('503'), { text: 'Nouvel essai.' }]);
+    expect(await generateShareComment(flaky.provider, group, facts, log)).toBe('Nouvel essai.');
     const dead = provider(Array.from({ length: CANDIDATES }, () => new LlmUnavailable('503')));
     expect(await generateShareComment(dead.provider, group, facts, log)).toBeNull();
     expect(dead.calls).toHaveLength(CANDIDATES); // and nothing reached the judge
-    const bug = provider([new Error('bad request'), { text: 'Deuxième essai.' }]);
-    expect(await generateShareComment(bug.provider, group, facts, log)).toBe('Deuxième essai.');
+    const bug = provider([new Error('bad request'), { text: 'Nouvel essai.' }]);
+    expect(await generateShareComment(bug.provider, group, facts, log)).toBe('Nouvel essai.');
     expect(bug.written()).toHaveLength(CANDIDATES);
   });
 

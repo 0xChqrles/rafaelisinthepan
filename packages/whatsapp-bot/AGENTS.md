@@ -526,6 +526,23 @@ remembers. It lives inside the monorepo and outside the game runtime: it imports
   affamé", "cheval en grève" and "pêcheur astigmate" all failed it. NO CONCRETE EXAMPLE
   IN THE PROMPT: "a surgeon who happens to be obese" came back as "chirurgien obese" the
   next run. No quoted word either ("officiellement", offered once, was in half the lines).
+  **LESS IS BETTER (v9, user-decided 2026-09-07: "a pretty short and concise prompt just
+  saying what is funny and what is not, without giving examples that might pollute its
+  answers … a nonchalant cynic but serious tone").** After v8's judge the user still found
+  it "very cringe". The voice is now ONE short paragraph (`personality.ts`, ~150 words
+  where v8 had ~900): the dry one in the group — nonchalant, a little cynical, entirely
+  serious, one flat short sentence, understatement over enthusiasm, never trying to be
+  funny; the game, the day, the sentence and the bot are the targets and the person never
+  is; the same short list of don'ts. No example line anywhere, in the writer OR the judge
+  (the judge's calibration lines leaned its picks toward their kind), no moves, no shapes.
+  The two task prompts were cut to the facts and the verdict ladder, and the ordinals were
+  added to the refused number words (the placing read back). Measured, three live rounds:
+  no cringe and no nonsense in 39 lines; the judge keeps three candidates in four with
+  this register — it is a safety net now, not the filter it was — and the costs are
+  repetition ("Impeccable." for every perfect score) and a dryness that can read as a
+  verdict on the score ("sans gloire"). v2/v3's "unimpressed" bot was retired in 2026-09-04
+  as "too cold for the group"; this is the user choosing it back with the put-down line
+  drawn, and the group's feedback decides next.
   **THE JUDGE (user-reported 2026-09-07: in production "perfect 40% of the time, the rest
   cringe or nonsense").** No wording of the writer's prompt moved that without making it
   worse, so the lever is SELECTION, not construction (`lineJudge.ts`): each line is written

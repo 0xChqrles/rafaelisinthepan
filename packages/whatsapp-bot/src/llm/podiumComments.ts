@@ -60,9 +60,10 @@ export function sanitizeComment(raw: unknown): string | null {
 // about half the time once its thinking was turned off (see `effort` below), so the rule is
 // checked here and a violation costs a retry, the way shortness is enforced. Any digit
 // counts, and any number word from three up in either language — "un/une/deux" stay
-// allowed, since they are articles and "vous deux" (and no sentence score is under three).
+// allowed, since they are articles and "vous deux" (and no sentence score is under three)
+// — and the ORDINALS, which are the placing read back ("Cinquième, c'est rude" got through).
 const NUMBER_WORDS = new Set(
-  'trois quatre cinq six sept huit neuf dix onze douze treize quatorze quinze seize vingt trente quarante cinquante soixante cent cents mille three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty thirty forty fifty sixty seventy eighty ninety hundred thousand'.split(
+  'trois quatre cinq six sept huit neuf dix onze douze treize quatorze quinze seize vingt trente quarante cinquante soixante cent cents mille premier premiere deuxieme troisieme quatrieme cinquieme sixieme septieme huitieme neuvieme dixieme three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty thirty forty fifty sixty seventy eighty ninety hundred thousand first second third fourth fifth sixth seventh eighth ninth tenth'.split(
     ' ',
   ),
 );
@@ -122,13 +123,9 @@ export function podiumCommentLines(podium: Podium): PodiumCommentLine[] {
 // from the same `scoreBand` the emoji uses, and the prompt says outright that the game is
 // not timed so the model has no room to imagine a clock. The hard rules come FIRST: with
 // its thinking off (see `effort` below) the model weighs the opening of a prompt most.
-const TASK = `Task: one short line about ONE podium position below. The line only — plain text, no markdown, no quotes around it, under ${COMMENT_MAX_CHARS} characters and usually far less.
+const TASK = `Task: one short line about ONE podium position below. The line only — plain text, no quotes, under ${COMMENT_MAX_CHARS} characters. No digits and no number words (the tries are printed above your line); no placing; no name (printed above too).
 
-Four rules before anything else: no digits and no number words (the tries are printed directly above your line); do not write the placing; no name (printed above too — say "tu", or "vous" when the line holds two names); no "comme", no "qui".
-
-The score is how many guesses it took — fewer is better, three is the floor, and the sentence game is not timed. How good it was is already decided for you: react to the verdict, never re-judge it. perfect = the best there is, nobody beats it · brilliant = genuinely good · strong = solid · ordinary = a fine day's work · laboured = slow, and fair game for the joke. Playful at every rung: a slow score is teased by exaggerating the slowness, never by judging it. "place" is where that lands them today, which is a separate thing: a modest score can still win a modest day.
-
-The other lines are written separately and cannot see yours, so no consolation that would fit any score ("aller au bout", "c'est déjà ça") and nothing any bot could have said. One blunt, strange, sincere verdict on THIS person, in the words a friend types.`;
+The score is how many guesses it took — fewer is better, three is the floor, nothing is timed. How good it was is decided for you: perfect = the best there is · brilliant = genuinely good · strong = solid · ordinary = a fine day's work · laboured = slow. "place" is where that lands them today, a separate thing: a modest score can win a modest day. The other lines are written separately, so nothing that would fit any score.`;
 
 const MAX_TOKENS = 4000;
 // COUNTS NOW THAT THINKING IS OFF (DeepSeek ignores it while thinking). 1.1 was the

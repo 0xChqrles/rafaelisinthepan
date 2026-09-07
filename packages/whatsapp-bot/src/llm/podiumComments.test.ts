@@ -151,6 +151,8 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
     expect(spellsANumber('un 4 sans un bruit')).toBe(true);
     expect(spellsANumber('QUATORZE coups')).toBe(true);
     expect(spellsANumber('Vingt-sept et debout.')).toBe(true);
+    expect(spellsANumber("Cinquième, c'est rude.")).toBe(true); // the placing, read back
+    expect(spellsANumber('Premier café de la journée.')).toBe(true);
     expect(spellsANumber('Une patience de luthier, vous deux.')).toBe(false);
     // Anywhere in the line: allowed mid-line, the name became a tic ("Tu es un tracteur, Quentin").
     expect(namesSomebody('Gab, je vais encadrer ça.', ['Gab'])).toBe(true);
@@ -197,10 +199,10 @@ describe('podium comments are prose keyed to immutable lines (#236)', () => {
   it('A LINE THAT FAILS NO LONGER TAKES THE OTHERS WITH IT', async () => {
     // The whole reason for one call per line: the renderer prints a podium line with no
     // comment, so a partial set is a partial podium rather than a bare one.
-    const provider = answering({ 1: ['', ''], 2: ['La deuxième tient.'] });
+    const provider = answering({ 1: ['', ''], 2: ['La suivante tient.'] });
     const comments = await generatePodiumComments(provider, group, podium, log);
     expect(comments.has('3')).toBe(false); // every candidate unusable, given up on
-    expect(comments.get('4')).toBe('La deuxième tient.');
+    expect(comments.get('4')).toBe('La suivante tient.');
   });
 
   it('publishes ONLY a finished answer, whatever cut it short', async () => {

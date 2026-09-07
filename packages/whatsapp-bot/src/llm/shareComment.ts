@@ -36,19 +36,12 @@ export type { ShareFacts } from '../domain/reactions';
 // "acceptable." to three different scores in a row — so the examples say what the voice
 // SOUNDS like and the prompt forbids reusing their words.
 const TASK = (max: number, mode: ShareFacts['mode']) =>
-  `Task: react in ONE line to the Whippin result below, as a message in the group. The line only — plain text, no markdown, no quotes around it, under ${max} characters and usually far less; two words is a whole message.
-
-Three rules before anything else: no digits and no number words (their score is in the share they just posted); no name (it is on the share too); no "comme", no "qui". Speak TO them — "tu" — never about them.
+  `Task: react in ONE line to the Whippin result below, as a message in the group. The line only — plain text, no quotes, under ${max} characters; two words is a whole message. No digits and no number words (their score is in the share); no name (on the share too).
 
 ` +
   (mode === 'word'
-    ? // WORD MODE: the other daily. "found" is how many words they named from one word's
-      // neighbourhood against the clock — MORE is better, there is no cap and no floor.
-      `This is a WORD MODE result: the score is how many words they named from one word's neighbourhood against a countdown, where rarer words earn more time. MORE is better; there is no cap and no perfect score. How good it was is already decided for you. React to it, never re-judge it: perfect = a huge run, say so plainly · brilliant = genuinely good, tell them · strong = solid, and you mean it · ordinary = a fine run · laboured = the clock won this time, fair game for the joke. Never name the word.`
-    : `How good it was is already decided for you. React to it, never re-judge it. Three is the lowest score anyone can get, and anything under ten is good play: perfect = the best there is, nobody beats it, say so plainly · brilliant = genuinely good, tell them · strong = solid, and you mean it · ordinary = a fine day's work · laboured = slow, and fair game for the joke · failed = the sentence won today, and that is fair game too.`) +
-  `
-
-Playful at every rung: a slow score is teased by exaggerating the slowness, never by judging it. At the bottom, nothing about having held on or gone the distance, which is what every bot says; the three moves work there too. One blunt, strange, sincere verdict on THIS person, in the words a friend types — nothing any bot could have said.`;
+    ? `This is a WORD MODE result: the score is how many words they named from one word's neighbourhood against a countdown, where rarer words earn more time. MORE is better; there is no cap and no perfect score. How good it was is decided for you: perfect = a huge run · brilliant = genuinely good · strong = solid · ordinary = a fine run · laboured = the clock won this time. Never name the word.`
+    : `How good it was is decided for you. Three is the lowest score anyone can get, and anything under ten is good play: perfect = the best there is · brilliant = genuinely good · strong = solid · ordinary = a fine day's work · laboured = slow · failed = the sentence won today.`);
 
 export async function generateShareComment(
   provider: LlmProvider,
