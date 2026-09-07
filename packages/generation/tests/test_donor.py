@@ -515,7 +515,7 @@ def test_main_writes_the_puzzle_and_names_the_substitution(monkeypatch, tmp_path
 
     gen_phrase.main()
 
-    data = json.loads((tmp_path / "fr" / "accoutumes_doucement_jardin.json")
+    data = json.loads((tmp_path / "fr" / "vermine_vermine_vermine.json")
                       .read_text(encoding="utf-8"))
     assert [h["secret"]["word"] for h in data["holes"]] == [
         "accoutumes", "doucement", "jardin",

@@ -25,6 +25,7 @@
 # Every member's manifest: a frozen install validates the lockfile against all of them.
 !packages/backend/package.json
 !packages/benchmark/package.json
+!packages/curation/package.json
 !packages/generation/package.json
 !packages/infra/package.json
 !packages/shared/package.json

@@ -21,6 +21,8 @@
     "gen:word": "pnpm --filter @whippin/generation gen:word",
     "bench:puzzle": "pnpm --filter @whippin/benchmark bench:puzzle",
     "bench:playbook:distill": "pnpm --filter @whippin/benchmark bench:playbook:distill",
+    "curate": "pnpm --filter @whippin/curation curate",
+    "shelf:lyrics": "pnpm --filter @whippin/curation shelf:lyrics",
     "backend:dev": "pnpm --filter @whippin/backend serve:local",
     "board:seed": "pnpm --filter @whippin/backend board:seed",
     "puzzle:publish": "pnpm --filter @whippin/backend puzzle:publish",

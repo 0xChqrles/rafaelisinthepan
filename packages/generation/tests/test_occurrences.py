@@ -79,15 +79,15 @@ def test_words_expand_a_repeated_secret_to_all_positions_and_share_rank_start(mo
     assert calls == [("jardin", None), ("chat", None), ("poursuit", None)]
 
 
-def test_filename_dedupes_repeated_slugs_but_keeps_sentence_order(monkeypatch):
+def test_filename_names_the_start_words_once_per_secret_in_sentence_order(monkeypatch):
     holes, _ranks, _calls = _run_repeated_generation(monkeypatch)
 
-    assert gen_phrase.filename_slugs_from_holes(holes) == ["chat", "poursuit", "jardin"]
-    assert gen_phrase.filename_slugs_from_holes(list(reversed(holes))) == [
-        "chat",
-        "poursuit",
-        "jardin",
-    ]
+    # one slug per distinct secret (the repeated chat counts once), each the hole's
+    # START word — the file is named after what the player sees, never the secrets.
+    assert gen_phrase.filename_slugs_from_holes(holes) == ["indice", "indice", "indice"]
+    assert gen_phrase.filename_slugs_from_holes(list(reversed(holes))) == ["indice"] * 3
+    named = [dict(h, start={"word": w}) for h, w in zip(holes, ["un", "deux", "un", "trois"])]
+    assert gen_phrase.filename_slugs_from_holes(named) == ["un", "deux", "trois"]
 
 
 def test_main_writes_one_three_slug_filename_for_repeated_holes(
@@ -131,7 +131,7 @@ def test_main_writes_one_three_slug_filename_for_repeated_holes(
 
     gen_phrase.main()
 
-    output = tmp_path / "fr" / "chat_poursuit_jardin.json"
+    output = tmp_path / "fr" / "indice_indice_indice.json"
     assert output.is_file()
     data = json.loads(output.read_text(encoding="utf-8"))
     assert len(data["holes"]) == 4
