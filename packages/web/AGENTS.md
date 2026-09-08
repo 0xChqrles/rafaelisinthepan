@@ -3059,9 +3059,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
   sentence and RISE it, the result grows around it", which put SHARE below the fold on
   most phones, and it RESTORES the 2026-08-14 hand-over: the sentence DISSOLVES and the
   result takes the whole column.** The rule: the score block is the same height on every
-  round and sits at the TOP, above the fold on every phone, never reached by scrolling —
-  SHARE is the reveal's closing beat and the liked-indicator; the sentence's PAGE is the
-  round's variable-height content, so THAT is the one thing that scrolls.
+  round and sits at the TOP, on screen AT REST on every phone — SHARE is the reveal's
+  closing beat and the liked-indicator; the sentence's PAGE is the round's
+  variable-height content. **THE WHOLE STAGE SCROLLS AS ONE, AND THE CREDIT STICKS**
+  (user-decided 2026-09-08, third pass: "the whole page scrollable, and the title sticky
+  below the header, so you can scroll and remove the score/share view, but you always
+  have the source somewhere on the screen"): once the reader reads, the score and SHARE
+  scroll away with the page, the credit sticks at the scroller's top edge on its own
+  ground, and a tap on it returns to the top. The earlier "the page is the one thing that
+  scrolls" (the same morning's second pass) is superseded by this.
   - **The sentence's EXIT is the DISSOLVE** (`components/DissolvePhrase.tsx`, the
     2026-08-14 decision unchanged): once the keyboard has dropped, the live `Phrase`
     hands its exact pixels to a letter-boxed copy that erodes them through the
@@ -3081,16 +3087,25 @@ it to the local store — see `packages/backend/AGENTS.md`).
       what you do with a RESULT). Centred and capped at the keyboard's 680px. Measured on a
       375×667 phone: 249px tall, SHARE landing at y 226–273 — the block ends at 325 with
       the whole page still below it.
-    - **CONTEXT** (`.solved-context`) — the sentence's page, read TOP-DOWN the way a page
-      is (user-decided 2026-09-08: "with the source above the text, we can start by a few
+    - **PAGE** (`.solved-page`) — the sentence's page, read TOP-DOWN the way a page is
+      (user-decided 2026-09-08: "with the source above the text, we can start by a few
       sentences before the puzzle" — no auto-scroll onto the line): the **SOURCE credit**
       first, left-aligned, then the **TEXT** in the READING face (`--ui`, 16px, 1.6), where
       the puzzle's line is in the ink (`.solved-line`) and — with #270 — the raw sentences
       before and after it are the MUTED text around it. That contrast IS the highlight:
-      never a marker band, never the pixel face inside a paragraph. It takes the rest of
-      the column and scrolls inside it (`overflow-y: auto`, `overscroll-behavior:
-      contain`, `pixel-scroll`), fading BOTH edges over its own 24px padding so nothing
-      fades at rest; on a phone its bottom padding adds the home-indicator inset.
+      never a marker band, never the pixel face inside a paragraph. **The STAGE is the
+      scroller** (`overflow-y: auto`, `overscroll-behavior: contain`, `pixel-scroll`,
+      `position: relative` so the sr-only hints under a long page are contained rather
+      than growing the document — measured 523px of page scroll before), fading its
+      BOTTOM edge over its own 24px padding (on a phone plus the home-indicator inset);
+      its top has no fade, because what passes there passes under the credit. **The
+      credit is `position: sticky; top: 0`** inside the page (its containing block, so it
+      sticks while the page is in view and leaves with it) on flat `--bg` with a 24px
+      `--bg`→transparent gradient hanging under it (`::after`), so the text disappears
+      under the credit rather than through it, and **a tap on it scrolls the stage back to
+      the top** (`backToTop`, smooth unless reduced motion): the running head is the way
+      back to the score and SHARE. On a phone that fits, nothing overflows and nothing
+      moves.
     - **The SECRETS are BUTTONS inside the line** (`.solved-secret`: the solve blue, font
       and line inherited, no box, `inline-block` for the pop), one per OCCURRENCE (a slug
       appearing twice yields two, sharing one distinct-secret `number` — the ruler ticks'

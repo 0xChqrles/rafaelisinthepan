@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { INFINITY_EM_HEIGHT, INFINITY_EM_WIDTH, INFINITY_GLYPH, type Source } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
@@ -301,6 +301,12 @@ export default function SolvedScreen({
   // Delivery (native sheet / clipboard + the "COPIED" confirmation) is the shared hook's;
   // this screen only composes the sentence result's text.
   const { share, copied } = useShare();
+  // The stage is the scroller; the sticky credit is its way back to the top (the score,
+  // SHARE) once the reader has scrolled them away.
+  const stageRef = useRef<HTMLDivElement>(null);
+  const backToTop = useCallback(() => {
+    stageRef.current?.scrollTo({ top: 0, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+  }, []);
   // The AS drum under SHARE: on the player's row, the link is signed with this account
   // (see ShareAs). Fresh on every mount — never remembered from one result to the next.
   const signer = useShareSigner();
@@ -332,7 +338,10 @@ export default function SolvedScreen({
   }, [lang, dayNumber, guessCount, trajectory, solvedAt, capped, share, signer.by]);
 
   return (
-    <div className={`solved-stage${stageIn ? ' in' : ''}${animate ? '' : ' settled'}`}>
+    <div
+      ref={stageRef}
+      className={`solved-stage pixel-scroll${stageIn ? ' in' : ''}${animate ? '' : ' settled'}`}
+    >
       {/* ---- the SCORE block, at the top: how the round went, and what you do with it. */}
       <div className={`solved-numbers${scoreIn ? ' in' : ''}`}>
         {/* The primary sentence metric. The hidden final value reserves the count's width
@@ -394,14 +403,15 @@ export default function SolvedScreen({
         </div>
       </div>
 
-      {/* ---- the CONTEXT: the sentence's page. The credit first, then the text — read
-           top-down, the way a page is. This is the scroller. */}
-      <div className="solved-context pixel-scroll">
+      {/* ---- the PAGE: the sentence's page. The credit first, then the text — read
+           top-down, the way a page is. The whole stage scrolls; the credit sticks. */}
+      <div className="solved-page">
         {/* The sentence's attribution, ABOVE the text it credits, at its own caption size
-            — the small quote-style citation it has always been. A source-less puzzle
+            — the small quote-style citation it has always been, and the running head
+            once the page scrolls: a tap on it returns to the top. A source-less puzzle
             simply shows the sentence. */}
         {hasSource && (
-          <div className={`solved-source${textIn ? ' in' : ''}`}>
+          <div className={`solved-source${textIn ? ' in' : ''}`} onClick={backToTop}>
             <SolvedCaption
               source={source}
               lang={lang}

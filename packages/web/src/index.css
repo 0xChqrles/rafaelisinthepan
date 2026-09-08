@@ -1816,23 +1816,37 @@ button {
 /* ---- THE SENTENCE RESULT (user-decided 2026-09-08, on #266's second review; it
    supersedes the same morning's "keep the sentence and RISE it", which put SHARE below the
    fold on most phones). The sentence DISSOLVES (the 2026-08-14 hand-over, restored) and
-   the result takes the whole column as a STAGE of two parts: the SCORE block at the TOP —
-   the same height on every round, above the fold on every phone, never reached by
-   scrolling — and the sentence's PAGE under it, which is the round's variable-height
-   content and therefore the one thing that scrolls. */
+   the result takes the whole column as a STAGE: the SCORE block at the TOP — the same
+   height on every round, on screen at rest on every phone — and the sentence's PAGE under
+   it. THE WHOLE STAGE SCROLLS AS ONE (user-decided 2026-09-08, third pass: "the whole
+   page scrollable, and the title sticky below the header"): once the reader reads, the
+   score and SHARE scroll away and the CREDIT STICKS under the header, so the source is
+   always somewhere on the screen; a tap on it returns to the top. */
 .solved-stage {
   /* `flex: 1 1 0` + `min-height: 0` is what makes the stage's height DEFINITE inside
      `.game` (auto-with-a-min): a `1 1 auto` item sized by its content grows the page
      instead, and a flex item's `min-height: auto` floor would refuse to shrink even then.
-     The page below inherits that definite height, which is what lets it scroll. */
+     A definite height is what lets it scroll. POSITIONED, so the sr-only hints under the
+     text (absolutely placed, at their static position after a long page) are contained
+     by this scroller rather than growing the document. */
   flex: 1 1 0;
   min-height: 0;
+  position: relative;
   width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   /* The GAP between the score and the page — the seam, stated once. */
   gap: clamp(28px, 5vh, 48px);
+  /* The bottom edge fades (the rule every scroller wears); the padding is the fade's own
+     height, so the last line rests clear of it. The TOP has no fade: what passes there
+     passes under the sticky credit's own ground. */
+  padding-bottom: 24px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
   opacity: 0;
   /* The stage rises the way the tray results always have (mirrored by resultAnimation). */
   transform: translateY(clamp(24px, 5vh, 44px));
@@ -1875,34 +1889,41 @@ button {
 
 /* The PAGE: the credit, then the text, read top-down the way a page is (user-decided
    2026-09-08: "with the source above the text, we can start by a few sentences before
-   the puzzle"). It takes the rest of the column and SCROLLS inside it, fading BOTH its
-   edges (the rule every scroller wears, `.word-scroll`): the padding is the fades' own
-   height, so nothing fades at rest and the last line rests clear of the bottom edge. The
-   right padding is the pixel scrollbar's clearance off the words. */
-.solved-context {
-  flex: 1 1 0;
-  min-height: 0;
+   the puzzle"). It is the stage's last item, at the score block's width; the right
+   padding is the pixel scrollbar's clearance off the words. It is the sticky credit's
+   CONTAINING BLOCK: the credit sticks while the page is in view and leaves with it. */
+.solved-page {
+  flex: none;
   width: 100%;
   max-width: 680px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  overscroll-behavior: contain;
-  padding: 24px 20px 24px 0;
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent,
-    #000 24px,
-    #000 calc(100% - 24px),
-    transparent
-  );
-  mask-image: linear-gradient(to bottom, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+  padding-right: 20px;
 }
 /* The credit, ABOVE the text it belongs to and on its left edge — the small quote-style
    citation it has always been. It lays out from frame one and is simply hidden until its
-   beat (the retired prompt's own trick), so the text never moves when it speaks. */
+   beat (the retired prompt's own trick), so the text never moves when it speaks. And it
+   STICKS at the scroller's top edge on its own flat ground, with the header's own short
+   gradient hanging under it, so the text disappears under the credit rather than through
+   it; a tap on it scrolls back to the top — the score and SHARE — so the running head
+   is also the way back. */
 .solved-source {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   width: 100%;
+  padding-bottom: 10px;
+  background: var(--bg);
   visibility: hidden;
+  cursor: pointer;
+}
+.solved-source::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 24px;
+  background: linear-gradient(to bottom, var(--bg), transparent);
+  pointer-events: none;
 }
 .solved-source.in {
   visibility: visible;
@@ -3321,9 +3342,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     min-height: calc(100dvh - 20px);
     margin-bottom: -24px;
   }
-  /* The result's PAGE reaches the screen's bottom edge: its last line clears the
+  /* The result's stage reaches the screen's bottom edge: its last line clears the
      home-indicator inset as the keyboard's last row does, plus its own fade. */
-  .solved-context {
+  .solved-stage {
     padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   }
   /* Word mode's overlaid result shares the same 14px phone-bottom frame. */
