@@ -185,71 +185,21 @@ Return {{"ranked": [<index>, ...]}}, best first, at most {limit} entries.""")
     return ranked or picks[:limit]
 
 
-def recognizes_source(claude: Claude, sentence: str, author: str) -> tuple[bool, dict]:
-    """The memorization test, two probes: does the model name the author, and does it
-    complete the line verbatim from its first half? Either = the line is known (the very
-    famous quote), next sentence. The completion probe is the reliable one: a model
-    under-claims authorship, but it cannot help finishing a line it has memorized."""
-    answer = claude.json(f"""Who wrote this French sentence, and in which work? If you do not know, say so:
-do not guess from style.
+def widely_known(claude: Claude, sentence: str, author: str, work: str) -> dict:
+    """Would a reader who has NOT read the book know this line? An ANNOTATION for the
+    reviewer, never a strike (user-decided 2026-09-08): the model has memorised every
+    line of a canonical book, so what it remembers says nothing about what a reader has
+    met — the strike is the quotation test's (`quotes.quoted`), off the record."""
+    answer = claude.json(f"""A French word game hides three words of a sentence from « {work} » by {author} and
+the player rebuilds it. Would a French reader who has NOT read the book have met this
+exact sentence before — is it widely quoted (quotation sites, the book's encyclopedia
+article, school anthologies, titles, advertising)? Judge the SENTENCE's fame, not the
+book's.
 
 « {sentence} »
 
-Return {{"author": "<name or null>", "work": "<title or null>", "confidence": <0..1>}}.""")
-    head, tail = split_for_completion(sentence)
-    completion = claude.json(f"""Complete this French sentence exactly as it was written, if you know it. If you do
-not recognize it, return an empty string.
-
-« {head} …
-
-Return {{"continuation": "<the rest of the sentence, verbatim, or empty>"}}.""")
-    continuation = completion.get("continuation") or ""
-    answer["continuation"] = continuation
-    known = same_author(answer.get("author") or "", author) or completion_matches(tail, continuation)
-    return known, answer
-
-
-def split_for_completion(sentence: str) -> tuple[str, str]:
-    words = sentence.split()
-    k = max(3, len(words) // 2)
-    return " ".join(words[:k]), " ".join(words[k:])
-
-
-# Share of the true continuation's words the model reproduces, in order, to count as
-# memorized (a paraphrase from style lands far below; a verbatim line at 1.0).
-COMPLETION_MATCH = 0.6
-
-
-def completion_matches(tail: str, continuation: str) -> bool:
-    truth = [slug(w) for w in tail.split() if slug(w)]
-    given = [slug(w) for w in continuation.split() if slug(w)]
-    if not truth or not given:
-        return False
-    i = 0
-    hits = 0
-    for w in truth:
-        try:
-            j = given.index(w, i)
-        except ValueError:
-            continue
-        hits += 1
-        i = j + 1
-    return hits / len(truth) >= COMPLETION_MATCH
-
-
-# Name particles that two different authors share.
-_NAME_PARTICLES = frozenset({"de", "du", "la", "le", "les", "von", "van", "der", "as", "and", "et"})
-
-
-def same_author(guessed: str, actual: str) -> bool:
-    """Two author strings name the same person when they share a real name part
-    (slug() fuses words, so compare per word: `Pessoa Fernando` vs `Fernando Pessoa (as
-    Bernardo Soares)`)."""
-
-    def parts(text: str) -> set[str]:
-        return {slug(w) for w in re.split(r"[\s,()\-]+", text)} - {""} - _NAME_PARTICLES
-
-    return bool({p for p in parts(guessed) if len(p) >= 3} & parts(actual))
+Return {{"known": true/false, "why": "<one line>"}}.""")
+    return {"known": bool(answer.get("known")), "why": str(answer.get("why") or "")}
 
 
 def holed(tokens, blanks: set[int], mark: int | None = None) -> str:

@@ -19,6 +19,10 @@
       lyrics.py              song files (#262): header format, Genius cleanup, couplet UNITS,
                              the famous-single cut, the artist cooldown (stdlib, tested)
       shelf_lyrics.py        the Genius fetch (lyricsgenius): artist list -> song files on the shelf
+      quotes.py              the QUOTATION test: wikitext -> quoted lines, the in-order match, the
+                             shelf/quotes/ file (stdlib, tested)
+      shelf_quotes.py        the Wikiquote + Wikipedia fetch (MediaWiki API, stdlib): per book on
+                             the shelf -> shelf/quotes/<file>.txt
       starts.py              the start-word rule (valid French): displayed sentence, elision,
                              band candidates (stdlib, tested)
       parse.py               spaCy adapter (fr_core_news_md) -> rules.Token
@@ -28,7 +32,8 @@
                              the generation output; the backend's local store is a test bed)
       _paths.py              path wiring (generation + benchmark scripts on sys.path)
     shelf/                   GITIGNORED: the epubs and song files to mine (copyrighted),
-                             artists.txt (the user's hand-written whitelist), index.json (state)
+                             artists.txt (the user's hand-written whitelist), index.json (state),
+                             quotes/<file>.txt (each book's quoted lines, per shelf_quotes)
     runs/                    GITIGNORED: one markdown log per run (every rejection names its rule)
     tests/                   pytest, dependency-free (rules, sentences, epub, lyrics); the LLM never runs
     pyproject.toml, uv.lock  claude-agent-sdk, spacy + fr_core_news_md (URL wheel), gensim/numpy,
@@ -59,6 +64,11 @@ pnpm shelf:lyrics [--artists shelf/artists.txt] [--max-songs N]
 #   is on the shelf; one .txt per song with a header. Needs GENIUS_ACCESS_TOKEN (a free
 #   client token, genius.com/api-clients; never a file in the repo). The only step that
 #   touches the network; the curator never does.
+pnpm shelf:quotes [--work <file>] [--force]
+#   The quotation test's data: per book on the shelf, the author's fr.wikiquote page, the
+#   work's wikiquote page when it has one and the work's fr.wikipedia article, their
+#   quoted lines written to shelf/quotes/<file>.txt (skipped when the file exists). One
+#   request at a time with a named User-Agent; a shelf step, never the curator.
 pnpm --filter @whippin/curation test
 ```
 
@@ -84,12 +94,23 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   within `MIN_GAP` tokens ("the same part of the sentence"); lemma/morphological
   variants; anything above `COSINE_MAX` to a pick ("too similar"). `conj` siblings stay
   (a list of nouns is a good spread).
-- **One model judgement is TESTED, not trusted**: the MEMORIZATION TEST, two stateless
-  probes — name the author (compared by name parts), and complete the line from its
-  first half (`COMPLETION_MATCH` = 60% of the true words, in order). Either = the very
-  famous line, next sentence; a model under-claims authorship but cannot help finishing
-  what it memorized (Camus's opening completes verbatim; Pessoa's "J'ai demandé si peu à
-  la vie" does not). Everything else the model is asked is a choice from a list.
+- **The FAMOUS LINE is a QUOTATION test, never a memory test (user-decided 2026-09-08,
+  replacing the two-probe MEMORIZATION test — author + completion from the first half).**
+  The model has memorised every line of a canonical book, so what it remembers says
+  nothing about what a reader has met: measured on 17 runs, the memory test's two
+  rejections were both Machado de Assis lines nobody quotes (one named the niece
+  Vénancia). What a reader has met is on record: `pnpm shelf:quotes` fetches, per book,
+  the author's fr.wikiquote page, the work's wikiquote page and the work's fr.wikipedia
+  article, and `quotes.extract_quotes` writes their quoted lines (`{{citation}}` bodies
+  and « … » spans of at least `MIN_QUOTE_WORDS` = 5) to `shelf/quotes/<file>.txt`. The
+  curator, OFFLINE, rejects a unit that shares `QUOTE_MATCH` (0.6) of the shorter side's
+  words, in order, with a quoted line — at least `QUOTE_MIN_WORDS` (5) of them
+  (`quotes.quoted`; a quote can be the first sentence of a two-sentence unit) — and the
+  log names the quote. A book with no file skips the test with a warning; a book with no
+  page rejects nothing, which is the point (no French reader quotes it). The model's own
+  opinion — would a reader who has not read the book know this line — is logged as an
+  ANNOTATION (`llm.widely_known`), never a strike. Everything else the model is asked is
+  a choice from a list.
 - **The CONTEXT CHECK is an ANNOTATION, never a strike** (decided on data 2026-09-06):
   after a trio is found, one stateless call per secret guesses the blank as the player
   sees the sentence (all three blanks); the log records where the true word landed among

@@ -23,6 +23,7 @@ import _paths
 from slug import slug
 
 import llm
+import quotes as qt
 import lyrics as lyr
 import rules
 import shelf as shelf_mod
@@ -417,17 +418,21 @@ def shortlist(claude: llm.Claude, log: Log, mined: list[str], exclude: set[str],
 
 
 def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: dict,
-            in_vocab, similarity, frequency_rank, lang: str, window: dict | None = None):
-    """One sentence through memorization test, trio search and generation. `window` is
+            in_vocab, similarity, frequency_rank, lang: str, window: dict | None = None,
+            quotes: list[str] = ()):
+    """One sentence through the quotation test, trio search and generation. `window` is
     the raw text around it (#270), which the model CUTS into the page once the trio is
-    found — so a rejected sentence never spends the call."""
+    found — so a rejected sentence never spends the call. `quotes` are the work's quoted
+    lines on file (`shelf_quotes`); the strike is theirs, and the model only annotates."""
     log(f"\n## « {sentence} »")
-    known, answer = llm.recognizes_source(claude, sentence, book.get("author", ""))
-    if known:
-        log(f"- rejected: the model recognizes the line ({answer.get('author')} — {answer.get('work')})")
+    hit = qt.quoted(sentence, list(quotes))
+    if hit:
+        log(f"- rejected: a quoted line — « {hit} »")
         return None
-    log(f"- memorization test: not recognized (author guess: {answer.get('author') or 'none'}; "
-        f"completion: {answer.get('continuation') or 'none'})")
+    known = llm.widely_known(claude, sentence, book.get("author", ""), book.get("title", ""))
+    log("- known-line check (annotation): "
+        + ("the model thinks a reader would know it" if known["known"] else "not known off the page")
+        + (f" — {known['why']}" if known["why"] else ""))
     tokens = parse(sentence, lang)
     candidates = rules.initial_candidates(tokens, in_vocab=in_vocab, past_secrets=archive["secrets"],
                                           frequency_rank=frequency_rank)
@@ -529,6 +534,16 @@ def main():
     ranked = shortlist(claude, log, mine(book, text, log), proposed, seed)
 
     similarity, frequency_rank = load_similarity(args.lang)
+    # The work's quoted lines (the quotation test): fetched onto the shelf by
+    # `pnpm shelf:quotes`, read here offline. A missing file skips the test, loudly.
+    quotes: list[str] = []
+    if book["kind"] == "book":
+        on_file = qt.load_quotes(book["file"])
+        if on_file is None:
+            log("- quotes: NO FILE for this work — run `pnpm shelf:quotes`; the quotation test is skipped")
+        else:
+            quotes = on_file
+            log(f"- quotes: {len(quotes)} quoted line(s) on file")
     tried: list[str] = []
     result = None
     for n, pick in enumerate(ranked, 1):
@@ -539,7 +554,7 @@ def main():
         # licensed product — the line is the whole quotation).
         window = excerpt_around(text, pick["sentence"], EXCERPT_WINDOW) if book["kind"] == "book" else None
         result = attempt(claude, log, pick["sentence"], book, archive, vocab.__contains__,
-                         similarity, frequency_rank, args.lang, window)
+                         similarity, frequency_rank, args.lang, window, quotes)
         log.end_attempt(bool(result), player_view(result, book) if result else ())
         if result:
             break
