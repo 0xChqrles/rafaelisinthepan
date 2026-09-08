@@ -82,10 +82,6 @@ def sentence_key(sentence: str) -> str:
     return " ".join(sentence.split()).lower()
 
 
-def _puzzle_files(lang: str):
-    yield from (_paths.GENERATION_OUTPUT_DIR / lang).rglob("*.json")
-
-
 def published(lang: str) -> list[dict]:
     """The ledger's lines for a language, in file order, a broken line skipped; a day
     published twice (a correction) keeps its LAST line only."""
@@ -100,6 +96,8 @@ def published(lang: str) -> list[dict]:
         try:
             entry = json.loads(line)
         except ValueError:
+            continue
+        if not isinstance(entry, dict):
             continue
         if entry.get("lang") == lang and entry.get("day"):
             by_day[entry["day"]] = entry
@@ -121,13 +119,20 @@ def archive(lang: str, today: date | None = None) -> dict:
     for entry in published(lang):
         day = date.fromisoformat(entry["day"])
         cooling = (today - day).days < SECRET_COOLDOWN_DAYS
-        for hole in entry.get("holes", ()):
+        for hole in entry.get("holes") or ():
+            if not isinstance(hole, dict):
+                continue
+            secret = hole.get("secret")
+            if not secret:
+                continue
             if cooling:
-                secrets.add(hole["secret"])
+                secrets.add(secret)
             if hole.get("start"):
-                pairs.setdefault(hole["secret"], set()).add(hole["start"])
-        sentences.add(sentence_key(entry.get("sentence", "")))
+                pairs.setdefault(secret, set()).add(hole["start"])
+        sentences.add(sentence_key(entry.get("sentence") or ""))
         src = entry.get("source") or {}
+        if not isinstance(src, dict):
+            src = {}
         key = (slug(src.get("author", "")), slug(src.get("work", "")))
         if src and key not in seen:
             seen.add(key)

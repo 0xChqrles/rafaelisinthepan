@@ -117,7 +117,7 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   article, and `quotes.extract_quotes` writes their quoted lines (`{{citation}}` bodies
   and « … » spans of at least `MIN_QUOTE_WORDS` = 5) to `shelf/quotes/<file>.txt`. The
   curator, OFFLINE, rejects a unit that shares `QUOTE_MATCH` (0.6) of the shorter side's
-  words, in order, with a quoted line — at least `QUOTE_MIN_WORDS` (5) of them
+  words, in order, with a quoted line — at least `QUOTE_MIN_WORDS` (4) of them
   (`quotes.quoted`; a quote can be the first sentence of a two-sentence unit) — and the
   log names the quote. A book with no file skips the test with a warning; a book with no
   page rejects nothing, which is the point (no French reader quotes it). The model's own
@@ -189,9 +189,8 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   terminal-punctuation rules of the sentence filter do not apply to verse.
 - **Artist cooldown, not "never twice"**: the same artist at most once every
   `ARTIST_COOLDOWN_DAYS` (30) on the calendar, never the same song. Judged on the
-  generation output's file dates (`shelf.archive().last_used`; a puzzle is generated the
-  day it is curated) and on the run index (`shelf.last_proposed`). Books keep "never the
-  same book twice".
+  ledger's game day (`shelf.archive()['last_used']`) and on the run index
+  (`shelf.last_proposed`). Books keep "never the same book twice".
 - Music is a minority stream (one or two days a week); the pick prompt says so.
 - `source` is `{kind: music, author: <artist>, work: <song title>}`, like the archive.
 

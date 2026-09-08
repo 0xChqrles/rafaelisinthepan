@@ -62,7 +62,9 @@ export function parseLedger(text: string): PublishedEntry[] {
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
     try {
-      out.push(JSON.parse(line) as PublishedEntry);
+      const entry = JSON.parse(line) as PublishedEntry;
+      if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) continue;
+      out.push(entry);
     } catch {
       // a broken line is not a reason to lose the rest
     }
