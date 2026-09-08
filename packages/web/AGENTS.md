@@ -198,14 +198,15 @@ These are decided and verified against the code. Treat them as load-bearing.
     PALE draft — `--hole` #aec1ff over its dashed OPEN-BLANK line
     (`.hole .hole-word-wrap::after` — anchored to the STATIC wrap, not the shaking word:
     the hit-shake rides `.hole-word` and a line anchored there shook with it,
-    user-reported 2026-08-17; the wrap never moves, and the solved screen's words, which
-    wear the RESOLVED hole's own markup since #266, never grow a blank. The app's "not yet" dash vocabulary;
+    user-reported 2026-08-17; the wrap never moves, and a resolved hole never grows a
+    blank — which since #266 is the only kind the solved screen shows, the sentence being
+    the board's own. The app's "not yet" dash vocabulary;
     the unfound `???` terminus wears it too — the TUTORIAL deliberately not at all,
     user-decided 2026-08-17: MixWord's demo hole and the coach text's hint words are
     lesson props, not blanks to fill. It sits at the wrap's bottom edge) — and solving
     INKS IT IN: `--solve` #4a6aff cobalt, blank gone. The ink IS the gradient's calm terminus, so a
     solve lands exactly on the peace the scale runs toward. It paints everything
-    reached: resolved holes, the solved screen's trophies, both termini found, Word
+    reached: resolved holes (the solved screen shows the same ones), both termini found, Word
     mode's day word, the OG card's word, the tutorial's `[[b:]]` secret (`.rt-target`) —
     and done-for-the-day strips/cells. The pale hole is strongly legible on `--bg`; the
     blank line and exponent carry the rest of the unresolved-state distinction.
@@ -328,15 +329,15 @@ These are decided and verified against the code. Treat them as load-bearing.
     holes, Word mode's day word, the route drawings entire (words, rank gutters, MISSED
     shelf), the prompt/input and its hint, the keyboard (keys + its `.kb-icon` pixel
     enter/backspace), the floating hits, the loot, the strike sheets, the CellDigits
-    watermark, the solved screen's word trophies, the rarity ladder's EXAMPLE words,
+    watermark, the rarity ladder's EXAMPLE words,
     MixWord — and, since the same day's later passes, the whole SOLVED STACK's data:
     both result counts (`.solved-score-num`), the ENTIRE standing line (labels, the
     accent rank number AND the TOP badge — one face, so `standingUnits` is back to
     rank-digits-count-DOUBLE with one unit = one label glyph), the SOURCE CREDIT (both
     lines — the source is the puzzle's content, not chrome, and it is EXEMPT from the
     all-caps chrome rule: quoted content keeps its own casing, the code-uppercased KIND
-    carrying the phrase contrast), the run ruler's tick numbers, the trophies'
-    superscript numbers, and the streak celebration's digits (wheel slots at the pixel
+    carrying the phrase contrast), the run ruler's tick numbers, and the streak
+    celebration's digits (wheel slots at the pixel
     1em advance, the flame's HARD 6px indigo underprint restored — a soft glow clips
     square inside the overflow-hidden slots). **Every monospace layout assumption therefore still holds** — fitWord, the
     route `--gutter` arithmetic, MixWord's ch reservations and CellDigits' grid all sit
@@ -3045,78 +3046,66 @@ it to the local store — see `packages/backend/AGENTS.md`).
   card/title named the right day all along, as `#<dayNumber>` then and as that same date
   since 2026-08-03 — see the share-card bullet). The archive **must not touch streaks**
   (separate issue).
-- **The solved SCREEN (user-decided 2026-08-14, superseding the tray-stack layout — "the
-  sentence takes way too much space on mobile"): the sentence DISSOLVES and the result
-  takes the whole column.**
-  - **The sentence's exit is the game's own word-transition run to absence**
-    (`components/DissolvePhrase`): once the solving beats have handed the screen back
-    (streak dismissed, keyboard dropped — `resultsUp`), the live Phrase swaps for a
-    pixel-identical letter-boxed copy (same `.phrase`/`.word`/`.hole-group`/`.hole
-    .resolved`/`.hole-letter` structure, so frame 0 matches to the pixel and the wrap
-    points are the same wrap points), and every letter churns random glyphs on the
-    scramble's OWN 40ms tick, each for 2–5 frames, then goes OUT. **The erosion is
-    SCATTERED, and its length is a CONSTANT** (user-decided on review the same day,
-    superseding the first cut's 20ms left-to-right sweep, which read as a cursor deleting
-    the sentence): each letter draws its start uniformly from ONE fixed window
-    (`SPREAD_TICKS`, 720ms), so the order is random every time, "batches" fall out of the
-    uniform draw with no batching machinery, and a long sentence dissolves in exactly the
-    time a short one does — more letters simply go out per tick. Both dice are rolled
-    ONCE at mount (a re-render can never re-roll a letter — the slash-flip rule). A dissolved letter keeps its box `visibility: hidden`
-    (`.hole-letter.gone`) — never an actual space, never removed — so the monospace
-    advance holds every surviving letter exactly where it was: the sentence burns down IN
-    PLACE, and nothing reflows until the whole area unmounts. The score watermark fades
-    with it (`.phrase-anchor.dissolving`); the prompt zone stays laid out (retired,
-    invisible) through the erosion so the centered sentence never moves. A 180ms breath
-    after the last letter, then `onDone` swaps the screen. Reduced motion skips the churn
-    entirely; a rehydrated solve mounts `dissolved` and replays nothing.
-    **The reduced-motion preference is read ONCE at mount, like the letter dice** (fixed
-    2026-08-16): two effects branch on it, and read live they could disagree — a setting
-    flipped mid-erosion (an OS toggle, battery saver) left the interval running while the
-    completion effect skipped `onDone` believing the other had already reported, stranding
-    the player on a fully eroded, invisible sentence. This is the one solved beat with no
-    deadline behind it, so its two halves have to agree by construction.
-  - **The solved STAGE then owns the full column** (`components/SolvedScreen`, rebuilt;
-    the `.play`+`.tray` split does not render at all — nothing is left to reserve the
-    keyboard's footprint for), **in TWO BLOCKS around one SEAM** (user-decided
-    2026-08-14, second pass — they answer different questions and ran together as one
-    undifferentiated column):
-    - **PUZZLE** (`.solved-puzzle`) — **the WHOLE SENTENCE the player rebuilt
-      (user-decided 2026-09-07, #266, superseding the row of three distinct guessed
-      words): every token as the board displayed it (`words[]`, punctuation and affixes
-      kept), with the SECRETS in the solve blue. The three words are no longer shown on
-      their own — they live in the sentence,** which is what makes the round more than
-      three adjacent word searches; the mobile-space objection that removed the sentence
-      on 2026-08-14 is answered by the screen being allowed to SCROLL (below) rather than
-      by dropping it. The markup is `Phrase`'s, class for class — `.phrase.solved-phrase`
-      over `.word` / `.hole-group` / `.hole.resolved` / `.hole-btn` / `.hole-word-wrap` /
-      `.hole-word` — so the type, the size, the affix grouping, the wrap points, the solve
-      blue, the print shadow, the hover brightening and the wheel's veil are the
-      sentence's own rules rather than a second copy of them; only three things are the
-      result's own, and they are `.solved-word`'s whole job: the POP, the leading NUMBER
-      (1..3 by the ruler-tick/modal-title numbering — LEADING, where a rank exponent
-      trails, so the two markers can never be read for each other) and the settled frame.
-      It CENTRES (`text-align: center`), because everything else on the stage does and a
-      left-aligned block would be the one item off the column's axis. Each secret is
-      still a BUTTON onto its history line — same `data-hole-explore` + `.hole-word-wrap`
-      zoom origin, never disabled since they only exist after every beat that owned the
-      sentence, and each rippling the hole-wave on its own 3–10s clock as the tap
-      affordance. **One entry per OCCURRENCE** (`SolvedHole`, built in `Game`): a secret
-      appearing twice appears twice in the sentence, each carrying its OWN hole index —
-      the tap opens the history of the word that was tapped — and the shared
-      distinct-secret number, so the two pop on one beat and open one log (they share a
-      rank map, so the two logs are the same log). **The CAPPED (`∞`) ending shows the
-      sentence too**: the answer was always shown there, now in context.
-      Under the sentence comes the SOURCE, **at its own caption size** — it briefly led
-      the stage typed big, and reads as what it has always been, the credit line beneath
-      the puzzle's content;
-      only its ALIGNMENT follows the centred stage. **It is a CREDIT BLOCK of TWO lines,
-      and the second one is a PHRASE** (user's own shape, 2026-08-15, superseding three
-      stacked fields the same day and the `— Author, Work` run-on before them):
+- **The solved SCREEN — THE RESULT GROWS AROUND THE SENTENCE (user-decided 2026-09-08,
+  on #266's review: "just keep the sentence and move it to the top a little bit with a
+  smooth animation before writing the source below"). It supersedes BOTH halves of the
+  2026-08-14 redesign — the DISSOLVE that handed the column over and the STAGE that took
+  it — and it is one rule: the round has ONE tree, the sentence is never rebuilt, and what
+  the solve changes is what stands under it and how high it sits.**
+  - **The sentence is the round's OWN live `Phrase`, the same element from the first
+    guess to SHARE.** It keeps the play column's width and its LEFT edge, so the wrap
+    points, the type, the size and the holes' inked-in words are the board's — nothing is
+    re-laid-out. That is the whole point of the decision: the 2026-08-14 stage owned the
+    column and capped it at the score block's 680px, which did not move the sentence but
+    REWROTE it — measured at 1280×800, 225px tall and 1176 wide during play against 405
+    and 680 on the stage. (The 2026-08-16 centring was the same mistake said again: every
+    other block on the stage centred, so the sentence did too, and it stopped being the
+    board's sentence.)
+  - **What plays instead of an exit is a RISE**, and how far is MEASURED, never stated:
+    the distance is whatever the credit and the score block leave, so `Game` reads the
+    phrase's position on the commit before the result mounts and on the one after, and
+    plays the difference back as a transform (the FLIP, `PHRASE_RISE_MS` = 420ms,
+    `SolvedScreen`'s `RISE_MS` waiting it out before the source types). Measured on the
+    same puzzles: 43px on a 3-line en sentence, 51px on a 41-token fr one, 84px on a
+    phone — "a little bit" whatever the content. A settled result never travels: a
+    rehydrated solve has no previous frame to compare against, and a fast-forward FINISHES
+    the rise mid-flight (`phraseRise.finish()`), because the settled frame is one where
+    the sentence has arrived.
+  - **`.play` is the box both phases share** (`.play-result`), which is what makes the one
+    tree possible, and it changes three things at the solve:
+    - the content stops being CENTRED between the header and the tray and takes its auto
+      margins instead (below), which is the rise;
+    - the column SCROLLS (`flex: 1 1 0` + `min-height: 0` + `overflow-y: auto`), because a
+      long sentence plus a credit plus the score block is unbounded content and `.app`'s
+      centred box clips symmetrically, taking the TOP of the result under the header — the
+      trap `.account-screen` records. `flex: 1 1 0` is what makes the height DEFINITE:
+      `.game`'s own height is auto-with-a-min, so a `1 1 auto` item sized by its content
+      grows the page instead, and a flex item's `min-height: auto` min-content floor would
+      refuse to shrink even then. `overflow-x` is stated because `auto` on one axis makes
+      the other compute to `auto` too;
+    - it FADES ITS OWN TOP, the rule every scroller that passes under the header wears
+      (`.word-scroll`, `.hw-scroll`): a 32px mask over 32px of padding, PULLED UP into the
+      header's own clearance by a matching negative margin (`.word-window.wb-open`'s
+      trick) so the two cancel — the sentence starts exactly where `.game`'s reserve
+      already put it, the fade costs the rise nothing, and what passes through it is
+      content scrolling up under the bar rather than a band of bare ground below one.
+      Without it the sentence's first line is cut mid-glyph on the scroller's edge.
+  - **The result is TWO BLOCKS, in the two places the play screen already has** — one
+    component (`components/SolvedScreen`, which returns a FRAGMENT, because the source's
+    completion signal is what releases the score):
+    - **SOURCE** (`.solved-source`) — in the retired prompt's own row, tight under the
+      sentence and on the sentence's LEFT edge, because the prompt was left-aligned there
+      too and the credit belongs to the sentence rather than to the result's centred
+      column. It lays out from frame one and is simply hidden until its beat (the retired
+      prompt's own trick), so the sentence never moves when it speaks. **It is a CREDIT
+      BLOCK of TWO lines, and the second one is a PHRASE** (user's own shape, 2026-08-15,
+      superseding three stacked fields the same day and the `— Author, Work` run-on before
+      them):
 
       ```
-         Les Misérables         the WORK — the credit's headline: gold, `clamp(13px,
-                                1.8vw, 17px)`, the biggest type in the block
-         BOOK by Victor Hugo    what it IS and who it is by — `--muted`, 10px, ONE phrase
+         Les Misérables         the WORK — the credit's headline: the accent, `clamp(14px,
+                                1.9vw, 18px)`, the biggest type in the block
+         BOOK by Victor Hugo    what it IS and who it is by — muted, 10px, ONE phrase
       ```
 
       The earlier cuts stacked the fields as peers, which left the reader guessing which
@@ -3132,99 +3121,86 @@ it to the local store — see `packages/backend/AGENTS.md`).
       is not a UI key: `kind` is puzzle DATA and an explicitly OPEN set (#5), so the lookup
       PASSES THROUGH anything unlisted, uppercased, exactly as the puzzle wrote it (one
       published fr puzzle already carries a free-form `discours`). The five documented
-      kinds are the whole table — adding an invented one would claim generation emits it. Gold over muted ranks the two,
-      so the eye lands on the title first. The qualifier sits tight under its headline —
-      the caption's gap opens between the credit and the words above, never inside it.
+      kinds are the whole table — adding an invented one would claim generation emits it.
       Every field is independently optional in the schema (#5), so the HEADLINE is the
       first of work / author / kind that exists and the qualifier is whatever is left: an
       author with no work takes the headline (a lone name is not a credit to anything, and
       `by Victor Hugo` under nothing is a sentence missing its subject) with its kind alone
       beneath it, and a source carrying only a kind is just that word. The typewriter is
-      unchanged: one character run across whatever lines exist.
+      one character run across whatever lines exist.
     - **SCORE** (`.solved-numbers`) — the named `<tries> TRIES` headline (the #170 TOP
-      badge beside the number since 2026-09-05) over the run ruler, **then SHARE**, which belongs to this
-      block (user-decided 2026-08-14, third pass: sharing is what you do with a RESULT).
-      **The standing leads and the score follows** (user-decided 2026-08-15): where you
-      placed, then YOUR number and the run that made it, which puts SHARE directly under
-      exactly what the card it shares draws.
-    - **The SEAM is SPACE, not a measured gap** (same decision): the SCORE block sits on
-      the screen's BOTTOM EDGE and the PUZZLE block's `margin: auto 0` eats all the
-      leftover height, centring it in what is left above. The taller the screen, the more
-      the two read as two — measured 33 / 99 / 175 / 202px at 320×568 / 375×667 / 390×844
-      / 1440×900, where the fixed gap it replaces gave the same ~43px everywhere. The
-      stage's own `gap` (`clamp(28px, 5vh, 48px)`) is only the FLOOR, for a screen too
-      short to have leftover height to hand out. The score block carries the page inset
-      off the bottom (+safe-area+10px on a phone — the retired `.tray.tray-results` rule,
-      now on the block that owns that edge).
-    - **The STAGE SCROLLS INSIDE THE COLUMN IT WAS GIVEN, and the score block keeps its
-      bottom edge either way** (#266): the sentence is unbounded content, and a tall one
-      has to be REACHABLE rather than overflow `.app`'s centred box — which clips
-      symmetrically and takes the TOP of the result under the header, the trap
-      `.account-screen` records. `flex: 1 1 0` + `min-height: 0` on `.solved-stage` is
-      what makes that height DEFINITE (`.game`'s own height is auto-with-a-min, so a
-      `1 1 auto` item sized by its content simply grows the page instead, and a flex
-      item's `min-height: auto` min-content floor would refuse to shrink even then): at
-      basis 0 the column's content height is 0, `.game`'s `min-height` decides the box,
-      and the free space handed back is exactly the viewport's. `overflow-x` is stated
-      rather than left `visible`, because `auto` on one axis makes the other compute to
-      `auto` too and a scrollbar would hang off the secrets' 14% pop overshoot. **And the
-      stage FADES ITS OWN TOP** — a 36px mask over 36px of matching top padding, the
-      `.word-scroll` / `.hw-scroll` rule verbatim: the header's own gradient only lights
-      on a scroll it hears, and without this the sentence's first line is cut mid-glyph
-      on the scroller's edge. Measured: a 41-token fr sentence at 375×667 scrolls the
-      STAGE (653 over 587) and never the page, with no horizontal overflow; a short
-      sentence needs no scroll at all and the score block still lands on `.game`'s own
-      bottom edge.
-  - **The reveal reads the way the stage is laid out**, top to bottom: the SENTENCE
-    arrives with the stage and its SECRETS **pop in one by one, 200ms apart**
-    (`solved-word-pop`, a 300ms overshoot-and-settle — a scale
-    on the pixel font is allowed exactly here, ONE SHOT and fast, the
-    `rank-pop`/`score-land` precedent; what the standing rule forbids is a long scale
-    TRANSITION holding blurry frames for its whole length; only `opacity` and `transform`
-    move, so the sentence's layout is final from its first frame — the secrets' boxes are
-    held open the whole time and not one letter around them shifts, which is what lets
-    them arrive INSIDE an already-printed sentence), the SOURCE types once the last
-    secret lands, and the SCORE block follows once that citation has **FINISHED PRINTING**
-    (user-decided 2026-08-15, superseding the fixed `CAPTION_LEAD_MS` 420ms lead off the
-    source's FIRST line): numbers arriving over a half-typed credit read as two things
-    happening at once, where waiting reads as one thing after another. That is the
-    screen's ONE signal-driven beat — it rides `SolvedCaption`'s own completion callback —
-    so it carries a DEADLINE behind it (`captionDurationMs(source)` + slack, the
-    `KB_EXIT_FALLBACK_MS` rule: a lost signal must never be able to stall the solved
-    sequence), and the deadline is derived from the typewriter's own numbers rather than
-    guessed. That backstop counts **VISIBLE time only**: the typewriter interval is
-    throttled/suspended with a hidden tab, so a wall-clock deadline could otherwise reveal
-    the numbers over a half-printed credit on return. A source-less puzzle has no printing
-    to wait for and its numbers follow the words. Every other beat is still an absolute
-    offset from the beat before it. **Inside the block the reveal runs score → standing →
-    SHARE (user-decided 2026-08-16, superseding "the standing arrives with the block it
-    heads"):** the tally counts its `SCORE_COUNT_MS` WHILE the ruler sweeps in and
-    colorizes (the color wave one `NEUTRAL_HOLD_MS` behind the neutral cells) — one beat
-    saying "here is your run" — then the STANDING lands (`rankIn`, after the longer of the
-    two plus a breath), and SHARE closes the reveal once the standing's own rung-in has
-    played (`shareIn`): the screen ends on its action. The standing's slot was always
-    mounted; SHARE now also hides IN PLACE with its footprint kept
-    (`.solved-stage .result-actions`), so neither arrival moves anything.
-  - **Nothing that has landed ever moves:** both later blocks hold their layout box from
-    frame one (the source `visibility: hidden` — the retired prompt's own trick — the
-    score block at `opacity: 0`), so the words keep the exact position they popped into
-    while everything else arrives under them (verified pixel-identical across the whole
-    beat, SHARE included). Rehydrated solves render `.settled` and replay nothing.
+      badge beside the number since 2026-09-05) over the run ruler, **then SHARE**, which
+      belongs to this block (user-decided 2026-08-14, third pass: sharing is what you do
+      with a RESULT). It takes the KEYBOARD's place: centred as the keyboard was, capped at
+      its 680px, and carrying the page inset off the bottom (+safe-area+10px on a phone —
+      the retired `.tray.tray-results` rule, now on the block that owns that edge).
+    - **The SEAM is SPACE, not a measured gap** (the 2026-08-14 rule, kept): the score
+      block's `margin-top: auto` pins it to the bottom edge and the sentence's own auto
+      margin takes the other half of whatever is left, so the puzzle CENTRES in the room
+      above the score rather than parking at the top. Both margins matter — without the
+      score's the block leaves the bottom edge, and without the sentence's a short round
+      reads as two blocks with a rift (the finding `/account`'s own bottom-edge pass
+      recorded, measured here as a 119px rise and a void where 43px and a seam belong).
+      The taller the screen, the more the two read as two; `.solved-numbers`'s `padding-top`
+      is the seam's FLOOR, for a screen with nothing to hand out.
+  - **The SECRETS stay tappable, and they are the sentence's own holes** — no trophy row,
+    so no numbering, no pop and no wave: `exploreDisabled` covers the SOLVING beats and
+    lifts again once the result is up, which restores the tap the stage's word buttons used
+    to carry. A rank-0 hole never ripples (`Hole`'s rule, 2026-08-11) and that is unchanged
+    here: on a finished round the whole sentence is solved, so the sentence is still.
+  - **The TRAY leaves with the keyboard**: it is unmounted once the drop's `animationend`
+    (or `KB_EXIT_FALLBACK_MS`) releases it, handing its footprint to the score block above.
+  - **The score WATERMARK goes with the round, not with the sentence** (`.play-finished`):
+    it fades the moment the board is solved — the count's next appearance is the result's
+    own headline — which is also well before `.play-result` turns the play area into a
+    scroller, and the canvas overflows `.phrase-anchor` symmetrically by design, so a
+    watermark still painting when that clip lands would show a cut number.
+
+  - **The reveal reads the way the result is laid out**, top to bottom: the SENTENCE
+    RISES, the SOURCE types under it once that move has landed, and the SCORE block follows
+    once that citation has **FINISHED PRINTING** (user-decided 2026-08-15, superseding the
+    fixed `CAPTION_LEAD_MS` 420ms lead off the source's FIRST line): numbers arriving over
+    a half-typed credit read as two things happening at once, where waiting reads as one
+    thing after another. That is the screen's ONE signal-driven beat — it rides
+    `SolvedCaption`'s own completion callback — so it carries a DEADLINE behind it
+    (`captionDurationMs(source)` + slack, the `KB_EXIT_FALLBACK_MS` rule: a lost signal
+    must never be able to stall the solved sequence), and the deadline is derived from the
+    typewriter's own numbers rather than guessed. That backstop counts **VISIBLE time
+    only**: the typewriter interval is throttled/suspended with a hidden tab, so a
+    wall-clock deadline could otherwise reveal the numbers over a half-printed credit on
+    return. A source-less puzzle has no printing to wait for and its numbers follow the
+    rise. Every other beat is still an absolute offset from the beat before it. **Inside
+    the block the reveal runs score → standing → SHARE (user-decided 2026-08-16,
+    superseding "the standing arrives with the block it heads"):** the tally counts its
+    `SCORE_COUNT_MS` WHILE the ruler sweeps in and colorizes (the color wave one
+    `NEUTRAL_HOLD_MS` behind the neutral cells) — one beat saying "here is your run" — then
+    the STANDING lands (`rankIn`, after the longer of the two plus a breath), and SHARE
+    closes the reveal once the standing's own rung-in has played (`shareIn`): the screen
+    ends on its action. The standing's slot is always mounted; SHARE hides IN PLACE with
+    its footprint kept, so neither arrival moves anything.
+  - **Nothing that has landed ever moves:** the source holds its layout box from frame one
+    (`visibility: hidden` — the retired prompt's own trick) and the score block arrives at
+    `opacity: 0` in a footprint its own auto margin already fixed, so the sentence keeps
+    the exact position its rise put it in while everything else arrives under it.
+    Rehydrated solves render `.settled` and replay nothing.
   - **ANY TAP OR KEY DURING THE REVEAL FAST-FORWARDS IT — AND STILL LANDS ON WHAT IT HIT**
     (user-decided 2026-08-16, #179). The scope is the whole hand-over: from the moment the
-    solving beats give the screen back (the keyboard drop, then the dissolve) through
-    SHARE's arrival. **The settled end state is EXACTLY what a rehydrated solve renders**,
-    reused rather than reimplemented — `Game.settleReveal` writes the three terminal
-    values in one batch (`keyboardLeaving` false, `dissolved` true, `animateResults`
-    false), and every beat in `SolvedScreen` already answers `animate: false` with its own
-    final value, so there is no parallel fast path to keep in step with the choreography.
+    solving beats give the screen back (the keyboard's drop, then the sentence's rise)
+    through SHARE's arrival. **The settled end state is EXACTLY what a rehydrated solve
+    renders**, reused rather than reimplemented — `Game.settleReveal` writes the two
+    terminal values in one batch (`keyboardLeaving` false, `animateResults` false), and
+    every beat in `SolvedScreen` already answers `animate: false` with its own final value,
+    so there is no parallel fast path to keep in step with the choreography. The RISE is
+    the one beat that is not React state, so it is finished by hand in that same call
+    (`phraseRise.finish()`): a settled frame is one where the sentence has ARRIVED, and a
+    move already in flight would otherwise keep travelling under a finished result.
     Two CSS consequences, both because the settled frame is now reached from HALFWAY
-    THROUGH rather than at mount: `.solved-stage.settled` (and its `.solved-numbers`) kill
-    the transitions the rehydrated path never starts, and `stagger` is 0 when settled, or
-    the ruler's per-cell delays would sweep the bar for over a second after the frame that
-    snapped (`rulerStagger`'s reduced-motion argument, spent on the same problem).
+    THROUGH rather than at mount: `.solved-numbers.settled` kills the transitions the
+    rehydrated path never starts, and `stagger` is 0 when settled, or the ruler's per-cell
+    delays would sweep the bar for over a second after the frame that snapped
+    (`rulerStagger`'s reduced-motion argument, spent on the same problem).
     **The gesture is never swallowed:** the listener is CAPTURE-phase on `window` and
-    neither cancels nor stops the event, so a tap on a found word settles the stage AND
+    neither cancels nor stops the event, so a tap on a found word settles the result AND
     opens that word's history, and Enter/Space on a focused control settles AND activates
     it natively. It listens for `click`, not `pointerdown`, for two reasons — a click's
     target is fixed before the listener runs, so settling can never pull a control out
@@ -3235,27 +3211,30 @@ it to the local store — see `packages/backend/AGENTS.md`).
     celebration stands — that screen keeps its OWN fast-forward → dismiss handling, and
     the tap that dismisses it must not spend the reveal it is handing over to (its
     dismissal lands 200ms later, past its exit fade, so the arming cannot catch that same
-    gesture either) — and never under the dev `?streak=N` preview, which holds the stage
+    gesture either) — and never under the dev `?streak=N` preview, which holds the result
     at frame zero behind a modal this round never sees. The standing slot snaps to
     whatever is true right now: `ScoreTop` renders nothing while the population read is
     out and appears settled when it lands, so the skip never blocks on, or fakes, the
     network. Reduced motion is unchanged (already near-instant). **The WORD end screen's
     own beats are deliberately out of scope**, as is skipping the SOLVING choreography.
-  - **REMOVED with the redesign** (no-back-compat rule, all were left without a
-    consumer): the caption's `masked` veil and its prompt-zone overlay (the caption now
-    mounts only WITH the stage, so an unsolved round's DOM never carries the author
-    hint at all — the leak the veil existed to plug), the SOURCE-reveal beat machinery
-    and its 6s visible-time fallback (`sourceReveal*`, `SOURCE_REVEAL_FALLBACK_MS`,
-    `solvedSettled` — nothing downstream waits on the typewriter any more), and the
-    tray's sentence-results state (`.tray.tray-results`; the tray now only ever holds
-    the gate or the keyboard). Holes are tappable during PLAY only; the stage's word
-    buttons take over after.
-  - **REMOVED with #266** (same rule): the trophy ROW and its whole private dress —
-    `.solved-words`, `.solved-word`'s own font/size/colour/shadow/hover (the resolved
-    hole's markup carries all five now), `.solved-word-text` in the wave and print-shadow
-    selector lists, `.solved-word.veiled` (one `.hole.veiled` rule serves both surfaces)
-    — and `Game`'s distinct-secret `solvedWords` memo, which carried the FIRST hole index
-    of each secret because that was all a row of three words needed.
+  - **REMOVED with the 2026-08-14 redesign** (no-back-compat rule, all were left without a
+    consumer): the caption's `masked` veil and its prompt-zone overlay (the caption mounts
+    only WITH the result, so an unsolved round's DOM never carries the author hint at all —
+    the leak the veil existed to plug), the SOURCE-reveal beat machinery and its 6s
+    visible-time fallback (`sourceReveal*`, `SOURCE_REVEAL_FALLBACK_MS`, `solvedSettled` —
+    nothing downstream waits on the typewriter any more), and the tray's sentence-results
+    state (`.tray.tray-results`).
+  - **REMOVED with #266** (same rule): **`components/DissolvePhrase.tsx` and every trace of
+    the sentence's exit** — the letter-boxed pixel-identical copy, its two dice, the
+    scattered erosion, `.hole-letter.gone`, the `dissolved` flag and the swap it hung on,
+    and the `.phrase-anchor.dissolving` watermark fade; **the STAGE** — `.solved-stage`,
+    `.solved-puzzle` and their rise, since `.play` is the column now; **the trophy ROW** —
+    `.solved-words`, `.solved-word*`, `solved-word-pop`, `.solved-word-text` in the wave
+    and print-shadow selector lists, `.solved-word.veiled`, the `.solved-phrase` of #266's
+    first cut, and `Game`'s `solvedWords`/`solvedHoles` memos with them. Two things the
+    trophy row carried are simply gone, not moved: the secrets' 1..3 NUMBERING (the ruler's
+    ticks number the same three by sentence order) and their POP (there is nothing to pop
+    in — the words were never taken away).
 - **Solved-result content (decided 2026-07-10; the LLM benchmark display — standings
   lineup, leaderboard dialog, SEE MORE — was REMOVED on 2026-08-12, user-decided: the
   comparison story will be other players' scores, not recorded model runs; the tray-stack
@@ -3342,7 +3321,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   global CSS rule collapses animation/transition DURATIONS but not DELAYS, so the ramp
   would otherwise still crawl across the bar for over a second for someone who asked for
   no motion. The keyboard's exit beat
-  releases the dissolve through a signal the DOM has to produce (its own
+  releases the RESULT through a signal the DOM has to produce (its own
   `animationend`) — so it carries a **deadline** (`KB_EXIT_FALLBACK_MS`
   in `Game.tsx`), a generous multiple of the real duration, cancelled by the genuine
   signal. A lost signal must never be able to stall the solved sequence. (The SOURCE
@@ -3352,28 +3331,31 @@ it to the local store — see `packages/backend/AGENTS.md`).
   streak solve the exit beat does NOT play hidden behind the celebration — the keyboard
   holds still under the modal and the drop starts at its dismissal (decided 2026-07-24).
   **The sentence must NOT move between the solved beats (decided 2026-07-24):** through
-  the streak, the drop and the dissolve, the tray keeps the keyboard's fixed height and
-  the retired prompt keeps its layout, so .play's centering never shifts the phrase — the
-  sentence holds perfectly still right up until it erodes in place. **Fresh-solve
+  the streak and the drop the tray keeps the keyboard's fixed height and the retired prompt
+  keeps its layout, so `.play`'s centering never shifts the phrase — the sentence holds
+  perfectly still right up until the result's own RISE moves it once, deliberately
+  (#266). **Fresh-solve
   sequence (decided 2026-07-10):** the
   solving submit immediately sends the prompt left while fading it out, in the same render
   that launches the final hole-hit feedback. The next stage waits until EVERY `Hole` reports
   its final secret rendered after its final settle animation completes — never a
   guessed timeout — so multi-word or throttled animation cannot be covered mid-resolution.
   A fresh active-day solve then holds the fully resolved sentence for 300ms before mounting
-  the streak modal. **The solved beats run STREAK → keyboard-drop → DISSOLVE → the stage
-  (2026-08-14, superseding the 2026-07-24 "results rise → SOURCE" tray order):** once the
-  modal has completely dismissed (including its exit fade) — or immediately after the
-  final holes settle on archive / no-streak play — the drop plays, the sentence dissolves,
-  and the solved stage rises with its layered reveal (see the solved-screen bullet
-  above). Rehydrated solves render the full stage immediately without
+  the streak modal. **The solved beats run STREAK → keyboard-drop → the RESULT
+  (2026-09-08, superseding the 2026-08-14 "drop → DISSOLVE → the stage" order, which itself
+  superseded the 2026-07-24 "results rise → SOURCE" tray order):** once the modal has
+  completely dismissed (including its exit fade) — or immediately after the final holes
+  settle on archive / no-streak play — the drop plays, the tray leaves with it, and the
+  result grows around the sentence with its layered reveal (see the solved-screen bullet
+  above). There is nothing between the drop and the result any more: the sentence stays, so
+  it has no exit to play. Rehydrated solves render the full result immediately without
   replaying the sequence — EXCEPT under the dev `?streak=N` preview, which deliberately
   opts one back into the choreography so the post-streak sequence can be watched. **That
   replay is held at frame zero until the preview dismisses** (`SolvedScreen`'s `start`,
   restored 2026-08-16): App owns the preview dialog, so this round never sees it in
-  `showStreakDialog`, and without the gate the whole reveal — words, citation, tally,
-  standing — plays under a full-screen modal and dismissal lands on a finished frame,
-  spending unseen the exact beats the harness exists to show. Player progression is separate:
+  `showStreakDialog`, and without the gate the whole reveal — citation, tally, standing —
+  plays under a full-screen modal and dismissal lands on a finished frame, spending unseen
+  the exact beats the harness exists to show. Player progression is separate:
   `StreakDialog` is a
   **borderless full-screen** native modal, opened only by a FRESH active-day
   unsolved→solved transition. Its staged animation uses `@react-spring/web` (v9 for React

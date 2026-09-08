@@ -579,12 +579,65 @@ button {
   position: relative;
   width: 100%;
 }
-/* While the sentence dissolves (2026-08-14), its watermark fades with it: the count's
-   next appearance is the solved stage's own headline, and a big faint number outliving
-   the sentence it was printed behind would read as furniture left on an empty stage. */
-.phrase-anchor.dissolving .progress-background {
+/* The watermark goes with the ROUND (2026-09-08, #266: it used to fade with the sentence's
+   DISSOLVE, and the sentence stays now). It leaves the moment the board is solved — the
+   count's next appearance is the result's own headline, and a big faint number outliving
+   the round would read as furniture — which is also well before `.play-result` turns the
+   play area into a scroller: the canvas overflows `.phrase-anchor` symmetrically by design,
+   so a watermark still painting when that clip lands would show a cut number. */
+.play-finished .progress-background {
   opacity: 0;
   transition: opacity 900ms ease-out;
+}
+
+/* THE PLAY AREA IS ALSO THE RESULT COLUMN (#266, user-decided 2026-09-08): the result
+   grows AROUND the sentence rather than replacing the column it lives in, so `.play` is the
+   one box both phases share and the `Phrase` inside it is never re-laid-out into another
+   one. Three things change here:
+   - the content stops being CENTRED and starts at the top, which is the sentence's own
+     RISE ("move it to the top a little bit"); how far it actually travels is whatever the
+     credit and the score block leave it, so `Game` MEASURES the move and plays it back as
+     a transform — nothing here states a distance;
+   - the column SCROLLS, because a long sentence plus a credit plus the score block is
+     unbounded content and `.app`'s centred box clips symmetrically, taking the top of the
+     result under the header (the trap `.account-screen` records). `flex: 1 1 0` +
+     `min-height: 0` is what makes this height definite: `.game`'s own height is
+     auto-with-a-min, so a `1 1 auto` item sized by its content grows the page instead, and
+     a flex item's `min-height: auto` min-content floor would refuse to shrink even then.
+     `overflow-x` is stated because `auto` on one axis makes the other compute to `auto`
+     too, and the standing badge and the hit-shake both lean past their own boxes;
+   - it FADES ITS OWN TOP, the rule every scroller that passes under the header wears
+     (`.word-scroll`, `.hw-scroll`) — the header's own gradient only lights on a scroll it
+     hears, and without this the sentence's first line is cut mid-glyph on the scroller's
+     edge. The matching top padding is the fade's own height, so nothing fades at rest.
+   The GAPS become the children's own (`gap: 0`): the credit belongs to the sentence and
+   sits tight under it, while THE SEAM IS SPACE, not a measured gap (the 2026-08-14 rule,
+   kept) — the score block's `margin-top: auto` pins it to the bottom edge, the sentence's
+   own auto margin takes the other half of whatever is left, and the puzzle therefore
+   CENTRES in the room above the score rather than parking at the top. Both matter: without
+   the score's margin the block leaves the bottom edge, and without the sentence's a short
+   round reads as two blocks with a rift (the finding `/account`'s own bottom-edge pass
+   recorded). The taller the screen, the more the two read as two; the padding on the score
+   block is the seam's FLOOR, for a screen with nothing to hand out. */
+.play-result {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  justify-content: flex-start;
+  gap: 0;
+  /* The fade is PULLED UP INTO THE HEADER'S OWN CLEARANCE (`.word-window.wb-open`'s trick):
+     the negative margin and the padding cancel, so the sentence starts exactly where
+     `.game`'s reserve already put it — the fade costs the rise nothing — and what passes
+     through it is content scrolling up under the bar rather than a band of bare ground
+     below one. */
+  margin-top: -32px;
+  padding-top: 32px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 32px);
+  mask-image: linear-gradient(to bottom, transparent, #000 32px);
+}
+.play-result .phrase-anchor {
+  margin-top: auto;
 }
 
 /* Bottom zone: the keyboard while playing, the solved results once solved. The height is
@@ -605,7 +658,7 @@ button {
 }
 /* Keyboard exit (#110): on a live solve the keyboard SLIDES DOWN out of the tray (which
    then sits empty under the dissolving sentence — since 2026-08-14 the sentence result
-   lives on the full-column .solved-stage, not in the tray). The wrapper exists only to
+   lives beside the sentence in `.play`, not in the tray). The wrapper exists only to
    carry this animation; its flex/width mirror the tray so the keyboard centers exactly
    as it did unwrapped. The tray clips ONLY while the drop plays (never in steady state,
    where clipping could shave the bottom key row's focus outline). Reduced motion
@@ -1251,13 +1304,11 @@ button {
   text-shadow: 2px 2px 0 black;
   padding-top: var(--text-shift);
 }
-/* A word never breaks internally — same policy as .hole. This is load-bearing for the
-   dissolve swap: DissolvePhrase letter-boxes every PLAIN word too, and adjacent
-   inline-block .hole-letter boxes are a soft-wrap opportunity, so without nowrap the
-   browser could rewrap the sentence mid-word on the swap's first frame (words cut in
-   half, lines repacked). It also closes the reverse gap: plain text breaks after a
-   hyphen where letter boxes under nowrap do not, so one shared rule is what keeps the
-   two renderers' wrap points identical. */
+/* A word never breaks internally — same policy as .hole. Plain text breaks after a hyphen
+   where a hole's inline-block letter boxes under `nowrap` do not, so the one shared rule is
+   what keeps the sentence's wrap points the same whichever kind of token a line ends on.
+   (It was also load-bearing for the retired dissolve swap, which letter-boxed every plain
+   word too; that renderer went with #266's kept sentence, the rule did not.) */
 .word {
   color: var(--fg);
   white-space: nowrap;
@@ -1388,13 +1439,6 @@ button {
    hole's `white-space: nowrap` means these boxes add no wrap opportunity. */
 .hole-letter {
   display: inline-block;
-}
-/* A DISSOLVED letter (DissolvePhrase, 2026-08-14): the sentence's exit erodes letters
-   into absence, but the box stays — invisible, never removed and never an actual space —
-   so the pixel font's fixed advance keeps every surviving letter exactly where it was.
-   The sentence burns down in place; nothing reflows until the whole area unmounts. */
-.hole-letter.gone {
-  visibility: hidden;
 }
 /* The wave (#129): a hole ripples its letters, up then down in sequence. EVERY hole runs its
    own clock (Hole.tsx, 3–10s re-rolled per wave), so several words can be mid-wave at once —
@@ -1815,86 +1859,43 @@ button {
   animation: blink 0.55s steps(1) infinite;
 }
 
-/* ---- the SOLVED STAGE (user-decided 2026-08-14): the sentence dissolves, and the
-   result takes the whole column the play area and tray used to split. Top to bottom:
-   the SENTENCE the player rebuilt (#266 — its secrets each still the history tap), the
-   source under it, the named score over its run ruler, the day's standing, and SHARE
-   parked on the bottom edge — the tutorial button's rule, so the one action sits the
-   page inset off the bottom whatever the content above it does. The main block centers
-   in the leftover space via its own auto margins (never justify-content, which would
-   split the overflow). */
-.solved-stage {
-  /* THE STAGE SCROLLS INSIDE THE COLUMN IT WAS GIVEN (#266): the sentence is unbounded
-     content now, and a tall one has to be reachable rather than overflow `.app`'s
-     centred box — which clips symmetrically, taking the TOP of the result under the
-     header (the trap `.account-screen` records). `flex: 1 1 0` + `min-height: 0` is what
-     makes this height DEFINITE: `.game`'s own height is auto-with-a-min, so a `1 1 auto`
-     item sized by its content simply grows the page instead, and `min-height: auto` (a
-     flex item's min-CONTENT floor) would refuse to shrink even then. At basis 0 the
-     column's content height is 0, `.game`'s `min-height` decides the box, and the free
-     space it hands back is exactly the viewport's — so the stage always fills the
-     screen, never exceeds it, and the score block keeps its bottom edge either way.
-     `overflow-x` is stated because `auto` on one axis makes `visible` on the other
-     compute to `auto` too, which would hang a scrollbar off the words' 14% pop
-     overshoot.
-     AND IT FADES ITS OWN TOP, the way every scroller that passes under the header does
-     (`.word-scroll`, `.hw-scroll`): a 36px mask, exactly the header's own gradient, drawn
-     by the scroller because the header's only lights on a scroll it hears — otherwise the
-     sentence's first line is cut mid-glyph on the stage's edge. The 36px of top padding is
-     the fade's own height, so the sentence rests CLEAR of it at the top of the scroll. */
-  flex: 1 1 0;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-top: 36px;
-  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 36px);
-  mask-image: linear-gradient(to bottom, transparent, #000 36px);
+/* ---- THE SENTENCE RESULT (user-decided 2026-09-08, #266's review, superseding the
+   2026-08-14 SOLVED STAGE that took the whole column and the dissolve that handed it
+   over). There is no stage: the sentence stays where it played, and two blocks grow
+   around it in the two places the play screen already has — the SOURCE in the retired
+   prompt's row, the SCORE on the bottom edge the keyboard held. Both are children of
+   `.play` (see `.play-result`), which is why neither carries a box of its own. */
+
+/* The credit belongs to the SENTENCE, so it sits tight under it and on ITS left edge —
+   the prompt was left-aligned in this row too. It lays out from frame one and is simply
+   hidden until its beat (the retired prompt's own trick), so the sentence never moves
+   when it speaks. */
+.solved-source {
   width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  /* The seam's FLOOR only — see `.solved-puzzle`'s auto margins for the real thing. */
-  gap: clamp(28px, 5vh, 48px);
-  opacity: 0;
-  /* The stage rises the way the tray results always have (mirrored by resultAnimation). */
-  transform: translateY(clamp(24px, 5vh, 44px));
-  transition: opacity 0.25s ease-out, transform 0.25s ease-out;
+  margin-top: clamp(14px, 2.6vh, 22px);
+  visibility: hidden;
 }
-.solved-stage.in {
-  opacity: 1;
-  transform: translateY(0);
+.solved-source.in {
+  visibility: visible;
 }
-/* A SETTLED stage replays nothing — a rehydrated solve, and since #179 a reveal the
-   player has fast-forwarded, which reaches the settled frame from HALFWAY THROUGH and so
-   must kill the transitions the rehydrated path never starts. */
-.solved-stage.settled,
-.solved-stage.settled .solved-numbers {
-  opacity: 1;
-  transform: none;
-  transition: none;
+.solved-source .solved-caption {
+  align-items: flex-start;
+  text-align: left;
 }
-.solved-puzzle,
+/* The SCORE block takes the keyboard's place: centred as the keyboard was, capped at its
+   width, and parked on the screen's bottom edge by the auto margin — which also hands it
+   every pixel of leftover height, so the seam above it is real space rather than a
+   measured gap. The padding is the seam's FLOOR, for a screen with no leftover to give. */
 .solved-numbers {
   width: 100%;
   max-width: 680px; /* the keyboard's own cap — the result keeps the play column's width */
+  align-self: center;
+  margin-top: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-}
-/* THE SEAM is SPACE, not a measured gap (user-decided 2026-08-14, second pass): the SCORE
-   block sits on the screen's bottom edge and the PUZZLE block's auto margins eat all the
-   leftover height, centring it in what is left above. So the taller the screen, the more
-   the two blocks read as two — where a fixed gap gave the same 40-odd pixels on a phone
-   and on a desktop. The stage's own `gap` (below) is only the FLOOR, for a screen short
-   enough that there is no leftover height to hand out. */
-.solved-puzzle {
-  margin: auto 0;
-  gap: clamp(14px, 2.6vh, 22px);
-}
-/* The words and the credit line under them are ONE object: a tighter gap than the seam,
-   so the citation reads as belonging to the words rather than as the next item down. */
-.solved-numbers {
   gap: clamp(18px, 3.4vh, 30px);
+  padding-top: clamp(28px, 5vh, 48px);
   /* SHARE is part of this block (it is what you do with a RESULT), so the block carries
      the page inset off the screen's bottom edge — the tutorial button's own rule. */
   padding-bottom: 10px;
@@ -1906,91 +1907,25 @@ button {
   opacity: 1;
   transform: translateY(0);
 }
-/* The citation lays out from frame one (so the words never move when it speaks) and is
-   simply hidden until its beat — the retired prompt's own trick. */
-.solved-source {
-  width: 100%;
-  visibility: hidden;
-}
-.solved-source.in {
-  visibility: visible;
+/* A SETTLED result replays nothing — a rehydrated solve, and since #179 a reveal the
+   player has fast-forwarded, which reaches the settled frame from HALFWAY THROUGH and so
+   must kill the transitions the rehydrated path never starts. */
+.solved-numbers.settled {
+  opacity: 1;
+  transform: none;
+  transition: none;
 }
 /* SHARE is the reveal's LAST beat (user-decided 2026-08-16): hidden IN PLACE — the row
    keeps its footprint, so its arrival moves nothing — until the standing has landed, then
-   in on the app's one "list arriving" gesture. A rehydrated result shows it outright. */
-.solved-stage .result-actions {
+   in on the app's one "list arriving" gesture. A settled result shows it outright. */
+.solved-numbers .result-actions {
   width: 100%;
   opacity: 0;
 }
-.solved-stage .result-actions.in {
+.solved-numbers .result-actions.in {
   animation: rung-in 220ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
 }
-.solved-stage.settled .result-actions {
-  opacity: 1;
-  animation: none;
-}
-/* THE SENTENCE ON THE SOLVED SCREEN (#266, user-decided 2026-09-07, replacing the row of
-   three guessed words): the whole thing the player rebuilt, in `.phrase`'s own type at
-   `.phrase`'s own size — the tokens are the board's, so they must READ as the board's.
-   Only two things are its own: it CENTRES (everything else on the stage does, and a
-   left-aligned block would be the one item off the column's axis), and it takes the
-   block's full width so its lines wrap inside the result rather than sizing to the
-   longest one. */
-.solved-phrase {
-  width: 100%;
-  text-align: center;
-}
-/* A found secret inside it IS A RESOLVED HOLE, and it wears the hole's own markup — the
-   `.hole.resolved` > `.hole-btn` > `.hole-word` the board draws, so the solve blue, the
-   print shadow, the button reset, the hover brightening and the wheel's veil are all the
-   sentence's rules, said once. What this class adds is the only three things the board
-   has no rule for: the POP, the NUMBER, and the settled frame. The number is the ruler
-   ticks' own (1..3, distinct secrets in sentence order), a small muted chip riding the
-   word the way a rank exponent rides a hole's — LEADING, where a rank trails, so the two
-   markers can never be read for each other. */
-.solved-word {
-  opacity: 0;
-}
-/* The secrets POP in, one by one, 200ms apart (user-decided 2026-08-14): the round's
-   trophies counted out, since #266 inside the sentence they were taken from — the plain
-   words are already printed, and these arrive into the gaps they left. A scale on the
-   pixel font is allowed exactly here — ONE-SHOT and fast, the rank exponent's `rank-pop`
-   and the tally's `score-land`; what the standing rule forbids is a long scale
-   TRANSITION, which holds blurry intermediate frames for its whole length. Overshoot
-   slightly past 1 and settle, so the word lands rather than inflates. (Only `opacity`
-   and `transform` move, so the sentence's layout is final from its first frame: the
-   secrets' boxes are held open the whole time and not one letter around them shifts.) */
-.solved-word.in {
-  animation: solved-word-pop 300ms cubic-bezier(0.2, 1.5, 0.4, 1) both;
-  animation-delay: calc(var(--step, 0) * 200ms);
-}
-@keyframes solved-word-pop {
-  0% {
-    opacity: 0;
-    transform: scale(0.55);
-  }
-  55% {
-    opacity: 1;
-    transform: scale(1.14);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-.solved-word-num {
-  font-family: var(--pixel-font);
-  font-size: 10px;
-  font-weight: 400;
-  color: var(--fg);
-  opacity: 0.7;
-  margin-right: 7px;
-  vertical-align: super;
-}
-/* A SETTLED result replays nothing — the secrets are simply in the sentence (the score
-   chart's own settled rule): a rehydrated solve, or a reveal fast-forwarded mid-pop
-   (#179), where killing the animation is what strands a half-popped word at full size. */
-.solved-stage.settled .solved-word {
+.solved-numbers.settled .result-actions {
   opacity: 1;
   animation: none;
 }
@@ -3256,9 +3191,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     align-items: stretch;
     gap: clamp(16px, 4vh, 28px);
   }
-  .solved-caption {
-    align-items: stretch;
-  }
+
   /* The row goes edge to edge on a phone: no float. */
   .topbar-inner {
     margin: 0;
@@ -3324,9 +3257,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     min-height: calc(100dvh - 20px);
     margin-bottom: -24px;
   }
-  /* The solved stage's SHARE doesn't hug the 4px keyboard gap: unlike the keyboard it
-     sits on the 14px page inset — the same thin frame on all three sides (decided
-     2026-07-24; carried onto the stage 2026-08-14). +10px over the keyboard's 4px = 14px. */
+  /* The result's SHARE doesn't hug the 4px keyboard gap: unlike the keyboard it sits on
+     the 14px page inset — the same thin frame on all three sides (decided 2026-07-24).
+     +10px over the keyboard's 4px = 14px. */
   .solved-numbers {
     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
   }
