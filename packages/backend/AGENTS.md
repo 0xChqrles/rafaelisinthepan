@@ -109,7 +109,11 @@
       layout.ts               storeKey() / sliceKey() — the keys shared by readers + publish (#17/#4/#203)
       serve.ts                local HTTP server: Function-URL⇄HTTP adapter over createHandler (#17)
       publish.ts              place a generated puzzle into local store (default) or S3 (#17/#4),
-                              stamping its #203 `revision` and deriving its slice beside it
+                              stamping its #203 `revision` and deriving its slice beside it;
+                              an S3 publish of a sentence puzzle also APPENDS the ledger
+      ledger.ts               the PUBLISH LEDGER (packages/generation/published.jsonl): the line
+                              a sentence publish earns, the append, and `puzzle:ledger --s3`
+                              (rebuild it from the bucket)
       config.ts               env names + one decrypted SSM GetParameters read
       index.ts                Lambda entrypoint (S3/Dynamo stores + async secret initialization)
     .local-store/<date>.<lang>.json          local puzzle store (gitignored) read by serve/fsStore
@@ -124,6 +128,7 @@
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output). Sentence puzzles AND #154 word artifacts (#156): the artifact type is detected from the file's SHAPE and routed to its own key.
 pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--mode sentence|word] [--ci]  # publish-buffer coverage (#61); --mode word probes the #156 word-artifact buffer; reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
+pnpm puzzle:ledger --s3     # rebuild packages/generation/published.jsonl from every sentence puzzle in the bucket (the backfill / the repair); an S3 publish appends to it itself
 pnpm backend:dev                # local server (puzzles + /scores + /profile + /friends + /board + /round + /history + /devices + /link + /today) on :8787; FS puzzles, in-memory scores/profiles/friends/rounds/history/devices/links, local Turnstile accept-all, and #204's link codes PRINTED to this log
 pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server with a #190 board population (in-memory — re-run after a restart)
 ```

@@ -29,7 +29,7 @@
       llm.py                 the questions asked of Claude + JSON parsing; the taste profile and
                              the secret rules are READ FROM THE SKILL FILE at run time
       shelf.py               the shelf, its index, and what the archive already holds (read off
-                             the generation output; the backend's local store is a test bed)
+                             the PUBLISH LEDGER, packages/generation/published.jsonl)
       _paths.py              path wiring (generation + benchmark scripts on sys.path)
     shelf/                   GITIGNORED: the epubs and song files to mine (copyrighted),
                              artists.txt (the user's hand-written whitelist), index.json (state),
@@ -99,7 +99,7 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   adverb has the higher floor), slug in the vocab, not a secret still in its
   `SECRET_COOLDOWN_DAYS` (90, `shelf.py`; user-decided 2026-09-08 — a COOLDOWN, not
   the permanent blacklist it was, which had « cimetière » off the table forever after one
-  Ernaux day; judged on the puzzle file's date like the artist cooldown),
+  Ernaux day; judged on the ledger's game day),
   no same-lemma twin under another slug in the sentence (a same-slug repeat is allowed:
   one hole per occurrence). After a pick, gone are: every verb if the pick is a verb
   (at most one verb); the pick's head and dependents and its modifier siblings (a verb
@@ -209,9 +209,13 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   (a curator-written line that gets a fact wrong on a literary screen is worse than
   nothing). **A song gets NO excerpt** (reaffirmed 2026-09-08: a verse or chorus is still
   reproduced lyrics); its track page is gen_phrase's `--url`, by hand.
-- **The archive the curator reads is the GENERATION OUTPUT** (`packages/generation/output/
-  word/<lang>/…`, every puzzle generated for publishing, works + secrets + sentences),
-  never the backend's local store — that one is a test bed (user-decided 2026-09-07).
+- **The archive the curator reads is the PUBLISH LEDGER** (`packages/generation/
+  published.jsonl`, appended by `pnpm puzzle:publish --s3` and by nothing else — root
+  `AGENTS.md`; user-decided 2026-09-08, superseding the generation output of 2026-09-07):
+  works, secrets in their cooldown (judged on the game DAY the line names), the permanent
+  secret/start pairs, sentences, the artist cooldown's dates. A day published twice keeps
+  its last line. Neither the generation output (what `forget` erases: attempts) nor the
+  backend's local store (a test bed) is ever read for the archive.
 
 ## Do NOT
 

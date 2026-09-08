@@ -19,6 +19,7 @@ import { pathToFileURL } from 'node:url';
 import { activeDate, type Puzzle, type WordPuzzle } from '@whippin/shared';
 import { defaultLocalStoreRoot, isValidDate, sliceKey, storeKey, type PuzzleMode } from './layout';
 import { buildSlice, encodeSlice } from './slice';
+import { appendPublished, ledgerEntry, publishLedgerPath } from './ledger';
 import { STACK_REGION, stackOutputs } from './stack';
 
 interface Args {
@@ -215,6 +216,16 @@ async function main() {
       }),
     );
     console.log(`[publish] s3://${bucket}/${plan.key}  (${artifact.lang}, ${artifact.mode}, day ${plan.day})`);
+
+    // THE LEDGER (user-decided 2026-09-08): an S3 publish of a sentence puzzle is recorded
+    // — day, instant, revision, source, sentence, the secret/start pairs — in
+    // packages/generation/published.jsonl, the one record the curator's archive reads.
+    // A local publish never writes it (the local store is a test bed); a word artifact is
+    // not recorded (the curator has no word archive). Commit the file with the publish.
+    if (artifact.mode === 'sentence') {
+      await appendPublished(ledgerEntry(raw as unknown as Puzzle, plan.day, new Date()));
+      console.log(`[publish] ledger: ${publishLedgerPath()}  (+1 line — commit it)`);
+    }
 
     // The puzzle URL is date-addressed and the CDN holds it via a year-long s-maxage, so a
     // REPUBLISH must invalidate the cached entry or the correction would never reach the

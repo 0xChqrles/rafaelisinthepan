@@ -10,6 +10,7 @@
     "serve:local": "tsx watch src/serve.ts",
     "puzzle:publish": "tsx src/publish.ts",
     "puzzle:inventory": "tsx src/inventory.ts",
+    "puzzle:ledger": "tsx src/ledger.ts",
     "board:seed": "tsx src/seedBoard.ts"
   },
   "dependencies": {

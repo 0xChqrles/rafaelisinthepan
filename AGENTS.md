@@ -39,7 +39,17 @@ packages/
 Data flow: generation writes **puzzles** into `packages/generation/output/` (then
 `pnpm puzzle:publish` places them in the store the backend reads), and the **vocab**
 existence set into `packages/web/public/vocab/<lang>.json` plus its metadata into
-`packages/shared/src/vocab.generated.json`. Each package's file map lives in ITS `AGENTS.md`.
+`packages/shared/src/vocab.generated.json`. **`packages/generation/published.jsonl` is the
+PUBLISH LEDGER (user-decided 2026-09-08): one JSON line per SENTENCE puzzle published to
+S3 — `day` (the game day served), `lang`, `publishedAt`, `revision`, `source`, `sentence`
+(`words[]` joined) and `holes` as `{secret, word, start, startRank}` — appended by
+`pnpm puzzle:publish --s3` and by nothing else (a local publish is a test bed, a word
+artifact is not recorded), COMMITTED with the publish, and the ONE source of truth of what
+has been published: the curator's archive (secret cooldown, secret/start pair blacklist,
+works, sentences, artist cooldown) reads it and nothing else. `pnpm puzzle:ledger --s3`
+rebuilds it from the bucket. Written by `backend/src/ledger.ts`, read by
+`curation/scripts/shelf.py`; a corrected day keeps its last line.** Each package's file
+map lives in ITS `AGENTS.md`.
 
 ## Maintaining these files
 

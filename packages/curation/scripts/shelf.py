@@ -1,7 +1,9 @@
 """The shelf (`packages/curation/shelf/`, gitignored), its state file, and what the
-archive already holds (works and secrets), read off the GENERATION OUTPUT — the one
-local record of every puzzle generated for publishing. The backend's local store is a
-test bed and is never read (user-decided 2026-09-07)."""
+archive already holds (works, secrets, secret/start pairs, sentences), read off the
+PUBLISH LEDGER — `packages/generation/published.jsonl`, appended by every S3 publish and
+the one source of truth of what has been published (user-decided 2026-09-08; the
+generation output was the archive until then, and it stays what `forget` erases). The
+backend's local store is a test bed and is never read."""
 
 from datetime import date, datetime, timezone
 import json
@@ -84,32 +86,48 @@ def _puzzle_files(lang: str):
     yield from (_paths.GENERATION_OUTPUT_DIR / lang).rglob("*.json")
 
 
+def published(lang: str) -> list[dict]:
+    """The ledger's lines for a language, in file order, a broken line skipped; a day
+    published twice (a correction) keeps its LAST line only."""
+    try:
+        text = _paths.PUBLISHED_LEDGER.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return []
+    by_day: dict[str, dict] = {}
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if entry.get("lang") == lang and entry.get("day"):
+            by_day[entry["day"]] = entry
+    return [by_day[day] for day in sorted(by_day)]
+
+
 def archive(lang: str, today: date | None = None) -> dict:
-    """What exists already: {works: [{author, work}], secrets: {slug} (the ones still in
-    their SECRET_COOLDOWN_DAYS), pairs: {secret slug: {start word}} (every secret/start
-    pair ever played — permanent), sentences: {key}, last_used: {author slug: date}} —
-    a puzzle's date being its file's own (a puzzle is generated the day it is curated),
-    what both cooldowns are judged on."""
+    """What has been PUBLISHED, off the ledger (user-decided 2026-09-08 — the one source
+    of truth; neither the generation output nor the backend's local store is read):
+    {works: [{author, work}], secrets: {slug} (the ones still in their
+    SECRET_COOLDOWN_DAYS, judged on the game DAY they were published for), pairs: {secret
+    slug: {start word}} (every secret/start pair ever played — permanent), sentences:
+    {key}, last_used: {author slug: date}} (the artist cooldown's clock)."""
     today = today or date.today()
     works, secrets, sentences = [], set(), set()
     pairs: dict[str, set[str]] = {}
     last_used: dict[str, date] = {}
     seen = set()
-    for path in _puzzle_files(lang):
-        try:
-            puzzle = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        day = date.fromtimestamp(path.stat().st_mtime)
+    for entry in published(lang):
+        day = date.fromisoformat(entry["day"])
         cooling = (today - day).days < SECRET_COOLDOWN_DAYS
-        for hole in puzzle.get("holes", ()):
+        for hole in entry.get("holes", ()):
             if cooling:
-                secrets.add(hole["secret"]["slug"])
-            start = (hole.get("start") or {}).get("word")
-            if start:
-                pairs.setdefault(hole["secret"]["slug"], set()).add(start)
-        sentences.add(sentence_key(" ".join(puzzle.get("words", ()))))
-        src = puzzle.get("source") or {}
+                secrets.add(hole["secret"])
+            if hole.get("start"):
+                pairs.setdefault(hole["secret"], set()).add(hole["start"])
+        sentences.add(sentence_key(entry.get("sentence", "")))
+        src = entry.get("source") or {}
         key = (slug(src.get("author", "")), slug(src.get("work", "")))
         if src and key not in seen:
             seen.add(key)
