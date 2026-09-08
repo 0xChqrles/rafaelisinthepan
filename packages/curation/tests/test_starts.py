@@ -54,12 +54,3 @@ def test_y_initial_is_the_models_call_like_h():
     assert elision_problem("le", "yaourt") is None       # « le yaourt » is right; « l'yeuse » too
     assert elision_problem("l’", "yeuse") is None
     assert [e["word"] for e in start_candidates({"yoga": {"word": "yoga", "rank": 120}}, "savoir", "le")] == ["yoga"]
-
-
-def test_a_hard_hole_opens_the_near_band():
-    from starts import NEAR_START_RANK_MIN, start_candidates
-    ranks = {"bontes": {"word": "bontés", "rank": 41}, "facultes": {"word": "facultés", "rank": 105},
-             "bienfaits": {"word": "bienfaits", "rank": 1}}
-    assert [e["word"] for e in start_candidates(ranks, "vertus", "aux")] == ["facultés"]
-    assert [e["word"] for e in start_candidates(ranks, "vertus", "aux", rank_min=NEAR_START_RANK_MIN)] == \
-        ["bontés", "facultés"]

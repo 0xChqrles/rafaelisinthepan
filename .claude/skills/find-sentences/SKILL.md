@@ -74,10 +74,6 @@ TOGETHER, never one at a time and never at random:
 - Balance the three: comparable difficulty across holes, the whole puzzle landing
   around a median of 10–20 tries. One trivial hole or one impossible hole spoils the day.
 - Not too tricky: a plain word a player knows, never an obscure term or a proper noun.
-- A HARD hole gets a QUITE SIMILAR start (recorded 2026-09-08): when the context gives
-  nothing for a word — the context check guessed none of it — the band opens down to
-  rank 20, and the start should be a close relative of the secret (« bontés » for
-  « vertus »), never a distant cousin at 100. The player has only the start to go on.
 - The displayed sentence must stay valid French (elision, gender, number, verb form).
 
 ## The page (recorded 2026-09-08)

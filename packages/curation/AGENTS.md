@@ -140,12 +140,7 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   with ranks (`starts.start_candidates`: rank `START_RANK_MIN..MAX`, no variant,
   elision-clean, not past `MAX_START_FREQ_RANK` = 40000 in the corpus order — « hétéroptère »
   is out), and gen_phrase reruns with `--start MOT=DEPART` per hole — a flag added for
-  this (#260), the headless twin of typing a word at the start prompt. **A HARD hole —
-  the context check guessed none of it — is offered the NEAR band, down to
-  `NEAR_START_RANK_MIN` (20)** (user-decided 2026-09-08, on a « vertus » started at 105
-  that read as unguessable): code opens the band only where the context earns it, the
-  model picks the quite similar word under the skill's rule; the re-pick after a refused
-  start keeps the same floor.
+  this (#260), the headless twin of typing a word at the start prompt.
 - **The displayed sentence must be VALID FRENCH** (user rule 2026-09-06: « l'effet »,
   never « le effet »). After every generation `curate.check_starts` applies the one rule
   code can apply with certainty (`starts.elision_problem`: an eliding word before a
