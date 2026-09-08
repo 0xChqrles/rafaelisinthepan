@@ -2879,19 +2879,32 @@ def prompt_kind():
         return raw
 
 
-def build_source(kind=None, author=None, work=None):
+def build_source(kind=None, author=None, work=None, before=None, after=None, url=None):
     """Assemble the optional `source` metadata dict, dropping blank fields.
 
     Returns None when nothing is provided so the puzzle JSON stays byte-compatible
     with metadata-less puzzles (no empty `source` key). Values are DISPLAY forms
-    (accents kept, never slugged), matching the rest of the schema."""
+    (accents kept, never slugged), matching the rest of the schema.
+
+    `before` / `after` (#270) are the source's RAW sentences around the line, in
+    reading order; blanks dropped, and the `excerpt` key exists only when at least one
+    sentence survives — both arrays are then present, so a consumer never asks which.
+    `url` is a music day's track page."""
     src = {}
-    for key, val in (("kind", kind), ("author", author), ("work", work)):
+    for key, val in (("kind", kind), ("author", author), ("work", work), ("url", url)):
         if val is None:
             continue
         val = val.strip()
         if val:
             src[key] = val
+    # The url becomes an href on the solved page and the web REFUSES the whole puzzle on
+    # a bad one — so it is refused HERE, on the author, not at fetch time on the players.
+    if "url" in src and not re.match(r"^https?://", src["url"], re.I):
+        raise ValueError(f"--url must be a web link (http(s)://…), got {src['url']!r}")
+    before = [s.strip() for s in (before or ()) if s and s.strip()]
+    after = [s.strip() for s in (after or ()) if s and s.strip()]
+    if before or after:
+        src["excerpt"] = {"before": before, "after": after}
     return src or None
 
 
@@ -3100,6 +3113,12 @@ def parse_args():
     p.add_argument("--kind", help="type d'œuvre (book, movie, music, quote, poem, …)")
     p.add_argument("--author", help="auteur / autrice")
     p.add_argument("--work", help="titre de l'œuvre")
+    p.add_argument("--before", action="append", metavar="PHRASE",
+                   help="une phrase du texte AVANT la phrase du jeu, telle quelle "
+                        "(répétable, dans l'ordre de lecture ; #270)")
+    p.add_argument("--after", action="append", metavar="PHRASE",
+                   help="une phrase du texte APRÈS la phrase du jeu (répétable ; #270)")
+    p.add_argument("--url", help="page du morceau pour un jour musique (#270)")
     p.add_argument("--out-dir", default=os.path.join(GEN_OUTPUT, "word"), dest="out_dir",
                    help="racine de sortie des puzzles ; le fichier est classé dessous "
                         "en <lang>/<type>/<auteur>/<œuvre>/ (défaut : "
@@ -3187,7 +3206,10 @@ def main():
             author = _prompt("Auteur / autrice")
         if work is None:
             work = _prompt("Titre de l'œuvre")
-    source = build_source(kind, author, work)
+    try:
+        source = build_source(kind, author, work, before=args.before, after=args.after, url=args.url)
+    except ValueError as exc:
+        sys.exit(f"erreur : {exc}")
 
     phrase = {
         "lang": lang,

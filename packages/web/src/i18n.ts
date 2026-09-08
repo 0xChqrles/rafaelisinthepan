@@ -432,6 +432,8 @@ const STRINGS = {
   // day) it offers the way back to the live one.
   share: { en: 'SHARE', fr: 'PARTAGER' },
   copied: { en: 'COPIED', fr: 'COPIÉ' },
+  // A music day's track link on the solved page (#270): an ordinary link, new tab.
+  listen: { en: 'LISTEN', fr: 'ÉCOUTER' },
   // The AS drum under SHARE (user-decided 2026-09-05, fourth pass): the label, and the
   // other row's name — the player's own row is their mark and name. Opens on the player.
   shareAs: { en: 'AS', fr: 'EN TANT QUE' },

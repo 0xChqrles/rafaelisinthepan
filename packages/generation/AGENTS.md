@@ -365,7 +365,10 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json + shared/src/vocab.
 #    outright — the headless twin of typing a word at the start prompt (#260: the
 #    curator re-picks a start that leaves the displayed sentence valid French); a word
 #    of the hole's vocabulary, never the secret; the other holes keep the seeded band
-#    pick.
+#    pick. --before/--after PHRASE (repeatable, reading order) carry the source's RAW
+#    sentences around the line into `source.excerpt` (#270) — blanks dropped, no key
+#    without a sentence, both arrays present when there is one; --url the track page
+#    into `source.url`. Neither is asked on a TTY: an excerpt is copied, not typed.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct words; all occurrences hole (no `--`)
 
 # 4. Generate a SINGLE-WORD artifact (#154): one word + its ranked neighborhood, no

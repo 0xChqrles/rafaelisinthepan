@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
 import { MISS_COLOR, rankHeatColor } from '@whippin/shared';
 import useAnimatedNumber, { linearEasing } from '../hooks/useAnimatedNumber';
+import { capitalize } from '../game/sentenceCase';
 import useLetterWave, { WAVE_VARS } from '../hooks/useLetterWave';
 import { prefersReducedMotion, useScramble } from '../hooks/useScramble';
 import type { HitState, RuntimeHole } from '@whippin/shared';
@@ -35,6 +36,7 @@ function rankTweenDuration(fromRank: number, toRank: number): number {
 // written WITHOUT a leading minus (user-decided 2026-08-16): it is a distance, and distances
 // are not negative — the app writes a rank the same bare way everywhere it shows one.
 export default function Hole({
+  capital = false,
   hole,
   hit,
   holeIndex,
@@ -61,6 +63,10 @@ export default function Hole({
   // and a longer word beneath would show its tail through the dim (user-reported
   // 2026-09-01; a ground band was tried first and covered the watermark).
   veiled?: boolean;
+  // The hole opens a sentence: its displayed word wears the capital (the sentence-case
+  // display rule, `game/sentenceCase.ts`) — on the letters alone, never on the word the
+  // round compares.
+  capital?: boolean;
   // Is the SENTENCE quiet — no guess feedback in flight, no modal over it, the round still
   // being played? That is the one thing about the ambient wave (#129) a hole cannot see for
   // itself, so the round supplies it and the hole owns everything else: its own clock, and
@@ -145,7 +151,8 @@ export default function Hole({
   // the scramble's churning frames alike, so the wave has something to move without a second
   // way of rendering a hole's word existing. Split by code point: a display form keeps its
   // accents (`grincement`, `plissés`), and those are single code points in NFC.
-  const letters = Array.from(jumble ?? displayWord);
+  const shown = jumble ?? displayWord;
+  const letters = Array.from(capital ? capitalize(shown) : shown);
 
   // The wave, on this hole's OWN clock. It never competes with feedback: a hole
   // mid-choreography — a floating hit landing on it, its word churning through the

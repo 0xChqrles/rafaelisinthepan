@@ -17,6 +17,10 @@ SHELF_DIR = CURATION_DIR / "shelf"
 RUNS_DIR = CURATION_DIR / "runs"
 SKILL_FILE = REPO_ROOT / ".claude" / "skills" / "find-sentences" / "SKILL.md"
 GENERATION_OUTPUT_DIR = GENERATION_DIR / "output" / "word"
+# The publish LEDGER (user-decided 2026-09-08): one JSON line per sentence puzzle published
+# to S3, appended by `pnpm puzzle:publish --s3` (backend/src/ledger.ts) — the ONE record of
+# what has been published, and the whole of the curator's archive.
+PUBLISHED_LEDGER = GENERATION_DIR / "published.jsonl"
 VOCAB_DIR = REPO_ROOT / "packages" / "web" / "public" / "vocab"
 
 for directory in (GENERATION_SCRIPTS_DIR, BENCHMARK_SCRIPTS_DIR):

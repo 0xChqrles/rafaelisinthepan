@@ -59,10 +59,25 @@ export type SourceKind = 'book' | 'movie' | 'music' | 'quote' | 'poem' | (string
 // screen (#8). EVERY field is optional so partial metadata is valid, and the whole
 // object may be absent so existing puzzles stay byte-compatible. Like the rest of
 // the schema, values are DISPLAY forms: accents kept, never folded/slugged.
+// Where the sentence sits in its source (#270, user-decided 2026-09-07): the RAW
+// sentences around it, display forms, a few each side (the constant is the curator's),
+// never generated prose and never the sentence itself (that is `words[]`). The curator
+// emits it from the epub it reads; a hand-authored puzzle may carry none; a song carries
+// none (lyrics are a licensed product). Rendered as the muted text around the line on
+// the solved page; the derivation slice and the share card carry none.
+export interface SourceExcerpt {
+  before: string[];
+  after: string[];
+}
+
 export interface Source {
   kind?: SourceKind;
   author?: string;
   work?: string; // the piece's title
+  excerpt?: SourceExcerpt;
+  // A music day's track page (#270): YouTube or the artist's own — display-only, an
+  // ordinary link on the solved page (no embed).
+  url?: string;
 }
 
 export interface Puzzle {

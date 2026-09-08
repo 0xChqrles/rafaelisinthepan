@@ -166,3 +166,11 @@ def test_initial_candidates_drop_the_commonest_words_and_common_adverbs():
     assert "bien" not in texts and "chat" not in texts
     assert "pensivement" in texts and "lune" in texts
     assert MAX_COMMON_RANK_ADV > MAX_COMMON_RANK
+
+
+def test_weak_verbs_are_never_candidates():
+    from rules import MIN_CANDIDATES, WEAK_VERBS
+    assert "croire" in WEAK_VERBS and MIN_CANDIDATES >= 3
+    sent = [tok(0, "je", "PRON", "nsubj", 1, stop=True), tok(1, "crois", "VERB", "ROOT", 1, lemma="croire"),
+            tok(2, "chat", "NOUN", "obj", 1), tok(3, "dort", "VERB", "conj", 1, lemma="dormir")]
+    assert [t.text for t in initial_candidates(sent, in_vocab=lambda s: True)] == ["chat", "dort"]

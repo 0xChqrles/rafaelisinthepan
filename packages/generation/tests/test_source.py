@@ -53,3 +53,35 @@ def test_values_kept_as_display_form_only_trimmed():
     # Accents preserved (display form, never slugged); only edge whitespace trimmed.
     src = gen_phrase.build_source(author="  Émile Zola  ", work="Germinal")
     assert src == {"author": "Émile Zola", "work": "Germinal"}
+
+
+# The excerpt (#270): the raw sentences around the line, blanks dropped, both arrays
+# present whenever the key is; and the track page.
+def test_excerpt_keeps_the_raw_sentences_in_order():
+    src = gen_phrase.build_source(kind="book", before=["Avant. ", " ", "Puis."], after=["Après."])
+    assert src == {"kind": "book", "excerpt": {"before": ["Avant.", "Puis."], "after": ["Après."]}}
+
+
+def test_no_excerpt_key_without_a_sentence():
+    assert gen_phrase.build_source(kind="book", before=[], after=[" "]) == {"kind": "book"}
+    assert gen_phrase.build_source(before=[], after=None) is None
+
+
+def test_one_sided_excerpt_still_carries_both_arrays():
+    assert gen_phrase.build_source(after=["Après."]) == {"excerpt": {"before": [], "after": ["Après."]}}
+
+
+def test_url_is_kept_trimmed():
+    assert gen_phrase.build_source(kind="music", url=" https://youtu.be/x ") == {
+        "kind": "music",
+        "url": "https://youtu.be/x",
+    }
+
+
+def test_a_url_that_is_not_a_web_link_is_refused_at_authoring():
+    import pytest
+    assert gen_phrase.build_source(url="HTTPS://youtu.be/x") == {"url": "HTTPS://youtu.be/x"}
+    with pytest.raises(ValueError):
+        gen_phrase.build_source(url="javascript:alert(1)")
+    with pytest.raises(ValueError):
+        gen_phrase.build_source(url="youtu.be/x")

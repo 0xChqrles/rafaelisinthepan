@@ -19,16 +19,21 @@
       lyrics.py              song files (#262): header format, Genius cleanup, couplet UNITS,
                              the famous-single cut, the artist cooldown (stdlib, tested)
       shelf_lyrics.py        the Genius fetch (lyricsgenius): artist list -> song files on the shelf
+      quotes.py              the QUOTATION test: wikitext -> quoted lines, the in-order match, the
+                             shelf/quotes/ file (stdlib, tested)
+      shelf_quotes.py        the Wikiquote + Wikipedia fetch (MediaWiki API, stdlib): per book on
+                             the shelf -> shelf/quotes/<file>.txt
       starts.py              the start-word rule (valid French): displayed sentence, elision,
                              band candidates (stdlib, tested)
       parse.py               spaCy adapter (fr_core_news_md) -> rules.Token
       llm.py                 the questions asked of Claude + JSON parsing; the taste profile and
                              the secret rules are READ FROM THE SKILL FILE at run time
       shelf.py               the shelf, its index, and what the archive already holds (read off
-                             the generation output; the backend's local store is a test bed)
+                             the PUBLISH LEDGER, packages/generation/published.jsonl)
       _paths.py              path wiring (generation + benchmark scripts on sys.path)
     shelf/                   GITIGNORED: the epubs and song files to mine (copyrighted),
-                             artists.txt (the user's hand-written whitelist), index.json (state)
+                             artists.txt (the user's hand-written whitelist), index.json (state),
+                             quotes/<file>.txt (each book's quoted lines, per shelf_quotes)
     runs/                    GITIGNORED: one markdown log per run (every rejection names its rule)
     tests/                   pytest, dependency-free (rules, sentences, epub, lyrics); the LLM never runs
     pyproject.toml, uv.lock  claude-agent-sdk, spacy + fr_core_news_md (URL wheel), gensim/numpy,
@@ -59,6 +64,11 @@ pnpm shelf:lyrics [--artists shelf/artists.txt] [--max-songs N]
 #   is on the shelf; one .txt per song with a header. Needs GENIUS_ACCESS_TOKEN (a free
 #   client token, genius.com/api-clients; never a file in the repo). The only step that
 #   touches the network; the curator never does.
+pnpm shelf:quotes [--work <file>] [--force]
+#   The quotation test's data: per book on the shelf, the author's fr.wikiquote page, the
+#   work's wikiquote page when it has one and the work's fr.wikipedia article, their
+#   quoted lines written to shelf/quotes/<file>.txt (skipped when the file exists). One
+#   request at a time with a named User-Agent; a shelf step, never the curator.
 pnpm --filter @whippin/curation test
 ```
 
@@ -71,12 +81,25 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   picks from; `rules.prune` shrinks it after every pick; a pick off the list is ignored.
   The model chooses, code enforces. Tunables live at the top of `rules.py`:
   `ALLOWED_POS`, `MAX_COMMON_RANK` (20) / `MAX_COMMON_RANK_ADV` (500, the frequency
-  floors read off the reduced vectors' order), `MIN_GAP` (3 tokens), `COSINE_MAX` (0.40), `MODIFIER_DEPS`,
-  `MAX_RESTARTS` (2), `MAX_OFF_LIST` (2), `CONTEXT_GUESSES` (3); and at the top of `curate.py`:
-  `MAX_SENTENCES` (600), `CHUNK` (150), `PICKS_PER_CHUNK` (6), `SHORTLIST` (20).
+  floors read off the reduced vectors' order), `WEAK_VERBS` (verbs of saying, thinking
+  and modality, by lemma — never a secret; user-decided 2026-09-08 on a trio led by
+  « je crois »), `MIN_CANDIDATES` (8 distinct candidate words, or the sentence never
+  reaches the model — `curate.rich_enough` parses the mined sentences before the
+  shortlist; measured 2026-09-08 on 27 attempts: 4–7 candidates gave no trio or a dull
+  forced one, every trio worth keeping came from 8+), `MIN_GAP` (3 tokens), `COSINE_MAX`
+  (0.40), `MODIFIER_DEPS`, `MAX_RESTARTS` (2), `MAX_OFF_LIST` (2), `CONTEXT_GUESSES` (3);
+  and at the top of `curate.py`: `MAX_SENTENCES` (600), `CHUNK` (150), `PICKS_PER_CHUNK`
+  (6), `SHORTLIST` (20). The mechanical filter (`sentences.is_candidate`) also refuses a
+  unit that OPENS on a quotation mark (reported speech, or an argument with a line the
+  player cannot see — the same day's « “Il sait qu’il meurt” est une pensée profonde »),
+  and the skill's taste rules refuse the REPLY (a line that quotes, answers or corrects
+  what the player cannot see) at the shortlist.
 - **The rules, as code applies them** (from the user's curation feedback, #260):
   candidates are NOUN/VERB/ADJ/ADV, not stopwords, not among the commonest words (an
-  adverb has the higher floor), slug in the vocab, not a past secret,
+  adverb has the higher floor), slug in the vocab, not a secret still in its
+  `SECRET_COOLDOWN_DAYS` (90, `shelf.py`; user-decided 2026-09-08 — a COOLDOWN, not
+  the permanent blacklist it was, which had « cimetière » off the table forever after one
+  Ernaux day; judged on the ledger's game day),
   no same-lemma twin under another slug in the sentence (a same-slug repeat is allowed:
   one hole per occurrence). After a pick, gone are: every verb if the pick is a verb
   (at most one verb); the pick's head and dependents and its modifier siblings (a verb
@@ -84,12 +107,25 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   within `MIN_GAP` tokens ("the same part of the sentence"); lemma/morphological
   variants; anything above `COSINE_MAX` to a pick ("too similar"). `conj` siblings stay
   (a list of nouns is a good spread).
-- **One model judgement is TESTED, not trusted**: the MEMORIZATION TEST, two stateless
-  probes — name the author (compared by name parts), and complete the line from its
-  first half (`COMPLETION_MATCH` = 60% of the true words, in order). Either = the very
-  famous line, next sentence; a model under-claims authorship but cannot help finishing
-  what it memorized (Camus's opening completes verbatim; Pessoa's "J'ai demandé si peu à
-  la vie" does not). Everything else the model is asked is a choice from a list.
+- **The FAMOUS LINE is a QUOTATION test, never a memory test (user-decided 2026-09-08,
+  replacing the two-probe MEMORIZATION test — author + completion from the first half).**
+  The model has memorised every line of a canonical book, so what it remembers says
+  nothing about what a reader has met: measured on 17 runs, the memory test's two
+  rejections were both Machado de Assis lines nobody quotes (one named the niece
+  Vénancia). What a reader has met is on record: `pnpm shelf:quotes` fetches, per book,
+  the author's fr.wikiquote page, the work's wikiquote page and the work's fr.wikipedia
+  article, and `quotes.extract_quotes` writes their quoted lines (`{{citation}}` bodies
+  and « … » spans of at least `MIN_QUOTE_WORDS` = 5) to `shelf/quotes/<file>.txt`. The
+  curator, OFFLINE, rejects a unit that shares `QUOTE_MATCH` (0.6) of the shorter side's
+  words, in order, with a quoted line — at least `QUOTE_MIN_WORDS` (4) of them
+  (`quotes.quoted`; a quote can be the first sentence of a two-sentence unit) — and the
+  log names the quote. A book with no file skips the test with a warning; a book whose
+  fetch found no page (`quotes.quote_sources` empty) rejects nothing and says so in the
+  log, which is the point (no French reader quotes it). The mined sentences are parsed
+  in one batched pass (`parse.parse_many`, `nlp.pipe`) before the shortlist. The model's own
+  opinion — would a reader who has not read the book know this line — is logged as an
+  ANNOTATION (`llm.widely_known`), never a strike. Everything else the model is asked is
+  a choice from a list.
 - **The CONTEXT CHECK is an ANNOTATION, never a strike** (decided on data 2026-09-06):
   after a trio is found, one stateless call per secret guesses the blank as the player
   sees the sentence (all three blanks); the log records where the true word landed among
@@ -113,7 +149,10 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   (user rule 2026-09-07: the start is the user's daily craft — read the context, avoid a
   synonym when the context helps, go easier when a hole or the context is hard, think of
   the chain of guesses, balance the three; the rules live in the skill's `## The start
-  word` section, read by `llm.start_rules`). The first successful gen_phrase run only
+  word` section, read by `llm.start_rules`). **A secret/start PAIR is blacklisted for
+  good** (user-decided 2026-09-08): `shelf.archive()['pairs']` holds every start each
+  secret was ever played with, `choose_starts` and `check_starts` exclude them from the
+  band, and a generated start that repeats a pair is refused and re-picked. The first successful gen_phrase run only
   supplies the rank maps; `curate.choose_starts` then shows the model, per hole, the
   slot (form + preceding word), the context-check annotation, and the band candidates
   with ranks (`starts.start_candidates`: rank `START_RANK_MIN..MAX`, no variant,
@@ -152,15 +191,35 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   terminal-punctuation rules of the sentence filter do not apply to verse.
 - **Artist cooldown, not "never twice"**: the same artist at most once every
   `ARTIST_COOLDOWN_DAYS` (30) on the calendar, never the same song. Judged on the
-  generation output's file dates (`shelf.archive().last_used`; a puzzle is generated the
-  day it is curated) and on the run index (`shelf.last_proposed`). Books keep "never the
-  same book twice".
+  ledger's game day (`shelf.archive()['last_used']`) and on the run index
+  (`shelf.last_proposed`). Books keep "never the same book twice".
 - Music is a minority stream (one or two days a week); the pick prompt says so.
 - `source` is `{kind: music, author: <artist>, work: <song title>}`, like the archive.
 
-- **The archive the curator reads is the GENERATION OUTPUT** (`packages/generation/output/
-  word/<lang>/…`, every puzzle generated for publishing, works + secrets + sentences),
-  never the backend's local store — that one is a test bed (user-decided 2026-09-07).
+- **A book day carries its PAGE, and the MODEL CUTS IT (#270, user-decided 2026-09-07;
+  the cut 2026-09-08: "sometimes the context should start/end sooner or later")**:
+  `sentences.excerpt_around` offers a WINDOW of `EXCERPT_WINDOW` (8) raw sentences each
+  side of the chosen unit, in reading order, crossing paragraph breaks (a unit opens its
+  paragraph as often as not), never the unit itself; once a trio is found — never before,
+  so a rejected sentence spends no call — `llm.choose_excerpt` shows it numbered (B1 right
+  before the line, A1 right after) under the skill's `## The page` rules and answers TWO
+  COUNTS; `sentences.cut_excerpt` clamps them into the window (code enforces), an answer
+  that is not two integers falls back to `EXCERPT_SENTENCES` (3) a side, and a page with
+  nothing on either side is no page. The counts are logged (`page:`). The curator hands
+  the cut to gen_phrase as `--before`/`--after` — the source's own text, never a summary
+  (a curator-written line that gets a fact wrong on a literary screen is worse than
+  nothing). **A song gets NO excerpt** (reaffirmed 2026-09-08: a verse or chorus is still
+  reproduced lyrics); its track page is gen_phrase's `--url`, by hand.
+- **The archive the curator reads is the PUBLISH LEDGER** (`packages/generation/
+  published.jsonl`, gitignored, appended by `pnpm puzzle:publish --s3` and by nothing
+  else, rebuilt from the bucket by `pnpm puzzle:ledger --s3` — the curator DIES without
+  it; root `AGENTS.md`; user-decided 2026-09-08, superseding the generation output of
+  2026-09-07):
+  works, secrets in their cooldown (judged on the game DAY the line names), the permanent
+  secret/start pairs, sentences, the artist cooldown's dates. A day published twice keeps
+  its last line for secrets, sentence and work — but its PAIRS come off every line, the
+  corrected day's earlier start included (it was played until the correction). Neither the generation output (what `forget` erases: attempts) nor the
+  backend's local store (a test bed) is ever read for the archive.
 
 ## Do NOT
 

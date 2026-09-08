@@ -579,10 +579,11 @@ button {
   position: relative;
   width: 100%;
 }
-/* While the sentence dissolves (2026-08-14), its watermark fades with it: the count's
-   next appearance is the solved stage's own headline, and a big faint number outliving
-   the sentence it was printed behind would read as furniture left on an empty stage. */
-.phrase-anchor.dissolving .progress-background {
+/* The watermark goes with the ROUND: it leaves the moment the board is solved — the
+   count's next appearance is the result's own headline, and a big faint number outliving
+   the round would read as furniture — so it is already gone by the time the sentence
+   dissolves and the stage takes the column. */
+.play-finished .progress-background {
   opacity: 0;
   transition: opacity 900ms ease-out;
 }
@@ -605,7 +606,7 @@ button {
 }
 /* Keyboard exit (#110): on a live solve the keyboard SLIDES DOWN out of the tray (which
    then sits empty under the dissolving sentence — since 2026-08-14 the sentence result
-   lives on the full-column .solved-stage, not in the tray). The wrapper exists only to
+   lives beside the sentence in `.play`, not in the tray). The wrapper exists only to
    carry this animation; its flex/width mirror the tray so the keyboard centers exactly
    as it did unwrapped. The tray clips ONLY while the drop plays (never in steady state,
    where clipping could shave the bottom key row's focus outline). Reduced motion
@@ -1251,13 +1252,11 @@ button {
   text-shadow: 2px 2px 0 black;
   padding-top: var(--text-shift);
 }
-/* A word never breaks internally — same policy as .hole. This is load-bearing for the
-   dissolve swap: DissolvePhrase letter-boxes every PLAIN word too, and adjacent
-   inline-block .hole-letter boxes are a soft-wrap opportunity, so without nowrap the
-   browser could rewrap the sentence mid-word on the swap's first frame (words cut in
-   half, lines repacked). It also closes the reverse gap: plain text breaks after a
-   hyphen where letter boxes under nowrap do not, so one shared rule is what keeps the
-   two renderers' wrap points identical. */
+/* A word never breaks internally — same policy as .hole. Plain text breaks after a hyphen
+   where a hole's inline-block letter boxes under `nowrap` do not, so the one shared rule is
+   what keeps the sentence's wrap points the same whichever kind of token a line ends on.
+   (It was also load-bearing for the retired dissolve swap, which letter-boxed every plain
+   word too; that renderer went with #266's kept sentence, the rule did not.) */
 .word {
   color: var(--fg);
   white-space: nowrap;
@@ -1389,8 +1388,7 @@ button {
 .hole-letter {
   display: inline-block;
 }
-/* A DISSOLVED letter (DissolvePhrase, 2026-08-14): the sentence's exit erodes letters
-   into absence, but the box stays — invisible, never removed and never an actual space —
+/* A DISSOLVED letter (DissolvePhrase) keeps its box, invisible — never an actual space —
    so the pixel font's fixed advance keeps every surviving letter exactly where it was.
    The sentence burns down in place; nothing reflows until the whole area unmounts. */
 .hole-letter.gone {
@@ -1404,8 +1402,7 @@ button {
    numbers handed down from Hole so the JS that ends the wave and the CSS that draws it
    cannot disagree. */
 .hole-word.wave .hole-letter,
-.word-subject-text.wave .hole-letter,
-.solved-word-text.wave .hole-letter {
+.word-subject-text.wave .hole-letter {
   animation: hole-wave var(--wave-dur, 300ms) ease-in-out calc(var(--i) * var(--wave-step, 40ms));
 }
 @keyframes hole-wave {
@@ -1471,8 +1468,6 @@ button {
 .hole-word,
 .hole-word .hole-letter,
 .phrase .hole-btn .hole-word .hole-letter,
-.solved-word-text,
-.solved-word-text .hole-letter,
 .word-subject-text,
 .word-subject-text .hole-letter {
   /* Rebrand 2026-09-01: the soft currentColor aura is gone — clean crisp ink, the
@@ -1818,21 +1813,47 @@ button {
   animation: blink 0.55s steps(1) infinite;
 }
 
-/* ---- the SOLVED STAGE (user-decided 2026-08-14): the sentence dissolves, and the
-   result takes the whole column the play area and tray used to split. Top to bottom:
-   the source (typed big), the guessed words (each still the history tap), the named
-   score over its run ruler, the population chart, and SHARE parked on the bottom edge —
-   the tutorial button's rule, so the one action sits the page inset off the bottom
-   whatever the content above it does. The main block centers in the leftover space via
-   its own auto margins (never justify-content, which would split the overflow). */
+/* ---- THE SENTENCE RESULT (user-decided 2026-09-08, on #266's second review; it
+   supersedes the same morning's "keep the sentence and RISE it", which put SHARE below the
+   fold on most phones). The sentence DISSOLVES (the 2026-08-14 hand-over, restored) and
+   the result takes the whole column as a STAGE: the SCORE block at the TOP — the same
+   height on every round, on screen at rest on every phone — and the sentence's PAGE under
+   it. THE WHOLE STAGE SCROLLS AS ONE (user-decided 2026-09-08, third pass: "the whole
+   page scrollable, and the title sticky below the header"): once the reader reads, the
+   score and SHARE scroll away and the CREDIT STICKS under the header, so the source is
+   always somewhere on the screen; a tap on it returns to the top. */
 .solved-stage {
-  flex: 1 1 auto;
-  width: 100%;
+  /* `flex: 1 1 0` + `min-height: 0` is what makes the stage's height DEFINITE inside
+     `.game` (auto-with-a-min): a `1 1 auto` item sized by its content grows the page
+     instead, and a flex item's `min-height: auto` floor would refuse to shrink even then.
+     A definite height is what lets it scroll. POSITIONED, so the sr-only hints under the
+     text (absolutely placed, at their static position after a long page) are contained
+     by this scroller rather than growing the document. */
+  flex: 1 1 0;
+  min-height: 0;
+  position: relative;
+  /* The stage BLEEDS to the screen's edges (user-decided 2026-09-08, the word board's
+     own rule): its scrollbar sits on the screen's border, while the content keeps the
+     page's inset as padding — `.app`'s 52px on desktop, 14px on a phone (below). */
+  width: calc(100% + 104px);
+  margin-left: -52px;
+  margin-right: -52px;
+  padding-left: 52px;
+  padding-right: 52px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* The seam's FLOOR only — see `.solved-puzzle`'s auto margins for the real thing. */
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  /* The GAP between the score and the page — the seam, stated once. */
   gap: clamp(28px, 5vh, 48px);
+  /* The bottom edge fades (the rule every scroller wears); the padding is the fade's own
+     height, so the last line rests clear of it. The TOP has no fade: what passes there
+     passes under the sticky credit's own ground. */
+  padding-bottom: 24px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
   opacity: 0;
   /* The stage rises the way the tray results always have (mirrored by resultAnimation). */
   transform: translateY(clamp(24px, 5vh, 44px));
@@ -1842,31 +1863,18 @@ button {
   opacity: 1;
   transform: translateY(0);
 }
-.solved-puzzle,
+/* The SCORE block: the named `<tries> TRIES` headline over the run ruler, then SHARE with
+   its AS drum — sharing is what you do with a RESULT (user-decided 2026-08-14). Centred
+   and capped at the keyboard's 680px, as the result always was. It holds its footprint
+   from frame one and arrives at `opacity: 0`, so nothing under it moves when it lands. */
 .solved-numbers {
+  flex: none;
   width: 100%;
-  max-width: 680px; /* the keyboard's own cap — the result keeps the play column's width */
+  max-width: 680px;
   display: flex;
   flex-direction: column;
   align-items: center;
-}
-/* THE SEAM is SPACE, not a measured gap (user-decided 2026-08-14, second pass): the SCORE
-   block sits on the screen's bottom edge and the PUZZLE block's auto margins eat all the
-   leftover height, centring it in what is left above. So the taller the screen, the more
-   the two blocks read as two — where a fixed gap gave the same 40-odd pixels on a phone
-   and on a desktop. The stage's own `gap` (below) is only the FLOOR, for a screen short
-   enough that there is no leftover height to hand out. */
-.solved-puzzle {
-  margin: auto 0;
-  gap: clamp(14px, 2.6vh, 22px);
-}
-/* The words and the credit line under them are ONE object: a tighter gap than the seam,
-   so the citation reads as belonging to the words rather than as the next item down. */
-.solved-numbers {
   gap: clamp(18px, 3.4vh, 30px);
-  /* SHARE is part of this block (it is what you do with a RESULT), so the block carries
-     the page inset off the screen's bottom edge — the tutorial button's own rule. */
-  padding-bottom: 10px;
   opacity: 0;
   transform: translateY(10px);
   transition: opacity 0.25s ease-out, transform 0.25s ease-out;
@@ -1875,62 +1883,138 @@ button {
   opacity: 1;
   transform: translateY(0);
 }
-/* The citation lays out from frame one (so the words never move when it speaks) and is
-   simply hidden until its beat — the retired prompt's own trick. */
-.solved-source {
+/* SHARE is the reveal's LAST beat (user-decided 2026-08-16): hidden IN PLACE — the row
+   keeps its footprint, so its arrival moves nothing — until the standing has landed, then
+   in on the app's one "list arriving" gesture. A settled result shows it outright. */
+.solved-numbers .result-actions {
   width: 100%;
+  opacity: 0;
+}
+.solved-numbers .result-actions.in {
+  animation: rung-in 220ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
+}
+
+/* The PAGE: the credit, then the text, read top-down the way a page is (user-decided
+   2026-09-08: "with the source above the text, we can start by a few sentences before
+   the puzzle"). It is the stage's last item, at the score block's width (the scrollbar is
+   on the screen's edge, past the page's inset, so the words need no clearance of their
+   own). It is the sticky credit's CONTAINING BLOCK: the credit sticks while the page is
+   in view and leaves with it. */
+.solved-page {
+  flex: none;
+  width: 100%;
+  max-width: 680px;
+}
+/* The credit, ABOVE the text it belongs to and on its left edge — the small quote-style
+   citation it has always been. It lays out from frame one and is simply hidden until its
+   beat (the retired prompt's own trick), so the text never moves when it speaks. And it
+   STICKS at the scroller's top edge on its own flat ground, with the header's own short
+   gradient hanging under it, so the text disappears under the credit rather than through
+   it; a tap on it scrolls back to the top — the score and SHARE — so the running head
+   is also the way back. A BUTTON, like everything tappable on the screen (pointer-only
+   app-wide), reset to nothing but its box: the caption inside keeps its own faces. */
+.solved-source {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0 0 10px;
+  border: 0;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: none;
+  text-align: left;
   visibility: hidden;
+  cursor: pointer;
+}
+.solved-source::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 24px;
+  background: linear-gradient(to bottom, var(--bg), transparent);
+  pointer-events: none;
 }
 .solved-source.in {
   visibility: visible;
 }
-/* SHARE is the reveal's LAST beat (user-decided 2026-08-16): hidden IN PLACE — the row
-   keeps its footprint, so its arrival moves nothing — until the standing has landed, then
-   in on the app's one "list arriving" gesture. A rehydrated result shows it outright. */
-.solved-stage .result-actions {
-  width: 100%;
-  opacity: 0;
+.solved-source .solved-caption {
+  align-items: flex-start;
+  text-align: left;
 }
-.solved-stage .result-actions.in {
-  animation: rung-in 220ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
-}
-.solved-stage.settled .result-actions {
-  opacity: 1;
-  animation: none;
-}
-/* The guessed words: the round's trophies in the brand accent, and still its buttons —
-   each opens the history line it walked. Numbered as the ruler's ticks number them
-   (1..3, distinct secrets in sentence order), the number a small muted chip riding the
-   word the way a rank exponent rides a hole's. */
-.solved-words {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: baseline;
-  gap: 10px clamp(20px, 4.5vw, 40px);
-}
-.solved-word {
-  font-family: var(--pixel-font);
-  font-size: clamp(26px, 6vw, 36px);
-  line-height: 1.2;
-  letter-spacing: 0;
-  background: none;
-  border: 0;
-  padding: 0;
+/* The TEXT, in the READING face — this is the book's page, not the board. The puzzle's
+   line is in the ink; #270's sentences before and after it will be the muted text around
+   it, which is the whole highlight: contrast, never a marker band. */
+.solved-text {
   margin: 0;
+  font-family: var(--ui);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.6;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+}
+.solved-source + .solved-text {
+  margin-top: clamp(14px, 2.6vh, 22px);
+}
+.solved-line {
+  color: var(--fg);
+}
+/* LISTEN (#270): a music day's one affordance — an ordinary link to the track's page, a
+   new tab, no embed. The credit's own face, in the action ink, underlined the pixel way. */
+.solved-listen {
+  display: inline-block;
+  margin-top: clamp(14px, 2.6vh, 22px);
+  font-family: var(--pixel-font);
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--accent);
+  text-decoration: none;
+  padding-bottom: 3px;
+  border-bottom: 2px solid currentColor;
+}
+.solved-listen:hover {
+  filter: brightness(1.25);
+}
+/* A secret's affixes stay on its line — Phrase's own nowrap group. */
+.solved-line-group {
+  white-space: nowrap;
+}
+/* A found SECRET inside the line: the solve blue, tappable onto its own history, and
+   otherwise nothing but its word — font, size and line inherited, no box — so the line
+   reads as one sentence. `inline-block` is what makes the pop's transform apply. */
+.solved-secret {
+  display: inline-block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: none;
   color: var(--solve);
   cursor: pointer;
-  white-space: nowrap;
-  text-shadow: 2px 2px 0 black;
   opacity: 0;
 }
-/* The words POP in, one by one, 200ms apart (user-decided 2026-08-14): the round's
-   trophies counted out. A scale on the pixel font is allowed exactly here — ONE-SHOT and
-   fast, the rank exponent's `rank-pop` and the tally's `score-land`; what the standing
-   rule forbids is a long scale TRANSITION, which holds blurry intermediate frames for its
-   whole length. Overshoot slightly past 1 and settle, so the word lands rather than
-   inflates. */
-.solved-word.in {
+.solved-secret:hover {
+  filter: brightness(1.25);
+}
+/* The secrets POP in, one by one, 200ms apart (user-decided 2026-08-14): the round's
+   trophies counted out, back in the gaps they were taken from — the plain words are
+   already printed, and these arrive into them. ONE-SHOT and fast, the rank exponent's
+   `rank-pop` and the tally's `score-land`; overshoot slightly past 1 and settle, so the
+   word lands rather than inflates. Only `opacity` and `transform` move, so the line's
+   layout is final from its first frame. Keep the numbers aligned with SolvedScreen's
+   `WORD_STEP_MS` / `WORD_POP_MS`. */
+.solved-secret.in {
   animation: solved-word-pop 300ms cubic-bezier(0.2, 1.5, 0.4, 1) both;
   animation-delay: calc(var(--step, 0) * 200ms);
 }
@@ -1948,28 +2032,18 @@ button {
     transform: scale(1);
   }
 }
-/* The global `button *` flattening would strip the phrase's drop shadow here too. */
-.solved-word,
-.solved-word * {
-  text-shadow: 2px 2px 0 black;
+/* A SETTLED result replays nothing — a rehydrated solve, and since #179 a reveal the
+   player has fast-forwarded, which reaches the settled frame from HALFWAY THROUGH and so
+   must kill the transitions the rehydrated path never starts (a half-popped word killed
+   mid-animation is otherwise stranded at full size). */
+.solved-stage.settled,
+.solved-stage.settled .solved-numbers {
+  opacity: 1;
+  transform: none;
+  transition: none;
 }
-/* The app's one interaction language: brighten on hover/press. */
-.solved-word:hover,
-.solved-word:active {
-  filter: brightness(1.35);
-}
-.solved-word-num {
-  font-family: var(--pixel-font);
-  font-size: 10px;
-  font-weight: 400;
-  color: var(--fg);
-  opacity: 0.7;
-  margin-right: 7px;
-  vertical-align: super;
-}
-/* A rehydrated result replays nothing — the words are simply there (the score chart's
-   own settled rule). */
-.solved-stage.settled .solved-word {
+.solved-stage.settled .result-actions,
+.solved-stage.settled .solved-secret {
   opacity: 1;
   animation: none;
 }
@@ -2420,8 +2494,7 @@ button {
    than covering, so the watermark and the sentence around it show through as before (a
    ground band was tried first and covered the watermark, user-reported 2026-09-01). */
 .hole.veiled .hole-word-wrap,
-.hole.veiled .hole-rank,
-.solved-word.veiled .hole-word-wrap {
+.hole.veiled .hole-rank {
   visibility: hidden;
 }
 /* A ROW: one line box of the sentence's own height (inline), the word in the pixel face
@@ -3236,9 +3309,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     align-items: stretch;
     gap: clamp(16px, 4vh, 28px);
   }
-  .solved-caption {
-    align-items: stretch;
-  }
+
   /* The row goes edge to edge on a phone: no float. */
   .topbar-inner {
     margin: 0;
@@ -3304,11 +3375,16 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     min-height: calc(100dvh - 20px);
     margin-bottom: -24px;
   }
-  /* The solved stage's SHARE doesn't hug the 4px keyboard gap: unlike the keyboard it
-     sits on the 14px page inset — the same thin frame on all three sides (decided
-     2026-07-24; carried onto the stage 2026-08-14). +10px over the keyboard's 4px = 14px. */
-  .solved-numbers {
-    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  /* The result's stage reaches the screen's bottom edge: its last line clears the
+     home-indicator inset as the keyboard's last row does, plus its own fade — and its
+     sides, so the scrollbar sits on the screen's border (the phone's inset is 14px). */
+  .solved-stage {
+    width: 100vw;
+    margin-left: -14px;
+    margin-right: -14px;
+    padding-left: 14px;
+    padding-right: 14px;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   }
   /* Word mode's overlaid result shares the same 14px phone-bottom frame. */
   .game.word-game .word-footer-result {

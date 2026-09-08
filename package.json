@@ -27,6 +27,7 @@
     "board:seed": "pnpm --filter @whippin/backend board:seed",
     "puzzle:publish": "pnpm --filter @whippin/backend puzzle:publish",
     "puzzle:inventory": "pnpm --filter @whippin/backend puzzle:inventory",
+    "puzzle:ledger": "pnpm --filter @whippin/backend puzzle:ledger",
     "bot:start": "pnpm --filter @whippin/whatsapp-bot start",
     "bot:pair": "pnpm --filter @whippin/whatsapp-bot pair",
     "bot:cli": "pnpm --filter @whippin/whatsapp-bot cli",

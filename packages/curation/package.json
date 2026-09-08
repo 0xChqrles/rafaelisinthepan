@@ -5,6 +5,7 @@
   "scripts": {
     "curate": "uv run scripts/curate.py",
     "shelf:lyrics": "uv run scripts/shelf_lyrics.py",
+    "shelf:quotes": "uv run scripts/shelf_quotes.py",
     "test": "uv run --no-project --with pytest pytest -q tests"
   }
 }

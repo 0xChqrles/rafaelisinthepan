@@ -18,7 +18,17 @@ def _nlp(lang: str):
 
 
 def parse(sentence: str, lang: str = "fr") -> list[Token]:
-    doc = _nlp(lang)(sentence)
+    return _tokens(_nlp(lang)(sentence))
+
+
+def parse_many(sentences: list[str], lang: str = "fr") -> list[list[Token]]:
+    """Every sentence parsed in one batched pass (`nlp.pipe`) — the whole mined text goes
+    through `rich_enough` before the shortlist, and one call per sentence there is a
+    novel's worth of single-document calls (PR-274 review)."""
+    return [_tokens(doc) for doc in _nlp(lang).pipe(sentences, batch_size=64)]
+
+
+def _tokens(doc) -> list[Token]:
     return [
         Token(
             i=t.i,

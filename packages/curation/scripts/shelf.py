@@ -1,7 +1,9 @@
 """The shelf (`packages/curation/shelf/`, gitignored), its state file, and what the
-archive already holds (works and secrets), read off the GENERATION OUTPUT — the one
-local record of every puzzle generated for publishing. The backend's local store is a
-test bed and is never read (user-decided 2026-09-07)."""
+archive already holds (works, secrets, secret/start pairs, sentences), read off the
+PUBLISH LEDGER — `packages/generation/published.jsonl`, appended by every S3 publish and
+the one source of truth of what has been published (user-decided 2026-09-08; the
+generation output was the archive until then, and it stays what `forget` erases). The
+backend's local store is a test bed and is never read."""
 
 from datetime import date, datetime, timezone
 import json
@@ -14,6 +16,10 @@ from epub import epub_metadata
 from lyrics import parse_song
 
 INDEX_FILE = _paths.SHELF_DIR / "index.json"
+# A secret comes back after this many days (user-decided 2026-09-08: a cooldown, not a
+# permanent blacklist — « cimetière » was off the table forever after one Ernaux day).
+# What stays permanent is the PAIR: a secret is never started from the same word twice.
+SECRET_COOLDOWN_DAYS = 90
 
 
 def list_works(shelf: Path = _paths.SHELF_DIR) -> list[dict]:
@@ -76,36 +82,79 @@ def sentence_key(sentence: str) -> str:
     return " ".join(sentence.split()).lower()
 
 
-def _puzzle_files(lang: str):
-    yield from (_paths.GENERATION_OUTPUT_DIR / lang).rglob("*.json")
+def ledger_lines(lang: str) -> list[dict]:
+    """Every line of the ledger for a language, in file order, a broken or non-object line
+    skipped — corrections included, each as its own line."""
+    try:
+        text = _paths.PUBLISHED_LEDGER.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return []
+    out = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(entry, dict) and entry.get("lang") == lang and entry.get("day"):
+            out.append(entry)
+    return out
 
 
-def archive(lang: str) -> dict:
-    """What exists already: {works: [{author, work}], secrets: {slug}, sentences: {key},
-    last_used: {author slug: date}} — the last date being the newest puzzle file's own
-    date (a puzzle is generated the day it is curated), what the artist cooldown is
-    judged on."""
+def published(lang: str) -> list[dict]:
+    """The ledger's lines for a language, one per day: a day published twice (a
+    correction) keeps its LAST line only."""
+    by_day: dict[str, dict] = {}
+    for entry in ledger_lines(lang):
+        by_day[entry["day"]] = entry
+    return [by_day[day] for day in sorted(by_day)]
+
+
+def _holes(entry: dict):
+    for hole in entry.get("holes") or ():
+        if isinstance(hole, dict) and hole.get("secret"):
+            yield hole
+
+
+def archive(lang: str, today: date | None = None) -> dict:
+    """What has been PUBLISHED, off the ledger (user-decided 2026-09-08 — the one source
+    of truth; neither the generation output nor the backend's local store is read):
+    {works: [{author, work}], secrets: {slug} (the ones still in their
+    SECRET_COOLDOWN_DAYS, judged on the game DAY they were published for), pairs: {secret
+    slug: {start word}} (every secret/start pair ever played — permanent), sentences:
+    {key}, last_used: {author slug: date}} (the artist cooldown's clock)."""
+    today = today or date.today()
     works, secrets, sentences = [], set(), set()
+    pairs: dict[str, set[str]] = {}
     last_used: dict[str, date] = {}
     seen = set()
-    for path in _puzzle_files(lang):
-        try:
-            puzzle = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        for hole in puzzle.get("holes", ()):
-            secrets.add(hole["secret"]["slug"])
-        sentences.add(sentence_key(" ".join(puzzle.get("words", ()))))
-        src = puzzle.get("source") or {}
+    # The PAIRS come off EVERY line, a corrected day's earlier start included: it was
+    # played until the correction, and the blacklist is "ever played" (PR-274 review).
+    for entry in ledger_lines(lang):
+        for hole in _holes(entry):
+            if hole.get("start"):
+                pairs.setdefault(hole["secret"], set()).add(hole["start"])
+    for entry in published(lang):
+        day = date.fromisoformat(entry["day"])
+        cooling = (today - day).days < SECRET_COOLDOWN_DAYS
+        for hole in _holes(entry):
+            if cooling:
+                secrets.add(hole["secret"])
+        if entry.get("sentence"):
+            sentences.add(sentence_key(entry["sentence"]))
+        src = entry.get("source") or {}
+        if not isinstance(src, dict):
+            src = {}
         key = (slug(src.get("author", "")), slug(src.get("work", "")))
         if src and key not in seen:
             seen.add(key)
             works.append({"author": src.get("author", ""), "work": src.get("work", "")})
         if src and key[0]:
-            day = date.fromtimestamp(path.stat().st_mtime)
             if key[0] not in last_used or day > last_used[key[0]]:
                 last_used[key[0]] = day
-    return {"works": works, "secrets": secrets, "sentences": sentences, "last_used": last_used}
+    return {"works": works, "secrets": secrets, "pairs": pairs, "sentences": sentences,
+            "last_used": last_used}
 
 
 def in_archive(book: dict, works: list[dict]) -> bool:

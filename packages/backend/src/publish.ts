@@ -19,6 +19,7 @@ import { pathToFileURL } from 'node:url';
 import { activeDate, type Puzzle, type WordPuzzle } from '@whippin/shared';
 import { defaultLocalStoreRoot, isValidDate, sliceKey, storeKey, type PuzzleMode } from './layout';
 import { buildSlice, encodeSlice } from './slice';
+import { appendPublished, ledgerEntry, publishLedgerPath } from './ledger';
 import { STACK_REGION, stackOutputs } from './stack';
 
 interface Args {
@@ -220,6 +221,10 @@ async function main() {
     // REPUBLISH must invalidate the cached entry or the correction would never reach the
     // edge. `/*` is one invalidation path (well within the free tier) and also covers the
     // 404 negative cache when publishing a late puzzle. Needs cloudfront:CreateInvalidation.
+    // This runs BEFORE the ledger append below: the ledger is rebuildable from the bucket
+    // (`puzzle:ledger --s3`) while a skipped purge strands the correction behind the edge
+    // cache with nothing retrying it, so a local-FS failure must never sit between the S3
+    // put and the invalidation.
     const { CloudFrontClient, CreateInvalidationCommand } = await import(
       '@aws-sdk/client-cloudfront'
     );
@@ -236,6 +241,16 @@ async function main() {
     console.log(
       `[publish] invalidated /* on ${deployed!.distributionId} (${inv.Invalidation?.Id ?? 'pending'})`,
     );
+
+    // THE LEDGER (user-decided 2026-09-08): an S3 publish of a sentence puzzle is recorded
+    // — day, instant, revision, source, sentence, the secret/start pairs — in
+    // packages/generation/published.jsonl, the one record the curator's archive reads.
+    // A local publish never writes it (the local store is a test bed); a word artifact is
+    // not recorded (the curator has no word archive). Gitignored: the bucket is the truth.
+    if (artifact.mode === 'sentence') {
+      await appendPublished(ledgerEntry(raw as unknown as Puzzle, plan.day, new Date()));
+      console.log(`[publish] ledger: ${publishLedgerPath()}  (+1 line)`);
+    }
     return;
   }
 

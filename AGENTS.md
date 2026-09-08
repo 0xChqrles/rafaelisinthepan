@@ -39,7 +39,18 @@ packages/
 Data flow: generation writes **puzzles** into `packages/generation/output/` (then
 `pnpm puzzle:publish` places them in the store the backend reads), and the **vocab**
 existence set into `packages/web/public/vocab/<lang>.json` plus its metadata into
-`packages/shared/src/vocab.generated.json`. Each package's file map lives in ITS `AGENTS.md`.
+`packages/shared/src/vocab.generated.json`. **`packages/generation/published.jsonl` is the
+PUBLISH LEDGER (user-decided 2026-09-08): one JSON line per SENTENCE puzzle published to
+S3 — `day` (the game day served), `lang`, `publishedAt`, `revision`, `source`, `sentence`
+(`words[]` joined) and `holes` as `{secret, word, start, startRank}` — appended by
+`pnpm puzzle:publish --s3` and by nothing else (a local publish is a test bed, a word
+artifact is not recorded), GITIGNORED — the BUCKET is the truth and the file its local,
+readable copy, rebuilt on any machine by `pnpm puzzle:ledger --s3` — and the ONE record
+the curator's archive (secret cooldown, secret/start pair blacklist, works, sentences,
+artist cooldown) reads; it reads nothing else, and refuses to run without the file.
+Written by `backend/src/ledger.ts`, read by `curation/scripts/shelf.py`; a corrected day
+keeps its last line.** Each package's file
+map lives in ITS `AGENTS.md`.
 
 ## Maintaining these files
 
@@ -112,7 +123,11 @@ is applied only to the player's raw keystrokes.
   "ranks": {                                    // keyed by SECRET slug
     "foret": { "<input-slug>": { "word": "<accented>", "rank": 12, "dq": 231 }, ... }
   },
-  "source": { "kind": "book", "author": "Victor Hugo", "work": "Les Misérables" },  // OPTIONAL
+  "source": {                                   // OPTIONAL, every field optional
+    "kind": "book", "author": "Victor Hugo", "work": "Les Misérables",
+    "excerpt": { "before": ["…", "…"], "after": ["…"] },   // #270: the RAW text around the line
+    "url": "https://…"                          // #270: a music day's track page
+  },
   "revision": "<hash>"                          // stamped by puzzle:publish (#203)
 }
 ```
@@ -127,7 +142,18 @@ is applied only to the player's raw keystrokes.
   secrets in one identity group are rejected at generation.
 - Every `{word, slug}` carries **both**, even when equal.
 - **`source` is fully optional**, every sub-field independently optional; values are display
-  forms; `kind` is an open union. There is no `context` field. Consumed by the solved screen.
+  forms; `kind` is an open union. Consumed by the solved screen.
+- **`source.excerpt` is the RAW text around the sentence (#270, user-decided 2026-09-07;
+  it reverses the earlier "no `context` field" rule):** `{before: string[], after:
+  string[]}`, at most `EXCERPT_WINDOW` (8, `curation/sentences.py`) sentences each side —
+  the curator's model choosing where the page starts and ends (decided 2026-09-08) —
+  display forms, never generated prose, never the sentence itself (that is `words[]`); both
+  arrays present whenever the key is. The curator emits it for a BOOK; a song carries NONE
+  (lyrics are a licensed product; reaffirmed 2026-09-08); a hand-authored puzzle may carry
+  none. Hashed into `revision` like any content; the derivation slice and the share card
+  carry no excerpt. **`source.url`** is a music day's track page, display-only (an ordinary
+  link on the solved page, never an embed). Written only by `gen_phrase`
+  (`--before`/`--after`/`--url`); the web refuses a malformed excerpt or a non-web url.
 - **No `benchmark` field, no `road` field, no `par` field** (removed 2026-08-12). Consumers
   ignore a stray key on an already-published puzzle. `packages/benchmark` never writes into a
   puzzle file.

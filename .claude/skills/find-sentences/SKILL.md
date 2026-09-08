@@ -51,6 +51,12 @@ concentrated on one word.
 - Three secrets in the same part of the sentence, or describing the same thing (a verb
   and its subject) → replace one. Spread them across the sentence.
 - At most one verb.
+- **Play the TURN (recorded 2026-09-08).** The part that makes the line worth playing —
+  its comparison, its image, its punch — must carry at least one hole; a trio that
+  hides three words of the set-up and leaves the turn intact plays the dull half of
+  the sentence. « je les conduisis au cimetière, comme on porte de l'argent à une
+  banque » wants a hole in the banque half, not three in the deaths before it. Spread
+  the three over the sentence's parts before spreading them over its words.
 - **The start word must leave the displayed sentence valid French**: elision (« l'effet »,
   never « le effet »), gender, number, verb form. A hint that breaks the grammar is
   replaced by another band word, never kept.
@@ -75,6 +81,23 @@ TOGETHER, never one at a time and never at random:
   around a median of 10–20 tries. One trivial hole or one impossible hole spoils the day.
 - Not too tricky: a plain word a player knows, never an obscure term or a proper noun.
 - The displayed sentence must stay valid French (elision, gender, number, verb form).
+
+## The page (recorded 2026-09-08)
+
+A book day shows the sentence on its PAGE: the raw sentences around it, muted, the
+puzzle's line in the ink. The curator offers up to eight sentences each side and the
+model says how many to keep on each; the cut is the model's, the text is the book's,
+verbatim.
+
+- Enough to situate the line — who speaks, what is going on — and no more: a page, not
+  a wall. Two to four sentences a side is typical; zero is right when the line opens a
+  chapter, or a paragraph that stands alone.
+- Cut on a natural boundary: stop before a scene change, a heading, a change of speaker,
+  a roll call of names, a footnote or an editor's note; never mid-thought, never on a
+  sentence that only makes sense with the one after it.
+- What comes AFTER the line weighs more than a third sentence before it: the page is read
+  by someone who just rebuilt the line and wants to know where it led.
+- Never rewrite, never summarise: the two counts are the whole answer.
 
 ## Taste profile
 
@@ -118,6 +141,12 @@ sentences of equal register:
   could be killed as easily as caressed) over a landscape, however beautiful;
 - reject the meditation made of abstract nouns, and the line whose only content is
   despair or a verdict on people — the top of the archive is never one-sided;
+- reject the REPLY (recorded 2026-09-08): a line that quotes, answers or corrects a
+  sentence the player cannot see — an opening quotation, a « cependant » or a « donc »
+  that continues an argument, a colon that completes one. « “Il sait qu’il meurt” est
+  une pensée profonde ; je crois cependant que la mienne est plus profonde » is wit
+  about Pascal, not a line that stands on its own. A reply is never self-contained,
+  however clever;
 - and use the SOURCE as a lever: the solved screen reveals it, so an unexpected
   provenance is itself the turn. Aim for one day in seven or so from outside literature —
   a naturalist, an economist, a speech, a documentary, a manual, a court record — chosen

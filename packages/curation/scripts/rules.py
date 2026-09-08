@@ -22,6 +22,17 @@ ALLOWED_POS = frozenset({"NOUN", "VERB", "ADJ", "ADV"})
 # `toujours` 59, `jamais` 158 are out; `pensivement` was a secret).
 MAX_COMMON_RANK = 20
 MAX_COMMON_RANK_ADV = 500
+# Verbs of saying, thinking and modality — function-like, never a clever secret
+# (user-decided 2026-09-08, on a trio led by « je crois »). By spaCy lemma.
+WEAK_VERBS = frozenset({
+    "dire", "croire", "penser", "savoir", "sembler", "paraître", "vouloir", "pouvoir",
+    "devoir", "falloir", "trouver", "avoir", "être", "faire", "aller",
+})
+# A sentence with fewer DISTINCT candidate words than this never reaches the model: the
+# trio search needs a choice, and a thin sentence forces a dull trio. Measured on 27
+# attempts (2026-09-08): 4–7 candidates gave no trio or « faim · crois · pensée »;
+# every trio worth keeping came from 8 or more.
+MIN_CANDIDATES = 8
 # Two secrets closer than this many tokens are "the same part of the sentence".
 MIN_GAP = 3
 # Two secrets above this cosine similarity are "too similar".
@@ -66,8 +77,8 @@ def initial_candidates(
     past_secrets: frozenset[str] | set[str] = frozenset(),
     frequency_rank: Callable[[Token], int | None] = lambda t: None,
 ) -> list[Token]:
-    """Tokens the LLM may pick first: an allowed POS, not a stopword or one of the
-    commonest words, a slug the game admits and has not used, and no same-lemma twin
+    """Tokens the LLM may pick first: an allowed POS, not a stopword, a weak verb or one
+    of the commonest words, a slug the game admits and has not used, and no same-lemma twin
     under another slug visible in the sentence (a same-slug repeat is fine: one hole
     per occurrence). `frequency_rank` reads the word's place in the corpus (None =
     unknown, which is not a reason to drop it)."""
@@ -78,6 +89,8 @@ def initial_candidates(
     out = []
     for t in tokens:
         if t.pos not in ALLOWED_POS or t.stop:
+            continue
+        if t.pos == "VERB" and t.lemma in WEAK_VERBS:
             continue
         if len(t.slug) < 2 or not in_vocab(t.slug):
             continue

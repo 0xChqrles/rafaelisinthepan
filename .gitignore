@@ -39,6 +39,9 @@ packages/backend/.local-store
 # `pnpm puzzle:publish`. Regenerable artifacts — not tracked. (vocab/<lang>.json
 # is a web asset and stays under packages/web/public/vocab.)
 packages/generation/output
+# The publish LEDGER (2026-09-08): a local copy of what the bucket holds, appended by
+# `puzzle:publish --s3`, rebuilt by `puzzle:ledger --s3`. The bucket is the truth.
+packages/generation/published.jsonl
 
 # ── Curation shelf + run logs (issue #260) ───────────────────
 # The shelf holds the epubs to mine (copyrighted) and index.json (which books were
