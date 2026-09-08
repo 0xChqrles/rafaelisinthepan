@@ -1832,7 +1832,14 @@ button {
   flex: 1 1 0;
   min-height: 0;
   position: relative;
-  width: 100%;
+  /* The stage BLEEDS to the screen's edges (user-decided 2026-09-08, the word board's
+     own rule): its scrollbar sits on the screen's border, while the content keeps the
+     page's inset as padding — `.app`'s 52px on desktop, 14px on a phone (below). */
+  width: calc(100% + 104px);
+  margin-left: -52px;
+  margin-right: -52px;
+  padding-left: 52px;
+  padding-right: 52px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1889,14 +1896,14 @@ button {
 
 /* The PAGE: the credit, then the text, read top-down the way a page is (user-decided
    2026-09-08: "with the source above the text, we can start by a few sentences before
-   the puzzle"). It is the stage's last item, at the score block's width; the right
-   padding is the pixel scrollbar's clearance off the words. It is the sticky credit's
-   CONTAINING BLOCK: the credit sticks while the page is in view and leaves with it. */
+   the puzzle"). It is the stage's last item, at the score block's width (the scrollbar is
+   on the screen's edge, past the page's inset, so the words need no clearance of their
+   own). It is the sticky credit's CONTAINING BLOCK: the credit sticks while the page is
+   in view and leaves with it. */
 .solved-page {
   flex: none;
   width: 100%;
   max-width: 680px;
-  padding-right: 20px;
 }
 /* The credit, ABOVE the text it belongs to and on its left edge — the small quote-style
    citation it has always been. It lays out from frame one and is simply hidden until its
@@ -3343,8 +3350,14 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     margin-bottom: -24px;
   }
   /* The result's stage reaches the screen's bottom edge: its last line clears the
-     home-indicator inset as the keyboard's last row does, plus its own fade. */
+     home-indicator inset as the keyboard's last row does, plus its own fade — and its
+     sides, so the scrollbar sits on the screen's border (the phone's inset is 14px). */
   .solved-stage {
+    width: 100vw;
+    margin-left: -14px;
+    margin-right: -14px;
+    padding-left: 14px;
+    padding-right: 14px;
     padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   }
   /* Word mode's overlaid result shares the same 14px phone-bottom frame. */
