@@ -107,6 +107,10 @@ def start_rules() -> str:
     return skill_section("## The start word")
 
 
+def page_rules() -> str:
+    return skill_section("## The page")
+
+
 # ---------------------------------------------------------------------------
 # Questions
 
@@ -371,6 +375,37 @@ Return {{"starts": {{"<hidden word>": "<chosen candidate, exactly>", ...}}, "why
         if isinstance(word, str) and word in {o["word"] for o in h["options"]}:
             out[h["slug"]] = word
     return out
+
+
+def choose_excerpt(claude: Claude, unit: str, window: dict) -> dict | None:
+    """Where the PAGE around the unit starts and ends (#270): the model is shown the
+    window — B1 is the sentence right before the line, A1 the one right after — and
+    answers two counts. None when the answer is not two integers (the caller falls back);
+    the clamp is `sentences.cut_excerpt`'s. A window with nothing in it asks nothing."""
+    before, after = window["before"], window["after"]
+    if not before and not after:
+        return {"before": 0, "after": 0}
+    listing = "\n".join(
+        [f"B{len(before) - i}: {s}" for i, s in enumerate(before)]
+        + [f"LINE: {unit}"]
+        + [f"A{i + 1}: {s}" for i, s in enumerate(after)]
+    )
+    answer = claude.json(f"""You curate a daily French word game. A player has just rebuilt the LINE below and is
+shown its page: the sentences of the book around it, verbatim. Decide how much of the
+page to keep, following these rules:
+
+{page_rules()}
+
+The text, in reading order — B1 is the sentence right before the line, A1 the one right
+after (at most {len(before)} before and {len(after)} after are available):
+
+{listing}
+
+Return {{"before": <how many B sentences to keep, 0..{len(before)}>, "after": <how many A sentences, 0..{len(after)}>}}.""")
+    b, a = answer.get("before"), answer.get("after")
+    if any(isinstance(v, bool) or not isinstance(v, int) for v in (b, a)):
+        return None
+    return {"before": b, "after": a}
 
 
 def pick_start(claude: Claude, sentence_marked: str, secret: str, options: list[dict],

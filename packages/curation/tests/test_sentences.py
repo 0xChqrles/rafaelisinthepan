@@ -53,3 +53,12 @@ def test_excerpt_around_a_unit_crosses_paragraphs_and_stops_at_the_edges():
     assert excerpt_around(text, "Neuf.", n=2) == {"before": ["Sept.", "Huit."], "after": []}
     assert excerpt_around(text, "Trois. Quatre.", n=2) is None  # a unit never crosses a paragraph
     assert excerpt_around(text, "Dix.") is None
+
+
+def test_cut_excerpt_clamps_the_counts_into_the_window():
+    from sentences import cut_excerpt
+    window = {"before": ["B3.", "B2.", "B1."], "after": ["A1.", "A2."]}
+    assert cut_excerpt(window, 2, 1) == {"before": ["B2.", "B1."], "after": ["A1."]}
+    assert cut_excerpt(window, 9, 9) == window            # never past the window
+    assert cut_excerpt(window, 0, 0) == {"before": [], "after": []}
+    assert cut_excerpt(window, -3, -1) == {"before": [], "after": []}

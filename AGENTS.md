@@ -134,7 +134,8 @@ is applied only to the player's raw keystrokes.
   forms; `kind` is an open union. Consumed by the solved screen.
 - **`source.excerpt` is the RAW text around the sentence (#270, user-decided 2026-09-07;
   it reverses the earlier "no `context` field" rule):** `{before: string[], after:
-  string[]}`, a few sentences each side (`EXCERPT_SENTENCES` = 3 in `curation/sentences.py`),
+  string[]}`, at most `EXCERPT_WINDOW` (8, `curation/sentences.py`) sentences each side —
+  the curator's model choosing where the page starts and ends (decided 2026-09-08) —
   display forms, never generated prose, never the sentence itself (that is `words[]`); both
   arrays present whenever the key is. The curator emits it for a BOOK; a song carries NONE
   (lyrics are a licensed product; reaffirmed 2026-09-08); a hand-authored puzzle may carry

@@ -29,7 +29,7 @@ import shelf as shelf_mod
 import starts as st
 from epub import epub_text
 from parse import parse
-from sentences import candidate_sentences, excerpt_around
+from sentences import EXCERPT_SENTENCES, EXCERPT_WINDOW, candidate_sentences, cut_excerpt, excerpt_around
 
 LANGS = ("fr",)
 # Candidate sentences shown to the model per book (a random sample above this).
@@ -417,9 +417,10 @@ def shortlist(claude: llm.Claude, log: Log, mined: list[str], exclude: set[str],
 
 
 def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: dict,
-            in_vocab, similarity, frequency_rank, lang: str, excerpt: dict | None = None):
-    """One sentence through memorization test, trio search and generation. `excerpt`
-    is the page around it (#270), handed to gen_phrase untouched."""
+            in_vocab, similarity, frequency_rank, lang: str, window: dict | None = None):
+    """One sentence through memorization test, trio search and generation. `window` is
+    the raw text around it (#270), which the model CUTS into the page once the trio is
+    found — so a rejected sentence never spends the call."""
     log(f"\n## « {sentence} »")
     known, answer = llm.recognizes_source(claude, sentence, book.get("author", ""))
     if known:
@@ -463,10 +464,24 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
         context[t.slug] = verdict
         log(f"- context check '{t.text}': {verdict}")
     source = {"kind": book["kind"], "author": book.get("author", ""), "work": book.get("title", "")}
+    excerpt = choose_page(claude, log, sentence, window) if window else None
     if excerpt:
         source["excerpt"] = excerpt
-        log(f"- excerpt: {len(excerpt['before'])} sentence(s) before, {len(excerpt['after'])} after")
     return generate(claude, log, sentence, words, source, lang, context, frequency_rank)
+
+
+def choose_page(claude: llm.Claude, log: Log, sentence: str, window: dict) -> dict | None:
+    """The page around the line (#270): the model says where it starts and ends, code
+    clamps it into the window; an unusable answer falls back to EXCERPT_SENTENCES a side.
+    None when nothing is left (a line with no page)."""
+    answer = llm.choose_excerpt(claude, sentence, window)
+    if answer is None:
+        answer = {"before": EXCERPT_SENTENCES, "after": EXCERPT_SENTENCES}
+        log("- page: no usable cut from the model; the default three-and-three")
+    excerpt = cut_excerpt(window, answer["before"], answer["after"])
+    log(f"- page: {len(excerpt['before'])} sentence(s) before, {len(excerpt['after'])} after "
+        f"(offered {len(window['before'])}/{len(window['after'])})")
+    return excerpt if excerpt["before"] or excerpt["after"] else None
 
 
 def main():
@@ -519,11 +534,12 @@ def main():
     for n, pick in enumerate(ranked, 1):
         tried.append(pick["sentence"])
         log.begin_attempt(n)
-        # The page around the line (#270): a book's raw neighbouring sentences; a song
-        # gets none (lyrics are a licensed product — the line is the whole quotation).
-        excerpt = excerpt_around(text, pick["sentence"]) if book["kind"] == "book" else None
+        # The page around the line (#270): a book's raw neighbouring sentences, the
+        # model cutting the window once a trio is found; a song gets none (lyrics are a
+        # licensed product — the line is the whole quotation).
+        window = excerpt_around(text, pick["sentence"], EXCERPT_WINDOW) if book["kind"] == "book" else None
         result = attempt(claude, log, pick["sentence"], book, archive, vocab.__contains__,
-                         similarity, frequency_rank, args.lang, excerpt)
+                         similarity, frequency_rank, args.lang, window)
         log.end_attempt(bool(result), player_view(result, book) if result else ())
         if result:
             break

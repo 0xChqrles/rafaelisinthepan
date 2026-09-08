@@ -76,6 +76,23 @@ TOGETHER, never one at a time and never at random:
 - Not too tricky: a plain word a player knows, never an obscure term or a proper noun.
 - The displayed sentence must stay valid French (elision, gender, number, verb form).
 
+## The page (recorded 2026-09-08)
+
+A book day shows the sentence on its PAGE: the raw sentences around it, muted, the
+puzzle's line in the ink. The curator offers up to eight sentences each side and the
+model says how many to keep on each; the cut is the model's, the text is the book's,
+verbatim.
+
+- Enough to situate the line — who speaks, what is going on — and no more: a page, not
+  a wall. Two to four sentences a side is typical; zero is right when the line opens a
+  chapter, or a paragraph that stands alone.
+- Cut on a natural boundary: stop before a scene change, a heading, a change of speaker,
+  a roll call of names, a footnote or an editor's note; never mid-thought, never on a
+  sentence that only makes sense with the one after it.
+- What comes AFTER the line weighs more than a third sentence before it: the page is read
+  by someone who just rebuilt the line and wants to know where it led.
+- Never rewrite, never summarise: the two counts are the whole answer.
+
 ## Taste profile
 
 The canonical references are **Houellebecq, Murakami, and Kundera**. The editorial
