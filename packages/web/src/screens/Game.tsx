@@ -35,6 +35,7 @@ import { t, ariaHoleHistory, srHoleResult } from '../i18n';
 import { track } from '../analytics';
 import { fold, dateForDayNumber, ROUND_GUESS_CAP } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
+import { sentenceStarts } from '../game/sentenceCase';
 import { prefetchTurnstileTokens } from '../turnstile';
 import { deviceIdentity, ensureDeviceIdentity, useDeviceIdentity } from '../identity';
 import ErrorScreen from '../components/ErrorScreen';
@@ -493,6 +494,7 @@ function Round({
     const justFinished = finished && !prevFinished.current;
     const freshSolve = solved && server?.solvedByAppend === true;
     prevFinished.current = finished;
+    setRevealEnded(false);
     if (!finished) {
       setShowResults(false);
       setAnimateResults(false);
@@ -597,8 +599,12 @@ function Round({
   }, []);
   // The reveal is on screen AND still playing: the solving beats have handed it over, no
   // full-screen celebration stands in front of it, and it has not settled yet.
+  // ...and DISARMED once the reveal has ended (PR-272 review): `animateResults` stays
+  // true after SHARE has landed, so without this the first ordinary tap on a finished
+  // screen still ran a (harmless today) skip. The result reports its last beat.
+  const [revealEnded, setRevealEnded] = useState(false);
   const revealPlaying =
-    showResults && !showStreakDialog && animateResults && !deferResultsAnimation;
+    showResults && !showStreakDialog && animateResults && !deferResultsAnimation && !revealEnded;
   // It listens in the CAPTURE phase and neither cancels nor stops the event, so the
   // gesture is never swallowed: a tap on a found word settles the result AND opens that
   // word's history, Enter on a focused control settles AND activates it, natively.
@@ -722,7 +728,11 @@ function Round({
   // A COMPLETED hole (rank 0) opens the words MODAL — there is nothing to swap in — whether
   // or not the rest of the sentence is done (user-decided 2026-09-01); an open hole opens
   // the WHEEL, and only the wheel veils the word beneath it.
-  const wheelOpen = historyHole !== null && holes[historyHole]?.rank !== 0;
+  // A FINISHED round opens the modal for every hole, found or not (PR-272 review): a
+  // capped round's unfound holes keep a rank, but the wheel measures the board's own
+  // `[data-hole-explore] .hole-word-wrap` — which the solved page's secrets do not wear —
+  // and a pick has nothing to swap into a page that shows the answer already.
+  const wheelOpen = historyHole !== null && holes[historyHole]?.rank !== 0 && !finished;
   // The wheel measures the tapped word itself (`data-hole-explore`), so opening is only
   // naming the hole.
   const openHistory = useCallback((index: number) => {
@@ -941,6 +951,7 @@ function Round({
           onExplore={openHistory}
           placement={placement}
           animate={animateResults}
+          onRevealEnd={() => setRevealEnded(true)}
           // The dev `?streak=N` preview (App owns that dialog, so this round never sees
           // it in `showStreakDialog`) opens over an ALREADY-SOLVED day, where the result
           // is mounted from the first frame. Without this it would play its whole reveal
@@ -1103,6 +1114,9 @@ function Round({
           hostIndex={historyHole}
           number={holeNumbers[historyHole]}
           lang={lang}
+          // The slot row redraws the hole's word: it wears the sentence-case capital
+          // exactly when the hole does (a sentence opener with no prefix to carry it).
+          capital={sentenceStarts(words)[puzzleHoles[historyHole].pos] && !puzzleHoles[historyHole].prefix}
           onPick={exploreDisabled ? undefined : (stop) => pickWord(historyHole, stop)}
           onClose={closeHistory}
         />

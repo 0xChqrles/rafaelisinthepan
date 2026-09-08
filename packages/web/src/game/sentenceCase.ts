@@ -30,5 +30,7 @@ export function capitalize(text: string): string {
   const m = /\p{L}/u.exec(text);
   if (!m) return text;
   const at = m.index;
-  return text.slice(0, at) + m[0].toLocaleUpperCase('fr') + text.slice(at + m[0].length);
+  // Locale-independent: neither language the game ships has a special-cased capital
+  // (Turkish's dotted i is the one case the locale forms exist for).
+  return text.slice(0, at) + m[0].toUpperCase() + text.slice(at + m[0].length);
 }

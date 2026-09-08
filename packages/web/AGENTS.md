@@ -178,7 +178,9 @@ These are decided and verified against the code. Treat them as load-bearing.
      fire **together** at that shared fade-out moment.
 - **THE SENTENCE IS DISPLAYED IN SENTENCE CASE (user-decided 2026-09-08).** `words[]`
   stays lowercased in the schema; `game/sentenceCase.ts` is the display rule, applied by
-  `Phrase`, `DissolvePhrase` (the swap must stay pixel-identical) and the solved page:
+  `Phrase`, `DissolvePhrase` (the swap must stay pixel-identical), the solved page and
+  the hole WHEEL's slot row (`HistoryWheel`'s `capital`, the fourth renderer of the word —
+  PR-272 review):
   the first token and every token after a sentence-final mark (`. ! ? …`, closing quote
   or bracket allowed) take a capital on their first LETTER, past an opening quote; a
   hole's PREFIX takes it when the hole has one (« T'attends »), else the hole's displayed
@@ -3105,7 +3107,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
       under the credit rather than through it, and **a tap on it scrolls the stage back to
       the top** (`backToTop`, smooth unless reduced motion): the running head is the way
       back to the score and SHARE. On a phone that fits, nothing overflows and nothing
-      moves.
+      moves. **A FINISHED round's secrets open the words MODAL, found or not** (PR-272
+      review): a capped round's unfound holes keep a rank, but the wheel measures the
+      board's own `[data-hole-explore] .hole-word-wrap`, which the page's secrets do not
+      wear, and a pick has nothing to swap into a page that already shows the answer —
+      `wheelOpen` is false once `finished`.
     - **The SECRETS are BUTTONS inside the line** (`.solved-secret`: the solve blue, font
       and line inherited, no box, `inline-block` for the pop), one per OCCURRENCE (a slug
       appearing twice yields two, sharing one distinct-secret `number` — the ruler ticks'
@@ -3199,7 +3205,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     from under the finger between press and release, and a SCROLL (a real gesture on the
     page) produces no click and must not read as a skip.
     **It is armed for the reveal's own span only** (`revealPlaying`): from the hand-over
-    (`showResults`, which is also when the drop starts), never while the streak
+    (`showResults`, which is also when the drop starts) until the result reports its LAST
+    BEAT (`onRevealEnd`, on SHARE's arrival — `revealEnded`, reset with the round; PR-272
+    review: `animateResults` stays true after the reveal, so the listener never stood
+    down), never while the streak
     celebration stands — that screen keeps its OWN fast-forward → dismiss handling, and
     the tap that dismisses it must not spend the reveal it is handing over to (its
     dismissal lands 200ms later, past its exit fade, so the arming cannot catch that same

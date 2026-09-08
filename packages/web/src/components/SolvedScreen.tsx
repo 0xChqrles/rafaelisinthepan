@@ -114,6 +114,7 @@ export default function SolvedScreen({
   capped = false,
   animate = true,
   start = true,
+  onRevealEnd,
 }: {
   guessCount: number;
   trajectory: number[]; // reconstruction % after each counted guess (one per try)
@@ -141,6 +142,9 @@ export default function SolvedScreen({
   // them — which is the point: a reveal that plays under a full-screen modal is a reveal
   // nobody sees, and what lands on dismissal is a finished frame.
   start?: boolean;
+  // The reveal's last beat has landed (SHARE, or the settled frame): the round disarms
+  // its fast-forward on it.
+  onRevealEnd?: () => void;
 }) {
   const reduceMotion = prefersReducedMotion();
   const n = Math.max(trajectory.length, 1);
@@ -298,6 +302,10 @@ export default function SolvedScreen({
     };
   }, [animate, reduceMotion, scoreIn, scoreBeatMs]);
 
+  useEffect(() => {
+    if (shareIn) onRevealEnd?.();
+  }, [shareIn, onRevealEnd]);
+
   // Delivery (native sheet / clipboard + the "COPIED" confirmation) is the shared hook's;
   // this screen only composes the sentence result's text.
   const { share, copied } = useShare();
@@ -411,14 +419,14 @@ export default function SolvedScreen({
             once the page scrolls: a tap on it returns to the top. A source-less puzzle
             simply shows the sentence. */}
         {hasSource && (
-          <div className={`solved-source${textIn ? ' in' : ''}`} onClick={backToTop}>
+          <button type="button" className={`solved-source${textIn ? ' in' : ''}`} onClick={backToTop}>
             <SolvedCaption
               source={source}
               lang={lang}
               animate={animate && textIn && !captionDone}
               onComplete={finishCaption}
             />
-          </div>
+          </button>
         )}
 
         {/* THE SENTENCE (#266, user-decided 2026-09-07): the whole thing the player

@@ -2,6 +2,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { rankHeatColor } from '@whippin/shared';
+import { capitalize } from '../game/sentenceCase';
 import type { HistoryModel, HistoryStop } from '../game/history';
 import { wheelOrder } from '../game/wordWheel';
 import { holeTitle, srRouteStop, t } from '../i18n';
@@ -104,6 +105,7 @@ export default function HistoryWheel({
   hostIndex,
   number,
   lang,
+  capital = false,
   onPick,
   onClose,
 }: {
@@ -113,6 +115,9 @@ export default function HistoryWheel({
   hub: { word: string; rank: number };
   // The `data-hole-explore` index of the control the wheel turns through.
   hostIndex: number;
+  // The hole opens its sentence and carries the capital itself (sentence case, the
+  // display rule `Phrase` applies): the slot row is the fourth renderer of that word.
+  capital?: boolean;
   // The hole's 1-based sentence position among distinct secrets — the ruler's numbering.
   number: number;
   lang: string;
@@ -277,7 +282,7 @@ export default function HistoryWheel({
       height: rowH,
       lineHeight: `${rowH}px`,
       marginBottom: GAP,
-      fontSize: `${fit(inSlot ? stop.display : stop.word, column, inSlot ? anchor.fontSize : small)}px`,
+      fontSize: `${fit(inSlot ? shown(stop) : stop.word, column, inSlot ? anchor.fontSize : small)}px`,
       '--rank-color': rankHeatColor(stop.rank),
       '--i': Math.abs(i - hubIndex),
     }) as CSSProperties;
@@ -285,12 +290,13 @@ export default function HistoryWheel({
   // The word in the slot is the hole as the sentence draws it — the same markup, so the
   // chip and the exponent are the sentence's own; every other row is the word, plain,
   // with its exponent raised the same way.
+  const shown = (stop: HistoryStop) => (capital ? capitalize(stop.display) : stop.display);
   const body = (stop: HistoryStop, inSlot: boolean) =>
     inSlot ? (
       <span className={`hole${stop.rank === 0 ? ' resolved' : ''}`}>
         <span className="hole-word-wrap">
           <span className="hole-word">
-            {Array.from(stop.display).map((ch, k) => (
+            {Array.from(shown(stop)).map((ch, k) => (
               <span key={k} className="hole-letter">
                 {ch}
               </span>
