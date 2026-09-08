@@ -210,8 +210,10 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   nothing). **A song gets NO excerpt** (reaffirmed 2026-09-08: a verse or chorus is still
   reproduced lyrics); its track page is gen_phrase's `--url`, by hand.
 - **The archive the curator reads is the PUBLISH LEDGER** (`packages/generation/
-  published.jsonl`, appended by `pnpm puzzle:publish --s3` and by nothing else — root
-  `AGENTS.md`; user-decided 2026-09-08, superseding the generation output of 2026-09-07):
+  published.jsonl`, gitignored, appended by `pnpm puzzle:publish --s3` and by nothing
+  else, rebuilt from the bucket by `pnpm puzzle:ledger --s3` — the curator DIES without
+  it; root `AGENTS.md`; user-decided 2026-09-08, superseding the generation output of
+  2026-09-07):
   works, secrets in their cooldown (judged on the game DAY the line names), the permanent
   secret/start pairs, sentences, the artist cooldown's dates. A day published twice keeps
   its last line. Neither the generation output (what `forget` erases: attempts) nor the

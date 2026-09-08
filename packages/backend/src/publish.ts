@@ -221,10 +221,10 @@ async function main() {
     // — day, instant, revision, source, sentence, the secret/start pairs — in
     // packages/generation/published.jsonl, the one record the curator's archive reads.
     // A local publish never writes it (the local store is a test bed); a word artifact is
-    // not recorded (the curator has no word archive). Commit the file with the publish.
+    // not recorded (the curator has no word archive). Gitignored: the bucket is the truth.
     if (artifact.mode === 'sentence') {
       await appendPublished(ledgerEntry(raw as unknown as Puzzle, plan.day, new Date()));
-      console.log(`[publish] ledger: ${publishLedgerPath()}  (+1 line — commit it)`);
+      console.log(`[publish] ledger: ${publishLedgerPath()}  (+1 line)`);
     }
 
     // The puzzle URL is date-addressed and the CDN holds it via a year-long s-maxage, so a

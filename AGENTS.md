@@ -44,11 +44,12 @@ PUBLISH LEDGER (user-decided 2026-09-08): one JSON line per SENTENCE puzzle publ
 S3 — `day` (the game day served), `lang`, `publishedAt`, `revision`, `source`, `sentence`
 (`words[]` joined) and `holes` as `{secret, word, start, startRank}` — appended by
 `pnpm puzzle:publish --s3` and by nothing else (a local publish is a test bed, a word
-artifact is not recorded), COMMITTED with the publish, and the ONE source of truth of what
-has been published: the curator's archive (secret cooldown, secret/start pair blacklist,
-works, sentences, artist cooldown) reads it and nothing else. `pnpm puzzle:ledger --s3`
-rebuilds it from the bucket. Written by `backend/src/ledger.ts`, read by
-`curation/scripts/shelf.py`; a corrected day keeps its last line.** Each package's file
+artifact is not recorded), GITIGNORED — the BUCKET is the truth and the file its local,
+readable copy, rebuilt on any machine by `pnpm puzzle:ledger --s3` — and the ONE record
+the curator's archive (secret cooldown, secret/start pair blacklist, works, sentences,
+artist cooldown) reads; it reads nothing else, and refuses to run without the file.
+Written by `backend/src/ledger.ts`, read by `curation/scripts/shelf.py`; a corrected day
+keeps its last line.** Each package's file
 map lives in ITS `AGENTS.md`.
 
 ## Maintaining these files

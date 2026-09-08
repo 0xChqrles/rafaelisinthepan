@@ -541,6 +541,9 @@ def main():
             log(f"- erased: {path}")
         shelf_mod.save_index(index)
         args.work = args.retry
+    if not _paths.PUBLISHED_LEDGER.exists():
+        die(f"no publish ledger at {_paths.PUBLISHED_LEDGER} — run `pnpm puzzle:ledger --s3` first "
+            "(the archive is read off it, and an empty archive would re-propose every published day)")
     archive = shelf_mod.archive(args.lang, datetime.now(timezone.utc).date())
     log(f"- archive: {len(archive['secrets'])} secret(s) still in their {shelf_mod.SECRET_COOLDOWN_DAYS}-day "
         f"cooldown, {sum(len(v) for v in archive['pairs'].values())} secret/start pair(s) blacklisted")

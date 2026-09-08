@@ -4,8 +4,9 @@
 // rank). It is THE record of what has been published: the curator's archive (the
 // secret cooldown, the secret/start pair blacklist, the works and sentences already
 // played) reads it and nothing else. A LOCAL publish never writes it — the local store is
-// a test bed. `pnpm puzzle:ledger --s3` rebuilds it from the bucket (the backfill, and
-// the repair if a line was ever lost).
+// a test bed. It is GITIGNORED: the bucket is the truth and the file its local, readable
+// copy — `pnpm puzzle:ledger --s3` rebuilds it from the bucket on a fresh machine, and
+// repairs it if a line was ever lost.
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
