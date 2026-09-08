@@ -68,7 +68,7 @@ def test_archive_cools_secrets_down_but_blacklists_pairs_for_good(tmp_path, monk
     ])
     arch = shelf.archive("fr", date(2026, 9, 8))
     assert arch["secrets"] == {"argent"}                        # cimetière is past its 90-day cooldown
-    assert arch["pairs"] == {"cimetiere": {"tombeau"}, "argent": {"billets"}}   # pairs never expire; a corrected day keeps its last line
+    assert arch["pairs"] == {"cimetiere": {"tombeau"}, "argent": {"monnaie", "billets"}}   # pairs never expire — a corrected day's earlier start was played too
     assert shelf.sentence_key("y corrected") in arch["sentences"] and shelf.sentence_key("y") not in arch["sentences"]
     assert arch["last_used"][shelf.slug("Machado")] == date(2026, 9, 1)
     assert "money" not in arch["secrets"]                       # another language's day is not this archive

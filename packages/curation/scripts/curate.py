@@ -29,7 +29,7 @@ import rules
 import shelf as shelf_mod
 import starts as st
 from epub import epub_text
-from parse import parse
+from parse import parse, parse_many
 from sentences import EXCERPT_SENTENCES, EXCERPT_WINDOW, candidate_sentences, cut_excerpt, excerpt_around
 
 LANGS = ("fr",)
@@ -241,11 +241,12 @@ def _word_rank(frequency_rank):
 
 
 def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, str],
-                  forms: dict[str, str], frequency_rank, pairs: dict[str, set[str]] = {}) -> dict[str, str]:
+                  forms: dict[str, str], frequency_rank, pairs: dict[str, set[str]] | None = None) -> dict[str, str]:
     """The model picks the three start words together, from each hole's band (elision-
     clean, not too rare, never a start this secret was played with before — `pairs`,
     the archive's permanent blacklist — nearest first), reading the sentence, each
     slot's form and the context annotations."""
+    pairs = pairs or {}
     puzzle = json.loads(open(path, encoding="utf-8").read())
     words, holes = puzzle["words"], puzzle["holes"]
     by_secret: dict[str, dict] = {}
@@ -277,11 +278,12 @@ def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, st
 
 
 def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, set[str]],
-                 context: dict[str, str], frequency_rank, pairs: dict[str, set[str]] = {}) -> dict[str, str]:
+                 context: dict[str, str], frequency_rank, pairs: dict[str, set[str]] | None = None) -> dict[str, str]:
     """The displayed sentence with its start words: a start this secret was already
     played with (`pairs`), the elision rule, then the model's grammar check. Returns
     {secret slug: new start} for every faulty hole (empty = all good, or nothing better
     to offer). `tried` holds every start a hole has shown so far; none is offered again."""
+    pairs = pairs or {}
     puzzle = json.loads(open(path, encoding="utf-8").read())
     words, holes = puzzle["words"], puzzle["holes"]
     shown = st.displayed(words, holes)
@@ -412,8 +414,8 @@ def rich_enough(log: Log, sentences: list[str], lang: str, in_vocab, past_secret
     ones the model is ever shown, so a thin sentence cannot be shortlisted, ranked first
     and forced into a dull trio (the 2026-09-08 « faim · crois · pensée » day)."""
     kept = []
-    for s in sentences:
-        candidates = rules.initial_candidates(parse(s, lang), in_vocab=in_vocab, past_secrets=past_secrets,
+    for s, tokens in zip(sentences, parse_many(sentences, lang)):
+        candidates = rules.initial_candidates(tokens, in_vocab=in_vocab, past_secrets=past_secrets,
                                               frequency_rank=frequency_rank)
         if len({t.slug for t in candidates}) >= rules.MIN_CANDIDATES:
             kept.append(s)
@@ -568,6 +570,9 @@ def main():
         on_file = qt.load_quotes(book["file"])
         if on_file is None:
             log("- quotes: NO FILE for this work — run `pnpm shelf:quotes`; the quotation test is skipped")
+        elif not qt.quote_sources(book["file"]):
+            log("- quotes: the fetch found NO WIKIQUOTE OR WIKIPEDIA PAGE for this work — the quotation "
+                "test has nothing to check")
         else:
             quotes = on_file
             log(f"- quotes: {len(quotes)} quoted line(s) on file")

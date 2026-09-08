@@ -79,3 +79,18 @@ def test_quotes_file_round_trips_and_none_when_never_fetched(tmp_path):
     assert load_quotes("x.epub", tmp_path) is None
     save_quotes("x.epub", ["Une   ligne citée.", "Une autre."], ["https://fr.wikiquote.org/wiki/X"], tmp_path)
     assert load_quotes("x.epub", tmp_path) == ["Une ligne citée.", "Une autre."]
+
+
+def test_dedupe_quotes_is_lossless():
+    from quotes import dedupe_quotes
+    piped = "Il dit : « je pars | je reste » et sort."
+    assert dedupe_quotes([piped, "Il dit : « je pars | je reste » et sort.", "Autre ligne ici."]) == [piped, "Autre ligne ici."]
+
+
+def test_quote_sources_tell_no_page_from_no_fetch(tmp_path):
+    from quotes import load_quotes, quote_sources, save_quotes
+    assert quote_sources("x.epub", tmp_path) == []
+    save_quotes("x.epub", [], [], tmp_path)            # the fetch ran and found no page
+    assert load_quotes("x.epub", tmp_path) == [] and quote_sources("x.epub", tmp_path) == []
+    save_quotes("y.epub", ["Une ligne citée ici."], ["https://fr.wikiquote.org/wiki/Y"], tmp_path)
+    assert quote_sources("y.epub", tmp_path) == ["https://fr.wikiquote.org/wiki/Y"]

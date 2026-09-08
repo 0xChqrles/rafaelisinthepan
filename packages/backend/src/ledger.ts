@@ -7,7 +7,7 @@
 // a test bed. It is GITIGNORED: the bucket is the truth and the file its local, readable
 // copy — `pnpm puzzle:ledger --s3` rebuilds it from the bucket on a fresh machine, and
 // repairs it if a line was ever lost.
-import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Puzzle } from '@whippin/shared';
@@ -133,13 +133,4 @@ async function main() {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((err) => die(err instanceof Error ? err.message : String(err)));
-}
-
-// Exported for the curator-side readers' tests and for a future reader in this package.
-export async function readLedger(file = publishLedgerPath()): Promise<PublishedEntry[]> {
-  try {
-    return parseLedger(await readFile(file, 'utf8'));
-  } catch {
-    return [];
-  }
 }

@@ -76,3 +76,12 @@ def test_url_is_kept_trimmed():
         "kind": "music",
         "url": "https://youtu.be/x",
     }
+
+
+def test_a_url_that_is_not_a_web_link_is_refused_at_authoring():
+    import pytest
+    assert gen_phrase.build_source(url="HTTPS://youtu.be/x") == {"url": "HTTPS://youtu.be/x"}
+    with pytest.raises(ValueError):
+        gen_phrase.build_source(url="javascript:alert(1)")
+    with pytest.raises(ValueError):
+        gen_phrase.build_source(url="youtu.be/x")

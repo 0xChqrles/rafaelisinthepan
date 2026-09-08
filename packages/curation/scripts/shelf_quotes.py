@@ -104,7 +104,7 @@ def fetch_work(work: dict) -> tuple[list[str], list[str]]:
             continue
         sources.append(f"https://{host}/wiki/{urllib.parse.quote(page.replace(' ', '_'))}")
         quotes.extend(qt.extract_quotes(text))
-    return qt.extract_quotes("\n".join(f"{{{{citation|{q}}}}}" for q in quotes)), sources
+    return qt.dedupe_quotes(quotes), sources
 
 
 def main() -> None:

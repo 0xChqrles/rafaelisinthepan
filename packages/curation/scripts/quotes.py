@@ -124,22 +124,31 @@ def word_count(text: str) -> int:
     return len([w for w in text.split() if slug(w)])
 
 
+def _key(text: str) -> str:
+    return " ".join(slug(w) for w in text.split() if slug(w))
+
+
+def dedupe_quotes(quotes: list[str]) -> list[str]:
+    """One line per distinct slug key, first occurrence kept — lossless, where re-parsing
+    a quote as wikitext truncated it at a pipe and split it on its own « » (PR-274 review)."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for q in quotes:
+        key = _key(q)
+        if key and key not in seen:
+            seen.add(key)
+            out.append(q)
+    return out
+
+
 def extract_quotes(wikitext: str, min_words: int = MIN_QUOTE_WORDS) -> list[str]:
     """Every quoted line of a page, cleaned, deduplicated, in page order: the citation
     templates (Wikiquote's own shape, used on Wikipedia too) and the « … » spans (how an
     encyclopedia article quotes an incipit)."""
     raw = template_bodies(wikitext)
     raw += re.findall(r"«\s*(.+?)\s*»", wikitext, flags=re.S)
-    seen: set[str] = set()
-    out: list[str] = []
-    for r in raw:
-        q = clean_markup(r)
-        key = " ".join(slug(w) for w in q.split() if slug(w))
-        if word_count(q) < min_words or key in seen:
-            continue
-        seen.add(key)
-        out.append(q)
-    return out
+    cleaned = [clean_markup(r) for r in raw]
+    return dedupe_quotes([q for q in cleaned if word_count(q) >= min_words])
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +202,16 @@ def save_quotes(work_file: str, quotes: list[str], sources: list[str], root: Pat
     lines = [f"# source: {s}" for s in sources] + [" ".join(q.split()) for q in quotes]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
+
+
+def quote_sources(work_file: str, root: Path = QUOTES_DIR) -> list[str]:
+    """The pages a work's quotes came from — none means the fetch ran and found no page,
+    which the curator says out loud rather than reading as 'nothing quoted'."""
+    path = quotes_file(work_file, root)
+    if not path.exists():
+        return []
+    return [line[len("# source:"):].strip() for line in path.read_text(encoding="utf-8").splitlines()
+            if line.startswith("# source:")]
 
 
 def load_quotes(work_file: str, root: Path = QUOTES_DIR) -> list[str] | None:

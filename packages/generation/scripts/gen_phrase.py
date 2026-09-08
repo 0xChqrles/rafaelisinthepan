@@ -2897,6 +2897,10 @@ def build_source(kind=None, author=None, work=None, before=None, after=None, url
         val = val.strip()
         if val:
             src[key] = val
+    # The url becomes an href on the solved page and the web REFUSES the whole puzzle on
+    # a bad one — so it is refused HERE, on the author, not at fetch time on the players.
+    if "url" in src and not re.match(r"^https?://", src["url"], re.I):
+        raise ValueError(f"--url must be a web link (http(s)://…), got {src['url']!r}")
     before = [s.strip() for s in (before or ()) if s and s.strip()]
     after = [s.strip() for s in (after or ()) if s and s.strip()]
     if before or after:
@@ -3202,7 +3206,10 @@ def main():
             author = _prompt("Auteur / autrice")
         if work is None:
             work = _prompt("Titre de l'œuvre")
-    source = build_source(kind, author, work, before=args.before, after=args.after, url=args.url)
+    try:
+        source = build_source(kind, author, work, before=args.before, after=args.after, url=args.url)
+    except ValueError as exc:
+        sys.exit(f"erreur : {exc}")
 
     phrase = {
         "lang": lang,

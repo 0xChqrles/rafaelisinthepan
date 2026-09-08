@@ -119,8 +119,10 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   curator, OFFLINE, rejects a unit that shares `QUOTE_MATCH` (0.6) of the shorter side's
   words, in order, with a quoted line — at least `QUOTE_MIN_WORDS` (4) of them
   (`quotes.quoted`; a quote can be the first sentence of a two-sentence unit) — and the
-  log names the quote. A book with no file skips the test with a warning; a book with no
-  page rejects nothing, which is the point (no French reader quotes it). The model's own
+  log names the quote. A book with no file skips the test with a warning; a book whose
+  fetch found no page (`quotes.quote_sources` empty) rejects nothing and says so in the
+  log, which is the point (no French reader quotes it). The mined sentences are parsed
+  in one batched pass (`parse.parse_many`, `nlp.pipe`) before the shortlist. The model's own
   opinion — would a reader who has not read the book know this line — is logged as an
   ANNOTATION (`llm.widely_known`), never a strike. Everything else the model is asked is
   a choice from a list.
@@ -215,7 +217,8 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   2026-09-07):
   works, secrets in their cooldown (judged on the game DAY the line names), the permanent
   secret/start pairs, sentences, the artist cooldown's dates. A day published twice keeps
-  its last line. Neither the generation output (what `forget` erases: attempts) nor the
+  its last line for secrets, sentence and work — but its PAIRS come off every line, the
+  corrected day's earlier start included (it was played until the correction). Neither the generation output (what `forget` erases: attempts) nor the
   backend's local store (a test bed) is ever read for the archive.
 
 ## Do NOT

@@ -160,7 +160,7 @@ function checkSource(source: unknown): void {
   if (excerpt !== undefined && (!isRecord(excerpt) || !isStrings(excerpt.before) || !isStrings(excerpt.after))) {
     throw new Error('malformed puzzle: "source.excerpt" must hold "before" and "after" string arrays');
   }
-  if (url !== undefined && (typeof url !== 'string' || !/^https?:\/\//.test(url))) {
+  if (url !== undefined && (typeof url !== 'string' || !/^https?:\/\//i.test(url))) {
     throw new Error('malformed puzzle: "source.url" must be a web link');
   }
 }
