@@ -155,7 +155,8 @@ def run_gen_phrase(sentence: str, words: list[str], source: dict, forms: dict[st
 
 
 def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], source: dict, lang: str,
-             context: dict[str, str] | None = None, frequency_rank=lambda t: None):
+             context: dict[str, str] | None = None, frequency_rank=lambda t: None,
+             hard: set[str] = frozenset()):
     """Returns the written puzzle path, or None with the reason logged. The forms are
     answered by the model as gen_phrase asks. The first successful run only supplies the
     rank maps: the START WORDS are then chosen by the model, the three together, from
@@ -178,12 +179,12 @@ def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], sour
             prev = path or prev
             if path and not chosen:
                 chosen = True
-                picked = choose_starts(claude, log, path, context or {}, forms, frequency_rank)
+                picked = choose_starts(claude, log, path, context or {}, forms, frequency_rank, hard)
                 if picked:
                     _adopt(starts, tried, picked)
                     continue
             if path and rounds < st.START_ROUNDS:
-                repick = check_starts(claude, log, path, tried, context or {}, frequency_rank)
+                repick = check_starts(claude, log, path, tried, context or {}, frequency_rank, hard)
                 if repick:
                     _adopt(starts, tried, repick)
                     rounds += 1
@@ -240,10 +241,11 @@ def _word_rank(frequency_rank):
 
 
 def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, str],
-                  forms: dict[str, str], frequency_rank) -> dict[str, str]:
+                  forms: dict[str, str], frequency_rank, hard: set[str] = frozenset()) -> dict[str, str]:
     """The model picks the three start words together, from each hole's band (elision-
     clean, not too rare, nearest first), reading the sentence, each slot's form and the
-    context annotations."""
+    context annotations. A HARD hole (in `hard`: the context check guessed nothing) is
+    offered the near band, down to NEAR_START_RANK_MIN — a quite similar start."""
     puzzle = json.loads(open(path, encoding="utf-8").read())
     words, holes = puzzle["words"], puzzle["holes"]
     by_secret: dict[str, dict] = {}
@@ -253,12 +255,13 @@ def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, st
     info = []
     for key, h in by_secret.items():
         options = st.start_candidates(puzzle["ranks"][key], key, st.previous_token(words, h),
-                                      frequency_rank=_word_rank(frequency_rank))[:st.START_OPTIONS]
+                                      frequency_rank=_word_rank(frequency_rank),
+                                      rank_min=_rank_min(key, hard))[:st.START_OPTIONS]
         if not options:
             log(f"- no elision-clean start in the band for « {h['secret']['word']} »; the band pick stays")
             continue
         info.append({"secret": h["secret"]["word"], "slug": key, "options": options,
-                     "context": context.get(key, "unknown"),
+                     "context": context.get(key, "unknown"), "hard": key in hard,
                      "slot": f"form {forms.get(h['secret']['word'], '?')}, after « {st.previous_token(words, h) or '—'} »"})
     if not info:
         return {}
@@ -273,8 +276,12 @@ def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, st
     return picked
 
 
+def _rank_min(key: str, hard: set[str]) -> int:
+    return st.NEAR_START_RANK_MIN if key in hard else st.START_RANK_MIN
+
+
 def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, set[str]],
-                 context: dict[str, str], frequency_rank) -> dict[str, str]:
+                 context: dict[str, str], frequency_rank, hard: set[str] = frozenset()) -> dict[str, str]:
     """The displayed sentence with its start words: the elision rule, then the model's
     grammar check. Returns {secret slug: new start} for every faulty hole (empty = all
     good, or nothing better to offer). `tried` holds every start a hole has shown so far;
@@ -309,7 +316,8 @@ def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, set[s
         prev = st.previous_token(words, h)
         options = st.start_candidates(puzzle["ranks"][key], key, prev,
                                       exclude={h["start"]["word"], *tried.get(key, ())},
-                                      frequency_rank=_word_rank(frequency_rank))[:st.START_OPTIONS]
+                                      frequency_rank=_word_rank(frequency_rank),
+                                      rank_min=_rank_min(key, hard))[:st.START_OPTIONS]
         if not options:
             log(f"- no other start in the band for « {h['secret']['word']} » — left to the reviewer")
             continue
@@ -460,6 +468,7 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
     # annotation for the reviewer, never a strike (see rules.CONTEXT_GUESSES).
     blanks = {t.i for t in trio}
     context: dict[str, str] = {}
+    hard: set[str] = set()  # the holes the context gives nothing for — the near band's
     for t in trio:
         guesses = llm.context_guesses(claude, tokens, blanks - {t.i}, t.i, rules.CONTEXT_GUESSES)
         rank = next((k + 1 for k, g in enumerate(guesses)
@@ -467,12 +476,14 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
         verdict = f"guessed #{rank} from context (guesses: {', '.join(guesses)})" if rank \
             else f"not guessed from context (guesses: {', '.join(guesses) or 'none'})"
         context[t.slug] = verdict
+        if rank is None:
+            hard.add(t.slug)
         log(f"- context check '{t.text}': {verdict}")
     source = {"kind": book["kind"], "author": book.get("author", ""), "work": book.get("title", "")}
     excerpt = choose_page(claude, log, sentence, window) if window else None
     if excerpt:
         source["excerpt"] = excerpt
-    return generate(claude, log, sentence, words, source, lang, context, frequency_rank)
+    return generate(claude, log, sentence, words, source, lang, context, frequency_rank, hard)
 
 
 def choose_page(claude: llm.Claude, log: Log, sentence: str, window: dict) -> dict | None:

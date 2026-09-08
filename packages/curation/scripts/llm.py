@@ -298,8 +298,10 @@ def pick_starts(claude: Claude, sentence_marked: str, holes: list[dict]) -> dict
     blocks = []
     for h in holes:
         opts = ", ".join(f"{o['word']} ({o['rank']})" for o in h["options"])
+        near = (" This hole is HARD (the context gives nothing), so its candidates start at "
+                "rank 20: give the player a quite similar word.") if h.get("hard") else ""
         blocks.append(f"Hole « {h['secret']} » (slot: {h.get('slot', 'as the hidden word')}) — "
-                      f"context check: {h['context']}.\n"
+                      f"context check: {h['context']}.{near}\n"
                       f"Candidates (word (rank), closest first): {opts}")
     answer = claude.json(f"""You curate a daily French word game: three words of a sentence are hidden and the
 player rediscovers each from embedding-neighbour feedback. Each hole shows a START word
