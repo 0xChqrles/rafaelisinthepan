@@ -14,6 +14,10 @@ from epub import epub_metadata
 from lyrics import parse_song
 
 INDEX_FILE = _paths.SHELF_DIR / "index.json"
+# A secret comes back after this many days (user-decided 2026-09-08: a cooldown, not a
+# permanent blacklist — « cimetière » was off the table forever after one Ernaux day).
+# What stays permanent is the PAIR: a secret is never started from the same word twice.
+SECRET_COOLDOWN_DAYS = 90
 
 
 def list_works(shelf: Path = _paths.SHELF_DIR) -> list[dict]:
@@ -80,12 +84,15 @@ def _puzzle_files(lang: str):
     yield from (_paths.GENERATION_OUTPUT_DIR / lang).rglob("*.json")
 
 
-def archive(lang: str) -> dict:
-    """What exists already: {works: [{author, work}], secrets: {slug}, sentences: {key},
-    last_used: {author slug: date}} — the last date being the newest puzzle file's own
-    date (a puzzle is generated the day it is curated), what the artist cooldown is
-    judged on."""
+def archive(lang: str, today: date | None = None) -> dict:
+    """What exists already: {works: [{author, work}], secrets: {slug} (the ones still in
+    their SECRET_COOLDOWN_DAYS), pairs: {secret slug: {start word}} (every secret/start
+    pair ever played — permanent), sentences: {key}, last_used: {author slug: date}} —
+    a puzzle's date being its file's own (a puzzle is generated the day it is curated),
+    what both cooldowns are judged on."""
+    today = today or date.today()
     works, secrets, sentences = [], set(), set()
+    pairs: dict[str, set[str]] = {}
     last_used: dict[str, date] = {}
     seen = set()
     for path in _puzzle_files(lang):
@@ -93,8 +100,14 @@ def archive(lang: str) -> dict:
             puzzle = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
+        day = date.fromtimestamp(path.stat().st_mtime)
+        cooling = (today - day).days < SECRET_COOLDOWN_DAYS
         for hole in puzzle.get("holes", ()):
-            secrets.add(hole["secret"]["slug"])
+            if cooling:
+                secrets.add(hole["secret"]["slug"])
+            start = (hole.get("start") or {}).get("word")
+            if start:
+                pairs.setdefault(hole["secret"]["slug"], set()).add(start)
         sentences.add(sentence_key(" ".join(puzzle.get("words", ()))))
         src = puzzle.get("source") or {}
         key = (slug(src.get("author", "")), slug(src.get("work", "")))
@@ -102,10 +115,10 @@ def archive(lang: str) -> dict:
             seen.add(key)
             works.append({"author": src.get("author", ""), "work": src.get("work", "")})
         if src and key[0]:
-            day = date.fromtimestamp(path.stat().st_mtime)
             if key[0] not in last_used or day > last_used[key[0]]:
                 last_used[key[0]] = day
-    return {"works": works, "secrets": secrets, "sentences": sentences, "last_used": last_used}
+    return {"works": works, "secrets": secrets, "pairs": pairs, "sentences": sentences,
+            "last_used": last_used}
 
 
 def in_archive(book: dict, works: list[dict]) -> bool:

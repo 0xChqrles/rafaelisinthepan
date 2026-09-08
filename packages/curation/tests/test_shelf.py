@@ -46,3 +46,21 @@ def test_archive_sentences_match_a_mined_sentence_by_key(tmp_path, monkeypatch):
     mined = "Il aimait ce moment, disait-il."
     assert shelf.sentence_key(mined) in archived
     assert mined not in archived  # the raw string never matched: the puzzle stores lowercased tokens
+
+
+def test_archive_cools_secrets_down_but_blacklists_pairs_for_good(tmp_path, monkeypatch):
+    import os
+    from datetime import date, datetime, timedelta
+    monkeypatch.setattr(_paths, "GENERATION_OUTPUT_DIR", tmp_path)
+    old = _write(tmp_path, "fr/a/old.json", {"words": ["x"], "holes": [
+        {"secret": {"word": "cimetière", "slug": "cimetiere"}, "start": {"word": "tombeau", "slug": "tombeau"}}]})
+    new = _write(tmp_path, "fr/a/new.json", {"words": ["y"], "holes": [
+        {"secret": {"word": "argent", "slug": "argent"}, "start": {"word": "monnaie", "slug": "monnaie"}}]})
+    today = date(2026, 9, 8)
+    stale = datetime(2026, 5, 1).timestamp()
+    os.utime(old, (stale, stale))
+    fresh = datetime(2026, 9, 1).timestamp()
+    os.utime(new, (fresh, fresh))
+    arch = shelf.archive("fr", today)
+    assert arch["secrets"] == {"argent"}                      # cimetière is past its cooldown
+    assert arch["pairs"] == {"cimetiere": {"tombeau"}, "argent": {"monnaie"}}   # pairs never expire

@@ -155,7 +155,8 @@ def run_gen_phrase(sentence: str, words: list[str], source: dict, forms: dict[st
 
 
 def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], source: dict, lang: str,
-             context: dict[str, str] | None = None, frequency_rank=lambda t: None):
+             context: dict[str, str] | None = None, frequency_rank=lambda t: None,
+             pairs: dict[str, set[str]] | None = None):
     """Returns the written puzzle path, or None with the reason logged. The forms are
     answered by the model as gen_phrase asks. The first successful run only supplies the
     rank maps: the START WORDS are then chosen by the model, the three together, from
@@ -178,12 +179,12 @@ def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], sour
             prev = path or prev
             if path and not chosen:
                 chosen = True
-                picked = choose_starts(claude, log, path, context or {}, forms, frequency_rank)
+                picked = choose_starts(claude, log, path, context or {}, forms, frequency_rank, pairs or {})
                 if picked:
                     _adopt(starts, tried, picked)
                     continue
             if path and rounds < st.START_ROUNDS:
-                repick = check_starts(claude, log, path, tried, context or {}, frequency_rank)
+                repick = check_starts(claude, log, path, tried, context or {}, frequency_rank, pairs or {})
                 if repick:
                     _adopt(starts, tried, repick)
                     rounds += 1
@@ -240,10 +241,11 @@ def _word_rank(frequency_rank):
 
 
 def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, str],
-                  forms: dict[str, str], frequency_rank) -> dict[str, str]:
+                  forms: dict[str, str], frequency_rank, pairs: dict[str, set[str]] = {}) -> dict[str, str]:
     """The model picks the three start words together, from each hole's band (elision-
-    clean, not too rare, nearest first), reading the sentence, each slot's form and the
-    context annotations."""
+    clean, not too rare, never a start this secret was played with before — `pairs`,
+    the archive's permanent blacklist — nearest first), reading the sentence, each
+    slot's form and the context annotations."""
     puzzle = json.loads(open(path, encoding="utf-8").read())
     words, holes = puzzle["words"], puzzle["holes"]
     by_secret: dict[str, dict] = {}
@@ -253,6 +255,7 @@ def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, st
     info = []
     for key, h in by_secret.items():
         options = st.start_candidates(puzzle["ranks"][key], key, st.previous_token(words, h),
+                                      exclude=pairs.get(key, ()),
                                       frequency_rank=_word_rank(frequency_rank))[:st.START_OPTIONS]
         if not options:
             log(f"- no elision-clean start in the band for « {h['secret']['word']} »; the band pick stays")
@@ -274,11 +277,11 @@ def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, st
 
 
 def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, set[str]],
-                 context: dict[str, str], frequency_rank) -> dict[str, str]:
-    """The displayed sentence with its start words: the elision rule, then the model's
-    grammar check. Returns {secret slug: new start} for every faulty hole (empty = all
-    good, or nothing better to offer). `tried` holds every start a hole has shown so far;
-    none is offered again."""
+                 context: dict[str, str], frequency_rank, pairs: dict[str, set[str]] = {}) -> dict[str, str]:
+    """The displayed sentence with its start words: a start this secret was already
+    played with (`pairs`), the elision rule, then the model's grammar check. Returns
+    {secret slug: new start} for every faulty hole (empty = all good, or nothing better
+    to offer). `tried` holds every start a hole has shown so far; none is offered again."""
     puzzle = json.loads(open(path, encoding="utf-8").read())
     words, holes = puzzle["words"], puzzle["holes"]
     shown = st.displayed(words, holes)
@@ -287,6 +290,9 @@ def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, set[s
         by_secret.setdefault(h["secret"]["slug"], h)
     faulty: dict[str, str] = {}
     for key, h in by_secret.items():
+        if h["start"]["word"] in pairs.get(key, ()):
+            faulty[key] = "this secret was already played from this start word"
+            continue
         problem = st.elision_problem(st.previous_token(words, h), h["start"]["word"])
         if problem:
             faulty[key] = problem
@@ -308,7 +314,7 @@ def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, set[s
         log(f"- start « {h['start']['word']} » for « {h['secret']['word']} » refused: {problem}")
         prev = st.previous_token(words, h)
         options = st.start_candidates(puzzle["ranks"][key], key, prev,
-                                      exclude={h["start"]["word"], *tried.get(key, ())},
+                                      exclude={h["start"]["word"], *tried.get(key, ()), *pairs.get(key, ())},
                                       frequency_rank=_word_rank(frequency_rank))[:st.START_OPTIONS]
         if not options:
             log(f"- no other start in the band for « {h['secret']['word']} » — left to the reviewer")
@@ -486,7 +492,7 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
     excerpt = choose_page(claude, log, sentence, window) if window else None
     if excerpt:
         source["excerpt"] = excerpt
-    return generate(claude, log, sentence, words, source, lang, context, frequency_rank)
+    return generate(claude, log, sentence, words, source, lang, context, frequency_rank, archive["pairs"])
 
 
 def choose_page(claude: llm.Claude, log: Log, sentence: str, window: dict) -> dict | None:
@@ -535,7 +541,9 @@ def main():
             log(f"- erased: {path}")
         shelf_mod.save_index(index)
         args.work = args.retry
-    archive = shelf_mod.archive(args.lang)
+    archive = shelf_mod.archive(args.lang, datetime.now(timezone.utc).date())
+    log(f"- archive: {len(archive['secrets'])} secret(s) still in their {shelf_mod.SECRET_COOLDOWN_DAYS}-day "
+        f"cooldown, {sum(len(v) for v in archive['pairs'].values())} secret/start pair(s) blacklisted")
     claude = llm.Claude()
 
     today = datetime.now(timezone.utc).date()

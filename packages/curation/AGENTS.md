@@ -96,7 +96,10 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   what the player cannot see) at the shortlist.
 - **The rules, as code applies them** (from the user's curation feedback, #260):
   candidates are NOUN/VERB/ADJ/ADV, not stopwords, not among the commonest words (an
-  adverb has the higher floor), slug in the vocab, not a past secret,
+  adverb has the higher floor), slug in the vocab, not a secret still in its
+  `SECRET_COOLDOWN_DAYS` (90, `shelf.py`; user-decided 2026-09-08 — a COOLDOWN, not
+  the permanent blacklist it was, which had « cimetière » off the table forever after one
+  Ernaux day; judged on the puzzle file's date like the artist cooldown),
   no same-lemma twin under another slug in the sentence (a same-slug repeat is allowed:
   one hole per occurrence). After a pick, gone are: every verb if the pick is a verb
   (at most one verb); the pick's head and dependents and its modifier siblings (a verb
@@ -144,7 +147,10 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   (user rule 2026-09-07: the start is the user's daily craft — read the context, avoid a
   synonym when the context helps, go easier when a hole or the context is hard, think of
   the chain of guesses, balance the three; the rules live in the skill's `## The start
-  word` section, read by `llm.start_rules`). The first successful gen_phrase run only
+  word` section, read by `llm.start_rules`). **A secret/start PAIR is blacklisted for
+  good** (user-decided 2026-09-08): `shelf.archive()['pairs']` holds every start each
+  secret was ever played with, `choose_starts` and `check_starts` exclude them from the
+  band, and a generated start that repeats a pair is refused and re-picked. The first successful gen_phrase run only
   supplies the rank maps; `curate.choose_starts` then shows the model, per hole, the
   slot (form + preceding word), the context-check annotation, and the band candidates
   with ranks (`starts.start_candidates`: rank `START_RANK_MIN..MAX`, no variant,

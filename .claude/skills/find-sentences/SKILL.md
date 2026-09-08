@@ -51,6 +51,12 @@ concentrated on one word.
 - Three secrets in the same part of the sentence, or describing the same thing (a verb
   and its subject) → replace one. Spread them across the sentence.
 - At most one verb.
+- **Play the TURN (recorded 2026-09-08).** The part that makes the line worth playing —
+  its comparison, its image, its punch — must carry at least one hole; a trio that
+  hides three words of the set-up and leaves the turn intact plays the dull half of
+  the sentence. « je les conduisis au cimetière, comme on porte de l'argent à une
+  banque » wants a hole in the banque half, not three in the deaths before it. Spread
+  the three over the sentence's parts before spreading them over its words.
 - **The start word must leave the displayed sentence valid French**: elision (« l'effet »,
   never « le effet »), gender, number, verb form. A hint that breaks the grammar is
   replaced by another band word, never kept.
