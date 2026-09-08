@@ -12,6 +12,7 @@ import useShare from '../hooks/useShare';
 import Button from './Button';
 import ShareAs, { useShareSigner } from './ShareAs';
 import { ariaHoleHistory, t } from '../i18n';
+import { capitalize, sentenceStarts } from '../game/sentenceCase';
 import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 
 // The sentence result — a STAGE in two parts, the score above and the sentence's page
@@ -153,6 +154,8 @@ export default function SolvedScreen({
   // the exploration hints (two occurrences of one secret share a hint, as they share a
   // history line) and for the pop's span (they pop on one beat too).
   const holeByPos = useMemo(() => new Map(holes.map((h) => [h.pos, h])), [holes]);
+  // The page reads in sentence case like the board did (`game/sentenceCase.ts`).
+  const starts = useMemo(() => sentenceStarts(words), [words]);
   const secretNumbers = useMemo(
     () => Array.from(new Set(holes.map((h) => h.number))).sort((a, b) => a - b),
     [holes],
@@ -426,15 +429,16 @@ export default function SolvedScreen({
                 return (
                   <Fragment key={i}>
                     {space}
-                    {w}
+                    {starts[i] ? capitalize(w) : w}
                   </Fragment>
                 );
               }
+              const capitalWord = starts[i] && !hole.prefix;
               return (
                 <Fragment key={i}>
                   {space}
                   <span className="solved-line-group">
-                    {hole.prefix}
+                    {hole.prefix && starts[i] ? capitalize(hole.prefix) : hole.prefix}
                     <button
                       type="button"
                       className={`solved-secret${textIn ? ' in' : ''}`}
@@ -442,7 +446,7 @@ export default function SolvedScreen({
                       aria-describedby={`solved-explore-${hole.number}`}
                       onClick={() => onExplore(hole.holeIndex)}
                     >
-                      {hole.word}
+                      {capitalWord ? capitalize(hole.word) : hole.word}
                     </button>
                     {hole.suffix}
                   </span>

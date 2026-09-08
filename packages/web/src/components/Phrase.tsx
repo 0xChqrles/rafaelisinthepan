@@ -1,5 +1,6 @@
 import { Fragment } from 'react';
 import Hole from './Hole';
+import { capitalize, sentenceStarts } from '../game/sentenceCase';
 import type { HitState, Hole as PuzzleHole, RuntimeHole } from '@whippin/shared';
 
 // Render the sentence: normal words as plain text, holes via <Hole>. A blanked word
@@ -39,6 +40,10 @@ export default function Phrase({
   veiledHole?: number | null;
 }) {
   const holeIndexByPos = new Map<number, number>(holes.map((h, i) => [h.pos, i]));
+  // Sentence case is a DISPLAY rule (`game/sentenceCase.ts`): the first token and every
+  // token after a sentence-final mark open on a capital; a hole's prefix takes it when
+  // the hole has one, else the hole's own displayed word.
+  const starts = sentenceStarts(words);
   const puzzleHoleByPos = new Map<number, PuzzleHole>(puzzleHoles.map((h) => [h.pos, h]));
   const hintId = (holeIndex: number) => `hole-explore-${holeIndex}`;
 
@@ -66,8 +71,11 @@ export default function Phrase({
             <Fragment key={i}>
               {space}
               <span className="hole-group">
-                {prefix ? <span className="word">{prefix}</span> : null}
+                {prefix ? (
+                  <span className="word">{starts[i] ? capitalize(prefix) : prefix}</span>
+                ) : null}
                 <Hole
+                  capital={starts[i] && !prefix}
                   hole={rHole}
                   hit={activeHit}
                   holeIndex={idx}
@@ -93,7 +101,7 @@ export default function Phrase({
         return (
           <Fragment key={i}>
             {space}
-            <span className="word">{w}</span>
+            <span className="word">{starts[i] ? capitalize(w) : w}</span>
           </Fragment>
         );
       })}

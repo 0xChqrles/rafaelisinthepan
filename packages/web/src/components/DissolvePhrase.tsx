@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { Hole as PuzzleHole } from '@whippin/shared';
 import { SCRAMBLE_TICK_MS, prefersReducedMotion, randomGlyphs } from '../hooks/useScramble';
+import { capitalize, sentenceStarts } from '../game/sentenceCase';
 
 // The solved sentence's EXIT (user-decided 2026-08-14; scattered on review the same
 // day): once the solving beats have played out, the sentence hands the screen to the
@@ -73,6 +74,9 @@ export default function DissolvePhrase({
   // from flipping mid-swing.
   const tokens = useMemo<Token[]>(() => {
     const holeByPos = new Map(puzzleHoles.map((h) => [h.pos, h]));
+    // The same capitals Phrase drew (`game/sentenceCase.ts`), or the swap would not be
+    // pixel-identical: the prefix's when the hole has one, else the secret's.
+    const starts = sentenceStarts(words);
     const plan = (text: string): Letter[] =>
       Array.from(text).map((ch) => ({
         ch,
@@ -90,12 +94,14 @@ export default function DissolvePhrase({
           secret: true,
           prefix: hole.prefix,
           suffix: hole.suffix,
-          prefixLetters: hole.prefix ? plan(hole.prefix) : undefined,
-          letters: plan(hole.secret.word),
+          prefixLetters: hole.prefix
+            ? plan(starts[i] ? capitalize(hole.prefix) : hole.prefix)
+            : undefined,
+          letters: plan(starts[i] && !hole.prefix ? capitalize(hole.secret.word) : hole.secret.word),
           suffixLetters: hole.suffix ? plan(hole.suffix) : undefined,
         };
       }
-      return { key: i, space, secret: false, letters: plan(w) };
+      return { key: i, space, secret: false, letters: plan(starts[i] ? capitalize(w) : w) };
     });
     // Static for the dissolve's lifetime: the sentence it erodes is the one it mounted with.
     // eslint-disable-next-line react-hooks/exhaustive-deps

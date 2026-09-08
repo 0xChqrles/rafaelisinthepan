@@ -176,6 +176,15 @@ These are decided and verified against the code. Treat them as load-bearing.
      `STAGGER_MS = 200ms` apart, but their fade-out phase is synchronized across the
      batch (they disappear together). The rank-improving word/rank replacements all
      fire **together** at that shared fade-out moment.
+- **THE SENTENCE IS DISPLAYED IN SENTENCE CASE (user-decided 2026-09-08).** `words[]`
+  stays lowercased in the schema; `game/sentenceCase.ts` is the display rule, applied by
+  `Phrase`, `DissolvePhrase` (the swap must stay pixel-identical) and the solved page:
+  the first token and every token after a sentence-final mark (`. ! ? …`, closing quote
+  or bracket allowed) take a capital on their first LETTER, past an opening quote; a
+  hole's PREFIX takes it when the hole has one (« T'attends »), else the hole's displayed
+  word (`Hole`'s `capital`, on the letters path alone — never on the word the round
+  compares, never on a slug or a keystroke). Proper nouns stay as stored: only
+  generation keeping the source's case could restore them, a schema decision not made.
 - **Solved holes (`rank === 0`) are locked:** excluded from the loop and rendered
   solved (accented secret, no exponent).
 - **Feedback grammar:** under-the-input message = info about *what you typed* (only
