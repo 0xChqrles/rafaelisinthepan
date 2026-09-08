@@ -153,6 +153,31 @@ describe('parsePuzzle (shape validation)', () => {
     expect(parsePuzzle(p).source).toEqual(p.source);
   });
 
+  // The excerpt and the track link (#270): rendered by the solved page, so their shape is
+  // checked — two string arrays, and a web link — while a source without them is still
+  // exactly what it was.
+  it('passes the source excerpt and url through, and refuses a malformed one', () => {
+    const source = {
+      kind: 'book',
+      excerpt: { before: ['Avant.'], after: ['Après.', 'Et après.'] },
+      url: 'https://example.com/track',
+    };
+    expect(parsePuzzle({ ...valid(), source }).source).toEqual(source);
+    expect(parsePuzzle({ ...valid(), source: { excerpt: { before: [], after: [] } } }).source).toEqual({
+      excerpt: { before: [], after: [] },
+    });
+    expect(() => parsePuzzle({ ...valid(), source: { excerpt: { before: 'Avant.' } } })).toThrow(
+      /source\.excerpt/,
+    );
+    expect(() => parsePuzzle({ ...valid(), source: { excerpt: { before: [], after: [1] } } })).toThrow(
+      /source\.excerpt/,
+    );
+    expect(() => parsePuzzle({ ...valid(), source: { url: 'javascript:alert(1)' } })).toThrow(
+      /source\.url/,
+    );
+    expect(() => parsePuzzle({ ...valid(), source: 'Victor Hugo' })).toThrow(/"source"/);
+  });
+
   // The optional distance annotation (#115): `dq` is a group property generation adds to
   // every ranked entry. The secret's own entry (rank 0) carries none, so ABSENT stays
   // valid; a PRESENT one must be a well-formed number.

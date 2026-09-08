@@ -38,3 +38,18 @@ def test_short_sentences_join_into_a_unit_within_a_paragraph():
     # A unit never crosses the paragraph break, and a capital opening a joined sentence
     # is not counted as a proper noun.
     assert is_candidate("Il partit sans un mot. Elle resta là, devant la porte, à compter les pas qui s'éloignaient. Puis Marie revint.")
+
+
+# The page around a unit (#270): raw neighbouring sentences, crossing paragraph breaks,
+# never the unit itself, both sides bounded.
+def test_excerpt_around_a_unit_crosses_paragraphs_and_stops_at_the_edges():
+    from sentences import excerpt_around
+    text = ("Un. Deux. Trois.\n\n"
+            "Quatre. Cinq. Six. Sept.\n\n"
+            "Huit. Neuf.")
+    assert excerpt_around(text, "Cinq. Six.", n=3) == {"before": ["Deux.", "Trois.", "Quatre."],
+                                                      "after": ["Sept.", "Huit.", "Neuf."]}
+    assert excerpt_around(text, "Un.", n=2) == {"before": [], "after": ["Deux.", "Trois."]}
+    assert excerpt_around(text, "Neuf.", n=2) == {"before": ["Sept.", "Huit."], "after": []}
+    assert excerpt_around(text, "Trois. Quatre.", n=2) is None  # a unit never crosses a paragraph
+    assert excerpt_around(text, "Dix.") is None

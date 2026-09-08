@@ -158,6 +158,14 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
 - Music is a minority stream (one or two days a week); the pick prompt says so.
 - `source` is `{kind: music, author: <artist>, work: <song title>}`, like the archive.
 
+- **A book day carries its PAGE (#270, user-decided 2026-09-07)**: `sentences.excerpt_around`
+  takes `EXCERPT_SENTENCES` (3) raw sentences each side of the chosen unit, in reading
+  order, crossing paragraph breaks (a unit opens its paragraph as often as not), never the
+  unit itself, and the curator hands them to gen_phrase as `--before`/`--after` — the
+  source's own text, never a summary (a curator-written line that gets a fact wrong on a
+  literary screen is worse than nothing). **A song gets NO excerpt** (reaffirmed
+  2026-09-08: a verse or chorus is still reproduced lyrics); its track page is
+  gen_phrase's `--url`, by hand.
 - **The archive the curator reads is the GENERATION OUTPUT** (`packages/generation/output/
   word/<lang>/…`, every puzzle generated for publishing, works + secrets + sentences),
   never the backend's local store — that one is a test bed (user-decided 2026-09-07).

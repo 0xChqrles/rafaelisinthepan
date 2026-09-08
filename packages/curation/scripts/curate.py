@@ -29,7 +29,7 @@ import shelf as shelf_mod
 import starts as st
 from epub import epub_text
 from parse import parse
-from sentences import candidate_sentences
+from sentences import candidate_sentences, excerpt_around
 
 LANGS = ("fr",)
 # Candidate sentences shown to the model per book (a random sample above this).
@@ -137,6 +137,11 @@ def run_gen_phrase(sentence: str, words: list[str], source: dict, forms: dict[st
     for key in ("kind", "author", "work"):
         if source.get(key):
             cmd += [f"--{key}", source[key]]
+    excerpt = source.get("excerpt") or {}
+    for sentence_before in excerpt.get("before", ()):
+        cmd += ["--before", sentence_before]
+    for sentence_after in excerpt.get("after", ()):
+        cmd += ["--after", sentence_after]
     for word, form in forms.items():
         cmd += ["--form", f"{word}={form}"]
     for word, start in (starts or {}).items():
@@ -412,8 +417,9 @@ def shortlist(claude: llm.Claude, log: Log, mined: list[str], exclude: set[str],
 
 
 def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: dict,
-            in_vocab, similarity, frequency_rank, lang: str):
-    """One sentence through memorization test, trio search and generation."""
+            in_vocab, similarity, frequency_rank, lang: str, excerpt: dict | None = None):
+    """One sentence through memorization test, trio search and generation. `excerpt`
+    is the page around it (#270), handed to gen_phrase untouched."""
     log(f"\n## « {sentence} »")
     known, answer = llm.recognizes_source(claude, sentence, book.get("author", ""))
     if known:
@@ -457,6 +463,9 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
         context[t.slug] = verdict
         log(f"- context check '{t.text}': {verdict}")
     source = {"kind": book["kind"], "author": book.get("author", ""), "work": book.get("title", "")}
+    if excerpt:
+        source["excerpt"] = excerpt
+        log(f"- excerpt: {len(excerpt['before'])} sentence(s) before, {len(excerpt['after'])} after")
     return generate(claude, log, sentence, words, source, lang, context, frequency_rank)
 
 
@@ -510,8 +519,11 @@ def main():
     for n, pick in enumerate(ranked, 1):
         tried.append(pick["sentence"])
         log.begin_attempt(n)
+        # The page around the line (#270): a book's raw neighbouring sentences; a song
+        # gets none (lyrics are a licensed product — the line is the whole quotation).
+        excerpt = excerpt_around(text, pick["sentence"]) if book["kind"] == "book" else None
         result = attempt(claude, log, pick["sentence"], book, archive, vocab.__contains__,
-                         similarity, frequency_rank, args.lang)
+                         similarity, frequency_rank, args.lang, excerpt)
         log.end_attempt(bool(result), player_view(result, book) if result else ())
         if result:
             break

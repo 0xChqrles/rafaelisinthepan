@@ -17,6 +17,10 @@ MAX_WORDS = 33
 MAX_INNER_CAPITALS = 2
 # Consecutive sentences of one paragraph joined into one unit, at most.
 MAX_SENTENCES_PER_UNIT = 3
+# The page around a chosen unit (#270): this many raw sentences each side, in reading
+# order, CROSSING paragraph breaks — a unit opens its paragraph as often as not, and a
+# page with nothing before the line is no page.
+EXCERPT_SENTENCES = 3
 
 _TERMINAL = ".!?…"
 # A boundary is terminal punctuation (with optional closing quotes) followed by
@@ -42,6 +46,30 @@ def paragraph_sentences(text: str) -> list[list[str]]:
 
 def split_sentences(text: str) -> list[str]:
     return [s for paragraph in paragraph_sentences(text) for s in paragraph]
+
+
+def excerpt_around(text: str, unit: str, n: int = EXCERPT_SENTENCES) -> dict | None:
+    """{before, after}: the n sentences before and after `unit` in `text`, the unit
+    being a run of consecutive sentences of one paragraph exactly as candidate_sentences
+    builds it. Raw text, never the unit itself. None when the unit is not in the text."""
+    flat: list[str] = []
+    span = None
+    for paragraph in paragraph_sentences(text):
+        if span is None:
+            for start in range(len(paragraph)):
+                for k in range(1, MAX_SENTENCES_PER_UNIT + 1):
+                    if start + k > len(paragraph):
+                        break
+                    if " ".join(paragraph[start:start + k]) == unit:
+                        span = (len(flat) + start, len(flat) + start + k)
+                        break
+                if span is not None:
+                    break
+        flat.extend(paragraph)
+    if span is None:
+        return None
+    i, j = span
+    return {"before": flat[max(0, i - n):i], "after": flat[j:j + n]}
 
 
 def word_count(sentence: str) -> int:

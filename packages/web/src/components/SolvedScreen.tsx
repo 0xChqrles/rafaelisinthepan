@@ -153,6 +153,10 @@ export default function SolvedScreen({
   // (`rulerStagger`'s reduced-motion argument, spent here on the same problem).
   const stagger = animate ? rulerStagger(n, reduceMotion) : 0;
   const hasSource = Boolean(source?.kind || source?.author || source?.work);
+  // The page around the line (#270): the source's raw sentences before and after it, as
+  // one paragraph of muted text — the line's own highlight is the contrast.
+  const before = source?.excerpt?.before ?? [];
+  const after = source?.excerpt?.after ?? [];
 
   // The secrets, by their place in the sentence — and the distinct numbers they carry, for
   // the exploration hints (two occurrences of one secret share a hint, as they share a
@@ -439,6 +443,7 @@ export default function SolvedScreen({
             always show, in the nowrap group that keeps them on the secret's own line —
             Phrase's rule, unchanged. */}
         <p className="solved-text">
+          {before.length > 0 ? `${before.join(' ')} ` : null}
           <span className="solved-line">
             {words.map((w, i) => {
               const hole = holeByPos.get(i);
@@ -472,7 +477,15 @@ export default function SolvedScreen({
               );
             })}
           </span>
+          {after.length > 0 ? ` ${after.join(' ')}` : null}
         </p>
+        {/* A music day's LISTEN (#270): an ordinary link to the track's page, in a new
+            tab — no embed, no third-party script on the page. */}
+        {source?.url ? (
+          <a className="solved-listen" href={source.url} target="_blank" rel="noopener noreferrer">
+            {t(lang, 'listen')}
+          </a>
+        ) : null}
         {/* The exploration hints, referenced by each secret's `aria-describedby`. OUTSIDE
             the text, for Phrase's own reason: inside the <p> they would interleave
             "Explore word 2" into the prose a screen reader reads straight through. Two

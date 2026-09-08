@@ -3150,11 +3150,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
       `by Victor Hugo` under nothing is a sentence missing its subject) with its kind alone
       beneath it, and a source carrying only a kind is just that word. The typewriter is
       one character run across whatever lines exist.
-    - **Excerpt / track link (#270) land HERE and nowhere else**: `source.excerpt`'s
-      `before`/`after` become muted text around `.solved-line`, `source.url` a plain link;
-      a puzzle carrying neither shows credit + sentence, and nothing looks missing. Songs
-      get NO lyrics (the #270 decision stands, reaffirmed 2026-09-08: a verse or chorus is
-      still reproduced lyrics).
+    - **The EXCERPT and the track link (#270) live HERE and nowhere else**:
+      `source.excerpt.before`/`after` are joined into the muted text around
+      `.solved-line` — one paragraph, read top-down from the credit, no auto-scroll onto
+      the line — and `source.url` is LISTEN (`.solved-listen`, i18n `listen`): an
+      ordinary link under the text, new tab, `rel="noopener noreferrer"`, no embed and no
+      third-party script. A puzzle carrying neither shows credit + sentence, and nothing
+      looks missing. `parsePuzzle` REFUSES a malformed excerpt (two string arrays or
+      nothing) and a non-`http(s)` url (it becomes an href). Songs get NO lyrics (the
+      #270 decision stands, reaffirmed 2026-09-08: a verse or chorus is still reproduced
+      lyrics). Not here: excerpts on the archive calendar, the share page or the card.
   - **The reveal reads dissolve → page → score → standing → SHARE.** The stage rises in;
     the CREDIT types (`SolvedCaption`, hidden with `visibility` until its beat so the text
     never moves when it speaks) while the SECRETS POP into the line one by one

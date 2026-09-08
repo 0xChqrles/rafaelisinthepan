@@ -1967,6 +1967,23 @@ button {
 .solved-line {
   color: var(--fg);
 }
+/* LISTEN (#270): a music day's one affordance — an ordinary link to the track's page, a
+   new tab, no embed. The credit's own face, in the action ink, underlined the pixel way. */
+.solved-listen {
+  display: inline-block;
+  margin-top: clamp(14px, 2.6vh, 22px);
+  font-family: var(--pixel-font);
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--accent);
+  text-decoration: none;
+  padding-bottom: 3px;
+  border-bottom: 2px solid currentColor;
+}
+.solved-listen:hover {
+  filter: brightness(1.25);
+}
 /* A secret's affixes stay on its line — Phrase's own nowrap group. */
 .solved-line-group {
   white-space: nowrap;

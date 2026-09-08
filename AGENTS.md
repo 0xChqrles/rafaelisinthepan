@@ -112,7 +112,11 @@ is applied only to the player's raw keystrokes.
   "ranks": {                                    // keyed by SECRET slug
     "foret": { "<input-slug>": { "word": "<accented>", "rank": 12, "dq": 231 }, ... }
   },
-  "source": { "kind": "book", "author": "Victor Hugo", "work": "Les Misérables" },  // OPTIONAL
+  "source": {                                   // OPTIONAL, every field optional
+    "kind": "book", "author": "Victor Hugo", "work": "Les Misérables",
+    "excerpt": { "before": ["…", "…"], "after": ["…"] },   // #270: the RAW text around the line
+    "url": "https://…"                          // #270: a music day's track page
+  },
   "revision": "<hash>"                          // stamped by puzzle:publish (#203)
 }
 ```
@@ -127,7 +131,17 @@ is applied only to the player's raw keystrokes.
   secrets in one identity group are rejected at generation.
 - Every `{word, slug}` carries **both**, even when equal.
 - **`source` is fully optional**, every sub-field independently optional; values are display
-  forms; `kind` is an open union. There is no `context` field. Consumed by the solved screen.
+  forms; `kind` is an open union. Consumed by the solved screen.
+- **`source.excerpt` is the RAW text around the sentence (#270, user-decided 2026-09-07;
+  it reverses the earlier "no `context` field" rule):** `{before: string[], after:
+  string[]}`, a few sentences each side (`EXCERPT_SENTENCES` = 3 in `curation/sentences.py`),
+  display forms, never generated prose, never the sentence itself (that is `words[]`); both
+  arrays present whenever the key is. The curator emits it for a BOOK; a song carries NONE
+  (lyrics are a licensed product; reaffirmed 2026-09-08); a hand-authored puzzle may carry
+  none. Hashed into `revision` like any content; the derivation slice and the share card
+  carry no excerpt. **`source.url`** is a music day's track page, display-only (an ordinary
+  link on the solved page, never an embed). Written only by `gen_phrase`
+  (`--before`/`--after`/`--url`); the web refuses a malformed excerpt or a non-web url.
 - **No `benchmark` field, no `road` field, no `par` field** (removed 2026-08-12). Consumers
   ignore a stray key on an already-published puzzle. `packages/benchmark` never writes into a
   puzzle file.

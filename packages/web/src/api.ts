@@ -144,7 +144,25 @@ export function parsePuzzle(data: unknown): Puzzle {
       checkRankAnnotations(entry);
     }
   }
+  checkSource(data.source);
   return data as unknown as Puzzle;
+}
+
+// The optional source (#5) passes through — except its two #270 fields, which the solved
+// page RENDERS rather than merely prints: the excerpt has to be two arrays of strings (a
+// malformed one would crash the page mid-render), and the url becomes an href, so it has
+// to be a web link and nothing else.
+function checkSource(source: unknown): void {
+  if (source === undefined) return;
+  if (!isRecord(source)) throw new Error('malformed puzzle: "source" must be an object');
+  const { excerpt, url } = source;
+  const isStrings = (v: unknown) => Array.isArray(v) && v.every((s) => typeof s === 'string');
+  if (excerpt !== undefined && (!isRecord(excerpt) || !isStrings(excerpt.before) || !isStrings(excerpt.after))) {
+    throw new Error('malformed puzzle: "source.excerpt" must hold "before" and "after" string arrays');
+  }
+  if (url !== undefined && (typeof url !== 'string' || !/^https?:\/\//.test(url))) {
+    throw new Error('malformed puzzle: "source.url" must be a web link');
+  }
 }
 
 // Runtime shape check for Word mode's fetched artifact (#154/#156) — the same job as
