@@ -22,7 +22,8 @@ import Phrase from '../components/Phrase';
 import CellDigits from '../components/CellDigits';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
-import SolvedScreen from '../components/SolvedScreen';
+import DissolvePhrase from '../components/DissolvePhrase';
+import SolvedScreen, { type SolvedHole } from '../components/SolvedScreen';
 import LazyStreakDialog, { preloadStreakDialog } from '../components/LazyStreakDialog';
 import HistoryWheel from '../components/HistoryWheel';
 import HistoryModal from '../components/HistoryModal';
@@ -74,10 +75,6 @@ const EMPTY_LOG: string[] = [];
 // a generous multiple of the real duration, so it only ever fires if the DOM signal
 // itself was lost.
 export const KB_EXIT_FALLBACK_MS = 1_200;
-
-// How long the sentence takes to rise into the result (#266). `SolvedScreen` waits it out
-// before the source starts typing, so the two must stay aligned.
-export const PHRASE_RISE_MS = 420;
 
 // Wrapper: drives the single puzzle. Loads the language's fixed vocabulary
 // (existence set + keyboard prefix set) before playing — existence is decided by it,
@@ -457,16 +454,22 @@ function Round({
   const [showStreakDialog, setShowStreakDialog] = useState(false);
   const [streakAdvanced, setStreakAdvanced] = useState(false);
   const [awaitingWordAnimations, setAwaitingWordAnimations] = useState(false);
+  // The sentence's EXIT (user-decided 2026-08-14; restored 2026-09-08 on #266's second
+  // review): once the solving beats have played out and the keyboard has dropped, the
+  // resolved sentence DISSOLVES — every letter churns through the scramble's glyphs and
+  // goes out — and only then does the result take the whole column. `dissolved` is the
+  // flag the swap hangs on: false through a live round (a fresh solve earns the
+  // dissolve), true from the first frame of a rehydrated solve (a revisit replays
+  // nothing, sentence included).
+  const [dissolved, setDissolved] = useState(finished);
   // Solved exit choreography (#110, decided 2026-07-24): a LIVE solve doesn't swap the
-  // tray instantly — the keyboard slides down out of it (kb-drop) before the result grows
-  // around the sentence. Rehydrated solves never set this: they mount the final frame
-  // directly.
+  // tray instantly — the keyboard slides down out of it (kb-drop) before the sentence
+  // dissolves and the result rises. Rehydrated solves never set this: they mount the
+  // final frame directly.
   const [keyboardLeaving, setKeyboardLeaving] = useState(false);
   // The solving beats have handed the screen back: streak dismissed, keyboard gone. What
-  // it releases is the RESULT — the sentence's rise, the source under it, the score block
-  // in the tray's place. (Until 2026-09-08 it released the sentence's DISSOLVE instead,
-  // and the stage waited for the sentence to finish going out; the sentence stays now, so
-  // there is nothing between the drop and the result.)
+  // it releases is the DISSOLVE (not yet the result — the result waits for the sentence
+  // to finish going out).
   const resultUp = showResults && !keyboardLeaving && !showStreakDialog;
   // The exit beat hands the tray back through a signal the DOM has to produce: the
   // keyboard's own `animationend`. It is reliable today, but the tray renders NOTHING
@@ -498,6 +501,7 @@ function Round({
       setAwaitingWordAnimations(false);
       setKeyboardLeaving(false);
       setPromptExiting(false);
+      setDissolved(false);
       return undefined;
     }
     if (!justFinished || !freshSolve) {
@@ -507,6 +511,7 @@ function Round({
       setStreakAdvanced(false);
       setAwaitingWordAnimations(false);
       setPromptExiting(false);
+      setDissolved(true); // nothing to replay — the sentence is already gone
       return undefined;
     }
     // The one analytics beat for "did the player finish a puzzle": fired ONLY on the
@@ -530,6 +535,7 @@ function Round({
     setAnimateResults(true);
     setStreakAdvanced(didAdvanceStreak);
     if (didAdvanceStreak) preloadStreakDialog();
+    setDissolved(false); // a fresh solve earns the sentence's dissolve
     setAwaitingWordAnimations(true);
     return undefined;
   }, [finished]);
@@ -580,17 +586,14 @@ function Round({
   // (user-decided 2026-08-16). The solved reveal is several seconds of choreography a
   // returning player has already seen, and a daily's player wants the number; the streak
   // celebration got its own skip for exactly this reason. One gesture settles the WHOLE
-  // remainder at once — the tray released, and the result drawn with `animate` off, which
-  // IS the frame a rehydrated solve renders (the sentence's rise reads the same flag and
-  // lands rather than travelling). Reusing that rendering rather than inventing a parallel
-  // fast path is the decision's own instruction, and it is what keeps the skip from
-  // drifting behind the beats.
+  // remainder at once — the tray released, the sentence gone, and the result drawn with
+  // `animate` off, which IS the frame a rehydrated solve renders. Reusing that rendering
+  // rather than inventing a parallel fast path is the decision's own instruction, and it
+  // is what keeps the skip from drifting behind the beats.
   const settleReveal = useCallback(() => {
     setKeyboardLeaving(false); // the drop is over, the tray is handed back
+    setDissolved(true); // the sentence is gone, however far its erosion had got
     setAnimateResults(false); // and the result draws its settled frame
-    // The RISE is the one beat that is not a React state: it is already in flight when a
-    // tap lands mid-move, and a settled frame is one where the sentence has arrived.
-    phraseRise.current?.finish();
   }, []);
   // The reveal is on screen AND still playing: the solving beats have handed it over, no
   // full-screen celebration stands in front of it, and it has not settled yet.
@@ -601,8 +604,8 @@ function Round({
   // word's history, Enter on a focused control settles AND activates it, natively.
   // `click` rather than `pointerdown`, for two reasons: a click's target is fixed before
   // this runs, so settling can never pull the control out from under the finger between
-  // press and release — and a SCROLL, which #266's kept sentence makes a real gesture
-  // here, produces no click and must not read as a skip.
+  // press and release — and a SCROLL, which the result's page makes a real gesture here
+  // (#266), produces no click and must not read as a skip.
   //
   // The streak celebration is excluded above because it keeps its OWN fast-forward →
   // dismiss handling: the tap that dismisses it must not also spend the reveal it is
@@ -620,48 +623,11 @@ function Round({
     };
   }, [revealPlaying, settleReveal]);
 
-  // --- THE SENTENCE RISES; IT IS NEVER REBUILT (user-decided 2026-09-08, #266's review,
-  // superseding the 2026-08-14 DISSOLVE): "just keep the sentence and move it to the top a
-  // little bit with a smooth animation before writing the source below". The result grows
-  // around the round's OWN live `Phrase` — same element, same play column, same left edge,
-  // same wrap points — so the words the player put there stay exactly the words on screen.
-  // (The dissolve was the hand-over to a stage that owned the whole column; a stage that
-  // re-laid the sentence out at the score block's 680px made it a different block: measured
-  // at 1280x800, 225px tall during play against 405px on the stage.)
-  //
-  // How far it rises is whatever the source and the score block leave it, which depends on
-  // the sentence, the viewport and the population — so it is MEASURED, not guessed: the
-  // position is read on every commit of the finishing round, and the one commit that moves
-  // it plays the difference back as a transform (the FLIP). The reads are bounded to
-  // `finished` and stop the moment the rise has played, so a round in play never pays for a
-  // layout it is not about to change.
-  const phraseRef = useRef<HTMLDivElement>(null);
-  const phraseTop = useRef<number | null>(null);
-  const phraseRise = useRef<Animation | null>(null);
-  const risen = useRef(false);
-  useLayoutEffect(() => {
-    if (!finished) {
-      phraseTop.current = null;
-      risen.current = false;
-      return;
-    }
-    const el = phraseRef.current;
-    if (!el || risen.current) return;
-    const top = el.getBoundingClientRect().top;
-    const from = phraseTop.current;
-    phraseTop.current = top;
-    if (!resultUp) return; // still the frame BEFORE the move
-    risen.current = true;
-    // A settled result did not travel: a rehydrated solve mounts here (nothing to compare
-    // against) and a fast-forward asked for the finished frame, not for the beat.
-    if (from === null || !animateResults || prefersReducedMotion()) return;
-    const delta = from - top;
-    if (delta < 1) return;
-    phraseRise.current = el.animate(
-      [{ transform: `translateY(${delta}px)` }, { transform: 'none' }],
-      { duration: PHRASE_RISE_MS, easing: 'cubic-bezier(0.2, 0.8, 0.3, 1)' },
-    );
-  });
+  // The dissolve reporting itself finished is what swaps the screen: DissolvePhrase has
+  // eroded every letter (plus its own closing breath), and the result may rise.
+  const finishDissolve = useCallback(() => {
+    setDissolved(true);
+  }, []);
 
   // --- the hole WHEEL (2026-09-01, replacing the history modal; 2026-08-10's own
   // replacement of the #117 route map): each hole opens the round's guess log ranked against
@@ -701,20 +667,15 @@ function Round({
   );
   // Tapping a hole is available during normal play only, since the 2026-08-14 redesign:
   // once the solving beats begin, the sentence belongs to the choreography (and then
-  // dissolves), and the tap moves to the solved stage's own word buttons — which are
-  // never disabled, because they only exist once every beat that owned the sentence is
-  // over. The rules GATE does NOT disable the holes: its own copy teaches the tap, so the
-  // gesture must work while the line that teaches it is on screen.
+  // dissolves), and the tap moves to the result's own secrets in the sentence's page —
+  // which are never disabled, because they only exist once every beat that owned the
+  // sentence is over. The rules GATE does NOT disable the holes: its own copy teaches the
+  // tap, so the gesture must work while the line that teaches it is on screen.
   //
   // `promptExiting` covers the START of those beats: the prompt leaves on the solving
   // submit while the holes are still resolving, so `boardComplete` — which only follows the
   // last word's settle — has not turned over yet.
-  // Live again once the RESULT is up (#266): the sentence stays on screen, so its secrets
-  // stay the way into their own history lines — the trophy row that used to carry that tap
-  // is gone with the stage. What the gate still covers is the SOLVING beats themselves,
-  // when the sentence belongs to the choreography (`promptExiting` covers their start,
-  // since the prompt leaves on the solving submit while the holes are still resolving).
-  const exploreDisabled = !resultUp && (promptExiting || boardComplete || finished);
+  const exploreDisabled = promptExiting || boardComplete || finished;
   // Stable for the round: the button wraps the hole for the WHOLE round or not at all, and
   // the gating above only disables it — unwrapping mid-round would remount the word while
   // its scramble is running. These are the buttons' DESCRIPTIONS, not their names: a hole is
@@ -722,6 +683,23 @@ function Round({
   const exploreLabels = useMemo<string[]>(
     () => holeNumbers.map((n) => ariaHoleHistory(lang, n)),
     [holeNumbers, lang],
+  );
+  // The result's own view of the secrets (#266): where each sits in `words[]`, the word
+  // and affixes it displays, its own index — the history modal's key, so the tap opens
+  // the history of the word that was tapped — and the shared distinct-secret `number`, so
+  // two occurrences pop on one beat and share one history line (they share a rank map, so
+  // the two logs are the same log).
+  const solvedHoles = useMemo<SolvedHole[]>(
+    () =>
+      puzzleHoles.map((h, holeIndex) => ({
+        pos: h.pos,
+        word: h.secret.word,
+        holeIndex,
+        number: holeNumbers[holeIndex],
+        prefix: h.prefix,
+        suffix: h.suffix,
+      })),
+    [puzzleHoles, holeNumbers],
   );
   const historyModel = useMemo(() => {
     if (historyHole === null) return null;
@@ -941,144 +919,153 @@ function Round({
         {announce}
       </div>
 
-      {/* ONE TREE for both phases (#266, user-decided 2026-09-08, superseding the
-          2026-08-14 stage/play SWAP): the result grows around the sentence instead of
-          replacing the column it lives in, so the `Phrase` below is the SAME element from
-          the first guess to SHARE — never re-rendered into another layout, never eroded
-          and rebuilt. What changes is what stands under it and how high it sits. */}
-      <div
-        className={`play${showResults ? ' play-finished' : ''}${resultUp ? ' play-result' : ''}`}
-      >
-        {/* The sentence, through every phase that owns it: the live holes/hits while
-            playing, the fully resolved sentence through the solving beats, and then the
-            result's own first block — risen a little, its secrets tappable again. The
-            wrapper anchors the score watermark behind the phrase (z-index:-1 in .play's
-            isolated stacking context), printed on the background's 24px cells
-            (CellDigits); the watermark fades as the result arrives — the count's next
-            appearance is the result's own headline. */}
-        <div className="phrase-anchor" ref={phraseRef}>
-          <div className="progress-background" aria-hidden="true">
-            <CellDigits value={guessCount} />
-          </div>
-          <Phrase
-            words={words}
-            holes={shownHoles}
-            puzzleHoles={puzzleHoles}
-            hits={hits}
-            onHitDone={removeHit}
-            onHoleResolved={markHoleResolved}
-            exploreLabels={exploreLabels}
-            exploreDisabled={exploreDisabled}
-            onExplore={openHistory}
-            quiet={quiet}
-            veiledHole={wheelOpen ? historyHole : null}
-          />
-        </div>
-
-        {resultUp ? (
-          /* The RESULT, in the two places the play screen already has: the SOURCE in the
-             prompt's row, the SCORE block on the bottom edge where the keyboard was. */
-          <SolvedScreen
-            guessCount={guessCount}
-            trajectory={trajectory}
-            dayNumber={dayNumber}
-            lang={lang}
-            // A capped round has no solve to tick and no count to name: it ends at `∞`
-            // (#214), with the sentence, its answer and the credit shown like any other
-            // finished round.
-            solvedAt={capped ? undefined : solvedAt}
-            capped={capped}
-            source={source}
-            placement={placement}
-            animate={animateResults}
-            // The dev `?streak=N` preview (App owns that dialog, so this round never sees
-            // it in `showStreakDialog`) opens over an ALREADY-SOLVED day, where the result
-            // is mounted from the first frame. Without this it would play its whole reveal
-            // — citation, tally, standing — under a full-screen modal, and dismissal would
-            // land on a finished frame: the exact choreography the harness exists to
-            // replay, spent unseen. The prop flips false on dismissal, which is the cue.
-            start={!deferResultsAnimation}
-          />
-        ) : (
-          /* Below the sentence: the prompt. It exits on the solving submit and stays laid
-             out (retired, invisible) through the streak and the keyboard's drop, so the
-             centered sentence never moves between the beats; the source takes this row
-             when the result arrives. */
-          <div className="prompt-zone">
-            <div
-              className={`input-area${promptExiting ? ' solving' : ''}${
-                showResults || gateOpen ? ' retired' : ''
-              }`}
-              aria-hidden={promptExiting || showResults || gateOpen || undefined}
-            >
-              <WordInput
-                value={input}
-                history={history}
-                onType={appendChar}
-                onBackspace={deleteChar}
-                onSubmit={submit}
-                onReplace={replaceInput}
-                invalidSignal={invalidAt}
-                // The history modal covers the prompt: keystrokes must not build (or submit)
-                // a guess the player cannot see behind it. The gate holds it back the same
-                // way — the prompt arrives with the keyboard, on PLAY.
-                active={!showResults && historyHole === null && !gateOpen}
-              />
-              <p className="hint">{feedback || ' '}</p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Bottom zone (fixed keyboard-height footprint): the on-screen keyboard, or the
-          gate. The keyboard lingers (inert; submit is guarded) through the last hole's
-          animation, then slides down out of the tray (#110) — and the tray leaves WITH it,
-          handing its footprint to the score block above. */}
-      {!resultUp && (
-        <div
-          className={`tray${keyboardLeaving ? ' kb-leaving' : ''}${gateOpen ? ' tray-gate' : ''}`}
-        >
-          {gateOpen ? (
-            /* The GATE, in the keyboard's own footprint: the rules in the app's shared
-               dialog box (`.coach-rules` — the tutorial's coach, so one design says "this
-               is here to help" everywhere), bulleted, and the PLAY that dismisses them for
-               good — the tutorial's own full-width button, so the graduation and the gate
-               speak one language. */
-            <div className="rules-gate">
-              <p className="sr-only">{gateRules}</p>
-              <div className="coach-rules" aria-hidden="true">
-                <CoachText copy={gateRules} />
+      {showResults && dissolved ? (
+        /* The RESULT (user-decided 2026-09-08, on #266's second review): the sentence has
+           dissolved, so the stage takes the WHOLE column the play area and the tray used
+           to split — the score block with SHARE at the TOP, and the sentence's page
+           (the credit, then the text, read top-down) scrolling under it. The tray goes
+           with the keyboard: nothing left down there to reserve a footprint for. */
+        <SolvedScreen
+          guessCount={guessCount}
+          trajectory={trajectory}
+          dayNumber={dayNumber}
+          lang={lang}
+          // A capped round has no solve to tick and no count to name: it ends at `∞`
+          // (#214), with the sentence, its answer and the credit shown like any other
+          // finished round.
+          solvedAt={capped ? undefined : solvedAt}
+          capped={capped}
+          source={source}
+          words={words}
+          holes={solvedHoles}
+          onExplore={openHistory}
+          placement={placement}
+          animate={animateResults}
+          // The dev `?streak=N` preview (App owns that dialog, so this round never sees
+          // it in `showStreakDialog`) opens over an ALREADY-SOLVED day, where the result
+          // is mounted from the first frame. Without this it would play its whole reveal
+          // — citation, tally, standing — under a full-screen modal, and dismissal would
+          // land on a finished frame: the exact choreography the harness exists to
+          // replay, spent unseen. The prop flips false on dismissal, which is the cue.
+          start={!deferResultsAnimation}
+        />
+      ) : (
+        <>
+          {/* The play area fills the space between the fixed HUD (top) and the keyboard
+              (bottom) and centers its content, so the sentence + prompt sit in the middle.
+              It also anchors the score watermark, so the big try count stays centered
+              behind THIS content rather than the full-height .game. */}
+          <div className={`play${showResults ? ' play-finished' : ''}`}>
+            {/* The sentence, through every phase that owns it: the live holes/hits while
+                playing, the fully resolved sentence through the solving beats — and then
+                its EXIT: once the keyboard has dropped (`resultUp`), the live Phrase hands
+                its exact pixels to DissolvePhrase, which erodes them letter by letter and
+                reports done (the swap above). The wrapper anchors the score watermark
+                behind the phrase (z-index:-1 in .play's isolated stacking context),
+                printed on the background's 24px cells (CellDigits); the watermark goes
+                with the round — the count's next appearance is the result's headline. */}
+            <div className="phrase-anchor">
+              <div className="progress-background" aria-hidden="true">
+                <CellDigits value={guessCount} />
               </div>
-              <button
-                type="button"
-                className="mix-btn"
-                onClick={handleGatePlay}
-                disabled={deploying}
+              {resultUp ? (
+                <DissolvePhrase words={words} puzzleHoles={puzzleHoles} onDone={finishDissolve} />
+              ) : (
+                <Phrase
+                  words={words}
+                  holes={shownHoles}
+                  puzzleHoles={puzzleHoles}
+                  hits={hits}
+                  onHitDone={removeHit}
+                  onHoleResolved={markHoleResolved}
+                  exploreLabels={exploreLabels}
+                  exploreDisabled={exploreDisabled}
+                  onExplore={openHistory}
+                  quiet={quiet}
+                  veiledHole={wheelOpen ? historyHole : null}
+                />
+              )}
+            </div>
+
+            {/* Below the sentence: the prompt. It exits on the solving submit and stays
+                laid out (retired, invisible) through the streak and the dissolve, so the
+                centered sentence never moves while it erodes. */}
+            <div className="prompt-zone">
+              <div
+                className={`input-area${promptExiting ? ' solving' : ''}${
+                  showResults || gateOpen ? ' retired' : ''
+                }`}
+                aria-hidden={promptExiting || showResults || gateOpen || undefined}
               >
-                {deploying ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'gatePlay')}
-              </button>
+                <WordInput
+                  value={input}
+                  history={history}
+                  onType={appendChar}
+                  onBackspace={deleteChar}
+                  onSubmit={submit}
+                  onReplace={replaceInput}
+                  invalidSignal={invalidAt}
+                  // The history modal covers the prompt: keystrokes must not build (or submit)
+                  // a guess the player cannot see behind it. The gate holds it back the same
+                  // way — the prompt arrives with the keyboard, on PLAY.
+                  active={!showResults && historyHole === null && !gateOpen}
+                />
+                <p className="hint">{feedback || ' '}</p>
+              </div>
             </div>
-          ) : (
-            <div
-              className={`kb-exit${keyboardLeaving ? ' leaving' : ''}`}
-              onAnimationEnd={(e) => {
-                // Child animations (key shakes) bubble here too: only the wrapper's own
-                // kb-drop end releases the tray (and lets the result in).
-                if (keyboardLeaving && e.target === e.currentTarget) setKeyboardLeaving(false);
-              }}
-            >
-              <Keyboard
-                input={input}
-                prefixSet={prefixSet}
-                vocabSet={vocabSet}
-                lang={lang}
-                onType={appendChar}
-                onBackspace={deleteChar}
-                onSubmit={submit}
-              />
-            </div>
-          )}
-        </div>
+          </div>
+
+          {/* Bottom zone (fixed keyboard-height footprint): the on-screen keyboard, or the
+              gate. The keyboard lingers (inert; submit is guarded) through the last hole's
+              animation, then slides down out of the tray (#110); the tray then sits empty
+              under the dissolving sentence until the result takes the whole column. */}
+          <div
+            className={`tray${keyboardLeaving ? ' kb-leaving' : ''}${
+              gateOpen ? ' tray-gate' : ''
+            }`}
+          >
+            {gateOpen ? (
+              /* The GATE, in the keyboard's own footprint: the rules in the app's shared
+                 dialog box (`.coach-rules` — the tutorial's coach, so one design says "this
+                 is here to help" everywhere), bulleted, and the PLAY that dismisses them for
+                 good — the tutorial's own full-width button, so the graduation and the gate
+                 speak one language. */
+              <div className="rules-gate">
+                <p className="sr-only">{gateRules}</p>
+                <div className="coach-rules" aria-hidden="true">
+                  <CoachText copy={gateRules} />
+                </div>
+                <button
+                  type="button"
+                  className="mix-btn"
+                  onClick={handleGatePlay}
+                  disabled={deploying}
+                >
+                  {deploying ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'gatePlay')}
+                </button>
+              </div>
+            ) : resultUp ? null : (
+              <div
+                className={`kb-exit${keyboardLeaving ? ' leaving' : ''}`}
+                onAnimationEnd={(e) => {
+                  // Child animations (key shakes) bubble here too: only the wrapper's own
+                  // kb-drop end releases the tray (and lets the dissolve begin).
+                  if (keyboardLeaving && e.target === e.currentTarget) setKeyboardLeaving(false);
+                }}
+              >
+                <Keyboard
+                  input={input}
+                  prefixSet={prefixSet}
+                  vocabSet={vocabSet}
+                  lang={lang}
+                  onType={appendChar}
+                  onBackspace={deleteChar}
+                  onSubmit={submit}
+                />
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       {/* The deploy's failure, on the app's error surface: what happened, and TRY AGAIN

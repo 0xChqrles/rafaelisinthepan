@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { INFINITY_EM_HEIGHT, INFINITY_EM_WIDTH, INFINITY_GLYPH, type Source } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { shareHeadline, shareText, shareUrl } from '../game/share';
@@ -10,54 +11,53 @@ import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useShare from '../hooks/useShare';
 import Button from './Button';
 import ShareAs, { useShareSigner } from './ShareAs';
-import { t } from '../i18n';
-import { SCORE_COUNT_MS } from './resultAnimation';
+import { ariaHoleHistory, t } from '../i18n';
+import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 
-// The sentence result — the two blocks that GROW AROUND the sentence (user-decided
-// 2026-09-08, on #266's review: "just keep the sentence and move it to the top a little
-// bit with a smooth animation before writing the source below"). It supersedes the
-// 2026-08-14 stage that took the whole column and the DISSOLVE that handed it over: the
-// sentence is not here and is never rebuilt — it is the round's own live `Phrase`, still
-// in `.play`, still at the play column's width and on its left edge, and all that happens
-// to it is a short RISE (`Game`'s `PHRASE_RISE_MS`). What this adds under it sits in the
-// two places the play screen already has:
+// The sentence result — a STAGE in two parts, the score above and the sentence's page
+// below (user-decided 2026-09-08, on #266's second review). It takes the whole column the
+// dissolved sentence handed over (the 2026-08-14 hand-over, restored), and it stacks:
 //
-//   SOURCE — in the retired prompt's own row, left-aligned under the sentence it credits
-//            (the prompt was left-aligned there too), typed at its own caption size.
-//   SCORE  — the named `<tries> TRIES` over its run ruler, the day's standing badge, and
-//            SHARE, which belongs to it (user-decided 2026-08-14: sharing is what you do
-//            with a RESULT). It carries `margin-top: auto`, so it sits on the screen's
-//            BOTTOM EDGE — the keyboard's own place, centred as the keyboard was — and the
-//            seam above it is real space rather than a measured gap: the taller the
-//            screen, the more the two read as two.
+//   SCORE   — at the TOP, right under the header: the named `<tries> TRIES` over its run
+//             ruler, the day's standing badge, and SHARE with its AS drum (sharing is what
+//             you do with a RESULT, user-decided 2026-08-14). Its height is the same on
+//             every round, and it is above the fold on every phone — SHARE is the
+//             reveal's closing beat and the game's one liked-indicator, and it is never
+//             reached by scrolling.
+//   CONTEXT — under it, with a gap: the source credit, then the sentence the player
+//             rebuilt in the READING face, its secrets in the solve blue and tappable.
+//             This is the round's variable-height content, so THIS is what scrolls: a
+//             long sentence (and, with #270, the sentences of the book around it, read
+//             top-down from the credit) goes under the fold, the score never does.
 //
-// The reveal therefore runs RISE → source → score → rank → SHARE: the sentence moves up,
-// the source types under it, and the SCORE block follows once that citation has FINISHED
-// PRINTING (user-decided 2026-08-15, superseding the fixed 420ms lead off the source's
-// first line) — numbers arriving over a half-typed credit read as two things happening at
-// once, where waiting reads as one thing after another. That is the screen's one
-// signal-driven beat, so it carries a DEADLINE behind it (the `KB_EXIT_FALLBACK_MS` rule:
-// a lost signal must never be able to stall the solved sequence), derived from the
-// typewriter's own numbers. Inside the score block the tally counts WHILE the ruler
-// colors — one beat saying one thing, "here is your run" — and only then the standing
-// lands, with SHARE as the reveal's closing beat: the screen ends on its action.
-// Everything else still hangs off an offset.
-// Rehydrated solves render the final frame immediately and replay nothing.
+// The reveal runs stage → credit + secrets → score → rank → SHARE: the stage rises in,
+// the credit types under it while the secrets pop into the sentence, and the SCORE block
+// follows once that citation has FINISHED PRINTING (user-decided 2026-08-15: numbers
+// arriving over a half-typed credit read as two things happening at once, where waiting
+// reads as one thing after another). That is the screen's one signal-driven beat, so it
+// carries a DEADLINE behind it (the `KB_EXIT_FALLBACK_MS` rule: a lost signal must never
+// be able to stall the solved sequence), derived from the typewriter's own numbers.
+// Inside the score block the tally counts WHILE the ruler colors — one beat saying one
+// thing, "here is your run" — and only then the standing lands, with SHARE as the
+// reveal's closing beat: the screen ends on its action. Everything else hangs off an
+// offset. Rehydrated solves render the final frame immediately and replay nothing.
 //
 // THAT LAST SENTENCE IS ALSO THE FAST-FORWARD (#179, user-decided 2026-08-16): a tap
 // during the reveal flips `animate` off, and every beat below already answers that flag
 // with its own settled value — so the skip reuses the rehydrated rendering instead of
 // inventing a parallel fast path, which is exactly what the decision asks for. Nothing
 // here listens for the tap: the round owns it, because the beats before this one (the
-// keyboard drop, the sentence's rise) are its.
+// keyboard drop, the dissolve) are its.
 const NEUTRAL_HOLD_MS = 55;
-// The source waits out the sentence's RISE — `Game`'s `PHRASE_RISE_MS`, restated here
-// because this component owns the beat and never sees the move. Keep the two aligned.
-const RISE_MS = 420;
+// The secrets POP into the sentence one by one, 200ms apart, each a fast scale pop — the
+// round's three trophies counted out, back in the gaps they were taken from. Keep aligned
+// with `.solved-secret.in` / `solved-word-pop`.
+const WORD_STEP_MS = 200;
+const WORD_POP_MS = 300;
 // The breath between the citation's last character and the numbers arriving.
 const SCORE_LEAD_MS = 320;
-// A puzzle with no source has no printing to wait for, so its numbers follow the rise.
-const RISE_LEAD_MS = 140;
+// A puzzle with no source has no printing to wait for, so its numbers follow the pops.
+const WORDS_LEAD_MS = 140;
 // How long past the citation's own length the result waits before giving up on the
 // completion signal and moving on anyway. Generous by design: it is a backstop, and the
 // typewriter's intervals are merely THROTTLED on a hidden tab, never dropped.
@@ -87,6 +87,18 @@ function InfinityScore() {
   );
 }
 
+// One OCCURRENCE of a secret in the solved sentence. A slug appearing twice yields two of
+// these (#5's own rule: one hole per occurrence, sharing one rank map) — they carry the
+// same `number`, so they pop on the same beat and open the same history line.
+export interface SolvedHole {
+  pos: number; // index of this secret in `words` — where it sits in the sentence
+  word: string; // the accented secret, as the sentence displays it
+  holeIndex: number; // this hole's own index (the history modal's key)
+  number: number; // 1-based distinct-secret position — the ruler ticks' own numbering
+  prefix?: string; // display-only affixes, kept around the secret exactly as Phrase keeps them
+  suffix?: string;
+}
+
 export default function SolvedScreen({
   guessCount,
   trajectory,
@@ -94,6 +106,9 @@ export default function SolvedScreen({
   dayNumber,
   lang,
   source,
+  words,
+  holes,
+  onExplore,
   placement = null,
   capped = false,
   animate = true,
@@ -105,20 +120,23 @@ export default function SolvedScreen({
   dayNumber: number;
   lang: string; // packed into the share token (drives the link's click-through target)
   source?: Source;
+  words: string[]; // the sentence's full display tokens (the puzzle's own `words[]`)
+  holes: SolvedHole[]; // one entry per occurrence, sorted by `pos` — the secrets inside it
+  onExplore: (holeIndex: number) => void;
   // The day's score population (#170): 'pending' while the round trip is in flight
   // (the slot shows RANKING...); null renders the reserved empty slot (silent).
   placement?: ScorePlacementState;
   // The round hit the server's guess cap unsolved (#214): the HEADLINE becomes `∞` and no
   // leaderboard entry exists (`placement` is null by construction — a capped round's solve
-  // never reached the server). Everything else is an ordinary result: the sentence above
-  // with its answer in place, the credit, the ruler at its real length, and SHARE.
+  // never reached the server). Everything else is an ordinary result: the sentence with its
+  // answer in place, the credit, the ruler at its real length, and SHARE.
   capped?: boolean;
   // Rehydrated solves render their final result immediately and replay nothing — and so
   // does a reveal the player has fast-forwarded (#179): the round flips this off, and the
   // settled frame this draws IS the decision's "settled end state".
   animate?: boolean;
   // Hold the WHOLE choreography at frame zero until the screen is actually the player's to
-  // look at. Every beat below hangs off `resultIn`, so gating that one flip gates all of
+  // look at. Every beat below hangs off `stageIn`, so gating that one flip gates all of
   // them — which is the point: a reveal that plays under a full-screen modal is a reveal
   // nobody sees, and what lands on dismissal is a finished frame.
   start?: boolean;
@@ -131,53 +149,63 @@ export default function SolvedScreen({
   const stagger = animate ? rulerStagger(n, reduceMotion) : 0;
   const hasSource = Boolean(source?.kind || source?.author || source?.work);
 
-  // The result is up; every block's own beat hangs off this one flip.
-  const [resultIn, setResultIn] = useState(() => !animate);
+  // The secrets, by their place in the sentence — and the distinct numbers they carry, for
+  // the exploration hints (two occurrences of one secret share a hint, as they share a
+  // history line) and for the pop's span (they pop on one beat too).
+  const holeByPos = useMemo(() => new Map(holes.map((h) => [h.pos, h])), [holes]);
+  const secretNumbers = useMemo(
+    () => Array.from(new Set(holes.map((h) => h.number))).sort((a, b) => a - b),
+    [holes],
+  );
+  const popSpanMs = Math.max(0, secretNumbers.length - 1) * WORD_STEP_MS + WORD_POP_MS;
+
+  // The stage is up; every block's own beat hangs off this one flip.
+  const [stageIn, setStageIn] = useState(() => !animate);
   useEffect(() => {
     if (!animate) {
-      setResultIn(true);
+      setStageIn(true);
       return undefined;
     }
     if (!start) return undefined;
-    const raf = requestAnimationFrame(() => setResultIn(true));
+    const raf = requestAnimationFrame(() => setStageIn(true));
     return () => cancelAnimationFrame(raf);
   }, [animate, start]);
 
-  // The source types once the sentence has finished rising; its completion only retires
-  // its own cursor — nothing downstream waits on it.
+  // The page's own beat: once the stage has risen, the credit types and the secrets pop
+  // into the sentence under it — one beat, "here is what you rebuilt, and where it is
+  // from". The credit's completion only retires its own cursor and releases the score.
   const [captionDone, setCaptionDone] = useState(false);
   const finishCaption = useCallback(() => setCaptionDone(true), []);
-  const [captionIn, setCaptionIn] = useState(() => !animate);
+  const [textIn, setTextIn] = useState(() => !animate);
   useEffect(() => {
     if (!animate) {
-      setCaptionIn(true);
+      setTextIn(true);
       return undefined;
     }
-    if (!resultIn) return undefined;
-    const id = window.setTimeout(() => setCaptionIn(true), reduceMotion ? 0 : RISE_MS);
+    if (!stageIn) return undefined;
+    const id = window.setTimeout(() => setTextIn(true), reduceMotion ? 0 : RESULTS_IN_MS);
     return () => window.clearTimeout(id);
-  }, [animate, resultIn, reduceMotion]);
+  }, [animate, stageIn, reduceMotion]);
 
-  // The SCORE block: the seam's other side. Its arrival is what starts the tally, so the
-  // number never counts behind a block that has not appeared yet. It waits for the source
-  // to finish PRINTING — on the caption's own completion signal, with the derived deadline
-  // behind it — and, on a puzzle with no source, simply follows the rise.
+  // The SCORE block. Its arrival is what starts the tally, so the number never counts
+  // behind a block that has not appeared yet. It waits for the source to finish PRINTING
+  // — on the caption's own completion signal, with the derived deadline behind it — and,
+  // on a puzzle with no source, simply follows the secrets' pops.
   const [scoreIn, setScoreIn] = useState(() => !animate);
   useEffect(() => {
     if (!animate) {
       setScoreIn(true);
       return undefined;
     }
-    if (!resultIn) return undefined;
+    if (!textIn) return undefined;
     if (reduceMotion) {
       setScoreIn(true);
       return undefined;
     }
     if (!hasSource) {
-      const id = window.setTimeout(() => setScoreIn(true), RISE_MS + RISE_LEAD_MS);
+      const id = window.setTimeout(() => setScoreIn(true), popSpanMs + WORDS_LEAD_MS);
       return () => window.clearTimeout(id);
     }
-    if (!captionIn) return undefined;
     if (captionDone) {
       const id = window.setTimeout(() => setScoreIn(true), SCORE_LEAD_MS);
       return () => window.clearTimeout(id);
@@ -204,7 +232,7 @@ export default function SolvedScreen({
       window.clearTimeout(id);
       document.removeEventListener('visibilitychange', armFallback);
     };
-  }, [animate, resultIn, reduceMotion, hasSource, captionIn, captionDone, source, lang]);
+  }, [animate, textIn, reduceMotion, hasSource, captionDone, popSpanMs, source, lang]);
 
   const [countTarget, setCountTarget] = useState(() => (animate ? 0 : guessCount));
   useEffect(() => {
@@ -300,29 +328,10 @@ export default function SolvedScreen({
     await share(shareText(headline, trajectory, solvedAt ?? [], url));
   }, [lang, dayNumber, guessCount, trajectory, solvedAt, capped, share, signer.by]);
 
-  // TWO SIBLINGS OF THE SENTENCE, not a screen — which is why this returns a FRAGMENT:
-  // the source has to sit in the row the prompt vacated, and the score block has to be the
-  // play column's last item to reach the bottom edge. They stay ONE component because the
-  // source's completion signal is what releases the score.
   return (
-    <>
-      {/* The sentence's attribution, UNDER the sentence it belongs to and at its own
-          caption size — the small quote-style citation it has always been. A source-less
-          puzzle simply shows the sentence. */}
-      {hasSource && (
-        <div className={`solved-source${captionIn ? ' in' : ''}`}>
-          <SolvedCaption
-            source={source}
-            lang={lang}
-            animate={animate && captionIn && !captionDone}
-            onComplete={finishCaption}
-          />
-        </div>
-      )}
-
-      {/* ---- the SCORE block, on the bottom edge: how the round went, and what you do
-           with it. */}
-      <div className={`solved-numbers${scoreIn ? ' in' : ''}${animate ? '' : ' settled'}`}>
+    <div className={`solved-stage${stageIn ? ' in' : ''}${animate ? '' : ' settled'}`}>
+      {/* ---- the SCORE block, at the top: how the round went, and what you do with it. */}
+      <div className={`solved-numbers${scoreIn ? ' in' : ''}`}>
         {/* The primary sentence metric. The hidden final value reserves the count's width
             so its tally never moves the content below it — a capped round has no tally to
             reserve for, since `∞` is one fixed shape. Where this run stands among the
@@ -381,6 +390,77 @@ export default function SolvedScreen({
           <ShareAs lang={lang} signer={signer} />
         </div>
       </div>
-    </>
+
+      {/* ---- the CONTEXT: the sentence's page. The credit first, then the text — read
+           top-down, the way a page is. This is the scroller. */}
+      <div className="solved-context pixel-scroll">
+        {/* The sentence's attribution, ABOVE the text it credits, at its own caption size
+            — the small quote-style citation it has always been. A source-less puzzle
+            simply shows the sentence. */}
+        {hasSource && (
+          <div className={`solved-source${textIn ? ' in' : ''}`}>
+            <SolvedCaption
+              source={source}
+              lang={lang}
+              animate={animate && textIn && !captionDone}
+              onComplete={finishCaption}
+            />
+          </div>
+        )}
+
+        {/* THE SENTENCE (#266, user-decided 2026-09-07): the whole thing the player
+            rebuilt, not just the three words it hid — the round is a sentence, and three
+            words on their own are three adjacent word searches. In the READING face,
+            because this is the book's page, not the board: the line is in the ink, and
+            #270's sentences around it will be the muted text before and after it. The
+            secrets are the only difference inside the line: the solve blue, the pop, and
+            the tap onto their own history. Prefix and suffix are sentence context and
+            always show, in the nowrap group that keeps them on the secret's own line —
+            Phrase's rule, unchanged. */}
+        <p className="solved-text">
+          <span className="solved-line">
+            {words.map((w, i) => {
+              const hole = holeByPos.get(i);
+              const space = i > 0 ? ' ' : '';
+              if (!hole) {
+                return (
+                  <Fragment key={i}>
+                    {space}
+                    {w}
+                  </Fragment>
+                );
+              }
+              return (
+                <Fragment key={i}>
+                  {space}
+                  <span className="solved-line-group">
+                    {hole.prefix}
+                    <button
+                      type="button"
+                      className={`solved-secret${textIn ? ' in' : ''}`}
+                      style={{ '--step': hole.number - 1 } as CSSProperties}
+                      aria-describedby={`solved-explore-${hole.number}`}
+                      onClick={() => onExplore(hole.holeIndex)}
+                    >
+                      {hole.word}
+                    </button>
+                    {hole.suffix}
+                  </span>
+                </Fragment>
+              );
+            })}
+          </span>
+        </p>
+        {/* The exploration hints, referenced by each secret's `aria-describedby`. OUTSIDE
+            the text, for Phrase's own reason: inside the <p> they would interleave
+            "Explore word 2" into the prose a screen reader reads straight through. Two
+            occurrences of one secret share a number, so they share one hint. */}
+        {secretNumbers.map((number) => (
+          <span key={number} id={`solved-explore-${number}`} className="sr-only">
+            {ariaHoleHistory(lang, number)}
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }
