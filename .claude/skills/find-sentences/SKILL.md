@@ -135,6 +135,12 @@ sentences of equal register:
   could be killed as easily as caressed) over a landscape, however beautiful;
 - reject the meditation made of abstract nouns, and the line whose only content is
   despair or a verdict on people — the top of the archive is never one-sided;
+- reject the REPLY (recorded 2026-09-08): a line that quotes, answers or corrects a
+  sentence the player cannot see — an opening quotation, a « cependant » or a « donc »
+  that continues an argument, a colon that completes one. « “Il sait qu’il meurt” est
+  une pensée profonde ; je crois cependant que la mienne est plus profonde » is wit
+  about Pascal, not a line that stands on its own. A reply is never self-contained,
+  however clever;
 - and use the SOURCE as a lever: the solved screen reveals it, so an unexpected
   provenance is itself the turn. Aim for one day in seven or so from outside literature —
   a naturalist, an economist, a speech, a documentary, a manual, a court record — chosen

@@ -81,9 +81,19 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   picks from; `rules.prune` shrinks it after every pick; a pick off the list is ignored.
   The model chooses, code enforces. Tunables live at the top of `rules.py`:
   `ALLOWED_POS`, `MAX_COMMON_RANK` (20) / `MAX_COMMON_RANK_ADV` (500, the frequency
-  floors read off the reduced vectors' order), `MIN_GAP` (3 tokens), `COSINE_MAX` (0.40), `MODIFIER_DEPS`,
-  `MAX_RESTARTS` (2), `MAX_OFF_LIST` (2), `CONTEXT_GUESSES` (3); and at the top of `curate.py`:
-  `MAX_SENTENCES` (600), `CHUNK` (150), `PICKS_PER_CHUNK` (6), `SHORTLIST` (20).
+  floors read off the reduced vectors' order), `WEAK_VERBS` (verbs of saying, thinking
+  and modality, by lemma — never a secret; user-decided 2026-09-08 on a trio led by
+  « je crois »), `MIN_CANDIDATES` (8 distinct candidate words, or the sentence never
+  reaches the model — `curate.rich_enough` parses the mined sentences before the
+  shortlist; measured 2026-09-08 on 27 attempts: 4–7 candidates gave no trio or a dull
+  forced one, every trio worth keeping came from 8+), `MIN_GAP` (3 tokens), `COSINE_MAX`
+  (0.40), `MODIFIER_DEPS`, `MAX_RESTARTS` (2), `MAX_OFF_LIST` (2), `CONTEXT_GUESSES` (3);
+  and at the top of `curate.py`: `MAX_SENTENCES` (600), `CHUNK` (150), `PICKS_PER_CHUNK`
+  (6), `SHORTLIST` (20). The mechanical filter (`sentences.is_candidate`) also refuses a
+  unit that OPENS on a quotation mark (reported speech, or an argument with a line the
+  player cannot see — the same day's « “Il sait qu’il meurt” est une pensée profonde »),
+  and the skill's taste rules refuse the REPLY (a line that quotes, answers or corrects
+  what the player cannot see) at the shortlist.
 - **The rules, as code applies them** (from the user's curation feedback, #260):
   candidates are NOUN/VERB/ADJ/ADV, not stopwords, not among the commonest words (an
   adverb has the higher floor), slug in the vocab, not a past secret,

@@ -401,6 +401,20 @@ def mine(work: dict, text: str, log: Log) -> list[str]:
     return sentences
 
 
+def rich_enough(log: Log, sentences: list[str], lang: str, in_vocab, past_secrets, frequency_rank) -> list[str]:
+    """The sentences with at least MIN_CANDIDATES distinct candidate words — the only
+    ones the model is ever shown, so a thin sentence cannot be shortlisted, ranked first
+    and forced into a dull trio (the 2026-09-08 « faim · crois · pensée » day)."""
+    kept = []
+    for s in sentences:
+        candidates = rules.initial_candidates(parse(s, lang), in_vocab=in_vocab, past_secrets=past_secrets,
+                                              frequency_rank=frequency_rank)
+        if len({t.slug for t in candidates}) >= rules.MIN_CANDIDATES:
+            kept.append(s)
+    log(f"- rich enough ({rules.MIN_CANDIDATES}+ distinct candidate words): {len(kept)} of {len(sentences)}")
+    return kept
+
+
 def shortlist(claude: llm.Claude, log: Log, mined: list[str], exclude: set[str], seed: int) -> list[dict]:
     sentences = [s for s in mined if shelf_mod.sentence_key(s) not in exclude]
     if not sentences:
@@ -437,8 +451,8 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
     candidates = rules.initial_candidates(tokens, in_vocab=in_vocab, past_secrets=archive["secrets"],
                                           frequency_rank=frequency_rank)
     log(f"- candidate words: {', '.join(t.text for t in candidates) or '(none)'}")
-    if len(candidates) < rules.TRIO:
-        log("- rejected: fewer than three candidate words")
+    if len({t.slug for t in candidates}) < rules.MIN_CANDIDATES:
+        log(f"- rejected: fewer than {rules.MIN_CANDIDATES} distinct candidate words")
         return None
 
     def choose(remaining, picked):
@@ -531,9 +545,11 @@ def main():
     proposed = {shelf_mod.sentence_key(s) for s in index["books"].get(book["file"], {}).get("sentences", ())}
     proposed |= archive["sentences"]
     seed = args.seed if args.seed is not None else int(stamp[:10].replace("-", ""))
-    ranked = shortlist(claude, log, mine(book, text, log), proposed, seed)
-
     similarity, frequency_rank = load_similarity(args.lang)
+    mined = rich_enough(log, mine(book, text, log), args.lang, vocab.__contains__, archive["secrets"],
+                        frequency_rank)
+    ranked = shortlist(claude, log, mined, proposed, seed)
+
     # The work's quoted lines (the quotation test): fetched onto the shelf by
     # `pnpm shelf:quotes`, read here offline. A missing file skips the test, loudly.
     quotes: list[str] = []

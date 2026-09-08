@@ -91,12 +91,15 @@ def word_count(sentence: str) -> int:
 
 
 def is_candidate(sentence: str, *, min_words: int = MIN_WORDS, max_words: int = MAX_WORDS) -> bool:
-    """The mechanical filter: length band, opens on a capital or quote, closes on
-    terminal punctuation, no dialogue dash, no roll call of names, no digits."""
+    """The mechanical filter: length band, opens on a capital (never on a quotation
+    mark — a line that opens by quoting is reported speech or an argument with a
+    sentence the player cannot see; user-decided 2026-09-08 on « “Il sait qu’il meurt”
+    est une pensée profonde… »), closes on terminal punctuation, no dialogue dash, no
+    roll call of names, no digits."""
     n = word_count(sentence)
     if n < min_words or n > max_words:
         return False
-    if not sentence[0].isupper() and sentence[0] not in "«\"“":
+    if not sentence[0].isupper():
         return False
     if sentence.rstrip("»”\"'")[-1:] not in _TERMINAL:
         return False
