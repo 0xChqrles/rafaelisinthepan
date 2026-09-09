@@ -88,7 +88,8 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   shortlist; measured 2026-09-08 on 27 attempts: 4–7 candidates gave no trio or a dull
   forced one, every trio worth keeping came from 8+), `MIN_GAP` (3 tokens), `COSINE_MAX`
   (0.40), `MODIFIER_DEPS`, `MAX_RESTARTS` (2), `MAX_OFF_LIST` (2), `CONTEXT_GUESSES` (3,
-  the reader's fillers the obviousness filter asks for), `OBVIOUS_RANK` (1);
+  the reader's fillers the obviousness filter asks for), `OBVIOUS_FILLERS` (2),
+  `TWIN_RANK` (3);
   and at the top of `curate.py`: `MAX_SENTENCES` (600), `CHUNK` (150), `PICKS_PER_CHUNK`
   (6), `SHORTLIST` (20). The mechanical filter (`sentences.is_candidate`) also refuses a
   unit that OPENS on a quotation mark (reported speech, or an argument with a line the
@@ -132,15 +133,24 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   supersedes the 2026-09-06 "annotation, never a strike").** For every candidate word
   of a shortlisted sentence, one call shows the sentence with THAT word blanked (every
   occurrence of it), the rest intact and NO start word, and asks a reader's
-  `CONTEXT_GUESSES` fillers, most likely first; code strikes the word when the secret
-  (or a variant) is among the first `OBVIOUS_RANK` (`rules.open_candidates`), and the
-  log names each verdict with the fillers. A sentence with fewer than `TRIO` open words
+  `CONTEXT_GUESSES` fillers, most likely first; code strikes the word when NOTHING ELSE
+  COMES to the reader — its first `OBVIOUS_FILLERS` fillers are all the secret or a
+  TWIN of it (`rules.open_candidates` / `is_twin`): a variant, or a word within
+  `TWIN_RANK` of the secret in the game's own ranking (`curate.load_similarity`
+  `neighbour_rank`, off `closest`). Measured 2026-09-10 on the reader's own fillers:
+  a spelling (« clés »/« clefs »), a synonym (« certainement »/« sûrement »), an
+  opposite (« premier »/« dernier ») sit at 0–3; a real alternative (« infection » for
+  « grippe », « bureau » for « magasin », « fois » for « année ») at 6 and beyond.
+  **A word a reader GUESSES, with alternatives, stays a hole — that is the game**
+  (user's call 2026-09-10 on « les clefs du [magasin] », « une [grippe] intestinale »:
+  the first-filler rule of the same morning struck them and left « sciatique »). The
+  log names each verdict with the fillers; a sentence with fewer than `TRIO` open words
   is rejected before any pick. Why this shape: the 2026-09-06 check ran AFTER the trio,
   with all three blanks, as a log note — « il aurait répondu [sûrement] pas » was picked
-  from a list of four and the check that would have refused it could change nothing;
-  judged one blank at a time, with the rest of the sentence intact, it asks what the
-  user asks before picking a hole. The open holes' fillers are shown to the start-word
-  prompt. "The context helps too much" stays a rule in the PICK prompt as well.
+  from a list of four and the check that would have refused it could change nothing.
+  The open holes' fillers are shown to the start-word prompt. The skill's trio rules
+  carry the user's INTERACTION rule of the same day (a hole another visible word
+  narrows, never a bare list item); the pick prompt reads it from there.
 - **A dead end restarts the sentence with its first pick struck**, `MAX_RESTARTS` times,
   then the next sentence. No smarter backtracking.
 - **The taste profile and the secret rules have ONE home, the `find-sentences` skill

@@ -51,6 +51,12 @@ concentrated on one word.
 - Three secrets in the same part of the sentence, or describing the same thing (a verb
   and its subject) → replace one. Spread them across the sentence.
 - At most one verb.
+- **A hole must INTERACT with the words around it (the user's rule, 2026-09-10).** The
+  game is guessing WITH the context: prefer a word another visible word narrows —
+  « une [grippe] intestinale », « une pose d'[implants] dentaires », « les clefs du
+  [magasin] » — over a bare item of a list or a word nothing in the sentence touches.
+  Guessing a disease name on its own (« … et une [sciatique] ») is a lookup, not fun;
+  a word the context lets the player REASON toward, with real alternatives, is the hole.
 - **Play the TURN (recorded 2026-09-08).** The part that makes the line worth playing —
   its comparison, its image, its punch — must carry at least one hole; a trio that
   hides three words of the set-up and leaves the turn intact plays the dull half of

@@ -50,12 +50,18 @@ MAX_OFF_LIST = 2
 # context, think of the fillers WITHOUT a start word, and only a word that is not
 # obvious can be a hole). Judged BEFORE the pick, one candidate at a time with the rest
 # of the sentence intact and no start word: the model answers as a reader with its
-# CONTEXT_GUESSES fillers, most likely first, and code strikes the word when the secret
-# is among the first OBVIOUS_RANK of them. Supersedes the 2026-09-06 annotation (three
-# blanks, after the trio, never a strike), which could refuse nothing: « il aurait
-# répondu [sûrement] pas » was picked from a list of four with the check still to come.
+# CONTEXT_GUESSES fillers, most likely first, and code strikes the word when NOTHING
+# ELSE COMES — its first OBVIOUS_FILLERS fillers are all the secret or a TWIN of it: a
+# variant, or a word within TWIN_RANK of the secret in the game's own ranking (a
+# spelling « clés »/« clefs », a synonym « certainement »/« sûrement », an opposite
+# « premier »/« dernier » all sit at 0–3; a real alternative — « infection » for
+# « grippe », « bureau » for « magasin », « fois » for « année » — at 6 and beyond,
+# measured 2026-09-10). A word a reader GUESSES, with alternatives, stays a hole: that
+# is the game. Supersedes the 2026-09-06 annotation (three blanks, after the trio,
+# never a strike), which could refuse nothing.
 CONTEXT_GUESSES = 3
-OBVIOUS_RANK = 1
+OBVIOUS_FILLERS = 2
+TWIN_RANK = 3
 # Secrets per puzzle (the sentence schema: exactly three distinct slugs).
 TRIO = 3
 
@@ -111,29 +117,42 @@ def initial_candidates(
     return out
 
 
+def is_twin(candidate: Token, word: str, neighbour_rank: Callable[[Token, str], int | None]) -> bool:
+    """`word` is the candidate's secret in another form: the same slug, a morphological
+    variant, or within TWIN_RANK of it in the game's ranking (`neighbour_rank(token,
+    word)`, None = unknown, which is not a twin)."""
+    s = slug(word)
+    if s and (s == candidate.slug or is_variant(s, candidate.slug)):
+        return True
+    rank = neighbour_rank(candidate, word)
+    return rank is not None and rank <= TWIN_RANK
+
+
 def open_candidates(
     candidates: list[Token],
     *,
     fillers: Callable[[Token], list[str]],
+    neighbour_rank: Callable[[Token, str], int | None] = lambda t, w: None,
     log: "SearchLog | None" = None,
 ) -> list[Token]:
     """The candidates the context does not hand over. `fillers(token)` is a reader's
     guess list for the sentence with that one word blanked (every occurrence of it, the
-    rest intact, no start word), most likely first; a word whose secret — or a variant
-    of it — is among the first OBVIOUS_RANK fillers is obvious and struck. One judgement
-    per distinct slug; the order of the list is kept."""
+    rest intact, no start word), most likely first. A word is obvious — struck — when
+    nothing else comes to the reader: its first OBVIOUS_FILLERS fillers are all the
+    secret or a twin of it (`is_twin`). One judgement per distinct slug; the order of
+    the list is kept."""
     log = log or SearchLog()
     verdict: dict[str, bool] = {}
     out = []
     for c in candidates:
         if c.slug not in verdict:
             guesses = fillers(c)
-            hit = next((k + 1 for k, g in enumerate(guesses[:OBVIOUS_RANK])
-                        if slug(g) and (slug(g) == c.slug or is_variant(slug(g), c.slug))), None)
-            verdict[c.slug] = hit is not None
+            leading = guesses[:OBVIOUS_FILLERS]
+            obvious = bool(leading) and all(is_twin(c, g, neighbour_rank) for g in leading)
+            verdict[c.slug] = obvious
             shown = ", ".join(guesses) or "none"
-            log.note(f"'{c.text}' is obvious from the context — struck (a reader puts: {shown})" if hit
-                     else f"'{c.text}' is open (a reader puts: {shown})")
+            log.note(f"'{c.text}' is obvious — nothing else comes to a reader (puts: {shown}) — struck"
+                     if obvious else f"'{c.text}' is open (a reader puts: {shown})")
         if not verdict[c.slug]:
             out.append(c)
     return out

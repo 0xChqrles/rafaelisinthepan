@@ -102,6 +102,8 @@ def load_similarity(lang: str):
     else:  # pragma: no cover - LANGS guards this
         raise ValueError(lang)
     kv = module.load_vectors()
+    V = module.build_vocab(kv)
+    M = module.build_matrix(kv, V)
 
     def key(t: rules.Token):
         for form in (t.text.lower(), t.lemma):
@@ -119,7 +121,17 @@ def load_similarity(lang: str):
         k = key(t)
         return None if k is None else int(kv.key_to_index[k])
 
-    return similarity, frequency_rank
+    def neighbour_rank(t: rules.Token, word: str):
+        """Where `word` stands in the game's own ranking around the token's vector
+        (0 = the nearest other word); None when either is unknown. The twin test of the
+        obviousness filter (`rules.is_twin`)."""
+        k = key(t)
+        w = word.lower()
+        if k is None or w not in kv or w == k:
+            return None
+        return next((r for cand, r, _ in module.closest(k, kv, V, M, n=None) if cand == w), None)
+
+    return similarity, frequency_rank, neighbour_rank
 
 
 # ---------------------------------------------------------------------------
@@ -441,7 +453,7 @@ def shortlist(claude: llm.Claude, log: Log, mined: list[str], exclude: set[str],
 
 def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: dict,
             in_vocab, similarity, frequency_rank, lang: str, window: dict | None = None,
-            quotes: list[str] = ()):
+            quotes: list[str] = (), neighbour_rank=lambda t, w: None):
     """One sentence through the quotation test, trio search and generation. `window` is
     the raw text around it (#270), which the model CUTS into the page once the trio is
     found — so a rejected sentence never spends the call. `quotes` are the work's quoted
@@ -464,7 +476,7 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
         return None
     # The obviousness filter (user-decided 2026-09-10, the user's own method): every
     # candidate is judged as a reader would, one word blanked at a time with the rest of
-    # the sentence intact and no start word; a word the context hands over is never
+    # the sentence intact and no start word; a word to which nothing else comes is never
     # offered to the pick. The reader's fillers are kept for the start-word prompt.
     occurrences: dict[str, set[int]] = {}
     for t in candidates:
@@ -478,7 +490,8 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
         return guesses
 
     filter_log = rules.SearchLog()
-    candidates = rules.open_candidates(candidates, fillers=fillers, log=filter_log)
+    candidates = rules.open_candidates(candidates, fillers=fillers, neighbour_rank=neighbour_rank,
+                                       log=filter_log)
     for event in filter_log.events:
         log(f"- {event}")
     if len({t.slug for t in candidates}) < rules.TRIO:
@@ -572,7 +585,7 @@ def main():
     proposed = {shelf_mod.sentence_key(s) for s in index["books"].get(book["file"], {}).get("sentences", ())}
     proposed |= archive["sentences"]
     seed = args.seed if args.seed is not None else int(stamp[:10].replace("-", ""))
-    similarity, frequency_rank = load_similarity(args.lang)
+    similarity, frequency_rank, neighbour_rank = load_similarity(args.lang)
     mined = rich_enough(log, mine(book, text, log), args.lang, vocab.__contains__, archive["secrets"],
                         frequency_rank)
     ranked = shortlist(claude, log, mined, proposed, seed)
@@ -600,7 +613,7 @@ def main():
         # licensed product — the line is the whole quotation).
         window = excerpt_around(text, pick["sentence"], EXCERPT_WINDOW) if book["kind"] == "book" else None
         result = attempt(claude, log, pick["sentence"], book, archive, vocab.__contains__,
-                         similarity, frequency_rank, args.lang, window, quotes)
+                         similarity, frequency_rank, args.lang, window, quotes, neighbour_rank)
         log.end_attempt(bool(result), player_view(result, book) if result else ())
         if result:
             break
