@@ -1,6 +1,7 @@
 """One book in, one candidate puzzle out (issue #260). Never publishes.
 
     pnpm curate [--lang fr] [--work <file on the shelf>]
+    pnpm curate --sentence <candidate puzzle.json | "the sentence"> [--work <file>]
 
 Greedy and linear: the LLM picks a work off the shelf (an epub, or a song file put
 there by `shelf:lyrics`), then sentences, then the secrets one at a time from a list
@@ -538,6 +539,30 @@ def choose_page(claude: llm.Claude, log: Log, sentence: str, window: dict) -> di
     return excerpt if excerpt["before"] or excerpt["after"] else None
 
 
+def sentence_target(args, log: Log) -> str:
+    """`--sentence`: a candidate puzzle file names its work (set as `args.work`) and is
+    erased — a retry replaces it; the sentence itself needs `--work`. Returns the
+    sentence, as the puzzle keeps it (lowercased tokens) or as typed."""
+    given = Path(args.sentence)
+    if given.suffix == ".json" and given.is_file():
+        try:
+            puzzle = json.loads(given.read_text(encoding="utf-8"))
+            words = puzzle["words"]
+        except (OSError, ValueError, KeyError, TypeError):
+            die(f"{given} is not a candidate puzzle")
+        work = shelf_mod.work_of(puzzle.get("source") or {}, shelf_mod.list_works())
+        if work is None and not args.work:
+            die(f"{given.name} names no work on the shelf — pass --work <file>")
+        if work is not None and not args.work:
+            args.work = work["file"]
+        shelf_mod.erase_puzzle(given.resolve())
+        log(f"- erased: {given}")
+        return " ".join(words)
+    if not args.work:
+        die("--sentence with the sentence itself needs --work <file on the shelf>")
+    return args.sentence
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--lang", choices=LANGS, default="fr")
@@ -546,9 +571,15 @@ def main():
                    help="withhold the winning sentence, its secrets and their handling from the "
                         "log and stdout (they go to runs/<stamp>.spoilers.md), so the run can be "
                         "read and the puzzle played before being spoiled")
-    p.add_argument("--retry", metavar="FILE",
-                   help="erase a previous attempt on this shelf file — its index entry and the "
-                        "candidate puzzle(s) it wrote under the generation output — then run on it")
+    again = p.add_mutually_exclusive_group()
+    again.add_argument("--retry", metavar="FILE",
+                       help="erase a previous attempt on this shelf file — its index entry and the "
+                            "candidate puzzle(s) it wrote under the generation output — then run on it")
+    again.add_argument("--sentence", metavar="PUZZLE|TEXT",
+                       help="retry ONE sentence, skipping the mining, the shortlist and the ranking: "
+                            "a candidate puzzle file (its work is read off the puzzle's source and "
+                            "the file is erased) or the sentence itself, with --work naming the "
+                            "shelf file")
     p.add_argument("--seed", type=int, default=None, help="sample seed (default: today)")
     args = p.parse_args()
 
@@ -579,16 +610,30 @@ def main():
     claude = llm.Claude()
 
     today = datetime.now(timezone.utc).date()
+    sentence = None
+    if args.sentence:
+        sentence = sentence_target(args, log)
     book = choose_work(claude, log, args, archive, index, today)
     path = _paths.SHELF_DIR / book["file"]
     text = epub_text(path) if book["kind"] == "book" else path.read_text(encoding="utf-8")
-    proposed = {shelf_mod.sentence_key(s) for s in index["books"].get(book["file"], {}).get("sentences", ())}
-    proposed |= archive["sentences"]
-    seed = args.seed if args.seed is not None else int(stamp[:10].replace("-", ""))
     similarity, frequency_rank, neighbour_rank = load_similarity(args.lang)
-    mined = rich_enough(log, mine(book, text, log), args.lang, vocab.__contains__, archive["secrets"],
-                        frequency_rank)
-    ranked = shortlist(claude, log, mined, proposed, seed)
+    if sentence is not None:
+        # One sentence, by hand: found again among the work's mined units so it keeps the
+        # source's casing; never a published one (the archive is the one record).
+        unit = shelf_mod.find_unit(mine(book, text, log), sentence)
+        if unit is None:
+            log("- the sentence is not one of the work's mined units — taken as typed")
+            unit = sentence
+        if shelf_mod.sentence_key(unit) in archive["sentences"]:
+            die("that sentence is already published (it is in the ledger)")
+        ranked = [{"sentence": unit, "why": "retried by hand"}]
+    else:
+        proposed = {shelf_mod.sentence_key(s) for s in index["books"].get(book["file"], {}).get("sentences", ())}
+        proposed |= archive["sentences"]
+        seed = args.seed if args.seed is not None else int(stamp[:10].replace("-", ""))
+        mined = rich_enough(log, mine(book, text, log), args.lang, vocab.__contains__, archive["secrets"],
+                            frequency_rank)
+        ranked = shortlist(claude, log, mined, proposed, seed)
 
     # The work's quoted lines (the quotation test): fetched onto the shelf by
     # `pnpm shelf:quotes`, read here offline. A missing file skips the test, loudly.
