@@ -47,8 +47,9 @@ export interface ChatConfig {
   // The direct-name form that addresses the bot without a mention ("WhippinBot, …").
   name: string;
   prePrompt: string;
-  // Conversational ceilings: replies per sender per UTC day, and per group per UTC day.
-  perUserPerDay: number;
+  // The conversational ceiling: the bot's written answers per group per UTC day. There is
+  // no per-person ceiling any more (#277): reached, it silenced a person for the rest of
+  // the day with nothing saying why, and set high enough not to it bounded nothing.
   perGroupPerDay: number;
 }
 
@@ -93,7 +94,6 @@ const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const LANGUAGES: readonly GroupLanguage[] = ['en', 'fr'];
 
 export const DEFAULT_BOT_NAME = 'WhippinBot';
-const DEFAULT_PER_USER_PER_DAY = 10;
 const DEFAULT_PER_GROUP_PER_DAY = 60;
 
 export class GroupConfigError extends Error {}
@@ -116,7 +116,7 @@ function timezoneIsValid(tz: string): boolean {
 }
 
 // Every unknown key is refused AT EVERY LEVEL, not only the top one. `chatt` and
-// `chat.perUserPerDya` fail exactly the same way, and they have to: the nested fields are
+// `chat.perGroupPerDya` fail exactly the same way, and they have to: the nested fields are
 // the ones with DEFAULTS, so a typo there is the case that silently un-configures a group
 // — a pre-prompt that never reaches the model, a ceiling back at ten a day — while a
 // mistyped top-level key mostly loses a whole object the parser then refuses anyway.
@@ -190,7 +190,6 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
     'enabled',
     'name',
     'prePrompt',
-    'perUserPerDay',
     'perGroupPerDay',
   ]);
   if (typeof chat.enabled !== 'boolean') fail(file, '"chat.enabled" must be a boolean');
@@ -200,15 +199,9 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
   if (typeof botName !== 'string' || botName.trim() === '') {
     fail(file, '"chat.name" must be a non-empty string');
   }
-  const perUserPerDay = chat.perUserPerDay ?? DEFAULT_PER_USER_PER_DAY;
   const perGroupPerDay = chat.perGroupPerDay ?? DEFAULT_PER_GROUP_PER_DAY;
-  for (const [key, value] of [
-    ['perUserPerDay', perUserPerDay],
-    ['perGroupPerDay', perGroupPerDay],
-  ] as const) {
-    if (!Number.isInteger(value) || (value as number) < 0) {
-      fail(file, `"chat.${key}" must be a non-negative integer`);
-    }
+  if (!Number.isInteger(perGroupPerDay) || (perGroupPerDay as number) < 0) {
+    fail(file, '"chat.perGroupPerDay" must be a non-negative integer');
   }
 
   if (acknowledge !== undefined && !ACKNOWLEDGE.includes(acknowledge as Acknowledge)) {
@@ -256,7 +249,6 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
       enabled: chat.enabled,
       name: botName.trim(),
       prePrompt: prePrompt.trim(),
-      perUserPerDay: perUserPerDay as number,
       perGroupPerDay: perGroupPerDay as number,
     },
     acknowledge: (acknowledge as Acknowledge | undefined) ?? 'react',

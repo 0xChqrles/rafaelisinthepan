@@ -5,16 +5,17 @@ import { memoryDeclarationStore } from '../domain/declarations';
 import type { InboundMessage } from '../domain/message';
 import { createLog } from '../log';
 import { LlmUnavailable, type LlmProvider, type LlmRequest, type LlmResponse } from '../llm/types';
-import { createAgent, plainReply } from './agent';
-import { RecentContext } from './context';
+import { DEFAULT_REACTION, createAgent, plainReply, reactionIn } from './agent';
+import { DayLog, memoryDayLogStore, type Turn } from './dayLog';
+import { memoryDiaryStore } from './diary';
 import { memoryLimitStore } from './limits';
-import { memoryMemoryStore } from './memory';
+import { NEW_EXCHANGE, type Approach, type Exchange } from './trigger';
 
 const GROUP = '120363000000000001@g.us';
 const TODAY = dayNumber('2026-09-03');
+const NOW = new Date('2026-09-03T12:00:00Z'); // 14:00 in Paris
 const identity = { jids: ['33700000000@s.whatsapp.net'], name: 'WhippinBot' };
-// A mention as the transport delivers it: the JID the message carried and the player key
-// it resolved to — the same thing in a phone-number-addressed group.
+const bot = '33700000000@s.whatsapp.net';
 const m = (jid: string, player = jid) => ({ jid, player });
 const group = parseGroupConfig('g.json', {
   id: GROUP,
@@ -22,7 +23,7 @@ const group = parseGroupConfig('g.json', {
   language: 'fr',
   enabled: true,
   timezone: 'Europe/Paris', podium: { enabled: true, time: '22:00' },
-  chat: { enabled: true, prePrompt: 'On se chambre.', perUserPerDay: 2, perGroupPerDay: 10 },
+  chat: { enabled: true, prePrompt: 'On se chambre.', perGroupPerDay: 10 },
 });
 
 function message(text: string, over: Partial<InboundMessage> = {}): InboundMessage {
@@ -32,10 +33,10 @@ function message(text: string, over: Partial<InboundMessage> = {}): InboundMessa
     sender: '33612345678@s.whatsapp.net',
     senderName: 'Gab',
     text,
-    timestamp: 1,
+    timestamp: NOW.getTime() / 1000,
     fromMe: false,
     participant: '33612345678@s.whatsapp.net',
-    mentions: [m('33700000000@s.whatsapp.net')],
+    mentions: [m(bot)],
     live: true,
     ...over,
   };
@@ -51,296 +52,195 @@ function scripted(steps: ((request: LlmRequest) => Partial<LlmResponse> | Error)
       const step = steps[requests.length - 1] ?? (() => ({ text: 'fin' }));
       const out = step(request);
       if (out instanceof Error) throw out;
-      return {
-        text: null,
-        toolCalls: [],
-        finish: 'stop',
-        usage: { inputTokens: 1, outputTokens: 1 },
-        latencyMs: 1,
-        ...out,
-      };
+      return { text: null, toolCalls: [], finish: 'stop', usage: { inputTokens: 1, outputTokens: 1 }, latencyMs: 1, ...out };
     },
   };
   return { provider, requests };
+}
+
+// The day log as main.ts fills it: the person's turn is on the record BEFORE the agent
+// reads the day. The agent answers off the log, so a test says something by logging it.
+async function said(dayLog: DayLog, text: string, over: Partial<Turn> = {}): Promise<void> {
+  await dayLog.append({ group: GROUP, day: TODAY, at: NOW.getTime(), id: 'M1', kind: 'said', name: 'Gab', text, ...over });
 }
 
 function agentWith(provider: LlmProvider, over: Partial<Parameters<typeof createAgent>[0]> = {}) {
   return createAgent({
     provider,
     declarations: memoryDeclarationStore(),
-    memory: memoryMemoryStore(),
+    diary: memoryDiaryStore(),
     limits: memoryLimitStore(),
-    context: new RecentContext(),
+    dayLog: new DayLog(memoryDayLogStore()),
     dailyCallCeiling: 100,
     log: createLog('silent'),
-    now: () => new Date('2026-09-03T12:00:00Z'),
+    now: () => NOW,
     ...over,
   });
 }
 
-describe('addressed conversation (#236)', () => {
-  it('runs the tool loop and returns one plain reply, with the addressing stripped', async () => {
+const asked = (approach: Approach = 'mention', exchange: Exchange = NEW_EXCHANGE) => ({ approach, exchange });
+const contents = (request: LlmRequest) => request.messages.map((x) => (x as { content: string }).content);
+
+describe('the conversation agent (#236, #277)', () => {
+  it('reads the whole day, stamped with the group\'s clock, runs the tool loop and records its reply', async () => {
     const { provider, requests } = scripted([
-      () => ({
-        toolCalls: [{ id: 'c1', name: 'get_today_podium', arguments: '{}' }],
-        finish: 'tool_calls',
-      }),
+      () => ({ toolCalls: [{ id: 'c1', name: 'get_today_podium', arguments: '{}' }], finish: 'tool_calls' }),
       () => ({ text: '*Personne* n’a encore joué, Gab.' }),
     ]);
-    const answer = agentWith(provider);
-    const out = await answer(message('@33700000000 qui mène ?'), group, identity, TODAY);
+    const dayLog = new DayLog(memoryDayLogStore());
+    await said(dayLog, 'je pense au nombre 67', { id: 'M0', at: NOW.getTime() - 3_600_000 }); // an hour ago — still today
+    await said(dayLog, 'WhippinBot qui mène ?');
+    const answer = agentWith(provider, { dayLog });
+    const out = await answer(message('@33700000000 qui mène ?'), group, identity, TODAY, asked());
     expect(out).toEqual({ kind: 'reply', text: 'Personne n’a encore joué, Gab.' });
-    expect(requests[0].messages).toEqual([{ role: 'user', content: 'Gab: qui mène ?' }]);
+    // The day, in order, as user turns with the time; the question is the last of them.
+    expect(contents(requests[0])).toEqual(['[13:00] Gab: je pense au nombre 67', '[14:00] Gab: WhippinBot qui mène ?']);
     expect(requests[0].tools?.map((t) => t.name)).toContain('get_head_to_head');
+    expect(requests[0].tools?.map((t) => t.name)).not.toContain('remember');
     expect(requests[0].system).toContain('On se chambre.');
-    expect(requests[1].messages[2]).toMatchObject({ role: 'tool', toolCallId: 'c1' });
-    expect(JSON.parse((requests[1].messages[2] as { content: string }).content)).toMatchObject({ lines: [] });
+    expect(requests[0].system).toContain('2026-09-03, a jeudi'); // the weekday is GIVEN, never worked out
+    expect(requests[1].messages.at(-1)).toMatchObject({ role: 'tool', toolCallId: 'c1' });
+    // Recorded as the bot's turn, so the next question sees it.
+    expect(dayLog.today(GROUP, TODAY).at(-1)).toMatchObject({ kind: 'bot', text: 'Personne n’a encore joué, Gab.' });
   });
 
-  it('spells the quote out: a reply to the bot names its line as yours, one to a player by name (2026-09-07)', async () => {
-    const bot = '33700000000@s.whatsapp.net';
-    const { provider, requests } = scripted([() => ({ text: 'de rien' }), () => ({ text: 'oui' })]);
-    const context = new RecentContext();
-    const answer = agentWith(provider, { context });
-    await answer(
-      message('merci', { mentions: [], quoted: { id: 'B1', participant: bot, player: bot, text: 'Podium du jour : Zou 5, Gab 7' } }),
-      group,
-      identity,
-      TODAY,
-    );
-    expect(requests[0].messages).toEqual([{ role: 'user', content: 'Gab: [replying to you: "Podium du jour : Zou 5, Gab 7"] merci' }]);
-    // The window keeps the same turn, so the exchange reads right later.
-    expect(context.recent(GROUP, new Date('2026-09-03T12:00:00Z').getTime())[0].text).toBe('[replying to you: "Podium du jour : Zou 5, Gab 7"] merci');
-    // Another player's line: named like a mention (nobody on the board yet, so the handle),
-    // and a mention of the bot inside it is the bot's name, never its number.
-    const zou = '33698765432@s.whatsapp.net';
-    await answer(
-      message('@33700000000 il a raison ?', { id: 'M2', quoted: { id: 'B2', participant: zou, player: zou, text: '@33700000000 t’es sûr ?' } }),
-      group,
-      identity,
-      TODAY,
-    );
-    expect(requests[1].messages.at(-1)).toEqual({ role: 'user', content: 'Gab: [replying to …5432: "WhippinBot t’es sûr ?"] il a raison ?' });
-  });
-
-  it('carries recent context and the sender\'s notes; stays silent on the ceilings', async () => {
-    const memory = memoryMemoryStore();
-    await memory.put(GROUP, '33612345678@s.whatsapp.net', {
-      version: 1,
-      updatedAt: '',
-      facts: ['Préfère Gabounet.'],
-    });
-    const { provider, requests } = scripted([() => ({ text: 'un' }), () => ({ text: 'deux' })]);
-    const answer = agentWith(provider, { memory });
-    await answer(message('salut'), group, identity, TODAY);
-    await answer(message('encore', { id: 'M2' }), group, identity, TODAY);
-    // The notes are CONVERSATION, not system: what a group member said about themselves
-    // must not become a standing instruction of the bot's (prompt injection).
-    expect(requests[0].system).not.toContain('Préfère Gabounet.');
-    expect((requests[0].messages[0] as { content: string }).content).toContain('Préfère Gabounet.');
-    expect(requests[0].messages[0].role).toBe('user');
-    expect(requests[1].messages.map((m) => (m as { content: string }).content)).toEqual([
-      expect.stringContaining('Préfère Gabounet.'),
-      'Gab: salut',
-      'un',
-      'Gab: encore',
+  it('A REACTION IS THE THIRD OUTCOME: allow-listed, recorded, and shown to the next call in its own form', async () => {
+    const { provider, requests } = scripted([() => ({ text: 'REACT ❤️' }), () => ({ text: 'REACT 🎉' }), () => ({ text: 'de rien' })]);
+    const dayLog = new DayLog(memoryDayLogStore());
+    await said(dayLog, '[replying to you: "Sept, derrière Zou."] merci');
+    const answer = agentWith(provider, { dayLog });
+    expect(await answer(message('merci', { mentions: [], quoted: { id: 'B1', participant: bot, player: bot, text: 'Sept, derrière Zou.' } }), group, identity, TODAY, asked('reply'))).toEqual({ kind: 'react', emoji: '❤️' });
+    expect(dayLog.today(GROUP, TODAY).at(-1)).toMatchObject({ kind: 'reacted', text: '❤️', id: 'M1#react' });
+    // An emoji off the list is the plainest one, never a broken sequence.
+    await said(dayLog, 'top', { id: 'M2', at: NOW.getTime() + 1_000 });
+    expect(await answer(message('top', { id: 'M2', mentions: [], timestamp: NOW.getTime() / 1000 + 1 }), group, identity, TODAY, asked('ambient'))).toEqual({ kind: 'react', emoji: DEFAULT_REACTION });
+    // The next call reads both reactions back as the assistant's `REACT …` turns.
+    await said(dayLog, 'WhippinBot et demain ?', { id: 'M3', at: NOW.getTime() + 2_000 });
+    await answer(message('@33700000000 et demain ?', { id: 'M3', timestamp: NOW.getTime() / 1000 + 2 }), group, identity, TODAY, asked());
+    expect(requests[2].messages.map((x) => [x.role, (x as { content: string }).content])).toEqual([
+      ['user', '[14:00] Gab: [replying to you: "Sept, derrière Zou."] merci'],
+      ['assistant', 'REACT ❤️'],
+      ['user', '[14:00] Gab: top'],
+      ['assistant', 'REACT 👍'],
+      ['user', '[14:00] Gab: WhippinBot et demain ?'],
     ]);
-    expect(await answer(message('trois', { id: 'M3' }), group, identity, TODAY)).toEqual({
-      kind: 'silent',
-      reason: 'user_limit',
-    });
+    // A reaction never charges the group's ceiling: it is not a bubble.
+    expect(reactionIn('REACT ❤️')).toBe('❤️');
+    expect(reactionIn('_react: 🔥_')).toBe('🔥');
+    expect(reactionIn('REACT 🎉')).toBe(DEFAULT_REACTION);
+    expect(reactionIn('REACTION time')).toBeNull();
+    expect(reactionIn('merci')).toBeNull();
+    expect(reactionIn(null)).toBeNull();
   });
 
-  it('a bare mention is not a question: no quota, no model call', async () => {
-    const { provider, requests } = scripted([() => ({ text: 'hi' })]);
-    const limits = memoryLimitStore();
-    const take = vi.spyOn(limits, 'take');
-    const answer = agentWith(provider, { limits });
-    for (let i = 0; i < 5; i += 1) {
-      expect(await answer(message('@33700000000', { id: `M${i}` }), group, identity, TODAY)).toEqual({
-        kind: 'silent',
-        reason: 'empty',
-      });
-    }
-    expect(take).not.toHaveBeenCalled();
-    expect(requests).toHaveLength(0);
-    // The two-a-day ceiling was never touched, so a real question still gets an answer.
-    expect(await answer(message('@33700000000 qui mène ?'), group, identity, TODAY)).toEqual({
-      kind: 'reply',
-      text: 'hi',
-    });
-  });
-
-  it('an unavailable model or an empty answer is silence, and the tool rounds are bounded', async () => {
-    const down = scripted([() => new LlmUnavailable('503')]);
-    expect(await agentWith(down.provider)(message('x'), group, identity, TODAY)).toEqual({
-      kind: 'silent',
-      reason: 'unavailable',
-    });
-    const loop = scripted(
-      Array.from({ length: 10 }, () => () => ({
-        toolCalls: [{ id: 'c', name: 'get_today_podium', arguments: '{}' }],
-        finish: 'tool_calls' as const,
-      })),
-    );
-    expect(await agentWith(loop.provider)(message('x'), group, identity, TODAY)).toEqual({
-      kind: 'silent',
-      reason: 'empty',
-    });
-    expect(loop.requests).toHaveLength(5);
-    expect(loop.requests[4].tools).toBeUndefined();
-    const ceiling = scripted([() => ({ text: 'hi' })]);
-    expect(
-      await agentWith(ceiling.provider, { dailyCallCeiling: 0 })(message('x'), group, identity, TODAY),
-    ).toEqual({ kind: 'silent', reason: 'call_ceiling' });
-  });
-
-  it('a TENTATIVE message is offered to the model, which may decline it — for free', async () => {
-    // Not aimed at the bot, merely the first thing said after its own line. The model is
-    // told so; NO_REPLY is silence, and a declined follow-up spends nobody's day of
-    // questions (the ceiling here is two): five declines, then a real question still gets
-    // its answer.
+  it('AMBIENT: silence is the default and costs nothing; a reply charges the group ceiling; the rules say so', async () => {
+    const tight = parseGroupConfig('t.json', { ...JSON.parse(JSON.stringify({ id: GROUP, name: 'g', language: 'fr', enabled: true, timezone: 'Europe/Paris', podium: { enabled: true, time: '22:00' } })), chat: { enabled: true, perGroupPerDay: 2 } });
     const { provider, requests } = scripted([
       () => ({ text: 'NO_REPLY' }),
-      () => ({ text: 'no_reply.' }),
-      () => ({ text: ' NO_REPLY\n' }),
       () => ({ text: '_NO_REPLY_' }),
       () => ({ text: '**NO_REPLY**' }),
-      () => ({ text: 'de rien' }),
+      () => ({ text: 'a' }),
+      () => ({ text: 'b' }),
+      () => ({ text: 'c' }),
     ]);
-    const context = new RecentContext();
-    const answer = agentWith(provider, { context });
-    const follow = (text: string, id: string) => message(text, { id, mentions: [] });
-    for (const [i, text] of ['ok', 'lol', 'bon', 'hein', 'quoi'].entries()) {
-      expect(await answer(follow(text, `F${i}`), group, identity, TODAY, { tentative: true })).toEqual({
-        kind: 'silent',
-        reason: 'not_for_me',
-      });
+    const dayLog = new DayLog(memoryDayLogStore());
+    const answer = agentWith(provider, { dayLog });
+    for (const [i, text] of ['ok', 'lol', 'bon'].entries()) {
+      await said(dayLog, text, { id: `F${i}`, at: NOW.getTime() + i });
+      expect(await answer(message(text, { id: `F${i}`, mentions: [] }), tight, identity, TODAY, asked('ambient'))).toEqual({ kind: 'silent', reason: 'not_for_me' });
     }
     expect(requests[0].system).toContain('NOT addressed to you');
     expect(requests[0].system).toContain('NO_REPLY');
-    // Declined: not a turn the agent records (main.ts remembers it as chatter instead).
-    expect(context.recent(GROUP, new Date('2026-09-03T12:00:00Z').getTime())).toEqual([]);
-    expect(await answer(follow('merci', 'F5'), group, identity, TODAY, { tentative: true })).toEqual({
-      kind: 'reply',
-      text: 'de rien',
-    });
-    // Answered, so charged like any question — and the exchange is a turn.
-    expect(context.recent(GROUP, new Date('2026-09-03T12:00:00Z').getTime()).map((t) => t.text)).toEqual(['merci', 'de rien']);
-    // A message aimed at the bot is never told it might not be.
-    await answer(message('@33700000000 et hier ?', { id: 'Q' }), group, identity, TODAY);
-    expect(requests[6].system).not.toContain('NO_REPLY');
+    expect(requests[0].system).toContain('answered 0 times without being addressed');
+    // Declined: nothing of the bot's is recorded, and the ceiling (two) is untouched.
+    expect(dayLog.today(GROUP, TODAY).every((t) => t.kind === 'said')).toBe(true);
+    for (const [i, text] of ['un', 'deux'].entries()) {
+      await said(dayLog, text, { id: `A${i}`, at: NOW.getTime() + 10 + i });
+      expect((await answer(message(text, { id: `A${i}`, mentions: [] }), tight, identity, TODAY, asked('ambient'))).kind).toBe('reply');
+    }
+    await said(dayLog, 'trois', { id: 'A2', at: NOW.getTime() + 20 });
+    expect(await answer(message('trois', { id: 'A2', mentions: [] }), tight, identity, TODAY, asked('ambient'))).toEqual({ kind: 'silent', reason: 'group_limit' });
+    // An addressed message is never told it might not be for the bot.
+    const direct = scripted([() => ({ text: 'oui' })]);
+    await said(dayLog, 'WhippinBot ?', { id: 'Q', at: NOW.getTime() + 30 });
+    await agentWith(direct.provider, { dayLog })(message('@33700000000 et hier ?', { id: 'Q' }), group, identity, TODAY, asked());
+    expect(direct.requests[0].system).not.toContain('NO_REPLY');
+    expect(direct.requests[0].system).toContain('addressed to you (you are mentioned)');
   });
 
-  it('a tentative reply still honours the ceilings, charged once the model has answered', async () => {
-    const { provider } = scripted([() => ({ text: 'a' }), () => ({ text: 'b' }), () => ({ text: 'c' })]);
-    const answer = agentWith(provider);
-    const follow = (text: string, id: string) => message(text, { id, mentions: [] });
-    expect((await answer(follow('un', 'F1'), group, identity, TODAY, { tentative: true })).kind).toBe('reply');
-    expect((await answer(follow('deux', 'F2'), group, identity, TODAY, { tentative: true })).kind).toBe('reply');
-    expect(await answer(follow('trois', 'F3'), group, identity, TODAY, { tentative: true })).toEqual({
-      kind: 'silent',
-      reason: 'user_limit',
-    });
+  it('tells the model how far into an exchange it is, and how much of the room it has been', async () => {
+    const { provider, requests } = scripted([() => ({ text: 'NO_REPLY' })]);
+    const dayLog = new DayLog(memoryDayLogStore());
+    for (let i = 0; i < 6; i += 1) {
+      await dayLog.append({ group: GROUP, day: TODAY, at: NOW.getTime() - 1000 + i, id: `T${i}`, kind: i % 2 ? 'bot' : 'said', name: i % 2 ? '' : 'Luc', text: `t${i}` });
+    }
+    await said(dayLog, 'gloups', { id: 'M1' });
+    await agentWith(provider, { dayLog })(message('gloups', { mentions: [] }), group, identity, TODAY, asked('ambient', { unasked: 5, lastSpokeAt: NOW.getTime() - 1 }));
+    expect(requests[0].system).toContain('already answered 5 times without being addressed');
+    expect(requests[0].system).toContain('You wrote 3 of the last 7 messages');
+    // Once the gap has passed the exchange is over, and the count starts again.
+    const fresh = scripted([() => ({ text: 'NO_REPLY' })]);
+    await agentWith(fresh.provider, { dayLog })(message('gloups', { mentions: [] }), group, identity, TODAY, asked('ambient', { unasked: 5, lastSpokeAt: NOW.getTime() - 3_600_000 }));
+    expect(fresh.requests[0].system).toContain('answered 0 times');
+  });
+
+  it('NOTHING TO ANSWER costs nothing — and a bare mention quoting a question is a question (2026-09-08)', async () => {
+    const { provider, requests } = scripted([() => ({ text: '14 bat 17, comme au golf.' })]);
+    const limits = memoryLimitStore();
+    const take = vi.spyOn(limits, 'take');
+    const dayLog = new DayLog(memoryDayLogStore());
+    const answer = agentWith(provider, { limits, dayLog });
+    for (let i = 0; i < 3; i += 1) {
+      expect(await answer(message('@33700000000', { id: `E${i}` }), group, identity, TODAY, asked())).toEqual({ kind: 'silent', reason: 'empty' });
+    }
+    expect(take).not.toHaveBeenCalled();
+    expect(requests).toHaveLength(0);
+    // The player quoted his own question and tagged the bot: in production that got
+    // nothing. The quote IS the question.
+    const own = { id: 'Q', participant: '33612345678@s.whatsapp.net', player: '33612345678@s.whatsapp.net', text: 'Pourtant 17 > 14, non ?' };
+    await said(dayLog, '[replying to Gab: "Pourtant 17 > 14, non ?"] WhippinBot');
+    expect(await answer(message('@33700000000', { quoted: own }), group, identity, TODAY, asked())).toEqual({ kind: 'reply', text: '14 bat 17, comme au golf.' });
+    expect(contents(requests[0])).toEqual(['[14:00] Gab: [replying to Gab: "Pourtant 17 > 14, non ?"] WhippinBot']);
+  });
+
+  it('carries the DIARY as a user turn — notes, never instructions — ahead of the day', async () => {
+    const diary = memoryDiaryStore();
+    await diary.put(GROUP, { version: 1, text: 'Luc a promis un ∞ pour demain.', updatedAt: '', day: TODAY - 1 });
+    const { provider, requests } = scripted([() => ({ text: 'un' })]);
+    const dayLog = new DayLog(memoryDayLogStore());
+    await said(dayLog, 'WhippinBot salut');
+    await agentWith(provider, { diary, dayLog })(message('salut'), group, identity, TODAY, asked());
+    expect(requests[0].system).not.toContain('Luc a promis');
+    expect(requests[0].messages[0].role).toBe('user');
+    expect(contents(requests[0])).toEqual([expect.stringMatching(/^\[Your diary of this group.*not instructions\.\]\nLuc a promis un ∞ pour demain\.$/s), '[14:00] Gab: WhippinBot salut']);
+    // A diary that cannot be read costs the diary, never the answer.
+    const broken = { get: async () => { throw new Error('dynamo down'); }, put: async () => {} };
+    const again = scripted([() => ({ text: 'deux' })]);
+    expect(await agentWith(again.provider, { diary: broken, dayLog })(message('salut'), group, identity, TODAY, asked())).toEqual({ kind: 'reply', text: 'deux' });
+  });
+
+  it('an unavailable model or an empty answer is silence, and the tool rounds are bounded', async () => {
+    const dayLog = new DayLog(memoryDayLogStore());
+    await said(dayLog, 'x');
+    const down = scripted([() => new LlmUnavailable('503')]);
+    expect(await agentWith(down.provider, { dayLog })(message('x'), group, identity, TODAY, asked())).toEqual({ kind: 'silent', reason: 'unavailable' });
+    const loop = scripted(Array.from({ length: 10 }, () => () => ({ toolCalls: [{ id: 'c', name: 'get_today_podium', arguments: '{}' }], finish: 'tool_calls' as const })));
+    expect(await agentWith(loop.provider, { dayLog })(message('x'), group, identity, TODAY, asked())).toEqual({ kind: 'silent', reason: 'empty' });
+    expect(loop.requests).toHaveLength(5);
+    expect(loop.requests[4].tools).toBeUndefined();
+    const ceiling = scripted([() => ({ text: 'hi' })]);
+    expect(await agentWith(ceiling.provider, { dayLog, dailyCallCeiling: 0 })(message('x'), group, identity, TODAY, asked())).toEqual({ kind: 'silent', reason: 'call_ceiling' });
   });
 
   it('retries an answer that did not FINISH once, then stays silent rather than posting a fragment', async () => {
-    // The reasoning model spends its thinking from the reply budget: a `length` finish is a
-    // fragment, or nothing at all — both observed in production as a question that was
-    // plainly asked and never answered.
+    const dayLog = new DayLog(memoryDayLogStore());
+    await said(dayLog, 'x');
     const once = scripted([() => ({ text: 'Gab, 7 ess', finish: 'length' }), () => ({ text: 'Sept, correct.' })]);
-    expect(await agentWith(once.provider)(message('x'), group, identity, TODAY)).toEqual({
-      kind: 'reply',
-      text: 'Sept, correct.',
-    });
+    expect(await agentWith(once.provider, { dayLog })(message('x'), group, identity, TODAY, asked())).toEqual({ kind: 'reply', text: 'Sept, correct.' });
     expect(once.requests).toHaveLength(2);
     const twice = scripted([() => ({ text: null, finish: 'length' }), () => ({ text: 'Gab,', finish: 'other' })]);
-    expect(await agentWith(twice.provider)(message('x'), group, identity, TODAY)).toEqual({
-      kind: 'silent',
-      reason: 'unfinished',
-    });
-    expect(twice.requests).toHaveLength(2);
-    // The budget is sized for the thinking, not for the line.
+    expect(await agentWith(twice.provider, { dayLog })(message('x'), group, identity, TODAY, asked())).toEqual({ kind: 'silent', reason: 'unfinished' });
     expect(once.requests[0].maxTokens).toBeGreaterThanOrEqual(2000);
-  });
-
-  it('keeps another player\'s mention in the question, as the name the group uses', async () => {
-    const declarations = memoryDeclarationStore();
-    await declarations.record({
-      group: GROUP,
-      dayNumber: TODAY - 1,
-      sender: '33611111111@s.whatsapp.net',
-      score: 4,
-      capped: false,
-      token: 't',
-      messageId: 'X',
-      messageTs: 1,
-      name: 'Zou',
-      receivedAt: '',
-      lang: 'fr',
-    });
-    const { provider, requests } = scripted([() => ({ text: 'ok' })]);
-    const answer = agentWith(provider, { declarations });
-    await answer(
-      message('@33700000000 combien de jours que @33611111111 me bat ?', {
-        mentions: [m('33700000000@s.whatsapp.net'), m('33611111111@s.whatsapp.net')],
-      }),
-      group,
-      identity,
-      TODAY,
-    );
-    // The bot's own mention is addressing and goes; the other becomes a name the tools can
-    // look up, and never the phone number behind it.
-    const asked = (requests[0].messages.at(-1) as { content: string }).content;
-    expect(asked).toBe('Gab: combien de jours que Zou me bat ?');
-    expect(asked).not.toContain('33611111111');
-
-    // In a LID-addressed group the @token spells the LID, and the declarations know the
-    // player by number: the label is looked up by the PLAYER key the mention resolved to,
-    // keyed by the digits the text actually carries.
-    const lid = scripted([() => ({ text: 'ok' })]);
-    await agentWith(lid.provider, { declarations })(
-      message('@99999999999999 combien de jours que @55555555555555 me bat ?', {
-        id: 'M2',
-        mentions: [
-          m('99999999999999@lid', '33700000000@s.whatsapp.net'),
-          m('55555555555555@lid', '33611111111@s.whatsapp.net'),
-        ],
-      }),
-      group,
-      { ...identity, jids: ['33700000000@s.whatsapp.net', '99999999999999@lid'] },
-      TODAY,
-    );
-    expect((lid.requests[0].messages.at(-1) as { content: string }).content).toBe(
-      'Gab: combien de jours que Zou me bat ?',
-    );
-  });
-
-  it('names an unknown mention by its handle, and still charges nothing for a bare one', async () => {
-    const { provider, requests } = scripted([() => ({ text: 'ok' })]);
-    const answer = agentWith(provider);
-    // Nobody the group has seen: the same …last4 handle every other surface shows.
-    await answer(
-      message('@33700000000 et @33699998888 alors ?', {
-        mentions: [m('33700000000@s.whatsapp.net'), m('33699998888@s.whatsapp.net')],
-      }),
-      group,
-      identity,
-      TODAY,
-    );
-    expect((requests[0].messages.at(-1) as { content: string }).content).toBe('Gab: et …8888 alors ?');
-    // Two bare mentions and no words is still not a question.
-    expect(
-      await answer(
-        message('@33700000000 @33699998888', {
-          id: 'M9',
-          mentions: [m('33700000000@s.whatsapp.net'), m('33699998888@s.whatsapp.net')],
-        }),
-        group,
-        identity,
-        TODAY,
-      ),
-    ).toEqual({ kind: 'silent', reason: 'empty' });
   });
 
   it('bounds a reply to plain text of a sane length', () => {
@@ -355,22 +255,18 @@ describe('addressed conversation (#236)', () => {
 describe('the bot knows its own schedule in this group (user-decided 2026-09-05)', () => {
   it('states the podium time and the reminder when the group has them, and says so when it does not', async () => {
     const { provider, requests } = scripted([() => ({ text: 'À 22h.' })]);
-    await agentWith(provider)(message('@33700000000 le podium c\'est quand ?'), group, identity, TODAY);
+    const dayLog = new DayLog(memoryDayLogStore());
+    await said(dayLog, "le podium c'est quand ?");
+    await agentWith(provider, { dayLog })(message("@33700000000 le podium c'est quand ?"), group, identity, TODAY, asked());
     expect(requests[0].system).toContain('at 22:00');
     expect(requests[0].system).toContain('podium');
-    expect(requests[0].system).not.toContain('Every morning'); // no reminder configured here
+    expect(requests[0].system).not.toContain('Every morning');
     const reminding = parseGroupConfig('r.json', {
-      id: GROUP,
-      name: 'g',
-      language: 'fr',
-      enabled: true,
-      timezone: 'Europe/Paris',
-      podium: { enabled: false, time: '22:00' },
-      reminder: { enabled: true, time: '08:30' },
-      chat: { enabled: true },
+      id: GROUP, name: 'g', language: 'fr', enabled: true, timezone: 'Europe/Paris',
+      podium: { enabled: false, time: '22:00' }, reminder: { enabled: true, time: '08:30' }, chat: { enabled: true },
     });
     const again = scripted([() => ({ text: 'Le matin.' })]);
-    await agentWith(again.provider)(message('@33700000000 et le rappel ?'), reminding, identity, TODAY);
+    await agentWith(again.provider, { dayLog })(message('@33700000000 et le rappel ?'), reminding, identity, TODAY, asked());
     expect(again.requests[0].system).toContain('no daily podium');
     expect(again.requests[0].system).toContain('Every morning at 08:30');
   });
@@ -378,54 +274,39 @@ describe('the bot knows its own schedule in this group (user-decided 2026-09-05)
 
 describe("the day's source rides in the system prompt, never as a tool (#236)", () => {
   const source = { kind: 'music', author: 'Bertrand Belin', work: 'Oiseau' };
+  const reader = { get: async () => source, read: async () => ({ published: true, source }) };
 
   it('is ambient: it is there before the question is read, and costs no tool round', async () => {
     const { provider, requests } = scripted([() => ({ text: "Ça vient d'une chanson." })]);
-    const answer = agentWith(provider, {
-      daySource: { get: async () => source, read: async () => ({ published: true, source }) },
-    });
-    const out = await answer(message('@33700000000 ça vient d’où ?'), group, identity, TODAY);
+    const dayLog = new DayLog(memoryDayLogStore());
+    await said(dayLog, 'ça vient d’où ?');
+    const out = await agentWith(provider, { dayLog, daySource: reader })(message('@33700000000 ça vient d’où ?'), group, identity, TODAY, asked());
     expect(out).toEqual({ kind: 'reply', text: "Ça vient d'une chanson." });
-    // ONE call — the fact was in hand, so nothing had to be fetched mid-conversation.
     expect(requests).toHaveLength(1);
-    expect(requests[0].tools?.map((t) => t.name) ?? []).not.toContain('get_day_source');
-    // The whole object is KNOWN, so the bot can tell what it is holding back.
     expect(requests[0].system).toContain('kind: music');
     expect(requests[0].system).toContain('author: Bertrand Belin');
-    // And the rule that only the kind may be said travels with it.
     expect(requests[0].system).toMatch(/NOT name the author or the work/);
   });
 
   it('drops an answer that spells the author or the work, whatever the prompt was told', async () => {
-    // The prompt rule is the defence; this is what stands behind it. A leak is irreversible.
-    const leaks = ["C'est Oiseau, de Bertrand Belin.", 'bertrand BELIN, évidemment', 'BertrandBelin'];
-    for (const [i, text] of leaks.entries()) {
+    const dayLog = new DayLog(memoryDayLogStore());
+    await said(dayLog, 'ça vient d’où ?');
+    for (const [i, text] of ["C'est Oiseau, de Bertrand Belin.", 'bertrand BELIN, évidemment', 'BertrandBelin'].entries()) {
       const { provider } = scripted([() => ({ text })]);
-      const answer = agentWith(provider, { daySource: { get: async () => source, read: async () => ({ published: true, source }) } });
-      expect(await answer(message('@33700000000 ça vient d’où ?', { id: `L${i}` }), group, identity, TODAY)).toEqual({
-        kind: 'silent',
-        reason: 'spoiler',
-      });
+      expect(await agentWith(provider, { dayLog, daySource: reader })(message('@33700000000 ça vient d’où ?', { id: `L${i}` }), group, identity, TODAY, asked())).toEqual({ kind: 'silent', reason: 'spoiler' });
     }
-    // A one-word title is a common noun: "un oiseau" in an ordinary sentence is not a leak,
-    // and neither is a fragment of the name — those stay the prompt's job.
     const { provider } = scripted([() => ({ text: "Je sais, c'est une chanson, et je dirai pas laquelle. Pas un oiseau en vue." })]);
-    const answer = agentWith(provider, { daySource: { get: async () => source, read: async () => ({ published: true, source }) } });
-    expect((await answer(message('@33700000000 alors ?'), group, identity, TODAY)).kind).toBe('reply');
+    expect((await agentWith(provider, { dayLog, daySource: reader })(message('@33700000000 alors ?'), group, identity, TODAY, asked())).kind).toBe('reply');
   });
 
-  it('a reader that says nothing leaves the prompt with no source at all', async () => {
+  it('a reader that says nothing, or none at all, leaves the prompt with no source', async () => {
+    const dayLog = new DayLog(memoryDayLogStore());
+    await said(dayLog, 'ça vient d’où ?');
     const { provider, requests } = scripted([() => ({ text: 'Aucune idée.' })]);
-    // An unpublished day, a puzzle with no metadata and a failed read are one answer here.
-    const answer = agentWith(provider, { daySource: { get: async () => null, read: async () => null } });
-    await answer(message('@33700000000 ça vient d’où ?'), group, identity, TODAY);
+    await agentWith(provider, { dayLog, daySource: { get: async () => null, read: async () => null } })(message('@33700000000 ça vient d’où ?'), group, identity, TODAY, asked());
     expect(requests[0].system).not.toContain("Where today's sentence comes from");
-  });
-
-  it('answers normally with no reader configured', async () => {
-    const { provider, requests } = scripted([() => ({ text: 'Salut.' })]);
-    const out = await agentWith(provider)(message('@33700000000 salut'), group, identity, TODAY);
-    expect(out).toEqual({ kind: 'reply', text: 'Salut.' });
-    expect(requests[0].system).not.toContain("Where today's sentence comes from");
+    const bare = scripted([() => ({ text: 'Salut.' })]);
+    expect(await agentWith(bare.provider, { dayLog })(message('@33700000000 salut'), group, identity, TODAY, asked())).toEqual({ kind: 'reply', text: 'Salut.' });
+    expect(bare.requests[0].system).not.toContain("Where today's sentence comes from");
   });
 });

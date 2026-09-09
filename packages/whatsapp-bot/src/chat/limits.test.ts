@@ -7,14 +7,13 @@ import {
 import { dynamoLimitStore, limitKeys, memoryLimitStore } from './limits';
 
 describe('conversational ceilings (#236)', () => {
-  it('counts per UTC day, per sender / group / everyone', () => {
+  it('counts per UTC day, per group / everyone — and no longer per person (#277)', () => {
     const now = new Date('2026-09-03T23:30:00Z');
-    expect(limitKeys.user('g@g.us', 'u@lid', now)).toEqual({
-      scope: 'LIMIT#g@g.us',
-      key: 'DAY#2026-09-03#USER#u@lid',
-    });
-    expect(limitKeys.group('g@g.us', now).key).toBe('DAY#2026-09-03#GROUP');
+    expect(limitKeys.group('g@g.us', now)).toEqual({ scope: 'LIMIT#g@g.us', key: 'DAY#2026-09-03#GROUP' });
     expect(limitKeys.calls(now)).toEqual({ scope: 'LIMIT#ALL', key: 'DAY#2026-09-03#CALLS' });
+    // Reached, a per-person ceiling silenced somebody for the rest of the day with nothing
+    // saying why; what bounds one person now is the exchange budget (trigger.ts).
+    expect(limitKeys).not.toHaveProperty('user');
   });
 
   it('the memory store reaches the ceiling and never passes it', async () => {
@@ -24,7 +23,7 @@ describe('conversational ceilings (#236)', () => {
     expect(await store.take('s', 'k', 2, 0)).toBe(false);
   });
 
-  it('the DynamoDB store spells the ceiling as the update\'s own condition', async () => {
+  it("the DynamoDB store spells the ceiling as the update's own condition", async () => {
     const send = vi
       .fn()
       .mockResolvedValueOnce({})

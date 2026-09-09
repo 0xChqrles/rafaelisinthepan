@@ -19,11 +19,24 @@ import { SSMClient } from '@aws-sdk/client-ssm';
 import { activeDate, dayNumber } from '@whippin/shared';
 import { createAgent } from './chat/agent';
 import { createDaySourceReader } from './puzzle/daySource';
-import { RecentContext, quoteLead } from './chat/context';
+import { DayLog, dayOfInstant, dynamoDayLogStore, quoteLead } from './chat/dayLog';
+import { dynamoDiaryStore } from './chat/diary';
 import { dynamoLimitStore, limitExpiry, limitKeys } from './chat/limits';
-import { dynamoMemoryStore } from './chat/memory';
 import { labelPlayers } from './chat/tools';
-import { EMPTY_FLOOR, addressedTo, advanceFloor, followsBot, jidUser, namesWithBot, quotesBot, withMentionNames, type BotIdentity, type Floor } from './chat/trigger';
+import {
+  NEW_EXCHANGE,
+  addressedTo,
+  afterAnswer,
+  isWordless,
+  jidUser,
+  mayVolunteer,
+  namesWithBot,
+  quotesBot,
+  withMentionNames,
+  type Approach,
+  type BotIdentity,
+  type Exchange,
+} from './chat/trigger';
 import { botRegion, loadEnv } from './config/env';
 import { loadGroups, type GroupConfig } from './config/groupConfig';
 import { dynamoDeclarationStore } from './domain/dynamoDeclarationStore';
@@ -124,9 +137,21 @@ async function main(): Promise<void> {
     : (outbound as CommandSource);
   if (!env.outboundQueueUrl) log.warn({ event: 'outbound.local' }, 'no BOT_OUTBOUND_QUEUE_URL: in-process outbound queue');
 
-  // ONE window per task, shared by the agent that reads it and `onMessage`, which fills
-  // it with everything the group says that was not aimed at the bot.
-  const context = new RecentContext();
+  // THE DAY LOG (#277): ONE per task, shared by the agent that reads it and `onMessage`,
+  // which fills it with everything the group says. Durable, and RELOADED HERE, so the
+  // minute a deploy costs no longer costs the bot the day it was in.
+  const dayLog = new DayLog(dynamoDayLogStore(dynamo, env.table));
+  const bootDay = dayNumber(activeDate(new Date()));
+  for (const group of groups.all()) {
+    if (!group.chat.enabled) continue;
+    try {
+      const turns = await dayLog.load(group.id, bootDay);
+      log.info({ event: 'daylog.loaded', group: tag(group.id), turns }, "today's log reloaded");
+    } catch (error) {
+      log.warn({ event: 'daylog.load_failed', group: tag(group.id), error: (error as Error).message }, 'starting the day from here');
+    }
+  }
+  const diary = dynamoDiaryStore(dynamo, env.table);
 
   let provider = null;
   try {
@@ -135,7 +160,6 @@ async function main(): Promise<void> {
     log.error({ event: 'llm.unconfigured', error: (error as Error).message }, 'no LLM provider; chat disabled');
   }
   const limits = dynamoLimitStore(dynamo, env.table);
-  const memory = dynamoMemoryStore(dynamo, env.table);
 
   // The spoken acknowledgement (`acknowledge: "say"`), and it SPENDS THE SAME DAILY CALL
   // CEILING the conversation does. That ceiling exists to bound what the bot can cost in a
@@ -150,6 +174,16 @@ async function main(): Promise<void> {
         })
     : undefined;
 
+  // The bot's own words into the day log, said in the log when the store refuses: a turn
+  // the bot cannot store is one it forgets at the next restart, nothing worse.
+  async function keep(turn: Parameters<DayLog['append']>[0], unlessSaid = false): Promise<void> {
+    try {
+      await (unlessSaid ? dayLog.appendUnlessSaid(turn) : dayLog.append(turn));
+    } catch (error) {
+      log.warn({ event: 'daylog.write_failed', group: tag(turn.group), error: (error as Error).message }, 'the turn was not stored');
+    }
+  }
+
   const ingest = createIngest({
     groups,
     declarations,
@@ -159,19 +193,22 @@ async function main(): Promise<void> {
     log,
     comment,
     // A spoken acknowledgement is something the bot SAID in the group, so it belongs in the
-    // window like any other turn — otherwise "pourquoi tu dis ça ?" a minute later is a
+    // day log like any other turn — otherwise "pourquoi tu dis ça ?" a minute later is a
     // question about a message the bot cannot see. Remembered once it is QUEUED, not once
     // it is composed: a line the queue refused for good was never said. The emoji is not a
     // turn — there is nothing to remember about it.
-    spoken: (group, line) => context.push(group.id, { role: 'assistant', name: '', text: line, at: Date.now() }),
+    spoken: (group, line, message) => {
+      const at = Date.now();
+      void keep({ group: group.id, day: dayOfInstant(at), at, id: `${message.id}#ack`, kind: 'bot', name: '', text: line });
+    },
   });
   const answer = provider
     ? createAgent({
         provider,
         declarations,
-        memory,
+        diary,
         limits,
-        context,
+        dayLog,
         dailyCallCeiling: env.llm.dailyCallCeiling,
         // Read once per (language, day) and held for the process's life: the task is
         // long-lived, so the group pays one 4-6 MB read a day and not one per question.
@@ -183,7 +220,7 @@ async function main(): Promise<void> {
   const abort = new AbortController();
 
   // The group's name for whoever a remembered message's mentions point at — off the same
-  // window the tools resolve names in (`labelPlayers`), so the window and a later question
+  // window the tools resolve names in (`labelPlayers`), so the log and a later question
   // agree on who "Zou" is. Keyed by the digits the text's @token spells, labelled by the
   // PLAYER the mention resolves to (a LID-addressed group's tokens spell LIDs the
   // declarations know nobody by). A read that fails costs the names, never the message:
@@ -203,102 +240,119 @@ async function main(): Promise<void> {
     return names;
   }
 
-  // THE FLOOR: when the bot last spoke in each group and how much has been said since, off
-  // every message the group delivers — the bot's own sends included, which WhatsApp echoes
-  // back as `fromMe` — so a message that follows the bot's line can be offered to the model
-  // as a possible reply to it (`followsBot`). Stamped with the message's OWN timestamp, and
-  // an out-of-order arrival (an offline delivery, a history replay) moves nothing.
-  const floors = new Map<string, Floor>();
+  // THE EXCHANGE, per group (`trigger.ts`): how many times in a row the bot has answered
+  // without being addressed, which is the one thing it may not do without end.
+  const exchanges = new Map<string, Exchange>();
 
-  // What the window keeps of an ordinary message — what a conversation can use and nothing
-  // that identifies anyone: the share stripped, the link AND the generated block around
-  // it, so a score-only message leaves nothing to remember; and every mention as the name
-  // the group uses, since the token spells a phone number.
-  async function remember(group: GroupConfig, message: InboundMessage, identity: BotIdentity): Promise<void> {
+  // What the day log keeps of a message — what a conversation can use and nothing that
+  // identifies anyone: the share stripped, the link AND the generated block around it, so
+  // a score-only message leaves nothing to remember; every mention as the name the group
+  // uses, since the token spells a phone number; and a quote spelled out at the head of
+  // the turn (`quoteLead`), so "oui" under "on joue ce soir ?" reads as the answer it was.
+  // Answers the text as remembered, or null when the message had nothing to keep.
+  async function remember(group: GroupConfig, message: InboundMessage, identity: BotIdentity): Promise<string | null> {
     const text = withoutShares(message.text, env.siteOrigin);
-    if (!text) return;
-    // A quote is named like a mention — the quoted author is one more player to label —
-    // and spelled out at the head of the turn (`quoteLead`), so "oui" under "on joue ce
-    // soir ?" reads in the window as the answer it was. The quoted words are stripped of
-    // shares like the message's own.
     const quoted = message.quoted;
+    const quotedText = quoted ? withoutShares(quoted.text, env.siteOrigin) : '';
+    if (!text && !quoted) return null;
     const refs = quoted ? [...message.mentions, { jid: quoted.participant, player: quoted.player }] : message.mentions;
     const names = await mentionNames(group, refs);
     const lead = quoted
       ? quoteLead(
           quotesBot(message, identity) ? 'you' : (names.get(jidUser(quoted.participant)) ?? displayName(group, quoted.player, '')),
-          withMentionNames(withoutShares(quoted.text, env.siteOrigin), namesWithBot(names, identity)),
+          withMentionNames(quotedText, namesWithBot(names, identity)),
         )
       : '';
-    context.push(group.id, {
-      role: 'user',
+    const kept = `${lead}${withMentionNames(text, names)}`.trim();
+    if (!kept) return null;
+    const at = message.timestamp * 1000;
+    await keep({
+      group: group.id,
+      day: dayOfInstant(at),
+      at,
+      id: message.id,
+      kind: 'said',
       name: displayName(group, message.sender, message.senderName),
-      text: `${lead}${withMentionNames(text, names)}`,
-      at: Date.now(),
+      text: kept,
     });
+    return kept;
   }
 
   async function onMessage(message: InboundMessage): Promise<void> {
     const group = groups.get(message.group);
+    if (!group) {
+      await ingest(message); // answers `ignored`; the allow-list is its to hold too
+      return;
+    }
     const at = message.timestamp * 1000;
-    const floor = group ? floors.get(group.id) : undefined;
-    if (group) floors.set(group.id, advanceFloor(floor ?? EMPTY_FLOOR, { fromMe: message.fromMe, at }));
-    // THE BOT'S OWN LINES ENTER THE WINDOW AS WHATSAPP ECHOES THEM BACK (`fromMe`,
+    const chatting = group.chat.enabled && message.live;
+    // THE BOT'S OWN LINES ENTER THE LOG AS WHATSAPP ECHOES THEM BACK (`fromMe`,
     // 2026-09-07): the podium and the reminder are sent from the queue and composed
     // nowhere near here, so a "merci" under the podium was a reply to a line the model
     // could not see. A line already remembered when it was composed — an answer, a spoken
-    // acknowledgement — is not remembered twice (`pushUnlessSaid`); the echo of a share
-    // block, should the bot ever forward one, leaves nothing.
-    if (group && group.chat.enabled && message.fromMe && message.live) {
+    // acknowledgement — is not remembered twice (`appendUnlessSaid`); the echo of a share
+    // block, should the bot ever forward one, leaves nothing; so does a reaction's echo.
+    if (chatting && message.fromMe) {
       const said = withoutShares(message.text, env.siteOrigin);
-      if (said) context.pushUnlessSaid(group.id, { role: 'assistant', name: '', text: said, at });
+      if (said) await keep({ group: group.id, day: dayOfInstant(at), at, id: message.id, kind: 'bot', name: '', text: said }, true);
     }
-    const listening =
-      group && group.chat.enabled && message.live && !message.fromMe && answer && client
-        ? { group, answer, identity: { jids: client.selfJids(), name: group.chat.name } }
-        : null;
-    // Aimed at the bot — or, failing that, one of the first things said after the bot's
-    // own last line, which MAY be: offered to the model as tentative, and declinable.
-    const address = listening
-      ? (addressedTo(message, listening.identity) ?? (followsBot(floor, at) ? 'follow' : null))
-      : null;
-    if (listening && !address) {
-      // NOT FOR THE BOT, BUT STILL THE CONVERSATION. Ordinary chatter is remembered so a
-      // later question can be answered in the room it was asked in — "I'm thinking of 67"
-      // has to be on the record before "@bot what number?" can mean anything. It reaches
-      // the provider only if somebody DOES address the bot while it is still in the window.
-      // REMEMBERED BEFORE `ingest` RUNS: a share is acknowledged inside it, and a spoken
-      // acknowledgement is a turn too (`spoken`, above) — recorded the other way round,
-      // every such exchange read as the bot answering before the player had spoken.
-      await remember(listening.group, message, listening.identity);
+    const identity: BotIdentity | null = chatting && client ? { jids: client.selfJids(), name: group.chat.name } : null;
+    // EVERY message of the group is the conversation, and is REMEMBERED BEFORE `ingest`
+    // RUNS: a share is acknowledged inside it, and a spoken acknowledgement is a turn too
+    // (`spoken`, above) — recorded the other way round, every such exchange read as the
+    // bot answering before the player had spoken.
+    const kept = identity && !message.fromMe ? await remember(group, message, identity) : null;
+    const ingested = await ingest(message);
+    if (!identity || message.fromMe || !answer) return;
+
+    // ADDRESSED, or AMBIENT (#277). Addressed is always answered. Ambient is offered to
+    // the model — unless the message was a share the bot has just acknowledged (that WAS
+    // the answer), or it holds nothing to answer, or the bot has volunteered its budget
+    // of unasked answers in this exchange (`mayVolunteer`).
+    const address = addressedTo(message, identity);
+    const approach: Approach = address ?? 'ambient';
+    const exchange = exchanges.get(group.id) ?? NEW_EXCHANGE;
+    if (!address) {
+      const acknowledged = group.acknowledge !== 'none' && (ingested === 'recorded' || ingested === 'acknowledged');
+      const wordless = !kept || (isWordless(kept) && !(message.quoted && !isWordless(message.quoted.text)));
+      const reason = acknowledged ? 'acknowledged' : wordless ? 'wordless' : !mayVolunteer(exchange, at) ? 'exchange_budget' : null;
+      if (reason) {
+        if (reason === 'exchange_budget') log.info({ event: 'chat.silent', reason, group: tag(group.id) }, 'not offered');
+        return;
+      }
     }
-    await ingest(message);
-    if (!listening || !address) return;
-    const { identity } = listening;
-    log.info({ event: 'chat.addressed', how: address, group: tag(listening.group.id), sender: tag(message.sender) }, 'addressed');
+    log.info({ event: 'chat.offered', how: approach, group: tag(group.id), sender: tag(message.sender) }, 'offered');
     const today = dayNumber(activeDate(new Date()));
-    // STRIPPED HERE TOO, not only on the ambient path. An addressed message can carry a
-    // share ("gg 7 essais <link> @bot qui mène ?"), and this one goes to the provider at
-    // once AND into the window as the turn the agent records — so leaving the share on it
-    // would send exactly what the ambient path is careful not to. The question loses
-    // nothing by having it removed; the agent names the mentions itself.
+    // STRIPPED HERE TOO, not only on the way into the log. An addressed message can carry
+    // a share ("gg 7 essais <link> @bot qui mène ?"), and the agent reads the message's
+    // own text for the emptiness test — so leaving the share on it would let a bare link
+    // count as a question.
     const asked = {
       ...message,
       text: withoutShares(message.text, env.siteOrigin),
       ...(message.quoted ? { quoted: { ...message.quoted, text: withoutShares(message.quoted.text, env.siteOrigin) } } : {}),
     };
-    const outcome = await listening.answer(asked, listening.group, identity, today, { tentative: address === 'follow' });
+    const outcome = await answer(asked, group, identity, today, { approach, exchange });
     if (outcome.kind === 'silent') {
-      log.info({ event: 'chat.silent', reason: outcome.reason, how: address, group: tag(listening.group.id) }, 'no reply');
-      // A follow-up the model declined was ordinary chatter after all, and is remembered
-      // as such — the agent records a turn only when it answers one.
-      if (outcome.reason === 'not_for_me') await remember(listening.group, message, identity);
+      log.info({ event: 'chat.silent', reason: outcome.reason, how: approach, group: tag(group.id) }, 'no reply');
       return;
     }
+    if (outcome.kind === 'react') {
+      // A reaction closes; it moves no exchange and adds no bubble.
+      await outbound.enqueue({
+        id: commandIds.reply(group.id, message.id),
+        kind: 'reaction',
+        group: group.id,
+        target: { id: message.id, participant: message.participant },
+        emoji: outcome.emoji,
+      });
+      return;
+    }
+    exchanges.set(group.id, afterAnswer(exchange, approach, at));
     await outbound.enqueue({
-      id: commandIds.reply(listening.group.id, message.id),
+      id: commandIds.reply(group.id, message.id),
       kind: 'message',
-      group: listening.group.id,
+      group: group.id,
       text: outcome.text,
       replyTo: { id: message.id, participant: message.participant, text: message.text },
     });

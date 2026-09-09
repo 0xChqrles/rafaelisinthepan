@@ -1,7 +1,14 @@
-// Conversational ceilings (#236): per sender per day, per group per day, and one global
-// daily model-call ceiling, so one bored participant cannot turn the group into an API
-// loop. Each is a counter row with a TTL, taken with a conditional increment — the count
-// may reach the ceiling, never pass it, and two racing takes cannot both succeed at it.
+// Conversational ceilings (#236): per group per day, and one global daily model-call
+// ceiling, so one group cannot eat the day's budget and one bored participant cannot turn
+// the bot into an API loop. Each is a counter row with a TTL, taken with a conditional
+// increment — the count may reach the ceiling, never pass it, and two racing takes cannot
+// both succeed at it.
+//
+// NO PER-PERSON CEILING (#277, user-decided 2026-09-09). There was one, charged per
+// answered question: reached, it silenced that person for the rest of the day with nothing
+// saying why — the third cause found behind "the bot misses messages" — and set high enough
+// not to, it never touched the one case it was for. What bounds one person now is the
+// exchange budget (`trigger.ts`), which limits only what the bot volunteers.
 
 import {
   ConditionalCheckFailedException,
@@ -19,10 +26,6 @@ export function utcDay(now: Date): string {
 }
 
 export const limitKeys = {
-  user: (group: string, sender: string, now: Date) => ({
-    scope: `LIMIT#${group}`,
-    key: `DAY#${utcDay(now)}#USER#${sender}`,
-  }),
   group: (group: string, now: Date) => ({
     scope: `LIMIT#${group}`,
     key: `DAY#${utcDay(now)}#GROUP`,

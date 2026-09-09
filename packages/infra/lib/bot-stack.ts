@@ -4,9 +4,10 @@
 // Whippin's public share-token contract; nothing in the game depends on it.
 //
 //   ONE Fargate task (desiredCount 1, stop-before-start) holding the ONE Baileys session,
-//   a bot-owned DynamoDB table (auth, declarations, memory, outbound dedup, limits),
+//   a bot-owned DynamoDB table (auth, declarations, day log, diary, outbound dedup, limits),
 //   an SQS outbound queue the task consumes and a scheduled Lambda produces into,
-//   one EventBridge schedule per configured group, at that group's own local time,
+//   one EventBridge schedule per configured group and scheduled act (podium, reminder,
+//   the diary rewrite at the day flip),
 //   and the alarms that say "disconnected" instead of letting the service claim health.
 //
 // NETWORKING IS DELIBERATELY CHEAP: public subnets, a public IP, no inbound rule, no NAT
@@ -67,6 +68,9 @@ const GROUPS_DIR = path.join(BOT_DIR, 'groups', 'local');
 const REPO_LOCKFILE = path.join(REPO_ROOT, 'pnpm-lock.yaml');
 
 export const BOT_METRICS_NAMESPACE = 'WhippinBot';
+// When the diary rewrite fires: the Whippin day flips at 22:00 Eastern (`shared/src/day.ts`).
+export const DIARY_TIME = '22:05';
+export const DIARY_TIMEZONE = 'America/New_York';
 export const CONNECTED_METRIC = 'Connected';
 
 interface BotStackProps extends StackProps {
@@ -105,10 +109,11 @@ export class BotStack extends Stack {
 
     // ── DynamoDB: the bot's own table, every keyspace ────────────────────────
     // `AUTH#bot` (Baileys creds + Signal keys, the lease), `GROUP#<jid>` (declarations,
-    // leader state), `MEMORY#<jid>`, `OUTBOX#<jid>`, `LIMIT#…`. Keyspaces share a table
-    // and keep separate store interfaces in code. RETAIN + PITR: the auth state is the one
-    // thing here that cannot be regenerated without a phone in hand. `expiresAt` TTL serves
-    // the transient counters only; auth and score rows never carry it.
+    // leader state), `DAYLOG#<jid>` (the day's turns, 48h TTL — #277), `DIARY#<jid>`,
+    // `OUTBOX#<jid>`, `LIMIT#…`. Keyspaces share a table and keep separate store
+    // interfaces in code. RETAIN + PITR: the auth state is the one thing here that cannot
+    // be regenerated without a phone in hand. `expiresAt` TTL serves the transient rows
+    // only (counters, sent records, the day log); auth, score and diary rows never carry it.
     const table = new dynamodb.Table(this, 'BotTable', {
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
@@ -270,7 +275,9 @@ export class BotStack extends Stack {
       runtime: lambda.Runtime.NODEJS_22_X,
       architecture: lambda.Architecture.ARM_64,
       memorySize: 256,
-      timeout: Duration.seconds(90),
+      // The podium's comments run in parallel and settle inside about a minute; the diary
+      // rewrite (#277) is one reasoning call over the whole day, cut at 60s in code.
+      timeout: Duration.seconds(120),
       logGroup: podiumLogs,
       environment: { ...commonEnv, BOT_GROUPS_DIR: '/var/task/groups' },
       depsLockFilePath: REPO_LOCKFILE,
@@ -310,12 +317,17 @@ export class BotStack extends Stack {
         },
       },
     });
-    table.grantReadData(podium);
+    // Read for the podium, WRITE for the diary it rewrites at the day flip (#277).
+    table.grantReadWriteData(podium);
     outbound.grantSendMessages(podium);
     podium.addToRolePolicy(readLlmKey);
 
-    // One schedule per group per scheduled message: the evening podium, and the morning
-    // reminder (user-decided 2026-09-05) — the same Lambda, told which by `kind`.
+    // One schedule per group per scheduled act: the evening podium, the morning reminder
+    // (user-decided 2026-09-05), and the DIARY rewrite (#277) — the same Lambda, told which
+    // by `kind`. The diary closes the WHIPPIN day, so it fires at the game's own boundary
+    // (22:00 Eastern, `shared/src/day.ts`), five minutes after it, whatever the group's
+    // zone: it is not a social time, nobody sees it, and a group time would drift an hour
+    // from the flip in the weeks where the two zones' DST changes do not coincide.
     const daily = (id: string, description: string, time: string, timezone: string, input: object) => {
       const [hour, minute] = time.split(':');
       new scheduler.Schedule(this, id, {
@@ -349,6 +361,15 @@ export class BotStack extends Stack {
           group.reminder.time,
           group.timezone,
           { group: group.id, kind: 'reminder' },
+        );
+      }
+      if (group.chat.enabled) {
+        daily(
+          `Diary${scheduleId(group)}`,
+          `Whippin diary rewrite for ${group.name} at the day flip`,
+          DIARY_TIME,
+          DIARY_TIMEZONE,
+          { group: group.id, kind: 'diary' },
         );
       }
     }
@@ -419,7 +440,7 @@ export class BotStack extends Stack {
         {
           id: 'AwsSolutions-IAM5',
           reason:
-            'DynamoDB read scoped to the bot table (index wildcard on a table with no index); SQS send to the one outbound queue; ssm:GetParameter to the one exact parameter ARN.',
+            'DynamoDB read/write scoped to the bot table (index wildcard on a table with no index); SQS send to the one outbound queue; ssm:GetParameter to the one exact parameter ARN.',
         },
         {
           id: 'AwsSolutions-L1',

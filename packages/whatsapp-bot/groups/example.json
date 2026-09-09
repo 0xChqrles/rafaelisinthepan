@@ -16,7 +16,6 @@
     "enabled": true,
     "name": "WhippinBot",
     "prePrompt": "R\u00e9ponds en fran\u00e7ais naturel, familier mais pas forc\u00e9.",
-    "perUserPerDay": 10,
     "perGroupPerDay": 60
   },
   "acknowledge": "react",
