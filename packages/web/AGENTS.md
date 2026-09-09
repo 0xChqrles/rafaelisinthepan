@@ -4020,67 +4020,43 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `.sr-only` polite live region (`srHoleResult`), animations honor
   `prefers-reduced-motion` (durations collapse to ~0 — never `animation: none`, several
   swaps advance on `animationend`; delays are kept so the floating numbers still show).
-  **EVERY BUTTON IS AN ORDINARY BUTTON, AND FOCUS IS THE KEYBOARD'S HOVER** (#267,
-  user-decided 2026-09-07 for the guard, reworked 2026-09-09 on the user's review of the
-  first cut — "with a bordered square on every focus, is it actually a good UI?" — and
-  superseding both the 2026-08-06 "every button is pointer-only and may NEVER retain
-  focus" and the first cut's "one 2px `--fg` outline on everything"). `buttonFocus.ts` —
-  which held every current, future, lazy and portaled button out of the tab order and
-  blurred any focus it took — is DELETED: it existed to avoid the ring a tap leaves stuck
-  on a control in a touch browser, and `:focus-visible` is the browser's own answer to
-  that without shutting keyboard players out (Tab could not reach PLAY).
-  What says WHERE the focus is is each control's OWN held state — the one it shows under a
-  mouse — never a ring laid over the app's language. Hover and `:focus-visible` never meet
-  on one device (pointer-only against keyboard-only), so every hover rule in `index.css`
-  carries `:focus-visible` as its twin, beside it; a twin is one notch STRONGER where the
-  hover is too quiet to find at a glance, in the same gesture; and two surfaces answer a
-  keyboard focus with the MOTION they answer a mouse with. The placements, each judged on
-  the screen at 2×:
-  - **The header row:** the secondary DOT travels to the focused key (`HeaderKeys`'
-    `focus` state beside `hover`, the dot now always in the tree — at rest it sits covered
-    under the lit dot, and only a mouse or a Tab ever moves it), and the icon dims to the
-    chrome's hover ink, which is all a lone key (a modal's close chip) shows.
-  - **A hole:** the chip takes the HOLE CYAN (`--hole` — the palette's own "act here" ink,
-    on no heat stop and no word state; the mouse's 80% dim was "hard to see" as a focus,
-    user-reviewed 2026-09-09) and GREETS the focus with one wave — `Hole`'s `greeting`, the tap affordance played once on arrival, never under
-    reduced motion, and only for a focus the keyboard made (`:focus-visible` asked in the
-    focus handler, so a tap greets nothing). A resolved word brightens as it does on hover.
-  - **A key:** INVERTS — a white tile, its glyph in the ground's ink, ENTER's in the solve
-    cobalt — the app's emphasis gesture, because hover's step cannot be found among
-    twenty-nine identical tiles; a greyed key lifts to full opacity with its muted glyph.
-    The rule sits AFTER the greyed rules it has to outrank.
-  - **The drums (wheel, selection, AS):** ONE tab stop each — the slot row carries the
-    `tabIndex`, the focus follows the pick when the arrows turn the drum — and the pick's
-    chip takes the hole cyan, as a focused hole does. (A row is stretched across its column, so a ring on
-    it was two rails across the screen; the columns are masked past the slot, so a ring
-    outside the chip was cut; an ink line inset in the chip was the "bordered square"
-    again.)
-  - **The primary buttons** (`.mix-btn`, `.btn-primary`): INVERT — white ground, the label
-    in the accent, the result action's own hover gesture (a quarter more light on a lone
-    full-width cobalt slab was "hard to see", user-reviewed 2026-09-09).
-    **Secondary/quiet buttons, chips, links, rows, tabs, swatches:** their hover, verbatim
-    (border to `--fg`, accent ink, opacity up), the palette swatch adding the picked
-    swatch's frame minus its halo, the account row's border going to `--fg`.
-  - **A text field:** its FRAME is the focus — the hairline goes to `--fg`
-    (`input:focus-visible`); the code prompt shows the caret through its NEXT cell's tint
-    and wears no ring.
-  - **The calendar:** the focused tile takes today's own marker in the secondary ink — a
-    2px `--muted` inset outline (it paints above the ripple child, where an inset shadow
-    would not) at the press's brightness; today keeps its `--fg` ring on top.
-  - **The solved page:** the secrets and the credit's headline UNDERLINE — a quarter more
-    light on blue type is not found inside a paragraph, and an underline is what a control
-    in prose looks like. The LISTEN link goes to the foreground, rule and all.
-  - **The quiet chrome, one notch up from its hover** (the 2026-09-09 affordance pass,
-    user-asked: "is the level of affordance enough?"): the month arrows and the board tabs
-    take the plain row's whisper of ground under their full ink; the device rows' frame
-    goes to `--fg` like a secondary button's; the privacy footnote goes white and
-    underlines. Each judged against the "found at a glance" test on the screen.
-  **The FLOOR:** `:where(button, a, input):focus-visible` still draws a 2px `--fg` outline,
-  at zero specificity so any twin outranks it with a bare `outline: none`. It is a safety
-  net, not a style — a white square on a screen means a control is missing its twin (the
-  verify pass Tabs through every stop of every screen and reports any that paints it).
-  Nothing anywhere paints on plain `:focus`. `useModalDismiss` still lands on the
-  `<dialog>` itself (`tabIndex: -1`, `outline: 0`), so nothing arrives already lit.
+  **EVERY BUTTON IS AN ORDINARY BUTTON, AND FOCUS IS THE TRAVELLING BRACKETS** (#267,
+  user-decided 2026-09-07 for the guard and 2026-09-09 for the indicator — the third
+  cut: a box ringing every control ("is it actually a good UI?"), then a colour or dim per
+  control ("don't play too much with the colors… maybe white corner brackets") — and
+  superseding the 2026-08-06 "every button is pointer-only and may NEVER retain focus").
+  `buttonFocus.ts` — which held every current, future, lazy and portaled button out of
+  the tab order and blurred any focus it took — is DELETED: it existed to avoid the ring
+  a tap leaves stuck on a control in a touch browser, and `:focus-visible` is the
+  browser's own answer to that without shutting keyboard players out.
+  **ONE indicator, and it is the app's own selection frame:** the device frame's corner
+  brackets, drawn small and sharp in `--fg` (2px, 8px arms, 3px outside the box) around
+  whatever the keyboard is on — `components/FocusBrackets.tsx`, mounted ONCE by App, one
+  element that TRAVELS from control to control (the header dot's rule: translations,
+  never appearances). No control changes for the focus: no ring, no colour, no dim —
+  hover stays the mouse's, and the CSS paints nothing on `:focus` or `:focus-visible`
+  anywhere (`:where(button, a, input, [tabindex])` resets the browser's). The rules:
+  - It answers **`:focus-visible` alone**, asked at focus time — a tap moves no brackets,
+    nor does the focus a click leaves on a button.
+  - It frames the control's **VISIBLE box**: `[data-focus-box]` inside a control that is
+    stretched wider than what it shows — a drum row frames its chip (`PuzzleSelect`,
+    `ShareAs`, the wheel's slot `.hole-word-wrap`); the code row is `fit-content` so the
+    field's box is its six cells. It never frames the guess field (its caret is its
+    focus), a dialog focused as a whole, or a `tabindex="-1"` container.
+  - It **follows a focus that moves** — a drum turning under it, a scroll, a resize — one
+    measurement a frame while it shows, and only while it shows; it mounts INSIDE an open
+    dialog when the focus is there (the top layer paints above the document).
+  - **Two surfaces still answer the keyboard with motion**, the way they answer a mouse:
+    the header's secondary dot travels to the focused key (`HeaderKeys`' `focus` beside
+    `hover`; the dot is always in the tree, covered under the lit dot at rest), and a hole
+    greets the focus with one wave (`Hole`'s `greeting`, never under reduced motion).
+  - **The drums are ONE tab stop each** — the slot row carries the `tabIndex`, the focus
+    follows the pick when the arrows turn the drum — so Tab lands on the pick and the
+    brackets stand on it.
+  The verify pass Tabs through every stop of every screen and reports any where the
+  brackets do not sit on the control's box or a browser ring paints (settled 260ms after
+  the Tab: the travel is a 140ms transition). `useModalDismiss` still lands on the
+  `<dialog>` itself, so nothing arrives already framed.
   **AND NO ZOOM ON A PHONE (user-reported 2026-09-09: "when you click on a button or
   select an input… the page gets zoomed in").** Two causes, two rules in `index.css`:
   `button, a, input { touch-action: manipulation }` — two quick taps on a control are a

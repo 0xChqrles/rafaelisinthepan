@@ -242,7 +242,9 @@ export default function PuzzleSelect({
                 if (d.tap(i) === 'slot') beginClose();
               }}
             >
-              <span className="ps-chip">{item.label}</span>
+              <span className="ps-chip" data-focus-box>
+                {item.label}
+              </span>
             </button>
           );
         })}

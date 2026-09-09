@@ -18,6 +18,7 @@ import TopBar, { HeaderLeft } from './components/TopBar';
 import PuzzleTitle from './components/PuzzleTitle';
 import HeaderKeys, { type HeaderPlace } from './components/HeaderKeys';
 import DeviceFrame from './components/DeviceFrame';
+import FocusBrackets from './components/FocusBrackets';
 import LazyStreakDialog from './components/LazyStreakDialog';
 import LoadError from './components/LoadError';
 import NoPuzzle from './components/NoPuzzle';
@@ -185,6 +186,8 @@ export default function App() {
     <div className="app">
       {/* The viewport's own furniture (decorative, desktop-only) — under every screen. */}
       <DeviceFrame serial={editionDay} />
+      {/* The keyboard's focus, drawn once for every screen (#267). */}
+      <FocusBrackets />
       <Fragment key={identityScope}>
         {/* THE HEADER, MOUNTED ONCE — it outlives the screens under it, which is what keeps
             the player's own face from re-reading its profile on every tap (`TopBar`). The

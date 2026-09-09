@@ -175,10 +175,10 @@ button * {
    square appear for a short moment"). Chrome's default `-webkit-tap-highlight-color` is
    `rgba(51, 181, 229, 0.4)` — a translucent CYAN box the shape of the control — painted
    on touch by the browser, over a UI that draws its own press states and nothing else.
-   App-wide rather than per control: the app draws its own press states, and its own
-   focus outline below, so there is no surface that wants it. Three buttons — the hole,
-   the solved word, the wheel row — each carried their own copy of this line; they are
-   the same rule said three times and are gone. */
+   App-wide rather than per control: the app draws its own press states, and the
+   keyboard's focus is the travelling brackets below, so there is no surface that wants
+   it. Three buttons — the hole, the solved word, the wheel row — each carried their own
+   copy of this line; they are the same rule said three times and are gone. */
 button {
   -webkit-tap-highlight-color: transparent;
 }
@@ -194,38 +194,62 @@ input {
   touch-action: manipulation;
 }
 
-/* FOCUS IS THE KEYBOARD'S HOVER (#267, reworked 2026-09-09 on the user's review of the
-   first cut — "with a bordered square on every focus, is it actually a good UI?").
-
-   Until #267 every button was pointer-only: `buttonFocus.ts` held them out of the tab
-   order and blurred any focus they took, so Tab could not reach PLAY. The guard is gone,
-   and what says WHERE the focus is now is each control's OWN held state — the one it
-   already shows under a mouse — not a ring laid over the app's language: hover and
-   `:focus-visible` never meet on one device (the first is pointer-only, the second is
-   keyboard-only), so a control's hover rule simply carries `:focus-visible` as its twin
-   (each one, beside its hover rule below). Where hover is too quiet to FIND at a glance —
-   a key among twenty-nine tiles, a full-width button with nothing beside it — the twin
-   is one notch stronger than the hover, in the same gesture; and two surfaces answer a
-   keyboard focus with MOTION the way they answer a mouse: the header's secondary dot
-   travels to the focused key, and a hole greets the focus with one wave (`HeaderKeys`,
-   `Hole`). Nothing anywhere paints on plain `:focus`.
-
-   This ring is the FLOOR under all of it: a control nobody has designed a state for still
-   shows the focus, as a hard 2px square of the foreground. Written with `:where()`, so any
-   twin below outranks it with a bare `outline: none`. If it shows up on a screen, that is
-   a control missing its twin, not a style. */
-:where(button, a, input):focus {
+/* FOCUS IS THE TRAVELLING BRACKETS (#267, user-decided 2026-09-09 after two cuts — a
+   box ringing every control, then a colour or dim per control: "don't play too much with
+   the colors… maybe white corner brackets"). Until #267 every button was pointer-only:
+   `buttonFocus.ts` held them out of the tab order and blurred any focus they took, so Tab
+   could not reach PLAY. The guard is gone; nothing here paints on `:focus` or
+   `:focus-visible` at all — `FocusBrackets` (mounted once by App) draws the app's own
+   selection frame, the device frame's corner brackets, small and sharp in `--fg`, just
+   outside whatever the keyboard is on, and moves it from control to control. So every
+   browser ring is off, everywhere: the brackets are the whole of it. */
+:where(button, a, input, [tabindex]):focus,
+:where(button, a, input, [tabindex]):focus-visible {
   outline: none;
 }
-:where(button, a, input):focus-visible {
-  outline: 2px solid var(--fg);
-  outline-offset: 2px;
+.focus-brackets {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 200;
+  pointer-events: none;
+  will-change: transform;
+  transition:
+    transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    height 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-/* A TEXT FIELD's frame IS its focus: the hairline it brightens to `--line-strong` under a
-   pointer goes to `--fg` under the caret. A text field always matches `:focus-visible`. */
-input:focus-visible {
-  outline: none;
-  border-color: var(--fg);
+/* The device frame's bracket, at the keyboard's scale: 2px of the foreground, 8px arms,
+   square. */
+.fb-corner {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--fg);
+}
+.fb-tl {
+  top: 0;
+  left: 0;
+  border-right: 0;
+  border-bottom: 0;
+}
+.fb-tr {
+  top: 0;
+  right: 0;
+  border-left: 0;
+  border-bottom: 0;
+}
+.fb-bl {
+  bottom: 0;
+  left: 0;
+  border-right: 0;
+  border-top: 0;
+}
+.fb-br {
+  bottom: 0;
+  right: 0;
+  border-left: 0;
+  border-top: 0;
 }
 
 .app {
@@ -415,13 +439,6 @@ input:focus-visible {
 .cal-arrow:hover:not([disabled]) {
   opacity: 1;
 }
-/* The keyboard's twin, one notch up: full ink AND the app's whisper of ground under it
-   (the plain row's hover), so a lone chevron at the month's edge is found. */
-.cal-arrow:focus-visible {
-  outline: none;
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.1);
-}
 .cal-arrow[disabled] {
   opacity: 0.26;
   cursor: default;
@@ -477,14 +494,6 @@ input:focus-visible {
   filter: brightness(1.2);
 }
 .cal-day:not([disabled]):active {
-  filter: brightness(1.35);
-}
-/* The keyboard's twin: the calendar marks a tile with a ring (today's, in `--fg`, above),
-   so the focused tile takes the same ring in the secondary ink — an outline, which paints
-   above the ripple child, at the press's brightness. Today under the focus keeps its own. */
-.cal-day:focus-visible {
-  outline: 2px solid var(--muted);
-  outline-offset: -2px;
   filter: brightness(1.35);
 }
 /* Out of range (before the first puzzle or after today): dimmed, inert — no hover, no shake. */
@@ -1060,15 +1069,6 @@ input:focus-visible {
   background: var(--muted);
   z-index: 1;
 }
-.home-btn:focus-visible {
-  outline: none;
-}
-/* The keyboard's twin: on the header row the secondary DOT travels to the focused key
-   (`HeaderKeys`), and the icon dims to the chrome's hover ink — which is the whole of what
-   a lone key (a modal's close chip) shows. */
-.home-btn:focus-visible .ui-icon {
-  color: var(--muted);
-}
 .home-btn.on {
   cursor: default;
 }
@@ -1105,11 +1105,7 @@ input:focus-visible {
    BOTH clickable titles — the daily's and, since 2026-09-03, every other screen's
    (`LangTitle`) — so the three phone step-downs below are tuned once and cannot drift. The
    back ARROW is no longer one of them: it holds no chip, and answers in its own ink. */
-.puzzle-title:focus-visible {
-  outline: none;
-}
-.puzzle-title:hover .topbar-title,
-.puzzle-title:focus-visible .topbar-title {
+.puzzle-title:hover .topbar-title {
   background: color-mix(in srgb, var(--fg) 80%, var(--bg));
 }
 .puzzle-title:active .topbar-title {
@@ -1255,13 +1251,6 @@ input:focus-visible {
   color: var(--fg);
   transition: background-color 120ms linear, color 120ms linear;
 }
-/* The drum rule (`.wheel-row`'s comment): one tab stop, the pick's chip lined inset in its ink. */
-.ps-row:focus-visible {
-  outline: none;
-}
-.ps-row.on:focus-visible .ps-chip {
-  background: var(--hole);
-}
 .ps-row.on .ps-chip {
   background: var(--fg);
   color: var(--bg);
@@ -1378,13 +1367,8 @@ input:focus-visible {
   cursor: default;
 }
 /* The app's one interaction language: brighten on hover/press. */
-.hole-btn:focus-visible {
-  outline: none;
-}
 .hole-btn:not([disabled]):hover .hole-word,
 .hole-btn:not([disabled]):hover .hole-rank,
-.hole-btn:focus-visible .hole-word,
-.hole-btn:focus-visible .hole-rank,
 .hole-btn:not([disabled]):active .hole-word,
 .hole-btn:not([disabled]):active .hole-rank {
   filter: brightness(1.35);
@@ -1456,19 +1440,11 @@ input:focus-visible {
    applied under it), so the chipped word opts out of it and the CHIP answers instead. The
    exponent beside it keeps the brighten — it is still coloured ink. */
 .hole:not(.resolved) .hole-btn:not([disabled]):hover .hole-word,
-.hole:not(.resolved) .hole-btn:focus-visible .hole-word,
 .hole:not(.resolved) .hole-btn:not([disabled]):active .hole-word {
   filter: none;
 }
 .hole:not(.resolved) .hole-btn:not([disabled]):hover .hole-word::before {
   background: color-mix(in srgb, var(--fg) 80%, var(--bg));
-}
-/* A FOCUSED CHIP TAKES THE HOLE CYAN (user-reviewed 2026-09-09: the mouse's 80% dim was
-   "hard to see" as a focus). `--hole` is the palette's own "highlighted, act here" ink —
-   the history line's held words wear it — and it sits on no heat stop and no word state,
-   so a chip in it can only mean the keyboard is on it. The ground swaps, the ink stays. */
-.hole:not(.resolved) .hole-btn:focus-visible .hole-word::before {
-  background: var(--hole);
 }
 .hole:not(.resolved) .hole-btn:not([disabled]):active .hole-word::before {
   background: color-mix(in srgb, var(--fg) 68%, var(--bg));
@@ -1772,12 +1748,11 @@ input:focus-visible {
 /* THE PROMPT'S REAL FOCUS TARGET (#267): a field the player never sees, holding the guess
    and every keystroke that builds it. Hidden the `.sr-only` way — never `display: none` or
    `visibility: hidden`, both of which would make it unfocusable and undo the whole point.
-   It draws no focus outline of its own — the clip takes it — and it wants none: the prompt
-   holds the keyboard for as long as the round is live, so the app's indicator would be
-   permanent furniture here. The blinking caret is what the line shows instead.
-   `font-size: 16px` because iOS zooms the page for a focused field under it;
-   `inputmode="none"` rides on the element, because the on-screen keyboard is this game's
-   keyboard on a phone. */
+   The focus brackets skip it: the prompt holds the keyboard for as long as the round is
+   live, so a frame on it would be permanent furniture, and the blinking caret is what
+   the line shows instead. `font-size: 16px` because iOS zooms the page for a focused
+   field under it; `inputmode="none"` rides on the element, because the on-screen keyboard
+   is this game's keyboard on a phone. */
 .wi-field {
   position: absolute;
   width: 1px;
@@ -2051,13 +2026,6 @@ input:focus-visible {
   visibility: hidden;
   cursor: pointer;
 }
-.solved-source:focus-visible {
-  outline: none;
-}
-.solved-source:focus-visible .solved-work {
-  text-decoration: underline;
-  text-underline-offset: 0.2em;
-}
 .solved-source::after {
   content: '';
   position: absolute;
@@ -2111,11 +2079,6 @@ input:focus-visible {
 .solved-listen:hover {
   filter: brightness(1.25);
 }
-/* The keyboard's twin, one notch up: the link goes to the foreground, rule and all. */
-.solved-listen:focus-visible {
-  outline: none;
-  color: var(--fg);
-}
 /* A secret's affixes stay on its line — Phrase's own nowrap group. */
 .solved-line-group {
   white-space: nowrap;
@@ -2138,14 +2101,6 @@ input:focus-visible {
 }
 .solved-secret:hover {
   filter: brightness(1.25);
-}
-/* The keyboard's twin, one notch up: a quarter more light on blue type is not found at a
-   glance inside a paragraph, and an underline is what a control in prose looks like. */
-.solved-secret:focus-visible {
-  outline: none;
-  filter: brightness(1.25);
-  text-decoration: underline;
-  text-underline-offset: 0.15em;
 }
 /* The secrets POP in, one by one, 200ms apart (user-decided 2026-08-14): the round's
    trophies counted out, back in the gaps they were taken from — the plain words are
@@ -2690,25 +2645,6 @@ input:focus-visible {
   position: relative;
   isolation: isolate;
 }
-/* A DRUM IS ONE TAB STOP, AND ITS PICK WEARS THE LINE INSET, IN ITS OWN INK (#267) —
-   the rule for all three drums: this wheel, the title's selection (`.ps-row`) and the
-   share's AS drum (`.share-as-row`). Three facts force it. A row is stretched across its
-   column so a tap anywhere on the line lands, which made the app's outline on a row two
-   rails across the screen around one word. The columns are masked and clipped a few
-   pixels past the slot, so a ring 2px OUTSIDE the slot chip is cut on every side. And
-   the slot chip is INVERTED (`--bg` on `--fg`), so a white ring could not sit on it
-   anyway. So: the row in the slot is the drum's only tab stop (roving tabindex in each
-   component, the focus following the pick when the arrows turn the drum), the row itself
-   paints no ring, and the chip it holds does what a focused hole chip does: it takes the
-   hole cyan for as long as the focus stays. (A 2px ink line inset in the chip was the
-   second cut, a "bordered square" like the rest; the mouse's 80% dim the third, "hard to
-   see" — both retired.) */
-.wheel-row:focus-visible {
-  outline: none;
-}
-.wheel-row-slot:focus-visible .hole-word::before {
-  background: var(--hole);
-}
 .wheel-plain::before {
   content: '';
   position: absolute;
@@ -2816,9 +2752,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .share-as-flip.up {
   rotate: 180deg;
 }
-.share-as-flip:hover,
-.share-as-flip:focus-visible {
-  outline: none;
+.share-as-flip:hover {
   color: var(--fg);
 }
 .share-as-track {
@@ -2838,13 +2772,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   font: inherit;
   color: var(--muted);
   cursor: pointer;
-}
-/* The drum rule (`.wheel-row`'s comment): one tab stop, the pick's chip lined inset in its ink. */
-.share-as-row:focus-visible {
-  outline: none;
-}
-.share-as-row.on:focus-visible .share-as-chip {
-  background: var(--hole);
 }
 .share-as-chip {
   display: inline-flex;
@@ -3300,23 +3227,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   opacity: 0.26;
   cursor: default;
 }
-/* (After the greyed rules above, which it has to outrank.) The keyboard's twin, and the one place hover's own step is nowhere near enough: a
-   focused key has to be found among twenty-nine identical tiles, so it takes the app's
-   emphasis gesture and INVERTS — a white tile, its glyph in the ground's ink (ENTER keeps
-   its cobalt as the glyph). A greyed key lifts to full opacity so the focus is seen on it
-   too, its muted glyph still saying "dead". */
-.kb-key:focus-visible {
-  outline: none;
-  opacity: 1;
-  background: var(--fg);
-  color: var(--bg);
-}
-.kb-key.kb-greyed:focus-visible {
-  color: var(--muted);
-}
-.kb-enter:focus-visible {
-  color: var(--solve);
-}
 /* Shake fired when a greyed key is tapped: signals "disabled", not a bug. */
 .kb-key.kb-shake {
   animation: kb-shake 0.28s ease-in-out;
@@ -3375,15 +3285,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .btn-primary:hover {
   filter: brightness(1.1);
 }
-/* THE KEYBOARD'S FOCUS INVERTS THE PRIMARY BUTTON (user-reviewed 2026-09-09: a quarter
-   more light on a lone full-width button was "hard to see"): the result action's own
-   hover gesture — white ground, the label in the accent — the one change to a cobalt slab
-   that cannot be missed and still reads as the same button. */
-.btn-primary:focus-visible {
-  outline: none;
-  background: var(--fg);
-  color: var(--accent);
-}
 /* A press is a STATE, not travel (the flat rule, 2026-08-18). */
 .btn-primary:active {
   filter: brightness(1.2);
@@ -3419,9 +3320,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   border-radius: var(--r-lg);
   color: var(--fg);
 }
-.btn-secondary:hover,
-.btn-secondary:focus-visible {
-  outline: none;
+.btn-secondary:hover {
   border-color: var(--fg);
 }
 /* THE ONE POSITION THE BARE DRESS EARNS. `border-color: transparent` rather than `border:
@@ -3433,9 +3332,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   opacity: 0.75;
 }
 .btn-primary + .btn-secondary:hover,
-.mix-btn + .btn-secondary:hover,
-.btn-primary + .btn-secondary:focus-visible,
-.mix-btn + .btn-secondary:focus-visible {
+.mix-btn + .btn-secondary:hover {
   border-color: transparent;
   opacity: 1;
 }
@@ -3969,11 +3866,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 .mix-btn:hover:not(:disabled) {
   filter: brightness(1.1);
-}
-.mix-btn:focus-visible {
-  outline: none;
-  background: var(--fg);
-  color: var(--accent);
 }
 .mix-btn:active:not(:disabled) {
   filter: brightness(1.2);
@@ -5111,6 +5003,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   color: var(--fg);
   opacity: 0.35;
 }
+.profile-name:focus {
+  border-color: var(--line-strong);
+}
 
 /* The grid: one tile per cell. An EMPTY cell wears the palette's background itself and
    the canvas behind them a DARKER version of it — DERIVED here with color-mix from the
@@ -5186,12 +5081,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .profile-palette:hover {
   filter: brightness(1.15);
 }
-/* The keyboard's twin: the hover lift plus the picked swatch's own frame, minus its halo. */
-.profile-palette:focus-visible {
-  outline: none;
-  filter: brightness(1.15);
-  border-color: var(--fg);
-}
 .profile-palette.sel {
   border-color: var(--fg);
   box-shadow: 0 0 0 1px var(--fg);
@@ -5219,10 +5108,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   transition: filter 0.08s linear, border-color 0.12s linear;
 }
 .profile-clear:hover:not(:disabled),
-.board-chip:hover,
-.profile-clear:focus-visible,
-.board-chip:focus-visible {
-  outline: none;
+.board-chip:hover {
   filter: brightness(1.3);
   border-color: var(--fg);
 }
@@ -5315,10 +5201,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 .account-link:hover {
   border-color: var(--line-strong);
-}
-.account-link:focus-visible {
-  outline: none;
-  border-color: var(--fg);
 }
 /* A row that is a FACT, not a control: the saved address, plainly. */
 /* The chevron says the row LEADS somewhere — the title's own 7×7 mark, pointing on. */
@@ -5540,9 +5422,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   cursor: pointer;
   transition: color 120ms;
 }
-.header-back:hover,
-.header-back:focus-visible {
-  outline: none;
+.header-back:hover {
   color: var(--muted);
 }
 .header-back .ui-icon {
@@ -5617,6 +5497,10 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   letter-spacing: 0.12em;
   font-size: 12px;
 }
+.account-input:focus {
+  outline: none;
+  border-color: var(--line-strong);
+}
 
 /* THE CODE PROMPT: six drawn cells over ONE real input (components/CodeInput.tsx explains
    why one). The input is stretched over the whole row and invisible — never
@@ -5627,6 +5511,11 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   justify-content: center;
   gap: 8px;
   cursor: text;
+  /* As wide as its six cells, centred — never the column: the field is stretched over
+     this box, and the focus brackets frame the field, so this is what they frame. */
+  width: fit-content;
+  margin-left: auto;
+  margin-right: auto;
 }
 .code-field {
   position: absolute;
@@ -5652,8 +5541,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* The row wears no focus ring (#267): its field is focused for the whole step, and the
-     NEXT cell's tint (`:focus-within`, below) is what says where the caret is. */
   /* Quiet at rest, LIT once filled — but a boundary still has to be visible: at `--line`
      the empty cell measured 1.28:1 against its own ground, under WCAG 1.4.11's 3.0 for a
      UI component, and in daylight the six cells the whole screen is about read as nothing.
@@ -5756,17 +5643,14 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   cursor: pointer;
   transition: color 120ms;
 }
-.link-quiet-btn:hover:not(:disabled),
-.link-quiet-btn:focus-visible {
-  outline: none;
+.link-quiet-btn:hover:not(:disabled) {
   color: var(--accent);
   border-color: var(--accent);
 }
 .btn + .link-quiet-btn {
   border-color: transparent;
 }
-.btn + .link-quiet-btn:hover:not(:disabled),
-.btn + .link-quiet-btn:focus-visible {
+.btn + .link-quiet-btn:hover:not(:disabled) {
   border-color: transparent;
 }
 /* A CONTROL THAT IS NOT A CONTROL YET LOSES ITS BOX (2026-08-30). RESEND spends its first
@@ -5791,9 +5675,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
      DELETES an account is not the smallest target on its own screen. */
   padding: 14px 12px;
 }
-.link-danger:hover:not(:disabled),
-.link-danger:focus-visible {
-  outline: none;
+.link-danger:hover:not(:disabled) {
   border-color: var(--danger);
   background: rgba(255, 61, 46, 0.06);
 }
@@ -6150,9 +6032,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   text-underline-offset: 3px;
   text-decoration-color: var(--line-strong);
 }
-.privacy-mail:hover,
-.privacy-mail:focus-visible {
-  outline: none;
+.privacy-mail:hover {
   color: var(--accent);
   text-decoration-color: var(--accent);
 }
@@ -6203,12 +6083,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   color: var(--muted);
   cursor: pointer;
   transition: color 120ms;
-}
-.account-foot-link:focus-visible {
-  outline: none;
-  color: var(--fg);
-  text-decoration: underline;
-  text-underline-offset: 0.2em;
 }
 .account-foot-link:hover {
   color: var(--fg);
@@ -6315,14 +6189,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .device-signout:hover:not(:disabled),
 .device-retry:hover {
   filter: brightness(1.3);
-}
-/* The keyboard's twin, one notch up: the bordered control's own frame goes to the
-   foreground, as the secondary button's does. */
-.device-signout:focus-visible,
-.device-retry:focus-visible {
-  outline: none;
-  filter: brightness(1.3);
-  border-color: var(--fg);
 }
 .device-signout:disabled {
   color: var(--muted);
@@ -6622,11 +6488,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 .board-tab:not(.active):hover {
   opacity: 0.9;
-}
-.board-tab:focus-visible {
-  outline: none;
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.1);
 }
 .board-tab.active {
   background: var(--fg);

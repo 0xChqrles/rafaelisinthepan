@@ -173,7 +173,9 @@ export default function ShareAs({ lang, signer }: { lang: string; signer: ShareS
                 }}
               >
                 {row.face}
-                <span className="share-as-chip">{row.chip}</span>
+                <span className="share-as-chip" data-focus-box>
+                  {row.chip}
+                </span>
               </button>
             );
           })}

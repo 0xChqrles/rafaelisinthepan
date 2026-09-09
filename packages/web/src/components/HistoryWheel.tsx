@@ -303,7 +303,7 @@ export default function HistoryWheel({
   const body = (stop: HistoryStop, inSlot: boolean) =>
     inSlot ? (
       <span className={`hole${stop.rank === 0 ? ' resolved' : ''}`}>
-        <span className="hole-word-wrap">
+        <span className="hole-word-wrap" data-focus-box>
           <span className="hole-word">
             {Array.from(shown(stop)).map((ch, k) => (
               <span key={k} className="hole-letter">
