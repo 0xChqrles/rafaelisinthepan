@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
+import type {
+  ChangeEvent,
+  ClipboardEvent,
+  FocusEvent,
+  KeyboardEvent,
+  MutableRefObject,
+} from 'react';
 import { fold } from '@whippin/shared';
+import { t } from '../i18n';
 
 // Map a physical key to the slug character(s) it contributes. The on-screen keyboard
 // only exposes [a-z] + dash, but a desktop user can press accented / uppercase keys;
@@ -16,136 +24,166 @@ interface WordInputProps {
   value: string;
   // Prompt history for Up/Down recall: the round's persisted guesses, oldest → newest.
   history: string[];
+  // Puzzle language — names the field for a screen reader.
+  lang: string;
   onType: (char: string) => void; // append a single validated slug char
   onBackspace: () => void; // delete the last char
   onSubmit: (value: string) => void; // submit the current guess
   onReplace: (value: string) => void; // set the whole value (history recall)
   invalidSignal: number;
+  // The caller's handle on the field, so the screen can put the caret back into it after
+  // a submit — the one moment the focus may be sitting on the on-screen ENTER instead.
+  fieldRef?: MutableRefObject<HTMLInputElement | null>;
   // The prompt stays MOUNTED (hidden) once the round is solved so the prompt zone keeps
-  // its natural height; inactive, its window listeners ignore every event — keys flow to
-  // the solved surface (e.g. the streak screen's press-any-key) exactly as if unmounted.
+  // its natural height; inactive, the field is DISABLED — it holds no focus, takes no
+  // keystroke, and is out of the tab order, so keys flow to the solved surface (e.g. the
+  // streak screen's press-any-key) exactly as if it were unmounted.
   active?: boolean;
 }
 
-// The guess prompt. It no longer owns a native <input>: on mobile that meant keeping a
-// hidden field focused (the blur→refocus dance) which opened the soft keyboard and
-// caused focus/viewport flicker (issue #36). Input now comes from two sources that both
-// mutate the same folded-slug state: the on-screen <Keyboard> (taps) and the physical
-// keyboard (this window keydown listener). With no focusable text field, the native
-// mobile keyboard never opens. The spans below stay the visible terminal-style prompt.
-export default function WordInput({ value, history, onType, onBackspace, onSubmit, onReplace, invalidSignal, active = true }: WordInputProps) {
+// The guess prompt: a visually hidden <input> (#267) under the terminal-style line the
+// player actually reads.
+//
+// It carried NO field between #36 and #267. The field it had before #36 was kept focused
+// by a blur→refocus dance that opened the mobile soft keyboard and flickered the viewport,
+// so it was replaced by a window `keydown` listener — which worked, but left the guess with
+// no focus target at all: the app answered the keyboard everywhere and belonged to it
+// nowhere. The field is back, and neither problem comes back with it: `inputmode="none"`
+// is what keeps the phone's keyboard shut (the on-screen <Keyboard> is this game's keyboard
+// there), and nothing ever refocuses it in a loop.
+//
+// The keys are read HERE, on the field, rather than on the document: physical typing is the
+// focused prompt's, so a control the player has tabbed to keeps its own Enter. The spans
+// below are the drawing — the field's value said in the pixel face — and are hidden from
+// assistive tech, which reads the field itself.
+export default function WordInput({
+  value,
+  history,
+  lang,
+  onType,
+  onBackspace,
+  onSubmit,
+  onReplace,
+  invalidSignal,
+  fieldRef,
+  active = true,
+}: WordInputProps) {
   const [shaking, setShaking] = useState<boolean>(false);
-  const activeRef = useRef(active);
-  activeRef.current = active;
+  const field = useRef<HTMLInputElement>(null);
 
   // Prompt history for Up/Down recall (desktop nicety). The array is the round's
-  // PERSISTED guesses (passed in), mirrored into a ref so the window listener always
-  // reads the latest without reattaching; the cursor (index) + draft stay ephemeral.
-  const historyRef = useRef<string[]>(history);
-  historyRef.current = history;
+  // PERSISTED guesses (passed in); the cursor (index) + draft stay ephemeral.
   const historyIndexRef = useRef<number | null>(null);
   const draftRef = useRef<string>('');
 
-  // Refs so the window listener attaches once and always reads the latest value/callbacks.
-  const valueRef = useRef(value);
-  valueRef.current = value;
-  const onTypeRef = useRef(onType);
-  onTypeRef.current = onType;
-  const onBackspaceRef = useRef(onBackspace);
-  onBackspaceRef.current = onBackspace;
-  const onSubmitRef = useRef(onSubmit);
-  onSubmitRef.current = onSubmit;
-  const onReplaceRef = useRef(onReplace);
-  onReplaceRef.current = onReplace;
-
+  // THE PROMPT TAKES THE KEYBOARD when it becomes the surface that answers it: on mount,
+  // and again whenever a modal that covered it closes (a native dialog hands focus back to
+  // the control that opened it, which is the hole, not the prompt). Never while inactive —
+  // the field is disabled then, and a disabled field cannot be focused anyway.
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (!activeRef.current) return;
-      // Leave browser shortcuts (Cmd/Ctrl/Alt combos) and any real editable field alone.
-      // Buttons are pointer-only app-wide, so a physical key always belongs to the guess
-      // prompt whenever this listener is active.
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const target = e.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
-      ) {
-        return;
+    if (active) field.current?.focus({ preventScroll: true });
+  }, [active]);
+
+  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    // Leave browser shortcuts (Cmd/Ctrl/Alt combos) alone — Cmd+V included, which is the
+    // paste handler's.
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      // History is the persisted `tried` list, updated by the submit handler (a valid
+      // guess -> recordGuess). Just reset the recall cursor and submit.
+      historyIndexRef.current = null;
+      draftRef.current = '';
+      onSubmit(value);
+      return;
+    }
+
+    if (e.key === 'Backspace') {
+      e.preventDefault();
+      historyIndexRef.current = null;
+      onBackspace();
+      return;
+    }
+
+    if (e.key === 'ArrowUp') {
+      if (history.length === 0) return;
+      e.preventDefault();
+      if (historyIndexRef.current === null) {
+        draftRef.current = value;
+        historyIndexRef.current = history.length - 1;
+      } else {
+        historyIndexRef.current = Math.max(0, historyIndexRef.current - 1);
       }
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        // History is the persisted `tried` list, updated by the submit handler (a valid
-        // guess -> recordGuess). Just reset the recall cursor and submit.
+      onReplace(history[historyIndexRef.current]);
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      if (historyIndexRef.current === null) return;
+      e.preventDefault();
+      if (historyIndexRef.current < history.length - 1) {
+        historyIndexRef.current += 1;
+        onReplace(history[historyIndexRef.current]);
+      } else {
         historyIndexRef.current = null;
-        draftRef.current = '';
-        onSubmitRef.current(valueRef.current);
-        return;
+        onReplace(draftRef.current);
       }
+      return;
+    }
 
-      if (e.key === 'Backspace') {
-        e.preventDefault();
-        historyIndexRef.current = null;
-        onBackspaceRef.current();
-        return;
-      }
-
-      if (e.key === 'ArrowUp') {
-        const hist = historyRef.current;
-        if (hist.length === 0) return;
-        e.preventDefault();
-        if (historyIndexRef.current === null) {
-          draftRef.current = valueRef.current;
-          historyIndexRef.current = hist.length - 1;
-        } else {
-          historyIndexRef.current = Math.max(0, historyIndexRef.current - 1);
-        }
-        onReplaceRef.current(hist[historyIndexRef.current]);
-        return;
-      }
-
-      if (e.key === 'ArrowDown') {
-        if (historyIndexRef.current === null) return;
-        e.preventDefault();
-        if (historyIndexRef.current < historyRef.current.length - 1) {
-          historyIndexRef.current += 1;
-          onReplaceRef.current(historyRef.current[historyIndexRef.current]);
-        } else {
-          historyIndexRef.current = null;
-          onReplaceRef.current(draftRef.current);
-        }
-        return;
-      }
-
-      // A single printable key -> its slug char(s), appended one at a time (a ligature
-      // like œ contributes "oe"). onType validates each against the vocab prefix set, so
-      // a dead-end letter is silently dropped — matching the greyed on-screen key.
-      if (e.key.length === 1) {
-        const chars = slugChars(e.key);
-        if (!chars) return;
-        e.preventDefault();
-        historyIndexRef.current = null;
-        for (const c of chars) onTypeRef.current(c);
-      }
-    };
-
-    const onPaste = (e: ClipboardEvent) => {
-      if (!activeRef.current) return;
-      const text = e.clipboardData?.getData('text');
-      if (!text) return;
-      const chars = Array.from(text).map(slugChars).join('');
+    // A single printable key -> its slug char(s), appended one at a time (a ligature
+    // like œ contributes "oe"). onType validates each against the vocab prefix set, so
+    // a dead-end letter is silently dropped — matching the greyed on-screen key. The
+    // field's own value is never written to: the folded state above is what it shows.
+    if (e.key.length === 1) {
+      const chars = slugChars(e.key);
       if (!chars) return;
       e.preventDefault();
       historyIndexRef.current = null;
-      for (const c of chars) onTypeRef.current(c);
-    };
+      for (const c of chars) onType(c);
+    }
+  };
 
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('paste', onPaste);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('paste', onPaste);
-    };
-  }, []);
+  const onPaste = (e: ClipboardEvent<HTMLInputElement>) => {
+    const text = e.clipboardData.getData('text');
+    if (!text) return;
+    const chars = Array.from(text).map(slugChars).join('');
+    if (!chars) return;
+    e.preventDefault();
+    historyIndexRef.current = null;
+    for (const c of chars) onType(c);
+  };
+
+  // Nothing the player TYPES reaches this: every key the prompt answers is
+  // preventDefault'ed above, and a paste has its own handler. It is the way in for text the
+  // browser inserts on its own — dictation, an IME commit — folded and appended one char at
+  // a time, exactly as typing is. React needs it too: a controlled field without an
+  // onChange is a read-only one, and this field is not.
+  const onChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const next = e.target.value;
+    // Only text ADDED at the end says anything; any other edit simply re-renders back to
+    // `value`, which is the state's own.
+    if (next.length <= value.length || !next.startsWith(value)) return;
+    historyIndexRef.current = null;
+    for (const c of Array.from(next.slice(value.length)).map(slugChars).join('')) onType(c);
+  };
+
+  // THE PROMPT KEEPS THE KEYBOARD. A click on the page's own background focuses nothing at
+  // all (`relatedTarget: null`), and the on-screen keys deliberately take no focus either —
+  // so without this one stray click on the sentence's margin would leave the game with no
+  // focused control, physical typing silently dead, and nothing on screen to click back
+  // into. Focus that left for another CONTROL is the player navigating and is never taken
+  // back. It runs a turn later, once the browser has settled focus where it was going —
+  // refocusing inside the blur itself only fights that same move.
+  const keepFocus = (e: FocusEvent<HTMLInputElement>) => {
+    if (e.relatedTarget !== null) return;
+    const node = e.currentTarget;
+    window.setTimeout(() => {
+      if (!node.isConnected || node.disabled) return;
+      if (document.activeElement === document.body) node.focus({ preventScroll: true });
+    }, 0);
+  };
 
   // Rejected word: keep the text (so it can be corrected) and shake the prompt.
   // Double-toggle through rAF to replay the animation even on consecutive rejects.
@@ -158,14 +196,38 @@ export default function WordInput({ value, history, onType, onBackspace, onSubmi
 
   return (
     <div className={`word-input${shaking ? ' invalid' : ''}`} onAnimationEnd={() => setShaking(false)}>
+      <input
+        ref={(node) => {
+          field.current = node;
+          if (fieldRef) fieldRef.current = node;
+        }}
+        className="wi-field"
+        type="text"
+        // The on-screen keyboard IS the keyboard on a phone (#36): `none` is what keeps the
+        // native one shut while the field holds the focus. Everything the browser would
+        // otherwise do to a text field — complete it, correct it, capitalize it, underline
+        // it — is off: the value is a folded slug, not prose.
+        inputMode="none"
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
+        aria-label={t(lang, 'ariaGuess')}
+        value={value}
+        disabled={!active}
+        onKeyDown={onKeyDown}
+        onPaste={onPaste}
+        onChange={onChange}
+        onBlur={keepFocus}
+      />
       <span className="wi-prompt" aria-hidden="true">&gt;</span>
       {/* The typed text is the only part of the line that gives when a guess outruns its
           column, and it gives at the HEAD: `.wi-text` is the clipping window and this run is
           the full string inside it, pushed to the window's right edge (see the CSS). The
           nesting is what makes that possible — a single element cannot both clip and overflow
-          its own start. The value stays whole in the DOM, so a screen reader still reads the
-          guess the player has actually typed. */}
-      <span className="wi-text">
+          its own start. It is the field's value DRAWN, so it is hidden from assistive tech:
+          the field above is what a screen reader reads the guess from. */}
+      <span className="wi-text" aria-hidden="true">
         <span className="wi-text-run">{value}</span>
       </span>
       <span className="wi-cursor" aria-hidden="true">_</span>

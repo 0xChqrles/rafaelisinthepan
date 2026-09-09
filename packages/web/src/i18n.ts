@@ -477,6 +477,9 @@ const STRINGS = {
   dayStreak: { en: 'DAY STREAK', fr: 'DAY STREAK' },
   srSolvedAll: { en: 'sentence solved!', fr: 'phrase résolue !' },
   ariaChangeLanguage: { en: 'Change language', fr: 'Changer de langue' },
+  // What the guess PROMPT's own field is called (#267). The line the player reads is a
+  // drawing of its value, hidden from assistive tech; this names the thing that holds it.
+  ariaGuess: { en: 'your guess', fr: 'votre proposition' },
   ariaKeyboard: { en: 'on-screen keyboard', fr: 'clavier virtuel' },
   ariaEnter: { en: 'enter', fr: 'entrée' },
   ariaBackspace: { en: 'backspace', fr: 'effacer' },

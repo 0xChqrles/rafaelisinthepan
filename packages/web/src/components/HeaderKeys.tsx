@@ -124,6 +124,13 @@ export default function HeaderKeys({
     ro.observe(el);
     return () => ro.disconnect();
   }, [on, hover]);
+  const placeOf = (target: EventTarget | null): HeaderPlace | null => {
+    const key = target instanceof HTMLElement ? target.closest('.home-btn') : null;
+    if (!key) return null;
+    const keys = row.current ? Array.from(row.current.querySelectorAll('.home-btn')) : [];
+    const i = keys.indexOf(key);
+    return i >= 0 ? PLACES[i] : null;
+  };
   const hoverFrom = (e: React.PointerEvent) => {
     if (e.pointerType !== 'mouse') return;
     const key = (e.target as HTMLElement).closest('.home-btn');
@@ -132,9 +139,7 @@ export default function HeaderKeys({
     // and a dot that ran home and back for every crossing read as a lost hover
     // (user-reported 2026-09-01). Only leaving the row ends the hover.
     if (!key) return;
-    const keys = row.current ? Array.from(row.current.querySelectorAll('.home-btn')) : [];
-    const i = keys.indexOf(key);
-    if (i >= 0) setHover(PLACES[i]);
+    setHover(placeOf(key));
   };
   const go = (to: string) => {
     leave?.();

@@ -4020,19 +4020,63 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `.sr-only` polite live region (`srHoleResult`), animations honor
   `prefers-reduced-motion` (durations collapse to ~0 — never `animation: none`, several
   swaps advance on `animationend`; delays are kept so the floating numbers still show).
-  **Every BUTTON is pointer-only and may NEVER retain focus** (decided 2026-08-06):
-  `buttonFocus.ts`, installed before React renders, gives current/future/lazy/portaled buttons
-  `tabIndex = -1`, prevents mouse-down focus without suppressing click, and immediately blurs
-  any browser or programmatic button focus. There are no `:focus-visible` button treatments and
-  modal close paths never restore focus to their triggers. Native modal focus may stay on the
-  non-button `<dialog>` itself so its focus trap and Escape behavior survive.
+  **EVERY BUTTON IS AN ORDINARY BUTTON, AND FOCUS IS THE TRAVELLING BRACKETS** (#267,
+  user-decided 2026-09-07 for the guard and 2026-09-09 for the indicator — the third
+  cut: a box ringing every control ("is it actually a good UI?"), then a colour or dim per
+  control ("don't play too much with the colors… maybe white corner brackets") — and
+  superseding the 2026-08-06 "every button is pointer-only and may NEVER retain focus").
+  `buttonFocus.ts` — which held every current, future, lazy and portaled button out of
+  the tab order and blurred any focus it took — is DELETED: it existed to avoid the ring
+  a tap leaves stuck on a control in a touch browser, and `:focus-visible` is the
+  browser's own answer to that without shutting keyboard players out.
+  **ONE indicator, and it is the app's own selection frame:** the device frame's corner
+  brackets, drawn small and sharp in `--fg` (2px, 8px arms, 3px outside the box) around
+  whatever the keyboard is on — `components/FocusBrackets.tsx`, mounted ONCE by App, one
+  element that TRAVELS from control to control (the header dot's rule: translations,
+  never appearances). No control changes for the focus: no ring, no colour, no dim —
+  hover stays the mouse's, and the CSS paints nothing on `:focus` or `:focus-visible`
+  anywhere (`:where(button, a, input, [tabindex])` resets the browser's). The rules:
+  - It answers **`:focus-visible` alone**, asked at focus time — a tap moves no brackets,
+    nor does the focus a click leaves on a button.
+  - It frames the control's **VISIBLE box**: `[data-focus-box]` inside a control that is
+    stretched wider than what it shows — a drum row frames its chip (`PuzzleSelect`,
+    `ShareAs`, the wheel's slot `.hole-word-wrap`); the code row is `fit-content` so the
+    field's box is its six cells. It never frames the guess field (its caret is its
+    focus), a dialog focused as a whole, or a `tabindex="-1"` container.
+  - It **follows a focus that moves** — a drum turning under it, a scroll, a resize — one
+    measurement a frame while it shows, and only while it shows; it mounts INSIDE an open
+    dialog when the focus is there (the top layer paints above the document).
+  - **The framed box DIMS a touch** (`data-bracketed`, set by the component on the box it
+    frames): `brightness(0.8)` where the control has contrast to spare, `0.9` on the dark
+    tiles that have little (a key, a calendar day) — brightness rather than opacity, the
+    same thing on the flat near-black ground and composable with a control's own opacity.
+    (User-decided 2026-09-09, with the header dot's keyboard travel REMOVED the same
+    review: the dot answers the mouse alone; the brackets are the focus on the row too.)
+  - **A hole still greets the keyboard with motion**, the way it answers a mouse: one
+    wave on arrival (`Hole`'s `greeting`, never under reduced motion).
+  - **The drums are ONE tab stop each** — the slot row carries the `tabIndex`, the focus
+    follows the pick when the arrows turn the drum — so Tab lands on the pick and the
+    brackets stand on it.
+  The verify pass Tabs through every stop of every screen and reports any where the
+  brackets do not sit on the control's box or a browser ring paints (settled 260ms after
+  the Tab: the travel is a 140ms transition). `useModalDismiss` still lands on the
+  `<dialog>` itself, so nothing arrives already framed.
+  **AND NO ZOOM ON A PHONE (user-reported 2026-09-09: "when you click on a button or
+  select an input… the page gets zoomed in").** Two causes, two rules in `index.css`:
+  `button, a, input { touch-action: manipulation }` — two quick taps on a control are a
+  double-tap to the browser, which zooms the page; `manipulation` keeps pan and pinch and
+  drops only that (the keys carried it already) — and **every text field is 16px or more**
+  (`.account-input` was 15), because iOS zooms the page to a focused field set smaller.
+  Never `maximum-scale=1` in the viewport: it would take pinch zoom away on Android. The
+  verify pass reports any field under 16px and any control without `manipulation`; the
+  only fields under 16 are Turnstile's `type=hidden` ones, which cannot be focused.
   **AND NO BROWSER TAP FLASH, APP-WIDE** (user-reported 2026-09-02: tapping a header key
   "makes a blue square appear for a short moment"). It is not focus — measured, a tap leaves
   `activeElement` on `<body>` — it is Chrome's default `-webkit-tap-highlight-color`,
-  `rgba(51, 181, 229, 0.4)`, a translucent cyan box the shape of the control. A pointer-only
-  UI that draws its own press states wants it on no surface at all, so `button` carries
-  `transparent` once beside the global `text-shadow: none`; the hole, the solved word and
-  the wheel row each held a private copy of the same line and are gone. **The missing-puzzle screen
+  `rgba(51, 181, 229, 0.4)`, a translucent cyan box the shape of the control. A UI that
+  draws its own press states, and its own focus outline, wants it on no surface at all, so
+  `button` carries `transparent` once beside the global `text-shadow: none`; the hole, the
+  solved word and the wheel row each held a private copy of the same line and are gone. **The missing-puzzle screen
   has TWO wordings, told apart by the ROUTE (#77, decided 2026-07-27)** — the backend's
   404 is undifferentiated, and which route asked is the only signal needed: on the
   **undated** route (today) it owns that the state is **abnormal** (a publish that did not
@@ -4082,11 +4126,38 @@ it to the local store — see `packages/backend/AGENTS.md`).
     let the surrounding `<button>`'s `aria-label` name the control.
   The type for `?react` imports comes from the `vite-plugin-svgr/client` reference in
   `web/src/vite-env.d.ts`; the plugin is registered **before** `react()` in `vite.config.ts`.
-- **On-screen keyboard (#36):** the guess input has **no native `<input>`** — the old
-  focus/refocus dance is gone, so the mobile soft keyboard never opens. `WordInput` is
-  now just the visual prompt + a **window `keydown`/`paste` listener** for the physical
-  keyboard (desktop); the `components/Keyboard.tsx` on-screen keyboard feeds the **same**
-  input actions. Both drive one **folded-slug** `input` state in `Game` via three shared
+- **On-screen keyboard (#36), and the guess PROMPT'S OWN FIELD (#267).** `WordInput` is the
+  drawn terminal prompt over a **visually hidden `<input>`** — the guess's real focus target
+  since #267, after two months with none. It had a field before #36, kept focused
+  by a blur→refocus dance that opened the mobile soft keyboard and flickered the viewport;
+  that was replaced by a **window `keydown`/`paste` listener**, which worked and left the
+  guess belonging to nothing a keyboard user could reach. Neither problem comes back with
+  the field: **`inputmode="none"`** is what keeps the phone's keyboard shut (the on-screen
+  `components/Keyboard.tsx` IS this game's keyboard there), and nothing refocuses in a loop.
+  Four rules hold it together:
+  - **The keys are read ON THE FIELD**, not on the document, so a control the player tabbed
+    to keeps its own Enter. Every key the prompt answers is `preventDefault`ed and the value
+    is the folded state — `onChange` exists for text the browser inserts on its own
+    (dictation, an IME commit) and for React's controlled-field contract, and only ever
+    reads text ADDED at the end.
+  - **The field takes the focus when the prompt becomes the surface that answers the
+    keyboard**: on mount, and again whenever `active` flips back true (a modal closing hands
+    focus to the control that opened it — the hole, never the prompt). Each screen also
+    refocuses it from its own `submit`, which moves anything only when the on-screen ENTER
+    was reached by Tab.
+  - **It TAKES THE FOCUS BACK when a click lands on nothing** (`relatedTarget: null`, a turn
+    later, and only if `document.activeElement` is `<body>`): the on-screen keys deliberately
+    take no focus, so one stray click on the sentence's margin would otherwise leave physical
+    typing silently dead with nothing on screen to click back into. Focus that left for
+    another CONTROL is the player navigating and is never taken back.
+  - **An INACTIVE prompt's field is `disabled`** — out of the tab order, holding no focus —
+    which is also what keeps a focusable control from standing inside the `aria-hidden` box a
+    retired prompt renders in. `Game`'s `active` therefore includes `!promptExiting`.
+  The prompt's drawn line is `aria-hidden`; the field carries the value and `ariaGuess`
+  names it. The on-screen keys answer a POINTER on `pointerdown` (instant, and
+  `preventDefault` keeps the caret in the field) and a KEYBOARD on the `click` that Enter or
+  Space makes, told apart by `detail === 0` so a tap never fires twice.
+  Both input sources drive one **folded-slug** `input` state in `Game` via three shared
   actions — `appendChar` (validated), `deleteChar`, `replaceInput` (Up/Down history
   recall, sourced from the round's **persisted** `tried` list so recall survives reload) —
   plus `submit`. Keys are `[a-z]` + dash + backspace + Enter (no accent keys; physical

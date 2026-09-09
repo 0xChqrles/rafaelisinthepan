@@ -186,6 +186,17 @@ export default function PuzzleSelect({
 
   // The arrow keys turn the drum that holds focus — the daily's when none does; Left and
   // Right hand focus from one drum's slot row to the other's.
+  // A drum that turns while one of its rows holds the focus carries the focus into the
+  // slot (#267): the pick is the drum's one tab stop, so what the keyboard is on and what
+  // the slot shows stay one thing. A drum turned by a pointer moves no focus.
+  useEffect(() => {
+    for (const box of [modeBox.current, langBox.current]) {
+      if (box?.contains(document.activeElement)) {
+        box.querySelector<HTMLElement>('[aria-current="true"]')?.focus({ preventScroll: true });
+      }
+    }
+  }, [modeDrum.current, langDrum.current]);
+
   const onKeyDown = useCallback(
     (e: KeyboardEvent) => {
       const inLang = langBox.current?.contains(document.activeElement) ?? false;
@@ -224,12 +235,16 @@ export default function PuzzleSelect({
               className={`ps-row${inSlot ? ' on' : ''}`}
               style={{ height: rowH, marginBottom: GAP, '--i': stagger + Math.abs(i - d.current) } as CSSProperties}
               aria-current={inSlot ? 'true' : undefined}
+              // The drum's ONE tab stop is the row in the slot (#267): the arrows turn it.
+              tabIndex={inSlot ? 0 : -1}
               aria-label={inSlot ? `${item.label}, ${t(lang, 'ariaClose')}` : item.label}
               onClick={() => {
                 if (d.tap(i) === 'slot') beginClose();
               }}
             >
-              <span className="ps-chip">{item.label}</span>
+              <span className="ps-chip" data-focus-box>
+                {item.label}
+              </span>
             </button>
           );
         })}

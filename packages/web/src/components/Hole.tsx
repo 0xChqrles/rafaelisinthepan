@@ -4,7 +4,7 @@ import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
 import { MISS_COLOR, rankHeatColor } from '@whippin/shared';
 import useAnimatedNumber, { linearEasing } from '../hooks/useAnimatedNumber';
 import { capitalize } from '../game/sentenceCase';
-import useLetterWave, { WAVE_VARS } from '../hooks/useLetterWave';
+import useLetterWave, { WAVE_VARS, waveDurationMs } from '../hooks/useLetterWave';
 import { prefersReducedMotion, useScramble } from '../hooks/useScramble';
 import type { HitState, RuntimeHole } from '@whippin/shared';
 
@@ -165,7 +165,20 @@ export default function Hole({
   // tail showing after a quickly-closed modal is worse than no wave at all).
   const busy = hit !== null || jumble !== null || hole.rank === 0;
   const ticking = quiet && !busy && explore !== undefined && !explore.disabled;
-  const waving = useLetterWave(ticking, letters.length);
+  const ambientWaving = useLetterWave(ticking, letters.length);
+  // THE KEYBOARD'S HOVER (#267): a hole reached by Tab greets the focus with one wave — the
+  // tap affordance, played once on arrival — and the chip holds its hover dim (CSS) for as
+  // long as the focus stays. Only a focus the keyboard made (`:focus-visible`, asked at
+  // focus time), so a tap greets nothing; never under reduced motion.
+  const [greeting, setGreeting] = useState(false);
+  useEffect(() => {
+    if (!greeting) return undefined;
+    const id = window.setTimeout(() => setGreeting(false), waveDurationMs(letters.length));
+    return () => window.clearTimeout(id);
+    // The letter count is read when the greeting starts, like the ambient wave's.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [greeting]);
+  const waving = ambientWaving || (greeting && ticking);
 
   // The exponent sizes to its own content (no reserved width), so a following suffix
   // sits right after the number instead of after a gap left for the widest rank.
@@ -258,6 +271,9 @@ export default function Hole({
           data-hole-explore={holeIndex}
           disabled={explore.disabled}
           onClick={explore.onOpen}
+          onFocus={(e) => {
+            if (e.currentTarget.matches(':focus-visible') && !prefersReducedMotion()) setGreeting(true);
+          }}
         >
           {body}
         </button>

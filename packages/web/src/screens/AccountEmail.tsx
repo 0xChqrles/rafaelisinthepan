@@ -622,8 +622,9 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
 
   // AND FOCUS FOLLOWS THE STEP, on the two that are not a field. The address and code steps
   // focus their own input (which is the act); the confirmation and the ending focus their
-  // STACK — a container, never a button, since `buttonFocus` blurs those by design and a
-  // dismiss control lit on arrival is the thing `useModalDismiss` exists to prevent.
+  // STACK — a container, never a button. A screen arriving with its own action already
+  // outlined is the thing `useModalDismiss` exists to prevent, and since #267 a focused
+  // button really does wear the app's outline.
   const stack = useRef<HTMLDivElement>(null);
   // THE TWO FIELDS, so a tap can move the caret between them. iOS raises a keyboard only
   // for a `focus()` made inside a user gesture, and the code step is reached across an
