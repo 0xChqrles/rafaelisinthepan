@@ -227,6 +227,21 @@ input {
   height: 8px;
   border: 2px solid var(--fg);
 }
+/* THE BRACKETED BOX DIMS A TOUCH (user-decided 2026-09-09: "play a bit with its opacity
+   by 10 to 20% depending on the level of contrast it allows"): the control says "held"
+   while the brackets say "here". Brightness rather than opacity, which on this one flat
+   near-black ground is the same thing — everything blends toward the same black — and
+   composes with the opacity a control already carries (a resting tab, a greyed key)
+   instead of overwriting it. 20% where the control has contrast to spare; 10% on the
+   dark tiles that have little to give (a key, a calendar day). */
+[data-bracketed] {
+  filter: brightness(0.8);
+  transition: filter 140ms linear;
+}
+.kb-key[data-bracketed],
+.cal-day[data-bracketed] {
+  filter: brightness(0.9);
+}
 .fb-tl {
   top: 0;
   left: 0;

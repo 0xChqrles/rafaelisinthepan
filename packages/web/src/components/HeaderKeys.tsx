@@ -86,11 +86,6 @@ export default function HeaderKeys({
   const dot = useRef<HTMLSpanElement>(null);
   const hoverDot = useRef<HTMLSpanElement>(null);
   const [hover, setHover] = useState<HeaderPlace | null>(null);
-  // THE KEYBOARD'S HOVER (#267): a key reached by Tab is answered exactly as a hovered one
-  // — the secondary dot travels to it — so a focus needs no ring of its own on this row.
-  // `:focus-visible` is asked at focus time, which is what keeps a tap (and the focus a
-  // click leaves on a key) from moving the dot the way a mouse does.
-  const [focus, setFocus] = useState<HeaderPlace | null>(null);
   const mouse = useMemo(hasMouse, []);
   useLayoutEffect(() => {
     const el = row.current;
@@ -116,7 +111,7 @@ export default function HeaderKeys({
         d.style.transform = `translateX(${x}px)`;
       }
       if (!h) return;
-      const hx = xOf(hover ?? focus ?? on, h.offsetWidth);
+      const hx = xOf(hover ?? on, h.offsetWidth);
       if (hx !== null) {
         // The secondary dot has no history: it is simply under the lit place until a
         // mouse moves it.
@@ -128,7 +123,7 @@ export default function HeaderKeys({
     const ro = new ResizeObserver(place);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [on, hover, focus]);
+  }, [on, hover]);
   const placeOf = (target: EventTarget | null): HeaderPlace | null => {
     const key = target instanceof HTMLElement ? target.closest('.home-btn') : null;
     if (!key) return null;
@@ -174,17 +169,8 @@ export default function HeaderKeys({
       onPointerLeave={(e) => {
         if (e.pointerType === 'mouse') setHover(null);
       }}
-      onFocus={(e) => {
-        if (e.target instanceof HTMLElement && e.target.matches(':focus-visible')) {
-          setFocus(placeOf(e.target));
-        }
-      }}
-      onBlur={() => setFocus(null)}
     >
-      {/* The secondary dot is always in the tree now that the keyboard moves it too (it
-          was mouse-only): at rest it sits UNDER the lit dot, covered by it — and only a
-          mouse or a Tab ever moves it, never a finger, so it cannot be left parked. */}
-      <span ref={hoverDot} className="hk-dot hk-dot-hover" aria-hidden="true" />
+      {mouse && <span ref={hoverDot} className="hk-dot hk-dot-hover" aria-hidden="true" />}
       <span ref={dot} className="hk-dot" aria-hidden="true" />
       {key('home', t(lang, 'ariaHome'), pathForMode(lang, mode), HomeIcon)}
       {key('archive', t(lang, 'ariaArchive'), pathForArchive(lang, mode), CalendarIcon)}

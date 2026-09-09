@@ -4046,10 +4046,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - It **follows a focus that moves** — a drum turning under it, a scroll, a resize — one
     measurement a frame while it shows, and only while it shows; it mounts INSIDE an open
     dialog when the focus is there (the top layer paints above the document).
-  - **Two surfaces still answer the keyboard with motion**, the way they answer a mouse:
-    the header's secondary dot travels to the focused key (`HeaderKeys`' `focus` beside
-    `hover`; the dot is always in the tree, covered under the lit dot at rest), and a hole
-    greets the focus with one wave (`Hole`'s `greeting`, never under reduced motion).
+  - **The framed box DIMS a touch** (`data-bracketed`, set by the component on the box it
+    frames): `brightness(0.8)` where the control has contrast to spare, `0.9` on the dark
+    tiles that have little (a key, a calendar day) — brightness rather than opacity, the
+    same thing on the flat near-black ground and composable with a control's own opacity.
+    (User-decided 2026-09-09, with the header dot's keyboard travel REMOVED the same
+    review: the dot answers the mouse alone; the brackets are the focus on the row too.)
+  - **A hole still greets the keyboard with motion**, the way it answers a mouse: one
+    wave on arrival (`Hole`'s `greeting`, never under reduced motion).
   - **The drums are ONE tab stop each** — the slot row carries the `tabIndex`, the focus
     follows the pick when the arrows turn the drum — so Tab lands on the pick and the
     brackets stand on it.

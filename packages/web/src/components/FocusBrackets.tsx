@@ -14,6 +14,9 @@ import { createPortal } from 'react-dom';
 // missed. It follows a focus that MOVES — a drum turning under it, a scroll, a resize —
 // one measurement a frame while it shows, and only while it shows.
 //
+// The framed box also DIMS a touch while the brackets stand on it (`data-bracketed`, the
+// CSS's), so the control itself says "held" beside the frame that says "here".
+//
 // It answers `:focus-visible` alone, asked at focus time: a tap moves no brackets, and
 // neither does the focus a click leaves on a button. It frames the control's VISIBLE box
 // — a `[data-focus-box]` inside it when the control is stretched wider than what it shows
@@ -65,6 +68,8 @@ export default function FocusBrackets() {
   useLayoutEffect(() => {
     const el = frame.current;
     if (!target || !el) return undefined;
+    const box = boxOf(target);
+    box.setAttribute('data-bracketed', '');
     let raf = 0;
     let last = '';
     const place = () => {
@@ -96,7 +101,10 @@ export default function FocusBrackets() {
     } else {
       place();
     }
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      box.removeAttribute('data-bracketed');
+    };
   }, [target]);
 
   if (!target || !host) return null;
