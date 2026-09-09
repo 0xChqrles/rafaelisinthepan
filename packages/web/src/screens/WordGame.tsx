@@ -367,6 +367,9 @@ function WordRound({
   const gainId = useRef(0);
 
   const [input, setInput] = useState('');
+  // The guess prompt's own field (#267) — see `Game`'s copy: a submit puts the caret back
+  // into it, which is a no-op unless the on-screen ENTER was activated from the keyboard.
+  const guessField = useRef<HTMLInputElement>(null);
   const [invalidAt, setInvalidAt] = useState(0);
   // The message line under the prompt (#175) — the sentence game's own feedback line, in
   // the same place: info about WHAT YOU TYPED. A repeat, a non-word and the day's word
@@ -486,6 +489,7 @@ function WordRound({
   const submit = useCallback(
     (raw: string) => {
       if (!playing) return;
+      guessField.current?.focus({ preventScroll: true });
       const typed = fold(raw);
       if (!typed) {
         setInput('');
@@ -738,6 +742,8 @@ function WordRound({
                 <WordInput
                   value={input}
                   history={tried}
+                  lang={lang}
+                  fieldRef={guessField}
                   onType={appendChar}
                   onBackspace={deleteChar}
                   onSubmit={submit}

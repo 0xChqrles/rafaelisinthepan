@@ -112,6 +112,9 @@ export default function Tutorial({
   const [invalidAt, setInvalidAt] = useState(0);
   const [feedback, setFeedback] = useState<string | null>(null);
   const hitId = useRef(0);
+  // The guess prompt's own field (#267) — the game's rule, in the lesson: a submit puts the
+  // caret back into it, which only ever moves anything after an on-screen ENTER reached by Tab.
+  const guessField = useRef<HTMLInputElement>(null);
 
   // Mix demo state: which ladder entry is showing (-1 = the untouched blue secret),
   // which stop the next press goes to, the stop copy currently explaining, and a
@@ -247,6 +250,7 @@ export default function Tutorial({
 
   const submit = useCallback(
     (raw: string) => {
+      guessField.current?.focus({ preventScroll: true });
       const typed = fold(raw);
       if (!typed) return;
       if (gatedWord) {
@@ -405,6 +409,7 @@ export default function Tutorial({
               <WordInput
                 value=""
                 history={[]}
+                lang={lang}
                 onType={noop}
                 onBackspace={noop}
                 onSubmit={noop}
@@ -435,6 +440,8 @@ export default function Tutorial({
               <WordInput
                 value={input}
                 history={[]}
+                lang={lang}
+                fieldRef={guessField}
                 onType={appendChar}
                 onBackspace={deleteChar}
                 onSubmit={submit}

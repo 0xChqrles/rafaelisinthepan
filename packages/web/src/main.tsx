@@ -2,7 +2,6 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import { initAnalytics } from './analytics';
-import { installButtonFocusGuard } from './buttonFocus';
 import { loadDeviceIdentity } from './identity';
 import {
   flushGameStorePersistence,
@@ -17,9 +16,6 @@ import { installTheme } from './theme';
 import './index.css';
 
 installTheme();
-
-const removeButtonFocusGuard = installButtonFocusGuard();
-if (import.meta.hot) import.meta.hot.dispose(removeButtonFocusGuard);
 
 // First paint is gated on IndexedDB, and an `indexedDB.open()` can STALL rather than
 // reject — a future schema upgrade blocked by a frozen background tab whose `blocking`

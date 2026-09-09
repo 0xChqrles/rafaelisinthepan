@@ -175,12 +175,50 @@ button * {
    square appear for a short moment"). Chrome's default `-webkit-tap-highlight-color` is
    `rgba(51, 181, 229, 0.4)` — a translucent CYAN box the shape of the control — painted
    on touch by the browser, over a UI that draws its own press states and nothing else.
-   App-wide rather than per control: buttons here are pointer-only (`buttonFocus.ts`
-   keeps them out of the tab order and blurs any focus), so there is no surface that
-   wants it. Three buttons — the hole, the solved word, the wheel row — each carried
-   their own copy of this line; they are the same rule said three times and are gone. */
+   App-wide rather than per control: the app draws its own press states, and its own
+   focus outline below, so there is no surface that wants it. Three buttons — the hole,
+   the solved word, the wheel row — each carried their own copy of this line; they are
+   the same rule said three times and are gone. */
 button {
   -webkit-tap-highlight-color: transparent;
+}
+
+/* THE APP'S ONE FOCUS INDICATOR (#267, user-decided 2026-09-07), DRAWN ON
+   `:focus-visible` ALONE.
+
+   Until this issue every button was pointer-only: `buttonFocus.ts` held them out of the
+   tab order and blurred any focus they took, so Tab could not reach PLAY. The guard was
+   there to avoid the ring a tap leaves stuck on a control in a touch browser, and
+   `:focus-visible` is the browser's own answer to exactly that — nothing after a pointer
+   press, an outline after Tab — without excluding anyone who plays on a keyboard. The
+   guard is gone and this rule is the whole of what replaces it.
+
+   ONE outline for every control the keyboard can reach, said once here rather than per
+   component: a hard 2px square of the foreground, no glow and no colour of its own, so it
+   reads the same on the pixel game surface as on the chrome. The 2px offset keeps it
+   clear of its own box and still inside the keyboard's 6px key gaps.
+
+   Plain `:focus` paints NOTHING — a control focused by a tap, or by code, tells a pointer
+   user nothing — which is what the reset is for: the ring the modern UA stylesheets draw
+   is already `:focus-visible`'s, but not every browser's is. */
+button:focus,
+a:focus,
+input:focus {
+  outline: none;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+}
+/* The code prompt is six drawn cells over ONE invisible field (`CodeInput`): the field
+   holds the focus, but its `opacity: 0` would take the outline with it — so the row it is
+   stretched over wears the indicator instead. Its own rule, never a fourth selector
+   above: a browser without `:has()` would drop the whole list and every outline with it. */
+.code-input:has(.code-field:focus-visible) {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
 }
 
 .app {
@@ -1672,9 +1710,36 @@ button {
   font-family: var(--pixel-font);
   font-size: clamp(18px, 3.2vw, 30px); /* = .phrase */
   color: var(--fg);
-  /* No native <input> to focus (issue #36): input comes from the on-screen keyboard
-     and the physical keyboard, so the prompt never needs to hold a caret. */
+  /* The drawn prompt is not selectable — the real field under it (`.wi-field`) is what
+     holds the caret, and it is not on screen. */
   user-select: none;
+}
+/* THE PROMPT'S REAL FOCUS TARGET (#267): a field the player never sees, holding the guess
+   and every keystroke that builds it. Hidden the `.sr-only` way — never `display: none` or
+   `visibility: hidden`, both of which would make it unfocusable and undo the whole point.
+   It draws no focus outline of its own — the clip takes it — and it wants none: the prompt
+   holds the keyboard for as long as the round is live, so the app's indicator would be
+   permanent furniture here. The blinking caret is what the line shows instead.
+   `font-size: 16px` because iOS zooms the page for a focused field under it;
+   `inputmode="none"` rides on the element, because the on-screen keyboard is this game's
+   keyboard on a phone. */
+.wi-field {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  background: none;
+  color: transparent;
+  font-size: 16px;
+  /* The drawn prompt around it is `user-select: none`, and WebKit has long extended that to
+     a nested field — an unselectable text input is one you cannot type into. Said back
+     explicitly on the one element that has to be editable. */
+  user-select: text;
+  -webkit-user-select: text;
 }
 .wi-prompt {
   color: var(--accent);
@@ -2660,10 +2725,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .share-as-flip:hover {
   color: var(--fg);
 }
-.share-as-flip:focus-visible {
-  outline: 2px solid var(--fg);
-  outline-offset: 2px;
-}
 .share-as-track {
   display: flex;
   flex-direction: column;
@@ -2720,10 +2781,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .share-as-name {
   text-transform: none;
   letter-spacing: 0.04em;
-}
-.share-as-row:focus-visible {
-  outline: 2px solid var(--fg);
-  outline-offset: 2px;
 }
 
 /* Player-progression celebration: the native dialog IS the borderless full-screen surface.
@@ -5411,7 +5468,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   font-size: 12px;
 }
 .account-input:focus {
-  outline: none;
   border-color: var(--line-strong);
 }
 

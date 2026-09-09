@@ -287,6 +287,10 @@ function Round({
   }, [roundKey]);
 
   const [input, setInput] = useState<string>('');
+  // The guess prompt's own field (#267). The screen holds it so a submit can put the caret
+  // back into it — the on-screen ENTER is a button, and a player who reached it with Tab is
+  // standing on it when the guess goes in.
+  const guessField = useRef<HTMLInputElement>(null);
   // A solving submit closes the prompt immediately, on the same render that launches
   // the final floating hits. The actual hole/store updates still finish on their existing
   // delayed choreography; this flag only owns the prompt's leftward fade and input lock.
@@ -791,6 +795,9 @@ function Round({
       // A board already complete takes no more guesses, and neither does a round the server
       // has closed — solved (frozen) or capped.
       if (boardComplete || finished || promptExiting) return;
+      // The next guess is typed where the last one was: a no-op when the field already has
+      // the focus, which is every submit but the on-screen ENTER's own keyboard activation.
+      guessField.current?.focus({ preventScroll: true });
       const typed = fold(raw);
       if (!typed) {
         setInput('');
@@ -1011,6 +1018,8 @@ function Round({
                 <WordInput
                   value={input}
                   history={history}
+                  lang={lang}
+                  fieldRef={guessField}
                   onType={appendChar}
                   onBackspace={deleteChar}
                   onSubmit={submit}
@@ -1018,8 +1027,10 @@ function Round({
                   invalidSignal={invalidAt}
                   // The history modal covers the prompt: keystrokes must not build (or submit)
                   // a guess the player cannot see behind it. The gate holds it back the same
-                  // way — the prompt arrives with the keyboard, on PLAY.
-                  active={!showResults && historyHole === null && !gateOpen}
+                  // way — the prompt arrives with the keyboard, on PLAY. And the RETIRING
+                  // prompt is inactive too, so its field is never a focusable control inside
+                  // the `aria-hidden` box below (#267 gave it one to focus).
+                  active={!showResults && historyHole === null && !gateOpen && !promptExiting}
                 />
                 <p className="hint">{feedback || ' '}</p>
               </div>

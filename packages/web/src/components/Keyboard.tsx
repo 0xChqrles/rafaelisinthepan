@@ -1,4 +1,4 @@
-import { useCallback, useState, type PointerEvent } from 'react';
+import { useCallback, useState, type MouseEvent, type PointerEvent } from 'react';
 import { KEYBOARD_ROWS, canExtend } from '../game/keyboard';
 // Inline SVG components (vite-plugin-svgr `?react`): they render into the DOM and paint
 // with `fill="currentColor"`, so each control key's icon inherits its `color` — muted for
@@ -26,13 +26,16 @@ interface KeyboardProps {
 // retriggers the CSS animation even on repeated taps of the same key.
 type Shake = { id: string; nonce: number } | null;
 
-// The custom on-screen keyboard (issue #36). Replaces the native mobile keyboard
-// entirely: keys are <button>s, so no text field is ever focused and the soft keyboard
-// never opens. Letters/dash that cannot extend the current input into any real word are
-// greyed out; tapping a greyed key shakes it (communicates "disabled", no input change).
-// Backspace is always active; Enter is active only when the input is a complete vocab
-// word. Desktop physical typing drives the same input state, so the greyed state stays
-// in sync regardless of input source.
+// The custom on-screen keyboard (issue #36). It is the keyboard on a phone: the guess
+// field beside it asks for no native one (`inputmode="none"`), so the soft keyboard never
+// opens over the game's own. Letters/dash that cannot extend the current input into any
+// real word are greyed out; tapping a greyed key shakes it (communicates "disabled", no
+// input change). Backspace is always active; Enter is active only when the input is a
+// complete vocab word. Desktop physical typing drives the same input state, so the greyed
+// state stays in sync regardless of input source.
+//
+// EVERY KEY IS AN ORDINARY BUTTON, reachable by Tab and activated by Enter or Space
+// (#267) — `press` and `activate` below are how one key answers both devices exactly once.
 export default function Keyboard({
   input,
   prefixSet,
@@ -48,11 +51,25 @@ export default function Keyboard({
     setShake((prev) => ({ id, nonce: (prev?.nonce ?? 0) + 1 }));
   }, []);
 
-  // pointerdown (not click): instant response and, with preventDefault, no focus/scroll
-  // side effects — nothing to blur, nothing to zoom.
+  // A POINTER is answered on pointerdown, not click: instant, and `preventDefault` keeps
+  // the press from moving the focus or scrolling — so the guess field beside the keyboard
+  // keeps the caret and physical typing keeps working after a tap.
   const press = useCallback(
     (e: PointerEvent<HTMLButtonElement>, run: () => void) => {
       e.preventDefault();
+      run();
+    },
+    [],
+  );
+
+  // A KEYBOARD activation makes no pointerdown at all: Enter and Space on a focused button
+  // arrive here as a click with no pointer behind it, which is what `detail === 0` says (a
+  // real click reports how many times the pointer was pressed). Answering `click`
+  // unconditionally would fire every key twice for a tap, since a pointerdown is followed
+  // by one.
+  const activate = useCallback(
+    (e: MouseEvent<HTMLButtonElement>, run: () => void) => {
+      if (e.detail !== 0) return;
       run();
     },
     [],
@@ -71,6 +88,7 @@ export default function Keyboard({
         aria-disabled={!active}
         className={`kb-key${active ? '' : ' kb-greyed'}${shaking ? ' kb-shake' : ''}`}
         onPointerDown={(e) => press(e, () => (active ? onType(char) : triggerShake(char)))}
+        onClick={(e) => activate(e, () => (active ? onType(char) : triggerShake(char)))}
         onAnimationEnd={() => setShake((prev) => (prev?.id === char ? null : prev))}
       >
         {char}
@@ -97,6 +115,7 @@ export default function Keyboard({
                 shake?.id === 'enter' ? ' kb-shake' : ''
               }`}
               onPointerDown={(e) => press(e, () => (enterActive ? onSubmit(input) : triggerShake('enter')))}
+              onClick={(e) => activate(e, () => (enterActive ? onSubmit(input) : triggerShake('enter')))}
               onAnimationEnd={() => setShake((prev) => (prev?.id === 'enter' ? null : prev))}
             >
               <EnterIcon className="kb-icon" aria-hidden />
@@ -111,6 +130,7 @@ export default function Keyboard({
                 aria-disabled={!dashActive}
                 className={`kb-key${dashActive ? '' : ' kb-greyed'}${dashShaking ? ' kb-shake' : ''}`}
                 onPointerDown={(e) => press(e, () => (dashActive ? onType('-') : triggerShake('-')))}
+                onClick={(e) => activate(e, () => (dashActive ? onType('-') : triggerShake('-')))}
                 onAnimationEnd={() => setShake((prev) => (prev?.id === '-' ? null : prev))}
               >
                 -
@@ -120,6 +140,7 @@ export default function Keyboard({
                 aria-label={t(lang, 'ariaBackspace')}
                 className="kb-key kb-control"
                 onPointerDown={(e) => press(e, onBackspace)}
+                onClick={(e) => activate(e, onBackspace)}
               >
                 <BackIcon className="kb-icon" aria-hidden />
               </button>
