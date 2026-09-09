@@ -109,7 +109,7 @@ describe('WhatsApp bot stack (#236)', () => {
     expect(reminder?.ScheduleExpressionTimezone).toBe('Europe/Paris');
     // The diary closes the WHIPPIN day (#277), so it fires at the game's own boundary —
     // 22:00 Eastern — five minutes after it, whatever zone the group lives in.
-    expect(diary?.ScheduleExpression).toBe('cron(5 22 * * ? *)');
+    expect(diary?.ScheduleExpression).toBe('cron(20 22 * * ? *)');
     expect(diary?.ScheduleExpressionTimezone).toBe('America/New_York');
     expect(Object.values(template.findResources('AWS::Lambda::Function'))).toHaveLength(1);
     // The job WRITES the diary it rewrites: read-write on the table, not read alone.

@@ -54,7 +54,8 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
     src/puzzle/daySource.ts     the day's `source` metadata, read once per (language, day) and carried in
                                 the CONVERSATION's prompt — the KIND is sayable, the work is not
     src/chat/                   the conversation: trigger (addressed vs ambient, the EXCHANGE BUDGET), the
-                                group ceiling (limits), the DAY LOG (durable; the whole day in every prompt),
+                                group ceiling (limits), serial.ts (one conversation at a time per group), the
+                                DAY LOG (durable; the whole day in every prompt),
                                 the DIARY (one text per group, rewritten at the day flip), read-only tools +
                                 name resolution (one window constant: a tool never promises days it
                                 cannot read), the bounded tool-loop agent (a reply, a REACTION, or nothing)
@@ -236,13 +237,23 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   **`ROUNDS` = 2** — a second round with the judge's reasons when it kept none — the share
   path's shape. **EVERY LINE GETS A COMMENT OR NONE DOES**: a bare slot beside somebody's
   name reads as neglect ("n'a pas le plaisir d'un commentaire… sympa"), a podium with no
-  comments reads as the bot being quiet. **Two lines opening the same way** (`openingOf`,
+  comments reads as the bot being quiet. **The ∞ LINE IS ONE OF THOSE LINES** (PR-278
+  review, `podiumText.ts` `CAPPED_LINE_ID`): it is printed under the places and read as one
+  of them, so a mixed podium that commented every finite line and left it bare was the
+  snub this rule exists to stop. It has no score and no position of its own — its facts
+  carry `score: "∞"` and the place after the last. **Two lines opening the same way** (`openingOf`,
   the first two words folded — "Pas mal pour…" opened four lines of one podium) are the
   tic parallel writers cannot see: the later one is written again once, told the opening
   to avoid (`echoes`). `COMMENT_MAX_CHARS` = 120: room for a number and a name, still one
   sentence. The calls fit the Lambda's 120s (`TIMEOUT_MS` 15s a candidate) and spend NO
   daily call ceiling, unlike the share line: this path fires once per group per day and is
-  bounded by the schedule, where an acknowledgement is bounded only by traffic. The
+  bounded by the schedule, where an acknowledgement is bounded only by traffic. **AND THE
+  TREE IS BOUNDED BY THE LAMBDA'S CLOCK** (PR-278 review): two rounds a line and then a
+  rewritten echo is four writer-plus-judge pairs, 140s against a 120s function, on calls
+  that were each valid and merely slow — so `runPodiumJob` hands
+  `generatePodiumComments` a deadline (`COMMENT_BUDGET_MS` = 80 000 from the job's start)
+  and a round that does not fit inside it (`ROUND_MS`) is not spent: a repeated opening
+  stands rather than being rewritten, and the podium is queued. The
   one-liner machinery this replaced — the band `verdict`, the score withheld,
   `spellsANumber` / `namesSomebody` / `readsLikeASimile` / `hasAClause`, `LINE_RULES`, the
   voice judge, `dropEchoes` on six-letter words, eight candidates — is gone with it.
@@ -356,6 +367,15 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
     a message with nothing to answer (no letter and no digit, and nothing quoted —
     `isWordless`; a reaction to a reaction is noise), a share the bot has just acknowledged
     (that WAS the answer), and anything past the EXCHANGE BUDGET.
+  - **THE READ, THE ANSWER AND THE WRITE ARE ONE SECTION PER GROUP** (`chat/serial.ts`
+    `serialByKey`, PR-278 review). WhatsApp starts a handler per message without awaiting
+    the last (`whatsapp/client.ts`), so a burst had every handler read the same `Exchange`,
+    judge itself under the cap, and write its own count back — a group at seven could
+    answer five more times and store eight, and an addressed reset could be overwritten by
+    a slower ambient increment. The conversation is therefore serialized per group;
+    INGESTION is deliberately outside it, since a share's emoji must not wait behind
+    somebody else's model call. It is also what a second message of a burst wants: an
+    answer written by a bot that can see the first.
   - **THE EXCHANGE BUDGET limits only VOLUNTEERING** (`trigger.ts` `Exchange`): the bot's
     UNASKED text answers in a row are counted; a reaction counts for nothing; an addressed
     answer resets the count; `EXCHANGE_GAP_MS` (10 min) of silence ends the exchange; at
@@ -371,7 +391,10 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
     `REACT <emoji>` and nothing else; the emoji is allow-listed (`agent.ts` `REACTIONS`,
     anything else becomes `DEFAULT_REACTION`), sent through the existing reaction command
     under the `reply:` id, recorded in the day log as `REACT ❤️` in the bot's own turn,
-    and it moves no exchange and adds no bubble. The prompt's rule: a thank-you, a
+    and it moves no exchange and adds no bubble. **The turn is filed by `main.ts` once the
+    OUTBOUND QUEUE has accepted it** — the rule ingest's `spoken` hook already followed
+    (PR-278 review): written by the agent, a reply the queue then refused was a turn in the
+    day log nobody had read, and it had spent the exchange budget too. The prompt's rule: a thank-you, a
     goodbye, an acknowledgement, a one-word reaction gets a reaction or nothing, never a
     sentence — the bot never takes the last word. (A dozen of its sentences in five days
     answered "merci", "bien", "❤️", "bonne nuit"; one of them, forced under "merci bot",
@@ -395,7 +418,13 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   row per turn in the bot table (`DAYLOG#<group>` / `DAY#<000000>#<instant>#<id>`, TTL
   `DAY_LOG_TTL_SECONDS` = 48h), reloaded on boot, read by the diary job from its own
   process; the prompt carries the day's turns in order, each stamped with the GROUP's own
-  clock (`clockIn`), the newest that fit `DAY_MAX_CHARS` (40 000). What a turn may hold is
+  clock (`clockIn`), the newest that fit `DAY_MAX_CHARS` (40 000). **The day read is the
+  MESSAGE's own** (`dayOfInstant`, PR-278 review), never the clock's: a message sent at
+  21:59 Eastern and delivered at 22:06 is still live (`OFFLINE_LIVE_S`) and belongs to the
+  day it was sent in — which is the day its log entry went to — so reading the day that had
+  since begun left the prompt without the very message it was answering. An echo is
+  compared only against the SAME day's turns for the same reason (two days are held, and a
+  deterministic reminder repeats). What a turn may hold is
   bounded by WHAT IT IS, not by who typed it (PR-243 review, the three rules unchanged):
   - **A SHARE'S RAW CONTENTS never travel.** `withoutShares` strips the whole GENERATED
     block the web composes — the headline, the emoji row, the word-mode WORD and its beads,
@@ -425,17 +454,33 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   (`DIARY#<group>` / `TEXT`, `DIARY_MAX_CHARS` 3000), what the bot knows about the people
   in it — who is who, who teases whom, running jokes, promises — rewritten by the bot
   itself at the day flip from the diary as it stood and the day's log (`podiumJob.ts`
-  `runDiaryJob`, `kind: "diary"`, scheduled at `DIARY_TIME` 22:05 `America/New_York` —
+  `runDiaryJob`, `kind: "diary"`, scheduled at `DIARY_TIME` **22:20** `America/New_York` —
   the game's own boundary, not a group time, since nobody sees it and a group time would
-  drift an hour from the flip when the two zones' DST changes do not coincide), and read
-  into every prompt as a USER turn marked as notes. An empty day, an unreachable model or
-  an unusable answer leave it AS IT WAS. `memory.ts` — eight facts a player told the bot
+  drift an hour from the flip when the two zones' DST changes do not coincide; twenty past
+  rather than five because a message sent before the flip can still be delivered, and
+  logged, for `OFFLINE_LIVE_S` after it — PR-278 review), and read into every prompt as a
+  USER turn marked as notes. An empty day, an unreachable model or an unusable answer leave
+  it AS IT WAS. **A DAY IS FOLDED ONCE, AND ONLY OVER THE DIARY THAT WAS READ** (PR-278
+  review): the row names the last day folded in and a job for a day at or below it is
+  skipped, so a retried schedule cannot fold twice and a replay of an older day cannot
+  replace a newer diary; and the write names the `{day, updatedAt}` it read
+  (`DiaryStamp`, a ConditionExpression), so an operator's `forget` landing inside the
+  model call is not undone by it — the refused rewrite is logged and the day waits. `memory.ts` — eight facts a player told the bot
   about THEMSELVES, written only when the model called `remember` about the person
   talking, read only when that person spoke again — could not hold a joke about one person
   made while talking to another, nor anything about the group; it and the `remember` tool
-  are gone. `bot:cli forget <group> <player>` is now a REWRITE (`withoutPerson`): the model
-  writes the diary again without them, and a rewrite that still names them is not stored;
-  their turns in the day log expire on their own.
+  are gone. `bot:cli forget <group> <player JID | name>` is now a REWRITE
+  (`withoutPerson`): the model writes the diary again without them, and a rewrite that
+  still names them is not stored; their turns in the day log expire on their own. **It
+  takes the NAME as readily as a JID** (PR-278 review): the diary writes people by the name
+  the group uses, and a JID reaches one only through the scoreboard rows — so a member who
+  never posted a score, or who renamed since, resolved to the `…last4` handle and the
+  command reported that the diary never mentioned them. A JID that resolves to nothing but
+  the handle is refused with the ask. `mentionsPerson` reads the WHOLE name in order (which
+  is what carries "Jo") as well as any part of three letters or more (which is what carries
+  "Luc Le Père"), both sides cut on the same word boundary so "Jean-Luc" matches; it errs
+  towards YES, since over-matching costs a rerun and under-matching stores a diary that
+  still names them.
   **THE BOT KNOWS HOW THE GAME WORKS, AND EXPLAINS IT (personality v3, user-decided
   2026-09-04).** The first thing a new group asked was how the words are ranked, and the bot
   could not say — it knew the rules of scoring and nothing about the SEMANTICS. The global

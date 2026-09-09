@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { PutItemCommand, type DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { ConditionalCheckFailedException, PutItemCommand, type DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { dayNumber } from '@whippin/shared';
 import { parseGroupConfig } from '../config/groupConfig';
 import { createLog } from '../log';
 import { LlmUnavailable, type LlmProvider, type LlmRequest, type LlmResponse } from '../llm/types';
 import type { Turn } from './dayLog';
-import { DIARY_MAX_CHARS, diaryTurn, dynamoDiaryStore, memoryDiaryStore, mentionsPerson, plainDiary, rewriteDiary, withoutPerson } from './diary';
+import { DIARY_MAX_CHARS, diaryTurn, dynamoDiaryStore, memoryDiaryStore, mentionsPerson, plainDiary, rewriteDiary, stampOf, withoutPerson } from './diary';
 
 const GROUP = '120363000000000001@g.us';
 const DAY = dayNumber('2026-09-03');
@@ -85,6 +85,15 @@ describe('the group diary (#277)', () => {
     expect(mentionsPerson(diary.text, 'Luc Le Père')).toBe(true);
     expect(mentionsPerson(diary.text, 'Léa')).toBe(false); // whole words, folded: "Léa" is not in "Le Père"
     expect(mentionsPerson('lucide', 'Luc')).toBe(false);
+    // A SHORT name is the whole name, so it is looked for whole (PR-278 review): under a
+    // three-letter minimum, "Jo" matched nothing and the command reported no mention.
+    expect(mentionsPerson('Jo a encore gagné.', 'Jo')).toBe(true);
+    expect(mentionsPerson('Bruno a encore gagné.', 'Jo')).toBe(false);
+    // And a hyphen is a word boundary on BOTH sides, so a compound name is found.
+    expect(mentionsPerson('Jean-Luc a promis un ∞.', 'Jean-Luc')).toBe(true);
+    expect(mentionsPerson('Jean Luc a promis un ∞.', 'Jean-Luc')).toBe(true);
+    expect(mentionsPerson('Zou a promis un ∞.', 'Jean-Luc')).toBe(false);
+    expect(mentionsPerson('un texte', '')).toBe(false);
     const clean = scripted({ text: 'Bruno reste la cible.' });
     const gone = await withoutPerson(clean.provider, group, diary, 'Luc Le Père', log, now);
     expect(gone?.text).toBe('Bruno reste la cible.');
@@ -99,13 +108,40 @@ describe('the group diary (#277)', () => {
     expect(nothing.requests).toHaveLength(0);
   });
 
+  it('WRITES ONLY OVER WHAT IT READ (PR-278 review): a diary that moved refuses the write', async () => {
+    // The case: the nightly rewrite reads the diary, spends a model call on it, and an
+    // operator's `forget` lands in between. Writing what was read would put the person back.
+    const store = memoryDiaryStore();
+    const first = { version: 1, text: 'un', updatedAt: 'A', day: DAY };
+    expect(await store.put(GROUP, first, null)).toBe(true);
+    expect(await store.put(GROUP, { ...first, text: 'again' }, null)).toBe(false); // there IS one now
+    expect(await store.put(GROUP, { ...first, text: 'deux', updatedAt: 'B' }, { day: DAY, updatedAt: 'A' })).toBe(true);
+    // Stale: what was read (updatedAt A) is no longer what stands (B).
+    expect(await store.put(GROUP, { ...first, text: 'trois', updatedAt: 'C' }, { day: DAY, updatedAt: 'A' })).toBe(false);
+    expect((await store.get(GROUP))?.text).toBe('deux');
+    expect(stampOf(null)).toBeNull();
+    expect(stampOf(first)).toEqual({ day: DAY, updatedAt: 'A' });
+  });
+
+  it('names the condition on the way to DynamoDB, and reads a refusal as a refusal', async () => {
+    const send = vi.fn().mockResolvedValue({});
+    const store = dynamoDiaryStore({ send } as unknown as DynamoDBClient, 'bot');
+    await store.put(GROUP, { version: 1, text: 'x', updatedAt: 'now', day: DAY }, { day: DAY - 1, updatedAt: 'before' });
+    const put = (send.mock.calls[0] as unknown[])[0] as PutItemCommand;
+    expect(put.input.ConditionExpression).toBe('#day = :day AND #updatedAt = :updatedAt');
+    expect(put.input.ExpressionAttributeValues).toEqual({ ':day': { N: String(DAY - 1) }, ':updatedAt': { S: 'before' } });
+    const refusing = vi.fn().mockRejectedValue(new ConditionalCheckFailedException({ message: 'x', $metadata: {} }));
+    const refused = dynamoDiaryStore({ send: refusing } as unknown as DynamoDBClient, 'bot');
+    expect(await refused.put(GROUP, { version: 1, text: 'x', updatedAt: 'now', day: DAY }, null)).toBe(false);
+  });
+
   it('is one row per group', async () => {
     const memory = memoryDiaryStore();
     expect(await memory.get(GROUP)).toBeNull();
-    await memory.put(GROUP, { version: 1, text: 'x', updatedAt: '', day: DAY });
+    expect(await memory.put(GROUP, { version: 1, text: 'x', updatedAt: '', day: DAY }, null)).toBe(true);
     expect((await memory.get(GROUP))?.text).toBe('x');
     const send = vi.fn().mockResolvedValue({});
-    await dynamoDiaryStore({ send } as unknown as DynamoDBClient, 'bot').put(GROUP, { version: 1, text: 'x', updatedAt: 'now', day: DAY });
+    await dynamoDiaryStore({ send } as unknown as DynamoDBClient, 'bot').put(GROUP, { version: 1, text: 'x', updatedAt: 'now', day: DAY }, null);
     const put = (send.mock.calls[0] as unknown[])[0] as PutItemCommand;
     expect(put.input.Item?.pk).toEqual({ S: `DIARY#${GROUP}` });
     expect(put.input.Item?.sk).toEqual({ S: 'TEXT' });

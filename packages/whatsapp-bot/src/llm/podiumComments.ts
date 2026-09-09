@@ -25,9 +25,9 @@ import { fold } from '@whippin/shared';
 import type { GroupConfig } from '../config/groupConfig';
 import type { Podium } from '../domain/podium';
 import type { PodiumContext } from '../domain/shareContext';
-import { lineId, type Comments } from '../domain/podiumText';
+import { CAPPED_LINE_ID, lineId, type Comments } from '../domain/podiumText';
 import type { Log } from '../log';
-import { FACT_JUDGE_SYSTEM, chooseLine } from './lineJudge';
+import { FACT_JUDGE_SYSTEM, JUDGE_TIMEOUT_MS, chooseLine } from './lineJudge';
 import { buildSystemPrompt } from './personality';
 import { LlmUnavailable, type LlmProvider } from './types';
 
@@ -59,19 +59,33 @@ export function sanitizeComment(raw: unknown, maxChars: number = COMMENT_MAX_CHA
 export interface PodiumCommentLine {
   id: string;
   position: number;
-  score: number;
+  score: number | '∞';
   names: string[];
   jids: string[];
 }
 
+// EVERY line the renderer prints, the ∞ one included (PR-278 review): it is printed under
+// the places and read as one of them, so leaving it the only bare slot is the snub this
+// path exists to stop. It has no score and no position of its own — `place` is the one
+// after the last, which is exactly where it is printed.
 export function podiumCommentLines(podium: Podium): PodiumCommentLine[] {
-  return podium.lines.map((line) => ({
+  const lines: PodiumCommentLine[] = podium.lines.map((line) => ({
     id: lineId(line),
     position: line.position,
     score: line.score,
     names: line.players.map((p) => p.name),
     jids: line.players.map((p) => p.jid),
   }));
+  if (podium.capped.length > 0) {
+    lines.push({
+      id: CAPPED_LINE_ID,
+      position: podium.lines.length + 1,
+      score: '∞',
+      names: podium.capped.map((p) => p.name),
+      jids: podium.capped.map((p) => p.jid),
+    });
+  }
+  return lines;
 }
 
 const TASK = `Task: one short comment under ONE line of tonight's podium, from the FACTS given and nothing else. Every number, name, position and comparison you write must come from the facts; you never invent or round one. The line's own names and score are printed right above your comment, so you do not repeat them — the others' names, and every number, are yours to use.
@@ -83,9 +97,14 @@ const MAX_TOKENS = 4000;
 // setting under thinking, and without it that much sampling produced word salad; 0.8
 // measured clean on the same podium, at no visible cost in strangeness.
 export const TEMPERATURE = 0.8;
-// The attempts at this must fit the podium Lambda's 90s with room for its reads, and the
-// lines run in parallel, so the ceiling here is per LINE and not per podium.
+// The attempts at this must fit the podium Lambda's timeout with room for its reads, and
+// the lines run in parallel, so the ceiling here is per LINE and not per podium.
 const TIMEOUT_MS = 15_000;
+// WHAT ONE MORE ROUND CAN COST (PR-278 review): a writer call and a verdict, back to back.
+// Two rounds and then a rewritten echo is four of these — 140s against a 120s Lambda, on a
+// sequence where every single call was valid and slow. So each extra round is spent only
+// if the caller's deadline still has room for it; the podium goes out either way.
+export const ROUND_MS = TIMEOUT_MS + JUDGE_TIMEOUT_MS;
 
 // ONE CANDIDATE: one writer call with its thinking off, one set of checks. Null when it
 // yielded nothing usable — a candidate is never retried, the others are its retry.
@@ -195,10 +214,15 @@ async function commentForLine(
   background: string,
   avoidOpening: string | null,
   log: Log,
+  deadlineAt: number,
 ): Promise<string | null> {
   const shown = background ? `${facts}\n\n${background}` : facts;
   let refused: string[] = [];
   for (let round = 1; round <= ROUNDS; round += 1) {
+    if (round > 1 && Date.now() + ROUND_MS > deadlineAt) {
+      log.info({ event: 'podium.out_of_time', id: line.id, round }, 'no room for another round');
+      return null;
+    }
     const notes = [
       ...(avoidOpening ? [`Another line of this podium already opens with "${avoidOpening}"; open differently.`] : []),
       ...(round > 1 ? [`Your previous lines were refused by the fact check${refused.length > 0 ? ' for these reasons:' : '.'}${refused.map((r) => `\n- ${r}`).join('')}\nWrite a new one that avoids them.`] : []),
@@ -251,6 +275,9 @@ export async function generatePodiumComments(
   context: PodiumContext,
   background: PodiumBackground,
   log: Log,
+  // When the caller must have its podium queued by. Absent, there is no clock — the tests
+  // and a hand-run replay.
+  deadlineAt: number = Number.POSITIVE_INFINITY,
 ): Promise<Comments> {
   const lines = podiumCommentLines(podium);
   if (lines.length === 0) return new Map();
@@ -263,21 +290,25 @@ export async function generatePodiumComments(
   const factsOf = (line: PodiumCommentLine) => JSON.stringify(lineFacts(line, lines.length, context));
   // PARALLEL, and every line settles on its own.
   const written = await Promise.all(
-    lines.map(async (line) => [line.id, await commentForLine(provider, system, line, factsOf(line), block, null, log)] as const),
+    lines.map(async (line) => [line.id, await commentForLine(provider, system, line, factsOf(line), block, null, log, deadlineAt)] as const),
   );
   const comments = new Map<string, string>();
   for (const [id, comment] of written) if (comment) comments.set(id, comment);
   // An echoed opening is written again, once, told what to avoid; still an echo, it stays.
   const echoed = echoes(lines, comments);
-  if (echoed.size > 0) {
+  if (echoed.size > 0 && Date.now() + ROUND_MS <= deadlineAt) {
     log.info({ event: 'podium.comment_echo', ids: [...echoed.keys()] }, 'lines opening like an earlier one; writing again');
     const again = await Promise.all(
       [...echoed].map(async ([id, opening]) => {
         const line = lines.find((l) => l.id === id)!;
-        return [id, await commentForLine(provider, system, line, factsOf(line), block, opening, log)] as const;
+        return [id, await commentForLine(provider, system, line, factsOf(line), block, opening, log, deadlineAt)] as const;
       }),
     );
     for (const [id, comment] of again) if (comment) comments.set(id, comment);
+  } else if (echoed.size > 0) {
+    // A repeated opening is a blemish; a podium killed by the Lambda's timeout is no
+    // podium. The lines stand as written.
+    log.info({ event: 'podium.echo_kept', ids: [...echoed.keys()] }, 'no room to write them again');
   }
   // EVERY LINE OR NONE.
   const missing = lines.filter((l) => !comments.has(l.id)).map((l) => l.id);

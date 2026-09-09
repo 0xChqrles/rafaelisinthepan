@@ -64,7 +64,9 @@ export function parseVerdict(text: string): Judgement | null {
 // the tail. `unknown` is a verdict that never arrived — a timeout, an outage, a truncated
 // answer — and is told apart from `drop` because it says nothing about the line.
 const MAX_TOKENS = 3000;
-const TIMEOUT_MS = 20_000;
+// Exported: the podium's round budget is a writer call plus one of these (`ROUND_MS`).
+export const JUDGE_TIMEOUT_MS = 20_000;
+const TIMEOUT_MS = JUDGE_TIMEOUT_MS;
 
 export async function judgeLine(
   provider: LlmProvider,

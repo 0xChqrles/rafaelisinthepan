@@ -4,7 +4,7 @@ import type { Declaration } from '../domain/declarations';
 import { HABIT_DAYS, TYPICAL_SCORE, buildPodiumContext } from '../domain/shareContext';
 import { createLog } from '../log';
 import { FACT_JUDGE_SYSTEM } from './lineJudge';
-import { CANDIDATES, echoes, generatePodiumComments, openingOf, podiumCommentLines, sanitizeComment } from './podiumComments';
+import { CANDIDATES, ROUND_MS, echoes, generatePodiumComments, openingOf, podiumCommentLines, sanitizeComment } from './podiumComments';
 import { LlmUnavailable, type LlmProvider, type LlmResponse } from './types';
 
 const GROUP = '120363000000000001@g.us';
@@ -167,6 +167,43 @@ describe('podium comments are commentary from the numbers (#236, #277)', () => {
     expect(comments.get('4')).toBe('Correct, sans plus.');
     const rewrite = provider.requests.filter((r) => factsIn(r.messages[0].content).place === 2).at(-1)!;
     expect(rewrite.messages[0].content).toContain('already opens with "pas mal"; open differently');
+  });
+
+  it('comments the ∞ LINE too, as the line the renderer prints (PR-278 review)', async () => {
+    const mixed = { ...podium, capped: [{ jid: 'd', name: 'Claire' }] };
+    expect(podiumCommentLines(mixed).at(-1)).toEqual({ id: '∞', position: 3, score: '∞', names: ['Claire'], jids: ['d'] });
+    const withClaire = buildPodiumContext({
+      group,
+      dayNumber: DAY,
+      todayRows: [...today, { ...row(DAY, 'd', 'Claire', 0), capped: true }],
+      windowRows: window,
+    });
+    const provider = answering({ 1: ['Un.'], 2: ['Deux.'], 3: ['Tu es allée au bout.'] });
+    const comments = await generatePodiumComments(provider, group, mixed, withClaire, none, log);
+    expect(comments.get('∞')).toBe('Tu es allée au bout.');
+    expect(comments.size).toBe(3);
+    // Its facts say ∞ where a place has a number, and its habit is there like anybody's.
+    const capped = sentByPlace(provider).at(-1);
+    expect(capped).toMatchObject({ place: 3, outOf: 3, score: '∞', who: ['Claire'] });
+    expect(capped.players[0].habit.name).toBe('Claire');
+    // EVERY LINE OR NONE counts it: no comment for the ∞ line is no comments at all.
+    const bare = answering({ 1: ['Un.'], 2: ['Deux.'], 3: ['', '', '', '', '', ''] });
+    expect((await generatePodiumComments(bare, group, mixed, withClaire, none, log)).size).toBe(0);
+  });
+
+  it('spends another round only when the caller\'s deadline has room for it (PR-278 review)', async () => {
+    // Two rounds a line and then a rewritten echo is four writer-plus-judge pairs — 140s
+    // against a 120s Lambda, on calls that were each valid and slow.
+    const retry = answering({ 1: ['Faux.', 'Faux.', 'Faux.', 'Bon.'], 2: ['Vous deux.'] }, (line) => (line === 'Faux.' ? '0: wrong' : '1'));
+    expect((await generatePodiumComments(retry, group, podium, context, none, log, Date.now() - 1)).size).toBe(0);
+    expect(retry.requests.filter((r) => factsIn(r.messages[0].content).place === 1)).toHaveLength(CANDIDATES); // one round only
+    // With room, the second round runs — the behaviour the budget must not cost.
+    const roomy = answering({ 1: ['Faux.', 'Faux.', 'Faux.', 'Bon.'], 2: ['Vous deux.'] }, (line) => (line === 'Faux.' ? '0: wrong' : '1'));
+    expect((await generatePodiumComments(roomy, group, podium, context, none, log, Date.now() + 10 * ROUND_MS)).get('3')).toBe('Bon.');
+    // An echoed opening is KEPT rather than rewritten when there is no room for it.
+    const echoing = answering({ 1: ['Pas mal pour un jeudi.'], 2: ['Pas mal, vous deux.'] });
+    const kept = await generatePodiumComments(echoing, group, podium, context, none, log, Date.now() + ROUND_MS);
+    expect(kept.get('4')).toBe('Pas mal, vous deux.');
   });
 
   it('keeps comments plain text', () => {

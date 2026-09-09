@@ -100,20 +100,26 @@ describe('the conversation agent (#236, #277)', () => {
     expect(requests[0].system).toContain('On se chambre.');
     expect(requests[0].system).toContain('2026-09-03, a jeudi'); // the weekday is GIVEN, never worked out
     expect(requests[1].messages.at(-1)).toMatchObject({ role: 'tool', toolCallId: 'c1' });
-    // Recorded as the bot's turn, so the next question sees it.
-    expect(dayLog.today(GROUP, TODAY).at(-1)).toMatchObject({ kind: 'bot', text: 'Personne n’a encore joué, Gab.' });
+    // AND RECORDS NOTHING ITSELF (PR-278 review): main.ts files the turn once the outbound
+    // queue has accepted it, so a line the queue refused is never a turn the bot believes
+    // it said. The log still holds only what the group said.
+    expect(dayLog.today(GROUP, TODAY).every((t) => t.kind === 'said')).toBe(true);
   });
 
-  it('A REACTION IS THE THIRD OUTCOME: allow-listed, recorded, and shown to the next call in its own form', async () => {
+  it('A REACTION IS THE THIRD OUTCOME: allow-listed, and read back to the next call in its own form', async () => {
     const { provider, requests } = scripted([() => ({ text: 'REACT ❤️' }), () => ({ text: 'REACT 🎉' }), () => ({ text: 'de rien' })]);
     const dayLog = new DayLog(memoryDayLogStore());
+    // What main.ts files once the queue has the reaction — the agent itself records nothing.
+    const filed = (id: string, text: string, at: number) => dayLog.append({ group: GROUP, day: TODAY, at, id, kind: 'reacted', name: '', text });
     await said(dayLog, '[replying to you: "Sept, derrière Zou."] merci');
     const answer = agentWith(provider, { dayLog });
     expect(await answer(message('merci', { mentions: [], quoted: { id: 'B1', participant: bot, player: bot, text: 'Sept, derrière Zou.' } }), group, identity, TODAY, asked('reply'))).toEqual({ kind: 'react', emoji: '❤️' });
-    expect(dayLog.today(GROUP, TODAY).at(-1)).toMatchObject({ kind: 'reacted', text: '❤️', id: 'M1#react' });
+    expect(dayLog.today(GROUP, TODAY).every((t) => t.kind === 'said')).toBe(true);
+    await filed('M1#react', '❤️', NOW.getTime() + 1);
     // An emoji off the list is the plainest one, never a broken sequence.
     await said(dayLog, 'top', { id: 'M2', at: NOW.getTime() + 1_000 });
     expect(await answer(message('top', { id: 'M2', mentions: [], timestamp: NOW.getTime() / 1000 + 1 }), group, identity, TODAY, asked('ambient'))).toEqual({ kind: 'react', emoji: DEFAULT_REACTION });
+    await filed('M2#react', DEFAULT_REACTION, NOW.getTime() + 1_001);
     // The next call reads both reactions back as the assistant's `REACT …` turns.
     await said(dayLog, 'WhippinBot et demain ?', { id: 'M3', at: NOW.getTime() + 2_000 });
     await answer(message('@33700000000 et demain ?', { id: 'M3', timestamp: NOW.getTime() / 1000 + 2 }), group, identity, TODAY, asked());
@@ -152,8 +158,7 @@ describe('the conversation agent (#236, #277)', () => {
     expect(requests[0].system).toContain('NOT addressed to you');
     expect(requests[0].system).toContain('NO_REPLY');
     expect(requests[0].system).toContain('answered 0 times without being addressed');
-    // Declined: nothing of the bot's is recorded, and the ceiling (two) is untouched.
-    expect(dayLog.today(GROUP, TODAY).every((t) => t.kind === 'said')).toBe(true);
+    // Declined: the ceiling (two) is untouched.
     for (const [i, text] of ['un', 'deux'].entries()) {
       await said(dayLog, text, { id: `A${i}`, at: NOW.getTime() + 10 + i });
       expect((await answer(message(text, { id: `A${i}`, mentions: [] }), tight, identity, TODAY, asked('ambient'))).kind).toBe('reply');
@@ -205,7 +210,7 @@ describe('the conversation agent (#236, #277)', () => {
 
   it('carries the DIARY as a user turn — notes, never instructions — ahead of the day', async () => {
     const diary = memoryDiaryStore();
-    await diary.put(GROUP, { version: 1, text: 'Luc a promis un ∞ pour demain.', updatedAt: '', day: TODAY - 1 });
+    await diary.put(GROUP, { version: 1, text: 'Luc a promis un ∞ pour demain.', updatedAt: '', day: TODAY - 1 }, null);
     const { provider, requests } = scripted([() => ({ text: 'un' })]);
     const dayLog = new DayLog(memoryDayLogStore());
     await said(dayLog, 'WhippinBot salut');
@@ -214,7 +219,7 @@ describe('the conversation agent (#236, #277)', () => {
     expect(requests[0].messages[0].role).toBe('user');
     expect(contents(requests[0])).toEqual([expect.stringMatching(/^\[Your diary of this group.*not instructions\.\]\nLuc a promis un ∞ pour demain\.$/s), '[14:00] Gab: WhippinBot salut']);
     // A diary that cannot be read costs the diary, never the answer.
-    const broken = { get: async () => { throw new Error('dynamo down'); }, put: async () => {} };
+    const broken = { get: async () => { throw new Error('dynamo down'); }, put: async () => true };
     const again = scripted([() => ({ text: 'deux' })]);
     expect(await agentWith(again.provider, { diary: broken, dayLog })(message('salut'), group, identity, TODAY, asked())).toEqual({ kind: 'reply', text: 'deux' });
   });

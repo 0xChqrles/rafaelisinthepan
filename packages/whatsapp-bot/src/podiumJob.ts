@@ -22,7 +22,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { SSMClient } from '@aws-sdk/client-ssm';
 import { activeDate, dateForDayNumber, dayNumber } from '@whippin/shared';
 import { dynamoDayLogStore, renderDay, type DayLogStore } from './chat/dayLog';
-import { dynamoDiaryStore, rewriteDiary, type DiaryStore } from './chat/diary';
+import { dynamoDiaryStore, rewriteDiary, stampOf, type DiaryStore } from './chat/diary';
 import { botRegion, loadEnv } from './config/env';
 import { loadGroups, type GroupRegistry } from './config/groupConfig';
 import { parseDay } from './domain/day';
@@ -75,6 +75,13 @@ export interface PodiumJobDeps {
 }
 
 const skipped = (group: string, dayNumber: number): PodiumJobResult => ({ outcome: 'skipped', group, dayNumber, lines: 0, comments: 0 });
+
+// HOW LONG THE COMMENTS MAY TAKE (PR-278 review). The Lambda has 120 seconds and the
+// comment tree can ask for four rounds of writer-plus-judge (two per line, then a
+// rewritten echo) — 140s of individually valid, individually slow calls, and a podium
+// killed before it is queued. Eighty leaves the reads and the enqueue their room; what
+// does not fit inside it is a round the podium goes without.
+export const COMMENT_BUDGET_MS = 80_000;
 
 // THE MORNING REMINDER. Skipped — never a bare link — when the day is not published, and
 // when the read that would say so failed: inviting a group to a 404 is the one thing this
@@ -129,6 +136,7 @@ export async function runPodiumJob(event: PodiumJobEvent, deps: PodiumJobDeps): 
     deps.log.warn({ event: 'podium.skipped', group: tag(event.group) }, 'group not configured for a podium');
     return skipped(event.group, day);
   }
+  const startedAt = now().getTime();
   const rows = inLanguage(await deps.declarations.day(group.id, day), group.language);
   const podium = buildPodium(day, rows, nameResolver(group));
   if (podium.lines.length === 0 && podium.capped.length === 0) {
@@ -160,7 +168,7 @@ export async function runPodiumJob(event: PodiumJobEvent, deps: PodiumJobDeps): 
           },
         );
       }
-      comments = await generatePodiumComments(deps.provider, group, podium, context, background, deps.log);
+      comments = await generatePodiumComments(deps.provider, group, podium, context, background, deps.log, startedAt + COMMENT_BUDGET_MS);
     } catch (error) {
       deps.log.warn({ event: 'podium.facts_failed', group: tag(group.id), error: (error as Error).message }, 'could not read the facts; podium without comments');
     }
@@ -200,15 +208,28 @@ export async function runDiaryJob(event: PodiumJobEvent, deps: PodiumJobDeps): P
     deps.log.warn({ event: 'diary.unwired', group: tag(group.id) }, 'no model or no store; nothing rewritten');
     return skipped(group.id, day);
   }
+  const previous = await deps.diary.get(group.id);
+  // MONOTONIC (PR-278 review). The diary names the last day folded into it, and a day is
+  // folded once: a retried schedule would otherwise fold the same day a second time, and a
+  // replay of an older day would replace a diary that has since seen newer ones. The
+  // podium gets this from its command id; the diary gets it from here, before any read.
+  if (previous && previous.day >= day) {
+    deps.log.info({ event: 'diary.already_folded', group: tag(group.id), day, folded: previous.day }, 'that day is already in the diary');
+    return skipped(group.id, day);
+  }
   const turns = await deps.dayLog.read(group.id, day);
   if (turns.length === 0) {
     deps.log.info({ event: 'diary.empty_day', group: tag(group.id), day }, 'nothing was said; diary kept');
     return { outcome: 'empty', group: group.id, dayNumber: day, lines: 0, comments: 0 };
   }
-  const previous = await deps.diary.get(group.id);
   const next = await rewriteDiary(deps.provider, group, previous, day, turns, deps.log, now);
   if (!next) return { outcome: 'empty', group: group.id, dayNumber: day, lines: turns.length, comments: 0 };
-  await deps.diary.put(group.id, next);
+  // AND CONDITIONAL: the rewrite takes a model call, and an operator's `forget` can land
+  // inside it. Writing what was read before that would put the person straight back.
+  if (!(await deps.diary.put(group.id, next, stampOf(previous)))) {
+    deps.log.warn({ event: 'diary.stale', group: tag(group.id), day }, 'the diary moved while it was being rewritten; kept as it stands');
+    return { outcome: 'empty', group: group.id, dayNumber: day, lines: turns.length, comments: 0 };
+  }
   deps.log.info({ event: 'diary.rewritten', group: tag(group.id), day, turns: turns.length, chars: next.text.length }, 'diary rewritten');
   return { outcome: 'posted', group: group.id, dayNumber: day, lines: turns.length, comments: 1 };
 }

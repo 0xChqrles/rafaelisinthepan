@@ -15,6 +15,11 @@ export function lineId(line: PodiumLine): string {
   return String(line.score);
 }
 
+// The ∞ line's id (PR-278 review). It is printed like any other line and is read like one
+// — the group counted the bare slot under Claire's name as a snub — so it is commented
+// like one. No finite score can collide with it.
+export const CAPPED_LINE_ID = '∞';
+
 const MONTHS_FR = [
   'janvier',
   'février',
@@ -82,6 +87,8 @@ export function renderPodium(
         language,
       )}`,
     );
+    const capped = comments.get(CAPPED_LINE_ID);
+    if (capped) out.push(`_${capped}_`);
   }
   return out.join('\n');
 }

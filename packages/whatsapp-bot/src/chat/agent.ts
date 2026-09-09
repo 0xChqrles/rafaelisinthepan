@@ -11,6 +11,11 @@
 // AMBIENT one is offered with the default being silence (`NO_REPLY`), and the code has
 // already refused to offer it at all past the exchange budget (`trigger.ts`).
 //
+// WHAT IT SAYS IS RECORDED BY ITS CALLER, once the outbound queue has accepted it
+// (`main.ts`) — the rule ingest's `spoken` hook already followed. Written here, a reply
+// the queue then refused was a turn in the day log that nobody ever read, and it had
+// spent the exchange budget too.
+//
 // A REACTION IS THE THIRD OUTCOME (user-decided 2026-09-09). A thank-you, a goodbye, an
 // acknowledgement used to get a sentence — a dozen of them in five days, and one of those
 // sentences is where a hallucinated podium row was born: forced to write something under
@@ -303,14 +308,8 @@ export function createAgent(deps: AgentDeps) {
       if (!ambient) deps.log.warn({ event: 'chat.declined_addressed', group: tag(group.id) }, 'the model declined an addressed message');
       return { kind: 'silent', reason: 'not_for_me' };
     }
-    // The bot's turn is filed AFTER the message it answers whatever the clocks say: a
-    // phone's timestamp and this process's clock need not agree to the millisecond.
-    const spokeAt = Math.max(at.getTime(), message.timestamp * 1000 + 1);
     const emoji = reactionIn(text);
-    if (emoji) {
-      await remember(deps, group, { kind: 'reacted', id: `${message.id}#react`, at: spokeAt, day: today, text: emoji });
-      return { kind: 'react', emoji };
-    }
+    if (emoji) return { kind: 'react', emoji };
     const reply = plainReply(text);
     if (!reply) return { kind: 'silent', reason: 'empty' };
     // THE SPOILER BACKSTOP: the prompt says the author and the work may not be named, and
@@ -324,19 +323,8 @@ export function createAgent(deps: AgentDeps) {
       const refused = await charge();
       if (refused) return refused;
     }
-    await remember(deps, group, { kind: 'bot', id: `${message.id}#reply`, at: spokeAt, day: today, text: reply });
     return { kind: 'reply', text: reply };
   };
-}
-
-// The bot's own turn into the day log. A store that refuses costs durability across a
-// restart and nothing the group sees; said in the log, never thrown at the answer.
-async function remember(deps: AgentDeps, group: GroupConfig, turn: Omit<Turn, 'group' | 'name'>): Promise<void> {
-  try {
-    await deps.dayLog.append({ ...turn, group: group.id, name: '' });
-  } catch (error) {
-    deps.log.warn({ event: 'daylog.write_failed', group: tag(group.id), error: (error as Error).message }, 'the turn was not stored');
-  }
 }
 
 // A turn of the day as the model reads it: a person's words stamped with the group's own

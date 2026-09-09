@@ -68,8 +68,12 @@ const GROUPS_DIR = path.join(BOT_DIR, 'groups', 'local');
 const REPO_LOCKFILE = path.join(REPO_ROOT, 'pnpm-lock.yaml');
 
 export const BOT_METRICS_NAMESPACE = 'WhippinBot';
-// When the diary rewrite fires: the Whippin day flips at 22:00 Eastern (`shared/src/day.ts`).
-export const DIARY_TIME = '22:05';
+// When the diary rewrite fires. The Whippin day flips at 22:00 Eastern
+// (`shared/src/day.ts`) — but a message SENT before the flip may still be delivered up to
+// `OFFLINE_LIVE_S` (10 minutes) later and is written into that day's log when it is, so a
+// job at 22:05 read a day that could still grow and never folded what arrived after it
+// (PR-278 review). Twenty past is the first minute nothing can be added.
+export const DIARY_TIME = '22:20';
 export const DIARY_TIMEZONE = 'America/New_York';
 export const CONNECTED_METRIC = 'Connected';
 

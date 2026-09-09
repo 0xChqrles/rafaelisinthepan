@@ -13,11 +13,13 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { SSMClient } from '@aws-sdk/client-ssm';
 import { activeDate, dayNumber } from '@whippin/shared';
-import { dynamoDiaryStore, withoutPerson } from './chat/diary';
+import { dynamoDiaryStore, stampOf, withoutPerson } from './chat/diary';
 import { labelPlayers } from './chat/tools';
+import { jidUser } from './chat/trigger';
 import { botRegion, loadEnv } from './config/env';
 import { GROUP_JID, USER_JID, loadGroups } from './config/groupConfig';
 import { dynamoDeclarationStore } from './domain/dynamoDeclarationStore';
+import { fallbackName } from './domain/names';
 import { createLlmProvider } from './llm';
 import { createLog } from './log';
 import { hasPairedDevice, useDynamoAuthState } from './whatsapp/authStore';
@@ -87,9 +89,9 @@ async function listGroups(): Promise<void> {
   }
 }
 
-async function forget(groupJid: string | undefined, player: string | undefined): Promise<void> {
-  if (!groupJid || !GROUP_JID.test(groupJid) || !player || !USER_JID.test(player)) {
-    console.error('usage: bot:cli forget <group JID> <player JID>');
+async function forget(groupJid: string | undefined, who: string | undefined): Promise<void> {
+  if (!groupJid || !GROUP_JID.test(groupJid) || !who) {
+    console.error('usage: bot:cli forget <group JID> <player JID | the name the diary uses>');
     process.exit(2);
   }
   const log = createLog('warn');
@@ -105,16 +107,31 @@ async function forget(groupJid: string | undefined, player: string | undefined):
     process.exit(1);
   }
   const dynamo = new DynamoDBClient({ region: botRegion() });
+  // A JID OR A NAME (PR-278 review). The diary writes people by the name the GROUP uses,
+  // and a JID only reaches one through the scoreboard rows — so a member who has never
+  // posted a score, or who renamed since, resolved to the `…last4` handle and the command
+  // reported cheerfully that the diary never mentioned them. A JID is still resolved; when
+  // nothing but the handle comes back, the operator is asked for the name, which they can
+  // read in the diary itself.
+  let name = who;
+  if (USER_JID.test(who)) {
+    const today = dayNumber(activeDate(new Date()));
+    const names = await labelPlayers({ group, today, declarations: dynamoDeclarationStore(dynamo, env.table) }, [who]);
+    const resolved = names.get(who) ?? '';
+    if (resolved === '' || resolved === fallbackName(jidUser(who))) {
+      console.error('The group has no name on record for that JID — they have never posted a score here, or they renamed since.');
+      console.error(`Run it again with the name the diary uses: bot:cli forget ${groupJid} "<name>"`);
+      process.exitCode = 1;
+      return;
+    }
+    name = resolved;
+  }
   const diaries = dynamoDiaryStore(dynamo, env.table);
   const diary = await diaries.get(group.id);
   if (!diary) {
     console.log('No diary for this group yet; nothing to forget.');
     return;
   }
-  // The name the diary knows them by: the operator's override or their latest snapshot.
-  const today = dayNumber(activeDate(new Date()));
-  const names = await labelPlayers({ group, today, declarations: dynamoDeclarationStore(dynamo, env.table) }, [player]);
-  const name = names.get(player) ?? '';
   const next = await withoutPerson(provider, group, diary, name, log);
   if (!next) {
     console.error('The rewrite could not be verified free of them; the diary is unchanged. Try again.');
@@ -122,10 +139,16 @@ async function forget(groupJid: string | undefined, player: string | undefined):
     return;
   }
   if (next === diary) {
-    console.log('The diary did not mention them; nothing changed.');
+    console.log(`The diary does not mention ${name}; nothing changed.`);
     return;
   }
-  await diaries.put(group.id, next);
+  // Conditional, like the nightly rewrite: if the diary moved while the model was writing
+  // (the day flip, another operator), nothing is stored over it.
+  if (!(await diaries.put(group.id, next, stampOf(diary)))) {
+    console.error('The diary changed while it was being rewritten (the nightly job?); nothing stored. Run it again.');
+    process.exitCode = 1;
+    return;
+  }
   console.log('Forgotten. Their turns in the day log expire within 48 hours.');
 }
 

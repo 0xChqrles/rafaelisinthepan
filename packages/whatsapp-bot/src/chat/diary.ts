@@ -18,7 +18,7 @@
 // diary again without them, and the result is checked — their name may not survive it.
 // Their turns in the day log expire on their own (48 hours).
 
-import { GetItemCommand, PutItemCommand, type DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { ConditionalCheckFailedException, GetItemCommand, PutItemCommand, type DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { dateForDayNumber, fold } from '@whippin/shared';
 import type { GroupConfig } from '../config/groupConfig';
 import { buildSystemPrompt } from '../llm/personality';
@@ -38,9 +38,20 @@ export interface Diary {
   day: number; // the last Whippin day folded into it
 }
 
+// What the diary looked like when it was read: a write names it, and is refused if the
+// stored one has moved on since (PR-278 review). `null` means "there was none".
+export type DiaryStamp = Pick<Diary, 'day' | 'updatedAt'> | null;
+
+export function stampOf(diary: Diary | null): DiaryStamp {
+  return diary ? { day: diary.day, updatedAt: diary.updatedAt } : null;
+}
+
 export interface DiaryStore {
   get(group: string): Promise<Diary | null>;
-  put(group: string, diary: Diary): Promise<void>;
+  // False when the stored diary is no longer the one `expected` describes — a nightly
+  // rewrite that started before an operator's `forget`, two schedules racing. The caller
+  // decides what that means; nothing is half-written either way.
+  put(group: string, diary: Diary, expected: DiaryStamp): Promise<boolean>;
 }
 
 export function diaryKey(group: string) {
@@ -59,19 +70,37 @@ export function dynamoDiaryStore(client: DynamoDBClient, tableName: string): Dia
         day: Number(item.day?.N ?? 0),
       };
     },
-    async put(group, diary) {
-      await client.send(
-        new PutItemCommand({
-          TableName: tableName,
-          Item: {
-            ...diaryKey(group),
-            version: { N: String(diary.version) },
-            text: { S: diary.text },
-            updatedAt: { S: diary.updatedAt },
-            day: { N: String(diary.day) },
-          },
-        }),
-      );
+    async put(group, diary, expected) {
+      try {
+        await client.send(
+          new PutItemCommand({
+            TableName: tableName,
+            Item: {
+              ...diaryKey(group),
+              version: { N: String(diary.version) },
+              text: { S: diary.text },
+              updatedAt: { S: diary.updatedAt },
+              day: { N: String(diary.day) },
+            },
+            // The row is still the one that was read — or there was none. `updatedAt` is
+            // the stamp: `day` alone would let a same-day `forget` be undone by a rewrite
+            // that read the diary before it.
+            ConditionExpression: expected
+              ? '#day = :day AND #updatedAt = :updatedAt'
+              : 'attribute_not_exists(#sk)',
+            ExpressionAttributeNames: expected
+              ? { '#day': 'day', '#updatedAt': 'updatedAt' }
+              : { '#sk': 'sk' },
+            ...(expected
+              ? { ExpressionAttributeValues: { ':day': { N: String(expected.day) }, ':updatedAt': { S: expected.updatedAt } } }
+              : {}),
+          }),
+        );
+        return true;
+      } catch (error) {
+        if (error instanceof ConditionalCheckFailedException) return false;
+        throw error;
+      }
     },
   };
 }
@@ -82,8 +111,13 @@ export function memoryDiaryStore(): DiaryStore {
     async get(group) {
       return rows.get(group) ?? null;
     },
-    async put(group, diary) {
+    async put(group, diary, expected) {
+      const standing = rows.get(group) ?? null;
+      const stamp = stampOf(standing);
+      const same = expected === null ? stamp === null : stamp !== null && stamp.day === expected.day && stamp.updatedAt === expected.updatedAt;
+      if (!same) return false;
       rows.set(group, diary);
+      return true;
     },
   };
 }
@@ -168,15 +202,22 @@ export async function rewriteDiary(
 const FORGET_TASK = (name: string) =>
   `Task: rewrite this diary with everything about ${name} removed — every mention of them, anything they said, anything said to or about them, any joke involving them. Change nothing else; keep every other note as it is. Answer with the diary and nothing else: plain text, same language, no preamble.`;
 
-// The parts of a name that must not survive a forget: whole words of three letters or
-// more, folded — the same reading `namesSomebody` had.
+// Whether a diary still names somebody. Both sides are cut into folded WORDS on the same
+// boundary — so "Jean-Luc" is [jean, luc] in the name and in the text alike — and it says
+// yes on either of two readings: the WHOLE name appearing in order (which is what carries
+// a short one, "Jo"), or any single part of three letters or more (which is what carries
+// "Luc Le Père" through a diary that only ever writes "Luc"). It errs towards YES on
+// purpose: over-matching refuses a rewrite and the operator runs it again, where
+// under-matching stores a diary that still names the person they asked to remove.
+const words = (text: string): string[] => text.split(/[^\p{L}\p{M}]+/u).map(fold).filter((w) => w !== '');
+
 export function mentionsPerson(text: string, name: string): boolean {
-  const words = new Set(text.split(/[^\p{L}\p{M}]+/u).map(fold).filter((w) => w !== ''));
-  return name
-    .split(/\s+/)
-    .map(fold)
-    .filter((part) => part.length >= 3)
-    .some((part) => words.has(part));
+  const parts = words(name);
+  if (parts.length === 0) return false;
+  const found = words(text);
+  if (parts.some((part) => part.length >= 3 && found.includes(part))) return true;
+  // The whole name, in order.
+  return found.some((_, i) => parts.every((part, k) => found[i + k] === part));
 }
 
 // Null when the model could not do it, or did it and the name is still there: the

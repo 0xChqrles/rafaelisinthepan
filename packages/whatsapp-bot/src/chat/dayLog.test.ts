@@ -66,6 +66,19 @@ describe('the day log (#277)', () => {
     expect(log.today(GROUP, DAY).map((t) => t.text)).toEqual(['Sept,\nderrière Zou.', 'Podium du jour']);
   });
 
+  it('skips an echo of a line already said TODAY, and never of yesterday\'s (PR-278 review)', async () => {
+    // Two days are held in memory and the morning reminder is deterministic, so yesterday's
+    // identical line made today's echo look like a duplicate and today lost its reminder.
+    const log = new DayLog(memoryDayLogStore());
+    const reminder = 'Le Whippin du jour est en ligne. Podium à 22h30.';
+    await log.append({ ...said('Y', reminder, NOON - 24 * 3_600_000), day: DAY - 1, kind: 'bot', name: '' });
+    await log.appendUnlessSaid({ ...said('T', reminder), kind: 'bot', name: '' });
+    expect(log.today(GROUP, DAY).map((t) => t.text)).toEqual([reminder]);
+    // Within the day it still holds: the same line twice is one turn.
+    await log.appendUnlessSaid({ ...said('T2', reminder, NOON + 1_000), kind: 'bot', name: '' });
+    expect(log.today(GROUP, DAY)).toHaveLength(1);
+  });
+
   it('is bounded in text: a turn is cut on the way in, and a day hands out the newest turns that fit', async () => {
     const log = new DayLog(memoryDayLogStore());
     await log.append(said('X', 'x'.repeat(TURN_MAX_CHARS * 3)));

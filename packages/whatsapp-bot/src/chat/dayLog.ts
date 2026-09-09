@@ -106,9 +106,15 @@ export class DayLog {
   // nothing here composed (the podium, the reminder, sent from the queue) enters. Compared
   // with whitespace collapsed: the echo comes through `withoutShares`, which collapses it,
   // while the composed line was remembered as written, newlines and all.
+  //
+  // WITHIN THE DAY, NOT ACROSS IT (PR-278 review): two days are held in memory, and the
+  // morning reminder is deterministic — so yesterday's identical line made today's echo
+  // look like a duplicate, and today's log lost its reminder.
   async appendUnlessSaid(turn: Turn): Promise<void> {
     const text = collapse(boundTurnText(turn.text));
-    const said = (this.turns.get(turn.group) ?? []).some((t) => t.kind === 'bot' && collapse(t.text) === text);
+    const said = (this.turns.get(turn.group) ?? []).some(
+      (t) => t.day === turn.day && t.kind === 'bot' && collapse(t.text) === text,
+    );
     if (!said) await this.append(turn);
   }
 

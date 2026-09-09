@@ -22,6 +22,7 @@ import { createDaySourceReader } from './puzzle/daySource';
 import { DayLog, dayOfInstant, dynamoDayLogStore, quoteLead } from './chat/dayLog';
 import { dynamoDiaryStore } from './chat/diary';
 import { dynamoLimitStore, limitExpiry, limitKeys } from './chat/limits';
+import { serialByKey } from './chat/serial';
 import { labelPlayers } from './chat/tools';
 import {
   NEW_EXCHANGE,
@@ -243,6 +244,12 @@ async function main(): Promise<void> {
   // THE EXCHANGE, per group (`trigger.ts`): how many times in a row the bot has answered
   // without being addressed, which is the one thing it may not do without end.
   const exchanges = new Map<string, Exchange>();
+  // ONE CONVERSATION AT A TIME PER GROUP (`chat/serial.ts`, PR-278 review): WhatsApp starts
+  // a handler per message without awaiting the last, so the read of the exchange, the model
+  // call and the write back have to be ONE section or a burst walks straight past the
+  // budget. Ingestion stays outside it — a share's emoji must not wait behind somebody
+  // else's model call — and only the conversation below is serialized.
+  const inTurn = serialByKey();
 
   // What the day log keeps of a message — what a conversation can use and nothing that
   // identifies anyone: the share stripped, the link AND the generated block around it, so
@@ -304,57 +311,79 @@ async function main(): Promise<void> {
     const kept = identity && !message.fromMe ? await remember(group, message, identity) : null;
     const ingested = await ingest(message);
     if (!identity || message.fromMe || !answer) return;
+    const bot = identity;
+    const ask = answer;
 
-    // ADDRESSED, or AMBIENT (#277). Addressed is always answered. Ambient is offered to
-    // the model — unless the message was a share the bot has just acknowledged (that WAS
-    // the answer), or it holds nothing to answer, or the bot has volunteered its budget
-    // of unasked answers in this exchange (`mayVolunteer`).
-    const address = addressedTo(message, identity);
-    const approach: Approach = address ?? 'ambient';
-    const exchange = exchanges.get(group.id) ?? NEW_EXCHANGE;
-    if (!address) {
-      const acknowledged = group.acknowledge !== 'none' && (ingested === 'recorded' || ingested === 'acknowledged');
-      const wordless = !kept || (isWordless(kept) && !(message.quoted && !isWordless(message.quoted.text)));
-      const reason = acknowledged ? 'acknowledged' : wordless ? 'wordless' : !mayVolunteer(exchange, at) ? 'exchange_budget' : null;
-      if (reason) {
-        if (reason === 'exchange_budget') log.info({ event: 'chat.silent', reason, group: tag(group.id) }, 'not offered');
+    return inTurn(group.id, async () => {
+      // ADDRESSED, or AMBIENT (#277). Addressed is always answered. Ambient is offered to
+      // the model — unless the message was a share the bot has just acknowledged (that WAS
+      // the answer), or it holds nothing to answer, or the bot has volunteered its budget
+      // of unasked answers in this exchange (`mayVolunteer`). READ INSIDE THE SECTION: the
+      // whole point of it is that this value is the one the last answer wrote.
+      const address = addressedTo(message, bot);
+      const approach: Approach = address ?? 'ambient';
+      const exchange = exchanges.get(group.id) ?? NEW_EXCHANGE;
+      if (!address) {
+        const acknowledged = group.acknowledge !== 'none' && (ingested === 'recorded' || ingested === 'acknowledged');
+        const wordless = !kept || (isWordless(kept) && !(message.quoted && !isWordless(message.quoted.text)));
+        const reason = acknowledged ? 'acknowledged' : wordless ? 'wordless' : !mayVolunteer(exchange, at) ? 'exchange_budget' : null;
+        if (reason) {
+          if (reason === 'exchange_budget') log.info({ event: 'chat.silent', reason, group: tag(group.id) }, 'not offered');
+          return;
+        }
+      }
+      log.info({ event: 'chat.offered', how: approach, group: tag(group.id), sender: tag(message.sender) }, 'offered');
+      // THE MESSAGE'S OWN DAY, never the clock's (PR-278 review). A message sent at 21:59
+      // Eastern and delivered at 22:06 is still live (`OFFLINE_LIVE_S`) and is a turn of
+      // the day it was SENT in — which is the day its own log entry went to. Read against
+      // the day that has since begun, the prompt would be missing the very message it is
+      // answering, and every other turn of that exchange with it.
+      const today = dayOfInstant(at);
+      // STRIPPED HERE TOO, not only on the way into the log. An addressed message can carry
+      // a share ("gg 7 essais <link> @bot qui mène ?"), and the agent reads the message's
+      // own text for the emptiness test — so leaving the share on it would let a bare link
+      // count as a question.
+      const asked = {
+        ...message,
+        text: withoutShares(message.text, env.siteOrigin),
+        ...(message.quoted ? { quoted: { ...message.quoted, text: withoutShares(message.quoted.text, env.siteOrigin) } } : {}),
+      };
+      const outcome = await ask(asked, group, bot, today, { approach, exchange });
+      if (outcome.kind === 'silent') {
+        log.info({ event: 'chat.silent', reason: outcome.reason, how: approach, group: tag(group.id) }, 'no reply');
         return;
       }
-    }
-    log.info({ event: 'chat.offered', how: approach, group: tag(group.id), sender: tag(message.sender) }, 'offered');
-    const today = dayNumber(activeDate(new Date()));
-    // STRIPPED HERE TOO, not only on the way into the log. An addressed message can carry
-    // a share ("gg 7 essais <link> @bot qui mène ?"), and the agent reads the message's
-    // own text for the emptiness test — so leaving the share on it would let a bare link
-    // count as a question.
-    const asked = {
-      ...message,
-      text: withoutShares(message.text, env.siteOrigin),
-      ...(message.quoted ? { quoted: { ...message.quoted, text: withoutShares(message.quoted.text, env.siteOrigin) } } : {}),
-    };
-    const outcome = await answer(asked, group, identity, today, { approach, exchange });
-    if (outcome.kind === 'silent') {
-      log.info({ event: 'chat.silent', reason: outcome.reason, how: approach, group: tag(group.id) }, 'no reply');
-      return;
-    }
-    if (outcome.kind === 'react') {
-      // A reaction closes; it moves no exchange and adds no bubble.
-      await outbound.enqueue({
-        id: commandIds.reply(group.id, message.id),
-        kind: 'reaction',
-        group: group.id,
-        target: { id: message.id, participant: message.participant },
-        emoji: outcome.emoji,
-      });
-      return;
-    }
-    exchanges.set(group.id, afterAnswer(exchange, approach, at));
-    await outbound.enqueue({
-      id: commandIds.reply(group.id, message.id),
-      kind: 'message',
-      group: group.id,
-      text: outcome.text,
-      replyTo: { id: message.id, participant: message.participant, text: message.text },
+      // SAID ONLY ONCE THE QUEUE HAS IT (PR-278 review), the rule ingest's `spoken` hook
+      // already followed: what the queue refused is not a turn the bot believes it said,
+      // and it spends no exchange budget either. The instant is this process's clock, never
+      // before the message it answers — a phone's stamp and this one need not agree.
+      const spokeAt = Math.max(Date.now(), at + 1);
+      try {
+        if (outcome.kind === 'react') {
+          await outbound.enqueue({
+            id: commandIds.reply(group.id, message.id),
+            kind: 'reaction',
+            group: group.id,
+            target: { id: message.id, participant: message.participant },
+            emoji: outcome.emoji,
+          });
+          // A reaction closes: it moves no exchange and adds no bubble.
+          await keep({ group: group.id, day: today, at: spokeAt, id: `${message.id}#react`, kind: 'reacted', name: '', text: outcome.emoji });
+          return;
+        }
+        await outbound.enqueue({
+          id: commandIds.reply(group.id, message.id),
+          kind: 'message',
+          group: group.id,
+          text: outcome.text,
+          replyTo: { id: message.id, participant: message.participant, text: message.text },
+        });
+      } catch (error) {
+        log.error({ event: 'outbound.enqueue_failed', group: tag(group.id), error: (error as Error).message }, 'the answer was not queued; nothing recorded');
+        return;
+      }
+      exchanges.set(group.id, afterAnswer(exchange, approach, at));
+      await keep({ group: group.id, day: today, at: spokeAt, id: `${message.id}#reply`, kind: 'bot', name: '', text: outcome.text });
     });
   }
 
