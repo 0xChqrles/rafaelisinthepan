@@ -182,6 +182,17 @@ button * {
 button {
   -webkit-tap-highlight-color: transparent;
 }
+/* NO DOUBLE-TAP ZOOM ON A CONTROL (user-reported 2026-09-09: on a phone "when you click
+   on a button or select an input… the page gets zoomed in"). Two taps in quick succession
+   on a button — a second guess, a second key, PLAY then a hole — are a double-tap to the
+   browser, which zooms the page. `manipulation` keeps pan and pinch and drops only that;
+   the keys carried it already. The other half of the report is the FIELDS: iOS zooms to a
+   focused text field whose type is under 16px, so every field here is 16px or more. */
+button,
+a,
+input {
+  touch-action: manipulation;
+}
 
 /* FOCUS IS THE KEYBOARD'S HOVER (#267, reworked 2026-09-09 on the user's review of the
    first cut — "with a bordered square on every focus, is it actually a good UI?").
@@ -401,10 +412,15 @@ input:focus-visible {
   cursor: pointer;
   transition: opacity 0.08s linear;
 }
-.cal-arrow:hover:not([disabled]),
+.cal-arrow:hover:not([disabled]) {
+  opacity: 1;
+}
+/* The keyboard's twin, one notch up: full ink AND the app's whisper of ground under it
+   (the plain row's hover), so a lone chevron at the month's edge is found. */
 .cal-arrow:focus-visible {
   outline: none;
   opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
 }
 .cal-arrow[disabled] {
   opacity: 0.26;
@@ -2086,10 +2102,13 @@ input:focus-visible {
   padding-bottom: 3px;
   border-bottom: 2px solid currentColor;
 }
-.solved-listen:hover,
+.solved-listen:hover {
+  filter: brightness(1.25);
+}
+/* The keyboard's twin, one notch up: the link goes to the foreground, rule and all. */
 .solved-listen:focus-visible {
   outline: none;
-  filter: brightness(1.25);
+  color: var(--fg);
 }
 /* A secret's affixes stay on its line — Phrase's own nowrap group. */
 .solved-line-group {
@@ -5578,7 +5597,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   background: rgba(0, 0, 0, 0.28);
   color: var(--fg);
   font-family: var(--ui);
-  font-size: 15px;
+  font-size: 16px; /* never under 16: iOS zooms the page to a smaller focused field */
   letter-spacing: 0.03em;
 }
 .account-input::placeholder {
@@ -6174,9 +6193,13 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   cursor: pointer;
   transition: color 120ms;
 }
-.account-foot-link:hover,
 .account-foot-link:focus-visible {
   outline: none;
+  color: var(--fg);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+.account-foot-link:hover {
   color: var(--fg);
 }
 
@@ -6279,11 +6302,16 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   cursor: pointer;
 }
 .device-signout:hover:not(:disabled),
-.device-retry:hover,
+.device-retry:hover {
+  filter: brightness(1.3);
+}
+/* The keyboard's twin, one notch up: the bordered control's own frame goes to the
+   foreground, as the secondary button's does. */
 .device-signout:focus-visible,
 .device-retry:focus-visible {
   outline: none;
   filter: brightness(1.3);
+  border-color: var(--fg);
 }
 .device-signout:disabled {
   color: var(--muted);
@@ -6587,6 +6615,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .board-tab:focus-visible {
   outline: none;
   opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
 }
 .board-tab.active {
   background: var(--fg);

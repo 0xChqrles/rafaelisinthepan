@@ -4067,13 +4067,27 @@ it to the local store — see `packages/backend/AGENTS.md`).
     would not) at the press's brightness; today keeps its `--fg` ring on top.
   - **The solved page:** the secrets and the credit's headline UNDERLINE — a quarter more
     light on blue type is not found inside a paragraph, and an underline is what a control
-    in prose looks like.
+    in prose looks like. The LISTEN link goes to the foreground, rule and all.
+  - **The quiet chrome, one notch up from its hover** (the 2026-09-09 affordance pass,
+    user-asked: "is the level of affordance enough?"): the month arrows and the board tabs
+    take the plain row's whisper of ground under their full ink; the device rows' frame
+    goes to `--fg` like a secondary button's; the privacy footnote goes white and
+    underlines. Each judged against the "found at a glance" test on the screen.
   **The FLOOR:** `:where(button, a, input):focus-visible` still draws a 2px `--fg` outline,
   at zero specificity so any twin outranks it with a bare `outline: none`. It is a safety
   net, not a style — a white square on a screen means a control is missing its twin (the
   verify pass Tabs through every stop of every screen and reports any that paints it).
   Nothing anywhere paints on plain `:focus`. `useModalDismiss` still lands on the
   `<dialog>` itself (`tabIndex: -1`, `outline: 0`), so nothing arrives already lit.
+  **AND NO ZOOM ON A PHONE (user-reported 2026-09-09: "when you click on a button or
+  select an input… the page gets zoomed in").** Two causes, two rules in `index.css`:
+  `button, a, input { touch-action: manipulation }` — two quick taps on a control are a
+  double-tap to the browser, which zooms the page; `manipulation` keeps pan and pinch and
+  drops only that (the keys carried it already) — and **every text field is 16px or more**
+  (`.account-input` was 15), because iOS zooms the page to a focused field set smaller.
+  Never `maximum-scale=1` in the viewport: it would take pinch zoom away on Android. The
+  verify pass reports any field under 16px and any control without `manipulation`; the
+  only fields under 16 are Turnstile's `type=hidden` ones, which cannot be focused.
   **AND NO BROWSER TAP FLASH, APP-WIDE** (user-reported 2026-09-02: tapping a header key
   "makes a blue square appear for a short moment"). It is not focus — measured, a tap leaves
   `activeElement` on `<body>` — it is Chrome's default `-webkit-tap-highlight-color`,
