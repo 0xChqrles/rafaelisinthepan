@@ -1260,7 +1260,7 @@ input:focus-visible {
   outline: none;
 }
 .ps-row.on:focus-visible .ps-chip {
-  background: color-mix(in srgb, var(--fg) 80%, var(--bg));
+  background: var(--hole);
 }
 .ps-row.on .ps-chip {
   background: var(--fg);
@@ -1460,9 +1460,15 @@ input:focus-visible {
 .hole:not(.resolved) .hole-btn:not([disabled]):active .hole-word {
   filter: none;
 }
-.hole:not(.resolved) .hole-btn:not([disabled]):hover .hole-word::before,
-.hole:not(.resolved) .hole-btn:focus-visible .hole-word::before {
+.hole:not(.resolved) .hole-btn:not([disabled]):hover .hole-word::before {
   background: color-mix(in srgb, var(--fg) 80%, var(--bg));
+}
+/* A FOCUSED CHIP TAKES THE HOLE CYAN (user-reviewed 2026-09-09: the mouse's 80% dim was
+   "hard to see" as a focus). `--hole` is the palette's own "highlighted, act here" ink —
+   the history line's held words wear it — and it sits on no heat stop and no word state,
+   so a chip in it can only mean the keyboard is on it. The ground swaps, the ink stays. */
+.hole:not(.resolved) .hole-btn:focus-visible .hole-word::before {
+  background: var(--hole);
 }
 .hole:not(.resolved) .hole-btn:not([disabled]):active .hole-word::before {
   background: color-mix(in srgb, var(--fg) 68%, var(--bg));
@@ -2693,14 +2699,15 @@ input:focus-visible {
    the slot chip is INVERTED (`--bg` on `--fg`), so a white ring could not sit on it
    anyway. So: the row in the slot is the drum's only tab stop (roving tabindex in each
    component, the focus following the pick when the arrows turn the drum), the row itself
-   paints no ring, and the chip it holds does what the hole chip does under a mouse: it
-   dims to 80% of the foreground for as long as the focus stays. (A 2px ink line inset in
-   the chip was the second cut, a "bordered square" like the rest — retired with them.) */
+   paints no ring, and the chip it holds does what a focused hole chip does: it takes the
+   hole cyan for as long as the focus stays. (A 2px ink line inset in the chip was the
+   second cut, a "bordered square" like the rest; the mouse's 80% dim the third, "hard to
+   see" — both retired.) */
 .wheel-row:focus-visible {
   outline: none;
 }
 .wheel-row-slot:focus-visible .hole-word::before {
-  background: color-mix(in srgb, var(--fg) 80%, var(--bg));
+  background: var(--hole);
 }
 .wheel-plain::before {
   content: '';
@@ -2837,7 +2844,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   outline: none;
 }
 .share-as-row.on:focus-visible .share-as-chip {
-  background: color-mix(in srgb, var(--fg) 80%, var(--bg));
+  background: var(--hole);
 }
 .share-as-chip {
   display: inline-flex;
@@ -3368,11 +3375,14 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .btn-primary:hover {
   filter: brightness(1.1);
 }
-/* The keyboard's twin, one notch up: a lone full-width button has nothing beside it to be
-   brighter than, so the step has to be seen on its own. */
+/* THE KEYBOARD'S FOCUS INVERTS THE PRIMARY BUTTON (user-reviewed 2026-09-09: a quarter
+   more light on a lone full-width button was "hard to see"): the result action's own
+   hover gesture — white ground, the label in the accent — the one change to a cobalt slab
+   that cannot be missed and still reads as the same button. */
 .btn-primary:focus-visible {
   outline: none;
-  filter: brightness(1.25);
+  background: var(--fg);
+  color: var(--accent);
 }
 /* A press is a STATE, not travel (the flat rule, 2026-08-18). */
 .btn-primary:active {
@@ -3962,7 +3972,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 .mix-btn:focus-visible {
   outline: none;
-  filter: brightness(1.25);
+  background: var(--fg);
+  color: var(--accent);
 }
 .mix-btn:active:not(:disabled) {
   filter: brightness(1.2);

@@ -4040,8 +4040,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `focus` state beside `hover`, the dot now always in the tree — at rest it sits covered
     under the lit dot, and only a mouse or a Tab ever moves it), and the icon dims to the
     chrome's hover ink, which is all a lone key (a modal's close chip) shows.
-  - **A hole:** the chip holds its hover dim (`--fg` at 80%) and GREETS the focus with one
-    wave — `Hole`'s `greeting`, the tap affordance played once on arrival, never under
+  - **A hole:** the chip takes the HOLE CYAN (`--hole` — the palette's own "act here" ink,
+    on no heat stop and no word state; the mouse's 80% dim was "hard to see" as a focus,
+    user-reviewed 2026-09-09) and GREETS the focus with one wave — `Hole`'s `greeting`, the tap affordance played once on arrival, never under
     reduced motion, and only for a focus the keyboard made (`:focus-visible` asked in the
     focus handler, so a tap greets nothing). A resolved word brightens as it does on hover.
   - **A key:** INVERTS — a white tile, its glyph in the ground's ink, ENTER's in the solve
@@ -4050,12 +4051,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
     The rule sits AFTER the greyed rules it has to outrank.
   - **The drums (wheel, selection, AS):** ONE tab stop each — the slot row carries the
     `tabIndex`, the focus follows the pick when the arrows turn the drum — and the pick's
-    chip holds the hole chip's 80% dim. (A row is stretched across its column, so a ring on
+    chip takes the hole cyan, as a focused hole does. (A row is stretched across its column, so a ring on
     it was two rails across the screen; the columns are masked past the slot, so a ring
     outside the chip was cut; an ink line inset in the chip was the "bordered square"
     again.)
-  - **The primary buttons** (`.mix-btn`, `.btn-primary`): brightness 1.25, one notch over
-    hover's 1.1 — a lone full-width button has nothing beside it to be brighter than.
+  - **The primary buttons** (`.mix-btn`, `.btn-primary`): INVERT — white ground, the label
+    in the accent, the result action's own hover gesture (a quarter more light on a lone
+    full-width cobalt slab was "hard to see", user-reviewed 2026-09-09).
     **Secondary/quiet buttons, chips, links, rows, tabs, swatches:** their hover, verbatim
     (border to `--fg`, accent ink, opacity up), the palette swatch adding the picked
     swatch's frame minus its halo, the account row's border going to `--fg`.
