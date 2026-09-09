@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { rankHeatColor } from '@whippin/shared';
@@ -237,6 +237,15 @@ export default function HistoryWheel({
   );
 
   // The arrow keys move a row; the wheel is a control, and a keyboard is an input.
+  // The wheel turning under a focused row carries the focus into the slot (#267) — the
+  // pick is the wheel's one tab stop. `preventScroll`: the column IS a scroller, and the
+  // drum owns its scrollTop. A wheel turned by a finger moves no focus.
+  useEffect(() => {
+    if (scrollRef.current?.contains(document.activeElement)) {
+      slotRef.current?.focus({ preventScroll: true });
+    }
+  }, [current]);
+
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
@@ -370,6 +379,8 @@ export default function HistoryWheel({
               style={rowStyle(stop, inSlot, i)}
               aria-label={inSlot ? t(lang, 'ariaClose') : srRouteStop(lang, stop)}
               aria-current={inSlot ? 'true' : undefined}
+              // The wheel's ONE tab stop is the row in the slot (#267): the arrows turn it.
+              tabIndex={inSlot ? 0 : -1}
               onClick={() => turnTo(i)}
             >
               {body(stop, inSlot)}

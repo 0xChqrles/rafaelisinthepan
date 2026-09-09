@@ -212,13 +212,23 @@ input:focus-visible {
   outline: 2px solid var(--fg);
   outline-offset: 2px;
 }
+/* A TEXT FIELD wears the ring ON its own frame, not around it. A field is focused the
+   whole time it is being typed in — a text field always matches `:focus-visible` — so the
+   2px halo a button gets sat 2px outside the field's hairline for the length of the step,
+   and a thin box floating inside a thick one read as two frames around one thing. At -1px
+   the band straddles the 1px hairline exactly: the frame itself goes white, one edge. */
+input:focus-visible {
+  outline-offset: -1px;
+}
 /* The code prompt is six drawn cells over ONE invisible field (`CodeInput`): the field
    holds the focus, but its `opacity: 0` would take the outline with it — so the row it is
    stretched over wears the indicator instead. Its own rule, never a fourth selector
-   above: a browser without `:has()` would drop the whole list and every outline with it. */
+   above: a browser without `:has()` would drop the whole list and every outline with it.
+   The offset clears the cells' own hairlines by their gap, so the ring reads as a frame
+   around the six, not as a seventh border. */
 .code-input:has(.code-field:focus-visible) {
   outline: 2px solid var(--fg);
-  outline-offset: 2px;
+  outline-offset: 6px;
 }
 
 .app {
@@ -1219,6 +1229,14 @@ input:focus-visible {
   white-space: nowrap;
   color: var(--fg);
   transition: background-color 120ms linear, color 120ms linear;
+}
+/* The drum rule (`.wheel-row`'s comment): one tab stop, the pick's chip lined inset in its ink. */
+.ps-row:focus-visible {
+  outline: none;
+}
+.ps-row.on:focus-visible .ps-chip {
+  outline: 2px solid var(--bg);
+  outline-offset: -4px;
 }
 .ps-row.on .ps-chip {
   background: var(--fg);
@@ -2615,6 +2633,26 @@ input:focus-visible {
   position: relative;
   isolation: isolate;
 }
+/* A DRUM IS ONE TAB STOP, AND ITS PICK WEARS THE LINE INSET, IN ITS OWN INK (#267) —
+   the rule for all three drums: this wheel, the title's selection (`.ps-row`) and the
+   share's AS drum (`.share-as-row`). Three facts force it. A row is stretched across its
+   column so a tap anywhere on the line lands, which made the app's outline on a row two
+   rails across the screen around one word. The columns are masked and clipped a few
+   pixels past the slot, so a ring 2px OUTSIDE the slot chip is cut on every side. And
+   the slot chip is INVERTED (`--bg` on `--fg`), so a white ring could not sit on it
+   anyway. So: the row in the slot is the drum's only tab stop (roving tabindex in each
+   component, the focus following the pick when the arrows turn the drum), the row itself
+   paints no ring, and the chip it holds wears the app's same 2px outline INSET, in `--bg`
+   — the one ink that shows on its ground — a hair inside its edge, so the pick reads as a
+   double-framed tile. (An inset `box-shadow` was the first cut and did not paint on the
+   selection's chips at 2px; the outline does, everywhere.) */
+.wheel-row:focus-visible {
+  outline: none;
+}
+.wheel-row-slot:focus-visible .hole-word::before {
+  outline: 2px solid var(--bg);
+  outline-offset: -3px;
+}
 .wheel-plain::before {
   content: '';
   position: absolute;
@@ -2742,6 +2780,14 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   font: inherit;
   color: var(--muted);
   cursor: pointer;
+}
+/* The drum rule (`.wheel-row`'s comment): one tab stop, the pick's chip lined inset in its ink. */
+.share-as-row:focus-visible {
+  outline: none;
+}
+.share-as-row.on:focus-visible .share-as-chip {
+  outline: 2px solid var(--bg);
+  outline-offset: -4px;
 }
 .share-as-chip {
   display: inline-flex;
@@ -5480,6 +5526,12 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   justify-content: center;
   gap: 8px;
   cursor: text;
+  /* As wide as its six cells, centred — never the column. The field is stretched over
+     this box, and so is the focus ring (#267): on the full column the ring was two rails
+     running the width of the screen around six small cells. */
+  width: fit-content;
+  margin-left: auto;
+  margin-right: auto;
 }
 .code-field {
   position: absolute;

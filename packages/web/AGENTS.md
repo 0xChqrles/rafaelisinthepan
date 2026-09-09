@@ -4041,7 +4041,22 @@ it to the local store — see `packages/backend/AGENTS.md`).
   nothing arrives already ringed, which is the whole reason that rule exists.
   The 2px OFFSET is measured against the tightest neighbours in the app, the keyboard's
   6px key gaps; `.tray` clips only while the drop plays, so a bottom-row key's outline is
-  never shaved.
+  never shaved. **WHERE THE RING SITS is the one thing that varies, and each placement
+  was found on the screen (PR-276 polish, 2026-09-09):** a TEXT FIELD wears it ON its
+  frame (`input:focus-visible { outline-offset: -1px }` — a text field is focused the
+  whole time it is typed in, and a halo 2px outside its hairline read as two frames around
+  one thing); the CODE ROW hugs its six cells (`width: fit-content`, so the ring is not two
+  rails across the column) at a 6px offset that clears their own hairlines; and **A DRUM
+  IS ONE TAB STOP WHOSE PICK WEARS THE LINE INSET, IN ITS OWN INK** — the hole wheel, the
+  title's selection and the share's AS drum alike: a row is stretched across its column
+  so a tap anywhere lands (a ring on it was two rails across the screen), the columns are
+  masked and clipped a few pixels past the slot (a ring outside the slot chip was cut on
+  every side), and the slot chip is inverted (a white ring cannot sit on it). So the slot
+  row is the drum's only tab stop (roving `tabIndex`, the focus following the pick when
+  the arrows turn the drum — `HistoryWheel`, `PuzzleSelect`, `ShareAs`), the row paints
+  no ring, and its chip wears the same 2px outline at a NEGATIVE offset in `--bg`, a
+  double-framed tile. An inset `box-shadow` was the first cut and did not paint at 2px
+  on the selection's chips; the outline paints everywhere.
   **AND NO BROWSER TAP FLASH, APP-WIDE** (user-reported 2026-09-02: tapping a header key
   "makes a blue square appear for a short moment"). It is not focus — measured, a tap leaves
   `activeElement` on `<body>` — it is Chrome's default `-webkit-tap-highlight-color`,

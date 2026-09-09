@@ -89,6 +89,17 @@ export default function ShareAs({ lang, signer }: { lang: string; signer: ShareS
     setOn(drum.current === 0);
   }, [drum.current, setOn]);
 
+  // ONE TAB STOP (#267): the rows are a radiogroup, so Tab lands on the row in the slot
+  // alone and the arrows (`onKeyDown`, below) move the pick — and the focus follows the
+  // pick into the slot, but only while the focus is already in the drum (a pointer
+  // turning it must not pull the focus off whatever else the player was on). Hooks, so
+  // above the early return that follows.
+  const rowRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  useEffect(() => {
+    const row = rowRefs.current[drum.current];
+    const inDrum = box.current?.contains(document.activeElement) ?? false;
+    if (row && inDrum && document.activeElement !== row) row.focus({ preventScroll: true });
+  }, [drum.current]);
   if (signer.signer === null || face === null) return null;
 
   // The mark stands OUTSIDE the chip, at the row's full height (user-decided 2026-09-05):
@@ -147,10 +158,14 @@ export default function ShareAs({ lang, signer }: { lang: string; signer: ShareS
             return (
               <button
                 key={row.key}
+                ref={(node) => {
+                  rowRefs.current[i] = node;
+                }}
                 type="button"
                 role="radio"
                 aria-checked={inSlot}
                 aria-label={row.label}
+                tabIndex={inSlot ? 0 : -1}
                 className={`share-as-row${inSlot ? ' on' : ''}`}
                 style={{ height: ROW_H, marginBottom: GAP } as CSSProperties}
                 onClick={() => {
