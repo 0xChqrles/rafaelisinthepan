@@ -231,7 +231,8 @@ The sentence as the player sees it so far (____ = already hidden):
 
 Already hidden: {already}.
 
-Rules (the list below already excludes what the rules forbid mechanically):
+Rules (the list below already excludes what the rules forbid mechanically, and every
+word a reader would put there from the context alone):
 {secret_rules()}
 
 Pick ONE word from this list only — the word that makes the best hole: many plausible
@@ -245,9 +246,13 @@ if none of the options makes a good hole.""")
 
 
 def context_guesses(claude: Claude, tokens, blanks: set[int], mark: int, n: int) -> list[str]:
+    """A reader's fillers for ONE blank, the rest of the sentence intact and no start
+    word — the obviousness filter's question (`rules.open_candidates`). `blanks` holds
+    the other occurrences of the same word, hidden so they cannot give it away."""
     shown = holed(tokens, blanks, mark)
-    answer = claude.json(f"""In this French sentence, ____ marks hidden words and [____] the one to guess.
-Give your {n} best guesses for [____], most likely first, single words.
+    answer = claude.json(f"""You are a French reader. In this sentence one word is hidden, marked [____]
+(____ marks the same word hidden again). Which words would you put there? Give the {n}
+most likely, most likely first, single words.
 
 {shown}
 

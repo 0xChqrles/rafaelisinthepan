@@ -6,9 +6,11 @@ from rules import (
     MAX_COMMON_RANK_ADV,
     MAX_OFF_LIST,
     MIN_GAP,
+    OBVIOUS_RANK,
     SearchLog,
     Token,
     initial_candidates,
+    open_candidates,
     prune,
     search_trio,
 )
@@ -174,3 +176,48 @@ def test_weak_verbs_are_never_candidates():
     sent = [tok(0, "je", "PRON", "nsubj", 1, stop=True), tok(1, "crois", "VERB", "ROOT", 1, lemma="croire"),
             tok(2, "chat", "NOUN", "obj", 1), tok(3, "dort", "VERB", "conj", 1, lemma="dormir")]
     assert [t.text for t in initial_candidates(sent, in_vocab=lambda s: True)] == ["chat", "dort"]
+
+
+# --- the obviousness filter (user-decided 2026-09-10) -----------------------------
+
+def test_open_candidates_strike_a_word_the_reader_puts_first():
+    cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
+    fillers = lambda t: ["chat", "chien", "rat"] if t.text == "chat" else ["neige", "mer", "nuit"]  # noqa: E731
+    log = SearchLog()
+    kept = open_candidates(cands, fillers=fillers, log=log)
+    assert "chat" not in {t.text for t in kept}
+    assert {t.text for t in kept} == {t.text for t in cands} - {"chat"}
+    assert any("'chat' is obvious" in e and "chat, chien, rat" in e for e in log.events)
+
+
+def test_open_candidates_keep_a_word_guessed_only_later():
+    cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
+    # The secret is the reader's SECOND filler: not obvious under OBVIOUS_RANK = 1.
+    fillers = lambda t: ["chien", t.text, "rat"]  # noqa: E731
+    assert OBVIOUS_RANK == 1
+    kept = open_candidates(cands, fillers=fillers)
+    assert [t.text for t in kept] == [t.text for t in cands]
+
+
+def test_open_candidates_count_a_variant_or_an_accent_as_the_secret():
+    cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
+    fillers = lambda t: ["chats"] if t.text == "chat" else (["Pierre"] if t.text == "pierre" else ["x"])  # noqa: E731
+    kept = {t.text for t in open_candidates(cands, fillers=fillers)}
+    assert "chat" not in kept and "pierre" not in kept
+
+
+def test_open_candidates_judge_a_repeated_word_once():
+    twice = [
+        tok(0, "chat", "NOUN", "nsubj", 1),
+        tok(1, "dort", "VERB", "ROOT", 1, lemma="dormir"),
+        tok(2, "chat", "NOUN", "conj", 0),
+    ]
+    asked = []
+
+    def fillers(t):
+        asked.append(t.i)
+        return ["chien"]
+
+    kept = open_candidates(twice, fillers=fillers)
+    assert asked == [0, 1]  # one question per distinct slug
+    assert [t.i for t in kept] == [0, 1, 2]

@@ -87,7 +87,8 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   reaches the model — `curate.rich_enough` parses the mined sentences before the
   shortlist; measured 2026-09-08 on 27 attempts: 4–7 candidates gave no trio or a dull
   forced one, every trio worth keeping came from 8+), `MIN_GAP` (3 tokens), `COSINE_MAX`
-  (0.40), `MODIFIER_DEPS`, `MAX_RESTARTS` (2), `MAX_OFF_LIST` (2), `CONTEXT_GUESSES` (3);
+  (0.40), `MODIFIER_DEPS`, `MAX_RESTARTS` (2), `MAX_OFF_LIST` (2), `CONTEXT_GUESSES` (3,
+  the reader's fillers the obviousness filter asks for), `OBVIOUS_RANK` (1);
   and at the top of `curate.py`: `MAX_SENTENCES` (600), `CHUNK` (150), `PICKS_PER_CHUNK`
   (6), `SHORTLIST` (20). The mechanical filter (`sentences.is_candidate`) also refuses a
   unit that OPENS on a quotation mark (reported speech, or an argument with a line the
@@ -126,14 +127,20 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   opinion — would a reader who has not read the book know this line — is logged as an
   ANNOTATION (`llm.widely_known`), never a strike. Everything else the model is asked is
   a choice from a list.
-- **The CONTEXT CHECK is an ANNOTATION, never a strike** (decided on data 2026-09-06):
-  after a trio is found, one stateless call per secret guesses the blank as the player
-  sees the sentence (all three blanks); the log records where the true word landed among
-  `CONTEXT_GUESSES`. Calibrated on the 12 real-player days (medians 7–23): the model's
-  three guesses held the true secret 18 times out of 34, its first guess 13 times — an
-  LLM guessing the blank does not predict what the context gives a human, and a strike on
-  it would reject most trios that play well. "The context helps too much" stays a rule in
-  the model's PICK prompt (the trio rules in the skill) and a line for the reviewer.
+- **The OBVIOUSNESS FILTER strikes a candidate BEFORE the pick (user-decided
+  2026-09-10, the user's own method, so a batch can ship without a play-test; it
+  supersedes the 2026-09-06 "annotation, never a strike").** For every candidate word
+  of a shortlisted sentence, one call shows the sentence with THAT word blanked (every
+  occurrence of it), the rest intact and NO start word, and asks a reader's
+  `CONTEXT_GUESSES` fillers, most likely first; code strikes the word when the secret
+  (or a variant) is among the first `OBVIOUS_RANK` (`rules.open_candidates`), and the
+  log names each verdict with the fillers. A sentence with fewer than `TRIO` open words
+  is rejected before any pick. Why this shape: the 2026-09-06 check ran AFTER the trio,
+  with all three blanks, as a log note — « il aurait répondu [sûrement] pas » was picked
+  from a list of four and the check that would have refused it could change nothing;
+  judged one blank at a time, with the rest of the sentence intact, it asks what the
+  user asks before picking a hole. The open holes' fillers are shown to the start-word
+  prompt. "The context helps too much" stays a rule in the PICK prompt as well.
 - **A dead end restarts the sentence with its first pick struck**, `MAX_RESTARTS` times,
   then the next sentence. No smarter backtracking.
 - **The taste profile and the secret rules have ONE home, the `find-sentences` skill
@@ -146,10 +153,12 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   `--words` and, when it demands one, `--form` answered by the model from the sentence
   (`curate.generate` parses the #133 error's analysis list). Nothing here publishes.
 - **The START WORDS are CHOSEN by the model, the three together, never at random**
-  (user rule 2026-09-07: the start is the user's daily craft — read the context, avoid a
-  synonym when the context helps, go easier when a hole or the context is hard, think of
-  the chain of guesses, balance the three; the rules live in the skill's `## The start
-  word` section, read by `llm.start_rules`). **A secret/start PAIR is blacklisted for
+  (user rule 2026-09-07: the start is the user's daily craft — think of the chain of
+  guesses, balance the three, go easier when another hole is hard; sharpened
+  2026-09-10: first strike every candidate that does not fit the slot, then a start that
+  CARRIES ONE OBVIOUS CONCEPT of the secret and is NEVER a synonym, a near-synonym or an
+  opposite of it; the rules live in the skill's `## The start word` section, read by
+  `llm.start_rules`). **A secret/start PAIR is blacklisted for
   good** (user-decided 2026-09-08): `shelf.archive()['pairs']` holds every start each
   secret was ever played with, `choose_starts` and `check_starts` exclude them from the
   band, and a generated start that repeats a pair is refused and re-picked. The first successful gen_phrase run only

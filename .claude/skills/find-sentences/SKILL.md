@@ -71,9 +71,12 @@ Each hole shows a START word, ranked 100–150 from the secret (lower rank = clo
 easier). Choosing it takes as much taste as the trio, and the three are chosen
 TOGETHER, never one at a time and never at random:
 
-- Read the context first. When the sentence already helps a lot with a hole, do not
-  hand it over: avoid a near-synonym or an immediate neighbour, go farther in the band.
-  When the context is hard, or another hole is already hard, go easier (closer).
+- First strike every candidate that does not fit the slot (elision, gender, number,
+  verb form); choose only among what is left (the user's rule, 2026-09-10).
+- The start carries at least ONE obvious concept of the secret — something the two
+  plainly share, that leads the player toward it — and is NEVER an exact synonym, a
+  near-synonym or an opposite of it (« agence » for « boutique » is a near-synonym:
+  out). When another hole is already hard, go easier (closer) within that rule.
 - Think about the CHAIN OF GUESSES the start sets off: a good start leads by
   association toward the secret in a few natural steps; a start whose neighbourhood
   pulls elsewhere (another sense of the word, a stronger collocation) is a trap.

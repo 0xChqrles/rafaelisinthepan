@@ -462,6 +462,28 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
     if len({t.slug for t in candidates}) < rules.MIN_CANDIDATES:
         log(f"- rejected: fewer than {rules.MIN_CANDIDATES} distinct candidate words")
         return None
+    # The obviousness filter (user-decided 2026-09-10, the user's own method): every
+    # candidate is judged as a reader would, one word blanked at a time with the rest of
+    # the sentence intact and no start word; a word the context hands over is never
+    # offered to the pick. The reader's fillers are kept for the start-word prompt.
+    occurrences: dict[str, set[int]] = {}
+    for t in candidates:
+        occurrences.setdefault(t.slug, set()).add(t.i)
+    fillers_of: dict[str, list[str]] = {}
+
+    def fillers(t: rules.Token) -> list[str]:
+        guesses = llm.context_guesses(claude, tokens, occurrences[t.slug] - {t.i}, t.i,
+                                      rules.CONTEXT_GUESSES)
+        fillers_of[t.slug] = guesses
+        return guesses
+
+    filter_log = rules.SearchLog()
+    candidates = rules.open_candidates(candidates, fillers=fillers, log=filter_log)
+    for event in filter_log.events:
+        log(f"- {event}")
+    if len({t.slug for t in candidates}) < rules.TRIO:
+        log(f"- rejected: fewer than {rules.TRIO} words the context leaves open")
+        return None
 
     def choose(remaining, picked):
         word = llm.pick_secret(claude, tokens, remaining, picked)
@@ -478,18 +500,10 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
         return None
     words = [t.text for t in trio]
     log(f"- trio: {' · '.join(words)}")
-    # The context check, as the player sees the sentence (all three blanks): an
-    # annotation for the reviewer, never a strike (see rules.CONTEXT_GUESSES).
-    blanks = {t.i for t in trio}
-    context: dict[str, str] = {}
-    for t in trio:
-        guesses = llm.context_guesses(claude, tokens, blanks - {t.i}, t.i, rules.CONTEXT_GUESSES)
-        rank = next((k + 1 for k, g in enumerate(guesses)
-                     if slug(g) == t.slug or (slug(g) and rules.is_variant(slug(g), t.slug))), None)
-        verdict = f"guessed #{rank} from context (guesses: {', '.join(guesses)})" if rank \
-            else f"not guessed from context (guesses: {', '.join(guesses) or 'none'})"
-        context[t.slug] = verdict
-        log(f"- context check '{t.text}': {verdict}")
+    # What a reader puts in each hole from the context alone (the filter's fillers, none
+    # of them the secret): shown to the start-word prompt, which must not hand one over.
+    context = {t.slug: f"open — a reader's first fillers: {', '.join(fillers_of.get(t.slug, ())) or 'none'}"
+               for t in trio}
     source = {"kind": book["kind"], "author": book.get("author", ""), "work": book.get("title", "")}
     excerpt = choose_page(claude, log, sentence, window) if window else None
     if excerpt:

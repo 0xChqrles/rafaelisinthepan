@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 import _paths  # noqa: F401  (generation's scripts on sys.path)
+from slug import slug
 from start_word import is_variant
 
 # Parts of speech a secret may carry (spaCy Universal POS tags).
@@ -45,11 +46,16 @@ MODIFIER_DEPS = frozenset({"amod", "nmod", "appos", "acl", "advmod"})
 MAX_RESTARTS = 2
 # Consecutive picks off the list before the model is taken to have declined.
 MAX_OFF_LIST = 2
-# Guesses the context check asks for, per finished secret, for the run log. It is an
-# ANNOTATION, never a strike: calibrated 2026-09-06 on the 12 real-player days (medians
-# 7–23), the model's three guesses held the true secret 18 times out of 34, its first
-# guess 13 times — a strike on either would reject most trios that play well.
+# The OBVIOUSNESS FILTER (user-decided 2026-09-10, the user's own method: read the
+# context, think of the fillers WITHOUT a start word, and only a word that is not
+# obvious can be a hole). Judged BEFORE the pick, one candidate at a time with the rest
+# of the sentence intact and no start word: the model answers as a reader with its
+# CONTEXT_GUESSES fillers, most likely first, and code strikes the word when the secret
+# is among the first OBVIOUS_RANK of them. Supersedes the 2026-09-06 annotation (three
+# blanks, after the trio, never a strike), which could refuse nothing: « il aurait
+# répondu [sûrement] pas » was picked from a list of four with the check still to come.
 CONTEXT_GUESSES = 3
+OBVIOUS_RANK = 1
 # Secrets per puzzle (the sentence schema: exactly three distinct slugs).
 TRIO = 3
 
@@ -102,6 +108,34 @@ def initial_candidates(
         if t.lemma and len(lemma_slugs.get(t.lemma, ())) > 1:
             continue
         out.append(t)
+    return out
+
+
+def open_candidates(
+    candidates: list[Token],
+    *,
+    fillers: Callable[[Token], list[str]],
+    log: "SearchLog | None" = None,
+) -> list[Token]:
+    """The candidates the context does not hand over. `fillers(token)` is a reader's
+    guess list for the sentence with that one word blanked (every occurrence of it, the
+    rest intact, no start word), most likely first; a word whose secret — or a variant
+    of it — is among the first OBVIOUS_RANK fillers is obvious and struck. One judgement
+    per distinct slug; the order of the list is kept."""
+    log = log or SearchLog()
+    verdict: dict[str, bool] = {}
+    out = []
+    for c in candidates:
+        if c.slug not in verdict:
+            guesses = fillers(c)
+            hit = next((k + 1 for k, g in enumerate(guesses[:OBVIOUS_RANK])
+                        if slug(g) and (slug(g) == c.slug or is_variant(slug(g), c.slug))), None)
+            verdict[c.slug] = hit is not None
+            shown = ", ".join(guesses) or "none"
+            log.note(f"'{c.text}' is obvious from the context — struck (a reader puts: {shown})" if hit
+                     else f"'{c.text}' is open (a reader puts: {shown})")
+        if not verdict[c.slug]:
+            out.append(c)
     return out
 
 
