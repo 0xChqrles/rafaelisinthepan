@@ -4020,43 +4020,60 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `.sr-only` polite live region (`srHoleResult`), animations honor
   `prefers-reduced-motion` (durations collapse to ~0 — never `animation: none`, several
   swaps advance on `animationend`; delays are kept so the floating numbers still show).
-  **EVERY BUTTON IS AN ORDINARY BUTTON, AND THE APP DRAWS ONE FOCUS INDICATOR** (#267,
-  user-decided 2026-09-07, superseding "every button is pointer-only and may NEVER retain
-  focus" of 2026-08-06 — including its claim that "there are no `:focus-visible` button
-  treatments"). `buttonFocus.ts` — which held every current, future, lazy and portaled
-  button out of the tab order and blurred any focus it took — is DELETED. It existed to
-  avoid the ring a tap leaves stuck on a control in a touch browser, and `:focus-visible`
-  is the browser's own answer to exactly that (nothing after a pointer press, an outline
-  after Tab) without excluding anyone who plays on a keyboard: Tab could not reach PLAY.
-  What replaces it is ONE rule in `index.css`, said once for `button`, `a` and `input` — a
-  hard **2px `--fg` outline at 2px offset**, on `:focus-visible` ONLY, with a reset beside
-  it so plain `:focus` paints nothing. Three consequences worth naming:
-  the CODE PROMPT wears the indicator on its ROW
-  (`.code-input:has(.code-field:focus-visible)`), because the field stretched over those
-  cells is `opacity: 0` and would take the outline with it — kept as its OWN rule and never
-  a fourth selector in that list, since a browser without `:has()` drops a whole selector
-  list and every outline in it; `.share-as-flip`/`.share-as-row`'s private copies of the
-  same two lines are gone (it is the app's rule now); and MODAL focus is untouched —
-  `useModalDismiss` still lands on the `<dialog>` itself (`tabIndex: -1`, `outline: 0`), so
-  nothing arrives already ringed, which is the whole reason that rule exists.
-  The 2px OFFSET is measured against the tightest neighbours in the app, the keyboard's
-  6px key gaps; `.tray` clips only while the drop plays, so a bottom-row key's outline is
-  never shaved. **WHERE THE RING SITS is the one thing that varies, and each placement
-  was found on the screen (PR-276 polish, 2026-09-09):** a TEXT FIELD wears it ON its
-  frame (`input:focus-visible { outline-offset: -1px }` — a text field is focused the
-  whole time it is typed in, and a halo 2px outside its hairline read as two frames around
-  one thing); the CODE ROW hugs its six cells (`width: fit-content`, so the ring is not two
-  rails across the column) at a 6px offset that clears their own hairlines; and **A DRUM
-  IS ONE TAB STOP WHOSE PICK WEARS THE LINE INSET, IN ITS OWN INK** — the hole wheel, the
-  title's selection and the share's AS drum alike: a row is stretched across its column
-  so a tap anywhere lands (a ring on it was two rails across the screen), the columns are
-  masked and clipped a few pixels past the slot (a ring outside the slot chip was cut on
-  every side), and the slot chip is inverted (a white ring cannot sit on it). So the slot
-  row is the drum's only tab stop (roving `tabIndex`, the focus following the pick when
-  the arrows turn the drum — `HistoryWheel`, `PuzzleSelect`, `ShareAs`), the row paints
-  no ring, and its chip wears the same 2px outline at a NEGATIVE offset in `--bg`, a
-  double-framed tile. An inset `box-shadow` was the first cut and did not paint at 2px
-  on the selection's chips; the outline paints everywhere.
+  **EVERY BUTTON IS AN ORDINARY BUTTON, AND FOCUS IS THE KEYBOARD'S HOVER** (#267,
+  user-decided 2026-09-07 for the guard, reworked 2026-09-09 on the user's review of the
+  first cut — "with a bordered square on every focus, is it actually a good UI?" — and
+  superseding both the 2026-08-06 "every button is pointer-only and may NEVER retain
+  focus" and the first cut's "one 2px `--fg` outline on everything"). `buttonFocus.ts` —
+  which held every current, future, lazy and portaled button out of the tab order and
+  blurred any focus it took — is DELETED: it existed to avoid the ring a tap leaves stuck
+  on a control in a touch browser, and `:focus-visible` is the browser's own answer to
+  that without shutting keyboard players out (Tab could not reach PLAY).
+  What says WHERE the focus is is each control's OWN held state — the one it shows under a
+  mouse — never a ring laid over the app's language. Hover and `:focus-visible` never meet
+  on one device (pointer-only against keyboard-only), so every hover rule in `index.css`
+  carries `:focus-visible` as its twin, beside it; a twin is one notch STRONGER where the
+  hover is too quiet to find at a glance, in the same gesture; and two surfaces answer a
+  keyboard focus with the MOTION they answer a mouse with. The placements, each judged on
+  the screen at 2×:
+  - **The header row:** the secondary DOT travels to the focused key (`HeaderKeys`'
+    `focus` state beside `hover`, the dot now always in the tree — at rest it sits covered
+    under the lit dot, and only a mouse or a Tab ever moves it), and the icon dims to the
+    chrome's hover ink, which is all a lone key (a modal's close chip) shows.
+  - **A hole:** the chip holds its hover dim (`--fg` at 80%) and GREETS the focus with one
+    wave — `Hole`'s `greeting`, the tap affordance played once on arrival, never under
+    reduced motion, and only for a focus the keyboard made (`:focus-visible` asked in the
+    focus handler, so a tap greets nothing). A resolved word brightens as it does on hover.
+  - **A key:** INVERTS — a white tile, its glyph in the ground's ink, ENTER's in the solve
+    cobalt — the app's emphasis gesture, because hover's step cannot be found among
+    twenty-nine identical tiles; a greyed key lifts to full opacity with its muted glyph.
+    The rule sits AFTER the greyed rules it has to outrank.
+  - **The drums (wheel, selection, AS):** ONE tab stop each — the slot row carries the
+    `tabIndex`, the focus follows the pick when the arrows turn the drum — and the pick's
+    chip holds the hole chip's 80% dim. (A row is stretched across its column, so a ring on
+    it was two rails across the screen; the columns are masked past the slot, so a ring
+    outside the chip was cut; an ink line inset in the chip was the "bordered square"
+    again.)
+  - **The primary buttons** (`.mix-btn`, `.btn-primary`): brightness 1.25, one notch over
+    hover's 1.1 — a lone full-width button has nothing beside it to be brighter than.
+    **Secondary/quiet buttons, chips, links, rows, tabs, swatches:** their hover, verbatim
+    (border to `--fg`, accent ink, opacity up), the palette swatch adding the picked
+    swatch's frame minus its halo, the account row's border going to `--fg`.
+  - **A text field:** its FRAME is the focus — the hairline goes to `--fg`
+    (`input:focus-visible`); the code prompt shows the caret through its NEXT cell's tint
+    and wears no ring.
+  - **The calendar:** the focused tile takes today's own marker in the secondary ink — a
+    2px `--muted` inset outline (it paints above the ripple child, where an inset shadow
+    would not) at the press's brightness; today keeps its `--fg` ring on top.
+  - **The solved page:** the secrets and the credit's headline UNDERLINE — a quarter more
+    light on blue type is not found inside a paragraph, and an underline is what a control
+    in prose looks like.
+  **The FLOOR:** `:where(button, a, input):focus-visible` still draws a 2px `--fg` outline,
+  at zero specificity so any twin outranks it with a bare `outline: none`. It is a safety
+  net, not a style — a white square on a screen means a control is missing its twin (the
+  verify pass Tabs through every stop of every screen and reports any that paints it).
+  Nothing anywhere paints on plain `:focus`. `useModalDismiss` still lands on the
+  `<dialog>` itself (`tabIndex: -1`, `outline: 0`), so nothing arrives already lit.
   **AND NO BROWSER TAP FLASH, APP-WIDE** (user-reported 2026-09-02: tapping a header key
   "makes a blue square appear for a short moment"). It is not focus — measured, a tap leaves
   `activeElement` on `<body>` — it is Chrome's default `-webkit-tap-highlight-color`,

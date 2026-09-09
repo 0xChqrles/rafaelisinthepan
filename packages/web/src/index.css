@@ -183,52 +183,38 @@ button {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* THE APP'S ONE FOCUS INDICATOR (#267, user-decided 2026-09-07), DRAWN ON
-   `:focus-visible` ALONE.
+/* FOCUS IS THE KEYBOARD'S HOVER (#267, reworked 2026-09-09 on the user's review of the
+   first cut — "with a bordered square on every focus, is it actually a good UI?").
 
-   Until this issue every button was pointer-only: `buttonFocus.ts` held them out of the
-   tab order and blurred any focus they took, so Tab could not reach PLAY. The guard was
-   there to avoid the ring a tap leaves stuck on a control in a touch browser, and
-   `:focus-visible` is the browser's own answer to exactly that — nothing after a pointer
-   press, an outline after Tab — without excluding anyone who plays on a keyboard. The
-   guard is gone and this rule is the whole of what replaces it.
+   Until #267 every button was pointer-only: `buttonFocus.ts` held them out of the tab
+   order and blurred any focus they took, so Tab could not reach PLAY. The guard is gone,
+   and what says WHERE the focus is now is each control's OWN held state — the one it
+   already shows under a mouse — not a ring laid over the app's language: hover and
+   `:focus-visible` never meet on one device (the first is pointer-only, the second is
+   keyboard-only), so a control's hover rule simply carries `:focus-visible` as its twin
+   (each one, beside its hover rule below). Where hover is too quiet to FIND at a glance —
+   a key among twenty-nine tiles, a full-width button with nothing beside it — the twin
+   is one notch stronger than the hover, in the same gesture; and two surfaces answer a
+   keyboard focus with MOTION the way they answer a mouse: the header's secondary dot
+   travels to the focused key, and a hole greets the focus with one wave (`HeaderKeys`,
+   `Hole`). Nothing anywhere paints on plain `:focus`.
 
-   ONE outline for every control the keyboard can reach, said once here rather than per
-   component: a hard 2px square of the foreground, no glow and no colour of its own, so it
-   reads the same on the pixel game surface as on the chrome. The 2px offset keeps it
-   clear of its own box and still inside the keyboard's 6px key gaps.
-
-   Plain `:focus` paints NOTHING — a control focused by a tap, or by code, tells a pointer
-   user nothing — which is what the reset is for: the ring the modern UA stylesheets draw
-   is already `:focus-visible`'s, but not every browser's is. */
-button:focus,
-a:focus,
-input:focus {
+   This ring is the FLOOR under all of it: a control nobody has designed a state for still
+   shows the focus, as a hard 2px square of the foreground. Written with `:where()`, so any
+   twin below outranks it with a bare `outline: none`. If it shows up on a screen, that is
+   a control missing its twin, not a style. */
+:where(button, a, input):focus {
   outline: none;
 }
-button:focus-visible,
-a:focus-visible,
-input:focus-visible {
+:where(button, a, input):focus-visible {
   outline: 2px solid var(--fg);
   outline-offset: 2px;
 }
-/* A TEXT FIELD wears the ring ON its own frame, not around it. A field is focused the
-   whole time it is being typed in — a text field always matches `:focus-visible` — so the
-   2px halo a button gets sat 2px outside the field's hairline for the length of the step,
-   and a thin box floating inside a thick one read as two frames around one thing. At -1px
-   the band straddles the 1px hairline exactly: the frame itself goes white, one edge. */
+/* A TEXT FIELD's frame IS its focus: the hairline it brightens to `--line-strong` under a
+   pointer goes to `--fg` under the caret. A text field always matches `:focus-visible`. */
 input:focus-visible {
-  outline-offset: -1px;
-}
-/* The code prompt is six drawn cells over ONE invisible field (`CodeInput`): the field
-   holds the focus, but its `opacity: 0` would take the outline with it — so the row it is
-   stretched over wears the indicator instead. Its own rule, never a fourth selector
-   above: a browser without `:has()` would drop the whole list and every outline with it.
-   The offset clears the cells' own hairlines by their gap, so the ring reads as a frame
-   around the six, not as a seventh border. */
-.code-input:has(.code-field:focus-visible) {
-  outline: 2px solid var(--fg);
-  outline-offset: 6px;
+  outline: none;
+  border-color: var(--fg);
 }
 
 .app {
@@ -415,7 +401,9 @@ input:focus-visible {
   cursor: pointer;
   transition: opacity 0.08s linear;
 }
-.cal-arrow:hover:not([disabled]) {
+.cal-arrow:hover:not([disabled]),
+.cal-arrow:focus-visible {
+  outline: none;
   opacity: 1;
 }
 .cal-arrow[disabled] {
@@ -473,6 +461,14 @@ input:focus-visible {
   filter: brightness(1.2);
 }
 .cal-day:not([disabled]):active {
+  filter: brightness(1.35);
+}
+/* The keyboard's twin: the calendar marks a tile with a ring (today's, in `--fg`, above),
+   so the focused tile takes the same ring in the secondary ink — an outline, which paints
+   above the ripple child, at the press's brightness. Today under the focus keeps its own. */
+.cal-day:focus-visible {
+  outline: 2px solid var(--muted);
+  outline-offset: -2px;
   filter: brightness(1.35);
 }
 /* Out of range (before the first puzzle or after today): dimmed, inert — no hover, no shake. */
@@ -1048,6 +1044,15 @@ input:focus-visible {
   background: var(--muted);
   z-index: 1;
 }
+.home-btn:focus-visible {
+  outline: none;
+}
+/* The keyboard's twin: on the header row the secondary DOT travels to the focused key
+   (`HeaderKeys`), and the icon dims to the chrome's hover ink — which is the whole of what
+   a lone key (a modal's close chip) shows. */
+.home-btn:focus-visible .ui-icon {
+  color: var(--muted);
+}
 .home-btn.on {
   cursor: default;
 }
@@ -1084,7 +1089,11 @@ input:focus-visible {
    BOTH clickable titles — the daily's and, since 2026-09-03, every other screen's
    (`LangTitle`) — so the three phone step-downs below are tuned once and cannot drift. The
    back ARROW is no longer one of them: it holds no chip, and answers in its own ink. */
-.puzzle-title:hover .topbar-title {
+.puzzle-title:focus-visible {
+  outline: none;
+}
+.puzzle-title:hover .topbar-title,
+.puzzle-title:focus-visible .topbar-title {
   background: color-mix(in srgb, var(--fg) 80%, var(--bg));
 }
 .puzzle-title:active .topbar-title {
@@ -1235,8 +1244,7 @@ input:focus-visible {
   outline: none;
 }
 .ps-row.on:focus-visible .ps-chip {
-  outline: 2px solid var(--bg);
-  outline-offset: -4px;
+  background: color-mix(in srgb, var(--fg) 80%, var(--bg));
 }
 .ps-row.on .ps-chip {
   background: var(--fg);
@@ -1354,8 +1362,13 @@ input:focus-visible {
   cursor: default;
 }
 /* The app's one interaction language: brighten on hover/press. */
+.hole-btn:focus-visible {
+  outline: none;
+}
 .hole-btn:not([disabled]):hover .hole-word,
 .hole-btn:not([disabled]):hover .hole-rank,
+.hole-btn:focus-visible .hole-word,
+.hole-btn:focus-visible .hole-rank,
 .hole-btn:not([disabled]):active .hole-word,
 .hole-btn:not([disabled]):active .hole-rank {
   filter: brightness(1.35);
@@ -1427,10 +1440,12 @@ input:focus-visible {
    applied under it), so the chipped word opts out of it and the CHIP answers instead. The
    exponent beside it keeps the brighten — it is still coloured ink. */
 .hole:not(.resolved) .hole-btn:not([disabled]):hover .hole-word,
+.hole:not(.resolved) .hole-btn:focus-visible .hole-word,
 .hole:not(.resolved) .hole-btn:not([disabled]):active .hole-word {
   filter: none;
 }
-.hole:not(.resolved) .hole-btn:not([disabled]):hover .hole-word::before {
+.hole:not(.resolved) .hole-btn:not([disabled]):hover .hole-word::before,
+.hole:not(.resolved) .hole-btn:focus-visible .hole-word::before {
   background: color-mix(in srgb, var(--fg) 80%, var(--bg));
 }
 .hole:not(.resolved) .hole-btn:not([disabled]):active .hole-word::before {
@@ -2014,6 +2029,13 @@ input:focus-visible {
   visibility: hidden;
   cursor: pointer;
 }
+.solved-source:focus-visible {
+  outline: none;
+}
+.solved-source:focus-visible .solved-work {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
 .solved-source::after {
   content: '';
   position: absolute;
@@ -2064,7 +2086,9 @@ input:focus-visible {
   padding-bottom: 3px;
   border-bottom: 2px solid currentColor;
 }
-.solved-listen:hover {
+.solved-listen:hover,
+.solved-listen:focus-visible {
+  outline: none;
   filter: brightness(1.25);
 }
 /* A secret's affixes stay on its line — Phrase's own nowrap group. */
@@ -2089,6 +2113,14 @@ input:focus-visible {
 }
 .solved-secret:hover {
   filter: brightness(1.25);
+}
+/* The keyboard's twin, one notch up: a quarter more light on blue type is not found at a
+   glance inside a paragraph, and an underline is what a control in prose looks like. */
+.solved-secret:focus-visible {
+  outline: none;
+  filter: brightness(1.25);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }
 /* The secrets POP in, one by one, 200ms apart (user-decided 2026-08-14): the round's
    trophies counted out, back in the gaps they were taken from — the plain words are
@@ -2642,16 +2674,14 @@ input:focus-visible {
    the slot chip is INVERTED (`--bg` on `--fg`), so a white ring could not sit on it
    anyway. So: the row in the slot is the drum's only tab stop (roving tabindex in each
    component, the focus following the pick when the arrows turn the drum), the row itself
-   paints no ring, and the chip it holds wears the app's same 2px outline INSET, in `--bg`
-   — the one ink that shows on its ground — a hair inside its edge, so the pick reads as a
-   double-framed tile. (An inset `box-shadow` was the first cut and did not paint on the
-   selection's chips at 2px; the outline does, everywhere.) */
+   paints no ring, and the chip it holds does what the hole chip does under a mouse: it
+   dims to 80% of the foreground for as long as the focus stays. (A 2px ink line inset in
+   the chip was the second cut, a "bordered square" like the rest — retired with them.) */
 .wheel-row:focus-visible {
   outline: none;
 }
 .wheel-row-slot:focus-visible .hole-word::before {
-  outline: 2px solid var(--bg);
-  outline-offset: -3px;
+  background: color-mix(in srgb, var(--fg) 80%, var(--bg));
 }
 .wheel-plain::before {
   content: '';
@@ -2760,7 +2790,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .share-as-flip.up {
   rotate: 180deg;
 }
-.share-as-flip:hover {
+.share-as-flip:hover,
+.share-as-flip:focus-visible {
+  outline: none;
   color: var(--fg);
 }
 .share-as-track {
@@ -2786,8 +2818,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   outline: none;
 }
 .share-as-row.on:focus-visible .share-as-chip {
-  outline: 2px solid var(--bg);
-  outline-offset: -4px;
+  background: color-mix(in srgb, var(--fg) 80%, var(--bg));
 }
 .share-as-chip {
   display: inline-flex;
@@ -3243,6 +3274,23 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   opacity: 0.26;
   cursor: default;
 }
+/* (After the greyed rules above, which it has to outrank.) The keyboard's twin, and the one place hover's own step is nowhere near enough: a
+   focused key has to be found among twenty-nine identical tiles, so it takes the app's
+   emphasis gesture and INVERTS — a white tile, its glyph in the ground's ink (ENTER keeps
+   its cobalt as the glyph). A greyed key lifts to full opacity so the focus is seen on it
+   too, its muted glyph still saying "dead". */
+.kb-key:focus-visible {
+  outline: none;
+  opacity: 1;
+  background: var(--fg);
+  color: var(--bg);
+}
+.kb-key.kb-greyed:focus-visible {
+  color: var(--muted);
+}
+.kb-enter:focus-visible {
+  color: var(--solve);
+}
 /* Shake fired when a greyed key is tapped: signals "disabled", not a bug. */
 .kb-key.kb-shake {
   animation: kb-shake 0.28s ease-in-out;
@@ -3301,6 +3349,12 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .btn-primary:hover {
   filter: brightness(1.1);
 }
+/* The keyboard's twin, one notch up: a lone full-width button has nothing beside it to be
+   brighter than, so the step has to be seen on its own. */
+.btn-primary:focus-visible {
+  outline: none;
+  filter: brightness(1.25);
+}
 /* A press is a STATE, not travel (the flat rule, 2026-08-18). */
 .btn-primary:active {
   filter: brightness(1.2);
@@ -3336,7 +3390,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   border-radius: var(--r-lg);
   color: var(--fg);
 }
-.btn-secondary:hover {
+.btn-secondary:hover,
+.btn-secondary:focus-visible {
+  outline: none;
   border-color: var(--fg);
 }
 /* THE ONE POSITION THE BARE DRESS EARNS. `border-color: transparent` rather than `border:
@@ -3348,7 +3404,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   opacity: 0.75;
 }
 .btn-primary + .btn-secondary:hover,
-.mix-btn + .btn-secondary:hover {
+.mix-btn + .btn-secondary:hover,
+.btn-primary + .btn-secondary:focus-visible,
+.mix-btn + .btn-secondary:focus-visible {
   border-color: transparent;
   opacity: 1;
 }
@@ -3882,6 +3940,10 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 .mix-btn:hover:not(:disabled) {
   filter: brightness(1.1);
+}
+.mix-btn:focus-visible {
+  outline: none;
+  filter: brightness(1.25);
 }
 .mix-btn:active:not(:disabled) {
   filter: brightness(1.2);
@@ -5019,9 +5081,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   color: var(--fg);
   opacity: 0.35;
 }
-.profile-name:focus {
-  border-color: var(--line-strong);
-}
 
 /* The grid: one tile per cell. An EMPTY cell wears the palette's background itself and
    the canvas behind them a DARKER version of it — DERIVED here with color-mix from the
@@ -5097,6 +5156,12 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .profile-palette:hover {
   filter: brightness(1.15);
 }
+/* The keyboard's twin: the hover lift plus the picked swatch's own frame, minus its halo. */
+.profile-palette:focus-visible {
+  outline: none;
+  filter: brightness(1.15);
+  border-color: var(--fg);
+}
 .profile-palette.sel {
   border-color: var(--fg);
   box-shadow: 0 0 0 1px var(--fg);
@@ -5124,7 +5189,10 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   transition: filter 0.08s linear, border-color 0.12s linear;
 }
 .profile-clear:hover:not(:disabled),
-.board-chip:hover {
+.board-chip:hover,
+.profile-clear:focus-visible,
+.board-chip:focus-visible {
+  outline: none;
   filter: brightness(1.3);
   border-color: var(--fg);
 }
@@ -5217,6 +5285,10 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 .account-link:hover {
   border-color: var(--line-strong);
+}
+.account-link:focus-visible {
+  outline: none;
+  border-color: var(--fg);
 }
 /* A row that is a FACT, not a control: the saved address, plainly. */
 /* The chevron says the row LEADS somewhere — the title's own 7×7 mark, pointing on. */
@@ -5438,7 +5510,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   cursor: pointer;
   transition: color 120ms;
 }
-.header-back:hover {
+.header-back:hover,
+.header-back:focus-visible {
+  outline: none;
   color: var(--muted);
 }
 .header-back .ui-icon {
@@ -5513,9 +5587,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   letter-spacing: 0.12em;
   font-size: 12px;
 }
-.account-input:focus {
-  border-color: var(--line-strong);
-}
 
 /* THE CODE PROMPT: six drawn cells over ONE real input (components/CodeInput.tsx explains
    why one). The input is stretched over the whole row and invisible — never
@@ -5526,12 +5597,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   justify-content: center;
   gap: 8px;
   cursor: text;
-  /* As wide as its six cells, centred — never the column. The field is stretched over
-     this box, and so is the focus ring (#267): on the full column the ring was two rails
-     running the width of the screen around six small cells. */
-  width: fit-content;
-  margin-left: auto;
-  margin-right: auto;
 }
 .code-field {
   position: absolute;
@@ -5557,6 +5622,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* The row wears no focus ring (#267): its field is focused for the whole step, and the
+     NEXT cell's tint (`:focus-within`, below) is what says where the caret is. */
   /* Quiet at rest, LIT once filled — but a boundary still has to be visible: at `--line`
      the empty cell measured 1.28:1 against its own ground, under WCAG 1.4.11's 3.0 for a
      UI component, and in daylight the six cells the whole screen is about read as nothing.
@@ -5659,14 +5726,17 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   cursor: pointer;
   transition: color 120ms;
 }
-.link-quiet-btn:hover:not(:disabled) {
+.link-quiet-btn:hover:not(:disabled),
+.link-quiet-btn:focus-visible {
+  outline: none;
   color: var(--accent);
   border-color: var(--accent);
 }
 .btn + .link-quiet-btn {
   border-color: transparent;
 }
-.btn + .link-quiet-btn:hover:not(:disabled) {
+.btn + .link-quiet-btn:hover:not(:disabled),
+.btn + .link-quiet-btn:focus-visible {
   border-color: transparent;
 }
 /* A CONTROL THAT IS NOT A CONTROL YET LOSES ITS BOX (2026-08-30). RESEND spends its first
@@ -5691,7 +5761,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
      DELETES an account is not the smallest target on its own screen. */
   padding: 14px 12px;
 }
-.link-danger:hover:not(:disabled) {
+.link-danger:hover:not(:disabled),
+.link-danger:focus-visible {
+  outline: none;
   border-color: var(--danger);
   background: rgba(255, 61, 46, 0.06);
 }
@@ -6048,7 +6120,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   text-underline-offset: 3px;
   text-decoration-color: var(--line-strong);
 }
-.privacy-mail:hover {
+.privacy-mail:hover,
+.privacy-mail:focus-visible {
+  outline: none;
   color: var(--accent);
   text-decoration-color: var(--accent);
 }
@@ -6100,7 +6174,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   cursor: pointer;
   transition: color 120ms;
 }
-.account-foot-link:hover {
+.account-foot-link:hover,
+.account-foot-link:focus-visible {
+  outline: none;
   color: var(--fg);
 }
 
@@ -6203,7 +6279,10 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   cursor: pointer;
 }
 .device-signout:hover:not(:disabled),
-.device-retry:hover {
+.device-retry:hover,
+.device-signout:focus-visible,
+.device-retry:focus-visible {
+  outline: none;
   filter: brightness(1.3);
 }
 .device-signout:disabled {
@@ -6504,6 +6583,10 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 .board-tab:not(.active):hover {
   opacity: 0.9;
+}
+.board-tab:focus-visible {
+  outline: none;
+  opacity: 1;
 }
 .board-tab.active {
   background: var(--fg);
