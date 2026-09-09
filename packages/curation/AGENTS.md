@@ -43,12 +43,11 @@
 ## Commands
 
 ```bash
-pnpm curate [--lang fr] [--work <file on the shelf>] [--retry <file>] [--blind] [--seed N]
-pnpm curate --sentence <candidate puzzle.json | "the sentence"> [--work <file>] [--blind]
+pnpm curate [--lang fr] [--work <file on the shelf>] [--retry <shelf file | puzzle.json>] [--blind] [--seed N]
 #   Picks a work (the model, off the shelf minus the archive minus index.json minus the
-#   artist cooldown; --work forces one; --retry erases a previous attempt on a file — its
-#   index entry and the candidate puzzle(s) it wrote under the generation output — then
-#   runs on it), mines it, and writes the first sentence that
+#   artist cooldown; --work forces one; --retry <shelf file> erases a previous attempt on
+#   a work — its index entry and the candidate puzzle(s) it wrote under the generation
+#   output — then runs on it), mines it, and writes the first sentence that
 #   survives every rule as a puzzle under packages/generation/output/word/fr/... via
 #   gen_phrase — headless, the start word is the band's random pick, the #133 form question
 #   is answered by the model from the sentence. Exit 0 = a candidate was written (publish it
@@ -59,12 +58,12 @@ pnpm curate --sentence <candidate puzzle.json | "the sentence"> [--work <file>] 
 #   nothing): the main log gets the player's view, the start words, the source and the
 #   path, and everything else goes to runs/<stamp>.spoilers.md — so the run can be read
 #   and the puzzle played before being spoiled (user rule 2026-09-07).
-#   --sentence retries ONE sentence (2026-09-10): a candidate puzzle file — its work is
-#   read off the puzzle's `source`, the file is erased, the sentence is found again
-#   among the work's mined units for its casing — or the sentence itself with --work;
-#   the mining, shortlist and ranking are skipped, everything from the obviousness
-#   filter on runs as in a full run (the page, the quotes test, the starts). A sentence
-#   the ledger holds is refused. Exclusive with --retry.
+#   --retry <candidate puzzle.json> retries ONE SENTENCE instead (user-decided
+#   2026-09-10: one command, a work or a puzzle): the work is read off the puzzle's
+#   `source`, the file is erased, the sentence is found again among the work's mined
+#   units for its casing; the mining, shortlist and ranking are skipped, everything
+#   from the obviousness filter on runs as in a full run (the page, the quotes test,
+#   the starts). A sentence the ledger holds is refused.
 pnpm shelf:lyrics [--artists shelf/artists.txt] [--max-songs N]
 #   The music source (#262): for each artist of the user's hand-written list, the songs
 #   from Genius most viewed first, minus the top FAMOUS_SHARE (the singles), minus what

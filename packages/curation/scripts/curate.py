@@ -1,7 +1,7 @@
 """One book in, one candidate puzzle out (issue #260). Never publishes.
 
     pnpm curate [--lang fr] [--work <file on the shelf>]
-    pnpm curate --sentence <candidate puzzle.json | "the sentence"> [--work <file>]
+    pnpm curate --retry <file on the shelf | candidate puzzle.json>
 
 Greedy and linear: the LLM picks a work off the shelf (an epub, or a song file put
 there by `shelf:lyrics`), then sentences, then the secrets one at a time from a list
@@ -539,11 +539,12 @@ def choose_page(claude: llm.Claude, log: Log, sentence: str, window: dict) -> di
     return excerpt if excerpt["before"] or excerpt["after"] else None
 
 
-def sentence_target(args, log: Log) -> str:
-    """`--sentence`: a candidate puzzle file names its work (set as `args.work`) and is
-    erased — a retry replaces it; the sentence itself needs `--work`. Returns the
-    sentence, as the puzzle keeps it (lowercased tokens) or as typed."""
-    given = Path(args.sentence)
+def retry_target(args, log: Log, index: dict) -> str | None:
+    """`--retry`: a candidate puzzle file names its work (set as `args.work`) and is
+    erased — the retry replaces it — and its sentence is returned, as the puzzle keeps
+    it (lowercased tokens); a file on the shelf has its whole attempt erased (index
+    entry, candidate puzzles) and is set as the work, returning None."""
+    given = Path(args.retry)
     if given.suffix == ".json" and given.is_file():
         try:
             puzzle = json.loads(given.read_text(encoding="utf-8"))
@@ -551,16 +552,20 @@ def sentence_target(args, log: Log) -> str:
         except (OSError, ValueError, KeyError, TypeError):
             die(f"{given} is not a candidate puzzle")
         work = shelf_mod.work_of(puzzle.get("source") or {}, shelf_mod.list_works())
-        if work is None and not args.work:
-            die(f"{given.name} names no work on the shelf — pass --work <file>")
-        if work is not None and not args.work:
-            args.work = work["file"]
+        if work is None:
+            die(f"{given.name} names no work on the shelf (source: {puzzle.get('source')})")
+        args.work = work["file"]
         shelf_mod.erase_puzzle(given.resolve())
         log(f"- erased: {given}")
         return " ".join(words)
-    if not args.work:
-        die("--sentence with the sentence itself needs --work <file on the shelf>")
-    return args.sentence
+    work = next((w for w in shelf_mod.list_works() if w["file"] == args.retry), None)
+    if work is None:
+        die(f"{args.retry} is neither on the shelf nor a candidate puzzle file")
+    for path in shelf_mod.forget(index, work, args.lang):
+        log(f"- erased: {path}")
+    shelf_mod.save_index(index)
+    args.work = args.retry
+    return None
 
 
 def main():
@@ -571,15 +576,11 @@ def main():
                    help="withhold the winning sentence, its secrets and their handling from the "
                         "log and stdout (they go to runs/<stamp>.spoilers.md), so the run can be "
                         "read and the puzzle played before being spoiled")
-    again = p.add_mutually_exclusive_group()
-    again.add_argument("--retry", metavar="FILE",
-                       help="erase a previous attempt on this shelf file — its index entry and the "
-                            "candidate puzzle(s) it wrote under the generation output — then run on it")
-    again.add_argument("--sentence", metavar="PUZZLE|TEXT",
-                       help="retry ONE sentence, skipping the mining, the shortlist and the ranking: "
-                            "a candidate puzzle file (its work is read off the puzzle's source and "
-                            "the file is erased) or the sentence itself, with --work naming the "
-                            "shelf file")
+    p.add_argument("--retry", metavar="FILE",
+                   help="retry a WORK — a file on the shelf, epub or song: erase its attempt (index "
+                        "entry and candidate puzzles) and run on it again — or ONE SENTENCE — a "
+                        "candidate puzzle file: erase it and rerun its sentence (the work read off "
+                        "the puzzle's source), skipping the mining, shortlist and ranking")
     p.add_argument("--seed", type=int, default=None, help="sample seed (default: today)")
     args = p.parse_args()
 
@@ -593,14 +594,9 @@ def main():
 
     vocab = set(json.loads((_paths.VOCAB_DIR / f"{args.lang}.json").read_text(encoding="utf-8")))
     index = shelf_mod.load_index()
+    sentence = None
     if args.retry:
-        work = next((w for w in shelf_mod.list_works() if w["file"] == args.retry), None)
-        if work is None:
-            die(f"{args.retry} is not on the shelf")
-        for path in shelf_mod.forget(index, work, args.lang):
-            log(f"- erased: {path}")
-        shelf_mod.save_index(index)
-        args.work = args.retry
+        sentence = retry_target(args, log, index)
     if not _paths.PUBLISHED_LEDGER.exists():
         die(f"no publish ledger at {_paths.PUBLISHED_LEDGER} — run `pnpm puzzle:ledger --s3` first "
             "(the archive is read off it, and an empty archive would re-propose every published day)")
@@ -610,9 +606,6 @@ def main():
     claude = llm.Claude()
 
     today = datetime.now(timezone.utc).date()
-    sentence = None
-    if args.sentence:
-        sentence = sentence_target(args, log)
     book = choose_work(claude, log, args, archive, index, today)
     path = _paths.SHELF_DIR / book["file"]
     text = epub_text(path) if book["kind"] == "book" else path.read_text(encoding="utf-8")
