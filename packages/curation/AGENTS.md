@@ -94,7 +94,7 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   shortlist; measured 2026-09-08 on 27 attempts: 4–7 candidates gave no trio or a dull
   forced one, every trio worth keeping came from 8+), `MIN_GAP` (3 tokens), `COSINE_MAX`
   (0.40), `MODIFIER_DEPS`, `MAX_RESTARTS` (2), `MAX_OFF_LIST` (2), `CONTEXT_GUESSES` (3,
-  the reader's fillers the obviousness filter asks for), `OBVIOUS_FILLERS` (2),
+  the most fillers the obviousness filter asks a reader for), `OBVIOUS_MAX` (2),
   `TWIN_RANK` (3);
   and at the top of `curate.py`: `MAX_SENTENCES` (600), `CHUNK` (150), `PICKS_PER_CHUNK`
   (6), `SHORTLIST` (20). The mechanical filter (`sentences.is_candidate`) also refuses a
@@ -104,7 +104,9 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   what the player cannot see) at the shortlist.
 - **The rules, as code applies them** (from the user's curation feedback, #260):
   candidates are NOUN/VERB/ADJ/ADV, not stopwords, not among the commonest words (an
-  adverb has the higher floor), slug in the vocab, not a secret still in its
+  adverb has the higher floor), slug in the vocab, never a hyphenated compound
+  (« sud-américain »: players type it as two words and grind — user-decided
+  2026-09-10), not a secret still in its
   `SECRET_COOLDOWN_DAYS` (90, `shelf.py`; user-decided 2026-09-08 — a COOLDOWN, not
   the permanent blacklist it was, which had « cimetière » off the table forever after one
   Ernaux day; judged on the ledger's game day),
@@ -138,20 +140,23 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   2026-09-10, the user's own method, so a batch can ship without a play-test; it
   supersedes the 2026-09-06 "annotation, never a strike").** For every candidate word
   of a shortlisted sentence, one call shows the sentence with THAT word blanked (every
-  occurrence of it), the rest intact and NO start word, and asks a reader's
-  `CONTEXT_GUESSES` fillers, most likely first; code strikes the word when NOTHING ELSE
-  COMES to the reader — its first `OBVIOUS_FILLERS` fillers are all the secret or a
-  TWIN of it (`rules.open_candidates` / `is_twin`): a variant, or a word within
-  `TWIN_RANK` of the secret in the game's own ranking (`curate.load_similarity`
-  `neighbour_rank`, off `closest`). Measured 2026-09-10 on the reader's own fillers:
-  a spelling (« clés »/« clefs »), a synonym (« certainement »/« sûrement »), an
-  opposite (« premier »/« dernier ») sit at 0–3; a real alternative (« infection » for
-  « grippe », « bureau » for « magasin », « fois » for « année ») at 6 and beyond.
-  **A word a reader GUESSES, with alternatives, stays a hole — that is the game**
-  (user's call 2026-09-10 on « les clefs du [magasin] », « une [grippe] intestinale »:
-  the first-filler rule of the same morning struck them and left « sciatique »). The
-  log names each verdict with the fillers; a sentence with fewer than `TRIO` open words
-  is rejected before any pick. Why this shape: the 2026-09-06 check ran AFTER the trio,
+  occurrence of it), the rest intact and NO start word, and asks a reader WHAT ELSE IT
+  COULD BE — the words that could really stand there, at most `CONTEXT_GUESSES`, only
+  what would not surprise a reader; code strikes the word when the reader can name at
+  most `OBVIOUS_MAX` words for it, the secret included (`rules.open_candidates`):
+  « [arrêt] cardiaque » — arrêt or crise — is out, « les clefs du [magasin] » —
+  magasin, camion, bureau — is a hole. A filler that is a TWIN of the secret
+  (`is_twin`: a variant, or a word within `TWIN_RANK` of it in the game's own ranking —
+  `curate.load_similarity` `neighbour_rank`, off `closest`; « clés »/« clefs »,
+  « certainement »/« sûrement », « premier »/« dernier » sit at 0–3, measured
+  2026-09-10) is the secret again, not an alternative. Only the reader's count sees a
+  fixed pair: « crise » is rank 12668 from « arrêt » (the twin-only rule of the same
+  evening let « arrêt » through). **A word a reader GUESSES, with alternatives, stays a
+  hole — that is the game** (user's call 2026-09-10 on « les clefs du [magasin] »,
+  « une [grippe] intestinale », « tant de [cocaïne] »: the first-filler rule of the
+  same morning struck them and left « sciatique »). The log names each verdict with
+  the count and the fillers; a sentence with fewer than `TRIO` open words is rejected
+  before any pick. Why this shape: the 2026-09-06 check ran AFTER the trio,
   with all three blanks, as a log note — « il aurait répondu [sûrement] pas » was picked
   from a list of four and the check that would have refused it could change nothing.
   The open holes' fillers are shown to the start-word prompt. The skill's trio rules
@@ -189,7 +194,9 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   code can apply with certainty (`starts.elision_problem`: an eliding word before a
   vowel, an elided one before a consonant; `h` and `y` are left to the model), then asks the model
   whether the displayed sentence is grammatical (`llm.grammar_check`, one reason per
-  faulty inserted word). A refused start is re-picked under the same start rules
+  faulty inserted word) — agreement, elision AND each start's CONSTRUCTION with what
+  follows it (« affublé d'un prénom » for « hérité d'un prénom » passed the check on
+  2026-09-10; the start prompt and the check now name it). A refused start is re-picked under the same start rules
   (`llm.pick_start`) and gen_phrase reruns; at most `START_ROUNDS` (3) rounds; what is
   still doubtful is logged for the reviewer.
 - **Tests are dependency-free** (`uv run --no-project --with pytest`, like generation and

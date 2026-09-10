@@ -6,7 +6,7 @@ from rules import (
     MAX_COMMON_RANK_ADV,
     MAX_OFF_LIST,
     MIN_GAP,
-    OBVIOUS_FILLERS,
+    OBVIOUS_MAX,
     TWIN_RANK,
     SearchLog,
     Token,
@@ -185,23 +185,33 @@ def test_weak_verbs_are_never_candidates():
 no_rank = lambda t, w: None  # noqa: E731
 
 
-def test_open_candidates_strike_a_word_when_nothing_else_comes():
+def test_open_candidates_strike_a_word_with_at_most_two_possibilities():
     cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
-    assert OBVIOUS_FILLERS == 2
-    # The reader's first two fillers are the secret and a variant of it: nothing else.
-    fillers = lambda t: ["chats", "chat", "chien"] if t.text == "chat" else ["neige", "mer", "nuit"]  # noqa: E731
+    assert OBVIOUS_MAX == 2
+    # « arrêt cardiaque »: the reader names the secret and one other word — two, out.
+    fillers = lambda t: ["chat", "chien"] if t.text == "chat" else ["neige", "mer", "nuit"]  # noqa: E731
     log = SearchLog()
     kept = open_candidates(cands, fillers=fillers, neighbour_rank=no_rank, log=log)
     assert {t.text for t in kept} == {t.text for t in cands} - {"chat"}
-    assert any("'chat' is obvious" in e and "chats, chat, chien" in e for e in log.events)
+    assert any("'chat' is obvious — 2 possible" in e and "chat, chien" in e for e in log.events)
 
 
-def test_open_candidates_keep_a_word_a_reader_guesses_with_an_alternative():
+def test_open_candidates_keep_a_word_with_three_possibilities():
     cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
-    # The secret comes first, a real alternative second: guessable, still a hole.
+    # The secret first, two real alternatives after it: guessable, still a hole.
     fillers = lambda t: [t.text, "autre", "encore"]  # noqa: E731
     kept = open_candidates(cands, fillers=fillers, neighbour_rank=no_rank)
     assert [t.text for t in kept] == [t.text for t in cands]
+
+
+def test_open_candidates_count_the_secret_even_when_the_reader_misses_it():
+    cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
+    # Two other words, the secret not among them: three possibilities, open.
+    fillers = lambda t: ["autre", "encore"]  # noqa: E731
+    assert len(open_candidates(cands, fillers=fillers, neighbour_rank=no_rank)) == len(cands)
+    # One other word only: two possibilities, obvious.
+    fillers = lambda t: ["autre"]  # noqa: E731
+    assert open_candidates(cands, fillers=fillers, neighbour_rank=no_rank) == []
 
 
 def test_a_twin_is_a_variant_or_a_near_neighbour_in_the_ranking():
@@ -214,17 +224,18 @@ def test_a_twin_is_a_variant_or_a_near_neighbour_in_the_ranking():
     assert not is_twin(chat, "lion", neighbour_rank)  # unknown to the vectors
 
 
-def test_open_candidates_strike_on_a_synonym_twin_and_keep_on_a_far_second():
+def test_open_candidates_fold_twins_into_the_secret_and_dedupe_fillers():
     cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
     ranks = {("chat", "minet"): 1, ("pierre", "roche"): 40}
     neighbour_rank = lambda t, w: ranks.get((t.text, w))  # noqa: E731
-    fillers = lambda t: {"chat": ["chat", "minet", "chien"], "pierre": ["pierre", "roche", "dalle"]}.get(t.text, ["x", "y"])  # noqa: E731
+    fillers = lambda t: {"chat": ["chats", "minet", "chien", "Chien"],  # noqa: E731
+                         "pierre": ["pierre", "roche", "dalle"]}.get(t.text, ["x", "y", "z"])
     kept = {t.text for t in open_candidates(cands, fillers=fillers, neighbour_rank=neighbour_rank)}
-    assert "chat" not in kept  # secret then a rank-1 synonym: nothing else came
-    assert "pierre" in kept  # secret then a real alternative (rank 40)
+    assert "chat" not in kept  # a variant, a rank-1 synonym and one word twice: two possibilities
+    assert "pierre" in kept  # the secret and two real alternatives (roche is rank 40)
 
 
-def test_open_candidates_judge_a_single_filler_and_a_repeated_word_once():
+def test_open_candidates_judge_a_repeated_word_once():
     twice = [
         tok(0, "chat", "NOUN", "nsubj", 1),
         tok(1, "dort", "VERB", "ROOT", 1, lemma="dormir"),
@@ -234,8 +245,14 @@ def test_open_candidates_judge_a_single_filler_and_a_repeated_word_once():
 
     def fillers(t):
         asked.append(t.i)
-        return ["chat"] if t.text == "chat" else ["ronfle"]
+        return ["chat"] if t.text == "chat" else ["ronfle", "dort", "veille"]
 
     kept = open_candidates(twice, fillers=fillers, neighbour_rank=no_rank)
     assert asked == [0, 1]  # one question per distinct slug
-    assert [t.i for t in kept] == [1]  # one filler, the secret itself: obvious, both occurrences gone
+    assert [t.i for t in kept] == [1]  # the secret alone: obvious, both occurrences gone
+
+
+def test_initial_candidates_drop_a_hyphenated_compound():
+    sent = SENT + [tok(14, "sud-américain", "ADJ", "amod", 11)]
+    vocab = VOCAB | {"sud-americain"}
+    assert "sud-américain" not in {t.text for t in initial_candidates(sent, in_vocab=vocab.__contains__)}

@@ -47,20 +47,22 @@ MAX_RESTARTS = 2
 # Consecutive picks off the list before the model is taken to have declined.
 MAX_OFF_LIST = 2
 # The OBVIOUSNESS FILTER (user-decided 2026-09-10, the user's own method: read the
-# context, think of the fillers WITHOUT a start word, and only a word that is not
-# obvious can be a hole). Judged BEFORE the pick, one candidate at a time with the rest
-# of the sentence intact and no start word: the model answers as a reader with its
-# CONTEXT_GUESSES fillers, most likely first, and code strikes the word when NOTHING
-# ELSE COMES — its first OBVIOUS_FILLERS fillers are all the secret or a TWIN of it: a
-# variant, or a word within TWIN_RANK of the secret in the game's own ranking (a
-# spelling « clés »/« clefs », a synonym « certainement »/« sûrement », an opposite
-# « premier »/« dernier » all sit at 0–3; a real alternative — « infection » for
-# « grippe », « bureau » for « magasin », « fois » for « année » — at 6 and beyond,
-# measured 2026-09-10). A word a reader GUESSES, with alternatives, stays a hole: that
-# is the game. Supersedes the 2026-09-06 annotation (three blanks, after the trio,
-# never a strike), which could refuse nothing.
-CONTEXT_GUESSES = 3
-OBVIOUS_FILLERS = 2
+# context, think of the fillers WITHOUT a start word, and ask "what else can it be?" —
+# only a word with real alternatives can be a hole). Judged BEFORE the pick, one
+# candidate at a time with the rest of the sentence intact and no start word: the model
+# answers as a reader with the words that could really stand there (at most
+# CONTEXT_GUESSES, only what would not surprise a reader), and code strikes the word
+# when the reader can name at most OBVIOUS_MAX words for it, the secret included
+# (« arrêt cardiaque »: arrêt or crise — two, out; « les clefs du magasin »: magasin,
+# camion, bureau — three, a hole). A filler that is a TWIN of the secret — a variant,
+# or a word within TWIN_RANK of it in the game's own ranking (« clés »/« clefs » 0,
+# « certainement »/« sûrement » 0, « premier »/« dernier » 0, measured 2026-09-10) — is
+# the secret again, not an alternative. Only the reader's count can see a fixed pair:
+# « crise » sits at rank 12668 from « arrêt ». A word a reader GUESSES, with
+# alternatives, stays a hole: that is the game. Supersedes the 2026-09-06 annotation
+# (three blanks, after the trio, never a strike), which could refuse nothing.
+CONTEXT_GUESSES = 6
+OBVIOUS_MAX = 2
 TWIN_RANK = 3
 # Secrets per puzzle (the sentence schema: exactly three distinct slugs).
 TRIO = 3
@@ -106,6 +108,8 @@ def initial_candidates(
             continue
         if len(t.slug) < 2 or not in_vocab(t.slug):
             continue
+        if "-" in t.slug:  # a compound (« sud-américain »): players type it as two words
+            continue
         rank = frequency_rank(t)
         if rank is not None and rank < (MAX_COMMON_RANK_ADV if t.pos == "ADV" else MAX_COMMON_RANK):
             continue
@@ -135,24 +139,24 @@ def open_candidates(
     neighbour_rank: Callable[[Token, str], int | None] = lambda t, w: None,
     log: "SearchLog | None" = None,
 ) -> list[Token]:
-    """The candidates the context does not hand over. `fillers(token)` is a reader's
-    guess list for the sentence with that one word blanked (every occurrence of it, the
-    rest intact, no start word), most likely first. A word is obvious — struck — when
-    nothing else comes to the reader: its first OBVIOUS_FILLERS fillers are all the
-    secret or a twin of it (`is_twin`). One judgement per distinct slug; the order of
-    the list is kept."""
+    """The candidates the context does not hand over. `fillers(token)` is what a reader
+    could really put in the sentence with that one word blanked (every occurrence of
+    it, the rest intact, no start word), most likely first. A word is obvious — struck
+    — when the reader can name at most OBVIOUS_MAX words for it, the secret included: a
+    filler that is a twin of the secret (`is_twin`) is the secret again. One judgement
+    per distinct slug; the order of the list is kept."""
     log = log or SearchLog()
     verdict: dict[str, bool] = {}
     out = []
     for c in candidates:
         if c.slug not in verdict:
             guesses = fillers(c)
-            leading = guesses[:OBVIOUS_FILLERS]
-            obvious = bool(leading) and all(is_twin(c, g, neighbour_rank) for g in leading)
-            verdict[c.slug] = obvious
+            others = {slug(g) for g in guesses if slug(g) and not is_twin(c, g, neighbour_rank)}
+            possible = len(others) + 1  # the secret itself is always one of them
+            verdict[c.slug] = possible <= OBVIOUS_MAX
             shown = ", ".join(guesses) or "none"
-            log.note(f"'{c.text}' is obvious — nothing else comes to a reader (puts: {shown}) — struck"
-                     if obvious else f"'{c.text}' is open (a reader puts: {shown})")
+            log.note(f"'{c.text}' is obvious — {possible} possible word(s) (a reader puts: {shown}) — struck"
+                     if verdict[c.slug] else f"'{c.text}' is open — {possible} possible words (a reader puts: {shown})")
         if not verdict[c.slug]:
             out.append(c)
     return out
