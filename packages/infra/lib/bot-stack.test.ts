@@ -81,7 +81,7 @@ describe('WhatsApp bot stack (#236)', () => {
     const byName = Object.fromEntries(env.map((e) => [e.Name, e.Value]));
     expect(byName.BOT_LLM_API_KEY_PARAMETER).toBe(KEY_PARAMETER);
     expect(byName.BOT_LLM_PROVIDER).toBe('deepseek');
-    expect(byName.BOT_LLM_MODEL).toBe('deepseek-v4-flash');
+    expect(byName.BOT_LLM_MODEL).toBe('deepseek-flash');
     expect(byName.BOT_METRICS_NAMESPACE).toBe(BOT_METRICS_NAMESPACE);
     expect(byName).not.toHaveProperty('BOT_LLM_API_KEY');
     expect(tasks[0].Properties.ContainerDefinitions[0].Secrets).toBeUndefined();

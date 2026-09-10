@@ -100,7 +100,7 @@ export class BotStack extends Stack {
 
     const llmApiKeyParameter = props.llmApiKeyParameter ?? '/whippin/bot/llm-api-key';
     const llmProvider = props.llmProvider ?? 'deepseek';
-    const llmModel = props.llmModel ?? 'deepseek-v4-flash';
+    const llmModel = props.llmModel ?? 'deepseek-flash';
     const siteOrigin = props.siteOrigin ?? 'https://whippin.ai';
     const apiBaseUrl = props.apiBaseUrl ?? 'https://api.whippin.ai';
     const groupsDir = props.groupsDir ?? GROUPS_DIR;

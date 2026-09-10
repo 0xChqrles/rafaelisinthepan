@@ -867,10 +867,20 @@ there is one region knob and not two.
   ratings are the user's, and the measurement of v4 against V4.1 waits on them. Not built:
   a manual replay/rebuild of ingestion, bot commands beyond addressing.
 - `chat.perUserPerDay` no longer exists (#277): the SSM configs must be pushed without it
-  before the next deploy's `pull`. The model is still `deepseek-v4-flash`; the switch to
-  DeepSeek V4.1 (#277 step 5) is `-c botLlmModel=<id>` / the `bot-stack.ts` default once
-  the id is public, with `thinking: {type: 'disabled'}` and `reasoning_effort` in
-  `providers/deepseek.ts` checked against it, and the candidate machinery re-measured.
+  before the next deploy's `pull`.
+- **The model is `deepseek-flash`** (#277 step 5, 2026-09-10): DeepSeek's name for the
+  CURRENT Flash model, which is V4.1-Flash as of that day's release. It is deliberately the
+  UNVERSIONED name — a bot that talks to a group wants the model DeepSeek is serving, and
+  the versioned `deepseek-v4-flash` this replaced is a compatibility alias already routed
+  to V4.1-Flash and due to be retired the way `deepseek-chat` was. Checked against the API
+  reference on the day: `thinking: {type: 'disabled'}` and `reasoning_effort`
+  (`none`/`low`/`high`, plus a new `max` nothing here asks for) are both accepted by
+  `deepseek-flash`, and `temperature` still "has no effect in thinking mode" — which is the
+  reason the comment paths turn thinking off. **What is NOT done is the MEASURING**: every
+  constant of the candidate machinery (`CANDIDATES`, `ROUNDS`, the timeouts, `MAX_TOKENS`
+  4000, `TEMPERATURE` 0.8, thinking off) was tuned against V4-Flash, and V4.1 is a
+  different model — the rated fixture (`pnpm bot:fixture`) is what says which of them still
+  earn their place.
 
 ## Do NOT
 
