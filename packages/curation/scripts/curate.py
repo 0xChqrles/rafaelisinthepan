@@ -1,6 +1,7 @@
 """One book in, one candidate puzzle out (issue #260). Never publishes.
 
     pnpm curate [--lang fr] [--work <file on the shelf>]
+    pnpm curate --retry <file on the shelf | candidate puzzle.json>
 
 Greedy and linear: the LLM picks a work off the shelf (an epub, or a song file put
 there by `shelf:lyrics`), then sentences, then the secrets one at a time from a list
@@ -102,6 +103,8 @@ def load_similarity(lang: str):
     else:  # pragma: no cover - LANGS guards this
         raise ValueError(lang)
     kv = module.load_vectors()
+    V = module.build_vocab(kv)
+    M = module.build_matrix(kv, V)
 
     def key(t: rules.Token):
         for form in (t.text.lower(), t.lemma):
@@ -119,7 +122,17 @@ def load_similarity(lang: str):
         k = key(t)
         return None if k is None else int(kv.key_to_index[k])
 
-    return similarity, frequency_rank
+    def neighbour_rank(t: rules.Token, word: str):
+        """Where `word` stands in the game's own ranking around the token's vector
+        (0 = the nearest other word); None when either is unknown. The twin test of the
+        obviousness filter (`rules.is_twin`)."""
+        k = key(t)
+        w = word.lower()
+        if k is None or w not in kv or w == k:
+            return None
+        return next((r for cand, r, _ in module.closest(k, kv, V, M, n=None) if cand == w), None)
+
+    return similarity, frequency_rank, neighbour_rank
 
 
 # ---------------------------------------------------------------------------
@@ -441,7 +454,7 @@ def shortlist(claude: llm.Claude, log: Log, mined: list[str], exclude: set[str],
 
 def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: dict,
             in_vocab, similarity, frequency_rank, lang: str, window: dict | None = None,
-            quotes: list[str] = ()):
+            quotes: list[str] = (), neighbour_rank=lambda t, w: None):
     """One sentence through the quotation test, trio search and generation. `window` is
     the raw text around it (#270), which the model CUTS into the page once the trio is
     found — so a rejected sentence never spends the call. `quotes` are the work's quoted
@@ -462,6 +475,29 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
     if len({t.slug for t in candidates}) < rules.MIN_CANDIDATES:
         log(f"- rejected: fewer than {rules.MIN_CANDIDATES} distinct candidate words")
         return None
+    # The obviousness filter (user-decided 2026-09-10, the user's own method): every
+    # candidate is judged as a reader would, one word blanked at a time with the rest of
+    # the sentence intact and no start word; a word to which nothing else comes is never
+    # offered to the pick. The reader's fillers are kept for the start-word prompt.
+    occurrences: dict[str, set[int]] = {}
+    for t in candidates:
+        occurrences.setdefault(t.slug, set()).add(t.i)
+    fillers_of: dict[str, list[str]] = {}
+
+    def fillers(t: rules.Token) -> list[str]:
+        guesses = llm.context_guesses(claude, tokens, occurrences[t.slug] - {t.i}, t.i,
+                                      rules.CONTEXT_GUESSES)
+        fillers_of[t.slug] = guesses
+        return guesses
+
+    filter_log = rules.SearchLog()
+    candidates = rules.open_candidates(candidates, fillers=fillers, neighbour_rank=neighbour_rank,
+                                       log=filter_log)
+    for event in filter_log.events:
+        log(f"- {event}")
+    if len({t.slug for t in candidates}) < rules.TRIO:
+        log(f"- rejected: fewer than {rules.TRIO} words the context leaves open")
+        return None
 
     def choose(remaining, picked):
         word = llm.pick_secret(claude, tokens, remaining, picked)
@@ -478,18 +514,10 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
         return None
     words = [t.text for t in trio]
     log(f"- trio: {' · '.join(words)}")
-    # The context check, as the player sees the sentence (all three blanks): an
-    # annotation for the reviewer, never a strike (see rules.CONTEXT_GUESSES).
-    blanks = {t.i for t in trio}
-    context: dict[str, str] = {}
-    for t in trio:
-        guesses = llm.context_guesses(claude, tokens, blanks - {t.i}, t.i, rules.CONTEXT_GUESSES)
-        rank = next((k + 1 for k, g in enumerate(guesses)
-                     if slug(g) == t.slug or (slug(g) and rules.is_variant(slug(g), t.slug))), None)
-        verdict = f"guessed #{rank} from context (guesses: {', '.join(guesses)})" if rank \
-            else f"not guessed from context (guesses: {', '.join(guesses) or 'none'})"
-        context[t.slug] = verdict
-        log(f"- context check '{t.text}': {verdict}")
+    # What a reader puts in each hole from the context alone (the filter's fillers, none
+    # of them the secret): shown to the start-word prompt, which must not hand one over.
+    context = {t.slug: f"open — a reader's first fillers: {', '.join(fillers_of.get(t.slug, ())) or 'none'}"
+               for t in trio}
     source = {"kind": book["kind"], "author": book.get("author", ""), "work": book.get("title", "")}
     excerpt = choose_page(claude, log, sentence, window) if window else None
     if excerpt:
@@ -511,6 +539,35 @@ def choose_page(claude: llm.Claude, log: Log, sentence: str, window: dict) -> di
     return excerpt if excerpt["before"] or excerpt["after"] else None
 
 
+def retry_target(args, log: Log, index: dict) -> str | None:
+    """`--retry`: a candidate puzzle file names its work (set as `args.work`) and is
+    erased — the retry replaces it — and its sentence is returned, as the puzzle keeps
+    it (lowercased tokens); a file on the shelf has its whole attempt erased (index
+    entry, candidate puzzles) and is set as the work, returning None."""
+    given = Path(args.retry)
+    if given.suffix == ".json" and given.is_file():
+        try:
+            puzzle = json.loads(given.read_text(encoding="utf-8"))
+            words = puzzle["words"]
+        except (OSError, ValueError, KeyError, TypeError):
+            die(f"{given} is not a candidate puzzle")
+        work = shelf_mod.work_of(puzzle.get("source") or {}, shelf_mod.list_works())
+        if work is None:
+            die(f"{given.name} names no work on the shelf (source: {puzzle.get('source')})")
+        args.work = work["file"]
+        shelf_mod.erase_puzzle(given.resolve())
+        log(f"- erased: {given}")
+        return " ".join(words)
+    work = next((w for w in shelf_mod.list_works() if w["file"] == args.retry), None)
+    if work is None:
+        die(f"{args.retry} is neither on the shelf nor a candidate puzzle file")
+    for path in shelf_mod.forget(index, work, args.lang):
+        log(f"- erased: {path}")
+    shelf_mod.save_index(index)
+    args.work = args.retry
+    return None
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--lang", choices=LANGS, default="fr")
@@ -520,8 +577,10 @@ def main():
                         "log and stdout (they go to runs/<stamp>.spoilers.md), so the run can be "
                         "read and the puzzle played before being spoiled")
     p.add_argument("--retry", metavar="FILE",
-                   help="erase a previous attempt on this shelf file — its index entry and the "
-                        "candidate puzzle(s) it wrote under the generation output — then run on it")
+                   help="retry a WORK — a file on the shelf, epub or song: erase its attempt (index "
+                        "entry and candidate puzzles) and run on it again — or ONE SENTENCE — a "
+                        "candidate puzzle file: erase it and rerun its sentence (the work read off "
+                        "the puzzle's source), skipping the mining, shortlist and ranking")
     p.add_argument("--seed", type=int, default=None, help="sample seed (default: today)")
     args = p.parse_args()
 
@@ -535,14 +594,9 @@ def main():
 
     vocab = set(json.loads((_paths.VOCAB_DIR / f"{args.lang}.json").read_text(encoding="utf-8")))
     index = shelf_mod.load_index()
+    sentence = None
     if args.retry:
-        work = next((w for w in shelf_mod.list_works() if w["file"] == args.retry), None)
-        if work is None:
-            die(f"{args.retry} is not on the shelf")
-        for path in shelf_mod.forget(index, work, args.lang):
-            log(f"- erased: {path}")
-        shelf_mod.save_index(index)
-        args.work = args.retry
+        sentence = retry_target(args, log, index)
     if not _paths.PUBLISHED_LEDGER.exists():
         die(f"no publish ledger at {_paths.PUBLISHED_LEDGER} — run `pnpm puzzle:ledger --s3` first "
             "(the archive is read off it, and an empty archive would re-propose every published day)")
@@ -555,13 +609,24 @@ def main():
     book = choose_work(claude, log, args, archive, index, today)
     path = _paths.SHELF_DIR / book["file"]
     text = epub_text(path) if book["kind"] == "book" else path.read_text(encoding="utf-8")
-    proposed = {shelf_mod.sentence_key(s) for s in index["books"].get(book["file"], {}).get("sentences", ())}
-    proposed |= archive["sentences"]
-    seed = args.seed if args.seed is not None else int(stamp[:10].replace("-", ""))
-    similarity, frequency_rank = load_similarity(args.lang)
-    mined = rich_enough(log, mine(book, text, log), args.lang, vocab.__contains__, archive["secrets"],
-                        frequency_rank)
-    ranked = shortlist(claude, log, mined, proposed, seed)
+    similarity, frequency_rank, neighbour_rank = load_similarity(args.lang)
+    if sentence is not None:
+        # One sentence, by hand: found again among the work's mined units so it keeps the
+        # source's casing; never a published one (the archive is the one record).
+        unit = shelf_mod.find_unit(mine(book, text, log), sentence)
+        if unit is None:
+            log("- the sentence is not one of the work's mined units — taken as typed")
+            unit = sentence
+        if shelf_mod.sentence_key(unit) in archive["sentences"]:
+            die("that sentence is already published (it is in the ledger)")
+        ranked = [{"sentence": unit, "why": "retried by hand"}]
+    else:
+        proposed = {shelf_mod.sentence_key(s) for s in index["books"].get(book["file"], {}).get("sentences", ())}
+        proposed |= archive["sentences"]
+        seed = args.seed if args.seed is not None else int(stamp[:10].replace("-", ""))
+        mined = rich_enough(log, mine(book, text, log), args.lang, vocab.__contains__, archive["secrets"],
+                            frequency_rank)
+        ranked = shortlist(claude, log, mined, proposed, seed)
 
     # The work's quoted lines (the quotation test): fetched onto the shelf by
     # `pnpm shelf:quotes`, read here offline. A missing file skips the test, loudly.
@@ -586,7 +651,7 @@ def main():
         # licensed product — the line is the whole quotation).
         window = excerpt_around(text, pick["sentence"], EXCERPT_WINDOW) if book["kind"] == "book" else None
         result = attempt(claude, log, pick["sentence"], book, archive, vocab.__contains__,
-                         similarity, frequency_rank, args.lang, window, quotes)
+                         similarity, frequency_rank, args.lang, window, quotes, neighbour_rank)
         log.end_attempt(bool(result), player_view(result, book) if result else ())
         if result:
             break

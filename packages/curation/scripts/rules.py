@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 import _paths  # noqa: F401  (generation's scripts on sys.path)
+from slug import slug
 from start_word import is_variant
 
 # Parts of speech a secret may carry (spaCy Universal POS tags).
@@ -45,11 +46,24 @@ MODIFIER_DEPS = frozenset({"amod", "nmod", "appos", "acl", "advmod"})
 MAX_RESTARTS = 2
 # Consecutive picks off the list before the model is taken to have declined.
 MAX_OFF_LIST = 2
-# Guesses the context check asks for, per finished secret, for the run log. It is an
-# ANNOTATION, never a strike: calibrated 2026-09-06 on the 12 real-player days (medians
-# 7–23), the model's three guesses held the true secret 18 times out of 34, its first
-# guess 13 times — a strike on either would reject most trios that play well.
-CONTEXT_GUESSES = 3
+# The OBVIOUSNESS FILTER (user-decided 2026-09-10, the user's own method: read the
+# context, think of the fillers WITHOUT a start word, and ask "what else can it be?" —
+# only a word with real alternatives can be a hole). Judged BEFORE the pick, one
+# candidate at a time with the rest of the sentence intact and no start word: the model
+# answers as a reader with the words that could really stand there (at most
+# CONTEXT_GUESSES, only what would not surprise a reader), and code strikes the word
+# when the reader can name at most OBVIOUS_MAX words for it, the secret included
+# (« arrêt cardiaque »: arrêt or crise — two, out; « les clefs du magasin »: magasin,
+# camion, bureau — three, a hole). A filler that is a TWIN of the secret — a variant,
+# or a word within TWIN_RANK of it in the game's own ranking (« clés »/« clefs » 0,
+# « certainement »/« sûrement » 0, « premier »/« dernier » 0, measured 2026-09-10) — is
+# the secret again, not an alternative. Only the reader's count can see a fixed pair:
+# « crise » sits at rank 12668 from « arrêt ». A word a reader GUESSES, with
+# alternatives, stays a hole: that is the game. Supersedes the 2026-09-06 annotation
+# (three blanks, after the trio, never a strike), which could refuse nothing.
+CONTEXT_GUESSES = 6
+OBVIOUS_MAX = 2
+TWIN_RANK = 3
 # Secrets per puzzle (the sentence schema: exactly three distinct slugs).
 TRIO = 3
 
@@ -94,6 +108,8 @@ def initial_candidates(
             continue
         if len(t.slug) < 2 or not in_vocab(t.slug):
             continue
+        if "-" in t.slug:  # a compound (« sud-américain »): players type it as two words
+            continue
         rank = frequency_rank(t)
         if rank is not None and rank < (MAX_COMMON_RANK_ADV if t.pos == "ADV" else MAX_COMMON_RANK):
             continue
@@ -102,6 +118,47 @@ def initial_candidates(
         if t.lemma and len(lemma_slugs.get(t.lemma, ())) > 1:
             continue
         out.append(t)
+    return out
+
+
+def is_twin(candidate: Token, word: str, neighbour_rank: Callable[[Token, str], int | None]) -> bool:
+    """`word` is the candidate's secret in another form: the same slug, a morphological
+    variant, or within TWIN_RANK of it in the game's ranking (`neighbour_rank(token,
+    word)`, None = unknown, which is not a twin)."""
+    s = slug(word)
+    if s and (s == candidate.slug or is_variant(s, candidate.slug)):
+        return True
+    rank = neighbour_rank(candidate, word)
+    return rank is not None and rank <= TWIN_RANK
+
+
+def open_candidates(
+    candidates: list[Token],
+    *,
+    fillers: Callable[[Token], list[str]],
+    neighbour_rank: Callable[[Token, str], int | None] = lambda t, w: None,
+    log: "SearchLog | None" = None,
+) -> list[Token]:
+    """The candidates the context does not hand over. `fillers(token)` is what a reader
+    could really put in the sentence with that one word blanked (every occurrence of
+    it, the rest intact, no start word), most likely first. A word is obvious — struck
+    — when the reader can name at most OBVIOUS_MAX words for it, the secret included: a
+    filler that is a twin of the secret (`is_twin`) is the secret again. One judgement
+    per distinct slug; the order of the list is kept."""
+    log = log or SearchLog()
+    verdict: dict[str, bool] = {}
+    out = []
+    for c in candidates:
+        if c.slug not in verdict:
+            guesses = fillers(c)
+            others = {slug(g) for g in guesses if slug(g) and not is_twin(c, g, neighbour_rank)}
+            possible = len(others) + 1  # the secret itself is always one of them
+            verdict[c.slug] = possible <= OBVIOUS_MAX
+            shown = ", ".join(guesses) or "none"
+            log.note(f"'{c.text}' is obvious — {possible} possible word(s) (a reader puts: {shown}) — struck"
+                     if verdict[c.slug] else f"'{c.text}' is open — {possible} possible words (a reader puts: {shown})")
+        if not verdict[c.slug]:
+            out.append(c)
     return out
 
 

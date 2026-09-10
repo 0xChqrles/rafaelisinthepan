@@ -170,6 +170,37 @@ def in_archive(book: dict, works: list[dict]) -> bool:
     return False
 
 
+def work_of(source: dict, works: list[dict]) -> dict | None:
+    """The shelf work a candidate puzzle came from: its `source` names the author and
+    the work exactly as the shelf does (the curator passes them to gen_phrase verbatim).
+    The author is compared by slug, the title by its lowercased text — a slug keeps
+    letters only, and « Vernon Subutex 1 » is not « Vernon Subutex 2 ». None when no
+    work matches or the source names no work."""
+    author, title = slug(source.get("author", "")), sentence_key(source.get("work", ""))
+    if not title:
+        return None
+    return next((w for w in works
+                 if slug(w.get("author", "")) == author and sentence_key(w.get("title", "")) == title), None)
+
+
+def find_unit(mined: list[str], sentence: str) -> str | None:
+    """The mined unit a sentence is, in the source's own casing: a puzzle keeps its
+    sentence lowercased, so the match is by `sentence_key`. None when the work does not
+    hold it (or the miner no longer cuts it the same way)."""
+    key = sentence_key(sentence)
+    return next((u for u in mined if sentence_key(u) == key), None)
+
+
+def erase_puzzle(path: Path) -> None:
+    """Delete one candidate puzzle under the generation output and the empty
+    directories it leaves."""
+    path.unlink()
+    parent = path.parent
+    while parent != _paths.GENERATION_OUTPUT_DIR and parent.exists() and not any(parent.iterdir()):
+        parent.rmdir()
+        parent = parent.parent
+
+
 def forget(index: dict, work: dict, lang: str) -> list[str]:
     """Erase an attempt: the work's index entry and every candidate puzzle written for it
     under the GENERATION OUTPUT (never the store — a published day is not an attempt).
@@ -185,10 +216,6 @@ def forget(index: dict, work: dict, lang: str) -> list[str]:
         except (OSError, ValueError):
             continue
         if slug(src.get("author", "")) == author and slug(src.get("work", "")) == title:
-            path.unlink()
+            erase_puzzle(path)
             deleted.append(str(path))
-            parent = path.parent
-            while parent != _paths.GENERATION_OUTPUT_DIR and not any(parent.iterdir()):
-                parent.rmdir()
-                parent = parent.parent
     return deleted

@@ -231,7 +231,8 @@ The sentence as the player sees it so far (____ = already hidden):
 
 Already hidden: {already}.
 
-Rules (the list below already excludes what the rules forbid mechanically):
+Rules (the list below already excludes what the rules forbid mechanically, and every
+word for which the context leaves a reader only one or two possibilities):
 {secret_rules()}
 
 Pick ONE word from this list only — the word that makes the best hole: many plausible
@@ -245,9 +246,16 @@ if none of the options makes a good hole.""")
 
 
 def context_guesses(claude: Claude, tokens, blanks: set[int], mark: int, n: int) -> list[str]:
+    """What a reader could really put in ONE blank, the rest of the sentence intact and
+    no start word — the obviousness filter's question (`rules.open_candidates`), which
+    counts the answer. `blanks` holds the other occurrences of the same word, hidden so
+    they cannot give it away."""
     shown = holed(tokens, blanks, mark)
-    answer = claude.json(f"""In this French sentence, ____ marks hidden words and [____] the one to guess.
-Give your {n} best guesses for [____], most likely first, single words.
+    answer = claude.json(f"""You are a French reader. In this sentence one word is hidden, marked [____]
+(____ marks the same word hidden again). What else could it be? List the single words
+that could really stand there — only words that would not surprise a reader in this
+exact sentence, most likely first, at most {n}. Be honest about the count: when only one
+or two words can really be there, list only those.
 
 {shown}
 
@@ -275,8 +283,12 @@ def grammar_check(claude: Claude, sentence: str, start_words: list[str]) -> dict
     """Is the displayed sentence valid French? The start words are the only things that
     can be wrong (elision, gender, number, agreement); the model names the faulty ones."""
     answer = claude.json(f"""Is this French sentence grammatically valid — elision, gender and number
-agreement, verb forms? The words {', '.join(f'« {w} »' for w in start_words)} were inserted
-into an existing sentence; only they can be wrong. Judge the grammar only, not the meaning.
+agreement, verb forms, and each inserted word's CONSTRUCTION with what surrounds it (a
+verb must accept the object or preposition that follows it: « il avait hérité d'un
+prénom » is French, « il avait affublé d'un prénom » is not — affubler needs an object
+before « de »)? The words {', '.join(f'« {w} »' for w in start_words)} were inserted into
+an existing sentence; only they can be wrong. Judge the grammar and the construction,
+not the meaning.
 
 « {sentence} »
 
@@ -308,9 +320,12 @@ as its first clue, IN PLACE of the hidden word. Choose the three start words, to
 {start_rules()}
 
 The start word replaces the hidden word in the sentence: it must be the same part of
-speech and agree with its surroundings (gender, number, verb form, elision). Before
-answering, read the sentence with each choice in place and reject what does not read as
-correct French — an infinitive where a noun stands, a feminine noun after « un ».
+speech, agree with its surroundings (gender, number, verb form, elision) and take the
+SAME CONSTRUCTION — a verb must accept the object or preposition that follows (« hérité
+d'un prénom » cannot become « affublé d'un prénom »: affubler needs an object before
+« de »). Before answering, read the sentence with each choice in place and reject what
+does not read as correct French — an infinitive where a noun stands, a feminine noun
+after « un », a verb cut off from its complement.
 
 The sentence, holes marked with the hidden word in brackets:
 {sentence_marked}

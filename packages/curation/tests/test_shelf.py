@@ -72,3 +72,23 @@ def test_archive_cools_secrets_down_but_blacklists_pairs_for_good(tmp_path, monk
     assert shelf.sentence_key("y corrected") in arch["sentences"] and shelf.sentence_key("y") not in arch["sentences"]
     assert arch["last_used"][shelf.slug("Machado")] == date(2026, 9, 1)
     assert "money" not in arch["secrets"]                       # another language's day is not this archive
+
+
+# --- retrying one sentence (--sentence) --------------------------------------------
+
+def test_find_unit_matches_a_lowercased_puzzle_sentence_to_the_source_unit():
+    from shelf import find_unit
+    mined = ["Son magasin s’appelait Revolver.", "Il avait confié les clefs du magasin à un collègue."]
+    assert find_unit(mined, "il avait confié les clefs du magasin à un collègue.") == mined[1]
+    assert find_unit(mined, "il avait confié les clefs") is None
+
+
+def test_work_of_reads_the_shelf_work_off_a_puzzle_source():
+    from shelf import work_of
+    works = [{"file": "a.epub", "kind": "book", "author": "Despentes Virginie", "title": "Vernon Subutex 1"},
+             {"file": "b.txt", "kind": "music", "author": "Nepal", "title": "Trajectoire"}]
+    assert work_of({"author": "despentes virginie", "work": "Vernon Subutex 1"}, works)["file"] == "a.epub"
+    assert work_of({"kind": "music", "author": "Népal", "work": "Trajectoire"}, works)["file"] == "b.txt"
+    assert work_of({"author": "Despentes Virginie", "work": "Vernon Subutex 2"}, works) is None
+    assert work_of({}, works) is None
+

@@ -30,8 +30,12 @@ the same rules headlessly; this skill is the interactive version.
      _temps_", "l'_horloge_ parlante", "avoir _envie_";
    - antithesis/parallel-forced: "belle comme le jour … belles comme la _nuit_"; mirror
      structures complete themselves;
-   - context-inferable: the May-68 tear-gas anecdote hands you _pleurait_ and _grenade_
-     once the scene is recognizable;
+   - context-forced: the context leaves a reader ONE or TWO possible words — « [arrêt]
+     cardiaque » (arrêt or crise, nothing else), the May-68 tear-gas anecdote handing
+     you _grenade_. A word the context merely HELPS toward, with several possible
+     fillers — « il prenait tant de [cocaïne] qu'il avait hérité d'un prénom
+     sud-américain » — is not a fault, it is the game (the user's rule, 2026-09-10:
+     the goal is to guess WITH the context);
    - given away by a visible sibling: same-lemma twin visible in the sentence
      (_appartenaient_/_appartiendraient_), or a near-synonym visible (_amour_ visible →
      _amoureux_ secret is warm on try one).
@@ -51,6 +55,19 @@ concentrated on one word.
 - Three secrets in the same part of the sentence, or describing the same thing (a verb
   and its subject) → replace one. Spread them across the sentence.
 - At most one verb.
+- **A hole must INTERACT with the words around it (the user's rule, 2026-09-10).** The
+  game is guessing WITH the context: prefer a word another visible word narrows —
+  « une [grippe] intestinale », « une pose d'[implants] dentaires », « les clefs du
+  [magasin] » — over a bare item of a list or a word nothing in the sentence touches.
+  Guessing a disease name on its own (« … et une [sciatique] ») is a lookup, not fun;
+  a word the context lets the player REASON toward, with real alternatives, is the hole.
+  The user's own trio on « Arrêt cardiaque. Pedro s'appelait Pierre, mais il prenait
+  tant de cocaïne qu'il avait hérité d'un prénom sud-américain. » (2026-09-10):
+  **cardiaque · cocaïne · hérité** — in a fixed pair hide the specific word, not the
+  head (« arrêt [cardiaque] » has many fillers, « [arrêt] cardiaque » two); the word the
+  joke turns on, which the context helps toward; the verb. Starts: « syncopal »,
+  « créatine », « voulu » — one concept each, no synonym. Not « sud-américain »: a
+  hyphenated compound is never a hole (players type it as two words; code drops them).
 - **Play the TURN (recorded 2026-09-08).** The part that makes the line worth playing —
   its comparison, its image, its punch — must carry at least one hole; a trio that
   hides three words of the set-up and leaves the turn intact plays the dull half of
@@ -71,16 +88,21 @@ Each hole shows a START word, ranked 100–150 from the secret (lower rank = clo
 easier). Choosing it takes as much taste as the trio, and the three are chosen
 TOGETHER, never one at a time and never at random:
 
-- Read the context first. When the sentence already helps a lot with a hole, do not
-  hand it over: avoid a near-synonym or an immediate neighbour, go farther in the band.
-  When the context is hard, or another hole is already hard, go easier (closer).
+- First strike every candidate that does not fit the slot (elision, gender, number,
+  verb form); choose only among what is left (the user's rule, 2026-09-10).
+- The start carries at least ONE obvious concept of the secret — something the two
+  plainly share, that leads the player toward it — and is NEVER an exact synonym, a
+  near-synonym or an opposite of it (« agence » for « boutique » is a near-synonym:
+  out). When another hole is already hard, go easier (closer) within that rule.
 - Think about the CHAIN OF GUESSES the start sets off: a good start leads by
   association toward the secret in a few natural steps; a start whose neighbourhood
   pulls elsewhere (another sense of the word, a stronger collocation) is a trap.
 - Balance the three: comparable difficulty across holes, the whole puzzle landing
   around a median of 10–20 tries. One trivial hole or one impossible hole spoils the day.
 - Not too tricky: a plain word a player knows, never an obscure term or a proper noun.
-- The displayed sentence must stay valid French (elision, gender, number, verb form).
+- The displayed sentence must stay valid French: elision, gender, number, verb form,
+  and the CONSTRUCTION — a verb must accept the complement that follows it (« hérité
+  d'un prénom » cannot become « affublé d'un prénom »; 2026-09-10).
 
 ## The page (recorded 2026-09-08)
 

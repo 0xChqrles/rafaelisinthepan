@@ -6,9 +6,13 @@ from rules import (
     MAX_COMMON_RANK_ADV,
     MAX_OFF_LIST,
     MIN_GAP,
+    OBVIOUS_MAX,
+    TWIN_RANK,
     SearchLog,
     Token,
     initial_candidates,
+    is_twin,
+    open_candidates,
     prune,
     search_trio,
 )
@@ -174,3 +178,81 @@ def test_weak_verbs_are_never_candidates():
     sent = [tok(0, "je", "PRON", "nsubj", 1, stop=True), tok(1, "crois", "VERB", "ROOT", 1, lemma="croire"),
             tok(2, "chat", "NOUN", "obj", 1), tok(3, "dort", "VERB", "conj", 1, lemma="dormir")]
     assert [t.text for t in initial_candidates(sent, in_vocab=lambda s: True)] == ["chat", "dort"]
+
+
+# --- the obviousness filter (user-decided 2026-09-10) -----------------------------
+
+no_rank = lambda t, w: None  # noqa: E731
+
+
+def test_open_candidates_strike_a_word_with_at_most_two_possibilities():
+    cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
+    assert OBVIOUS_MAX == 2
+    # « arrêt cardiaque »: the reader names the secret and one other word — two, out.
+    fillers = lambda t: ["chat", "chien"] if t.text == "chat" else ["neige", "mer", "nuit"]  # noqa: E731
+    log = SearchLog()
+    kept = open_candidates(cands, fillers=fillers, neighbour_rank=no_rank, log=log)
+    assert {t.text for t in kept} == {t.text for t in cands} - {"chat"}
+    assert any("'chat' is obvious — 2 possible" in e and "chat, chien" in e for e in log.events)
+
+
+def test_open_candidates_keep_a_word_with_three_possibilities():
+    cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
+    # The secret first, two real alternatives after it: guessable, still a hole.
+    fillers = lambda t: [t.text, "autre", "encore"]  # noqa: E731
+    kept = open_candidates(cands, fillers=fillers, neighbour_rank=no_rank)
+    assert [t.text for t in kept] == [t.text for t in cands]
+
+
+def test_open_candidates_count_the_secret_even_when_the_reader_misses_it():
+    cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
+    # Two other words, the secret not among them: three possibilities, open.
+    fillers = lambda t: ["autre", "encore"]  # noqa: E731
+    assert len(open_candidates(cands, fillers=fillers, neighbour_rank=no_rank)) == len(cands)
+    # One other word only: two possibilities, obvious.
+    fillers = lambda t: ["autre"]  # noqa: E731
+    assert open_candidates(cands, fillers=fillers, neighbour_rank=no_rank) == []
+
+
+def test_a_twin_is_a_variant_or_a_near_neighbour_in_the_ranking():
+    chat = next(t for t in SENT if t.text == "chat")
+    ranks = {"chien": TWIN_RANK, "souris": TWIN_RANK + 1, "clés": 0}
+    neighbour_rank = lambda t, w: ranks.get(w)  # noqa: E731
+    assert is_twin(chat, "Chats", no_rank)  # a variant, accent and case aside
+    assert is_twin(chat, "chien", neighbour_rank)  # within TWIN_RANK
+    assert not is_twin(chat, "souris", neighbour_rank)  # just past it
+    assert not is_twin(chat, "lion", neighbour_rank)  # unknown to the vectors
+
+
+def test_open_candidates_fold_twins_into_the_secret_and_dedupe_fillers():
+    cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
+    ranks = {("chat", "minet"): 1, ("pierre", "roche"): 40}
+    neighbour_rank = lambda t, w: ranks.get((t.text, w))  # noqa: E731
+    fillers = lambda t: {"chat": ["chats", "minet", "chien", "Chien"],  # noqa: E731
+                         "pierre": ["pierre", "roche", "dalle"]}.get(t.text, ["x", "y", "z"])
+    kept = {t.text for t in open_candidates(cands, fillers=fillers, neighbour_rank=neighbour_rank)}
+    assert "chat" not in kept  # a variant, a rank-1 synonym and one word twice: two possibilities
+    assert "pierre" in kept  # the secret and two real alternatives (roche is rank 40)
+
+
+def test_open_candidates_judge_a_repeated_word_once():
+    twice = [
+        tok(0, "chat", "NOUN", "nsubj", 1),
+        tok(1, "dort", "VERB", "ROOT", 1, lemma="dormir"),
+        tok(2, "chat", "NOUN", "conj", 0),
+    ]
+    asked = []
+
+    def fillers(t):
+        asked.append(t.i)
+        return ["chat"] if t.text == "chat" else ["ronfle", "dort", "veille"]
+
+    kept = open_candidates(twice, fillers=fillers, neighbour_rank=no_rank)
+    assert asked == [0, 1]  # one question per distinct slug
+    assert [t.i for t in kept] == [1]  # the secret alone: obvious, both occurrences gone
+
+
+def test_initial_candidates_drop_a_hyphenated_compound():
+    sent = SENT + [tok(14, "sud-américain", "ADJ", "amod", 11)]
+    vocab = VOCAB | {"sud-americain"}
+    assert "sud-américain" not in {t.text for t in initial_candidates(sent, in_vocab=vocab.__contains__)}

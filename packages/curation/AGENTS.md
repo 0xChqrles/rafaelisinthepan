@@ -43,11 +43,11 @@
 ## Commands
 
 ```bash
-pnpm curate [--lang fr] [--work <file on the shelf>] [--retry <file>] [--blind] [--seed N]
+pnpm curate [--lang fr] [--work <file on the shelf>] [--retry <shelf file | puzzle.json>] [--blind] [--seed N]
 #   Picks a work (the model, off the shelf minus the archive minus index.json minus the
-#   artist cooldown; --work forces one; --retry erases a previous attempt on a file — its
-#   index entry and the candidate puzzle(s) it wrote under the generation output — then
-#   runs on it), mines it, and writes the first sentence that
+#   artist cooldown; --work forces one; --retry <shelf file> erases a previous attempt on
+#   a work — its index entry and the candidate puzzle(s) it wrote under the generation
+#   output — then runs on it), mines it, and writes the first sentence that
 #   survives every rule as a puzzle under packages/generation/output/word/fr/... via
 #   gen_phrase — headless, the start word is the band's random pick, the #133 form question
 #   is answered by the model from the sentence. Exit 0 = a candidate was written (publish it
@@ -58,6 +58,12 @@ pnpm curate [--lang fr] [--work <file on the shelf>] [--retry <file>] [--blind] 
 #   nothing): the main log gets the player's view, the start words, the source and the
 #   path, and everything else goes to runs/<stamp>.spoilers.md — so the run can be read
 #   and the puzzle played before being spoiled (user rule 2026-09-07).
+#   --retry <candidate puzzle.json> retries ONE SENTENCE instead (user-decided
+#   2026-09-10: one command, a work or a puzzle): the work is read off the puzzle's
+#   `source`, the file is erased, the sentence is found again among the work's mined
+#   units for its casing; the mining, shortlist and ranking are skipped, everything
+#   from the obviousness filter on runs as in a full run (the page, the quotes test,
+#   the starts). A sentence the ledger holds is refused.
 pnpm shelf:lyrics [--artists shelf/artists.txt] [--max-songs N]
 #   The music source (#262): for each artist of the user's hand-written list, the songs
 #   from Genius most viewed first, minus the top FAMOUS_SHARE (the singles), minus what
@@ -87,7 +93,9 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   reaches the model — `curate.rich_enough` parses the mined sentences before the
   shortlist; measured 2026-09-08 on 27 attempts: 4–7 candidates gave no trio or a dull
   forced one, every trio worth keeping came from 8+), `MIN_GAP` (3 tokens), `COSINE_MAX`
-  (0.40), `MODIFIER_DEPS`, `MAX_RESTARTS` (2), `MAX_OFF_LIST` (2), `CONTEXT_GUESSES` (3);
+  (0.40), `MODIFIER_DEPS`, `MAX_RESTARTS` (2), `MAX_OFF_LIST` (2), `CONTEXT_GUESSES` (3,
+  the most fillers the obviousness filter asks a reader for), `OBVIOUS_MAX` (2),
+  `TWIN_RANK` (3);
   and at the top of `curate.py`: `MAX_SENTENCES` (600), `CHUNK` (150), `PICKS_PER_CHUNK`
   (6), `SHORTLIST` (20). The mechanical filter (`sentences.is_candidate`) also refuses a
   unit that OPENS on a quotation mark (reported speech, or an argument with a line the
@@ -96,7 +104,9 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   what the player cannot see) at the shortlist.
 - **The rules, as code applies them** (from the user's curation feedback, #260):
   candidates are NOUN/VERB/ADJ/ADV, not stopwords, not among the commonest words (an
-  adverb has the higher floor), slug in the vocab, not a secret still in its
+  adverb has the higher floor), slug in the vocab, never a hyphenated compound
+  (« sud-américain »: players type it as two words and grind — user-decided
+  2026-09-10), not a secret still in its
   `SECRET_COOLDOWN_DAYS` (90, `shelf.py`; user-decided 2026-09-08 — a COOLDOWN, not
   the permanent blacklist it was, which had « cimetière » off the table forever after one
   Ernaux day; judged on the ledger's game day),
@@ -126,14 +136,32 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   opinion — would a reader who has not read the book know this line — is logged as an
   ANNOTATION (`llm.widely_known`), never a strike. Everything else the model is asked is
   a choice from a list.
-- **The CONTEXT CHECK is an ANNOTATION, never a strike** (decided on data 2026-09-06):
-  after a trio is found, one stateless call per secret guesses the blank as the player
-  sees the sentence (all three blanks); the log records where the true word landed among
-  `CONTEXT_GUESSES`. Calibrated on the 12 real-player days (medians 7–23): the model's
-  three guesses held the true secret 18 times out of 34, its first guess 13 times — an
-  LLM guessing the blank does not predict what the context gives a human, and a strike on
-  it would reject most trios that play well. "The context helps too much" stays a rule in
-  the model's PICK prompt (the trio rules in the skill) and a line for the reviewer.
+- **The OBVIOUSNESS FILTER strikes a candidate BEFORE the pick (user-decided
+  2026-09-10, the user's own method, so a batch can ship without a play-test; it
+  supersedes the 2026-09-06 "annotation, never a strike").** For every candidate word
+  of a shortlisted sentence, one call shows the sentence with THAT word blanked (every
+  occurrence of it), the rest intact and NO start word, and asks a reader WHAT ELSE IT
+  COULD BE — the words that could really stand there, at most `CONTEXT_GUESSES`, only
+  what would not surprise a reader; code strikes the word when the reader can name at
+  most `OBVIOUS_MAX` words for it, the secret included (`rules.open_candidates`):
+  « [arrêt] cardiaque » — arrêt or crise — is out, « les clefs du [magasin] » —
+  magasin, camion, bureau — is a hole. A filler that is a TWIN of the secret
+  (`is_twin`: a variant, or a word within `TWIN_RANK` of it in the game's own ranking —
+  `curate.load_similarity` `neighbour_rank`, off `closest`; « clés »/« clefs »,
+  « certainement »/« sûrement », « premier »/« dernier » sit at 0–3, measured
+  2026-09-10) is the secret again, not an alternative. Only the reader's count sees a
+  fixed pair: « crise » is rank 12668 from « arrêt » (the twin-only rule of the same
+  evening let « arrêt » through). **A word a reader GUESSES, with alternatives, stays a
+  hole — that is the game** (user's call 2026-09-10 on « les clefs du [magasin] »,
+  « une [grippe] intestinale », « tant de [cocaïne] »: the first-filler rule of the
+  same morning struck them and left « sciatique »). The log names each verdict with
+  the count and the fillers; a sentence with fewer than `TRIO` open words is rejected
+  before any pick. Why this shape: the 2026-09-06 check ran AFTER the trio,
+  with all three blanks, as a log note — « il aurait répondu [sûrement] pas » was picked
+  from a list of four and the check that would have refused it could change nothing.
+  The open holes' fillers are shown to the start-word prompt. The skill's trio rules
+  carry the user's INTERACTION rule of the same day (a hole another visible word
+  narrows, never a bare list item); the pick prompt reads it from there.
 - **A dead end restarts the sentence with its first pick struck**, `MAX_RESTARTS` times,
   then the next sentence. No smarter backtracking.
 - **The taste profile and the secret rules have ONE home, the `find-sentences` skill
@@ -146,10 +174,12 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   `--words` and, when it demands one, `--form` answered by the model from the sentence
   (`curate.generate` parses the #133 error's analysis list). Nothing here publishes.
 - **The START WORDS are CHOSEN by the model, the three together, never at random**
-  (user rule 2026-09-07: the start is the user's daily craft — read the context, avoid a
-  synonym when the context helps, go easier when a hole or the context is hard, think of
-  the chain of guesses, balance the three; the rules live in the skill's `## The start
-  word` section, read by `llm.start_rules`). **A secret/start PAIR is blacklisted for
+  (user rule 2026-09-07: the start is the user's daily craft — think of the chain of
+  guesses, balance the three, go easier when another hole is hard; sharpened
+  2026-09-10: first strike every candidate that does not fit the slot, then a start that
+  CARRIES ONE OBVIOUS CONCEPT of the secret and is NEVER a synonym, a near-synonym or an
+  opposite of it; the rules live in the skill's `## The start word` section, read by
+  `llm.start_rules`). **A secret/start PAIR is blacklisted for
   good** (user-decided 2026-09-08): `shelf.archive()['pairs']` holds every start each
   secret was ever played with, `choose_starts` and `check_starts` exclude them from the
   band, and a generated start that repeats a pair is refused and re-picked. The first successful gen_phrase run only
@@ -164,7 +194,9 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   code can apply with certainty (`starts.elision_problem`: an eliding word before a
   vowel, an elided one before a consonant; `h` and `y` are left to the model), then asks the model
   whether the displayed sentence is grammatical (`llm.grammar_check`, one reason per
-  faulty inserted word). A refused start is re-picked under the same start rules
+  faulty inserted word) — agreement, elision AND each start's CONSTRUCTION with what
+  follows it (« affublé d'un prénom » for « hérité d'un prénom » passed the check on
+  2026-09-10; the start prompt and the check now name it). A refused start is re-picked under the same start rules
   (`llm.pick_start`) and gen_phrase reruns; at most `START_ROUNDS` (3) rounds; what is
   still doubtful is logged for the reviewer.
 - **Tests are dependency-free** (`uv run --no-project --with pytest`, like generation and
