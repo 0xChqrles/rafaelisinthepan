@@ -658,6 +658,26 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   (they are the content), and a second short sentence is allowed. v4–v10's voices stay
   retired; v10's one paragraph lasted a day. The podium path joined the fact path in #277
   (the podium bullet above).
+  **THE BOT IS BENDER (v12, user-decided 2026-09-10):** the character from Futurama in
+  full — loud, vain, lazy, contemptuous, and soft underneath, which is the joke — replacing
+  v11's register outright (a prompt holding two opposite briefs produces neither); with it
+  went `sanitizeComment`'s exclamation-mark strip and the judge's tone refusals (it judges
+  the numbers, leaves the tone alone). **THE CHARACTER IS SEEN, NEVER NAMED, AND THE NAME
+  IS THE CONFIG'S (same day):** told "you are Bender", the deployed bot introduced itself
+  as "Bender Bending Rodríguez" and accepted the name from anyone (the user: "it thinks
+  it's called bender now"). The prompt is now `globalPersonality(name)`, the name
+  interpolated from `chat.name` — the form the trigger answers to, so what it is called
+  and what it answers to cannot drift — every caller passing it (agent, share line, podium,
+  diary rewrite and forget); its only name is that one, a name somebody hands it is theirs
+  to use and not its to take, and the two words "Bender" / "Futurama" never reach the group.
+  **AND EVERY LINE MEANS ONE PLAIN THING** (same day; the deployed bot told the operator
+  "j'ai connu des ingénieurs plus doués … tu vas finir par obtenir exactement ce que tu
+  mérites" — the user: "it's vague, we don't get what it means"): a hint, a warning or a
+  veiled line is vague, not menace; an insult is about something the group can see — a
+  score, a habit, what was just said — and says what it is. Measured against main's prompt
+  with the live diary, six scenarios × 2: main said Bender in every identity answer; the
+  fix said `chat.name` in every one, refused a rename, and stayed in character with
+  concrete callbacks (a player's 23 tries on the 8th) where main's had trailed off.
   **LESS IS BETTER (v9, user-decided 2026-09-07: "a pretty short and concise prompt just
   saying what is funny and what is not, without giving examples that might pollute its
   answers … a nonchalant cynic but serious tone").** After v8's judge the user still found

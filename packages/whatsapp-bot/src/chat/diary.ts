@@ -178,7 +178,7 @@ export async function rewriteDiary(
   now: () => Date = () => new Date(),
 ): Promise<Diary | null> {
   if (turns.length === 0) return null;
-  const system = buildSystemPrompt({ language: group.language, groupPrePrompt: group.chat.prePrompt, extra: TASK });
+  const system = buildSystemPrompt({ name: group.chat.name, language: group.language, groupPrePrompt: group.chat.prePrompt, extra: TASK });
   const content = `[Your diary so far]\n${previous?.text || '(nothing yet — this is the first day)'}\n\n[Today, ${dateForDayNumber(day)}]\n${renderDay(turns, group.timezone, group.chat.name)}`;
   try {
     const response = await provider.generate({
@@ -243,7 +243,7 @@ export async function withoutPerson(
   now: () => Date = () => new Date(),
 ): Promise<Diary | null> {
   if (!mentionsPerson(diary.text, name)) return diary;
-  const system = buildSystemPrompt({ language: group.language, groupPrePrompt: group.chat.prePrompt, extra: FORGET_TASK(name) });
+  const system = buildSystemPrompt({ name: group.chat.name, language: group.language, groupPrePrompt: group.chat.prePrompt, extra: FORGET_TASK(name) });
   try {
     const response = await provider.generate({
       system,

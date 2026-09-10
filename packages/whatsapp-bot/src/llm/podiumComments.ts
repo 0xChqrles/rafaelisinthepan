@@ -281,6 +281,7 @@ export async function generatePodiumComments(
   const lines = podiumCommentLines(podium);
   if (lines.length === 0) return new Map();
   const system = buildSystemPrompt({
+    name: group.chat.name,
     language: group.language,
     groupPrePrompt: group.chat.prePrompt,
     extra: TASK,
