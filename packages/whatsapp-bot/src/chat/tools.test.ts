@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { dayNumber } from '@whippin/shared';
 import { parseGroupConfig } from '../config/groupConfig';
 import { memoryDeclarationStore, type Declaration } from '../domain/declarations';
-import { memoryMemoryStore } from './memory';
 import { HISTORY_WINDOW_DAYS, TOOL_DEFINITIONS, createToolRunner, resolvePlayer } from './tools';
 
 const GROUP = '120363000000000001@g.us';
@@ -41,16 +40,14 @@ function row(sender: string, name: string, day: number, score: number, capped = 
 async function harness(rows: Declaration[] = DEFAULT_ROWS) {
   const declarations = memoryDeclarationStore();
   for (const r of rows) await declarations.record(r);
-  const memory = memoryMemoryStore();
   const tools = createToolRunner({
     group,
     today: TODAY,
     sender: GAB,
     declarations,
-    memory,
     now: () => new Date('2026-09-03T12:00:00Z'),
   });
-  return { tools, memory };
+  return { tools };
 }
 
 const DEFAULT_ROWS = [
@@ -169,7 +166,6 @@ describe('Whippin tools are read-only structured answers (#236)', () => {
       today: TODAY,
       sender: GAB,
       declarations,
-      memory: memoryMemoryStore(),
       now: () => new Date('2026-09-03T12:00:00Z'),
     });
     expect(await tools.run('get_head_to_head', { left: 'Gab', right: 'Zou' })).toMatchObject({
@@ -197,7 +193,6 @@ describe('Whippin tools are read-only structured answers (#236)', () => {
       today: TODAY,
       sender: GAB,
       declarations,
-      memory: memoryMemoryStore(),
       now: () => new Date('2026-09-03T12:00:00Z'),
     });
     expect(await tools.run('get_today_podium', {})).toMatchObject({
@@ -235,12 +230,10 @@ describe('Whippin tools are read-only structured answers (#236)', () => {
     });
   });
 
-  it('remembers a fact about the SENDER only, bounded, and refuses unknown tools', async () => {
-    const { tools, memory } = await harness();
-    expect(await tools.run('remember', { fact: '  Préfère qu\'on l\'appelle Gab.  ' })).toEqual({ saved: true, facts: 1 });
-    expect((await memory.get(GROUP, GAB))?.facts).toEqual(["Préfère qu'on l'appelle Gab."]);
-    expect(await memory.get(GROUP, ZOU)).toBeNull();
-    expect(await tools.run('remember', { fact: 'x'.repeat(200) })).toMatchObject({ saved: false });
+  it('refuses unknown tools — `remember` among them, retired with the per-person memory (#277)', async () => {
+    const { tools } = await harness();
+    expect(tools.definitions.map((t) => t.name)).not.toContain('remember');
+    expect(await tools.run('remember', { fact: 'x' })).toEqual({ error: 'unknown tool remember' });
     expect(await tools.run('drop_table', {})).toEqual({ error: 'unknown tool drop_table' });
     expect(await tools.run('constructor', {})).toEqual({ error: 'unknown tool constructor' });
   });

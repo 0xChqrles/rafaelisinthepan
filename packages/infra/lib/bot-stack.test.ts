@@ -81,7 +81,7 @@ describe('WhatsApp bot stack (#236)', () => {
     const byName = Object.fromEntries(env.map((e) => [e.Name, e.Value]));
     expect(byName.BOT_LLM_API_KEY_PARAMETER).toBe(KEY_PARAMETER);
     expect(byName.BOT_LLM_PROVIDER).toBe('deepseek');
-    expect(byName.BOT_LLM_MODEL).toBe('deepseek-v4-flash');
+    expect(byName.BOT_LLM_MODEL).toBe('deepseek-flash');
     expect(byName.BOT_METRICS_NAMESPACE).toBe(BOT_METRICS_NAMESPACE);
     expect(byName).not.toHaveProperty('BOT_LLM_API_KEY');
     expect(tasks[0].Properties.ContainerDefinitions[0].Secrets).toBeUndefined();
@@ -96,16 +96,28 @@ describe('WhatsApp bot stack (#236)', () => {
     }
   });
 
-  it('creates a podium schedule and a reminder schedule per ENABLED group, at its zone, on ONE job', () => {
+  it('creates a podium, a reminder and a diary schedule per ENABLED group, on ONE job', () => {
     const schedules = Object.values(template.findResources('AWS::Scheduler::Schedule')).map((s) => s.Properties);
-    expect(schedules).toHaveLength(2);
+    expect(schedules).toHaveLength(3);
     const byInput = new Map(schedules.map((p) => [JSON.stringify(JSON.parse(p.Target.Input)), p]));
     const podium = byInput.get(JSON.stringify({ group: GROUP }));
     const reminder = byInput.get(JSON.stringify({ group: GROUP, kind: 'reminder' }));
+    const diary = byInput.get(JSON.stringify({ group: GROUP, kind: 'diary' }));
     expect(podium?.ScheduleExpression).toBe('cron(0 22 * * ? *)');
     expect(reminder?.ScheduleExpression).toBe('cron(0 9 * * ? *)');
-    for (const p of schedules) expect(p.ScheduleExpressionTimezone).toBe('Europe/Paris');
+    expect(podium?.ScheduleExpressionTimezone).toBe('Europe/Paris');
+    expect(reminder?.ScheduleExpressionTimezone).toBe('Europe/Paris');
+    // The diary closes the WHIPPIN day (#277), so it fires at the game's own boundary —
+    // 22:00 Eastern — five minutes after it, whatever zone the group lives in.
+    expect(diary?.ScheduleExpression).toBe('cron(20 22 * * ? *)');
+    expect(diary?.ScheduleExpressionTimezone).toBe('America/New_York');
     expect(Object.values(template.findResources('AWS::Lambda::Function'))).toHaveLength(1);
+    // The job WRITES the diary it rewrites: read-write on the table, not read alone.
+    const statements = Object.values(template.findResources('AWS::IAM::Policy')).flatMap(
+      (p) => p.Properties.PolicyDocument.Statement as { Action: unknown }[],
+    );
+    const dynamo = statements.filter((s) => JSON.stringify(s.Action).includes('dynamodb:'));
+    expect(dynamo.filter((s) => JSON.stringify(s.Action).includes('dynamodb:PutItem'))).toHaveLength(2);
   });
 
   it('owns a table with TTL + PITR, an outbound queue with a DLQ, and alarms that treat silence as down', () => {

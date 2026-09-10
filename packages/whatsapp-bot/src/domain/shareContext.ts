@@ -7,7 +7,7 @@
 // verdict, and no band word travels with it.
 
 import { dateForDayNumber } from '@whippin/shared';
-import type { GroupConfig } from '../config/groupConfig';
+import type { GroupConfig, GroupLanguage } from '../config/groupConfig';
 import { inLanguage, type Declaration } from './declarations';
 import { displayName } from './names';
 import { buildPodium } from './podium';
@@ -19,6 +19,15 @@ export const TYPICAL_SCORE = { low: 10, high: 20, median: 14 } as const;
 // How far back a player's habit is read. Two weeks: long enough for an average position
 // to mean something, short enough that it is who they are NOW.
 export const HABIT_DAYS = 14;
+
+// THE WEEKDAY IS A FACT THE MODEL IS GIVEN, never one it works out (#277): told only a
+// date, the podium comments wrote "pour un mardi" on a Wednesday. Spelled in the group's
+// language, so the line can say it as it is.
+export function weekdayOf(date: string, language: GroupLanguage): string {
+  return new Intl.DateTimeFormat(language === 'fr' ? 'fr-FR' : 'en-GB', { weekday: 'long', timeZone: 'UTC' }).format(
+    new Date(`${date}T12:00:00Z`),
+  );
+}
 
 export type Score = number | '∞';
 
@@ -40,6 +49,7 @@ export interface PlayerHabit {
 export interface ShareContext {
   reading: string; // how to read the rest — the one sentence both the writer and the judge need
   date: string;
+  weekday: string;
   player: string;
   score: Score;
   typical: typeof TYPICAL_SCORE;
@@ -123,6 +133,7 @@ export function buildShareContext(input: {
   return {
     reading: `today's score is "score"; "habit", "recent" and "others" cover the ${HABIT_DAYS} days BEFORE today and do not include it, so today's score compared to habit.best / habit.worst tells whether today is this player's best or worst of the window, today included; "today" is the board with this share on it`,
     date: dateForDayNumber(dayNumber),
+    weekday: weekdayOf(dateForDayNumber(dayNumber), group.language),
     player: nameOf(mine),
     score,
     typical: TYPICAL_SCORE,
@@ -148,5 +159,70 @@ export function buildShareContext(input: {
         posters: postersByDay[days.indexOf(r.dayNumber)] ?? 0,
       })),
     others: others.sort(byRank).map((r) => habitFor(r.sender, nameOf(r))),
+  };
+}
+
+// THE FACTS A PODIUM LINE IS COMMENTED FROM (#277): the same readings the share line has —
+// the day's board, what a day usually costs, every player's habit and recent days over the
+// window before today — computed once for the podium and picked per line. Same numbers,
+// same window, same names, so a podium comment and the afternoon's share line cannot
+// disagree about who usually does what.
+export interface PodiumContext {
+  date: string;
+  weekday: string;
+  typical: typeof TYPICAL_SCORE;
+  habitDays: number;
+  usualPosters: number | null;
+  board: BoardLine[];
+  // By player key: their habit over the window, and their recent days, newest first.
+  players: Map<string, { habit: PlayerHabit; recent: ShareContext['recent'] }>;
+}
+
+export function buildPodiumContext(input: {
+  group: GroupConfig;
+  dayNumber: number;
+  todayRows: readonly Declaration[];
+  windowRows: readonly Declaration[];
+}): PodiumContext {
+  const { group, dayNumber } = input;
+  const nameOf = (d: Declaration) => displayName(group, d.sender, d.name);
+  const today = inLanguage(input.todayRows, group.language);
+  const podium = buildPodium(dayNumber, today, nameOf);
+  const board: BoardLine[] = [
+    ...podium.lines.map((l) => ({ position: l.position, score: l.score as Score, names: l.players.map((p) => p.name) })),
+    ...(podium.capped.length ? [{ position: podium.lines.length + 1, score: '∞' as const, names: podium.capped.map((p) => p.name) }] : []),
+  ];
+  const window = inLanguage(input.windowRows, group.language).filter((r) => r.dayNumber < dayNumber && r.dayNumber >= dayNumber - HABIT_DAYS);
+  const days = [...new Set(window.map((r) => r.dayNumber))].sort((a, b) => b - a);
+  const positionsByDay = days.map((day) => {
+    const rows = window.filter((r) => r.dayNumber === day);
+    const p = buildPodium(day, rows, nameOf);
+    const m = new Map<string, number | null>();
+    for (const line of p.lines) for (const player of line.players) m.set(player.jid, line.position);
+    for (const player of p.capped) m.set(player.jid, null);
+    return m;
+  });
+  const postersByDay = days.map((day) => window.filter((r) => r.dayNumber === day).length);
+  const players = new Map<string, { habit: PlayerHabit; recent: ShareContext['recent'] }>();
+  for (const row of today) {
+    const mine = window.filter((r) => r.sender === row.sender).sort((a, b) => b.dayNumber - a.dayNumber);
+    players.set(row.sender, {
+      habit: habitOf(nameOf(row), mine, positionsByDay),
+      recent: mine.map((r) => ({
+        date: dateForDayNumber(r.dayNumber),
+        score: scoreOf(r),
+        position: positionsByDay[days.indexOf(r.dayNumber)]?.get(r.sender) ?? null,
+        posters: postersByDay[days.indexOf(r.dayNumber)] ?? 0,
+      })),
+    });
+  }
+  return {
+    date: dateForDayNumber(dayNumber),
+    weekday: weekdayOf(dateForDayNumber(dayNumber), group.language),
+    typical: TYPICAL_SCORE,
+    habitDays: HABIT_DAYS,
+    usualPosters: postersByDay.length ? round1(postersByDay.reduce((a, b) => a + b, 0) / postersByDay.length) : null,
+    board,
+    players,
   };
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { dayNumber } from '@whippin/shared';
-import { dayLabel, joinNames, renderPodium, renderReminder } from './podiumText';
+import { CAPPED_LINE_ID, dayLabel, joinNames, renderPodium, renderReminder } from './podiumText';
 
 const podium = {
   dayNumber: dayNumber('2026-09-01'),
@@ -65,5 +65,20 @@ describe('podium rendering (#236)', () => {
     expect(renderReminder('fr', 'https://whippin.ai', null, null)).toBe('Le Whippin du jour est en ligne.\nhttps://whippin.ai');
     // An unknown kind (the set is open) is left unsaid rather than guessed at.
     expect(renderReminder('en', 'https://whippin.ai', 'podcast', null)).toBe("Today's Whippin is up.\nhttps://whippin.ai");
+  });
+
+  it('prints the ∞ line\'s comment like any other (PR-278 review)', () => {
+    // It is printed under the places and read as one of them, so the one bare slot on a
+    // mixed podium was read as a snub.
+    const podium = {
+      dayNumber: 20700,
+      lines: [{ position: 1, score: 3, players: [{ jid: 'a', name: 'Gab' }] }],
+      capped: [{ jid: 'b', name: 'Claire' }],
+    };
+    const text = renderPodium(podium, 'fr', new Map([['3', 'Impeccable.'], [CAPPED_LINE_ID, 'Tu es allée au bout.']]));
+    expect(text).toContain('1 — Gab — 3\n_Impeccable._');
+    expect(text).toContain('∞ — Claire\n_Tu es allée au bout._');
+    // No comment for it is still a complete podium.
+    expect(renderPodium(podium, 'fr', new Map([['3', 'Impeccable.']]))).toContain('∞ — Claire');
   });
 });

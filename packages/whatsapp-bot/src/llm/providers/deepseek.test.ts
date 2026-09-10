@@ -20,7 +20,7 @@ describe('DeepSeek provider boundary (#236)', () => {
       ],
       usage: { prompt_tokens: 12, completion_tokens: 3 },
     });
-    const provider = deepSeekProvider({ apiKey: 'k', model: 'deepseek-v4-flash', fetch: doFetch });
+    const provider = deepSeekProvider({ apiKey: 'k', model: 'deepseek-flash', fetch: doFetch });
     const response = await provider.generate({
       system: 'sys',
       messages: [
@@ -43,7 +43,7 @@ describe('DeepSeek provider boundary (#236)', () => {
     expect(url).toBe('https://api.deepseek.com/chat/completions');
     expect((init.headers as Record<string, string>).authorization).toBe('Bearer k');
     const sent = JSON.parse(init.body as string);
-    expect(sent.model).toBe('deepseek-v4-flash');
+    expect(sent.model).toBe('deepseek-flash');
     expect(sent.messages[0]).toEqual({ role: 'system', content: 'sys' });
     expect(sent.messages[2].tool_calls[0].function.name).toBe('t');
     expect(sent.messages[3]).toEqual({ role: 'tool', content: '{}', tool_call_id: 'x' });

@@ -33,6 +33,8 @@
     "bot:cli": "pnpm --filter @whippin/whatsapp-bot cli",
     "bot:groups": "pnpm --filter @whippin/whatsapp-bot groups",
     "bot:build": "pnpm --filter @whippin/whatsapp-bot build",
+    "bot:fixture": "pnpm --filter @whippin/whatsapp-bot fixture",
+    "bot:diary": "pnpm --filter @whippin/whatsapp-bot diary",
     "infra:synth": "pnpm --filter @whippin/infra synth",
     "infra:diff": "pnpm --filter @whippin/infra diff",
     "infra:deploy": "pnpm --filter @whippin/infra run deploy",
