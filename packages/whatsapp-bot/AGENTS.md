@@ -66,10 +66,14 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
     src/main.ts                 the Fargate task entry
     src/podiumJob.ts            the Lambda entry (EventBridge Scheduler → podium / reminder command on the
                                 queue, and the diary rewrite at the day flip)
+    src/whatsappExport.ts       reading a WhatsApp export — ONE parser for the two paths below, and the
+                                one place an exported author (half of them phone numbers) becomes the
+                                name the group uses
+    src/diarySeed.ts            `pnpm bot:diary` — fold an export's history into the diary, day by day,
+                                through the nightly rewrite; writes the current day to the day log
+    src/fixture.ts              `pnpm bot:fixture` — every bot line of an export, with its context, to rate
     src/pair.ts, src/cli.ts     operator paths: pairing (QR / code), `groups` listing, `forget`
     scripts/bundle.mjs          esbuild bundle of main.ts for the image (deps external)
-    scripts/fixtureFromExport.mjs  the eval fixture: every bot line of a WhatsApp export, with its context,
-                                for the user to rate (writes eval/local/, gitignored)
     Dockerfile                  built from the REPO ROOT (see the root .dockerignore whitelist)
 ```
 
@@ -477,7 +481,20 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   about THEMSELVES, written only when the model called `remember` about the person
   talking, read only when that person spoke again — could not hold a joke about one person
   made while talking to another, nor anything about the group; it and the `remember` tool
-  are gone. `bot:cli forget <group> <player JID | name>` is now a REWRITE
+  **A GROUP THAT HAS BEEN PLAYING FOR MONTHS IS SEEDED FROM ITS EXPORT**
+  (`diarySeed.ts`, `pnpm bot:diary`): the history is folded day by day, in order, through
+  the SAME `rewriteDiary` the nightly job calls — so what comes out is the bot's own voice
+  under the one prompt, and each day sees the diary as the day before left it, which is
+  what compresses July down to what still matters by September. It stops at the last
+  COMPLETE Whippin day and files the current day's messages in the DAY LOG instead, so
+  tonight's job folds that day itself with everything said after the export was taken:
+  seeded into the diary, the day would be `already_folded` and the evening lost. It
+  refuses to overwrite a diary without `--force`, a diary being the one thing here that
+  cannot be rebuilt from the game's own rows. An exported author is a NAME or a PHONE
+  NUMBER, so every one goes through `displayName` (`whatsappExport.ts` `speakerName`) —
+  the group's override, or the `…last4` handle — and the turn is composed the way
+  `main.ts` composes a live one: share block out, mentions named, quote spelled out.
+  `bot:cli forget <group> <player JID | name>` is now a REWRITE
   (`withoutPerson`): the model writes the diary again without them, and a rewrite that
   still names them is not stored; their turns in the day log expire on their own. **It
   takes the NAME as readily as a JID** (PR-278 review): the diary writes people by the name
@@ -828,7 +845,8 @@ pnpm bot:pair         # print the QR (or --phone <digits> for a pairing code); -
 pnpm bot:cli groups   # list the paired account's groups with their JIDs (takes the lease)
 pnpm bot:groups list  # what SSM holds  |  push <slug> | rm <slug> | pull [slug]  (no lease)
 pnpm bot:cli forget <group JID> <player JID>   # rewrite the group's diary without them (needs the model)
-pnpm bot:fixture <export.md|export.txt>       # every bot line of a WhatsApp export, to rate (eval/local/, gitignored)
+pnpm bot:fixture <export.md>                  # every bot line of a WhatsApp export, to rate (eval/local/, gitignored)
+pnpm bot:diary <group JID> <export.md>        # seed the diary from an export's history (--dry-run first)
 pnpm bot:build        # bundle main.ts into dist/ (what the Dockerfile runs)
 pnpm --filter @whippin/whatsapp-bot test
 ```
@@ -868,6 +886,11 @@ there is one region knob and not two.
   a manual replay/rebuild of ingestion, bot commands beyond addressing.
 - `chat.perUserPerDay` no longer exists (#277): the SSM configs must be pushed without it
   before the next deploy's `pull`.
+- **The beta group's SSM config still carries `chat.perUserPerDay`** — confirmed
+  2026-09-10, when the seeding run refused it (`beta.json: unknown field
+  "chat.perUserPerDay"`). It must be pulled, edited and pushed without the field before the
+  deploy that follows this change, or the task and the podium Lambda refuse to load the
+  group at all.
 - **The model is `deepseek-flash`** (#277 step 5, 2026-09-10): DeepSeek's name for the
   CURRENT Flash model, which is V4.1-Flash as of that day's release. It is deliberately the
   UNVERSIONED name — a bot that talks to a group wants the model DeepSeek is serving, and
