@@ -101,6 +101,15 @@ export type AgentOutcome =
 export interface AnswerOptions {
   approach: Approach;
   exchange: Exchange;
+  // WHICH MESSAGE IS BEING ANSWERED (PR-278 review, second round). The prompt is the whole
+  // day, and a conversation is serialized per group — so the message being answered is NOT
+  // always the last turn of it: B arriving while the bot writes its answer to A is filed
+  // first and answered second, and its prompt reads A → B → the answer to A. Told only
+  // "the last message", the model carried on with A or declined. So the turn is MARKED
+  // where it sits. `text` is what `main.ts` filed for it (its own cleaning is the one
+  // spelling of that), and it stands in when the day log never took the turn at all — a
+  // store that refused would otherwise leave the question out of the prompt entirely.
+  said: { id: string; name: string; text: string };
 }
 
 // One plain-text bubble: markdown marks and control characters out, whitespace collapsed,
@@ -148,13 +157,16 @@ const REACTION_LIST = REACTIONS.join(' ');
 // THE RULES OF THE MOMENT: addressed or ambient, and how far into an exchange the bot is.
 // The count is what lets the model raise its own bar before the code has to (`trigger.ts`).
 export function approachContext(approach: Approach, exchange: Exchange, wrote: number, of: number): string {
+  // NEVER "the last message" (PR-278 review): it is not always the last turn — see
+  // `AnswerOptions.said`. The mark is the one that is in the transcript.
+  const target = `The message marked "${ANSWERING}" below`;
   const closers = `A thank-you, a goodbye, an acknowledgement, a one-word reaction gets exactly "${REACT_PREFIX} <emoji>" and nothing else — one of ${REACTION_LIST} — never a sentence: a reaction is how a person closes an exchange, and you never take the last word.`;
-  const share = `You wrote ${wrote} of the last ${of} messages in this group.`;
+  const share = `You wrote ${wrote} of the last ${of} messages in this group. Anything after the marked message arrived while you were writing; you are answering the marked one, not the end of the transcript.`;
   if (approach !== 'ambient') {
-    return `The last message is addressed to you (${approach === 'mention' ? 'you are mentioned' : approach === 'reply' ? 'it replies to one of your lines' : 'it says your name'}). Answer it in one short message. ${closers} ${share}`;
+    return `${target} is addressed to you (${approach === 'mention' ? 'you are mentioned' : approach === 'reply' ? 'it replies to one of your lines' : 'it says your name'}). Answer THAT message in one short message. ${closers} ${share}`;
   }
   const unasked = exchange.unasked;
-  return `The last message is NOT addressed to you: it is the group talking. By default you stay out of it — answer exactly NO_REPLY and nothing else. Answer in words only when the message is plainly meant for you: a reply to what you just said, a question only you can answer, a place where a number nobody else has belongs. ${closers} ${share} In this exchange you have already answered ${unasked} time${unasked === 1 ? '' : 's'} without being addressed: the more you have said unasked, the more a reply has to bring — a fact, an answer to a real question — or it is NO_REPLY.`;
+  return `${target} is NOT addressed to you: it is the group talking. By default you stay out of it — answer exactly NO_REPLY and nothing else. Answer in words only when THAT message is plainly meant for you: a reply to what you just said, a question only you can answer, a place where a number nobody else has belongs. ${closers} ${share} In this exchange you have already answered ${unasked} time${unasked === 1 ? '' : 's'} without being addressed: the more you have said unasked, the more a reply has to bring — a fact, an answer to a real question — or it is NO_REPLY.`;
 }
 
 export function createAgent(deps: AgentDeps) {
@@ -233,7 +245,23 @@ export function createAgent(deps: AgentDeps) {
       return null;
     }));
     if (diary) messages.push({ role: 'user', content: diary });
-    for (const turn of turns) messages.push(turnMessage(turn, group.timezone));
+    let named = false;
+    for (const turn of turns) {
+      const answering = turn.kind === 'said' && turn.id === options.said.id;
+      named ||= answering;
+      messages.push(turnMessage(turn, group.timezone, answering));
+    }
+    // The day log never took it (a store that refused, logged where it happened): the
+    // question is put back at the end rather than left out of the prompt altogether.
+    if (!named && options.said.text !== '') {
+      messages.push(
+        turnMessage(
+          { group: group.id, day: today, at: message.timestamp * 1000, id: options.said.id, kind: 'said', name: options.said.name, text: options.said.text },
+          group.timezone,
+          true,
+        ),
+      );
+    }
 
     let text: string | null = null;
     let retried = false;
@@ -327,11 +355,18 @@ export function createAgent(deps: AgentDeps) {
   };
 }
 
+// How the message being answered is pointed at, inside the day it sits in. One string, used
+// by the transcript AND by the rules beside it (`approachContext`), so the two cannot drift.
+export const ANSWERING = '← the message you are answering';
+
 // A turn of the day as the model reads it: a person's words stamped with the group's own
 // clock, the bot's lines as its own, and a reaction of the bot's in the very form it
-// answers one — the transcript shows what was already closed and teaches the form.
-export function turnMessage(turn: Turn, timezone: string): LlmMessage {
-  if (turn.kind === 'said') return { role: 'user', content: `[${clockIn(timezone, turn.at)}] ${turn.name}: ${turn.text}` };
+// answers one — the transcript shows what was already closed and teaches the form. Only a
+// person's turn can be the one being answered; the bot never answers itself.
+export function turnMessage(turn: Turn, timezone: string, answering = false): LlmMessage {
+  if (turn.kind === 'said') {
+    return { role: 'user', content: `[${clockIn(timezone, turn.at)}] ${turn.name}: ${turn.text}${answering ? `  ${ANSWERING}` : ''}` };
+  }
   if (turn.kind === 'reacted') return { role: 'assistant', content: `${REACT_PREFIX} ${turn.text}` };
   return { role: 'assistant', content: turn.text };
 }

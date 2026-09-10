@@ -348,7 +348,14 @@ async function main(): Promise<void> {
         text: withoutShares(message.text, env.siteOrigin),
         ...(message.quoted ? { quoted: { ...message.quoted, text: withoutShares(message.quoted.text, env.siteOrigin) } } : {}),
       };
-      const outcome = await ask(asked, group, bot, today, { approach, exchange });
+      const outcome = await ask(asked, group, bot, today, {
+        approach,
+        exchange,
+        // What was filed for this message, so the prompt can point at it wherever the day
+        // has put it (`AnswerOptions.said`): queued behind another answer, it is not the
+        // last turn of the day by the time it is answered.
+        said: { id: message.id, name: displayName(group, message.sender, message.senderName), text: kept ?? '' },
+      });
       if (outcome.kind === 'silent') {
         log.info({ event: 'chat.silent', reason: outcome.reason, how: approach, group: tag(group.id) }, 'no reply');
         return;

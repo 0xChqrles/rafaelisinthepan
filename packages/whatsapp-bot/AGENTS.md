@@ -367,6 +367,14 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
     a message with nothing to answer (no letter and no digit, and nothing quoted —
     `isWordless`; a reaction to a reaction is noise), a share the bot has just acknowledged
     (that WAS the answer), and anything past the EXCHANGE BUDGET.
+  - **AND THE QUESTION IS NAMED IN THE TRANSCRIPT** (`agent.ts` `ANSWERING`, PR-278
+    review): serialized, the message being answered is NOT always the day's last turn — a
+    message arriving while the bot writes is filed on arrival and answered once the section
+    frees up, so its own prompt reads A → B → the answer to A. Told "the last message", the
+    model carried A on or declined. The turn is MARKED where it sits (never moved: the day
+    stays chronological), `approachContext` points at the mark rather than at the end, and
+    `AnswerOptions.said` carries what `main.ts` filed for it — which also puts the question
+    back in the prompt when the day log never took the turn at all.
   - **THE READ, THE ANSWER AND THE WRITE ARE ONE SECTION PER GROUP** (`chat/serial.ts`
     `serialByKey`, PR-278 review). WhatsApp starts a handler per message without awaiting
     the last (`whatsapp/client.ts`), so a burst had every handler read the same `Exchange`,

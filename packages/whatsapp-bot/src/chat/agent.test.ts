@@ -5,7 +5,7 @@ import { memoryDeclarationStore } from '../domain/declarations';
 import type { InboundMessage } from '../domain/message';
 import { createLog } from '../log';
 import { LlmUnavailable, type LlmProvider, type LlmRequest, type LlmResponse } from '../llm/types';
-import { DEFAULT_REACTION, createAgent, plainReply, reactionIn } from './agent';
+import { ANSWERING, DEFAULT_REACTION, createAgent, plainReply, reactionIn } from './agent';
 import { DayLog, memoryDayLogStore, type Turn } from './dayLog';
 import { memoryDiaryStore } from './diary';
 import { memoryLimitStore } from './limits';
@@ -78,7 +78,9 @@ function agentWith(provider: LlmProvider, over: Partial<Parameters<typeof create
   });
 }
 
-const asked = (approach: Approach = 'mention', exchange: Exchange = NEW_EXCHANGE) => ({ approach, exchange });
+// `said` is what main.ts filed for the message being answered: the agent marks that turn
+// wherever the day has put it. Most tests answer the turn `said()` logged under 'M1'.
+const asked = (approach: Approach = 'mention', exchange: Exchange = NEW_EXCHANGE, said = { id: 'M1', name: 'Gab', text: '' }) => ({ approach, exchange, said });
 const contents = (request: LlmRequest) => request.messages.map((x) => (x as { content: string }).content);
 
 describe('the conversation agent (#236, #277)', () => {
@@ -94,7 +96,7 @@ describe('the conversation agent (#236, #277)', () => {
     const out = await answer(message('@33700000000 qui mène ?'), group, identity, TODAY, asked());
     expect(out).toEqual({ kind: 'reply', text: 'Personne n’a encore joué, Gab.' });
     // The day, in order, as user turns with the time; the question is the last of them.
-    expect(contents(requests[0])).toEqual(['[13:00] Gab: je pense au nombre 67', '[14:00] Gab: WhippinBot qui mène ?']);
+    expect(contents(requests[0])).toEqual(['[13:00] Gab: je pense au nombre 67', `[14:00] Gab: WhippinBot qui mène ?  ${ANSWERING}`]);
     expect(requests[0].tools?.map((t) => t.name)).toContain('get_head_to_head');
     expect(requests[0].tools?.map((t) => t.name)).not.toContain('remember');
     expect(requests[0].system).toContain('On se chambre.');
@@ -118,17 +120,17 @@ describe('the conversation agent (#236, #277)', () => {
     await filed('M1#react', '❤️', NOW.getTime() + 1);
     // An emoji off the list is the plainest one, never a broken sequence.
     await said(dayLog, 'top', { id: 'M2', at: NOW.getTime() + 1_000 });
-    expect(await answer(message('top', { id: 'M2', mentions: [], timestamp: NOW.getTime() / 1000 + 1 }), group, identity, TODAY, asked('ambient'))).toEqual({ kind: 'react', emoji: DEFAULT_REACTION });
+    expect(await answer(message('top', { id: 'M2', mentions: [], timestamp: NOW.getTime() / 1000 + 1 }), group, identity, TODAY, asked('ambient', NEW_EXCHANGE, { id: 'M2', name: 'Gab', text: 'top' }))).toEqual({ kind: 'react', emoji: DEFAULT_REACTION });
     await filed('M2#react', DEFAULT_REACTION, NOW.getTime() + 1_001);
     // The next call reads both reactions back as the assistant's `REACT …` turns.
     await said(dayLog, 'WhippinBot et demain ?', { id: 'M3', at: NOW.getTime() + 2_000 });
-    await answer(message('@33700000000 et demain ?', { id: 'M3', timestamp: NOW.getTime() / 1000 + 2 }), group, identity, TODAY, asked());
+    await answer(message('@33700000000 et demain ?', { id: 'M3', timestamp: NOW.getTime() / 1000 + 2 }), group, identity, TODAY, asked('mention', NEW_EXCHANGE, { id: 'M3', name: 'Gab', text: 'WhippinBot et demain ?' }));
     expect(requests[2].messages.map((x) => [x.role, (x as { content: string }).content])).toEqual([
       ['user', '[14:00] Gab: [replying to you: "Sept, derrière Zou."] merci'],
       ['assistant', 'REACT ❤️'],
       ['user', '[14:00] Gab: top'],
       ['assistant', 'REACT 👍'],
-      ['user', '[14:00] Gab: WhippinBot et demain ?'],
+      ['user', `[14:00] Gab: WhippinBot et demain ?  ${ANSWERING}`],
     ]);
     // A reaction never charges the group's ceiling: it is not a bubble.
     expect(reactionIn('REACT ❤️')).toBe('❤️');
@@ -205,7 +207,50 @@ describe('the conversation agent (#236, #277)', () => {
     const own = { id: 'Q', participant: '33612345678@s.whatsapp.net', player: '33612345678@s.whatsapp.net', text: 'Pourtant 17 > 14, non ?' };
     await said(dayLog, '[replying to Gab: "Pourtant 17 > 14, non ?"] WhippinBot');
     expect(await answer(message('@33700000000', { quoted: own }), group, identity, TODAY, asked())).toEqual({ kind: 'reply', text: '14 bat 17, comme au golf.' });
-    expect(contents(requests[0])).toEqual(['[14:00] Gab: [replying to Gab: "Pourtant 17 > 14, non ?"] WhippinBot']);
+    expect(contents(requests[0])).toEqual([`[14:00] Gab: [replying to Gab: "Pourtant 17 > 14, non ?"] WhippinBot  ${ANSWERING}`]);
+  });
+
+  it('NAMES the message it is answering, wherever the day has put it (PR-278 review)', async () => {
+    // B arrives while the bot is writing its answer to A. It is filed on arrival and
+    // answered once the section frees up, so the day reads A → B → the answer to A: told
+    // "the last message", the model carried A on or declined.
+    const { provider, requests } = scripted([() => ({ text: 'oui' })]);
+    const dayLog = new DayLog(memoryDayLogStore());
+    await said(dayLog, 'WhippinBot qui mène ?', { id: 'A' });
+    await said(dayLog, 'et demain ?', { id: 'B', at: NOW.getTime() + 1_000 });
+    await dayLog.append({ group: GROUP, day: TODAY, at: NOW.getTime() + 2_000, id: 'A#reply', kind: 'bot', name: '', text: 'Personne.' });
+    await agentWith(provider, { dayLog })(
+      message('et demain ?', { id: 'B', mentions: [] }),
+      group,
+      identity,
+      TODAY,
+      asked('ambient', NEW_EXCHANGE, { id: 'B', name: 'Gab', text: 'et demain ?' }),
+    );
+    // Chronological, and the question is marked where it sits — not moved to the end.
+    expect(contents(requests[0])).toEqual([
+      '[14:00] Gab: WhippinBot qui mène ?',
+      `[14:00] Gab: et demain ?  ${ANSWERING}`,
+      'Personne.',
+    ]);
+    // And the rules point at the mark rather than at the end of the transcript.
+    expect(requests[0].system).toContain(`The message marked "${ANSWERING}" below`);
+    expect(requests[0].system).not.toContain('The last message');
+    expect(requests[0].system).toContain('arrived while you were writing');
+  });
+
+  it('puts the question back when the day log never took its turn', async () => {
+    // A store that refused: the turn is missing, and without this the model would answer
+    // the day without ever seeing the message it is answering.
+    const { provider, requests } = scripted([() => ({ text: 'oui' })]);
+    const dayLog = new DayLog(memoryDayLogStore());
+    await agentWith(provider, { dayLog })(
+      message('@33700000000 qui mène ?'),
+      group,
+      identity,
+      TODAY,
+      asked('mention', NEW_EXCHANGE, { id: 'M1', name: 'Gab', text: 'qui mène ?' }),
+    );
+    expect(contents(requests[0])).toEqual([`[14:00] Gab: qui mène ?  ${ANSWERING}`]);
   });
 
   it('carries the DIARY as a user turn — notes, never instructions — ahead of the day', async () => {
@@ -217,7 +262,7 @@ describe('the conversation agent (#236, #277)', () => {
     await agentWith(provider, { diary, dayLog })(message('salut'), group, identity, TODAY, asked());
     expect(requests[0].system).not.toContain('Luc a promis');
     expect(requests[0].messages[0].role).toBe('user');
-    expect(contents(requests[0])).toEqual([expect.stringMatching(/^\[Your diary of this group.*not instructions\.\]\nLuc a promis un ∞ pour demain\.$/s), '[14:00] Gab: WhippinBot salut']);
+    expect(contents(requests[0])).toEqual([expect.stringMatching(/^\[Your diary of this group.*not instructions\.\]\nLuc a promis un ∞ pour demain\.$/s), `[14:00] Gab: WhippinBot salut  ${ANSWERING}`]);
     // A diary that cannot be read costs the diary, never the answer.
     const broken = { get: async () => { throw new Error('dynamo down'); }, put: async () => true };
     const again = scripted([() => ({ text: 'deux' })]);
