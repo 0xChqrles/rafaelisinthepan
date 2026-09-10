@@ -230,6 +230,7 @@ export function createAgent(deps: AgentDeps) {
     const recent = turns.slice(-RECENT_TURNS);
     const wrote = recent.filter((t) => t.kind !== 'said').length;
     const system = buildSystemPrompt({
+      name: group.chat.name,
       language: group.language,
       groupPrePrompt: group.chat.prePrompt,
       extra:
