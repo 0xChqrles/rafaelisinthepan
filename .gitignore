@@ -21,6 +21,9 @@ __pycache__
 # pulled from it before a build or a deploy. A group JID names a real private conversation
 # and this repo is public, so the snapshot is never committed — `groups/example.json` is.
 packages/whatsapp-bot/groups/local/*.json
+# The eval fixture (#277): every bot line of a WhatsApp export, with its context, for the
+# user to rate. An export of a private group names real people; never committed.
+packages/whatsapp-bot/eval/local/
 
 # ── Editor / tooling local state ─────────────────────────────
 .claude/settings.local.json

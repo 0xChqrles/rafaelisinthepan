@@ -70,6 +70,7 @@ export async function generateShareComment(
   takeCall: () => Promise<boolean> = async () => true,
 ): Promise<string | null> {
   const system = buildSystemPrompt({
+    name: group.chat.name,
     language: group.language,
     groupPrePrompt: group.chat.prePrompt,
     extra: TASK(facts.mode),

@@ -10,7 +10,9 @@
     "start": "tsx src/main.ts",
     "pair": "tsx src/pair.ts",
     "cli": "tsx src/cli.ts",
-    "groups": "tsx src/groupsCli.ts"
+    "groups": "tsx src/groupsCli.ts",
+    "fixture": "tsx src/fixture.ts",
+    "diary": "tsx src/diarySeed.ts"
   },
   "dependencies": {
     "@aws-sdk/client-cloudwatch": "3.1075.0",

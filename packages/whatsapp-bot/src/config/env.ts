@@ -7,7 +7,11 @@ import { fileURLToPath } from 'node:url';
 
 export interface LlmEnv {
   provider: string; // BOT_LLM_PROVIDER, e.g. "deepseek"
-  model: string; // BOT_LLM_MODEL, e.g. "deepseek-v4-flash"
+  // BOT_LLM_MODEL. `deepseek-flash` is DeepSeek's own name for the CURRENT Flash model
+  // (V4.1-Flash since 2026-09-10) — a moving pin, which is what a chat bot wants; the
+  // versioned `deepseek-v4-flash` is a compatibility alias DeepSeek routes to the same
+  // model and will retire, as it retired `deepseek-chat`.
+  model: string;
   apiKeyParameter?: string; // SSM SecureString holding the provider key
   apiKey?: string; // local runs only (BOT_LLM_API_KEY); production uses the parameter
   // Daily ceiling on model CALLS across every group — the last line against one bored
@@ -83,7 +87,7 @@ export function loadEnv(env: NodeJS.ProcessEnv = process.env): BotEnv {
     metricsNamespace: env.BOT_METRICS_NAMESPACE || undefined,
     llm: {
       provider: env.BOT_LLM_PROVIDER || 'deepseek',
-      model: env.BOT_LLM_MODEL || 'deepseek-v4-flash',
+      model: env.BOT_LLM_MODEL || 'deepseek-flash',
       apiKeyParameter: env.BOT_LLM_API_KEY_PARAMETER || undefined,
       apiKey: env.BOT_LLM_API_KEY || undefined,
       dailyCallCeiling: ceiling,

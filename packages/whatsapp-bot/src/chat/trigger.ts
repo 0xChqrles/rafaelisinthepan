@@ -1,8 +1,24 @@
-// Conversation is OPT-IN per message (#236): the bot reads the whole group stream (that is
-// how it finds shares) but the model sees a message only when it is deliberately aimed at
-// the bot — an explicit mention, a reply to one of the bot's messages, or a conservative
-// direct-name form ("WhippinBot, …"). Everything else is a group of humans talking among
-// themselves, which is not prompt material.
+// WHEN THE BOT SPEAKS (#236, rewritten in #277). Every live message of a configured group
+// reaches the model once, with the whole day in front of it; what this module decides is
+// HOW it reaches it, and where the code stops the model regardless of what it decides.
+//
+// Two kinds of message. ADDRESSED — a mention, a reply to one of the bot's lines, or its
+// name as a whole word anywhere — is always answered: the person opted in, and a limit on
+// answering somebody who asked is the bot missing "when we need him". AMBIENT — the rest —
+// is offered to the model, which answers, reacts, or stays out of it, under a budget the
+// code holds (below). A message with nothing to answer — no words and nothing quoted, an
+// emoji alone — is not offered at all.
+//
+// THE EXCHANGE BUDGET (user-decided 2026-09-09). It used to be a window of three messages
+// after the bot's own last line, reset by every line the bot said — which is a loop with
+// one person: 25 bot messages in an hour, measured, every one of them a follow-up to a
+// follow-up, until the person went to bed. The limit is only ever on VOLUNTEERING: the
+// bot's UNASKED answers in a row are counted (`Exchange.unasked`), a reaction counts for
+// nothing (it adds no bubble), an addressed answer resets the count (they asked), a gap of
+// `EXCHANGE_GAP_MS` ends the exchange, and at `MAX_UNASKED_IN_A_ROW` the bot stops
+// volunteering until somebody addresses it. Set high: the longest good unasked chain in
+// the log was six, the bad ones fourteen to twenty-five. The count is also told to the
+// model, which is how it can raise its own bar before the code has to.
 
 import type { InboundMessage, Mention, QuotedRef } from '../domain/message';
 import { fallbackName } from '../domain/names';
@@ -52,41 +68,43 @@ function namedAnywhere(name: string): RegExp {
   return new RegExp(`(?<![\\p{L}\\p{N}_])@?${escapeRegExp(name)}${nameBoundary(name)}`, 'iu');
 }
 
-export type Address = 'mention' | 'reply' | 'name' | 'follow' | null;
+export type Address = 'mention' | 'reply' | 'name';
+// How a message reaches the model: addressed, or ambient — offered, declinable.
+export type Approach = Address | 'ambient';
 
-// THE FLOOR: when the bot last spoke in a group, and how many messages the group has said
-// since — main.ts keeps one per group off every message the group delivers, the bot's own
-// sends included (WhatsApp echoes them back as `fromMe`). `at` is the message's OWN
-// timestamp, so an offline delivery orders correctly.
-export interface Floor {
-  botAt: number | null; // ms; null until the bot has said anything
-  since: number; // messages by anybody else since that line
+export const MAX_UNASKED_IN_A_ROW = 8;
+export const EXCHANGE_GAP_MS = 10 * 60_000;
+
+export interface Exchange {
+  unasked: number; // the bot's unaddressed text answers in a row
+  lastSpokeAt: number | null; // ms; when the bot last answered in text
 }
 
-export const EMPTY_FLOOR: Floor = { botAt: null, since: 0 };
+export const NEW_EXCHANGE: Exchange = { unasked: 0, lastSpokeAt: null };
 
-export function advanceFloor(floor: Floor, message: { fromMe: boolean; at: number }): Floor {
-  if (message.fromMe) return floor.botAt !== null && message.at < floor.botAt ? floor : { botAt: message.at, since: 0 };
-  // A message from before the bot's line (an offline delivery, a replay) is not "since".
-  if (floor.botAt !== null && message.at < floor.botAt) return floor;
-  return { botAt: floor.botAt, since: floor.since + 1 };
+// The exchange as it stands at `at`: over, and counted from zero, once the bot has been
+// quiet for the gap.
+export function currentExchange(exchange: Exchange, at: number): Exchange {
+  if (exchange.lastSpokeAt === null || at - exchange.lastSpokeAt > EXCHANGE_GAP_MS) return NEW_EXCHANGE;
+  return exchange;
 }
 
-export const FOLLOW_UP_WINDOW_MS = 5 * 60_000;
-export const FOLLOW_UP_MESSAGES = 3;
+// Whether an ambient message may be offered at all.
+export function mayVolunteer(exchange: Exchange, at: number): boolean {
+  return currentExchange(exchange, at).unasked < MAX_UNASKED_IN_A_ROW;
+}
 
-// A message that FOLLOWS the bot's own last line, soon after it, MAY be a reply to it
-// (user-decided 2026-09-04): a person answering a line does not @-mention its author, and
-// a "merci" or an "et hier ?" after the bot spoke reads as one. It is offered to the model
-// as TENTATIVE — the agent tells it so and asks it to decline what was clearly not for it —
-// never treated as certain. Bounded: the first FOLLOW_UP_MESSAGES messages inside
-// FOLLOW_UP_WINDOW_MS of the bot's line, and no more, so a lively room after a podium
-// costs a few declined calls and not one per message. (It was ONE message inside two
-// minutes, and that missed the second person reacting to the same line, and anybody who
-// took more than two minutes to type.)
-export function followsBot(floor: Floor | undefined, at: number): boolean {
-  if (!floor || floor.botAt === null) return false;
-  return at >= floor.botAt && at - floor.botAt <= FOLLOW_UP_WINDOW_MS && floor.since < FOLLOW_UP_MESSAGES;
+// After a TEXT answer. A reaction changes nothing here: it is how an exchange is closed,
+// not continued.
+export function afterAnswer(exchange: Exchange, approach: Approach, at: number): Exchange {
+  const current = currentExchange(exchange, at);
+  return { unasked: approach === 'ambient' ? current.unasked + 1 : 0, lastSpokeAt: at };
+}
+
+// Nothing to answer: no letter and no digit in it (an emoji, a sticker, a reaction, an
+// empty caption). Not offered — a reaction to a reaction is noise.
+export function isWordless(text: string): boolean {
+  return !/[\p{L}\p{N}]/u.test(text);
 }
 
 // Either spelling of a reference may be the bot's: the JID the message carried, or the
@@ -99,7 +117,7 @@ function namesBot(ref: Mention | QuotedRef, identity: BotIdentity): boolean {
   return isBot(jid, identity) || isBot(ref.player, identity);
 }
 
-export function addressedTo(message: InboundMessage, identity: BotIdentity): Address {
+export function addressedTo(message: InboundMessage, identity: BotIdentity): Address | null {
   if (message.mentions.some((m) => namesBot(m, identity))) return 'mention';
   if (message.quoted && namesBot(message.quoted, identity)) return 'reply';
   if (namedAnywhere(identity.name).test(message.text)) return 'name';
@@ -132,13 +150,13 @@ export function mentionedOthers(message: InboundMessage, identity: BotIdentity):
 
 const MENTION = /@(\d{5,})/g;
 
-// EVERY mention replaced by a name, for a message that was NOT addressed to the bot and is
-// being remembered (main.ts). The window reaches the provider on a later question, and a
-// mention token spells the phone number (or LID) of whoever it points at — the identifier
-// the addressed path is careful to resolve before the model reads it. Same rule here, same
-// fallback: the name the group uses, or the `…last4` handle every other surface shows for
-// a nameless JID, so a full number never travels — not even one typed by hand, since the
-// token is matched in the TEXT and not in the message's mention list.
+// EVERY mention replaced by a name, for a message on its way into the day log. The log
+// reaches the provider on every later message, and a mention token spells the phone
+// number (or LID) of whoever it points at — the identifier the addressed path is careful
+// to resolve before the model reads it. Same rule here, same fallback: the name the group
+// uses, or the `…last4` handle every other surface shows for a nameless JID, so a full
+// number never travels — not even one typed by hand, since the token is matched in the
+// TEXT and not in the message's mention list.
 export function withMentionNames(text: string, names: ReadonlyMap<string, string>): string {
   return text
     .replace(MENTION, (_whole, digits: string) => ` ${names.get(digits) ?? fallbackName(digits)} `)
@@ -146,15 +164,10 @@ export function withMentionNames(text: string, names: ReadonlyMap<string, string
     .trim();
 }
 
-// What the model reads: the BOT's mention tokens and a leading name form removed, so the
-// prompt holds the question and not the addressing.
-//
-// EVERY OTHER MENTION SURVIVES AS A NAME. Deleting them all was the same line of code and
-// it silently rewrote the question — "@Bot combien de jours que @Zou me bat ?" reached the
-// model as "combien de jours que me bat ?", a sentence about nobody. What replaces one is
-// the name the group uses (`names`, resolved by the agent, which is where name resolution
-// lives); anything unresolved falls back to the same `…last4` handle every other surface
-// shows for a nameless JID, so a full phone number never travels to the provider.
+// What is left of a message once the BOT's mention tokens and a leading name form are
+// removed — the question, or nothing. With no resolution supplied, EVERY mention reads as
+// addressing (a bare "@Bot @Zou" is not a question); with one, every other mention
+// survives as the name the group uses, never as the number behind it.
 export function questionText(
   message: InboundMessage,
   identity: BotIdentity,
@@ -167,12 +180,19 @@ export function questionText(
   for (const m of message.mentions) if (namesBot(m, identity)) own.add(jidUser(m.jid));
   const text = message.text.replace(MENTION, (whole, digits: string) => {
     if (own.has(digits)) return ' ';
-    // With no resolution supplied, this is the emptiness test's reading (see the agent):
-    // every mention is addressing, and what is left is the question or nothing.
     return names.size === 0 ? ' ' : ` ${names.get(digits) ?? fallbackName(digits)} `;
   });
   return text
     .replace(nameForm(identity.name, '[\\s,:;!?—-]*'), '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+// NOTHING TO ANSWER: no question once the addressing is gone, AND nothing quoted. A bare
+// `@bot` under somebody's own question (2026-09-08, in production: a player quoted his
+// question and tagged the bot, and got nothing) IS a question — the quote is what he
+// asked. Only a mention with nothing behind it and nothing under it is empty.
+export function nothingToAnswer(message: InboundMessage, identity: BotIdentity): boolean {
+  if (message.quoted && !isWordless(message.quoted.text)) return false;
+  return isWordless(questionText(message, identity));
 }

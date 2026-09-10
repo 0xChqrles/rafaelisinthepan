@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import type { InboundMessage } from '../domain/message';
-import { EMPTY_FLOOR, FOLLOW_UP_MESSAGES, FOLLOW_UP_WINDOW_MS, addressedTo, advanceFloor, followsBot, questionText, withMentionNames } from './trigger';
+import {
+  EXCHANGE_GAP_MS,
+  MAX_UNASKED_IN_A_ROW,
+  NEW_EXCHANGE,
+  addressedTo,
+  afterAnswer,
+  currentExchange,
+  isWordless,
+  mayVolunteer,
+  nothingToAnswer,
+  questionText,
+  withMentionNames,
+} from './trigger';
 
 const identity = { jids: ['33700000000@s.whatsapp.net', '99999999999999@lid'], name: 'WhippinBot' };
 const m = (jid: string, player = jid) => ({ jid, player });
@@ -43,7 +55,7 @@ describe('conversation triggers (#236)', () => {
 
   it('fires on the name, leading or not, and never on a longer word', () => {
     expect(addressedTo(message({ text: 'WhippinBot, ça fait combien ?' }), identity)).toBe('name');
-    expect(addressedTo(message({ text: 'whippinbot t\'es là ?' }), identity)).toBe('name');
+    expect(addressedTo(message({ text: "whippinbot t'es là ?" }), identity)).toBe('name');
     // Mid-sentence too (user-decided 2026-09-04): a friend is addressed like this in a group.
     expect(addressedTo(message({ text: 'je crois que WhippinBot dort' }), identity)).toBe('name');
     expect(addressedTo(message({ text: 'WhippinBotte' }), identity)).toBeNull();
@@ -63,8 +75,6 @@ describe('conversation triggers (#236)', () => {
   it('strips the addressing from what the model reads', () => {
     expect(questionText(message({ text: '@33700000000  ça fait combien de jours ?' }), identity)).toBe('ça fait combien de jours ?');
     expect(questionText(message({ text: 'WhippinBot: qui mène ?' }), identity)).toBe('qui mène ?');
-    // The bot mentioned by a LID `identity` does not list, beside another mention: the
-    // token that counted as addressing must not survive as a handle in the question.
     const unlisted = { ...identity, jids: ['33700000000@s.whatsapp.net'] };
     const lid = message({
       text: '@99999999999999 combien de jours que @33600000000 me bat ?',
@@ -75,10 +85,6 @@ describe('conversation triggers (#236)', () => {
   });
 
   it('names EVERY mention of a remembered message, so no number reaches the provider later', () => {
-    // The ambient path (main.ts): the message was not for the bot, but it enters the window
-    // the next question carries. "@336… tu confirmes ?" spells a phone number; what is
-    // remembered is the name the group uses, or the `…last4` handle when nobody is known —
-    // and a number typed by hand, absent from the mention list, gets the same treatment.
     const names = new Map([['33600000000', 'Zou']]);
     expect(withMentionNames('@33600000000 tu confirmes ?', names)).toBe('Zou tu confirmes ?');
     expect(withMentionNames('@33659018262 tu confirmes ?', names)).toBe('…8262 tu confirmes ?');
@@ -86,36 +92,69 @@ describe('conversation triggers (#236)', () => {
     expect(withMentionNames('rien à voir', names)).toBe('rien à voir');
   });
 
-  it('offers the first few messages after the bot\'s own line as possible replies, for a while', () => {
-    // A person answering the bot does not @-mention it. The first FOLLOW_UP_MESSAGES
-    // messages inside the window are candidates — the second person reacting to the same
-    // line counts too — and then the room is talking among itself.
-    const said = advanceFloor(EMPTY_FLOOR, { fromMe: true, at: 1_000_000 });
-    expect(followsBot(EMPTY_FLOOR, 5)).toBe(false);
-    expect(followsBot(said, said.botAt! + 5_000)).toBe(true);
-    expect(followsBot(said, said.botAt! + FOLLOW_UP_WINDOW_MS)).toBe(true);
-    expect(followsBot(said, said.botAt! + FOLLOW_UP_WINDOW_MS + 1)).toBe(false);
-    // Out of order (an offline delivery from before the bot spoke) is not a follow-up, and
-    // does not count as "since" either.
-    expect(followsBot(said, said.botAt! - 1)).toBe(false);
-    expect(advanceFloor(said, { fromMe: false, at: said.botAt! - 1 })).toEqual(said);
-    let floor = said;
-    for (let i = 0; i < FOLLOW_UP_MESSAGES; i += 1) {
-      expect(followsBot(floor, said.botAt! + 1_000 * (i + 1))).toBe(true);
-      floor = advanceFloor(floor, { fromMe: false, at: said.botAt! + 1_000 * (i + 1) });
-    }
-    expect(followsBot(floor, said.botAt! + 10_000)).toBe(false);
-    // The bot speaking again resets the count; an older echo of its own does not move it.
-    expect(advanceFloor(floor, { fromMe: true, at: said.botAt! + 20_000 })).toEqual({ botAt: said.botAt! + 20_000, since: 0 });
-    expect(advanceFloor(floor, { fromMe: true, at: said.botAt! - 20_000 })).toEqual(floor);
-  });
-
   it('fires on the name anywhere in the message, as a whole word', () => {
     expect(addressedTo(message({ text: 'salut whippinbot, tu fais quoi' }), identity)).toBe('name');
     expect(addressedTo(message({ text: 'je crois que WhippinBot se trompe' }), identity)).toBe('name');
     expect(addressedTo(message({ text: 'ok @whippinbot' }), identity)).toBe('name');
     expect(addressedTo(message({ text: 'les whippinbottes sont là' }), identity)).toBe(null);
-    // Mid-sentence the name is part of what was said; only the leading form is stripped.
     expect(questionText(message({ text: 'salut whippinbot, tu fais quoi' }), identity)).toBe('salut whippinbot, tu fais quoi');
+  });
 });
+
+describe('nothing to answer (#277)', () => {
+  const bot = '33700000000@s.whatsapp.net';
+  it('a bare mention with nothing quoted is empty; one quoting a question IS the question', () => {
+    // 2026-09-08, in production: a player quoted his own question and tagged the bot, and
+    // got nothing — the text was the mention alone, and the quote was never read.
+    expect(nothingToAnswer(message({ text: '@33700000000', mentions: [m(bot)] }), identity)).toBe(true);
+    expect(nothingToAnswer(message({ text: '@33700000000 @33699998888', mentions: [m(bot), m('33699998888@s.whatsapp.net')] }), identity)).toBe(true);
+    const own = { id: 'Q', participant: '33612345678@s.whatsapp.net', player: '33612345678@s.whatsapp.net', text: 'Pourtant 17 > 14, non ?' };
+    expect(nothingToAnswer(message({ text: '@33700000000', mentions: [m(bot)], quoted: own }), identity)).toBe(false);
+    // A quote with no words left (a photo, a stripped share) is not a question either.
+    expect(nothingToAnswer(message({ text: '@33700000000', mentions: [m(bot)], quoted: { ...own, text: '' } }), identity)).toBe(true);
+    expect(nothingToAnswer(message({ text: '@33700000000 qui mène ?', mentions: [m(bot)] }), identity)).toBe(false);
+  });
+
+  it('a message with no letter and no digit is wordless: an emoji, a sticker, nothing', () => {
+    expect(isWordless('')).toBe(true);
+    expect(isWordless('👍')).toBe(true);
+    expect(isWordless('❤️ 🔥')).toBe(true);
+    expect(isWordless('ok')).toBe(false);
+    expect(isWordless('14')).toBe(false);
+    expect(isWordless('é')).toBe(false);
+  });
+});
+
+describe('the exchange budget (#277)', () => {
+  const T = 1_000_000;
+
+  it('counts the unasked answers in a row; an addressed answer resets it; a gap ends the exchange', () => {
+    let exchange = afterAnswer(NEW_EXCHANGE, 'ambient', T);
+    expect(exchange).toEqual({ unasked: 1, lastSpokeAt: T });
+    exchange = afterAnswer(exchange, 'ambient', T + 1_000);
+    expect(exchange.unasked).toBe(2);
+    // They asked: the person opted in, and the bot is answering, not volunteering.
+    expect(afterAnswer(exchange, 'mention', T + 2_000)).toEqual({ unasked: 0, lastSpokeAt: T + 2_000 });
+    expect(afterAnswer(exchange, 'reply', T + 2_000).unasked).toBe(0);
+    expect(afterAnswer(exchange, 'name', T + 2_000).unasked).toBe(0);
+    // Quiet for the gap: a new exchange, counted from zero.
+    expect(currentExchange(exchange, T + 1_000 + EXCHANGE_GAP_MS)).toBe(exchange);
+    expect(currentExchange(exchange, T + 1_000 + EXCHANGE_GAP_MS + 1)).toEqual(NEW_EXCHANGE);
+    expect(afterAnswer(exchange, 'ambient', T + 1_000 + EXCHANGE_GAP_MS + 1)).toEqual({ unasked: 1, lastSpokeAt: T + 1_000 + EXCHANGE_GAP_MS + 1 });
+  });
+
+  it('stops volunteering at the cap, set high: the longest good chain was six, the bad ones fourteen to twenty-five', () => {
+    let exchange = NEW_EXCHANGE;
+    for (let i = 0; i < MAX_UNASKED_IN_A_ROW; i += 1) {
+      expect(mayVolunteer(exchange, T + i)).toBe(true);
+      exchange = afterAnswer(exchange, 'ambient', T + i);
+    }
+    expect(mayVolunteer(exchange, T + MAX_UNASKED_IN_A_ROW)).toBe(false);
+    // Only VOLUNTEERING is limited: an addressed message is always answered (main.ts never
+    // asks), and answering it reopens the budget.
+    expect(mayVolunteer(afterAnswer(exchange, 'mention', T + 100), T + 101)).toBe(true);
+    // And the gap reopens it too.
+    expect(mayVolunteer(exchange, T + MAX_UNASKED_IN_A_ROW + EXCHANGE_GAP_MS + 1)).toBe(true);
+    expect(MAX_UNASKED_IN_A_ROW).toBeGreaterThanOrEqual(6);
+  });
 });

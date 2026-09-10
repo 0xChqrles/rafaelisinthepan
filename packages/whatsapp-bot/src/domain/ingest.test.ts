@@ -158,7 +158,8 @@ describe('share ingestion (#236)', () => {
     const spoken = vi.fn();
     const said = harness(registry({ acknowledge: 'say' }), { comment: async () => 'une ligne.', spoken });
     expect(await said.ingest(message())).toBe('recorded');
-    expect(spoken).toHaveBeenCalledWith(expect.objectContaining({ id: GROUP }), 'une ligne.');
+    // Named with the MESSAGE it answers (#277): the day log files the line under it.
+    expect(spoken).toHaveBeenCalledWith(expect.objectContaining({ id: GROUP }), 'une ligne.', expect.objectContaining({ id: 'M1' }));
 
     const refused = vi.fn();
     const dead = harness(registry({ acknowledge: 'say' }), {

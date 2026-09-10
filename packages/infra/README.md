@@ -166,7 +166,7 @@ built from the repo root by the runner's Docker.
    aws ssm put-parameter --name /whippin/bot/llm-api-key --type SecureString --value '<DeepSeek key>'
    ```
    Another name: `-c botLlmApiKeyParameter=…`. Provider/model: `-c botLlmProvider=` /
-   `-c botLlmModel=` (defaults `deepseek` / `deepseek-v4-flash`). No key = no comments and no
+   `-c botLlmModel=` (defaults `deepseek` / `deepseek-flash`). No key = no comments and no
    chat; the scoreboard still runs.
 2. **Confirm the alerts subscription** (`AlertsTopicArn`, the `OPERATOR_EMAIL` address) —
    nothing is delivered until the email is confirmed.

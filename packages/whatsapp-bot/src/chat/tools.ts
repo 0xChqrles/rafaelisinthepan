@@ -18,7 +18,6 @@ import { parseDay } from '../domain/day';
 import { buildPodium } from '../domain/podium';
 import { displayName } from '../domain/names';
 import type { LlmTool } from '../llm/types';
-import { withFact, type MemoryStore } from './memory';
 
 export const HISTORY_WINDOW_DAYS = 60; // how far back the resolution universe and records look
 const DEFAULT_DAYS = 7;
@@ -32,9 +31,8 @@ const MAX_DAYS = HISTORY_WINDOW_DAYS;
 export interface ToolContext {
   group: GroupConfig;
   today: number; // active Whippin dayNumber
-  sender: string; // the person asking — the only JID `remember` may write about
+  sender: string; // the person asking
   declarations: DeclarationStore;
-  memory: MemoryStore;
   now: () => Date;
 }
 
@@ -161,16 +159,6 @@ export const TOOL_DEFINITIONS: LlmTool[] = [
           description: `Window in days, default ${RECORDS_DEFAULT_DAYS}, max ${MAX_DAYS}`,
         },
       },
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'remember',
-    description: 'Save one short fact the person you are talking to explicitly told you about THEMSELVES (a nickname they prefer, a rivalry, a habit). Never about someone else, never a guess.',
-    parameters: {
-      type: 'object',
-      properties: { fact: { type: 'string', description: 'One plain sentence, at most 120 characters' } },
-      required: ['fact'],
       additionalProperties: false,
     },
   },
@@ -389,14 +377,6 @@ export function createToolRunner(ctx: ToolContext): ToolRunner {
         mostDaysPlayed: mostPlayed ? { player: label(mostPlayed[0]), days: mostPlayed[1] } : null,
         playersSeen: playedCount.size,
       };
-    },
-    async remember(args) {
-      if (typeof args.fact !== 'string') return { saved: false, reason: 'fact must be a string' };
-      const current = await ctx.memory.get(ctx.group.id, ctx.sender);
-      const next = withFact(current, args.fact, ctx.now());
-      if (!next) return { saved: false, reason: 'empty or too long' };
-      await ctx.memory.put(ctx.group.id, ctx.sender, next);
-      return { saved: true, facts: next.facts.length };
     },
   };
 

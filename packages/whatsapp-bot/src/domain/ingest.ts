@@ -49,7 +49,7 @@ export interface IngestDeps {
   // Told a line ONCE IT IS QUEUED — the line is a turn in the group's conversation and the
   // caller remembers it as one (main.ts) — and never for a line the queue refused for
   // good: remembered, that would be a message the bot believes it sent and nobody read.
-  spoken?: (group: GroupConfig, line: string) => void;
+  spoken?: (group: GroupConfig, line: string, message: InboundMessage) => void;
 }
 
 // `failed` WINS over `recorded`: a message carrying two days, one of which could not be
@@ -260,7 +260,7 @@ export function createIngest(deps: IngestDeps) {
             },
         group.id,
       );
-      if (line && queued) deps.spoken?.(group, line);
+      if (line && queued) deps.spoken?.(group, line, message);
     }
     // Queued after the acknowledgement. The queue is standard SQS and promises no order, so
     // this buys a tendency and not a guarantee — worth having, since the two are usually
