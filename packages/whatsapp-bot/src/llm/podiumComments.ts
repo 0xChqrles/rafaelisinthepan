@@ -48,7 +48,6 @@ export function sanitizeComment(raw: unknown, maxChars: number = COMMENT_MAX_CHA
   let text = raw
     .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, ' ')
     .replace(/[*_~`]/g, '')
-    .replace(/\s*!+/g, '') // the voice has no exclamation marks; a stray one is dropped, not posted
     .replace(/\s+/g, ' ')
     .trim();
   if (/^["'«“].*["'»”]$/.test(text)) text = text.slice(1, -1).trim();

@@ -209,7 +209,7 @@ describe('podium comments are commentary from the numbers (#236, #277)', () => {
   it('keeps comments plain text', () => {
     expect(sanitizeComment(' *La* _brigade_\n antidopage. ')).toBe('La brigade antidopage.');
     expect(sanitizeComment('"Quoted."')).toBe('Quoted.');
-    expect(sanitizeComment('Wow un sous-marin !')).toBe('Wow un sous-marin');
+    expect(sanitizeComment('Wow un sous-marin !')).toBe('Wow un sous-marin !');
     expect(sanitizeComment(42)).toBeNull();
   });
 
