@@ -200,12 +200,6 @@ export default function App() {
                 mode={routed ? route.mode : (lastMode ?? 'sentence')}
                 on={place}
                 leave={place === 'rules' ? leaveTutorial : undefined}
-                // TOMORROW's sentence (#273): HOME is lit — it is today's onward action,
-                // not an archive play — yet the tap everyone makes first must still LEAVE
-                // (user-decided 2026-09-11: a bare arrow in the header "might not be very
-                // obvious… many might get stuck"). The one exception to "a lit key goes
-                // nowhere".
-                homeLeaves={route.view === 'game' && route.date != null && route.date > today}
               />
             }
           />
@@ -261,11 +255,13 @@ function headerPlace(route: Route, surface: GameSurface, today: string): HeaderP
   switch (route.view) {
     case 'game':
       if (surface === 'invite') return null;
-      // The tutorial is the RULES' place; a past day is the ARCHIVE's. TOMORROW's
-      // sentence (#273, user-decided 2026-09-11) is NOT an archive play: it is today's
-      // onward action, so HOME stays lit and the way back is the left slot's arrow.
+      // The tutorial is the RULES' place; any OTHER day is the ARCHIVE's — tomorrow's
+      // sentence included (#273, user-decided 2026-09-11 on the second pass: it "should
+      // actually live as an archive play, so you can just click the house to go back").
+      // HOME unlit is a live key, which is the way back before the night's lock; the
+      // locked round's own TODAY button is the way back after it.
       if (surface === 'tutorial') return 'rules';
-      return route.date == null || route.date >= today ? 'home' : 'archive';
+      return route.date == null || route.date === today ? 'home' : 'archive';
     case 'archive':
       return 'archive';
     case 'board':
