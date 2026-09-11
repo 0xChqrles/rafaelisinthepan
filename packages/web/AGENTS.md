@@ -12,6 +12,8 @@
     src/
       hooks/useVocab.ts       fetch+cache the per-language existence Set (once per session)
       hooks/usePuzzle.ts      fetch the client-computed day's puzzle from the backend
+      hooks/puzzleCache.ts    the last 3 PARSED artifacts kept across mounts, no longer than the
+                              CDN's own 300s (2026-09-11): today <-> tomorrow without a reload
       api.ts                  backend client: puzzleUrl/wordPuzzleUrl, 404->NO PUZZLE, and
                               `readProfile` — the ONE place `GET /profile`'s four answers
                               (shown / blank / GONE / failed) are told apart (#204)
