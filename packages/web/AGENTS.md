@@ -1316,10 +1316,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **THE REVEAL RUNS SCORE FIRST, THEN THE PAGE (user-decided 2026-09-11, reversing the
   2026-08-15 page-first order):** the stage rises with the card, the tally counts while the
   ruler colors, the standing lands, SHARE closes the card — and only then the credit
-  types and the secrets pop under it ("the score view should be created first, then the
-  source being written now that the score is above"). The 2026-08-15 rule survives
-  inverted: nothing prints while the numbers move. The citation's completion (with its
-  visible-time deadline) is now the reveal's END and what disarms the fast-forward.
+  types, and only once it has printed does the SENTENCE appear, its secrets popping in
+  ("score view → source → sentence", the user's second pass the same day: the text used
+  to stand from the first frame). The 2026-08-15 rule survives inverted: nothing prints
+  while the numbers move. `.solved-text` holds its box from frame one and fades in on
+  `sentenceIn` (the citation's completion, with its visible-time deadline); the pops ride
+  the same flag, and their end is the reveal's END, which disarms the fast-forward.
 - **Early play: tomorrow's sentence tonight (#273, user-decided 2026-09-08).** The
   product contract — TOMORROW beside SHARE as the result's one onward action, the first
   progress / `EARLY_GUESS_CAP` stop, the server's `early_locked` — lives in the root
@@ -1327,8 +1329,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **The dated route reaches `activeDate + 1`** (`langs.ts` `ROUTE_FUTURE_DAYS`, ONE
     `dateOf` for both grammars). `GameRoute` reads the day LIVE off `useToday` — `isActiveDay`
     and `early` both — so a tab open across the flip sees tomorrow become today: the lock
-    lifts, the streak read starts, without a reload. The header title carries the day tag
-    and the calendar key lights, as for any dated route.
+    lifts, the streak read starts, without a reload. **Tomorrow is NOT an archive play
+    (user-decided 2026-09-11):** HOME stays lit (`headerPlace` lights the archive only for
+    a day BEFORE today), and the left slot carries the area's BACK ARROW before the title
+    — the clean way back to the solved screen, the browser's own back when TOMORROW pushed
+    the entry and today's game on a pasted link (`goBack(pathForMode)`). The title keeps
+    the `12/09` day tag; at 320px it ellipsises to make room, the row's standing rule.
   - **`Game` locks LOCALLY** (`locked` = `early && !finished && earlyLocked(...)`, over the
     FULL play log rather than the board's deferred view, so the lock lands on the guess that
     made progress while its floating hit still plays): `submit` refuses, the prompt retires

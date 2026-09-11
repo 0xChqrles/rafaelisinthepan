@@ -2115,6 +2115,11 @@ input {
    it, which is the whole highlight: contrast, never a marker band. */
 .solved-text {
   margin: 0;
+  /* The sentence follows the CREDIT (user-decided 2026-09-11, "score view → source →
+     sentence"): it holds its box from frame one — the page's layout is final before a
+     word prints — and fades in once the citation has finished; its secrets pop with it. */
+  opacity: 0;
+  transition: opacity 0.3s ease-out;
   font-family: var(--ui);
   font-size: 16px;
   font-weight: 400;
@@ -2131,7 +2136,13 @@ input {
 }
 /* LISTEN (#270): a music day's one affordance — an ordinary link to the track's page, a
    new tab, no embed. The credit's own face, in the action ink, underlined the pixel way. */
+.solved-text.in,
+.solved-listen.in {
+  opacity: 1;
+}
 .solved-listen {
+  opacity: 0;
+  transition: opacity 0.3s ease-out;
   display: inline-block;
   margin-top: clamp(14px, 2.6vh, 22px);
   font-family: var(--pixel-font);
@@ -2199,7 +2210,9 @@ input {
    must kill the transitions the rehydrated path never starts (a half-popped word killed
    mid-animation is otherwise stranded at full size). */
 .solved-stage.settled,
-.solved-stage.settled .solved-numbers {
+.solved-stage.settled .solved-numbers,
+.solved-stage.settled .solved-text,
+.solved-stage.settled .solved-listen {
   opacity: 1;
   transform: none;
   transition: none;

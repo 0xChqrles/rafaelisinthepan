@@ -31,12 +31,12 @@ import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 //             long sentence (and, with #270, the sentences of the book around it, read
 //             top-down from the credit) goes under the fold, the score never does.
 //
-// The reveal runs stage → SCORE → rank → SHARE → credit + secrets (user-decided
+// The reveal runs stage → SCORE → rank → SHARE → credit → sentence (user-decided
 // 2026-09-11, reversing 2026-08-15's page-first order now that the score is a CARD above
 // the page): the stage rises in with the card, the tally counts WHILE the ruler colors —
 // one beat saying one thing, "here is your run" — then the standing lands and SHARE
-// closes the card, and only THEN, with the score standing above it, the credit types and
-// the secrets pop into the sentence. The 2026-08-15 rule survives in the other direction:
+// closes the card; only THEN, with the score standing above it, the credit types, and
+// only once it has printed does the sentence appear under it, its secrets popping in. The 2026-08-15 rule survives in the other direction:
 // nothing prints while the numbers move, so the two never read as happening at once. The
 // citation's completion is the screen's one signal-driven beat, so it carries a DEADLINE
 // behind it (the `KB_EXIT_FALLBACK_MS` rule: a lost signal must never be able to stall
@@ -278,26 +278,20 @@ export default function SolvedScreen({
     return () => window.clearTimeout(id);
   }, [animate, shareIn, reduceMotion]);
 
-  // The reveal's END: the citation has finished printing — on its own completion
-  // signal, with the derived deadline behind it — or, on a puzzle with no source, the
-  // secrets have popped. The round disarms its fast-forward on it.
-  const [textDone, setTextDone] = useState(() => !animate);
+  // THE SENTENCE, after the source (user-decided 2026-09-11: "score view → source →
+  // sentence"): the text appears — and its secrets pop into it — once the citation has
+  // FINISHED PRINTING, on its own completion signal with the derived deadline behind it;
+  // a puzzle with no source has nothing to wait for and shows it as the page's beat
+  // starts.
+  const [sentenceIn, setSentenceIn] = useState(() => !animate);
   useEffect(() => {
     if (!animate) {
-      setTextDone(true);
+      setSentenceIn(true);
       return undefined;
     }
     if (!textIn) return undefined;
-    if (reduceMotion) {
-      setTextDone(true);
-      return undefined;
-    }
-    if (!hasSource) {
-      const id = window.setTimeout(() => setTextDone(true), popSpanMs);
-      return () => window.clearTimeout(id);
-    }
-    if (captionDone) {
-      setTextDone(true);
+    if (reduceMotion || !hasSource || captionDone) {
+      setSentenceIn(true);
       return undefined;
     }
 
@@ -312,7 +306,7 @@ export default function SolvedScreen({
       window.clearTimeout(id);
       if (document.visibilityState === 'hidden') return;
       id = window.setTimeout(
-        () => setTextDone(true),
+        () => setSentenceIn(true),
         captionDurationMs(source, lang) + CAPTION_FALLBACK_SLACK_MS,
       );
     };
@@ -322,7 +316,24 @@ export default function SolvedScreen({
       window.clearTimeout(id);
       document.removeEventListener('visibilitychange', armFallback);
     };
-  }, [animate, textIn, reduceMotion, hasSource, captionDone, popSpanMs, source, lang]);
+  }, [animate, textIn, reduceMotion, hasSource, captionDone, source, lang]);
+
+  // The reveal's END: the secrets have popped into the sentence. The round disarms its
+  // fast-forward on it.
+  const [textDone, setTextDone] = useState(() => !animate);
+  useEffect(() => {
+    if (!animate) {
+      setTextDone(true);
+      return undefined;
+    }
+    if (!sentenceIn) return undefined;
+    if (reduceMotion) {
+      setTextDone(true);
+      return undefined;
+    }
+    const id = window.setTimeout(() => setTextDone(true), popSpanMs);
+    return () => window.clearTimeout(id);
+  }, [animate, sentenceIn, reduceMotion, popSpanMs]);
 
   useEffect(() => {
     if (textDone) onRevealEnd?.();
@@ -470,7 +481,7 @@ export default function SolvedScreen({
             the tap onto their own history. Prefix and suffix are sentence context and
             always show, in the nowrap group that keeps them on the secret's own line —
             Phrase's rule, unchanged. */}
-        <p className="solved-text">
+        <p className={`solved-text${sentenceIn ? ' in' : ''}`}>
           {before.length > 0 ? `${before.join(' ')} ` : null}
           <span className="solved-line">
             {words.map((w, i) => {
@@ -492,7 +503,7 @@ export default function SolvedScreen({
                     {hole.prefix && starts[i] ? capitalize(hole.prefix) : hole.prefix}
                     <button
                       type="button"
-                      className={`solved-secret${textIn ? ' in' : ''}`}
+                      className={`solved-secret${sentenceIn ? ' in' : ''}`}
                       style={{ '--step': hole.number - 1 } as CSSProperties}
                       aria-describedby={`solved-explore-${hole.number}`}
                       onClick={() => onExplore(hole.holeIndex)}
@@ -510,7 +521,12 @@ export default function SolvedScreen({
         {/* A music day's LISTEN (#270): an ordinary link to the track's page, in a new
             tab — no embed, no third-party script on the page. */}
         {source?.url ? (
-          <a className="solved-listen" href={source.url} target="_blank" rel="noopener noreferrer">
+          <a
+            className={`solved-listen${sentenceIn ? ' in' : ''}`}
+            href={source.url}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             {t(lang, 'listen')}
           </a>
         ) : null}

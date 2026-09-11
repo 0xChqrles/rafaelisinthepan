@@ -14,7 +14,7 @@ import SignedOut from './screens/SignedOut';
 import { useIdentityScopeRevision, useSignedOut } from './identity';
 import Game from './screens/Game';
 import WordGame from './screens/WordGame';
-import TopBar, { HeaderLeft } from './components/TopBar';
+import TopBar, { HeaderBack, HeaderLeft } from './components/TopBar';
 import PuzzleTitle from './components/PuzzleTitle';
 import HeaderKeys, { type HeaderPlace } from './components/HeaderKeys';
 import DeviceFrame from './components/DeviceFrame';
@@ -26,7 +26,7 @@ import LazyTutorial from './tutorial/LazyTutorial';
 import Invite from './tutorial/Invite';
 import { useGameStore } from './state/gameStore';
 import { track } from './analytics';
-import { useLocation, navigate } from './routing';
+import { useLocation, navigate, goBack } from './routing';
 import {
   parseRoute,
   pathForMode,
@@ -255,9 +255,11 @@ function headerPlace(route: Route, surface: GameSurface, today: string): HeaderP
   switch (route.view) {
     case 'game':
       if (surface === 'invite') return null;
-      // The tutorial is the RULES' place; a past day is the ARCHIVE's.
+      // The tutorial is the RULES' place; a past day is the ARCHIVE's. TOMORROW's
+      // sentence (#273, user-decided 2026-09-11) is NOT an archive play: it is today's
+      // onward action, so HOME stays lit and the way back is the left slot's arrow.
       if (surface === 'tutorial') return 'rules';
-      return route.date == null || route.date === today ? 'home' : 'archive';
+      return route.date == null || route.date >= today ? 'home' : 'archive';
     case 'archive':
       return 'archive';
     case 'board':
@@ -379,6 +381,14 @@ function GameRoute({
           missing-puzzle and the loaded game: which puzzle is a fact of the ROUTE, so it
           never waits on a game to report it. */}
       <HeaderLeft>
+        {/* TOMORROW's round is a screen you navigated INTO from today's result (#273), so
+            it carries the area's back arrow before its title — the clean way back to the
+            solved screen (user-decided 2026-09-11) — where a past day is a place of the
+            archive's and carries none. Back is the browser's own when TOMORROW pushed
+            this entry, and today's game on a pasted link. */}
+        {early && (
+          <HeaderBack label={t(lang, 'ariaBack')} onBack={() => goBack(pathForMode(lang, mode))} />
+        )}
         <PuzzleTitle lang={lang} mode={mode} dayNumber={isActiveDay ? null : dayNumber} />
       </HeaderLeft>
       {loading && (
