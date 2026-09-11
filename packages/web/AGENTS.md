@@ -1331,20 +1331,19 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **The dated route reaches `activeDate + 1`** (`langs.ts` `ROUTE_FUTURE_DAYS`, ONE
     `dateOf` for both grammars). `GameRoute` reads the day LIVE off `useToday` — `isActiveDay`
     and `early` both — so a tab open across the flip sees tomorrow become today: the lock
-    lifts, the streak read starts, without a reload. **Tomorrow is NOT an archive play
-    (user-decided 2026-09-11):** HOME stays lit (`headerPlace` lights the archive only for
-    a day BEFORE today), and the title keeps the `12/09` day tag. **TWO WAYS BACK to the
-    solved screen, both LABELLED or already known** (user-decided the same day, after a
-    bare back arrow in the left slot lived for one commit: "a few white pixels appearing in
-    the header might not be very obvious, many might get stuck"): the lit HOME still
-    LEAVES for today's game (`HeaderKeys`' `homeLeaves`, the one exception to "a lit key
-    goes nowhere" — it is the tap everyone makes first), and the round carries a
-    ‹ TODAY / AUJOURD'HUI secondary button under the prompt, in the play area, for the
-    WHOLE early round, locked or not (`.early-back`; extended the same day from the locked
-    state alone: "we should also have a way to go back when we didn't spend the 3 guesses
-    yet") — one place, so it never moves when the keys give way to the countdown. TOMORROW
-    wears the title's pixel chevron after its word and TODAY the same one turned back
-    (`.btn-arrow`), the two ends of one trip.
+    lifts, the streak read starts, without a reload. **Tomorrow LIVES AS AN ARCHIVE PLAY
+    in the header (user-decided 2026-09-11, the last of three passes on the way back):**
+    the calendar key lights, HOME is a live key, and the title keeps the `12/09` day tag —
+    so before the night's lock the house is the way back to today's result, exactly as on
+    any dated route. After the lock the round carries its own labelled way back: a
+    ‹ TODAY / AUJOURD'HUI secondary button under the countdown (`FlipCountdown`'s
+    `onToday`, `.flip-today`), because a locked screen with nothing left to do must say
+    where to go. RETIRED the same day: a bare back arrow in the left slot ("a few white
+    pixels appearing in the header might not be very obvious, many might get stuck"), a
+    lit-but-leaving HOME (the one exception to "a lit key goes nowhere" — gone with it, the
+    rule stands whole), and a TODAY under the prompt for the whole round (one commit; the
+    house covers the unlocked round). TOMORROW wears the title's pixel chevron after its
+    word and TODAY the same one turned back (`.btn-arrow`), the two ends of one trip.
   - **`Game` locks LOCALLY** (`locked` = `early && !finished && earlyLocked(...)`, over the
     FULL play log rather than the board's deferred view, so the lock lands on the guess that
     made progress while its floating hit still plays): `submit` refuses, the prompt retires

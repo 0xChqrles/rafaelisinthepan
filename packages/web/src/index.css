@@ -2808,17 +2808,12 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .flip-clock {
   width: 100%;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(18px, 3.2vh, 28px);
 }
-/* The labelled way back on TOMORROW's round (2026-09-11): ‹ TODAY under the prompt, in
-   the play area, for the whole early round — one place whether the keys or the countdown
-   stand below. The result action's own floor width. */
-.early-back {
-  width: 100%;
-  display: flex;
-  justify-content: center;
-}
-.early-back .btn {
+/* The labelled way back under the clock: the result action's own floor width. */
+.flip-today {
   min-width: 180px;
 }
 /* A button that POINTS (2026-09-11): TOMORROW carries the title's 7×7 pixel chevron after
