@@ -72,6 +72,9 @@ export default function HeaderKeys({
   lang,
   mode,
   on,
+  // An archive PLAY is on screen — a day other than today's, which is the archive's, so
+  // `on` is 'archive' — rather than the calendar itself.
+  archivePlay = false,
   // Run before ANY key leaves this surface — the tutorial closes itself here (a lesson
   // left by the row is a lesson skipped, and the store must not reopen it on the game).
   leave,
@@ -79,6 +82,7 @@ export default function HeaderKeys({
   lang: string;
   mode: Mode;
   on: HeaderPlace;
+  archivePlay?: boolean;
   leave?: () => void;
 }) {
   const openTutorial = useGameStore((s) => s.openTutorial);
@@ -147,14 +151,19 @@ export default function HeaderKeys({
   };
   const key = (place: HeaderPlace, label: string, to: string, Icon: typeof HomeIcon) => {
     const lit = on === place;
+    // Lit, a key goes nowhere: you are already there. The CALENDAR over an archive play is
+    // the one lit key that still leads somewhere (user-decided 2026-09-11): the day is the
+    // archive's, which is why the key is lit, but the calendar is not on screen, and
+    // getting back to it took another key and then this one.
+    const here = lit && !(place === 'archive' && archivePlay);
     return (
       <button
         type="button"
-        className={`home-btn${lit ? ' on' : ''}`}
+        className={`home-btn${here ? ' on' : ''}`}
         aria-label={label}
-        aria-current={lit ? 'page' : undefined}
+        aria-current={here ? 'page' : lit ? 'true' : undefined}
         onClick={() => {
-          if (!lit) go(to);
+          if (!here) go(to);
         }}
       >
         <Icon className="ui-icon" aria-hidden />

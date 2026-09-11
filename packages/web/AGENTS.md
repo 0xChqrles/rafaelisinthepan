@@ -1340,10 +1340,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `onToday`, `.flip-today`), because a locked screen with nothing left to do must say
     where to go. RETIRED the same day: a bare back arrow in the left slot ("a few white
     pixels appearing in the header might not be very obvious, many might get stuck"), a
-    lit-but-leaving HOME (the one exception to "a lit key goes nowhere" — gone with it, the
-    rule stands whole), and a TODAY under the prompt for the whole round (one commit; the
-    house covers the unlocked round). TOMORROW wears the title's pixel chevron after its
-    word and TODAY the same one turned back (`.btn-arrow`), the two ends of one trip.
+    lit-but-leaving HOME (a lit key that led OUT of the place it lit), and a TODAY under the
+    prompt for the whole round (one commit; the house covers the unlocked round). TOMORROW
+    wears the title's pixel chevron after its word and TODAY the same one turned back
+    (`.btn-arrow`), the two ends of one trip.
   - **`Game` locks LOCALLY** (`locked` = `early && !finished && earlyLocked(...)`, over the
     FULL play log rather than the board's deferred view, so the lock lands on the guess that
     made progress while its floating hit still plays): `submit` refuses, the prompt retires
@@ -3837,6 +3837,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the lit key again ("not intuitive at all") and a ✕ that appeared only on the board and
     the archive ("moving the header icons around on a click is not a great solution").
     A lit key still answers a press (it goes nowhere), so nothing on the row is dead.
+    **The one lit key that goes somewhere is the CALENDAR over an archive PLAY** (a past
+    day, or tomorrow's; user-decided 2026-09-11): the day is the archive's, which is why
+    the key is lit, but the calendar is not on screen, and getting back to it took another
+    key and then the calendar. It leads to the calendar (`HeaderKeys`' `archivePlay`, set
+    by App); on the calendar itself it goes nowhere.
   **THE KEYS, per surface — identical, only the LIT one moves.** Live daily: HOME lit.
   Past day: ARCHIVE lit (a past day is the archive's). Calendar: ARCHIVE lit. Board:
   BOARD lit. Account area — `/account`, `/profile`, both email doors: FACE lit (the
