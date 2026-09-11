@@ -1950,6 +1950,11 @@ input {
   margin-right: -52px;
   padding-left: 52px;
   padding-right: 52px;
+  /* Air under the header before the score lands (user-asked 2026-09-11: the block sat
+     too close to the bar). Padding INSIDE the scroller rather than a margin on the
+     block, so it scrolls away with the score and the sticky credit still meets the
+     scroller's top edge. */
+  padding-top: clamp(20px, 4vh, 40px);
   display: flex;
   flex-direction: column;
   align-items: center;
