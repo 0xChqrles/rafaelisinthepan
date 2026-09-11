@@ -4191,14 +4191,19 @@ it to the local store — see `packages/backend/AGENTS.md`).
   by a blur→refocus dance that opened the mobile soft keyboard and flickered the viewport;
   that was replaced by a **window `keydown`/`paste` listener**, which worked and left the
   guess belonging to nothing a keyboard user could reach. Neither problem comes back with
-  the field: **`inputmode="none"`** is what keeps the phone's keyboard shut (the on-screen
-  `components/Keyboard.tsx` IS this game's keyboard there), and nothing refocuses in a loop.
+  the field: on a TOUCH SCREEN (primary pointer coarse, watched live) it is **`readOnly`**
+  (the on-screen `components/Keyboard.tsx` IS this game's keyboard there), and nothing
+  refocuses in a loop. **`inputmode="none"` alone is NOT enough** (2026-09-12, reported on a
+  Samsung phone in Chrome): it hides the phone's keyboard, but Android still binds the
+  keyboard APP to an editable field, and its composition fought the game's rewrites —
+  letters doubled and tripled, backspace undone. A read-only field binds no keyboard app and
+  still takes the focus and a hardware keyboard's keys; #268's NATIVE switch lifts it.
   Four rules hold it together:
   - **The keys are read ON THE FIELD**, not on the document, so a control the player tabbed
     to keeps its own Enter. Every key the prompt answers is `preventDefault`ed and the value
     is the folded state — `onChange` exists for text the browser inserts on its own
-    (dictation, an IME commit) and for React's controlled-field contract, and only ever
-    reads text ADDED at the end.
+    (dictation, a desktop IME's commit — never on a touch screen) and for React's
+    controlled-field contract, and only ever reads text ADDED at the end.
   - **The field takes the focus when the prompt becomes the surface that answers the
     keyboard**: on mount, and again whenever `active` flips back true (a modal closing hands
     focus to the control that opened it — the hole, never the prompt). Each screen also

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type {
   ChangeEvent,
   ClipboardEvent,
@@ -17,6 +17,26 @@ import { t } from '../i18n';
 function slugChars(key: string): string {
   if (key === '-') return '-';
   return fold(key);
+}
+
+// A TOUCH SCREEN is read the way the rest of the app reads it (`Game`'s history-tap rule):
+// the PRIMARY pointer is coarse. Watched rather than read once, because it can change under a
+// live round — a Chromebook folded into a tablet, a phone docked to a desktop.
+const TOUCH_SCREEN = '(pointer: coarse)';
+
+function touchScreen(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia(TOUCH_SCREEN).matches
+  );
+}
+
+function watchTouchScreen(onChange: () => void): () => void {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return () => {};
+  const query = window.matchMedia(TOUCH_SCREEN);
+  query.addEventListener('change', onChange);
+  return () => query.removeEventListener('change', onChange);
 }
 
 interface WordInputProps {
@@ -48,9 +68,18 @@ interface WordInputProps {
 // by a blur→refocus dance that opened the mobile soft keyboard and flickered the viewport,
 // so it was replaced by a window `keydown` listener — which worked, but left the guess with
 // no focus target at all: the app answered the keyboard everywhere and belonged to it
-// nowhere. The field is back, and neither problem comes back with it: `inputmode="none"`
-// is what keeps the phone's keyboard shut (the on-screen <Keyboard> is this game's keyboard
-// there), and nothing ever refocuses it in a loop.
+// nowhere. The field is back, and neither problem comes back with it: on a touch screen it
+// is READ-ONLY (the on-screen <Keyboard> is this game's keyboard there), and nothing ever
+// refocuses it in a loop.
+//
+// Read-only, because `inputmode="none"` alone only keeps the phone's keyboard out of SIGHT.
+// The field stays an editable one, so Android binds the keyboard app to it all the same; that
+// app keeps its own copy of the word it believes it is typing, and the game rewrote the field
+// under it on every tap. The two drifted apart: players on a Samsung phone saw letters come
+// out two and three times, a backspace put straight back, and the keys greyed out around the
+// dead prefix that left (2026-09-12). A read-only field is no text field to the browser, so no
+// keyboard app is ever bound to it — and it still takes the focus and a hardware keyboard's
+// keys. Opening the phone's own keyboard is #268's NATIVE switch, which lifts this.
 //
 // The keys are read HERE, on the field, rather than on the document: physical typing is the
 // focused prompt's, so a control the player has tabbed to keeps its own Enter. The spans
@@ -70,6 +99,7 @@ export default function WordInput({
 }: WordInputProps) {
   const [shaking, setShaking] = useState<boolean>(false);
   const field = useRef<HTMLInputElement>(null);
+  const touch = useSyncExternalStore(watchTouchScreen, touchScreen, touchScreen);
 
   // Prompt history for Up/Down recall (desktop nicety). The array is the round's
   // PERSISTED guesses (passed in); the cursor (index) + draft stay ephemeral.
@@ -157,9 +187,10 @@ export default function WordInput({
 
   // Nothing the player TYPES reaches this: every key the prompt answers is
   // preventDefault'ed above, and a paste has its own handler. It is the way in for text the
-  // browser inserts on its own — dictation, an IME commit — folded and appended one char at
-  // a time, exactly as typing is. React needs it too: a controlled field without an
-  // onChange is a read-only one, and this field is not.
+  // browser inserts on its own — dictation, a desktop IME's commit — folded and appended one
+  // char at a time, exactly as typing is; a touch screen's read-only field never gets here.
+  // React needs it too: a controlled field without an onChange must be marked read-only, and
+  // off a touch screen this one is not.
   const onChange = (e: ChangeEvent<HTMLInputElement>) => {
     const next = e.target.value;
     // Only text ADDED at the end says anything; any other edit simply re-renders back to
@@ -203,10 +234,12 @@ export default function WordInput({
         }}
         className="wi-field"
         type="text"
-        // The on-screen keyboard IS the keyboard on a phone (#36): `none` is what keeps the
-        // native one shut while the field holds the focus. Everything the browser would
-        // otherwise do to a text field — complete it, correct it, capitalize it, underline
-        // it — is off: the value is a folded slug, not prose.
+        // The on-screen keyboard IS the keyboard on a touch screen (#36): the field is
+        // read-only there, so no keyboard app is bound to it (see above), and `none` keeps a
+        // native keyboard shut wherever it stays editable (a touch laptop). Everything the
+        // browser would otherwise do to a text field — complete it, correct it, capitalize
+        // it, underline it — is off: the value is a folded slug, not prose.
+        readOnly={touch}
         inputMode="none"
         autoComplete="off"
         autoCorrect="off"

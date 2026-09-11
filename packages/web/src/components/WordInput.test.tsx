@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import WordInput from './WordInput';
 
 const noop = () => {};
@@ -59,5 +59,31 @@ describe('the guess prompt is a real field (#267)', () => {
     const html = render();
     expect(html).toContain('aria-label="votre proposition"');
     expect(html).toContain('<span class="wi-text" aria-hidden="true">');
+  });
+});
+
+// 2026-09-12: on Android, `inputmode="none"` keeps the phone's keyboard out of sight but still
+// binds the keyboard APP to an editable field, and that app's edits fought the game's — letters
+// doubled, backspace undone. On a touch screen the field is no text field at all.
+describe('a touch screen binds no keyboard app to the guess field', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const primaryPointer = (coarse: boolean) =>
+    vi.stubGlobal('window', {
+      matchMedia: (query: string) => ({
+        matches: coarse && query === '(pointer: coarse)',
+        addEventListener() {},
+        removeEventListener() {},
+      }),
+    });
+
+  it('is READ-ONLY when the primary pointer is a finger', () => {
+    primaryPointer(true);
+    expect(render()).toContain('readonly=""');
+  });
+
+  it('stays editable for a mouse, so dictation and a desktop IME still land', () => {
+    primaryPointer(false);
+    expect(render()).not.toContain('readonly=""');
   });
 });
