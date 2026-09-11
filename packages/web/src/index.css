@@ -2307,8 +2307,10 @@ input {
    built that day read as a lightstrip and its flat-rule replacement lost the colours —
    "put back the old step by step colors"): one flat cell per counted try at that try's
    `progressHeatColor`, dead sharp, 16px tall, with the white solve TICKS and their
-   pixel sentence indices. The two reveal beats are the original per-cell delays:
-   `.shown` staggers the neutral cells in, `.colorized` chases them with the colours. */
+   pixel sentence indices. The reveal FILLS it (user-decided 2026-09-11): every cell
+   stands neutral from the card's arrival, and takes its colour (`.on`) when the tally's
+   count reaches its try — RunRuler flips the class off the count itself, so there is no
+   delay here to keep in step with the number. */
 .run-ruler {
   width: 100%;
   /* Symmetric block padding: the bottom lane holds the tick numbers, the matching top
@@ -2327,22 +2329,15 @@ input {
 .run-cell {
   flex: 1 1 0;
   image-rendering: pixelated;
-  opacity: 0;
   background-color: var(--surface-hover);
-  transition:
-    opacity 1ms linear var(--show-delay, 0ms),
-    background-color 1ms linear var(--color-delay, 0ms);
 }
-.run-ruler.shown .run-cell {
-  opacity: 1;
-}
-.run-ruler.colorized .run-cell {
+.run-cell.on {
   background-color: var(--cell-color);
 }
 /* A solve moment: the tick sits on the RIGHT edge of the solving try's cell (the state
-   after that guess), overhanging the bar like a ruler mark; it fades in when the
-   colorize wave reaches its column. Several secrets dropped by one guess stack their
-   indices vertically under the single shared tick. */
+   after that guess), overhanging the bar like a ruler mark; it stands (`.on`) when the
+   fill reaches its try. Several secrets dropped by one guess stack their indices
+   vertically under the single shared tick. */
 .run-tick {
   position: absolute;
   top: -3px;
@@ -2352,9 +2347,8 @@ input {
   transform: translateX(-50%);
   background-color: var(--fg);
   opacity: 0;
-  transition: opacity 1ms linear var(--tick-delay, 0ms);
 }
-.run-ruler.colorized .run-tick {
+.run-tick.on {
   opacity: 1;
 }
 .run-tick-nums {
