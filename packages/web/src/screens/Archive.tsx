@@ -134,7 +134,10 @@ export default function Archive({ lang, mode = 'sentence' }: { lang: LangCode; m
         <PuzzleTitle lang={lang} mode={mode} surface="archive" />
       </HeaderLeft>
 
-      <div className="cal">
+      {/* The calendar is ONE thing, and it wears the CARD (2026-09-11): the month's
+          navigation, its weekdays and its grid inside one panel, the failure note with
+          them. */}
+      <div className="cal card">
         {/* Month navigation, clamped to [first puzzle month, current month]. */}
         <div className="cal-nav">
           <button

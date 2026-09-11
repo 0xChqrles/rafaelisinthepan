@@ -1301,8 +1301,25 @@ it to the local store — see `packages/backend/AGENTS.md`).
   ruler, SHARE/TOMORROW are the caption row — while the sentence's PAGE stays on the bare
   ground (user-decided the same day, after both were tried as cards: the page is a page,
   not a tile). Two earlier cuts the same day — a `--surface` + `--line` 4px tile on both
-  blocks, then a square 3%/6% tile — were reviewed as not it. Other stacked views may
-  adopt the panel; the flat ground stays the default elsewhere.
+  blocks, then a square 3%/6% tile — were reviewed as not it.
+  **WHERE IT LIVES (user-decided 2026-09-11: "everywhere in the app where it makes sense —
+  view separation, these informations are together, those are separate — but not
+  everything needs a card").** Four consumers: the sentence RESULT (score + ruler in the
+  well, SHARE/TOMORROW the caption row); Word mode's RESULT (`.solved-results`, the twin:
+  count + rarity bar in the well, SHARE under; it sits on the footer's bottom edge at its
+  own height, no longer filling it); the ACCOUNT's three numbers (`AccountStats`, a panel
+  with no well — a simple group takes the panel alone); the archive CALENDAR (`.cal` —
+  nav, weekdays, grid and the failure note in one panel). Deliberately NOT: the sentence's
+  page (prose is not a tile), the leaderboard (its rows are already tiles — a panel round
+  them is a box in a box), the coach/rules boxes (a dialog's own dress), the account's
+  device rows (the same row grammar).
+  **THE REVEAL RUNS SCORE FIRST, THEN THE PAGE (user-decided 2026-09-11, reversing the
+  2026-08-15 page-first order):** the stage rises with the card, the tally counts while the
+  ruler colors, the standing lands, SHARE closes the card — and only then the credit
+  types and the secrets pop under it ("the score view should be created first, then the
+  source being written now that the score is above"). The 2026-08-15 rule survives
+  inverted: nothing prints while the numbers move. The citation's completion (with its
+  visible-time deadline) is now the reveal's END and what disarms the fast-forward.
 - **Early play: tomorrow's sentence tonight (#273, user-decided 2026-09-08).** The
   product contract — TOMORROW beside SHARE as the result's one onward action, the first
   progress / `EARLY_GUESS_CAP` stop, the server's `early_locked` — lives in the root
@@ -3180,7 +3197,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
       nothing) and a non-`http(s)` url (it becomes an href). Songs get NO lyrics (the
       #270 decision stands, reaffirmed 2026-09-08: a verse or chorus is still reproduced
       lyrics). Not here: excerpts on the archive calendar, the share page or the card.
-  - **The reveal reads dissolve → page → score → standing → SHARE.** The stage rises in;
+  - **The reveal reads dissolve → score → standing → SHARE → page since 2026-09-11 (see
+    the card bullet above; the paragraph below describes the 2026-09-08 page-first order
+    it replaced, and its beats still hold in their new places).** The stage rises in;
     the CREDIT types (`SolvedCaption`, hidden with `visibility` until its beat so the text
     never moves when it speaks) while the SECRETS POP into the line one by one
     (`solved-word-pop`, `WORD_STEP_MS` 200 apart, `WORD_POP_MS` 300 — the 2026-08-14 pop,

@@ -2219,8 +2219,8 @@ input {
   align-items: center;
   justify-content: center;
   /* The sentence result's own rhythm (`.solved-numbers`) — the two stacks are ONE layout
-     since 2026-08-15, so the spacing is stated once. */
-  gap: clamp(18px, 3.4vh, 30px);
+     since 2026-08-15, so the spacing is stated once: the well, then the caption row. */
+  gap: clamp(14px, 2.6vh, 22px);
   width: 100%;
   max-width: 680px; /* match the keyboard's max-width */
   opacity: 0;
@@ -4131,8 +4131,10 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    with the screen it was supposed to rhyme with. The shared `.solved-results` entrance
    still moves the whole composition. */
 .word-footer-result .solved-results {
-  height: 100%;
-  justify-content: flex-end;
+  /* The CARD sits on the footer's bottom edge at its own height (2026-09-11) — it used
+     to fill the footer and push its content to the bottom, which a panel cannot do
+     without becoming a wall. */
+  align-self: flex-end;
 }
 /* The tally's landing: word mode's count is the result's LAST beat (no ruler colorize
    follows it, as in the sentence tray), so the number marks its own arrival with a
@@ -5334,10 +5336,11 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
-  /* Tight under the masthead's rule and given air before the actions: the numbers answer
-     the same question the row above them does — what this account IS — where everything
-     below the row is something to DO with it. */
-  margin: -8px 0 4px;
+  /* A CARD since 2026-09-11 — the three numbers are one thing, what this account IS —
+     with the panel's own inset around them, a step under the masthead's rule and air
+     before the actions, which are something to DO with it. */
+  margin: 4px 0 8px;
+  padding: 16px 12px;
 }
 .account-stat {
   display: flex;
