@@ -71,7 +71,10 @@ describe('the group diary (#277)', () => {
   });
 
   it('is bounded at a sentence end, and travels as a user turn marked as notes', () => {
-    const long = plainDiary(`${'Une phrase. '.repeat(400)}`)!;
+    // Twice the bound, whatever the bound is, so the cut is always exercised.
+    const input = 'Une phrase. '.repeat(DIARY_MAX_CHARS / 6);
+    expect(input.length).toBeGreaterThan(DIARY_MAX_CHARS);
+    const long = plainDiary(input)!;
     expect(long.length).toBeLessThanOrEqual(DIARY_MAX_CHARS);
     expect(long.endsWith('.')).toBe(true);
     expect(plainDiary('')).toBeNull();
