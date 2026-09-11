@@ -1287,6 +1287,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
     link sent in a language renders them in it. (The missing-puzzle screen, headerless too,
     opens the SAME drums from its CHANGE LANGUAGE button — `NoPuzzle`, since 2026-09-05.)
 
+- **THE CARD (2026-09-11, user-asked: on a phone "it's hard to understand what's on
+  screen quickly").** `.card` is ONE boxed surface for a VIEW: `--surface` ground, the
+  chrome's `--line` hairline, the sharp `--r-lg` (4px) ceiling, padded. A CLASS, not a
+  wrapper component — the blocks that wear it already have their own elements. The
+  solved screen is its first consumer: the SCORE block and the sentence's PAGE are two
+  cards on the ground, so the result and the page read as two things before a word is
+  read; the sticky credit takes the card's ground (and its gradient) so the text still
+  disappears under it. Screenshotted at 375 and 1280 before landing; the same family as the
+  board rows and the coach box (surface + hairline), one step lighter so it reads at a
+  glance. Other stacked views may adopt it; the flat ground stays the default elsewhere.
 - **Early play: tomorrow's sentence tonight (#273, user-decided 2026-09-08).** The
   product contract — TOMORROW beside SHARE as the result's one onward action, the first
   progress / `EARLY_GUESS_CAP` stop, the server's `early_locked` — lives in the root

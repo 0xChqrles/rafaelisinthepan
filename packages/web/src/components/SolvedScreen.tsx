@@ -360,7 +360,7 @@ export default function SolvedScreen({
       className={`solved-stage pixel-scroll${stageIn ? ' in' : ''}${animate ? '' : ' settled'}`}
     >
       {/* ---- the SCORE block, at the top: how the round went, and what you do with it. */}
-      <div className={`solved-numbers${scoreIn ? ' in' : ''}`}>
+      <div className={`solved-numbers card${scoreIn ? ' in' : ''}`}>
         {/* The primary sentence metric. The hidden final value reserves the count's width
             so its tally never moves the content below it — a capped round has no tally to
             reserve for, since `∞` is one fixed shape. Where this run stands among the
@@ -427,7 +427,7 @@ export default function SolvedScreen({
 
       {/* ---- the PAGE: the sentence's page. The credit first, then the text — read
            top-down, the way a page is. The whole stage scrolls; the credit sticks. */}
-      <div className="solved-page">
+      <div className="solved-page card">
         {/* The sentence's attribution, ABOVE the text it credits, at its own caption size
             — the small quote-style citation it has always been, and the running head
             once the page scrolls: a tap on it returns to the top. A source-less puzzle

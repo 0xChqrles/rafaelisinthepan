@@ -1980,6 +1980,21 @@ input {
   opacity: 1;
   transform: translateY(0);
 }
+/* ===================== the CARD (2026-09-11) ===================== */
+/* ONE boxed surface for a VIEW: a lighter tile on the flat ground, the chrome's hairline
+   and the sharp 4px ceiling, padded so its content stands off its edge. It exists because a
+   phone shows two or three different things stacked in one column — a result, a page, a
+   list — and on the bare ground they read as one run of text. A card says "this is one
+   thing" before a word is read. Same family as the board rows and the coach box (surface +
+   hairline), one step lighter so it reads at a glance rather than on inspection. */
+.card {
+  box-sizing: border-box;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: clamp(18px, 3.2vh, 28px) clamp(14px, 3vw, 24px);
+}
+
 /* The SCORE block: the named `<tries> TRIES` headline over the run ruler, then SHARE —
    sharing is what you do with a RESULT (user-decided 2026-08-14). Centred
    and capped at the keyboard's 680px, as the result always was. It holds its footprint
@@ -2047,6 +2062,14 @@ input {
   text-align: left;
   visibility: hidden;
   cursor: pointer;
+}
+/* On a CARD the running head stands on the card's own ground, gradient included, so the
+   text still disappears under it rather than through it. */
+.card .solved-source {
+  background: var(--surface);
+}
+.card .solved-source::after {
+  background: linear-gradient(to bottom, var(--surface), transparent);
 }
 .solved-source::after {
   content: '';
