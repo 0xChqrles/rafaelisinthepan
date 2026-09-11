@@ -32,11 +32,11 @@ import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 //             long sentence (and, with #270, the sentences of the book around it, read
 //             top-down from the credit) goes under the fold, the score never does.
 //
-// The reveal runs stage → SCORE → rank → SHARE → credit → sentence (user-decided
+// The reveal runs stage → SCORE → rank + SHARE → credit → sentence (user-decided
 // 2026-09-11, reversing 2026-08-15's page-first order now that the score is a CARD above
 // the page): the stage rises in with the card, the tally counts WHILE the ruler colors —
-// one beat saying one thing, "here is your run" — then the standing lands and SHARE
-// closes the card; only THEN, with the score standing above it, the credit types, and
+// one beat saying one thing, "here is your run" — then the standing lands with SHARE,
+// closing the card; only THEN, with the score standing above it, the credit types, and
 // only once it has printed does the sentence appear under it, its secrets popping in. The 2026-08-15 rule survives in the other direction:
 // nothing prints while the numbers move, so the two never read as happening at once. The
 // citation's completion is the screen's one signal-driven beat, so it carries a DEADLINE
@@ -64,12 +64,9 @@ const TEXT_LEAD_MS = 320;
 // completion signal and moving on anyway. Generous by design: it is a backstop, and the
 // typewriter's intervals are merely THROTTLED on a hidden tab, never dropped.
 const CAPTION_FALLBACK_SLACK_MS = 4_000;
-// The reveal's closing beats: the standing waits out the tally-and-colorize beat plus a
-// breath, and SHARE waits out the standing's own rung-in plus another.
-const RANK_LEAD_MS = 260;
-// `.score-top.in`'s rung-in — keep aligned with the CSS.
-const RANK_IN_MS = 220;
-const SHARE_LEAD_MS = 180;
+// The card's closing beat — the standing and SHARE, together — waits out the
+// tally-and-colorize beat plus a breath.
+const CLOSE_LEAD_MS = 260;
 
 // The capped round's headline (#214). Press Start 2P has no `∞`, so the glyph is drawn from
 // the shared path data — the same path, at the same fraction of the font size, that the OG
@@ -231,35 +228,26 @@ export default function SolvedScreen({
     return () => window.clearTimeout(color);
   }, [animate, reduceMotion, scoreIn]);
 
-  // The card's closing beats (user-decided 2026-08-16): the STANDING lands only once
-  // the tally-and-colorize beat has settled, and SHARE once the standing's own rung-in
-  // has. Both hold their layout space throughout (the rank's slot is always mounted,
-  // SHARE hides in place), so these flips change when each appears, never where anything
-  // sits.
+  // The card's closing beat (user-decided 2026-08-16): the STANDING and SHARE land
+  // TOGETHER, once the tally-and-colorize beat has settled. SHARE used to wait out the
+  // standing's own rung-in and a breath of its own on top, which put the card's one
+  // action far too late (user-reported 2026-09-11). Both hold their layout space
+  // throughout (the rank's slot is always mounted, SHARE hides in place), so the flip
+  // changes when they appear, never where anything sits.
   const scoreBeatMs = Math.max(SCORE_COUNT_MS, NEUTRAL_HOLD_MS + rulerSpanMs);
-  const [rankIn, setRankIn] = useState(() => !animate);
   const [shareIn, setShareIn] = useState(() => !animate);
   useEffect(() => {
     if (!animate) {
-      setRankIn(true);
       setShareIn(true);
       return undefined;
     }
     if (!scoreIn) return undefined;
     if (reduceMotion) {
-      setRankIn(true);
       setShareIn(true);
       return undefined;
     }
-    const rank = window.setTimeout(() => setRankIn(true), scoreBeatMs + RANK_LEAD_MS);
-    const share = window.setTimeout(
-      () => setShareIn(true),
-      scoreBeatMs + RANK_LEAD_MS + RANK_IN_MS + SHARE_LEAD_MS,
-    );
-    return () => {
-      window.clearTimeout(rank);
-      window.clearTimeout(share);
-    };
+    const id = window.setTimeout(() => setShareIn(true), scoreBeatMs + CLOSE_LEAD_MS);
+    return () => window.clearTimeout(id);
   }, [animate, reduceMotion, scoreIn, scoreBeatMs]);
 
   // THE PAGE, under the finished card: the credit types and the secrets pop into the
@@ -415,7 +403,7 @@ export default function SolvedScreen({
               mode="sentence"
               lang={lang}
               animate={animate}
-              start={rankIn}
+              start={shareIn}
             />
           </span>
           <span className="solved-score-unit">
@@ -436,8 +424,8 @@ export default function SolvedScreen({
         </div>
         </div>
 
-        {/* SHARE closes the reveal: hidden in place (footprint kept) until the standing
-            has landed — and TOMORROW beside it (#273), the onward action, on the same
+        {/* SHARE closes the card: hidden in place (footprint kept) until it lands with
+            the standing — and TOMORROW beside it (#273), the onward action, on the same
             beat: two equals on one row, never a second arrival. */}
         <div className={`result-actions${onTomorrow ? ' paired' : ''}${shareIn ? ' in' : ''}`}>
           <Button

@@ -1317,7 +1317,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   device rows (the same row grammar).
   **THE REVEAL RUNS SCORE FIRST, THEN THE PAGE (user-decided 2026-09-11, reversing the
   2026-08-15 page-first order):** the stage rises with the card, the tally counts while the
-  ruler colors, the standing lands, SHARE closes the card — and only then the credit
+  ruler colors, the standing lands with SHARE, closing the card — and only then the credit
   types, and only once it has printed does the SENTENCE appear, its secrets popping in
   ("score view → source → sentence", the user's second pass the same day: the text used
   to stand from the first frame). The 2026-08-15 rule survives inverted: nothing prints
@@ -3212,7 +3212,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
       nothing) and a non-`http(s)` url (it becomes an href). Songs get NO lyrics (the
       #270 decision stands, reaffirmed 2026-09-08: a verse or chorus is still reproduced
       lyrics). Not here: excerpts on the archive calendar, the share page or the card.
-  - **The reveal reads dissolve → score → standing → SHARE → page since 2026-09-11 (see
+  - **The reveal reads dissolve → score → standing + SHARE → page since 2026-09-11 (see
     the card bullet above; the paragraph below describes the 2026-09-08 page-first order
     it replaced, and its beats still hold in their new places).** The stage rises in;
     the CREDIT types (`SolvedCaption`, hidden with `visibility` until its beat so the text
@@ -3232,10 +3232,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     runs score → standing → SHARE (user-decided 2026-08-16):** the tally counts its
     `SCORE_COUNT_MS` WHILE the ruler sweeps in and colorizes (the color wave one
     `NEUTRAL_HOLD_MS` behind the neutral cells) — one beat saying "here is your run" — then
-    the STANDING lands (`rankIn`, after the longer of the two plus a breath), and SHARE
-    closes the reveal once the standing's own rung-in has played (`shareIn`): the screen
-    ends on its action. The standing's slot is always mounted; SHARE hides IN PLACE with
-    its footprint kept, so neither arrival moves anything.
+    the STANDING and SHARE land TOGETHER (`shareIn`, after the longer of the two plus a
+    breath); SHARE also waiting out the standing's own rung-in was "way too long"
+    (user-reported 2026-09-11). The standing's slot is always mounted; SHARE hides IN
+    PLACE with its footprint kept, so neither arrival moves anything.
   - **Nothing that has landed ever moves:** the score block holds its footprint from frame
     one and arrives at `opacity: 0`, the credit holds its box hidden, the secrets' boxes
     are open before they pop. Rehydrated solves render `.settled` and replay nothing.
