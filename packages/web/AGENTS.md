@@ -67,6 +67,10 @@
                             challenge (one module-level conversation per round)
       game/playLog.ts         #214's pure projection: (server log + outbox) -> the play log
                               every client derivation reads, and the outbox remainder
+      game/earlyPlay.ts       #273's lock: when tomorrow's round, played tonight, stops taking
+                              guesses (first progress, or EARLY_GUESS_CAP) — read off the play log
+      components/FlipCountdown.tsx  the clock that takes the keyboard's place while it is locked:
+                              HH:MM:SS to the 22:00-ET flip
       state/history.ts        #211's PRIVATE history: the in-memory month/solved-day cache,
                               its one-flight-per-key reads, the explicit-loading status and
                               the streak credit a fresh solve rides
@@ -1283,6 +1287,32 @@ it to the local store — see `packages/backend/AGENTS.md`).
     link sent in a language renders them in it. (The missing-puzzle screen, headerless too,
     opens the SAME drums from its CHANGE LANGUAGE button — `NoPuzzle`, since 2026-09-05.)
 
+- **Early play: tomorrow's sentence tonight (#273, user-decided 2026-09-08).** The
+  product contract — TOMORROW beside SHARE as the result's one onward action, the first
+  progress / `EARLY_GUESS_CAP` stop, the server's `early_locked` — lives in the root
+  `AGENTS.md`. What is this package's:
+  - **The dated route reaches `activeDate + 1`** (`langs.ts` `ROUTE_FUTURE_DAYS`, ONE
+    `dateOf` for both grammars). `GameRoute` reads the day LIVE off `useToday` — `isActiveDay`
+    and `early` both — so a tab open across the flip sees tomorrow become today: the lock
+    lifts, the streak read starts, without a reload. The header title carries the day tag
+    and the calendar key lights, as for any dated route.
+  - **`Game` locks LOCALLY** (`locked` = `early && !finished && earlyLocked(...)`, over the
+    FULL play log rather than the board's deferred view, so the lock lands on the guess that
+    made progress while its floating hit still plays): `submit` refuses, the prompt retires
+    like the gate's, and the TRAY renders `FlipCountdown` where the keyboard stood — the
+    whole statement, no caption (show, don't tell). Holes stay tappable (the wheel is a
+    reading aid).
+  - **The engine (`roundSync.ts`) treats `early_locked` like `round_solved`** — adopt,
+    discard the outbox, close — but remembers WHY (`lockedEarly`): the re-registration that
+    reports `early: false` re-opens the conversation with a READ (another device may have
+    moved the log) and the outbox then flushes. A client whose clock has already flipped
+    (`early` false) that still gets `early_locked` KEEPS the guess and retries behind the
+    backoff — clock skew is not a verdict.
+  - **`SolvedScreen` takes `onTomorrow`** (today's result only; `Game` passes nothing on an
+    archive day), a second secondary button on SHARE's own beat; `.result-actions.paired`
+    gives the pair half the row each (`flex: 1 1 0`, capped 240px) so they share ONE line on
+    a phone. TOMORROW navigates to `pathForDay(lang, tomorrow)`. A capped round offers it too:
+    it is the same result screen.
 - **Local storage is an OUTBOX; a capped round ends at ∞ (#214).** The product contract —
   the three values, the load order, what the cap means, the share token, what was removed —
   lives in the root `AGENTS.md`. What is this package's:

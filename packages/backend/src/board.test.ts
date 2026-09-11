@@ -350,6 +350,7 @@ describe('board in-progress rows (#206)', () => {
       puzzle: over.puzzle ?? ARTIFACT.revision,
       progress,
       solved: over.solved ?? false,
+      early: false,
       now: NOW,
     });
 

@@ -8,10 +8,11 @@ import {
   type DynamoDBClient,
   type TransactWriteItem,
 } from '@aws-sdk/client-dynamodb';
-import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
+import { EARLY_GUESS_CAP, ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
 import { isConditionFailure } from './dynamoErrors';
 import { BATCH_RETRY_ATTEMPTS, batchRetryDelayMs, sleep, type Wait } from './dynamoRetry';
 import {
+  earlyLocked,
   roundMonthPrefix,
   roundPartition,
   roundSortKeyDate,
@@ -256,6 +257,24 @@ export function dynamoRoundStore(
           state: stateForTag(await readItem(input, input.publicId), input.puzzle),
         };
       }
+      // The early-play cap's empty-log half, for the same reason (#273).
+      if (input.early && input.guesses.length > EARLY_GUESS_CAP) {
+        return {
+          outcome: 'early_locked',
+          state: stateForTag(await readItem(input, input.publicId), input.puzzle),
+        };
+      }
+
+      // EARLY PLAY (#273): a round played BEFORE its day takes two clauses more, in the
+      // SAME condition. The night's play ends at the first progress — `#prog` is written by
+      // every append, so a stored value above 0 refuses the next one — or once the log
+      // holds `EARLY_GUESS_CAP` entries, expressed as ROOM exactly like the cap below.
+      // `:zero` is the version bump's own 0, which is also what "no progress yet" compares
+      // against. The day itself lifts both: the route stops asking.
+      const earlyClauses = input.early
+        ? ' AND (attribute_not_exists(#prog) OR #prog = :zero)' +
+          ' AND (attribute_not_exists(#g) OR size(#g) <= :earlyRoom)'
+        : '';
 
       try {
         const response = await client.send(
@@ -286,7 +305,8 @@ export function dynamoRoundStore(
             ConditionExpression:
               '(attribute_not_exists(#last) OR #last < :cutoff) ' +
               'AND (attribute_not_exists(#g) OR (size(#g) <= :room AND #p = :puzzle)) ' +
-              'AND attribute_not_exists(#solved)',
+              'AND attribute_not_exists(#solved)' +
+              earlyClauses,
             ExpressionAttributeNames: aliases(
               'guesses',
               'puzzle',
@@ -299,6 +319,9 @@ export function dynamoRoundStore(
             ExpressionAttributeValues: values({
               ':empty': { L: [] },
               ':room': { N: String(ROUND_GUESS_CAP - input.guesses.length) },
+              ...(input.early
+                ? { ':earlyRoom': { N: String(EARLY_GUESS_CAP - input.guesses.length) } }
+                : {}),
               ...VERSION_BUMP_VALUES,
             }),
             ReturnValues: 'ALL_NEW',
@@ -309,7 +332,8 @@ export function dynamoRoundStore(
         if (!isConditionFailure(error)) throw error;
       }
 
-      // The condition named four bounds; classify against the stored item.
+      // The condition named four bounds (six on an early round); classify against the
+      // stored item.
       const item = await readItem(input, input.publicId);
       const last = numberOf(item?.lastWriteAt);
       const paced = last === undefined || last < cutoff;
@@ -367,6 +391,11 @@ export function dynamoRoundStore(
       // A SOLVED round is settled — the truest answer of the three, since neither retrying
       // nor a smaller batch can ever be accepted again (#203).
       if (stored.solved) return { outcome: 'round_solved', state: stored };
+      // The night's play is over (#273): before the cap, since it is the tighter bound
+      // and, until the day comes, just as final as the freeze.
+      if (input.early && earlyLocked(stored, input.guesses.length)) {
+        return { outcome: 'early_locked', state: stored };
+      }
       // A log already at (or within one batch of) the cap is the cap refusal — the truer
       // answer, since retrying can never succeed — and anything else is the interval.
       if (stored.guesses.length + input.guesses.length > ROUND_GUESS_CAP) {

@@ -367,6 +367,15 @@ export async function handleRound(
   // and the derivation describes exactly that.
   const derived = deriveRound(slice, [...(stored?.guesses ?? []), ...guesses]);
 
+  // EARLY PLAY (#273, user-decided 2026-09-08): a round whose date is AFTER this server's
+  // active day — the +1-day window `requireDayParams` already admits — is tomorrow's
+  // sentence being started tonight, and the night's play ends at the first progress or at
+  // `EARLY_GUESS_CAP` guesses. The store enforces both inside the append's own condition;
+  // this is the one place that knows the server's day, so it is where the round is told.
+  // Judged on the SERVER's clock, like `onTime`: the client's own reading of the flip is
+  // what it locks its input on, and a skewed device is refused here rather than trusted.
+  const early = dayNumber(date) > dayNumber(serverDate);
+
   const { outcome, state } = await rounds.append({
     date,
     lang,
@@ -376,8 +385,23 @@ export async function handleRound(
     puzzle,
     progress: derived.progress,
     solved: derived.solved,
+    early,
     now: instant,
   });
+  if (outcome === 'early_locked') {
+    // The night's play is over (#273): the guess that made progress is STORED — it is
+    // what moved `progress` — and this one is refused. The client adopts and CLOSES, the
+    // `round_solved` shape: what it still held pending was never stored, and the day
+    // itself is what unlocks the round, not a retry.
+    return refusal(
+      409,
+      'early_locked',
+      `This round is played before its day and accepts no further guesses until ${date}.`,
+      state,
+      instant,
+      responseHeaders,
+    );
+  }
   if (outcome === 'round_solved') {
     // The FREEZE (#203): this round is finished and its score is recorded, so nothing more
     // may join its log. The client must do BOTH things here — ADOPT the state (so the tab

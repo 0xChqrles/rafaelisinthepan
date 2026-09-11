@@ -360,6 +360,16 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   a browser reads null for a header only curl and `backend:dev` ever see. Local serve swaps
   in `memoryRoundStore`; no new env or IAM (the table grant already carried GetItem +
   UpdateItem).
+  **EARLY PLAY (#273):** the route judges `early = dayNumber(date) > dayNumber(serverDate)`
+  — the +1-day window `requireDayParams` admits — and hands it to `append`, which then adds
+  two clauses to the SAME condition, path-only syntax like the rest:
+  `AND (attribute_not_exists(#prog) OR #prog = :zero) AND (attribute_not_exists(#g) OR size(#g) <= :earlyRoom)`
+  (`:zero` is the version bump's own 0; `:earlyRoom` = `EARLY_GUESS_CAP` minus the batch,
+  the cap's ROOM shape; a first batch past the early cap is refused in the store like the
+  round cap's empty-log half). The classification reads solved → `early_locked`
+  (`roundStore.earlyLocked`, the two clauses restated for the read and for the memory store)
+  → cap → interval. `early_locked` is a 409 carrying the stored state; the day itself lifts
+  it (the route stops asking). The rule lives in the root `AGENTS.md` (Sentence round).
 - **Word mode's two round writes (#202), owned by a DEVICE since #217:** the same route,
   `mode=word`. The product contract (why the fast game syncs least, the server-stamped clock,
   the wait check, the caps, what is deliberately NOT validated, and #217's two conditions)

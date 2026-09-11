@@ -24,6 +24,7 @@ async function seeded(progress: number, solved = false) {
     puzzle: PUZZLE,
     progress,
     solved,
+    early: false,
     now: NOW,
   });
   return store;
@@ -165,6 +166,7 @@ describe('memoryRoundStore.move — what counts as recorded play (#204)', () => 
       puzzle: PUZZLE,
       progress: 10,
       solved: false,
+      early: false,
       now: NOW,
     });
     expect(other.move(WORD, PUBLIC_ID, TO)).toBeNull();
@@ -194,6 +196,7 @@ describe('memoryRoundStore.getMany — the board read (#206)', () => {
       puzzle: 'ffffffffffffffff',
       progress: 10,
       solved: false,
+      early: false,
       now: NOW,
     });
     // A round on ANOTHER daily under the same player never answers this day's read.
@@ -205,6 +208,7 @@ describe('memoryRoundStore.getMany — the board read (#206)', () => {
       puzzle: PUZZLE,
       progress: 5,
       solved: false,
+      early: false,
       now: NOW,
     });
 

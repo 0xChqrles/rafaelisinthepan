@@ -115,6 +115,7 @@ export default function SolvedScreen({
   animate = true,
   start = true,
   onRevealEnd,
+  onTomorrow,
 }: {
   guessCount: number;
   trajectory: number[]; // reconstruction % after each counted guess (one per try)
@@ -145,6 +146,10 @@ export default function SolvedScreen({
   // The reveal's last beat has landed (SHARE, or the settled frame): the round disarms
   // its fast-forward on it.
   onRevealEnd?: () => void;
+  // TOMORROW (#273, user-decided 2026-09-08): the result screen's ONE onward action —
+  // the next day's sentence, opened tonight, beside SHARE. Only today's result offers it
+  // (the round passes nothing on an archive day), and it arrives on SHARE's own beat.
+  onTomorrow?: () => void;
 }) {
   const reduceMotion = prefersReducedMotion();
   const n = Math.max(trajectory.length, 1);
@@ -402,8 +407,9 @@ export default function SolvedScreen({
         </div>
 
         {/* SHARE closes the reveal: hidden in place (footprint kept) until the standing
-            has landed. */}
-        <div className={`result-actions${shareIn ? ' in' : ''}`}>
+            has landed — and TOMORROW beside it (#273), the onward action, on the same
+            beat: two equals on one row, never a second arrival. */}
+        <div className={`result-actions${onTomorrow ? ' paired' : ''}${shareIn ? ' in' : ''}`}>
           <Button
             variant="secondary"
             className={`result-action${copied ? ' copied' : ''}`}
@@ -411,6 +417,11 @@ export default function SolvedScreen({
           >
             {copied ? t(lang, 'copied') : t(lang, 'share')}
           </Button>
+          {onTomorrow && (
+            <Button variant="secondary" className="result-action" onClick={onTomorrow}>
+              {t(lang, 'tomorrow')}
+            </Button>
+          )}
         </div>
       </div>
 

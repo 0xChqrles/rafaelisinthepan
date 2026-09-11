@@ -121,7 +121,16 @@ describe('parseRoute — archive + past-day deep links (#55)', () => {
 
   it('treats a real date outside [firstDate, activeDate] as unknown -> home', () => {
     expect(parseRoute('/fr/2025-12-31', bounds)).toEqual({ view: 'home' }); // before first
-    expect(parseRoute('/fr/2026-07-01', bounds)).toEqual({ view: 'home' }); // after active day
+    expect(parseRoute('/fr/2026-07-02', bounds)).toEqual({ view: 'home' }); // two days past the active day
+  });
+
+  it('reaches ONE day past the active day — tomorrow\'s sentence, started tonight (#273)', () => {
+    expect(parseRoute('/fr/2026-07-01', bounds)).toEqual({
+      view: 'game',
+      lang: 'fr',
+      mode: 'sentence',
+      date: '2026-07-01',
+    });
   });
 
   it('skips the future bound when no activeDate is supplied', () => {
@@ -162,7 +171,9 @@ describe('parseRoute — Word mode grammar (#156): /<lang>/word[/…]', () => {
   it('applies the SAME date rules as the sentence grammar', () => {
     expect(parseRoute('/fr/word/2026-02-30', bounds)).toEqual({ view: 'home' }); // no Feb 30
     expect(parseRoute('/fr/word/2025-12-31', bounds)).toEqual({ view: 'home' }); // before first
-    expect(parseRoute('/fr/word/2026-07-01', bounds)).toEqual({ view: 'home' }); // after active
+    expect(parseRoute('/fr/word/2026-07-02', bounds)).toEqual({ view: 'home' }); // two days past the active day
+    // The same +1 reach as the sentence grammar: one `dateOf`, so the two cannot drift.
+    expect(parseRoute('/fr/word/2026-07-01', bounds)).toMatchObject({ view: 'game', date: '2026-07-01' });
     // Non-date third segment keeps the tolerance -> today's word.
     expect(parseRoute('/fr/word/xyz', bounds)).toEqual({ view: 'game', lang: 'fr', mode: 'word' });
   });

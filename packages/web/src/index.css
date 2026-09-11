@@ -2718,6 +2718,37 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .result-action.copied {
   color: var(--accent);
 }
+/* TOMORROW beside SHARE (#273): two actions share the row as equals — each gives up the
+   lone button's floor width and takes half the row instead, capped so the pair does not
+   stretch across the 680px block on a desktop. On a phone (347px of row) that is two
+   buttons of ~167px, on one line. */
+.result-actions.paired .result-action {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 240px;
+}
+
+/* The EARLY-PLAY clock (#273): tomorrow's round locked for the night, and in the
+   keyboard's place the time until the day flips and it continues. The pixel face — it is
+   the game's own number, like Word mode's clock — centred in the tray's footprint, so it
+   swaps the keys out and moves nothing above it. */
+.flip-clock {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+.flip-timer {
+  font-family: var(--pixel-font);
+  font-size: 24px;
+  line-height: 1;
+  color: var(--fg);
+  pointer-events: none;
+}
+@media (max-width: 640px) {
+  .flip-timer {
+    font-size: 20px;
+  }
+}
 /* Player-progression celebration: the native dialog IS the borderless full-screen surface.
    React Spring owns every staged entrance/bounce; fixed rows reserve the final composition
    so the flame, number, week, and action never move each other as they appear. */
