@@ -96,9 +96,8 @@ export function useLocation(): string {
     window.addEventListener('popstate', sync);
     const off = subscribe(sync);
     // A navigation that RACED this subscription: a child's mount effect runs before its
-    // parent's, so a screen that `navigate`s as soon as it mounts (the invite landing
-    // skipping itself for the sender or a friend, 2026-09-05) notified nobody — the URL
-    // changed and the page stayed empty until a reload. Reading the location once here
+    // parent's, so a screen that `navigate`s as soon as it mounts notified nobody — the
+    // URL changed and the page stayed empty until a reload. Reading the location once here
     // catches whatever moved before anyone was listening.
     sync();
     return () => {

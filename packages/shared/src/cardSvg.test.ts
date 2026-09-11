@@ -324,11 +324,12 @@ describe('renderInviteCardSvg', () => {
   });
 });
 
-// CONTRACT (user-decided 2026-09-05): a SIGNED share — the solved screen's INVITE toggle
-// left on — draws the player's mark and name on the result card, both modes, and a plain
-// share draws neither. The strip sits in the top band the result leaves empty, and the
-// name is bounded by the profile's own cap so the widest signature clears the margins.
-describe('a signed result card (the share link carrying an invite)', () => {
+// CONTRACT (user-decided 2026-09-05): a SIGNED share — every share the result screens make
+// from a device holding an account — draws the player's mark and name on the result card,
+// both modes, and a plain share draws neither. The strip sits in the top band the result
+// leaves empty, and the name is bounded by the profile's own cap so the widest signature
+// clears the margins.
+describe('a signed result card (the share link wearing its player)', () => {
   const id = 'abcdefghij234567';
   const sentence = {
     lang: 'en',

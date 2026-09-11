@@ -434,10 +434,6 @@ const STRINGS = {
   copied: { en: 'COPIED', fr: 'COPIÉ' },
   // A music day's track link on the solved page (#270): an ordinary link, new tab.
   listen: { en: 'LISTEN', fr: 'ÉCOUTER' },
-  // The AS drum under SHARE (user-decided 2026-09-05, fourth pass): the label, and the
-  // other row's name — the player's own row is their mark and name. Opens on the player.
-  shareAs: { en: 'AS', fr: 'EN TANT QUE' },
-  shareAnon: { en: 'ANONYMOUS', fr: 'ANONYME' },
   // ---- the solved screen's STANDING (#170): ONE badge, `TOP 25%`, beside the score
   // (user-decided 2026-09-05, dropping the `RANK #6 OF 60` line). `TOP` is untranslated in
   // every language, like MISS and the rarity grades — one word, identical everywhere.

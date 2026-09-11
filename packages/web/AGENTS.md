@@ -1712,38 +1712,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `additionalBehaviors`, and `changeOrigin`/`xfwd` are pinned OFF (Vite's string shorthand
   does not leave them off) so the backend, which has no `siteOrigin` locally, reads the
   BROWSER's Host and bounces to the app rather than to itself.
-  **THE SHARE'S AS DRUM (user-decided 2026-09-05, root `AGENTS.md`):**
-  `components/ShareAs.tsx` — `useShareSigner` (component state, the player's row by
-  default, so every result screen asks afresh; `by` is the account's publicId or null) and,
-  under SHARE in both `SolvedScreen` and `WordEndScreen`, the label AS beside a two-row
-  drum on `useDrum` — ONE ROW TALL: the slot with a 7px sliver of the other row in the fade,
-  the pick wearing `.ps-row.on`'s inverted fill with the MARK OUTSIDE the chip, beside it at the row's full height (2026-09-05: inside the fill a white-pixel mark vanished; a hairline frame instead lost the wheel's dress) — a flip CHEVRON on its LEFT, between the label and the slot (and a tap on the
-  slot row flips too); rows are `role=radio`; arrow keys turn it — holding the player's mark
-  + name (`useOwnFace`, rendered once the face has settled) or ANONYMOUS. Five passes the
-  same day: a glass chip reading INVITE ("looks like a button", "the term invite is weird"),
-  a checkbox reading SHARE MY PROFILE ("can be scary"), a checkbox reading `AS <mark> <name>`
-  ("the checkbox already looks like a pfp, so on the same line it feels weird"), a three-row
-  drum ("too far from the share button — we don't get the link between them"), then this
-  line directly under SHARE. No account, no drum. The landing draws the shared
-  score in `.solved-score`'s own dress (pixel number over its unit — the first cut used the
-  chrome face and broke the layout). The
-  landing
-  takes the token as `/join/<publicId>/<token>` (`parseRoute` shape-checks it with
-  `SHARE_TOKEN_PATTERN`, `FriendInvite` decodes it — `sharedResultFrom`), draws the shared
-  result FIRST and alone (`SharedResultBlock`, ONE template for both modes — a headline
-  only Word has, the number + named unit, the mode's visual: the run ruler settled or the
-  rarity bar, and the date in the card's pixel face), then — after a 40px break — the PERSON as one
-  group (`.invite-person`: mark, name, ADD FRIEND, and PLAY as the bare secondary under
-  it, the way out for a reader who wants the game and not the friend; user-decided
-  2026-09-05, "group relevant items together"), and continues into the SHARED DAY
-  (`landingAfter`). `useLocation` re-reads the URL once it subscribes, because this
-  landing's skip navigates from a mount effect that runs BEFORE App's subscription.
-  **The signer's own device never sees it, and neither does a FRIEND's** (user-decided
-  2026-09-05): a signed link opened by the account that signed it (`isOwnLink`, known
-  locally) or by an account already holding the edge (one `POST /friends {token}` read
-  while the loading frame stands; a failed read shows the landing) goes straight to the
-  shared day, as a plain link would — the landing is for a reader who could add the
-  sender, and neither of them is one.
+  **A RESULT SHARE IS SIGNED AND OPENS THE DAY** (root `AGENTS.md`, Player profile):
+  `SolvedScreen` and `WordEndScreen` sign every link with the device's account
+  (`useDeviceIdentity()?.accountId`, null without one), with no control beside SHARE; the
+  click opens the shared day, so the SPA has no landing for a share and `/join/` carries
+  the publicId alone. (The AS drum and the landing's shared-result view were retired
+  2026-09-10.)
   **ACCEPTING IS A BUTTON, for everyone** (#216 trigger rework, user-decided 2026-08-24,
   superseding the auto-add on page load): the landing shows the INVITER's mark and name
   (a best-effort bounded profile read, the assigned identity as fallback) over ONE primary
@@ -2722,7 +2696,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   nothing; reduced motion collapses the rise and keeps the delays (the floating numbers'
   degradation). It is decorative (`role="img"`) with `srWordBreakdown` as its accessible
   line — grade names untranslated, as everywhere. ONE component, `WordRarityBar`, draws it
-  on the result screen AND the invite landing; the OG card draws the same bar in SVG
+  on the result screen; the OG card draws the same bar in SVG
   (`shared/cardSvg.ts`, floor-width segments over the ruler's column); only the share
   TEXT keeps its bead row. Identity is mode-addressed everywhere: `roundKeyForDay(day, lang,
   'word')` = `w:` keys into the store's own `wordRounds` map (persist **v8** since the
@@ -3084,10 +3058,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `1 1 auto` item sized by its content grows the page instead), centred, rising in the
     way the tray results always have (`RESULTS_IN_MS`), stacking TWO parts with ONE gap:
     - **SCORE** (`.solved-numbers`) — the named `<tries> TRIES` headline (the #170 TOP
-      badge beside the number since 2026-09-05) over the run ruler, **then SHARE** with its
-      AS drum, which belongs to this block (user-decided 2026-08-14, third pass: sharing is
+      badge beside the number since 2026-09-05) over the run ruler, **then SHARE**, which
+      belongs to this block (user-decided 2026-08-14, third pass: sharing is
       what you do with a RESULT). Centred and capped at the keyboard's 680px. Measured on a
-      375×667 phone: 249px tall, SHARE landing at y 226–273 — the block ends at 325 with
+      375×667 phone: 197px tall, SHARE landing at y 226–273, where the block ends, with
       the whole page still below it.
     - **PAGE** (`.solved-page`) — the sentence's page, read TOP-DOWN the way a page is
       (user-decided 2026-09-08: "with the source above the text, we can start by a few
@@ -4039,8 +4013,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - It answers **`:focus-visible` alone**, asked at focus time — a tap moves no brackets,
     nor does the focus a click leaves on a button.
   - It frames the control's **VISIBLE box**: `[data-focus-box]` inside a control that is
-    stretched wider than what it shows — a drum row frames its chip (`PuzzleSelect`,
-    `ShareAs`, the wheel's slot `.hole-word-wrap`); the code row is `fit-content` so the
+    stretched wider than what it shows — a drum row frames its chip (`PuzzleSelect`, the
+    wheel's slot `.hole-word-wrap`); the code row is `fit-content` so the
     field's box is its six cells. It never frames the guess field (its caret is its
     focus), a dialog focused as a whole, or a `tabindex="-1"` container.
   - It **follows a focus that moves** — a drum turning under it, a scroll, a resize — one

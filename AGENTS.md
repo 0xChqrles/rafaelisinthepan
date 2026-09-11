@@ -605,6 +605,18 @@ The live routes then share:
 - Moderation best-effort on write: banned-strings name filter (`name_rejected`), exhaustive
   swastika template match (`avatar_rejected`). Symbolic; the friends graph is the containment.
 - The copyable-key backup UI was removed (2026-08-19); #204's email link is the backup.
+- **A RESULT SHARE WEARS ITS PLAYER'S FACE, AND CARRIES NO INVITE (decided 2026-09-05;
+  made unconditional and invite-free 2026-09-10).** Both result screens sign every share
+  with the device's account, `/s/<token>/<publicId>` (`shared/src/invite.ts` `sharePath`):
+  the card wears the player's mark and name, the page title names them, the page is served
+  at the invite's 300s TTL, and the click opens the shared day exactly as a plain link does
+  — no landing, no ADD FRIEND. There is no control and no anonymous option (the AS drum
+  under SHARE was retired 2026-09-10). The TOKEN is untouched (no codec change; the bot
+  reads a signed share as a plain one and strips the id with the link). No account → the
+  plain `/s/<token>`, content-addressed and year-cached. A deleted signer falls back to the
+  PLAIN share (the score was never the part that went away). The signed card centres the
+  strip, the gap and the result as ONE block (the result moves down; the plain card is
+  untouched).
 
 ### Friends graph (#189)
 
@@ -614,24 +626,6 @@ The live routes then share:
   `/join/<publicId>`, whose ADD FRIEND tap records the edge (never the load). Paths live in
   `shared/src/invite.ts` (infra routes `/i/*` to the API origin, backend serves, web builds).
   A deleted sender's link expires (404).
-- **A RESULT SHARE CARRIES THE INVITE BY DEFAULT (decided 2026-09-05).** The result
-  screens' AS drum — under SHARE, opening on the player, NEVER persisted
-  (fresh on every result) — signs the link `/s/<token>/<publicId>` (`shared/src/invite.ts`
-  `sharePath`).
-  The TOKEN is untouched (no codec change; the bot reads a signed share as a plain one and
-  strips the id with the link); the card wears the player's mark and name; the page is
-  served at the invite's 300s TTL; the click lands on `/join/<publicId>/<token>`, the
-  invite landing showing the result, whose ADD FRIEND records the edge and whose PLAY
-  opens the shared day; the SIGNER's own device, and a device already FRIENDS with the
-  signer (one `/friends` read), skip the landing and open the day, like a plain link. A deleted signer falls back to the PLAIN share (the score was
-  never the part that went away). Toggle OFF = the plain `/s/<token>`, byte for byte,
-  still content-addressed and year-cached. The control is the label AS and a ONE-ROW-TALL
-  two-row DRUM with a flip chevron (the app's one picker physics) holding the player's mark
-  + name or ANONYMOUS, opening on the player, directly under SHARE (a taller drum lost the
-  link to the button); never a "share my profile" checkbox (scary), an `AS` checkbox beside a face
-  (two squares), a "don't share" opt-out, or an INVITE chip (each tried and retired the same
-  day). The signed card centres strip + gap + result as ONE block (the result moves down;
-  the plain card is untouched).
 - **`POST /friends`**: `{token}` reads, `{token, add}` links, `{token, remove}` unlinks;
   every answer `{ friends: [publicId] }`. Storage: one row per DIRECTION,
   `friends#<publicId>` / friend id, `createdAt` from the first link; both rows written (and

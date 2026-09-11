@@ -1,10 +1,10 @@
 // CONTRACT: the paths three packages agree on (shared/src/invite.ts). A SIGNED share
-// (user-decided 2026-09-05) is the plain share path plus ONE segment, so that the toggle
-// OFF yields today's link byte for byte and the token itself never changes.
+// (user-decided 2026-09-05) is the plain share path plus ONE segment, so the plain link
+// is the signed one minus it, byte for byte, and the token itself never changes.
 
 import { describe, expect, it } from 'vitest';
 import {
-  SHARE_TOKEN_PATTERN,
+  SHARE_TOKEN_SOURCE,
   inviteCardPath,
   inviteLandingPath,
   invitePath,
@@ -27,16 +27,16 @@ describe('share and invite paths', () => {
     expect(shareCardPath(TOKEN, ID)).toBe(`/og/${TOKEN}/${ID}.png`);
   });
 
-  it('the signed landing is the invite landing carrying the token', () => {
-    expect(inviteLandingPath(ID)).toBe(`/join/${ID}`);
-    expect(inviteLandingPath(ID, TOKEN)).toBe(`/join/${ID}/${TOKEN}`);
+  it('the invite link, its landing and its card', () => {
     expect(invitePath(ID)).toBe(`/i/${ID}`);
+    expect(inviteLandingPath(ID)).toBe(`/join/${ID}`);
     expect(inviteCardPath(ID)).toBe(`/og/i/${ID}.png`);
   });
 
   it('a token never contains a slash, which is what keeps the two segments apart', () => {
-    expect(SHARE_TOKEN_PATTERN.test(TOKEN)).toBe(true);
-    expect(SHARE_TOKEN_PATTERN.test(`${TOKEN}/${ID}`)).toBe(false);
-    expect(SHARE_TOKEN_PATTERN.test('')).toBe(false);
+    const whole = new RegExp(`^${SHARE_TOKEN_SOURCE}$`);
+    expect(whole.test(TOKEN)).toBe(true);
+    expect(whole.test(`${TOKEN}/${ID}`)).toBe(false);
+    expect(whole.test('')).toBe(false);
   });
 });

@@ -56,7 +56,7 @@ async function rasterize(svg: string): Promise<Buffer> {
 }
 
 // `by` is the SIGNATURE (user-decided 2026-09-05): the player's mark and name on the
-// card when the share carries their invite, nothing when it does not.
+// card when the share is signed, nothing when it is not.
 export async function renderCardPng(data: CardData, by: InviteCardData | null = null): Promise<Buffer> {
   return rasterize(renderCardSvg(data, by));
 }
@@ -87,15 +87,11 @@ export interface ShareSigner {
   name: string;
 }
 
-// A SIGNED share (user-decided 2026-09-05) unfurls as the player's own card and lands on
-// the invite landing WITH the result, where ADD FRIEND records the edge; its title names
-// the player before the score. A plain share is unchanged: the result's card, the game.
+// A SIGNED share (user-decided 2026-09-05) unfurls as the player's own card, and its title
+// names the player before the score. The click opens the shared day either way: a share
+// carries no invite (2026-09-10).
 function shareTitle(result: string, by: ShareSigner | null): string {
   return by ? `${by.name || anonName(by.publicId)} · ${result}` : result;
-}
-
-function shareTarget(base: string, token: string, gameUrl: string, by: ShareSigner | null): string {
-  return by ? `${base}${inviteLandingPath(by.publicId, token)}` : gameUrl;
 }
 
 // A solved sentence's share page: the card at /og/<token>.png, and a click-through into
@@ -137,7 +133,7 @@ export function renderShareHtml(
     lang,
     shareTitle(title, by),
     `${base}${shareCardPath(token, by?.publicId)}`,
-    shareTarget(base, token, gameUrl, by),
+    gameUrl,
     L.play,
   );
 }
@@ -166,7 +162,7 @@ export function renderWordShareHtml(
     lang,
     shareTitle(title, by),
     `${base}${shareCardPath(token, by?.publicId)}`,
-    shareTarget(base, token, gameUrl, by),
+    gameUrl,
     L.play,
   );
 }
