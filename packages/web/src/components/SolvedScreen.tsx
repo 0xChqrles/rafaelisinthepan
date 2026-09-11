@@ -10,6 +10,7 @@ import SolvedCaption, { captionDurationMs } from './SolvedCaption';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useShare from '../hooks/useShare';
 import Button from './Button';
+import ChevronRightIcon from '../assets/icons/chevron-right.svg?react';
 import { useDeviceIdentity } from '../identity';
 import { ariaHoleHistory, t } from '../i18n';
 import { capitalize, sentenceStarts } from '../game/sentenceCase';
@@ -447,8 +448,10 @@ export default function SolvedScreen({
             {copied ? t(lang, 'copied') : t(lang, 'share')}
           </Button>
           {onTomorrow && (
-            <Button variant="secondary" className="result-action" onClick={onTomorrow}>
+            <Button variant="secondary" className="result-action btn-arrow" onClick={onTomorrow}>
               {t(lang, 'tomorrow')}
+              {/* The title's own 7×7 pixel chevron, pointing ONWARD (user-asked 2026-09-11). */}
+              <ChevronRightIcon className="ui-icon" aria-hidden />
             </Button>
           )}
         </div>

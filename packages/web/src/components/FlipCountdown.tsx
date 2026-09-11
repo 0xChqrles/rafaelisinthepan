@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { nextResetAt } from '@whippin/shared';
 import { srEarlyClock, t } from '../i18n';
 import Button from './Button';
+import ChevronLeftIcon from '../assets/icons/chevron-left.svg?react';
 
 // The clock that takes the KEYBOARD's place once tomorrow's round is locked for the night
 // (#273): how long until the day flips and the round continues where it stopped. It is
@@ -53,7 +54,9 @@ export default function FlipCountdown({
       >
         <span aria-hidden="true">{`${pad(h)}:${pad(m)}:${pad(s)}`}</span>
       </span>
-      <Button variant="secondary" className="flip-today" onClick={onToday}>
+      <Button variant="secondary" className="flip-today btn-arrow" onClick={onToday}>
+        {/* The same pixel chevron as TOMORROW's, pointing BACK (user-asked 2026-09-11). */}
+        <ChevronLeftIcon className="ui-icon" aria-hidden />
         {t(lang, 'today')}
       </Button>
     </div>

@@ -2816,6 +2816,20 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .flip-today {
   min-width: 180px;
 }
+/* A button that POINTS (2026-09-11): TOMORROW carries the title's 7×7 pixel chevron after
+   its word, TODAY carries the same one turned back before its word — the two ends of one
+   trip wearing one mark. The glyph rides the label's line at its in-file 14px. */
+.btn-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.btn-arrow .ui-icon {
+  flex: none;
+  /* The pixel chevron sits a hair under the caps' optical centre; lift it onto it. */
+  margin-top: calc(-1 * var(--cap-shift, 0px));
+}
 .flip-timer {
   font-family: var(--pixel-font);
   font-size: 24px;
