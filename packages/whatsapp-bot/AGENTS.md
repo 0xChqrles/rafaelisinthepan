@@ -463,7 +463,7 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   remembered). The emoji acknowledgement is not a turn. **Only the BOT's mention is
   addressing**: everybody else's is part of what was said, as the name the group uses.
   **THE DIARY (`chat/diary.ts`) REPLACES THE PER-PERSON MEMORY.** One text per group
-  (`DIARY#<group>` / `TEXT`, `DIARY_MAX_CHARS` 3000), what the bot knows about the people
+  (`DIARY#<group>` / `TEXT`, `DIARY_MAX_CHARS` 6000), what the bot knows about the people
   in it — who is who, who teases whom, running jokes, promises — rewritten by the bot
   itself at the day flip from the diary as it stood and the day's log (`podiumJob.ts`
   `runDiaryJob`, `kind: "diary"`, scheduled at `DIARY_TIME` **22:20** `America/New_York` —

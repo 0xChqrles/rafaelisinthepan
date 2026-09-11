@@ -28,8 +28,8 @@ import { renderDay, type Turn } from './dayLog';
 
 export const DIARY_VERSION = 1;
 // About what a member holds in their head about a group of friends, and small enough to
-// sit in every prompt beside the whole day.
-export const DIARY_MAX_CHARS = 3000;
+// sit in every prompt beside the whole day (user-decided 2026-09-11: 6000, from 3000).
+export const DIARY_MAX_CHARS = 6000;
 
 export interface Diary {
   version: number;
@@ -158,10 +158,13 @@ What it is for: tomorrow you read it before answering anybody, so keep what a me
 // twenty to fifty turns whose transcript is barely a thousand tokens — the budget went
 // almost entirely on deliberation. So the thinking is BOUNDED (`low`, the judge's setting)
 // and the budget is generous beside a diary that is at most `DIARY_MAX_CHARS` of French,
-// about 1200 tokens. A nightly fold that truncates loses the day for good: the job holds
-// the diary as it stands and the day is never folded again (`already_folded` is written
-// only on a successful write, but the day has passed).
-const MAX_TOKENS = 8000;
+// about 2400 tokens. Measured live (2026-09-11): a 2978-character diary came back in 5995
+// tokens, thinking included, so the budget grew with the diary (8000 → 10000 when the
+// limit doubled), and the timeout still covers all of it at that night's ~220 tokens a
+// second. A nightly fold that truncates loses the day for good: the job holds the diary as
+// it stands and the day is never folded again (`already_folded` is written only on a
+// successful write, but the day has passed).
+const MAX_TOKENS = 10000;
 const EFFORT = 'low' as const;
 const TIMEOUT_MS = 60_000;
 
