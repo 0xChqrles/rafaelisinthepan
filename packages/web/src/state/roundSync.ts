@@ -315,7 +315,11 @@ async function pump(key: string): Promise<void> {
       f.closed = true;
       return;
     }
-    f.inFlight = appendBatch(f, key, owed.slice(0, room));
+    // Early play stops on a GUESS, including within a coalesced outbox. Send one at
+    // a time so the server's atomic progress/cap guard judges each next guess. This
+    // also prevents an oversized batch from refusing a round with one slot left
+    // after another device advanced it.
+    f.inFlight = appendBatch(f, key, owed.slice(0, f.early ? 1 : room));
   }
   try {
     await f.inFlight;

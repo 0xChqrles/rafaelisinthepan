@@ -981,6 +981,37 @@ describe('early play: tomorrow\'s round tonight (#273)', () => {
     post.mockReset();
   }
 
+  it('sends early outbox guesses individually and stops after the first improvement', async () => {
+    await readyEarly();
+    seedOutbox(['zzz', 'bois', 'chemin']);
+    post.mockResolvedValueOnce(ok(['zzz']));
+    post.mockResolvedValueOnce(ok(['zzz', 'bois']));
+    post.mockResolvedValueOnce(refusal(409, ['zzz', 'bois'], 'early_locked'));
+    notifyGuess(KEY);
+    await settle(60_000);
+    expect([bodyOf(0).guesses, bodyOf(1).guesses, bodyOf(2).guesses])
+      .toEqual([['zzz'], ['bois'], ['chemin']]);
+    expect(server()?.guesses).toEqual(['zzz', 'bois']);
+    expect(outbox()).toEqual([]);
+    expect(post).toHaveBeenCalledTimes(3);
+  });
+
+  it('uses the last early slot when another device advanced during a coalesced outbox', async () => {
+    await readyEarly(['zzz']);
+    seedOutbox(['xxx', 'www']);
+    // Another device added yyy; only one of our two pending guesses now fits.
+    post.mockImplementationOnce(async (_url, body) => {
+      expect(body.guesses).toEqual(['xxx']);
+      return ok(['zzz', 'yyy', 'xxx']);
+    });
+    post.mockResolvedValueOnce(refusal(409, ['zzz', 'yyy', 'xxx'], 'early_locked'));
+    notifyGuess(KEY);
+    await settle(60_000);
+    expect(server()?.guesses).toEqual(['zzz', 'yyy', 'xxx']);
+    expect(outbox()).toEqual([]);
+    expect(post).toHaveBeenCalledTimes(2);
+  });
+
   it('409 early_locked: adopts the stored state, DISCARDS the outbox, closes', async () => {
     await readyEarly(['zzz']);
     seedOutbox(['chemin']);

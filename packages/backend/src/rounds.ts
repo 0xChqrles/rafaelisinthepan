@@ -376,6 +376,21 @@ export async function handleRound(
   // what it locks its input on, and a skewed device is refused here rather than trusted.
   const early = dayNumber(date) > dayNumber(serverDate);
 
+  // The atomic store guard checks progress BEFORE this batch. Reject a batch that
+  // itself continues past an improvement; otherwise three secrets could solve early.
+  // Progress is monotonic, so checking the prefix before the last guess is enough.
+  // Refuse the whole batch, preserving the append's all-or-nothing contract.
+  if (early && guesses.length > 1 && deriveRound(slice, guesses.slice(0, -1)).progress > 0) {
+    return refusal(
+      409,
+      'early_locked',
+      'This batch continues past the first early-play improvement.',
+      (await rounds.get(key, publicId, puzzle)) ?? { guesses: [], createdAt: '' },
+      instant,
+      responseHeaders,
+    );
+  }
+
   const { outcome, state } = await rounds.append({
     date,
     lang,

@@ -1459,6 +1459,50 @@ describe('early play: tomorrow\'s sentence tonight (#273)', () => {
     await expect(handler.historyStore.solvedDays(ME.accountId, 'fr')).resolves.toEqual([]);
   });
 
+  it('refuses a three-secret batch without freezing an early solve', async () => {
+    const sentence: Puzzle = {
+      ...SENTENCE,
+      words: [...SENTENCE.words, 'mer'],
+      holes: [...SENTENCE.holes, {
+        pos: 4, secret: { word: 'mer', slug: 'mer' },
+        start: { word: 'eau', slug: 'eau' }, start_rank: 1,
+      }],
+      ranks: { ...SENTENCE.ranks, mer: {
+        mer: { word: 'mer', rank: 0 }, eau: { word: 'eau', rank: 1, dq: 255 },
+      } },
+    };
+    const handler = makeHandler({ sentence });
+    const refused = await handler(tomorrow(['phare', 'nuit', 'mer']));
+    expect(refused.statusCode).toBe(409);
+    expect(parsed(refused).error).toBe('early_locked');
+    expect(parsed(refused).guesses).toEqual([]);
+    expect((await handler(tomorrow())).statusCode).toBe(404);
+
+    // A valid retry remains playable and can earn the day after the flip.
+    expect((await handler(tomorrow(['phare']))).statusCode).toBe(200);
+    handler.advance(24 * 60 * 60 * 1000);
+    expect(parsed(await handler(tomorrow(['nuit', 'mer']))).credited).toBe(true);
+  });
+
+  it('accepts a batch ending at its first improvement, but nothing after it', async () => {
+    const handler = makeHandler();
+    const accepted = await handler(tomorrow(['zzz', 'mer']));
+    expect(accepted.statusCode).toBe(200);
+    expect(parsed(accepted).guesses).toEqual(['zzz', 'mer']);
+    handler.advance(ROUND_WRITE_MIN_MS + 1);
+    expect(parsed(await handler(tomorrow(['yyy']))).error).toBe('early_locked');
+  });
+
+  it('refuses a batch with an improvement before its end without partially appending', async () => {
+    const handler = makeHandler();
+    await handler(tomorrow(['zzz']));
+    handler.advance(ROUND_WRITE_MIN_MS + 1);
+    const refused = await handler(tomorrow(['mer', 'yyy']));
+    expect(refused.statusCode).toBe(409);
+    expect(parsed(refused).guesses).toEqual(['zzz']);
+    expect(parsed(await handler(tomorrow())).guesses).toEqual(['zzz']);
+  });
+
   it('bounds the RESULTING log: a first batch past the cap creates nothing', async () => {
     const handler = makeHandler();
     const refused = await handler(tomorrow(['a', 'b', 'c', 'd']));
