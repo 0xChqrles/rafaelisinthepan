@@ -89,15 +89,7 @@ User-decided rules with the same bar as the stable invariants.
 
 ---
 
-## Working protocol (jbarbier/CLAUDE.md, decided 2026-09-11)
-
-> Imported from
-> [jbarbier/CLAUDE.md](https://github.com/jbarbier/CLAUDE.md/blob/ad8cee2b0d19736948d3c1fb6a7d8e2a848002ab/CLAUDE.md)
-> at `ad8cee2`, cut down to what agrees with the rest of this file and applies to this repo.
-> What is kept is its wording, with headings one level deeper, "Julien" (its author) read as
-> "the user" and a "service" as a package. Left out on purpose: its worktree branching,
-> sub-agents and critics, commit/push/PR after every task, tests and evals for every change,
-> the ban on hosted LLM APIs, and the `services/` layout.
+## Working protocol (decided 2026-09-11)
 
 ### How to work (high-level mindset)
 
