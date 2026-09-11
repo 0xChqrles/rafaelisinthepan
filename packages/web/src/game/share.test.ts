@@ -418,9 +418,9 @@ describe('shareUrl — result packed into a /s/<token> link', () => {
     expect(url).toMatch(/^https:\/\/whippin\.ai\/s\/[A-Za-z0-9_-]+$/);
   });
 
-  // The INVITE toggle (user-decided 2026-09-05): on, the link is SIGNED with the player's
-  // publicId as a second segment; the token itself is the same bytes either way, so the
-  // plain link is exactly the signed one minus the signature.
+  // A SIGNED share (user-decided 2026-09-05): the link carries the player's publicId as a
+  // second segment; the token itself is the same bytes either way, so the plain link is
+  // exactly the signed one minus the signature.
   it('signs the link with the player id as a second segment, leaving the token untouched', () => {
     const plain = shareUrl('https://whippin.ai', result);
     const signed = shareUrl('https://whippin.ai', result, 'abcdefghij234567');

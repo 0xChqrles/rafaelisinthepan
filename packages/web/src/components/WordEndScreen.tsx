@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { prefersReducedMotion } from '../hooks/useScramble';
+import { useDeviceIdentity } from '../identity';
 import { t } from '../i18n';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import type { ScorePlacementState } from '../hooks/useScoreHistogram';
 import useShare from '../hooks/useShare';
 import Button from './Button';
-import ShareAs, { useShareSigner } from './ShareAs';
 import WordRarityBar from './WordRarityBar';
 import ScoreTop from './ScoreTop';
 import { shareHeadline, wordShareText, wordShareUrl, wordShareScore } from '../game/share';
@@ -105,18 +105,18 @@ export default function WordEndScreen({
   // Delivery (native sheet / clipboard + the "COPIED" confirmation) is the shared hook's;
   // this screen only composes the word result's text.
   const { share, copied } = useShare();
-  // The AS drum under SHARE (see ShareAs): fresh on every mount, never remembered.
-  const signer = useShareSigner();
+  // The link is SIGNED with this account, always (see SolvedScreen).
+  const by = useDeviceIdentity()?.accountId ?? null;
 
   // This screen owns only the LOCALIZED headline; the body's composition — the word, its
   // bead row, the blank lines — is `game/share.ts`'s, next to the sentence twin it mirrors.
   const onShare = useCallback(async () => {
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const url = wordShareUrl(origin, { lang, dayNumber, counts, word }, signer.by);
+    const url = wordShareUrl(origin, { lang, dayNumber, counts, word }, by);
     const unit = t(lang, score === 1 ? 'word' : 'words').toLowerCase();
     const headline = shareHeadline(dayNumber, score, unit);
     await share(wordShareText(headline, word, lang, counts, url));
-  }, [lang, dayNumber, counts, score, share, word, signer.by]);
+  }, [lang, dayNumber, counts, score, share, word, by]);
 
   return (
     <div className={`solved-results${resultsIn ? ' in' : ''}`}>
@@ -141,8 +141,8 @@ export default function WordEndScreen({
       </span>
 
       {/* The tally's BREAKDOWN as a BAR (user-decided 2026-09-05, replacing the row of
-          chips: "too many centered informations") — `WordRarityBar`, the one drawing every
-          surface shares. It rises in segment by segment once the count has landed. */}
+          chips: "too many centered informations") — `WordRarityBar`, the drawing the OG
+          card mirrors. It rises in segment by segment once the count has landed. */}
       <WordRarityBar counts={counts} lang={lang} shown={breakdownIn} animate={animate} />
 
       <div className="result-actions">
@@ -153,7 +153,6 @@ export default function WordEndScreen({
         >
           {copied ? t(lang, 'copied') : t(lang, 'share')}
         </Button>
-        <ShareAs lang={lang} signer={signer} />
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { INVITE_LANDING_SEGMENT, PUBLIC_ID_PATTERN, SHARE_TOKEN_PATTERN } from '@whippin/shared';
+import { INVITE_LANDING_SEGMENT, PUBLIC_ID_PATTERN } from '@whippin/shared';
 import { FIRST_PUZZLE_DATE } from './config';
 
 // Supported game languages — the single source for the picker and the /<lang> URL
@@ -130,10 +130,7 @@ export type Route =
   | { view: 'accountEmail'; intent: LinkIntent }
   | { view: 'profile' }
   | { view: 'privacy' }
-  // `token` is a SIGNED share's result (`/join/<publicId>/<token>`, user-decided
-  // 2026-09-05): the landing shows it over the inviter's face. Shape-checked only here;
-  // the landing decodes it, and one it cannot read is a plain invite.
-  | { view: 'invite'; publicId: string; token?: string }
+  | { view: 'invite'; publicId: string }
   | { view: 'home' };
 
 // A strict "YYYY-MM-DD" that is ALSO a real calendar date (so 2026-13-40 is rejected):
@@ -173,10 +170,9 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
   // A broken invite link falls through to `home` rather than asking the server about an id
   // that cannot exist — the same treatment a broken date deep-link gets.
   if (seg === INVITE_LANDING_SEGMENT) {
-    if (!second || !PUBLIC_ID_PATTERN.test(second)) return { view: 'home' };
-    return third && SHARE_TOKEN_PATTERN.test(third)
-      ? { view: 'invite', publicId: second, token: third }
-      : { view: 'invite', publicId: second };
+    return second && PUBLIC_ID_PATTERN.test(second)
+      ? { view: 'invite', publicId: second }
+      : { view: 'home' };
   }
   // `/select`, the language chooser SCREEN, was retired 2026-09-05 (user-decided): every
   // header title opens the selection drums (`PuzzleSelect`), so a page of its own answered

@@ -1973,8 +1973,8 @@ input {
   opacity: 1;
   transform: translateY(0);
 }
-/* The SCORE block: the named `<tries> TRIES` headline over the run ruler, then SHARE with
-   its AS drum — sharing is what you do with a RESULT (user-decided 2026-08-14). Centred
+/* The SCORE block: the named `<tries> TRIES` headline over the run ruler, then SHARE —
+   sharing is what you do with a RESULT (user-decided 2026-08-14). Centred
    and capped at the keyboard's 680px, as the result always was. It holds its footprint
    from frame one and arrives at `opacity: 0`, so nothing under it moves when it lands. */
 .solved-numbers {
@@ -2718,116 +2718,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .result-action.copied {
   color: var(--accent);
 }
-/* WHO A SHARE IS FROM (user-decided 2026-09-05, ShareAs.tsx): the label AS, a ONE-ROW drum
-   and a flip chevron, directly under SHARE in the actions' own gap — a line, not a block
-   (the three-row drum "put it too far from the share button"). The two rows turn through
-   the slot (`useDrum`, the app's one picker physics) with a sliver of the other showing in
-   the fade; the row in the slot wears the inverted chip the header selection's rows wear
-   (`.ps-row.on`). The player's row is their mark and name, kept in their own case; the
-   other is ANONYMOUS. Nothing is remembered. */
-.share-as {
-  flex-basis: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 10px;
-  font-family: var(--ui);
-}
-.share-as-label {
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.share-as-drum {
-  position: relative;
-  overflow: hidden;
-  touch-action: none;
-  overscroll-behavior: contain;
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 9px, #000 calc(100% - 9px), transparent);
-  mask-image: linear-gradient(to bottom, transparent, #000 9px, #000 calc(100% - 9px), transparent);
-}
-/* The flip: the header title's own chevron, LEFT of the slot between the label and the
-   drum, pointing at the row it would bring — down to ANONYMOUS, up (turned) back to the
-   player. No padding of its own: the row's gap is its spacing. */
-.share-as-flip {
-  display: inline-flex;
-  align-items: center;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-  transition: rotate 160ms ease-out, color 120ms linear;
-}
-.share-as-flip.up {
-  rotate: 180deg;
-}
-.share-as-flip:hover {
-  color: var(--fg);
-}
-.share-as-track {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  will-change: translate;
-}
-.share-as-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  color: var(--muted);
-  cursor: pointer;
-}
-.share-as-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 100%;
-  padding: 0 10px;
-  /* Square, like the header selection's rows (`.ps-chip`): the slot chip is that chip. */
-  border-radius: 0;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  line-height: 1;
-  text-transform: uppercase;
-  white-space: nowrap;
-  box-sizing: border-box;
-  transition: background-color 120ms linear, color 120ms linear;
-}
-.share-as-row.on {
-  color: var(--fg);
-}
-/* The pick wears the header wheel's inverted fill (`.ps-row.on`). The mark is NOT inside
-   it (user-decided 2026-09-05: white pixels vanished into the white chip) — it stands
-   beside the chip at the row's full height, its own tile. */
-.share-as-row.on .share-as-chip {
-  background: var(--fg);
-  color: var(--bg);
-}
-.share-as-row.on:active .share-as-chip {
-  background: color-mix(in srgb, var(--fg) 68%, var(--bg));
-}
-/* As tall as the chip beside it (the row's height, set inline on the mark). */
-.share-as-face {
-  display: inline-flex;
-  flex: none;
-}
-.share-as-name {
-  text-transform: none;
-  letter-spacing: 0.04em;
-}
-
 /* Player-progression celebration: the native dialog IS the borderless full-screen surface.
    React Spring owns every staged entrance/bounce; fixed rows reserve the final composition
    so the flame, number, week, and action never move each other as they appear. */
@@ -6799,19 +6689,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* Between the RESULT and the PERSON (user-decided 2026-09-05): a real break, so the two
-     read as what was shared and who shared it, not one stack. */
-  gap: 40px;
-  text-align: center;
-}
-/* The person and what you can do about them: mark, name, ADD FRIEND, PLAY — one group at
-   the landing's own 14px rhythm, so the button sits under the face it is about. */
-.invite-person {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
   gap: 14px;
+  text-align: center;
 }
 .invite-done .avatar {
   border: 1px solid var(--line);
@@ -6840,44 +6719,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    one position that earns it); the pair's seam is the group's own gap. */
 .invite-done .btn-secondary {
   width: 100%;
-}
-
-/* The shared RESULT on the landing (user-decided 2026-09-05): what a signed share link
-   was about, FIRST and on its own — the result screens' own score dress (`.solved-score`:
-   pixel number over its named unit), the run ruler (sentence) or the day's word and its
-   rarity bar (word game), the date. */
-.invite-result {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-}
-/* The day's WORD, as the card draws it (user-decided 2026-09-05: "bigger, and the pixel
-   font, like in the preview"): the pixel face in the solve cobalt, the headline of the
-   block, on one line — a long word steps down rather than wrapping. */
-.invite-result-word {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--pixel-font);
-  font-size: clamp(22px, 4vh, 30px);
-  font-weight: 400;
-  line-height: 1.2;
-  letter-spacing: 0;
-  color: var(--solve);
-  /* Clear of the score under it: the headline is its own line, not the number's cap. */
-  margin-bottom: 10px;
-}
-/* The date, in the CARD's own face (user-decided 2026-09-05: "the same font for the date on
-   the og preview and the score screen"), a little clear of the bar's own lane. */
-.invite-result-date {
-  margin-top: 8px;
-  font-family: var(--pixel-font);
-  font-size: 12px;
-  line-height: 1;
-  color: var(--muted);
 }
 
 /* ---- The signed-out screen (#216, reshaped 2026-08-26 on user feedback: the

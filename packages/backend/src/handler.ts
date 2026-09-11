@@ -273,10 +273,10 @@ export function createHandler(deps: HandlerDeps) {
         }
         // WHO signed it. An account an email link deleted (#204) signs nothing: the
         // result is still real, so the page falls back to the PLAIN share — the card
-        // without a face, the click into the game — rather than expiring like an invite
-        // does, since the score was never the part that went away. A failed read draws
-        // the assigned identity and, like the invite preview, is the one answer not
-        // cached; an answered one is held for the invite preview's minutes.
+        // without a face — rather than expiring like an invite does, since the score was
+        // never the part that went away. A failed read draws the assigned identity and,
+        // like the invite preview, is the one answer not cached; an answered one is held
+        // for the invite preview's minutes.
         let by: (InviteCardData & ShareSigner) | null = null;
         let cacheControl = `public, max-age=${SHARE_MAX_AGE}, immutable`;
         if (signedBy !== undefined) {

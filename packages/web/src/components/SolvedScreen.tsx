@@ -10,7 +10,7 @@ import SolvedCaption, { captionDurationMs } from './SolvedCaption';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useShare from '../hooks/useShare';
 import Button from './Button';
-import ShareAs, { useShareSigner } from './ShareAs';
+import { useDeviceIdentity } from '../identity';
 import { ariaHoleHistory, t } from '../i18n';
 import { capitalize, sentenceStarts } from '../game/sentenceCase';
 import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
@@ -20,8 +20,8 @@ import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 // dissolved sentence handed over (the 2026-08-14 hand-over, restored), and it stacks:
 //
 //   SCORE   — at the TOP, right under the header: the named `<tries> TRIES` over its run
-//             ruler, the day's standing badge, and SHARE with its AS drum (sharing is what
-//             you do with a RESULT, user-decided 2026-08-14). Its height is the same on
+//             ruler, the day's standing badge, and SHARE (sharing is what you do with a
+//             RESULT, user-decided 2026-08-14). Its height is the same on
 //             every round, and it is above the fold on every phone — SHARE is the
 //             reveal's closing beat and the game's one liked-indicator, and it is never
 //             reached by scrolling.
@@ -319,9 +319,9 @@ export default function SolvedScreen({
   const backToTop = useCallback(() => {
     stageRef.current?.scrollTo({ top: 0, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
   }, []);
-  // The AS drum under SHARE: on the player's row, the link is signed with this account
-  // (see ShareAs). Fresh on every mount — never remembered from one result to the next.
-  const signer = useShareSigner();
+  // The link is SIGNED with this account, always (user-decided 2026-09-10, retiring the AS
+  // drum): the card wears the player's mark and name, and the click opens the day.
+  const by = useDeviceIdentity()?.accountId ?? null;
 
   const onShare = useCallback(async () => {
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
@@ -335,7 +335,7 @@ export default function SolvedScreen({
         solvedAt: solvedAt ?? [],
         capped,
       },
-      signer.by,
+      by,
     );
     // This screen owns only its localized UNIT; the line's shape is share.ts's, shared
     // with Word mode so the two modes' messages cannot drift apart. A capped round names
@@ -347,7 +347,7 @@ export default function SolvedScreen({
     // summary of that SAME run — trajectory and solve moments both — so the link and its
     // fallback can't disagree.
     await share(shareText(headline, trajectory, solvedAt ?? [], url));
-  }, [lang, dayNumber, guessCount, trajectory, solvedAt, capped, share, signer.by]);
+  }, [lang, dayNumber, guessCount, trajectory, solvedAt, capped, share, by]);
 
   return (
     <div
@@ -411,7 +411,6 @@ export default function SolvedScreen({
           >
             {copied ? t(lang, 'copied') : t(lang, 'share')}
           </Button>
-          <ShareAs lang={lang} signer={signer} />
         </div>
       </div>
 

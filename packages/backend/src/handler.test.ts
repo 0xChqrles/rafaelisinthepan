@@ -575,14 +575,14 @@ describe('invite link (#189) — the shared link, its preview page and its card'
   });
 });
 
-// CONTRACT (user-decided 2026-09-05): a SIGNED share, `/s/<token>/<publicId>`, is the
-// result share carrying its player's invite. The token is read exactly as a plain share's;
-// the page unfurls as the player's own card (mark + name over the result), names them in
-// its title, and bounces the click onto the invite landing WITH the token, where ADD FRIEND
-// records the edge. It is served with the invite preview's short TTL, never the plain
-// share's year. A deleted signer falls back to the PLAIN share — the score was never the
-// part that went away.
-describe('a signed share (#8 + #189 in one link)', () => {
+// CONTRACT (user-decided 2026-09-05; the invite dropped 2026-09-10): a SIGNED share,
+// `/s/<token>/<publicId>`, is the result share wearing its player. The token is read
+// exactly as a plain share's; the page unfurls as the player's own card (mark + name over
+// the result) and names them in its title, and the click opens the shared day exactly as a
+// plain share's does — there is no landing in between. It is served with the invite
+// preview's short TTL, never the plain share's year. A deleted signer falls back to the
+// PLAIN share — the score was never the part that went away.
+describe('a signed share (the result wearing its player)', () => {
   const ID = 'abcdefghij234567';
   const token = encodeResult({
     lang: 'en',
@@ -603,7 +603,7 @@ describe('a signed share (#8 + #189 in one link)', () => {
     async upsert() {},
   });
 
-  it('serves the page: the player named, THEIR card, the landing carrying the result', async () => {
+  it('serves the page: the player named, THEIR card, the click into the shared day', async () => {
     const res = await makeHandler({
       siteOrigin: ORIGIN,
       profiles: stored({ publicId: ID, name: 'Chqrles', avatar: '' }),
@@ -611,8 +611,8 @@ describe('a signed share (#8 + #189 in one link)', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('<title>Chqrles · Whippin AI 2026-07-04 — 6 tries</title>');
     expect(res.body).toContain(`${ORIGIN}${shareCardPath(token, ID)}`);
-    expect(res.body).toContain(`${ORIGIN}${inviteLandingPath(ID, token)}`);
-    expect(res.body).not.toContain(`${ORIGIN}/en/2026-07-04`);
+    expect(res.body).toContain(`location.replace("${ORIGIN}/en/2026-07-04")`);
+    expect(res.body).not.toContain(inviteLandingPath(ID));
     expect(res.headers['Cache-Control']).toBe('public, max-age=300');
   });
 
@@ -641,7 +641,7 @@ describe('a signed share (#8 + #189 in one link)', () => {
       event({ path: sharePath(wordToken, ID) }),
     );
     expect(res.body).toContain(`<title>${anonName(ID)} · Whippin AI 2026-07-04 — 12 mots</title>`);
-    expect(res.body).toContain(`${ORIGIN}${inviteLandingPath(ID, wordToken)}`);
+    expect(res.body).toContain(`location.replace("${ORIGIN}/fr/word/2026-07-04")`);
   });
 
   it('a deleted signer leaves the PLAIN share: no face, the click into the game', async () => {
