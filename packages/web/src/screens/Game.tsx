@@ -30,6 +30,8 @@ import HistoryModal from '../components/HistoryModal';
 import CoachText from '../tutorial/CoachText';
 import LoadError from '../components/LoadError';
 import FlipCountdown from '../components/FlipCountdown';
+import Button from '../components/Button';
+import ChevronLeftIcon from '../assets/icons/chevron-left.svg?react';
 import { earlyLocked } from '../game/earlyPlay';
 import { navigate } from '../routing';
 import { pathForDay, pathForMode } from '../langs';
@@ -1072,6 +1074,24 @@ function Round({
                 <p className="hint">{feedback || ' '}</p>
               </div>
             </div>
+
+            {/* THE WAY BACK on TOMORROW's round (user-decided 2026-09-11, extended the same
+                day to the round still being played: "we should also have a way to go back
+                when we didn't spend the 3 guesses yet"): ‹ TODAY under the prompt, in the
+                play area, for the whole early round — locked or not, so it never moves
+                when the keyboard gives way to the countdown below. */}
+            {early && !finished && (
+              <div className="early-back">
+                <Button
+                  variant="secondary"
+                  className="btn-arrow"
+                  onClick={() => navigate(pathForMode(lang, 'sentence'))}
+                >
+                  <ChevronLeftIcon className="ui-icon" aria-hidden />
+                  {t(lang, 'today')}
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* Bottom zone (fixed keyboard-height footprint): the on-screen keyboard, or the
@@ -1107,7 +1127,7 @@ function Round({
               /* THE NIGHT'S LOCK (#273): the countdown to the flip takes the keyboard's
                  place — the whole statement, in the keys' own footprint, so nothing above
                  it moves when the keys go or when they come back. */
-              <FlipCountdown lang={lang} onToday={() => navigate(pathForMode(lang, 'sentence'))} />
+              <FlipCountdown lang={lang} />
             ) : (
               <div
                 className={`kb-exit${keyboardLeaving ? ' leaving' : ''}`}
