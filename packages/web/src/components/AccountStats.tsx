@@ -47,7 +47,7 @@ export default function AccountStats({
     { key: 'days', label: t(lang, 'statDays'), value: stats?.days },
   ];
   return (
-    <div className="account-stats">
+    <div className="account-stats card">
       {cells.map((cell) => (
         <div className="account-stat" key={cell.key}>
           <span className="account-stat-value">

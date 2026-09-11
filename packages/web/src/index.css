@@ -1950,14 +1950,21 @@ input {
   margin-right: -52px;
   padding-left: 52px;
   padding-right: 52px;
+  /* Air under the header before the score lands (user-asked 2026-09-11: the block sat
+     too close to the bar). Padding INSIDE the scroller rather than a margin on the
+     block, so it scrolls away with the score and the sticky credit still meets the
+     scroller's top edge. */
+  padding-top: clamp(20px, 4vh, 40px);
   display: flex;
   flex-direction: column;
   align-items: center;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
-  /* The GAP between the score and the page — the seam, stated once. */
-  gap: clamp(28px, 5vh, 48px);
+  /* The GAP between the score and the page — the seam, stated once. Widened 2026-09-11
+     (user-asked): the two blocks are two different things, and the air between them is
+     what says so. */
+  gap: clamp(44px, 8vh, 76px);
   /* The bottom edge fades (the rule every scroller wears); the padding is the fade's own
      height, so the last line rests clear of it. The TOP has no fade: what passes there
      passes under the sticky credit's own ground. */
@@ -1973,6 +1980,51 @@ input {
   opacity: 1;
   transform: translateY(0);
 }
+/* ===================== the CARD (2026-09-11) ===================== */
+/* ONE panel for a VIEW, in the language of the user's three `inspiration/card` references
+   (user-decided 2026-09-11, replacing the square hairline tile of the same morning): a
+   LARGE, SOFTLY ROUNDED panel lifted a shade off the near-black ground, a thin
+   low-contrast stroke, and inside it a darker inset WELL holding the thing the card is
+   about, with a caption row under the well. It exists because a phone shows two or three
+   different things stacked in one column, and on the bare ground they read as one run of
+   text: a card says "this is one thing" before a word is read.
+
+   THE ONE EXCEPTION TO THE 4px RADIUS CEILING (user-decided by the references): the
+   panel's corners are big and soft, and so is the well's. Nothing else in the chrome
+   rounds past 4px; the pill buttons inside the references were NOT taken (the app's
+   buttons stay its own).
+
+   Two surfaces, two strokes, all four a whisper: the panel is `--fg` at 4.5% over the
+   ground with a 9% edge; the well sits BACK INTO the ground (near `--bg` itself) with a
+   6% edge — depth by two steps of value, never by a shadow or a glow (the flat rule). */
+.card {
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 24px;
+  padding: 12px;
+}
+.card-well {
+  box-sizing: border-box;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(5, 5, 7, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: clamp(22px, 4vh, 34px) clamp(14px, 3vw, 24px);
+}
+@media (max-width: 640px) {
+  .card {
+    border-radius: 22px;
+    padding: 10px;
+  }
+  .card-well {
+    border-radius: 14px;
+  }
+}
+
 /* The SCORE block: the named `<tries> TRIES` headline over the run ruler, then SHARE —
    sharing is what you do with a RESULT (user-decided 2026-08-14). Centred
    and capped at the keyboard's 680px, as the result always was. It holds its footprint
@@ -1984,7 +2036,7 @@ input {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: clamp(18px, 3.4vh, 30px);
+  gap: clamp(14px, 2.6vh, 22px);
   opacity: 0;
   transform: translateY(10px);
   transition: opacity 0.25s ease-out, transform 0.25s ease-out;
@@ -2063,6 +2115,11 @@ input {
    it, which is the whole highlight: contrast, never a marker band. */
 .solved-text {
   margin: 0;
+  /* The sentence follows the CREDIT (user-decided 2026-09-11, "score view → source →
+     sentence"): it holds its box from frame one — the page's layout is final before a
+     word prints — and fades in once the citation has finished; its secrets pop with it. */
+  opacity: 0;
+  transition: opacity 0.3s ease-out;
   font-family: var(--ui);
   font-size: 16px;
   font-weight: 400;
@@ -2079,7 +2136,13 @@ input {
 }
 /* LISTEN (#270): a music day's one affordance — an ordinary link to the track's page, a
    new tab, no embed. The credit's own face, in the action ink, underlined the pixel way. */
+.solved-text.in,
+.solved-listen.in {
+  opacity: 1;
+}
 .solved-listen {
+  opacity: 0;
+  transition: opacity 0.3s ease-out;
   display: inline-block;
   margin-top: clamp(14px, 2.6vh, 22px);
   font-family: var(--pixel-font);
@@ -2147,7 +2210,9 @@ input {
    must kill the transitions the rehydrated path never starts (a half-popped word killed
    mid-animation is otherwise stranded at full size). */
 .solved-stage.settled,
-.solved-stage.settled .solved-numbers {
+.solved-stage.settled .solved-numbers,
+.solved-stage.settled .solved-text,
+.solved-stage.settled .solved-listen {
   opacity: 1;
   transform: none;
   transition: none;
@@ -2167,8 +2232,8 @@ input {
   align-items: center;
   justify-content: center;
   /* The sentence result's own rhythm (`.solved-numbers`) — the two stacks are ONE layout
-     since 2026-08-15, so the spacing is stated once. */
-  gap: clamp(18px, 3.4vh, 30px);
+     since 2026-08-15, so the spacing is stated once: the well, then the caption row. */
+  gap: clamp(14px, 2.6vh, 22px);
   width: 100%;
   max-width: 680px; /* match the keyboard's max-width */
   opacity: 0;
@@ -2202,7 +2267,11 @@ input {
   position: relative;
   display: inline-block;
   font-family: var(--pixel-font);
-  font-size: clamp(34px, 5vh, 46px);
+  /* Bigger since 2026-09-11 (user-asked): the headline is the result, and it reads as
+     one from across the room. Shared with Word mode's end screen by the "exact same
+     layout and sizing" rule, so both grew. Three digits at the phone floor are 132px,
+     well inside a 347px row with the TOP badge hung off its right edge. */
+  font-size: clamp(44px, 6.5vh, 60px);
   font-weight: 400;
   line-height: 1;
   color: var(--fg);
@@ -2351,12 +2420,16 @@ input {
   animation: rung-in 220ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
 }
 
-/* Actions row: SHARE. */
+/* Actions row: SHARE (and TOMORROW). Inside the CARD it is the caption row under the
+   well, so it carries the well's side inset and a floor of its own. */
 .result-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 12px;
+}
+.card > .result-actions {
+  padding: 0 clamp(6px, 1.5vw, 12px) 6px;
 }
 /* ---- the shared modal header (ModalHeader), worn by every full-screen dialog ----
    NOT a modal chrome of its own: it reuses the app's own corner-chip row wholesale
@@ -2717,6 +2790,57 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 .result-action.copied {
   color: var(--accent);
+}
+/* TOMORROW beside SHARE (#273): two actions share the row as equals — each gives up the
+   lone button's floor width and takes half the row instead, capped so the pair does not
+   stretch across the 680px block on a desktop. On a phone (347px of row) that is two
+   buttons of ~167px, on one line. */
+.result-actions.paired .result-action {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 240px;
+}
+
+/* The EARLY-PLAY clock (#273): tomorrow's round locked for the night, and in the
+   keyboard's place the time until the day flips and it continues. The pixel face — it is
+   the game's own number, like Word mode's clock — centred in the tray's footprint, so it
+   swaps the keys out and moves nothing above it. */
+.flip-clock {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(18px, 3.2vh, 28px);
+}
+/* The labelled way back under the clock: the result action's own floor width. */
+.flip-today {
+  min-width: 180px;
+}
+/* A button that POINTS (2026-09-11): TOMORROW carries the title's 7×7 pixel chevron after
+   its word, TODAY carries the same one turned back before its word — the two ends of one
+   trip wearing one mark. The glyph rides the label's line at its in-file 14px. */
+.btn-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.btn-arrow .ui-icon {
+  flex: none;
+  /* The pixel chevron sits a hair under the caps' optical centre; lift it onto it. */
+  margin-top: calc(-1 * var(--cap-shift, 0px));
+}
+.flip-timer {
+  font-family: var(--pixel-font);
+  font-size: 24px;
+  line-height: 1;
+  color: var(--fg);
+  pointer-events: none;
+}
+@media (max-width: 640px) {
+  .flip-timer {
+    font-size: 20px;
+  }
 }
 /* Player-progression celebration: the native dialog IS the borderless full-screen surface.
    React Spring owns every staged entrance/bounce; fixed rows reserve the final composition
@@ -4040,8 +4164,10 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    with the screen it was supposed to rhyme with. The shared `.solved-results` entrance
    still moves the whole composition. */
 .word-footer-result .solved-results {
-  height: 100%;
-  justify-content: flex-end;
+  /* The CARD sits on the footer's bottom edge at its own height (2026-09-11) — it used
+     to fill the footer and push its content to the bottom, which a panel cannot do
+     without becoming a wall. */
+  align-self: flex-end;
 }
 /* The tally's landing: word mode's count is the result's LAST beat (no ruler colorize
    follows it, as in the sentence tray), so the number marks its own arrival with a
@@ -5243,10 +5369,11 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
-  /* Tight under the masthead's rule and given air before the actions: the numbers answer
-     the same question the row above them does — what this account IS — where everything
-     below the row is something to DO with it. */
-  margin: -8px 0 4px;
+  /* A CARD since 2026-09-11 — the three numbers are one thing, what this account IS —
+     with the panel's own inset around them, a step under the masthead's rule and air
+     before the actions, which are something to DO with it. */
+  margin: 4px 0 8px;
+  padding: 16px 12px;
 }
 .account-stat {
   display: flex;

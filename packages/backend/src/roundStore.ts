@@ -1,3 +1,4 @@
+import { EARLY_GUESS_CAP } from '@whippin/shared';
 import type { DeviceAgent } from './deviceStore';
 import type { ScoreMode } from './scoreLimits';
 
@@ -85,7 +86,15 @@ export interface RoundState {
 //   round_full — the batch would push the log past ROUND_GUESS_CAP; nothing changed;
 //   round_solved — the round is already SOLVED and accepts no further appends (#203);
 //                  nothing changed.
-export type RoundAppendOutcome = 'appended' | 'too_fast' | 'round_full' | 'round_solved';
+//   early_locked — the round is being played BEFORE its day (#273) and the night's play is
+//                  over: the stored log has already made progress, or the batch would push
+//                  it past EARLY_GUESS_CAP; nothing changed. The day itself unlocks it.
+export type RoundAppendOutcome =
+  | 'appended'
+  | 'too_fast'
+  | 'round_full'
+  | 'round_solved'
+  | 'early_locked';
 
 export interface RoundAppendInput extends RoundKey {
   publicId: string;
@@ -93,6 +102,11 @@ export interface RoundAppendInput extends RoundKey {
   // Which PUZZLE this log belongs to — an opaque client-supplied tag, compared for
   // EQUALITY and never interpreted (see `RoundStore` below).
   puzzle: string;
+  // EARLY PLAY (#273): the round's date is AFTER the server's active day, so the append is
+  // bounded twice more, inside the same condition — accepted only while the stored
+  // `progress` is 0 AND the resulting log stays within `EARLY_GUESS_CAP`. The ROUTE decides
+  // it (only it knows the server's day); the store enforces it, so it cannot be raced.
+  early: boolean;
   // What the ROUTE derived from (the stored log + this batch) against the day's slice
   // (#203). It travels with the append because both must land in ONE mutation; the store
   // still knows nothing about what they mean.
@@ -241,8 +255,9 @@ export interface RoundStore {
   ): Promise<RoundState | null>;
   // Append to the log (creating the item on the first write) under EVERY bound in one
   // atomic decision — including the #203 freeze, since a SOLVED round accepts no further
-  // appends: a refused append changes nothing and answers with the stored state, which is
-  // already the truth the client reconciles against.
+  // appends, and #273's early-play lock when the round is played before its day: a
+  // refused append changes nothing and answers with the stored state, which is already the
+  // truth the client reconciles against.
   append(input: RoundAppendInput): Promise<{ outcome: RoundAppendOutcome; state: RoundState }>;
   // Correct the derived summary against the log the append actually produced (#203). Only
   // ever called when the two disagree, and it must be RETRIED rather than fired and
@@ -288,6 +303,14 @@ export interface RoundStore {
   // floor, and only for the DEVICE the stamp names (#217). Like `append`, every outcome
   // answers with the stored state.
   submit(input: RoundSubmitInput): Promise<{ outcome: RoundSubmitOutcome; state: RoundState }>;
+}
+
+// What the early-play bound (#273) refuses, read off the stored state of THIS puzzle: the
+// night's play has already made progress, or this batch would push the log past
+// `EARLY_GUESS_CAP`. It is the DynamoDB condition's two clauses restated for the
+// classification read and for the memory store, so both backends refuse the same append.
+export function earlyLocked(stored: RoundState, batch: number): boolean {
+  return (stored.progress ?? 0) > 0 || stored.guesses.length + batch > EARLY_GUESS_CAP;
 }
 
 // A round key is only (date, lang, mode), so RE-PUBLISHING keeps the key while changing the

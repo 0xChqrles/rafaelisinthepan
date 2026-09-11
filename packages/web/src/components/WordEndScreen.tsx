@@ -119,11 +119,13 @@ export default function WordEndScreen({
   }, [lang, dayNumber, counts, score, share, word, by]);
 
   return (
-    <div className={`solved-results${resultsIn ? ' in' : ''}`}>
+    <div className={`solved-results card${resultsIn ? ' in' : ''}`}>
       {/* The run's own number, then SHARE: the sentence result's exact stack (user-decided
-          2026-08-15, "the exact same layout and sizing"). Where this run stands among the
-          day's players (#170) is the TOP badge BESIDE the number (user-decided 2026-09-05),
-          absolutely placed so its arrival moves nothing. */}
+          2026-08-15, "the exact same layout and sizing") — the CARD with its WELL since
+          2026-09-11, the number and its breakdown in the well, SHARE the caption row.
+          Where this run stands among the day's players (#170) is the TOP badge BESIDE the
+          number (user-decided 2026-09-05), absolutely placed so its arrival moves nothing. */}
+      <div className="card-well">
       <span className="solved-score">
         <span className="solved-score-line">
           <span className={`solved-score-num${landed ? ' landed' : ''}`}>
@@ -144,6 +146,7 @@ export default function WordEndScreen({
           chips: "too many centered informations") — `WordRarityBar`, the drawing the OG
           card mirrors. It rises in segment by segment once the count has landed. */}
       <WordRarityBar counts={counts} lang={lang} shown={breakdownIn} animate={animate} />
+      </div>
 
       <div className="result-actions">
         <Button

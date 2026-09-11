@@ -1,5 +1,6 @@
-import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
+import { EARLY_GUESS_CAP, ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
 import {
+  earlyLocked,
   roundMonthPrefix,
   roundPartition,
   roundSortKeyDate,
@@ -126,6 +127,10 @@ export function memoryRoundStore(): RoundStore & LinkRoundWrites {
       if (input.guesses.length > ROUND_GUESS_CAP) {
         return { outcome: 'round_full' as const, state: stateForTag(existing, input.puzzle) };
       }
+      // The early-play cap's empty-log half (#273), the Dynamo store's own order.
+      if (input.early && input.guesses.length > EARLY_GUESS_CAP) {
+        return { outcome: 'early_locked' as const, state: stateForTag(existing, input.puzzle) };
+      }
 
       // A RETIRED puzzle's log: the round restarted under the same key, so the batch
       // REPLACES it rather than growing it — the retired puzzle's derived summary included,
@@ -147,10 +152,14 @@ export function memoryRoundStore(): RoundStore & LinkRoundWrites {
         return { outcome: 'appended' as const, state: stateOf(item) };
       }
 
-      // Solved first, then cap, then interval — the same order the Dynamo classification
-      // reads them in, so a doubly-refused append answers alike on both backends.
+      // Solved first, then the early-play lock, then cap, then interval — the same order
+      // the Dynamo classification reads them in, so a doubly-refused append answers alike
+      // on both backends.
       if (existing.solved) {
         return { outcome: 'round_solved' as const, state: stateOf(existing) };
+      }
+      if (input.early && earlyLocked(stateOf(existing), input.guesses.length)) {
+        return { outcome: 'early_locked' as const, state: stateOf(existing) };
       }
       if (existing.guesses.length + input.guesses.length > ROUND_GUESS_CAP) {
         return { outcome: 'round_full' as const, state: stateOf(existing) };

@@ -116,7 +116,7 @@ function freshHoles(): RuntimeHole[] {
 const REVISION = 'a1b2c3d4e5f60718';
 const CORRECTED_REVISION = 'b2c3d4e5f6071829';
 
-function ctx(key: string = KEY, revision: string = REVISION) {
+function ctx(key: string = KEY, revision: string = REVISION, early = false) {
   return {
     roundKey: key,
     lang: 'fr',
@@ -124,6 +124,8 @@ function ctx(key: string = KEY, revision: string = REVISION) {
     date: '2026-08-21',
     revision,
     ranks: SECRET_MAP,
+    // EARLY PLAY (#273): tomorrow's round, started tonight. Off by default — today's.
+    early,
   } as const;
 }
 
@@ -962,5 +964,125 @@ describe('no token, no private fetch (#216)', () => {
     beginRoundSync(ctx());
     await settle();
     expect(identity.signedOut).not.toHaveBeenCalled();
+  });
+});
+
+// CONTRACT (#273): on TOMORROW's round the server refuses the append after the first
+// progress or the third guess with 409 `early_locked`, which this engine treats like
+// `round_solved` — adopt the stored state, drop what was refused, close — but only until
+// the day flips: the re-registration that reports the flip re-opens the conversation with a
+// read. A client whose clock has already flipped keeps the guess the server still refuses.
+describe('early play: tomorrow\'s round tonight (#273)', () => {
+  async function readyEarly(serverLog: string[] = []) {
+    post.mockResolvedValueOnce(serverLog.length ? ok(serverLog) : status(404));
+    seedOutbox();
+    beginRoundSync(ctx(KEY, REVISION, true));
+    await settle();
+    post.mockReset();
+  }
+
+  it('sends early outbox guesses individually and stops after the first improvement', async () => {
+    await readyEarly();
+    seedOutbox(['zzz', 'bois', 'chemin']);
+    post.mockResolvedValueOnce(ok(['zzz']));
+    post.mockResolvedValueOnce(ok(['zzz', 'bois']));
+    post.mockResolvedValueOnce(refusal(409, ['zzz', 'bois'], 'early_locked'));
+    notifyGuess(KEY);
+    await settle(60_000);
+    expect([bodyOf(0).guesses, bodyOf(1).guesses, bodyOf(2).guesses])
+      .toEqual([['zzz'], ['bois'], ['chemin']]);
+    expect(server()?.guesses).toEqual(['zzz', 'bois']);
+    expect(outbox()).toEqual([]);
+    expect(post).toHaveBeenCalledTimes(3);
+  });
+
+  it('uses the last early slot when another device advanced during a coalesced outbox', async () => {
+    await readyEarly(['zzz']);
+    seedOutbox(['xxx', 'www']);
+    // Another device added yyy; only one of our two pending guesses now fits.
+    post.mockImplementationOnce(async (_url, body) => {
+      expect(body.guesses).toEqual(['xxx']);
+      return ok(['zzz', 'yyy', 'xxx']);
+    });
+    post.mockResolvedValueOnce(refusal(409, ['zzz', 'yyy', 'xxx'], 'early_locked'));
+    notifyGuess(KEY);
+    await settle(60_000);
+    expect(server()?.guesses).toEqual(['zzz', 'yyy', 'xxx']);
+    expect(outbox()).toEqual([]);
+    expect(post).toHaveBeenCalledTimes(2);
+  });
+
+  it('409 early_locked: adopts the stored state, DISCARDS the outbox, closes', async () => {
+    await readyEarly(['zzz']);
+    seedOutbox(['chemin']);
+    // Another device's `bois` made the progress this one did not see.
+    post.mockResolvedValueOnce(refusal(409, ['zzz', 'bois'], 'early_locked'));
+    notifyGuess(KEY);
+    await settle(60_000);
+    expect(server()?.guesses).toEqual(['zzz', 'bois']);
+    expect(outbox()).toEqual([]);
+    expect(post).toHaveBeenCalledTimes(1);
+
+    // Closed for the night: a further guess is not sent.
+    seedOutbox(['sentier']);
+    notifyGuess(KEY);
+    await settle(60_000);
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('the flip RE-OPENS the conversation with a read, and play continues where it stopped', async () => {
+    await readyEarly(['zzz']);
+    seedOutbox(['chemin']);
+    post.mockResolvedValueOnce(refusal(409, ['zzz', 'bois'], 'early_locked'));
+    notifyGuess(KEY);
+    await settle(60_000);
+    post.mockReset();
+
+    // The day came: the round re-registers as today's. The engine READS first — the
+    // stored log may have moved since the night's refusal — then flushes what is owed.
+    post.mockResolvedValueOnce(ok(['zzz', 'bois']));
+    beginRoundSync(ctx(KEY, REVISION, false));
+    await settle();
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(bodyOf(0).guesses).toBeUndefined();
+
+    seedOutbox(['chemin']);
+    post.mockResolvedValueOnce(ok(['zzz', 'bois', 'chemin']));
+    notifyGuess(KEY);
+    await settle(ROUND_WRITE_MIN_MS + 1);
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(bodyOf(1).guesses).toEqual(['chemin']);
+    expect(outbox()).toEqual([]);
+  });
+
+  it('a client already past the flip KEEPS a guess the server still refuses — clock skew', async () => {
+    post.mockResolvedValueOnce(ok(['zzz']));
+    seedOutbox();
+    beginRoundSync(ctx(KEY, REVISION, false));
+    await settle();
+    post.mockReset();
+
+    seedOutbox(['chemin']);
+    post.mockResolvedValueOnce(refusal(409, ['zzz', 'bois'], 'early_locked'));
+    post.mockResolvedValueOnce(refusal(409, ['zzz', 'bois'], 'early_locked'));
+    post.mockResolvedValueOnce(refusal(409, ['zzz', 'bois'], 'early_locked'));
+    post.mockResolvedValueOnce(ok(['zzz', 'bois', 'chemin']));
+    notifyGuess(KEY);
+    await settle();
+    expect(post).toHaveBeenCalledTimes(1);
+    // Retried behind the backoff rather than dropped on a verdict that expires by itself —
+    // and the backoff WIDENS across repeated refusals (2s, 4s, 8s…): the failure count is
+    // carried where every other answer resets it, so a clock hours ahead does not ask
+    // every two seconds until the server's day catches up.
+    await settle(ROUND_WRITE_MIN_MS * 2);
+    expect(post).toHaveBeenCalledTimes(2);
+    await settle(ROUND_WRITE_MIN_MS * 2);
+    expect(post).toHaveBeenCalledTimes(2);
+    await settle(ROUND_WRITE_MIN_MS * 2);
+    expect(post).toHaveBeenCalledTimes(3);
+    await settle(60_000);
+    expect(post).toHaveBeenCalledTimes(4);
+    expect(bodyOf(3).guesses).toEqual(['chemin']);
+    expect(outbox()).toEqual([]);
   });
 });

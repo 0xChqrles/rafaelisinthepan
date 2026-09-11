@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
-import { activeDate } from '@whippin/shared';
+import { activeDate, dayNumber as dayNumberOf } from '@whippin/shared';
 import LoadingWave from './components/LoadingWave';
 import usePuzzle from './hooks/usePuzzle';
 import useWordPuzzle from './hooks/useWordPuzzle';
@@ -255,7 +255,11 @@ function headerPlace(route: Route, surface: GameSurface, today: string): HeaderP
   switch (route.view) {
     case 'game':
       if (surface === 'invite') return null;
-      // The tutorial is the RULES' place; a past day is the ARCHIVE's.
+      // The tutorial is the RULES' place; any OTHER day is the ARCHIVE's — tomorrow's
+      // sentence included (#273, user-decided 2026-09-11 on the second pass: it "should
+      // actually live as an archive play, so you can just click the house to go back").
+      // HOME unlit is a live key, which is the way back before the night's lock; the
+      // locked round's own TODAY button is the way back after it.
       if (surface === 'tutorial') return 'rules';
       return route.date == null || route.date === today ? 'home' : 'archive';
     case 'archive':
@@ -316,7 +320,12 @@ function GameRoute({
 
   // A dated route replays a past day when its date is not today's active game day; the
   // undated route is always the active day. Gates the streak celebration + solve analytics.
-  const isActiveDay = date == null || date === activeDate(new Date());
+  // LIVE, off the app's one day signal (#273): a dated route can also be TOMORROW's
+  // sentence, started tonight, and a tab held open across the 22:00 flip has to see it
+  // become the active day — the lock lifts, the streak read starts — without a reload.
+  const today = useToday();
+  const isActiveDay = date == null || dayNumberOf(date) === today;
+  const early = date != null && dayNumberOf(date) > today;
 
   // Visiting a puzzle route makes this the last-played language (seeds the `/` redirect).
   useEffect(() => {
@@ -390,6 +399,7 @@ function GameRoute({
           puzzle={sentence.puzzle}
           dayNumber={dayNumber}
           isActiveDay={isActiveDay}
+          early={early}
           deferResultsAnimation={preview.streak != null}
         />
       )}

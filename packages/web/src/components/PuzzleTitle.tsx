@@ -37,13 +37,12 @@ import PuzzleSelect, { type SelectSurface } from './PuzzleSelect';
 import { t } from '../i18n';
 import type { LangCode, Mode } from '../langs';
 
-// "29 AUG" — short, in the reader's locale, and only ever shown on a day that is not today.
-function shortDay(dayNumber: number, lang: string): string {
-  const at = Date.parse(`${dateForDayNumber(dayNumber)}T12:00:00Z`);
-  if (!Number.isFinite(at)) return '';
-  return new Intl.DateTimeFormat(lang, { day: 'numeric', month: 'short', timeZone: 'UTC' })
-    .format(new Date(at))
-    .toUpperCase();
+// "29/08" — DD/MM (user-decided 2026-09-11, replacing the locale's "29 AUG" / "29 AOÛT"),
+// and only ever shown on a day that is not today. The same digits in every language, read
+// straight off the date label — no locale formatter, so no locale can reorder them.
+function shortDay(dayNumber: number): string {
+  const [, month, day] = dateForDayNumber(dayNumber).split('-');
+  return `${day}/${month}`;
 }
 
 export default function PuzzleTitle({
@@ -63,7 +62,7 @@ export default function PuzzleTitle({
 }) {
   const [open, setOpen] = useState(false);
   const name = t(lang, mode === 'word' ? 'modeWord' : 'modeSentence').toUpperCase();
-  const day = dayNumber === null ? null : shortDay(dayNumber, lang);
+  const day = dayNumber === null ? null : shortDay(dayNumber);
   return (
     <>
       <button

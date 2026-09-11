@@ -64,6 +64,12 @@ export interface RoundSyncContext {
   // Only for the canonical identity (#104's `guessKey`): what "the server already holds
   // this guess" means when two devices typed two surfaces of one group.
   ranks: RankMap;
+  // EARLY PLAY (#273): this round's day is AFTER the client's active day — tomorrow's
+  // sentence, started tonight. The server refuses the append after the first progress or
+  // the third guess (`early_locked`); the screen locks its input from the same reading, so
+  // this engine normally never sends one. LIVE: the day's flip flips it false, and a
+  // conversation the lock closed re-opens with a read.
+  early: boolean;
 }
 
 interface RoundFlight extends RoundSyncContext {
@@ -94,6 +100,10 @@ interface RoundFlight extends RoundSyncContext {
   timer: ReturnType<typeof setTimeout> | null;
   inFlight: Promise<void> | null;
   closed: boolean;
+  // WHY it closed, when the reason is the night (#273): an `early_locked` refusal ends the
+  // conversation until the day flips, where the freeze and the cap end it for good. The
+  // re-registration that reports the flip is what re-opens it.
+  lockedEarly: boolean;
 }
 
 const flights = new Map<string, RoundFlight>();
@@ -175,8 +185,18 @@ export function beginRoundSync(ctx: RoundSyncContext): void {
       existing.settled = false;
       existing.created = false;
       existing.closed = false;
+      existing.lockedEarly = false;
       existing.failures = 0;
       useGameStore.getState().setRoundLoad(ctx.roundKey, { status: 'loading', puzzle });
+    } else if (existing.lockedEarly && !ctx.early) {
+      // THE FLIP (#273): the day this round was locked for has come, and the server's
+      // condition no longer applies. The conversation re-opens with a READ rather than a
+      // write — the night's refusal adopted the stored state, but another device may have
+      // moved it since, and the outbox stands owed to whatever the server now holds.
+      existing.closed = false;
+      existing.lockedEarly = false;
+      existing.readDone = false;
+      existing.failures = 0;
     }
     Object.assign(existing, ctx, { puzzle });
     // Re-insert so the LRU sees this round as the most recent.
@@ -199,6 +219,7 @@ export function beginRoundSync(ctx: RoundSyncContext): void {
     timer: null,
     inFlight: null,
     closed: false,
+    lockedEarly: false,
   });
   useGameStore.getState().setRoundLoad(ctx.roundKey, { status: 'loading', puzzle });
   pruneFlights(ctx.roundKey);
@@ -221,6 +242,7 @@ export function retryRoundSync(roundKey: string): void {
   f.lastFailureAt = 0;
   if (!f.settled) {
     f.closed = false;
+    f.lockedEarly = false;
     useGameStore.getState().setRoundLoad(roundKey, { status: 'loading', puzzle: f.puzzle });
   }
   void pump(roundKey);
@@ -293,7 +315,11 @@ async function pump(key: string): Promise<void> {
       f.closed = true;
       return;
     }
-    f.inFlight = appendBatch(f, key, owed.slice(0, room));
+    // Early play stops on a GUESS, including within a coalesced outbox. Send one at
+    // a time so the server's atomic progress/cap guard judges each next guess. This
+    // also prevents an oversized batch from refusing a round with one slot left
+    // after another device advanced it.
+    f.inFlight = appendBatch(f, key, owed.slice(0, f.early ? 1 : room));
   }
   try {
     await f.inFlight;
@@ -523,6 +549,7 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
     // left: not its log, not its cap, not its failure count. The republish (or the sign-out)
     // already reset this flight to read again.
     if (superseded(f, puzzle, epoch)) return;
+    const priorFailures = f.failures;
     f.failures = 0;
     // The server holds a record for this puzzle — but only when this answer DEMONSTRATES
     // one (corrected on review). A rate-refused RESTART answers the EMPTY state, because no
@@ -541,6 +568,29 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
     if (state.solved || error === 'round_solved') {
       discardOutbox(f);
       f.closed = true;
+      return;
+    }
+
+    // THE NIGHT'S LOCK (#273): the same two things, for the same reason — the guesses this
+    // batch carried were refused and will never be stored, and the tab has to render the
+    // state the server holds (another device's guess made the progress this one did not
+    // see). It closes only until the day flips: `beginRoundSync` re-opens it then.
+    //
+    // Unless THIS client already believes the day has flipped (`early` false) and the
+    // server has not — device-clock skew, the same minute on two clocks. Then the guess is
+    // one the server WILL accept, so it is kept and retried behind the backoff rather than
+    // dropped on a verdict that expires by itself. The failure count is CARRIED across
+    // these answers (every other answer resets it), so a device whose clock is hours ahead
+    // widens to the 30s ceiling instead of asking every two seconds until the server agrees.
+    if (error === 'early_locked') {
+      if (f.early) {
+        discardOutbox(f);
+        f.closed = true;
+        f.lockedEarly = true;
+      } else {
+        f.failures = priorFailures;
+        retryLater(f, key);
+      }
       return;
     }
 
@@ -631,6 +681,7 @@ export function rearmRoundSync(): void {
     f.settled = false;
     f.created = false;
     f.closed = false;
+    f.lockedEarly = false;
     f.failures = 0;
     useGameStore.getState().setRoundLoad(key, { status: 'loading', puzzle: f.puzzle });
     void pump(key);

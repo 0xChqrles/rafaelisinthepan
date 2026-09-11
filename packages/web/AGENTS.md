@@ -12,6 +12,8 @@
     src/
       hooks/useVocab.ts       fetch+cache the per-language existence Set (once per session)
       hooks/usePuzzle.ts      fetch the client-computed day's puzzle from the backend
+      hooks/puzzleCache.ts    the last 3 PARSED artifacts kept across mounts, no longer than the
+                              CDN's own 300s (2026-09-11): today <-> tomorrow without a reload
       api.ts                  backend client: puzzleUrl/wordPuzzleUrl, 404->NO PUZZLE, and
                               `readProfile` — the ONE place `GET /profile`'s four answers
                               (shown / blank / GONE / failed) are told apart (#204)
@@ -67,6 +69,10 @@
                             challenge (one module-level conversation per round)
       game/playLog.ts         #214's pure projection: (server log + outbox) -> the play log
                               every client derivation reads, and the outbox remainder
+      game/earlyPlay.ts       #273's lock: when tomorrow's round, played tonight, stops taking
+                              guesses (first progress, or EARLY_GUESS_CAP) — read off the play log
+      components/FlipCountdown.tsx  the clock that takes the keyboard's place while it is locked:
+                              HH:MM:SS to the 22:00-ET flip
       state/history.ts        #211's PRIVATE history: the in-memory month/solved-day cache,
                               its one-flight-per-key reads, the explicit-loading status and
                               the streak credit a fresh solve rides
@@ -1283,6 +1289,78 @@ it to the local store — see `packages/backend/AGENTS.md`).
     link sent in a language renders them in it. (The missing-puzzle screen, headerless too,
     opens the SAME drums from its CHANGE LANGUAGE button — `NoPuzzle`, since 2026-09-05.)
 
+- **THE CARD (user-decided 2026-09-11, from the three references in `inspiration/card/`:
+  on a phone "it's hard to understand what's on screen quickly").** `.card` is ONE panel for
+  a VIEW in those references' language: a LARGE, SOFTLY ROUNDED panel lifted a shade off the
+  ground (`--fg` at 4.5%, a 9% stroke, 24px radius — 22 on a phone), and inside it a darker
+  inset WELL (`.card-well`: back into the ground at 75% `--bg`, a 6% stroke, 16px radius)
+  holding the thing the card is about, with a caption row under the well. Depth by two
+  steps of value, never a shadow or a glow (the flat rule stands). **It is THE ONE
+  EXCEPTION to the 4px radius ceiling**, by the user's own references; nothing else in the
+  chrome rounds past 4px, and the references' PILL buttons were not taken (the app's
+  buttons stay its own). A CLASS, not a wrapper component. The solved screen is its first
+  consumer and only the SCORE block wears it — the well holds the number and its run
+  ruler, SHARE/TOMORROW are the caption row — while the sentence's PAGE stays on the bare
+  ground (user-decided the same day, after both were tried as cards: the page is a page,
+  not a tile). Two earlier cuts the same day — a `--surface` + `--line` 4px tile on both
+  blocks, then a square 3%/6% tile — were reviewed as not it.
+  **WHERE IT LIVES (user-decided 2026-09-11: "everywhere in the app where it makes sense —
+  view separation, these informations are together, those are separate — but not
+  everything needs a card").** Four consumers: the sentence RESULT (score + ruler in the
+  well, SHARE/TOMORROW the caption row); Word mode's RESULT (`.solved-results`, the twin:
+  count + rarity bar in the well, SHARE under; it sits on the footer's bottom edge at its
+  own height, no longer filling it); the ACCOUNT's three numbers (`AccountStats`, a panel
+  with no well — a simple group takes the panel alone); the archive CALENDAR (`.cal` —
+  nav, weekdays, grid and the failure note in one panel). Deliberately NOT: the sentence's
+  page (prose is not a tile), the leaderboard (its rows are already tiles — a panel round
+  them is a box in a box), the coach/rules boxes (a dialog's own dress), the account's
+  device rows (the same row grammar).
+  **THE REVEAL RUNS SCORE FIRST, THEN THE PAGE (user-decided 2026-09-11, reversing the
+  2026-08-15 page-first order):** the stage rises with the card, the tally counts while the
+  ruler colors, the standing lands, SHARE closes the card — and only then the credit
+  types, and only once it has printed does the SENTENCE appear, its secrets popping in
+  ("score view → source → sentence", the user's second pass the same day: the text used
+  to stand from the first frame). The 2026-08-15 rule survives inverted: nothing prints
+  while the numbers move. `.solved-text` holds its box from frame one and fades in on
+  `sentenceIn` (the citation's completion, with its visible-time deadline); the pops ride
+  the same flag, and their end is the reveal's END, which disarms the fast-forward.
+- **Early play: tomorrow's sentence tonight (#273, user-decided 2026-09-08).** The
+  product contract — TOMORROW beside SHARE as the result's one onward action, the first
+  progress / `EARLY_GUESS_CAP` stop, the server's `early_locked` — lives in the root
+  `AGENTS.md`. What is this package's:
+  - **The dated route reaches `activeDate + 1`** (`langs.ts` `ROUTE_FUTURE_DAYS`, ONE
+    `dateOf` for both grammars). `GameRoute` reads the day LIVE off `useToday` — `isActiveDay`
+    and `early` both — so a tab open across the flip sees tomorrow become today: the lock
+    lifts, the streak read starts, without a reload. **Tomorrow LIVES AS AN ARCHIVE PLAY
+    in the header (user-decided 2026-09-11, the last of three passes on the way back):**
+    the calendar key lights, HOME is a live key, and the title keeps the `12/09` day tag —
+    so before the night's lock the house is the way back to today's result, exactly as on
+    any dated route. After the lock the round carries its own labelled way back: a
+    ‹ TODAY / AUJOURD'HUI secondary button under the countdown (`FlipCountdown`'s
+    `onToday`, `.flip-today`), because a locked screen with nothing left to do must say
+    where to go. RETIRED the same day: a bare back arrow in the left slot ("a few white
+    pixels appearing in the header might not be very obvious, many might get stuck"), a
+    lit-but-leaving HOME (the one exception to "a lit key goes nowhere" — gone with it, the
+    rule stands whole), and a TODAY under the prompt for the whole round (one commit; the
+    house covers the unlocked round). TOMORROW wears the title's pixel chevron after its
+    word and TODAY the same one turned back (`.btn-arrow`), the two ends of one trip.
+  - **`Game` locks LOCALLY** (`locked` = `early && !finished && earlyLocked(...)`, over the
+    FULL play log rather than the board's deferred view, so the lock lands on the guess that
+    made progress while its floating hit still plays): `submit` refuses, the prompt retires
+    like the gate's, and the TRAY renders `FlipCountdown` where the keyboard stood — the
+    whole statement, no caption (show, don't tell). Holes stay tappable (the wheel is a
+    reading aid).
+  - **The engine (`roundSync.ts`) treats `early_locked` like `round_solved`** — adopt,
+    discard the outbox, close — but remembers WHY (`lockedEarly`): the re-registration that
+    reports `early: false` re-opens the conversation with a READ (another device may have
+    moved the log) and the outbox then flushes. A client whose clock has already flipped
+    (`early` false) that still gets `early_locked` KEEPS the guess and retries behind the
+    backoff — clock skew is not a verdict.
+  - **`SolvedScreen` takes `onTomorrow`** (today's result only; `Game` passes nothing on an
+    archive day), a second secondary button on SHARE's own beat; `.result-actions.paired`
+    gives the pair half the row each (`flex: 1 1 0`, capped 240px) so they share ONE line on
+    a phone. TOMORROW navigates to `pathForDay(lang, tomorrow)`. A capped round offers it too:
+    it is the same result screen.
 - **Local storage is an OUTBOX; a capped round ends at ∞ (#214).** The product contract —
   the three values, the load order, what the cap means, the share token, what was removed —
   lives in the root `AGENTS.md`. What is this package's:
@@ -3134,7 +3212,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
       nothing) and a non-`http(s)` url (it becomes an href). Songs get NO lyrics (the
       #270 decision stands, reaffirmed 2026-09-08: a verse or chorus is still reproduced
       lyrics). Not here: excerpts on the archive calendar, the share page or the card.
-  - **The reveal reads dissolve → page → score → standing → SHARE.** The stage rises in;
+  - **The reveal reads dissolve → score → standing → SHARE → page since 2026-09-11 (see
+    the card bullet above; the paragraph below describes the 2026-09-08 page-first order
+    it replaced, and its beats still hold in their new places).** The stage rises in;
     the CREDIT types (`SolvedCaption`, hidden with `visibility` until its beat so the text
     never moves when it speaks) while the SECRETS POP into the line one by one
     (`solved-word-pop`, `WORD_STEP_MS` 200 apart, `WORD_POP_MS` 300 — the 2026-08-14 pop,

@@ -413,6 +413,24 @@ The live routes then share:
 - **Share token v6** is the sentence format (capped flag + numeric score + trajectory +
   ticks; a capped token carries no ticks). `decodeLegacyShareTarget` recognizes ONLY sentence
   versions 1 and 2 (a named list); Word v5 is decoded by its own decoder first.
+- **EARLY PLAY (#273, user-decided 2026-09-08): after today's result, TOMORROW opens the
+  next day's sentence tonight** — beside SHARE, the result screen's ONE onward action
+  (sentence only; from TODAY's result only). The web's dated route reaches `activeDate + 1`
+  (`web/src/langs.ts` `ROUTE_FUTURE_DAYS`), the server's own skew window. **Play stops at the
+  FIRST PROGRESS (`holeProgress > 0` on any hole, an exact hit included) or after
+  `EARLY_GUESS_CAP` = 3 guesses (`shared/src/scores.ts`), whichever comes first.** The
+  server enforces it inside the append's own condition for a round whose date is AFTER its
+  active day: accepted only while the stored `progress` is 0 AND the RESULTING log stays
+  within the cap (ROOM, the round cap's shape); the guess that makes progress is STORED and
+  the next append is 409 `early_locked`, which the client adopts and closes on like
+  `round_solved` — until the flip, where the re-registration re-opens the conversation with
+  a read (a client already past the flip on its own clock keeps and retries the guess). The
+  client locks its input from the same reading of its play log (`web/src/game/earlyPlay.ts`)
+  the moment either holds; the countdown to the flip takes the keyboard's place
+  (`FlipCountdown`). The log STAYS: the early guesses count as tries, the on-time verdict is
+  unchanged (the solving append lands on the day). An early SOLVE is impossible by
+  construction (a hit is progress), so the on-time rule never denies an early round a credit.
+  Not done, deliberately: Word mode; a NEXT-DAY preview beyond +1.
 - **Storage**: the score table, partition `round#<publicId>`, sort key
   `<lang>#<mode>#<date>` (language first so a month is one Query), attributes `guesses`,
   `puzzle`, `createdAt`, `lastWriteAt`, `progress`, `solved`, `version`. Per PLAYER, not per

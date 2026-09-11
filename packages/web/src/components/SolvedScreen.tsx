@@ -10,6 +10,7 @@ import SolvedCaption, { captionDurationMs } from './SolvedCaption';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useShare from '../hooks/useShare';
 import Button from './Button';
+import ChevronRightIcon from '../assets/icons/chevron-right.svg?react';
 import { useDeviceIdentity } from '../identity';
 import { ariaHoleHistory, t } from '../i18n';
 import { capitalize, sentenceStarts } from '../game/sentenceCase';
@@ -31,17 +32,18 @@ import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 //             long sentence (and, with #270, the sentences of the book around it, read
 //             top-down from the credit) goes under the fold, the score never does.
 //
-// The reveal runs stage → credit + secrets → score → rank → SHARE: the stage rises in,
-// the credit types under it while the secrets pop into the sentence, and the SCORE block
-// follows once that citation has FINISHED PRINTING (user-decided 2026-08-15: numbers
-// arriving over a half-typed credit read as two things happening at once, where waiting
-// reads as one thing after another). That is the screen's one signal-driven beat, so it
-// carries a DEADLINE behind it (the `KB_EXIT_FALLBACK_MS` rule: a lost signal must never
-// be able to stall the solved sequence), derived from the typewriter's own numbers.
-// Inside the score block the tally counts WHILE the ruler colors — one beat saying one
-// thing, "here is your run" — and only then the standing lands, with SHARE as the
-// reveal's closing beat: the screen ends on its action. Everything else hangs off an
-// offset. Rehydrated solves render the final frame immediately and replay nothing.
+// The reveal runs stage → SCORE → rank → SHARE → credit → sentence (user-decided
+// 2026-09-11, reversing 2026-08-15's page-first order now that the score is a CARD above
+// the page): the stage rises in with the card, the tally counts WHILE the ruler colors —
+// one beat saying one thing, "here is your run" — then the standing lands and SHARE
+// closes the card; only THEN, with the score standing above it, the credit types, and
+// only once it has printed does the sentence appear under it, its secrets popping in. The 2026-08-15 rule survives in the other direction:
+// nothing prints while the numbers move, so the two never read as happening at once. The
+// citation's completion is the screen's one signal-driven beat, so it carries a DEADLINE
+// behind it (the `KB_EXIT_FALLBACK_MS` rule: a lost signal must never be able to stall
+// the solved sequence), derived from the typewriter's own numbers — and it is what ends
+// the reveal now. Everything else hangs off an offset. Rehydrated solves render the final
+// frame immediately and replay nothing.
 //
 // THAT LAST SENTENCE IS ALSO THE FAST-FORWARD (#179, user-decided 2026-08-16): a tap
 // during the reveal flips `animate` off, and every beat below already answers that flag
@@ -55,10 +57,9 @@ const NEUTRAL_HOLD_MS = 55;
 // with `.solved-secret.in` / `solved-word-pop`.
 const WORD_STEP_MS = 200;
 const WORD_POP_MS = 300;
-// The breath between the citation's last character and the numbers arriving.
-const SCORE_LEAD_MS = 320;
-// A puzzle with no source has no printing to wait for, so its numbers follow the pops.
-const WORDS_LEAD_MS = 140;
+// The breath between SHARE's arrival — the card's last beat — and the page starting to
+// print under it.
+const TEXT_LEAD_MS = 320;
 // How long past the citation's own length the result waits before giving up on the
 // completion signal and moving on anyway. Generous by design: it is a backstop, and the
 // typewriter's intervals are merely THROTTLED on a hidden tab, never dropped.
@@ -115,6 +116,7 @@ export default function SolvedScreen({
   animate = true,
   start = true,
   onRevealEnd,
+  onTomorrow,
 }: {
   guessCount: number;
   trajectory: number[]; // reconstruction % after each counted guess (one per try)
@@ -142,9 +144,13 @@ export default function SolvedScreen({
   // them — which is the point: a reveal that plays under a full-screen modal is a reveal
   // nobody sees, and what lands on dismissal is a finished frame.
   start?: boolean;
-  // The reveal's last beat has landed (SHARE, or the settled frame): the round disarms
-  // its fast-forward on it.
+  // The reveal's last beat has landed (the credit printed under the card, or the settled
+  // frame): the round disarms its fast-forward on it.
   onRevealEnd?: () => void;
+  // TOMORROW (#273, user-decided 2026-09-08): the result screen's ONE onward action —
+  // the next day's sentence, opened tonight, beside SHARE. Only today's result offers it
+  // (the round passes nothing on an archive day), and it arrives on SHARE's own beat.
+  onTomorrow?: () => void;
 }) {
   const reduceMotion = prefersReducedMotion();
   const n = Math.max(trajectory.length, 1);
@@ -182,68 +188,18 @@ export default function SolvedScreen({
     return () => cancelAnimationFrame(raf);
   }, [animate, start]);
 
-  // The page's own beat: once the stage has risen, the credit types and the secrets pop
-  // into the sentence under it — one beat, "here is what you rebuilt, and where it is
-  // from". The credit's completion only retires its own cursor and releases the score.
-  const [captionDone, setCaptionDone] = useState(false);
-  const finishCaption = useCallback(() => setCaptionDone(true), []);
-  const [textIn, setTextIn] = useState(() => !animate);
-  useEffect(() => {
-    if (!animate) {
-      setTextIn(true);
-      return undefined;
-    }
-    if (!stageIn) return undefined;
-    const id = window.setTimeout(() => setTextIn(true), reduceMotion ? 0 : RESULTS_IN_MS);
-    return () => window.clearTimeout(id);
-  }, [animate, stageIn, reduceMotion]);
-
-  // The SCORE block. Its arrival is what starts the tally, so the number never counts
-  // behind a block that has not appeared yet. It waits for the source to finish PRINTING
-  // — on the caption's own completion signal, with the derived deadline behind it — and,
-  // on a puzzle with no source, simply follows the secrets' pops.
+  // THE SCORE block, FIRST: its arrival is what starts the tally, so the number never
+  // counts behind a block that has not appeared yet. It follows the stage's own rise.
   const [scoreIn, setScoreIn] = useState(() => !animate);
   useEffect(() => {
     if (!animate) {
       setScoreIn(true);
       return undefined;
     }
-    if (!textIn) return undefined;
-    if (reduceMotion) {
-      setScoreIn(true);
-      return undefined;
-    }
-    if (!hasSource) {
-      const id = window.setTimeout(() => setScoreIn(true), popSpanMs + WORDS_LEAD_MS);
-      return () => window.clearTimeout(id);
-    }
-    if (captionDone) {
-      const id = window.setTimeout(() => setScoreIn(true), SCORE_LEAD_MS);
-      return () => window.clearTimeout(id);
-    }
-
-    // The typewriter advances on a short interval, which browsers throttle or suspend in
-    // a hidden tab. Its backstop therefore counts VISIBLE time too: a plain wall-clock
-    // timeout can expire while only a handful of letters have printed and reveal the
-    // numbers over a half-typed credit on return. The real completion signal normally
-    // wins; restarting the generous fallback when visibility returns only affects the
-    // lost-signal path it exists to rescue.
-    let id = 0;
-    const armFallback = () => {
-      window.clearTimeout(id);
-      if (document.visibilityState === 'hidden') return;
-      id = window.setTimeout(
-        () => setScoreIn(true),
-        captionDurationMs(source, lang) + CAPTION_FALLBACK_SLACK_MS,
-      );
-    };
-    armFallback();
-    document.addEventListener('visibilitychange', armFallback);
-    return () => {
-      window.clearTimeout(id);
-      document.removeEventListener('visibilitychange', armFallback);
-    };
-  }, [animate, textIn, reduceMotion, hasSource, captionDone, popSpanMs, source, lang]);
+    if (!stageIn) return undefined;
+    const id = window.setTimeout(() => setScoreIn(true), reduceMotion ? 0 : RESULTS_IN_MS);
+    return () => window.clearTimeout(id);
+  }, [animate, stageIn, reduceMotion]);
 
   const [countTarget, setCountTarget] = useState(() => (animate ? 0 : guessCount));
   useEffect(() => {
@@ -275,11 +231,11 @@ export default function SolvedScreen({
     return () => window.clearTimeout(color);
   }, [animate, reduceMotion, scoreIn]);
 
-  // The reveal's closing beats (user-decided 2026-08-16): the STANDING lands only once
+  // The card's closing beats (user-decided 2026-08-16): the STANDING lands only once
   // the tally-and-colorize beat has settled, and SHARE once the standing's own rung-in
-  // has — the screen ends on its action. Both hold their layout space throughout (the
-  // rank's slot is always mounted, SHARE hides in place), so these flips change when
-  // each appears, never where anything sits.
+  // has. Both hold their layout space throughout (the rank's slot is always mounted,
+  // SHARE hides in place), so these flips change when each appears, never where anything
+  // sits.
   const scoreBeatMs = Math.max(SCORE_COUNT_MS, NEUTRAL_HOLD_MS + rulerSpanMs);
   const [rankIn, setRankIn] = useState(() => !animate);
   const [shareIn, setShareIn] = useState(() => !animate);
@@ -306,9 +262,83 @@ export default function SolvedScreen({
     };
   }, [animate, reduceMotion, scoreIn, scoreBeatMs]);
 
+  // THE PAGE, under the finished card: the credit types and the secrets pop into the
+  // sentence — one beat, "here is what you rebuilt, and where it is from" — once SHARE
+  // has closed the card above it. The credit's completion retires its own cursor and
+  // ends the reveal.
+  const [captionDone, setCaptionDone] = useState(false);
+  const finishCaption = useCallback(() => setCaptionDone(true), []);
+  const [textIn, setTextIn] = useState(() => !animate);
   useEffect(() => {
-    if (shareIn) onRevealEnd?.();
-  }, [shareIn, onRevealEnd]);
+    if (!animate) {
+      setTextIn(true);
+      return undefined;
+    }
+    if (!shareIn) return undefined;
+    const id = window.setTimeout(() => setTextIn(true), reduceMotion ? 0 : TEXT_LEAD_MS);
+    return () => window.clearTimeout(id);
+  }, [animate, shareIn, reduceMotion]);
+
+  // THE SENTENCE, after the source (user-decided 2026-09-11: "score view → source →
+  // sentence"): the text appears — and its secrets pop into it — once the citation has
+  // FINISHED PRINTING, on its own completion signal with the derived deadline behind it;
+  // a puzzle with no source has nothing to wait for and shows it as the page's beat
+  // starts.
+  const [sentenceIn, setSentenceIn] = useState(() => !animate);
+  useEffect(() => {
+    if (!animate) {
+      setSentenceIn(true);
+      return undefined;
+    }
+    if (!textIn) return undefined;
+    if (reduceMotion || !hasSource || captionDone) {
+      setSentenceIn(true);
+      return undefined;
+    }
+
+    // The typewriter advances on a short interval, which browsers throttle or suspend in
+    // a hidden tab. Its backstop therefore counts VISIBLE time too: a plain wall-clock
+    // timeout can expire while only a handful of letters have printed and end the reveal
+    // over a half-typed credit on return. The real completion signal normally wins;
+    // restarting the generous fallback when visibility returns only affects the
+    // lost-signal path it exists to rescue.
+    let id = 0;
+    const armFallback = () => {
+      window.clearTimeout(id);
+      if (document.visibilityState === 'hidden') return;
+      id = window.setTimeout(
+        () => setSentenceIn(true),
+        captionDurationMs(source, lang) + CAPTION_FALLBACK_SLACK_MS,
+      );
+    };
+    armFallback();
+    document.addEventListener('visibilitychange', armFallback);
+    return () => {
+      window.clearTimeout(id);
+      document.removeEventListener('visibilitychange', armFallback);
+    };
+  }, [animate, textIn, reduceMotion, hasSource, captionDone, source, lang]);
+
+  // The reveal's END: the secrets have popped into the sentence. The round disarms its
+  // fast-forward on it.
+  const [textDone, setTextDone] = useState(() => !animate);
+  useEffect(() => {
+    if (!animate) {
+      setTextDone(true);
+      return undefined;
+    }
+    if (!sentenceIn) return undefined;
+    if (reduceMotion) {
+      setTextDone(true);
+      return undefined;
+    }
+    const id = window.setTimeout(() => setTextDone(true), popSpanMs);
+    return () => window.clearTimeout(id);
+  }, [animate, sentenceIn, reduceMotion, popSpanMs]);
+
+  useEffect(() => {
+    if (textDone) onRevealEnd?.();
+  }, [textDone, onRevealEnd]);
 
   // Delivery (native sheet / clipboard + the "COPIED" confirmation) is the shared hook's;
   // this screen only composes the sentence result's text.
@@ -355,7 +385,11 @@ export default function SolvedScreen({
       className={`solved-stage pixel-scroll${stageIn ? ' in' : ''}${animate ? '' : ' settled'}`}
     >
       {/* ---- the SCORE block, at the top: how the round went, and what you do with it. */}
-      <div className={`solved-numbers${scoreIn ? ' in' : ''}`}>
+      <div className={`solved-numbers card${scoreIn ? ' in' : ''}`}>
+        {/* THE WELL (2026-09-11): the card's inset panel holds the thing the card is
+            about — the number and its run — and the actions are the caption row under it,
+            the references' own shape (a preview in a well, a title under it). */}
+        <div className="card-well">
         {/* The primary sentence metric. The hidden final value reserves the count's width
             so its tally never moves the content below it — a capped round has no tally to
             reserve for, since `∞` is one fixed shape. Where this run stands among the
@@ -400,10 +434,12 @@ export default function SolvedScreen({
             colorized={rulerColorized}
           />
         </div>
+        </div>
 
         {/* SHARE closes the reveal: hidden in place (footprint kept) until the standing
-            has landed. */}
-        <div className={`result-actions${shareIn ? ' in' : ''}`}>
+            has landed — and TOMORROW beside it (#273), the onward action, on the same
+            beat: two equals on one row, never a second arrival. */}
+        <div className={`result-actions${onTomorrow ? ' paired' : ''}${shareIn ? ' in' : ''}`}>
           <Button
             variant="secondary"
             className={`result-action${copied ? ' copied' : ''}`}
@@ -411,6 +447,13 @@ export default function SolvedScreen({
           >
             {copied ? t(lang, 'copied') : t(lang, 'share')}
           </Button>
+          {onTomorrow && (
+            <Button variant="secondary" className="result-action btn-arrow" onClick={onTomorrow}>
+              {t(lang, 'tomorrow')}
+              {/* The title's own 7×7 pixel chevron, pointing ONWARD (user-asked 2026-09-11). */}
+              <ChevronRightIcon className="ui-icon" aria-hidden />
+            </Button>
+          )}
         </div>
       </div>
 
@@ -441,7 +484,7 @@ export default function SolvedScreen({
             the tap onto their own history. Prefix and suffix are sentence context and
             always show, in the nowrap group that keeps them on the secret's own line —
             Phrase's rule, unchanged. */}
-        <p className="solved-text">
+        <p className={`solved-text${sentenceIn ? ' in' : ''}`}>
           {before.length > 0 ? `${before.join(' ')} ` : null}
           <span className="solved-line">
             {words.map((w, i) => {
@@ -463,7 +506,7 @@ export default function SolvedScreen({
                     {hole.prefix && starts[i] ? capitalize(hole.prefix) : hole.prefix}
                     <button
                       type="button"
-                      className={`solved-secret${textIn ? ' in' : ''}`}
+                      className={`solved-secret${sentenceIn ? ' in' : ''}`}
                       style={{ '--step': hole.number - 1 } as CSSProperties}
                       aria-describedby={`solved-explore-${hole.number}`}
                       onClick={() => onExplore(hole.holeIndex)}
@@ -481,7 +524,12 @@ export default function SolvedScreen({
         {/* A music day's LISTEN (#270): an ordinary link to the track's page, in a new
             tab — no embed, no third-party script on the page. */}
         {source?.url ? (
-          <a className="solved-listen" href={source.url} target="_blank" rel="noopener noreferrer">
+          <a
+            className={`solved-listen${sentenceIn ? ' in' : ''}`}
+            href={source.url}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             {t(lang, 'listen')}
           </a>
         ) : null}

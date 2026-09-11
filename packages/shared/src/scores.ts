@@ -50,6 +50,18 @@ export function wordRunFloorMs(claims: number): number {
 export const ROUND_GUESS_CAP = 500;
 export const ROUND_WRITE_MIN_MS = 1_000;
 
+// EARLY PLAY (#273, user-decided 2026-09-08): tomorrow's sentence opens TONIGHT, and the
+// player keeps guessing until the FIRST PROGRESS — a guess that beats a start word, an
+// exact hit included — or until this many guesses, whichever comes first. The server
+// enforces it inside the append's own condition for a round whose date is AFTER its active
+// day (the +1-day window the puzzle route already serves): an append is accepted only while
+// the stored `progress` is 0 and the RESULTING log stays within this cap, and the next one
+// is refused `early_locked`. The web locks its input from the same reading, so one
+// spelling is what keeps the screen and the store agreeing on when the night's play ends.
+// A hit is progress, so an early SOLVE cannot happen: the on-time rule never has to deny
+// a credit to a round played the evening before its day.
+export const EARLY_GUESS_CAP = 3;
+
 // The header a CloudFront viewer-request function stamps the connecting viewer's IP into,
 // and the ONLY client address the round handler trusts in production (#169). Named here
 // because it is a CDN⇔handler contract: infra writes it, the backend reads it, and a

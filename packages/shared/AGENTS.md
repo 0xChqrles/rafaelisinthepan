@@ -12,7 +12,7 @@
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
     src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
     src/scores.ts             WORD_CLAIM_ZONE + Word mode's clock/caps (web+backend), the #201
-                              round bounds, VIEWER_IP_HEADER (infra+backend)
+                              round bounds, #273's EARLY_GUESS_CAP, VIEWER_IP_HEADER (infra+backend)
     src/scoring.ts            what a guess LOG means (#203): s()/holeProgress, rankCount,
                               guessKey, countTries — the readings BOTH ends now perform
     src/puzzleTag.ts          fnvTag — Word mode's round tag. The SENTENCE daily's is the
@@ -171,6 +171,10 @@
   false, and real runs would start being refused as impossibly early. Retuning the clock
   therefore moves this file and deploys the backend with it, exactly like
   `WORD_CLAIM_ZONE`; the RARITY CUTS and the rest of the ladder stay the web's own knob.
+  **Since #273 it also owns `EARLY_GUESS_CAP` (3)** — how many guesses tomorrow's sentence
+  takes tonight before the first progress: ONE spelling for the server's append condition
+  (`early_locked`) and the web's input lock, so the screen never locks on a guess the server
+  would have stored, nor sends one it refuses (root `AGENTS.md`, Sentence round).
 - **`src/heat.ts` is the app's ONE gradient, and it runs WEIRD → CALM (user-decided
   2026-08-17, the calm redesign — superseding the FLIR iron bow of the same day and the
   crimson→cyan heat stops before it).** Solving is RESTORING PEACE to a weird sentence:
