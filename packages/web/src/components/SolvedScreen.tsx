@@ -361,6 +361,10 @@ export default function SolvedScreen({
     >
       {/* ---- the SCORE block, at the top: how the round went, and what you do with it. */}
       <div className={`solved-numbers card${scoreIn ? ' in' : ''}`}>
+        {/* THE WELL (2026-09-11): the card's inset panel holds the thing the card is
+            about — the number and its run — and the actions are the caption row under it,
+            the references' own shape (a preview in a well, a title under it). */}
+        <div className="card-well">
         {/* The primary sentence metric. The hidden final value reserves the count's width
             so its tally never moves the content below it — a capped round has no tally to
             reserve for, since `∞` is one fixed shape. Where this run stands among the
@@ -404,6 +408,7 @@ export default function SolvedScreen({
             shown={rulerShown}
             colorized={rulerColorized}
           />
+        </div>
         </div>
 
         {/* SHARE closes the reveal: hidden in place (footprint kept) until the standing

@@ -1287,17 +1287,22 @@ it to the local store — see `packages/backend/AGENTS.md`).
     link sent in a language renders them in it. (The missing-puzzle screen, headerless too,
     opens the SAME drums from its CHANGE LANGUAGE button — `NoPuzzle`, since 2026-09-05.)
 
-- **THE CARD (2026-09-11, user-asked: on a phone "it's hard to understand what's on
-  screen quickly"; tuned the same day on the user's review).** `.card` is ONE boxed
-  surface for a VIEW, and it is QUIET: `--fg` at 3% over the ground, an edge at 6% (under
-  `--line`), **radius 0** — the one chrome box below the 4px ceiling, user-decided ("the
-  border radius should be 0px") — padded. A CLASS, not a wrapper component: the blocks
-  that wear it already have their own elements. The solved screen is its first consumer,
-  and only the SCORE block wears it: the sentence's PAGE stays on the bare ground
-  (user-decided the same day, after both were tried as cards — the page is a page, not a
-  tile), so the result reads as one thing and the text as the prose it is. The first cut
-  (`--surface` + `--line` at 4px, on both blocks) was reviewed as too loud. Other stacked
-  views may adopt it; the flat ground stays the default elsewhere.
+- **THE CARD (user-decided 2026-09-11, from the three references in `inspiration/card/`:
+  on a phone "it's hard to understand what's on screen quickly").** `.card` is ONE panel for
+  a VIEW in those references' language: a LARGE, SOFTLY ROUNDED panel lifted a shade off the
+  ground (`--fg` at 4.5%, a 9% stroke, 24px radius — 22 on a phone), and inside it a darker
+  inset WELL (`.card-well`: back into the ground at 75% `--bg`, a 6% stroke, 16px radius)
+  holding the thing the card is about, with a caption row under the well. Depth by two
+  steps of value, never a shadow or a glow (the flat rule stands). **It is THE ONE
+  EXCEPTION to the 4px radius ceiling**, by the user's own references; nothing else in the
+  chrome rounds past 4px, and the references' PILL buttons were not taken (the app's
+  buttons stay its own). A CLASS, not a wrapper component. The solved screen is its first
+  consumer and only the SCORE block wears it — the well holds the number and its run
+  ruler, SHARE/TOMORROW are the caption row — while the sentence's PAGE stays on the bare
+  ground (user-decided the same day, after both were tried as cards: the page is a page,
+  not a tile). Two earlier cuts the same day — a `--surface` + `--line` 4px tile on both
+  blocks, then a square 3%/6% tile — were reviewed as not it. Other stacked views may
+  adopt the panel; the flat ground stays the default elsewhere.
 - **Early play: tomorrow's sentence tonight (#273, user-decided 2026-09-08).** The
   product contract — TOMORROW beside SHARE as the result's one onward action, the first
   progress / `EARLY_GUESS_CAP` stop, the server's `early_locked` — lives in the root
