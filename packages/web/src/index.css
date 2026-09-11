@@ -1981,17 +1981,20 @@ input {
   transform: translateY(0);
 }
 /* ===================== the CARD (2026-09-11) ===================== */
-/* ONE boxed surface for a VIEW: a lighter tile on the flat ground, the chrome's hairline
-   and the sharp 4px ceiling, padded so its content stands off its edge. It exists because a
-   phone shows two or three different things stacked in one column — a result, a page, a
+/* ONE boxed surface for a VIEW: a tile a shade lighter than the ground, its edge a whisper
+   of a hairline, DEAD SQUARE, padded so its content stands off its edge. It exists because
+   a phone shows two or three different things stacked in one column — a result, a page, a
    list — and on the bare ground they read as one run of text. A card says "this is one
-   thing" before a word is read. Same family as the board rows and the coach box (surface +
-   hairline), one step lighter so it reads at a glance rather than on inspection. */
+   thing" before a word is read. QUIET by decision (user-reviewed 2026-09-11: the first cut
+   on `--surface` + `--line` at 4px "could be improved — reduce the contrast, a less visible
+   border, 0px radius"): the ground is `--fg` at 3% over `--bg` (~#0c0d0f, under the
+   `--surface` tile the board rows wear), the edge `--fg` at 6% (under `--line`'s 13%),
+   and the radius 0 — the one box in the chrome below the 4px ceiling, on purpose. */
 .card {
   box-sizing: border-box;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0;
   padding: clamp(18px, 3.2vh, 28px) clamp(14px, 3vw, 24px);
 }
 
@@ -2062,14 +2065,6 @@ input {
   text-align: left;
   visibility: hidden;
   cursor: pointer;
-}
-/* On a CARD the running head stands on the card's own ground, gradient included, so the
-   text still disappears under it rather than through it. */
-.card .solved-source {
-  background: var(--surface);
-}
-.card .solved-source::after {
-  background: linear-gradient(to bottom, var(--surface), transparent);
 }
 .solved-source::after {
   content: '';

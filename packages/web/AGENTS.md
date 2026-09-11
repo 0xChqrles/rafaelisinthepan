@@ -1288,15 +1288,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
     opens the SAME drums from its CHANGE LANGUAGE button — `NoPuzzle`, since 2026-09-05.)
 
 - **THE CARD (2026-09-11, user-asked: on a phone "it's hard to understand what's on
-  screen quickly").** `.card` is ONE boxed surface for a VIEW: `--surface` ground, the
-  chrome's `--line` hairline, the sharp `--r-lg` (4px) ceiling, padded. A CLASS, not a
-  wrapper component — the blocks that wear it already have their own elements. The
-  solved screen is its first consumer: the SCORE block and the sentence's PAGE are two
-  cards on the ground, so the result and the page read as two things before a word is
-  read; the sticky credit takes the card's ground (and its gradient) so the text still
-  disappears under it. Screenshotted at 375 and 1280 before landing; the same family as the
-  board rows and the coach box (surface + hairline), one step lighter so it reads at a
-  glance. Other stacked views may adopt it; the flat ground stays the default elsewhere.
+  screen quickly"; tuned the same day on the user's review).** `.card` is ONE boxed
+  surface for a VIEW, and it is QUIET: `--fg` at 3% over the ground, an edge at 6% (under
+  `--line`), **radius 0** — the one chrome box below the 4px ceiling, user-decided ("the
+  border radius should be 0px") — padded. A CLASS, not a wrapper component: the blocks
+  that wear it already have their own elements. The solved screen is its first consumer,
+  and only the SCORE block wears it: the sentence's PAGE stays on the bare ground
+  (user-decided the same day, after both were tried as cards — the page is a page, not a
+  tile), so the result reads as one thing and the text as the prose it is. The first cut
+  (`--surface` + `--line` at 4px, on both blocks) was reviewed as too loud. Other stacked
+  views may adopt it; the flat ground stays the default elsewhere.
 - **Early play: tomorrow's sentence tonight (#273, user-decided 2026-09-08).** The
   product contract — TOMORROW beside SHARE as the result's one onward action, the first
   progress / `EARLY_GUESS_CAP` stop, the server's `early_locked` — lives in the root

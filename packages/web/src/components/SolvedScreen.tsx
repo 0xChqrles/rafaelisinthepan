@@ -427,7 +427,7 @@ export default function SolvedScreen({
 
       {/* ---- the PAGE: the sentence's page. The credit first, then the text — read
            top-down, the way a page is. The whole stage scrolls; the credit sticks. */}
-      <div className="solved-page card">
+      <div className="solved-page">
         {/* The sentence's attribution, ABOVE the text it credits, at its own caption size
             — the small quote-style citation it has always been, and the running head
             once the page scrolls: a tap on it returns to the top. A source-less puzzle
