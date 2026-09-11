@@ -32,7 +32,7 @@ import LoadError from '../components/LoadError';
 import FlipCountdown from '../components/FlipCountdown';
 import { earlyLocked } from '../game/earlyPlay';
 import { navigate } from '../routing';
-import { pathForDay } from '../langs';
+import { pathForDay, pathForMode } from '../langs';
 import { buildHistory } from '../game/history';
 import type { HistoryStop } from '../game/history';
 import { t, ariaHoleHistory, srHoleResult } from '../i18n';
@@ -1107,7 +1107,7 @@ function Round({
               /* THE NIGHT'S LOCK (#273): the countdown to the flip takes the keyboard's
                  place — the whole statement, in the keys' own footprint, so nothing above
                  it moves when the keys go or when they come back. */
-              <FlipCountdown lang={lang} />
+              <FlipCountdown lang={lang} onToday={() => navigate(pathForMode(lang, 'sentence'))} />
             ) : (
               <div
                 className={`kb-exit${keyboardLeaving ? ' leaving' : ''}`}

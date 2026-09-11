@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { nextResetAt } from '@whippin/shared';
-import { srEarlyClock } from '../i18n';
+import { srEarlyClock, t } from '../i18n';
+import Button from './Button';
 
 // The clock that takes the KEYBOARD's place once tomorrow's round is locked for the night
 // (#273): how long until the day flips and the round continues where it stopped. It is
@@ -16,7 +17,16 @@ import { srEarlyClock } from '../i18n';
 const TICK_MS = 1000;
 const pad = (n: number) => String(n).padStart(2, '0');
 
-export default function FlipCountdown({ lang }: { lang: string }) {
+export default function FlipCountdown({
+  lang,
+  onToday,
+}: {
+  lang: string;
+  // The way BACK, under the clock (user-decided 2026-09-11): the locked round is the one
+  // moment with nothing left to do, so it carries a labelled button to today's result —
+  // where a bare arrow in the header "might not be very obvious… many might get stuck".
+  onToday: () => void;
+}) {
   const [deadline] = useState(() => nextResetAt(new Date()).getTime());
   const [, bump] = useState(0);
   useEffect(() => {
@@ -43,6 +53,9 @@ export default function FlipCountdown({ lang }: { lang: string }) {
       >
         <span aria-hidden="true">{`${pad(h)}:${pad(m)}:${pad(s)}`}</span>
       </span>
+      <Button variant="secondary" className="flip-today" onClick={onToday}>
+        {t(lang, 'today')}
+      </Button>
     </div>
   );
 }

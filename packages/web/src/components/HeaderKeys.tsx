@@ -75,11 +75,17 @@ export default function HeaderKeys({
   // Run before ANY key leaves this surface — the tutorial closes itself here (a lesson
   // left by the row is a lesson skipped, and the store must not reopen it on the game).
   leave,
+  homeLeaves = false,
 }: {
   lang: string;
   mode: Mode;
   on: HeaderPlace;
   leave?: () => void;
+  // THE ONE EXCEPTION to "a lit key goes nowhere" (#273, user-decided 2026-09-11): on
+  // TOMORROW's sentence HOME is lit — it is today's onward action, not an archive play —
+  // and a tap on it still leaves for today's game, because it is the tap everyone makes
+  // first, and a dead one strands them on a locked round.
+  homeLeaves?: boolean;
 }) {
   const openTutorial = useGameStore((s) => s.openTutorial);
   const row = useRef<HTMLDivElement>(null);
@@ -154,7 +160,7 @@ export default function HeaderKeys({
         aria-label={label}
         aria-current={lit ? 'page' : undefined}
         onClick={() => {
-          if (!lit) go(to);
+          if (!lit || (place === 'home' && homeLeaves)) go(to);
         }}
       >
         <Icon className="ui-icon" aria-hidden />

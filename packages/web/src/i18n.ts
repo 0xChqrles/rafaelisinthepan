@@ -434,6 +434,8 @@ const STRINGS = {
   copied: { en: 'COPIED', fr: 'COPIÉ' },
   // The result screen's ONE onward action (#273): tomorrow's sentence, tonight.
   tomorrow: { en: 'TOMORROW', fr: 'DEMAIN' },
+  // …and the way back from it, under the night's countdown: today's result.
+  today: { en: 'TODAY', fr: "AUJOURD'HUI" },
   // A music day's track link on the solved page (#270): an ordinary link, new tab.
   listen: { en: 'LISTEN', fr: 'ÉCOUTER' },
   // ---- the solved screen's STANDING (#170): ONE badge, `TOP 25%`, beside the score
