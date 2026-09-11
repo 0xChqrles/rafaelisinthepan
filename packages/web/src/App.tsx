@@ -199,6 +199,7 @@ export default function App() {
                 lang={routed ? route.lang : homeLang}
                 mode={routed ? route.mode : (lastMode ?? 'sentence')}
                 on={place}
+                archivePlay={place === 'archive' && route.view === 'game'}
                 leave={place === 'rules' ? leaveTutorial : undefined}
               />
             }

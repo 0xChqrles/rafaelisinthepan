@@ -4,7 +4,7 @@ import { INFINITY_EM_HEIGHT, INFINITY_EM_WIDTH, INFINITY_GLYPH, type Source } fr
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { shareHeadline, shareText, shareUrl } from '../game/share';
 import type { ScorePlacementState } from '../hooks/useScoreHistogram';
-import RunRuler, { rulerStagger } from './RunRuler';
+import RunRuler from './RunRuler';
 import ScoreTop from './ScoreTop';
 import SolvedCaption, { captionDurationMs } from './SolvedCaption';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
@@ -32,18 +32,20 @@ import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 //             long sentence (and, with #270, the sentences of the book around it, read
 //             top-down from the credit) goes under the fold, the score never does.
 //
-// The reveal runs stage → SCORE → rank → SHARE → credit → sentence (user-decided
+// The reveal runs stage → SCORE → rank + SHARE → credit → sentence (user-decided
 // 2026-09-11, reversing 2026-08-15's page-first order now that the score is a CARD above
-// the page): the stage rises in with the card, the tally counts WHILE the ruler colors —
-// one beat saying one thing, "here is your run" — then the standing lands and SHARE
-// closes the card; only THEN, with the score standing above it, the credit types, and
+// the page): the stage rises in with the card, which lands reading 0 over a bar with no
+// colour in it yet; then the tally counts WHILE the bar colours in, try by try — one beat
+// saying one thing, "here is your run" — then the standing lands with SHARE,
+// closing the card; only THEN, with the score standing above it, the credit types, and
 // only once it has printed does the sentence appear under it, its secrets popping in. The 2026-08-15 rule survives in the other direction:
 // nothing prints while the numbers move, so the two never read as happening at once. The
 // citation's completion is the screen's one signal-driven beat, so it carries a DEADLINE
 // behind it (the `KB_EXIT_FALLBACK_MS` rule: a lost signal must never be able to stall
 // the solved sequence), derived from the typewriter's own numbers — and it is what ends
-// the reveal now. Everything else hangs off an offset. Rehydrated solves render the final
-// frame immediately and replay nothing.
+// the reveal now. Everything else hangs off an offset, or — the closing beat — off the
+// count's own landing, which the tween's clock always reaches (no DOM signal to lose).
+// Rehydrated solves render the final frame immediately and replay nothing.
 //
 // THAT LAST SENTENCE IS ALSO THE FAST-FORWARD (#179, user-decided 2026-08-16): a tap
 // during the reveal flips `animate` off, and every beat below already answers that flag
@@ -51,7 +53,6 @@ import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 // inventing a parallel fast path, which is exactly what the decision asks for. Nothing
 // here listens for the tap: the round owns it, because the beats before this one (the
 // keyboard drop, the dissolve) are its.
-const NEUTRAL_HOLD_MS = 55;
 // The secrets POP into the sentence one by one, 200ms apart, each a fast scale pop — the
 // round's three trophies counted out, back in the gaps they were taken from. Keep aligned
 // with `.solved-secret.in` / `solved-word-pop`.
@@ -64,12 +65,9 @@ const TEXT_LEAD_MS = 320;
 // completion signal and moving on anyway. Generous by design: it is a backstop, and the
 // typewriter's intervals are merely THROTTLED on a hidden tab, never dropped.
 const CAPTION_FALLBACK_SLACK_MS = 4_000;
-// The reveal's closing beats: the standing waits out the tally-and-colorize beat plus a
-// breath, and SHARE waits out the standing's own rung-in plus another.
-const RANK_LEAD_MS = 260;
-// `.score-top.in`'s rung-in — keep aligned with the CSS.
-const RANK_IN_MS = 220;
-const SHARE_LEAD_MS = 180;
+// The card's closing beat — the standing and SHARE, together — follows the count's
+// landing (the bar full) by a breath.
+const CLOSE_LEAD_MS = 260;
 
 // The capped round's headline (#214). Press Start 2P has no `∞`, so the glyph is drawn from
 // the shared path data — the same path, at the same fraction of the font size, that the OG
@@ -153,11 +151,6 @@ export default function SolvedScreen({
   onTomorrow?: () => void;
 }) {
   const reduceMotion = prefersReducedMotion();
-  const n = Math.max(trajectory.length, 1);
-  // A settled result staggers NOTHING: the ruler's per-cell delays are what a fast-forward
-  // would otherwise sweep across the bar for over a second after the frame it snapped
-  // (`rulerStagger`'s reduced-motion argument, spent here on the same problem).
-  const stagger = animate ? rulerStagger(n, reduceMotion) : 0;
   const hasSource = Boolean(source?.kind || source?.author || source?.work);
   // The page around the line (#270): the source's raw sentences before and after it, as
   // one paragraph of muted text — the line's own highlight is the contrast.
@@ -201,66 +194,57 @@ export default function SolvedScreen({
     return () => window.clearTimeout(id);
   }, [animate, stageIn, reduceMotion]);
 
-  const [countTarget, setCountTarget] = useState(() => (animate ? 0 : guessCount));
-  useEffect(() => {
-    if (scoreIn) setCountTarget(guessCount);
-  }, [scoreIn, guessCount]);
-  const shownScore = useAnimatedNumber(countTarget, !animate || reduceMotion ? 1 : SCORE_COUNT_MS);
-
-  // The ruler rides the tally (user-decided 2026-08-16, superseding "after the score
-  // lands"): the neutral cells sweep in the moment the block arrives and the color wave
-  // chases them a breath behind, so the bar colors WHILE the number counts — one beat.
-  // The ruler always reserves its final footprint, so neither animation moves the
-  // actions below it.
-  const rulerSpanMs = Math.max(0, n - 1) * stagger;
-  const [rulerShown, setRulerShown] = useState(() => !animate);
-  const [rulerColorized, setRulerColorized] = useState(() => !animate);
+  // THE TALLY, once the card has LANDED (user-decided 2026-09-11): the card rises in
+  // reading 0 over the whole bar, every cell there and none coloured yet, and only then
+  // does the number climb — the bar colouring in try by try, each tick standing as its
+  // try is reached, WHILE it counts. The ruler reads the count ITSELF (`shownCount`), so
+  // the number and the coloured cells cannot drift apart: at every frame the number says
+  // how many tries are coloured. The ruler reserves its final footprint throughout, so
+  // nothing below it moves.
+  const [countIn, setCountIn] = useState(() => !animate);
   useEffect(() => {
     if (!animate) {
-      setRulerShown(true);
-      setRulerColorized(true);
+      setCountIn(true);
       return undefined;
     }
     if (!scoreIn) return undefined;
-    setRulerShown(true);
-    if (reduceMotion) {
-      setRulerColorized(true);
-      return undefined;
-    }
-    const color = window.setTimeout(() => setRulerColorized(true), NEUTRAL_HOLD_MS);
-    return () => window.clearTimeout(color);
-  }, [animate, reduceMotion, scoreIn]);
+    // The card's own rise is the stage's (`.solved-numbers`, the same 250ms).
+    const id = window.setTimeout(() => setCountIn(true), reduceMotion ? 0 : RESULTS_IN_MS);
+    return () => window.clearTimeout(id);
+  }, [animate, scoreIn, reduceMotion]);
 
-  // The card's closing beats (user-decided 2026-08-16): the STANDING lands only once
-  // the tally-and-colorize beat has settled, and SHARE once the standing's own rung-in
-  // has. Both hold their layout space throughout (the rank's slot is always mounted,
-  // SHARE hides in place), so these flips change when each appears, never where anything
-  // sits.
-  const scoreBeatMs = Math.max(SCORE_COUNT_MS, NEUTRAL_HOLD_MS + rulerSpanMs);
-  const [rankIn, setRankIn] = useState(() => !animate);
+  const [countTarget, setCountTarget] = useState(() => (animate ? 0 : guessCount));
+  useEffect(() => {
+    if (countIn) setCountTarget(guessCount);
+  }, [countIn, guessCount]);
+  const shownScore = useAnimatedNumber(countTarget, !animate || reduceMotion ? 1 : SCORE_COUNT_MS);
+  const shownCount = Math.round(shownScore);
+
+  // The card's closing beat (user-decided 2026-08-16): the STANDING and SHARE land
+  // TOGETHER, once the tally has settled. SHARE used to wait out the standing's own
+  // rung-in and a breath of its own on top, which put the card's one action far too late
+  // (user-reported 2026-09-11). Both hold their layout space throughout (the rank's slot
+  // is always mounted, SHARE hides in place), so the flip changes when they appear, never
+  // where anything sits.
+  // It keys off the count LANDING — the number showing its final value, the bar full —
+  // not off `SCORE_COUNT_MS`: the tween eases out and the number is rounded, so the last
+  // visible step comes well before the tween's own end (at 45% of it on a 3-try run), and
+  // a timer off that end would hold everything still before SHARE.
+  const countLanded = countIn && shownCount === guessCount;
   const [shareIn, setShareIn] = useState(() => !animate);
   useEffect(() => {
     if (!animate) {
-      setRankIn(true);
       setShareIn(true);
       return undefined;
     }
-    if (!scoreIn) return undefined;
+    if (!countLanded) return undefined;
     if (reduceMotion) {
-      setRankIn(true);
       setShareIn(true);
       return undefined;
     }
-    const rank = window.setTimeout(() => setRankIn(true), scoreBeatMs + RANK_LEAD_MS);
-    const share = window.setTimeout(
-      () => setShareIn(true),
-      scoreBeatMs + RANK_LEAD_MS + RANK_IN_MS + SHARE_LEAD_MS,
-    );
-    return () => {
-      window.clearTimeout(rank);
-      window.clearTimeout(share);
-    };
-  }, [animate, reduceMotion, scoreIn, scoreBeatMs]);
+    const id = window.setTimeout(() => setShareIn(true), CLOSE_LEAD_MS);
+    return () => window.clearTimeout(id);
+  }, [animate, reduceMotion, countLanded]);
 
   // THE PAGE, under the finished card: the credit types and the secrets pop into the
   // sentence — one beat, "here is what you rebuilt, and where it is from" — once SHARE
@@ -407,7 +391,7 @@ export default function SolvedScreen({
                 <span className="solved-score-ghost" aria-hidden="true">
                   {guessCount}
                 </span>
-                <span className="solved-score-live">{Math.round(shownScore)}</span>
+                <span className="solved-score-live">{shownCount}</span>
               </span>
             )}
             <ScoreTop
@@ -415,7 +399,7 @@ export default function SolvedScreen({
               mode="sentence"
               lang={lang}
               animate={animate}
-              start={rankIn}
+              start={shareIn}
             />
           </span>
           <span className="solved-score-unit">
@@ -426,18 +410,12 @@ export default function SolvedScreen({
         {/* The player's own run ruler — the share card draws this same ruler from the v2
             token. */}
         <div className="run-ruler-frame" aria-hidden="true">
-          <RunRuler
-            trajectory={trajectory}
-            solvedAt={solvedAt ?? []}
-            stagger={stagger}
-            shown={rulerShown}
-            colorized={rulerColorized}
-          />
+          <RunRuler trajectory={trajectory} solvedAt={solvedAt ?? []} filled={shownCount} />
         </div>
         </div>
 
-        {/* SHARE closes the reveal: hidden in place (footprint kept) until the standing
-            has landed — and TOMORROW beside it (#273), the onward action, on the same
+        {/* SHARE closes the card: hidden in place (footprint kept) until it lands with
+            the standing — and TOMORROW beside it (#273), the onward action, on the same
             beat: two equals on one row, never a second arrival. */}
         <div className={`result-actions${onTomorrow ? ' paired' : ''}${shareIn ? ' in' : ''}`}>
           <Button

@@ -12,15 +12,14 @@ import { progressHeatColor } from '@whippin/shared';
 export default function RunRuler({
   trajectory,
   solvedAt,
-  stagger,
-  shown,
-  colorized,
+  filled,
 }: {
   trajectory: number[];
   solvedAt: (number | null)[];
-  stagger: number;
-  shown: boolean;
-  colorized: boolean;
+  // How many tries are COLOURED IN — the tally's own count (user-decided 2026-09-11), so
+  // the bar fills try by try as the number climbs: every cell stands from the start, the
+  // ones past the count without their colour, and a tick stands once its try is reached.
+  filled: number;
 }) {
   const n = Math.max(trajectory.length, 1);
   // Group solve moments by try: one tick per solving guess, its hole indices stacked.
@@ -33,36 +32,24 @@ export default function RunRuler({
   });
   ticks.sort((a, b) => a.at - b.at);
   return (
-    <div
-      className={`run-ruler${shown ? ' shown' : ''}${colorized ? ' colorized' : ''}`}
-      style={{ '--n': n } as CSSProperties}
-    >
+    <div className="run-ruler" style={{ '--n': n } as CSSProperties}>
       <div className="run-bar">
         {trajectory.map((pct, i) => (
           <span
             // eslint-disable-next-line react/no-array-index-key
             key={i}
-            className="run-cell"
+            className={`run-cell${i < filled ? ' on' : ''}`}
             style={
-              {
-                '--cell-color': progressHeatColor(pct),
-                '--show-delay': `${Math.round(i * stagger)}ms`,
-                '--color-delay': `${Math.round(i * stagger)}ms`,
-              } as CSSProperties &
-                Record<'--cell-color' | '--show-delay' | '--color-delay', string>
+              { '--cell-color': progressHeatColor(pct) } as CSSProperties &
+                Record<'--cell-color', string>
             }
           />
         ))}
         {ticks.map((tick) => (
           <span
             key={tick.at}
-            className="run-tick"
-            style={
-              {
-                '--at': tick.at,
-                '--tick-delay': `${Math.round((tick.at - 1) * stagger)}ms`,
-              } as CSSProperties & Record<'--at' | '--tick-delay', string | number>
-            }
+            className={`run-tick${tick.at <= filled ? ' on' : ''}`}
+            style={{ '--at': tick.at } as CSSProperties & Record<'--at', number>}
           >
             <span className="run-tick-nums">
               {tick.holes.map((h) => (
@@ -74,16 +61,4 @@ export default function RunRuler({
       </div>
     </div>
   );
-}
-
-// The colorize-wave pacing: per-try column delays, capped so the whole sweep never
-// exceeds the max span. Under
-// reduced motion the stagger is ZERO — the global CSS rule collapses DURATIONS but not
-// transition-DELAYS, so without this the sweep would still crawl across the bar for over
-// a second for a viewer who asked for no motion.
-const RULER_STAGGER_MS = 55;
-const RULER_MAX_SPAN_MS = 1400;
-export function rulerStagger(maxN: number, reduceMotion = false): number {
-  if (reduceMotion || maxN <= 1) return 0;
-  return Math.min(RULER_STAGGER_MS, RULER_MAX_SPAN_MS / (maxN - 1));
 }

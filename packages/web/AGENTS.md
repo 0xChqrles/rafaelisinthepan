@@ -466,10 +466,10 @@ These are decided and verified against the code. Treat them as load-bearing.
     trip):** a gradient-filament version and then a colourless flat rule each lived for
     part of the day and both were rejected — "remove the gradient, put back the old
     step by step colors" — so the drawing is the original: one flat cell per counted
-    try at that try's `progressHeatColor`, dead sharp, 16px, revealed by the per-cell
-    show/colorize delays. What SURVIVES from the detour is the ticks' sentence indices
-    in the PIXEL face. The bar therefore still matches the share card's stepped cells
-    exactly.
+    try at that try's `progressHeatColor`, dead sharp, 16px, filled by the result's tally
+    (see the solved-screen bullet). What SURVIVES from the detour is the ticks' sentence
+    indices in the PIXEL face. The bar therefore still matches the share card's stepped
+    cells exactly.
 - **A RANK IS WRITTEN BARE — no leading minus, anywhere (user-decided 2026-08-16).** A rank
   is a DISTANCE, and a distance is not negative; `sailor^87`, not `sailor^-87`. This is the
   app's ONE way of writing a rank, so it holds on every surface that shows one: the hole's
@@ -1317,7 +1317,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   device rows (the same row grammar).
   **THE REVEAL RUNS SCORE FIRST, THEN THE PAGE (user-decided 2026-09-11, reversing the
   2026-08-15 page-first order):** the stage rises with the card, the tally counts while the
-  ruler colors, the standing lands, SHARE closes the card — and only then the credit
+  ruler colors, the standing lands with SHARE, closing the card — and only then the credit
   types, and only once it has printed does the SENTENCE appear, its secrets popping in
   ("score view → source → sentence", the user's second pass the same day: the text used
   to stand from the first frame). The 2026-08-15 rule survives inverted: nothing prints
@@ -1340,10 +1340,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `onToday`, `.flip-today`), because a locked screen with nothing left to do must say
     where to go. RETIRED the same day: a bare back arrow in the left slot ("a few white
     pixels appearing in the header might not be very obvious, many might get stuck"), a
-    lit-but-leaving HOME (the one exception to "a lit key goes nowhere" — gone with it, the
-    rule stands whole), and a TODAY under the prompt for the whole round (one commit; the
-    house covers the unlocked round). TOMORROW wears the title's pixel chevron after its
-    word and TODAY the same one turned back (`.btn-arrow`), the two ends of one trip.
+    lit-but-leaving HOME (a lit key that led OUT of the place it lit), and a TODAY under the
+    prompt for the whole round (one commit; the house covers the unlocked round). TOMORROW
+    wears the title's pixel chevron after its word and TODAY the same one turned back
+    (`.btn-arrow`), the two ends of one trip.
   - **`Game` locks LOCALLY** (`locked` = `early && !finished && earlyLocked(...)`, over the
     FULL play log rather than the board's deferred view, so the lock lands on the guess that
     made progress while its floating hit still plays): `submit` refuses, the prompt retires
@@ -3212,7 +3212,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
       nothing) and a non-`http(s)` url (it becomes an href). Songs get NO lyrics (the
       #270 decision stands, reaffirmed 2026-09-08: a verse or chorus is still reproduced
       lyrics). Not here: excerpts on the archive calendar, the share page or the card.
-  - **The reveal reads dissolve → score → standing → SHARE → page since 2026-09-11 (see
+  - **The reveal reads dissolve → score → standing + SHARE → page since 2026-09-11 (see
     the card bullet above; the paragraph below describes the 2026-09-08 page-first order
     it replaced, and its beats still hold in their new places).** The stage rises in;
     the CREDIT types (`SolvedCaption`, hidden with `visibility` until its beat so the text
@@ -3229,13 +3229,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
     numbers and counting **VISIBLE time only** (the interval is throttled on a hidden tab,
     so a wall-clock deadline could reveal the numbers over a half-printed credit on
     return). A source-less puzzle's numbers follow the pops. **Inside the block the reveal
-    runs score → standing → SHARE (user-decided 2026-08-16):** the tally counts its
-    `SCORE_COUNT_MS` WHILE the ruler sweeps in and colorizes (the color wave one
-    `NEUTRAL_HOLD_MS` behind the neutral cells) — one beat saying "here is your run" — then
-    the STANDING lands (`rankIn`, after the longer of the two plus a breath), and SHARE
-    closes the reveal once the standing's own rung-in has played (`shareIn`): the screen
-    ends on its action. The standing's slot is always mounted; SHARE hides IN PLACE with
-    its footprint kept, so neither arrival moves anything.
+    runs score → standing → SHARE (user-decided 2026-08-16):** the card lands reading 0
+    over the whole bar, every cell there and none coloured (user-decided 2026-09-11); then
+    the tally counts its `SCORE_COUNT_MS` WHILE the bar colours in try by try, each tick
+    standing as its try is reached — `RunRuler` fills off the count itself (`filled`), so
+    the number always says how many tries are coloured — one beat saying "here is your
+    run"; then the STANDING and SHARE land TOGETHER (`shareIn`), a breath after the count
+    LANDS (the eased, rounded number shows its final value well before the tween's own
+    end, so a timer off `SCORE_COUNT_MS` held a dead beat). SHARE also waiting out the
+    standing's own rung-in was "way too long" (user-reported 2026-09-11). The standing's
+    slot is always mounted; SHARE hides IN PLACE with its footprint kept, so neither
+    arrival moves anything.
   - **Nothing that has landed ever moves:** the score block holds its footprint from frame
     one and arrives at `opacity: 0`, the credit holds its box hidden, the secrets' boxes
     are open before they pop. Rehydrated solves render `.settled` and replay nothing.
@@ -3249,13 +3253,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
     reused rather than reimplemented — `Game.settleReveal` writes the three terminal values
     in one batch (`keyboardLeaving` false, `dissolved` true, `animateResults` false), and
     every beat in `SolvedScreen` already answers `animate: false` with its own final value,
-    so there is no parallel fast path to keep in step with the choreography. Two CSS
-    consequences, both because the settled frame is reached from HALFWAY THROUGH rather
-    than at mount: `.solved-stage.settled` kills the transitions and the pop the
-    rehydrated path never starts (a half-popped word killed mid-animation is otherwise
-    stranded at full size), and `stagger` is 0 when settled, or the ruler's per-cell
-    delays would sweep the bar for over a second after the frame that snapped
-    (`rulerStagger`'s reduced-motion argument, spent on the same problem).
+    so there is no parallel fast path to keep in step with the choreography. One CSS
+    consequence, because the settled frame is reached from HALFWAY THROUGH rather than at
+    mount: `.solved-stage.settled` kills the transitions and the pop the rehydrated path
+    never starts (a half-popped word killed mid-animation is otherwise stranded at full
+    size). The ruler needs nothing of its own: it fills off the count, which snaps with
+    the rest.
     **The gesture is never swallowed:** the listener is CAPTURE-phase on `window` and
     neither cancels nor stops the event, so a tap on a found word settles the result AND
     opens that word's history, and Enter/Space on a focused control settles AND activates
@@ -3370,12 +3373,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   under a shared tick), so the row can reach `MAX_ROW_CELLS + 2`; and since the final try
   always solves, a finished run ALWAYS ends on a keycap (a 3-try perfect game is exactly
   `1️⃣2️⃣3️⃣`, no color at all). `solvedAt` is optional — without it the row is the plain ramp.
-  The ruler's colorize wave paces its
-  per-cell delay with
-  `rulerStagger(n, reduceMotion)`, which returns **0 under reduced motion** — the
-  global CSS rule collapses animation/transition DURATIONS but not DELAYS, so the ramp
-  would otherwise still crawl across the bar for over a second for someone who asked for
-  no motion. The keyboard's exit beat
+  The ruler has no delays of its own since 2026-09-11 — it fills off the tally's count
+  (`RunRuler`'s `filled`) — so under reduced motion, where the count lands at once, so
+  does the bar. The keyboard's exit beat
   releases the RESULT through a signal the DOM has to produce (its own
   `animationend`) — so it carries a **deadline** (`KB_EXIT_FALLBACK_MS`
   in `Game.tsx`), a generous multiple of the real duration, cancelled by the genuine
@@ -3837,6 +3837,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the lit key again ("not intuitive at all") and a ✕ that appeared only on the board and
     the archive ("moving the header icons around on a click is not a great solution").
     A lit key still answers a press (it goes nowhere), so nothing on the row is dead.
+    **The one lit key that goes somewhere is the CALENDAR over an archive PLAY** (a past
+    day, or tomorrow's; user-decided 2026-09-11): the day is the archive's, which is why
+    the key is lit, but the calendar is not on screen, and getting back to it took another
+    key and then the calendar. It leads to the calendar (`HeaderKeys`' `archivePlay`, set
+    by App); on the calendar itself it goes nowhere.
   **THE KEYS, per surface — identical, only the LIT one moves.** Live daily: HOME lit.
   Past day: ARCHIVE lit (a past day is the archive's). Calendar: ARCHIVE lit. Board:
   BOARD lit. Account area — `/account`, `/profile`, both email doors: FACE lit (the
