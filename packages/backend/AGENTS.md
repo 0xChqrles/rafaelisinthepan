@@ -674,8 +674,10 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   was read to authenticate the call — and it is the one true thing the account screen can say
   about an identity whose name and mark it already draws. New env: `MAIL_FROM` (required, like the
   table name — a link flow whose mail cannot be sent strands every player who tries it). New
-  IAM: `ses:SendEmail`, scoped to the stack's own domain identity and conditioned on the one
-  `ses:FromAddress` — **and `dynamodb:ConditionCheckItem`** (added 2026-09-02 on the PR-227
+  IAM: `ses:SendEmail` on EVERY identity of the account (`identity/*` since 2026-09-12 — SES
+  authorizes a send against the RECIPIENT's identity too when the recipient is a verified one,
+  which in the sandbox every recipient is; the domain-only grant answered `AccessDenied` to the
+  first real code) and conditioned on the one `ses:FromAddress` — **and `dynamodb:ConditionCheckItem`** (added 2026-09-02 on the PR-227
   review). A transaction's Put/Update/Delete elements are authorized through the item
   permissions the table grant already carried, but a standalone `ConditionCheck` element is
   NOT: AWS authorizes it through its own action. The adoption asserts rows it does not write
