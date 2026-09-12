@@ -8,6 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const postLinkBody = vi.hoisted(() => vi.fn());
+const adoptLinkedAccount = vi.hoisted(() => vi.fn(() => true));
 const identity = vi.hoisted(() => ({
   current: {
     identity: { token: 'f'.repeat(64), accountId: 'lfd5pqz5pa7zjm5u', deviceId: 'd'.repeat(16) },
@@ -21,6 +22,7 @@ vi.mock('../api', () => ({
   parseAccountSummary: (data: unknown) => data as { mergePending: boolean },
 }));
 vi.mock('../identity', () => ({
+  adoptLinkedAccount,
   currentRequestIdentity: () => identity.current,
   deviceIdentity: () => identity.current?.identity ?? null,
   identityEpochOf: (value: { accountId: string; deviceId: string }) =>
@@ -28,7 +30,8 @@ vi.mock('../identity', () => ({
 }));
 vi.mock('./signedOutVerdict', () => ({ adoptSignedOutVerdict: vi.fn() }));
 
-const { resumeMergeDrain } = await import('./account');
+const { loadAccountSummary, resetAccountSummary, resumeMergeDrain, useAccountStore } =
+  await import('./account');
 
 const answered = (mergePending: boolean) => ({
   ok: true,
@@ -38,6 +41,8 @@ const answered = (mergePending: boolean) => ({
 beforeEach(() => {
   vi.useFakeTimers();
   postLinkBody.mockReset();
+  adoptLinkedAccount.mockClear();
+  resetAccountSummary();
   identity.current = {
     identity: { token: 'f'.repeat(64), accountId: 'lfd5pqz5pa7zjm5u', deviceId: 'd'.repeat(16) },
     epoch: `lfd5pqz5pa7zjm5u:${'d'.repeat(16)}`,
@@ -91,5 +96,36 @@ describe('resumeMergeDrain — a link that still owes a merge', () => {
     resumeMergeDrain(true);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(postLinkBody).not.toHaveBeenCalled();
+  });
+});
+
+// 2026-09-12: the ids a device holds are learned at the bootstrap and at an email link and
+// never re-read — so a device moved to another account on the server (a lost-token repair)
+// kept asking public reads about an account that no longer existed. The summary is the
+// server's own word on which account this device acts as, and it wins.
+describe('the account summary re-homes a device the server has moved', () => {
+  const summaryOf = (accountId: string, deviceId: string) => ({
+    ok: true,
+    json: async () => ({ accountId, deviceId, email: null, createdAt: '', mergePending: false }),
+  });
+
+  it('adopts the account and device the server names when they differ from the held ones', async () => {
+    postLinkBody.mockResolvedValueOnce(summaryOf('vf4dwlhgx4i7hh3m', 'e'.repeat(16)));
+    loadAccountSummary();
+    await vi.waitFor(() => expect(adoptLinkedAccount).toHaveBeenCalled());
+    expect(adoptLinkedAccount).toHaveBeenCalledWith(identity.current!.epoch, {
+      accountId: 'vf4dwlhgx4i7hh3m',
+      deviceId: 'e'.repeat(16),
+    });
+    // The adoption's scope reset re-reads; this answer is not published as the held one's.
+    expect(useAccountStore.getState().summary).toBeNull();
+  });
+
+  it('adopts nothing when the server names the account the device already holds', async () => {
+    postLinkBody.mockResolvedValueOnce(summaryOf('lfd5pqz5pa7zjm5u', 'd'.repeat(16)));
+    loadAccountSummary();
+    await vi.waitFor(() => expect(useAccountStore.getState().phase).toBe('ready'));
+    expect(adoptLinkedAccount).not.toHaveBeenCalled();
+    expect(useAccountStore.getState().summary?.accountId).toBe('lfd5pqz5pa7zjm5u');
   });
 });

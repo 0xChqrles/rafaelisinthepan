@@ -16,7 +16,12 @@
 
 import { create } from 'zustand';
 import { linkUrl, parseAccountSummary, postLinkBody, type AccountSummary } from '../api';
-import { currentRequestIdentity, deviceIdentity, identityEpochOf } from '../identity';
+import {
+  adoptLinkedAccount,
+  currentRequestIdentity,
+  deviceIdentity,
+  identityEpochOf,
+} from '../identity';
 import { adoptSignedOutVerdict } from './signedOutVerdict';
 
 // How hard the client chases a merge the server has not finished. The identity change has
@@ -90,6 +95,25 @@ export function loadAccountSummary(force = false): void {
       // Fenced: an answer that outlived its identity describes an account this device no
       // longer acts as.
       if (currentRequestIdentity(epoch) === null) return;
+      // THE SERVER'S WORD ON WHICH ACCOUNT THIS DEVICE ACTS AS wins over the copy the phone
+      // holds (2026-09-12). The ids are learned at the bootstrap and at an email link and
+      // never re-read, so a device moved to another account BY HAND (a lost-token repair,
+      // done once in production) kept asking public reads about an account that no longer
+      // existed: no name, no mark, a blank face key, while every token-authenticated call
+      // worked. The summary is exactly the answer the link flow adopts on, so it is adopted
+      // the same way; the scope reset that follows re-reads everything under the right
+      // account, this summary included.
+      if (
+        summary.accountId !== resolved.identity.accountId ||
+        summary.deviceId !== resolved.identity.deviceId
+      ) {
+        flight = null;
+        if (
+          adoptLinkedAccount(epoch, { accountId: summary.accountId, deviceId: summary.deviceId })
+        ) {
+          return;
+        }
+      }
       loadedFor = summary.accountId;
       useAccountStore.setState({ phase: 'ready', summary });
       if (summary.mergePending) void drain(resolved.identity.token, epoch, true);

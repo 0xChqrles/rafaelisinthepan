@@ -1011,7 +1011,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `code_spent`, which left this branch dead — PR-227 review.)
   - **`state/account.ts` holds the summary AND the merge drain.** Both screens need the same
     one fact (is this saved, and to what), so `/account` can state it without mounting the
-    flow. The `{token}` read runs only with an account (the #216 no-private-fetch rule) and
+    flow. **The summary also RE-HOMES the device (2026-09-12):** the ids a device holds are
+    learned at the bootstrap and at a link and never re-read, so a device moved to another
+    account on the server (a lost-token repair done by hand in production) kept asking
+    public reads about a deleted account — blank face, no name. A summary naming another
+    `accountId`/`deviceId` is adopted exactly as a link answer is (`adoptLinkedAccount`),
+    and the scope reset re-reads under the right account. The `{token}` read runs only with an account (the #216 no-private-fetch rule) and
     RETRIES the drain, bounded and backed off — those edges are consented relationships, so
     the job may not simply be abandoned, and it is durable either way. It is ACCOUNT-owned,
     so `identityScope` resets it. **A SUCCESSFUL LINK RESUMES THAT SAME DRAIN**
