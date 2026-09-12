@@ -12,6 +12,7 @@ import {
 import { installIdentityScope } from './state/identityScope';
 import { installLocalIdentityDeploy } from './state/localIdentityDeploy';
 import { installVersionCheck } from './versionCheck';
+import { installKeylog } from './keylog';
 import { installTheme } from './theme';
 import './index.css';
 
@@ -78,6 +79,10 @@ async function mount(): Promise<void> {
 
   // Prod only: dev serves no version.json, and HMR already delivers new code to open tabs.
   if (import.meta.env.PROD) installVersionCheck();
+
+  // `?keylog=1`: the on-screen trace of the prompt's raw input events (keylog.ts). Reachable
+  // in production on purpose — it exists for a player's phone we cannot hold.
+  if (new URLSearchParams(window.location.search).has('keylog')) installKeylog();
 
   createRoot(document.getElementById('root') as HTMLElement).render(
     <StrictMode>

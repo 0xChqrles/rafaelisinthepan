@@ -552,7 +552,11 @@ pnpm typecheck  # tsc --noEmit
 Front-end dev harnesses: `?tutorial=1` forces the tutorial, `?streak=N` previews the
 streak celebration, `?error=<variant>` previews the error screen against a real backdrop
 (`dev/errorPreview.ts` — every variant is a real call site's copy; bare `?error` takes the
-account one, closing CYCLES the set). All dev only. There is **no `?puzzle=` file override** — the front
+account one, closing CYCLES the set). All dev only — EXCEPT **`?keylog=1`** (`keylog.ts`,
+2026-09-12), which works in PRODUCTION on purpose: it draws every raw event the guess prompt
+and the on-screen keyboard receive, and the prompt's text after each, in a corner overlay,
+so a player whose phone we cannot hold can send a screenshot that says which handler fired
+and how often. There is **no `?puzzle=` file override** — the front
 always loads the day's puzzle from the backend (test a specific puzzle by publishing
 it to the local store — see `packages/backend/AGENTS.md`).
 
@@ -4220,7 +4224,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   The prompt's drawn line is `aria-hidden`; the field carries the value and `ariaGuess`
   names it. The on-screen keys answer a POINTER on `pointerdown` (instant, and
   `preventDefault` keeps the caret in the field) and a KEYBOARD on the `click` that Enter or
-  Space makes, told apart by `detail === 0` so a tap never fires twice.
+  Space makes, told apart by `detail === 0` AND by no pointerdown on the keyboard within the
+  last `POINTER_CLICK_MS` (1s; 2026-09-12 — a synthesized tap click with `detail` 0, iOS
+  Safari's documented first-tap double click, must not type twice) so a tap never fires twice.
   Both input sources drive one **folded-slug** `input` state in `Game` via three shared
   actions — `appendChar` (validated), `deleteChar`, `replaceInput` (Up/Down history
   recall, sourced from the round's **persisted** `tried` list so recall survives reload) —

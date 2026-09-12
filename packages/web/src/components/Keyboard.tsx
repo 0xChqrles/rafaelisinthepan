@@ -1,4 +1,4 @@
-import { useCallback, useState, type MouseEvent, type PointerEvent } from 'react';
+import { useCallback, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
 import { KEYBOARD_ROWS, canExtend } from '../game/keyboard';
 // Inline SVG components (vite-plugin-svgr `?react`): they render into the DOM and paint
 // with `fill="currentColor"`, so each control key's icon inherits its `color` — muted for
@@ -26,6 +26,9 @@ interface KeyboardProps {
 // retriggers the CSS animation even on repeated taps of the same key.
 type Shake = { id: string; nonce: number } | null;
 
+// How long after a pointerdown a click on the keyboard is still that press's own click.
+const POINTER_CLICK_MS = 1000;
+
 // The custom on-screen keyboard (issue #36). It is the keyboard on a phone: the guess
 // field beside it asks for no native one (`inputmode="none"`), so the soft keyboard never
 // opens over the game's own. Letters/dash that cannot extend the current input into any
@@ -46,6 +49,8 @@ export default function Keyboard({
   onSubmit,
 }: KeyboardProps) {
   const [shake, setShake] = useState<Shake>(null);
+  // When a POINTER last pressed a key here — see `activate`.
+  const pointerAt = useRef(-Infinity);
 
   const triggerShake = useCallback((id: string) => {
     setShake((prev) => ({ id, nonce: (prev?.nonce ?? 0) + 1 }));
@@ -57,6 +62,7 @@ export default function Keyboard({
   const press = useCallback(
     (e: PointerEvent<HTMLButtonElement>, run: () => void) => {
       e.preventDefault();
+      pointerAt.current = performance.now();
       run();
     },
     [],
@@ -66,10 +72,13 @@ export default function Keyboard({
   // arrive here as a click with no pointer behind it, which is what `detail === 0` says (a
   // real click reports how many times the pointer was pressed). Answering `click`
   // unconditionally would fire every key twice for a tap, since a pointerdown is followed
-  // by one.
+  // by one. `detail` is not the only guard (2026-09-12): a click that follows a pointerdown
+  // on this keyboard within POINTER_CLICK_MS is that tap's own click whatever it reports —
+  // a browser or an assistive tool that synthesizes the tap's click with `detail` 0 (iOS
+  // Safari's documented double click on a first tap) must not type the letter twice.
   const activate = useCallback(
     (e: MouseEvent<HTMLButtonElement>, run: () => void) => {
-      if (e.detail !== 0) return;
+      if (e.detail !== 0 || performance.now() - pointerAt.current < POINTER_CLICK_MS) return;
       run();
     },
     [],
