@@ -701,8 +701,9 @@ The live routes then share:
   (sign out, then sign in); it is reached through RECONNECT. Repo-wide consequences: RECONNECT lands on
   `/account/signin`; SEND CODE is the sixth deploy trigger; **a link signs the account's
   OTHER devices out** when the left account is deleted (they fail the account-existence check).
-- **Infra**: SES domain identity with EasyDKIM in the API's hosted zone; `ses:SendEmail`
-  scoped to it and to one `ses:FromAddress`. **By hand, never automated**: SES sandbox exit,
+- **Infra**: SES domain identity with EasyDKIM in the API's hosted zone; `ses:SendEmail` on
+  every identity of the account (`identity/*` — a verified RECIPIENT is an identity the send is
+  authorized against too, 2026-09-12) and one `ses:FromAddress`. **By hand, never automated**: SES sandbox exit,
   and the SPF + DMARC TXT records (zone mail policy). `pnpm backend:dev` PRINTS the code to
   its log (`consoleMailer`). `backend/src/mailer.ts` is ONE message shape and must not be
   widened.

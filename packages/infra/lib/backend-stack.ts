@@ -281,14 +281,18 @@ export class BackendStack extends Stack {
         resourceName: name.replace(/^\/+/, ''),
         arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
       });
-    // #204's link codes. Scoped to the ONE verified identity this stack owns and, through
-    // `ses:FromAddress`, to the ONE address it sends as: a leaked role may not turn this
-    // account's reputation into somebody else's mail.
+    // #204's link codes. Bounded through `ses:FromAddress` to the ONE address it sends as: a
+    // leaked role may not turn this account's reputation into somebody else's mail. The
+    // RESOURCE is every identity in the account, not only the stack's own domain
+    // (2026-09-12): SES authorizes a send against every identity the message touches, and a
+    // RECIPIENT who is a verified identity — which in the sandbox every recipient is — is one
+    // of them, so the domain-only grant answered `AccessDeniedException` to the first code
+    // sent to a verified player. The forwarder below grants the same shape for the same reason.
     fn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ['ses:SendEmail'],
         resources: [
-          this.formatArn({ service: 'ses', resource: 'identity', resourceName: props.domainName ?? '*' }),
+          this.formatArn({ service: 'ses', resource: 'identity', resourceName: '*' }),
           this.formatArn({ service: 'ses', resource: 'configuration-set', resourceName: '*' }),
         ],
         conditions: { StringEquals: { 'ses:FromAddress': mailFrom } },

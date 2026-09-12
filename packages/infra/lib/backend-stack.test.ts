@@ -293,6 +293,9 @@ describe('score production boundary (#169)', () => {
     );
     expect(send).toHaveLength(1);
     expect(send[0].Condition).toEqual({ StringEquals: { 'ses:FromAddress': MAIL_FROM } });
+    // Every identity, not the domain alone: a verified RECIPIENT is an identity the send is
+    // authorized against too (2026-09-12), and the sender bound above is the guard that matters.
+    expect(JSON.stringify(send[0].Resource)).toContain(':identity/*');
     const functions = Object.values(template.findResources('AWS::Lambda::Function'));
     expect(functions[0].Properties.Environment.Variables).toMatchObject({ MAIL_FROM });
   });
