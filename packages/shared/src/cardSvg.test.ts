@@ -11,7 +11,7 @@ import { anonName, defaultAvatar } from './assigned';
 import { decodeAvatar, encodeAvatar, AVATAR_CELLS, AVATAR_PALETTES } from './avatar';
 import {
   renderCardSvg,
-  renderInviteCardSvg,
+  renderGroupCardSvg,
   renderWordCardSvg,
   CARD_WIDTH,
   WORD_RARITY_COLORS,
@@ -278,46 +278,57 @@ describe('renderWordCardSvg', () => {
   });
 });
 
-// CONTRACT (#189, 2026-08-20): the invite card carries THREE things and no fourth — the
-// player's mark, their name, the app name. What is pinned here is the identity it
-// resolves, not the layout: a card that named a different player than every board row
-// shows would make one person two people, which is the reason `assigned.ts` moved into
-// this package at all.
-describe('renderInviteCardSvg', () => {
+// CONTRACT (#271): the group card carries THREE things and no fourth — the group's name,
+// its members' marks, the app name. What is pinned here is the identity each mark
+// resolves, not the layout: a card that drew a member differently from every board row
+// would make one person two people, which is the reason `assigned.ts` lives in this
+// package at all.
+describe('renderGroupCardSvg', () => {
   const id = 'abcdefghij234567';
+  const other = 'zwjxqk37xfkvtxqu';
 
-  it('draws the stored name and the stored mark', () => {
+  it('draws the group name and every member mark, stored or assigned', () => {
     const avatar = encodeAvatar(2, new Array<number>(AVATAR_CELLS).fill(0).map((_, i) => (i % 3 === 0 ? 1 : 0)));
-    const svg = renderInviteCardSvg({ publicId: id, name: 'Chqrles', avatar });
-    expect(svg).toContain('>Chqrles<');
+    const svg = renderGroupCardSvg({
+      name: 'Les_copains',
+      members: [
+        { publicId: id, name: 'Chqrles', avatar },
+        { publicId: other, name: '', avatar: null },
+      ],
+    });
+    expect(svg).toContain('>Les_copains<');
     expect(svg).toContain(AVATAR_PALETTES[2].fg);
-    expect(svg).toContain(AVATAR_PALETTES[2].bg);
-  });
-
-  it('falls back to the ASSIGNED identity — the one every board row already shows', () => {
-    const svg = renderInviteCardSvg({ publicId: id, name: '', avatar: null });
-    expect(svg).toContain(`>${anonName(id)}<`);
-    const { palette } = decodeAvatar(defaultAvatar(id));
+    const { palette } = decodeAvatar(defaultAvatar(other));
     expect(svg).toContain(AVATAR_PALETTES[palette].fg);
+    expect(svg.match(/<clipPath /g)).toHaveLength(2);
   });
 
-  it('says the app name, and nothing else besides the player', () => {
-    const svg = renderInviteCardSvg({ publicId: id, name: 'Chqrles', avatar: null });
+  it('says the app name, and nothing else besides the group', () => {
+    const svg = renderGroupCardSvg({ name: 'Bureau', members: [{ publicId: id, name: '', avatar: null }] });
     const texts = [...svg.matchAll(/>([^<>]+)<\/text>/g)].map((m) => m[1]);
-    expect(texts).toEqual(['Chqrles', 'WHIPPIN AI']);
+    expect(texts).toEqual(['Bureau', 'WHIPPIN AI']);
+  });
+
+  it('folds a large group into six tiles: five marks and a +N count', () => {
+    const members = Array.from({ length: 9 }, (_, i) => ({
+      publicId: `member${String(i).padStart(10, '0')}`,
+      name: '',
+      avatar: null,
+    }));
+    const svg = renderGroupCardSvg({ name: 'Big', members });
+    expect(svg.match(/<clipPath /g)).toHaveLength(5);
+    expect(svg).toContain('>+4<');
   });
 
   it('still draws a face for a stored string that will not decode', () => {
-    const svg = renderInviteCardSvg({ publicId: id, name: 'Chqrles', avatar: 'not-an-avatar' });
+    const svg = renderGroupCardSvg({ name: 'X', members: [{ publicId: id, name: '', avatar: 'not-an-avatar' }] });
     const { palette } = decodeAvatar(defaultAvatar(id));
     expect(svg).toContain(AVATAR_PALETTES[palette].bg);
   });
 
   it('keeps a long name inside the card on ONE line', () => {
-    // The stored charset caps a name at NAME_MAX_LENGTH; the divide is what holds the
-    // longest one to its column rather than letting it set edge to edge.
     const name = 'W'.repeat(NAME_MAX_LENGTH);
-    const svg = renderInviteCardSvg({ publicId: id, name, avatar: null });
+    const svg = renderGroupCardSvg({ name, members: [] });
     const size = Number(/font-size="(\d+)"[^>]*>W+<\/text>/.exec(svg)![1]);
     expect(name.length * size).toBeLessThan(CARD_WIDTH);
     expect(svg.match(/<text /g)).toHaveLength(2);

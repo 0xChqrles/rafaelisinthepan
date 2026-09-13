@@ -74,7 +74,7 @@ describe('score production boundary (#169)', () => {
     const policies = Object.values(
       template.findResources('AWS::CloudFront::OriginRequestPolicy'),
     );
-    // The score policy, the profile policy (#188), the friends policy (#189), the
+    // The score policy, the profile policy (#188), the groups policy (#271), the
     // board policy (#190), the round policy (#201), the history policy (#211), the
     // devices policy (#216) and the account-link policy (#204) — each forwards exactly the
     // queries its handler route reads (the root AGENTS.md allowList contract).
@@ -134,30 +134,31 @@ describe('score production boundary (#169)', () => {
     });
   });
 
-  it('uses a deployable zero-cache friends behavior forwarding NO query (#189)', () => {
+  it('uses a deployable zero-cache groups behavior forwarding exactly `id` (#271)', () => {
     const distributions = Object.values(template.findResources('AWS::CloudFront::Distribution'));
     const behaviors = distributions[0].Properties.DistributionConfig.CacheBehaviors as Record<
       string,
       unknown
     >[];
-    const friends = behaviors.find(({ PathPattern }) => PathPattern === 'friends*');
-    // The graph is live data, like /scores and /profile.
-    expect(friends?.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
-    // The route is POST-only: the device token authenticates in the body.
-    expect(friends?.AllowedMethods).toContain('POST');
+    const groups = behaviors.find(({ PathPattern }) => PathPattern === 'groups*');
+    // Memberships are live data, like /scores and /profile.
+    expect(groups?.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
+    // Every write is a POST: the device token authenticates in the body.
+    expect(groups?.AllowedMethods).toContain('POST');
 
     const policies = Object.values(
       template.findResources('AWS::CloudFront::OriginRequestPolicy'),
     );
-    const friendsPolicy = policies.find(
-      (policy) => policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinFriendsOrigin',
+    const groupsPolicy = policies.find(
+      (policy) => policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinGroupsOrigin',
     );
-    // Nothing to forward: the handler reads no query parameter at all. The header mode is
-    // still the Lambda-URL-safe one, since it is what carries the OAC-signed body hash.
-    expect(friendsPolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
-      QueryStringBehavior: 'none',
+    // ONE query: the public group id the GET answers a face for. The header mode is still
+    // the Lambda-URL-safe one, since it is what carries the OAC-signed body hash.
+    expect(groupsPolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
+      QueryStringBehavior: 'whitelist',
+      QueryStrings: ['id'],
     });
-    expect(friendsPolicy?.Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
+    expect(groupsPolicy?.Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
       HeaderBehavior: 'allExcept',
       Headers: ['Host'],
     });
@@ -172,7 +173,7 @@ describe('score production boundary (#169)', () => {
     const board = behaviors.find(({ PathPattern }) => PathPattern === 'board*');
     // The leaderboard is live data, like the other three.
     expect(board?.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
-    // POST must be allowed (the authenticated friends-board read).
+    // POST must be allowed (the authenticated group-board read).
     expect(board?.AllowedMethods).toContain('POST');
 
     const policies = Object.values(
@@ -242,7 +243,7 @@ describe('score production boundary (#169)', () => {
     const devicesPolicy = policies.find(
       (policy) => policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinDevicesOrigin',
     );
-    // Nothing to forward — the /friends rule. The header mode still has to be the
+    // Nothing to forward — the token rides in the body. The header mode still has to be the
     // Lambda-URL-safe one, since it is what carries the OAC-signed body hash.
     expect(devicesPolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
       QueryStringBehavior: 'none',
@@ -262,7 +263,7 @@ describe('score production boundary (#169)', () => {
     const link = behaviors.find(({ PathPattern }) => PathPattern === 'link*');
     // An account link is live AND private: it must never sit at the edge.
     expect(link?.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
-    // POST-only: the device token authenticates in the body, like /friends and /devices.
+    // POST-only: the device token authenticates in the body, like /groups and /devices.
     expect(link?.AllowedMethods).toContain('POST');
 
     const policies = Object.values(
@@ -271,7 +272,7 @@ describe('score production boundary (#169)', () => {
     const linkPolicy = policies.find(
       (policy) => policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinAccountLinkOrigin',
     );
-    // Nothing to forward — the /friends rule. The header mode still has to be the
+    // Nothing to forward — the token rides in the body. The header mode still has to be the
     // Lambda-URL-safe one, since it is what carries the OAC-signed body hash.
     expect(linkPolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
       QueryStringBehavior: 'none',
@@ -309,7 +310,7 @@ describe('score production boundary (#169)', () => {
     const history = behaviors.find(({ PathPattern }) => PathPattern === 'history*');
     // A player's own history is live AND private: it must never sit at the edge.
     expect(history?.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
-    // POST-only: the device token authenticates in the body, like /friends and /round.
+    // POST-only: the device token authenticates in the body, like /groups and /round.
     expect(history?.AllowedMethods).toContain('POST');
 
     const policies = Object.values(
@@ -370,7 +371,7 @@ describe('score production boundary (#169)', () => {
       expect(associations[0].EventType, pattern).toBe('viewer-request');
     }
     // The routes with no per-address logic stay clean.
-    for (const pattern of ['profile*', 'board*', 'friends*', 'history*']) {
+    for (const pattern of ['profile*', 'board*', 'groups*', 'history*']) {
       const behavior = behaviors.find(({ PathPattern }) => PathPattern === pattern);
       expect(behavior?.FunctionAssociations, pattern).toBeUndefined();
     }
@@ -410,7 +411,7 @@ describe('per-player score storage (#187)', () => {
     });
   });
 
-  it('grants the handler exactly the row-store surface: Query, Get/BatchGet, conditional Put, Update, friend Delete, adoption ConditionCheck', () => {
+  it('grants the handler exactly the row-store surface: Query, Get/BatchGet, conditional Put, Update, membership Delete, adoption ConditionCheck', () => {
     const policies = Object.values(template.findResources('AWS::IAM::Policy'));
     const statements = policies.flatMap(
       (policy) => policy.Properties.PolicyDocument.Statement as { Action?: unknown }[],
@@ -421,11 +422,11 @@ describe('per-player score storage (#187)', () => {
     expect(statement?.Action).toEqual([
       'dynamodb:Query',
       'dynamodb:GetItem',
-      // #190's friends board reads a KNOWN key set in batches, never a Scan.
+      // #190's group board reads a KNOWN key set in batches, never a Scan.
       'dynamodb:BatchGetItem',
       'dynamodb:PutItem',
       'dynamodb:UpdateItem',
-      // #189's symmetric removal is the only thing on this table that deletes.
+      // Leaving a group (#271), device revocation and #204's erase are what delete here.
       'dynamodb:DeleteItem',
       // #204's adoption asserts rows it does not write (the adopted account, a surviving
       // source, every guarded no-move). A standalone ConditionCheck element is authorized

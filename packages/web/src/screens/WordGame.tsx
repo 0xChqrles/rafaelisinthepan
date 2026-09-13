@@ -5,7 +5,7 @@ import LoadingWave from '../components/LoadingWave';
 import useVocab from '../hooks/useVocab';
 import { KB_EXIT_FALLBACK_MS } from './Game';
 import { useDeadlinePassed } from '../hooks/useCountdown';
-import useScoreHistogram from '../hooks/useScoreHistogram';
+import useGroupStanding from '../hooks/useGroupStanding';
 import useWordRoundSync from '../hooks/useWordRoundSync';
 import { finishWordRound, retryWordRoundSync, startWordRound } from '../state/wordRoundSync';
 import { prefetchTurnstileTokens } from '../turnstile';
@@ -265,19 +265,19 @@ function WordRound({
   const run = useMemo(() => replayWordRun(ranks, tried), [ranks, tried]);
   const score = run.claimed.length;
 
-  // The day's score population (#170), READ once the SERVER holds this run (#203). The
-  // claim count is no longer POSTed: the end-of-run SUBMISSION is what records the row, so
-  // the standing is readable exactly when that write has been acknowledged — which
-  // `settled` already says, whether this device wrote the run or merely read that another
-  // one had. A run this device merely watched therefore draws no standing until the device
-  // playing it submits, which is the same one fact rather than a rule of its own. Renders
-  // on the post-mortem only.
-  const placement = useScoreHistogram({
+  // Where this run stands in the player's group today (#271), READ once the SERVER holds
+  // this run (#203): the end-of-run SUBMISSION is what records the row, so the standing is
+  // readable exactly when that write has been acknowledged — which `settled` already says,
+  // whether this device wrote the run or merely read that another one had. A run this
+  // device merely watched therefore draws no standing until the device playing it submits.
+  // Renders on the post-mortem only.
+  const lastGroupId = useGameStore((s) => s.lastGroupId);
+  const standing = useGroupStanding({
     finished: settled,
     mode: 'word',
     lang,
     dayNumber,
-    score,
+    lastGroupId,
   });
 
   // The claims broken down by grade, ladder order — what the end screen's share text, the
@@ -791,7 +791,7 @@ function WordRound({
               dayNumber={dayNumber}
               lang={lang}
               word={puzzle.word.word}
-              placement={placement}
+              standing={standing}
               animate={animateResults}
             />
           </div>

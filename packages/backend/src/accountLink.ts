@@ -5,7 +5,7 @@
 // The state changes are two steps, in the order that makes every partial failure safe:
 //
 //   1. COMMIT — `LinkStore.adopt`, ONE transaction: the challenge is consumed, the device
-//      moves, the account being left is deleted with its profile row, the friend-merge job
+//      moves, the account being left is deleted with its profile row, the departure job
 //      is persisted, and the ACTIVE DAY's play moves with the device (`supportedTuples`,
 //      every tuple where the destination has nothing and the source has play). Indivisible,
 //      because the half-states are not equally harmless: a device left on a DELETED account
@@ -13,16 +13,19 @@
 //      adoption that never commits is play under an account nobody holds — the first cut
 //      moved the play in separate writes BEFORE the commit and could leave exactly that,
 //      which no retry, claim or takeover could then honestly own.
-//   2. DRAIN the friend merge. Up to 200 mutual edges is 800 rows, which cannot fit one
-//      transaction, so the job written in step 1 is what makes the fan-out durable: it is
-//      idempotent, resumable, and its own last act is to delete itself.
+//   2. DRAIN the departure (#271). A deleted account LEAVES EVERY GROUP it was in — its
+//      memberships are dropped, never carried across — and that fan-out cannot ride the
+//      commit: a membership can land between a read and the transaction, and only a
+//      re-read until empty is sure to catch it (a join asserts the account exists, so
+//      after the commit nothing new can land). The job written in step 1 is what makes it
+//      durable: idempotent, resumable, and its own last act is to delete itself.
 //
 // The solved-day credit a transferred sentence solve owes the adopting account's streak
 // follows step 1 as a logged, non-fatal side effect, the round route's own rule for that
 // rebuildable collection.
 
 import { bestStreak, currentStreak, VOCAB_BUILDS } from '@whippin/shared';
-import { FRIENDS_MAX, type FriendStore, type FriendTransfer } from './friendStore';
+import type { GroupStore } from './groupStore';
 import type { PlayerHistoryStore } from './historyStore';
 import type { LinkStore } from './linkStore';
 import type { ScoreMode } from './scoreLimits';
@@ -69,105 +72,35 @@ export async function accountStakes(
   };
 }
 
-// One PASS of the friend merge: read what is left of the account being deleted, decide each
-// friendship's fate, and write the batch. The rules are #204's, in order:
-//
-//   1. keep every friendship the adopting account already has;
-//   2. remove the two accounts themselves and the duplicates from the list being merged;
-//   3. fill the remaining capacity with the rest, OLDEST FIRST, ties by friend id;
-//   4. rewrite both directions of every kept friendship onto the adopting account;
-//   5. when no slot remains, DROP the friendship and remove both facing edges — no link is
-//      left pointing at an account that no longer exists.
-//
-// Deciding it per pass rather than once is what makes the job resumable: whatever a partial
-// batch already moved is simply absent from the next read, and the ordering rule picks up
-// exactly where it left off.
-async function mergePass(friends: FriendStore, from: string, to: string): Promise<number> {
-  const leaving = await friends.entries(from);
-  if (leaving.length === 0) return 0;
-  const held = new Set(await friends.list(to));
-  // The source↔destination edge is always deleted below. It therefore consumes no slot in
-  // the graph that will stand after this pass; counting it here drops one valid candidate
-  // and leaves a full merge at FRIENDS_MAX - 1.
-  held.delete(from);
-  // The two accounts' own edge to each other, if the player ever invited themselves across
-  // devices: it is DROPPED, never moved — the adopting account cannot befriend itself, and
-  // the edge would otherwise survive pointing at a deleted player.
-  const drops: FriendTransfer[] = [];
-  const candidates: typeof leaving = [];
-  for (const edge of leaving) {
-    // A duplicate needs only its two `from`-facing rows removed: the adopting account
-    // already holds this friendship, so there is nothing to write on its side.
-    if (edge.friendId === to || held.has(edge.friendId)) {
-      drops.push({ friendId: edge.friendId, keep: false, createdAt: edge.createdAt });
-    } else {
-      candidates.push(edge);
-    }
-  }
-  candidates.sort((a, b) =>
-    a.createdAt === b.createdAt
-      ? a.friendId < b.friendId
-        ? -1
-        : 1
-      : a.createdAt < b.createdAt
-        ? -1
-        : 1,
-  );
-  // The present cap is ACCEPTED here (#204): a future pagination change may remove it, but
-  // this issue neither waits for that work nor promises to recover an edge dropped now.
-  const room = Math.max(0, FRIENDS_MAX - held.size);
-  const moves: FriendTransfer[] = [
-    ...drops,
-    ...candidates.map((edge, index) => ({
-      friendId: edge.friendId,
-      keep: index < room,
-      createdAt: edge.createdAt,
-    })),
-  ];
-  await friends.transfer(from, to, moves);
-  return moves.length;
-}
-
-// A merge cannot need more passes than the cap allows friendships, and each pass writes at
-// least one move or reports zero and ends the loop — so this bound can only be reached by a
-// store that is not shrinking the partition it was told to, which is a bug rather than a
-// retry.
-const MERGE_MAX_PASSES = FRIENDS_MAX + 1;
-
-export async function mergeFriends(friends: FriendStore, from: string, to: string): Promise<void> {
-  for (let pass = 0; pass < MERGE_MAX_PASSES; pass += 1) {
-    if ((await mergePass(friends, from, to)) === 0) return;
-  }
-  throw new Error(`Friend merge from ${from} did not converge.`);
-}
-
 // Finish whatever this account still owes. Normally there is nothing — one small Query over
-// an empty partition — and after a link there is exactly one job.
+// an empty partition — and after an erasing link there is exactly one job: the deleted
+// account's group memberships to drop (`GroupStore.leaveAll` re-reads until empty).
 //
 // A failure is REPORTED, not thrown: the identity change has already committed, the answer
 // the player is waiting for is about their account, and the job survives to be drained by
-// the next call. The route says `mergePending` so the client can ask again.
-export async function drainMerges(
+// the next call. The route says `departurePending` so the client can ask again.
+export async function drainDepartures(
   links: LinkStore,
-  friends: FriendStore,
+  groups: GroupStore,
   accountId: string,
 ): Promise<boolean> {
   let pending: string[];
   try {
-    pending = await links.pendingMerges(accountId);
+    pending = await links.pendingDepartures(accountId);
   } catch (error) {
-    console.warn('[link] pending merge lookup failed:', error);
+    console.warn('[link] pending departure lookup failed:', error);
     return false;
   }
   let done = true;
   for (const from of pending) {
     try {
-      await mergeFriends(friends, from, accountId);
-      await links.clearMerge(accountId, from);
+      await groups.leaveAll(from);
+      await links.clearDeparture(accountId, from);
     } catch (error) {
-      // LOGGED and left queued. The edges are consented relationships, so the job may not be
-      // abandoned — but it also may not fail the link that already happened.
-      console.warn(`[link] friend merge ${from} -> ${accountId} unfinished:`, error);
+      // LOGGED and left queued. A membership pointing at a deleted account keeps a ghost on
+      // a group's member count, so the job may not be abandoned — but it also may not fail
+      // the link that already happened.
+      console.warn(`[link] group departure of ${from} (adopted by ${accountId}) unfinished:`, error);
       done = false;
     }
   }

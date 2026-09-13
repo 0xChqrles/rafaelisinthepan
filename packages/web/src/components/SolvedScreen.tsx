@@ -3,9 +3,9 @@ import type { CSSProperties } from 'react';
 import { INFINITY_EM_HEIGHT, INFINITY_EM_WIDTH, INFINITY_GLYPH, type Source } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { shareHeadline, shareText, shareUrl } from '../game/share';
-import type { ScorePlacementState } from '../hooks/useScoreHistogram';
+import type { GroupStandingState } from '../hooks/useGroupStanding';
 import RunRuler from './RunRuler';
-import ScoreTop from './ScoreTop';
+import GroupStanding from './GroupStanding';
 import SolvedCaption, { captionDurationMs } from './SolvedCaption';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useShare from '../hooks/useShare';
@@ -21,7 +21,7 @@ import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 // dissolved sentence handed over (the 2026-08-14 hand-over, restored), and it stacks:
 //
 //   SCORE   — at the TOP, right under the header: the named `<tries> TRIES` over its run
-//             ruler, the day's standing badge, and SHARE (sharing is what you do with a
+//             ruler, the group standing line, and SHARE (sharing is what you do with a
 //             RESULT, user-decided 2026-08-14). Its height is the same on
 //             every round, and it is above the fold on every phone — SHARE is the
 //             reveal's closing beat and the game's one liked-indicator, and it is never
@@ -109,7 +109,7 @@ export default function SolvedScreen({
   words,
   holes,
   onExplore,
-  placement = null,
+  standing = null,
   capped = false,
   animate = true,
   start = true,
@@ -125,11 +125,11 @@ export default function SolvedScreen({
   words: string[]; // the sentence's full display tokens (the puzzle's own `words[]`)
   holes: SolvedHole[]; // one entry per occurrence, sorted by `pos` — the secrets inside it
   onExplore: (holeIndex: number) => void;
-  // The day's score population (#170): 'pending' while the round trip is in flight
-  // (the slot shows RANKING...); null renders the reserved empty slot (silent).
-  placement?: ScorePlacementState;
+  // Where this score stands today in the player's group (#271): 'pending' while the read
+  // is in flight; null renders nothing (silent — no group, no row, or a failure).
+  standing?: GroupStandingState;
   // The round hit the server's guess cap unsolved (#214): the HEADLINE becomes `∞` and no
-  // leaderboard entry exists (`placement` is null by construction — a capped round's solve
+  // leaderboard entry exists (`standing` is null by construction — a capped round's solve
   // never reached the server). Everything else is an ordinary result: the sentence with its
   // answer in place, the credit, the ruler at its real length, and SHARE.
   capped?: boolean;
@@ -377,8 +377,8 @@ export default function SolvedScreen({
         {/* The primary sentence metric. The hidden final value reserves the count's width
             so its tally never moves the content below it — a capped round has no tally to
             reserve for, since `∞` is one fixed shape. Where this run stands among the
-            day's players (#170) is the TOP badge BESIDE the number (user-decided
-            2026-09-05), absolutely placed so its arrival moves nothing. */}
+            player's group (#271) is the STANDING LINE BESIDE the number (the #170 TOP
+            badge's slot), absolutely placed so its arrival moves nothing. */}
         <span className="solved-score">
           <span className="solved-score-line">
             {capped ? (
@@ -394,8 +394,8 @@ export default function SolvedScreen({
                 <span className="solved-score-live">{shownCount}</span>
               </span>
             )}
-            <ScoreTop
-              placement={placement}
+            <GroupStanding
+              standing={standing}
               mode="sentence"
               lang={lang}
               animate={animate}

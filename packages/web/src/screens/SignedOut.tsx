@@ -29,7 +29,7 @@
 // says the one thing they need before making it — this tap starts over on a new account,
 // and the one named above is left — in two short sentences, in the shared `gatePlay` label
 // both game gates already wear. The tap then has to BE that: it lifts the verdict and hands
-// the destination to App's home redirect (`FriendInvite`'s own `continueToGame`), because a
+// the destination to App's home redirect (`GroupInvite`'s own `continueToGame`), because a
 // button that says PLAY on a leaderboard route must not leave the player on the leaderboard.
 // The new account itself is minted by the game's own PLAY gate, the #216 trigger it lands on.
 //
@@ -59,7 +59,7 @@ import { timeoutSignal } from '../timeout';
 
 // Leave the account behind and go play: the verdict is lifted (which is also what removes
 // the persisted tombstone, origin-wide), then App's home redirect resolves the last-played
-// game route — `FriendInvite`'s exact hand-off.
+// game route — `GroupInvite`'s exact hand-off.
 const playFresh = () => {
   startFreshDevice();
   navigate('/', { replace: true });

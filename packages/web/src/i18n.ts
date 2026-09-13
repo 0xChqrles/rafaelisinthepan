@@ -33,9 +33,15 @@ const STRINGS = {
   // needs its own words: a month is drawn, so "failed to load" would be plainly false, and
   // the thing the reader has to know is that what they are looking at may be out of date.
   staleHistory: { en: 'HISTORY MAY BE OUT OF DATE', fr: 'HISTORIQUE PEUT-ÊTRE OBSOLÈTE' },
-  // The #189 invite link's write, loud for the same reason: it is the one thing that
-  // click existed to do, so losing it silently would leave both players none the wiser.
-  failedInvite: { en: 'FAILED TO ADD FRIEND', fr: "ÉCHEC DE L'AJOUT EN AMI" },
+  // The #271 group invite's write, loud for the same reason: it is the one thing that
+  // tap existed to do, so losing it silently would leave everyone none the wiser.
+  failedJoin: { en: 'FAILED TO JOIN', fr: "ÉCHEC DE L'ADHÉSION" },
+  // A group write that did not land (create, leave, remove) — the same loudness.
+  failedGroup: { en: 'FAILED', fr: 'ÉCHEC' },
+  failedGroupNote: {
+    en: 'The group was not changed. Check your connection and try again.',
+    fr: "Le groupe n'a pas été modifié. Vérifiez votre connexion et réessayez.",
+  },
   // Neither the native sheet nor the clipboard could deliver (insecure context, denied
   // clipboard, a spent activation): the one share whose silence reads as a dead button.
   // On the error surface, whose TRY AGAIN shares inside its own fresh activation — which
@@ -50,11 +56,17 @@ const STRINGS = {
   // stamps the clock, so a failed start is a run that has not begun. Saying nothing would
   // leave the player tapping PLAY at a gate that never opens.
   failedStart: { en: 'FAILED TO START', fr: 'ÉCHEC DU DÉMARRAGE' },
-  // The one refusal a player can act on, so it is the one refusal that speaks (#189). Asking
-  // again cannot change it — a full list is a state, not a hiccup — so this reads as a fact
-  // and its button plays rather than retries. Neutral about WHOSE list: the cap binds either
-  // side of the pair, and the clicker cannot tell which.
-  friendListFull: { en: 'FRIEND LIST FULL', fr: "LISTE D'AMIS PLEINE" },
+  // The refusals a player can act on, so they are the refusals that speak (#271). Asking
+  // again cannot change them — a full group is a state, not a hiccup — so this reads as a
+  // fact and its button plays rather than retries. ONE line for both caps: the group is
+  // full, or the clicker is in too many groups; either way this group is not joinable now.
+  groupFull: { en: 'GROUP FULL', fr: 'GROUPE COMPLET' },
+  // The caller's own cap, on a create or a join from the board.
+  groupLimit: { en: 'TOO MANY GROUPS', fr: 'TROP DE GROUPES' },
+  groupLimitNote: {
+    en: 'Leave a group to join or create another one.',
+    fr: 'Quittez un groupe pour en rejoindre ou en créer un autre.',
+  },
   retry: { en: 'RETRY', fr: 'RÉESSAYER' },
   // The error screen's way OUT (2026-08-27, when the sheet became a full-screen modal).
   // It is not "close" — nothing is being tidied away; the act did not happen and the player
@@ -75,9 +87,9 @@ const STRINGS = {
     en: 'The round did not start — the clock is not running. Check your connection and try again.',
     fr: "La partie n'a pas démarré — le chrono ne tourne pas. Vérifiez votre connexion et réessayez.",
   },
-  failedInviteNote: {
-    en: 'The friend was not added. Check your connection and try again.',
-    fr: "L'ami n'a pas été ajouté. Vérifiez votre connexion et réessayez.",
+  failedJoinNote: {
+    en: 'You did not join the group. Check your connection and try again.',
+    fr: "Vous n'avez pas rejoint le groupe. Vérifiez votre connexion et réessayez.",
   },
   failedSaveNote: {
     en: 'Your profile was not saved. Check your connection and try again.',
@@ -129,8 +141,8 @@ const STRINGS = {
   // the words: a line survives only if it says something the screen does not already show.
   // So there is no "YOUR ACCOUNT" over a screen titled ACCOUNT, no "SAVED AS" in front of
   // something plainly an email, and no "6-DIGIT CODE" over six cells.
-  // An invite link whose sender's account is gone (#204). It is a STATE, not a failure:
-  // there is nothing to retry, so the screen says so and carries the reader into the game.
+  // An invite link naming no group (#271). It is a STATE, not a failure: there is nothing
+  // to retry, so the screen says so and carries the reader into the game.
   inviteExpired: { en: 'THIS INVITE LINK HAS EXPIRED', fr: "CE LIEN D'INVITATION A EXPIRÉ" },
   accountTitle: { en: 'ACCOUNT', fr: 'COMPTE' },
   // The account's own age, prefixed once — the only thing this screen can say about an
@@ -212,8 +224,8 @@ const STRINGS = {
   // neither is obvious: the active day's play moves across, and the friends graph is merged.
   // A confirmation that overstates the damage misleads exactly as much as one that hides it.
   linkEraseKeeps: {
-    en: "Today's game and your friends come with you. The rest is lost.",
-    fr: 'La partie du jour et vos amis vous suivent. Le reste est perdu.',
+    en: "Today's game comes with you. Your groups and the rest are lost.",
+    fr: 'La partie du jour vous suit. Vos groupes et le reste sont perdus.',
   },
   linkEraseDeleted: { en: 'DELETED', fr: 'SUPPRIMÉ' },
   // Reached from the SAVE door, the crossroads is a genuine surprise — the player asked to
@@ -438,10 +450,12 @@ const STRINGS = {
   today: { en: 'TODAY', fr: "AUJOURD'HUI" },
   // A music day's track link on the solved page (#270): an ordinary link, new tab.
   listen: { en: 'LISTEN', fr: 'ÉCOUTER' },
-  // ---- the solved screen's STANDING (#170): ONE badge, `TOP 25%`, beside the score
-  // (user-decided 2026-09-05, dropping the `RANK #6 OF 60` line). `TOP` is untranslated in
-  // every language, like MISS and the rarity grades — one word, identical everywhere.
-  scoreTop: { en: 'TOP', fr: 'TOP' },
+  // ---- the solved screen's STANDING (#271): ONE line, "2ND OF 7", beside the score — the
+  // player's place in their group today, a tap onto that group's board. It replaced the
+  // #170 `TOP 25%` badge (user-decided 2026-09-07). The issue's "today" is not printed: the
+  // result screen IS today's, and the word pushed the line off a phone's card. Composed by
+  // `tStanding` below.
+  standingOf: { en: 'OF', fr: 'SUR' },
   // The solved credit block's one function word (user-decided 2026-08-15): it binds the
   // author to the work in the line under it — `Les Misérables` / `BOOK by Victor Hugo` can
   // only be read one way, where two stacked names could be read either. LOWERCASE, unlike
@@ -621,44 +635,78 @@ const STRINGS = {
   profileClear: { en: 'CLEAR', fr: 'CLEAR' },
   ariaAvatarEditor: { en: 'Avatar editor: tap to paint', fr: "Éditeur d'avatar : touchez pour peindre" },
   ariaPalette: { en: 'Palette', fr: 'Palette' },
-  // ---- the leaderboard screen (#190): friends board first, global top 50 as the
+  // ---- the leaderboard screen (#190/#271): the player's GROUPS first, global top 50 as the
   // untrusted tab. Terse chrome in the app's register; the tabs and the rows do the
   // explaining. GLOBAL is one word in both languages, like TOP and the grades.
   boardTitle: { en: 'LEADERBOARD', fr: 'CLASSEMENT' },
-  boardFriends: { en: 'FRIENDS', fr: 'AMIS' },
   boardGlobal: { en: 'GLOBAL', fr: 'GLOBAL' },
-  // The empty states, one per tab (user feedback 2026-08-20, replacing one long
-  // "NO ONE ON THE BOARD YET" line): TERSE, under a small sad pixel ghost that carries
-  // the mood. An empty friends tab really is "no friends" — friends who merely haven't
-  // played today show as waiting rows — and the INVITE button below is the remedy.
-  boardEmptyFriends: { en: 'NO FRIENDS', fr: "PAS D'AMIS" },
+  boardPeriods: { en: 'Period', fr: 'Période' },
+  periodDay: { en: 'DAY', fr: 'JOUR' },
+  periodWeek: { en: 'WEEK', fr: 'SEMAINE' },
+  periodMonth: { en: 'MONTH', fr: 'MOIS' },
+  // The empty states, one per view (user feedback 2026-08-20: TERSE, under a small sad
+  // pixel ghost that carries the mood). No group at all; a group of one — the caller
+  // alone, since a member who merely has not played shows as a waiting row; a week or a
+  // month in which nobody in the group recorded a score; and the global board's nobody.
+  boardEmptyGroups: { en: 'NO GROUP', fr: 'AUCUN GROUPE' },
+  boardEmptyGroup: { en: 'JUST YOU', fr: 'QUE VOUS' },
+  boardEmptyPeriod: { en: 'NOBODY YET', fr: 'ENCORE PERSONNE' },
   boardEmptyGlobal: { en: 'NOBODY YET', fr: 'ENCORE PERSONNE' },
   boardEdit: { en: 'EDIT', fr: 'MODIFIER' },
-  boardInvite: { en: 'INVITE FRIENDS', fr: 'INVITER DES AMIS' },
-  // A friend on the board who has no recorded score today (user-decided 2026-08-20):
-  // the row stays — an edge is a person you chose — and this label sits where their
-  // score would.
+  boardInvite: { en: 'INVITE', fr: 'INVITER' },
+  // The period rule's numbers: podium POINTS as the unit caption, the tiebreakers as a
+  // small detail on the row.
+  points: { en: 'POINTS', fr: 'POINTS' },
+  dayUnit: { en: 'day', fr: 'jour' },
+  daysUnit: { en: 'days', fr: 'jours' },
+  // A member on the day board who has no recorded score today (user-decided 2026-08-20):
+  // the row stays — a member is a person you chose to play with — and this label sits
+  // where their score would.
   boardPlaying: { en: 'IN PROGRESS', fr: 'EN COURS' },
   boardNotPlayed: { en: 'NOT PLAYED YET', fr: 'PAS ENCORE JOUÉ' },
-  // The line above the invite link when it leaves the app (#189). Lowercase and plain —
-  // it travels in a chat between friends, so it reads like something a person would
-  // actually type, not marketing copy (user feedback 2026-08-20, replacing "Play
-  // Whippin AI with me:").
+  // The line above the invite link when it leaves the app (#271). Lowercase and plain —
+  // it travels in a chat between people who know each other, so it reads like something a
+  // person would actually type, not marketing copy (user feedback 2026-08-20).
   boardInviteText: {
-    en: 'add me on Whippin:',
-    fr: 'ajoute-moi sur Whippin :',
+    en: 'join my group on Whippin:',
+    fr: 'rejoins mon groupe sur Whippin :',
   },
-  // The invite landing's confirmation (#189, user feedback 2026-08-20 — the click used
-  // to continue into the game without a word, leaving the clicker unsure anything
-  // happened): the inviter's mark + name above this line, PLAY below it.
-  inviteAdded: { en: 'FRIEND ADDED', fr: 'AMI AJOUTÉ' },
-  // The landing's one primary button (#216 trigger rework): accepting is a TAP, never a
-  // page load — the tap deploys the clicker's account if they have none, then records the
-  // mutual edge.
-  inviteAccept: { en: 'ADD FRIEND', fr: 'AJOUTER EN AMI' },
+  // A GROUP's own acts (#271): making one, naming it, joining, leaving, and the creator
+  // showing a member out. The destructive two confirm by changing their own word.
+  groupNew: { en: 'NEW GROUP', fr: 'NOUVEAU GROUPE' },
+  groupName: { en: 'Group name', fr: 'Nom du groupe' },
+  groupNamePlaceholder: { en: 'NAME', fr: 'NOM' },
+  groupCreate: { en: 'CREATE', fr: 'CRÉER' },
+  groupMembers: { en: 'Members', fr: 'Membres' },
+  groupJoin: { en: 'JOIN', fr: 'REJOINDRE' },
+  // The landing's confirmation: the group's name and marks above this line, the board and
+  // PLAY below it.
+  groupJoined: { en: 'JOINED', fr: 'REJOINT' },
+  groupLeave: { en: 'LEAVE GROUP', fr: 'QUITTER LE GROUPE' },
+  groupLeaveConfirm: { en: 'LEAVE?', fr: 'QUITTER ?' },
+  groupManage: { en: 'MANAGE', fr: 'GÉRER' },
+  groupManageDone: { en: 'DONE', fr: 'OK' },
+  groupRemove: { en: 'Remove from the group', fr: 'Retirer du groupe' },
+  groupRemoveConfirm: { en: 'REMOVE?', fr: 'RETIRER ?' },
   failedBoard: { en: 'FAILED TO LOAD LEADERBOARD', fr: 'ÉCHEC DU CHARGEMENT DU CLASSEMENT' },
   ariaLeaderboard: { en: 'Leaderboard', fr: 'Classement' },
 } satisfies Record<string, Record<UiLang, string>>;
+
+// An ORDINAL in the chrome's register, uppercase like every label: `2ND`, `1ER`/`2E`.
+// English takes the four suffixes with the teens' exception; French the first's `ER`
+// and `E` for the rest — deterministic, so the standing line never says "1TH".
+export function ordinal(lang: string, n: number): string {
+  if (uiLang(lang) === 'fr') return n === 1 ? '1ER' : `${n}E`;
+  const tens = n % 100;
+  const suffix =
+    tens >= 11 && tens <= 13 ? 'TH' : n % 10 === 1 ? 'ST' : n % 10 === 2 ? 'ND' : n % 10 === 3 ? 'RD' : 'TH';
+  return `${n}${suffix}`;
+}
+
+// The solved screen's standing line (#271): "2ND OF 7" / "2E SUR 7".
+export function tStanding(lang: string, rank: number, of: number): string {
+  return `${ordinal(lang, rank)} ${t(lang, 'standingOf')} ${of}`;
+}
 
 export type UiKey = keyof typeof STRINGS;
 

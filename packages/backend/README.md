@@ -40,8 +40,8 @@ that provisions Lambda + Function URL + CloudFront + the bucket is issue #3.)
     player's own window) and `GET /profile?id=<publicId>` (a public profile row). Nothing
     in them authenticates.
   - **Authenticated POSTs**: `POST /round` (#201/#202/#203: the per-round guess log, Word
-    mode's start/submit, the derived score), `POST /history` (#211), `POST /friends`
-    (#189), `POST /board` (the friends face, #190), `POST /profile` (the own-row upsert,
+    mode's start/submit, the derived score), `POST /history` (#211), `GET|POST /groups`
+    (#271), `POST /board` (a group's faces, #190), `POST /profile` (the own-row upsert,
     #188), and `POST /devices` for the device list and revocation — each carries the
     **DEVICE TOKEN in the body** (`{ "token": "<64-hex>" }`, #216), which the server
     resolves to the account.
@@ -118,7 +118,7 @@ Run the **same `createHandler`** locally, swapping the S3 store for a filesystem
 (`src/fsStore.ts`) and DynamoDB for an in-memory score store. The day boundary,
 404-no-puzzle, CORS, the live-route validation and puzzle shapes are therefore identical
 to production — only Turnstile is an explicit local accept-all, and the in-memory stores
-(scores, rounds, devices, friends, profiles, history) reset when the process restarts. `src/serve.ts` remains a thin Function-URL ⇄ HTTP adapter.
+(scores, rounds, devices, groups, profiles, history) reset when the process restarts. `src/serve.ts` remains a thin Function-URL ⇄ HTTP adapter.
 
 ```bash
 # 1. Generate a puzzle (writes it under its source: packages/generation/output/word/

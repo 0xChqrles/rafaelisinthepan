@@ -58,7 +58,12 @@
       components/AccountFace.tsx  the ONE read of "who an account is" (mark + name), shared
                               by the account screen, the flow's ending and the sign-out screen
       state/account.ts        what `/account` shows — the `{token}` summary and the
-                              friend-merge drain behind it
+                              group-departure drain behind it (#271)
+      state/groups.ts         the player's GROUPS (#271): the ONE transient cache every group
+                              surface reads (tabs, marks, the landing's "already in")
+      hooks/useGroupStanding.ts  the solved screen's standing read: one request, the group last
+                              opened else the best standing (`pickStanding`)
+      components/GroupStanding.tsx  the "2ND OF 7" line beside the score, a tap onto the board
       components/DeviceList.tsx  the account's devices + SIGN OUT rows (#216), on the profile editor
       components/ErrorScreen.tsx  the app's error surface: a FULL-SCREEN modal led by the
                               user-drawn ERROR BOT (2026-08-27, replacing the popup/sheet);
@@ -92,12 +97,12 @@
                               one-drum `PuzzleSelect` behind it
       hooks/useUiLang.ts      the chrome language of a screen the URL names none for: the
                               link's `?lang=`, then the stored preference, then the browser
-      screens/FriendInvite.tsx  the #189 invite link's landing (/join/<publicId>): POST the mutual
-                              edge with this device's token, then continue into the game. The link
-                              players SHARE is /i/<publicId>, served by the backend for its preview
-      screens/Leaderboard.tsx the #190 leaderboard (/<lang>[/word]/board): friends board first,
-                              global top 50; INVITE share (its identity strip left with
-                              the 2026-08-30 header rework — the face is the header's)
+      screens/GroupInvite.tsx  the #271 group invite link's landing (/join/g/<groupId>): JOIN
+                              with this device's token, then the board or the game. The link
+                              members SHARE is /g/<groupId>, served by the backend for its preview
+      screens/Leaderboard.tsx the #190/#271 leaderboard (/<lang>[/word]/board): the player's
+                              groups first (day / week / month), global top 50; NEW GROUP,
+                              INVITE, LEAVE, the creator's MANAGE
       components/Avatar.tsx   a stored avatar rendered as SVG (editor preview + #190 board rows);
                               the tracer + the assigned identity are @whippin/shared's since 2026-08-20
       versionCheck.ts         stale-tab reload: __BUILD_ID__ vs /version.json on visibility flips
@@ -708,7 +713,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     below holds the reasoning). It is the screen's own handler now, not a prop.
   - **`components/DeviceList.tsx` is the REACHABLE surface for signing any device out**,
     mounted on the PROFILE editor — the screen that already is the identity screen. Every
-    call answers the list as it now stands (the /friends house rule), so a revocation needs no
+    call answers the list as it now stands (the live routes' house rule), so a revocation needs no
     optimistic update, and the route's own correction for the index's lag means the screen
     compensates for nothing. Each row returns an opaque `revokeKey` and sends it back with its
     `deviceId`, letting the backend address the base item directly; signing out the current row
@@ -760,8 +765,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
       the header's back goes code → address.
     - **THE CROSSROADS, NOT A WARNING:** both accounts drawn — the one being left dimmed,
       under DELETED (the area's one red) or under its own NAME when merely left — the one
-      being joined lit and NAMED; one sentence carries what survives (*Today's game and your
-      friends come with you. The rest is lost.*); from the SAVE door it gains the lead *That
+      being joined lit and NAMED; one sentence carries what survives and what does not
+      (*Today's game comes with you. Your groups and the rest are lost.* — #271); from the SAVE door it gains the lead *That
       address already has an account.* Skipped when nothing is at stake. `would_switch` is
       the same crossroads with the red taken out: no stakes, *Nothing is deleted — this
       account stays saved under its own address.*, an ordinary lit SWITCH ACCOUNT.
@@ -989,8 +994,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     an unparseable body — NOT evidence of a deletion). Reading `response.ok` alone collapses
     them, and what it collapsed was a deleted account drawn with the pseudonym and mark that
     are still its own. **The 410 matters where the id came from SOMEBODY ELSE:**
-    `FriendInvite` shows the EXPIRED state at once (`inviterFrom`) instead of drawing the
-    erased inviter over an ADD FRIEND whose only outcome is `unknown_player`, and `SignedOut`
+    `GroupInvite`'s `readGroup` is the group-shaped twin (shown / gone / failed), and `SignedOut`
     SETTLES FACELESS (`faceFrom`) instead of holding a loading frame or drawing the erased
     account. Both keep `gone`, `loading` and `shown` as three states rather than two, and both
     export their mapping so it can be read and tested on its own.
@@ -1009,17 +1013,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
     codes" at the input; a missing or malformed count reads as NONE LEFT rather than offering
     a try the client cannot promise. (The server used to answer the fifth mismatch as a 409
     `code_spent`, which left this branch dead — PR-227 review.)
-  - **`state/account.ts` holds the summary AND the merge drain.** Both screens need the same
-    one fact (is this saved, and to what), so `/account` can state it without mounting the
-    flow. The `{token}` read runs only with an account (the #216 no-private-fetch rule) and
-    RETRIES the drain, bounded and backed off — those edges are consented relationships, so
-    the job may not simply be abandoned, and it is durable either way. It is ACCOUNT-owned,
-    so `identityScope` resets it. **A SUCCESSFUL LINK RESUMES THAT SAME DRAIN**
-    (`resumeMergeDrain`, PR-227 review): the verify answer's `mergePending` says the server
-    could not finish the fan-out, and `AccountEmail.finish` hands it over AFTER the adoption
-    has published — so the drain runs as the account the link LANDED on, not the one the
-    verify started under, and the remaining edges are not left for whenever the player next
-    opens `/account`.
+  - **`state/account.ts` holds the summary AND the departure drain (#271, the friend merge's
+    successor).** Both screens need the same one fact (is this saved, and to what), so
+    `/account` can state it without mounting the flow. The `{token}` read runs only with an
+    account (the #216 no-private-fetch rule) and RETRIES the drain, bounded and backed off —
+    a membership left pointing at a deleted account is a ghost on every one of its groups,
+    so the job may not simply be abandoned, and it is durable either way. It is
+    ACCOUNT-owned, so `identityScope` resets it. **A SUCCESSFUL LINK RESUMES THAT SAME
+    DRAIN** (`resumeDepartureDrain`, PR-227 review): the verify answer's `departurePending`
+    says the server could not finish, and `AccountEmail.finish` hands it over AFTER the
+    adoption has published — so the drain runs as the account the link LANDED on.
   - **CONTINUE is a DEPLOY BUTTON**, the sixth (#216's five plus this one), and it has to
     be: an email link needs an account to bind, and "this device is empty" is exactly the
     reconnect case. It wears the shape that rule defines — one tap chaining the bootstrap,
@@ -1095,10 +1098,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     signed-out screen's own move), and the two endings return differently: an ADOPT offers
     PLAY into the game, a BIND offers OK back to `/account` — a settings errand ends where
     it began, and `.link-stack` is the one centered face-stack all three moments wear.
-  - **`FriendInvite` gained an EXPIRED state**: `unknown_player` is neither a hiccup nor the
-    cap, so it takes the cap's own surface (a state with a way ONWARD rather than a retry) —
-    retrying cannot bring an account back, and continuing silently would tell the clicker they
-    added a friend they did not.
+  - **The invite landing has an EXPIRED state** (`GroupInvite` since #271; `unknown_group`):
+    neither a hiccup nor the cap, so it takes the cap's own surface (a state with a way ONWARD
+    rather than a retry) — retrying cannot bring a group back, and continuing silently would
+    tell the clicker they joined a group they did not.
   - **`game/streak.ts` re-exports `currentStreak` from `@whippin/shared`** and keeps
     `streakTransition`/`weekView`: the server derives a streak for the erase confirmation, so
     the derivation itself moved.
@@ -1777,195 +1780,84 @@ it to the local store — see `packages/backend/AGENTS.md`).
   a spread of full grids), never the command syntax, since the property it exists for
   — no seam at a fractional DPR — is one jsdom cannot rasterize.
 
-- **Invite link (#189):** the link a player SHARES is `/i/<publicId>` (`pathForInvite`,
-  now `@whippin/shared`'s `invitePath`), and since 2026-08-20 the BACKEND serves that path
-  so the link unfurls in a chat as the sender's own mark and name — see the root
-  `AGENTS.md` for the preview's rules. What the SPA routes is the LANDING it bounces to,
-  `/join/<publicId>` (`screens/FriendInvite.tsx`) — global like `/profile`, since an
-  identity is not language-scoped, and unchanged in every other way: the preview cannot
-  touch the graph, because the edge needs the CLICKER's key and the clicker's device is
-  the only place it exists. **THE DEV SERVER PROXIES `/i/*` (with `/s/*` and `/og/*`) to
-  the local backend** — `vite.config.ts`, the CDN's own behavior list restated, so a
-  pasted link walks the same two steps locally that it does in production. It did not at
-  first, and the failure had NO symptom (user-reported 2026-08-20): the SPA fallback
-  answered `/i/<id>` with index.html, `parseRoute` saw a path it no longer owned, and the
-  click landed on the game with nothing said and no edge written. Two details are
-  load-bearing there — the proxy list must move with `web-stack.ts`'s
-  `additionalBehaviors`, and `changeOrigin`/`xfwd` are pinned OFF (Vite's string shorthand
-  does not leave them off) so the backend, which has no `siteOrigin` locally, reads the
-  BROWSER's Host and bounces to the app rather than to itself.
+- **Group invite link (#271, replacing #189's player invite):** the link a member SHARES is
+  `/g/<groupId>` (`pathForGroupInvite`, `@whippin/shared`'s `groupInvitePath`), served by
+  the BACKEND so it unfurls in a chat as the group's name and its members' marks — see the
+  root `AGENTS.md` for the preview's rules. What the SPA routes is the LANDING it bounces to,
+  `/join/g/<groupId>` (`screens/GroupInvite.tsx`) — global like `/profile`. The preview
+  cannot touch the group, because the membership needs the CLICKER's key and the clicker's
+  device is the only place it exists. **THE DEV SERVER PROXIES `/g/*` (with `/s/*` and
+  `/og/*`) to the local backend** — `vite.config.ts`, the CDN's own behavior list restated
+  (the reasoning, and the pinned-OFF `changeOrigin`/`xfwd`, are #189's, unchanged).
   **A RESULT SHARE IS SIGNED AND OPENS THE DAY** (root `AGENTS.md`, Player profile):
-  `SolvedScreen` and `WordEndScreen` sign every link with the device's account
-  (`useDeviceIdentity()?.accountId`, null without one), with no control beside SHARE; the
-  click opens the shared day, so the SPA has no landing for a share and `/join/` carries
-  the publicId alone. (The AS drum and the landing's shared-result view were retired
-  2026-09-10.)
-  **ACCEPTING IS A BUTTON, for everyone** (#216 trigger rework, user-decided 2026-08-24,
-  superseding the auto-add on page load): the landing shows the INVITER's mark and name
-  (a best-effort bounded profile read, the assigned identity as fallback) over ONE primary
-  ADD FRIEND button; the tap POSTs `{token, add}` with this device's token — minted by
-  that same tap for a brand-new visitor, which is what lands the edge before their first
-  game — with a loading wave in the button and the `ErrorScreen` (TRY AGAIN) for a
-  transport/5xx failure. The `shareInviteFlight` one-conversation map went with the
-  auto-add: the effect-replay hazard it guarded no longer exists once the POST rides a
-  click. **A SUCCESSFUL add is still CONFIRMED on screen**
-  (user-decided 2026-08-20 — the
-  clicker was left unsure anything had happened): the same inviter identity over
-  `FRIEND ADDED` (`.invite-done`),
-  with PLAY handing the destination to App's own
-  home redirect via
-  `navigate('/', { replace: true })`, replacing this landing in history so a back tap
-  leaves the game instead of re-firing the invite.
-  The publicId is validated in `parseRoute` (and again in the backend's own route), so a
-  broken link goes home rather than asking the server about an id nobody can hold. A NON-CAP 4xx is a VERDICT and continues into the
-  game silently — nothing was added, so nothing is announced (the
-  score submission's rule: `self_link` and a bad id cannot be argued with); a transport
-  error or a 5xx shows `failedInvite` + RETRY — LOUD, unlike a score submission, for the #188
-  profile read's reason: the write is the one thing the click existed to do. **The CAP (409
-  `friend_limit`) is the one verdict that also speaks**, on that same reasoning: retrying
-  cannot empty a full list, but silently continuing would leave a player at `FRIENDS_MAX`
-  clicking invitations forever with every one appearing to work. It shows `friendListFull` on
-  the same `LoadError` surface with the button relabelled `gatePlay` (its `actionLabel`
-  prop) — a state gets a way ONWARD where a hiccup gets a RETRY — and the copy is neutral
-  about WHOSE list is full, because the cap binds either side of the pair and the answer does
-  not say which. The button's in-flight state prevents a second tap while its request runs;
-  no effect or module-level conversation exists now that accepting is a deliberate click.
-  The SENDING surface is the leaderboard screen's INVITE button (#190),
-  which shares `boardInviteText` + the link via `useShare`; this route receives them.
+  `SolvedScreen` and `WordEndScreen` sign every link with the device's account, with no
+  control beside SHARE; a share carries NO group (the 2026-09-10 decision stands over the
+  issue's earlier AS drum), so `/join/` carries the group landing alone.
+  **JOINING IS A BUTTON, for everyone** (#216's trigger rule): the landing draws the group
+  (a bounded `readGroup` — `api.readGroup` tells shown / gone / failed apart, the
+  `readProfile` rule; gone AND failed both end the landing on the EXPIRED surface, since a
+  button would join a group the screen could not describe) over ONE primary JOIN; the tap
+  POSTs `{token, join}` — minted by that same tap for a brand-new visitor — with a loading
+  wave in the button and the `ErrorScreen` for a transport/5xx failure. **A member already
+  skips the landing** onto the group's board (the cached groups list says so; tokenless it
+  is known-empty). **A SUCCESSFUL join is CONFIRMED on screen** — the group over `JOINED`,
+  the BOARD as the primary way on and PLAY under it — and the answered list is published
+  through `adoptGroups`, so the board opens on the group without a second read. The
+  landing replaces itself in history. A NON-CAP 4xx is a VERDICT and continues into the
+  game silently; **the two CAPS (409 `group_full` / `group_limit`) and an EXPIRED link
+  (404 `unknown_group`) speak** on the `LoadError` surface with PLAY as the way onward
+  (`groupFull`, `inviteExpired`). Contract-tested (`GroupInvite.test.ts`).
 
-- **Leaderboard screen (#190):** `/<lang>/board` and `/<lang>/word/board`
-  (`pathForBoard` — the archive's grammar; a board is per (day, lang, mode), always
-  the ACTIVE day), `screens/Leaderboard.tsx`, entered from the game header's CROWN KEY
-  — which stays LIT while the board is up (2026-08-30; the LEADERBOARD title is gone —
-  the header's left slot carries `PuzzleTitle` here too, because a board is a view OF a
-  daily — and the way out is any other key of the same, unmoving row, HOME above all:
-  `HeaderKeys`, user-decided 2026-08-31). FRIENDS is the default tab — the trusted surface — GLOBAL the top-50 untrusted
-  one; the header's TITLE SELECTION switches WHICH daily's board, the in-screen `.board-tab`s
-  WHOSE scores. **WHICH TAB belongs to a VISIT — not
-  to the screen, and NOT to the player** (user feedback 2026-08-20, in two passes; the
-  first cut made it a standing preference and the user narrowed it). Two things remount
-  this screen WITHOUT ending the visit — a page REFRESH and a header MODE SWITCH (App
-  keys it on lang:mode) — and local state dropped a player who had chosen GLOBAL back
-  onto FRIENDS both times. So it lives in the store as `boardTab` (persist **v9**, which
-  is the only way to survive the reload; older blobs get 'friends', the default the
-  screen already opens on), and **App RESETS it the moment a NON-BOARD route renders**,
-  which is what ends a visit: leaving the leaderboard and coming back opens on FRIENDS,
-  the trusted default. That reset lives in App rather than at each entry point precisely
-  because an entry that forgot it would silently reopen on a stale tab forever, and
-  there is more than one way onto this screen. A stored 'global' is therefore at most one
-  interrupted visit old (a killed tab), never a preference to honour forever — the first
-  non-board route of the next session clears it. **THE DAY IS A LIVE VALUE**
-  (corrected 2026-08-20 on review): the screen reads `useToday` — the app's one day
-  signal, which re-fires at the DST-correct 22:00-ET reset AND on a visibility flip —
-  rather than stamping `activeDate(new Date())` at fetch time, because a board is left
-  open across that flip routinely (a phone, overnight). A new day DROPS BOTH tabs'
-  caches, during render rather than in an effect, so yesterday's rows are never
-  committed under today's date and the refetch is already keyed on the new day.
-  **One fetch per tab ACTIVATION, and
-  the OUTCOME is per tab** (both corrected 2026-08-20 on review): the route is a
-  zero-TTL live read — its whole CloudFront behavior is `CACHING_DISABLED` because the
-  data is live — so a tab flip re-reads rather than showing a snapshot from earlier in
-  the visit, with the cached board holding the screen while the fresh one is in flight
-  (stale-but-good beats a spinner) and FAILED shown only when there is nothing to draw.
-  A screen-global failure flag painted an error frame over the OTHER tab's perfectly
-  good board for a render on every flip back. (App keys the screen on lang:mode so a
-  switch resets.) The friends read is the authenticated `POST /board {token}` via the
-  OAC-hashed body, the global read the anonymous GET widened with the caller's PUBLIC
-  id for the own window when `deviceIdentity()` already holds one. The global board needs no
-  identity and remains an anonymous GET without one; #216 removed the old client-side
-  `crypto.subtle` derivation from that path (live POSTs still require it for OAC).
-  **OPENING THIS SCREEN IS NOT A TRIGGER (user-decided 2026-08-24, superseding "opening
-  the leaderboard mints an account" — the root AGENTS trigger list moved with it):** a
-  navigation must not create server state, so a tokenless visitor's FRIENDS board is the
-  KNOWN-EMPTY answer (the ghost + INVITE, no request — the #216 no-private-fetch rule),
-  the header's face key shows the LOCAL placeholder (`useOwnFace`), the `/friends` decoration read
-  is skipped, and the INVITE tap is the screen's account-creating act — **and it is ONE
-  TAP (user-decided 2026-08-24, superseding the same day's two-phase mint-then-ask: the
-  deploy buttons are single taps)**: a tokenless tap bootstraps (LoadingWave in the
-  button, the Word gate's PLAY shape; a failed deploy raises the `ErrorScreen` with
-  `failedAccount` + TRY AGAIN, nothing created) and then delivers in the same gesture.
-  The physics the two-phase design guarded against still exist — Turnstile + /devices can
-  outlive the transient user activation, and past it navigator.share rejects by spec and
-  the async clipboard does on WebKit — so `useShare.share` REPORTS delivery (a dismissed
-  sheet counts as delivered), and a share neither channel could make raises the
-  `ErrorScreen` (`failedShare`/`failedShareNote`) instead of being swallowed: its TRY
-  AGAIN shares inside its own fresh activation, identity now in hand, which is exactly
-  the delivery the first tap could not make. Desktop and an already-deployed account
-  never hit that path. The TOKENLESS answers are derived
-  SYNCHRONOUSLY (state initializers + the render-time scope reset, never an effect), so a
-  direct tokenless visit paints no skeleton and no LOADING flash; and every cache on this
-  screen — both tabs' boards, the friend marks, the strip — is IDENTITY-SCOPED, dropped
-  during render when the epoch changes exactly as a new day drops the boards: the
-  stale-but-good rule keeps a cached board over a failed refresh, so a kept
-  tokenless-empty board would suppress both the adopted account's real data and the retry
-  UI. **The ONE exception is a PROVEN MINT** (2026-08-26; corrected on review the same day
-  after it was first written as "any first acquisition"): a tokenless tab whose own
-  bootstrap commits keeps the known-empty friends board, because a freshly minted account
-  has no edges BY CONSTRUCTION — that is a fact, not a stale guess, and it stops the INVITE
-  tap's mint blinking the ghost into a loading frame the button is already showing. It
-  turns on `useIdentityMintedHere()`, never on the transition, because `identity.ts`'s own
-  rule is that every OTHER null → identity publish is an ADOPTION of an account that may
-  already hold server state — a sibling tab's, a storage-recovered pending token, a raced
-  bootstrap another tab won. An accepted invite is the reachable case: its tap mints AND
-  links in one gesture, so a sibling tab adopting that identity has friends the instant it
-  arrives, and a failed refresh would freeze a false ghost with no retry offered.
-  Every identity-reading effect keys on the LIVE
-  identity (`useDeviceIdentity`), so the mint — or a cross-tab adoption — populates the
-  strip, both boards and the friend marks without a remount (a run-once strip effect used
-  to leave them blank until navigation). Its lazy
-  `/friends` decoration read checks the refusal body too: only `401 unknown_device` raises the
-  signed-out screen, while an ordinary decoration failure simply leaves rows unmarked. The screen
-  renders what the API returned (ranks, cut, own window
-  — the shared leaderboard rules; root AGENTS.md): glass rows of rank + avatar + name
-  + score, ranks and scores in the PIXEL face (game numbers), names in mono (identity
-  chrome, case kept), the unit caption (TRIES/WORDS) naming which way is better.
-  **ROWS CONNECTED TO THE READER wear the ACCENT — ONE family at two strengths
-  (user-decided 2026-08-20, REPLACING the inverted selection box on the own row here):**
-  a 2px inset accent left edge marks a FRIEND among the global rows, and YOUR row takes
-  that edge plus a whisper of the accent in the fill and the hairline and the name at the
-  action weight. The inverted box — the app's one emphasis gesture everywhere else — was
-  too loud in a column of glass rows, and it left nothing quieter for a friend to wear.
-  The edge is an inset SHADOW, never a border-left, so marking a row cannot shift the
-  grid under it by a pixel. Friends are marked on the GLOBAL list ONLY: on the friends
-  board every row is one, and marking everything marks nothing. Their id set comes from
-  ONE lazy `POST /friends` fired on the first GLOBAL activation and cached for the visit
-  (the graph does not change with the day the board is addressed by) — decoration, so a
-  failure leaves the rows unmarked rather than failing anything.
-  A player
-  with no profile degrades honestly, with an ASSIGNED identity rather than a hole
-  (both user-decided 2026-08-20, second pass the same day): a GAMERTAG pseudonym as
-  the name (`anonName` — `SwiftFalcon84`-style AdjectiveNoun## derived from the
-  publicId, superseding the same-day syllable names, which didn't read as usernames;
-  length-budgeted under the shared 16-char cap and always `sanitizeName`-stable;
-  name-shaped, so only the secondary ink says "placeholder") and a generated MARK as the avatar
-  (`defaultAvatar` — a mirrored 10×10 creature + palette from the id hash, the
-  seeder's proven recipe, superseding the dashed empty frame). Both are DISPLAY-ONLY
-  pure functions of the publicId — identical on every surface and device, nothing
-  stored, and a saved profile replaces them; both live in `@whippin/shared`
-  (`assigned.ts`) since the invite card started drawing a player server-side. The below-the-cut gap renders as a
-  dashed rule (ties are NOT folded at the cut — user-decided 2026-08-20, superseding
-  the "+N TIED" collapse row: at most 50 ordinary rows, shared ranks shown), and the friends
-  tab's WAITING friends (edges with no score today, user-decided 2026-08-20) as
-  dashed no-fill rows under ONE `NOT PLAYED YET` hairline section caption (second
-  pass, same day: a label repeated per row read as a stutter) with a small centered
-  solid tick in the rank column (an empty cell read as a rendering hole, and the
-  pixel hyphen sat left and thin). An EMPTY board is the USER'S OWN SAD PIXEL GHOST
-  over one terse line (user-decided 2026-08-20, superseding a long sentence that said
-  less than the drawing does): `assets/ghost.png` (13×18), and it **TINTS LIKE AN
-  ICON** — the sprite is a pure black-on-transparent silhouette, so `.board-ghost`
-  paints it through a CSS MASK in `currentColor` (the strike sheets' technique) rather
-  than drawing it as an image, which is what lets it wear the block's `--muted` ink;
-  at an exact integer scale (4× = 52×72) with `image-rendering: pixelated`, the
-  standing pixel-art rule (measured on the rendered output: 97% of source texels land
-  as uniform blocks). The line is per TAB — `NO FRIENDS` on the friends board, since
-  an empty one really means no edges (a friend who merely has not played is a waiting
-  row), `NOBODY YET` on the global one. **Empty is therefore counted WITHOUT the
-  caller's own row on the friends tab** (corrected 2026-08-20 on review): the server
-  always includes the caller once they have played, so keying the ghost on "no rows at
-  all" made it unreachable for exactly the player who needs it — someone with no
-  friends who finished today's daily landed on a board of one row, themselves, under
-  a header face already showing the same mark, with nothing saying why.
-  **THE IDENTITY STRIP IS GONE (2026-08-30, with the header rework).** The board opened on
+- **Leaderboard screen (#190; drawn over GROUPS since #271, user-decided 2026-09-07):**
+  `/<lang>/board` and `/<lang>/word/board` (`pathForBoard`; a board is per (day, lang,
+  mode), always the ACTIVE day), `screens/Leaderboard.tsx`, entered from the header's CROWN
+  KEY (lit while the board is up; the way out is any other key, HOME above all). The
+  player's GROUPS are the tabs — a scrolling strip of names, then `+` (NEW GROUP), then
+  GLOBAL, the untrusted top 50 — and a group has THREE boards under a second row: DAY (the
+  live one: finished, IN PROGRESS, NOT PLAYED YET), WEEK and MONTH (the shared period rule,
+  `PeriodList`: podium POINTS under the caption, the days and the total as a quiet detail).
+  **WHICH TAB belongs to a VISIT** (user feedback 2026-08-20; `boardTab` is `'group' |
+  'global'` since persist **v19**, App resets it on any non-board route); **WHICH GROUP
+  outlives it** — `gameStore.lastGroupId` (v19, account-owned: `reconcileIdentity` drops it
+  with the account), set by every group tab opened and by the standing line's tap, the
+  first listed group standing in for a stale or missing one. The period is the screen's own
+  state. The groups themselves are `state/groups.ts` — ONE transient cache (`loadGroups`,
+  `adoptGroups` after every write, `resetGroups` in `identityScope`), tokenless
+  known-empty without a request. **THE DAY IS A LIVE VALUE** and **EVERY CACHE IS
+  IDENTITY-SCOPED** exactly as before (a new day or a new epoch drops every board during
+  render); one fetch per board ACTIVATION with the outcome per board key
+  (`<group>:<period>` / `global`), stale-but-good over a failed refresh. A group's read is
+  `POST /board {token, group[, period]}`; a 403 `not_member` (left elsewhere, removed)
+  re-reads the groups list, since the list is what is stale. **OPENING THIS SCREEN IS NOT
+  A TRIGGER (user-decided 2026-08-24)**: the deliberate acts are NEW GROUP (an inline form
+  — one text field in the player name's charset via `sanitizeName`, never empty, CREATE)
+  and INVITE (shares `boardInviteText` + `/g/<id>` via `useShare`, `tracked: false`);
+  both are ONE TAP for a tokenless device (the mint, then the act, the button holding a
+  LoadingWave; failures on the `ErrorScreen` — `failedAccount`, `failedShare`,
+  `groupLimit`, `failedGroup`). LEAVE and — for the group's creator, on the DAY board —
+  MANAGE are two quiet `.link-quiet-btn`s under the list; MANAGE turns every other row's
+  end into a `✕` (`.board-remove`), and both destructive taps CONFIRM ON A SECOND TAP by
+  changing their own word (`LEAVE?`, `REMOVE?`), never with a dialog. A WEEK/MONTH row
+  stacks its tiebreakers under the name (`.board-ident`) — beside it they ate the name on
+  a phone. **A member already skips the landing onto the board, but never one this tab
+  just joined** (`GroupInvite`'s module-level `joinedHere`): the tap that joins can also
+  MINT the identity, and an acquired identity remounts the routed surface, so a remounted
+  landing would otherwise read "member already" and skip the confirmation it just earned. Rows CONNECTED to
+  the reader wear the ACCENT: on the GLOBAL list a member of any of your groups takes the
+  2px inset left edge (`.board-row.mate`, the union of the cached groups' member ids — no
+  extra read), your own row that edge plus the tint. An EMPTY board is the sad pixel ghost
+  over one terse line, per view: `NO GROUP` (the tab strip holds only `+` and GLOBAL, the
+  big action is NEW GROUP), `JUST YOU` (a group of one — counted WITHOUT the caller's own
+  row, the 2026-08-20 rule), `NOBODY YET` (a period nobody recorded in; the global board).
+  The rest of the 2026-08-20 board dress — pixel ranks and scores, mono names, the unit
+  caption, the WAITING dashed rows under one caption, the no-rank tick, the ghost's
+  integer-scale mask, the assigned identity for an unnamed player — is unchanged.
+  Board VISUALS carry no tests per policy; the contract-y parts are the shared ranking and
+  period rules, `parseBoard`/`parsePeriodBoard`/`parseGroups`/`parseStandings`, and the
+  route grammar (`langs.test.ts`).
+  **THE IDENTITY STRIP IS GONE (2026-08-30, with the header rework).** *(Historical — the
+  INVITE paragraph below describes the #189 friends button; the shape is the group INVITE's
+  now, per the bullet above.)* The board opened on
   the player's own mark + name as a row (from 2026-08-20; the door to `/account` from
   2026-08-26), and the header's right group now ends in the player's own face on every
   game surface — the same drawing, the same door, 40px above where the strip sat. Two
@@ -3457,8 +3349,23 @@ it to the local store — see `packages/backend/AGENTS.md`).
   opens the sequence immediately with `N` as the PREVIOUS value (`?streak=9` → `9→10`),
   suppresses the first-visit invitation, and synthesizes its visual week without mutating
   persisted rounds/solved days; production builds ignore the parameter.
-- **Solved-screen STANDING (#170, 2026-08-14; the histogram it started as was retired
-  2026-08-15 — see below):** both modes' result stacks show where the finished score sits
+- **Solved-screen STANDING — the GROUP line (#271, user-decided 2026-09-07; it REPLACED
+  the #170 TOP-% badge below):** both result stacks show `2ND OF 7` beside the score (no
+  "today": the result screen is today's, and the word clipped at a 375px card's edge)
+  (`components/GroupStanding`, in the badge's exact `.standing-line` slot, a BUTTON onto the
+  group's board that sets `lastGroupId` first), read by `hooks/useGroupStanding` — ONE
+  request, `POST /board {token, standing: true}`, once the SERVER holds the round (the #203
+  gate below, unchanged) — and `pickStanding` chooses the group last opened when the player
+  stands in it, else the best (lowest rank, then the larger field). `of` is the members who
+  RECORDED a score today. Nothing is drawn for a player in no group, with no row (late,
+  capped), with no identity, or on a silent failure; the ordinal is `i18n.ordinal`
+  (`1ST`/`2ND`… and `1ER`/`2E`…), the line `tStanding`. **REMOVED** (no-back-compat):
+  `ScoreTop`, `game/scores.ts` (`scoreStanding`, the three gates, `formatTopPct`),
+  `hooks/useScoreHistogram`, `api.scoresUrl`/`parseScoreHistogram`, the `scoreTop` string —
+  the backend's `/scores` route still answers with no consumer (the user's call).
+  *(The paragraphs below describe the #170 badge this replaced; what survives of them is the
+  SERVER-holds-the-round gate, the one-conversation-per-round flight and the silent failure.)*
+  Both modes' result stacks used to show where the finished score sits
   in the day's anonymous population (#169), above the mode's own metrics and SHARE — the
   comparison story that replaced the removed LLM benchmark.
   ONE rule (`hooks/useScoreHistogram`), and since #203 it is a plain READ: a round the

@@ -163,13 +163,13 @@ export function dynamoRoundStore(
     // The friends board's read (#206): BatchGetItem over the exact row keys the caller
     // resolved its edges into — the read shape the per-player partition was designed for
     // (roundStore.ts), never a read across players. Chunked at DynamoDB's 100-key batch
-    // limit (FRIENDS_MAX + 1 callers is at most three batches), with UnprocessedKeys
+    // limit (GROUP_MEMBERS_MAX callers is one batch), with UnprocessedKeys
     // retried behind the jittered schedule above.
     //
     // EVENTUALLY CONSISTENT, where the score `getMany` reads consistently: a score row is
     // a final result the caller may have recorded a moment ago (their own just-finished
     // row must show), while a playing row is a MID-FLIGHT snapshot by nature — it is
-    // stale the moment the friend guesses again — and round items carry whole guess
+    // stale the moment the member guesses again — and round items carry whole guess
     // logs, the table's biggest items, so the consistent read would double the cost of
     // exactly the rows with the least claim to it.
     async getMany(key, publicIds) {

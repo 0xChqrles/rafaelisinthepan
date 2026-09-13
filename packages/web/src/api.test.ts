@@ -8,13 +8,15 @@ import {
   apiBase,
   boardUrl,
   devicesUrl,
-  friendsUrl,
+  groupsUrl,
   parseBoard,
   parseDeviceIdentity,
   puzzleUrl,
   wordPuzzleUrl,
   puzzleOutcome,
-  parseFriends,
+  parseGroups,
+  parsePeriodBoard,
+  parseStandings,
   parsePuzzle,
   parseAccountSummary,
   parseErasePrompt,
@@ -22,12 +24,10 @@ import {
   parseLinkResult,
   parseProfile,
   parseRound,
-  parseScoreHistogram,
   parseWordPuzzle,
   profileUrl,
   readProfile,
   roundUrl,
-  scoresUrl,
 } from './api';
 
 describe('apiBase', () => {
@@ -373,66 +373,6 @@ describe('parseWordPuzzle (shape validation)', () => {
   });
 });
 
-// The live score endpoint (#169/#170): mode is REQUIRED on this route, and the response
-// is validated the way puzzles are — a wrong-shaped body must surface as a (silent)
-// failure, never as NaN bars on the solved screen.
-describe('scoresUrl', () => {
-  it('addresses the /scores route with lang, date and the REQUIRED mode', () => {
-    expect(scoresUrl('fr', '2026-08-14', 'sentence', undefined, 'https://api.example')).toBe(
-      'https://api.example/scores?lang=fr&date=2026-08-14&mode=sentence',
-    );
-    expect(scoresUrl('en', '2026-08-14', 'word', undefined, 'https://api.example')).toBe(
-      'https://api.example/scores?lang=en&date=2026-08-14&mode=word',
-    );
-  });
-
-  it('names the CALLER with their public id, which is what makes `bucket` theirs (#203)', () => {
-    // Matching a local count against the bands only ever says "somebody scored this"; the
-    // server locates the row that is actually this player's.
-    expect(
-      scoresUrl('fr', '2026-08-14', 'sentence', 'lfd5pqz5pa7zjm5u', 'https://api.example'),
-    ).toBe('https://api.example/scores?lang=fr&date=2026-08-14&mode=sentence&id=lfd5pqz5pa7zjm5u');
-  });
-
-  it('throws without a configured base (never a silent same-origin fetch)', () => {
-    expect(() => scoresUrl('fr', '2026-08-14', 'sentence', undefined, '')).toThrow(
-      /VITE_API_BASE_URL/,
-    );
-  });
-});
-
-describe('parseScoreHistogram (shape validation)', () => {
-  const valid = () => ({
-    buckets: [
-      { min: 1, max: 3, count: 2 },
-      { min: 4, max: 5, count: 0 },
-    ],
-    total: 2,
-    bucket: 0,
-  });
-
-  it('accepts the POST shape (bucket set) and the GET shape (bucket null)', () => {
-    expect(parseScoreHistogram(valid()).total).toBe(2);
-    expect(parseScoreHistogram({ ...valid(), bucket: null }).bucket).toBeNull();
-  });
-
-  it('accepts an EMPTY population — since #187 the bands are derived from the rows', () => {
-    expect(parseScoreHistogram({ buckets: [], total: 0, bucket: null }).buckets).toEqual([]);
-  });
-
-  it('rejects non-objects, bad totals, bad buckets and bad bucket indexes', () => {
-    expect(() => parseScoreHistogram(null)).toThrow(/histogram/);
-    expect(() => parseScoreHistogram({ ...valid(), total: -1 })).toThrow(/total/);
-    expect(() => parseScoreHistogram({ ...valid(), total: 1.5 })).toThrow(/total/);
-    expect(() => parseScoreHistogram({ ...valid(), buckets: 'none' })).toThrow(/buckets/);
-    expect(() => parseScoreHistogram({ ...valid(), buckets: [{ min: 1, max: 3, count: -1 }] }))
-      .toThrow(/bucket/);
-    expect(() => parseScoreHistogram({ ...valid(), bucket: 'zero' })).toThrow(/bucket/);
-    expect(() => parseScoreHistogram({ ...valid(), bucket: -1 })).toThrow(/bucket/);
-    expect(() => parseScoreHistogram({ ...valid(), bucket: 2 })).toThrow(/bucket/);
-  });
-});
-
 // CONTRACT (#204): `GET /profile` has FOUR materially different answers, and reading only
 // `response.ok` collapses them — which is how a DELETED account ends up drawn with the
 // assigned pseudonym and mark that are still its own. The rule is spelled ONCE here; every
@@ -606,18 +546,66 @@ describe('devicesUrl + parseDeviceIdentity (#216)', () => {
   });
 });
 
-describe('friendsUrl + parseFriends (#189)', () => {
-  it('addresses the /friends route with NO query — the key authenticates in the body', () => {
-    expect(friendsUrl('https://api.example')).toBe('https://api.example/friends');
-    expect(() => friendsUrl('')).toThrow(/VITE_API_BASE_URL/);
+describe('groupsUrl + parseGroups (#271)', () => {
+  it('addresses the /groups route, with the public id only on the GET', () => {
+    expect(groupsUrl(undefined, 'https://api.example')).toBe('https://api.example/groups');
+    expect(groupsUrl('abcdefghij234567', 'https://api.example')).toBe(
+      'https://api.example/groups?id=abcdefghij234567',
+    );
+    expect(() => groupsUrl(undefined, '')).toThrow(/VITE_API_BASE_URL/);
   });
 
-  it('validates the list shape and rejects a corrupt one', () => {
-    expect(parseFriends({ friends: [] })).toEqual([]);
-    expect(parseFriends({ friends: ['abcdefghij234567'] })).toEqual(['abcdefghij234567']);
-    expect(() => parseFriends(null)).toThrow(/not an object/);
-    expect(() => parseFriends({ friends: 'abcdefghij234567' })).toThrow(/friends/);
-    expect(() => parseFriends({ friends: ['NOPE'] })).toThrow(/friends/);
+  const group = (over: Partial<Record<string, unknown>> = {}) => ({
+    id: 'abcdefghij234567',
+    name: 'Les_copains',
+    createdBy: 'zwjxqk37xfkvtxqu',
+    joinedAt: '2026-09-13T12:00:00.000Z',
+    members: ['zwjxqk37xfkvtxqu'],
+    ...over,
+  });
+
+  it('validates the list shape, the minted id included, and rejects a corrupt one', () => {
+    expect(parseGroups({ groups: [] })).toEqual({ groups: [] });
+    expect(parseGroups({ groups: [group()] }).groups).toHaveLength(1);
+    expect(parseGroups({ groups: [group()], created: 'abcdefghij234567' }).created).toBe('abcdefghij234567');
+    expect(() => parseGroups(null)).toThrow(/not an object/);
+    expect(() => parseGroups({ groups: 'none' })).toThrow(/groups/);
+    expect(() => parseGroups({ groups: [group({ id: 'NOPE' })] })).toThrow(/groups/);
+    expect(() => parseGroups({ groups: [group({ members: ['NOPE'] })] })).toThrow(/groups/);
+    expect(() => parseGroups({ groups: [], created: 'NOPE' })).toThrow(/created/);
+  });
+});
+
+describe('parsePeriodBoard + parseStandings (#271)', () => {
+  const row = (over: Partial<Record<string, unknown>> = {}) => ({
+    publicId: 'abcdefghij234567',
+    name: '',
+    avatar: null,
+    rank: 1,
+    points: 6,
+    solvedDays: 2,
+    total: 9,
+    ...over,
+  });
+  const valid = () => ({ from: '2026-09-07', to: '2026-09-13', rows: [row()] });
+
+  it('accepts a well-formed period board and rejects a malformed row', () => {
+    expect(parsePeriodBoard(valid()).rows).toHaveLength(1);
+    expect(parsePeriodBoard({ ...valid(), rows: [] }).rows).toEqual([]);
+    expect(() => parsePeriodBoard(null)).toThrow(/period board/);
+    expect(() => parsePeriodBoard({ ...valid(), from: 7 })).toThrow(/from/);
+    expect(() => parsePeriodBoard({ ...valid(), rows: [row({ rank: 0 })] })).toThrow(/row/);
+    expect(() => parsePeriodBoard({ ...valid(), rows: [row({ solvedDays: 0 })] })).toThrow(/row/);
+    expect(() => parsePeriodBoard({ ...valid(), rows: [row({ points: -1 })] })).toThrow(/row/);
+    expect(() => parsePeriodBoard({ ...valid(), rows: [row({ publicId: 'NOPE' })] })).toThrow(/row/);
+  });
+
+  it('accepts standings and rejects a rank past the population', () => {
+    expect(parseStandings({ standings: [] })).toEqual([]);
+    expect(parseStandings({ standings: [{ group: 'abcdefghij234567', rank: 2, of: 7 }] })).toHaveLength(1);
+    expect(() => parseStandings({ standings: [{ group: 'abcdefghij234567', rank: 8, of: 7 }] })).toThrow(/row/);
+    expect(() => parseStandings({ standings: [{ group: 'NOPE', rank: 1, of: 1 }] })).toThrow(/row/);
+    expect(() => parseStandings({})).toThrow(/standings/);
   });
 });
 
@@ -798,14 +786,14 @@ describe('parseAccountSummary (#204)', () => {
         deviceId: DEVICE,
         email: 'zoe@example.com',
         createdAt: '2026-08-12T10:00:00.000Z',
-        mergePending: false,
+        departurePending: false,
       }),
     ).toEqual({
       accountId: ID,
       deviceId: DEVICE,
       email: 'zoe@example.com',
       createdAt: '2026-08-12T10:00:00.000Z',
-      mergePending: false,
+      departurePending: false,
     });
   });
 
@@ -814,7 +802,7 @@ describe('parseAccountSummary (#204)', () => {
       accountId: ID,
       deviceId: DEVICE,
       createdAt: '2026-08-12T10:00:00.000Z',
-      mergePending: false,
+      departurePending: false,
     };
     expect(parseAccountSummary({ ...base, email: null }).email).toBeNull();
     for (const email of [undefined, '', 42]) {
@@ -828,7 +816,7 @@ describe('parseAccountSummary (#204)', () => {
       deviceId: DEVICE,
       email: null,
       createdAt: '',
-      mergePending: false,
+      departurePending: false,
     });
     expect(summary.createdAt).toBe('');
     // The screen renders no "since" line for it, exactly as the device list renders no date.
@@ -836,17 +824,17 @@ describe('parseAccountSummary (#204)', () => {
   });
 
   it('refuses a body whose IDS are wrong — an account screen may not name nobody', () => {
-    const rest = { email: null, createdAt: '', mergePending: false };
+    const rest = { email: null, createdAt: '', departurePending: false };
     expect(() => parseAccountSummary({ accountId: 'nope', deviceId: DEVICE, ...rest })).toThrow(/accountId/);
     expect(() => parseAccountSummary({ accountId: ID, deviceId: 'nope', ...rest })).toThrow(/deviceId/);
     expect(() => parseAccountSummary(null)).toThrow(/not an object/);
   });
 
-  it('carries the merge flag, which is what the client retries on', () => {
+  it('carries the departure flag, which is what the client retries on', () => {
     const base = { accountId: ID, deviceId: DEVICE, email: null, createdAt: '' };
-    expect(parseAccountSummary({ ...base, mergePending: true }).mergePending).toBe(true);
-    expect(parseAccountSummary({ ...base, mergePending: false }).mergePending).toBe(false);
-    expect(() => parseAccountSummary(base)).toThrow(/mergePending/);
+    expect(parseAccountSummary({ ...base, departurePending: true }).departurePending).toBe(true);
+    expect(parseAccountSummary({ ...base, departurePending: false }).departurePending).toBe(false);
+    expect(() => parseAccountSummary(base)).toThrow(/departurePending/);
   });
 });
 
@@ -907,7 +895,7 @@ describe('link answers (#204 vol. 2)', () => {
       accountId: ID,
       deviceId: DEVICE,
       email: 'z@example.com',
-      mergePending: false,
+      departurePending: false,
     };
     expect(parseLinkResult({ ...base, stakes: { streak: 12, best: 30, days: 41 } }).stakes).toEqual({
       streak: 12,
@@ -920,17 +908,17 @@ describe('link answers (#204 vol. 2)', () => {
     expect(parseLinkResult({ ...base, stakes: { streak: 12, days: 41 } }).stakes).toBeNull();
   });
 
-  it('REFUSES a link answer whose mergePending is missing or malformed (#204)', () => {
+  it('REFUSES a link answer whose departurePending is missing or malformed (#204)', () => {
     // It is a JOB the client has to come back and finish — consented friend edges the
     // server could not fan out in one transaction. Coercing a missing field to `false`
     // silently cancelled the resumed drain, which is the opposite of what an absent
     // answer means; and this parser already refuses every other malformed field, because
     // an identity is being replaced off this body.
     const base = { outcome: 'adopted', accountId: ID, deviceId: DEVICE, email: 'z@example.com' };
-    expect(parseLinkResult({ ...base, mergePending: true }).mergePending).toBe(true);
-    expect(parseLinkResult({ ...base, mergePending: false }).mergePending).toBe(false);
-    expect(() => parseLinkResult(base)).toThrow(/mergePending/);
-    expect(() => parseLinkResult({ ...base, mergePending: 'yes' })).toThrow(/mergePending/);
-    expect(() => parseLinkResult({ ...base, mergePending: 1 })).toThrow(/mergePending/);
+    expect(parseLinkResult({ ...base, departurePending: true }).departurePending).toBe(true);
+    expect(parseLinkResult({ ...base, departurePending: false }).departurePending).toBe(false);
+    expect(() => parseLinkResult(base)).toThrow(/departurePending/);
+    expect(() => parseLinkResult({ ...base, departurePending: 'yes' })).toThrow(/departurePending/);
+    expect(() => parseLinkResult({ ...base, departurePending: 1 })).toThrow(/departurePending/);
   });
 });

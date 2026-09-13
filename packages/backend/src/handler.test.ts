@@ -12,14 +12,15 @@ import {
   dateForDayNumber,
   encodeResult,
   encodeWordResult,
-  inviteCardPath,
-  inviteLandingPath,
+  groupCardPath,
+  groupLandingPath,
   shareCardPath,
   sharePath,
-  INVITE_SEGMENT,
+  GROUP_SEGMENT,
 } from '@whippin/shared';
 import { createHandler, type HandlerDeps } from './handler';
-import { renderCardPng, renderInviteCardPng, renderWordCardPng } from './ogCard';
+import { renderCardPng, renderGroupCardPng, renderWordCardPng } from './ogCard';
+import { memoryGroupStore } from './memoryGroupStore';
 import type { ProfileRecord, ProfileStore } from './profileStore';
 import { LAMBDA_MAX_RESPONSE_BYTES, envelopeBytes, type FnUrlEvent } from './respond';
 import type { PuzzleStore } from './store';
@@ -29,7 +30,7 @@ import type { PuzzleStore } from './store';
 vi.mock('./ogCard', async () => {
   const actual = await vi.importActual<typeof import('./ogCard')>('./ogCard');
   const stub = () => vi.fn(async () => Buffer.from([0x89, 0x50, 0x4e, 0x47]));
-  return { ...actual, renderCardPng: stub(), renderInviteCardPng: stub(), renderWordCardPng: stub() };
+  return { ...actual, renderCardPng: stub(), renderGroupCardPng: stub(), renderWordCardPng: stub() };
 });
 
 // A minimal but schema-valid puzzle, keyed by the date the fixed clock resolves to.
@@ -486,13 +487,14 @@ describe('word-mode share routes (#156)', () => {
   });
 });
 
-// CONTRACT (#189, preview added 2026-08-20): `/i/<publicId>` is the link a player SHARES,
-// so the server owns it — the page a chat unfurls carries that player's own name and
-// mark, and it bounces a human onto the SPA landing that actually records the edge. The
-// two paths come from `shared/invite.ts` here and in `web/langs.ts`, which is what keeps
-// the bounce landing somewhere the app routes.
-describe('invite link (#189) — the shared link, its preview page and its card', () => {
+// CONTRACT (#271): `/g/<groupId>` is the link a member SHARES, so the server owns it — the
+// page a chat unfurls carries the group's name and its members' marks, and it bounces a
+// human onto the SPA landing that actually records the membership. The paths come from
+// `shared/invite.ts` here and in `web/langs.ts`, which is what keeps the bounce landing
+// somewhere the app routes.
+describe('group invite link (#271) — the shared link, its preview page and its card', () => {
   const ID = 'abcdefghij234567';
+  const MEMBER = 'zwjxqk37xfkvtxqu';
   const stored = (row: ProfileRecord | null, fails = false, live = true): ProfileStore => ({
     async get() {
       if (fails) throw new Error('profile store is down');
@@ -504,72 +506,90 @@ describe('invite link (#189) — the shared link, its preview page and its card'
     async upsert() {},
   });
   const drawn = blankAvatar(2);
+  // A group with one member, minted the way the route mints one: the store hands out the
+  // id, so the test names it by overriding what `create` is given.
+  async function seeded(name = 'Les_copains') {
+    const groups = memoryGroupStore();
+    await groups.create({ id: ID, name, createdBy: MEMBER, now: FIXED_NOW.toISOString() });
+    return groups;
+  }
 
-  it('serves the preview page: the player named, their card, the landing to bounce to', async () => {
+  it('serves the preview page: the group named, its card, the landing to bounce to', async () => {
     const res = await makeHandler({
       siteOrigin: ORIGIN,
-      profiles: stored({ publicId: ID, name: 'Chqrles', avatar: drawn }),
-    })(event({ path: `/${INVITE_SEGMENT}/${ID}` }));
+      groups: await seeded(),
+      profiles: stored({ publicId: MEMBER, name: 'Chqrles', avatar: drawn }),
+    })(event({ path: `/${GROUP_SEGMENT}/${ID}` }));
     expect(res.statusCode).toBe(200);
     expect(res.headers['Content-Type']).toMatch(/text\/html/);
-    // The title says the two things the card says, and nothing else.
-    expect(res.body).toContain('<title>Whippin AI — Chqrles</title>');
-    expect(res.body).toContain(`${ORIGIN}${inviteCardPath(ID)}`);
-    // The click continues to the SPA landing — the one that records the mutual edge.
-    expect(res.body).toContain(`${ORIGIN}${inviteLandingPath(ID)}`);
-  });
-
-  it('names the ASSIGNED identity for a player who never customized one', async () => {
-    const res = await makeHandler({ siteOrigin: ORIGIN, profiles: stored(null) })(
-      event({ path: `/${INVITE_SEGMENT}/${ID}` }),
-    );
-    expect(res.statusCode).toBe(200);
-    expect(res.body).toContain(`<title>Whippin AI — ${anonName(ID)}</title>`);
+    // The title says the one thing the card says in text, and nothing else.
+    expect(res.body).toContain('<title>Whippin AI — Les_copains</title>');
+    expect(res.body).toContain(`${ORIGIN}${groupCardPath(ID)}`);
+    // The click continues to the SPA landing — the one that records the membership.
+    expect(res.body).toContain(`${ORIGIN}${groupLandingPath(ID)}`);
+    expect(res.headers['Cache-Control']).toBe('public, max-age=300');
   });
 
   it('a trailing slash is the same link (a pasted one often carries one)', async () => {
-    const res = await makeHandler({ siteOrigin: ORIGIN, profiles: stored(null) })(
-      event({ path: `/${INVITE_SEGMENT}/${ID}/` }),
+    const res = await makeHandler({ siteOrigin: ORIGIN, groups: await seeded(), profiles: stored(null) })(
+      event({ path: `/${GROUP_SEGMENT}/${ID}/` }),
     );
     expect(res.statusCode).toBe(200);
   });
 
   it('a malformed id is a 404 — never a lookup for an id nobody can hold', async () => {
-    const profiles = stored(null);
-    const get = vi.spyOn(profiles, 'get');
-    const handler = makeHandler({ siteOrigin: ORIGIN, profiles });
+    const groups = memoryGroupStore();
+    const get = vi.spyOn(groups, 'get');
+    const handler = makeHandler({ siteOrigin: ORIGIN, groups, profiles: stored(null) });
     for (const bad of ['nope', 'abcdefghij234560', `${ID}x`]) {
-      const res = await handler(event({ path: `/${INVITE_SEGMENT}/${bad}` }));
+      const res = await handler(event({ path: `/${GROUP_SEGMENT}/${bad}` }));
       expect(res.statusCode).toBe(404);
     }
     expect(get).not.toHaveBeenCalled();
   });
 
-  it('renders the card from the STORED profile, empty avatar read as none', async () => {
+  it('a link naming no group has expired', async () => {
+    const res = await makeHandler({ siteOrigin: ORIGIN, groups: memoryGroupStore(), profiles: stored(null) })(
+      event({ path: `/${GROUP_SEGMENT}/${ID}` }),
+    );
+    expect(res.statusCode).toBe(404);
+    expect(JSON.parse(res.body).message).toMatch(/expired/);
+  });
+
+  it('renders the card from the members\' STORED profiles, empty avatar read as none', async () => {
     const res = await makeHandler({
-      profiles: stored({ publicId: ID, name: 'Chqrles', avatar: '' }),
-    })(event({ path: inviteCardPath(ID) }));
+      groups: await seeded(),
+      profiles: stored({ publicId: MEMBER, name: 'Chqrles', avatar: '' }),
+    })(event({ path: groupCardPath(ID) }));
     expect(res.statusCode).toBe(200);
     expect(res.headers['Content-Type']).toMatch(/image\/png/);
-    expect(renderInviteCardPng).toHaveBeenCalledWith({
-      publicId: ID,
-      name: 'Chqrles',
-      avatar: null,
+    expect(renderGroupCardPng).toHaveBeenCalledWith({
+      name: 'Les_copains',
+      members: [{ publicId: MEMBER, name: 'Chqrles', avatar: null }],
     });
   });
 
+  it('drops a member whose account is gone from the card (#204)', async () => {
+    await makeHandler({
+      groups: await seeded(),
+      profiles: stored({ publicId: MEMBER, name: 'Chqrles', avatar: '' }, false, false),
+    })(event({ path: groupCardPath(ID) }));
+    expect(renderGroupCardPng).toHaveBeenLastCalledWith({ name: 'Les_copains', members: [] });
+  });
+
   it('caches an answered read, but NEVER a face it had to fall back to', async () => {
-    const answered = await makeHandler({ siteOrigin: ORIGIN, profiles: stored(null) })(
-      event({ path: `/${INVITE_SEGMENT}/${ID}` }),
+    const answered = await makeHandler({ siteOrigin: ORIGIN, groups: await seeded(), profiles: stored(null) })(
+      event({ path: `/${GROUP_SEGMENT}/${ID}` }),
     );
     expect(answered.headers['Cache-Control']).toMatch(/max-age=\d+/);
 
     // A read that FAILED is not the answer "never customized": holding the assigned
-    // identity at the edge would put a stranger's face on a player who drew their own.
+    // identity at the edge would put a stranger's face on a member who drew their own.
     const failed = await makeHandler({
       siteOrigin: ORIGIN,
+      groups: await seeded(),
       profiles: stored(null, true),
-    })(event({ path: `/${INVITE_SEGMENT}/${ID}` }));
+    })(event({ path: `/${GROUP_SEGMENT}/${ID}` }));
     expect(failed.statusCode).toBe(200);
     expect(failed.headers['Cache-Control']).toBe('no-store');
   });
@@ -579,7 +599,7 @@ describe('invite link (#189) — the shared link, its preview page and its card'
 // `/s/<token>/<publicId>`, is the result share wearing its player. The token is read
 // exactly as a plain share's; the page unfurls as the player's own card (mark + name over
 // the result) and names them in its title, and the click opens the shared day exactly as a
-// plain share's does — there is no landing in between. It is served with the invite
+// plain share's does — there is no landing in between. It is served with the group
 // preview's short TTL, never the plain share's year. A deleted signer falls back to the
 // PLAIN share — the score was never the part that went away.
 describe('a signed share (the result wearing its player)', () => {
@@ -612,7 +632,7 @@ describe('a signed share (the result wearing its player)', () => {
     expect(res.body).toContain('<title>Chqrles · Whippin AI 2026-07-04 — 6 tries</title>');
     expect(res.body).toContain(`${ORIGIN}${shareCardPath(token, ID)}`);
     expect(res.body).toContain(`location.replace("${ORIGIN}/en/2026-07-04")`);
-    expect(res.body).not.toContain(inviteLandingPath(ID));
+    expect(res.body).not.toContain(groupLandingPath(ID));
     expect(res.headers['Cache-Control']).toBe('public, max-age=300');
   });
 

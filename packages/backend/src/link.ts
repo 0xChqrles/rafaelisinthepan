@@ -1,12 +1,12 @@
 // The email link route on the ONE handler: POST /link (#204).
 //
 //   { token }                                    — WHAT THIS ACCOUNT IS SAVED AS, and a
-//                                                  chance to finish any friend merge a
-//                                                  previous link left queued.
+//                                                  chance to finish any group departure
+//                                                  a previous link left queued (#271).
 //   { token, email, turnstileToken, lang? }      — SEND a 6-digit code to that address.
 //   { token, email, code, erase? }               — VERIFY it, and link.
 //
-// POST-only, and every message carries the device token in the BODY — the /friends rule, and
+// POST-only, and every message carries the device token in the BODY — the live routes' rule, and
 // the reason this route reads NO query parameter at all (its CloudFront behavior's allow-list
 // is EMPTY, the standing three-package contract). A production POST needs
 // `x-amz-content-sha256` over the exact body bytes, like every other write here.
@@ -49,9 +49,9 @@ import {
   PUBLIC_ID_PATTERN,
   VOCAB_BUILDS,
 } from '@whippin/shared';
-import { accountStakes, drainMerges, supportedTuples } from './accountLink';
+import { accountStakes, drainDepartures, supportedTuples } from './accountLink';
 import { deviceTokenHash, type DeviceStore } from './deviceStore';
-import type { FriendStore } from './friendStore';
+import type { GroupStore } from './groupStore';
 import type { PlayerHistoryStore } from './historyStore';
 import { emailHash, linkCodeHash, type LinkStore } from './linkStore';
 import {
@@ -69,7 +69,8 @@ import type { TurnstileVerifier } from './turnstile';
 
 export interface LinkHandlerDeps {
   links: LinkStore;
-  friends: FriendStore;
+  // A deleted account leaves every group (#271): the departure job drains through this.
+  groups: GroupStore;
   history: PlayerHistoryStore;
   mailer: Mailer;
   // SENDING a code creates state and puts a message in somebody else's inbox, so it is
@@ -143,9 +144,9 @@ export async function handleLink(
   const account = auth.value.account;
 
   if (!wantsSend && !wantsVerify) {
-    // The READ. It also DRAINS: a friend merge left unfinished by an interrupted link is
+    // The READ. It also DRAINS: a group departure left unfinished by an interrupted link is
     // resumed by the account's own next call here, which is what the client retries.
-    const merged = await drainMerges(deps.links, deps.friends, account.accountId);
+    const drained = await drainDepartures(deps.links, deps.groups, account.accountId);
     return json(
       200,
       {
@@ -156,7 +157,7 @@ export async function handleLink(
         // call — and it is the one true thing the account screen can say about an identity
         // whose name and mark it already draws.
         createdAt: account.createdAt,
-        mergePending: !merged,
+        departurePending: !drained,
       },
       responseHeaders,
     );
@@ -353,7 +354,7 @@ export async function handleLink(
           accountId: account.accountId,
           deviceId: held.deviceId,
           email,
-          mergePending: false,
+          departurePending: false,
         },
         responseHeaders,
       );
@@ -408,7 +409,7 @@ export async function handleLink(
         accountId: account.accountId,
         deviceId: held.deviceId,
         email,
-        mergePending: false,
+        departurePending: false,
       },
       responseHeaders,
     );
@@ -442,7 +443,7 @@ export async function handleLink(
     // **LEAVING AN ACCOUNT IS CONFIRMED TOO, even when nothing is destroyed** (user-decided
     // 2026-08-28). The account this device holds carries an address of its own, so it
     // survives and stays reachable — but this device still stops being it: the name, the
-    // mark, the streak and the friends on screen all become somebody else's. That happened
+    // mark, the streak and the groups on screen all become somebody else's. That happened
     // SILENTLY, which is the one outcome an identity change may not have; a player who typed
     // an address to SAVE their account, and turned out to have typed one that already
     // belongs to another, was simply moved to it with nothing said.
@@ -461,7 +462,7 @@ export async function handleLink(
   }
 
   // The identity and the active day's play, ONE transaction (#204): the device moves, the
-  // account being left is deleted with its profile row, the friend-merge job is persisted,
+  // account being left is deleted with its profile row, the departure job is persisted,
   // and — when that account is being erased — every supported language × mode tuple of
   // the active day moves with it where the destination has nothing and the source has
   // play. "Active day" means ALL of them, never whichever route the linking device is on:
@@ -475,12 +476,12 @@ export async function handleLink(
     erase,
     emailHash: hash,
     codeHash,
-    // The friend merge and the transfer both belong to the DELETION: an account that
-    // SURVIVES keeps its own edges and its own play — the right answer for an account the
+    // The departure and the transfer both belong to the DELETION: an account that
+    // SURVIVES keeps its own groups and its own play — the right answer for an account the
     // player can sign back into.
     ...(erase
       ? {
-          mergeFrom: leaving,
+          departFrom: leaving,
           moves: supportedTuples().map((tuple) => ({ date: activeDate(instant), ...tuple })),
         }
       : {}),
@@ -534,13 +535,13 @@ export async function handleLink(
 
   // The fan-out the transaction promised. It is best-effort HERE — the identity has already
   // changed and the player is waiting on an answer about it — and durable in the job it
-  // drains, so an unfinished merge is reported rather than lost.
-  const merged = await drainMerges(deps.links, deps.friends, target);
+  // drains, so an unfinished departure is reported rather than lost.
+  const drained = await drainDepartures(deps.links, deps.groups, target);
 
   // `erased` and `moved` used to ride along here and no client ever read either: the
   // ending draws the account it ARRIVED at, and what was left behind is exactly what the
-  // player was shown on the confirmation before they agreed to it. `mergePending` stays,
-  // because it is a JOB the client has to come back and finish (`state/account.ts`).
+  // player was shown on the confirmation before they agreed to it. `departurePending`
+  // stays, because it is a JOB the client has to come back and finish (`state/account.ts`).
   return json(
     200,
     {
@@ -548,7 +549,7 @@ export async function handleLink(
       accountId: target,
       deviceId: held.deviceId,
       email,
-      mergePending: !merged,
+      departurePending: !drained,
       stakes,
     },
     responseHeaders,

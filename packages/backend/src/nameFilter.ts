@@ -2,7 +2,7 @@
 // check, deliberately not a classifier — it normalizes away the easy disguises (case,
 // accents, spacing, digit-for-letter substitutions) and refuses a name containing any
 // listed term. Best-effort by design, like the avatar's symbol check: the real
-// containment is the friends model (#189), where the default board only shows people
+// containment is the groups model (#271), where the default board only shows people
 // you chose to add.
 
 // Digit/symbol stand-ins folded to the letters they imitate BEFORE matching, so

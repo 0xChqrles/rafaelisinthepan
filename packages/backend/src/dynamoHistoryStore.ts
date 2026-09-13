@@ -96,7 +96,7 @@ export function dynamoHistoryStore(
       // Whatever now sits BEYOND the cap, oldest first. Concurrent credits may each drop the
       // same element — a DELETE of an absent one is a no-op — so the collection can sit a
       // day or two over the cap until the next credit trims again. That is a BOUND overshot
-      // by simultaneous writes, the shape `FRIENDS_MAX` already has, and it converges; a
+      // by simultaneous writes, the shape `GROUP_MEMBERS_MAX` already has, and it converges; a
       // lost solved day would not.
       // Sorted but deliberately NOT bounded — `boundSolvedDays` is what DROPS the overflow,
       // and this is the one place that needs to see it in order to delete it.

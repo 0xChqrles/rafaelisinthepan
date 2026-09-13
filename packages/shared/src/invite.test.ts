@@ -5,9 +5,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   SHARE_TOKEN_SOURCE,
-  inviteCardPath,
-  inviteLandingPath,
-  invitePath,
+  groupCardPath,
+  groupInvitePath,
+  groupLandingPath,
   shareCardPath,
   sharePath,
 } from './invite';
@@ -27,10 +27,10 @@ describe('share and invite paths', () => {
     expect(shareCardPath(TOKEN, ID)).toBe(`/og/${TOKEN}/${ID}.png`);
   });
 
-  it('the invite link, its landing and its card', () => {
-    expect(invitePath(ID)).toBe(`/i/${ID}`);
-    expect(inviteLandingPath(ID)).toBe(`/join/${ID}`);
-    expect(inviteCardPath(ID)).toBe(`/og/i/${ID}.png`);
+  it('the group invite link, its landing and its card (#271)', () => {
+    expect(groupInvitePath(ID)).toBe(`/g/${ID}`);
+    expect(groupLandingPath(ID)).toBe(`/join/g/${ID}`);
+    expect(groupCardPath(ID)).toBe(`/og/g/${ID}.png`);
   });
 
   it('a token never contains a slash, which is what keeps the two segments apart', () => {

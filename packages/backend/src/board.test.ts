@@ -8,7 +8,7 @@ import {
 } from '@whippin/shared';
 import { createHandler } from './handler';
 import { memoryDeviceStore } from './memoryDeviceStore';
-import { memoryFriendStore } from './memoryFriendStore';
+import { memoryGroupStore } from './memoryGroupStore';
 import { memoryHistoryStore } from './memoryHistoryStore';
 import { memoryProfileStore } from './memoryProfileStore';
 import { memoryRoundStore } from './memoryRoundStore';
@@ -18,13 +18,13 @@ import type { ScoreRow, ScoreStore } from './scoreStore';
 import type { PuzzleStore } from './store';
 import { seedDevice } from './testDevice';
 
-// The /board route (#190): the GLOBAL top-50 read (anonymous GET) and the FRIENDS board
-// (authenticated POST). The ranking rules themselves are contract-tested in
+// The /board route (#190): the GLOBAL top-50 read (anonymous GET) and a GROUP's boards
+// (authenticated POST, #271). The ranking rules themselves are contract-tested in
 // @whippin/shared/leaderboard.test.ts; what this asserts is the ROUTE — params, auth,
-// and the response carrying ranks + profiles the way a board renders them — plus the
-// #206 in-progress rows: a friend with a stored round but no recorded score is PLAYING,
-// with the EXACT deduped try count (against the day's full artifact) and the stored
-// derived percentage, on the friends POST only.
+// membership, and the response carrying ranks + profiles the way a board renders them —
+// plus the #206 in-progress rows: a member with a stored round but no recorded score is
+// PLAYING, with the EXACT deduped try count (against the day's full artifact) and the
+// stored derived percentage, on the day POST only.
 
 const NOW = new Date('2026-08-19T12:00:00Z');
 const DATE = activeDate(NOW);
@@ -51,20 +51,20 @@ async function makeHandler(
   opts: { store?: PuzzleStore; rounds?: RoundStore } = {},
 ) {
   const profiles = memoryProfileStore();
-  const friends = memoryFriendStore();
   const devices = memoryDeviceStore();
+  const groups = memoryGroupStore();
   const handler = createHandler({
     store: opts.store ?? emptyStore,
     now: () => NOW,
     scores: { scoreStore: fixedScores(rows) },
     profiles,
-    friends,
+    groups,
     deviceStore: devices,
     devices: {
       turnstile: { verify: async () => true },
       allowSourceIp: true,
     },
-    // The #206 playing rows read the friends' stored rounds through the round route's
+    // The #206 playing rows read the members' stored rounds through the round route's
     // own dep bundle; only `roundStore` is ever touched by the board.
     ...(opts.rounds
       ? {
@@ -78,13 +78,24 @@ async function makeHandler(
         }
       : {}),
   });
-  return { handler, profiles, friends, devices };
+  return { handler, profiles, groups, devices };
 }
 
-// The caller's device, seeded on an account the test already named — the friends face
+// The caller's device, seeded on an account the test already named — the group face
 // resolves the caller from the token, so the board it answers is that ACCOUNT's.
 const callerOn = (devices: ReturnType<typeof memoryDeviceStore>, accountId: string) =>
   seedDevice(devices, { accountId });
+
+// ONE group per test, created by the caller and joined by whoever the case names — the
+// shape every trusted-board case needs. Ids here are not seeded accounts, so the store is
+// built without an account check (the route's own membership check is what is asserted).
+const GROUP = 'gggggggggggggggg';
+async function enroll(groups: ReturnType<typeof memoryGroupStore>, me: string, ...others: string[]) {
+  if (!(await groups.get(GROUP))) {
+    await groups.create({ id: GROUP, name: 'Test', createdBy: me, now: NOW.toISOString() });
+  }
+  for (const id of others) await groups.join({ id: GROUP, publicId: id, now: NOW.toISOString() });
+}
 
 function get(query: Record<string, string>): FnUrlEvent {
   return {
@@ -176,19 +187,19 @@ describe('board route (#190)', () => {
     expect(board.rows.slice(40).every((row) => row.rank === 41 && row.score === 99)).toBe(true);
   });
 
-  it('answers the friends board only for the caller edges plus themselves', async () => {
+  it('answers a group board only for its members', async () => {
     const me = generatePublicId();
     const friend = generatePublicId();
     const stranger = generatePublicId();
-    const { handler, friends, devices } = await makeHandler([
+    const { handler, groups, devices } = await makeHandler([
       { publicId: me, score: 9 },
       { publicId: friend, score: 4 },
       { publicId: stranger, score: 1 },
     ]);
-    await friends.link({ publicId: me, friendId: friend, createdAt: NOW.toISOString() });
+    await enroll(groups, me, friend);
     const caller = await callerOn(devices, me);
 
-    const result = await handler(post(QUERY, { token: caller.token }));
+    const result = await handler(post(QUERY, { token: caller.token, group: GROUP }));
     expect(result.statusCode).toBe(200);
     const board = JSON.parse(result.body) as Board;
     // The stranger's better score is not on this board — that is the whole point.
@@ -224,7 +235,7 @@ describe('board route (#190)', () => {
         ]),
       },
       profiles: flaky,
-      friends: memoryFriendStore(),
+      groups: memoryGroupStore(),
       deviceStore: memoryDeviceStore(),
       devices: {
         turnstile: { verify: async () => true },
@@ -241,60 +252,186 @@ describe('board route (#190)', () => {
     ]);
   });
 
-  it("shows friends' scores before the caller has played (own row simply absent)", async () => {
+  it("shows members' scores before the caller has played (own row simply absent)", async () => {
     const me = generatePublicId();
     const friend = generatePublicId();
-    const { handler, friends, devices } = await makeHandler([{ publicId: friend, score: 4 }]);
-    await friends.link({ publicId: me, friendId: friend, createdAt: NOW.toISOString() });
+    const { handler, groups, devices } = await makeHandler([{ publicId: friend, score: 4 }]);
+    await enroll(groups, me, friend);
     const caller = await callerOn(devices, me);
 
-    const board = JSON.parse((await handler(post(QUERY, { token: caller.token }))).body) as Board;
+    const board = JSON.parse((await handler(post(QUERY, { token: caller.token, group: GROUP }))).body) as Board;
     expect(board.rows.map((row) => row.publicId)).toEqual([friend]);
     // The caller never waits on their own board — the identity strip already shows them.
     expect(board.waiting).toEqual([]);
   });
 
-  it('names a friend with no score today in `waiting` instead of dropping them', async () => {
+  it('names a member with no score today in `waiting` instead of dropping them', async () => {
     const me = generatePublicId();
     const played = generatePublicId();
     const notYet = generatePublicId();
-    const { handler, friends, profiles, devices } = await makeHandler([
+    const { handler, groups, profiles, devices } = await makeHandler([
       { publicId: me, score: 9 },
       { publicId: played, score: 4 },
     ]);
-    await friends.link({ publicId: me, friendId: played, createdAt: NOW.toISOString() });
-    await friends.link({ publicId: me, friendId: notYet, createdAt: NOW.toISOString() });
+    await enroll(groups, me, played);
+    await enroll(groups, me, notYet);
     await profiles.upsert({ publicId: notYet, name: 'Later', avatar: 'A'.repeat(19), now: NOW.toISOString() });
     const caller = await callerOn(devices, me);
 
-    const board = JSON.parse((await handler(post(QUERY, { token: caller.token }))).body) as Board;
+    const board = JSON.parse((await handler(post(QUERY, { token: caller.token, group: GROUP }))).body) as Board;
     expect(board.rows.map((row) => row.publicId)).toEqual([played, me]);
     expect(board.waiting).toEqual([
       { publicId: notYet, name: 'Later', avatar: 'A'.repeat(19) },
     ]);
   });
 
-  it('refuses a friends read without a canonical device token (the auth IS the body)', async () => {
+  it('refuses a group read without a canonical device token (the auth IS the body)', async () => {
     const { handler } = await makeHandler([]);
-    expect((await handler(post(QUERY, {}))).statusCode).toBe(400);
-    expect((await handler(post(QUERY, { token: 'nope' }))).statusCode).toBe(400);
+    expect((await handler(post(QUERY, { group: GROUP }))).statusCode).toBe(400);
+    expect((await handler(post(QUERY, { token: 'nope', group: GROUP }))).statusCode).toBe(400);
     // Well-formed but never issued: the distinct answer that signs a device out (#216).
-    const stranger = await handler(post(QUERY, { token: 'f'.repeat(64) }));
+    const stranger = await handler(post(QUERY, { token: 'f'.repeat(64), group: GROUP }));
     expect(stranger.statusCode).toBe(401);
     expect(JSON.parse(stranger.body).error).toBe('unknown_device');
   });
 
   it('answers an empty day honestly on both faces', async () => {
-    const { handler, devices } = await makeHandler([]);
+    const { handler, groups, devices } = await makeHandler([]);
     const global = JSON.parse((await handler(get(QUERY))).body) as Board;
     expect(global).toEqual({ rows: [], own: null, playing: [], waiting: [] });
     const caller = await seedDevice(devices);
-    const mine = JSON.parse((await handler(post(QUERY, { token: caller.token }))).body) as Board;
+    await enroll(groups, caller.accountId);
+    const mine = JSON.parse((await handler(post(QUERY, { token: caller.token, group: GROUP }))).body) as Board;
     expect(mine).toEqual({ rows: [], own: null, playing: [], waiting: [] });
+  });
+
+  // THE TRUST BOUNDARY (#271): a board is drawn over a member list, for a member only.
+  it('refuses a group the caller is not in, and a group that does not exist, alike', async () => {
+    const me = generatePublicId();
+    const other = generatePublicId();
+    const { handler, groups, devices } = await makeHandler([{ publicId: other, score: 3 }]);
+    await enroll(groups, other);
+    const caller = await callerOn(devices, me);
+    const outsider = await handler(post(QUERY, { token: caller.token, group: GROUP }));
+    expect(outsider.statusCode).toBe(403);
+    expect(JSON.parse(outsider.body).error).toBe('not_member');
+    const nowhere = await handler(post(QUERY, { token: caller.token, group: 'nnnnnnnnnnnnnnnn' }));
+    expect(nowhere.statusCode).toBe(403);
+    expect((await handler(post(QUERY, { token: caller.token, group: 'NOPE' }))).statusCode).toBe(400);
+    expect((await handler(post(QUERY, { token: caller.token }))).statusCode).toBe(400);
+    expect(
+      (await handler(post(QUERY, { token: caller.token, group: GROUP, period: 'year' }))).statusCode,
+    ).toBe(400);
   });
 });
 
-// CONTRACT (#206): the friends board is alive mid-day. A friend with a stored round for
+// The PERIOD boards (#271): the shared `rankPeriod` rule over every member's recorded score
+// on every day `periodRange` names, and the STANDING read the solved screen makes.
+describe('group period boards and the standing (#271)', () => {
+  // The day partitions BY DATE: a score store the route reads one day at a time.
+  function datedScores(rows: (ScoreRow & { date: string })[]): ScoreStore {
+    return {
+      list: async (key) => rows.filter((row) => row.date === key.date),
+      getMany: async (key, ids) =>
+        rows.filter((row) => row.date === key.date && ids.includes(row.publicId)),
+      submit: async () => {
+        throw new Error('the board route never submits');
+      },
+    };
+  }
+  async function makeDated(rows: (ScoreRow & { date: string })[]) {
+    const profiles = memoryProfileStore();
+    const devices = memoryDeviceStore();
+    const groups = memoryGroupStore();
+    const handler = createHandler({
+      store: emptyStore,
+      now: () => NOW,
+      scores: { scoreStore: datedScores(rows) },
+      profiles,
+      groups,
+      deviceStore: devices,
+      devices: { turnstile: { verify: async () => true }, allowSourceIp: true },
+    });
+    return { handler, profiles, groups, devices };
+  }
+  // NOW is 2026-08-19, a Wednesday: the week is 08-17 .. 08-19, the month 08-01 .. 08-19.
+  const ME = 'aaaaaaaaaaaaaaaa';
+  const B = 'bbbbbbbbbbbbbbbb';
+  const C = 'cccccccccccccccc';
+  const OUTSIDE = 'zzzzzzzzzzzzzzzz';
+
+  it('ranks the WEEK by podium points over the week days only, members only', async () => {
+    const { handler, groups, devices, profiles } = await makeDated([
+      { date: '2026-08-17', publicId: ME, score: 5 },
+      { date: '2026-08-17', publicId: B, score: 3 },
+      { date: '2026-08-18', publicId: ME, score: 4 },
+      { date: '2026-08-19', publicId: B, score: 9 },
+      { date: '2026-08-19', publicId: ME, score: 9 },
+      // Last week, and a stranger: neither counts.
+      { date: '2026-08-16', publicId: B, score: 1 },
+      { date: '2026-08-18', publicId: OUTSIDE, score: 1 },
+    ]);
+    await enroll(groups, ME, B, C);
+    await profiles.upsert({ publicId: B, name: 'Bea', avatar: 'A'.repeat(19), now: NOW.toISOString() });
+    const caller = await callerOn(devices, ME);
+    const result = await handler(post(QUERY, { token: caller.token, group: GROUP, period: 'week' }));
+    expect(result.statusCode).toBe(200);
+    const board = JSON.parse(result.body);
+    expect(board.from).toBe('2026-08-17');
+    expect(board.to).toBe(DATE);
+    // Day 17: B first (3), ME second (2). Day 18: ME alone (3). Day 19: tie, both 3.
+    expect(board.rows).toEqual([
+      { publicId: ME, rank: 1, points: 8, solvedDays: 3, total: 18, name: '', avatar: null },
+      { publicId: B, rank: 2, points: 6, solvedDays: 2, total: 12, name: 'Bea', avatar: 'A'.repeat(19) },
+    ]);
+  });
+
+  it('ranks the MONTH from the first of the month to the day asked about', async () => {
+    const { handler, groups, devices } = await makeDated([
+      { date: '2026-08-02', publicId: B, score: 2 },
+      { date: '2026-07-31', publicId: ME, score: 2 },
+    ]);
+    await enroll(groups, ME, B);
+    const caller = await callerOn(devices, ME);
+    const board = JSON.parse(
+      (await handler(post(QUERY, { token: caller.token, group: GROUP, period: 'month' }))).body,
+    );
+    expect(board.from).toBe('2026-08-01');
+    expect(board.rows.map((row: { publicId: string }) => row.publicId)).toEqual([B]);
+  });
+
+  it('answers the standing in each of the caller\'s groups, and none where they have no row', async () => {
+    const { handler, groups, devices } = await makeDated([
+      { date: DATE, publicId: ME, score: 7 },
+      { date: DATE, publicId: B, score: 3 },
+      { date: DATE, publicId: C, score: 7 },
+    ]);
+    await enroll(groups, ME, B, C);
+    await groups.create({ id: 'hhhhhhhhhhhhhhhh', name: 'Duo', createdBy: B, now: NOW.toISOString() });
+    await groups.join({ id: 'hhhhhhhhhhhhhhhh', publicId: ME, now: NOW.toISOString() });
+    await groups.create({ id: 'iiiiiiiiiiiiiiii', name: 'Solo', createdBy: ME, now: NOW.toISOString() });
+    const caller = await callerOn(devices, ME);
+    const result = await handler(post(QUERY, { token: caller.token, standing: true }));
+    expect(result.statusCode).toBe(200);
+    // Tied with C behind B in the big group; second of two in the duo; alone in Solo.
+    expect(JSON.parse(result.body).standings).toEqual([
+      { group: GROUP, rank: 2, of: 3 },
+      { group: 'hhhhhhhhhhhhhhhh', rank: 2, of: 2 },
+      { group: 'iiiiiiiiiiiiiiii', rank: 1, of: 1 },
+    ]);
+    // A caller with no row today stands nowhere.
+    const late = await callerOn(devices, 'dddddddddddddddd');
+    await groups.join({ id: GROUP, publicId: 'dddddddddddddddd', now: NOW.toISOString() });
+    expect(JSON.parse((await handler(post(QUERY, { token: late.token, standing: true }))).body)).toEqual({
+      standings: [],
+    });
+    expect(
+      (await handler(post(QUERY, { token: caller.token, standing: true, group: GROUP }))).statusCode,
+    ).toBe(400);
+  });
+});
+
+// CONTRACT (#206): a group's day board is alive mid-day. A member with a stored round for
 // the CURRENT published revision but no recorded score is IN PROGRESS — their row carries
 // the EXACT deduped try count (`countTries` over the raw log against the day's full
 // artifact, never the stored log's length) and the server-derived percentage, ordered by
@@ -354,30 +491,30 @@ describe('board in-progress rows (#206)', () => {
       now: NOW,
     });
 
-  it('names mid-round friends in `playing` with the EXACT deduped try count', async () => {
+  it('names mid-round members in `playing` with the EXACT deduped try count', async () => {
     const me = generatePublicId();
     const finished = generatePublicId();
     const midRound = generatePublicId();
     const notYet = generatePublicId();
     const rounds = memoryRoundStore();
-    const { handler, friends, profiles, devices } = await makeHandler(
+    const { handler, groups, profiles, devices } = await makeHandler(
       [{ publicId: finished, score: 4 }],
       { store: artifactStore, rounds },
     );
     for (const id of [finished, midRound, notYet]) {
-      await friends.link({ publicId: me, friendId: id, createdAt: NOW.toISOString() });
+      await enroll(groups, me, id);
     }
     // The finished friend's round row stays: the recorded score is the day's final word.
     await seedRound(rounds, finished, ['mer', 'lune', 'nuit', 'phare'], 100);
     // Three raw guesses, TWO tries: `mers` is `mer`'s own group in every map that knows
     // either, so the pair is one identity — the number the final score will land on.
     await seedRound(rounds, midRound, ['mer', 'mers', 'lune'], 62.5);
-    // The caller's own live row shows too — it is where they stand among friends mid-day.
+    // The caller's own live row shows too — it is where they stand among the group mid-day.
     await seedRound(rounds, me, ['quai'], 10);
     await profiles.upsert({ publicId: midRound, name: 'Zoe', avatar: 'A'.repeat(19), now: NOW.toISOString() });
     const caller = await callerOn(devices, me);
 
-    const board = JSON.parse((await handler(post(QUERY, { token: caller.token }))).body) as Board;
+    const board = JSON.parse((await handler(post(QUERY, { token: caller.token, group: GROUP }))).body) as Board;
     expect(board.rows.map((row) => row.publicId)).toEqual([finished]);
     expect(board.playing).toEqual([
       { publicId: midRound, tries: 2, progress: 62.5, name: 'Zoe', avatar: 'A'.repeat(19) },
@@ -391,19 +528,19 @@ describe('board in-progress rows (#206)', () => {
     const me = generatePublicId();
     const ids = ['aaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbb', 'cccccccccccccccc'];
     const rounds = memoryRoundStore();
-    const { handler, friends, devices } = await makeHandler([], {
+    const { handler, groups, devices } = await makeHandler([], {
       store: artifactStore,
       rounds,
     });
     for (const id of ids) {
-      await friends.link({ publicId: me, friendId: id, createdAt: NOW.toISOString() });
+      await enroll(groups, me, id);
     }
     await seedRound(rounds, ids[0], ['quai'], 40); // behind on progress
     await seedRound(rounds, ids[1], ['mer', 'lune'], 80); // same progress, more tries
     await seedRound(rounds, ids[2], ['soir'], 80);
     const caller = await callerOn(devices, me);
 
-    const board = JSON.parse((await handler(post(QUERY, { token: caller.token }))).body) as Board;
+    const board = JSON.parse((await handler(post(QUERY, { token: caller.token, group: GROUP }))).body) as Board;
     expect(board.playing.map((row) => [row.publicId, row.progress, row.tries])).toEqual([
       [ids[2], 80, 1],
       [ids[1], 80, 2],
@@ -415,17 +552,17 @@ describe('board in-progress rows (#206)', () => {
     const me = generatePublicId();
     const friend = generatePublicId();
     const rounds = memoryRoundStore();
-    const { handler, friends, devices } = await makeHandler([], {
+    const { handler, groups, devices } = await makeHandler([], {
       store: artifactStore,
       rounds,
     });
-    await friends.link({ publicId: me, friendId: friend, createdAt: NOW.toISOString() });
+    await enroll(groups, me, friend);
     // A log played against a republished-away version: its tries would dedup against
     // maps it was never played on, and the round restarts on its player's next append.
     await seedRound(rounds, friend, ['mer'], 50, { puzzle: 'deadbeefdeadbeef' });
     const caller = await callerOn(devices, me);
 
-    const board = JSON.parse((await handler(post(QUERY, { token: caller.token }))).body) as Board;
+    const board = JSON.parse((await handler(post(QUERY, { token: caller.token, group: GROUP }))).body) as Board;
     expect(board.playing).toEqual([]);
     expect(board.waiting.map((row) => row.publicId)).toEqual([friend]);
   });
@@ -443,9 +580,9 @@ describe('board in-progress rows (#206)', () => {
     const solvedUnranked = generatePublicId();
     const capped = generatePublicId();
     const rounds = memoryRoundStore();
-    const { handler, friends, devices } = await makeHandler([], { store: artifactStore, rounds });
+    const { handler, groups, devices } = await makeHandler([], { store: artifactStore, rounds });
     for (const id of [solvedUnranked, capped]) {
-      await friends.link({ publicId: me, friendId: id, createdAt: NOW.toISOString() });
+      await enroll(groups, me, id);
     }
     // SOLVED, but the population holds no row for them — the IP allowance refused it, or
     // the solve landed past the flip. `recordScoreRow` swallows both silently by design.
@@ -456,7 +593,7 @@ describe('board in-progress rows (#206)', () => {
     await seedRound(rounds, capped, misses, 25);
     const caller = await callerOn(devices, me);
 
-    const board = JSON.parse((await handler(post(QUERY, { token: caller.token }))).body) as Board;
+    const board = JSON.parse((await handler(post(QUERY, { token: caller.token, group: GROUP }))).body) as Board;
     expect(board.rows).toEqual([]);
     expect(board.playing.map((row) => [row.publicId, row.progress, row.tries])).toEqual([
       [solvedUnranked, 100, 2],
@@ -470,23 +607,23 @@ describe('board in-progress rows (#206)', () => {
     const me = generatePublicId();
     const friend = generatePublicId();
     const rounds = memoryRoundStore();
-    const { handler, friends, devices } = await makeHandler([{ publicId: me, score: 3 }], {
+    const { handler, groups, devices } = await makeHandler([{ publicId: me, score: 3 }], {
       store: artifactStore,
       rounds,
     });
-    await friends.link({ publicId: me, friendId: friend, createdAt: NOW.toISOString() });
+    await enroll(groups, me, friend);
     await seedRound(rounds, friend, ['mer'], 50);
     await seedRound(rounds, friend, ['mer'], 50, { mode: 'word' });
     const caller = await callerOn(devices, me);
 
     // Word mode: a run's log reaches the server only at submission — nothing to read.
     const word = JSON.parse(
-      (await handler(post({ ...QUERY, mode: 'word' }, { token: caller.token }))).body,
+      (await handler(post({ ...QUERY, mode: 'word' }, { token: caller.token, group: GROUP }))).body,
     ) as Board;
     expect(word.playing).toEqual([]);
     expect(word.waiting.map((row) => row.publicId)).toEqual([friend]);
 
-    // The global board never watches anyone play — friends only, by consent.
+    // The global board never watches anyone play — members only, by consent.
     const global = JSON.parse((await handler(get({ ...QUERY, id: me }))).body) as Board;
     expect(global.playing).toEqual([]);
   });
@@ -495,11 +632,11 @@ describe('board in-progress rows (#206)', () => {
     const me = generatePublicId();
     const friend = generatePublicId();
     const rounds = memoryRoundStore();
-    const { handler, friends, devices } = await makeHandler([], { rounds });
-    await friends.link({ publicId: me, friendId: friend, createdAt: NOW.toISOString() });
+    const { handler, groups, devices } = await makeHandler([], { rounds });
+    await enroll(groups, me, friend);
     const caller = await callerOn(devices, me);
 
-    const board = JSON.parse((await handler(post(QUERY, { token: caller.token }))).body) as Board;
+    const board = JSON.parse((await handler(post(QUERY, { token: caller.token, group: GROUP }))).body) as Board;
     expect(board.playing).toEqual([]);
     expect(board.waiting.map((row) => row.publicId)).toEqual([friend]);
   });

@@ -6,19 +6,26 @@
 
 import {
   DEVICE_ID_PATTERN,
+  GROUP_ID_PATTERN,
+  isBoardPeriod,
   isValidAvatar,
   isValidDeviceToken,
   PUBLIC_ID_PATTERN,
 } from '@whippin/shared';
 import type {
   Board,
+  BoardPeriod,
   BoardPlayer,
   BoardRow,
+  GroupStanding,
+  GroupSummary,
+  PeriodBoard,
+  PeriodRow,
   PlayingRow,
   PlayerHistory,
   PlayerProfile,
+  PublicGroup,
   Puzzle,
-  ScoreHistogram,
   Word,
   WordPuzzle,
 } from '@whippin/shared';
@@ -199,60 +206,6 @@ export function parseWordPuzzle(data: unknown): WordPuzzle {
   return data as unknown as WordPuzzle;
 }
 
-// The live score population (#169/#170), READ-ONLY since #203: a finished round no longer
-// claims its score — the server derives it from the guess log and records the row itself
-// (the round route), so this is a plain GET of the day's bands. Unlike the puzzle route,
-// `mode` is REQUIRED here.
-export function scoresUrl(
-  lang: string,
-  date: string,
-  mode: Mode,
-  id?: string,
-  base: string = apiBase(),
-): string {
-  const root = `${requireApiBase(base)}/scores?lang=${encodeURIComponent(lang)}&date=${encodeURIComponent(
-    date,
-  )}&mode=${encodeURIComponent(mode)}`;
-  // The caller's PUBLIC id (#203, added on review), which is what makes the answer's
-  // `bucket` this player's rather than whoever else recorded the same number. `id` is in the
-  // score behavior's allowList — the root AGENTS.md three-package contract.
-  return id ? `${root}&id=${encodeURIComponent(id)}` : root;
-}
-
-// Runtime shape check for the histogram response — the parsePuzzle contract: a truncated
-// or wrong-shaped body surfaces as a failure (silent, here), never as NaN bars. An EMPTY
-// bucket list is valid since #187 — the bands are derived from the day's recorded rows,
-// so a population of zero honestly has none.
-export function parseScoreHistogram(data: unknown): ScoreHistogram {
-  if (!isRecord(data)) throw new Error('malformed histogram: not an object');
-  const { buckets, total, bucket } = data;
-  if (typeof total !== 'number' || !Number.isInteger(total) || total < 0) {
-    throw new Error('malformed histogram: "total" must be a non-negative integer');
-  }
-  if (bucket !== null && (typeof bucket !== 'number' || !Number.isInteger(bucket))) {
-    throw new Error('malformed histogram: "bucket" must be an integer or null');
-  }
-  if (!Array.isArray(buckets)) {
-    throw new Error('malformed histogram: "buckets" must be an array');
-  }
-  for (const b of buckets) {
-    if (
-      !isRecord(b) ||
-      typeof b.min !== 'number' ||
-      typeof b.max !== 'number' ||
-      typeof b.count !== 'number' ||
-      !Number.isInteger(b.count) ||
-      b.count < 0
-    ) {
-      throw new Error('malformed histogram: bad bucket entry');
-    }
-  }
-  if (bucket !== null && (bucket < 0 || bucket >= buckets.length)) {
-    throw new Error('malformed histogram: "bucket" index is outside "buckets"');
-  }
-  return data as unknown as ScoreHistogram;
-}
-
 // Production POSTs cross CloudFront's OAC in front of the Lambda URL, which refuses an
 // unsigned body: the request must carry `x-amz-content-sha256`, the lowercase hex SHA-256
 // of the EXACT UTF-8 body bytes. Hash and send the same byte array — never reserialize
@@ -280,7 +233,7 @@ export function isUnknownDeviceAnswer(status: number, error: unknown): boolean {
 }
 
 // The device route (#216): the lazy Turnstile-gated bootstrap that MINTS this device's
-// identity, and the sign-out screen's list + revocation. POST-only like /friends — the
+// identity, and the sign-out screen's list + revocation. POST-only — the
 // device token is the auth and it travels in the BODY, never a query string, so the route
 // reads no query at all (its CloudFront behavior's allow-list is EMPTY, the same
 // three-package contract). The answer never carries the token back: the client already
@@ -289,7 +242,7 @@ export function devicesUrl(base: string = apiBase()): string {
   return `${requireApiBase(base)}/devices`;
 }
 
-// Every /devices call is BOUNDED (the FriendInvite/turnstile rule, sized for a cold
+// Every /devices call is BOUNDED (the invite landing's turnstile rule, sized for a cold
 // Lambda + a server-side Siteverify): the bootstrap runs inside the origin-wide Web Lock
 // behind a module-level flight, so a request that never settled used to wedge account
 // creation for every tab — no error, no retry, PLAY disabled forever.
@@ -371,7 +324,7 @@ export function parseDeviceIdentity(data: unknown): DeviceListing {
 }
 
 // The round route (#201/#202/#203): the server-authoritative state of one player's play on
-// one daily, one item per (date, lang, mode, account). POST-only like /friends —
+// one daily, one item per (date, lang, mode, account). POST-only —
 // `{token, puzzle}` reads the stored round (404 = none yet); SENTENCE mode streams into it
 // with `{token, puzzle, guesses}`, carrying a `turnstileToken` on the append that CREATES
 // the round, while WORD mode writes twice, `{token, puzzle, turnstileToken}` to START its
@@ -494,7 +447,7 @@ export function parseRound(data: unknown): RoundState {
 
 // The PRIVATE player history (#211): the archive calendar's month, the chooser's status
 // strip and the streak's solved-day list, all off what the server already derives from the
-// guess log (#203). POST-only like /friends — the device token authenticates in the BODY, so
+// guess log (#203). POST-only — the device token authenticates in the BODY, so
 // there is no way to ask for someone else's history. `month` is OPTIONAL: the streak needs
 // the solved-day collection alone, and making that read spend a month Query would cost a
 // whole calendar per game load. All three queries are in the history CloudFront behavior's
@@ -612,7 +565,7 @@ export async function postProfileBody(
 
 // Email account linking (#204): ONE route, POST-only — the device token is the auth and it
 // travels in the BODY, so the route reads no query at all (its CloudFront behavior's
-// allow-list is EMPTY, the same three-package contract as /friends and /devices).
+// allow-list is EMPTY, the same three-package contract as /devices).
 //
 //   { token }                                — what this account is saved as.
 //   { token, email, turnstileToken, lang }   — send a six-digit code to that address.
@@ -660,8 +613,9 @@ export interface AccountSummary {
   deviceId: string;
   email: string | null;
   createdAt: string;
-  // A friend merge an interrupted link left queued. The client asks again until it is not.
-  mergePending: boolean;
+  // A group departure an interrupted link left queued (#271). The client asks again until
+  // it is not.
+  departurePending: boolean;
 }
 
 export function parseAccountSummary(data: unknown): AccountSummary {
@@ -679,8 +633,8 @@ export function parseAccountSummary(data: unknown): AccountSummary {
   if (typeof createdAt !== 'string') {
     throw new Error('malformed account: bad "createdAt"');
   }
-  if (typeof data.mergePending !== 'boolean') {
-    throw new Error('malformed account: bad "mergePending"');
+  if (typeof data.departurePending !== 'boolean') {
+    throw new Error('malformed account: bad "departurePending"');
   }
   return {
     accountId,
@@ -690,7 +644,7 @@ export function parseAccountSummary(data: unknown): AccountSummary {
     // unreadable date as no date (the device list's rule), and refusing the whole summary
     // over a label would hide the email state this screen exists for.
     createdAt,
-    mergePending: data.mergePending,
+    departurePending: data.departurePending,
   };
 }
 
@@ -702,15 +656,15 @@ export interface LinkResult {
   accountId: string;
   deviceId: string;
   email: string;
-  // Whether a friend merge is still queued. The client RESUMES the drain off this, rather
-  // than leaving those edges for whenever the player next opens `/account` (#204).
+  // Whether a group departure is still queued (#271): the deleted account's memberships
+  // still to drop. The client RESUMES the drain off this, rather than leaving a ghost on
+  // every one of those groups for whenever the player next opens `/account` (#204).
   //
   // REQUIRED, and validated as strictly as `parseAccountSummary` validates its own copy
   // (PR-227 follow-up review). It was optional and coerced with `=== true`, so a body that
   // omitted it — or sent it wrong — silently answered "nothing queued" and the resumed
-  // drain never ran, leaving consented friend edges for whenever the player next opened
-  // `/account`. A field whose absence disables a job is a field that has to be present.
-  mergePending: boolean;
+  // drain never ran. A field whose absence disables a job is a field that has to be present.
+  departurePending: boolean;
   // THE RECEIPT on an ADOPT: what the recovered account holds, which is the evidence for
   // the claim "we found your account". Absent on the other two outcomes — nothing was
   // recovered, so there is nothing to vouch for.
@@ -751,15 +705,15 @@ export function parseLinkResult(data: unknown): LinkResult {
     throw new Error('malformed link: bad "deviceId"');
   }
   if (typeof email !== 'string') throw new Error('malformed link: bad "email"');
-  if (typeof data.mergePending !== 'boolean') {
-    throw new Error('malformed link: bad "mergePending"');
+  if (typeof data.departurePending !== 'boolean') {
+    throw new Error('malformed link: bad "departurePending"');
   }
   return {
     outcome,
     accountId,
     deviceId,
     email,
-    mergePending: data.mergePending,
+    departurePending: data.departurePending,
     // Decorative, so a missing or malformed one is simply no receipt — never a failed
     // link, which would strand a device whose identity has already moved.
     stakes: parseStakes(data.stakes),
@@ -835,38 +789,116 @@ export function parseErasePrompt(
   };
 }
 
-// The #189 friends graph: ONE route, POST-only — the device token authenticates in the body
-// (#216) and there is no query to ask with, so a caller can only ever read or change their
-// own edges. `{token}` reads the list, `{token, add}` records the mutual edge an invite
-// link's click makes, `{token, remove}` deletes both sides. Every call answers with the
-// caller's current list.
-export function friendsUrl(base: string = apiBase()): string {
-  return `${requireApiBase(base)}/friends`;
+// GROUPS (#271): ONE route. `GET /groups?id=` is a group's PUBLIC face (what the invite
+// landing draws before anyone joins); every POST carries the device token in the body
+// (#216) and answers the caller's groups as they now stand:
+//   { token }                         — the caller's groups;
+//   { token, create: true, name }     — a new group, the caller its first member (`created`);
+//   { token, join: id }               — the membership an invite link's tap records;
+//   { token, leave: id }              — walk out;
+//   { token, remove: id, member }     — the creator shows a member out.
+// The `id` query is in the groups CloudFront behavior's allowList (the root AGENTS.md
+// three-package contract).
+export function groupsUrl(id?: string, base: string = apiBase()): string {
+  const root = `${requireApiBase(base)}/groups`;
+  return id ? `${root}?id=${encodeURIComponent(id)}` : root;
 }
 
-export async function postFriendsBody(
-  url: string,
-  body: { token: string; add?: string; remove?: string },
-): Promise<Response> {
+export interface GroupsBody {
+  token: string;
+  create?: true;
+  name?: string;
+  join?: string;
+  leave?: string;
+  remove?: string;
+  member?: string;
+}
+
+export async function postGroupsBody(url: string, body: GroupsBody): Promise<Response> {
   return postSignedJson(url, body);
 }
 
-// Runtime shape check for the friends response — the parsePuzzle contract: a wrong-shaped
-// body surfaces as a failure, never as a board of blank rows.
-export function parseFriends(data: unknown): string[] {
-  if (!isRecord(data)) throw new Error('malformed friends: not an object');
-  const { friends } = data;
-  if (!Array.isArray(friends) || !friends.every((id) => typeof id === 'string' && PUBLIC_ID_PATTERN.test(id))) {
-    throw new Error('malformed friends: "friends" must be an array of player ids');
+export interface GroupsAnswer {
+  groups: GroupSummary[];
+  // The id a `create` minted — the tab the screen opens on.
+  created?: string;
+}
+
+function isIdList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((id) => typeof id === 'string' && PUBLIC_ID_PATTERN.test(id));
+}
+
+function isGroupSummary(value: unknown): value is GroupSummary {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    GROUP_ID_PATTERN.test(value.id) &&
+    typeof value.name === 'string' &&
+    typeof value.createdBy === 'string' &&
+    PUBLIC_ID_PATTERN.test(value.createdBy) &&
+    typeof value.joinedAt === 'string' &&
+    isIdList(value.members)
+  );
+}
+
+// Runtime shape check for the groups answer — the parsePuzzle contract: a wrong-shaped
+// body surfaces as a failure, never as a row of blank tabs.
+export function parseGroups(data: unknown): GroupsAnswer {
+  if (!isRecord(data)) throw new Error('malformed groups: not an object');
+  const { groups, created } = data;
+  if (!Array.isArray(groups) || !groups.every(isGroupSummary)) {
+    throw new Error('malformed groups: "groups" must be an array of groups');
   }
-  return friends as string[];
+  if (created !== undefined && (typeof created !== 'string' || !GROUP_ID_PATTERN.test(created))) {
+    throw new Error('malformed groups: bad "created"');
+  }
+  return created === undefined ? { groups } : { groups, created };
+}
+
+export function parsePublicGroup(data: unknown): PublicGroup {
+  if (!isRecord(data)) throw new Error('malformed group: not an object');
+  const { id, name, createdBy, members } = data;
+  if (typeof id !== 'string' || !GROUP_ID_PATTERN.test(id)) throw new Error('malformed group: bad "id"');
+  if (typeof name !== 'string') throw new Error('malformed group: bad "name"');
+  if (typeof createdBy !== 'string' || !PUBLIC_ID_PATTERN.test(createdBy)) {
+    throw new Error('malformed group: bad "createdBy"');
+  }
+  checkBoardPlayers(members, 'members');
+  return { id, name, createdBy, members };
+}
+
+// **`GET /groups?id=` HAS THREE ANSWERS** (the `readProfile` rule): the group, GONE (404
+// `unknown_group` — a link naming nothing, expired for good), and FAILED (a transport
+// error, a 5xx, an unparseable body — never evidence of anything).
+export type GroupRead =
+  | { status: 'shown'; group: PublicGroup }
+  | { status: 'gone' }
+  | { status: 'failed' };
+
+export async function readGroup(id: string, signal?: AbortSignal): Promise<GroupRead> {
+  try {
+    const response = await fetch(groupsUrl(id), signal ? { signal } : {});
+    if (response.ok) return { status: 'shown', group: parsePublicGroup(await response.json()) };
+    if (response.status === 404) {
+      const error = await response
+        .clone()
+        .json()
+        .then((body) => (body as { error?: unknown }).error)
+        .catch(() => undefined);
+      return error === 'unknown_group' ? { status: 'gone' } : { status: 'failed' };
+    }
+    return { status: 'failed' };
+  } catch {
+    return { status: 'failed' };
+  }
 }
 
 // The #190 leaderboard: GET is the anonymous GLOBAL top 50 (`id` — the caller's PUBLIC
 // id, never the token — widens it with their own below-the-cut window); POST with
-// `{token}` is the authenticated FRIENDS board, the trusted surface. Addressed per
-// (day, lang, mode) like everything else; all four query parameters are in the board
-// CloudFront behavior's allowList (the root AGENTS.md three-package contract).
+// `{token, group[, period]}` is a GROUP's board (#271), the trusted surface, and
+// `{token, standing: true}` where the caller stands today in each of their groups.
+// Addressed per (day, lang, mode) like everything else; all four query parameters are in
+// the board CloudFront behavior's allowList (the root AGENTS.md three-package contract).
 export function boardUrl(
   lang: string,
   date: string,
@@ -880,7 +912,11 @@ export function boardUrl(
   return id ? `${root}&id=${encodeURIComponent(id)}` : root;
 }
 
-export async function postBoardBody(url: string, body: { token: string }): Promise<Response> {
+export type BoardBody =
+  | { token: string; group: string; period?: BoardPeriod }
+  | { token: string; standing: true };
+
+export async function postBoardBody(url: string, body: BoardBody): Promise<Response> {
   return postSignedJson(url, body);
 }
 
@@ -955,6 +991,61 @@ export function parseBoard(data: unknown): Board {
   checkBoardPlayers(waiting, 'waiting');
   return data as unknown as Board;
 }
+
+const isCount = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0;
+
+// A WEEK / MONTH board (#271): dressed rows carrying the period rule's three numbers and
+// a competition rank, plus the inclusive range the screen captions.
+export function parsePeriodBoard(data: unknown): PeriodBoard {
+  if (!isRecord(data)) throw new Error('malformed period board: not an object');
+  const { from, to, rows } = data;
+  if (typeof from !== 'string' || typeof to !== 'string') {
+    throw new Error('malformed period board: "from"/"to" must be dates');
+  }
+  if (!Array.isArray(rows)) throw new Error('malformed period board: "rows" must be an array');
+  for (const raw of rows) {
+    const row = raw as Record<string, unknown>;
+    if (
+      !isBoardPlayer(raw) ||
+      !isCount(row.rank) ||
+      row.rank < 1 ||
+      !isCount(row.points) ||
+      !isCount(row.solvedDays) ||
+      row.solvedDays < 1 ||
+      !isCount(row.total)
+    ) {
+      throw new Error('malformed period board: bad row');
+    }
+  }
+  return { from, to, rows: rows as PeriodRow[] };
+}
+
+// Where the caller stands today in each of their groups (#271) — the solved screen's line.
+export function parseStandings(data: unknown): GroupStanding[] {
+  if (!isRecord(data)) throw new Error('malformed standings: not an object');
+  const { standings } = data;
+  if (!Array.isArray(standings)) throw new Error('malformed standings: "standings" must be an array');
+  for (const raw of standings) {
+    const row = raw as Record<string, unknown>;
+    if (
+      !isRecord(raw) ||
+      typeof row.group !== 'string' ||
+      !GROUP_ID_PATTERN.test(row.group) ||
+      !isCount(row.rank) ||
+      row.rank < 1 ||
+      !isCount(row.of) ||
+      row.of < row.rank
+    ) {
+      throw new Error('malformed standings: bad row');
+    }
+  }
+  return standings as GroupStanding[];
+}
+
+// The period name is the body's, and a screen's tab is typed by the same guard the server
+// validates with — one spelling of the three periods.
+export { isBoardPeriod };
 
 // Runtime shape check for a fetched profile — the parsePuzzle contract: a wrong-shaped
 // body surfaces as a failure, never as a broken editor or board row.

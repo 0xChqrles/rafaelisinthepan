@@ -7,8 +7,8 @@
 > The share routes (`/s/<token>`, `/og/<token>.png`) render tokens from the shared
 > `shareCard` codec; their product behavior is described in the solved-result bullet
 > of `packages/web/AGENTS.md`. A SIGNED share (`/s/<token>/<publicId>`, root `AGENTS.md`
-> 2026-09-05) reads the signer's profile through the same best-effort `readFace` the
-> invite preview uses (`no-store` on a failed read, the invite's 300s otherwise), hands
+> 2026-09-05) reads the signer's profile through the best-effort `readFace` (`no-store`
+> on a failed read, the group preview's 300s otherwise), hands
 > the face to the renderers as a second argument, and bounces into the shared day exactly
 > like a plain share (no landing since 2026-09-10); a deleted signer renders the PLAIN share. Since #214 a SENTENCE token is **v6** and may be CAPPED:
 > `ogCard.renderShareHtml` then titles the result `∞` (the literal character — this page is
@@ -26,7 +26,7 @@
   backend/                    daily-puzzle backend (pkg @whippin/backend, #2)
     src/
       handler.ts              createHandler() — the ONE day/404/CORS/Puzzle logic (Lambda + local);
-                              also the share routes and #189's invite preview (/i/<publicId>)
+                              also the share routes and #271's group invite preview (/g/<groupId>)
       store.ts                PuzzleStore interface (date+lang -> Puzzle | WordPuzzle | PuzzleSlice | null)
       s3Store.ts, fsStore.ts  store impls: S3 (prod) and local FS (#17), both read the same key
       slice.ts                #203's DERIVATION SLICE: build it from a puzzle, read a log against
@@ -45,7 +45,7 @@
       link.ts                 POST /link (#204): the read/drain, the Turnstile-gated + metered
                               code send, and the verification that binds or adopts an account
       accountLink.ts          what a verified link DOES: the stakes read, the active-day
-                              transfer, the friend merge and its resumable drain
+                              transfer, the group departure and its resumable drain (#271)
       linkStore.ts            link storage contract: the challenge/binding/allowance/job keys,
                               the address + code hashing, and the one indivisible `adopt`
       dynamoLinkStore.ts      prod conditional counters, the attempt-counting verify, and the
@@ -69,10 +69,17 @@
       profileStore.ts         player-row storage contract (player#<publicId> partition)
       dynamoProfileStore.ts   prod GetItem read + UpdateItem upsert (createdAt via if_not_exists)
       memoryProfileStore.ts   process-local implementation for backend:dev/tests
-      friends.ts              POST /friends (#189): auth, list/add/remove, self-add + cap refusals
-      board.ts                GET|POST /board (#190): global top-50 read + authenticated friends
-                              board — shared leaderboard rules over score rows + profiles + edges;
-                              since #206 the friends POST also answers `playing` (round rows
+      groups.ts               GET|POST /groups (#271): a group's public face; the caller's own
+                              groups and every membership write (create/join/leave/remove)
+      groupStore.ts           group storage contract: group row + the two-row membership,
+                              GROUPS_MAX / GROUP_MEMBERS_MAX, the joinedAt order, leaveAll
+      dynamoGroupStore.ts     prod one-transaction create/join (account + group asserted),
+                              two-row leave, the departure's re-read-until-empty leaveAll
+      memoryGroupStore.ts     process-local implementation for backend:dev/tests
+      board.ts                GET|POST /board (#190/#271): global top-50 read + a GROUP's day,
+                              week and month boards + the caller's standings — shared
+                              leaderboard rules over score rows + profiles + member lists;
+                              since #206 the day POST also answers `playing` (round rows
                               deduped against the day's full artifact)
       history.ts              POST /history (#211): the PRIVATE player history — one month of
                               (lang, mode) summaries + the language's solved-day collection
@@ -80,9 +87,6 @@
                               partition, history#<lang> sort key
       dynamoHistoryStore.ts   prod NUMBER-SET credit (idempotent ADD) + an ADD/DELETE overflow trim
       memoryHistoryStore.ts   process-local implementation for backend:dev/tests
-      friendStore.ts          mutual-edge storage contract; friends#<publicId> partition + FRIENDS_MAX
-      dynamoFriendStore.ts    prod one-transaction link/unlink (both directions) + consistent Query
-      memoryFriendStore.ts    process-local implementation for backend:dev/tests
       rounds.ts               POST /round (#201/#202/#203): the per-round state — read, sentence
                               append, Word mode's Turnstile-gated start + end-of-run submission;
                               slug + length validation, cap / interval / wait / freeze refusals,
@@ -105,7 +109,7 @@
       dynamoRetry.ts          the ONE backoff schedule (full jitter, doubling window) the
                               batch reads and the conflict loops share
       turnstile.ts            Cloudflare Siteverify + explicit local accept-all verifier
-      ogCard.ts               resvg-wasm rasterizer + the preview PAGE template (share links + #189 invites)
+      ogCard.ts               resvg-wasm rasterizer + the preview PAGE template (share links + #271 group invites)
       layout.ts               storeKey() / sliceKey() — the keys shared by readers + publish (#17/#4/#203)
       serve.ts                local HTTP server: Function-URL⇄HTTP adapter over createHandler (#17)
       publish.ts              place a generated puzzle into local store (default) or S3 (#17/#4),
@@ -129,8 +133,8 @@
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output). Sentence puzzles AND #154 word artifacts (#156): the artifact type is detected from the file's SHAPE and routed to its own key.
 pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--mode sentence|word] [--ci]  # publish-buffer coverage (#61); --mode word probes the #156 word-artifact buffer; reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
 pnpm puzzle:ledger --s3     # rebuild packages/generation/published.jsonl (gitignored — the bucket is the truth) from every sentence puzzle in the bucket; an S3 publish appends to it itself; the curator refuses to run without it
-pnpm backend:dev                # local server (puzzles + /scores + /profile + /friends + /board + /round + /history + /devices + /link + /today) on :8787; FS puzzles, in-memory scores/profiles/friends/rounds/history/devices/links, local Turnstile accept-all, and #204's link codes PRINTED to this log
-pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server with a #190 board population (in-memory — re-run after a restart)
+pnpm backend:dev                # local server (puzzles + /scores + /profile + /groups + /board + /round + /history + /devices + /link + /today) on :8787; FS puzzles, in-memory scores/profiles/groups/rounds/history/devices/links, local Turnstile accept-all, and #204's link codes PRINTED to this log
+pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server with a #190 board population + a seeded group (in-memory — re-run after a restart); --group also lands five seeds in YOUR group
 ```
 
 ---
@@ -195,94 +199,90 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   like every live JSON write (same OAC boundary); the `id` query must stay in the CloudFront
   profile behavior's allowList (root `AGENTS.md` contract).
 
-- **Invite link preview (#189, user-decided 2026-08-20):** the ONE handler also serves the
-  invite LINK itself — `GET /i/<publicId>`, the page a chat unfurls, and
-  `GET /og/i/<publicId>.png`, the card it unfurls into (mark + name + app name, nothing
-  more). The product rules and the reason the SPA landing split off to `/join/<publicId>`
-  are in the root `AGENTS.md`. Implementation notes: both resolve BEFORE the puzzle logic
-  (the share routes' reason — no lang, no day, nothing to 400 on); the id is matched
-  loosely and validated with the shared `PUBLIC_ID_PATTERN`, so a malformed one is a 404
-  that never reaches the store; the profile read is best-effort like a board row's, and a
-  read that FAILED answers `no-store` where an honest 404 ("never customized") caches for
-  300s. `siteOrigin` is what both preview pages bounce to, and `backend:dev` sets NONE:
-  the handler falls back to the REQUEST's Host, and the web dev server proxies these
-  paths here without rewriting it (`web/vite.config.ts`), so a page served through the
-  proxy addresses the app rather than this server. The CDN wiring is the WEB
-  distribution's (`infra/lib/web-stack.ts` routes `/i/*` to the API origin beside `/s/*`
-  and `/og/*`), not this stack's — and the dev proxy is that list restated, so the two
-  move together.
-- **Friends graph (#189):** the ONE handler also serves `POST /friends` — and ONLY POST
-  (a GET is a named 405): the player key authenticates in the BODY, so there is no way to
-  ask for a list without proving whose it is. `{token}` reads the caller's edges,
-  `{token, add}` records the mutual link an invite-link click makes, `{token, remove}`
-  deletes both sides; every call answers `{ friends: [publicId] }` and every response is
-  `no-store`. `add` refuses a self-link (400 `self_link`) and the cap (409 `friend_limit`,
-  `FRIENDS_MAX` = 200, checked on BOTH sides); a re-click and a remove of a non-friend are
-  ordinary 200s. Storage is the score table again — `friends#<publicId>` partition, sort key
-  = the friend's id, `createdAt` via `if_not_exists` (`dynamoFriendStore`; local serve swaps
-  in `memoryFriendStore`). The pair is ONE `TransactWriteItems` in both directions, so a
-  half-edge is unrepresentable, and the writes are unconditional — which is why the
-  transaction needs no `ClientRequestToken`. **Both rows go out on every accepted link, a
-  re-click included** (`already_linked` reports the CALLER's list as unchanged, not that
-  nothing was written): the store reads the caller's partition and cannot see the friend's,
-  so returning early there would leave a missing other half missing for good, and re-writing
-  a row that is already present costs two WCUs on a rare path and changes nothing —
-  `if_not_exists` keeps the original instant. The cap is likewise only spent on a pair the
-  caller does not already hold. Every Query is STRONGLY CONSISTENT
-  (the profile read's rule: the call answers with the list it just wrote), and an `add` reads
-  the CALLER's partition exactly ONCE: `link` returns `{ outcome, friends }` — the list it
-  read to decide the cap plus the single edge its transaction committed — so the route never
-  Queries a second time for a list the call is already holding (a genuinely new pair still
-  COUNTs the other side's partition, which is a number rather than a list). And the cap is
-  COUNTED off those rows rather than kept in a counter item — see the root `AGENTS.md` for
-  why a bound may be overshot by a simultaneous click and an invariant may not. This is the
-  only route that DELETES, which is why the table grant gained `dynamodb:DeleteItem`. The
-  route reads NO query parameter; the CloudFront `friends*` behavior forwards none, and the
-  day it reads one, that behavior has to name it (root `AGENTS.md` contract). Production
-  POST needs `x-amz-content-sha256` like every other write here.
-- **Leaderboard reads (#190):** the ONE handler also serves `/board` — the product
-  contract (the two faces, the shared ranking rules, the four-query allowList) lives in
-  the root `AGENTS.md`. Implementation notes: `handleBoard` reuses the /scores param
-  guards (supported lang, required mode, valid date, +1-day future guard). *(This said the
-  route reads NO puzzle store; #206 overturned it for the FRIENDS POST — see below. The
-  GLOBAL GET still reads none:* a population only exists for a published daily, so an
-  unpublished day answers the empty board.*)* GET's optional `id` is validated against
-  `PUBLIC_ID_PATTERN` (400 malformed); POST authenticates `{token}` exactly like /friends.
+- **Group invite preview (#271; the shape is #189's player preview, user-decided
+  2026-08-20):** the ONE handler serves the invite LINK itself — `GET /g/<groupId>`, the
+  page a chat unfurls, and `GET /og/g/<groupId>.png`, the card it unfurls into (name +
+  member marks + app name, at most six tiles then a `+N`). Both resolve BEFORE the puzzle
+  logic (no lang, no day, nothing to 400 on); the id is matched loosely and validated with
+  the shared `GROUP_ID_PATTERN`, so a malformed one is a 404 that never reaches the store; a
+  link naming no group is a 404 "expired" cached 300s; the faces are `readGroupFace`
+  (`groups.ts`) — the member list dressed like board rows, a GONE account dropped — and a
+  read that FAILED answers `no-store` where an answered one caches for 300s. `siteOrigin`
+  is what the preview page bounces to (the SPA landing `/join/g/<groupId>`), and
+  `backend:dev` sets NONE: the handler falls back to the REQUEST's Host, and the web dev
+  server proxies `/g/*` here without rewriting it (`web/vite.config.ts`). The CDN wiring is
+  the WEB distribution's (`infra/lib/web-stack.ts` routes `/g/*` to the API origin beside
+  `/s/*` and `/og/*`) — the dev proxy is that list restated, so the two move together.
+- **Groups (#271):** the ONE handler also serves `/groups` — `GET ?id=` the public face,
+  `POST` every membership write, the device token in the BODY (#216). The product contract
+  (the verbs, the caps, the name rule, the storage, the departure) lives in the root
+  `AGENTS.md`. Implementation notes: the field name IS the verb (`create`/`join`/`leave`/
+  `remove`) and two verbs in one body is a 400; every POST answers `{ groups }` as the list
+  now stands through `listGroups` (the caller's memberships off their own partition, each
+  with its member ids — one consistent Query per group, GROUPS_MAX at most), `create` adding
+  the minted id as `created`. The NAME is validated against the shared `isValidName` (never
+  empty) and moderated by `nameFilter.ts` (400 `name_rejected`). The stores: `create` is ONE
+  create-only transaction of the group row + the creator's membership pair asserting the
+  creator's account; `join` reads the group row, the caller's own membership row (an
+  `already` writes nothing — the pair is one transaction, so there is no half to repair),
+  COUNTs both caps, then writes the pair asserting the caller's account AND the group row,
+  reading a refusal off the reasons (account → `gone` = 401 `unknown_device`, group →
+  `unknown_group`, pair → `already`); `leave` is two unconditional deletes; `leaveAll` is
+  the #204 departure, re-reading the player's partition until empty (bounded). Every Query
+  is STRONGLY CONSISTENT (the profile read's rule). `remove` is authorized by the group
+  row's `createdBy`, never by the caller's say-so. Reads NO query but `id`, which the
+  CloudFront `groups*` behavior forwards; the day it reads another, that behavior has to
+  name it (root `AGENTS.md` contract). Production POST needs `x-amz-content-sha256`.
+- **Leaderboard reads (#190/#271):** the ONE handler also serves `/board` — the product
+  contract (the faces, the shared ranking and period rules, the standing, the four-query
+  allowList) lives in the root `AGENTS.md`. Implementation notes: `handleBoard` reuses the
+  /scores param guards (supported lang, required mode, valid date, +1-day future guard).
+  *(This said the route reads NO puzzle store; #206 overturned it for the DAY POST — see
+  below. The GLOBAL GET, the period boards and the standing still read none:* a population
+  only exists for a published daily, so an unpublished day answers empty.*)* GET's optional
+  `id` is validated against `PUBLIC_ID_PATTERN` (400 malformed); POST authenticates
+  `{token}` like every live route, then DISPATCHES on the body: `standing: true` (no group,
+  no period) answers the caller's standings — every group's member list, ONE exact-key
+  batch over the union for the day, `standingIn` per group; otherwise `group` is required
+  (`GROUP_ID_PATTERN`, else 400), `period` optional (`isBoardPeriod`, else 400), and the
+  member list is the TRUST BOUNDARY: a caller not on it is 403 `not_member`, an unknown
+  group the same. `week`/`month` read `periodRange`'s days through `ScoreStore.getMany` once
+  per day, concurrently, and rank with `rankPeriod` — no new store, no new write.
   The param guards, the JSON-body reader and the secret check are the SHARED
   `liveRoute.ts` (below), not a fourth copy. The GLOBAL face reads the day partition
-  (`ScoreStore.list`); the FRIENDS face reads `getMany` — the caller's edges plus
-  themselves are the exact row keys, so it fetches those (BatchGetItem in prod,
-  constant in the day's population) instead of paging every player who played today to
-  keep at most `FRIENDS_MAX + 1` rows. Its `UnprocessedKeys` are RETRIED (a dropped key
-  is a friend missing from the board, so the read fails loudly rather than silently
+  (`ScoreStore.list`); a GROUP's day face reads `getMany` — the members are the exact row
+  keys, so it fetches those (BatchGetItem in prod, constant in the day's population)
+  instead of paging every player who played today, to keep at most `GROUP_MEMBERS_MAX`
+  rows. Its `UnprocessedKeys` are RETRIED (a dropped key is a member missing from the
+  board, so the read fails loudly rather than silently
   short) with **full-jitter exponential backoff** — an unprocessed response means the
   partition is under pressure, and retrying at full speed spends the whole budget
   before capacity can return, which is how a transient throttle became a 500 on the
-  friends board; the jitter is what stops Lambdas throttled together from coming back
+  trusted board; the jitter is what stops Lambdas throttled together from coming back
   in lockstep. The `wait` is injectable so the schedule is asserted without sleeping. Rows are ranked/cut/windowed by
   `@whippin/shared`'s leaderboard functions, then dressed with profiles — one
   `ProfileStore.get` per DISTINCT id shown, in parallel (bounded: top 50 + a 5-row
-  window, or FRIENDS_MAX rows). The friends face also
-  answers `playing` (#206) and `waiting`: a friend with a stored round for the current
+  window, or GROUP_MEMBERS_MAX rows). The day face also
+  answers `playing` (#206) and `waiting`: a member with a stored round for the current
   revision but no score row is IN PROGRESS — `loadPlaying` reads `RoundStore.getMany`
   (BatchGetItem over the exact keys, EVENTUALLY consistent — the method's comment holds
   the reasoning) CONCURRENTLY with the score `getMany` and the full artifact
   (`getPuzzle`, fresh — the one puzzle-store read on this route), dedups each raw log
   with `countTries` for the exact try count, carries the STORED derived `progress`, and
   orders with the shared `orderPlaying`; a failure there fails the POST rather than
-  letting `waiting` claim "not played yet" over a friend mid-game (root `AGENTS.md`,
+  letting `waiting` claim "not played yet" over a member mid-game (root `AGENTS.md`,
   #206). The subtraction is the RANKED players, not the DONE ones, so a round that ENDED
   with no score row — capped, late, or refused by the #169 IP allowance — stays in that
   section: accepted and reasoned in the root `AGENTS.md`, with the fourth state at #224.
-  `waiting` keeps the caller's edges with NEITHER row, profile-dressed and
+  `waiting` keeps the other members with NEITHER row, profile-dressed and
   publicId-sorted (root `AGENTS.md`). Every response is
   `no-store`; a missing profile dresses as `name: ''` / `avatar: null` — **and so does
   one whose READ FAILED** (a per-id `catch`, never `Promise.all`'s fail-fast): the name
   and mark are decoration over rows that already answered, so one throttled `GetItem`
   must not 500 a whole board. An EMPTY stored avatar dresses as `null` for the same
   reason — `''` is not a decodable avatar, and the client's fallback is keyed on null.
-  No new store: the route is a pure READ over the score rows, the friend edges, the
-  profile rows — and, since #206, the friends' round rows and the day's published
+  No new store: the route is a pure READ over the score rows, the member lists, the
+  profile rows — and, since #206, the members' round rows and the day's published
   artifact.
   **The LIVE routes share their plumbing** (`liveRoute.ts`, extracted 2026-08-20 when
   `/board` became the FOURTH byte-identical copy): the `no-store` header, the body
@@ -302,15 +302,15 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   **`pnpm board:seed` (src/seedBoard.ts) is the LOCAL-ONLY population seeder**: run it
   against a live `pnpm backend:dev` to fill the in-memory stores with 60 scored players
   (a tie straddling the top-50 cut included), a few unnamed ones, two unplayed
-  profile-only ones, and printed invite links; `--friend <publicId|/i/link>` links a
-  handful to your own identity. Re-run after every backend restart (the stores reset —
+  profile-only ones, a seeded GROUP of four with its printed invite link (#271);
+  `--group <groupId|/g/link>` also lands five seeds in YOUR group. Re-run after every backend restart (the stores reset —
   that is why it is a script, not a fixture); it copies the newest local fr sentence
   puzzle forward to the active day when that key is missing.
 
 - **Round guess-log sync (#201):** the ONE handler also serves `POST /round?lang=&date=&mode=`
   — the product contract (server-authoritative state, strings-not-indices, the two
   bounds, cap semantics) lives in the root `AGENTS.md`. Implementation notes: POST-only
-  like /friends (a GET is a named 405); the shared `requireDayParams` guard triple
+  (a GET is a named 405); the shared `requireDayParams` guard triple
   applies. Archive days sync like today's. *(This said the route reads NO puzzle store;
   #203 overturned it for the APPEND — see its own bullet below — and the READ still reads
   none.)* `{token, puzzle}` reads (404 = none yet, and
@@ -476,7 +476,7 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
 - **Server-backed player history (#211):** the ONE handler also serves `POST /history?lang=&mode=[&month=]`
   — the product contract (why it exists after #214, the explicit-loading rule, the streak
   window, the metering stance) lives in the root `AGENTS.md`. Implementation notes: POST-only
-  like /friends (a GET is a named 405), the `{token}` body check and the `lang`/`mode` guard
+  (a GET is a named 405), the `{token}` body check and the `lang`/`mode` guard
   are the SHARED `liveRoute.ts` (`requireGameParams`, split out of `requireDayParams` because
   this read is addressed by a MONTH rather than a day); `month` is validated against the
   shared `HISTORY_MONTH_PATTERN` and is OPTIONAL, and there is deliberately NO future guard —
@@ -554,12 +554,12 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   device out, exactly as a wiped table would.
 - **Email account linking (#204):** the ONE handler also serves `POST /link` — and ONLY POST
   (a GET is a named 405). The product contract (the one flow, the three endings, when the
-  account being left is deleted, the erase confirmation, the active-day transfer, the friend
-  merge, what a deleted account stops being, the SES/operator steps) lives in the root
+  account being left is deleted, the erase confirmation, the active-day transfer, the group
+  departure, what a deleted account stops being, the SES/operator steps) lives in the root
   `AGENTS.md`. Implementation notes: the route DISPATCHES on the body — `turnstileToken` =
   SEND, `code` = VERIFY, neither = READ — and a body carrying both is a 400, the /devices
-  rule. The READ also DRAINS any friend-merge job an interrupted link left queued, which is
-  the client's resume path. TURNSTILE is checked BEFORE the send allowances, deliberately:
+  rule. The READ also DRAINS any departure job an interrupted link left queued, which is
+  the client's resume path (`departurePending`). TURNSTILE is checked BEFORE the send allowances, deliberately:
   they are spent per ADDRESS, so checking them first would let an unauthenticated caller burn
   a stranger's code budget. The challenge is stored as `HMAC(ipHmacSecret, "link-code:" +
   email + ":" + code)` — a bare hash of a six-digit space is a precomputable table — and the
@@ -573,7 +573,7 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   on the exact list it read — a concurrent send refuses the set and it is decided again
   from what now stands, so no send ever counts against a stale view. `accountLink.ts` owns
   the ORDER: `LinkStore.adopt` as ONE transaction — the identity AND the active day's play —
-  then the merge drain; the reasoning is in that file's header and in the root `AGENTS.md`.
+  then the departure drain; the reasoning is in that file's header and in the root `AGENTS.md`.
   **A SEND THAT FAILS IS FAIL-CLOSED** (user-decided 2026-09-02): the route catches the
   mailer at its boundary and answers **503 `mail_unavailable`**; the allowance stays
   CHARGED and the stored challenge stands (the next successful resend replaces it). The
@@ -649,14 +649,14 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   answers `stakes: null`). **`dynamoLinkStore` is the
   ONE file that writes items across several stores' key spaces**, and every key it writes
   comes from the OWNING module's own formatter (`deviceKey`, `accountKey`, `profileKey`),
-  never a literal, and the round/score items from their own stores' planners. The friend
-  merge's KEPT moves (`FriendStore.entries` + `transfer`) condition the `from`-facing
-  delete on the edge still standing, and a refused batch is re-written without the moves
-  whose edge somebody ended meanwhile, so an unlink between the plan and the write is never
-  resurrected onto the adopting account. `ProfileStore.get` widened to a
+  never a literal, and the round/score items from their own stores' planners. The
+  DEPARTURE (#271) is not planned at all: it is the job row (`depart#<to>` / `from#<from>`)
+  the transaction persists, and `GroupStore.leaveAll` drains it after the commit by
+  re-reading the deleted account's memberships until none are left (a join asserts the
+  account row, so none can land after the deletion). `ProfileStore.get` widened to a
   `ProfileLookup` (`{live, profile}`) read as ONE TRANSACTION (`TransactGetItems`) over the
   profile row and the ACCOUNT row beside it, which is what lets `/profile`, `/board` and the
-  `/i/` preview tell "never customized" from "gone". **It was a strongly consistent
+  `/g/` preview tell "never customized" from "gone". **It was a strongly consistent
   BatchGetItem, and that is not the same thing** (corrected 2026-09-02 on the PR-227
   follow-up review): strong consistency is per ITEM, a batch is serializable per item and
   NOT across the batch, and the deletion this lookup exists to detect removes both rows in
@@ -668,8 +668,8 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   `TransactionConflict` — bounded and jittered on the shared schedule, every attempt a FRESH
   snapshot, because a snapshot is only a snapshot whole. It costs twice the read units of the
   batch; the alternative that keeps them (reading the account row LAST) buys that back with a
-  second round trip on a read the board already fans out per row. `DeviceStore.accountExists` is
-  what `/friends {add}` asks before writing an edge. The `{token}` READ also answers the
+  second round trip on a read the board already fans out per row. The group stores assert
+  the account row inside their own transactions rather than asking `accountExists` first. The `{token}` READ also answers the
   account's own **`createdAt`** (2026-08-26, with the UX rework): it costs nothing — the row
   was read to authenticate the call — and it is the one true thing the account screen can say
   about an identity whose name and mark it already draws. New env: `MAIL_FROM` (required, like the
@@ -704,9 +704,9 @@ pnpm board:seed [--friend <publicId|/i/link>]  # fill the RUNNING local server w
   transaction conflicts. **Three loops handle a conflict explicitly**, each bounded, jittered
   and re-reading first where its items came from a read: the link send allowance, the
   adoption's re-plan (a rival may have moved a guarded row, so it plans AGAIN rather than
-  re-sending), and the BIND, which had no retry at all. The friend and score stores keep
-  their existing policy of not retrying, but a mixed or malformed cancellation now surfaces
-  instead of being read as `gone` or `capped`.
+  re-sending), and the BIND, which had no retry at all. The group and score stores keep
+  the policy of not retrying, but a mixed or malformed cancellation surfaces instead of
+  being read as `gone` or `capped`.
 - **The inbound mail FORWARDER (#230, `src/mailForward.ts`; rules recorded here since the
   root compaction of 2026-09-05 — infra's half is in `infra/AGENTS.md`).** A separate Lambda
   fed by the SES receipt rule (S3 action first, then this): it fetches the raw MIME the S3

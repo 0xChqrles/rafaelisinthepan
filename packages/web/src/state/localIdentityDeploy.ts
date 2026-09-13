@@ -12,7 +12,7 @@
 // something is already stored (even an empty row is somebody's deliberate avatar-only
 // save). The read's 404 avoids an unnecessary write; the POST's atomic create is the
 // authority if another writer lands between them. From then on every surface reads the
-// same stored values: your own strip, your friends' boards, the invite card.
+// same stored values: your own strip, your groups' boards, the group card.
 //
 // It listens to the identity lifecycle here — the same one readable block identityScope
 // owns — rather than at each of the five deploy triggers, so a future trigger cannot

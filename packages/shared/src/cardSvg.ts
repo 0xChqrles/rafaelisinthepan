@@ -128,37 +128,38 @@ function escapeSvgText(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// ── The invite link's card (#189, user-decided 2026-08-20) ───────────────────────────
+// ── The GROUP invite link's card (#271, replacing #189's player card) ─────────────────
 //
-// What a `/i/<publicId>` link unfurls into in a chat: the player's MARK, their NAME, and
-// the APP NAME. Nothing else — no "friend invite" banner, no call to action, no daily.
-// The link is already sent by a person to a person, so the message around it says what
-// it is; the card only has to say WHO. Anything more would be the sender's own message
-// repeated back at them in a picture.
+// What a `/g/<groupId>` link unfurls into in a chat: the group's NAME, its members'
+// MARKS in a row, and the APP NAME. Nothing else — no call to action, no daily. The link
+// is already sent by a person to their people, so the message around it says what it is;
+// the card only has to say WHICH group, and who is already in it.
 //
-// It draws the ASSIGNED identity for a player who never customized one (`assigned.ts`),
-// so the face in the chat is the same face their friends' boards show — which is the
-// whole reason those two functions moved into this package.
-const INVITE_AVATAR_PX = 260;
-const INVITE_AVATAR_Y = 96;
-const INVITE_NAME_Y = 448; // baseline
-const INVITE_NAME_MAX_SIZE = 60;
-// The name's own column, well inside the card's margins: a 16-character name set at the
-// max size runs 960 of the 1020 the margins leave, which reads as the name wearing the
-// card rather than the player wearing the name. Held to this box instead, everything up
-// to 12 glyphs keeps the full size and only a genuinely long name steps down.
-const INVITE_NAME_WIDTH = 720;
-const INVITE_APP_Y = 528; // baseline
-const INVITE_APP_SIZE = 28;
+// It draws the ASSIGNED mark for a member who never customized one (`assigned.ts`), so
+// the faces in the chat are the faces the group's board shows.
+const GROUP_MARK_PX = 128;
+const GROUP_MARK_GAP = 28;
+const GROUP_MARKS_Y = 118;
+// How many marks the row draws before it folds the rest into a `+N` tile: six marks
+// with their gaps run 908 of the 1020 the margins leave.
+const GROUP_MARKS_SHOWN = 6;
+const GROUP_NAME_Y = 410; // baseline
+const GROUP_NAME_MAX_SIZE = 60;
+// The name's own column, well inside the card's margins (the player card's rule): a
+// 16-character name set at the max size runs 960 of the 1020 the margins leave, which
+// reads as the name wearing the card. Held to this box, everything up to 12 glyphs keeps
+// the full size and only a genuinely long name steps down.
+const GROUP_NAME_WIDTH = 720;
+const GROUP_APP_Y = 528; // baseline
+const GROUP_APP_SIZE = 28;
 const APP_NAME = 'WHIPPIN AI';
 
 // The mark is the app's ONE avatar drawing: the palette's ground, the union outline of
 // the filled cells on top, and only the tile's outer corners rounded (the web's `Avatar`,
 // whose renderer this shares). A stored string that will not decode falls back to the
 // assigned mark rather than leaving a hole — a card must always draw a face, and the store
-// only ever holds validated avatars anyway. Drawn by the invite card at its full size and
-// by a SIGNED result card's strip at a small one; `id` names the clip, which must be unique
-// within one SVG.
+// only ever holds validated avatars anyway. Drawn by the group card's member row and by a
+// SIGNED result card's strip; `id` names the clip, which must be unique within one SVG.
 function markTile(
   id: string,
   publicId: string,
@@ -214,7 +215,7 @@ const SENTENCE_SIGN_SHIFT = 30;
 const WORD_SIGN_Y = 44;
 const WORD_SIGN_SHIFT = 14;
 
-function signatureStrip({ publicId, name, avatar }: InviteCardData, y: number): string {
+function signatureStrip({ publicId, name, avatar }: CardFace, y: number): string {
   const shown = name || anonName(publicId);
   const glyphs = Math.max(1, Array.from(shown).length);
   const width = SIGN_AVATAR_PX + SIGN_GAP + glyphs * SIGN_NAME_SIZE;
@@ -227,7 +228,8 @@ function signatureStrip({ publicId, name, avatar }: InviteCardData, y: number): 
   );
 }
 
-export interface InviteCardData {
+// A player as a card draws them: a signed share's signer, a group card's member.
+export interface CardFace {
   publicId: string;
   // The STORED profile: '' / null when the player never customized one. The card
   // resolves the assigned fallbacks itself, so "the card shows what a board shows"
@@ -236,33 +238,57 @@ export interface InviteCardData {
   avatar: string | null;
 }
 
-export function renderInviteCardSvg({ publicId, name, avatar }: InviteCardData): string {
+export interface GroupCardData {
+  name: string;
+  // The members' STORED profiles, in the group's own order; the card draws at most
+  // `GROUP_MARKS_SHOWN` and folds the rest into a count.
+  members: readonly CardFace[];
+}
+
+export function renderGroupCardSvg({ name, members }: GroupCardData): string {
   const cx = CARD_WIDTH / 2;
-  const shown = name || anonName(publicId);
   // Press Start 2P advances exactly 1em per glyph, so the name fits its column at
   // `size = width / glyphs` — one line always, since the name is the thing the card is
   // about and a wrapped one reads as two.
-  const glyphs = Math.max(1, Array.from(shown).length);
+  const glyphs = Math.max(1, Array.from(name).length);
   const nameSize = Math.min(
-    INVITE_NAME_MAX_SIZE,
-    Math.max(1, Math.floor(INVITE_NAME_WIDTH / glyphs)),
+    GROUP_NAME_MAX_SIZE,
+    Math.max(1, Math.floor(GROUP_NAME_WIDTH / glyphs)),
   );
 
-  const x = Math.round(cx - INVITE_AVATAR_PX / 2);
+  // The marks, centred as one row: the first members, then a `+N` tile standing where
+  // the seventh mark would when the group is larger than the row.
+  const overflow = members.length > GROUP_MARKS_SHOWN ? members.length - (GROUP_MARKS_SHOWN - 1) : 0;
+  const shown = overflow > 0 ? members.slice(0, GROUP_MARKS_SHOWN - 1) : members;
+  const tiles = shown.length + (overflow > 0 ? 1 : 0);
+  const rowWidth = tiles * GROUP_MARK_PX + Math.max(0, tiles - 1) * GROUP_MARK_GAP;
+  const rowX = Math.round(cx - rowWidth / 2);
+  const tileX = (index: number) => rowX + index * (GROUP_MARK_PX + GROUP_MARK_GAP);
+  const marks = shown.map((member, index) =>
+    markTile(`member${index}`, member.publicId, member.avatar, tileX(index), GROUP_MARKS_Y, GROUP_MARK_PX),
+  );
+  if (overflow > 0) {
+    const x = tileX(shown.length);
+    const radius = Math.round(GROUP_MARK_PX * 0.036);
+    marks.push(
+      `<rect x="${x}" y="${GROUP_MARKS_Y}" width="${GROUP_MARK_PX}" height="${GROUP_MARK_PX}" rx="${radius}" fill="none" stroke="${MUTED}" stroke-width="3"/>` +
+        `<text x="${x + GROUP_MARK_PX / 2}" y="${GROUP_MARKS_Y + GROUP_MARK_PX / 2}" dy="0.16em" dominant-baseline="middle" text-anchor="middle" font-family="${CARD_FONT}" font-size="${GROUP_APP_SIZE}" fill="${MUTED}">+${overflow}</text>`,
+    );
+  }
 
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}">`,
     `<rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="${BG}"/>`,
-    markTile('mark', publicId, avatar, x, INVITE_AVATAR_Y, INVITE_AVATAR_PX),
-    `<text x="${cx}" y="${INVITE_NAME_Y}" text-anchor="middle" font-family="${CARD_FONT}" font-size="${nameSize}" font-variant-ligatures="none" fill="${FG}">${escapeSvgText(shown)}</text>`,
-    `<text x="${cx}" y="${INVITE_APP_Y}" text-anchor="middle" font-family="${CARD_FONT}" font-size="${INVITE_APP_SIZE}" fill="${MUTED}">${APP_NAME}</text>`,
+    ...marks,
+    `<text x="${cx}" y="${GROUP_NAME_Y}" text-anchor="middle" font-family="${CARD_FONT}" font-size="${nameSize}" font-variant-ligatures="none" fill="${FG}">${escapeSvgText(name)}</text>`,
+    `<text x="${cx}" y="${GROUP_APP_Y}" text-anchor="middle" font-family="${CARD_FONT}" font-size="${GROUP_APP_SIZE}" fill="${MUTED}">${APP_NAME}</text>`,
     `</svg>`,
   ].join('');
 }
 
 export function renderWordCardSvg(
   { lang, dayNumber, counts, word }: WordCardData,
-  by: InviteCardData | null = null,
+  by: CardFace | null = null,
 ): string {
   const unit = WORD_UNITS[lang] ?? WORD_UNITS.en;
   const score = counts.reduce((sum, n) => sum + n, 0);
@@ -349,7 +375,7 @@ function scoreLockup(score: number, capped: boolean, unit: { one: string; many: 
 
 export function renderCardSvg(
   { lang, dayNumber, score, trajectory, solvedAt, capped = false }: CardData,
-  by: InviteCardData | null = null,
+  by: CardFace | null = null,
 ): string {
   const n = Math.max(1, trajectory.length);
 

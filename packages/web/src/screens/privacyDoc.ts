@@ -119,7 +119,7 @@ export const PRIVACY: Record<UiLang, PrivacyDoc> = {
           },
           {
             term: 'Your games',
-            body: 'The words you type in each round, your scores, the days you solved, the friends you added, and the name and avatar you picked. Basically your history, your streak and the leaderboards.',
+            body: 'The words you type in each round, your scores, the days you solved, the groups you created or joined (their names and who is in them), and the name and avatar you picked. Basically your history, your streak and the leaderboards.',
           },
           {
             term: 'A scrambled version of your IP address',
@@ -207,7 +207,7 @@ export const PRIVACY: Record<UiLang, PrivacyDoc> = {
           },
           {
             term: 'Vos parties',
-            body: "Les mots que vous tapez à chaque partie, vos scores, les jours résolus, les amis que vous avez ajoutés, et le nom et l'avatar que vous avez choisis. En gros, votre historique, votre série et les classements.",
+            body: "Les mots que vous tapez à chaque partie, vos scores, les jours résolus, les groupes que vous avez créés ou rejoints (leur nom et qui en fait partie), et le nom et l'avatar que vous avez choisis. En gros, votre historique, votre série et les classements.",
           },
           {
             term: 'Une version brouillée de votre adresse IP',

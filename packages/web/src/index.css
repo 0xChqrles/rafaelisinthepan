@@ -2375,12 +2375,14 @@ input {
   position: relative;
   display: inline-block;
 }
-/* An OUTLINED badge — a hairline rule around foreground type, no ground at all
-   (user-decided 2026-08-17: a filled block shouted louder than the score it qualifies,
-   where an outline still frames the claim as a stamp). Pixel type, like the number it
-   stands beside; the explicit height keeps the overrunning pixel glyphs centred, and the
-   page's global text-shadow is OFF inside the frame. */
-.score-top {
+/* The STANDING LINE (#271, in the #170 badge's slot): an OUTLINED stamp — a hairline
+   rule around foreground type, no ground at all (user-decided 2026-08-17: a filled block
+   shouted louder than the score it qualifies, where an outline still frames the claim as
+   a stamp) — and a BUTTON, since it opens the group's board: hover inverts it, the app's
+   one emphasis gesture. Pixel type, like the number it stands beside; the explicit height
+   keeps the overrunning pixel glyphs centred, and the page's global text-shadow is OFF
+   inside the frame. */
+.standing-line {
   position: absolute;
   left: 100%;
   top: 50%;
@@ -2391,6 +2393,7 @@ input {
   padding: 0 12px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
+  background: transparent;
   color: var(--fg);
   font-family: var(--pixel-font);
   font-size: 11px;
@@ -2399,18 +2402,24 @@ input {
   letter-spacing: 0;
   white-space: nowrap;
   text-shadow: none;
+  cursor: pointer;
+  transition: background-color 0.1s linear, color 0.1s linear;
+}
+.standing-line:hover {
+  background: var(--fg);
+  color: var(--bg);
 }
 @media (max-width: 380px) {
-  .score-top {
+  .standing-line {
     translate: 10px -50%;
     height: 26px;
     padding: 0 10px;
     font-size: 10px;
   }
 }
-/* The badge arrives on the app's one "list arriving" gesture; a rehydrated result wears
+/* The line arrives on the app's one "list arriving" gesture; a rehydrated result wears
    `.settled` and replays nothing. */
-.score-top.in {
+.standing-line.in {
   animation: rung-in 220ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
 }
 
@@ -6459,14 +6468,14 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   }
 }
 
-/* ---- The LEADERBOARD screen (#190): friends board first, global top 50 as the
+/* ---- The LEADERBOARD screen (#190/#271): the player's groups first, global top 50 as the
    untrusted tab. A full-height column in the app's chrome voice — glass rows on
    hairlines, primary `--fg` for what matters and plain `--muted` for SECONDARY text
    and icons (user-decided 2026-08-20, amending the one-ink rule: never `--fg` +
    opacity for a resting secondary; opacity stays an interaction treatment) — with
    the game's numbers (ranks, scores) in the pixel face, since a score is something
    the game produced. Rows CONNECTED to the reader are marked in the accent — a quiet
-   left edge on a friend, that edge plus a tint on your own row (user-decided
+   left edge on one of your people, that edge plus a tint on your own row (user-decided
    2026-08-20, superseding the inverted selection box here). ---- */
 .board-screen {
   width: min(430px, 100%);
@@ -6491,6 +6500,128 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   padding: 2px;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
+}
+/* The GROUP strip (#271): as many named tabs as the player has groups, then NEW (+),
+   then GLOBAL. It scrolls sideways once the names outrun the column, each tab as wide
+   as its name, never squeezed; the scrollbar is hidden (the strip is a row of chips,
+   not a document). */
+.group-tabs {
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: none;
+}
+.group-tabs::-webkit-scrollbar {
+  display: none;
+}
+.group-tabs .board-tab {
+  flex: none;
+  white-space: nowrap;
+}
+.group-tabs .board-tab:last-child {
+  margin-left: auto;
+}
+.board-tab-new {
+  font-size: 15px;
+  font-weight: 500;
+  padding-top: 5px;
+  padding-bottom: 4px;
+}
+/* The three boards of a group. The row is the same segmented control, quieter: no
+   frame of its own, the active period in weight alone. */
+.period-tabs {
+  flex: none;
+  border-color: transparent;
+  padding: 0;
+}
+.period-tabs .board-tab.active {
+  background: transparent;
+  color: var(--fg);
+}
+
+/* NEW GROUP: one text field and CREATE on one line, the field in the chrome's own
+   register (mono, 16px so a phone never zooms to it). */
+.group-form {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+.group-form-input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  background: var(--glass);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  color: var(--fg);
+  font-family: var(--ui);
+  font-size: 16px;
+  font-weight: 550;
+  letter-spacing: 0.02em;
+}
+.group-form-input::placeholder {
+  color: var(--muted);
+  letter-spacing: 0.1em;
+}
+.group-form-submit {
+  flex: none;
+  min-width: 96px;
+}
+
+/* A group's two quiet acts, under its board: LEAVE, and the creator's MANAGE. */
+.group-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex: none;
+}
+/* The creator's ✕ at a managed row's end: a small square that turns into REMOVE? on the
+   first tap and acts on the second (no dialog). */
+.board-row.managed {
+  grid-template-columns: 42px 28px minmax(0, 1fr) auto auto;
+}
+.board-row.playing.managed {
+  grid-template-columns: 42px 28px minmax(0, 1fr) auto auto auto;
+}
+.board-row.waiting.managed .board-name {
+  grid-column: 3 / 4;
+}
+.board-remove {
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--fg);
+  border-radius: var(--r-sm);
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  text-shadow: none;
+}
+.board-remove.confirming {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--fg);
+}
+
+/* A WEEK or a MONTH row: the podium points under the unit caption, the tiebreakers as a
+   quiet second line under the name (beside it they ate the name on a phone). */
+.board-ident {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.board-detail {
+  font-family: var(--ui);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .board-tab {
   flex: 1;
@@ -6650,7 +6781,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   color: var(--fg);
   translate: 0 1px;
 }
-/* No rank yet (a waiting friend): a small solid tick, CENTERED in the rank column
+/* No rank yet (a waiting member): a small solid tick, CENTERED in the rank column
    (user feedback 2026-08-20, second pass — the pixel hyphen sat left and thin), so
    the cell never reads as a rendering hole. Secondary ink, like the ranks around it. */
 .board-norank {
@@ -6688,14 +6819,14 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    history line's own marker), as a 2px inset left edge. It is ONE family said at two
    strengths (user-decided 2026-08-20, superseding the inverted selection box on the own
    row: a solid block of foreground in a list of glass rows shouted, and it left nothing
-   quieter for a friend to wear).
-     - a FRIEND among the global rows: the edge alone, nothing else touched;
+   quieter for a member to wear).
+     - one of your GROUPS' members among the global rows: the edge alone, nothing else touched;
      - YOUR row: that edge, plus a whisper of the accent in the fill and the hairline,
        plus the name at the action weight.
    The edge is an INSET SHADOW rather than a border-left, so marking a row cannot shift
-   the grid under it by a pixel. Scoped to the GLOBAL list in the screen — on the friends
-   board every row is a friend, and marking everything marks nothing. */
-.board-row.friend,
+   the grid under it by a pixel. Scoped to the GLOBAL list in the screen — on a group's
+   board every row is one of your people (#271), and marking everything marks nothing. */
+.board-row.mate,
 .board-row.me {
   box-shadow: inset 2px 0 0 var(--accent);
 }
@@ -6801,9 +6932,10 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   }
 }
 
-/* ---- The invite landing's confirmation (#189, user feedback 2026-08-20): the click
-   now SAYS what it did — the inviter's mark and name over FRIEND ADDED, PLAY onward.
-   Vertically self-centering (auto margins), like the app's other HUD-less screens. ---- */
+/* ---- The group invite landing (#271; the shape is #189's, user feedback 2026-08-20): the
+   group's name over its members' marks, JOIN, and after the tap it SAYS what it did —
+   JOINED, the board and PLAY onward. Vertically self-centering (auto margins), like the
+   app's other HUD-less screens. ---- */
 .invite-done {
   width: min(340px, 100%);
   margin: auto 0;
@@ -6822,6 +6954,22 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   font-size: 20px;
   font-weight: 650;
   letter-spacing: 0.03em;
+}
+/* The members' marks in a row that wraps, each a small framed tile. */
+.invite-marks {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-width: 100%;
+}
+.invite-marks .avatar {
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
 }
 .invite-done-line {
   margin: 0;
