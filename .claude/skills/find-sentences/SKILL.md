@@ -48,6 +48,13 @@ The target is a median of 10–20 tries, with the struggle spread over the SENTE
 concentrated on one word.
 
 - No very easy and no very hard hole. Difficulty should be comparable across the three.
+- **The secret is never the EXPECTED word** — the one most readers would put in the
+  blank (« quinze [jours] plus tard », « au [crayon] », « la [poste] me retourna »,
+  « le [chauffage] »): the days that play well hide **gosses** where a reader expects
+  *enfants*, **lâcher** where they expect *dire*, **alcoolique** where they expect
+  *salaud* (the 2026-09-13 day, median 44; the days that hid an expected word played
+  at 6–8; user-decided 2026-09-13, "aim harder"). Code strikes it; keep it in mind
+  when the three are spread.
 - A secret the context gives away is replaced. When the context helps only a little, a
   harder start word is acceptable (not too tricky); when it helps too much, another word.
 - Two secrets too similar in meaning → replace one. Three secrets from three unrelated

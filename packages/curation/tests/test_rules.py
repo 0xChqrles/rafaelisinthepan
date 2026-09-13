@@ -188,20 +188,34 @@ no_rank = lambda t, w: None  # noqa: E731
 def test_open_candidates_strike_a_word_with_at_most_two_possibilities():
     cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
     assert OBVIOUS_MAX == 2
-    # « arrêt cardiaque »: the reader names the secret and one other word — two, out.
-    fillers = lambda t: ["chat", "chien"] if t.text == "chat" else ["neige", "mer", "nuit"]  # noqa: E731
+    # « [arrêt] cardiaque » with « crise » expected: the reader names one other word
+    # and the secret — two possibilities, out (even though the secret is not first).
+    fillers = lambda t: ["chien", "chat"] if t.text == "chat" else ["neige", "mer", "nuit"]  # noqa: E731
     log = SearchLog()
     kept = open_candidates(cands, fillers=fillers, neighbour_rank=no_rank, log=log)
     assert {t.text for t in kept} == {t.text for t in cands} - {"chat"}
-    assert any("'chat' is obvious — 2 possible" in e and "chat, chien" in e for e in log.events)
+    assert any("'chat' is obvious — 2 possible" in e and "chien, chat" in e for e in log.events)
 
 
 def test_open_candidates_keep_a_word_with_three_possibilities():
     cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
-    # The secret first, two real alternatives after it: guessable, still a hole.
-    fillers = lambda t: [t.text, "autre", "encore"]  # noqa: E731
+    # Another word expected first, the secret among the alternatives: a hole.
+    fillers = lambda t: ["autre", t.text, "encore"]  # noqa: E731
     kept = open_candidates(cands, fillers=fillers, neighbour_rank=no_rank)
     assert [t.text for t in kept] == [t.text for t in cands]
+
+
+def test_open_candidates_strike_the_expected_word_even_with_alternatives():
+    cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
+    # « quinze [jours] plus tard »: the secret is what most readers put, mois/ans/années behind it.
+    fillers = lambda t: ["chat", "chien", "rat", "lion"] if t.text == "chat" else ["autre", t.text, "encore"]  # noqa: E731
+    log = SearchLog()
+    kept = open_candidates(cands, fillers=fillers, neighbour_rank=no_rank, log=log)
+    assert "chat" not in {t.text for t in kept}
+    assert any("'chat' is the EXPECTED word" in e for e in log.events)
+    # A twin first (« clés » for « clefs ») is the secret first.
+    fillers = lambda t: ["chats", "chien", "rat", "lion"] if t.text == "chat" else ["autre", t.text, "encore"]  # noqa: E731
+    assert "chat" not in {t.text for t in open_candidates(cands, fillers=fillers, neighbour_rank=no_rank)}
 
 
 def test_open_candidates_count_the_secret_even_when_the_reader_misses_it():
@@ -228,11 +242,11 @@ def test_open_candidates_fold_twins_into_the_secret_and_dedupe_fillers():
     cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
     ranks = {("chat", "minet"): 1, ("pierre", "roche"): 40}
     neighbour_rank = lambda t, w: ranks.get((t.text, w))  # noqa: E731
-    fillers = lambda t: {"chat": ["chats", "minet", "chien", "Chien"],  # noqa: E731
-                         "pierre": ["pierre", "roche", "dalle"]}.get(t.text, ["x", "y", "z"])
+    fillers = lambda t: {"chat": ["chien", "chats", "minet", "Chien"],  # noqa: E731
+                         "pierre": ["roche", "pierre", "dalle"]}.get(t.text, ["x", "y", "z"])
     kept = {t.text for t in open_candidates(cands, fillers=fillers, neighbour_rank=neighbour_rank)}
-    assert "chat" not in kept  # a variant, a rank-1 synonym and one word twice: two possibilities
-    assert "pierre" in kept  # the secret and two real alternatives (roche is rank 40)
+    assert "chat" not in kept  # chien, then a variant and a rank-1 synonym of the secret: two possibilities
+    assert "pierre" in kept  # roche expected, the secret and dalle behind it: three, a hole
 
 
 def test_open_candidates_judge_a_repeated_word_once():

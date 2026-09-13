@@ -154,9 +154,16 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   evening let « arrêt » through). **A word a reader GUESSES, with alternatives, stays a
   hole — that is the game** (user's call 2026-09-10 on « les clefs du [magasin] »,
   « une [grippe] intestinale », « tant de [cocaïne] »: the first-filler rule of the
-  same morning struck them and left « sciatique »). The log names each verdict with
-  the count and the fillers; a sentence with fewer than `TRIO` open words is rejected
-  before any pick. Why this shape: the 2026-09-06 check ran AFTER the trio,
+  same morning struck them and left « sciatique »). **The EXPECTED word is never a
+  hole either (user-decided 2026-09-13, "aim harder"): the reader's FIRST filler — what
+  most readers put there, twins folded — is struck even with alternatives behind it.**
+  Measured on the runs' own logs against the real medians (`/scores`): the curated
+  days of 09-10/11/12 hid one to three expected words (« hérité », « chauffage »,
+  « peau » / « montrer ») and played at 6 / 8 / 8; the 09-13 day hid none (« lâcher »
+  where a reader puts « dire », « gosses » for « enfants ») and played at 44; both
+  Kundera attempts hid three (« quinze [jours] », « au [crayon] », « la [poste] ») and
+  were guessable in three tries. The log names each verdict with the count and the
+  fillers; a sentence with fewer than `TRIO` open words is rejected before any pick. Why this shape: the 2026-09-06 check ran AFTER the trio,
   with all three blanks, as a log note — « il aurait répondu [sûrement] pas » was picked
   from a list of four and the check that would have refused it could change nothing.
   The open holes' fillers are shown to the start-word prompt. The skill's trio rules
