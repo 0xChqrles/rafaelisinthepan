@@ -61,6 +61,15 @@ MAX_OFF_LIST = 2
 # « crise » sits at rank 12668 from « arrêt ». A word a reader GUESSES, with
 # alternatives, stays a hole: that is the game. Supersedes the 2026-09-06 annotation
 # (three blanks, after the trio, never a strike), which could refuse nothing.
+#
+# THE EXPECTED WORD IS NEVER A HOLE (user-decided 2026-09-13, "aim harder"): the
+# reader's FIRST filler — the word most readers put there, twins folded — is struck
+# even with alternatives behind it. Measured on the days' own logs and real medians:
+# the curated days of 09-10/11/12 hid one to three expected words (« hérité »,
+# « chauffage », « peau » / « montrer ») and played at 6 / 8 / 8; the 09-13 day hid
+# none (« lâcher » where a reader puts « dire », « gosses » for « enfants ») and played
+# at 44; both Kundera attempts (« quinze [jours] », « au [crayon] », « la [poste] ») hid
+# three and were "guessable in 3 tries".
 CONTEXT_GUESSES = 6
 OBVIOUS_MAX = 2
 TWIN_RANK = 3
@@ -141,22 +150,28 @@ def open_candidates(
 ) -> list[Token]:
     """The candidates the context does not hand over. `fillers(token)` is what a reader
     could really put in the sentence with that one word blanked (every occurrence of
-    it, the rest intact, no start word), most likely first. A word is obvious — struck
-    — when the reader can name at most OBVIOUS_MAX words for it, the secret included: a
-    filler that is a twin of the secret (`is_twin`) is the secret again. One judgement
-    per distinct slug; the order of the list is kept."""
+    it, the rest intact, no start word), most likely first. A word is struck when it is
+    the EXPECTED word — the reader's first filler is the secret or a twin of it
+    (`is_twin`) — or when the reader can name at most OBVIOUS_MAX words for it, the
+    secret included (a twin is the secret again). One judgement per distinct slug; the
+    order of the list is kept."""
     log = log or SearchLog()
     verdict: dict[str, bool] = {}
     out = []
     for c in candidates:
         if c.slug not in verdict:
             guesses = fillers(c)
+            expected = bool(guesses) and is_twin(c, guesses[0], neighbour_rank)
             others = {slug(g) for g in guesses if slug(g) and not is_twin(c, g, neighbour_rank)}
             possible = len(others) + 1  # the secret itself is always one of them
-            verdict[c.slug] = possible <= OBVIOUS_MAX
+            verdict[c.slug] = expected or possible <= OBVIOUS_MAX
             shown = ", ".join(guesses) or "none"
-            log.note(f"'{c.text}' is obvious — {possible} possible word(s) (a reader puts: {shown}) — struck"
-                     if verdict[c.slug] else f"'{c.text}' is open — {possible} possible words (a reader puts: {shown})")
+            if expected:
+                log.note(f"'{c.text}' is the EXPECTED word — the first a reader puts ({shown}) — struck")
+            elif verdict[c.slug]:
+                log.note(f"'{c.text}' is obvious — {possible} possible word(s) (a reader puts: {shown}) — struck")
+            else:
+                log.note(f"'{c.text}' is open — {possible} possible words (a reader puts: {shown})")
         if not verdict[c.slug]:
             out.append(c)
     return out
