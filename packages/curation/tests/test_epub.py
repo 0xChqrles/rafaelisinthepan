@@ -24,3 +24,10 @@ def test_metadata_and_spine_order(tmp_path):
 
 def test_html_to_text_skips_head_and_keeps_blocks():
     assert html_to_text("<head><style>p{}</style></head><p>a</p><p>b<br/>c</p>") == "a\n\nb\n\nc"
+
+
+def test_html_to_text_reads_a_hard_wrapped_paragraph_as_one_line():
+    # A newline inside a text node is whitespace, as in a browser; <br> and blocks break.
+    assert html_to_text("<p>une ligne\ncoupée en\n   deux</p><p>puis<br/>autre</p>") == \
+        "une ligne coupée en deux\n\npuis\n\nautre"
+
