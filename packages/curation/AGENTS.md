@@ -95,7 +95,7 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   forced one, every trio worth keeping came from 8+), `MIN_GAP` (3 tokens), `COSINE_MAX`
   (0.40), `MODIFIER_DEPS`, `MAX_RESTARTS` (2), `MAX_OFF_LIST` (2), `CONTEXT_GUESSES` (3,
   the most fillers the obviousness filter asks a reader for), `OBVIOUS_MAX` (2),
-  `TWIN_RANK` (3);
+  `TWIN_RANK` (3), `PLAIN_WORD_RANK` (40000, ONE boundary with `starts.MAX_START_FREQ_RANK`);
   and at the top of `curate.py`: `MAX_SENTENCES` (600), `CHUNK` (150), `PICKS_PER_CHUNK`
   (6), `SHORTLIST` (20). The mechanical filter (`sentences.is_candidate`) also refuses a
   unit that OPENS on a quotation mark (reported speech, or an argument with a line the
@@ -162,8 +162,14 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   « peau » / « montrer ») and played at 6 / 8 / 8; the 09-13 day hid none (« lâcher »
   where a reader puts « dire », « gosses » for « enfants ») and played at 44; both
   Kundera attempts hid three (« quinze [jours] », « au [crayon] », « la [poste] ») and
-  were guessable in three tries. The log names each verdict with the count and the
-  fillers; a sentence with fewer than `TRIO` open words is rejected before any pick. Why this shape: the 2026-09-06 check ran AFTER the trio,
+  were guessable in three tries. **The strike applies to a PLAIN word only** — corpus
+  rank at or under `PLAIN_WORD_RANK` (40000, the start band's "a word a player knows"
+  boundary): past it the reader's first filler is the model's knowledge, not every
+  player's — « je lance à la [cantonade] » (rank 68858, the user's call 2026-09-14) is
+  an idiom the model completes and a player may not; every word the rule struck on the
+  easy days sits under 28000. The count rule still judges a rare word. The log names
+  each verdict with the count and the fillers; a sentence with fewer than `TRIO` open
+  words is rejected before any pick. Why this shape: the 2026-09-06 check ran AFTER the trio,
   with all three blanks, as a log note — « il aurait répondu [sûrement] pas » was picked
   from a list of four and the check that would have refused it could change nothing.
   The open holes' fillers are shown to the start-word prompt. The skill's trio rules

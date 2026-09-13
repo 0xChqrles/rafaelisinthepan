@@ -7,6 +7,7 @@ from rules import (
     MAX_OFF_LIST,
     MIN_GAP,
     OBVIOUS_MAX,
+    PLAIN_WORD_RANK,
     TWIN_RANK,
     SearchLog,
     Token,
@@ -270,3 +271,19 @@ def test_initial_candidates_drop_a_hyphenated_compound():
     sent = SENT + [tok(14, "sud-américain", "ADJ", "amod", 11)]
     vocab = VOCAB | {"sud-americain"}
     assert "sud-américain" not in {t.text for t in initial_candidates(sent, in_vocab=vocab.__contains__)}
+
+
+def test_the_expected_strike_spares_a_rare_word_the_count_rule_still_judges():
+    cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
+    # « je lance à la [cantonade] »: the reader completes the idiom first, but the word
+    # is past the plain-word boundary — a player may not have it. Three fillers: a hole.
+    fillers = lambda t: [t.text, "ronde", "volée"]  # noqa: E731
+    rank = lambda t: PLAIN_WORD_RANK + 1 if t.text == "chat" else 100  # noqa: E731
+    log = SearchLog()
+    kept = {t.text for t in open_candidates(cands, fillers=fillers, neighbour_rank=no_rank, frequency_rank=rank, log=log)}
+    assert "chat" in kept and "pierre" not in kept  # pierre is plain and expected: struck
+    assert any("'chat' is open — rare" in e for e in log.events)
+    # Rare but with only one alternative: the count rule strikes it all the same.
+    fillers = lambda t: [t.text, "ronde"]  # noqa: E731
+    assert "chat" not in {t.text for t in open_candidates(cands, fillers=fillers, neighbour_rank=no_rank, frequency_rank=rank)}
+

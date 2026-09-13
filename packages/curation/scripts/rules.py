@@ -69,10 +69,17 @@ MAX_OFF_LIST = 2
 # « chauffage », « peau » / « montrer ») and played at 6 / 8 / 8; the 09-13 day hid
 # none (« lâcher » where a reader puts « dire », « gosses » for « enfants ») and played
 # at 44; both Kundera attempts (« quinze [jours] », « au [crayon] », « la [poste] ») hid
-# three and were "guessable in 3 tries".
+# three and were "guessable in 3 tries". The strike applies to a PLAIN word only — one
+# at or under PLAIN_WORD_RANK in the corpus order, the boundary the start band uses for
+# "a word a player knows" (« hétéroptère » out, « bestiole » in): past it the reader's
+# first filler is the model's knowledge, not every player's — « je lance à la
+# [cantonade] » (rank 68858) is an idiom the model completes and a player may not (the
+# user's call 2026-09-14); every word the rule struck on the easy days sits under 28000.
+# The count rule still judges a rare word.
 CONTEXT_GUESSES = 6
 OBVIOUS_MAX = 2
 TWIN_RANK = 3
+PLAIN_WORD_RANK = 40000
 # Secrets per puzzle (the sentence schema: exactly three distinct slugs).
 TRIO = 3
 
@@ -146,22 +153,26 @@ def open_candidates(
     *,
     fillers: Callable[[Token], list[str]],
     neighbour_rank: Callable[[Token, str], int | None] = lambda t, w: None,
+    frequency_rank: Callable[[Token], int | None] = lambda t: None,
     log: "SearchLog | None" = None,
 ) -> list[Token]:
     """The candidates the context does not hand over. `fillers(token)` is what a reader
     could really put in the sentence with that one word blanked (every occurrence of
     it, the rest intact, no start word), most likely first. A word is struck when it is
     the EXPECTED word — the reader's first filler is the secret or a twin of it
-    (`is_twin`) — or when the reader can name at most OBVIOUS_MAX words for it, the
-    secret included (a twin is the secret again). One judgement per distinct slug; the
-    order of the list is kept."""
+    (`is_twin`) and the word is a plain one (`frequency_rank` at or under
+    PLAIN_WORD_RANK; None = unknown, taken as plain) — or when the reader can name at
+    most OBVIOUS_MAX words for it, the secret included (a twin is the secret again).
+    One judgement per distinct slug; the order of the list is kept."""
     log = log or SearchLog()
     verdict: dict[str, bool] = {}
     out = []
     for c in candidates:
         if c.slug not in verdict:
             guesses = fillers(c)
-            expected = bool(guesses) and is_twin(c, guesses[0], neighbour_rank)
+            rank = frequency_rank(c)
+            rare = rank is not None and rank > PLAIN_WORD_RANK
+            expected = bool(guesses) and is_twin(c, guesses[0], neighbour_rank) and not rare
             others = {slug(g) for g in guesses if slug(g) and not is_twin(c, g, neighbour_rank)}
             possible = len(others) + 1  # the secret itself is always one of them
             verdict[c.slug] = expected or possible <= OBVIOUS_MAX
@@ -170,6 +181,9 @@ def open_candidates(
                 log.note(f"'{c.text}' is the EXPECTED word — the first a reader puts ({shown}) — struck")
             elif verdict[c.slug]:
                 log.note(f"'{c.text}' is obvious — {possible} possible word(s) (a reader puts: {shown}) — struck")
+            elif rare:
+                log.note(f"'{c.text}' is open — rare (rank {rank}), the reader's first filler is not every "
+                         f"player's — {possible} possible words (a reader puts: {shown})")
             else:
                 log.note(f"'{c.text}' is open — {possible} possible words (a reader puts: {shown})")
         if not verdict[c.slug]:
