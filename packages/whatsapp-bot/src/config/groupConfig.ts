@@ -71,6 +71,13 @@ export interface GroupConfig {
   // only its public face (whether it still stands) — never a membership: a WhatsApp group
   // is still not a Whippin group.
   whippinGroup: string | null;
+  // THE OWNER (user-decided 2026-09-15): ONE sender JID whose word the bot always does —
+  // whatever they ask, no refusal, no sulking, no bargaining — and nobody else's. Null
+  // for none. A voice rule, not a grant: it changes nothing the code decides (tools, the
+  // spoiler backstop, the ceilings). A JID names a person, so it lives in the SSM config
+  // and never in code; either spelling (phone number or LID) is accepted and matched
+  // against the message as it came and as its player key.
+  owner: string | null;
   chat: ChatConfig;
   // HOW a recorded share is acknowledged (user-decided 2026-09-04). `react` is the
   // deterministic emoji, no model call; `say` is one short written line the model composes,
@@ -163,12 +170,13 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
     'podium',
     'reminder',
     'whippinGroup',
+    'owner',
     'chat',
     'acknowledge',
     'leaderAnnouncements',
     'names',
   ]);
-  const { id, name, language, enabled, timezone, podium, reminder, whippinGroup, chat, acknowledge, leaderAnnouncements, names } =
+  const { id, name, language, enabled, timezone, podium, reminder, whippinGroup, owner, chat, acknowledge, leaderAnnouncements, names } =
     raw;
   if (typeof id !== 'string' || !GROUP_JID.test(id)) fail(file, '"id" must be a group JID');
   if (id === PLACEHOLDER_GROUP_JID) {
@@ -197,6 +205,11 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
   // mistake, and it is refused rather than picked apart.
   if (whippinGroup !== undefined && (typeof whippinGroup !== 'string' || !GROUP_ID_PATTERN.test(whippinGroup))) {
     fail(file, '"whippinGroup" must be a Whippin group id: the 16 characters after /g/ in its invite link');
+  }
+
+  // The JID never appears in the error: this message reaches synth/CI logs (the `names` rule).
+  if (owner !== undefined && owner !== null && (typeof owner !== 'string' || !USER_JID.test(owner))) {
+    fail(file, '"owner" must be a user JID, or null');
   }
 
   if (!isRecord(chat)) fail(file, '"chat" must be an object');
@@ -260,6 +273,7 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
     podium: podiumConfig,
     reminder: reminderConfig,
     whippinGroup: (whippinGroup as string | undefined) ?? null,
+    owner: (owner as string | null | undefined) ?? null,
     chat: {
       enabled: chat.enabled,
       name: botName.trim(),

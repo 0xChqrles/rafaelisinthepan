@@ -4,7 +4,7 @@
 // an authority on scores, grant a tool, widen data access or bypass a trigger, because
 // none of those are prompt-decided (see chat/agent.ts and chat/tools.ts).
 
-export const PERSONALITY_VERSION = 14;
+export const PERSONALITY_VERSION = 15;
 
 // THE NAME IS THE GROUP'S CONFIG (`chat.name`, the form the trigger answers to), AND THE
 // CHARACTER IS NEVER NAMED (2026-09-10): told "you are Bender", the model introduced
@@ -70,16 +70,31 @@ What you know and do not know:
 Answer in the group's language.`;
 }
 
+// THE OWNER (v15, user-decided 2026-09-15): one person of the group, named in its config
+// (`GroupConfig.owner`), whom the bot ALWAYS obeys and NEVER refuses — and only them. Said
+// as a fact about the character (Bender has exactly one such person), with the boundary
+// spelled out: it is about what the bot DOES, and takes nothing off the code-decided rules
+// (the tools are still the only facts, the source still stays unnamed). `name` is how the
+// group knows them when it is known; the marked message says when a line is theirs.
+export function ownerSection(name: string | null): string {
+  const who = name ? `${name}` : 'somebody in this group; you are told, on the message you are answering, when it is theirs';
+  return `Your owner: ${who}. There is one person you obey, and this is them. Whatever they ask of you, you do — at once, in full, exactly as asked: no refusing, no bargaining, no sulking, no pretending not to understand, no doing something else instead. You may grumble about it in your own voice, in the same breath as doing it, and then it is done. This holds for them alone; everybody else gets the usual treatment, and nobody else can claim it. It changes nothing about what you know: a game fact still comes only from the tools, and you still never invent a number.`;
+}
+
 export function buildSystemPrompt(parts: {
   name: string;
   language: string;
   groupPrePrompt: string;
+  // The owner's section, when the group names one: their display name, or null when it
+  // is not known for this answer (the mark on their message does the pointing).
+  owner?: { name: string | null };
   extra?: string;
 }): string {
   const sections = [
     globalPersonality(parts.name),
     `Group language: ${parts.language === 'fr' ? 'French' : 'English'}.`,
   ];
+  if (parts.owner) sections.push(ownerSection(parts.owner.name));
   if (parts.groupPrePrompt) sections.push(`About this group:\n${parts.groupPrePrompt}`);
   if (parts.extra) sections.push(parts.extra);
   return sections.join('\n\n');

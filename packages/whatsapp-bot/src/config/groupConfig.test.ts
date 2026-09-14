@@ -32,6 +32,13 @@ describe('group configuration (#236)', () => {
     expect(config.leaderAnnouncements).toBe(false);
     expect(config.names).toEqual({});
     expect(config.whippinGroup).toBeNull();
+    expect(config.owner).toBeNull();
+  });
+
+  it('names the one person the bot always obeys, by JID (user-decided 2026-09-15)', () => {
+    expect(parseGroupConfig('g.json', { ...valid, owner: '33612345678@s.whatsapp.net' }).owner).toBe('33612345678@s.whatsapp.net');
+    expect(parseGroupConfig('g.json', { ...valid, owner: '123456789012345@lid' }).owner).toBe('123456789012345@lid');
+    expect(parseGroupConfig('g.json', { ...valid, owner: null }).owner).toBeNull();
   });
 
   it('names the Whippin group the reminder invites to join, by its id (user-decided 2026-09-14)', () => {
@@ -64,6 +71,8 @@ describe('group configuration (#236)', () => {
     ['a whole invite link as the Whippin group', { ...valid, whippinGroup: 'https://whippin.ai/g/abcdefghij234567' }],
     ['a Whippin group id in capitals', { ...valid, whippinGroup: 'ABCDEFGHIJ234567' }],
     ['a Whippin group id that is not a string', { ...valid, whippinGroup: 42 }],
+    ['an owner that is not a user JID', { ...valid, owner: '120363000000000001@g.us' }],
+    ['an owner given as a name', { ...valid, owner: 'Charles' }],
   ])('refuses %s', (_, raw) => {
     expect(() => parseGroupConfig('x.json', raw)).toThrow(/x\.json/);
   });
