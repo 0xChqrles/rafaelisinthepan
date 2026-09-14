@@ -35,7 +35,11 @@ class _TextExtractor(HTMLParser):
 
     def handle_data(self, data):
         if not self._skip:
-            self.parts.append(data)
+            # A newline inside a text node is HTML whitespace (a browser collapses it),
+            # not a line break: some epubs are hard-wrapped at ~70 characters inside
+            # every <p>, and read raw they cut every sentence to pieces. Blocks and
+            # <br> are the line breaks.
+            self.parts.append(re.sub(r"\s+", " ", data))
 
 
 def html_to_text(html: str) -> str:
