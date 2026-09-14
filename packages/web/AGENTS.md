@@ -1830,8 +1830,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   issue's earlier AS drum), so `/join/` carries the group landing alone.
   **JOINING IS A BUTTON, for everyone** (#216's trigger rule): the landing draws the group
   (a bounded `readGroup` — `api.readGroup` tells shown / gone / failed apart, the
-  `readProfile` rule; gone AND failed both end the landing on the EXPIRED surface, since a
-  button would join a group the screen could not describe) over ONE primary JOIN; the tap
+  `readProfile` rule; gone ends the landing on EXPIRED, while failed offers RETRY of the
+  bounded read) over ONE primary JOIN; the tap
   POSTs `{token, join}` — minted by that same tap for a brand-new visitor — with a loading
   wave in the button and the `ErrorScreen` for a transport/5xx failure. **A member already
   skips the landing** onto the group's board (the cached groups list says so; tokenless it
@@ -1872,7 +1872,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   first listed group standing in for a stale or missing one. The period is the screen's own
   state. The groups themselves are `state/groups.ts` — ONE transient cache (`loadGroups`,
   `adoptGroups` after every write, `resetGroups` in `identityScope`), tokenless
-  known-empty without a request. **THE DAY IS A LIVE VALUE** and **EVERY CACHE IS
+  known-empty without a request. The list refreshes on board/invite entry and on opening
+  group management, retaining a cached answer during refresh. Older reads cannot overwrite
+  a newer membership write or identity. **THE DAY IS A LIVE VALUE** and **EVERY CACHE IS
   IDENTITY-SCOPED** exactly as before (a new day or a new epoch drops every board during
   render); one fetch per board ACTIVATION with the outcome per board key
   (`<group>:<period>` / `global`), stale-but-good over a failed refresh. A group's read is

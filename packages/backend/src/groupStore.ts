@@ -11,15 +11,15 @@
 //   `player#<publicId>` / `group#<id>`  — the same membership seen from the player: the
 //                                          caller's own groups are one Query over the
 //                                          partition their profile and account already
-//                                          share. It DENORMALIZES the group's name and
-//                                          creator, which never change (there is no
-//                                          rename), so the list needs no second read.
+//                                          share. It DENORMALIZES the group's immutable
+//                                          name (there is no
+//                                          rename); ownership is read from the group row.
 //
 // A membership is BOTH rows or NEITHER — written and deleted in one transaction, so no
 // reader can ever see a member the group does not list, or a group the member does not.
-// A group is created WITH its creator's membership in the same transaction: a group with
-// nobody in it is unreachable by construction, though one can be LEFT empty (the row then
-// lingers, joinable through its link — accepted).
+// A group is created with its creator's membership and deleted with its last membership.
+// Every membership write changes the group's version in the same transaction, so a
+// leave can only commit against the membership and owner it was decided from.
 //
 // The caps are COUNTED off the rows themselves rather than kept in a counter item, for
 // the reason the histogram is derived from the score rows: a second store answering the
@@ -36,6 +36,7 @@ export interface GroupRecord {
   name: string;
   createdBy: string;
   createdAt: string;
+  membershipVersion: number;
 }
 
 export interface GroupMember {
@@ -57,7 +58,9 @@ export interface GroupMembership {
 // user-decided 2026-09-14): an OWNER who leaves hands the group to a SUCCESSOR, and a
 // member whose leaving EMPTIES the group deletes it — one transaction either way.
 export interface LeaveOptions {
-  // The member the group row's `createdBy` moves to, conditioned on it naming the leaver.
+  // The group snapshot used to decide succession and authorize removal.
+  expectedVersion: number;
+  // The member the group row's `createdBy` moves to if the snapshot still stands.
   successor?: string;
   // Delete the group row: the leaver was the last member.
   deleteGroup?: boolean;
@@ -74,14 +77,15 @@ export function successionFor(
   leaving: string,
   chosen?: string,
 ): { options: LeaveOptions; needsChoice: boolean } {
+  const expectedVersion = group.membershipVersion;
   const others = members.filter((member) => member.publicId !== leaving);
-  if (others.length === 0) return { options: { deleteGroup: true }, needsChoice: false };
-  if (group.createdBy !== leaving) return { options: {}, needsChoice: false };
-  if (others.length === 1) return { options: { successor: others[0].publicId }, needsChoice: false };
+  if (others.length === 0) return { options: { expectedVersion, deleteGroup: true }, needsChoice: false };
+  if (group.createdBy !== leaving) return { options: { expectedVersion }, needsChoice: false };
+  if (others.length === 1) return { options: { expectedVersion, successor: others[0].publicId }, needsChoice: false };
   if (chosen !== undefined && others.some((member) => member.publicId === chosen)) {
-    return { options: { successor: chosen }, needsChoice: false };
+    return { options: { expectedVersion, successor: chosen }, needsChoice: false };
   }
-  return { options: { successor: others[0].publicId }, needsChoice: true };
+  return { options: { expectedVersion, successor: others[0].publicId }, needsChoice: true };
 }
 
 export interface GroupCreateInput {
@@ -136,9 +140,10 @@ export interface GroupStore {
   join(input: GroupJoinInput): Promise<GroupJoinOutcome>;
   // Both rows or neither, and — per `LeaveOptions` — the group row's succession or
   // deletion in the SAME transaction. Idempotent on the rows: leaving a group one is not
-  // in is a no-op. The owner's REMOVE of a member is this same write with no options,
-  // authorized by the route (a removed member is never the owner).
-  leave(id: string, publicId: string, options?: LeaveOptions): Promise<void>;
+  // in is a no-op on membership. REMOVE passes the version used to authorize its owner.
+  // Omitting options computes automatic succession from a fresh snapshot (cleanup).
+  // False means the snapshot changed; re-read before deciding or authorizing again.
+  leave(id: string, publicId: string, options?: LeaveOptions): Promise<boolean>;
   // Every membership of one player, for the #204 departure a deleted account owes,
   // each under `successionFor` with nobody choosing: re-read until the partition is
   // empty, so a membership landing between two passes goes with the rest. IDEMPOTENT,

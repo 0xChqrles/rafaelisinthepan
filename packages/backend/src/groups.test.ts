@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { GROUP_MEMBERS_MAX, GROUPS_MAX, type GroupSummary } from '@whippin/shared';
 import { createHandler } from './handler';
 import { memoryDeviceStore } from './memoryDeviceStore';
@@ -139,7 +139,7 @@ describe('groups route (#271) — create, join, leave, remove', () => {
     const id = await create(handler, me);
     await call(handler, { token: them.token, join: id });
     // The group row goes under a member (the store's own delete, as the last leave does).
-    await groups.leave(id, me.accountId, { deleteGroup: true });
+    await groups.leave(id, me.accountId, { expectedVersion: (await groups.get(id))!.membershipVersion, deleteGroup: true });
     expect((await call(handler, { token: them.token })).groups).toEqual([]);
     await expect(groups.listMine(them.accountId)).resolves.toEqual([]);
   });
@@ -263,5 +263,102 @@ describe('groups route (#271) — the public face', () => {
     const { handler } = await makeHandler();
     expect((await handler(get('abcdefghij234567'))).statusCode).toBe(404);
     expect((await handler(get('NOPE'))).statusCode).toBe(400);
+  });
+});
+
+
+describe('membership changes between a leave decision and its transaction', () => {
+  it('re-evaluates the successor when the selected member leaves first', async () => {
+    const { handler, me, them, devices, groups } = await makeHandler();
+    const third = await seedDevice(devices);
+    const id = await create(handler, me);
+    await call(handler, { token: them.token, join: id });
+    await call(handler, { token: third.token, join: id });
+    const leave = groups.leave.bind(groups);
+    vi.spyOn(groups, 'leave').mockImplementationOnce(async (...args) => {
+      await call(handler, { token: them.token, leave: id });
+      return leave(...args);
+    });
+    await call(handler, { token: me.token, leave: id, successor: them.accountId });
+    expect((await groups.get(id))?.createdBy).toBe(third.accountId);
+    expect((await groups.members(id)).map((m) => m.publicId)).toEqual([third.accountId]);
+  });
+
+  it('asks for a new choice if multiple members remain after the successor leaves', async () => {
+    const { handler, me, them, devices, groups } = await makeHandler();
+    const third = await seedDevice(devices);
+    const fourth = await seedDevice(devices);
+    const id = await create(handler, me);
+    for (const device of [them, third, fourth]) await call(handler, { token: device.token, join: id });
+    const leave = groups.leave.bind(groups);
+    vi.spyOn(groups, 'leave').mockImplementationOnce(async (...args) => {
+      await call(handler, { token: them.token, leave: id });
+      return leave(...args);
+    });
+    const result = await handler(post({ token: me.token, leave: id, successor: them.accountId }));
+    expect(result.statusCode).toBe(409);
+    expect(JSON.parse(result.body).error).toBe('successor_required');
+    expect((await groups.get(id))?.createdBy).toBe(me.accountId);
+    expect((await groups.members(id)).map((m) => m.publicId)).toContain(me.accountId);
+  });
+
+  it('preserves a join that commits before the last member leaves', async () => {
+    const { handler, me, them, groups } = await makeHandler();
+    const id = await create(handler, me);
+    const leave = groups.leave.bind(groups);
+    vi.spyOn(groups, 'leave').mockImplementationOnce(async (...args) => {
+      await call(handler, { token: them.token, join: id });
+      return leave(...args);
+    });
+    await call(handler, { token: me.token, leave: id });
+    expect((await groups.get(id))?.createdBy).toBe(them.accountId);
+    expect((await groups.members(id)).map((m) => m.publicId)).toEqual([them.accountId]);
+    expect((await handler(get(id))).statusCode).toBe(200);
+  });
+
+  it('rechecks ownership when a non-owner becomes owner during their leave', async () => {
+    const { handler, me, them, devices, groups } = await makeHandler();
+    const third = await seedDevice(devices);
+    const id = await create(handler, me);
+    for (const device of [them, third]) await call(handler, { token: device.token, join: id });
+    const leave = groups.leave.bind(groups);
+    vi.spyOn(groups, 'leave').mockImplementationOnce(async (...args) => {
+      await call(handler, { token: me.token, leave: id, successor: them.accountId });
+      return leave(...args);
+    });
+    await call(handler, { token: them.token, leave: id });
+    expect((await groups.get(id))?.createdBy).toBe(third.accountId);
+    expect((await groups.members(id)).map((m) => m.publicId)).toEqual([third.accountId]);
+  });
+
+  it('refuses an old owner removing a member after handing over ownership', async () => {
+    const { handler, me, them, groups } = await makeHandler();
+    const id = await create(handler, me);
+    await call(handler, { token: them.token, join: id });
+    const leave = groups.leave.bind(groups);
+    vi.spyOn(groups, 'leave').mockImplementationOnce(async (...args) => {
+      await call(handler, { token: me.token, leave: id });
+      return leave(...args);
+    });
+    const result = await handler(post({ token: me.token, remove: id, member: them.accountId }));
+    expect(result.statusCode).toBe(403);
+    expect(JSON.parse(result.body).error).toBe('not_creator');
+    expect((await groups.members(id)).map((m) => m.publicId)).toEqual([them.accountId]);
+  });
+
+  it('re-reads a stale departure job rather than assigning a departed successor', async () => {
+    const { handler, me, them, devices, groups } = await makeHandler();
+    const third = await seedDevice(devices);
+    const id = await create(handler, me);
+    await groups.join({ id, publicId: them.accountId, now: '2026-09-13T13:00:00Z' });
+    await groups.join({ id, publicId: third.accountId, now: '2026-09-13T14:00:00Z' });
+    const leave = groups.leave.bind(groups);
+    vi.spyOn(groups, 'leave').mockImplementationOnce(async (...args) => {
+      await call(handler, { token: them.token, leave: id });
+      return leave(...args);
+    });
+    await groups.leaveAll(me.accountId);
+    expect((await groups.get(id))?.createdBy).toBe(third.accountId);
+    expect(await groups.listMine(me.accountId)).toEqual([]);
   });
 });

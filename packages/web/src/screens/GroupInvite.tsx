@@ -81,16 +81,12 @@ export async function sendJoin(groupId: string): Promise<JoinOutcome> {
   return 'settled';
 }
 
-// The read's own three states, kept APART: `null` is "not settled yet" (the loading
-// frame), `'gone'` a settled answer with no group in it, and a group is the landing.
-export type GroupState = PublicGroup | 'gone' | null;
+// A pending read, a missing group and a retryable failure are distinct states.
+export type GroupState = PublicGroup | 'gone' | 'failed' | null;
 
 export function groupFrom(read: GroupRead): Exclude<GroupState, null> {
   if (read.status === 'shown') return read.group;
-  // A read that FAILED keeps the landing waiting on nothing it can name: it is treated as
-  // gone rather than drawn as a group with no name — the button would join a group the
-  // screen could not describe.
-  return 'gone';
+  return read.status;
 }
 
 // Hand the destination to App's own home redirect, and replace this landing in history so a
@@ -101,15 +97,17 @@ export default function GroupInvite({ groupId, lang }: { groupId: string; lang: 
   const [group, setGroup] = useState<GroupState>(null);
   const [phase, setPhase] = useState<'idle' | 'busy' | 'done' | 'full' | 'expired'>('idle');
   const [failed, setFailed] = useState(false);
+  const [readAttempt, setReadAttempt] = useState(0);
   const identity = useDeviceIdentity();
   const { groups } = useGroups();
   const setLastGroup = useGameStore((s) => s.setLastGroup);
 
   // WHICH group — read before anything is joined, so the button is a decision about a
   // group rather than a mystery. Bounded: a read that stalls would strand the clicker on
-  // a bare LOADING with only a reload as the way out. It resolves ONCE and holds.
+  // a bare LOADING with only a reload as the way out. Failed reads can be retried.
   useEffect(() => {
     let mounted = true;
+    setGroup(null);
     (async () => {
       const read = await readGroup(groupId, timeoutSignal(6_000));
       if (mounted) setGroup(groupFrom(read));
@@ -117,7 +115,7 @@ export default function GroupInvite({ groupId, lang }: { groupId: string; lang: 
     return () => {
       mounted = false;
     };
-  }, [groupId]);
+  }, [groupId, readAttempt]);
 
   // A member already skips the landing: the device's own groups say so (no request for a
   // tokenless device — its list is known empty).
@@ -166,9 +164,16 @@ export default function GroupInvite({ groupId, lang }: { groupId: string; lang: 
 
   const openBoard = () => navigate(pathForBoard(lang), { replace: true });
 
-  // A cap or an expired link is a STATE, so its screen carries the player on rather than
-  // retrying: asking again cannot empty a full group, and a dead end with no way out is the
-  // one thing every failure surface here exists to prevent.
+  if (group === 'failed') {
+    return (
+      <LoadError
+        message={t(lang, 'failedJoin')}
+        lang={lang}
+        onRetry={() => setReadAttempt((attempt) => attempt + 1)}
+      />
+    );
+  }
+  // A confirmed cap or missing group offers PLAY; a failed read above offers RETRY.
   if (phase === 'full' || phase === 'expired' || group === 'gone') {
     return (
       <LoadError

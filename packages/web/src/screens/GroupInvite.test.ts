@@ -80,10 +80,10 @@ describe('sendJoin — the tap carries the CLICKER key and the GROUP id', () => 
 });
 
 describe('groupFrom — what each read means on the landing', () => {
-  it('a shown group is the landing; gone and failed both end it', () => {
+  it('keeps failed reads retryable and expires only a confirmed missing group', () => {
     const group = { id: GROUP, name: 'G', createdBy: 'x', members: [] };
     expect(groupFrom({ status: 'shown', group })).toBe(group);
     expect(groupFrom({ status: 'gone' })).toBe('gone');
-    expect(groupFrom({ status: 'failed' })).toBe('gone');
+    expect(groupFrom({ status: 'failed' })).toBe('failed');
   });
 });

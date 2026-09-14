@@ -8,6 +8,7 @@ import {
 } from '@aws-sdk/client-dynamodb';
 import { ACCOUNT_SORT_KEY, accountKey } from './deviceStore';
 import { classifyTransaction, refusedAt } from './dynamoErrors';
+import { conflictDelayMs, sleep } from './dynamoRetry';
 import {
   GROUP_MEMBERS_MAX,
   GROUP_SORT_KEY,
@@ -117,6 +118,7 @@ export function dynamoGroupStore(client: DynamoDBClient, tableName: string): Gro
           name: item.name?.S ?? '',
           createdBy: item.createdBy?.S ?? '',
           createdAt: item.createdAt?.S ?? '',
+          membershipVersion: Number(item.membershipVersion?.N),
         }
       : null;
 
@@ -162,7 +164,7 @@ export function dynamoGroupStore(client: DynamoDBClient, tableName: string): Gro
 
     async create({ id, name, createdBy, now }) {
       if ((await countMine(createdBy)) >= GROUPS_MAX) return 'group_limit';
-      const group: GroupRecord = { id, name, createdBy, createdAt: now };
+      const group: GroupRecord = { id, name, createdBy, createdAt: now, membershipVersion: 0 };
       try {
         await client.send(
           new TransactWriteItemsCommand({
@@ -179,6 +181,7 @@ export function dynamoGroupStore(client: DynamoDBClient, tableName: string): Gro
                     name: { S: name },
                     createdBy: { S: createdBy },
                     createdAt: { S: now },
+                    membershipVersion: { N: '0' },
                   },
                   ConditionExpression: 'attribute_not_exists(pk)',
                 },
@@ -219,12 +222,13 @@ export function dynamoGroupStore(client: DynamoDBClient, tableName: string): Gro
             TransactItems: [
               accountStands(publicId),
               {
-                // The group must still exist at the write: a group row is never deleted
-                // today, but the condition is what keeps that a fact rather than a hope.
-                ConditionCheck: {
+                // Every membership mutation invalidates outstanding leave decisions.
+                Update: {
                   TableName: tableName,
                   Key: { pk: { S: groupKey(id) }, sk: { S: GROUP_SORT_KEY } },
                   ConditionExpression: 'attribute_exists(pk)',
+                  UpdateExpression: 'ADD membershipVersion :one',
+                  ExpressionAttributeValues: { ':one': { N: '1' } },
                 },
               },
               ...membershipItems(group, publicId, now),
@@ -245,18 +249,27 @@ export function dynamoGroupStore(client: DynamoDBClient, tableName: string): Gro
       return 'joined';
     },
 
-    // The row deletes are unconditional; the hand-over is conditioned on the leaver still
-    // owning the group, and a REFUSED hand-over (the owner changed under the caller — a
-    // departure racing a deliberate leave, two devices leaving at once) means the group
-    // already has its owner: the rows then go without it. Anything else is thrown.
-    async leave(id, publicId, options = {}) {
+    // A stale decision never degrades into unconditional deletes: the caller must
+    // re-read membership AND ownership before choosing what the leave now means.
+    async leave(id, publicId, options) {
+      if (!options) {
+        const group = await this.get(id);
+        if (group) {
+          options = successionFor(group, await this.members(id), publicId).options;
+        }
+      }
       try {
         await client.send(
           new TransactWriteItemsCommand({ TransactItems: leaveItems(tableName, id, publicId, options) }),
         );
+        return true;
       } catch (error) {
-        if (options.successor === undefined || classifyTransaction(error).kind !== 'refused') throw error;
-        await client.send(new TransactWriteItemsCommand({ TransactItems: leaveItems(tableName, id, publicId) }));
+        const verdict = classifyTransaction(error);
+        if (
+          verdict.kind === 'conflict' ||
+          (verdict.kind === 'refused' && refusedAt(verdict.reasons, 0))
+        ) return false;
+        throw error;
       }
     },
 
@@ -270,9 +283,11 @@ export function dynamoGroupStore(client: DynamoDBClient, tableName: string): Gro
         const mine = await this.listMine(publicId);
         if (mine.length === 0) return;
         for (const held of mine) {
-          const [group, members] = await Promise.all([this.get(held.id), this.members(held.id)]);
-          await this.leave(held.id, publicId, group ? successionFor(group, members, publicId).options : {});
+          const group = await this.get(held.id);
+          const members = await this.members(held.id);
+          await this.leave(held.id, publicId, group ? successionFor(group, members, publicId).options : undefined);
         }
+        await sleep(conflictDelayMs(pass));
       }
       throw new Error(`Group departure of ${publicId} did not converge.`);
     },
@@ -281,30 +296,34 @@ export function dynamoGroupStore(client: DynamoDBClient, tableName: string): Gro
 
 // The two rows one membership is, both deleted: no membership may be left pointing at an
 // account that is about to stop existing, and no group may keep listing a member who left.
-// Plus what the leave does to the GROUP row (`LeaveOptions`): the owner's succession,
-// conditioned on the row still naming the leaver, or the deletion of a group left empty.
+// The same transaction checks the membership snapshot and increments its version,
+// hands over ownership, or deletes the group when its last member leaves.
 function leaveItems(
   tableName: string,
   id: string,
   publicId: string,
-  options: LeaveOptions = {},
+  options?: LeaveOptions,
 ): TransactWriteItem[] {
-  const groupRow: TransactWriteItem[] = options.deleteGroup
-    ? [{ Delete: { TableName: tableName, Key: { pk: { S: groupKey(id) }, sk: { S: GROUP_SORT_KEY } } } }]
-    : options.successor !== undefined
-      ? [
-          {
-            Update: {
-              TableName: tableName,
-              Key: { pk: { S: groupKey(id) }, sk: { S: GROUP_SORT_KEY } },
-              UpdateExpression: 'SET #createdBy = :successor',
-              ConditionExpression: '#createdBy = :leaver',
-              ExpressionAttributeNames: { '#createdBy': 'createdBy' },
-              ExpressionAttributeValues: { ':successor': { S: options.successor }, ':leaver': { S: publicId } },
-            },
+  const key = { pk: { S: groupKey(id) }, sk: { S: GROUP_SORT_KEY } };
+  const values = { ':version': { N: String(options?.expectedVersion) } };
+  const groupRow: TransactWriteItem[] = !options
+    ? [{ ConditionCheck: { TableName: tableName, Key: key, ConditionExpression: 'attribute_not_exists(pk)' } }]
+    : options.deleteGroup
+      ? [{ Delete: {
+          TableName: tableName, Key: key,
+          ConditionExpression: 'membershipVersion = :version',
+          ExpressionAttributeValues: values,
+        } }]
+      : [{ Update: {
+          TableName: tableName, Key: key,
+          ConditionExpression: 'membershipVersion = :version',
+          UpdateExpression: `${options.successor === undefined ? '' : 'SET createdBy = :successor '}ADD membershipVersion :one`,
+          ExpressionAttributeValues: {
+            ...values,
+            ':one': { N: '1' },
+            ...(options.successor === undefined ? {} : { ':successor': { S: options.successor } }),
           },
-        ]
-      : [];
+        } }];
   return [
     ...groupRow,
     {

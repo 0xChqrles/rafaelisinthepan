@@ -817,11 +817,12 @@ The live routes then share:
   leaving a group of TWO hands it to the other member; an OWNER leaving a group of THREE OR
   MORE must NAME a member as `successor` (409 `successor_required` until they do; a
   non-member named is the same refusal); a member who is not the owner hands nothing over.
-  The hand-over is an Update of `createdBy` conditioned on it still naming the leaver. The
-  web asks the successor on the leave's full-screen confirmation.
+  A leave must commit only while the membership and ownership it was decided from still
+  stand; a concurrent join must not be erased, and a departed member must not become owner.
+  The web asks the successor on the leave's full-screen confirmation.
 - **A deleted account leaves every group**: the link flow's departure job (above), under
   the same rule with nobody choosing — its owned groups go to the OLDEST other membership.
-  A hand-over refused by its condition (the owner already changed) falls back to the bare
+  A stale leave re-reads and applies the succession rule again, never falling back to bare
   row deletes; a membership whose group row is gone is deleted by the next list.
 
 ### Leaderboard reads (#190/#206/#271)

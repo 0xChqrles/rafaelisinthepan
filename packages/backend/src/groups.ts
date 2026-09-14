@@ -43,6 +43,7 @@ import {
   type GroupRecord,
   type GroupStore,
 } from './groupStore';
+import { CONFLICT_RETRY_ATTEMPTS, conflictDelayMs, sleep } from './dynamoRetry';
 import { LIVE_HEADERS, readJsonObject, requireDevice } from './liveRoute';
 import { isNameAllowed } from './nameFilter';
 import type { ProfileStore } from './profileStore';
@@ -233,20 +234,25 @@ export async function handleGroups(
         responseHeaders,
       );
     }
-    const [group, members] = await Promise.all([deps.groups.get(target), deps.groups.members(target)]);
-    // Not in it (or no such group): nothing to leave, and the list says so.
-    if (!group || !members.some((member) => member.publicId === publicId)) return mine();
-    const rule = successionFor(group, members, publicId, successor);
-    if (rule.needsChoice) {
-      return errorResponse(
-        409,
-        'successor_required',
-        'Name the member who takes the group over before leaving it.',
-        responseHeaders,
-      );
+    for (let attempt = 0; attempt < CONFLICT_RETRY_ATTEMPTS; attempt += 1) {
+      // Read the version BEFORE membership: every later mutation invalidates this plan.
+      const group = await deps.groups.get(target);
+      const members = await deps.groups.members(target);
+      // Not in it (or no such group): nothing to leave, and the list says so.
+      if (!group || !members.some((member) => member.publicId === publicId)) return mine();
+      const rule = successionFor(group, members, publicId, successor);
+      if (rule.needsChoice) {
+        return errorResponse(
+          409,
+          'successor_required',
+          'Name the member who takes the group over before leaving it.',
+          responseHeaders,
+        );
+      }
+      if (await deps.groups.leave(target, publicId, rule.options)) return mine();
+      await sleep(conflictDelayMs(attempt));
     }
-    await deps.groups.leave(target, publicId, rule.options);
-    return mine();
+    throw new Error('Group membership kept changing during leave.');
   }
 
   // REMOVE: the owner shows a member out. Authorized by the group row, never by the
@@ -263,21 +269,23 @@ export async function handleGroups(
   if (member === publicId) {
     return errorResponse(400, 'bad_request', 'Leave the group instead of removing yourself.', responseHeaders);
   }
-  const group = await deps.groups.get(target);
-  if (!group) return errorResponse(404, 'unknown_group', 'No such group.', responseHeaders);
-  if (group.createdBy !== publicId) {
-    return errorResponse(403, 'not_creator', 'Only the group creator can remove a member.', responseHeaders);
+  for (let attempt = 0; attempt < CONFLICT_RETRY_ATTEMPTS; attempt += 1) {
+    const group = await deps.groups.get(target);
+    if (!group) return errorResponse(404, 'unknown_group', 'No such group.', responseHeaders);
+    if (group.createdBy !== publicId) {
+      return errorResponse(403, 'not_creator', 'Only the group creator can remove a member.', responseHeaders);
+    }
+    if (await deps.groups.leave(target, member, { expectedVersion: group.membershipVersion })) return mine();
+    await sleep(conflictDelayMs(attempt));
   }
-  await deps.groups.leave(target, member);
-  return mine();
+  throw new Error('Group membership kept changing during removal.');
 }
 
 // The caller's groups as every POST answers them: the memberships off their own partition,
 // each with its owner (the group row's fact — it changes hands) and who is in it (one
 // consistent read + one Query per group, GROUPS_MAX at most) — what the board's picker,
 // the global board's marks and the landing's "already a member" all read. A membership
-// whose group row is GONE — a join that landed as the last member's leave deleted the
-// group — is a stray pair pointing at nothing: it is dropped from the answer AND deleted
+// whose group row is GONE is a stray pair pointing at nothing: it is dropped AND deleted
 // (the idempotent leave), so it neither shows as a group nobody owns nor holds one of the
 // caller's GROUPS_MAX slots for good.
 export async function listGroups(groups: GroupStore, publicId: string): Promise<GroupSummary[]> {

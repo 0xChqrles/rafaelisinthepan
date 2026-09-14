@@ -54,7 +54,7 @@ export function memoryGroupStore(
       // Create-only, like the production Put: a minted id never collides in practice, and
       // an id that did must not overwrite somebody else's group.
       if (groups.has(id)) throw new Error(`group ${id} already exists`);
-      groups.set(id, { id, name, createdBy, createdAt: now });
+      groups.set(id, { id, name, createdBy, createdAt: now, membershipVersion: 0 });
       memberships.set(id, new Map([[createdBy, now]]));
       return 'created';
     },
@@ -66,37 +66,49 @@ export function memoryGroupStore(
       if (members.size >= GROUP_MEMBERS_MAX) return 'group_full';
       if (countMine(publicId) >= GROUPS_MAX) return 'group_limit';
       if (!(await accountExists(publicId))) return 'gone';
+      // Recheck after the asynchronous account lookup, before the indivisible write.
+      const group = groups.get(id);
+      if (!group) return 'unknown_group';
+      if (of(id).has(publicId)) return 'already';
+      groups.set(id, { ...group, membershipVersion: group.membershipVersion + 1 });
       members.set(publicId, now);
       memberships.set(id, members);
       return 'joined';
     },
 
-    async leave(id, publicId, options = {}) {
-      of(id).delete(publicId);
+    async leave(id, publicId, options) {
       const group = groups.get(id);
-      if (!group) return;
-      if (options.deleteGroup) {
+      if (!options && group) {
+        options = successionFor(group, await this.members(id), publicId).options;
+        return this.leave(id, publicId, options);
+      }
+      if (options && (!group || group.membershipVersion !== options.expectedVersion)) return false;
+      of(id).delete(publicId);
+      if (!group) return true;
+      if (options?.deleteGroup) {
         groups.delete(id);
         memberships.delete(id);
-      } else if (options.successor !== undefined && group.createdBy === publicId) {
-        groups.set(id, { ...group, createdBy: options.successor });
+      } else {
+        groups.set(id, {
+          ...group,
+          createdBy: options?.successor ?? group.createdBy,
+          membershipVersion: group.membershipVersion + 1,
+        });
       }
+      return true;
     },
 
     async leaveAll(publicId) {
-      for (const [id, members] of [...memberships]) {
-        if (!members.has(publicId)) continue;
-        const group = groups.get(id);
-        if (!group) {
-          members.delete(publicId);
-          continue;
+      for (let pass = 0; pass < 4; pass += 1) {
+        const mine = await this.listMine(publicId);
+        if (mine.length === 0) return;
+        for (const held of mine) {
+          const group = await this.get(held.id);
+          const members = await this.members(held.id);
+          await this.leave(held.id, publicId, group ? successionFor(group, members, publicId).options : undefined);
         }
-        const rows = byJoinedAt(
-          [...members].map(([member, joinedAt]) => ({ publicId: member, joinedAt })),
-          (row) => row.publicId,
-        );
-        await this.leave(id, publicId, successionFor(group, rows, publicId).options);
       }
+      throw new Error(`Group departure of ${publicId} did not converge.`);
     },
   };
 }

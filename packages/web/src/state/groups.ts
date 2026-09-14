@@ -30,19 +30,20 @@ export const useGroupsStore = create<GroupsState>(() => ({ phase: 'idle', groups
 // ONE flight per account, the `activeScoreFlights` pattern.
 let flight: Promise<void> | null = null;
 let loadedFor: string | null = null;
+let generation = 0;
 
-// Read the caller's groups. Safe to call repeatedly; a list already in hand for this
-// account is kept unless `force`.
-export function loadGroups(force = false): void {
+// Refresh on each surface entry, keeping a previous answer visible while it loads.
+export function loadGroups(): void {
   const identity = deviceIdentity();
   if (identity === null) {
     loadedFor = null;
     useGroupsStore.setState({ phase: 'ready', groups: [] });
     return;
   }
-  if (!force && loadedFor === identity.accountId) return;
   if (flight) return;
   const epoch = identityEpochOf(identity);
+  const requestGeneration = generation;
+  const current = () => generation === requestGeneration && currentRequestIdentity(epoch) !== null;
   useGroupsStore.setState((state) => ({
     phase: 'loading',
     // Keep a list already in hand while a refresh is out — the leaderboard's
@@ -54,21 +55,22 @@ export function loadGroups(force = false): void {
       const resolved = currentRequestIdentity(epoch);
       if (!resolved) return;
       const response = await postGroupsBody(groupsUrl(), { token: resolved.identity.token });
+      if (!current()) return;
       if (!response.ok) {
         await adoptSignedOutVerdict(response, resolved.epoch);
-        useGroupsStore.setState((state) => ({ phase: 'failed', groups: state.groups }));
+        if (current()) useGroupsStore.setState((state) => ({ phase: 'failed', groups: state.groups }));
         return;
       }
       const answer = parseGroups(await response.json());
       // Fenced: an answer that outlived its identity describes an account this device no
       // longer acts as.
-      if (currentRequestIdentity(epoch) === null) return;
+      if (!current()) return;
       loadedFor = identity.accountId;
       useGroupsStore.setState({ phase: 'ready', groups: answer.groups });
     } catch {
-      useGroupsStore.setState((state) => ({ phase: 'failed', groups: state.groups }));
+      if (current()) useGroupsStore.setState((state) => ({ phase: 'failed', groups: state.groups }));
     } finally {
-      flight = null;
+      if (generation === requestGeneration) flight = null;
     }
   })();
 }
@@ -76,6 +78,8 @@ export function loadGroups(force = false): void {
 // A write answered with the list as it now stands: publish it for the account it is about.
 export function adoptGroups(answer: GroupsAnswer, accountId: string): void {
   if (deviceIdentity()?.accountId !== accountId) return;
+  generation += 1;
+  flight = null;
   loadedFor = accountId;
   useGroupsStore.setState({ phase: 'ready', groups: answer.groups });
 }
@@ -86,6 +90,7 @@ export function useGroups(): GroupsState {
 
 // Registered in `identityScope`: the list belongs to the ACCOUNT.
 export function resetGroups(): void {
+  generation += 1;
   flight = null;
   loadedFor = null;
   useGroupsStore.setState({ phase: 'idle', groups: null });

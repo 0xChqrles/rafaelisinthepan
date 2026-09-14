@@ -228,16 +228,18 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   COUNTs both caps, then writes the pair asserting the caller's account AND the group row,
   reading a refusal off the reasons (account → `gone` = 401 `unknown_device`, group →
   `unknown_group`, pair → `already`); `leave` is two unconditional deletes plus what
-  `LeaveOptions` says for the group row — the owner's hand-over (an Update of `createdBy`
-  conditioned on the leaver) or the deletion of a group left empty — in ONE transaction,
+  `LeaveOptions` says for the group row — the owner's hand-over (an Update of `createdBy`)
+  or the deletion of a group left empty — in ONE transaction, guarded by the group's
+  `membershipVersion` (created at 0, incremented by every join/removal in that transaction),
   the route deciding the options through `successionFor` off a fresh read of the group and
   its members (409 `successor_required` when the owner of three or more names nobody);
-  a hand-over REFUSED by its condition (the owner changed under the caller) falls back to
-  the bare row deletes inside `leave` itself; `leaveAll` is the #204 departure, re-reading
+  a stale version or transaction conflict returns false without deleting membership, and
+  the route re-reads before deciding/authorizing again (bounded with `dynamoRetry` backoff).
+  `leaveAll` is the #204 departure, re-reading
   the player's partition until empty (bounded), each group under `successionFor` with
   nobody choosing (oldest member). `listGroups` reads each group's row for its owner and
-  DELETES a membership whose row is gone (a join that landed as the last leave deleted the
-  group), so a stray pair never holds a GROUPS_MAX slot. Every Query is STRONGLY CONSISTENT
+  DELETES a membership whose group row is gone, so a stray pair never holds a GROUPS_MAX
+  slot. Every Query is STRONGLY CONSISTENT
   (the profile read's rule). `remove` is authorized by the group row's `createdBy`, never
   by the caller's say-so. Reads NO query but `id`, which the
   CloudFront `groups*` behavior forwards; the day it reads another, that behavior has to

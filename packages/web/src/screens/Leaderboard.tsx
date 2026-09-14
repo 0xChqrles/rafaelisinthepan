@@ -213,7 +213,7 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
           if (!response.ok) {
             await adoptSignedOutVerdict(response, epochNow ?? '');
             // Not a member any more (left elsewhere, removed): the list is what is stale.
-            if (response.status === 403) loadGroups(true);
+            if (response.status === 403) loadGroups();
             throw new Error(`board answered ${response.status}`);
           }
           const data: unknown = await response.json();
@@ -368,7 +368,7 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
       setScreen(null);
     } else if (result.error === 'successor_required') {
       // The list this screen decided from was stale: re-read it, and the next LEAVE asks.
-      loadGroups(true);
+      loadGroups();
     }
   };
 
@@ -399,7 +399,10 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
           onOpen={(index) => {
             const key = scopes[index]?.key;
             if (key === 'new') setScreen('create');
-            else if (key !== 'global' && key !== undefined) setScreen('group');
+            else if (key !== 'global' && key !== undefined) {
+              loadGroups();
+              setScreen('group');
+            }
           }}
         />
       ) : (
@@ -425,7 +428,7 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
 
       <div className="board-body">
         {tab === 'group' && groupsPhase === 'failed' && groups === null ? (
-          <LoadError message={t(lang, 'failedBoard')} lang={lang} onRetry={() => loadGroups(true)} />
+          <LoadError message={t(lang, 'failedBoard')} lang={lang} onRetry={() => loadGroups()} />
         ) : tab === 'group' && onNew ? (
           // The NEW GROUP page: the ghost (over its word while the player has no group at
           // all) and the one call.

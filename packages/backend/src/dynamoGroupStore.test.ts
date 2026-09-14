@@ -22,7 +22,7 @@ function fakeClient(opts: { group?: boolean; held?: boolean; members?: number; m
       if (sk === 'group') {
         return opts.group === false
           ? {}
-          : { Item: { name: { S: 'Les_copains' }, createdBy: { S: ME }, createdAt: { S: NOW } } };
+          : { Item: { name: { S: 'Les_copains' }, createdBy: { S: ME }, createdAt: { S: NOW }, membershipVersion: { N: '0' } } };
       }
       return opts.held ? { Item: { joinedAt: { S: NOW } } } : {};
     }
@@ -61,6 +61,7 @@ describe('dynamoGroupStore (#271)', () => {
     expect(items[0].ConditionCheck?.Key).toEqual({ pk: { S: `player#${ME}` }, sk: { S: 'account' } });
     expect(items[1].Put?.Item).toMatchObject({ pk: { S: `group#${GROUP}` }, sk: { S: 'group' }, name: { S: 'Les_copains' } });
     expect(items[1].Put?.ConditionExpression).toBe('attribute_not_exists(pk)');
+    expect(items[1].Put?.Item?.membershipVersion).toEqual({ N: '0' });
     expect(items[2].Put?.Item).toMatchObject({ pk: { S: `group#${GROUP}` }, sk: { S: `member#${ME}` } });
     // The player-side row DENORMALIZES the immutable name: the list is one Query. The owner
     // is NOT copied — it changes hands when an owner leaves, and the group row holds it.
@@ -85,7 +86,12 @@ describe('dynamoGroupStore (#271)', () => {
     await expect(dynamoGroupStore(client, 'scores').join({ id: GROUP, publicId: THEM, now: NOW })).resolves.toBe('joined');
     const [tx] = transactions(send);
     const items = tx.input.TransactItems!;
-    expect(items.map((item) => item.ConditionCheck?.Key ?? item.Put?.Item?.sk)).toEqual([
+    expect(items[1].Update).toMatchObject({
+      UpdateExpression: 'ADD membershipVersion :one',
+      ConditionExpression: 'attribute_exists(pk)',
+      ExpressionAttributeValues: { ':one': { N: '1' } },
+    });
+    expect(items.map((item) => item.ConditionCheck?.Key ?? item.Update?.Key ?? item.Put?.Item?.sk)).toEqual([
       { pk: { S: `player#${THEM}` }, sk: { S: 'account' } },
       { pk: { S: `group#${GROUP}` }, sk: { S: 'group' } },
       { S: `member#${THEM}` },
@@ -129,35 +135,42 @@ describe('dynamoGroupStore (#271)', () => {
     await expect(refusedAt(2).join({ id: GROUP, publicId: THEM, now: NOW })).resolves.toBe('already');
   });
 
-  it('leaves by deleting both rows together, unconditionally', async () => {
+  it('leaves by deleting both rows with a conditional membership version update', async () => {
     const { send, client } = fakeClient();
-    await dynamoGroupStore(client, 'scores').leave(GROUP, THEM);
+    await dynamoGroupStore(client, 'scores').leave(GROUP, THEM, { expectedVersion: 0 });
     const [tx] = transactions(send);
-    expect(tx.input.TransactItems!.map((item) => item.Delete?.Key)).toEqual([
+    expect(tx.input.TransactItems!.filter((item) => item.Delete).map((item) => item.Delete?.Key)).toEqual([
       { pk: { S: `group#${GROUP}` }, sk: { S: `member#${THEM}` } },
       { pk: { S: `player#${THEM}` }, sk: { S: `group#${GROUP}` } },
     ]);
-    expect(tx.input.TransactItems!.every((item) => item.Delete?.ConditionExpression === undefined)).toBe(true);
+    expect(tx.input.TransactItems![0].Update).toMatchObject({
+      ConditionExpression: 'membershipVersion = :version',
+      UpdateExpression: 'ADD membershipVersion :one',
+    });
   });
 
-  it('hands the group over in the SAME transaction, conditioned on the leaver still owning it', async () => {
+  it('hands the group over only while the membership snapshot still stands', async () => {
     const { send, client } = fakeClient();
-    await dynamoGroupStore(client, 'scores').leave(GROUP, ME, { successor: THEM });
+    await dynamoGroupStore(client, 'scores').leave(GROUP, ME, { expectedVersion: 0, successor: THEM });
     const [tx] = transactions(send);
     const [succession, ...deletes] = tx.input.TransactItems!;
     expect(succession.Update).toMatchObject({
       Key: { pk: { S: `group#${GROUP}` }, sk: { S: 'group' } },
-      UpdateExpression: 'SET #createdBy = :successor',
-      ConditionExpression: '#createdBy = :leaver',
-      ExpressionAttributeValues: { ':successor': { S: THEM }, ':leaver': { S: ME } },
+      UpdateExpression: 'SET createdBy = :successor ADD membershipVersion :one',
+      ConditionExpression: 'membershipVersion = :version',
+      ExpressionAttributeValues: { ':successor': { S: THEM }, ':version': { N: '0' }, ':one': { N: '1' } },
     });
     expect(deletes.map((item) => item.Delete?.Key?.sk)).toEqual([{ S: `member#${ME}` }, { S: `group#${GROUP}` }]);
   });
 
   it('deletes the group row with the last membership', async () => {
     const { send, client } = fakeClient();
-    await dynamoGroupStore(client, 'scores').leave(GROUP, ME, { deleteGroup: true });
+    await dynamoGroupStore(client, 'scores').leave(GROUP, ME, { expectedVersion: 0, deleteGroup: true });
     const [tx] = transactions(send);
+    expect(tx.input.TransactItems![0].Delete).toMatchObject({
+      ConditionExpression: 'membershipVersion = :version',
+      ExpressionAttributeValues: { ':version': { N: '0' } },
+    });
     expect(tx.input.TransactItems!.map((item) => item.Delete?.Key)).toEqual([
       { pk: { S: `group#${GROUP}` }, sk: { S: 'group' } },
       { pk: { S: `group#${GROUP}` }, sk: { S: `member#${ME}` } },
@@ -214,30 +227,15 @@ describe('dynamoGroupStore (#271)', () => {
     await expect(dynamoGroupStore(stuck.client, 'scores').leaveAll(ME)).rejects.toThrow(/converge/);
   });
 
-  it('a refused hand-over falls back to the bare row deletes (the departure rides it)', async () => {
-    let passes = 0;
-    let attempts = 0;
-    const { client } = fakeClient({ mine: 1, members: 1 });
-    const base = client.send as unknown as ReturnType<typeof vi.fn>;
-    const send = vi.fn(async (command: unknown) => {
-      if (command instanceof QueryCommand && (command.input.ExpressionAttributeValues?.[':pk']?.S ?? '').startsWith('player#')) {
-        passes += 1;
-        return passes > 1 ? { Items: [] } : base(command);
-      }
-      if (command instanceof TransactWriteItemsCommand) {
-        attempts += 1;
-        if (attempts === 1) {
-          throw Object.assign(new Error('refused'), {
-            name: 'TransactionCanceledException',
-            CancellationReasons: [{ Code: 'ConditionalCheckFailed' }, { Code: 'None' }, { Code: 'None' }],
-          });
-        }
-      }
-      return base(command);
+  it.each(['ConditionalCheckFailed', 'TransactionConflict'])('returns stale on %s without deleting membership', async (code) => {
+    const send = vi.fn(async () => {
+      throw Object.assign(new Error('refused'), {
+        name: 'TransactionCanceledException',
+        CancellationReasons: [{ Code: code }, { Code: 'None' }, { Code: 'None' }],
+      });
     });
-    await dynamoGroupStore({ send } as unknown as DynamoDBClient, 'scores').leaveAll(ME);
-    const txs = transactions(send);
-    expect(txs).toHaveLength(2);
-    expect(txs[1].input.TransactItems).toHaveLength(2);
+    const store = dynamoGroupStore({ send } as unknown as DynamoDBClient, 'scores');
+    await expect(store.leave(GROUP, ME, { expectedVersion: 0, successor: THEM })).resolves.toBe(false);
+    expect(send).toHaveBeenCalledTimes(1);
   });
 });
