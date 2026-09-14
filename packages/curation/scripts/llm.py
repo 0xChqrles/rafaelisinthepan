@@ -245,22 +245,34 @@ if none of the options makes a good hole.""")
     return word if isinstance(word, str) and word.strip() else None
 
 
-def context_guesses(claude: Claude, tokens, blanks: set[int], mark: int, n: int) -> list[str]:
+def context_guesses(claude: Claude, tokens, blanks: set[int], mark: int, n: int) -> tuple[list[str], str | None]:
     """What a reader could really put in ONE blank, the rest of the sentence intact and
-    no start word — the obviousness filter's question (`rules.open_candidates`), which
-    counts the answer. `blanks` holds the other occurrences of the same word, hidden so
-    they cannot give it away."""
+    no start word, and the ONE word most readers would write there when readers agree
+    (None when they split) — the obviousness filter's question (`rules.open_candidates`),
+    which counts the list and strikes the expected word. `blanks` holds the other
+    occurrences of the same word, hidden so they cannot give it away. The model is told
+    to set the book aside: it has memorised a canonical text, and the true word is not
+    what a reader who has never seen it writes — the position of the true word in its
+    list was the verdict until 2026-09-15 and struck nearly every word of an Orwell."""
     shown = holed(tokens, blanks, mark)
     answer = claude.json(f"""You are a French reader. In this sentence one word is hidden, marked [____]
-(____ marks the same word hidden again). What else could it be? List the single words
-that could really stand there — only words that would not surprise a reader in this
-exact sentence, most likely first, at most {n}. Be honest about the count: when only one
-or two words can really be there, list only those.
+(____ marks the same word hidden again). You may recognise the sentence: set the book
+aside and answer for a reader who has NEVER seen it, from this sentence alone.
 
 {shown}
 
-Return {{"guesses": ["...", ...]}}.""")
-    return [g for g in answer.get("guesses", []) if isinstance(g, str)][:n]
+Two answers:
+- "guesses": what else could it be? The single words that could really stand there —
+  only words that would not surprise a reader in this exact sentence, at most {n}. Be
+  honest about the count: when only one or two words can really be there, list only those.
+- "expected": the ONE word most readers would write there, when readers would agree on
+  it (an idiom completed, a fixed pair, the word the rest of the sentence calls for);
+  null when readers would split between several words.
+
+Return {{"guesses": ["...", ...], "expected": "..." or null}}.""")
+    guesses = [g for g in answer.get("guesses", []) if isinstance(g, str)][:n]
+    expected = answer.get("expected")
+    return guesses, expected.strip() if isinstance(expected, str) and expected.strip() else None
 
 
 def pick_form(claude: Claude, sentence: str, secret: str, choices: list[str]) -> int:

@@ -484,11 +484,11 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
         occurrences.setdefault(t.slug, set()).add(t.i)
     fillers_of: dict[str, list[str]] = {}
 
-    def fillers(t: rules.Token) -> list[str]:
-        guesses = llm.context_guesses(claude, tokens, occurrences[t.slug] - {t.i}, t.i,
-                                      rules.CONTEXT_GUESSES)
+    def fillers(t: rules.Token) -> tuple[list[str], str | None]:
+        guesses, expected = llm.context_guesses(claude, tokens, occurrences[t.slug] - {t.i}, t.i,
+                                                rules.CONTEXT_GUESSES)
         fillers_of[t.slug] = guesses
-        return guesses
+        return guesses, expected
 
     filter_log = rules.SearchLog()
     candidates = rules.open_candidates(candidates, fillers=fillers, neighbour_rank=neighbour_rank,

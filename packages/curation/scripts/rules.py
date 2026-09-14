@@ -69,7 +69,11 @@ MAX_OFF_LIST = 2
 # « chauffage », « peau » / « montrer ») and played at 6 / 8 / 8; the 09-13 day hid
 # none (« lâcher » where a reader puts « dire », « gosses » for « enfants ») and played
 # at 44; both Kundera attempts (« quinze [jours] », « au [crayon] », « la [poste] ») hid
-# three and were "guessable in 3 tries". The strike applies to a PLAIN word only — one
+# three and were "guessable in 3 tries". The expected word is what the reader NAMES as
+# the one most readers would write (None when readers split), never the first of the
+# list: the model has memorised a canonical text and lists the true word first — the
+# list-position reading struck 32 of 38 words of an Orwell and flipped the same
+# Houellebecq words between runs (2026-09-15). The strike applies to a PLAIN word only — one
 # at or under PLAIN_WORD_RANK in the corpus order, the boundary the start band uses for
 # "a word a player knows" (« hétéroptère » out, « bestiole » in): past it the reader's
 # first filler is the model's knowledge, not every player's — « je lance à la
@@ -151,41 +155,45 @@ def is_twin(candidate: Token, word: str, neighbour_rank: Callable[[Token, str], 
 def open_candidates(
     candidates: list[Token],
     *,
-    fillers: Callable[[Token], list[str]],
+    fillers: Callable[[Token], tuple[list[str], str | None]],
     neighbour_rank: Callable[[Token, str], int | None] = lambda t, w: None,
     frequency_rank: Callable[[Token], int | None] = lambda t: None,
     log: "SearchLog | None" = None,
 ) -> list[Token]:
-    """The candidates the context does not hand over. `fillers(token)` is what a reader
-    could really put in the sentence with that one word blanked (every occurrence of
-    it, the rest intact, no start word), most likely first. A word is struck when it is
-    the EXPECTED word — the reader's first filler is the secret or a twin of it
+    """The candidates the context does not hand over. `fillers(token)` answers as a
+    reader with the sentence blanked on that one word (every occurrence of it, the rest
+    intact, no start word): the words that could really stand there, and the ONE word
+    most readers would write when they agree (None when they split). A word is struck
+    when it is the EXPECTED word — the reader's named word is the secret or a twin of it
     (`is_twin`) and the word is a plain one (`frequency_rank` at or under
     PLAIN_WORD_RANK; None = unknown, taken as plain) — or when the reader can name at
-    most OBVIOUS_MAX words for it, the secret included (a twin is the secret again).
-    One judgement per distinct slug; the order of the list is kept."""
+    most OBVIOUS_MAX words for it, the secret included (a twin is the secret again; a
+    named word that is not the secret is one of the alternatives). One judgement per
+    distinct slug; the order of the list is kept."""
     log = log or SearchLog()
     verdict: dict[str, bool] = {}
     out = []
     for c in candidates:
         if c.slug not in verdict:
-            guesses = fillers(c)
+            guesses, named = fillers(c)
             rank = frequency_rank(c)
             rare = rank is not None and rank > PLAIN_WORD_RANK
-            expected = bool(guesses) and is_twin(c, guesses[0], neighbour_rank) and not rare
-            others = {slug(g) for g in guesses if slug(g) and not is_twin(c, g, neighbour_rank)}
+            expected = named is not None and is_twin(c, named, neighbour_rank) and not rare
+            others = {slug(g) for g in [*guesses, *([named] if named else [])]
+                      if slug(g) and not is_twin(c, g, neighbour_rank)}
             possible = len(others) + 1  # the secret itself is always one of them
             verdict[c.slug] = expected or possible <= OBVIOUS_MAX
             shown = ", ".join(guesses) or "none"
+            agreed = f"most readers write « {named} »" if named else "readers split"
             if expected:
-                log.note(f"'{c.text}' is the EXPECTED word — the first a reader puts ({shown}) — struck")
+                log.note(f"'{c.text}' is the EXPECTED word — {agreed} (a reader puts: {shown}) — struck")
             elif verdict[c.slug]:
                 log.note(f"'{c.text}' is obvious — {possible} possible word(s) (a reader puts: {shown}) — struck")
             elif rare:
-                log.note(f"'{c.text}' is open — rare (rank {rank}), the reader's first filler is not every "
-                         f"player's — {possible} possible words (a reader puts: {shown})")
+                log.note(f"'{c.text}' is open — rare (rank {rank}), the reader's expected word is not every "
+                         f"player's — {possible} possible words ({agreed}; a reader puts: {shown})")
             else:
-                log.note(f"'{c.text}' is open — {possible} possible words (a reader puts: {shown})")
+                log.note(f"'{c.text}' is open — {possible} possible words ({agreed}; a reader puts: {shown})")
         if not verdict[c.slug]:
             out.append(c)
     return out
