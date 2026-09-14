@@ -157,10 +157,11 @@ const REACTION_LIST = REACTIONS.join(' ');
 // THE RULES OF THE MOMENT: addressed or ambient, and how far into an exchange the bot is.
 // The count is what lets the model raise its own bar before the code has to (`trigger.ts`).
 // WHOSE MESSAGE IT IS, when the group names an owner (user-decided 2026-09-15): the JID
-// is compared, never the name — a name is a snapshot anybody can wear. Both spellings of
-// the sender are tried, since the config holds whichever the operator found.
-export function fromOwner(group: GroupConfig, message: Pick<InboundMessage, 'sender' | 'participant'>): boolean {
-  return group.owner !== null && (message.sender === group.owner || message.participant === group.owner);
+// is compared, never the name — a name is a snapshot anybody can wear. Keep the alternate
+// sender too: on a phone-addressed message it may be the only copy of the owner's LID.
+export function fromOwner(group: GroupConfig, message: Pick<InboundMessage, 'sender' | 'participant' | 'participantAlt'>): boolean {
+  return group.owner !== null &&
+    (message.sender === group.owner || message.participant === group.owner || message.participantAlt === group.owner);
 }
 
 export function approachContext(approach: Approach, exchange: Exchange, wrote: number, of: number, owner = false): string {

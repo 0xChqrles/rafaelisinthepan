@@ -29,6 +29,7 @@ export interface InboundMessage {
   id: string;
   sender: string; // canonical sender JID — the player key
   participant: string; // the message key's author field as WhatsApp addressed it — what a reaction or a quote must name
+  participantAlt?: string; // alternate sender JID supplied by WhatsApp, normalized for identity matching
   senderName: string; // pushName snapshot; may be empty
   text: string; // conversation / extended text / media caption; empty when none
   timestamp: number; // WhatsApp message timestamp, seconds

@@ -112,6 +112,7 @@ export async function toInbound(
     id: key.id,
     sender,
     participant,
+    ...(key.participantAlt ? { participantAlt: jidNormalizedUser(key.participantAlt) } : {}),
     senderName: message.pushName ?? '',
     text: messageText(message),
     timestamp: messageSeconds(message.messageTimestamp),
