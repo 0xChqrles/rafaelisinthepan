@@ -166,7 +166,9 @@ export function approachContext(approach: Approach, exchange: Exchange, wrote: n
     return `${target} is addressed to you (${approach === 'mention' ? 'you are mentioned' : approach === 'reply' ? 'it replies to one of your lines' : 'it says your name'}). Answer THAT message in one short message. ${closers} ${share}`;
   }
   const unasked = exchange.unasked;
-  return `${target} is NOT addressed to you: it is the group talking. By default you stay out of it — answer exactly NO_REPLY and nothing else. Answer in words only when THAT message is plainly meant for you: a reply to what you just said, a question only you can answer, a place where a number nobody else has belongs. ${closers} ${share} In this exchange you have already answered ${unasked} time${unasked === 1 ? '' : 's'} without being addressed: the more you have said unasked, the more a reply has to bring — a fact, an answer to a real question — or it is NO_REPLY.`;
+  // No "a number nobody else has" among the openings (v13, 2026-09-14): a bot the game
+  // bores does not jump into the group's talk with a statistic nobody asked for.
+  return `${target} is NOT addressed to you: it is the group talking. By default you stay out of it — answer exactly NO_REPLY and nothing else. Answer in words only when THAT message is plainly meant for you: a reply to what you just said, or a question only you can answer. ${closers} ${share} In this exchange you have already answered ${unasked} time${unasked === 1 ? '' : 's'} without being addressed: the more you have said unasked, the more a reply has to bring — a fact, an answer to a real question — or it is NO_REPLY.`;
 }
 
 export function createAgent(deps: AgentDeps) {

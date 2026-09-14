@@ -16,6 +16,7 @@ import {
 } from '../domain/declarations';
 import { parseDay } from '../domain/day';
 import { buildPodium } from '../domain/podium';
+import { dayStandings, spokenShare, usualBeats } from '../domain/shareContext';
 import { displayName } from '../domain/names';
 import type { LlmTool } from '../llm/types';
 
@@ -112,8 +113,9 @@ export const TOOL_DEFINITIONS: LlmTool[] = [
     },
   },
   {
-    name: 'get_player_history',
-    description: "A player's scores over the last N days, with best and average.",
+    name: 'get_player_form',
+    description:
+      "A player's form over the last N days: each day's place among that day's players, and how many of the other players they usually beat. Places, never scores: what a day costs depends on its sentence, so a score says nothing next to another day's.",
     parameters: {
       type: 'object',
       properties: {
@@ -256,23 +258,33 @@ export function createToolRunner(ctx: ToolContext): ToolRunner {
         playersThatDay: rows.length,
       };
     },
-    async get_player_history(args) {
+    // A PLAYER'S FORM IS WHERE THEY LAND, NOT WHAT THEY SCORE (v13, user-decided
+    // 2026-09-14). It was `get_player_history` — every day's score, a best and an average —
+    // and the chat answered "34 après ton 43 d'hier" with it: what a day costs depends on its
+    // sentence, so a score says nothing next to another day's. Each day is now a place
+    // among that day's players, and the form is `usuallyBeats`, computed exactly as the
+    // share line's (`domain/shareContext.ts`) over whatever window is asked. One day's
+    // score is still `get_player_score`, for the person who asks for it.
+    async get_player_form(args) {
       const r = await resolve(args.player);
       const bad = notOne(r);
       if (bad) return bad;
       const player = (r as { player: PlayerSummary }).player;
       const days = clampDays(args.days);
-      const rows = (await history()).filter(
-        (x) => x.sender === player.sender && x.dayNumber > ctx.today - days,
-      );
-      const finite = rows.filter((x) => !x.capped).map((x) => x.score);
+      const window = (await history()).filter((x) => x.dayNumber > ctx.today - days);
+      const rows = window.filter((x) => x.sender === player.sender).sort((a, b) => b.dayNumber - a.dayNumber);
+      const standings = new Map(rows.map((x) => [x.dayNumber, dayStandings(x.dayNumber, dayOf(window, x.dayNumber))]));
+      const usual = usualBeats(player.sender, [...standings.values()]);
       return {
         player: displayName(ctx.group, player.sender, player.name),
         windowDays: days,
-        results: rows.map((x) => ({ date: dateForDayNumber(x.dayNumber), score: scoreOf(x) })),
+        recent: rows.map((x) => ({
+          date: dateForDayNumber(x.dayNumber),
+          place: standings.get(x.dayNumber)?.get(player.sender)?.place ?? null,
+          of: dayOf(window, x.dayNumber).length,
+        })),
         daysPlayed: rows.length,
-        best: finite.length ? Math.min(...finite) : null,
-        average: finite.length ? Math.round((finite.reduce((a, b) => a + b, 0) / finite.length) * 10) / 10 : null,
+        usuallyBeats: usual === null ? null : spokenShare(usual),
       };
     },
     async get_head_to_head(args) {

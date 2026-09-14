@@ -31,7 +31,7 @@ import { dynamoDeclarationStore } from './domain/dynamoDeclarationStore';
 import { nameResolver } from './domain/names';
 import { buildPodium } from './domain/podium';
 import { renderPodium, renderReminder, type Comments } from './domain/podiumText';
-import { HABIT_DAYS, buildPodiumContext } from './domain/shareContext';
+import { FORM_DAYS, buildPodiumContext } from './domain/shareContext';
 import { createDaySourceReader, type DaySourceReader } from './puzzle/daySource';
 import { createLlmProvider, type LlmProvider } from './llm';
 import { generatePodiumComments, type PodiumBackground } from './llm/podiumComments';
@@ -146,11 +146,11 @@ export async function runPodiumJob(event: PodiumJobEvent, deps: PodiumJobDeps): 
   let comments: Comments = new Map();
   if (deps.provider) {
     // THE FACTS FIRST, THE BACKGROUND IF IT CAN BE READ. The window before today is what
-    // every habit is computed from; without it there are no facts and no comments. The
+    // every form is computed from; without it there are no facts and no comments. The
     // day's conversation and the diary are what a callback draws on, and a read that
     // fails costs the callbacks and nothing else.
     try {
-      const windowRows = await deps.declarations.range(group.id, day - HABIT_DAYS, day - 1);
+      const windowRows = await deps.declarations.range(group.id, day - FORM_DAYS, day - 1);
       const context = buildPodiumContext({ group, dayNumber: day, todayRows: rows, windowRows });
       const background: PodiumBackground = { diary: null, conversation: null };
       if (deps.diary) {

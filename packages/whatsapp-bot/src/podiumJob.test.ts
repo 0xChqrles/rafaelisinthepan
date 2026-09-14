@@ -98,7 +98,7 @@ describe('podium job (#236)', () => {
     const writer = requests.find((r) => r.system !== FACT_JUDGE_SYSTEM)!;
     const content = (writer.messages[0] as { content: string }).content;
     expect(content).toContain('"score":3');
-    expect(content).toContain('"habit":{"name":"Gab","daysPlayed":1');
+    expect(content).toContain('"players":[{"name":"Gab","daysPlayed":1,');
     expect(content).toContain('Gab vise toujours trop haut.');
     expect(content).toContain('Gab: je vise un 3');
     // Stores that refuse cost the background, never the podium.

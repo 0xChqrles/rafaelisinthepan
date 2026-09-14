@@ -167,7 +167,7 @@ async function main(): Promise<void> {
   // day, and a second model path outside it would leave it bounding half the spend. Out of
   // budget answers null, which is the emoji — the share is still acknowledged.
   const comment = provider
-    ? (group: GroupConfig, facts: ShareFacts, key: { dayNumber: number; sender: string }) =>
+    ? (group: GroupConfig, facts: ShareFacts, key: { dayNumber: number; sender: string; said?: string }) =>
         generateShareComment(provider, group, facts, { declarations, ...key }, log, async () => {
           const at = new Date();
           const { scope, key } = limitKeys.calls(at);
@@ -263,11 +263,12 @@ async function main(): Promise<void> {
     const quotedText = quoted ? withoutShares(quoted.text, env.siteOrigin) : '';
     if (!text && !quoted) return null;
     const refs = quoted ? [...message.mentions, { jid: quoted.participant, player: quoted.player }] : message.mentions;
-    const names = await mentionNames(group, refs);
+    // ONE map for the body and the quote, the bot in it under its name (`namesWithBot`).
+    const names = namesWithBot(await mentionNames(group, refs), identity, message.mentions);
     const lead = quoted
       ? quoteLead(
           quotesBot(message, identity) ? 'you' : (names.get(jidUser(quoted.participant)) ?? displayName(group, quoted.player, '')),
-          withMentionNames(quotedText, namesWithBot(names, identity)),
+          withMentionNames(quotedText, names),
         )
       : '';
     const kept = `${lead}${withMentionNames(text, names)}`.trim();
@@ -309,7 +310,9 @@ async function main(): Promise<void> {
     // (`spoken`, above) — recorded the other way round, every such exchange read as the
     // bot answering before the player had spoken.
     const kept = identity && !message.fromMe ? await remember(group, message, identity) : null;
-    const ingested = await ingest(message);
+    // What the player wrote around a share is handed to its acknowledgement as it was
+    // remembered — `kept` exists only where the chat is on, which is the privacy line.
+    const ingested = await ingest(message, kept ?? undefined);
     if (!identity || message.fromMe || !answer) return;
     const bot = identity;
     const ask = answer;

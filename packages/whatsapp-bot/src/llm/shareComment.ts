@@ -1,11 +1,13 @@
 // THE SPOKEN ACKNOWLEDGEMENT OF A SHARE — COMMENTARY FROM THE NUMBERS (user-decided
 // 2026-09-07). It used to be one line about a band word, and it said nothing, whatever
 // the voice; now the bot is handed the FACTS (`domain/shareContext.ts`): the exact score,
-// what a day typically costs, the day's board so far with this share placed, who is ahead
-// and behind, this player's habit and recent days, and everybody else's habit — and it
-// reasons over them and says what they mean, with names and numbers. The first share of a
-// day is read against the typical score with the caveat that few have posted; the next
-// ones against the ones before; and a player's habit is what makes today's number news.
+// the day's board so far with this share placed, who is above and below, the share of
+// today's others it beats, and this player's FORM — where they usually land among the
+// others, their recent places, their record against each person on today's board — and it
+// says what that means, with names and numbers. A score is only ever read against the
+// SAME day's other scores (user-decided 2026-09-14: what a day costs depends on its
+// sentence, so "ton pire score des 14 jours" said nothing on the day 43 was fourth of
+// six); the first share of a day therefore has nothing to be compared with yet, and says so.
 //
 // IT IS COMMENTARY, NEVER A FACT. Every number the model may say was computed here from
 // the group's own declarations; the model phrases and may never revise, and a judge reads
@@ -15,9 +17,8 @@
 
 import type { GroupConfig } from '../config/groupConfig';
 import type { ShareFacts } from '../domain/reactions';
-import { buildShareContext, type ShareContext } from '../domain/shareContext';
+import { FORM_DAYS, buildShareContext, type ShareContext } from '../domain/shareContext';
 import type { Declaration, DeclarationStore } from '../domain/declarations';
-import { HISTORY_WINDOW_DAYS } from '../chat/tools';
 import type { Log } from '../log';
 import { FACT_JUDGE_SYSTEM, chooseLine } from './lineJudge';
 import { buildSystemPrompt } from './personality';
@@ -26,11 +27,13 @@ import type { LlmProvider } from './types';
 
 export type { ShareFacts } from '../domain/reactions';
 
-// Where the facts come from: the day's rows and the group's window before it.
+// Where the facts come from: the day's rows and the group's window before it — and what
+// the player wrote around the share, when the caller had it to give (`ingest.ts` says when).
 export interface ShareCommentDeps {
   declarations: DeclarationStore;
   dayNumber: number;
   sender: string;
+  said?: string;
 }
 
 // Two short sentences of numbers and names need room the one-liner never had. Still a
@@ -51,12 +54,15 @@ const CANDIDATES = 3;
 const ROUNDS = 2;
 const SHAPE: CandidateShape = { maxChars: COMMENTARY_MAX_CHARS, refuse: () => null, effort: 'none', timeoutMs: 15_000 };
 
+// What the player wrote around the share, when it is in the facts (`ShareCommentDeps.said`).
+const SAID = `If the facts carry "said", that is what the player wrote with their share: when it asks you something or says something worth an answer, your line answers it — in place of the commentary, not on top of it, at the same length.`;
+
 const TASK = (mode: ShareFacts['mode']) =>
   mode === 'word'
-    ? `Task: react in one short line to the WORD MODE result below, as a message in the group. The score is how many words they named from one word's neighbourhood against a countdown, where rarer words earn more time; MORE is better, there is no cap; a typical run names about ten, a good one twenty or more. Plain text only, no quotes. Never name the word.`
+    ? `Task: react in one short line to the WORD MODE result below, as a message in the group. The score is how many words they named from one word's neighbourhood against a countdown, where rarer words earn more time; MORE is better, there is no cap; a typical run names about ten, a good one twenty or more. ${SAID} Plain text only, no quotes. Never name the word.`
     : `Task: comment on the Whippin result below, as a message in the group, from the FACTS given and nothing else. Every number, name, position and comparison you write must come from the facts; you never invent or round one.
 
-What brings value: how the score sits against what a day typically costs; how it sits against who has posted so far — who it passes, who stays ahead, where it lands on the board; how it sits against this player's own habit and recent days, and against the habit of the people around them on the board. When few have posted, say the reading is early and the day's difficulty is not known yet; when nobody had posted, read the score against the typical day and say more players are needed. When others have posted, the comparison to them is the news. The habit, the recent days and the others' habits cover only the last "habitDays" days: a best or a worst is a best or a worst of those days, never of all time. Say what is interesting in these numbers and skip what is not; a share with nothing notable gets a plain short acknowledgement. Speak to the player as "tu" and about the others by name. Plain text only, no quotes, one or two short sentences.`;
+A score on its own says nothing, and neither does a score held against another day's: what it is worth depends on how the others did with the SAME sentence. So the news is where it lands among today's posters — who it beats, who is still above, how the others are doing — and how that compares with where this player usually lands: how many of the others they usually beat, their recent places, their record against the people on today's board (beating somebody they usually lose to, losing to somebody they usually beat). When nobody else has posted, there is nothing to compare it with yet: say so in a few words, with at most where they usually land. When few have posted, say the reading is early. Say what is interesting in these numbers and skip what is not — one thing said well beats three listed; a share with nothing notable gets a plain short acknowledgement. This line is about the result: your own life stays out of it. ${SAID} Speak to the player as "tu" and about the others by name. Plain text only, no quotes, one or two short sentences.`;
 
 export async function generateShareComment(
   provider: LlmProvider,
@@ -77,15 +83,18 @@ export async function generateShareComment(
   });
   let shown: string;
   let context: ShareContext | null = null;
+  // What they wrote with it travels beside the facts, so the judge reads it too: a line
+  // that answers it is supported by it.
+  const said = deps.said ? { said: deps.said } : {};
   if (facts.mode === 'word') {
-    shown = JSON.stringify({ player: facts.player, found: facts.claims });
+    shown = JSON.stringify({ player: facts.player, found: facts.claims, ...said });
   } else {
     let todayRows: Declaration[];
     let windowRows: Declaration[];
     try {
       [todayRows, windowRows] = await Promise.all([
         deps.declarations.day(group.id, deps.dayNumber),
-        deps.declarations.range(group.id, deps.dayNumber - HISTORY_WINDOW_DAYS, deps.dayNumber - 1),
+        deps.declarations.range(group.id, deps.dayNumber - FORM_DAYS, deps.dayNumber - 1),
       ]);
     } catch (error) {
       // No facts, no commentary: a line written without them is the empty one this
@@ -98,7 +107,7 @@ export async function generateShareComment(
       log.warn({ event: 'share.facts_missing' }, 'the share is not on the board; the emoji stands in');
       return null;
     }
-    shown = JSON.stringify(context);
+    shown = JSON.stringify({ ...context, ...said });
   }
   let refused: string[] = [];
   for (let round = 1; round <= ROUNDS; round += 1) {
@@ -117,7 +126,7 @@ export async function generateShareComment(
     );
     const candidates = written.filter((c): c is string => c !== null);
     log.info({ event: 'share.candidates', round, written: candidates.length, of: CANDIDATES }, 'candidates written');
-    const choice = await chooseLine(provider, { system: FACT_JUDGE_SYSTEM, occasion: shown }, candidates, log, takeCall);
+    const choice = await chooseLine(provider, { system: FACT_JUDGE_SYSTEM, occasion: shown }, candidates, log, takeCall, 'post-none');
     if (choice.line) return choice.line;
     // Nothing written, or nothing judged, is not the judge's doing: no second try.
     if (choice.dropped === 0) return null;
