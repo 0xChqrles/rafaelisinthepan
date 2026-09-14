@@ -9,6 +9,7 @@ import {
   currentExchange,
   isWordless,
   mayVolunteer,
+  namesWithBot,
   nothingToAnswer,
   questionText,
   withMentionNames,
@@ -90,6 +91,19 @@ describe('conversation triggers (#236)', () => {
     expect(withMentionNames('@33659018262 tu confirmes ?', names)).toBe('…8262 tu confirmes ?');
     expect(withMentionNames('gg @33600000000 et @33659018262 !', names)).toBe('gg Zou et …8262 !');
     expect(withMentionNames('rien à voir', names)).toBe('rien à voir');
+  });
+
+  it('names the BOT by its name in a remembered message, body and quote alike — never by its number', () => {
+    // "Pas vrai @bot ?" reached the model as "Pas vrai …8262 ?", and the bot answered that
+    // it answers to one name only (2026-09-14).
+    const named = namesWithBot(new Map([['33600000000', 'Zou']]), identity);
+    expect(withMentionNames('Pas vrai @33700000000 ?', named)).toBe('Pas vrai WhippinBot ?');
+    expect(withMentionNames('@99999999999999 présente @33600000000', named)).toBe('WhippinBot présente Zou');
+    // A LID the identity does not list, resolved by the transport to the bot's number.
+    const unlisted = { ...identity, jids: ['33700000000@s.whatsapp.net'] };
+    const lid = [m('88888888888888@lid', '33700000000@s.whatsapp.net')];
+    expect(withMentionNames('@88888888888888 tu dors ?', namesWithBot(new Map(), unlisted, lid))).toBe('WhippinBot tu dors ?');
+    expect(withMentionNames('@88888888888888 tu dors ?', namesWithBot(new Map(), unlisted))).toBe('…8888 tu dors ?');
   });
 
   it('fires on the name anywhere in the message, as a whole word', () => {

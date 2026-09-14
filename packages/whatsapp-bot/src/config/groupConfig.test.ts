@@ -31,6 +31,11 @@ describe('group configuration (#236)', () => {
     expect(config.acknowledge).toBe('react');
     expect(config.leaderAnnouncements).toBe(false);
     expect(config.names).toEqual({});
+    expect(config.whippinGroup).toBeNull();
+  });
+
+  it('names the Whippin group the reminder invites to join, by its id (user-decided 2026-09-14)', () => {
+    expect(parseGroupConfig('g.json', { ...valid, whippinGroup: 'abcdefghij234567' }).whippinGroup).toBe('abcdefghij234567');
   });
 
   it.each([
@@ -55,6 +60,10 @@ describe('group configuration (#236)', () => {
     // of the day with nothing saying why. A config still carrying it is refused where it is
     // read, loudly, like every field this parser no longer knows.
     ['the per-person ceiling it removed', { ...valid, chat: { ...valid.chat, perUserPerDay: 10 } }],
+    // The Whippin group is the id alone: the whole invite link pasted in is the likely slip.
+    ['a whole invite link as the Whippin group', { ...valid, whippinGroup: 'https://whippin.ai/g/abcdefghij234567' }],
+    ['a Whippin group id in capitals', { ...valid, whippinGroup: 'ABCDEFGHIJ234567' }],
+    ['a Whippin group id that is not a string', { ...valid, whippinGroup: 42 }],
   ])('refuses %s', (_, raw) => {
     expect(() => parseGroupConfig('x.json', raw)).toThrow(/x\.json/);
   });

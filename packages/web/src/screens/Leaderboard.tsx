@@ -63,7 +63,7 @@ import { t } from '../i18n';
 //
 // WHICH BOARD is a PAGER (user-decided 2026-09-14, the third design: a tab strip, then a
 // chip opening a wheel under the header's own wheel — "come up with a totally new
-// leaderboard control design"): the scopes — every group, NEW GROUP, GLOBAL — are pages
+// leaderboard control design"): the scopes — every group, then GLOBAL — are pages
 // on one horizontal line, swiped or tapped through (`ScopePager`), with the period switch
 // under it as the only other control before the list. Everything there is to DO with a
 // group is on the group's OWN SCREEN (`GroupScreen`, a tap on the middle page): INVITE, the
@@ -102,8 +102,6 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
   const lastGroupId = useGameStore((s) => s.lastGroupId);
   const setLastGroup = useGameStore((s) => s.setLastGroup);
   const [period, setPeriod] = useState<BoardPeriod>('day');
-  // The pager's NEW GROUP page is up (a group page otherwise, when the tab is a group's).
-  const [newPage, setNewPage] = useState(false);
 
   const identity = useDeviceIdentity();
   const epoch = identity ? identityEpochOf(identity) : null;
@@ -123,7 +121,8 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
   // group they are in, which the list already carries.
   const mates = new Set(groups?.flatMap((group) => group.members) ?? []);
 
-  // THE SCOPES, in the pager's order: every group, NEW GROUP, GLOBAL.
+  // THE SCOPES, in the pager's order: every group — or, with none, the one page that
+  // SAYS so (a state, not a button: its body carries CREATE GROUP) — then GLOBAL.
   const scopes: Scope[] =
     groups === null
       ? []
@@ -133,38 +132,33 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
             title: group.name,
             sub: `${group.members.length} ${t(lang, group.members.length === 1 ? 'memberUnit' : 'membersUnit')}`,
           })),
-          { key: 'new', title: t(lang, 'groupNew') },
+          ...(groups.length === 0 ? [{ key: 'none', title: t(lang, 'boardEmptyGroups') }] : []),
           { key: 'global', title: t(lang, 'boardGlobal'), sub: t(lang, 'scopeGlobalSub') },
         ];
-  const onNew = tab === 'group' && (newPage || active === null);
+  const onNone = tab === 'group' && active === null;
   const activeIndex =
     scopes.length === 0
       ? 0
       : tab === 'global'
         ? scopes.length - 1
-        : onNew || active === null
-          ? scopes.length - 2
+        : active === null
+          ? 0
           : Math.max(0, scopes.findIndex((scope) => scope.key === active.id));
   const showScope = (index: number) => {
     const scope = scopes[index];
     if (!scope) return;
     if (scope.key === 'global') {
       setTab('global');
-      setNewPage(false);
-    } else if (scope.key === 'new') {
-      setTab('group');
-      setNewPage(true);
     } else {
-      setLastGroup(scope.key);
+      if (scope.key !== 'none') setLastGroup(scope.key);
       setTab('group');
-      setNewPage(false);
     }
   };
 
   // ONE outcome slot per board — a board, or that board's own failure — keyed by what it
   // shows. Screen-global failure state would paint a FAILED frame over another board's
   // perfectly good rows for a render when flipping back.
-  const boardKey = tab === 'global' ? 'global' : active && !onNew ? `${active.id}:${period}` : null;
+  const boardKey = tab === 'global' ? 'global' : active ? `${active.id}:${period}` : null;
   const [boards, setBoards] = useState<Partial<Record<string, AnyBoard | 'failed'>>>({});
   const [attempt, setAttempt] = useState(0);
 
@@ -307,16 +301,18 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
     }
   };
 
-  const create = async (name: string) => {
-    if (busy) return;
+  // The create screen closes ITSELF once the group exists (it plays the name inked in
+  // first); the board is already on the new group when it does.
+  const create = async (name: string): Promise<boolean> => {
+    if (busy) return false;
     const result = await write('create', (token) => ({ token, create: true, name }));
     if (result.ok && result.created) {
       setLastGroup(result.created);
       setTab('group');
-      setNewPage(false);
       setPeriod('day');
-      setScreen(null);
+      return true;
     }
+    return false;
   };
 
   // The invite link is both "join us" and "come play": one line of copy, then the URL.
@@ -389,17 +385,18 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
       </HeaderLeft>
 
       {/* WHICH BOARD: the pager. A tap on the middle page goes into it — the group's own
-          screen, the create screen on NEW GROUP; GLOBAL has nothing to open. */}
+          screen; GLOBAL and the no-group page have nothing to open. The plus after the
+          dots creates. */}
       {scopes.length > 0 ? (
         <ScopePager
           lang={lang}
           scopes={scopes}
           active={activeIndex}
           onChange={showScope}
+          onNew={() => setScreen('create')}
           onOpen={(index) => {
             const key = scopes[index]?.key;
-            if (key === 'new') setScreen('create');
-            else if (key !== 'global' && key !== undefined) {
+            if (key !== 'global' && key !== 'none' && key !== undefined) {
               loadGroups();
               setScreen('group');
             }
@@ -410,7 +407,7 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
       )}
 
       {/* WHICH of the group's three boards: one framed switch, three equal cells. */}
-      {tab === 'group' && active && !onNew && (
+      {tab === 'group' && active && (
         <nav className="board-tabs period-tabs" aria-label={t(lang, 'boardPeriods')}>
           {PERIODS.map((view) => (
             <button
@@ -429,12 +426,10 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
       <div className="board-body">
         {tab === 'group' && groupsPhase === 'failed' && groups === null ? (
           <LoadError message={t(lang, 'failedBoard')} lang={lang} onRetry={() => loadGroups()} />
-        ) : tab === 'group' && onNew ? (
-          // The NEW GROUP page: the ghost (over its word while the player has no group at
-          // all) and the one call.
+        ) : tab === 'group' && onNone ? (
+          // No group at all: the ghost and the one call.
           <div className="board-empty">
             <span className="board-ghost" aria-hidden="true" />
-            {groups !== null && groups.length === 0 && <p>{t(lang, 'boardEmptyGroups')}</p>}
             <button type="button" className="btn btn-primary" disabled={busy !== null} onClick={() => setScreen('create')}>
               {t(lang, 'groupCreate')}
             </button>
@@ -488,7 +483,7 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
         />
       )}
       {screen === 'create' && (
-        <GroupCreate lang={lang} busy={busy === 'create'} onCreate={(name) => void create(name)} onClose={() => setScreen(null)} />
+        <GroupCreate lang={lang} busy={busy === 'create'} onCreate={create} onClose={() => setScreen(null)} />
       )}
 
       {/* REMOVE: the member's face over the act. */}
@@ -540,11 +535,10 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
                     type="button"
                     role="radio"
                     aria-checked={picked}
-                    className={`board-row waiting${picked ? ' picked' : ''}`}
+                    className={`board-row member${picked ? ' picked' : ''}`}
                     style={{ '--i': index } as CSSProperties}
                     onClick={() => setSuccessor(id)}
                   >
-                    <span className="board-norank" aria-hidden="true" />
                     <Avatar avatar={face?.avatar ?? defaultAvatar(id)} size={28} />
                     <span className={`board-name${face?.name ? '' : ' anon'}`}>{face?.name || anonName(id)}</span>
                   </button>
@@ -748,20 +742,10 @@ function Face({ player }: { player: BoardPlayer }) {
   );
 }
 
-function PlayingRowItem({
-  row,
-  me,
-  index,
-  trailing = null,
-}: {
-  row: PlayingRow;
-  me: boolean;
-  index: number;
-  trailing?: React.ReactNode;
-}) {
+function PlayingRowItem({ row, me, index }: { row: PlayingRow; me: boolean; index: number }) {
   return (
     <li
-      className={`board-row playing${me ? ' me' : ''}${trailing ? ' managed' : ''}`}
+      className={`board-row playing${me ? ' me' : ''}`}
       style={{ '--i': index, '--play-heat': progressHeatColor(row.progress) } as CSSProperties}
       aria-current={me || undefined}
     >
@@ -770,26 +754,16 @@ function PlayingRowItem({
       <span className={`board-name${row.name ? '' : ' anon'}`}>{row.name || anonName(row.publicId)}</span>
       <span className="board-progress">{Math.round(row.progress)}%</span>
       <span className="board-score">{row.tries}</span>
-      {trailing}
     </li>
   );
 }
 
-function WaitingRowItem({
-  player,
-  index,
-  trailing = null,
-}: {
-  player: BoardPlayer;
-  index: number;
-  trailing?: React.ReactNode;
-}) {
+function WaitingRowItem({ player, index }: { player: BoardPlayer; index: number }) {
   return (
-    <li className={`board-row waiting${trailing ? ' managed' : ''}`} style={{ '--i': index } as CSSProperties}>
+    <li className="board-row waiting" style={{ '--i': index } as CSSProperties}>
       <span className="board-norank" aria-hidden="true" />
       <Avatar avatar={player.avatar ?? defaultAvatar(player.publicId)} size={28} />
       <span className={`board-name${player.name ? '' : ' anon'}`}>{player.name || anonName(player.publicId)}</span>
-      {trailing}
     </li>
   );
 }
@@ -799,19 +773,17 @@ function BoardRowItem({
   me,
   mate,
   index,
-  trailing = null,
 }: {
   row: BoardRow;
   me: boolean;
   mate: boolean;
   index: number;
-  trailing?: React.ReactNode;
 }) {
   return (
     <li
       // `me` wins over `mate`: your own row is never one of your people, but a stale list
       // could say so, and two markers on one row is a rendering bug on screen.
-      className={`board-row${me ? ' me' : mate ? ' mate' : ''}${trailing ? ' managed' : ''}`}
+      className={`board-row${me ? ' me' : mate ? ' mate' : ''}`}
       style={{ '--i': index } as CSSProperties}
       aria-current={me || undefined}
     >
@@ -819,7 +791,6 @@ function BoardRowItem({
       <Avatar avatar={row.avatar ?? defaultAvatar(row.publicId)} size={28} />
       <span className={`board-name${row.name ? '' : ' anon'}`}>{row.name || anonName(row.publicId)}</span>
       <span className="board-score">{row.score}</span>
-      {trailing}
     </li>
   );
 }

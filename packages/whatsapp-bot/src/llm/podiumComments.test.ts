@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parseGroupConfig } from '../config/groupConfig';
 import type { Declaration } from '../domain/declarations';
-import { HABIT_DAYS, TYPICAL_SCORE, buildPodiumContext } from '../domain/shareContext';
+import { FORM_DAYS, buildPodiumContext } from '../domain/shareContext';
 import { createLog } from '../log';
 import { FACT_JUDGE_SYSTEM } from './lineJudge';
 import { CANDIDATES, ROUND_MS, echoes, generatePodiumComments, openingOf, podiumCommentLines, sanitizeComment } from './podiumComments';
@@ -92,7 +92,7 @@ const sentByPlace = (provider: { requests: { messages: { content: string }[] }[]
 };
 
 describe('podium comments are commentary from the numbers (#236, #277)', () => {
-  it('hands the model one line at a time with ITS facts — score, place, weekday, habit, the board — never the id', async () => {
+  it('hands the model one line at a time with ITS facts — score, place, weekday, form, the board — never the id', async () => {
     expect(podiumCommentLines(podium)).toEqual([
       { id: '3', position: 1, score: 3, names: ['Gab'], jids: ['a'] },
       { id: '4', position: 2, score: 4, names: ['Delphine', 'Zou'], jids: ['b', 'c'] },
@@ -104,16 +104,21 @@ describe('podium comments are commentary from the numbers (#236, #277)', () => {
     expect(comments.get('4')).toBe('Vous deux à 4, derrière Gab.');
     const [first, second] = sentByPlace(provider);
     // THE SCORE IS SENT (it is the content now), the date AND the weekday (told only a
-    // date, the model wrote "pour un mardi" on a Wednesday), the habit over the window,
-    // the whole board — and neutral field names ("typical" came back as French).
-    expect(first).toMatchObject({ place: 1, outOf: 2, score: 3, who: ['Gab'], date: '2026-09-03', weekday: 'jeudi', usual: TYPICAL_SCORE, habitDays: HABIT_DAYS });
-    expect(first.players[0].habit).toMatchObject({ name: 'Gab', daysPlayed: 2, averageScore: 10.5, best: 9, worst: 12 });
-    expect(first.players[0].recent.map((r: { score: number }) => r.score)).toEqual([9, 12]);
+    // date, the model wrote "pour un mardi" on a Wednesday), the share of tonight's others
+    // it beats, each player's FORM over the window — places, never another day's score
+    // (user-decided 2026-09-14) — the whole board, and neutral field names ("typical" came
+    // back as French).
+    expect(first).toMatchObject({ place: 1, outOf: 2, score: 3, who: ['Gab'], date: '2026-09-03', weekday: 'jeudi', beats: '2 of 2', othersMedian: 4, formDays: FORM_DAYS });
+    expect(first.players[0]).toMatchObject({ name: 'Gab', daysPlayed: 2, usuallyBeats: 'none' });
+    expect(first.players[0].recent).toEqual([{ date: '2026-09-02', place: 2, of: 2 }, { date: '2026-09-01', place: 1, of: 1 }]);
+    expect(first.players[0].rivals.map((r: { name: string; theyBeatYou: number }) => [r.name, r.theyBeatYou])).toEqual([['Delphine', 1], ['Zou', 0]]);
     expect(first.board).toEqual([{ position: 1, score: 3, names: ['Gab'] }, { position: 2, score: 4, names: ['Delphine', 'Zou'] }]);
     expect(first.reading).toContain('BEFORE today');
-    expect(JSON.stringify(first)).not.toContain('typical');
-    expect(second.players.map((p: { habit: { name: string } } | null) => p?.habit.name)).toEqual(['Delphine', 'Zou']);
-    expect(second.players[1].habit.daysPlayed).toBe(0); // Zou has no window
+    expect(JSON.stringify(first)).not.toMatch(/typical|"habit"|"usual"|"best"|"worst"/);
+    // A shared line beats the same players; its others' median is everybody off the line.
+    expect(second).toMatchObject({ beats: '0 of 2', othersMedian: 3 });
+    expect(second.players.map((p: { name: string } | null) => p?.name)).toEqual(['Delphine', 'Zou']);
+    expect(second.players[1]).toMatchObject({ daysPlayed: 0, usuallyBeats: null, recent: [] }); // Zou has no window
     // The writer thinks not at all; the judge does — once per usable candidate (one here
     // per line; the fake answers '' past the list's end, which never reaches the judge).
     expect(provider.requests[0].effort).toBe('none');
@@ -182,10 +187,11 @@ describe('podium comments are commentary from the numbers (#236, #277)', () => {
     const comments = await generatePodiumComments(provider, group, mixed, withClaire, none, log);
     expect(comments.get('∞')).toBe('Tu es allée au bout.');
     expect(comments.size).toBe(3);
-    // Its facts say ∞ where a place has a number, and its habit is there like anybody's.
+    // Its facts say ∞ where a place has a number, it beats nobody, and its form is there
+    // like anybody's.
     const capped = sentByPlace(provider).at(-1);
-    expect(capped).toMatchObject({ place: 3, outOf: 3, score: '∞', who: ['Claire'] });
-    expect(capped.players[0].habit.name).toBe('Claire');
+    expect(capped).toMatchObject({ place: 3, outOf: 3, score: '∞', who: ['Claire'], beats: '0 of 3', othersMedian: 4 });
+    expect(capped.players[0].name).toBe('Claire');
     // EVERY LINE OR NONE counts it: no comment for the ∞ line is no comments at all.
     const bare = answering({ 1: ['Un.'], 2: ['Deux.'], 3: ['', '', '', '', '', ''] });
     expect((await generatePodiumComments(bare, group, mixed, withClaire, none, log)).size).toBe(0);

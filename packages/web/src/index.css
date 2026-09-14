@@ -2747,37 +2747,46 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .result-action.copied {
   --cap-ink: var(--accent);
 }
-/* TOMORROW is SHARE's equal on the row, not its answer: a cap, never the quiet word. */
+/* TOMORROW is SHARE's equal on the row, not its answer: the secondary shape, never the
+   bare word. */
 .result-actions .btn-primary + .btn-secondary {
-  --print: color-mix(in srgb, var(--fg) 26%, var(--bg));
-  --cap-ground: var(--surface);
-  --cap-ink: var(--fg);
+  --btn: var(--fg);
+  --wash: 6%;
   min-height: 48px;
   padding: 14px 40px;
-  border: 1px solid var(--line-strong);
+  border: 1px solid color-mix(in srgb, var(--fg) 45%, transparent);
   border-radius: var(--r-sm);
-  font-size: 14px;
+  background: color-mix(in srgb, var(--btn) var(--wash), transparent);
+  color: var(--fg);
+  opacity: 1;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.12em;
-  box-shadow: 4px 4px 0 0 var(--print);
 }
 .result-actions .btn-primary + .btn-secondary:hover:not(:disabled) {
-  translate: -1px -1px;
-  box-shadow: 5px 5px 0 0 var(--print);
+  --wash: 12%;
+  border: 1px solid var(--fg);
+  background: color-mix(in srgb, var(--btn) var(--wash), transparent);
 }
 .result-actions .btn-primary + .btn-secondary:active:not(:disabled) {
-  translate: 3px 3px;
-  box-shadow: 1px 1px 0 0 var(--print);
+  --wash: 18%;
+  background: color-mix(in srgb, var(--btn) var(--wash), transparent);
   color: var(--fg);
 }
+/* COPIED lands in the accent's own wash: the primary already is. */
+.result-action.copied {
+  --btn: var(--accent);
+}
 /* TOMORROW beside SHARE (#273): two actions share the row as equals — each gives up the
-   lone button's floor width and takes half the row instead, capped so the pair does not
-   stretch across the 680px block on a desktop. On a phone (347px of row) that is two
-   buttons of ~167px, on one line. */
+   lone button's floor width and its 40px of air, and takes half the row instead, capped so
+   the pair does not stretch across the 680px block on a desktop. On a phone (347px of
+   row) that is two buttons of ~167px, on one line. */
 .result-actions.paired .result-action {
   flex: 1 1 0;
   min-width: 0;
   max-width: 240px;
+  padding-left: 12px;
+  padding-right: 12px;
 }
 
 /* The EARLY-PLAY clock (#273): tomorrow's round locked for the night, and in the
@@ -3261,68 +3270,54 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   border: 0;
   cursor: pointer;
 }
-/* ── BUTTONS, THIRD DESIGN (user-decided 2026-09-14: "we should completely update the
-   buttons design, they're really ugly and boring" — superseding the flat cobalt
-   gradient slab of 2026-09-01 and the device card before it). A button is a KEYCAP IN
-   THE APP'S OWN PIXEL GRAMMAR: a sharp tile with a HARD PRINT — the 1-bit drop shadow
-   every pixel sprite here already carries (the floating hits, the loot) — offset down
-   and right, and a press pushes the cap DOWN ONTO its print (the cap travels the print's
-   own 4px and the print collapses), which is the one motion a hard print makes
-   physical. Three caps, one geometry:
-     PRIMARY   — the HELD WORD as a button: `--fg` ground, `--bg` ink, the print in the
-                 game's accent (cobalt, the step toward the solve — the ENTER key's colour
-                 under the hole chip's ground). The app's one emphasis gesture, pressed.
-     SECONDARY — the keyboard's letter tile: `--surface` ground, a hairline, `--fg` ink,
-                 the print in a dim grey. Same cap, quieter.
-     DANGER    — the secondary in the danger ink (destruction never glows).
-   And the QUIET word (`.link-quiet-btn`) is not a cap at all: a bare tracked word on a
-   short print line. Sized TO THE WORD, never stretched by default — a column that wants
-   the deploy geometry (the bottom-edge PLAY / MIX / SAVE) says so (`.mix-btn`). */
+/* ── BUTTONS, FIFTH DESIGN (user-specified 2026-09-14: "something flat with a colored
+   border, the same color in the background but with less opacity, and the text in the
+   border color… derive the other buttons from it, and avoid heavy UI elements that
+   complexify the screen, such as underline or box shadow"). ONE shape, drawn in ONE
+   colour at three strengths — a hairline border at full, a wash of the same colour
+   behind it at 14%, the label in it — and the variants differ only by the colour:
+     PRIMARY   — the ACCENT (the solve cobalt: the step toward the solve).
+     SECONDARY — the FOREGROUND ink (white) at a quieter border.
+     DANGER    — the danger ink.
+     THE WORD  — a secondary directly under a primary, and every quiet act: the label
+                 alone, no border, no wash — nothing drawn that is not the word.
+   Hover deepens the wash, a press deepens it more; nothing travels, nothing glows, no
+   shadow, no underline. Sized to the word (40px of air a side); a column that wants the
+   deploy geometry says so (`.mix-btn`). The colour is `--btn`, so a variant is one line. */
 .btn-primary,
 .btn-secondary,
 .mix-btn {
-  --print: var(--accent);
-  --cap-ground: var(--fg);
-  --cap-ink: var(--bg);
-  position: relative;
+  --btn: var(--accent);
+  --wash: 14%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 12px;
-  /* A word needs air in a cap: 40px a side (user-reported 2026-09-14, CREATE "very
-     narrow" at 28). */
   padding: 14px 40px;
   min-height: 48px;
   font-family: var(--ui);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   line-height: 1;
-  color: var(--cap-ink);
-  background: var(--cap-ground);
-  border: 1px solid var(--cap-ground);
+  color: var(--btn);
+  background: color-mix(in srgb, var(--btn) var(--wash), transparent);
+  border: 1px solid var(--btn);
   border-radius: var(--r-sm);
-  box-shadow: 4px 4px 0 0 var(--print);
   text-shadow: none;
   cursor: pointer;
-  transition:
-    translate 70ms ease-out,
-    box-shadow 70ms ease-out,
-    filter 80ms linear;
+  transition: background-color 0.1s linear, border-color 0.1s linear, color 0.1s linear;
 }
 .btn-primary:hover:not(:disabled),
 .btn-secondary:hover:not(:disabled),
 .mix-btn:hover:not(:disabled) {
-  translate: -1px -1px;
-  box-shadow: 5px 5px 0 0 var(--print);
+  --wash: 24%;
 }
-/* The press: the cap goes down onto its print. */
 .btn-primary:active:not(:disabled),
 .btn-secondary:active:not(:disabled),
 .mix-btn:active:not(:disabled) {
-  translate: 3px 3px;
-  box-shadow: 1px 1px 0 0 var(--print);
+  --wash: 34%;
 }
 .btn-primary:disabled,
 .btn-secondary:disabled,
@@ -3335,51 +3330,62 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .btn-primary {
   min-width: min(220px, 100%);
 }
+/* The secondary: the foreground ink, its border a step quieter than the primary's so
+   the two read as one shape at two strengths, not two shapes. */
 .btn-secondary {
-  --print: color-mix(in srgb, var(--fg) 26%, var(--bg));
-  --cap-ground: var(--surface);
-  --cap-ink: var(--fg);
-  border-color: var(--line-strong);
+  --btn: var(--fg);
+  --wash: 6%;
+  border-color: color-mix(in srgb, var(--fg) 45%, transparent);
+}
+.btn-secondary:hover:not(:disabled) {
+  --wash: 12%;
+  border-color: var(--fg);
+}
+.btn-secondary:active:not(:disabled) {
+  --wash: 18%;
 }
 .btn-danger {
-  --print: color-mix(in srgb, var(--danger) 45%, var(--bg));
-  --cap-ink: var(--danger);
-  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  --btn: var(--danger);
+  --wash: 8%;
+  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
 }
-/* THE ONE POSITION THE CAP COMES OFF (user-decided 2026-08-30, restated 2026-09-14:
-   "when a label button is below a bigger button it always has the same underline
-   design"): directly under a primary, answering it, a secondary is THE QUIET WORD —
-   `.link-quiet-btn`'s exact dress, the tracked word on its print line — so the pair reads
-   as one action and its way out, on every screen the same. Restated in full here rather
-   than shared through a class, because the sibling rule has to WIN over the cap's. */
+.btn-danger:hover:not(:disabled) {
+  --wash: 16%;
+  border-color: var(--danger);
+}
+.btn-danger:active:not(:disabled) {
+  --wash: 24%;
+}
+/* THE ONE POSITION THE SHAPE COMES OFF (user-decided 2026-08-30, restated 2026-09-14):
+   directly under a primary, answering it, a secondary is THE WORD — the label alone, no
+   border, no wash (`.link-quiet-btn`'s exact dress) — so the pair reads as one action and
+   its way out, on every screen the same. Restated in full here rather than shared through
+   a class, because the sibling rule has to WIN over the shape's. */
 .btn-primary + .btn-secondary,
 .mix-btn + .btn-secondary {
-  --print: var(--line-strong);
-  --cap-ground: transparent;
-  --cap-ink: var(--fg);
   width: auto;
   min-width: 0;
   min-height: 0;
-  padding: 14px 4px 12px;
+  padding: 14px 8px;
   border: 0;
   border-radius: 0;
+  background: none;
+  color: var(--fg);
+  opacity: 0.7;
   font-size: 12px;
   font-weight: 650;
   letter-spacing: 0.14em;
-  box-shadow: inset 0 -2px 0 0 var(--print);
-  transition: color 120ms, box-shadow 120ms;
+  transition: opacity 120ms;
 }
 .btn-primary + .btn-secondary:hover:not(:disabled),
 .mix-btn + .btn-secondary:hover:not(:disabled) {
-  --print: var(--fg);
-  translate: 0;
-  box-shadow: inset 0 -2px 0 0 var(--print);
+  border: 0;
+  background: none;
+  opacity: 1;
 }
 .btn-primary + .btn-secondary:active:not(:disabled),
 .mix-btn + .btn-secondary:active:not(:disabled) {
-  --print: var(--fg);
-  translate: 0;
-  box-shadow: inset 0 -2px 0 0 var(--print);
+  background: none;
   color: var(--muted);
 }
 
@@ -3995,6 +4001,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   opacity: 0.8;
   text-shadow: none;
 }
+
 .invite-actions {
   width: 100%;
   margin-top: 32px;
@@ -5102,14 +5109,13 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   border-color: var(--fg);
   box-shadow: 0 0 0 1px var(--fg);
 }
-/* THE COMPACT CAP (third button design, 2026-09-14): the secondary keycap at a row's
-   size — CLEAR on the editor's tool row, EDIT on the account masthead, SIGN OUT and RETRY
-   on the device rows. Same tile, same print (3px at this size), same press. */
+/* THE COMPACT SECONDARY (2026-09-14): the secondary shape at a row's size — CLEAR on the
+   editor's tool row, EDIT on the account masthead, SIGN OUT and RETRY on the device rows. */
 .profile-clear,
 .board-chip,
 .device-signout,
 .device-retry {
-  --print: color-mix(in srgb, var(--fg) 26%, var(--bg));
+  --wash: 6%;
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -5122,27 +5128,25 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--fg);
-  background: var(--surface);
-  border: 1px solid var(--line-strong);
+  background: color-mix(in srgb, var(--fg) var(--wash), transparent);
+  border: 1px solid color-mix(in srgb, var(--fg) 45%, transparent);
   border-radius: var(--r-sm);
-  box-shadow: 3px 3px 0 0 var(--print);
   cursor: pointer;
   text-shadow: none;
-  transition: translate 70ms ease-out, box-shadow 70ms ease-out;
+  transition: border-color 0.1s linear, background-color 0.1s linear;
 }
 .profile-clear:hover:not(:disabled),
 .board-chip:hover,
 .device-signout:hover:not(:disabled),
 .device-retry:hover {
-  translate: -1px -1px;
-  box-shadow: 4px 4px 0 0 var(--print);
+  --wash: 12%;
+  border-color: var(--fg);
 }
 .profile-clear:active:not(:disabled),
 .board-chip:active,
 .device-signout:active:not(:disabled),
 .device-retry:active {
-  translate: 2px 2px;
-  box-shadow: 1px 1px 0 0 var(--print);
+  --wash: 18%;
 }
 .profile-clear:disabled,
 .device-signout:disabled {
@@ -5648,31 +5652,29 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   justify-content: center;
   gap: 10px;
 }
-/* THE QUIET WORD (third button design, 2026-09-14): a bare tracked word on a short PRINT
-   LINE — the cap's hard print with the cap taken away — at a finger's height. It is the
-   dress of every secondary act that is not the answer to a primary right above it
-   (RESEND, LEAVE THE GROUP, CANCEL under a danger cap); hover lifts the line to the ink. */
+/* THE WORD (2026-09-14, user-specified: no underline, no box shadow): a quiet act is the
+   label alone — a bare tracked word at a finger's height, a step under full strength,
+   lifted to it on hover. RESEND, LEAVE THE GROUP, CANCEL under a danger shape. */
 .link-quiet-btn {
-  --print: var(--line-strong);
-  padding: 14px 4px 12px;
+  padding: 14px 8px;
   border: 0;
   background: none;
   color: var(--fg);
+  opacity: 0.7;
   font-family: var(--ui);
   font-size: 12px;
   font-weight: 650;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   line-height: 1;
-  box-shadow: inset 0 -2px 0 0 var(--print);
   cursor: pointer;
-  transition: color 120ms, box-shadow 120ms;
+  transition: opacity 120ms, color 120ms;
 }
 .link-quiet-btn:hover:not(:disabled) {
-  --print: var(--fg);
+  opacity: 1;
 }
 .link-quiet-btn:active:not(:disabled) {
-  --print: var(--fg);
+  opacity: 1;
   color: var(--muted);
 }
 /* A CONTROL THAT IS NOT A CONTROL YET LOSES ITS BOX (2026-08-30). RESEND spends its first
@@ -5682,18 +5684,17 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    is a STATUS line (`RESEND (12)`); when the clock runs out the box arrives with the
    offer. */
 .link-quiet-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: default;
-  --print: transparent;
 }
 
-/* DESTRUCTION NEVER GLOWS: the quiet word in the danger ink, its print line the same. */
+/* DESTRUCTION NEVER GLOWS: the word in the danger ink. */
 .link-danger {
-  --print: color-mix(in srgb, var(--danger) 45%, transparent);
   color: var(--danger);
+  opacity: 0.85;
 }
 .link-danger:hover:not(:disabled) {
-  --print: var(--danger);
+  opacity: 1;
 }
 
 /* The address step's LEAD: WHO is being saved. A touch of air between it and the input it
@@ -6445,8 +6446,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 /* THE SCOPE PAGER (#271, user-decided 2026-09-14 — the third design of this control; the
    reasoning is in ScopePager.tsx). One horizontal line of PAGES, native scroll-snap: the
-   page in the middle at full strength, its neighbours peeking in at the sides at a
-   quarter, both edges fading into the ground; under it the DOTS, the active one long. */
+   page in the middle at full strength, one neighbour peeking in at each edge at half,
+   both edges fading into the ground; under it the DOTS, the active one long. */
 .scope {
   display: flex;
   flex-direction: column;
@@ -6458,23 +6459,55 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   height: 84px;
 }
 .scope-pager {
+  /* THE PEEK: what each end of the line keeps for a neighbour — the first or last few
+     letters of its name, the rest past the edge, the outer part fading. */
+  --peek: 44px;
   display: flex;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
   overscroll-behavior-x: contain;
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 5%, #000 95%, transparent);
-  mask-image: linear-gradient(to right, transparent, #000 5%, #000 95%, transparent);
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 calc(var(--peek) * 0.6),
+    #000 calc(100% - var(--peek) * 0.6),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 calc(var(--peek) * 0.6),
+    #000 calc(100% - var(--peek) * 0.6),
+    transparent
+  );
 }
 .scope-pager::-webkit-scrollbar {
   display: none;
 }
-/* A PAGE: 60% of the line, snapped to its centre — the neighbours peek in over the
-   remaining 20% a side, the outer 8% fading; the first and last carry the margin that
-   lets them reach the middle. */
+/* A peek of room at each end, so the first and the last page reach the middle. Real
+   flex items rather than padding, whose inline-end half engines have long left out of a
+   flex scroller's scrollable area. */
+.scope-pager::before,
+.scope-pager::after {
+  content: '';
+  flex: 0 0 var(--peek);
+}
+/* A PAGE: the line less a peek at each end, snapped to its centre — so a neighbour's
+   page begins exactly where the peek does, and the next one out a whole page further,
+   past the edge (user-reported 2026-09-14: the neighbours "should only be on the side,
+   and you should see part of one neighbour per side maximum"). Its name LEANS
+   (`--lean`, written by ScopePager off the scroll position): centred on the middle page,
+   against the inner edge on a neighbour's, so the peek shows the name's end nearest the
+   middle whatever its length. ONE PAGE A SWIPE (`scroll-snap-stop`): a fling would
+   otherwise sail past the neighbour the peek promised.
+   A neighbour is READABLE (user-reported the same day: "the group on the left is almost
+   invisible" at a quarter) — half strength. */
 .scope-page {
-  flex: 0 0 60%;
+  flex: 0 0 calc(100% - 2 * var(--peek));
+  min-width: 0;
   scroll-snap-align: center;
+  scroll-snap-stop: always;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -6486,19 +6519,11 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   font: inherit;
   color: var(--fg);
   cursor: pointer;
-  /* A neighbour is READABLE (user-reported 2026-09-14: "the group on the left is almost
-     invisible" at a quarter) — half strength, the outer 5% of the line fading. */
   opacity: 0.55;
   transition: opacity 160ms linear;
 }
 .scope-page.on {
   opacity: 1;
-}
-.scope-page:first-child {
-  margin-left: 20%;
-}
-.scope-page:last-child {
-  margin-right: 20%;
 }
 /* THE TITLE: the scope's name in the chrome's voice, one size, and — on the middle page —
    the app's CORNER BRACKETS around it (the device frame's selection mark, the focus's
@@ -6517,6 +6542,10 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   letter-spacing: 0.1em;
   text-transform: uppercase;
   line-height: 1;
+}
+.scope-title,
+.scope-sub {
+  translate: var(--lean, 0px) 0;
 }
 .scope-corner {
   position: absolute;
@@ -6540,7 +6569,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   color: var(--muted);
 }
 /* The line under the name: which of a thing (a group's size, GLOBAL's TOP 50), the
-   archive day's tag dress. */
+   archive day's tag dress. The MIDDLE page's alone: a peek is a name's few letters, not
+   a caption. */
 .scope-sub {
   font-family: var(--ui);
   font-size: 10px;
@@ -6549,14 +6579,44 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   text-transform: uppercase;
   color: var(--muted);
   white-space: nowrap;
+  opacity: 0;
+  transition: opacity 160ms linear;
+}
+.scope-page.on .scope-sub {
+  opacity: 1;
 }
 /* THE DOTS: one per page, the active one drawn long — and it TRAVELS: the width moves
-   from dot to dot, so the change reads as one mark sliding rather than two appearing. */
+   from dot to dot, so the change reads as one mark sliding rather than two appearing.
+   After the last dot, the ADD: a pixel plus that opens the create screen (user-decided
+   2026-09-14 — a NEW GROUP page "is the design of the group title, but it's a button",
+   so creating left the pager's pages and became the row's one control). */
 .scope-dots {
   display: flex;
+  align-items: center;
   justify-content: center;
   gap: 6px;
   padding: 0 14px;
+}
+.scope-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  opacity: 0.55;
+  cursor: pointer;
+  transition: opacity 120ms linear;
+}
+.scope-add:hover {
+  opacity: 1;
+}
+.scope-add .ui-icon {
+  display: block;
 }
 .scope-dot {
   width: 6px;
@@ -6640,53 +6700,59 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .group-calls .btn-primary {
   width: 100%;
 }
-/* NAMING A NEW GROUP: one field in the middle of the screen, the call under it. The
-   field is the account area's input at the step's own size, centred type, 16px so a
-   phone never zooms to it. */
+/* NAMING A NEW GROUP (user-decided 2026-09-14: "an act of creation that should be
+   satisfying — reuse the game prompt input"): the guess prompt's own line — the cobalt
+   `>`, the pixel face, the blinking cursor — alone in the middle of the screen, over the
+   one call. On CREATE the line gives way to the name INKED IN: the solve's cobalt word,
+   with the hit's shake, held for a beat before the screen folds — the group is named the
+   way a hole is solved. */
 .group-create {
-  width: min(360px, 100% - 28px);
+  width: min(430px, 100% - 28px);
   margin: auto;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-  gap: 24px;
+  align-items: center;
+  gap: 40px;
   padding-bottom: 72px;
 }
-.group-create-input {
+.group-create-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
-  padding: 16px 14px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-md);
-  background: rgba(0, 0, 0, 0.28);
-  color: var(--fg);
-  font-family: var(--ui);
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-align: center;
+  min-height: 64px;
 }
-.group-create-input::placeholder {
-  color: var(--muted);
-  font-weight: 500;
-  letter-spacing: 0.14em;
-  font-size: 13px;
-  text-transform: uppercase;
+.group-create .word-input {
+  /* A 20-character name fits the line on a 375px phone (14px × 20 = 280 beside the `>`);
+     it grows with the screen up to the sentence's own size. */
+  font-size: clamp(14px, 3.7vw, 24px);
+  min-width: 0;
 }
-.group-create-input:focus {
-  outline: none;
-  border-color: var(--fg);
+.group-create-word {
+  font-family: var(--pixel-font);
+  font-size: clamp(14px, 3.7vw, 24px);
+  line-height: 1.5;
+  color: var(--solve);
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: word-shake 0.5s ease-out both;
 }
-/* The owner's ✕ at a managed row's end (the group screen): a small square that opens
+.group-create .btn-primary {
+  width: 100%;
+  max-width: 430px;
+}
+/* A MEMBER — on the group's own screen and in the leave's successor picker: a person in
+   the group, not a player on today's board, so the board's plain row (glass on a hairline)
+   with no rank column and none of the WAITING row's dashes (user-reported 2026-09-14: "the
+   member list have dashed rows for no reason" — they were the NOT PLAYED YET dress,
+   borrowed). The last column holds the owner's ✕. */
+.board-row.member {
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+}
+/* The owner's ✕ at a member row's end (the group screen): a small square that opens
    the confirmation. */
-.board-row.managed {
-  grid-template-columns: 42px 28px minmax(0, 1fr) auto auto;
-}
-.board-row.playing.managed {
-  grid-template-columns: 42px 28px minmax(0, 1fr) auto auto auto;
-}
-.board-row.waiting.managed .board-name {
-  grid-column: 3 / 4;
-}
 .board-remove {
   border: 1px solid var(--line-strong);
   background: transparent;
@@ -7376,13 +7442,11 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   font: inherit;
   text-align: left;
   color: var(--fg);
-  border-style: dashed;
 }
 .confirm-pick .board-row:hover {
   border-color: var(--line-strong);
 }
 .confirm-pick .board-row.picked {
-  border-style: solid;
   border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
   background: color-mix(in srgb, var(--accent) 12%, var(--glass));
   box-shadow: inset 2px 0 0 var(--accent);

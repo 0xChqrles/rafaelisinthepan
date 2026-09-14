@@ -8,8 +8,9 @@
 // was not given: slowness in a game that times nothing, a weekday ("pour un mardi" on a
 // Wednesday), a third person for a player it was told to address. The line is now
 // written from the same facts the afternoon's share line had (`domain/shareContext.ts`
-// `buildPodiumContext`: the score, the placing, what a day usually costs, each player's
-// habit and recent days over the window, the whole board) — and, so it can do what the
+// `buildPodiumContext`: the score, the placing, how many of tonight's others it beats,
+// each player's form — where they usually land among the others, never what they usually
+// score (user-decided 2026-09-14) — and the whole board) — and, so it can do what the
 // group actually laughed at, from the DAY'S CONVERSATION and the bot's DIARY: a promise
 // kept or not, a running joke, what somebody said this morning. The judge is the fact
 // check (`lineJudge.ts` `FACT_JUDGE_SYSTEM`), shown the same context.
@@ -24,15 +25,20 @@
 import { fold } from '@whippin/shared';
 import type { GroupConfig } from '../config/groupConfig';
 import type { Podium } from '../domain/podium';
-import type { PodiumContext } from '../domain/shareContext';
+import { medianScore, type PodiumContext } from '../domain/shareContext';
 import { CAPPED_LINE_ID, lineId, type Comments } from '../domain/podiumText';
 import type { Log } from '../log';
 import { FACT_JUDGE_SYSTEM, JUDGE_TIMEOUT_MS, chooseLine } from './lineJudge';
 import { buildSystemPrompt } from './personality';
 import { LlmUnavailable, type LlmProvider } from './types';
 
-// Room for a number and a name; still one short sentence under a podium line.
-export const COMMENT_MAX_CHARS = 120;
+// Room for a name, a record and a comparison; still one short sentence under a podium
+// line. 120 until 2026-09-14, when the facts grew rivals and records: measured on the beta
+// group's hardest day, 30% of the old prompt's candidates and 51% of the new one's ran
+// past 120 and were lost before the judge — and a podium is EVERY LINE OR NONE, so one
+// line with three lost candidates blanks it. The writer is asked for words, not
+// characters, which it cannot count.
+export const COMMENT_MAX_CHARS = 160;
 // Three candidates per line, judged in parallel; a second round with the judge's reasons
 // when all three were dropped (the share path's measured shape).
 export const CANDIDATES = 3;
@@ -89,7 +95,7 @@ export function podiumCommentLines(podium: Podium): PodiumCommentLine[] {
 
 const TASK = `Task: one short comment under ONE line of tonight's podium, from the FACTS given and nothing else. Every number, name, position and comparison you write must come from the facts; you never invent or round one. The line's own names and score are printed right above your comment, so you do not repeat them — the others' names, and every number, are yours to use.
 
-What brings value: how the score sits against what a day usually costs; against this player's own habit and recent days; against the people just above and below on the board and their habits; and, when the day's conversation or your diary holds something about this player that is genuinely worth a callback — a promise, a bet, a running joke, something they said today — that, in passing. Speak to the player as "tu" ("vous" when the line holds more than one name), never about them. Plain text only, no quotes, ONE short sentence, under ${COMMENT_MAX_CHARS} characters; a line with nothing notable gets a plain short acknowledgement.`;
+A score is worth what the others made of the same sentence tonight, never what another day cost. What brings value: where this line lands among tonight's players and how the others did; how that compares with where these players usually land against the others — how many of the others they usually beat, their recent places, their record against the people just above and below; and, when the day's conversation or your diary holds something about this player that is genuinely worth a callback — a promise, a bet, a running joke, something they said today — that, in passing. Every number comes from the facts: the conversation and the diary are for what people said and did, never for a score, a place or a best, and tonight's score is never held against another day's. This line is about the result: your own life stays out of it. Pick the ONE thing that is news about this line and say only that: one comparison, or one callback, never a list. Speak to the player as "tu" ("vous" when the line holds more than one name), never about them. Plain text only, no quotes, ONE short sentence of about fifteen words; a line with nothing notable gets a plain short acknowledgement.`;
 
 const MAX_TOKENS = 4000;
 // COUNTS NOW THAT THINKING IS OFF (DeepSeek ignores it while thinking). 1.1 was the
@@ -172,19 +178,22 @@ export async function writeCandidate(
 
 // THE FACTS OF ONE LINE, picked from the podium's context. Neutral field names: the model
 // writes with whatever vocabulary is in front of it, and these are words it may borrow
-// (`typical` came back as "le bas du typical"; `band` as "le band a gagné").
+// (`typical` came back as "le bas du typical"; `band` as "le band a gagné"). The players
+// of one line share a score, so they beat the same players; "the others" of the median
+// are everybody the line does not hold.
 export function lineFacts(line: PodiumCommentLine, outOf: number, context: PodiumContext) {
   return {
-    reading: `"score" is tonight's score of this line (fewer tries is better; three is the floor; ∞ is a run that never finished). "usual" is what a day costs in this group. "habit" and "recent" cover the ${context.habitDays} days BEFORE today and do not include it, so tonight's score against habit.best / habit.worst says whether tonight is a player's best or worst of that window, tonight included. "board" is the whole podium.`,
+    reading: `"score" is tonight's score of this line (fewer tries is better; three is the floor; ∞ is a run that never finished). A score is worth something only against the other players' scores of the same night (what a day costs depends on its sentence), so nothing here gives a score from another day. "beats" is how many of tonight's other players this line beats, "othersMedian" the middle of their scores. "players" is each name's form over the ${context.formDays} days BEFORE today: how many of the other posters they usually beat, their recent places ("of" = how many posted that day), and their record against everybody else on tonight's board. "board" is the whole podium.`,
     date: context.date,
     weekday: context.weekday,
     place: line.position,
     outOf,
     score: line.score,
     who: line.names,
-    usual: context.typical,
-    habitDays: context.habitDays,
-    players: line.jids.map((jid) => context.players.get(jid) ?? null),
+    beats: context.players.get(line.jids[0])?.beats ?? null,
+    othersMedian: medianScore([...context.ranks].filter(([jid]) => !line.jids.includes(jid)).map(([, rank]) => rank)),
+    formDays: context.formDays,
+    players: line.jids.map((jid) => context.players.get(jid)?.form ?? null),
     board: context.board,
   };
 }

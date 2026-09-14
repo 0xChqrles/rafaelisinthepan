@@ -34,14 +34,17 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
       declarations.ts           Declaration, the PRECEDENCE rule (`supersedes`), `inLanguage`, store interface, memory impl
       dynamoDeclarationStore.ts GROUP#<jid> / DAY#<000000>#PLAYER#<sender>; precedence as a ConditionExpression
       podium.ts                 DENSE podium (1, 2, 2 → 3); ∞ runs listed, never positioned
-      shareContext.ts           the FACTS a share is commented from: score, typical day, the board so far,
-                                who is ahead/behind, the player's habit and recent days, the others' habits
+      shareContext.ts           the FACTS a share is commented from: the day's board with this share placed,
+                                who is above/below and how many it beats, and each player's FORM — where
+                                they usually land among the others, their places, their record per rival
       podiumText.ts             the renderer (positions/names/scores/framing are ITS; comments keyed by line id),
                                 and `renderReminder`, the morning line
       names.ts                  display name = operator override ?? latest snapshot ?? …last4
       reactions.ts              score band → emoji, no model (the `acknowledge: "react"` shape); BOTH ladders
                                 (sentence: lower is better; word: higher is better) and the `ShareFacts` they judge
       leader.ts                 the new-leader event + its anti-spam row (LEAD#<day>)
+      whippinGroup.ts           the Whippin group's invite link (`?v=<day>`) and the public read that says
+                                whether it still stands (`GET /groups?id=`)
       ingest.ts                 the per-message pipeline: allow-list → share → durable row → acknowledgement/leader.
                                 The ONE place a model touches this path, through an injected `comment` — everything
                                 that DECIDES anything here (the decode, the row, the band) stays model-free.
@@ -62,7 +65,8 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
     src/whatsapp/               the Baileys boundary: inbound mapping, durable auth (DynamoDB), the
                                 single-session lease + the keeper that stops a holder whose renewals
                                 stop landing, the socket wrapper (reconnect/stop policy), the
-                                redacting logger the library is handed, metrics
+                                redacting logger the library is handed, metrics, linkPreview.ts
+                                (the preview card a command names, built before the send)
     src/main.ts                 the Fargate task entry
     src/podiumJob.ts            the Lambda entry (EventBridge Scheduler → podium / reminder command on the
                                 queue, and the diary rewrite at the day flip)
@@ -144,7 +148,18 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   waited for, unlike the conversation's budgeted `get`) and posts nothing for an unpublished
   day AND for a read that failed — a morning without a reminder costs nothing, a link to
   nothing costs trust. The day flips at 22:00 Eastern (04:00 Paris), so any morning hour
-  points at a fresh puzzle. `language` decides which daily's shares count — an `fr` group ranks
+  points at a fresh puzzle. **AND IT INVITES THE GROUP TO ITS WHIPPIN GROUP (user-decided
+  2026-09-14):** a config may name one, `whippinGroup` (the id in its invite link, refused
+  unless it matches `GROUP_ID_PATTERN`), and the reminder then adds one line asking the
+  group to join it, with `<site>/g/<id>?v=<day>` (`domain/whippinGroup.ts`) — the shared
+  invite path plus a new `v` every day, which the CDN neither keys on nor forwards
+  (`CACHING_OPTIMIZED` on `/g/*`) and a client that remembers a preview by its URL does.
+  The same no-404 rule one level down: the job reads the group's public face first
+  (`GET /groups?id=`, 404 `unknown_group`), because a deleted group's link does not fail —
+  the web CDN answers the miss with the app's index.html and a 200, which unfurls as the
+  generic card — and a gone group or a failed read costs the line, never the reminder. The
+  command names the link as its `preview`, so the message carries that group's card
+  (below). `language` decides which daily's shares count — an `fr` group ranks
   the French puzzle and ignores an English token — on the way IN and on the way OUT: every
   read of the declarations goes through `inLanguage`, so a group whose configured language
   changes does not rank the rows it wrote under the old one. Files hold product behaviour
@@ -229,8 +244,9 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   ("pour un mardi" on a Wednesday), a third person for a player it was told to address —
   and the group read every bare line beside a name as a verdict. A line is now written
   from the same facts the share line has (`domain/shareContext.ts` `buildPodiumContext`:
-  the score, the placing, `date` AND `weekday`, what a day usually costs, every player's
-  habit and recent days over `HABIT_DAYS`, the whole board — neutral field names, since
+  the score, the placing, `date` AND `weekday`, how many of the night's others it beats,
+  every player's FORM over `FORM_DAYS` (places, never another day's score — the share-line
+  bullet below), the whole board — neutral field names, since
   `typical` came back as "le bas du typical"), plus the DAY LOG and the DIARY
   (`llm/podiumComments.ts` `backgroundBlock`, the day cut to its last `CONTEXT_MAX_CHARS`),
   so it can do the one kind of joke the group laughed at: a callback. **ONE CALL PER
@@ -248,8 +264,11 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   carry `score: "∞"` and the place after the last. **Two lines opening the same way** (`openingOf`,
   the first two words folded — "Pas mal pour…" opened four lines of one podium) are the
   tic parallel writers cannot see: the later one is written again once, told the opening
-  to avoid (`echoes`). `COMMENT_MAX_CHARS` = 120: room for a number and a name, still one
-  sentence. The calls fit the Lambda's 120s (`TIMEOUT_MS` 15s a candidate) and spend NO
+  to avoid (`echoes`). `COMMENT_MAX_CHARS` = 160 (120 until 2026-09-14: with the form
+  facts — rivals, records — 30% of the old prompt's candidates and 51% of the new one's ran
+  past 120 and were lost before the judge, on a podium that is EVERY LINE OR NONE; the
+  writer is asked for "about fifteen words", not a character count it cannot keep): room
+  for a name, a record and a comparison, still one sentence. The calls fit the Lambda's 120s (`TIMEOUT_MS` 15s a candidate) and spend NO
   daily call ceiling, unlike the share line: this path fires once per group per day and is
   bounded by the schedule, where an acknowledgement is bounded only by traffic. **AND THE
   TREE IS BOUNDED BY THE LAMBDA'S CLOCK** (PR-278 review): two rounds a line and then a
@@ -271,6 +290,18 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   accumulating a permanent row per message ever sent. ONE acknowledgement per MESSAGE, for the
   best result it carried — the id is keyed by the message, and WhatsApp holds one reaction
   per account anyway.
+  **A PREVIEW CARD ONLY FOR THE LINK A COMMAND NAMES (user-decided 2026-09-14,
+  `whatsapp/linkPreview.ts`).** WhatsApp does not unfurl a link for its recipients: the
+  sender embeds the card, so the task builds it BEFORE the send — Baileys' `getUrlInfo`
+  over its optional peer `link-preview-js` (pinned inside Baileys' `^3` peer range), the
+  image uploaded as a full-size card. Only `OutboundCommand.preview` gets one (an https link
+  the text carries, checked by `parseCommand`); every other send passes `linkPreview: null`,
+  since left undefined Baileys fetches the first https link in ANY text — a model's or a
+  member's — from inside the task. The build is bounded as a whole (`PREVIEW_BUDGET_MS`
+  20s, 10s per fetch — a cold card render measured 2.3s against Baileys' 3s default),
+  because the image download inside it has no timeout and this runs in the ONE outbound
+  loop; a card that does not arrive costs the card, never the message, and its log line
+  carries no URL (an invite link is a way in).
   **HOW a share is acknowledged is `acknowledge` in the group config (user-decided
   2026-09-04):** `react` is the deterministic emoji, `say` is one short line the model
   writes (`llm/shareComment.ts`, quoting the share so a busy group can tell whose result it
@@ -448,7 +479,10 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
     spells the phone number or LID of whoever it points at. Resolved through the same
     window the tools name players from (`labelPlayers`, keyed by the token's digits,
     labelled by the PLAYER key), falling back to the override or the `…last4` handle — a
-    read that fails costs the names, never the message.
+    read that fails costs the names, never the message. **The BOT's own mention is named
+    too, under its `chat.name`, in the body as in a quote** (`namesWithBot`, 2026-09-14):
+    the body's came through as the `…last4` handle of the bot's own number, and "Pas vrai
+    @bot ?" was answered "Je réponds à un seul nom, et 8262 n'en est pas un".
   - **BOUNDED IN TEXT**: a turn is cut on the way in (`TURN_MAX_CHARS` 500, head kept).
   **A QUOTE IS SPELLED OUT** (2026-09-07): `QuotedRef.text` carries the quoted message's
   words (`inbound.ts`, off `contextInfo.quotedMessage`), and the turn opens with
@@ -464,7 +498,12 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   addressing**: everybody else's is part of what was said, as the name the group uses.
   **THE DIARY (`chat/diary.ts`) REPLACES THE PER-PERSON MEMORY.** One text per group
   (`DIARY#<group>` / `TEXT`, `DIARY_MAX_CHARS` 6000), what the bot knows about the people
-  in it — who is who, who teases whom, running jokes, promises — rewritten by the bot
+  in it — who is who, who teases whom, running jokes, promises — **and what the bot has
+  told them about its OWN LIFE, so the life it invents stays straight; and NO scores,
+  places or podiums, and no rule it wrote for itself (its name included) — the rewrite
+  takes those out of the diary as it stood** (v13, user-decided 2026-09-14: a score noted
+  there came back as "ta pire journée des quatorze", and "je réponds à un seul nom" as a
+  standing rule) — rewritten by the bot
   itself at the day flip from the diary as it stood and the day's log (`podiumJob.ts`
   `runDiaryJob`, `kind: "diary"`, scheduled at `DIARY_TIME` **22:20** `America/New_York` —
   the game's own boundary, not a group time, since nobody sees it and a group time would
@@ -512,8 +551,9 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   personality now carries it: ranks come from usage over an enormous corpus (the web and
   Wikipedia — fastText's Common Crawl build for fr, GloVe's Wikipedia + news for en), so
   closeness is the company a word keeps and not synonymy or spelling, and a rank of 1 is
-  the word most often found in the same company, not "almost the word". Explaining this is
-  the ONE subject where being helpful is in character. **THE WORKED EXAMPLE IS CHECKED
+  the word most often found in the same company, not "almost the word". It explains this
+  right and briefly when asked — since v13 bored like everything about the game, no longer
+  GLADLY, but nobody else in the group can. **THE WORKED EXAMPLE IS CHECKED
   AGAINST THE REAL VECTORS** (PR-246 review, v5): the first draft taught "capuche" /
   "soleil", which in `cc.fr.300_reduced` have a similarity of 0.20 and are outside each
   other's top 3000 — the bot would have explained the game with a pair the game itself
@@ -627,13 +667,28 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   that replaced voice-tuning).** Every voice from v5 to v9 wrote empty lines for the same
   reason: the writer was handed a band word and nothing to react to. Now
   `domain/shareContext.ts` computes, from the group's own declarations, what a friend
-  reacts to — the exact score; what a day typically costs (`TYPICAL_SCORE` 10–20, median
-  14); the day's board so far with this share placed, who is ahead, level and behind, how
-  many have posted against how many usually do, whether this is the first share of the
-  day; this player's habit over `HABIT_DAYS` = 14 (average score and dense position,
-  best, worst) and their recent days; and the habit of everybody else on the board — and
-  `llm/shareComment.ts` hands it ALL to the writer as JSON, with the rule that every number,
-  name and comparison comes from it. **No band word travels** (the user: "not a word like
+  reacts to — the exact score; the day's board so far with this share placed, who is
+  above, level and below, how many of the others it beats and the middle of their scores,
+  how many have posted against how many usually do, whether this is the first share of the
+  day; and this player's FORM over `FORM_DAYS` = 14 — how many of a day's others they
+  usually beat, said as people say it ("3 in 4", never a percentage: handed "69%", the
+  writer printed it), their recent places, and their record against each person on today's
+  board — and `llm/shareComment.ts` hands it ALL to the writer as JSON, with the rule that
+  every number, name and comparison comes from it. **A SCORE IS READ AGAINST THE SAME
+  DAY'S OTHER SCORES, NEVER AGAINST ANOTHER DAY'S (user-decided 2026-09-14: "a 64 one day
+  can be strong and a 20 can be weak another day; what matters is how good the others are
+  doing, how you do compared to them, and compared to how you did compared to them
+  before").** The facts used to carry a typical day (`TYPICAL_SCORE` 10–20) and each
+  player's average, best and worst SCORE, and the bot told a 43 "ta pire journée des 14
+  derniers jours" on the day 43 was fourth of six; nothing in the facts now holds a score
+  from another day, the judge drops a line that compares one even when it is true, the
+  diary no longer keeps scores, and the chat's tool is `get_player_form` (places, never
+  scores; one day's score is still `get_player_score`). The first share of a day has
+  nobody to be compared with and says so. **What the player wrote around the share is
+  answered too** (`ShareCommentDeps.said`, same day: "fais un commentaire gentil" came
+  with a 64 and the line, never shown it, answered with the worst score of the fortnight):
+  `main.ts` hands `ingest` the text it remembered for the day log, so it exists only where
+  the group's chat is on. **No band word travels** (the user: "not a word like
   strong, just the score"); **numbers and names are the point**, so none of the one-liner
   refusals apply to this path (`CandidateShape`); **the writer does NOT think, the judge does**
   (measured on the seeded day: thinking on, 15–29s a share and no better; off, 12–21s —
@@ -668,8 +723,12 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   it's called bender now"). The prompt is now `globalPersonality(name)`, the name
   interpolated from `chat.name` — the form the trigger answers to, so what it is called
   and what it answers to cannot drift — every caller passing it (agent, share line, podium,
-  diary rewrite and forget); its only name is that one, a name somebody hands it is theirs
-  to use and not its to take, and the two words "Bender" / "Futurama" never reach the group.
+  diary rewrite and forget), and the two words "Bender" / "Futurama" never reach the group.
+  **And the name is NOT A SUBJECT (v13, user-decided 2026-09-14):** v12's "that is your
+  only name; a name somebody hands you is theirs to use" made it the bot's favourite topic
+  — every nickname corrected, "je réponds à un seul nom" written into the diary as a rule.
+  It is said once, as a fact: the bot does not bring it up, and anybody may call it
+  anything.
   **AND EVERY LINE MEANS ONE PLAIN THING** (same day; the deployed bot told the operator
   "j'ai connu des ingénieurs plus doués … tu vas finir par obtenir exactement ce que tu
   mérites" — the user: "it's vague, we don't get what it means"): a hint, a warning or a
@@ -678,6 +737,25 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   with the live diary, six scenarios × 2: main said Bender in every identity answer; the
   fix said `chat.name` in every one, refused a rename, and stayed in character with
   concrete callbacks (a player's 23 tries on the 8th) where main's had trailed off.
+  **THE GAME BORES IT, AND IT HAS A LIFE ELSEWHERE (v13, user-decided 2026-09-14).** v12
+  brought every answer back to the scoreboard ("je compte les coups" to a welcome, a
+  threat and a nickname alike). The character now keeps the scoreboard and does not play;
+  the game bores it — it gets anything about it right and gives it no more than it needs —
+  and it has a life away from the group, the way the character does: relatives who are
+  machines like it, a home, friends, schemes, bad habits, a love life, INVENTED as it goes
+  and kept consistent by the diary (above). It comes up in passing, when it is bored or
+  asked how or who it is; it perks up when talked to about anything but the game. The
+  prompt names no relative and no appliance (the first draft's "a family of machines" came
+  back verbatim). **The two comment paths keep the life out** ("this line is about the
+  result"), and the ambient openings lost "a place where a number nobody else has
+  belongs": a bot the game bores does not volunteer a statistic. The ambient default
+  (silence) is unchanged.
+  **EVERY LINE IS SAID IN FRONT OF EVERYBODY (v14, user-reported 2026-09-14: "we're in a
+  group chat, it's not a DM, you just told everybody").** Asked by the group about its
+  passions, v13 named a vice and told the asker not to repeat it. The personality now says,
+  once, that whoever it answers the whole group reads every line, so it never confides and
+  never asks anybody to keep something to themselves — with no phrasing of the confidence
+  quoted, since a quoted phrase comes back.
   **LESS IS BETTER (v9, user-decided 2026-09-07: "a pretty short and concise prompt just
   saying what is funny and what is not, without giving examples that might pollute its
   answers … a nonchalant cynic but serious tone").** After v8's judge the user still found
@@ -704,16 +782,25 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   `reasoning_effort`; measured, thinking bought nothing a line needs and ran past the
   timeout — and off, `TEMPERATURE` = 0.8 counts, which DeepSeek ignores while thinking;
   1.1 produced word salad), each candidate is read by ONE call with its thinking ON
-  (`reasoning_effort: low`, 20s cut; "pick the best of N" reasoned 12–25s, truncated and
+  (`reasoning_effort: low`, 25s cut and 4500 tokens since 2026-09-14 — over the form facts
+  the median verdict is ~1100 tokens in 6s and 17% ran into the old 3000 and answered
+  nothing; "pick the best of N" reasoned 12–25s, truncated and
   landed at half accuracy), the first kept in candidate order is posted, and when all were
   dropped ONE more round is written with the judge's reasons in front of the writer
   (`ROUNDS` = 2; the reasons ride `digit: reason`, `parseVerdict`, logged as `line.judged`
-  / `line.all_dropped`). No verdict at all (the judge unreachable) posts the first
-  candidate unjudged, so an outage of the judge does not blank every podium it lasts
-  through. The share path spends one unit of the daily call ceiling per candidate AND per
+  / `line.all_dropped`). No verdict at all (the judge unreachable, or the ceiling spent)
+  posts the first candidate unjudged ON THE PODIUM, so an outage of the judge does not
+  blank every podium it lasts through — and NOTHING on the share path (`chooseLine`
+  `unjudged`, 2026-09-14): the emoji stands in for a share anyway, and an unchecked line
+  is how "un gars qui me bat une fois sur deux" (the bot confusing itself with a rival)
+  reached the group. The judge also drops a line that mixes two people up (the bot
+  included) or is not correct in its language; how it SOUNDS stays its own business. The share path spends one unit of the daily call ceiling per candidate AND per
   verdict; the podium path spends none (above). No example line anywhere, in the writer or
   the judge (v9, user-decided 2026-09-07): the judge's calibration lines leaned its picks
-  toward their kind. **These mechanics were measured against `deepseek-v4-flash` and exist
+  toward their kind. **A line holding the score against another day's score — a past one,
+  an average, a best or worst, a typical day — is DROPPED even when true** (v13): the
+  facts carry none, but the day's conversation and the diary a podium line is shown can.
+  **These mechanics were measured against `deepseek-v4-flash` and exist
   to work around it**; re-measure them on the next model (#277 step 5) before keeping them.
   **And the bot knows its OWN SCHEDULE in the group** (user-decided 2026-09-05,
   `agent.ts` `scheduleContext`): the system prompt states whether this group has a podium
@@ -792,9 +879,11 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   group, because `withoutShares` removes the whole block from a remembered or an addressed
   message and a message that was only a share is remembered not at all. What a `say` group
   DOES send, deliberately and without anyone addressing the bot, is a set of DERIVED FACTS
-  the bot decided: the player's display name, the try count (or none for a ∞ run), whether
-  it was solved, and the bot's own verdict band — the input the line is commentary over
-  (`llm/shareComment.ts`). A `react` or `none` group sends nothing on a share. The old
+  the bot decided: the day's board as the group's own shares make it (display names and
+  scores), and each player's form over `FORM_DAYS` (places, records against each other) —
+  the input the line is commentary over (`llm/shareComment.ts`); and, in a group whose chat
+  is on, what the player wrote around the share, as the day log already sends it. A
+  `react` or `none` group sends nothing on a share. The old
   wording, "score-only shares never reach the provider", was true of the raw share and
   false of `say`, which is why it is gone.
   **And since 2026-09-04 an ADDRESSED message also carries the day's SOURCE** — its `kind`,
@@ -899,7 +988,11 @@ there is one region knob and not two.
   missing `BOT_TABLE`. What that does not cover is WhatsApp itself.
 - Baileys is pinned to `7.0.0-rc14` (its `prepare` build script and protobufjs' postinstall
   are declined in `pnpm-workspace.yaml`; the package ships prebuilt). `sharp` arrives as
-  its non-optional peer.
+  its non-optional peer; `link-preview-js` is its optional one, installed since 2026-09-14
+  for the preview card (3.x: Baileys' `getUrlInfo` is written against `^3`, and 4/5 are
+  out of that range).
+- **No group config names its `whippinGroup` yet** (2026-09-14): the invite line appears
+  once one is pushed to SSM and a deploy promotes it.
 - Proactive new-leader lines are implemented behind `leaderAnnouncements` (default off).
 - The eval fixture exists as a SCRIPT (#277, `pnpm bot:fixture`) and is NOT yet rated: the
   ratings are the user's, and the measurement of v4 against V4.1 waits on them. Not built:
@@ -911,6 +1004,15 @@ there is one region knob and not two.
   "chat.perUserPerDay"`). It must be pulled, edited and pushed without the field before the
   deploy that follows this change, or the task and the podium Lambda refuse to load the
   group at all.
+- **An existing group's diary still holds scores until the first nightly rewrite after
+  the v13 deploy** (2026-09-14): the beta diary read "le 13, 43, sa pire journée des
+  quatorze", and a podium writer shown it copies the comparison, which the judge then
+  drops. The podium of the deploy day (22:30 Paris) runs BEFORE that night's rewrite
+  (22:20 ET), so its comments may come out bare; the second round and the 160-character
+  cap are what keep it from doing so, and the next night's diary is clean (measured: three
+  rewrites of the live diary, every score and the "je réponds à un seul nom" rule gone).
+  Not verified end to end: the podium probes ran out of DeepSeek balance mid-measurement
+  (see the PR).
 - **The model is `deepseek-flash`** (#277 step 5, 2026-09-10): DeepSeek's name for the
   CURRENT Flash model, which is V4.1-Flash as of that day's release. It is deliberately the
   UNVERSIONED name — a bot that talks to a group wants the model DeepSeek is serving, and

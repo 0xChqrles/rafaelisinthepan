@@ -98,7 +98,7 @@ describe('podium job (#236)', () => {
     const writer = requests.find((r) => r.system !== FACT_JUDGE_SYSTEM)!;
     const content = (writer.messages[0] as { content: string }).content;
     expect(content).toContain('"score":3');
-    expect(content).toContain('"habit":{"name":"Gab","daysPlayed":1');
+    expect(content).toContain('"players":[{"name":"Gab","daysPlayed":1,');
     expect(content).toContain('Gab vise toujours trop haut.');
     expect(content).toContain('Gab: je vise un 3');
     // Stores that refuse cost the background, never the podium.
@@ -247,5 +247,55 @@ describe('the morning reminder (user-decided 2026-09-05)', () => {
     const plain = deps({ daySource: day(null) });
     await runReminderJob({ group: GROUP, kind: 'reminder' }, plain.deps);
     expect((plain.sent[0] as { text: string }).text).toBe('Le Whippin du jour est en ligne. Podium à 22h30.\nhttps://whippin.ai');
+  });
+
+  describe('the Whippin group invite (user-decided 2026-09-14)', () => {
+    const WHIPPIN_GROUP = 'abcdefghij234567';
+    const inviting = new GroupRegistry([
+      parseGroupConfig('g.json', {
+        id: GROUP,
+        name: 'g',
+        language: 'fr',
+        enabled: true,
+        timezone: 'Europe/Paris', podium: { enabled: true, time: '22:30' },
+        reminder: { enabled: true, time: '09:00' },
+        whippinGroup: WHIPPIN_GROUP,
+        chat: { enabled: false },
+      }),
+    ]);
+    const reader = (answer: boolean | null) => {
+      const asked: string[] = [];
+      return { asked, reader: { stands: async (id: string) => (asked.push(id), answer) } };
+    };
+
+    it('carries the link — a new `v` each day — and names it as the one the preview card belongs to', async () => {
+      const { asked, reader: whippinGroups } = reader(true);
+      const { sent, deps: d } = deps({ groups: inviting, whippinGroups });
+      const today = dayNumber(activeDate(new Date('2026-09-05T07:00:00Z')));
+      await runReminderJob({ group: GROUP, kind: 'reminder' }, d);
+      const invite = `https://whippin.ai/g/${WHIPPIN_GROUP}?v=${today}`;
+      expect(asked).toEqual([WHIPPIN_GROUP]);
+      expect(sent[0]).toMatchObject({ id: `reminder:${GROUP}:${today}`, preview: invite });
+      expect((sent[0] as { text: string }).text).toBe(
+        `Le Whippin du jour est en ligne, c'est une chanson aujourd'hui. Podium à 22h30.\nhttps://whippin.ai\nRejoignez le groupe sur Whippin : ${invite}`,
+      );
+    });
+
+    it('never links a group that is gone, nor one it could not read — and the reminder still goes out', async () => {
+      for (const answer of [false, null]) {
+        const { sent, deps: d } = deps({ groups: inviting, whippinGroups: reader(answer).reader });
+        expect((await runReminderJob({ group: GROUP, kind: 'reminder' }, d)).outcome).toBe('posted');
+        expect(sent[0]).not.toHaveProperty('preview');
+        expect((sent[0] as { text: string }).text).toBe("Le Whippin du jour est en ligne, c'est une chanson aujourd'hui. Podium à 22h30.\nhttps://whippin.ai");
+      }
+    });
+
+    it('asks nothing for a group that names no Whippin group', async () => {
+      const { asked, reader: whippinGroups } = reader(true);
+      const { sent, deps: d } = deps({ whippinGroups });
+      await runReminderJob({ group: GROUP, kind: 'reminder' }, d);
+      expect(asked).toEqual([]);
+      expect(sent[0]).not.toHaveProperty('preview');
+    });
   });
 });

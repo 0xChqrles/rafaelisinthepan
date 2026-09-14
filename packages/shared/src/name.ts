@@ -27,19 +27,37 @@
 // alone. One function owns the rule; there is no second spelling of it to drift.
 
 export const NAME_MAX_LENGTH = 16;
+// A GROUP's name (#271) wears the same charset at a longer cap (user-decided
+// 2026-09-14: "the group max length should be 20, not 16") — a group is named for
+// several people, and "Les_copains_du_lundi" is a group where it is not a handle.
+export const GROUP_NAME_MAX_LENGTH = 20;
 
 // The ligatures NFKD does not decompose, expanded by hand (slug.ts's LIGATURES, with
 // the capitals a display form can carry).
 const LIGATURES: Record<string, string> = { œ: 'oe', Œ: 'OE', æ: 'ae', Æ: 'AE' };
 
-export function sanitizeName(raw: string): string {
+function sanitizeTo(raw: string, max: number): string {
   let name = raw;
   for (const [lig, repl] of Object.entries(LIGATURES)) name = name.split(lig).join(repl);
   return name
     .normalize('NFKD')
     .replace(/\p{M}/gu, '') // drop combining marks — `é` keeps its `e`
     .replace(/[^A-Za-z0-9]/gu, '_')
-    .slice(0, NAME_MAX_LENGTH);
+    .slice(0, max);
+}
+
+export function sanitizeName(raw: string): string {
+  return sanitizeTo(raw, NAME_MAX_LENGTH);
+}
+
+// The group name: ONE pipeline (above), the longer cap. The web sanitizes what is typed,
+// the backend refuses what is not already sanitized — the player name's own contract.
+export function sanitizeGroupName(raw: string): string {
+  return sanitizeTo(raw, GROUP_NAME_MAX_LENGTH);
+}
+
+export function isValidGroupName(name: string): boolean {
+  return sanitizeGroupName(name) === name;
 }
 
 // A name is valid exactly when the sanitizer has nothing to do to it. The cap rides

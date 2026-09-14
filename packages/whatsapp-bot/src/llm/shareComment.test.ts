@@ -64,22 +64,45 @@ function provider(
 }
 
 describe('the spoken acknowledgement of a share is commentary from the numbers (user-decided 2026-09-07)', () => {
-  it('hands the model the FACTS of the day and the habit, reasons, and returns the line cleaned', async () => {
+  it('hands the model the FACTS of the day and the form, and returns the line cleaned', async () => {
     const p = provider([{ text: '  **Sept**,\n derrière Zou.  ' }]);
     expect(await generateShareComment(p.provider, group, facts, depsFor(await store()), log)).toBe('Sept, derrière Zou.');
     // The user turn is the facts as JSON — the exact score, the board with this share
-    // placed, who is ahead, the habit — and no band word anywhere.
+    // placed, who is above, where Gab usually lands — and no band word anywhere.
     const sent = JSON.parse(p.written()[0].messages[0].content);
     expect(sent.score).toBe(7);
-    expect(sent.today).toMatchObject({ postedSoFar: 2, firstOfDay: false, position: 2, ahead: ['Zou'], behind: [] });
-    expect(sent.habit).toMatchObject({ daysPlayed: 1, averageScore: 12, averagePosition: 2 });
-    expect(sent.others[0]).toMatchObject({ name: 'Zou', averageScore: 9 });
+    expect(sent.today).toMatchObject({ posted: 2, first: false, place: 2, above: ['Zou'], below: [], beats: '0 of 1', othersMedian: 5 });
+    // Yesterday is a PLACE and a record against Zou, never yesterday's 12 (user-decided
+    // 2026-09-14: a score says nothing against another day's).
+    expect(sent.form).toEqual({
+      name: 'Gab',
+      daysPlayed: 1,
+      usuallyBeats: 'none',
+      recent: [{ date: '2026-09-03', place: 2, of: 2 }],
+      rivals: [{ name: 'Zou', together: 1, youBeatThem: 0, theyBeatYou: 1, tied: 0, theyUsuallyBeat: 'all' }],
+    });
     expect(JSON.stringify(sent)).not.toMatch(/strong|brilliant|verdict/);
     // The writer phrases the facts with its thinking off; the judge reasons over them.
     expect(p.written()[0].effort).toBe('none');
     expect(p.written()[0].system).toContain('On se chambre.');
     const judgeCall = p.calls.find((c) => c.system === FACT_JUDGE_SYSTEM)!;
     expect(judgeCall.messages[0].content).toContain('"score":7');
+  });
+
+  it('shows the writer AND the judge what the player wrote with the share, beside the facts', async () => {
+    const p = provider([{ text: 'Voilà, gentil : sept, juste derrière Zou.' }]);
+    const deps = { ...depsFor(await store()), said: 'fais un commentaire gentil' };
+    expect(await generateShareComment(p.provider, group, facts, deps, log)).toBe('Voilà, gentil : sept, juste derrière Zou.');
+    expect(JSON.parse(p.written()[0].messages[0].content)).toMatchObject({ score: 7, said: 'fais un commentaire gentil' });
+    expect(p.written()[0].system).toContain('"said"');
+    expect(p.calls.find((c) => c.system === FACT_JUDGE_SYSTEM)!.messages[0].content).toContain('fais un commentaire gentil');
+    // A Word share carries it the same way; without it, there is no such field at all.
+    const word = provider([{ text: 'Vingt-six.' }]);
+    await generateShareComment(word.provider, group, { mode: 'word', player: 'Gab', claims: 26 }, { ...depsFor(await store()), said: 'dur' }, log);
+    expect(JSON.parse(word.written()[0].messages[0].content)).toEqual({ player: 'Gab', found: 26, said: 'dur' });
+    const plain = provider([{ text: 'Sept.' }]);
+    await generateShareComment(plain.provider, group, facts, depsFor(await store()), log);
+    expect(JSON.parse(plain.written()[0].messages[0].content)).not.toHaveProperty('said');
   });
 
   it('the emoji stands in when the facts cannot be read, or the share is not on the board', async () => {
@@ -107,15 +130,19 @@ describe('the spoken acknowledgement of a share is commentary from the numbers (
     expect(await generateShareComment(long.provider, group, facts, depsFor(await store()), log)).toBeNull();
   });
 
-  it('THE JUDGE reads each line against the facts: the first kept is posted, none kept is the emoji, no verdict posts the first', async () => {
+  it('THE JUDGE reads each line against the facts: the first kept is posted, none kept is the emoji, and so is no verdict at all', async () => {
     const picky = provider([{ text: 'Zou est derrière toi.' }, { text: 'Sept, derrière Zou.' }], (line) => ({ text: line === 'Sept, derrière Zou.' ? '1' : '0' }));
     expect(await generateShareComment(picky.provider, group, facts, depsFor(await store()), log)).toBe('Sept, derrière Zou.');
     expect(picky.judged).toHaveLength(3);
     const strict = provider([{ text: 'Zou est derrière toi.' }], () => ({ text: '0' }));
     expect(await generateShareComment(strict.provider, group, facts, depsFor(await store()), log)).toBeNull();
     expect(strict.written()).toHaveLength(6); // two rounds, and no third
+    // A judge that never answered posts NOTHING here (2026-09-14): the emoji stands in for a
+    // share anyway, where the podium has nothing to fall back on and posts the first.
     const down = provider([{ text: 'Sept, derrière Zou.' }], () => new LlmUnavailable('503'));
-    expect(await generateShareComment(down.provider, group, facts, depsFor(await store()), log)).toBe('Sept, derrière Zou.');
+    expect(await generateShareComment(down.provider, group, facts, depsFor(await store()), log)).toBeNull();
+    const cut = provider([{ text: 'Sept, derrière Zou.' }], () => ({ text: '', finish: 'length' as const }));
+    expect(await generateShareComment(cut.provider, group, facts, depsFor(await store()), log)).toBeNull();
   });
 
   it('writes ONE more round when the judge kept nothing, with the judge\'s reasons in front of the writer', async () => {
@@ -132,10 +159,18 @@ describe('the spoken acknowledgement of a share is commentary from the numbers (
   });
 
   it('spends the daily ceiling per call — candidates and verdicts — and none at all is the emoji', async () => {
+    // The candidates take their units first (in parallel), then the verdicts: four units
+    // are three candidates and one verdict, posted. One unit writes a candidate nobody can
+    // check, and an unchecked line is not posted (the emoji is).
     let units = 0;
     const metered = provider([{ text: 'Sept, derrière Zou.' }]);
-    expect(await generateShareComment(metered.provider, group, facts, depsFor(await store()), log, async () => (units += 1) <= 1)).toBe('Sept, derrière Zou.');
-    expect(metered.written()).toHaveLength(1);
+    expect(await generateShareComment(metered.provider, group, facts, depsFor(await store()), log, async () => (units += 1) <= 4)).toBe('Sept, derrière Zou.');
+    expect(metered.written()).toHaveLength(3);
+    expect(metered.judged).toHaveLength(1);
+    let one = 0;
+    const unchecked = provider([{ text: 'Sept, derrière Zou.' }]);
+    expect(await generateShareComment(unchecked.provider, group, facts, depsFor(await store()), log, async () => (one += 1) <= 1)).toBeNull();
+    expect(unchecked.written()).toHaveLength(1);
     const closed = provider([{ text: 'Sept, derrière Zou.' }]);
     expect(await generateShareComment(closed.provider, group, facts, depsFor(await store()), log, async () => false)).toBeNull();
     expect(closed.calls).toHaveLength(0);

@@ -136,6 +136,22 @@ describe('share ingestion (#236)', () => {
     });
   });
 
+  it('hands the line what the player wrote around the share, when the caller has it — and nothing when it has not', async () => {
+    // "fais un commentaire gentil" came in the same message as a 64; the line was never shown
+    // it (2026-09-14). The caller passes what it remembered, only where the chat is on.
+    const comment = vi.fn(async () => 'Voilà, gentil.');
+    const { ingest } = harness(registry({ acknowledge: 'say' }), { comment });
+    await ingest(message(), 'fais un commentaire gentil');
+    expect(comment).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: GROUP }),
+      expect.objectContaining({ score: 7 }),
+      expect.objectContaining({ said: 'fais un commentaire gentil' }),
+    );
+    const bare = vi.fn(async () => 'Sept.');
+    await harness(registry({ acknowledge: 'say' }), { comment: bare }).ingest(message());
+    expect(bare).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.not.objectContaining({ said: expect.anything() }));
+  });
+
   it('falls back to the emoji when the line cannot be written — never silence', async () => {
     // The share is already durable; an unavailable model costs the words, not the
     // acknowledgement. Both shapes of "no line" behave the same.

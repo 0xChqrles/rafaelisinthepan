@@ -100,12 +100,13 @@
       screens/GroupInvite.tsx  the #271 group invite link's landing (/join/g/<groupId>): JOIN
                               with this device's token, then the board or the game. The link
                               members SHARE is /g/<groupId>, served by the backend for its preview
-      components/ScopePager.tsx  WHICH BOARD (#271): the pager of scopes — every group, NEW
-                              GROUP, GLOBAL — swiped on native scroll-snap, brackets on
-                              the middle page, dots under it
+      components/ScopePager.tsx  WHICH BOARD (#271): the pager of scopes — every group, then
+                              GLOBAL, one neighbour peeking in at each edge — swiped on
+                              native scroll-snap, brackets on the middle page, dots under it
       components/GroupScreen.tsx  a group's own screen (#271): members (the owner's ✕),
                               INVITE, LEAVE — everything there is to do with a group
-      components/GroupCreate.tsx  naming a new group (#271): one field, one call
+      components/GroupCreate.tsx  naming a new group (#271): the GAME'S PROMPT alone on the
+                              screen, the name inked in on CREATE (the solve's beat)
       components/ConfirmScreen.tsx  the app's CONFIRMATION surface (#271): the error screen's
                               shape in the plain voice, the act as the quiet danger control
                               over CANCEL; the leave's successor picker rides it
@@ -341,9 +342,30 @@ These are decided and verified against the code. Treat them as load-bearing.
     measured 4px at 38, 1px at 32 and touching at 30. `.hk-dot` states the GAP and derives
     its offset (`--hk-icon` / `--hk-gap` / `--hk-size`); the 340px step-down now only makes
     the dot smaller, where it used to restate the position.
+  - **THE BUTTONS ARE ONE SHAPE IN ONE COLOUR AT THREE STRENGTHS (user-specified
+    2026-09-14, the FIFTH design, superseding the keycaps of the same day, the cobalt slab
+    below and the device card before it: "something flat with a colored border, the same
+    color in the background but with less opacity, and the text in the border color…
+    derive the other buttons from it, and avoid heavy UI elements that complexify the
+    screen, such as underline or box shadow").** `index.css` "BUTTONS, FIFTH DESIGN": a
+    1px border in `--btn`, a wash of `--btn` at `--wash` (14%) behind it, the label in
+    `--btn`, sharp (2px), 13px/700 mono tracked, 40px of air a side, 48px tall. PRIMARY
+    `--btn` = the accent (`.btn-primary`, `.mix-btn` in the deploy geometry — full width,
+    430 max, 52 tall); SECONDARY = `--fg` at a 45% border and a 6% wash; DANGER
+    (`.btn-danger`) = the danger ink. Hover deepens the wash, a press deepens it more —
+    a press is a STATE, nothing travels, no shadow, no underline. **THE WORD**: a
+    secondary directly under a primary (`.btn-primary + .btn-secondary`, `.mix-btn +
+    .btn-secondary`) and every quiet act (`.link-quiet-btn`, `.link-danger`) is the label
+    alone at 0.7 strength, lifted to 1 on hover — nothing drawn that is not the word. The
+    result row's TOMORROW beside SHARE (an equal, not an answer) and the COMPACT
+    secondary (`.board-chip` EDIT, `.profile-clear`, `.device-signout`, `.device-retry`,
+    40px tall) are the shape. SHARE is the primary on both result screens; the paired row
+    narrows its air to 12px so both fit a phone. No other button dress remains.
+    *(The two paragraphs below are the designs it replaced, kept for their reasoning.)*
   - **THE BUTTONS ARE KEYCAPS WITH A HARD PRINT (user-decided 2026-09-14: "we should
     completely update the buttons design, they're really ugly and boring" — the THIRD
-    design, superseding the flat cobalt slab below and the device card before it).** One
+    design, superseding the flat cobalt slab below and the device card before it;
+    SUPERSEDED the same day by the fifth design above).** One
     geometry, three caps (`index.css`, "BUTTONS, THIRD DESIGN"): a sharp tile with a 4px
     hard print offset down-right — the 1-bit drop shadow the app's sprites already carry —
     and a press pushes the cap onto its print (the cap travels 4px, the print collapses:
@@ -1851,13 +1873,27 @@ it to the local store — see `packages/backend/AGENTS.md`).
   HEAD is a PAGER (`ScopePager`, user-decided 2026-09-14 — the THIRD design of this
   control, after a strip of named tabs and a chip opening a wheel under the header's own
   wheel: "come up with a totally new leaderboard control design"): the SCOPES — every
-  group, NEW GROUP, GLOBAL (the untrusted top 50) — are pages on one horizontal line on
-  native scroll-snap (60% wide, the neighbours peeking at a quarter strength, the outer 8%
-  fading), the middle page wearing the app's CORNER BRACKETS and a row of DOTS under it
-  (the active one long). A swipe, a tap on a neighbour or a dot, and the arrow keys turn
-  it; the dress follows the nearest page LIVE, the caller is told once the scroll SETTLES
-  (90ms quiet), so one swipe fetches one board. A tap on the middle page goes INTO it —
-  the group's own screen, the create screen on NEW GROUP; GLOBAL opens nothing. A group
+  group, then GLOBAL (the untrusted top 50); with no group at all, ONE page that says so
+  (`boardEmptyGroups`, a state, its body carrying CREATE GROUP) — are pages on one
+  horizontal line on
+  native scroll-snap, EACH PAGE THE LINE LESS A 44px PEEK AT EACH END, ONE PAGE A SWIPE
+  (`scroll-snap-stop`), a neighbour's name LEANING against its page's inner edge (`--lean`,
+  written off the scroll position, so a swipe carries it from the edge into the middle): the
+  middle name stands alone and exactly ONE neighbour peeks in per side at half strength, its
+  nearest letters showing, the outer part fading, whatever the names' lengths (user-reported
+  2026-09-14, twice: a short neighbour centred in a 60% page never showed — "it might not be
+  obvious that you can swipe" — and pages cut to their names' widths packed the neighbours
+  against the brackets — "they should only be on the side, and you should see part of one
+  neighbour per side maximum"); only the middle page shows its caption. The middle page wears the app's
+  CORNER BRACKETS and a row of DOTS sits under it (the active one long). A swipe, a tap on
+  a neighbour or a dot, and the arrow keys turn it (a dot or a key GLIDES, a cut under
+  reduced motion); the dress follows the nearest page LIVE, the caller is told once the
+  scroll SETTLES (90ms quiet), so a glide across three groups fetches one board. A tap on
+  the middle page goes INTO it —
+  the group's own screen; GLOBAL and the no-group page open nothing. **CREATING is the
+  PLUS after the last dot** (`.scope-add`, `assets/icons/plus.svg`; user-decided
+  2026-09-14 — a NEW GROUP page "is the design of the group title, but it's a button to
+  create a group, feels like bad UX"), and CREATE GROUP is said in full (`groupCreate`). A group
   has THREE boards under the pager as ONE FRAMED SWITCH of three EQUAL cells (`.period-tabs`;
   user-reported: bare labels "float in the screen with no purpose, no affordance"): TODAY
   (the live one: finished, IN PROGRESS, NOT PLAYED YET — TODAY, not DAY, user-decided
@@ -1889,11 +1925,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `groupLimit`, `failedGroup`). **THE GROUP'S OWN SCREEN (`GroupScreen`, user-decided
   2026-09-14: "managing the group should have its own screen")** is a full-screen dialog
   in the selection's shell — the way back and the name in the header, the MEMBERS as the
-  board's own rows (dressed by `readGroup`, the owner tagged), the owner's `✕` at every
+  board's plain rows (`.board-row.member`: no rank column, never the WAITING row's dashes —
+  user-reported 2026-09-14; the successor picker wears the same rows), dressed by
+  `readGroup`, the owner tagged, the owner's `✕` at every
   other row's end (`.board-remove`), INVITE as the primary cap, LEAVE as the quiet danger
-  word — there is no MANAGE toggle, the screen is the management. **NAMING A GROUP is its
-  own screen too (`GroupCreate`)**: one field in the middle, CREATE under it (the inline
-  form under the tabs was "really ugly"). BOTH DESTRUCTIVE ACTS CONFIRM ON A FULL-SCREEN
+  word — there is no MANAGE toggle, the screen is the management. **NAMING A GROUP is
+  THE GAME'S PROMPT (`GroupCreate`, user-decided 2026-09-14: "an act of creation that
+  should be satisfying — reuse the game prompt input")**: `WordInput`'s dress — the
+  cobalt `>`, the name in the pixel face, the blinking cursor — alone in the middle of
+  its own screen over CREATE GROUP, on an EDITABLE field of its own (a name takes digits
+  and underscores the on-screen keyboard has no keys for, so the phone's keyboard opens;
+  every keystroke lands through `sanitizeGroupName`, cap 20). On CREATE the line gives
+  way to the name INKED IN — the solve's cobalt pixel word with the hit's shake, held
+  `INKED_MS` (1100ms) — and the screen folds itself onto the board already on the new
+  group; an empty name shakes the line, the invalid guess's own answer. BOTH DESTRUCTIVE ACTS CONFIRM ON A FULL-SCREEN
   MODAL (`ConfirmScreen`, user-decided 2026-09-14 — "for such an important action, we
   actually need a fullscreen modal", replacing the two-tap word swap `LEAVE?` / `REMOVE?`):
   the member's face or the group's name over the act's title, one sentence, the act as the

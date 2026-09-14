@@ -672,7 +672,8 @@ const STRINGS = {
   groupNew: { en: 'NEW GROUP', fr: 'NOUVEAU GROUPE' },
   groupName: { en: 'Group name', fr: 'Nom du groupe' },
   groupNamePlaceholder: { en: 'NAME', fr: 'NOM' },
-  groupCreate: { en: 'CREATE', fr: 'CRÉER' },
+  // Explicit (user-decided 2026-09-14: "CREATE is not very explicit").
+  groupCreate: { en: 'CREATE GROUP', fr: 'CRÉER UN GROUPE' },
   groupMembers: { en: 'Members', fr: 'Membres' },
   groupJoin: { en: 'JOIN', fr: 'REJOINDRE' },
   // The landing's confirmation: the group's name and marks above this line, the board and

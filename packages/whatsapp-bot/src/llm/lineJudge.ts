@@ -19,13 +19,16 @@ import type { Log } from '../log';
 import { LlmUnavailable, type LlmProvider } from './types';
 
 // THE FACT CHECK (user-decided 2026-09-07): the share commentary is written FROM numbers —
-// the score, the day's board, the player's habit — so what its judge asks is not whether
-// the line is dry but whether it is TRUE to those numbers, and worth saying. A line that
-// misplaces somebody or invents an average is worse than no line: it is the bot deciding
-// a rank, which is the one thing the boundary forbids.
+// the score, the day's board, where the player usually lands — so what its judge asks is
+// not whether the line is dry but whether it is TRUE to those numbers, and worth saying. A
+// line that misplaces somebody or invents a record is worse than no line: it is the bot
+// deciding a rank, which is the one thing the boundary forbids. AND A SCORE HELD AGAINST
+// ANOTHER DAY'S IS DROPPED EVEN WHEN IT IS TRUE (user-decided 2026-09-14): what a day costs
+// depends on its sentence, so it says nothing — and the facts no longer carry one, but the
+// diary and the day's conversation a podium line is shown still do.
 export const FACT_JUDGE_SYSTEM = `You check a one-line comment a WhatsApp bot is about to post in a group of friends who play a daily word game, against the FACTS the comment was written from — and, when one is given after them, the day's conversation and the bot's diary of the group. The facts are the truth; the comment may only phrase them. A callback to something said in the conversation or noted in the diary is supported when it is there; a claim about a person that is in neither is invented.
 
-Post it only if all of this holds: every number, name, position, comparison and claim in it is supported by the facts exactly (a player said to be ahead is ahead in the facts; an average said is the average given; "usually" is backed by the habit given); it says something the facts support that a friend in the group would find worth reading — how the score sits against a typical day, against who has posted, against this player's habit — rather than filler — unless the facts hold nothing notable (the usual leader leading, a score at a player's usual level with nobody passed), in which case a plain, short, accurate acknowledgement is exactly right and is kept; it is one or two short sentences. How it sounds is not yours to judge: boasting, rudeness, sulking, tenderness and self-congratulation are all in character and none of them is a reason to drop a line. Drop it for any invented or wrong number, any claim the facts do not back (a weekday, a mood, a reason, a person not in the facts), or nonsense. Read the facts' own "reading" note first: the habit and the recent days cover the window BEFORE today, so today's score beyond habit.best or habit.worst IS the player's best or worst of the window, today included, and a ∞ today after one in the window IS the second. Rounding (26 for 26.3), a paraphrase ("la quinzaine" for 14 days, "la moyenne d'un jour classique" for the typical median), and an ordinal for a position are NOT errors: judge the substance, not the wording.
+Post it only if all of this holds: every number, name, place, comparison and claim in it is supported by the facts exactly (a player said to be above is above in the facts; a record said is the record given; "usually" is backed by the form given); it says something the facts support that a friend in the group would find worth reading — where the score lands among the day's other players, how the others did, how that compares with where this player usually lands among them — rather than filler — unless the facts hold nothing notable (the usual leader leading, a player landing where they usually land), in which case a plain, short, accurate acknowledgement is exactly right and is kept; it is one or two short sentences. Drop it when it compares the score — the number of tries — with the number of tries of ANOTHER day (a past score, an average score, a best or a worst, what a day usually costs), even a true one, even one taken from the conversation or the diary. Comparing where the player lands today (their place, who they beat) with where they usually land (how many they usually beat, their recent places, their record against somebody) is what the line is for, and is kept. How it sounds is not yours to judge: boasting, rudeness, sulking, tenderness and self-congratulation are all in character and none of them is a reason to drop a line. Drop it for any invented or wrong number, any claim the facts do not back (a weekday, a mood, a reason, a person not in the facts), a line that mixes two people up (the bot itself included: it keeps the scores, it plays against nobody), a sentence that is not correct in its language (a wrong verb form, a broken sentence), or nonsense. Read the facts' own "reading" note first: the form covers the days BEFORE today and never includes it. Rounding, a paraphrase ("la quinzaine" for 14 days, "trois sur quatre" for 3 in 4, "presque tout le monde" for 9 in 10), and an ordinal for a place are NOT errors: judge the substance, not the wording.
 
 Answer the digit first — 1 to post, 0 to drop — then, after a colon, the reason in a few words.`;
 
@@ -59,13 +62,16 @@ export function parseVerdict(text: string): Judgement | null {
   return { verdict: text[at] === '1' ? 'keep' : 'drop', ...(reason ? { reason } : {}) };
 }
 
-// Sized to the measurement above: a verdict at `low` is a few hundred reasoning tokens and
-// about 4s, with a tail to 12s; the budget refuses nothing it needs, and the cut sits above
-// the tail. `unknown` is a verdict that never arrived — a timeout, an outage, a truncated
-// answer — and is told apart from `drop` because it says nothing about the line.
-const MAX_TOKENS = 3000;
+// Sized to the measurement: a verdict at `low` was a few hundred reasoning tokens and
+// about 4s over the band-word facts; over the form facts (2026-09-14: rivals and records
+// for everybody on the board) the median verdict is ~1100 output tokens in 6s, p90 11s,
+// and 17% of them ran into a 3000-token budget at ~15s and came back as no verdict at
+// all. 4500 is what the timeout can hold at the measured ~200 tokens a second. `unknown`
+// is a verdict that never arrived — a timeout, an outage, a truncated answer — and is
+// told apart from `drop` because it says nothing about the line.
+const MAX_TOKENS = 4500;
 // Exported: the podium's round budget is a writer call plus one of these (`ROUND_MS`).
-export const JUDGE_TIMEOUT_MS = 20_000;
+export const JUDGE_TIMEOUT_MS = 25_000;
 const TIMEOUT_MS = JUDGE_TIMEOUT_MS;
 
 export async function judgeLine(
@@ -110,15 +116,18 @@ export interface Choice {
 
 // The candidates are judged in PARALLEL and the first kept one, in candidate order, is
 // posted. All dropped = nothing posted, by design. All UNKNOWN — the judge could not be
-// reached at all — posts the first candidate unjudged, logged: an outage of the judge must
-// not blank every podium for as long as it lasts, and the candidate passed every check the
-// bot ran before the judge existed.
+// reached at all — is the caller's call (`unjudged`): the PODIUM posts the first candidate
+// unjudged, logged, because an outage of the judge must not blank every podium for as
+// long as it lasts; the SHARE line posts nothing, because the emoji stands in for it
+// anyway and a line nobody checked is how "un gars qui me bat une fois sur deux" (the bot
+// confusing itself with a rival) reached a group (2026-09-14).
 export async function chooseLine(
   provider: LlmProvider,
   brief: JudgeBrief,
   candidates: readonly string[],
   log: Log,
   takeCall: () => Promise<boolean> = async () => true,
+  unjudged: 'post-first' | 'post-none' = 'post-first',
 ): Promise<Choice> {
   if (candidates.length === 0) return { line: null, dropped: 0, reasons: [] };
   const judgements = await Promise.all(
@@ -128,8 +137,9 @@ export async function chooseLine(
   const kept = candidates.find((_, i) => verdicts[i] === 'keep');
   if (kept) return { line: kept, dropped: 0, reasons: [] };
   if (verdicts.every((v) => v === 'unknown')) {
-    log.warn({ event: 'line.unjudged', candidates: candidates.length }, 'no verdict came back; posting the first candidate');
-    return { line: candidates[0], dropped: 0, reasons: [] };
+    const post = unjudged === 'post-first';
+    log.warn({ event: 'line.unjudged', candidates: candidates.length, posted: post }, post ? 'no verdict came back; posting the first candidate' : 'no verdict came back; posting nothing');
+    return { line: post ? candidates[0] : null, dropped: 0, reasons: [] };
   }
   const reasons = judgements.flatMap((j) => (j.verdict === 'drop' && j.reason ? [j.reason] : []));
   log.info({ event: 'line.all_dropped', candidates: candidates.length, verdicts, reasons }, 'the judge kept none of them');

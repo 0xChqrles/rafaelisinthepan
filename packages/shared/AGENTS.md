@@ -73,7 +73,9 @@
   to validate and moderate — a fork would accept different strings for one drawing
   (root `AGENTS.md`, Player profile).
 - `src/name.ts` is the ONE definition of the #188 display-name charset (user-decided
-  2026-08-19: "the server should apply the same rules"). `sanitizeName` is what the web
+  2026-08-19: "the server should apply the same rules") — and of the #271 GROUP name,
+  the same pipeline at `GROUP_NAME_MAX_LENGTH` = 20 (`sanitizeGroupName` /
+  `isValidGroupName`, user-decided 2026-09-14). `sanitizeName` is what the web
   writes through on every path — the initial read, keystrokes, a composition's commit,
   the save body — and `isValidName` is simply "the sanitizer leaves it alone", which is
   what the backend refuses a write on. Stating the rule twice would let the editor
