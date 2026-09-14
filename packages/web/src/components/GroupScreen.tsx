@@ -92,11 +92,10 @@ export default function GroupScreen({
             return (
               <li
                 key={id}
-                className={`board-row waiting${me ? ' me' : ''}${owner && !me ? ' managed' : ''}`}
+                className={`board-row member${me ? ' me' : ''}`}
                 style={{ '--i': index } as CSSProperties}
                 aria-current={me || undefined}
               >
-                <span className="board-norank" aria-hidden="true" />
                 <Avatar avatar={player.avatar ?? defaultAvatar(id)} size={28} />
                 <span className="board-ident">
                   <span className={`board-name${player.name ? '' : ' anon'}`}>{player.name || anonName(id)}</span>

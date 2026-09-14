@@ -100,9 +100,9 @@
       screens/GroupInvite.tsx  the #271 group invite link's landing (/join/g/<groupId>): JOIN
                               with this device's token, then the board or the game. The link
                               members SHARE is /g/<groupId>, served by the backend for its preview
-      components/ScopePager.tsx  WHICH BOARD (#271): the pager of scopes — every group, NEW
-                              GROUP, GLOBAL — swiped on native scroll-snap, brackets on
-                              the middle page, dots under it
+      components/ScopePager.tsx  WHICH BOARD (#271): the pager of scopes — every group, then
+                              GLOBAL, one neighbour peeking in at each edge — swiped on
+                              native scroll-snap, brackets on the middle page, dots under it
       components/GroupScreen.tsx  a group's own screen (#271): members (the owner's ✕),
                               INVITE, LEAVE — everything there is to do with a group
       components/GroupCreate.tsx  naming a new group (#271): the GAME'S PROMPT alone on the
@@ -1876,11 +1876,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
   group, then GLOBAL (the untrusted top 50); with no group at all, ONE page that says so
   (`boardEmptyGroups`, a state, its body carrying CREATE GROUP) — are pages on one
   horizontal line on
-  native scroll-snap (60% wide, the neighbours peeking at a quarter strength, the outer 8%
-  fading), the middle page wearing the app's CORNER BRACKETS and a row of DOTS under it
-  (the active one long). A swipe, a tap on a neighbour or a dot, and the arrow keys turn
-  it; the dress follows the nearest page LIVE, the caller is told once the scroll SETTLES
-  (90ms quiet), so one swipe fetches one board. A tap on the middle page goes INTO it —
+  native scroll-snap, EACH PAGE THE LINE LESS A 44px PEEK AT EACH END, ONE PAGE A SWIPE
+  (`scroll-snap-stop`), a neighbour's name LEANING against its page's inner edge (`--lean`,
+  written off the scroll position, so a swipe carries it from the edge into the middle): the
+  middle name stands alone and exactly ONE neighbour peeks in per side at half strength, its
+  nearest letters showing, the outer part fading, whatever the names' lengths (user-reported
+  2026-09-14, twice: a short neighbour centred in a 60% page never showed — "it might not be
+  obvious that you can swipe" — and pages cut to their names' widths packed the neighbours
+  against the brackets — "they should only be on the side, and you should see part of one
+  neighbour per side maximum"); only the middle page shows its caption. The middle page wears the app's
+  CORNER BRACKETS and a row of DOTS sits under it (the active one long). A swipe, a tap on
+  a neighbour or a dot, and the arrow keys turn it (a dot or a key GLIDES, a cut under
+  reduced motion); the dress follows the nearest page LIVE, the caller is told once the
+  scroll SETTLES (90ms quiet), so a glide across three groups fetches one board. A tap on
+  the middle page goes INTO it —
   the group's own screen; GLOBAL and the no-group page open nothing. **CREATING is the
   PLUS after the last dot** (`.scope-add`, `assets/icons/plus.svg`; user-decided
   2026-09-14 — a NEW GROUP page "is the design of the group title, but it's a button to
@@ -1916,7 +1925,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `groupLimit`, `failedGroup`). **THE GROUP'S OWN SCREEN (`GroupScreen`, user-decided
   2026-09-14: "managing the group should have its own screen")** is a full-screen dialog
   in the selection's shell — the way back and the name in the header, the MEMBERS as the
-  board's own rows (dressed by `readGroup`, the owner tagged), the owner's `✕` at every
+  board's plain rows (`.board-row.member`: no rank column, never the WAITING row's dashes —
+  user-reported 2026-09-14; the successor picker wears the same rows), dressed by
+  `readGroup`, the owner tagged, the owner's `✕` at every
   other row's end (`.board-remove`), INVITE as the primary cap, LEAVE as the quiet danger
   word — there is no MANAGE toggle, the screen is the management. **NAMING A GROUP is
   THE GAME'S PROMPT (`GroupCreate`, user-decided 2026-09-14: "an act of creation that
