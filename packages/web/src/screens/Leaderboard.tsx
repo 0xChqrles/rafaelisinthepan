@@ -63,7 +63,7 @@ import { t } from '../i18n';
 //
 // WHICH BOARD is a PAGER (user-decided 2026-09-14, the third design: a tab strip, then a
 // chip opening a wheel under the header's own wheel — "come up with a totally new
-// leaderboard control design"): the scopes — every group, NEW GROUP, GLOBAL — are pages
+// leaderboard control design"): the scopes — every group, then GLOBAL — are pages
 // on one horizontal line, swiped or tapped through (`ScopePager`), with the period switch
 // under it as the only other control before the list. Everything there is to DO with a
 // group is on the group's OWN SCREEN (`GroupScreen`, a tap on the middle page): INVITE, the
@@ -535,11 +535,10 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
                     type="button"
                     role="radio"
                     aria-checked={picked}
-                    className={`board-row waiting${picked ? ' picked' : ''}`}
+                    className={`board-row member${picked ? ' picked' : ''}`}
                     style={{ '--i': index } as CSSProperties}
                     onClick={() => setSuccessor(id)}
                   >
-                    <span className="board-norank" aria-hidden="true" />
                     <Avatar avatar={face?.avatar ?? defaultAvatar(id)} size={28} />
                     <span className={`board-name${face?.name ? '' : ' anon'}`}>{face?.name || anonName(id)}</span>
                   </button>
@@ -743,20 +742,10 @@ function Face({ player }: { player: BoardPlayer }) {
   );
 }
 
-function PlayingRowItem({
-  row,
-  me,
-  index,
-  trailing = null,
-}: {
-  row: PlayingRow;
-  me: boolean;
-  index: number;
-  trailing?: React.ReactNode;
-}) {
+function PlayingRowItem({ row, me, index }: { row: PlayingRow; me: boolean; index: number }) {
   return (
     <li
-      className={`board-row playing${me ? ' me' : ''}${trailing ? ' managed' : ''}`}
+      className={`board-row playing${me ? ' me' : ''}`}
       style={{ '--i': index, '--play-heat': progressHeatColor(row.progress) } as CSSProperties}
       aria-current={me || undefined}
     >
@@ -765,26 +754,16 @@ function PlayingRowItem({
       <span className={`board-name${row.name ? '' : ' anon'}`}>{row.name || anonName(row.publicId)}</span>
       <span className="board-progress">{Math.round(row.progress)}%</span>
       <span className="board-score">{row.tries}</span>
-      {trailing}
     </li>
   );
 }
 
-function WaitingRowItem({
-  player,
-  index,
-  trailing = null,
-}: {
-  player: BoardPlayer;
-  index: number;
-  trailing?: React.ReactNode;
-}) {
+function WaitingRowItem({ player, index }: { player: BoardPlayer; index: number }) {
   return (
-    <li className={`board-row waiting${trailing ? ' managed' : ''}`} style={{ '--i': index } as CSSProperties}>
+    <li className="board-row waiting" style={{ '--i': index } as CSSProperties}>
       <span className="board-norank" aria-hidden="true" />
       <Avatar avatar={player.avatar ?? defaultAvatar(player.publicId)} size={28} />
       <span className={`board-name${player.name ? '' : ' anon'}`}>{player.name || anonName(player.publicId)}</span>
-      {trailing}
     </li>
   );
 }
@@ -794,19 +773,17 @@ function BoardRowItem({
   me,
   mate,
   index,
-  trailing = null,
 }: {
   row: BoardRow;
   me: boolean;
   mate: boolean;
   index: number;
-  trailing?: React.ReactNode;
 }) {
   return (
     <li
       // `me` wins over `mate`: your own row is never one of your people, but a stale list
       // could say so, and two markers on one row is a rendering bug on screen.
-      className={`board-row${me ? ' me' : mate ? ' mate' : ''}${trailing ? ' managed' : ''}`}
+      className={`board-row${me ? ' me' : mate ? ' mate' : ''}`}
       style={{ '--i': index } as CSSProperties}
       aria-current={me || undefined}
     >
@@ -814,7 +791,6 @@ function BoardRowItem({
       <Avatar avatar={row.avatar ?? defaultAvatar(row.publicId)} size={28} />
       <span className={`board-name${row.name ? '' : ' anon'}`}>{row.name || anonName(row.publicId)}</span>
       <span className="board-score">{row.score}</span>
-      {trailing}
     </li>
   );
 }
