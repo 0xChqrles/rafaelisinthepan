@@ -21,6 +21,7 @@
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { GROUP_ID_PATTERN } from '@whippin/shared';
 import { NAME_MAX_CHARS, isBoundName } from '../domain/names';
 
 export type GroupLanguage = 'en' | 'fr';
@@ -64,6 +65,12 @@ export interface GroupConfig {
   timezone: string;
   podium: PodiumConfig;
   reminder: ReminderConfig;
+  // THE WHIPPIN GROUP this WhatsApp group plays as (user-decided 2026-09-14): the id in its
+  // invite link, `<site>/g/<id>`, or null for none. The morning reminder asks the group to
+  // join it and carries the link, with its preview card. It names a #271 group and reads
+  // only its public face (whether it still stands) — never a membership: a WhatsApp group
+  // is still not a Whippin group.
+  whippinGroup: string | null;
   chat: ChatConfig;
   // HOW a recorded share is acknowledged (user-decided 2026-09-04). `react` is the
   // deterministic emoji, no model call; `say` is one short written line the model composes,
@@ -155,12 +162,13 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
     'timezone',
     'podium',
     'reminder',
+    'whippinGroup',
     'chat',
     'acknowledge',
     'leaderAnnouncements',
     'names',
   ]);
-  const { id, name, language, enabled, timezone, podium, reminder, chat, acknowledge, leaderAnnouncements, names } =
+  const { id, name, language, enabled, timezone, podium, reminder, whippinGroup, chat, acknowledge, leaderAnnouncements, names } =
     raw;
   if (typeof id !== 'string' || !GROUP_JID.test(id)) fail(file, '"id" must be a group JID');
   if (id === PLACEHOLDER_GROUP_JID) {
@@ -183,6 +191,12 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
   if (reminder !== undefined) {
     if (!isRecord(reminder)) fail(file, '"reminder" must be an object');
     reminderConfig = parseScheduled(file, 'reminder', reminder);
+  }
+
+  // The id alone, as the invite link spells it — a whole URL pasted here is the likely
+  // mistake, and it is refused rather than picked apart.
+  if (whippinGroup !== undefined && (typeof whippinGroup !== 'string' || !GROUP_ID_PATTERN.test(whippinGroup))) {
+    fail(file, '"whippinGroup" must be a Whippin group id: the 16 characters after /g/ in its invite link');
   }
 
   if (!isRecord(chat)) fail(file, '"chat" must be an object');
@@ -245,6 +259,7 @@ export function parseGroupConfig(file: string, raw: unknown): GroupConfig {
     timezone,
     podium: podiumConfig,
     reminder: reminderConfig,
+    whippinGroup: (whippinGroup as string | undefined) ?? null,
     chat: {
       enabled: chat.enabled,
       name: botName.trim(),

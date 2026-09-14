@@ -67,6 +67,16 @@ describe('podium rendering (#236)', () => {
     expect(renderReminder('en', 'https://whippin.ai', 'podcast', null)).toBe("Today's Whippin is up.\nhttps://whippin.ai");
   });
 
+  it('asks the group to join its Whippin group, with the invite link, when it has one (user-decided 2026-09-14)', () => {
+    const invite = 'https://whippin.ai/g/abcdefghij234567?v=20711';
+    expect(renderReminder('fr', 'https://whippin.ai', 'music', '22:30', invite)).toBe(
+      `Le Whippin du jour est en ligne, c'est une chanson aujourd'hui. Podium à 22h30.\nhttps://whippin.ai\nRejoignez le groupe sur Whippin : ${invite}`,
+    );
+    expect(renderReminder('en', 'https://whippin.ai', null, null, invite)).toBe(
+      `Today's Whippin is up.\nhttps://whippin.ai\nJoin the group on Whippin: ${invite}`,
+    );
+  });
+
   it('prints the ∞ line\'s comment like any other (PR-278 review)', () => {
     // It is printed under the places and read as one of them, so the one bare slot on a
     // mixed podium was read as a snub.

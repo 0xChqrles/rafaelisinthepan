@@ -94,6 +94,8 @@ describe('outbound dispatcher (#236)', () => {
       parseCommand(JSON.stringify({ id: 'r', kind: 'reaction', group: GROUP, target, emoji: '🔥' })),
     ).toMatchObject({ kind: 'reaction' });
     expect(parseCommand(JSON.stringify({ id: 'r', kind: 'sticker', group: GROUP }))).toBeNull();
+    const invite = 'https://whippin.ai/g/abcdefghij234567?v=20711';
+    expect(parseCommand(JSON.stringify({ ...podium(`Rejoignez le groupe : ${invite}`), preview: invite }))).toMatchObject({ preview: invite });
   });
 
   // A ref the transport cannot build a message key from must be DROPPED here: sent, it
@@ -104,6 +106,10 @@ describe('outbound dispatcher (#236)', () => {
     ['a reaction with no emoji', { id: 'r', kind: 'reaction', group: GROUP, emoji: '', target: { id: 'M', participant: 'p@s.whatsapp.net' } }],
     ['a half-formed reply ref', { id: 'x', kind: 'message', group: GROUP, text: 'hi', replyTo: { id: 'M' } }],
     ['mentions that are not strings', { id: 'x', kind: 'message', group: GROUP, text: 'hi', mentions: [7] }],
+    // A card belongs to a link the reader can see, and only an https one is ever built.
+    ['a preview for a link the text does not carry', { id: 'x', kind: 'message', group: GROUP, text: 'hi', preview: 'https://whippin.ai/g/abcdefghij234567' }],
+    ['a preview that is not https', { id: 'x', kind: 'message', group: GROUP, text: 'http://whippin.ai', preview: 'http://whippin.ai' }],
+    ['a preview that is not a string', { id: 'x', kind: 'message', group: GROUP, text: 'hi', preview: true }],
   ])('refuses %s', (_, body) => {
     expect(parseCommand(JSON.stringify(body))).toBeNull();
   });

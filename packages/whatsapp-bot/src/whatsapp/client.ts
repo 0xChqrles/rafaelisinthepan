@@ -28,6 +28,7 @@ import type { OutboundCommand } from '../outbound/commands';
 import { hasPairedDevice, type DurableAuth } from './authStore';
 import { baileysLogger } from './baileysLog';
 import { isLive, messageSeconds, toInbound } from './inbound';
+import { buildLinkPreview } from './linkPreview';
 
 export type StopReason = 'logged_out' | 'replaced';
 
@@ -265,9 +266,17 @@ export async function connectWhatsApp(options: WhatsAppClientOptions): Promise<W
               message: { conversation: command.replyTo.text ?? '' },
             } as WAMessage)
           : undefined;
+        // A card only for the link the command names, WAITED FOR before the send; `null`,
+        // never absent, for everything else — see linkPreview.ts.
+        const linkPreview = command.preview
+          ? await buildLinkPreview(command.preview, { upload: sock.waUploadToServer, log, logger: baileysLog })
+          : null;
+        // The build awaited: the socket may have dropped meanwhile, and a send over a closed
+        // one would throw the same error the check above does.
+        if (!sock || !open) throw new Error('WhatsApp socket is not open.');
         sent = await sock.sendMessage(
           command.group,
-          { text: command.text, ...(command.mentions ? { mentions: command.mentions } : {}) },
+          { text: command.text, linkPreview, ...(command.mentions ? { mentions: command.mentions } : {}) },
           quoted ? { quoted } : undefined,
         );
       }
