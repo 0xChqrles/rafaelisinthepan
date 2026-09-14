@@ -6446,8 +6446,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 /* THE SCOPE PAGER (#271, user-decided 2026-09-14 — the third design of this control; the
    reasoning is in ScopePager.tsx). One horizontal line of PAGES, native scroll-snap: the
-   page in the middle at full strength, its neighbours peeking in at the sides at a
-   quarter, both edges fading into the ground; under it the DOTS, the active one long. */
+   page in the middle at full strength, its neighbours' names right beside it at half,
+   both edges fading into the ground; under it the DOTS, the active one long. */
 .scope {
   display: flex;
   flex-direction: column;
@@ -6460,6 +6460,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 .scope-pager {
   display: flex;
+  gap: 20px;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
@@ -6470,12 +6471,28 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .scope-pager::-webkit-scrollbar {
   display: none;
 }
-/* A PAGE: 60% of the line, snapped to its centre — the neighbours peek in over the
-   remaining 20% a side, the outer 8% fading; the first and last carry the margin that
-   lets them reach the middle. */
+/* Half a line of room at each end, so the first and the last page can reach the middle
+   whatever their widths. Real flex items rather than padding, whose inline-end half
+   engines have long left out of a flex scroller's scrollable area. */
+.scope-pager::before,
+.scope-pager::after {
+  content: '';
+  flex: 0 0 50%;
+}
+/* A PAGE: as wide as its NAME (user-reported 2026-09-14: a 60% page centred a short
+   neighbour's name out past the edge, so often no neighbour showed at all), snapped to
+   its centre, never wider than the line. ONE PAGE A SWIPE (`scroll-snap-stop`): pages a
+   name's width apart sit about half as far apart as the 60% ones did, so a flick would
+   sail past the neighbour it had just shown — the name beside the brackets is where a
+   swipe lands.
+   A neighbour is READABLE (user-reported the same day: "the group on the left is almost
+   invisible" at a quarter) — half strength. */
 .scope-page {
-  flex: 0 0 60%;
+  flex: none;
+  min-width: 0;
+  max-width: 100%;
   scroll-snap-align: center;
+  scroll-snap-stop: always;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -6487,19 +6504,11 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   font: inherit;
   color: var(--fg);
   cursor: pointer;
-  /* A neighbour is READABLE (user-reported 2026-09-14: "the group on the left is almost
-     invisible" at a quarter) — half strength, the outer 5% of the line fading. */
   opacity: 0.55;
   transition: opacity 160ms linear;
 }
 .scope-page.on {
   opacity: 1;
-}
-.scope-page:first-child {
-  margin-left: 20%;
-}
-.scope-page:last-child {
-  margin-right: 20%;
 }
 /* THE TITLE: the scope's name in the chrome's voice, one size, and — on the middle page —
    the app's CORNER BRACKETS around it (the device frame's selection mark, the focus's
@@ -6541,8 +6550,14 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   color: var(--muted);
 }
 /* The line under the name: which of a thing (a group's size, GLOBAL's TOP 50), the
-   archive day's tag dress. */
+   archive day's tag dress. The MIDDLE page's alone — under every name the captions would
+   run into each other — and it takes NO width: a zero-wide box centring its overflow, so
+   the name alone sizes the page and a caption wider than its name ("AB", "2 MEMBERS")
+   hangs centred under it without pushing the neighbours away. */
 .scope-sub {
+  display: flex;
+  justify-content: center;
+  width: 0;
   font-family: var(--ui);
   font-size: 10px;
   font-weight: 500;
@@ -6550,6 +6565,11 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   text-transform: uppercase;
   color: var(--muted);
   white-space: nowrap;
+  opacity: 0;
+  transition: opacity 160ms linear;
+}
+.scope-page.on .scope-sub {
+  opacity: 1;
 }
 /* THE DOTS: one per page, the active one drawn long — and it TRAVELS: the width moves
    from dot to dot, so the change reads as one mark sliding rather than two appearing.
@@ -6709,17 +6729,16 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   width: 100%;
   max-width: 430px;
 }
-/* The owner's ✕ at a managed row's end (the group screen): a small square that opens
+/* A MEMBER — on the group's own screen and in the leave's successor picker: a person in
+   the group, not a player on today's board, so the board's plain row (glass on a hairline)
+   with no rank column and none of the WAITING row's dashes (user-reported 2026-09-14: "the
+   member list have dashed rows for no reason" — they were the NOT PLAYED YET dress,
+   borrowed). The last column holds the owner's ✕. */
+.board-row.member {
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+}
+/* The owner's ✕ at a member row's end (the group screen): a small square that opens
    the confirmation. */
-.board-row.managed {
-  grid-template-columns: 42px 28px minmax(0, 1fr) auto auto;
-}
-.board-row.playing.managed {
-  grid-template-columns: 42px 28px minmax(0, 1fr) auto auto auto;
-}
-.board-row.waiting.managed .board-name {
-  grid-column: 3 / 4;
-}
 .board-remove {
   border: 1px solid var(--line-strong);
   background: transparent;
@@ -7409,13 +7428,11 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   font: inherit;
   text-align: left;
   color: var(--fg);
-  border-style: dashed;
 }
 .confirm-pick .board-row:hover {
   border-color: var(--line-strong);
 }
 .confirm-pick .board-row.picked {
-  border-style: solid;
   border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
   background: color-mix(in srgb, var(--accent) 12%, var(--glass));
   box-shadow: inset 2px 0 0 var(--accent);

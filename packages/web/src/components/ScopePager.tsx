@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import PlusIcon from '../assets/icons/plus.svg?react';
+import { prefersReducedMotion } from '../hooks/useScramble';
 import { t } from '../i18n';
 import type { LangCode } from '../langs';
 
@@ -9,18 +10,29 @@ import type { LangCode } from '../langs';
 //
 // The board's SCOPES — every group the player is in, then GLOBAL — are PAGES
 // on one horizontal line, and the head of the screen is a PAGER through them: the page in
-// the middle names what the list below shows, its neighbours peek in from the sides at a
-// quarter strength, and a row of DOTS under it says where in the line you are (the active
+// the middle names what the list below shows, its neighbours stand beside it at half
+// strength, and a row of DOTS under it says where in the line you are (the active
 // dot drawn long — the carousel grammar of the user's own reference, `inspiration/modern`).
 // The middle page wears the app's CORNER BRACKETS, the device frame's selection mark:
 // this is the framed one, and tapping it goes INTO it (the group's own screen).
 //
+// A PAGE IS AS WIDE AS ITS NAME, one fixed gap from the next (user-reported 2026-09-14:
+// "you're not always seeing other groups/global on the left/right of the current group…
+// it might not be obvious that you can swipe"). Pages were 60% of the line with the name
+// centred in each, which left a neighbour's name out past the edge unless it was long
+// enough to reach back in — a short one never showed at all. Sized to their names, the
+// neighbours are the words right beside the brackets, the camera app's mode strip: the
+// line says what a swipe does before anyone swipes. Only the middle page shows its
+// caption — under every name they would run into each other — and the caption takes no
+// width, so the line's rhythm is its names'.
+//
 // A SWIPE turns it — native scroll-snap, so the physics are the platform's own (momentum,
-// the rubber ends, the snap) and nothing is re-implemented — and so do a tap on a peeking
-// neighbour, a tap on a dot, and the arrow keys. Which page is in the middle is read off
-// the scroll position (the nearest page centre to the pager's centre), LIVE for the
-// dress and SETTLED (a short quiet after the last scroll event) for the caller, so a
-// swipe across three groups fetches one board, not three.
+// the rubber ends, the snap) and nothing is re-implemented — and so do a tap on a
+// neighbour, a tap on a dot, and the arrow keys. A swipe moves ONE page (the name beside
+// the brackets is where it lands); a dot glides as far as it names. Which page is in the
+// middle is read off the scroll position (the nearest page centre to the pager's centre),
+// LIVE for the dress and SETTLED (a short quiet after the last scroll event) for the
+// caller, so a glide across three groups fetches one board, not three.
 //
 // The pager is the ONE control: there is no chip, no wheel and no tab strip left on the
 // board, and the period switch under it is the only other thing before the list. CREATING
@@ -29,7 +41,8 @@ import type { LangCode } from '../langs';
 export interface Scope {
   key: string;
   title: string;
-  // The small line under the title: a group's size, GLOBAL's "TOP 50". None on NEW.
+  // The small line under the middle page's title: a group's size, GLOBAL's "TOP 50".
+  // None on the no-group page.
   sub?: string;
 }
 
@@ -60,6 +73,8 @@ export default function ScopePager({
   const [near, setNear] = useState(active);
   const settle = useRef(0);
   const raf = useRef(0);
+  // The held page, for the resize observer, which outlives a page turn.
+  const held = useRef(active);
 
   // A page's centre, in the pager's own scroll coordinates. Measured through the rects,
   // never `offsetLeft`: the pager is not positioned, so that would be relative to the
@@ -92,21 +107,42 @@ export default function ScopePager({
     el.scrollTo({ left: centreOf(el, page) - el.clientWidth / 2, behavior });
   };
 
-  // Open ON the held page, before paint; glide there when the caller moves it later —
-  // and re-centre it, instantly, whenever the pager's own width changes (the column
-  // settling on a desktop, a rotation): a snapped position is a fraction of a width.
+  // Open ON the held page, before paint; glide there when the caller moves it later (a
+  // cut under reduced motion, the app's standing rule).
   const mounted = useRef(false);
   useLayoutEffect(() => {
-    scrollTo(active, mounted.current ? 'smooth' : 'instant');
+    held.current = active;
+    scrollTo(active, mounted.current && !prefersReducedMotion() ? 'smooth' : 'instant');
     mounted.current = true;
     setNear(active);
-    const el = box.current;
-    if (!el || typeof ResizeObserver === 'undefined') return undefined;
-    const observer = new ResizeObserver(() => scrollTo(active, 'instant'));
-    observer.observe(el);
-    return () => observer.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, scopes.length]);
+
+  // RE-CENTRE the held page, instantly, when a width CHANGES: the pager's own (the column
+  // settling on a desktop, a rotation) or a page's — a page is as wide as its name, so
+  // every centre moves when the web font lands. Only a CHANGE: an observer's first report
+  // of an element is its arrival, and answering that one — the observer used to be rebuilt
+  // on every page turn — re-centred instantly and cut short the glide just started above,
+  // so a tap on a dot jumped.
+  const pageKeys = scopes.map((scope) => scope.key).join(' ');
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const widths = new WeakMap<Element, number>();
+    const observer = new ResizeObserver((entries) => {
+      let changed = false;
+      for (const { target, contentRect } of entries) {
+        const before = widths.get(target);
+        widths.set(target, contentRect.width);
+        if (before !== undefined && before !== contentRect.width) changed = true;
+      }
+      if (changed) scrollTo(held.current, 'instant');
+    });
+    observer.observe(el);
+    for (const page of Array.from(el.children)) observer.observe(page);
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageKeys]);
 
   useEffect(
     () => () => {
