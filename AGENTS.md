@@ -879,7 +879,10 @@ The live routes then share:
   import `@whippin/shared`; nothing imports it. A consumer of the PUBLIC share-token contract,
   never a source of game truth: no WhatsApp identity on an account, no share-encoding change
   for it, no LLM deciding a score or a rank. A WhatsApp group is NOT a #271 group (it reads
-  share tokens, never a membership); #271 left it untouched.
+  share tokens, never a membership); #271 left it untouched. Its config may NAME one
+  (`whippinGroup`, user-decided 2026-09-14), whose invite link (`shared/src/invite.ts`
+  `groupInvitePath`) the morning reminder prints after reading only its public face
+  (`GET /groups?id=`) — the invite contract has a fourth consumer, and still no membership read.
 - **Its stack is a sibling** (`WhippinBotStack`, `infra/lib/bot-stack.ts`): one Fargate task
   (`desiredCount 1`, stop-before-start — one Baileys session is a correctness rule), a
   bot-owned table, an SQS outbound queue, a podium Lambda with one schedule per group, alarms

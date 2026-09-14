@@ -7,7 +7,8 @@
 //   podium:   read the group's rows for the Whippin day → dense podium → (optional) model
 //             comments from the facts, the day's log and the diary → render → ONE outbound
 //             command on the queue the connected task consumes.
-//   reminder: read the day → one deterministic line with the link.
+//   reminder: read the day → one deterministic line with the link (and, when the group
+//             plays as a Whippin group that still stands, its invite and preview card).
 //   diary:    read the closed day's log and the diary → the model rewrites the diary.
 //
 // The Whippin day is the shared day contract's active day at the fire instant — never a
@@ -32,6 +33,7 @@ import { nameResolver } from './domain/names';
 import { buildPodium } from './domain/podium';
 import { renderPodium, renderReminder, type Comments } from './domain/podiumText';
 import { FORM_DAYS, buildPodiumContext } from './domain/shareContext';
+import { createWhippinGroupReader, groupInviteUrl, type WhippinGroupReader } from './domain/whippinGroup';
 import { createDaySourceReader, type DaySourceReader } from './puzzle/daySource';
 import { createLlmProvider, type LlmProvider } from './llm';
 import { generatePodiumComments, type PodiumBackground } from './llm/podiumComments';
@@ -68,6 +70,8 @@ export interface PodiumJobDeps {
   // puzzle to link to at all. Absent (the podium-only tests), a reminder is skipped.
   siteOrigin?: string;
   daySource?: DaySourceReader;
+  // Whether the group's Whippin group still stands. Absent, no invite is ever printed.
+  whippinGroups?: WhippinGroupReader;
   // For the podium's comments and the diary: the day's conversation and the diary itself.
   // Absent, the podium is commented from the facts alone and the diary job is skipped.
   dayLog?: DayLogStore;
@@ -108,11 +112,27 @@ export async function runReminderJob(event: PodiumJobEvent, deps: PodiumJobDeps)
     deps.log.info({ event: read ? 'reminder.unpublished' : 'reminder.unread', group: tag(group.id), day }, 'no puzzle to point at; nothing posted');
     return skipped(group.id, day);
   }
+  // THE INVITE (user-decided 2026-09-14), when the group names a Whippin group that still
+  // stands: one more line and the link, whose preview card the task builds at send time
+  // (`preview`). The same rule as the day's link, one level down — a gone group or a read
+  // that failed costs that line and never the reminder.
+  let invite: string | null = null;
+  if (group.whippinGroup && deps.whippinGroups) {
+    const stands = await deps.whippinGroups.stands(group.whippinGroup);
+    if (stands) invite = groupInviteUrl(deps.siteOrigin, group.whippinGroup, day);
+    else {
+      deps.log.warn(
+        { event: stands === false ? 'reminder.whippin_group_gone' : 'reminder.whippin_group_unread', group: tag(group.id), day },
+        'reminder without the group invite',
+      );
+    }
+  }
   await deps.outbound.enqueue({
     id: commandIds.reminder(group.id, day),
     kind: 'message',
     group: group.id,
-    text: renderReminder(group.language, deps.siteOrigin, read.source?.kind ?? null, group.podium.enabled ? group.podium.time : null),
+    text: renderReminder(group.language, deps.siteOrigin, read.source?.kind ?? null, group.podium.enabled ? group.podium.time : null, invite),
+    ...(invite ? { preview: invite } : {}),
   });
   deps.log.info({ event: 'reminder.queued', group: tag(group.id), day }, 'reminder queued');
   return { outcome: 'posted', group: group.id, dayNumber: day, lines: 0, comments: 0 };
@@ -256,6 +276,7 @@ async function buildDeps(): Promise<PodiumJobDeps> {
     log,
     siteOrigin: env.siteOrigin,
     daySource: createDaySourceReader({ apiBaseUrl: env.apiBaseUrl, log }),
+    whippinGroups: createWhippinGroupReader({ apiBaseUrl: env.apiBaseUrl, log }),
     dayLog: dynamoDayLogStore(dynamo, env.table),
     diary: dynamoDiaryStore(dynamo, env.table),
   };

@@ -43,6 +43,8 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
       reactions.ts              score band → emoji, no model (the `acknowledge: "react"` shape); BOTH ladders
                                 (sentence: lower is better; word: higher is better) and the `ShareFacts` they judge
       leader.ts                 the new-leader event + its anti-spam row (LEAD#<day>)
+      whippinGroup.ts           the Whippin group's invite link (`?v=<day>`) and the public read that says
+                                whether it still stands (`GET /groups?id=`)
       ingest.ts                 the per-message pipeline: allow-list → share → durable row → acknowledgement/leader.
                                 The ONE place a model touches this path, through an injected `comment` — everything
                                 that DECIDES anything here (the decode, the row, the band) stays model-free.
@@ -63,7 +65,8 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
     src/whatsapp/               the Baileys boundary: inbound mapping, durable auth (DynamoDB), the
                                 single-session lease + the keeper that stops a holder whose renewals
                                 stop landing, the socket wrapper (reconnect/stop policy), the
-                                redacting logger the library is handed, metrics
+                                redacting logger the library is handed, metrics, linkPreview.ts
+                                (the preview card a command names, built before the send)
     src/main.ts                 the Fargate task entry
     src/podiumJob.ts            the Lambda entry (EventBridge Scheduler → podium / reminder command on the
                                 queue, and the diary rewrite at the day flip)
@@ -145,7 +148,18 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   waited for, unlike the conversation's budgeted `get`) and posts nothing for an unpublished
   day AND for a read that failed — a morning without a reminder costs nothing, a link to
   nothing costs trust. The day flips at 22:00 Eastern (04:00 Paris), so any morning hour
-  points at a fresh puzzle. `language` decides which daily's shares count — an `fr` group ranks
+  points at a fresh puzzle. **AND IT INVITES THE GROUP TO ITS WHIPPIN GROUP (user-decided
+  2026-09-14):** a config may name one, `whippinGroup` (the id in its invite link, refused
+  unless it matches `GROUP_ID_PATTERN`), and the reminder then adds one line asking the
+  group to join it, with `<site>/g/<id>?v=<day>` (`domain/whippinGroup.ts`) — the shared
+  invite path plus a new `v` every day, which the CDN neither keys on nor forwards
+  (`CACHING_OPTIMIZED` on `/g/*`) and a client that remembers a preview by its URL does.
+  The same no-404 rule one level down: the job reads the group's public face first
+  (`GET /groups?id=`, 404 `unknown_group`), because a deleted group's link does not fail —
+  the web CDN answers the miss with the app's index.html and a 200, which unfurls as the
+  generic card — and a gone group or a failed read costs the line, never the reminder. The
+  command names the link as its `preview`, so the message carries that group's card
+  (below). `language` decides which daily's shares count — an `fr` group ranks
   the French puzzle and ignores an English token — on the way IN and on the way OUT: every
   read of the declarations goes through `inLanguage`, so a group whose configured language
   changes does not rank the rows it wrote under the old one. Files hold product behaviour
@@ -276,6 +290,18 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   accumulating a permanent row per message ever sent. ONE acknowledgement per MESSAGE, for the
   best result it carried — the id is keyed by the message, and WhatsApp holds one reaction
   per account anyway.
+  **A PREVIEW CARD ONLY FOR THE LINK A COMMAND NAMES (user-decided 2026-09-14,
+  `whatsapp/linkPreview.ts`).** WhatsApp does not unfurl a link for its recipients: the
+  sender embeds the card, so the task builds it BEFORE the send — Baileys' `getUrlInfo`
+  over its optional peer `link-preview-js` (pinned inside Baileys' `^3` peer range), the
+  image uploaded as a full-size card. Only `OutboundCommand.preview` gets one (an https link
+  the text carries, checked by `parseCommand`); every other send passes `linkPreview: null`,
+  since left undefined Baileys fetches the first https link in ANY text — a model's or a
+  member's — from inside the task. The build is bounded as a whole (`PREVIEW_BUDGET_MS`
+  20s, 10s per fetch — a cold card render measured 2.3s against Baileys' 3s default),
+  because the image download inside it has no timeout and this runs in the ONE outbound
+  loop; a card that does not arrive costs the card, never the message, and its log line
+  carries no URL (an invite link is a way in).
   **HOW a share is acknowledged is `acknowledge` in the group config (user-decided
   2026-09-04):** `react` is the deterministic emoji, `say` is one short line the model
   writes (`llm/shareComment.ts`, quoting the share so a busy group can tell whose result it
@@ -724,6 +750,12 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   result"), and the ambient openings lost "a place where a number nobody else has
   belongs": a bot the game bores does not volunteer a statistic. The ambient default
   (silence) is unchanged.
+  **EVERY LINE IS SAID IN FRONT OF EVERYBODY (v14, user-reported 2026-09-14: "we're in a
+  group chat, it's not a DM, you just told everybody").** Asked by the group about its
+  passions, v13 named a vice and told the asker not to repeat it. The personality now says,
+  once, that whoever it answers the whole group reads every line, so it never confides and
+  never asks anybody to keep something to themselves — with no phrasing of the confidence
+  quoted, since a quoted phrase comes back.
   **LESS IS BETTER (v9, user-decided 2026-09-07: "a pretty short and concise prompt just
   saying what is funny and what is not, without giving examples that might pollute its
   answers … a nonchalant cynic but serious tone").** After v8's judge the user still found
@@ -956,7 +988,11 @@ there is one region knob and not two.
   missing `BOT_TABLE`. What that does not cover is WhatsApp itself.
 - Baileys is pinned to `7.0.0-rc14` (its `prepare` build script and protobufjs' postinstall
   are declined in `pnpm-workspace.yaml`; the package ships prebuilt). `sharp` arrives as
-  its non-optional peer.
+  its non-optional peer; `link-preview-js` is its optional one, installed since 2026-09-14
+  for the preview card (3.x: Baileys' `getUrlInfo` is written against `^3`, and 4/5 are
+  out of that range).
+- **No group config names its `whippinGroup` yet** (2026-09-14): the invite line appears
+  once one is pushed to SSM and a deploy promotes it.
 - Proactive new-leader lines are implemented behind `leaderAnnouncements` (default off).
 - The eval fixture exists as a SCRIPT (#277, `pnpm bot:fixture`) and is NOT yet rated: the
   ratings are the user's, and the measurement of v4 against V4.1 waits on them. Not built:

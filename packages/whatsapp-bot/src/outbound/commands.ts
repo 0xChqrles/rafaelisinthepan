@@ -25,6 +25,11 @@ export type OutboundCommand =
       text: string;
       replyTo?: MessageRef;
       mentions?: string[];
+      // THE ONE LINK whose preview card goes with the message (user-decided 2026-09-14),
+      // built by the task at send time. Only a link the CODE composed ever gets a card:
+      // without this field a message goes without one, so the task never fetches a URL a
+      // model or a member wrote. It appears in `text` — the card belongs to that span.
+      preview?: string;
     }
   | { id: string; kind: 'reaction'; group: string; target: MessageRef; emoji: string };
 
@@ -90,6 +95,10 @@ export function parseCommand(body: string): OutboundCommand | null {
       c.mentions !== undefined &&
       (!Array.isArray(c.mentions) || c.mentions.some((m) => typeof m !== 'string'))
     ) {
+      return null;
+    }
+    // An https link the text carries: a card for a link nobody can see is a card for nothing.
+    if (c.preview !== undefined && (typeof c.preview !== 'string' || !c.preview.startsWith('https://') || !c.text.includes(c.preview))) {
       return null;
     }
     return c as unknown as OutboundCommand;
