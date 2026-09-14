@@ -100,8 +100,12 @@
       screens/GroupInvite.tsx  the #271 group invite link's landing (/join/g/<groupId>): JOIN
                               with this device's token, then the board or the game. The link
                               members SHARE is /g/<groupId>, served by the backend for its preview
-      components/GroupSelect.tsx  WHICH GROUP (#271): the title's selection dress, one drum —
-                              every group, then NEW GROUP — behind the board's group chip
+      components/ScopePager.tsx  WHICH BOARD (#271): the pager of scopes — every group, NEW
+                              GROUP, GLOBAL — swiped on native scroll-snap, brackets on
+                              the middle page, dots under it
+      components/GroupScreen.tsx  a group's own screen (#271): members (the owner's ✕),
+                              INVITE, LEAVE — everything there is to do with a group
+      components/GroupCreate.tsx  naming a new group (#271): one field, one call
       components/ConfirmScreen.tsx  the app's CONFIRMATION surface (#271): the error screen's
                               shape in the plain voice, the act as the quiet danger control
                               over CANCEL; the leave's successor picker rides it
@@ -337,9 +341,25 @@ These are decided and verified against the code. Treat them as load-bearing.
     measured 4px at 38, 1px at 32 and touching at 30. `.hk-dot` states the GAP and derives
     its offset (`--hk-icon` / `--hk-gap` / `--hk-size`); the 340px step-down now only makes
     the dot smaller, where it used to restate the position.
+  - **THE BUTTONS ARE KEYCAPS WITH A HARD PRINT (user-decided 2026-09-14: "we should
+    completely update the buttons design, they're really ugly and boring" — the THIRD
+    design, superseding the flat cobalt slab below and the device card before it).** One
+    geometry, three caps (`index.css`, "BUTTONS, THIRD DESIGN"): a sharp tile with a 4px
+    hard print offset down-right — the 1-bit drop shadow the app's sprites already carry —
+    and a press pushes the cap onto its print (the cap travels 4px, the print collapses:
+    the one motion a hard print makes physical; it is the deliberate exception to "a press
+    is a state, not travel"). PRIMARY = the held word as a button: `--fg` ground, `--bg`
+    ink, the print in the accent (cobalt under the hole chip's ground — `.btn-primary`,
+    `.mix-btn` in the deploy geometry). SECONDARY = the keyboard's letter tile: `--surface`
+    ground, hairline, `--fg` ink, a grey print. DANGER (`.btn-danger`) = the secondary in
+    the danger ink. The QUIET WORD (`.link-quiet-btn`, `.link-danger`) is a bare tracked
+    word on a 2px print line — no cap. Sized to the word; a secondary directly under a
+    primary is bare (2026-08-30's rule stands). `--accent-deep` and `polished` are no
+    longer read by any button (the derivation stays for whatever next wants it).
+    *(The paragraph below is the 2026-09-01 design it replaced.)*
   - **THE PRIMARY BUTTON IS THE ACCENT, FLAT, WITH A DISCREET DIAGONAL GRADIENT**
     (user-decided 2026-09-01, superseding the 2026-08-18 device card — glass, hairline,
-    LED, all gone): `linear-gradient(135deg, --accent, --accent-deep)`, where
+    LED, all gone; SUPERSEDED 2026-09-14 by the keycaps above): `linear-gradient(135deg, --accent, --accent-deep)`, where
     `--accent-deep` is DERIVED at startup by **`polished.darken(0.07, --accent)`**
     (`src/theme.ts`, installed from `main.tsx`; `polished` joined the dependencies for
     it) — never a second typed hex, so retuning the accent moves the whole button. White
@@ -1817,16 +1837,24 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `/<lang>/board` and `/<lang>/word/board` (`pathForBoard`; a board is per (day, lang,
   mode), always the ACTIVE day), `screens/Leaderboard.tsx`, entered from the header's CROWN
   KEY (lit while the board is up; the way out is any other key, HOME above all). The
-  HEAD ROW is a two-way switch (user-decided 2026-09-14: "wheel group on the left, global
-  on the right"): the active GROUP's name as a held-word chip with the title's chevron on
-  the left, opening `GroupSelect` — the selection's dress, ONE drum of every group plus a
-  last NEW GROUP row that opens the create form, the pick landing as the fold begins — and
-  GLOBAL, the untrusted top 50, on the right; exactly one of the two is lit (the chip reads
-  NEW GROUP and opens the form directly while the player has no group). It replaced a
-  scrolling strip of named tabs. A group has THREE boards under a second row: TODAY (the
-  live one: finished, IN PROGRESS, NOT PLAYED YET — TODAY, not DAY, user-decided
+  HEAD is a PAGER (`ScopePager`, user-decided 2026-09-14 — the THIRD design of this
+  control, after a strip of named tabs and a chip opening a wheel under the header's own
+  wheel: "come up with a totally new leaderboard control design"): the SCOPES — every
+  group, NEW GROUP, GLOBAL (the untrusted top 50) — are pages on one horizontal line on
+  native scroll-snap (60% wide, the neighbours peeking at a quarter strength, the outer 8%
+  fading), the middle page wearing the app's CORNER BRACKETS and a row of DOTS under it
+  (the active one long). A swipe, a tap on a neighbour or a dot, and the arrow keys turn
+  it; the dress follows the nearest page LIVE, the caller is told once the scroll SETTLES
+  (90ms quiet), so one swipe fetches one board. A tap on the middle page goes INTO it —
+  the group's own screen, the create screen on NEW GROUP; GLOBAL opens nothing. A group
+  has THREE boards under the pager as ONE FRAMED SWITCH of three EQUAL cells (`.period-tabs`;
+  user-reported: bare labels "float in the screen with no purpose, no affordance"): TODAY
+  (the live one: finished, IN PROGRESS, NOT PLAYED YET — TODAY, not DAY, user-decided
   2026-09-14), WEEK and MONTH (the shared period rule, `PeriodList`: podium POINTS under
-  the caption, the days and the total as a quiet detail).
+  the caption, the days and the total as a quiet detail). THE BOARD CARRIES NO STANDING
+  BUTTON (user-reported: "3 huge thick buttons always on screen even if we use them 1% of
+  the time"): a group of one shows INVITE in its empty state, and every other act is on the
+  group's screen.
   **WHICH TAB belongs to a VISIT** (user feedback 2026-08-20; `boardTab` is `'group' |
   'global'` since persist **v19**, App resets it on any non-board route); **WHICH GROUP
   outlives it** — `gameStore.lastGroupId` (v19, account-owned: `reconcileIdentity` drops it
@@ -1845,13 +1873,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   and INVITE (shares `boardInviteText` + `/g/<id>` via `useShare`, `tracked: false`);
   both are ONE TAP for a tokenless device (the mint, then the act, the button holding a
   LoadingWave; failures on the `ErrorScreen` — `failedAccount`, `failedShare`,
-  `groupLimit`, `failedGroup`). LEAVE and — for the group's owner, on the TODAY board —
-  MANAGE are two quiet `.link-quiet-btn`s under the list; MANAGE turns every other row's
-  end into a `✕` (`.board-remove`), and BOTH DESTRUCTIVE ACTS CONFIRM ON A FULL-SCREEN
+  `groupLimit`, `failedGroup`). **THE GROUP'S OWN SCREEN (`GroupScreen`, user-decided
+  2026-09-14: "managing the group should have its own screen")** is a full-screen dialog
+  in the selection's shell — the way back and the name in the header, the MEMBERS as the
+  board's own rows (dressed by `readGroup`, the owner tagged), the owner's `✕` at every
+  other row's end (`.board-remove`), INVITE as the primary cap, LEAVE as the quiet danger
+  word — there is no MANAGE toggle, the screen is the management. **NAMING A GROUP is its
+  own screen too (`GroupCreate`)**: one field in the middle, CREATE under it (the inline
+  form under the tabs was "really ugly"). BOTH DESTRUCTIVE ACTS CONFIRM ON A FULL-SCREEN
   MODAL (`ConfirmScreen`, user-decided 2026-09-14 — "for such an important action, we
   actually need a fullscreen modal", replacing the two-tap word swap `LEAVE?` / `REMOVE?`):
-  the member's face or the group's name over the act's title, one sentence, the act in the
-  quiet danger dress, CANCEL. The leave's note follows the SUCCESSION RULE (root
+  the member's face or the group's name over the act's title, one sentence, the act as the
+  DANGER cap, CANCEL as the quiet word. The leave's note follows the SUCCESSION RULE (root
   `AGENTS.md`, Groups) off the list on screen: last member → "the group will be deleted";
   owner of two → "the other member takes it over"; owner of three or more → a PICKER of the
   others (the board's rows as radios, dressed by `readGroup`), LEAVE held back until one is
@@ -3368,8 +3401,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   opens the sequence immediately with `N` as the PREVIOUS value (`?streak=9` → `9→10`),
   suppresses the first-visit invitation, and synthesizes its visual week without mutating
   persisted rounds/solved days; production builds ignore the parameter.
+- **Solved-screen STANDING — DROPPED 2026-09-14 (user-decided: "just drop this part for
+  now at least"): neither result screen shows a standing; `GroupStanding`,
+  `useGroupStanding`, `tStanding`/`ordinal`, `parseStandings` and `.standing-line` are
+  deleted, the `.solved-score-line` slot stays empty, and the server's `standing: true`
+  read still answers with no consumer. The paragraph below is what it was.**
 - **Solved-screen STANDING — the GROUP line (#271, user-decided 2026-09-07; it REPLACED
-  the #170 TOP-% badge below):** both result stacks show `2ND OF 7` beside the score (no
+  the #170 TOP-% badge below; DROPPED 2026-09-14):** both result stacks show `2ND OF 7` beside the score (no
   "today": the result screen is today's, and the word clipped at a 375px card's edge)
   (`components/GroupStanding`, in the badge's exact `.standing-line` slot, a BUTTON onto the
   group's board that sets `lastGroupId` first), read by `hooks/useGroupStanding` — ONE

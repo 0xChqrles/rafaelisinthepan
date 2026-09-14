@@ -3,11 +3,9 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 import { useDeviceIdentity } from '../identity';
 import { t } from '../i18n';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
-import type { GroupStandingState } from '../hooks/useGroupStanding';
 import useShare from '../hooks/useShare';
 import Button from './Button';
 import WordRarityBar from './WordRarityBar';
-import GroupStanding from './GroupStanding';
 import { shareHeadline, wordShareText, wordShareUrl, wordShareScore } from '../game/share';
 import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 
@@ -27,17 +25,12 @@ export default function WordEndScreen({
   dayNumber,
   lang,
   word,
-  standing = null,
   animate = true,
 }: {
   counts: readonly number[]; // claims per rarity grade, commonest first (ladder order)
   dayNumber: number;
   lang: string;
   word: string; // accented display form carried into the OG card
-  // Where this run stands today in the player's group (#271): 'pending' while the read
-  // is in flight, the standing once it landed. Null renders nothing — the silent-degrade
-  // decision.
-  standing?: GroupStandingState;
   // A live run rises and tallies like the sentence result. Rehydrated runs render their
   // final state immediately, so revisiting a finished day never replays the celebration.
   animate?: boolean;
@@ -135,7 +128,6 @@ export default function WordEndScreen({
             </span>
             <span className="solved-score-live">{Math.round(shownScore)}</span>
           </span>
-          <GroupStanding standing={standing} mode="word" lang={lang} animate={animate} start={chartStart} />
         </span>
         <span className="solved-score-unit">
           {t(lang, score === 1 ? 'foundWord' : 'foundWords')}

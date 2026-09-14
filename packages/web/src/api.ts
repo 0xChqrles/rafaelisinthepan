@@ -17,7 +17,6 @@ import type {
   BoardPeriod,
   BoardPlayer,
   BoardRow,
-  GroupStanding,
   GroupSummary,
   PeriodBoard,
   PeriodRow,
@@ -899,7 +898,8 @@ export async function readGroup(id: string, signal?: AbortSignal): Promise<Group
 // The #190 leaderboard: GET is the anonymous GLOBAL top 50 (`id` — the caller's PUBLIC
 // id, never the token — widens it with their own below-the-cut window); POST with
 // `{token, group[, period]}` is a GROUP's board (#271), the trusted surface, and
-// `{token, standing: true}` where the caller stands today in each of their groups.
+// `{token, standing: true}` where the caller stands today in each of their groups (the
+// server still answers it; the web's standing line was dropped 2026-09-14).
 // Addressed per (day, lang, mode) like everything else; all four query parameters are in
 // the board CloudFront behavior's allowList (the root AGENTS.md three-package contract).
 export function boardUrl(
@@ -1022,28 +1022,6 @@ export function parsePeriodBoard(data: unknown): PeriodBoard {
     }
   }
   return { from, to, rows: rows as PeriodRow[] };
-}
-
-// Where the caller stands today in each of their groups (#271) — the solved screen's line.
-export function parseStandings(data: unknown): GroupStanding[] {
-  if (!isRecord(data)) throw new Error('malformed standings: not an object');
-  const { standings } = data;
-  if (!Array.isArray(standings)) throw new Error('malformed standings: "standings" must be an array');
-  for (const raw of standings) {
-    const row = raw as Record<string, unknown>;
-    if (
-      !isRecord(raw) ||
-      typeof row.group !== 'string' ||
-      !GROUP_ID_PATTERN.test(row.group) ||
-      !isCount(row.rank) ||
-      row.rank < 1 ||
-      !isCount(row.of) ||
-      row.of < row.rank
-    ) {
-      throw new Error('malformed standings: bad row');
-    }
-  }
-  return standings as GroupStanding[];
 }
 
 // The period name is the body's, and a screen's tab is typed by the same guard the server

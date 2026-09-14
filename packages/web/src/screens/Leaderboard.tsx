@@ -1,12 +1,10 @@
-import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import {
   anonName,
   dateForDayNumber,
   defaultAvatar,
   isBoardPeriod,
-  NAME_MAX_LENGTH,
   progressHeatColor,
-  sanitizeName,
   type Board,
   type BoardPeriod,
   type BoardPlayer,
@@ -26,14 +24,14 @@ import {
   postGroupsBody,
   readGroup,
 } from '../api';
-import ChevronDownIcon from '../assets/icons/chevron-down.svg?react';
-import CloseIcon from '../assets/icons/close.svg?react';
 import Avatar from '../components/Avatar';
 import ConfirmScreen from '../components/ConfirmScreen';
-import GroupSelect from '../components/GroupSelect';
+import GroupCreate from '../components/GroupCreate';
+import GroupScreen from '../components/GroupScreen';
 import LoadError from '../components/LoadError';
 import LoadingWave from '../components/LoadingWave';
 import PuzzleTitle from '../components/PuzzleTitle';
+import ScopePager, { type Scope } from '../components/ScopePager';
 import { HeaderLeft } from '../components/TopBar';
 import useShare from '../hooks/useShare';
 import useToday from '../hooks/useToday';
@@ -63,14 +61,18 @@ import { t } from '../i18n';
 // player CREATES a group, INVITES into it (the `/g/<id>` link), LEAVES it, and — as its
 // owner — shows a member out.
 //
-// WHICH GROUP is a WHEEL, not a strip (user-decided 2026-09-14: "reuse the wheel component
-// to select the group — wheel group on the left, global on the right"): the head row holds
-// the active group's name as a held-word CHIP with a chevron, opening `GroupSelect` (one
-// drum: every group, then NEW GROUP), and GLOBAL as the row's other end. LEAVING and
-// REMOVING confirm on a FULL-SCREEN modal (`ConfirmScreen`, same decision: "for such an
-// important action, we actually need a fullscreen modal"), and the owner's leave carries
-// the SUCCESSION the server demands (root AGENTS.md, Groups): alone, the group is deleted;
-// with one other member that member takes it; with more, the owner picks one here.
+// WHICH BOARD is a PAGER (user-decided 2026-09-14, the third design: a tab strip, then a
+// chip opening a wheel under the header's own wheel — "come up with a totally new
+// leaderboard control design"): the scopes — every group, NEW GROUP, GLOBAL — are pages
+// on one horizontal line, swiped or tapped through (`ScopePager`), with the period switch
+// under it as the only other control before the list. Everything there is to DO with a
+// group is on the group's OWN SCREEN (`GroupScreen`, a tap on the middle page): INVITE, the
+// owner's ✕ on every other member, LEAVE — the board itself carries no standing button
+// ("3 huge thick buttons always on screen even if we use them 1% of the time"). Naming a
+// new group is its own screen too (`GroupCreate`). LEAVING and REMOVING confirm on a
+// FULL-SCREEN modal (`ConfirmScreen`), and the owner's leave carries the SUCCESSION the
+// server demands (root AGENTS.md, Groups): alone, the group is deleted; with one other
+// member that member takes it; with more, the owner picks one here.
 //
 // The rows come ranked from the server (competition ties, the plain top-50 cut, the
 // own-row window, the period rule — @whippin/shared's leaderboard rules); this screen only
@@ -95,17 +97,19 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
   // this screen remounts without the visit ending, and App resets it on any non-board route.
   const tab: Tab = useGameStore((s) => s.boardTab);
   const setTab = useGameStore((s) => s.setBoardTab);
-  // WHICH group: the one last opened (persisted, account-owned — the standing line reads
-  // it too), else the first the server lists.
+  // WHICH group: the one last opened (persisted, account-owned), else the first the
+  // server lists.
   const lastGroupId = useGameStore((s) => s.lastGroupId);
   const setLastGroup = useGameStore((s) => s.setLastGroup);
   const [period, setPeriod] = useState<BoardPeriod>('day');
+  // The pager's NEW GROUP page is up (a group page otherwise, when the tab is a group's).
+  const [newPage, setNewPage] = useState(false);
 
   const identity = useDeviceIdentity();
   const epoch = identity ? identityEpochOf(identity) : null;
   const meId = identity?.accountId ?? null;
 
-  // The player's groups — the tabs. Read off the ONE cache every group surface shares;
+  // The player's groups — the pages. Read off the ONE cache every group surface shares;
   // tokenless it is known-empty without a request.
   const { phase: groupsPhase, groups } = useGroups();
   useEffect(() => {
@@ -119,10 +123,48 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
   // group they are in, which the list already carries.
   const mates = new Set(groups?.flatMap((group) => group.members) ?? []);
 
+  // THE SCOPES, in the pager's order: every group, NEW GROUP, GLOBAL.
+  const scopes: Scope[] =
+    groups === null
+      ? []
+      : [
+          ...groups.map((group) => ({
+            key: group.id,
+            title: group.name,
+            sub: `${group.members.length} ${t(lang, group.members.length === 1 ? 'memberUnit' : 'membersUnit')}`,
+          })),
+          { key: 'new', title: t(lang, 'groupNew') },
+          { key: 'global', title: t(lang, 'boardGlobal'), sub: t(lang, 'scopeGlobalSub') },
+        ];
+  const onNew = tab === 'group' && (newPage || active === null);
+  const activeIndex =
+    scopes.length === 0
+      ? 0
+      : tab === 'global'
+        ? scopes.length - 1
+        : onNew || active === null
+          ? scopes.length - 2
+          : Math.max(0, scopes.findIndex((scope) => scope.key === active.id));
+  const showScope = (index: number) => {
+    const scope = scopes[index];
+    if (!scope) return;
+    if (scope.key === 'global') {
+      setTab('global');
+      setNewPage(false);
+    } else if (scope.key === 'new') {
+      setTab('group');
+      setNewPage(true);
+    } else {
+      setLastGroup(scope.key);
+      setTab('group');
+      setNewPage(false);
+    }
+  };
+
   // ONE outcome slot per board — a board, or that board's own failure — keyed by what it
   // shows. Screen-global failure state would paint a FAILED frame over another board's
   // perfectly good rows for a render when flipping back.
-  const boardKey = tab === 'global' ? 'global' : active ? `${active.id}:${period}` : null;
+  const boardKey = tab === 'global' ? 'global' : active && !onNew ? `${active.id}:${period}` : null;
   const [boards, setBoards] = useState<Partial<Record<string, AnyBoard | 'failed'>>>({});
   const [attempt, setAttempt] = useState(0);
 
@@ -144,7 +186,7 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
     setBoards({});
   }
 
-  // One fetch per board ACTIVATION — the route is a zero-TTL live read, so a tab flip
+  // One fetch per board ACTIVATION — the route is a zero-TTL live read, so a page turn
   // re-reads rather than trusting a snapshot; the cached board holds the screen while the
   // fresh one is in flight (stale-but-good beats a spinner), and RETRY refetches. A GROUP
   // board is the authenticated POST naming the group (the server refuses a non-member);
@@ -154,7 +196,7 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
     const key = boardKey;
     let cancelled = false;
     setBoards((prev) => (prev[key] === 'failed' ? { ...prev, [key]: undefined } : prev));
-    // No token, no private fetch (#216): a group tab cannot exist tokenless (the list is
+    // No token, no private fetch (#216): a group page cannot exist tokenless (the list is
     // empty), so only the global read runs without an identity.
     if (tab === 'group' && !identity) return;
     (async () => {
@@ -205,24 +247,20 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
   const entry = boardKey === null ? undefined : boards[boardKey];
   const board = entry === 'failed' ? undefined : entry;
 
-  // ---- the deliberate acts: NEW GROUP, INVITE, LEAVE, REMOVE. Each write answers the
-  // list as it now stands, published through `adoptGroups`; a failure lands on the app's
-  // error surface, since saying nothing leaves the player tapping a button that appears to
-  // do nothing.
+  // ---- the deliberate acts: CREATE, INVITE, LEAVE, REMOVE — on the group's own screens,
+  // never on the board. Each write answers the list as it now stands, published through
+  // `adoptGroups`; a failure lands on the app's error surface, since saying nothing leaves
+  // the player tapping a button that appears to do nothing.
   const [busy, setBusy] = useState<'create' | 'invite' | 'leave' | 'remove' | null>(null);
   const [failure, setFailure] = useState<'account' | 'share' | 'group' | 'limit' | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [name, setName] = useState('');
-  const nameInput = useRef<HTMLInputElement>(null);
-  // The group WHEEL, and the CONFIRMATION up: a member to remove, or the leave.
-  const [picking, setPicking] = useState(false);
+  // WHICH SCREEN is up over the board, and WHICH CONFIRMATION over that.
+  const [screen, setScreen] = useState<'group' | 'create' | null>(null);
   const [confirming, setConfirming] = useState<{ kind: 'remove'; member: BoardPlayer } | { kind: 'leave' } | null>(null);
   const [successor, setSuccessor] = useState<string | null>(null);
   // The members DRESSED (name + mark) for the successor picker: the list carries ids
   // alone, and `GET /groups?id=` is the public face that names them. Decoration — until
   // it lands, and if it never does, the rows wear the assigned identities.
   const [faces, setFaces] = useState<Record<string, BoardPlayer>>({});
-  const [managing, setManaging] = useState(false);
   const { share, copied } = useShare({ tracked: false });
   useEffect(() => {
     if (identity === null) prefetchTurnstileTokens(1);
@@ -269,17 +307,15 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
     }
   };
 
-  const create = async (event: FormEvent) => {
-    event.preventDefault();
-    const clean = sanitizeName(name);
-    if (busy || clean.length === 0) return;
-    const result = await write('create', (token) => ({ token, create: true, name: clean }));
+  const create = async (name: string) => {
+    if (busy) return;
+    const result = await write('create', (token) => ({ token, create: true, name }));
     if (result.ok && result.created) {
       setLastGroup(result.created);
       setTab('group');
+      setNewPage(false);
       setPeriod('day');
-      setCreating(false);
-      setName('');
+      setScreen(null);
     }
   };
 
@@ -329,7 +365,7 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
     setConfirming(null);
     setSuccessor(null);
     if (result.ok) {
-      setManaging(false);
+      setScreen(null);
     } else if (result.error === 'successor_required') {
       // The list this screen decided from was stale: re-read it, and the next LEAVE asks.
       loadGroups(true);
@@ -352,119 +388,26 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
         <PuzzleTitle lang={lang} mode={mode} surface="board" />
       </HeaderLeft>
 
-      {/* THE HEAD ROW: the GROUP on the left — its name as a held-word chip with a chevron,
-          the wheel behind it (or NEW GROUP, opening the form, while there is none) — and
-          GLOBAL on the right, the fun view. Exactly one of the two is lit. */}
-      <div className="board-head">
-        {groups === null ? (
-          <span className="board-pick" aria-hidden />
-        ) : active ? (
-          <button
-            type="button"
-            className={`board-pick${tab === 'group' ? ' on' : ''}`}
-            aria-label={`${active.name}, ${t(lang, 'groupMenu')}`}
-            aria-haspopup="dialog"
-            aria-expanded={picking}
-            onClick={() => setPicking(true)}
-          >
-            <span className="board-pick-chip">{active.name}</span>
-            <ChevronDownIcon className="ui-icon" aria-hidden />
-          </button>
-        ) : (
-          <button
-            type="button"
-            className={`board-pick${tab === 'group' ? ' on' : ''}`}
-            aria-expanded={creating}
-            onClick={() => {
-              setTab('group');
-              setCreating((open) => !open);
-            }}
-          >
-            <span className="board-pick-chip">{t(lang, 'groupNew')}</span>
-          </button>
-        )}
-        <button
-          type="button"
-          className={`board-tab board-global${tab === 'global' ? ' active' : ''}`}
-          aria-current={tab === 'global' || undefined}
-          onClick={() => {
-            setTab('global');
-            setCreating(false);
-          }}
-        >
-          {t(lang, 'boardGlobal')}
-        </button>
-      </div>
-
-      {picking && groups !== null && (
-        <GroupSelect
+      {/* WHICH BOARD: the pager. A tap on the middle page goes into it — the group's own
+          screen, the create screen on NEW GROUP; GLOBAL has nothing to open. */}
+      {scopes.length > 0 ? (
+        <ScopePager
           lang={lang}
-          groups={groups}
-          current={active?.id ?? null}
-          onPick={(id) => {
-            setLastGroup(id);
-            setTab('group');
-            setManaging(false);
-            setCreating(false);
-          }}
-          onNew={() => {
-            setTab('group');
-            setCreating(true);
-          }}
-          onClose={() => {
-            setPicking(false);
-            // The wheel's fold on NEW GROUP opened the form under it; the dialog's close
-            // hands the focus back to the chip, so the field takes it here, after that.
-            nameInput.current?.focus();
+          scopes={scopes}
+          active={activeIndex}
+          onChange={showScope}
+          onOpen={(index) => {
+            const key = scopes[index]?.key;
+            if (key === 'new') setScreen('create');
+            else if (key !== 'global' && key !== undefined) setScreen('group');
           }}
         />
+      ) : (
+        <div className="scope scope-blank" aria-hidden />
       )}
 
-      {/* NEW GROUP: a name — the player name's own charset, never empty — and CREATE, which
-          is a deploy button: a tokenless tap mints the account and then creates. */}
-      {creating && (
-        <form className="group-form" onSubmit={(event) => void create(event)}>
-          {/* The form's way out without creating (a pick in the wheel and GLOBAL close it
-              too): the dialogs' own ✕, at the row's start. */}
-          <button
-            type="button"
-            className="group-form-close"
-            aria-label={t(lang, 'ariaClose')}
-            onClick={() => setCreating(false)}
-          >
-            <CloseIcon className="ui-icon" aria-hidden />
-          </button>
-          <input
-            ref={nameInput}
-            className="group-form-input"
-            type="text"
-            value={name}
-            maxLength={NAME_MAX_LENGTH}
-            placeholder={t(lang, 'groupNamePlaceholder')}
-            aria-label={t(lang, 'groupName')}
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            autoFocus
-            onChange={(event) => setName(sanitizeName(event.target.value))}
-            // The form's way out without creating: Escape, a pick in the wheel, or GLOBAL.
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') setCreating(false);
-            }}
-          />
-          <button
-            type="submit"
-            className="btn btn-primary group-form-submit"
-            disabled={busy !== null || sanitizeName(name).length === 0}
-          >
-            {busy === 'create' ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'groupCreate')}
-          </button>
-        </form>
-      )}
-
-      {/* WHICH of the group's three boards. */}
-      {tab === 'group' && active && (
+      {/* WHICH of the group's three boards: one framed switch, three equal cells. */}
+      {tab === 'group' && active && !onNew && (
         <nav className="board-tabs period-tabs" aria-label={t(lang, 'boardPeriods')}>
           {PERIODS.map((view) => (
             <button
@@ -481,14 +424,18 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
       )}
 
       <div className="board-body">
-        {tab === 'group' && groups !== null && groups.length === 0 ? (
-          // No group at all: the sad ghost over one terse line; NEW GROUP below remedies it.
+        {tab === 'group' && groupsPhase === 'failed' && groups === null ? (
+          <LoadError message={t(lang, 'failedBoard')} lang={lang} onRetry={() => loadGroups(true)} />
+        ) : tab === 'group' && onNew ? (
+          // The NEW GROUP page: the ghost (over its word while the player has no group at
+          // all) and the one call.
           <div className="board-empty">
             <span className="board-ghost" aria-hidden="true" />
-            <p>{t(lang, 'boardEmptyGroups')}</p>
+            {groups !== null && groups.length === 0 && <p>{t(lang, 'boardEmptyGroups')}</p>}
+            <button type="button" className="btn btn-primary" disabled={busy !== null} onClick={() => setScreen('create')}>
+              {t(lang, 'groupCreate')}
+            </button>
           </div>
-        ) : tab === 'group' && groupsPhase === 'failed' && groups === null ? (
-          <LoadError message={t(lang, 'failedBoard')} lang={lang} onRetry={() => loadGroups(true)} />
         ) : entry === 'failed' ? (
           <LoadError
             message={t(lang, 'failedBoard')}
@@ -509,7 +456,9 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
               // Only the GLOBAL list marks the reader's people: on a group's board every
               // row is one, and marking everything marks nothing.
               mates={tab === 'global' ? mates : null}
-              onRemove={managing && creator ? (member) => setConfirming({ kind: 'remove', member }) : undefined}
+              // A group of one is the moment INVITE matters: it is the empty state's call.
+              onInvite={tab === 'group' ? () => void invite() : undefined}
+              inviteLabel={copied ? t(lang, 'copied') : t(lang, 'boardInvite')}
             />
           )
         ) : (
@@ -519,28 +468,24 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
         )}
       </div>
 
-      {/* A group's own two quiet acts under its board: LEAVE, and — for its owner —
-          MANAGE, which turns every row's end into a ✕. Both destructive acts confirm on
-          the full-screen `ConfirmScreen` below. */}
-      {tab === 'group' && active && (
-        <div className="group-actions">
-          <button
-            type="button"
-            className="link-quiet-btn"
-            disabled={busy !== null}
-            onClick={() => {
-              setSuccessor(null);
-              setConfirming({ kind: 'leave' });
-            }}
-          >
-            {t(lang, 'groupLeave')}
-          </button>
-          {creator && period === 'day' && (
-            <button type="button" className="link-quiet-btn" onClick={() => setManaging((open) => !open)}>
-              {t(lang, managing ? 'groupManageDone' : 'groupManage')}
-            </button>
-          )}
-        </div>
+      {screen === 'group' && active && (
+        <GroupScreen
+          lang={lang}
+          group={active}
+          meId={meId}
+          busy={busy !== null}
+          copied={copied}
+          onInvite={() => void invite()}
+          onRemove={(member) => setConfirming({ kind: 'remove', member })}
+          onLeave={() => {
+            setSuccessor(null);
+            setConfirming({ kind: 'leave' });
+          }}
+          onClose={() => setScreen(null)}
+        />
+      )}
+      {screen === 'create' && (
+        <GroupCreate lang={lang} busy={busy === 'create'} onCreate={(name) => void create(name)} onClose={() => setScreen(null)} />
       )}
 
       {/* REMOVE: the member's face over the act. */}
@@ -607,29 +552,6 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
         </ConfirmScreen>
       )}
 
-      {/* The screen's one big action, on the column's bottom edge: INVITE into the group
-          on screen, or NEW GROUP when there is none. Both are deploy triggers for a
-          tokenless device (the tap mints, then acts, holding a LoadingWave). */}
-      {tab === 'group' && active ? (
-        <button
-          type="button"
-          className="mix-btn board-invite"
-          disabled={busy !== null}
-          onClick={() => void invite()}
-        >
-          {copied ? t(lang, 'copied') : t(lang, 'boardInvite')}
-        </button>
-      ) : (
-        <button
-          type="button"
-          className="mix-btn board-invite"
-          disabled={busy !== null}
-          onClick={() => setCreating(true)}
-        >
-          {t(lang, 'groupNew')}
-        </button>
-      )}
-
       {failure !== null && (
         <ErrorScreen
           lang={lang}
@@ -667,7 +589,8 @@ function BoardList({
   mode,
   meId,
   mates,
-  onRemove,
+  onInvite,
+  inviteLabel,
 }: {
   board: Board;
   tab: Tab;
@@ -675,7 +598,9 @@ function BoardList({
   mode: Mode;
   meId?: string;
   mates: ReadonlySet<string> | null;
-  onRemove?: (member: BoardPlayer) => void;
+  // A group of one: the empty state's call is INVITE.
+  onInvite?: () => void;
+  inviteLabel?: string;
 }) {
   // Empty is per TAB. The GLOBAL board is empty when nobody played. A GROUP's board is
   // empty when the caller is ALONE in it: the server includes the caller's own row once
@@ -693,14 +618,15 @@ function BoardList({
       <div className="board-empty">
         <span className="board-ghost" aria-hidden="true" />
         <p>{t(lang, tab === 'group' ? 'boardEmptyGroup' : 'boardEmptyGlobal')}</p>
+        {onInvite && (
+          <button type="button" className="btn btn-primary" onClick={onInvite}>
+            {inviteLabel}
+          </button>
+        )}
       </div>
     );
   }
   let index = 0;
-  const removal = (player: BoardPlayer) =>
-    onRemove && player.publicId !== meId ? (
-      <RemoveButton lang={lang} onClick={() => onRemove({ publicId: player.publicId, name: player.name, avatar: player.avatar })} />
-    ) : null;
   const item = (row: BoardRow) => (
     <BoardRowItem
       key={row.publicId}
@@ -708,7 +634,6 @@ function BoardList({
       me={row.publicId === meId}
       mate={mates?.has(row.publicId) ?? false}
       index={index++}
-      trailing={removal(row)}
     />
   );
   return (
@@ -733,12 +658,11 @@ function BoardList({
             row={row}
             me={row.publicId === meId}
             index={index++}
-            trailing={removal(row)}
           />
         ))}
         {board.waiting.length > 0 && <li className="board-section">{t(lang, 'boardNotPlayed')}</li>}
         {board.waiting.map((player) => (
-          <WaitingRowItem key={player.publicId} player={player} index={index++} trailing={removal(player)} />
+          <WaitingRowItem key={player.publicId} player={player} index={index++} />
         ))}
       </ol>
     </>
@@ -811,15 +735,6 @@ function PeriodRowItem({
   );
 }
 
-// The owner's ✕ at a managed row's end: it opens the confirmation, it removes nobody.
-function RemoveButton({ lang, onClick }: { lang: LangCode; onClick: () => void }) {
-  return (
-    <button type="button" className="board-remove" aria-label={t(lang, 'groupRemove')} onClick={onClick}>
-      ✕
-    </button>
-  );
-}
-
 // WHO is at stake, over a confirmation: the mark and the name, the crossroads' own stack.
 function Face({ player }: { player: BoardPlayer }) {
   return (
@@ -834,12 +749,12 @@ function PlayingRowItem({
   row,
   me,
   index,
-  trailing,
+  trailing = null,
 }: {
   row: PlayingRow;
   me: boolean;
   index: number;
-  trailing: React.ReactNode;
+  trailing?: React.ReactNode;
 }) {
   return (
     <li
@@ -860,11 +775,11 @@ function PlayingRowItem({
 function WaitingRowItem({
   player,
   index,
-  trailing,
+  trailing = null,
 }: {
   player: BoardPlayer;
   index: number;
-  trailing: React.ReactNode;
+  trailing?: React.ReactNode;
 }) {
   return (
     <li className={`board-row waiting${trailing ? ' managed' : ''}`} style={{ '--i': index } as CSSProperties}>
@@ -881,13 +796,13 @@ function BoardRowItem({
   me,
   mate,
   index,
-  trailing,
+  trailing = null,
 }: {
   row: BoardRow;
   me: boolean;
   mate: boolean;
   index: number;
-  trailing: React.ReactNode;
+  trailing?: React.ReactNode;
 }) {
   return (
     <li

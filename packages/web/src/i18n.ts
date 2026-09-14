@@ -450,12 +450,6 @@ const STRINGS = {
   today: { en: 'TODAY', fr: "AUJOURD'HUI" },
   // A music day's track link on the solved page (#270): an ordinary link, new tab.
   listen: { en: 'LISTEN', fr: 'ÉCOUTER' },
-  // ---- the solved screen's STANDING (#271): ONE line, "2ND OF 7", beside the score — the
-  // player's place in their group today, a tap onto that group's board. It replaced the
-  // #170 `TOP 25%` badge (user-decided 2026-09-07). The issue's "today" is not printed: the
-  // result screen IS today's, and the word pushed the line off a phone's card. Composed by
-  // `tStanding` below.
-  standingOf: { en: 'OF', fr: 'SUR' },
   // The solved credit block's one function word (user-decided 2026-08-15): it binds the
   // author to the work in the line under it — `Les Misérables` / `BOOK by Victor Hugo` can
   // only be read one way, where two stacked names could be read either. LOWERCASE, unlike
@@ -685,11 +679,13 @@ const STRINGS = {
   // PLAY below it.
   groupJoined: { en: 'JOINED', fr: 'REJOINT' },
   groupLeave: { en: 'LEAVE GROUP', fr: 'QUITTER LE GROUPE' },
-  groupManage: { en: 'MANAGE', fr: 'GÉRER' },
-  groupManageDone: { en: 'DONE', fr: 'OK' },
+  // The board's SCOPE pager (user-decided 2026-09-14, the third control design): a
+  // group's page reads its name over its size, GLOBAL's over what it is.
+  scopeGlobalSub: { en: 'TOP 50', fr: 'TOP 50' },
+  memberUnit: { en: 'MEMBER', fr: 'MEMBRE' },
+  membersUnit: { en: 'MEMBERS', fr: 'MEMBRES' },
+  groupOwnerTag: { en: 'OWNER', fr: 'CRÉATEUR' },
   groupRemove: { en: 'Remove from the group', fr: 'Retirer du groupe' },
-  // The group picker (user-decided 2026-09-14): the wheel behind the board's group chip.
-  groupMenu: { en: 'Change group', fr: 'Changer de groupe' },
   // The two CONFIRMATIONS (user-decided 2026-09-14: a full-screen modal for both). The
   // title says the act, the note what it means; the button is the act's own word. The
   // owner's leave has three notes, by what the succession rule does (root AGENTS.md).
@@ -720,22 +716,6 @@ const STRINGS = {
   failedBoard: { en: 'FAILED TO LOAD LEADERBOARD', fr: 'ÉCHEC DU CHARGEMENT DU CLASSEMENT' },
   ariaLeaderboard: { en: 'Leaderboard', fr: 'Classement' },
 } satisfies Record<string, Record<UiLang, string>>;
-
-// An ORDINAL in the chrome's register, uppercase like every label: `2ND`, `1ER`/`2E`.
-// English takes the four suffixes with the teens' exception; French the first's `ER`
-// and `E` for the rest — deterministic, so the standing line never says "1TH".
-export function ordinal(lang: string, n: number): string {
-  if (uiLang(lang) === 'fr') return n === 1 ? '1ER' : `${n}E`;
-  const tens = n % 100;
-  const suffix =
-    tens >= 11 && tens <= 13 ? 'TH' : n % 10 === 1 ? 'ST' : n % 10 === 2 ? 'ND' : n % 10 === 3 ? 'RD' : 'TH';
-  return `${n}${suffix}`;
-}
-
-// The solved screen's standing line (#271): "2ND OF 7" / "2E SUR 7".
-export function tStanding(lang: string, rank: number, of: number): string {
-  return `${ordinal(lang, rank)} ${t(lang, 'standingOf')} ${of}`;
-}
 
 export type UiKey = keyof typeof STRINGS;
 

@@ -13,7 +13,6 @@ import { replayRun, type RunReplay } from '../game/share';
 import { canExtend } from '../game/keyboard';
 import LoadingWave from '../components/LoadingWave';
 import useVocab from '../hooks/useVocab';
-import useGroupStanding from '../hooks/useGroupStanding';
 import useRoundSync from '../hooks/useRoundSync';
 import { notifyGuess, retryRoundSync } from '../state/roundSync';
 import { useGameStore, roundKeyForDay } from '../state/gameStore';
@@ -383,22 +382,6 @@ function Round({
     navigate(pathForDay(lang, dateForDayNumber(dayNumber + 1)));
   }, [lang, dayNumber]);
 
-  // Where this score stands in the player's group today (#271), READ once the SERVER holds
-  // this round (#203): the append that solves the round is what records the row, and
-  // `solved` is the server's own answer that it did. Gating on the local board alone would
-  // read a board one round trip before this round joined it — and, with nothing left to
-  // retry, would leave the standing blank for good.
-  //
-  // A CAPPED round simply never gets there: past the server's guess cap its appends are
-  // refused, so its solve never reaches the server and no row exists to stand in.
-  const lastGroupId = useGameStore((s) => s.lastGroupId);
-  const standing = useGroupStanding({
-    finished: solved,
-    mode: 'sentence',
-    lang,
-    dayNumber,
-    lastGroupId,
-  });
   // The instructions GATE (2026-08-11; reworked with the #216 triggers, user-decided
   // 2026-08-24). Two reasons to hold the round back, one dialog:
   //   - the RULES, stated once ever (the persisted flag) — an account-holding player who
@@ -987,7 +970,6 @@ function Round({
           words={words}
           holes={solvedHoles}
           onExplore={openHistory}
-          standing={standing}
           animate={animateResults}
           onRevealEnd={() => setRevealEnded(true)}
           // TOMORROW opens the next day's sentence (#273) — from TODAY's result only: an

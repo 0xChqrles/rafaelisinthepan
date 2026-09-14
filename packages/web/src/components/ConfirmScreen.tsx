@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import useModalDismiss from '../hooks/useModalDismiss';
-import Button from './Button';
 import LoadingWave from './LoadingWave';
 import { t } from '../i18n';
 
@@ -64,15 +63,15 @@ export default function ConfirmScreen({
         <p className="error-note">{note}</p>
         <button
           type="button"
-          className="link-quiet-btn link-danger confirm-action"
+          className="btn btn-secondary btn-danger"
           disabled={busy || disabled}
           onClick={onConfirm}
         >
           {busy ? <LoadingWave text={t(lang, 'loading')} /> : action}
         </button>
-        <Button variant="secondary" disabled={busy} onClick={beginClose}>
+        <button type="button" className="link-quiet-btn" disabled={busy} onClick={beginClose}>
           {t(lang, 'linkCancel')}
-        </Button>
+        </button>
       </div>
     </dialog>
   );

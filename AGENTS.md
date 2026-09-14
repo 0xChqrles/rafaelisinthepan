@@ -854,9 +854,11 @@ The live routes then share:
   POST), finished. A round that ended without a score (capped, late, IP-refused) stays IN
   PROGRESS — accepted; the fourth state is #224. The caller's own playing row never defeats
   the just-you ghost.
-- **The solved screen shows ONE standing line — "2ND OF 7" (the issue's "today" is not
-  printed: the result screen is today's, and the word pushed the line off a phone's card) —
-  for the group last opened
+- **The solved screen's standing line is DROPPED (user-decided 2026-09-14, "for now at
+  least"): the web reads no standing; `POST /board {token, standing: true}` still answers
+  (retiring it is a separate call). What it was, for when it returns:** ONE line — "2ND OF
+  7" (no "today": the result screen is today's, and the word pushed the line off a phone's
+  card) — for the group last opened
   (`gameStore.lastGroupId`, account-owned, persisted) when the player stands in it, else the
   best standing (lowest rank, then the larger field); a tap opens that group's board; nothing
   when the player is in no group or holds no row (late, capped). It REPLACED the #170 TOP-%

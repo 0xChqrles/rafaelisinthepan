@@ -16,7 +16,6 @@ import {
   puzzleOutcome,
   parseGroups,
   parsePeriodBoard,
-  parseStandings,
   parsePuzzle,
   parseAccountSummary,
   parseErasePrompt,
@@ -576,7 +575,7 @@ describe('groupsUrl + parseGroups (#271)', () => {
   });
 });
 
-describe('parsePeriodBoard + parseStandings (#271)', () => {
+describe('parsePeriodBoard (#271)', () => {
   const row = (over: Partial<Record<string, unknown>> = {}) => ({
     publicId: 'abcdefghij234567',
     name: '',
@@ -598,14 +597,6 @@ describe('parsePeriodBoard + parseStandings (#271)', () => {
     expect(() => parsePeriodBoard({ ...valid(), rows: [row({ solvedDays: 0 })] })).toThrow(/row/);
     expect(() => parsePeriodBoard({ ...valid(), rows: [row({ points: -1 })] })).toThrow(/row/);
     expect(() => parsePeriodBoard({ ...valid(), rows: [row({ publicId: 'NOPE' })] })).toThrow(/row/);
-  });
-
-  it('accepts standings and rejects a rank past the population', () => {
-    expect(parseStandings({ standings: [] })).toEqual([]);
-    expect(parseStandings({ standings: [{ group: 'abcdefghij234567', rank: 2, of: 7 }] })).toHaveLength(1);
-    expect(() => parseStandings({ standings: [{ group: 'abcdefghij234567', rank: 8, of: 7 }] })).toThrow(/row/);
-    expect(() => parseStandings({ standings: [{ group: 'NOPE', rank: 1, of: 1 }] })).toThrow(/row/);
-    expect(() => parseStandings({})).toThrow(/standings/);
   });
 });
 
