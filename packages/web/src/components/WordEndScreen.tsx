@@ -3,11 +3,9 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 import { useDeviceIdentity } from '../identity';
 import { t } from '../i18n';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
-import type { ScorePlacementState } from '../hooks/useScoreHistogram';
 import useShare from '../hooks/useShare';
 import Button from './Button';
 import WordRarityBar from './WordRarityBar';
-import ScoreTop from './ScoreTop';
 import { shareHeadline, wordShareText, wordShareUrl, wordShareScore } from '../game/share';
 import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 
@@ -27,17 +25,12 @@ export default function WordEndScreen({
   dayNumber,
   lang,
   word,
-  placement = null,
   animate = true,
 }: {
   counts: readonly number[]; // claims per rarity grade, commonest first (ladder order)
   dayNumber: number;
   lang: string;
   word: string; // accented display form carried into the OG card
-  // The day's score population (#170): 'pending' while the submit/fetch round trip is
-  // in flight (the slot shows RANKING...), the placement once it landed. Null renders
-  // no chart and no message — the silent-degrade decision.
-  placement?: ScorePlacementState;
   // A live run rises and tallies like the sentence result. Rehydrated runs render their
   // final state immediately, so revisiting a finished day never replays the celebration.
   animate?: boolean;
@@ -123,8 +116,8 @@ export default function WordEndScreen({
       {/* The run's own number, then SHARE: the sentence result's exact stack (user-decided
           2026-08-15, "the exact same layout and sizing") — the CARD with its WELL since
           2026-09-11, the number and its breakdown in the well, SHARE the caption row.
-          Where this run stands among the day's players (#170) is the TOP badge BESIDE the
-          number (user-decided 2026-09-05), absolutely placed so its arrival moves nothing. */}
+          Where this run stands in the player's group (#271) is the STANDING LINE BESIDE the
+          number (the #170 badge's slot), absolutely placed so its arrival moves nothing. */}
       <div className="card-well">
       <span className="solved-score">
         <span className="solved-score-line">
@@ -135,7 +128,6 @@ export default function WordEndScreen({
             </span>
             <span className="solved-score-live">{Math.round(shownScore)}</span>
           </span>
-          <ScoreTop placement={placement} mode="word" lang={lang} animate={animate} start={chartStart} />
         </span>
         <span className="solved-score-unit">
           {t(lang, score === 1 ? 'foundWord' : 'foundWords')}
@@ -150,7 +142,7 @@ export default function WordEndScreen({
 
       <div className="result-actions">
         <Button
-          variant="secondary"
+          variant="primary"
           className={`result-action${copied ? ' copied' : ''}`}
           onClick={onShare}
         >

@@ -8,7 +8,7 @@ import { createHandler } from './handler';
 import { s3Store } from './s3Store';
 import { loadConfig, loadScoreSecrets } from './config';
 import { dynamoDeviceStore } from './dynamoDeviceStore';
-import { dynamoFriendStore } from './dynamoFriendStore';
+import { dynamoGroupStore } from './dynamoGroupStore';
 import { dynamoHistoryStore } from './dynamoHistoryStore';
 import { dynamoLinkStore } from './dynamoLinkStore';
 import { dynamoProfileStore } from './dynamoProfileStore';
@@ -38,10 +38,10 @@ function initializeHandler(): Promise<ProductionHandler> {
       // start) are the same challenge against the same secret.
       const turnstile = turnstileVerifier(secrets.turnstileSecret);
       const deviceStore = dynamoDeviceStore(dynamo, config.scoreTable);
-      // ONE of each store: the link route MOVES rows the round, score, friend and history
+      // ONE of each store: the link route MOVES rows the round, score, group and history
       // routes own, so it has to act on the very same instances those routes read.
       const roundStore = dynamoRoundStore(dynamo, config.scoreTable);
-      const friendStore = dynamoFriendStore(dynamo, config.scoreTable);
+      const groupStore = dynamoGroupStore(dynamo, config.scoreTable);
       const historyStore = dynamoHistoryStore(dynamo, config.scoreTable);
       return createHandler({
         store: s3Store(s3, config.bucket),
@@ -50,7 +50,7 @@ function initializeHandler(): Promise<ProductionHandler> {
         // Read-only since #203: the population is WRITTEN by the round route below.
         scores: { scoreStore },
         profiles: dynamoProfileStore(dynamo, config.scoreTable),
-        friends: friendStore,
+        groups: groupStore,
         // Devices and their accounts (#216): the ONE store every authenticated route
         // resolves its caller through, and the Turnstile-gated bootstrap that mints one.
         deviceStore,
@@ -69,11 +69,11 @@ function initializeHandler(): Promise<ProductionHandler> {
         },
         // Email account linking (#204). It reaches across the other routes' stores — a
         // verified link moves the day's round and score rows, credits the adopting
-        // account's solved days and merges the friend graph — and sends its codes through
+        // account's solved days and drops a deleted account's memberships — and sends its codes through
         // SES, gated by the same Turnstile verifier and metered by the same address secret.
         link: {
           links: dynamoLinkStore(dynamo, config.scoreTable),
-          friends: friendStore,
+          groups: groupStore,
           history: historyStore,
           mailer: sesMailer(ses, config.mailFrom),
           turnstile,

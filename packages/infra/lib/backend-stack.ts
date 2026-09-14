@@ -244,10 +244,10 @@ export class BackendStack extends Stack {
     bucket.grantRead(fn);
     // The submission transaction is one Update (dedup allowance) + one conditional Put
     // (the player's row); reads are one Query over the day partition. The profile row
-    // (#188) adds one GetItem (its read) and reuses UpdateItem (its upsert). The friends
-    // graph (#189) reuses Query (a player's edge partition) and UpdateItem (the mutual
-    // link), and first adds DeleteItem — removal deletes both directions. The friends board
-    // (#190) adds BatchGetItem: it reads the score rows of
+    // (#188) adds one GetItem (its read) and reuses UpdateItem (its upsert). Groups (#271)
+    // reuse Query (a group's member list, a player's own groups) and PutItem (a membership
+    // pair, the group row), and use DeleteItem — leaving deletes both rows of a membership.
+    // A group's board (#190) adds BatchGetItem: it reads the score rows of
     // a KNOWN key set instead of paging the whole day partition. A transaction's Get, Put,
     // Update and Delete elements are authorized through those same item permissions (the
     // #204 profile lookup is a `TransactGetItems` and needs nothing beyond the GetItem
@@ -487,21 +487,20 @@ export class BackendStack extends Stack {
       ['id'],
     );
 
-    // `/friends` (#189) reads NO query parameter at all — the device token authenticates in
-    // the body, so every call is a POST and there is nothing to forward but the headers
-    // carrying the OAC-signed body hash. An EMPTY allow-list is the honest statement of
-    // that: the day this route grows a query, it has to be named here or CloudFront will
-    // strip it before the handler ever sees it.
-    const friendsOriginRequestPolicy = liveOriginRequestPolicy(
-      'FriendsOriginRequestPolicy',
-      'WhippinFriendsOrigin',
-      'Friends graph: no query strings, Lambda-URL-safe headers outside cache.',
-      [],
+    // `/groups` (#271) reads ONE query, `id` — the PUBLIC group id its GET answers a face
+    // for (the invite landing's read, the /profile pattern). Every write is a POST whose
+    // device token travels in the body; the day the route reads a second query, it has to
+    // be named here or CloudFront will strip it before the handler ever sees it.
+    const groupsOriginRequestPolicy = liveOriginRequestPolicy(
+      'GroupsOriginRequestPolicy',
+      'WhippinGroupsOrigin',
+      'Groups: forward the id query and Lambda-URL-safe headers outside cache.',
+      ['id'],
     );
 
     // `/board` (#190) reads FOUR: `lang`/`date`/`mode` address the day's board, and `id`
     // (the caller's PUBLIC id, never the secret) widens the global GET with a
-    // below-the-cut window.
+    // below-the-cut window. A group's boards (#271) name the group in the POST BODY.
     const boardOriginRequestPolicy = liveOriginRequestPolicy(
       'BoardOriginRequestPolicy',
       'WhippinLeaderboardOrigin',
@@ -520,8 +519,8 @@ export class BackendStack extends Stack {
     );
 
     // `/devices` (#216) reads NO query at all — the device token is the auth and it travels
-    // in the body, exactly like `/friends`. Same empty-allow-list rule: the day it reads one,
-    // it has to be named here or CloudFront will strip it before the handler sees it.
+    // in the body. Same allow-list rule: the day it reads one, it has to be named here or
+    // CloudFront will strip it before the handler sees it.
     const devicesOriginRequestPolicy = liveOriginRequestPolicy(
       'DevicesOriginRequestPolicy',
       'WhippinDevicesOrigin',
@@ -530,9 +529,8 @@ export class BackendStack extends Stack {
     );
 
     // `/link` (#204) reads NO query at all — the device token is the auth and it travels in
-    // the body, exactly like `/friends` and `/devices`. Same empty-allow-list rule: the day
-    // it reads one, it has to be named here or CloudFront will strip it before the handler
-    // sees it.
+    // the body, exactly like `/devices`. Same empty-allow-list rule: the day it reads one,
+    // it has to be named here or CloudFront will strip it before the handler sees it.
     const linkOriginRequestPolicy = liveOriginRequestPolicy(
       'LinkOriginRequestPolicy',
       'WhippinAccountLinkOrigin',
@@ -641,7 +639,7 @@ export class BackendStack extends Stack {
         'round*': liveBehavior(roundOriginRequestPolicy, {
           functionAssociations: [viewerIpAssociation],
         }),
-        'friends*': liveBehavior(friendsOriginRequestPolicy),
+        'groups*': liveBehavior(groupsOriginRequestPolicy),
         'history*': liveBehavior(historyOriginRequestPolicy),
         // The device BOOTSTRAP is Turnstile-gated (#216), so this route needs a trusted
         // client address exactly as the round start does — the third behavior wearing the
@@ -698,7 +696,7 @@ export class BackendStack extends Stack {
         {
           id: 'AwsSolutions-IAM5',
           reason:
-            'S3 read access is scoped to the puzzle bucket/object keys. DynamoDB is scoped to this table and its indexes — the grant\'s <table>/index/* resource covers exactly the one DeviceByAccount GSI (#216) — with only Query/GetItem/PutItem/UpdateItem/DeleteItem (DeleteItem serves symmetric friend removal, device revocation and #204\'s account erase), and SSM GetParameters to the two exact secret-parameter ARNs; no parameter wildcard exists. ses:SendEmail names this stack\'s own domain identity and is additionally conditioned on the single ses:FromAddress it may send as; the configuration-set wildcard is required by SES on every SendEmail call and grants nothing on its own.',
+            'S3 read access is scoped to the puzzle bucket/object keys. DynamoDB is scoped to this table and its indexes — the grant\'s <table>/index/* resource covers exactly the one DeviceByAccount GSI (#216) — with only Query/GetItem/PutItem/UpdateItem/DeleteItem (DeleteItem serves leaving a group, device revocation and #204\'s account erase), and SSM GetParameters to the two exact secret-parameter ARNs; no parameter wildcard exists. ses:SendEmail names this stack\'s own domain identity and is additionally conditioned on the single ses:FromAddress it may send as; the configuration-set wildcard is required by SES on every SendEmail call and grants nothing on its own.',
         },
         {
           id: 'AwsSolutions-L1',

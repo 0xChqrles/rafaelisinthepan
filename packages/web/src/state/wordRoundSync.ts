@@ -10,7 +10,7 @@
 //                    it over.
 //
 // The intuition says the opposite (fast game, urgent sync), but the fast game benefits
-// LEAST: what syncing buys is the live friends board (#206), and a 60-second run is over
+// LEAST: what syncing buys is the live group board (#206), and a 60-second run is over
 // before anybody opens it. Write counts are roughly a wash between the modes, so value
 // decides the shape rather than cost.
 //

@@ -1,8 +1,10 @@
 // The #190 leaderboard's ranking rules — the pure half of the board reads, shared
 // because the BACKEND applies them (it cuts the global board and windows the caller's
 // own row before profiles are attached) and the WEB renders what they produced (ranks
-// on the friends board, the own-row section). Two copies would
-// let the ranks a board shows drift from the rows the server selected.
+// on a group's board, the own-row section). Two copies would
+// let the ranks a board shows drift from the rows the server selected. Since #271 the
+// PERIOD rule (`rankPeriod`, at the bottom) ranks a group's WEEK and MONTH the same way,
+// once, for both ends.
 //
 // Three decided rules (issue #190; the cut simplified 2026-08-20 on user review):
 //   - TIES GET EQUAL RANKS, competition style, never a fake ordering. Sentence scores
@@ -69,9 +71,9 @@ export function boardWindow(
   return ranked.slice(Math.max(0, index - BOARD_WINDOW_SPAN), index + BOARD_WINDOW_SPAN + 1);
 }
 
-// One friend STILL PLAYING the daily (#206): the two live numbers a mid-round row
+// One member STILL PLAYING the daily (#206): the two live numbers a mid-round row
 // shows — the EXACT deduped try count (the same `countTries` the score records, never
-// the raw stored log length: two devices can store one identity twice, and a friend
+// the raw stored log length: two devices can store one identity twice, and a member
 // must not watch 40 all afternoon and see the final score land at 38) and the server's
 // derived reconstruction percentage (#203's stored value, the calendar's own source).
 export interface PlayingScore {
@@ -134,19 +136,132 @@ export interface PlayingRow extends BoardPlayer {
 
 export interface Board {
   rows: BoardRow[];
-  // The caller's own below-the-cut window; always null on the friends board.
+  // The caller's own below-the-cut window; always null on a group's board.
   own: BoardRow[] | null;
-  // FRIENDS mid-round today (#206), in `orderPlaying`'s order: the board is alive while
-  // the day is still being played, instead of only filling in once everybody finished.
-  // FRIENDS ONLY, always empty on the global board — mutual edges are consented by
-  // construction; strangers watching you play is not the same thing. Sentence mode only
-  // in practice: a Word run is 60 seconds plus bonuses, over before anyone looks, and
-  // its log reaches the server only at submission anyway.
+  // GROUP MEMBERS mid-round today (#206), in `orderPlaying`'s order: the board is alive
+  // while the day is still being played, instead of only filling in once everybody
+  // finished. MEMBERS ONLY, always empty on the global board — a membership is consented
+  // by construction; strangers watching you play is not the same thing. Sentence mode
+  // only in practice: a Word run is 60 seconds plus bonuses, over before anyone looks,
+  // and its log reaches the server only at submission anyway.
   playing: PlayingRow[];
-  // FRIENDS who have no recorded score today (user-decided 2026-08-20): an edge is a
-  // person you chose, so the board names them even before they play — with "not played
-  // yet" where a score would be, never by silently dropping the row. Always empty on
-  // the global board (the population there IS the recorded scores), and never the
-  // caller themselves (the identity strip already shows them).
+  // MEMBERS who have no recorded score today (user-decided 2026-08-20): a member is a
+  // person in a group you chose, so the board names them even before they play — with
+  // "not played yet" where a score would be, never by silently dropping the row. Always
+  // empty on the global board (the population there IS the recorded scores), and never
+  // the caller themselves (the header's own face already shows them).
   waiting: BoardPlayer[];
+}
+
+// ---- A group's WEEK / MONTH (#271, user-decided 2026-09-07): ONE rule, applied by the
+// backend over the recorded score rows of every day in the range and rendered by the web.
+//
+//   1. PODIUM POINTS per day: each day is ranked on its own (`rankBoard`, competition
+//      ties), and the first three RANKS pay 3 / 2 / 1 — a tie for first pays both 3,
+//      and the next rank is then third (1), the competition rule's own arithmetic.
+//   2. then SOLVED DAYS — how many days of the range recorded a score at all;
+//   3. then the TOTAL of the recorded scores, in the mode's own direction (sentence:
+//      fewer tries; Word: more words);
+//   4. publicId last — a deterministic row order, never a ranking claim (`rankBoard`'s
+//      own tie rule). Rows equal on all three numbers share their rank.
+//
+// A day with no recorded score for a member is simply absent from that member's line —
+// a leaderboard is a DAY's competition (#211's on-time rule), so late and capped rounds
+// count for nothing here exactly as they record no row on the day board.
+export const PODIUM_POINTS: readonly number[] = [3, 2, 1];
+
+// One recorded score of one member on one day of the range — what the backend reads.
+export interface PeriodDay extends BoardScore {
+  date: string;
+}
+
+export interface PeriodScore {
+  publicId: string;
+  points: number;
+  solvedDays: number;
+  total: number;
+}
+
+export interface RankedPeriod extends PeriodScore {
+  rank: number;
+}
+
+function podiumPoints(rank: number): number {
+  return PODIUM_POINTS[rank - 1] ?? 0;
+}
+
+export function rankPeriod(days: readonly PeriodDay[], mode: BoardMode): RankedPeriod[] {
+  const byDate = new Map<string, PeriodDay[]>();
+  for (const day of days) {
+    const rows = byDate.get(day.date) ?? [];
+    rows.push(day);
+    byDate.set(day.date, rows);
+  }
+  const totals = new Map<string, PeriodScore>();
+  for (const rows of byDate.values()) {
+    for (const row of rankBoard(rows, mode)) {
+      const held = totals.get(row.publicId) ?? {
+        publicId: row.publicId,
+        points: 0,
+        solvedDays: 0,
+        total: 0,
+      };
+      held.points += podiumPoints(row.rank);
+      held.solvedDays += 1;
+      held.total += row.score;
+      totals.set(row.publicId, held);
+    }
+  }
+  const sorted = [...totals.values()].sort((a, b) => {
+    if (a.points !== b.points) return b.points - a.points;
+    if (a.solvedDays !== b.solvedDays) return b.solvedDays - a.solvedDays;
+    if (a.total !== b.total) return mode === 'word' ? b.total - a.total : a.total - b.total;
+    return a.publicId < b.publicId ? -1 : a.publicId > b.publicId ? 1 : 0;
+  });
+  let rank = 1;
+  return sorted.map((row, i) => {
+    const previous = sorted[i - 1];
+    if (
+      i > 0 &&
+      (row.points !== previous.points ||
+        row.solvedDays !== previous.solvedDays ||
+        row.total !== previous.total)
+    ) {
+      rank = i + 1;
+    }
+    return { ...row, rank };
+  });
+}
+
+// Where the caller stands on one group's DAY board (#271): their competition rank among
+// the members who recorded a score today, and how many did — "2nd of 7 today". Null when
+// the caller has no recorded score on that board (not finished, finished late, capped),
+// which the solved screen draws as nothing.
+export interface Standing {
+  rank: number;
+  of: number;
+}
+
+export function standingIn(ranked: readonly RankedScore[], publicId: string): Standing | null {
+  const own = ranked.find((row) => row.publicId === publicId);
+  return own ? { rank: own.rank, of: ranked.length } : null;
+}
+
+// What `POST /board {token, standing: true}` answers, one entry per group of the caller's
+// in which they stand today. The solved screen picks ONE (the group last opened, else the
+// best), so the whole set travels in one request.
+export interface GroupStanding extends Standing {
+  group: string;
+}
+
+// A dressed period row: the ranked numbers with the profile a board renders.
+export interface PeriodRow extends BoardPlayer, RankedPeriod {}
+
+// What `POST /board {token, group, period}` answers for a WEEK or a MONTH: the ranked
+// members who recorded at least one score in the range, and the range itself (ISO
+// dates, inclusive) so the screen can caption what it is showing.
+export interface PeriodBoard {
+  from: string;
+  to: string;
+  rows: PeriodRow[];
 }

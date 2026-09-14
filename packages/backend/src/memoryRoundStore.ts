@@ -88,7 +88,7 @@ export function memoryRoundStore(): RoundStore & LinkRoundWrites {
       return rows.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
     },
 
-    // The friends board's read (#206): the named players' stored rounds for one daily.
+    // A group board's read (#206): the named players' stored rounds for one daily.
     // A player with no record simply has no row, which is how "not started" is said.
     async getMany(key, publicIds) {
       const rows: RoundBoardRow[] = [];

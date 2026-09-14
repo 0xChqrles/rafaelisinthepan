@@ -1,5 +1,5 @@
 // The #190 leaderboard reads on the ONE handler: `/board`, addressed per (day, lang,
-// mode) like everything else, answering the shared `Board` shape both tabs render.
+// mode) like everything else.
 //
 //   GET  /board?lang=&date=&mode=[&id=<publicId>] — the GLOBAL top 50, anonymous: the
 //     population is public by design (and untrusted by design, #187 — nothing treats it
@@ -7,54 +7,67 @@
 //     travel in the query — and widens the answer with their own below-the-cut window.
 //     A DELIBERATE exposure to know about: nothing binds `id` to the caller, so anyone
 //     holding a publicId can read that player's window (score + rank + profile) for any
-//     served day. Consistent with the design: publicIds are broadcast by invite links
-//     (#189), and a stranger holding your id could already read your scores by
-//     friending you through that same link — the trusted surface stays the POST.
-//   POST /board  { token }  (+ the same query) — the FRIENDS board, the trusted
-//     surface: the server resolves the account the caller's DEVICE TOKEN (#216) maps to,
-//     then their edges (#189), so the read proves who is asking — the token
-//     authenticates in the BODY, the /friends rule.
+//     served day. Consistent with the design: publicIds are public (every signed share and
+//     every board row carries one) — the trusted surface stays the POST.
+//   POST /board  (+ the same query) — a GROUP's boards (#271), the trusted surface: the
+//     server resolves the account the caller's DEVICE TOKEN (#216) maps to and answers
+//     only for a group that account is IN — the token authenticates in the BODY.
+//       { token, group }                   — the group's DAY board (the shared `Board`);
+//       { token, group, period: 'week' | 'month' }
+//                                          — its WEEK or MONTH (`PeriodBoard`), ranked by
+//                                            the shared period rule (`rankPeriod`);
+//       { token, standing: true }          — where the caller stands today in each of
+//                                            their groups (`GroupStanding[]`), the solved
+//                                            screen's one line.
 //
-// Both answers are rows a board can draw directly: rank (competition ties), score, and
-// the public profile (#188) — name and avatar — attached per row. The ranking, the
-// plain top-50 cut and the own-row window are the shared pure rules in
+// Every answer is rows a board can draw directly: rank (competition ties), score, and the
+// public profile (#188) — name and avatar — attached per row. The ranking, the plain
+// top-50 cut, the own-row window and the period rule are the shared pure rules in
 // @whippin/shared/leaderboard.ts.
 //
-// THE FRIENDS BOARD IS ALIVE MID-DAY (#206): a friend with a stored round but no
+// A GROUP'S DAY BOARD IS ALIVE MID-DAY (#206): a member with a stored round but no
 // recorded score is IN PROGRESS, not "not played yet" — their row carries the EXACT
 // deduped try count and the server-derived reconstruction percentage, ordered among
-// themselves below every finished row. Friends only, never the global board (mutual
-// edges are consented by construction; strangers watching you play is not the same
-// thing), and it leaks nothing about the puzzle — a percentage and a try count say
-// nothing about which words are involved. Getting the try count EXACT needs the day's
-// FULL artifact (`countTries` dedups on a guess's rank in EVERY map, which no summary
-// answers — the raw stored log can hold one identity twice whenever two devices merge),
-// so the friends POST is the one board read that touches the puzzle store, read FRESH
-// like every other artifact read (#203's rule, puzzleReads.ts). Sentence mode only: a
-// Word run's log reaches the server at submission, so mid-run there is honestly
-// nothing to read.
+// themselves below every finished row. Members only, never the global board (a membership
+// is consented by construction; strangers watching you play is not the same thing), and
+// it leaks nothing about the puzzle — a percentage and a try count say nothing about
+// which words are involved. Getting the try count EXACT needs the day's FULL artifact
+// (`countTries` dedups on a guess's rank in EVERY map, which no summary answers — the raw
+// stored log can hold one identity twice whenever two devices merge), so the day POST is
+// the one board read that touches the puzzle store, read FRESH like every other artifact
+// read (#203's rule, puzzleReads.ts). Sentence mode only: a Word run's log reaches the
+// server at submission, so mid-run there is honestly nothing to read.
 //
-// The GLOBAL GET still reads no puzzle store: a population only ever exists for a
-// published daily (the round route's guards enforce it — it is what writes the score
-// rows since #203), so an unpublished day honestly answers the empty board. The
-// malformed-param 400s and the future +1-day guard still apply (shared liveRoute.ts).
+// The GLOBAL GET, the period boards and the standing read no puzzle store: a population
+// only ever exists for a published daily (the round route's guards enforce it — it is
+// what writes the score rows since #203), so an unpublished day honestly answers empty.
+// The malformed-param 400s and the future +1-day guard still apply (shared liveRoute.ts).
 
 import {
   boardOwnRows,
   countTries,
   cutBoard,
+  isBoardPeriod,
   orderPlaying,
+  periodRange,
   rankBoard,
+  rankPeriod,
+  standingIn,
+  GROUP_ID_PATTERN,
   PUBLIC_ID_PATTERN,
   type Board,
   type BoardPlayer,
   type BoardRow,
+  type GroupStanding,
+  type PeriodBoard,
+  type PeriodDay,
+  type PeriodRow,
   type PlayingRow,
   type PlayingScore,
   type RankedScore,
 } from '@whippin/shared';
 import type { DeviceStore } from './deviceStore';
-import type { FriendStore } from './friendStore';
+import type { GroupStore } from './groupStore';
 import { LIVE_HEADERS, readJsonObject, requireDayParams, requireDevice } from './liveRoute';
 import type { ProfileStore } from './profileStore';
 import type { RoundKey, RoundStore } from './roundStore';
@@ -65,13 +78,14 @@ import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respon
 export interface BoardHandlerDeps {
   scores: ScoreStore;
   profiles: ProfileStore;
-  friends: FriendStore;
+  // The trusted boards are drawn over a group's member list (#271).
+  groups: GroupStore;
   // The trusted face authenticates its caller's device (#216); the anonymous GET does not.
   devices: DeviceStore;
-  // The #206 in-progress rows: the friends' stored rounds, and the day's full artifact
+  // The #206 in-progress rows: the members' stored rounds, and the day's full artifact
   // the exact try count dedups their logs against. Optional for the read-only handler
-  // consumers that never take the friends POST; without both, the board simply carries
-  // no playing section — production and the local server always provide them.
+  // consumers that never take the day POST; without both, the board simply carries no
+  // playing section — production and the local server always provide them.
   rounds?: RoundStore;
   puzzles?: PuzzleStore;
 }
@@ -96,7 +110,8 @@ type Live = (publicId: string) => boolean;
 
 // Dress ranked rows with the public profile a board renders. One read per DISTINCT
 // player (a row and the own window can overlap populations, never within themselves),
-// in parallel — the response is bounded (top 50 + a 5-row window, or FRIENDS_MAX rows).
+// in parallel — the response is bounded (top 50 + a 5-row window, or GROUP_MEMBERS_MAX
+// rows).
 // Per-id `catch`, never `Promise.all`'s fail-fast: one throttled GetItem must not 500 a
 // board whose every score row and edge already answered.
 async function dressRows(
@@ -135,7 +150,7 @@ function toBoardRows(rows: readonly RankedScore[], dress: Dress): BoardRow[] {
   return rows.map((row) => ({ ...row, ...dress(row.publicId) }));
 }
 
-// The #206 in-progress candidates: every board member's stored round for this daily,
+// The #206 in-progress candidates: every group member's stored round for this daily,
 // deduped into an exact try count against the day's full artifact. UNFILTERED — the
 // caller still subtracts the players the score population already ranks, which it can
 // only do once both concurrent reads have answered.
@@ -150,7 +165,7 @@ function toBoardRows(rows: readonly RankedScore[], dress: Dress): BoardRow[] {
 // append anyway, so for THIS puzzle they honestly have not started.
 //
 // A failure here PROPAGATES (it is not caught into an empty list): degrading would let
-// the waiting section claim "not played yet" over a friend mid-game — a claim, and a
+// the waiting section claim "not played yet" over a member mid-game — a claim, and a
 // false one — where a failed board keeps the client's cached rows on screen instead.
 // An UNPUBLISHED day is not a failure: no artifact means no round route ever accepted
 // a guess for it, so the empty list is the honest answer.
@@ -225,26 +240,68 @@ export async function handleBoard(
     return json(200, board, responseHeaders);
   }
 
-  // POST — the friends board. The body carries only the proof of identity.
+  // POST — a group's boards. The body carries the proof of identity and which group.
   const body = readJsonObject(event, 'Board', responseHeaders);
   if (!body.ok) return body.response;
   const auth = await requireDevice(body.value, responseHeaders, deps.devices, instant);
   if (!auth.ok) return auth.response;
-
   const publicId = auth.value.account.accountId;
-  const friends = await deps.friends.list(publicId);
-  // The trusted board is the caller's edges plus themselves — and the caller already
-  // holds the exact row keys, so BOTH stores fetch THOSE (batch-shaped, constant in the
-  // day's population) rather than paging anything. Recorded scores make the RANKED
-  // rows. A friend with a stored round but no score is IN PROGRESS (#206), with the
-  // exact try count and percentage — the caller included: on a board with at least one
-  // friend, their own live row shows where they stand among friends mid-day (the web
-  // deliberately keeps a self-only board as its NO FRIENDS ghost). A FRIEND with neither
-  // is still named, in `waiting` — an edge is a person the caller chose, so the board says
-  // "not played yet" rather than silently dropping them (user-decided 2026-08-20); the
-  // caller's own unplayed row stays absent (the screen's identity strip already shows
-  // them). Bounded by FRIENDS_MAX, so no cut.
-  const members = [...friends, publicId];
+  const { group, period = 'day', standing } = body.value;
+
+  if (standing !== undefined) {
+    if (standing !== true || group !== undefined || body.value.period !== undefined) {
+      return errorResponse(
+        400,
+        'bad_request',
+        'Body field "standing" must be true, and asks for no group or period.',
+        responseHeaders,
+      );
+    }
+    return json(200, { standings: await readStandings(deps, key, publicId) }, responseHeaders);
+  }
+
+  if (typeof group !== 'string' || !GROUP_ID_PATTERN.test(group)) {
+    return errorResponse(
+      400,
+      'bad_request',
+      'Body field "group" must be a 16-character group id.',
+      responseHeaders,
+    );
+  }
+  if (!isBoardPeriod(period)) {
+    return errorResponse(
+      400,
+      'bad_request',
+      'Body field "period" must be "day", "week" or "month" when present.',
+      responseHeaders,
+    );
+  }
+
+  // The trust boundary (#271): a board is drawn over a group's member list, and only for
+  // a caller ON it — "nothing reads across players outside a group's member list". A group
+  // that does not exist has no members, so it answers the same refusal: this device holds
+  // a group id its account is not in (removed, left on another device), and the client's
+  // move is the same either way — re-read its groups.
+  const members = (await deps.groups.members(group)).map((member) => member.publicId);
+  if (!members.includes(publicId)) {
+    return errorResponse(403, 'not_member', 'You are not in this group.', responseHeaders);
+  }
+
+  if (period !== 'day') {
+    return json(200, await readPeriodBoard(deps, key, period, members), responseHeaders);
+  }
+
+  // The DAY board: the members — the caller included — hold the exact row keys, so BOTH
+  // stores fetch THOSE (batch-shaped, constant in the day's population) rather than paging
+  // anything. Recorded scores make the RANKED rows. A member with a stored round but no
+  // score is IN PROGRESS (#206), with the exact try count and percentage — the caller
+  // included: on a group of more than one, their own live row shows where they stand
+  // mid-day (the web keeps a group of one as its empty ghost). A member with neither is
+  // still named, in `waiting` — a member is a person in a group the caller chose, so the
+  // board says "not played yet" rather than silently dropping them (user-decided
+  // 2026-08-20); the caller's own unplayed row stays absent (the header's own face already
+  // shows them). Bounded by GROUP_MEMBERS_MAX, so no cut.
+  const others = members.filter((id) => id !== publicId);
   const [rows, candidates] = await Promise.all([
     deps.scores.getMany(key, members),
     loadPlaying(deps.rounds, deps.puzzles, key, members),
@@ -267,17 +324,16 @@ export async function handleBoard(
   const playingIds = new Set(playing.map((row) => row.publicId));
   // Sorted for a stable board between reads; publicId is the only order every waiting
   // row is guaranteed to carry.
-  const waiting = friends.filter((id) => !scored.has(id) && !playingIds.has(id)).sort();
+  const waiting = others.filter((id) => !scored.has(id) && !playingIds.has(id)).sort();
   const { dress, live } = await dressRows(
     deps.profiles,
     ranked,
     playing,
     waiting.map((id) => ({ publicId: id })),
   );
-  // The same #204 rule on every section. A friend whose account was deleted by their own
-  // email link disappears from this board until the merge job rewrites the edge onto the
-  // account that adopted it — the drop-then-reappear window the issue names and accepts.
-  // What it will never do is render a deleted identity.
+  // The same #204 rule on every section. A member whose account was deleted by their own
+  // email link disappears from this board at once, and from the group itself when the
+  // link's departure drains. What it will never do is render a deleted identity.
   const board: Board = {
     rows: toBoardRows(ranked, dress).filter((row) => live(row.publicId)),
     own: null,
@@ -289,4 +345,65 @@ export async function handleBoard(
       .map((id): BoardPlayer => ({ publicId: id, ...dress(id) })),
   };
   return json(200, board, responseHeaders);
+}
+
+// A group's WEEK or MONTH (#271): every member's recorded score on every day of the range,
+// ranked by the ONE shared period rule. The score rows live in DAY partitions, so the read
+// is the day board's own exact-key batch, once per day of the range (at most 31 × the
+// member list), concurrently — no new store and no new write: a member's day counts
+// exactly when the day board ranked them (#211's on-time rule already decided which rows
+// exist). The period boards read no puzzle and no round: they rank what is FINISHED.
+async function readPeriodBoard(
+  deps: BoardHandlerDeps,
+  key: ScoreKey,
+  period: 'week' | 'month',
+  members: readonly string[],
+): Promise<PeriodBoard> {
+  const dates = periodRange(period, key.date);
+  const perDay = await Promise.all(
+    dates.map((date) => deps.scores.getMany({ ...key, date }, members)),
+  );
+  const days: PeriodDay[] = perDay.flatMap((rows, i) =>
+    rows.map((row) => ({ ...row, date: dates[i] })),
+  );
+  const ranked = rankPeriod(days, key.mode);
+  const { dress, live } = await dressRows(deps.profiles, ranked);
+  return {
+    from: dates[0],
+    to: dates[dates.length - 1],
+    rows: ranked
+      .filter((row) => live(row.publicId))
+      .map((row): PeriodRow => ({ ...row, ...dress(row.publicId) })),
+  };
+}
+
+// Where the caller stands TODAY in each of their groups (#271) — the solved screen's one
+// line, and the reason it needs ONE request rather than a board per group: every group's
+// member list (GROUPS_MAX Queries at most), then ONE exact-key batch over the union of
+// members for the day, ranked per group by the day board's own rule. Score rows only —
+// no artifact, no rounds, no profiles — which is what keeps a solve's standing cheap.
+//
+// A member whose account an email link deleted is still in a member list until that
+// link's departure drains (normally the same request), and in that window their row
+// counts here where the board would drop it: accepted, since it is milliseconds and no
+// face is rendered from this answer.
+async function readStandings(
+  deps: BoardHandlerDeps,
+  key: ScoreKey,
+  publicId: string,
+): Promise<GroupStanding[]> {
+  const mine = await deps.groups.listMine(publicId);
+  if (mine.length === 0) return [];
+  const lists = await Promise.all(mine.map((group) => deps.groups.members(group.id)));
+  const union = [...new Set(lists.flat().map((member) => member.publicId))];
+  const rows = await deps.scores.getMany(key, union);
+  const byId = new Map(rows.map((row) => [row.publicId, row]));
+  return mine.flatMap((group, i): GroupStanding[] => {
+    const groupRows = lists[i].flatMap((member) => {
+      const row = byId.get(member.publicId);
+      return row ? [row] : [];
+    });
+    const standing = standingIn(rankBoard(groupRows, key.mode), publicId);
+    return standing ? [{ group: group.id, ...standing }] : [];
+  });
 }

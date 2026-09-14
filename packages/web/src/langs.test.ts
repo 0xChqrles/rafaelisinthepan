@@ -4,7 +4,7 @@
 // shared link or a refresh lands in the right language AND the right mode.
 
 import { describe, it, expect } from 'vitest';
-import { inviteLandingPath } from '@whippin/shared';
+import { groupLandingPath } from '@whippin/shared';
 import {
   ACCOUNT_EMAIL_PATH,
   ACCOUNT_PATH,
@@ -16,7 +16,7 @@ import {
   pathForArchive,
   pathForBoard,
   pathForDay,
-  pathForInvite,
+  pathForGroupInvite,
   langFromSearch,
   parseRoute,
   resolveHomeLang,
@@ -47,28 +47,31 @@ describe('parseRoute', () => {
     expect(parseRoute('/select')).toEqual({ view: 'home' });
     expect(parseRoute('/select/')).toEqual({ view: 'home' });
   });
-  // The #189 invite link is a bearer "add me" token in a path segment, so the id is
+  // The #271 group invite link is a bearer "join us" token in a path segment, so the id is
   // validated HERE: a mistyped or truncated link must go home rather than send the
   // server an id nobody can hold.
   //
-  // The SHARED link stays `/i/<publicId>` and is served by the BACKEND (it renders the
-  // preview and bounces here), so what the SPA routes is the LANDING `/join/<publicId>`.
+  // The SHARED link is `/g/<groupId>` and is served by the BACKEND (it renders the
+  // preview and bounces here), so what the SPA routes is the LANDING `/join/g/<groupId>`.
   // The two spellings live in `shared/invite.ts` precisely because this file and the
   // backend's redirect have to name the same path.
-  it('routes /join/<publicId> to the invite landing, and a broken one home', () => {
+  it('routes /join/g/<groupId> to the group landing, and a broken one home', () => {
     const id = 'abcdefghij234567';
-    expect(pathForInvite(id)).toBe(`/i/${id}`);
-    expect(inviteLandingPath(id)).toBe(`/join/${id}`);
-    expect(parseRoute(inviteLandingPath(id))).toEqual({ view: 'invite', publicId: id });
-    expect(parseRoute(`/join/${id}/`)).toEqual({ view: 'invite', publicId: id });
+    expect(pathForGroupInvite(id)).toBe(`/g/${id}`);
+    expect(groupLandingPath(id)).toBe(`/join/g/${id}`);
+    expect(parseRoute(groupLandingPath(id))).toEqual({ view: 'groupInvite', groupId: id });
+    expect(parseRoute(`/join/g/${id}/`)).toEqual({ view: 'groupInvite', groupId: id });
     expect(parseRoute('/join')).toEqual({ view: 'home' });
-    expect(parseRoute('/join/nope')).toEqual({ view: 'home' });
+    expect(parseRoute('/join/g')).toEqual({ view: 'home' });
+    expect(parseRoute('/join/g/nope')).toEqual({ view: 'home' });
+    // The retired player landing (`/join/<publicId>`) is a home redirect, not a screen.
+    expect(parseRoute(`/join/${id}`)).toEqual({ view: 'home' });
     // base32 has no 0/1/8/9, and the id is exactly 16 characters.
-    expect(parseRoute('/join/abcdefghij234560')).toEqual({ view: 'home' });
-    expect(parseRoute(`/join/${id}x`)).toEqual({ view: 'home' });
+    expect(parseRoute('/join/g/abcdefghij234560')).toEqual({ view: 'home' });
+    expect(parseRoute(`/join/g/${id}x`)).toEqual({ view: 'home' });
     // The shared link itself never reaches the SPA in production (CloudFront hands
-    // `/i/*` to the API), and it must not be a second spelling of the landing here.
-    expect(parseRoute(pathForInvite(id))).toEqual({ view: 'home' });
+    // `/g/*` to the API), and it must not be a second spelling of the landing here.
+    expect(parseRoute(pathForGroupInvite(id))).toEqual({ view: 'home' });
   });
   // The two choosers sit ABOVE /<lang>: neither is language- or mode-scoped, and /mode
   // must never be read as a language segment or shadow Word mode's /<lang>/word.

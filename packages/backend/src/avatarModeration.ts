@@ -2,7 +2,7 @@
 // rotations, reflections, scales and positions — at 10×10 that is a few thousand cell
 // comparisons, trivially cheap. Explicitly BEST-EFFORT/SYMBOLIC (the decided stance):
 // it catches the single most-drawn offensive symbol and nothing else; the real
-// containment is the friends model (#189), where the default board only shows avatars
+// containment is the groups model (#271), where the default board only shows avatars
 // of people you chose to add.
 
 import { AVATAR_SIZE } from '@whippin/shared';

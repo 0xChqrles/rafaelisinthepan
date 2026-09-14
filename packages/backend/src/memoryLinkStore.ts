@@ -23,7 +23,7 @@ import type {
 // `adopt` is ONE transaction in production. Here its writes reach the owning maps through
 // synchronous, memory-only methods (`LinkDeviceWrites` / `LinkProfileWrites` /
 // `LinkRoundWrites` / `LinkScoreWrites`) and run in one serialized event-loop critical
-// section. No request can observe the device, account, profile, merge job, challenge, or
+// section. No request can observe the device, account, profile, departure job, challenge, or
 // the active day's moved play halfway through that section.
 export function memoryLinkStore(deps: {
   devices: LinkDeviceWrites;
@@ -35,8 +35,8 @@ export function memoryLinkStore(deps: {
   const bindings = new Map<string, EmailBinding>();
   // Per scope, the instants of its sends — pruned to the rolling window on every write.
   const sends = new Map<string, number[]>();
-  // to -> the accounts whose friends still have to be merged into it.
-  const merges = new Map<string, Set<string>>();
+  // to -> the deleted accounts whose group memberships still have to be dropped.
+  const departures = new Map<string, Set<string>>();
   // The production bind/adopt operations are DynamoDB transactions. Serialize their
   // process-local equivalents so two Promise turns cannot both validate the same challenge
   // or the same empty email slot before either applies its writes.
@@ -139,10 +139,10 @@ export function memoryLinkStore(deps: {
           now: input.now,
         });
         if (outcome !== 'adopted') return { outcome, moved: [] };
-        if (input.mergeFrom !== undefined) {
-          const queued = merges.get(input.to) ?? new Set<string>();
-          queued.add(input.mergeFrom);
-          merges.set(input.to, queued);
+        if (input.departFrom !== undefined) {
+          const queued = departures.get(input.to) ?? new Set<string>();
+          queued.add(input.departFrom);
+          departures.set(input.to, queued);
         }
         if (input.erase) {
           deps.profiles.remove(input.from);
@@ -161,12 +161,12 @@ export function memoryLinkStore(deps: {
       });
     },
 
-    async pendingMerges(accountId) {
-      return [...(merges.get(accountId) ?? [])].sort();
+    async pendingDepartures(accountId) {
+      return [...(departures.get(accountId) ?? [])].sort();
     },
 
-    async clearMerge(accountId, from) {
-      merges.get(accountId)?.delete(from);
+    async clearDeparture(accountId, from) {
+      departures.get(accountId)?.delete(from);
     },
   };
 }

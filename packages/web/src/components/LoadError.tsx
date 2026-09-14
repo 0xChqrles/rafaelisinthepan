@@ -9,7 +9,7 @@ import { t } from '../i18n';
 // `message` arrives already localized; `lang` localizes the default RETRY label.
 //
 // `actionLabel` overrides that label for the one case where asking again cannot help:
-// the #189 invite landing's full friend list is a state, not a hiccup, so its button
+// the #271 invite landing's full group is a state, not a hiccup, so its button
 // says PLAY and carries the player on. The surface stays the same — a dead end with
 // one way out is the thing this component exists to prevent.
 export default function LoadError({

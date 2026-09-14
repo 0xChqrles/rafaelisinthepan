@@ -3,9 +3,7 @@ import type { CSSProperties } from 'react';
 import { INFINITY_EM_HEIGHT, INFINITY_EM_WIDTH, INFINITY_GLYPH, type Source } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { shareHeadline, shareText, shareUrl } from '../game/share';
-import type { ScorePlacementState } from '../hooks/useScoreHistogram';
 import RunRuler from './RunRuler';
-import ScoreTop from './ScoreTop';
 import SolvedCaption, { captionDurationMs } from './SolvedCaption';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useShare from '../hooks/useShare';
@@ -21,7 +19,7 @@ import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 // dissolved sentence handed over (the 2026-08-14 hand-over, restored), and it stacks:
 //
 //   SCORE   — at the TOP, right under the header: the named `<tries> TRIES` over its run
-//             ruler, the day's standing badge, and SHARE (sharing is what you do with a
+//             ruler and SHARE (sharing is what you do with a
 //             RESULT, user-decided 2026-08-14). Its height is the same on
 //             every round, and it is above the fold on every phone — SHARE is the
 //             reveal's closing beat and the game's one liked-indicator, and it is never
@@ -109,7 +107,6 @@ export default function SolvedScreen({
   words,
   holes,
   onExplore,
-  placement = null,
   capped = false,
   animate = true,
   start = true,
@@ -125,12 +122,8 @@ export default function SolvedScreen({
   words: string[]; // the sentence's full display tokens (the puzzle's own `words[]`)
   holes: SolvedHole[]; // one entry per occurrence, sorted by `pos` — the secrets inside it
   onExplore: (holeIndex: number) => void;
-  // The day's score population (#170): 'pending' while the round trip is in flight
-  // (the slot shows RANKING...); null renders the reserved empty slot (silent).
-  placement?: ScorePlacementState;
   // The round hit the server's guess cap unsolved (#214): the HEADLINE becomes `∞` and no
-  // leaderboard entry exists (`placement` is null by construction — a capped round's solve
-  // never reached the server). Everything else is an ordinary result: the sentence with its
+  // leaderboard entry exists (a capped round's solve never reached the server). Everything else is an ordinary result: the sentence with its
   // answer in place, the credit, the ruler at its real length, and SHARE.
   capped?: boolean;
   // Rehydrated solves render their final result immediately and replay nothing — and so
@@ -376,9 +369,9 @@ export default function SolvedScreen({
         <div className="card-well">
         {/* The primary sentence metric. The hidden final value reserves the count's width
             so its tally never moves the content below it — a capped round has no tally to
-            reserve for, since `∞` is one fixed shape. Where this run stands among the
-            day's players (#170) is the TOP badge BESIDE the number (user-decided
-            2026-09-05), absolutely placed so its arrival moves nothing. */}
+            reserve for, since `∞` is one fixed shape. (The #271 standing line stood beside
+            the number here until 2026-09-14, when the user dropped it; the #170 badge
+            before it. The slot stays, empty.) */}
         <span className="solved-score">
           <span className="solved-score-line">
             {capped ? (
@@ -394,13 +387,6 @@ export default function SolvedScreen({
                 <span className="solved-score-live">{shownCount}</span>
               </span>
             )}
-            <ScoreTop
-              placement={placement}
-              mode="sentence"
-              lang={lang}
-              animate={animate}
-              start={shareIn}
-            />
           </span>
           <span className="solved-score-unit">
             {t(lang, !capped && guessCount === 1 ? 'try' : 'tries')}
@@ -419,7 +405,7 @@ export default function SolvedScreen({
             beat: two equals on one row, never a second arrival. */}
         <div className={`result-actions${onTomorrow ? ' paired' : ''}${shareIn ? ' in' : ''}`}>
           <Button
-            variant="secondary"
+            variant="primary"
             className={`result-action${copied ? ' copied' : ''}`}
             onClick={onShare}
           >

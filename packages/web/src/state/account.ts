@@ -6,10 +6,11 @@
 // mounting the flow, and what keeps a link that lands on `/account/email` from leaving a
 // stale address behind it on the screen the player returns to.
 //
-// It is also where the friend-merge DRAIN lives, for the same reason: the `{token}` read
-// and the drain are ONE message on the server, so whoever reads also finishes whatever an
-// interrupted link left queued. Retried, bounded and backed off — those edges are consented
-// relationships, so the job may not simply be abandoned, and it is durable either way.
+// It is also where the group-departure DRAIN lives (#271), for the same reason: the
+// `{token}` read and the drain are ONE message on the server, so whoever reads also finishes
+// whatever an interrupted link left queued. Retried, bounded and backed off — a membership
+// left pointing at a deleted account is a ghost on every one of its groups, so the job may
+// not simply be abandoned, and it is durable either way.
 //
 // TRANSIENT, never persisted: it is the server's answer about the caller, and #211's rule
 // applies — a summary that has not arrived is UNKNOWN, never a guessed empty one.
@@ -19,10 +20,10 @@ import { linkUrl, parseAccountSummary, postLinkBody, type AccountSummary } from 
 import { currentRequestIdentity, deviceIdentity, identityEpochOf } from '../identity';
 import { adoptSignedOutVerdict } from './signedOutVerdict';
 
-// How hard the client chases a merge the server has not finished. The identity change has
-// already committed, so this is housekeeping nobody is waiting on.
-const MERGE_DRAIN_ATTEMPTS = 4;
-const MERGE_DRAIN_DELAY_MS = 1_500;
+// How hard the client chases a departure the server has not finished. The identity change
+// has already committed, so this is housekeeping nobody is waiting on.
+const DRAIN_ATTEMPTS = 4;
+const DRAIN_DELAY_MS = 1_500;
 
 export type AccountPhase = 'idle' | 'loading' | 'ready' | 'failed';
 
@@ -44,14 +45,14 @@ let loadedFor: string | null = null;
 
 async function drain(token: string, epoch: string, pending: boolean): Promise<void> {
   let outstanding = pending;
-  for (let attempt = 0; outstanding && attempt < MERGE_DRAIN_ATTEMPTS; attempt += 1) {
-    await new Promise((done) => setTimeout(done, MERGE_DRAIN_DELAY_MS * 2 ** attempt));
+  for (let attempt = 0; outstanding && attempt < DRAIN_ATTEMPTS; attempt += 1) {
+    await new Promise((done) => setTimeout(done, DRAIN_DELAY_MS * 2 ** attempt));
     // The identity may have moved on between attempts — a sign-out, another tab's account.
     if (currentRequestIdentity(epoch) === null) return;
     try {
       const response = await postLinkBody(linkUrl(), { token });
       if (!response.ok) return;
-      outstanding = parseAccountSummary(await response.json()).mergePending;
+      outstanding = parseAccountSummary(await response.json()).departurePending;
     } catch {
       return;
     }
@@ -92,7 +93,7 @@ export function loadAccountSummary(force = false): void {
       if (currentRequestIdentity(epoch) === null) return;
       loadedFor = summary.accountId;
       useAccountStore.setState({ phase: 'ready', summary });
-      if (summary.mergePending) void drain(resolved.identity.token, epoch, true);
+      if (summary.departurePending) void drain(resolved.identity.token, epoch, true);
     } catch {
       useAccountStore.setState({ phase: 'failed' });
     } finally {
@@ -101,17 +102,17 @@ export function loadAccountSummary(force = false): void {
   })();
 }
 
-// A LINK LANDED, AND IT MAY OWE A FRIEND MERGE (#204). Up to 200 mutual edges is 800 rows,
-// which cannot fit one transaction, so the adoption commits a durable JOB and the server
-// drains what it can before answering — `mergePending` is it saying "not all of it". The
-// edges are consented relationships, so the job may not simply be left for whenever the
-// player next opens `/account`: this resumes the SAME bounded, backed-off, epoch-fenced
-// drain the summary read uses, in the identity the link just landed on.
+// A LINK LANDED, AND IT MAY OWE A DEPARTURE (#204/#271): the deleted account's group
+// memberships are dropped by a durable JOB the adoption commits, and the server drains what
+// it can before answering — `departurePending` is it saying "not all of it". A membership
+// left standing is a ghost on every one of those groups, so the job may not simply be left
+// for whenever the player next opens `/account`: this resumes the SAME bounded, backed-off,
+// epoch-fenced drain the summary read uses, in the identity the link just landed on.
 //
 // Called AFTER the adoption has published, so the epoch it captures is the one the drain
 // has to run under — an adopt CHANGES the account id, and a drain fenced on the epoch the
 // verify started under would return on its first check without ever calling.
-export function resumeMergeDrain(pending: boolean): void {
+export function resumeDepartureDrain(pending: boolean): void {
   if (!pending) return;
   const resolved = currentRequestIdentity();
   if (!resolved) return;
@@ -128,7 +129,7 @@ export function noteAccountEmail(accountId: string, email: string): void {
         ? { ...state.summary, email }
         : // An ADOPT lands on an account this store has never read. Publish what is KNOWN
           // and let the next mount fill in the rest, rather than showing nothing.
-          { accountId, deviceId: '', email, createdAt: '', mergePending: false },
+          { accountId, deviceId: '', email, createdAt: '', departurePending: false },
   }));
   // An ADOPT lands on an account this store has never read, so the next `loadAccountSummary`
   // has to actually go — the address is known but the rest of the row is not.

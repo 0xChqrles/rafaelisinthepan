@@ -31,8 +31,8 @@
 // **THE ERASE CONFIRMATION IS A CROSSROADS, NOT A WARNING.** A trade drawn from one side
 // reads as pure loss, so it shows BOTH accounts — the one being left, struck under the word
 // DELETED, and the one being joined, lit beside it. That frees its one sentence to carry
-// the part the screen cannot draw: what SURVIVES (the active day's play moves across, the
-// friends graph is merged). It is still skipped entirely when there is nothing to lose.
+// the part the screen cannot draw: what SURVIVES (the active day's play moves across) and
+// what does not (the groups, #271). It is still skipped entirely when there is nothing to lose.
 //
 // It is a CODE, not a magic link: a link opens in whatever browser the mail client prefers
 // rather than the one that asked, and corporate scanners prefetch links and spend
@@ -97,7 +97,7 @@ import { navigate } from '../routing';
 import {
   loadAccountSummary,
   noteAccountEmail,
-  resumeMergeDrain,
+  resumeDepartureDrain,
   useAccountSummary,
 } from '../state/account';
 import { recoveredLinkResult } from '../state/linkRecovery';
@@ -371,7 +371,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
     // AFTER the adoption, so the drain runs as the account it landed on (#204). The server
     // drained what it could before answering; this finishes the rest without waiting for the
     // player to visit `/account`.
-    resumeMergeDrain(result.mergePending);
+    resumeDepartureDrain(result.departurePending);
   }, []);
 
   const recoverAmbiguous = useCallback(
@@ -877,14 +877,14 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             <p className="account-note account-note-center">
               {t(lang, erasing ? 'linkEraseKeeps' : 'linkSwitchKeeps')}
             </p>
-            {/* Destruction never GLOWS, so the erase is the QUIET button in the danger ink
-                and the lit primary is never the one that deletes an account. A switch
+            {/* Destruction never GLOWS, so the erase is the DANGER cap (the secondary tile
+                in the danger ink) and the lit primary is never the one that deletes an account. A switch
                 destroys nothing, so it is an ordinary primary — dressing it as a danger
                 would teach the red to mean "a decision" rather than "a loss". */}
             {erasing ? (
               <Button
                 variant="secondary"
-                className="link-danger"
+                className="btn-danger"
                 disabled={busy}
                 onClick={() => void verify(code, { erase: prompt.accountId })}
               >

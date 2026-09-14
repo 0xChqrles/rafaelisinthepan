@@ -5,7 +5,6 @@ import LoadingWave from '../components/LoadingWave';
 import useVocab from '../hooks/useVocab';
 import { KB_EXIT_FALLBACK_MS } from './Game';
 import { useDeadlinePassed } from '../hooks/useCountdown';
-import useScoreHistogram from '../hooks/useScoreHistogram';
 import useWordRoundSync from '../hooks/useWordRoundSync';
 import { finishWordRound, retryWordRoundSync, startWordRound } from '../state/wordRoundSync';
 import { prefetchTurnstileTokens } from '../turnstile';
@@ -264,21 +263,6 @@ function WordRound({
   // the run is over; that is the clock's, above.
   const run = useMemo(() => replayWordRun(ranks, tried), [ranks, tried]);
   const score = run.claimed.length;
-
-  // The day's score population (#170), READ once the SERVER holds this run (#203). The
-  // claim count is no longer POSTed: the end-of-run SUBMISSION is what records the row, so
-  // the standing is readable exactly when that write has been acknowledged — which
-  // `settled` already says, whether this device wrote the run or merely read that another
-  // one had. A run this device merely watched therefore draws no standing until the device
-  // playing it submits, which is the same one fact rather than a rule of its own. Renders
-  // on the post-mortem only.
-  const placement = useScoreHistogram({
-    finished: settled,
-    mode: 'word',
-    lang,
-    dayNumber,
-    score,
-  });
 
   // The claims broken down by grade, ladder order — what the end screen's share text, the
   // share token and the OG card all carry. Derived from the same replay as the score, so
@@ -791,7 +775,6 @@ function WordRound({
               dayNumber={dayNumber}
               lang={lang}
               word={puzzle.word.word}
-              placement={placement}
               animate={animateResults}
             />
           </div>

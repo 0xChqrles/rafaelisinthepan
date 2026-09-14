@@ -1,4 +1,4 @@
-import { dayNumber, INVITE_LANDING_SEGMENT, PUBLIC_ID_PATTERN } from '@whippin/shared';
+import { dayNumber, GROUP_ID_PATTERN, GROUP_LANDING_SEGMENT, GROUP_SEGMENT } from '@whippin/shared';
 import { FIRST_PUZZLE_DATE } from './config';
 
 // How far past the client's active day a dated route may reach (#273): ONE day, the
@@ -108,22 +108,19 @@ export const PRIVACY_PATH = '/privacy';
 // Which act the email flow is dressing. It never reaches the server.
 export type LinkIntent = 'save' | 'return';
 
-// The #189 INVITE LINK: `/i/<publicId>`, the sender's own id in the path. Global — an
-// identity is not language-scoped. Since 2026-08-20 the LINK ITSELF is served by the
-// backend, so it unfurls in a chat as the sender's own mark and name (`shared/invite.ts`
-// holds the three paths, since infra, the backend and this file all have to agree on
-// them); it renders that preview and bounces a human into the LANDING below, which is
-// where the click still does its one job. So the shared link is unchanged and every one
-// already in the wild simply gained a preview.
-//
-// `/join/<publicId>` is that landing: it records the mutual edge with the CLICKER's key
-// and continues into the game, which is why one link is both "add me" and "come play".
-// The id is validated here, so a mistyped link is an unknown path, not a request.
-export { invitePath as pathForInvite } from '@whippin/shared';
+// The #271 GROUP INVITE LINK: `/g/<groupId>`, the group's id in the path. Global — a group
+// is not language-scoped. The LINK ITSELF is served by the backend, so it unfurls in a chat
+// as the group's name and its members' marks (`shared/invite.ts` holds the three paths,
+// since infra, the backend and this file all have to agree on them); it renders that
+// preview and bounces a human into the LANDING below, which is where the tap does its one
+// job: `/join/g/<groupId>` records the membership with the CLICKER's key and continues into
+// the game, which is why one link is both "join us" and "come play". The id is validated
+// here, so a mistyped link is an unknown path, not a request.
+export { groupInvitePath as pathForGroupInvite } from '@whippin/shared';
 
 // A parsed route. The game IS the home: /<lang> plays today's puzzle, /<lang>/<date>
 // plays a past day (archive, #55), /<lang>/archive is the calendar, /privacy is the data
-// notice, and anything else (/, unknown paths) is
+// notice, /join/g/<groupId> the group invite landing (#271), and anything else (/, unknown paths) is
 // a `home` redirect that bounces to the user's language (see resolveHomeLang). Word
 // mode (#156) mirrors the whole grammar under /<lang>/word: today's word,
 // /word/<date>, /word/archive.
@@ -135,7 +132,7 @@ export type Route =
   | { view: 'accountEmail'; intent: LinkIntent }
   | { view: 'profile' }
   | { view: 'privacy' }
-  | { view: 'invite'; publicId: string }
+  | { view: 'groupInvite'; groupId: string }
   | { view: 'home' };
 
 // A strict "YYYY-MM-DD" that is ALSO a real calendar date (so 2026-13-40 is rejected):
@@ -173,10 +170,11 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
     return { view: 'account' };
   }
   // A broken invite link falls through to `home` rather than asking the server about an id
-  // that cannot exist — the same treatment a broken date deep-link gets.
-  if (seg === INVITE_LANDING_SEGMENT) {
-    return second && PUBLIC_ID_PATTERN.test(second)
-      ? { view: 'invite', publicId: second }
+  // that cannot exist — the same treatment a broken date deep-link gets. Only the GROUP
+  // landing exists under `/join/` (#271; the player landing went with the friends graph).
+  if (seg === GROUP_LANDING_SEGMENT) {
+    return second === GROUP_SEGMENT && third && GROUP_ID_PATTERN.test(third)
+      ? { view: 'groupInvite', groupId: third }
       : { view: 'home' };
   }
   // `/select`, the language chooser SCREEN, was retired 2026-09-05 (user-decided): every

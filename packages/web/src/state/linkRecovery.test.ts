@@ -12,7 +12,7 @@ function summary(accountId: string, email: string | null) {
     deviceId: DEVICE,
     email,
     createdAt: '2026-08-12T10:00:00.000Z',
-    mergePending: false,
+    departurePending: false,
   };
 }
 

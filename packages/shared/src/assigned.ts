@@ -20,7 +20,7 @@ import { AVATAR_CELLS, AVATAR_PALETTES, encodeAvatar } from './avatar';
 // unnamed player wears a GAMERTAG-style pseudonym (second pass, same day: the first
 // cut's pronounceable syllables — "Fototi" — didn't read as a username; games hand out
 // AdjectiveNoun handles, so this does too): `SwiftFalcon84`, derived deterministically
-// from the publicId, identical on every surface, every device and every friend's board.
+// from the publicId, identical on every surface, every device and every group's board.
 //
 // The parts are length-budgeted against the shared name cap (6 + 7 + 2 ≤ 16) and the
 // alphabet is alphanumeric, so a pseudonym is always a value `sanitizeName` would
