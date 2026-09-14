@@ -120,6 +120,15 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   because whichever copy won would decide that group's language and podium. A config is
   capped at SSM Standard's 4 KB, checked where it is written — `chat.prePrompt` is the field
   that will reach it, and the Advanced tier is a per-parameter charge for a group's settings.
+- **THE OWNER (user-decided 2026-09-15): `owner` in the group config is ONE sender JID
+  (phone or LID form, null for none) whose word the bot ALWAYS does and NEVER refuses —
+  and only theirs.** A voice rule in the prompt (`personality.ts` `ownerSection`, v15;
+  `agent.ts` `fromOwner`: matched by JID against the message as it came and as its player
+  key, never by a name), pointed at on the message being answered — ambient included, so
+  an unaddressed ask of theirs is not left to the NO_REPLY default. It grants nothing the
+  code decides: the tools are still the only facts, the spoiler backstop, the ceilings and
+  the podium's comments are untouched. Their display name reaches the prompt from `names`
+  or from their own message; a JID names a person, so it lives in SSM, never in code.
 - **No config, no behaviour.** That set is the allow-list for ingestion, reactions,
   conversation AND scheduled messages (the stack reads it at synth to create one schedule
   per enabled podium, one per enabled reminder, and one diary rewrite per group with chat

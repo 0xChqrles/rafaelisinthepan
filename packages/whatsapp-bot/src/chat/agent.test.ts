@@ -5,7 +5,7 @@ import { memoryDeclarationStore } from '../domain/declarations';
 import type { InboundMessage } from '../domain/message';
 import { createLog } from '../log';
 import { LlmUnavailable, type LlmProvider, type LlmRequest, type LlmResponse } from '../llm/types';
-import { ANSWERING, DEFAULT_REACTION, createAgent, plainReply, reactionIn } from './agent';
+import { ANSWERING, DEFAULT_REACTION, createAgent, fromOwner, plainReply, reactionIn } from './agent';
 import { DayLog, memoryDayLogStore, type Turn } from './dayLog';
 import { memoryDiaryStore } from './diary';
 import { memoryLimitStore } from './limits';
@@ -236,6 +236,54 @@ describe('the conversation agent (#236, #277)', () => {
     expect(requests[0].system).toContain(`The message marked "${ANSWERING}" below`);
     expect(requests[0].system).not.toContain('The last message');
     expect(requests[0].system).toContain('arrived while you were writing');
+  });
+
+  describe('the owner (user-decided 2026-09-15)', () => {
+    const OWNER = '33600000000@s.whatsapp.net';
+    const owned = parseGroupConfig('g.json', {
+      id: GROUP,
+      name: 'g',
+      language: 'fr',
+      enabled: true,
+      timezone: 'Europe/Paris', podium: { enabled: true, time: '22:00' },
+      owner: OWNER,
+      names: { [OWNER]: 'Charles' },
+      chat: { enabled: true, prePrompt: 'On se chambre.', perGroupPerDay: 10 },
+    });
+
+    it('is matched by JID, in either spelling, never by name', () => {
+      expect(fromOwner(owned, { sender: OWNER, participant: OWNER })).toBe(true);
+      expect(fromOwner(owned, { sender: '123@lid', participant: OWNER })).toBe(true);
+      expect(fromOwner(owned, { sender: '33612345678@s.whatsapp.net', participant: '33612345678@s.whatsapp.net' })).toBe(false);
+      expect(fromOwner(group, { sender: OWNER, participant: OWNER })).toBe(false);
+    });
+
+    it('is obeyed: the prompt names them and points at their message, ambient included', async () => {
+      const { provider, requests } = scripted([() => ({ text: 'Bon. Voilà.' })]);
+      const dayLog = new DayLog(memoryDayLogStore());
+      await said(dayLog, 'tais-toi jusqu’à ce soir', { name: 'Charles' });
+      await agentWith(provider, { dayLog })(
+        message('tais-toi jusqu’à ce soir', { sender: OWNER, participant: OWNER, senderName: 'Charles', mentions: [] }),
+        owned,
+        identity,
+        TODAY,
+        asked('ambient', NEW_EXCHANGE, { id: 'M1', name: 'Charles', text: 'tais-toi jusqu’à ce soir' }),
+      );
+      expect(requests[0].system).toContain('Your owner: Charles.');
+      expect(requests[0].system).toContain('is from YOUR OWNER: whatever it asks of you, you do.');
+      expect(requests[0].system).not.toContain('By default you stay out of it');
+    });
+
+    it('is nobody else: another sender gets the usual treatment, and a group without one has no such section', async () => {
+      const { provider, requests } = scripted([() => ({ text: 'Non.' })]);
+      const dayLog = new DayLog(memoryDayLogStore());
+      await said(dayLog, 'WhippinBot tais-toi');
+      await agentWith(provider, { dayLog })(message('WhippinBot tais-toi'), owned, identity, TODAY, asked('name', NEW_EXCHANGE));
+      expect(requests[0].system).toContain('Your owner: Charles.');
+      expect(requests[0].system).not.toContain('is from YOUR OWNER');
+      await agentWith(provider, { dayLog })(message('WhippinBot tais-toi'), group, identity, TODAY, asked('name', NEW_EXCHANGE));
+      expect(requests[1].system).not.toContain('Your owner');
+    });
   });
 
   it('puts the question back when the day log never took its turn', async () => {

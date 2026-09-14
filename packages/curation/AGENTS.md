@@ -155,8 +155,13 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   hole — that is the game** (user's call 2026-09-10 on « les clefs du [magasin] »,
   « une [grippe] intestinale », « tant de [cocaïne] »: the first-filler rule of the
   same morning struck them and left « sciatique »). **The EXPECTED word is never a
-  hole either (user-decided 2026-09-13, "aim harder"): the reader's FIRST filler — what
-  most readers put there, twins folded — is struck even with alternatives behind it.**
+  hole either (user-decided 2026-09-13, "aim harder"): the word most readers would
+  write there, twins folded, is struck even with alternatives behind it.** The reader
+  NAMES it in the same call (`expected`, null when readers would split), told to set
+  the book aside; it is never read off the list's first position — the model has
+  memorised a canonical text and lists the true word first (2026-09-15: that reading
+  struck 32 of 38 words of an Orwell, and flipped the same Houellebecq words between
+  runs). A named word that is not the secret counts as one of the alternatives.
   Measured on the runs' own logs against the real medians (`/scores`): the curated
   days of 09-10/11/12 hid one to three expected words (« hérité », « chauffage »,
   « peau » / « montrer ») and played at 6 / 8 / 8; the 09-13 day hid none (« lâcher »

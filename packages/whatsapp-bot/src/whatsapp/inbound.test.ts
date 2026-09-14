@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { WAMessage } from 'baileys';
+import { fromOwner } from '../chat/agent';
+import { parseGroupConfig } from '../config/groupConfig';
 import { OFFLINE_LIVE_S, canonicalSender, isLive, toInbound } from './inbound';
 
 const GROUP = '120363000000000001@g.us';
@@ -20,6 +22,26 @@ function wa(over: Partial<WAMessage> & { key?: Partial<WAMessage['key']> }): WAM
 }
 
 describe('Baileys stops at the inbound boundary (#236)', () => {
+  it('recognizes a LID-configured owner on a phone-addressed message', async () => {
+    const group = parseGroupConfig('owner.json', {
+      id: GROUP, name: 'test', language: 'fr', enabled: true,
+      timezone: 'Europe/Paris', podium: { enabled: false }, chat: { enabled: true },
+      owner: '123456789012345@lid',
+    });
+    const inbound = await toInbound(wa({
+      key: { participant: '33612345678:2@s.whatsapp.net', participantAlt: '123456789012345:7@lid' },
+      message: { conversation: 'hello' },
+    }), true, resolve);
+    expect(inbound).toMatchObject({
+      sender: '33612345678@s.whatsapp.net',
+      participant: '33612345678@s.whatsapp.net',
+      participantAlt: group.owner,
+    });
+    expect(fromOwner(group, inbound!)).toBe(true);
+    expect(fromOwner({ ...group, owner: '999999999999999@lid' }, inbound!)).toBe(false);
+    expect(fromOwner({ ...group, owner: null }, inbound!)).toBe(false);
+  });
+
   it('maps a group text with a mention and a quote into our own shape', async () => {
     const inbound = await toInbound(
       wa({

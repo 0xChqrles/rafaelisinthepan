@@ -12,6 +12,7 @@
     "enabled": false,
     "time": "09:00"
   },
+  "owner": null,
   "chat": {
     "enabled": true,
     "name": "WhippinBot",

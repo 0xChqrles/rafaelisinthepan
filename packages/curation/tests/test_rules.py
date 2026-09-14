@@ -190,8 +190,8 @@ def test_open_candidates_strike_a_word_with_at_most_two_possibilities():
     cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
     assert OBVIOUS_MAX == 2
     # « [arrêt] cardiaque » with « crise » expected: the reader names one other word
-    # and the secret — two possibilities, out (even though the secret is not first).
-    fillers = lambda t: ["chien", "chat"] if t.text == "chat" else ["neige", "mer", "nuit"]  # noqa: E731
+    # and the secret — two possibilities, out (even though the secret is not the one named).
+    fillers = lambda t: (["chien", "chat"], "chien") if t.text == "chat" else (["neige", "mer", "nuit"], None)  # noqa: E731
     log = SearchLog()
     kept = open_candidates(cands, fillers=fillers, neighbour_rank=no_rank, log=log)
     assert {t.text for t in kept} == {t.text for t in cands} - {"chat"}
@@ -200,32 +200,49 @@ def test_open_candidates_strike_a_word_with_at_most_two_possibilities():
 
 def test_open_candidates_keep_a_word_with_three_possibilities():
     cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
-    # Another word expected first, the secret among the alternatives: a hole.
-    fillers = lambda t: ["autre", t.text, "encore"]  # noqa: E731
+    # Another word expected, the secret among the alternatives: a hole.
+    fillers = lambda t: (["autre", t.text, "encore"], "autre")  # noqa: E731
     kept = open_candidates(cands, fillers=fillers, neighbour_rank=no_rank)
     assert [t.text for t in kept] == [t.text for t in cands]
 
 
 def test_open_candidates_strike_the_expected_word_even_with_alternatives():
     cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
-    # « quinze [jours] plus tard »: the secret is what most readers put, mois/ans/années behind it.
-    fillers = lambda t: ["chat", "chien", "rat", "lion"] if t.text == "chat" else ["autre", t.text, "encore"]  # noqa: E731
+    # « quinze [jours] plus tard »: the secret is what most readers write, mois/ans/années behind it.
+    fillers = lambda t: (["chat", "chien", "rat", "lion"], "chat") if t.text == "chat" else (["autre", t.text, "encore"], None)  # noqa: E731
     log = SearchLog()
     kept = open_candidates(cands, fillers=fillers, neighbour_rank=no_rank, log=log)
     assert "chat" not in {t.text for t in kept}
-    assert any("'chat' is the EXPECTED word" in e for e in log.events)
-    # A twin first (« clés » for « clefs ») is the secret first.
-    fillers = lambda t: ["chats", "chien", "rat", "lion"] if t.text == "chat" else ["autre", t.text, "encore"]  # noqa: E731
+    assert any("'chat' is the EXPECTED word" in e and "« chat »" in e for e in log.events)
+    # A twin named (« clés » for « clefs ») is the secret named.
+    fillers = lambda t: (["chats", "chien", "rat", "lion"], "chats") if t.text == "chat" else (["autre", t.text, "encore"], None)  # noqa: E731
     assert "chat" not in {t.text for t in open_candidates(cands, fillers=fillers, neighbour_rank=no_rank)}
+
+
+def test_the_expected_word_is_the_one_named_never_the_first_of_the_list():
+    cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
+    # The model lists the true word first (it knows the text) but says readers would
+    # split: a hole. The list-position reading struck it (2026-09-15, Orwell).
+    fillers = lambda t: ([t.text, "chien", "rat", "lion"], None)  # noqa: E731
+    log = SearchLog()
+    kept = {t.text for t in open_candidates(cands, fillers=fillers, neighbour_rank=no_rank, log=log)}
+    assert kept == {t.text for t in cands}
+    assert any("'chat' is open" in e and "readers split" in e for e in log.events)
+    # Readers agree on ANOTHER word: it counts as an alternative even when the list
+    # omits it (« photos » for « [cartes] »: cartes, photos, images — three, a hole).
+    fillers = lambda t: ([t.text, "images"], "photos")  # noqa: E731
+    assert {t.text for t in open_candidates(cands, fillers=fillers, neighbour_rank=no_rank)} == {t.text for t in cands}
+    fillers = lambda t: ([t.text], "photos")  # noqa: E731
+    assert open_candidates(cands, fillers=fillers, neighbour_rank=no_rank) == []
 
 
 def test_open_candidates_count_the_secret_even_when_the_reader_misses_it():
     cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
     # Two other words, the secret not among them: three possibilities, open.
-    fillers = lambda t: ["autre", "encore"]  # noqa: E731
+    fillers = lambda t: (["autre", "encore"], None)  # noqa: E731
     assert len(open_candidates(cands, fillers=fillers, neighbour_rank=no_rank)) == len(cands)
     # One other word only: two possibilities, obvious.
-    fillers = lambda t: ["autre"]  # noqa: E731
+    fillers = lambda t: (["autre"], None)  # noqa: E731
     assert open_candidates(cands, fillers=fillers, neighbour_rank=no_rank) == []
 
 
@@ -243,8 +260,8 @@ def test_open_candidates_fold_twins_into_the_secret_and_dedupe_fillers():
     cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
     ranks = {("chat", "minet"): 1, ("pierre", "roche"): 40}
     neighbour_rank = lambda t, w: ranks.get((t.text, w))  # noqa: E731
-    fillers = lambda t: {"chat": ["chien", "chats", "minet", "Chien"],  # noqa: E731
-                         "pierre": ["roche", "pierre", "dalle"]}.get(t.text, ["x", "y", "z"])
+    fillers = lambda t: {"chat": (["chien", "chats", "minet", "Chien"], "minet"),  # noqa: E731
+                         "pierre": (["roche", "pierre", "dalle"], "roche")}.get(t.text, (["x", "y", "z"], None))
     kept = {t.text for t in open_candidates(cands, fillers=fillers, neighbour_rank=neighbour_rank)}
     assert "chat" not in kept  # chien, then a variant and a rank-1 synonym of the secret: two possibilities
     assert "pierre" in kept  # roche expected, the secret and dalle behind it: three, a hole
@@ -260,7 +277,7 @@ def test_open_candidates_judge_a_repeated_word_once():
 
     def fillers(t):
         asked.append(t.i)
-        return ["chat"] if t.text == "chat" else ["ronfle", "dort", "veille"]
+        return (["chat"], "chat") if t.text == "chat" else (["ronfle", "dort", "veille"], None)
 
     kept = open_candidates(twice, fillers=fillers, neighbour_rank=no_rank)
     assert asked == [0, 1]  # one question per distinct slug
@@ -275,15 +292,15 @@ def test_initial_candidates_drop_a_hyphenated_compound():
 
 def test_the_expected_strike_spares_a_rare_word_the_count_rule_still_judges():
     cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
-    # « je lance à la [cantonade] »: the reader completes the idiom first, but the word
-    # is past the plain-word boundary — a player may not have it. Three fillers: a hole.
-    fillers = lambda t: [t.text, "ronde", "volée"]  # noqa: E731
+    # « je lance à la [cantonade] »: the reader completes the idiom, but the word is
+    # past the plain-word boundary — a player may not have it. Three fillers: a hole.
+    fillers = lambda t: ([t.text, "ronde", "volée"], t.text)  # noqa: E731
     rank = lambda t: PLAIN_WORD_RANK + 1 if t.text == "chat" else 100  # noqa: E731
     log = SearchLog()
     kept = {t.text for t in open_candidates(cands, fillers=fillers, neighbour_rank=no_rank, frequency_rank=rank, log=log)}
     assert "chat" in kept and "pierre" not in kept  # pierre is plain and expected: struck
     assert any("'chat' is open — rare" in e for e in log.events)
     # Rare but with only one alternative: the count rule strikes it all the same.
-    fillers = lambda t: [t.text, "ronde"]  # noqa: E731
+    fillers = lambda t: ([t.text, "ronde"], t.text)  # noqa: E731
     assert "chat" not in {t.text for t in open_candidates(cands, fillers=fillers, neighbour_rank=no_rank, frequency_rank=rank)}
 
