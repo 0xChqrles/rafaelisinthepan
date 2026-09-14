@@ -405,7 +405,7 @@ export default function SolvedScreen({
             beat: two equals on one row, never a second arrival. */}
         <div className={`result-actions${onTomorrow ? ' paired' : ''}${shareIn ? ' in' : ''}`}>
           <Button
-            variant="secondary"
+            variant="primary"
             className={`result-action${copied ? ' copied' : ''}`}
             onClick={onShare}
           >

@@ -2743,8 +2743,32 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .result-action {
   min-width: 180px;
 }
+/* COPIED lands in the accent on the white cap — the one moment the cap's ink is coloured. */
 .result-action.copied {
-  color: var(--accent);
+  --cap-ink: var(--accent);
+}
+/* TOMORROW is SHARE's equal on the row, not its answer: a cap, never the quiet word. */
+.result-actions .btn-primary + .btn-secondary {
+  --print: color-mix(in srgb, var(--fg) 26%, var(--bg));
+  --cap-ground: var(--surface);
+  --cap-ink: var(--fg);
+  min-height: 48px;
+  padding: 14px 40px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  box-shadow: 4px 4px 0 0 var(--print);
+}
+.result-actions .btn-primary + .btn-secondary:hover:not(:disabled) {
+  translate: -1px -1px;
+  box-shadow: 5px 5px 0 0 var(--print);
+}
+.result-actions .btn-primary + .btn-secondary:active:not(:disabled) {
+  translate: 3px 3px;
+  box-shadow: 1px 1px 0 0 var(--print);
+  color: var(--fg);
 }
 /* TOMORROW beside SHARE (#273): two actions share the row as equals — each gives up the
    lone button's floor width and takes half the row instead, capped so the pair does not
@@ -3265,7 +3289,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  padding: 14px 28px;
+  /* A word needs air in a cap: 40px a side (user-reported 2026-09-14, CREATE "very
+     narrow" at 28). */
+  padding: 14px 40px;
   min-height: 48px;
   font-family: var(--ui);
   font-size: 14px;
@@ -3320,27 +3346,41 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   --cap-ink: var(--danger);
   border-color: color-mix(in srgb, var(--danger) 45%, transparent);
 }
-/* THE ONE POSITION THE BARE DRESS EARNS (user-decided 2026-08-30): directly under a
-   primary, answering it, a secondary is a QUIET WORD — no cap, no print — so the pair
-   reads as one action and its way out. */
+/* THE ONE POSITION THE CAP COMES OFF (user-decided 2026-08-30, restated 2026-09-14:
+   "when a label button is below a bigger button it always has the same underline
+   design"): directly under a primary, answering it, a secondary is THE QUIET WORD —
+   `.link-quiet-btn`'s exact dress, the tracked word on its print line — so the pair reads
+   as one action and its way out, on every screen the same. Restated in full here rather
+   than shared through a class, because the sibling rule has to WIN over the cap's. */
 .btn-primary + .btn-secondary,
 .mix-btn + .btn-secondary {
-  --print: transparent;
+  --print: var(--line-strong);
   --cap-ground: transparent;
-  border-color: transparent;
-  box-shadow: none;
-  opacity: 0.75;
+  --cap-ink: var(--fg);
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 14px 4px 12px;
+  border: 0;
+  border-radius: 0;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.14em;
+  box-shadow: inset 0 -2px 0 0 var(--print);
+  transition: color 120ms, box-shadow 120ms;
 }
-.btn-primary + .btn-secondary:hover,
-.mix-btn + .btn-secondary:hover {
+.btn-primary + .btn-secondary:hover:not(:disabled),
+.mix-btn + .btn-secondary:hover:not(:disabled) {
+  --print: var(--fg);
   translate: 0;
-  box-shadow: none;
-  opacity: 1;
+  box-shadow: inset 0 -2px 0 0 var(--print);
 }
-.btn-primary + .btn-secondary:active,
-.mix-btn + .btn-secondary:active {
+.btn-primary + .btn-secondary:active:not(:disabled),
+.mix-btn + .btn-secondary:active:not(:disabled) {
+  --print: var(--fg);
   translate: 0;
-  box-shadow: none;
+  box-shadow: inset 0 -2px 0 0 var(--print);
+  color: var(--muted);
 }
 
 /* ===================== mobile / small screens ===================== */
@@ -3965,9 +4005,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 .invite-actions .btn-primary {
   width: 100%;
-}
-.invite-actions .btn-secondary {
-  font-size: 14px;
 }
 
 @media (max-width: 640px) {
@@ -5065,34 +5102,50 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   border-color: var(--fg);
   box-shadow: 0 0 0 1px var(--fg);
 }
-/* CLEAR: a quiet hairline chip — it undoes, so it never competes with the swatches.
-   The leaderboard's EDIT chip (#190) is the same control in the same voice: it leads
-   away from the board rather than acting on it, so it wears this rule rather than a
-   copy of it. */
+/* THE COMPACT CAP (third button design, 2026-09-14): the secondary keycap at a row's
+   size — CLEAR on the editor's tool row, EDIT on the account masthead, SIGN OUT and RETRY
+   on the device rows. Same tile, same print (3px at this size), same press. */
 .profile-clear,
-.board-chip {
+.board-chip,
+.device-signout,
+.device-retry {
+  --print: color-mix(in srgb, var(--fg) 26%, var(--bg));
   flex: none;
-  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 16px;
   font-family: var(--ui);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--fg);
-  background: var(--glass);
+  background: var(--surface);
   border: 1px solid var(--line-strong);
   border-radius: var(--r-sm);
-  padding: 0 14px;
+  box-shadow: 3px 3px 0 0 var(--print);
   cursor: pointer;
   text-shadow: none;
-  transition: filter 0.08s linear, border-color 0.12s linear;
+  transition: translate 70ms ease-out, box-shadow 70ms ease-out;
 }
 .profile-clear:hover:not(:disabled),
-.board-chip:hover {
-  filter: brightness(1.3);
-  border-color: var(--fg);
+.board-chip:hover,
+.device-signout:hover:not(:disabled),
+.device-retry:hover {
+  translate: -1px -1px;
+  box-shadow: 4px 4px 0 0 var(--print);
 }
-.profile-clear:disabled {
+.profile-clear:active:not(:disabled),
+.board-chip:active,
+.device-signout:active:not(:disabled),
+.device-retry:active {
+  translate: 2px 2px;
+  box-shadow: 1px 1px 0 0 var(--print);
+}
+.profile-clear:disabled,
+.device-signout:disabled {
   opacity: 0.45;
   cursor: default;
 }
@@ -6125,38 +6178,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.device-signout,
-.device-retry {
-  flex: 0 0 auto;
-  /* The one destructive control on `/account`, and it measured 82x27. The height is STATED
-     rather than reached through padding (`.board-chip`'s own shape), so the floor cannot
-     drift with the label's line box. The row grows with it rather than the chip being given
-     an invisible overhang: two SIGN OUT buttons one gap apart would then have OVERLAPPING
-     hit areas, and a tap landing on the wrong row's sign-out is the exact accident this
-     list must never have. */
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  padding: 0 14px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-sm);
-  background: none;
-  font-family: var(--ui);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--fg);
-  cursor: pointer;
-}
-.device-signout:hover:not(:disabled),
-.device-retry:hover {
-  filter: brightness(1.3);
-}
-.device-signout:disabled {
-  color: var(--muted);
-  cursor: default;
-}
 
 /* On a phone the mobile .app is top-anchored (16px), so the column's top padding sets
    where the editor starts: 48px puts it at 64px from the viewport top — exactly where
@@ -6269,14 +6290,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    masthead squeezed the account's own name to `ShinyGobl…`. Both are bought back in
    PADDING, so no type shrinks and no label is rewritten. */
 @media (max-width: 380px) {
-  /* Measured: at 16px of side padding the label still wrapped and 14 was the exact
-     threshold, so this takes 12 — two pixels of slack against a device whose metrics round
-     the other way. */
-  .btn-primary {
-    padding-left: 12px;
-    padding-right: 12px;
-  }
-  /* And the masthead hands the name back what MODIFIER took: 132px of column became 150,
+  /* The masthead hands the name back what MODIFIER took: 132px of column became 150,
      which fits every assigned name up to 14 characters where 13 was already clipping. The
      longest two the generator can make still ellipsize, which is what the ellipsis is for. */
   .account-id {
@@ -6449,8 +6463,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
   overscroll-behavior-x: contain;
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
-  mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 5%, #000 95%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 5%, #000 95%, transparent);
 }
 .scope-pager::-webkit-scrollbar {
   display: none;
@@ -6472,7 +6486,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   font: inherit;
   color: var(--fg);
   cursor: pointer;
-  opacity: 0.28;
+  /* A neighbour is READABLE (user-reported 2026-09-14: "the group on the left is almost
+     invisible" at a quarter) — half strength, the outer 5% of the line fading. */
+  opacity: 0.55;
   transition: opacity 160ms linear;
 }
 .scope-page.on {
@@ -6518,7 +6534,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   to { opacity: 1; scale: 1; }
 }
 .scope-page:hover:not(.on) {
-  opacity: 0.55;
+  opacity: 0.8;
 }
 .scope-page.on:active .scope-title {
   color: var(--muted);
@@ -7054,11 +7070,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   width: 100%;
   margin-top: 12px;
 }
-/* PLAY under ADD FRIEND wears the bare secondary dress (`.mix-btn + .btn-secondary`, the
-   one position that earns it); the pair's seam is the group's own gap. */
-.invite-done .btn-secondary {
-  width: 100%;
-}
+/* PLAY under JOIN is the quiet word (`.mix-btn + .btn-secondary`); the pair's seam is the
+   group's own gap. */
 
 /* ---- The signed-out screen (#216, reshaped 2026-08-26 on user feedback: the
    sentence-only frame was hard to understand). The invite landing's own shape — the
@@ -7097,12 +7110,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    and every other big action in the app — the first cut sized it to its label and read as
    too narrow (user feedback 2026-08-26). The first one keeps the invite CTA's breathing
    room off the note above it. */
-.signed-out .btn {
+.signed-out .btn-primary {
   width: 100%;
   margin-top: 12px;
-}
-.signed-out .btn + .btn {
-  margin-top: 0;
 }
 
 /* ---------------------------------------------------------------------------

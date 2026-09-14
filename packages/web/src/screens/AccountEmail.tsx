@@ -877,14 +877,14 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             <p className="account-note account-note-center">
               {t(lang, erasing ? 'linkEraseKeeps' : 'linkSwitchKeeps')}
             </p>
-            {/* Destruction never GLOWS, so the erase is the QUIET button in the danger ink
-                and the lit primary is never the one that deletes an account. A switch
+            {/* Destruction never GLOWS, so the erase is the DANGER cap (the secondary tile
+                in the danger ink) and the lit primary is never the one that deletes an account. A switch
                 destroys nothing, so it is an ordinary primary — dressing it as a danger
                 would teach the red to mean "a decision" rather than "a loss". */}
             {erasing ? (
               <Button
                 variant="secondary"
-                className="link-danger"
+                className="btn-danger"
                 disabled={busy}
                 onClick={() => void verify(code, { erase: prompt.accountId })}
               >

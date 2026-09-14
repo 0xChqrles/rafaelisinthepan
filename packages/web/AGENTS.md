@@ -353,9 +353,19 @@ These are decided and verified against the code. Treat them as load-bearing.
     `.mix-btn` in the deploy geometry). SECONDARY = the keyboard's letter tile: `--surface`
     ground, hairline, `--fg` ink, a grey print. DANGER (`.btn-danger`) = the secondary in
     the danger ink. The QUIET WORD (`.link-quiet-btn`, `.link-danger`) is a bare tracked
-    word on a 2px print line — no cap. Sized to the word; a secondary directly under a
-    primary is bare (2026-08-30's rule stands). `--accent-deep` and `polished` are no
-    longer read by any button (the derivation stays for whatever next wants it).
+    word on a 2px print line — no cap. Sized to the word, 40px of side padding
+    (user-reported 2026-09-14: CREATE "very narrow" at 28; the ≤380px 12px override is
+    gone). **A SECONDARY DIRECTLY UNDER A PRIMARY IS THE QUIET WORD, everywhere the same**
+    (user-decided 2026-09-14: "when a label button is below a bigger button it always has
+    the same underline design" — `.btn-primary + .btn-secondary`, `.mix-btn +
+    .btn-secondary`, restating `.link-quiet-btn`'s dress so the sibling rule wins over the
+    cap's; the result row's TOMORROW beside SHARE is the one sibling that stays a cap, an
+    equal, not an answer). SHARE is the PRIMARY cap on both result screens. The COMPACT CAP
+    (`.board-chip` EDIT, `.profile-clear`, `.device-signout`, `.device-retry`) is the
+    secondary tile at a row's size with a 3px print. No other button dress remains: the
+    header keys, the calendar arrows and the game's own controls are not buttons of this
+    system. `--accent-deep` and `polished` are no longer read by any button (the
+    derivation stays for whatever next wants it).
     *(The paragraph below is the 2026-09-01 design it replaced.)*
   - **THE PRIMARY BUTTON IS THE ACCENT, FLAT, WITH A DISCREET DIAGONAL GRADIENT**
     (user-decided 2026-09-01, superseding the 2026-08-18 device card — glass, hairline,

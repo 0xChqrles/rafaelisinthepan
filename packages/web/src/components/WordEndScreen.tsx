@@ -142,7 +142,7 @@ export default function WordEndScreen({
 
       <div className="result-actions">
         <Button
-          variant="secondary"
+          variant="primary"
           className={`result-action${copied ? ' copied' : ''}`}
           onClick={onShare}
         >
