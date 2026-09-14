@@ -410,7 +410,7 @@ describe('dynamoLinkStore — the indivisible core', () => {
 
   it('deletes the account row AND its profile row together when it is being erased', async () => {
     const { store, send } = makeStore(async () => ({}));
-    await store.adopt({ ...PLAN, erase: true, mergeFrom: PLAN.from });
+    await store.adopt({ ...PLAN, erase: true, departFrom: PLAN.from });
 
     const items = (send.mock.calls[0][0] as TransactWriteItemsCommand).input.TransactItems!;
     const deleted = items.flatMap((item) => (item.Delete ? [item.Delete.Key!.pk.S] : []));
@@ -418,9 +418,9 @@ describe('dynamoLinkStore — the indivisible core', () => {
     // it behind would keep exposing an account the player has left for good.
     expect(deleted).toContain(`player#${PLAN.from}`);
     expect(deleted.filter((pk) => pk === `player#${PLAN.from}`)).toHaveLength(2);
-    // The friend-merge job is persisted in the SAME transaction that deletes the account,
-    // which is what makes the fan-out behind it durable.
-    const job = items.find((item) => item.Put?.Item?.pk.S === `merge#${PLAN.to}`);
+    // The departure job (#271) is persisted in the SAME transaction that deletes the
+    // account, which is what makes the fan-out behind it durable.
+    const job = items.find((item) => item.Put?.Item?.pk.S === `depart#${PLAN.to}`);
     expect(job!.Put!.Item!.sk.S).toBe(`from#${PLAN.from}`);
     const source = items.find(
       (item) => item.Delete?.Key?.pk.S === `player#${PLAN.from}` && item.Delete.Key.sk.S === 'account',
@@ -480,13 +480,13 @@ describe('dynamoLinkStore — the indivisible core', () => {
       return {};
     });
     await expect(
-      store.adopt({ ...PLAN, erase: true, mergeFrom: PLAN.from, moves: [KEY] }),
+      store.adopt({ ...PLAN, erase: true, departFrom: PLAN.from, moves: [KEY] }),
     ).resolves.toEqual({ outcome: 'adopted', moved: [{ key: KEY, solved: true }] });
 
     const all = transactions(send);
     expect(all).toHaveLength(1);
     const items = all[0].input.TransactItems!;
-    // Identity (device, target check, challenge, merge job, account, profile) + the round's
+    // Identity (device, target check, challenge, departure job, account, profile) + the round's
     // Put/Delete + the score's Put/Delete — every one conditioned on what was READ.
     expect(items).toHaveLength(10);
     expect(items[6].Put).toMatchObject({
@@ -514,7 +514,7 @@ describe('dynamoLinkStore — the indivisible core', () => {
       return {};
     });
     await expect(
-      store.adopt({ ...PLAN, erase: true, mergeFrom: PLAN.from, moves: [KEY] }),
+      store.adopt({ ...PLAN, erase: true, departFrom: PLAN.from, moves: [KEY] }),
     ).resolves.toEqual({ outcome: 'adopted', moved: [] });
     const items = transactions(send)[0].input.TransactItems!;
     expect(items).toHaveLength(8);
@@ -547,7 +547,7 @@ describe('dynamoLinkStore — the indivisible core', () => {
       return {};
     });
     await expect(
-      store.adopt({ ...PLAN, erase: true, mergeFrom: PLAN.from, moves: [KEY] }),
+      store.adopt({ ...PLAN, erase: true, departFrom: PLAN.from, moves: [KEY] }),
     ).resolves.toEqual({ outcome: 'adopted', moved: [{ key: KEY, solved: true }] });
     const all = transactions(send);
     expect(all).toHaveLength(2);
@@ -575,7 +575,7 @@ describe('dynamoLinkStore — the indivisible core', () => {
       return {};
     });
     await expect(
-      store.adopt({ ...PLAN, erase: true, mergeFrom: PLAN.from, moves: [KEY] }),
+      store.adopt({ ...PLAN, erase: true, departFrom: PLAN.from, moves: [KEY] }),
     ).resolves.toEqual({ outcome: 'adopted', moved: [{ key: KEY, solved: false }] });
     const all = transactions(send);
     const first = all[0].input.TransactItems!;
@@ -636,7 +636,7 @@ describe('dynamoLinkStore — the indivisible core', () => {
     };
     const first = makeStore(send);
     await expect(
-      first.store.adopt({ ...PLAN, erase: true, mergeFrom: PLAN.from, moves: [KEY] }),
+      first.store.adopt({ ...PLAN, erase: true, departFrom: PLAN.from, moves: [KEY] }),
     ).resolves.toMatchObject({ outcome: 'adopted', moved: [{ key: KEY }] });
     expect(table.get(`round#${PLAN.to}`)).toMatchObject({
       guesses: { L: [{ S: 'chat' }] },
@@ -651,7 +651,7 @@ describe('dynamoLinkStore — the indivisible core', () => {
       second.store.adopt({
         ...PLAN,
         from: OTHER,
-        mergeFrom: OTHER,
+        departFrom: OTHER,
         erase: true,
         tokenHash: 'b'.repeat(64),
         moves: [KEY],
@@ -674,7 +674,7 @@ describe('dynamoLinkStore — the indivisible core', () => {
       throw refusing([4, 7])(command as TransactWriteItemsCommand);
     });
     await expect(
-      store.adopt({ ...PLAN, erase: true, mergeFrom: PLAN.from, moves: [KEY] }),
+      store.adopt({ ...PLAN, erase: true, departFrom: PLAN.from, moves: [KEY] }),
     ).resolves.toEqual({ outcome: 'account_changed', moved: [] });
   });
 });
@@ -833,7 +833,7 @@ describe('dynamoLinkStore — transaction conflicts', () => {
       return {};
     });
     await expect(
-      store.adopt({ ...PLAN, erase: true, mergeFrom: PLAN.from, moves: [KEY] }),
+      store.adopt({ ...PLAN, erase: true, departFrom: PLAN.from, moves: [KEY] }),
     ).resolves.toMatchObject({ outcome: 'adopted' });
     expect(reads).toBe(2);
     expect(waits).toHaveLength(1);
@@ -874,13 +874,13 @@ describe('dynamoLinkStore — transaction conflicts', () => {
   });
 });
 
-describe('dynamoLinkStore — the merge queue', () => {
+describe('dynamoLinkStore — the departure queue', () => {
   it('deletes a finished job unconditionally, so finishing twice is a no-op', async () => {
     const { store, send } = makeStore(async () => ({}));
-    await store.clearMerge('aaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbb');
+    await store.clearDeparture('aaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbb');
     const command = send.mock.calls[0][0] as DeleteItemCommand;
     expect(command.input.Key).toEqual({
-      pk: { S: 'merge#aaaaaaaaaaaaaaaa' },
+      pk: { S: 'depart#aaaaaaaaaaaaaaaa' },
       sk: { S: 'from#bbbbbbbbbbbbbbbb' },
     });
     expect(command.input.ConditionExpression).toBeUndefined();

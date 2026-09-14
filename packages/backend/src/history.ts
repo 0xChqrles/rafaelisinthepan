@@ -10,7 +10,7 @@
 // identity, linked or unlinked: after #214 it is the normal source on every device, not a
 // linked-account enhancement.
 //
-// POST-only for the /friends reason — the device token is the auth (#216) and it travels in
+// POST-only — the device token is the auth (#216) and it travels in
 // the BODY, never a query string, so there is no way to ask for someone else's history. The
 // two things it reads are already stored:
 //

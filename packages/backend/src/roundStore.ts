@@ -193,7 +193,7 @@ export type RoundSubmitOutcome =
   | 'too_early'
   | 'already_submitted';
 
-// What the friends board reads of one stored round (#206): the RAW ordered log (the
+// What a group board reads of one stored round (#206): the RAW ordered log (the
 // route dedups it against the day's full artifact for the exact try count), the puzzle
 // tag that says which published revision the log answers, and the derived summary the
 // same row already carries (#203) — the stored `progress` is the one number the
@@ -236,7 +236,7 @@ export interface RoundStore {
   // read (#206), the exact shape the per-player partition was designed for: the caller
   // resolves its edges into row keys and fetches THOSE (BatchGetItem), never a read
   // across players. A player with no stored round simply has no row. Bounded by
-  // FRIENDS_MAX + 1 callers per read.
+  // GROUP_MEMBERS_MAX callers per read.
   getMany(key: RoundKey, publicIds: readonly string[]): Promise<RoundBoardRow[]>;
   // The caller's stored round, or null when the server holds none FOR THIS PUZZLE.
   //
@@ -291,7 +291,7 @@ export interface RoundStore {
   // rides along.
   settle(input: RoundSettleInput): Promise<boolean>;
   // WORD mode's two writes (#202) — the mode streams nothing, because what syncing buys is
-  // the live friends board and a 60-second run is over before anyone opens it.
+  // the live group board and a 60-second run is over before anyone opens it.
   //
   // START stamps `startedAt` from the SERVER's clock on THIS record (never a separate
   // short-lived item: the submission can arrive hours later, on the revisit that finds the
@@ -330,7 +330,7 @@ export const PUZZLE_TAG_SHAPE = /^[a-z0-9]{1,32}$/;
 // update), so a long round's writes get progressively more expensive — and under a day
 // partition every player's writes for one daily would land on ONE partition key, which
 // adaptive capacity cannot split. Nothing reads across players here: /board resolves the
-// caller's friends into exact row keys and fetches those (BatchGetItem), which is the
+// group's members into exact row keys and fetches those (BatchGetItem), which is the
 // shape a future progress read (#206) takes too.
 export function roundPartition(publicId: string): string {
   return `round#${publicId}`;

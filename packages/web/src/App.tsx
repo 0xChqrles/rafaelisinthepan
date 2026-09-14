@@ -7,7 +7,7 @@ import Account from './screens/Account';
 import AccountEmail from './screens/AccountEmail';
 import Profile from './screens/Profile';
 import Privacy from './screens/Privacy';
-import FriendInvite from './screens/FriendInvite';
+import GroupInvite from './screens/GroupInvite';
 import Archive from './screens/Archive';
 import Leaderboard from './screens/Leaderboard';
 import SignedOut from './screens/SignedOut';
@@ -130,8 +130,8 @@ export default function App() {
   // The board's whose-scores tab belongs to a VISIT (user feedback 2026-08-20, narrowing
   // the first cut's standing preference). It has to survive the two things that remount
   // the screen WITHOUT ending the visit — a page refresh and a header mode switch — so it
-  // is persisted; and leaving the leaderboard is what ends it, so the next open is
-  // FRIENDS, the trusted default. Rendering a non-board route IS the leaving, which is
+  // is persisted; and leaving the leaderboard is what ends it, so the next open is the
+  // GROUP, the trusted default. Rendering a non-board route IS the leaving, which is
   // why the rule lives here: an entry point that forgot to reset would silently reopen on
   // a stale tab forever, and there is more than one way onto this screen.
   const resetBoardTab = useGameStore((s) => s.resetBoardTab);
@@ -216,10 +216,10 @@ export default function App() {
             because a legal notice has to be linkable (the SES review opens one), and the
             one route a sign-out does not close (`blocked`): it reads no private state. */}
         {!blocked && route.view === 'privacy' && <Privacy />}
-        {/* The invite link (#189) is a beat, not a screen: it lands the mutual edge and
-            hands over to the home redirect above. */}
-        {!blocked && route.view === 'invite' && (
-          <FriendInvite publicId={route.publicId} lang={homeLang} />
+        {/* The group invite landing (#271) is a beat, not a screen: it records the
+            membership and hands over to the game or the group's board. */}
+        {!blocked && route.view === 'groupInvite' && (
+          <GroupInvite groupId={route.groupId} lang={homeLang} />
         )}
         {!blocked && route.view === 'archive' && <Archive lang={route.lang} mode={route.mode} />}
         {/* The leaderboard screen (#190) — keyed so switching daily/language drops the

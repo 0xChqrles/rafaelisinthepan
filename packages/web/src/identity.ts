@@ -3,7 +3,7 @@
 //
 // Until #216 the identity WAS a 128-bit secret (#187) that every device on an account
 // shared, so there was nothing device-specific to revoke: someone with your key could only
-// be shut out by abandoning the account — losing the archive, the streak and every friend.
+// be shut out by abandoning the account — losing the archive, the streak and every group.
 // A device now holds its own token; the server can delete that token's row without this
 // device being present, and the account survives.
 //
@@ -86,9 +86,9 @@ interface IdentityState {
   //
   // Published because a reader cannot tell the two apart from the transition alone, and the
   // difference decides whether "brand new, therefore empty" is a fact or a guess: the
-  // leaderboard keeps its known-empty friends board across a MINT (nothing to fetch could
+  // leaderboard keeps its known-empty group list across a MINT (nothing to fetch could
   // contradict it) and must drop it on an adoption, where a failed refresh would otherwise
-  // park a false "no friends" under the stale-but-good rule with no retry offered.
+  // park a false "no group" under the stale-but-good rule with no retry offered.
   mintedHere: boolean;
 }
 

@@ -12,11 +12,13 @@
 //   `linksend#<scope>#<hash>` / `send`  — a send allowance: the instants of the sends still
 //                                        inside the ROLLING window, with its own TTL. One per
 //                                        address and one per IP.
-//   `merge#<toAccountId>` / `from#<fromAccountId>`
-//                                      — the durable FRIEND-MERGE job. Up to 200 mutual
-//                                        edges cannot fit one 100-item transaction, so the
-//                                        link commits a job and the fan-out drains behind
-//                                        it, idempotently and resumably.
+//   `depart#<toAccountId>` / `from#<fromAccountId>`
+//                                      — the durable DEPARTURE job (#271): a deleted
+//                                        account leaves every group it was in. The link
+//                                        commits the job with the deletion and the
+//                                        memberships drain behind it, idempotently and
+//                                        resumably — after the commit, when no new
+//                                        membership can land (a join asserts the account).
 //
 // **The address is stored HASHED wherever it is a KEY** and in clear only on the account
 // row it belongs to. A key is a value anyone reading the table can enumerate; the account
@@ -145,8 +147,9 @@ export interface AccountAdoption {
   // so a re-send between verification and commit cannot swap in a challenge the caller did
   // not prove, and two final writes cannot both consume one code.
   codeHash: string;
-  // A friend-merge job for the surviving account, present exactly when `erase` is.
-  mergeFrom?: string;
+  // A group-departure job for the account being deleted, queued under the surviving one;
+  // present exactly when `erase` is.
+  departFrom?: string;
   // The ACTIVE DAY's tuples — every supported language × both modes — whose play moves with
   // the device when the account it is in is being erased; present exactly when `erase` is.
   // Each tuple moves only when the source holds RECORDED PLAY and the destination holds none,
@@ -190,7 +193,7 @@ export interface LinkStore {
   }): Promise<LinkBindOutcome>;
   // The identity-bearing core, indivisible: consume the challenge, move the one device item,
   // delete the account being left (its account row AND its profile row, so no
-  // identity-bearing read can dress a deleted player), persist the friend-merge job — and
+  // identity-bearing read can dress a deleted player), persist the departure job — and
   // carry the active day's play across (`moves`), each tuple conditioned on the exact rows
   // it was planned from, so a guess landing meanwhile refuses the commit and the plan is
   // made again over what now stands.
@@ -200,11 +203,11 @@ export interface LinkStore {
   // moved by an adoption that never commits is play under an account nobody holds — neither
   // is an outcome this flow may produce.
   adopt(input: AccountAdoption): Promise<LinkAdoptResult>;
-  // The accounts whose friends still have to be merged into this one. Normally empty; a
-  // partially drained job is what makes it not.
-  pendingMerges(accountId: string): Promise<string[]>;
+  // The deleted accounts this one adopted whose group memberships still have to be dropped.
+  // Normally empty; a partially drained job is what makes it not.
+  pendingDepartures(accountId: string): Promise<string[]>;
   // The job is done. Idempotent — a job deleted twice is a job that finished twice.
-  clearMerge(accountId: string, from: string): Promise<void>;
+  clearDeparture(accountId: string, from: string): Promise<void>;
 }
 
 // What `adopt` mutates OUTSIDE its own key space — the device item, the account row and the
@@ -283,12 +286,12 @@ export function recentSends(sends: readonly number[], windowSeconds: number, now
   return sends.filter((at) => at > since);
 }
 
-// The friend-merge queue, partitioned by the SURVIVING account: the drain is "what still has
-// to be merged into me", which is the question the adopting device's next call asks.
-export function mergeKey(accountId: string): string {
-  return `merge#${accountId}`;
+// The departure queue, partitioned by the SURVIVING account: the drain is "what did I leave
+// behind that still has to go", which is the question the adopting device's next call asks.
+export function departureKey(accountId: string): string {
+  return `depart#${accountId}`;
 }
-export function mergeSortKey(from: string): string {
+export function departureSortKey(from: string): string {
   return `from#${from}`;
 }
-export const MERGE_SORT_PREFIX = 'from#';
+export const DEPARTURE_SORT_PREFIX = 'from#';

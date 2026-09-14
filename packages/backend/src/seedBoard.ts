@@ -5,14 +5,14 @@
 //
 //   pnpm backend:dev                          # keep it running in another terminal
 //   pnpm board:seed                           # seed today's fr sentence board
-//   pnpm board:seed --friend <publicId|link>  # also link a few seeds to YOUR identity
+//   pnpm board:seed --group <groupId|link>   # also land a few seeds in YOUR group (#271)
 //
 // What it seeds: 60 scored players (40 distinct scores + a 20-player tie across the
 // top-50 cut, so shared ranks are visible on both sides of it), most with profiles (a few without,
 // to show the pseudonym + dashed-mark fallback), plus a couple of profile-only players
-// with NO score (the friends board's "not played yet" rows). It prints INVITE LINKS for
-// a few seeds — clicking one in the app is the real one-tap friend flow, and the
-// easiest way to land seeds on your own friends board without hunting down your id.
+// with NO score (a group board's "not played yet" rows). It prints the INVITE LINK of a
+// group the seeds created — opening it in the app is the real one-tap join flow, and the
+// easiest way to see a populated group board without hunting down ids.
 //
 // If the active day has no local fr sentence puzzle, the newest one in the local store is
 // copied to today's key — its #203 derivation SLICE with it, since the round route reads
@@ -30,7 +30,7 @@ import {
   AVATAR_CELLS,
   VIEWER_IP_HEADER,
   encodeAvatar,
-  invitePath,
+  groupInvitePath,
   type Puzzle,
 } from '@whippin/shared';
 import { defaultLocalStoreRoot, sliceKey } from './layout';
@@ -154,14 +154,14 @@ function playthrough(puzzle: Puzzle, score: number): string[] {
   return [...misses, ...secrets];
 }
 
-function friendArg(): string | null {
-  const flag = process.argv.indexOf('--friend');
+function groupArg(): string | null {
+  const flag = process.argv.indexOf('--group');
   if (flag < 0) return null;
   const raw = process.argv[flag + 1];
-  if (!raw) throw new Error('--friend needs a publicId or an invite link.');
-  // Either invite spelling, or a bare id: this extracts an id, it does not route.
+  if (!raw) throw new Error('--group needs a group id or an invite link.');
+  // Either link spelling, or a bare id: this extracts an id, it does not route.
   const match = /(?:^|\/)([a-z2-7]{16})$/.exec(raw.trim());
-  if (!match) throw new Error(`"${raw}" holds no 16-character player id.`);
+  if (!match) throw new Error(`"${raw}" holds no 16-character group id.`);
   return match[1];
 }
 
@@ -176,7 +176,7 @@ async function bootstrap(i: number, ip: string): Promise<string> {
 }
 
 async function main() {
-  const friendId = friendArg();
+  const groupId = groupArg();
 
   let today: { date: string };
   try {
@@ -225,7 +225,7 @@ async function main() {
     if (!r.ok) console.log(`[seed] round ${i} refused:`, r.status, await r.text());
   }
 
-  // Two profile-only players with NO score today — the friends board's "not played
+  // Two profile-only players with NO score today — a group board's "not played
   // yet" rows once linked.
   for (const i of [60, 61]) {
     accountIds.set(i, await bootstrap(i, `10.0.2.${i}`));
@@ -237,28 +237,32 @@ async function main() {
     if (!r.ok) console.log(`[seed] profile ${i} refused:`, r.status, await r.text());
   }
 
-  // Optionally befriend the given identity from a few seeds' side — the mutual write
-  // lands both halves, so the caller's board fills without their device token ever leaving
-  // their browser.
-  if (friendId) {
+  // Optionally land a few seeds in the given group — a JOIN is the caller's own write, so
+  // YOUR board fills without your device token ever leaving your browser.
+  if (groupId) {
     for (const i of [2, 7, 19, 47, 60]) {
-      const r = await post('/friends', { token: tokenOf(i), add: friendId });
-      if (!r.ok) console.log(`[seed] friend link ${i} refused:`, r.status, await r.text());
+      const r = await post('/groups', { token: tokenOf(i), join: groupId });
+      if (!r.ok) console.log(`[seed] group join ${i} refused:`, r.status, await r.text());
     }
-    console.log(`[seed] linked 5 seeds (one unplayed) to ${friendId}`);
+    console.log(`[seed] joined 5 seeds (one unplayed) to group ${groupId}`);
   }
 
-  console.log(`[seed] done — ${LANG} ${MODE} board for ${date} holds 60 scores.`);
-  // The REAL shared link (`/i/<publicId>`), preview and all: the dev server proxies
-  // `/i/*` to this backend exactly as the CDN does in production (web/vite.config.ts),
-  // so a local click walks the same two steps a pasted link does. Set WHIPPIN_SITE if
-  // your dev server is not on the port below.
-  console.log('[seed] invite links (click one in the app to land that seed on your friends board):');
-  for (const i of [11, 33, 61]) {
-    const id = accountIds.get(i);
-    if (!id) continue;
-    const label = i === 61 ? 'has NOT played today' : 'has played';
-    console.log(`[seed]   ${SITE}${invitePath(id)}   (${NAMES[i % NAMES.length]}, ${label})`);
+  // A seeded GROUP of its own: created by one seed, joined by a handful (one unplayed), so
+  // the REAL shared link (`/g/<groupId>`, preview and all — the dev server proxies `/g/*`
+  // to this backend exactly as the CDN does, web/vite.config.ts) lands you on a board with
+  // rows in it. Set WHIPPIN_SITE if your dev server is not on the port below.
+  const created = await post('/groups', { token: tokenOf(11), create: true, name: 'Les_Amis' });
+  if (!created.ok) {
+    console.log('[seed] group creation refused:', created.status, await created.text());
+  } else {
+    const seeded = ((await created.json()) as { created: string }).created;
+    for (const i of [33, 5, 61]) {
+      const r = await post('/groups', { token: tokenOf(i), join: seeded });
+      if (!r.ok) console.log(`[seed] group join ${i} refused:`, r.status, await r.text());
+    }
+    console.log(`[seed] done — ${LANG} ${MODE} board for ${date} holds 60 scores.`);
+    console.log('[seed] group invite link (open it in the app to join a board with rows):');
+    console.log(`[seed]   ${SITE}${groupInvitePath(seeded)}   (Les_Amis: 4 seeds, one has NOT played today)`);
   }
 }
 

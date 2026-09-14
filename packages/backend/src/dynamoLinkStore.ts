@@ -29,12 +29,12 @@ import { planScoreMove } from './dynamoScoreStore';
 import {
   BINDING_SORT_KEY,
   CHALLENGE_SORT_KEY,
-  MERGE_SORT_PREFIX,
+  DEPARTURE_SORT_PREFIX,
   SEND_SORT_KEY,
   bindingKey,
   challengeKey,
-  mergeKey,
-  mergeSortKey,
+  departureKey,
+  departureSortKey,
   recentSends,
   sendKey,
   sameDigest,
@@ -443,13 +443,13 @@ export function dynamoLinkStore(
           },
         },
       ];
-      if (input.mergeFrom !== undefined) {
+      if (input.departFrom !== undefined) {
         identity.push({
           Put: {
             TableName: tableName,
             Item: {
-              pk: { S: mergeKey(input.to) },
-              sk: { S: mergeSortKey(input.mergeFrom) },
+              pk: { S: departureKey(input.to) },
+              sk: { S: departureSortKey(input.departFrom) },
               createdAt: { S: input.now },
             },
           },
@@ -539,7 +539,7 @@ export function dynamoLinkStore(
                 input.emailHash,
                 input.codeHash,
                 String(input.erase),
-                input.mergeFrom ?? '',
+                input.departFrom ?? '',
                 input.now,
                 JSON.stringify(moves),
               ),
@@ -574,7 +574,7 @@ export function dynamoLinkStore(
       throw new Error("The active day's play kept changing while an account was being adopted.");
     },
 
-    async pendingMerges(accountId) {
+    async pendingDepartures(accountId) {
       const from: string[] = [];
       let cursor: Record<string, AttributeValue> | undefined;
       do {
@@ -584,8 +584,8 @@ export function dynamoLinkStore(
             KeyConditionExpression: '#pk = :pk AND begins_with(#sk, :prefix)',
             ExpressionAttributeNames: { '#pk': 'pk', '#sk': 'sk' },
             ExpressionAttributeValues: {
-              ':pk': { S: mergeKey(accountId) },
-              ':prefix': { S: MERGE_SORT_PREFIX },
+              ':pk': { S: departureKey(accountId) },
+              ':prefix': { S: DEPARTURE_SORT_PREFIX },
             },
             ConsistentRead: true,
             ...(cursor ? { ExclusiveStartKey: cursor } : {}),
@@ -593,20 +593,20 @@ export function dynamoLinkStore(
         );
         for (const item of response.Items ?? []) {
           const sk = item.sk?.S;
-          if (sk?.startsWith(MERGE_SORT_PREFIX)) from.push(sk.slice(MERGE_SORT_PREFIX.length));
+          if (sk?.startsWith(DEPARTURE_SORT_PREFIX)) from.push(sk.slice(DEPARTURE_SORT_PREFIX.length));
         }
         cursor = response.LastEvaluatedKey;
       } while (cursor);
       return from.sort();
     },
 
-    async clearMerge(accountId, from) {
+    async clearDeparture(accountId, from) {
       // Unconditional and therefore idempotent: deleting an absent item is a no-op, which is
       // what a job finishing twice has to be.
       await client.send(
         new DeleteItemCommand({
           TableName: tableName,
-          Key: { pk: { S: mergeKey(accountId) }, sk: { S: mergeSortKey(from) } },
+          Key: { pk: { S: departureKey(accountId) }, sk: { S: departureSortKey(from) } },
         }),
       );
     },

@@ -92,12 +92,13 @@
   its own `profile*` behavior on the same shape: `CachingDisabled`, ALLOW_ALL methods,
   and an origin-request policy forwarding exactly the `id` query (the one parameter the
   profile handler reads) with `allExcept: Host` headers for the OAC-signed POST — no
-  viewer-IP function, since the route has no per-IP logic. **`/friends` (#189)** is the
+  viewer-IP function, since the route has no per-IP logic. **`/groups` (#271)** is the
   third behavior on that shape — `CachingDisabled`, ALLOW_ALL methods, `allExcept: Host`
-  headers for the OAC-signed POST — with a query allow-list that is EMPTY, because the
-  handler reads no query at all (the key authenticates in the body); the day it reads one,
-  it has to be named there or CloudFront will strip it. **`/board` (#190)** is the fourth:
-  `CachingDisabled`, ALLOW_ALL methods (the friends-board read is an authenticated POST),
+  headers for the OAC-signed POST — with an allow-list of exactly `id`, the public group
+  id its GET answers a face for (the token authenticates in the body on every write); the
+  day it reads another, it has to be named there or CloudFront will strip it. **`/board`
+  (#190)** is the fourth:
+  `CachingDisabled`, ALLOW_ALL methods (a group's board read is an authenticated POST),
   `allExcept: Host` headers, and an origin-request allow-list of exactly the FOUR queries
   the board handler reads (`lang`/`date`/`mode`/`id`) — no viewer-IP function, no per-IP
   logic. **`/round` (#201/#203)** is the fifth behavior on that shape — `CachingDisabled`,
@@ -115,7 +116,7 @@
   **`/devices` (#216)** is the seventh on that shape — `CachingDisabled` (identity is live
   AND a device list is private), ALLOW_ALL methods (POST-only; the device token authenticates
   in the body), `allExcept: Host` headers, an allow-list that is EMPTY because the handler
-  reads no query at all (the `/friends` rule), and the viewer-IP function, because the
+  reads no query at all, and the viewer-IP function, because the
   Turnstile-gated BOOTSTRAP needs a trusted address exactly as a round start does. It brings
   this table's **ONE secondary index**, `DeviceByAccount` (`gsi1pk`/`gsi1sk`, projecting the
   device row's label fields): authentication is a direct base-table read by the token's hash,
@@ -128,7 +129,7 @@
   and the behavior's three-package allow-list.
   The table grant adds
   `GetItem` for the profile read (the upsert reuses `UpdateItem`) and **`DeleteItem` for
-  #189's symmetric friend removal and #216's device revocation**; all are pinned by
+  leaving a group (#271), #216's device revocation and #204's erase**; all are pinned by
   `backend-stack.test.ts`. The Lambda
   receives the table name and SSM SecureString PARAMETER NAMES (defaults
   `/whippin/turnstile-secret`, `/whippin/ip-hmac-secret`; override with the matching `-c`
@@ -161,10 +162,11 @@
   reproducible) served only via **CloudFront + OAC** over HTTPS, with **SPA fallback**
   (403/404 → `/index.html`, 200). **Three path patterns are handed to the API origin
   instead of the bucket** — `/s/*` (the share page), `/og/*` (every card image) and,
-  since 2026-08-20, `/i/*` (#189's invite link, which the backend renders so it unfurls
-  as the sender's own mark and name; its card sits under `/og/i/`). Adding a pattern here
-  TAKES that path away from the SPA, which is exactly why the invite's landing moved to
-  `/join/<publicId>` — see `shared/src/invite.ts` and the root `AGENTS.md`. Three `BucketDeployment`s split cache lifetimes (hashed
+  since #271, `/g/*` (the group invite link, which the backend renders so it unfurls as
+  the group's name and its members' marks; its card sits under `/og/g/`; it replaced
+  #189's `/i/*`). Adding a pattern here TAKES that path away from the SPA, which is
+  exactly why the invite's landing is `/join/g/<groupId>` — see `shared/src/invite.ts`
+  and the root `AGENTS.md`. Three `BucketDeployment`s split cache lifetimes (hashed
   `assets/*` immutable-1yr, `vocab/*` SWR, everything else `no-cache`) and **invalidate
   `/*`** on deploy — so `pnpm build` must run **before** deploy (missing `dist` → warn +
   skip upload). **The root set (index.html + version.json) publishes LAST** — an explicit

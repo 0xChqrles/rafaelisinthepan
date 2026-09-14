@@ -1,7 +1,8 @@
-// CONTRACT (#204): the friend merge is a DURABLE JOB. Up to 200 mutual edges is 800 rows,
-// which cannot fit one DynamoDB transaction, so the adoption commits the job and the
-// server drains what it can before answering — `mergePending` is it saying "not all of
-// it". Those edges are consented relationships, so the client may not simply leave the
+// CONTRACT (#204/#271): the group departure is a DURABLE JOB. The deleted account's
+// memberships cannot ride the adoption transaction (a re-read until empty is what makes
+// the drop complete), so the adoption commits the job and the server drains what it can
+// before answering — `departurePending` is it saying "not all of it". A membership left
+// standing is a ghost on every one of those groups, so the client may not simply leave the
 // rest for whenever the player next opens `/account`: a successful link RESUMES the same
 // bounded, backed-off, epoch-fenced drain the summary read uses.
 
@@ -18,7 +19,7 @@ const identity = vi.hoisted(() => ({
 vi.mock('../api', () => ({
   linkUrl: () => 'https://api.test/link',
   postLinkBody,
-  parseAccountSummary: (data: unknown) => data as { mergePending: boolean },
+  parseAccountSummary: (data: unknown) => data as { departurePending: boolean },
 }));
 vi.mock('../identity', () => ({
   currentRequestIdentity: () => identity.current,
@@ -28,11 +29,11 @@ vi.mock('../identity', () => ({
 }));
 vi.mock('./signedOutVerdict', () => ({ adoptSignedOutVerdict: vi.fn() }));
 
-const { resumeMergeDrain } = await import('./account');
+const { resumeDepartureDrain } = await import('./account');
 
-const answered = (mergePending: boolean) => ({
+const answered = (departurePending: boolean) => ({
   ok: true,
-  json: async () => ({ mergePending }),
+  json: async () => ({ departurePending }),
 });
 
 beforeEach(() => {
@@ -48,16 +49,16 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('resumeMergeDrain — a link that still owes a merge', () => {
-  it('does NOTHING when the server finished the fan-out — mergePending false is done', async () => {
-    resumeMergeDrain(false);
+describe('resumeDepartureDrain — a link that still owes a departure', () => {
+  it('does NOTHING when the server finished the fan-out — departurePending false is done', async () => {
+    resumeDepartureDrain(false);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(postLinkBody).not.toHaveBeenCalled();
   });
 
   it('asks again, with the device token, until the server says the job is drained', async () => {
     postLinkBody.mockResolvedValueOnce(answered(true)).mockResolvedValueOnce(answered(false));
-    resumeMergeDrain(true);
+    resumeDepartureDrain(true);
 
     // BACKED OFF, never immediate: the identity change has already committed and nobody is
     // waiting on this.
@@ -72,15 +73,15 @@ describe('resumeMergeDrain — a link that still owes a merge', () => {
 
   it('is BOUNDED — a server that keeps reporting work stops being asked', async () => {
     postLinkBody.mockResolvedValue(answered(true));
-    resumeMergeDrain(true);
+    resumeDepartureDrain(true);
     await vi.advanceTimersByTimeAsync(600_000);
-    // MERGE_DRAIN_ATTEMPTS; the job is durable either way.
+    // DRAIN_ATTEMPTS; the job is durable either way.
     expect(postLinkBody).toHaveBeenCalledTimes(4);
   });
 
   it('is FENCED: an identity this device has left never has its merge drained under it', async () => {
     postLinkBody.mockResolvedValue(answered(true));
-    resumeMergeDrain(true);
+    resumeDepartureDrain(true);
     identity.current = null;
     await vi.advanceTimersByTimeAsync(60_000);
     expect(postLinkBody).not.toHaveBeenCalled();
@@ -88,7 +89,7 @@ describe('resumeMergeDrain — a link that still owes a merge', () => {
 
   it('does not resume at all when there is no identity to resume as', async () => {
     identity.current = null;
-    resumeMergeDrain(true);
+    resumeDepartureDrain(true);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(postLinkBody).not.toHaveBeenCalled();
   });

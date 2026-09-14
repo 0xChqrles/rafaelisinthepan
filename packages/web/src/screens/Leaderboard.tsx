@@ -3,24 +3,35 @@ import {
   anonName,
   dateForDayNumber,
   defaultAvatar,
+  isBoardPeriod,
   progressHeatColor,
   type Board,
+  type BoardPeriod,
   type BoardPlayer,
   type BoardRow,
+  type GroupSummary,
+  type PeriodBoard,
+  type PeriodRow,
   type PlayingRow,
 } from '@whippin/shared';
 import {
   boardUrl,
-  friendsUrl,
+  groupsUrl,
   parseBoard,
-  parseFriends,
+  parseGroups,
+  parsePeriodBoard,
   postBoardBody,
-  postFriendsBody,
+  postGroupsBody,
+  readGroup,
 } from '../api';
 import Avatar from '../components/Avatar';
+import ConfirmScreen from '../components/ConfirmScreen';
+import GroupCreate from '../components/GroupCreate';
+import GroupScreen from '../components/GroupScreen';
 import LoadError from '../components/LoadError';
 import LoadingWave from '../components/LoadingWave';
 import PuzzleTitle from '../components/PuzzleTitle';
+import ScopePager, { type Scope } from '../components/ScopePager';
 import { HeaderLeft } from '../components/TopBar';
 import useShare from '../hooks/useShare';
 import useToday from '../hooks/useToday';
@@ -30,242 +41,192 @@ import {
   identityEpoch,
   identityEpochOf,
   useDeviceIdentity,
-  useIdentityMintedHere,
 } from '../identity';
+import { adoptGroups, loadGroups, useGroups } from '../state/groups';
 import { adoptSignedOutVerdict } from '../state/signedOutVerdict';
 import { prefetchTurnstileTokens } from '../turnstile';
 import ErrorScreen from '../components/ErrorScreen';
-import { useGameStore, type BoardTab } from '../state/gameStore';
-import {
-  pathForArchive,
-  pathForBoard,
-  pathForInvite,
-  pathForMode,
-  type LangCode,
-  type Mode,
-} from '../langs';
-import { navigate } from '../routing';
+import { useGameStore } from '../state/gameStore';
+import { pathForGroupInvite, type LangCode, type Mode } from '../langs';
 import { t } from '../i18n';
-// Inline SVG (vite-plugin-svgr): the control that closes the board back onto the game,
-// painting with currentColor; the button's aria-label names it.
 
-// The #190 leaderboard screen: the day's boards per (day, lang, mode), for the active
-// day. FRIENDS is the DEFAULT and the trusted surface — the whole point of the design
-// (#187's anti-cheat stance: trust comes from the graph, not the global list) — with
-// the GLOBAL top 50 as the second tab, explicitly the fun/untrusted view. This screen
-// is also where a player customizes their profile (#188 — the EDIT chip onto /profile)
-// and shares their invite link (#189 — the INVITE button), neither of which requires
-// having played, which is why the header icon reaches it before a first round.
+// The #190 leaderboard screen, drawn over GROUPS since #271 (user-decided 2026-09-07:
+// groups replace the friends graph — a pair of friends is a group of two). The boards are
+// per (day, lang, mode), for the active day. A GROUP is the DEFAULT and the trusted
+// surface — the whole point of the design (#187's anti-cheat stance: trust comes from the
+// people you chose, not the global list) — with the GLOBAL top 50 as the last tab,
+// explicitly the fun/untrusted view. A group has THREE boards: the DAY (finished,
+// playing, waiting — the live one), and the WEEK and MONTH ranked by the shared period
+// rule (podium points, then solved days, then fewer tries). This screen is also where a
+// player CREATES a group, INVITES into it (the `/g/<id>` link), LEAVES it, and — as its
+// owner — shows a member out.
+//
+// WHICH BOARD is a PAGER (user-decided 2026-09-14, the third design: a tab strip, then a
+// chip opening a wheel under the header's own wheel — "come up with a totally new
+// leaderboard control design"): the scopes — every group, NEW GROUP, GLOBAL — are pages
+// on one horizontal line, swiped or tapped through (`ScopePager`), with the period switch
+// under it as the only other control before the list. Everything there is to DO with a
+// group is on the group's OWN SCREEN (`GroupScreen`, a tap on the middle page): INVITE, the
+// owner's ✕ on every other member, LEAVE — the board itself carries no standing button
+// ("3 huge thick buttons always on screen even if we use them 1% of the time"). Naming a
+// new group is its own screen too (`GroupCreate`). LEAVING and REMOVING confirm on a
+// FULL-SCREEN modal (`ConfirmScreen`), and the owner's leave carries the SUCCESSION the
+// server demands (root AGENTS.md, Groups): alone, the group is deleted; with one other
+// member that member takes it; with more, the owner picks one here.
 //
 // The rows come ranked from the server (competition ties, the plain top-50 cut, the
-// own-row window — @whippin/shared's leaderboard rules); this screen only draws what
-// the API returned. Rows CONNECTED to the reader are marked in the accent — the app's
-// "you are here" colour: a quiet left edge on a friend, that edge plus a tint on your
-// own row (user-decided 2026-08-20, see the CSS).
+// own-row window, the period rule — @whippin/shared's leaderboard rules); this screen only
+// draws what the API returned. Rows CONNECTED to the reader are marked in the accent: a
+// quiet left edge on a member of one of your groups among the global rows, that edge plus
+// a tint on your own row.
 //
-// **OPENING THIS SCREEN IS NOT A TRIGGER (user-decided 2026-08-24, superseding "opening
-// the leaderboard mints an account").** A navigation must not create server state: a
-// signed-out or brand-new visitor browsing here would otherwise silently spawn an
-// account. Tokenless, every private face is the KNOWN-EMPTY answer (#216's rule): the
-// friends board is the ghost + INVITE without a request, and the global read stays
-// genuinely anonymous. The deliberate act that mints is the INVITE tap — the one thing on
-// this screen that cannot exist without an account — and every identity-reading effect
-// keys on the live identity, so a mint (or a cross-tab adoption) populates the boards
-// without a remount.
-//
-// **THE IDENTITY STRIP IS GONE (2026-08-30, with the header rework).** The board opened
-// on the player's own mark and name as a row — the LOCAL PLACEHOLDER for a tokenless
-// device — and since #204 that row was the one door to `/account`. The header's right
-// group now ends in the player's own face (`AccountKey`, on every game surface), which is
-// the same drawing, the same door, 40px above where the strip sat: two identical faces
-// stacked at the top of one screen read as a rendering fault, not as emphasis. What the
-// strip carried beyond the face — the name — is on the account screen one tap away and on
-// the player's own row once they have played; its profile read (a duplicate of
-// `useOwnFace`'s) went with it.
-type Tab = BoardTab;
+// **OPENING THIS SCREEN IS NOT A TRIGGER (user-decided 2026-08-24).** A navigation must not
+// create server state: tokenless, the groups list is the KNOWN-EMPTY answer (#216's rule)
+// and the global read stays anonymous. The deliberate acts that mint are NEW GROUP and
+// INVITE, and every identity-reading effect keys on the live identity, so a mint (or a
+// cross-tab adoption) populates the screen without a remount.
+type Tab = 'group' | 'global';
 
-// The tokenless FRIENDS board: a device with no account holds no edges and no rows, so
-// this is the KNOWN-EMPTY answer (#216), installed synchronously — at first render and at
-// every identity-scope reset — so a tokenless visit never flashes a LOADING frame for a
-// request nobody makes.
-const EMPTY_FRIENDS_BOARD: Board = { rows: [], own: null, playing: [], waiting: [] };
-const boardsFor = (identity: unknown): Partial<Record<Tab, Board | 'failed'>> =>
-  identity ? {} : { friends: EMPTY_FRIENDS_BOARD };
+const PERIODS: readonly BoardPeriod[] = ['day', 'week', 'month'];
+type AnyBoard = Board | PeriodBoard;
+
+const isPeriodBoard = (board: AnyBoard): board is PeriodBoard => 'from' in board;
 
 export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode }) {
-  // The tab belongs to the VISIT, and it lives in the store because this screen remounts
-  // without the visit ending — a header mode switch (App keys it on lang:mode) and a page
-  // refresh both did, and local state dropped a player who had chosen GLOBAL back onto
-  // FRIENDS both times. LEAVING the leaderboard is what ends the visit, and App owns that
-  // reset (user feedback 2026-08-20).
-  const tab = useGameStore((s) => s.boardTab);
+  // The tab belongs to the VISIT (user feedback 2026-08-20): it lives in the store because
+  // this screen remounts without the visit ending, and App resets it on any non-board route.
+  const tab: Tab = useGameStore((s) => s.boardTab);
   const setTab = useGameStore((s) => s.setBoardTab);
+  // WHICH group: the one last opened (persisted, account-owned), else the first the
+  // server lists.
+  const lastGroupId = useGameStore((s) => s.lastGroupId);
+  const setLastGroup = useGameStore((s) => s.setLastGroup);
+  const [period, setPeriod] = useState<BoardPeriod>('day');
 
-  // The device's live identity (#216). Opening this screen is NOT a trigger (user-decided
-  // 2026-08-24): the strip, the boards and the friend marks all READ whatever identity the
-  // device holds, and only the INVITE tap below ever creates one. Keying the effects on
-  // this value is what populates the screen when an identity ARRIVES under it — the invite
-  // tap's own mint, or an adoption from another tab — where a run-once effect left the
-  // strip blank and the invite dead until a remount (review finding). It leads the state
-  // below because the TOKENLESS answers are derived from it SYNCHRONOUSLY: known-empty is
-  // an initializer's value, never an effect's, or the first paint flashes a skeleton and a
-  // LOADING wave for requests nobody makes.
   const identity = useDeviceIdentity();
   const epoch = identity ? identityEpochOf(identity) : null;
-  // Whether that identity was MINTED here or ADOPTED — the known-empty rule below turns on
-  // it, and the transition alone cannot say.
-  const mintedHere = useIdentityMintedHere();
-
-  // The id alone, available as soon as the identity is: it is what the own-row marker
-  // needs, which never waits on a profile. Pure derivation — state here would only ever
-  // mirror the identity, one sync hazard for nothing.
   const meId = identity?.accountId ?? null;
-  // The reader's edges, for marking friends among the global rows. Decoration, fetched
-  // lazily and only for the tab that needs it.
-  const [friendIds, setFriendIds] = useState<ReadonlySet<string> | null>(null);
-  // ONE outcome slot per tab — a board, or that tab's own failure. Screen-global
-  // failure state painted a FAILED frame over the other tab's perfectly good board for
-  // a render when flipping back (review finding, 2026-08-20).
-  const [boards, setBoards] = useState<Partial<Record<Tab, Board | 'failed'>>>(() =>
-    boardsFor(identity),
-  );
+
+  // The player's groups — the pages. Read off the ONE cache every group surface shares;
+  // tokenless it is known-empty without a request.
+  const { phase: groupsPhase, groups } = useGroups();
+  useEffect(() => {
+    loadGroups();
+  }, [identity]);
+  const active: GroupSummary | null =
+    groups === null
+      ? null
+      : (groups.find((group) => group.id === lastGroupId) ?? groups[0] ?? null);
+  // The reader's own people, for marking rows among the global ones: the union of every
+  // group they are in, which the list already carries.
+  const mates = new Set(groups?.flatMap((group) => group.members) ?? []);
+
+  // THE SCOPES, in the pager's order: every group — or, with none, the one page that
+  // SAYS so (a state, not a button: its body carries CREATE GROUP) — then GLOBAL.
+  const scopes: Scope[] =
+    groups === null
+      ? []
+      : [
+          ...groups.map((group) => ({
+            key: group.id,
+            title: group.name,
+            sub: `${group.members.length} ${t(lang, group.members.length === 1 ? 'memberUnit' : 'membersUnit')}`,
+          })),
+          ...(groups.length === 0 ? [{ key: 'none', title: t(lang, 'boardEmptyGroups') }] : []),
+          { key: 'global', title: t(lang, 'boardGlobal'), sub: t(lang, 'scopeGlobalSub') },
+        ];
+  const onNone = tab === 'group' && active === null;
+  const activeIndex =
+    scopes.length === 0
+      ? 0
+      : tab === 'global'
+        ? scopes.length - 1
+        : active === null
+          ? 0
+          : Math.max(0, scopes.findIndex((scope) => scope.key === active.id));
+  const showScope = (index: number) => {
+    const scope = scopes[index];
+    if (!scope) return;
+    if (scope.key === 'global') {
+      setTab('global');
+    } else {
+      if (scope.key !== 'none') setLastGroup(scope.key);
+      setTab('group');
+    }
+  };
+
+  // ONE outcome slot per board — a board, or that board's own failure — keyed by what it
+  // shows. Screen-global failure state would paint a FAILED frame over another board's
+  // perfectly good rows for a render when flipping back.
+  const boardKey = tab === 'global' ? 'global' : active ? `${active.id}:${period}` : null;
+  const [boards, setBoards] = useState<Partial<Record<string, AnyBoard | 'failed'>>>({});
   const [attempt, setAttempt] = useState(0);
 
-  // THE DAY IS A LIVE VALUE, not a clock read at fetch time (review finding,
-  // 2026-08-20). A board is addressed per (day, lang, mode), and this screen can be
-  // left open across the 22:00-ET flip — on a phone, overnight, routinely. `useToday`
-  // is the app's one day signal: it re-fires at the DST-correct reset AND on a
-  // visibility flip (the case a throttled background timer would otherwise miss).
+  // THE DAY IS A LIVE VALUE: a board is left open across the 22:00-ET flip routinely, and a
+  // new day is a new board, so every cache goes with it — dropped during render so
+  // yesterday's rows are never committed under today's date.
   const date = dateForDayNumber(useToday());
-  // A NEW DAY IS A NEW BOARD, so both tabs' caches go with it — dropped during render
-  // (React's own "adjust state when a prop changes" shape) rather than in an effect, so
-  // yesterday's rows are never committed under today's date, and the fetch below is
-  // already keyed on the new day when it runs.
   const [cachedDate, setCachedDate] = useState(date);
   if (cachedDate !== date) {
     setCachedDate(date);
-    setBoards(boardsFor(identity));
+    setBoards({});
   }
-  // AND THE CACHES ARE IDENTITY-SCOPED (PR-219 follow-up review): a board cached tokenless
-  // — or under a previous identity — is not the current account's answer, and the
-  // stale-but-good rule below deliberately keeps a cached board over a FAILED refresh, so
-  // a kept tokenless-empty board would suppress both the adopted account's real data and
-  // the retry UI. A scope change therefore drops both tabs, the friend marks and the strip
-  // during render, exactly as a new day does; what replaces them is the new scope's own
-  // synchronous answer.
+  // AND THE CACHES ARE IDENTITY-SCOPED: a board cached under a previous identity is not the
+  // current account's answer, and the stale-but-good rule below would keep it over a failed
+  // refresh. A scope change drops everything, exactly as a new day does.
   const [cachedEpoch, setCachedEpoch] = useState(epoch);
   if (cachedEpoch !== epoch) {
     setCachedEpoch(epoch);
-    // A TOKENLESS tab whose own MINT lands keeps the known-empty friends board (user
-    // feedback 2026-08-26: the INVITE tap's mint made the ghost blink into a loading
-    // frame — the loading belongs on the button alone). A freshly minted account has no
-    // edges by construction, so known-empty is a FACT there, not a stale guess; the fetch
-    // below still fires and the stale-but-good rule swaps in the server's answer.
-    //
-    // **It must be a MINT, not merely an acquisition** (review finding): `identity.ts`'s
-    // own rule is that every other null → identity publish is an ADOPTION of an account
-    // that MAY ALREADY HOLD SERVER STATE — a sibling tab's account, a pending token
-    // recovered from storage, a raced bootstrap another tab won. An accepted invite is the
-    // reachable case: its tap mints AND links in one gesture, so a sibling tab adopting
-    // that identity has friends the instant it arrives. Keeping known-empty there is a
-    // guess, and a failed refresh would freeze it — the stale-but-good rule keeps a cached
-    // board over a failure, so the account's real edges AND the retry UI would both be
-    // suppressed behind a false ghost. Every OTHER scope change (an adoption, A → B,
-    // A → signed out) keeps the PR-219 rule: drop everything to the new scope's own
-    // synchronous answer.
-    setBoards(
-      cachedEpoch === null && identity && mintedHere
-        ? { friends: EMPTY_FRIENDS_BOARD }
-        : boardsFor(identity),
-    );
-    setFriendIds(null);
+    setBoards({});
   }
-  // The pinned `share` analytics event means "a RESULT left the app" (the three-event
-  // invariant); an invite link is not a result, so its delivery is untracked rather
-  // than quietly redefining the metric.
-  const { share, copied } = useShare({ tracked: false });
-  // The one challenge a tokenless INVITE tap will spend on its deploy, in hand before the
-  // tap — the less the mint waits on, the more often the same gesture can still deliver.
-  useEffect(() => {
-    if (identity === null) prefetchTurnstileTokens(1);
-  }, [identity]);
 
-  // The reader's OWN EDGES, for marking friends among the global rows (user-asked,
-  // 2026-08-20). Fetched only when the GLOBAL tab is actually shown and only once per
-  // visit: the friends board's rows are friends by construction, so nothing there needs
-  // marking, and the graph does not change with the day the board is addressed by.
-  // Decoration — a failure simply leaves the rows unmarked, never an error.
+  // One fetch per board ACTIVATION — the route is a zero-TTL live read, so a page turn
+  // re-reads rather than trusting a snapshot; the cached board holds the screen while the
+  // fresh one is in flight (stale-but-good beats a spinner), and RETRY refetches. A GROUP
+  // board is the authenticated POST naming the group (the server refuses a non-member);
+  // GLOBAL is the anonymous GET, widened with the caller's own window via their PUBLIC id.
   useEffect(() => {
-    if (tab !== 'global' || friendIds) return;
-    // No identity means no edges: unmarked rows are the honest board, and asking would
-    // bootstrap an account for a navigation (#216 — reads never mint).
-    if (!identity) return;
+    if (boardKey === null) return;
+    const key = boardKey;
     let cancelled = false;
+    setBoards((prev) => (prev[key] === 'failed' ? { ...prev, [key]: undefined } : prev));
+    // No token, no private fetch (#216): a group page cannot exist tokenless (the list is
+    // empty), so only the global read runs without an identity.
+    if (tab === 'group' && !identity) return;
     (async () => {
+      const epochNow = identity ? identityEpochOf(identity) : null;
       try {
-        const epoch = identityEpochOf(identity);
-        const response = await postFriendsBody(friendsUrl(), { token: identity.token });
-        if (cancelled || identityEpoch() !== epoch) return;
-        if (!response.ok) {
-          // Unmarked rows are a fine board, so this read fails silently — EXCEPT for the one
-          // answer that is not about the read at all. A device revoked since the board
-          // mounted can learn it here first, and swallowing it would leave the screen
-          // decorating a board for an account it no longer holds.
-          await adoptSignedOutVerdict(response, epoch);
-          return;
+        let board: AnyBoard;
+        if (tab === 'group' && identity !== null && active !== null) {
+          const response = await postBoardBody(boardUrl(lang, date, mode), {
+            token: identity.token,
+            group: active.id,
+            ...(period === 'day' ? {} : { period }),
+          });
+          if (cancelled || (epochNow !== null && identityEpoch() !== epochNow)) return;
+          if (!response.ok) {
+            await adoptSignedOutVerdict(response, epochNow ?? '');
+            // Not a member any more (left elsewhere, removed): the list is what is stale.
+            if (response.status === 403) loadGroups();
+            throw new Error(`board answered ${response.status}`);
+          }
+          const data: unknown = await response.json();
+          board = period === 'day' ? parseBoard(data) : parsePeriodBoard(data);
+        } else {
+          const response = await fetch(boardUrl(lang, date, mode, identity?.accountId));
+          if (cancelled || (epochNow !== null && identityEpoch() !== epochNow)) return;
+          if (!response.ok) throw new Error(`board answered ${response.status}`);
+          board = parseBoard(await response.json());
         }
-        const ids = parseFriends(await response.json());
-        if (!cancelled && identityEpoch() === epoch) setFriendIds(new Set(ids));
-      } catch {
-        // Unmarked rows are a fine board.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [tab, friendIds, identity]);
-
-  // One fetch per tab ACTIVATION — the route is a zero-TTL live read, so a tab flip
-  // re-reads rather than trusting a snapshot from minutes ago; the cached board holds
-  // the screen while the fresh one is in flight (stale-but-good beats a spinner), and
-  // RETRY refetches. FRIENDS is the authenticated POST — the server resolves YOUR
-  // edges, so the read has to prove who is asking (#216: the device token in the body,
-  // never a query string). GLOBAL is the anonymous GET, widened with the caller's own
-  // window via their PUBLIC id.
-  useEffect(() => {
-    let cancelled = false;
-    // A standing failure turns back into the loading state for this pass.
-    setBoards((prev) => (prev[tab] === 'failed' ? { ...prev, [tab]: undefined } : prev));
-    // **No token, no private fetch (#216)** — and no MINT for a navigation (user-decided
-    // 2026-08-24): the tokenless FRIENDS board is the KNOWN-EMPTY answer, already
-    // installed synchronously (`boardsFor`) — the ghost and the INVITE button, exactly
-    // what a brand-new visitor should see, with no request behind it. The GLOBAL read
-    // below needs no identity: the caller's public id only ever widens it with their own
-    // window.
-    if (tab === 'friends' && !identity) return;
-    (async () => {
-      const epoch = identity ? identityEpochOf(identity) : null;
-      try {
-        const response =
-          tab === 'friends' && identity !== null
-            ? await postBoardBody(boardUrl(lang, date, mode), { token: identity.token })
-            : await fetch(boardUrl(lang, date, mode, identity?.accountId));
-        if (cancelled || (epoch !== null && identityEpoch() !== epoch)) return;
-        if (!response.ok) {
-          // The anonymous GLOBAL read carries no epoch and can sign nobody out.
-          if (epoch !== null) await adoptSignedOutVerdict(response, epoch);
-          throw new Error(`board answered ${response.status}`);
-        }
-        const board = parseBoard(await response.json());
-        if (!cancelled && (epoch === null || identityEpoch() === epoch)) {
-          setBoards((prev) => ({ ...prev, [tab]: board }));
+        if (!cancelled && (epochNow === null || identityEpoch() === epochNow)) {
+          setBoards((prev) => ({ ...prev, [key]: board }));
         }
       } catch {
-        // FAILED only when there is nothing to show: an error frame over rows already
-        // on screen helps nobody — the cached board stands until a refresh succeeds.
-        if (!cancelled && (epoch === null || identityEpoch() === epoch)) {
+        // FAILED only when there is nothing to show: an error frame over rows already on
+        // screen helps nobody — the cached board stands until a refresh succeeds.
+        if (!cancelled && (epochNow === null || identityEpoch() === epochNow)) {
           setBoards((prev) =>
-            prev[tab] && prev[tab] !== 'failed' ? prev : { ...prev, [tab]: 'failed' },
+            prev[key] && prev[key] !== 'failed' ? prev : { ...prev, [key]: 'failed' },
           );
         }
       }
@@ -273,108 +234,231 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
     return () => {
       cancelled = true;
     };
-  }, [tab, lang, mode, date, attempt, identity]);
+    // `active?.id` rather than `active`: the list object is re-read, the group is not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boardKey, tab, active?.id, period, lang, mode, date, attempt, identity]);
 
-  const entry = boards[tab];
+  const entry = boardKey === null ? undefined : boards[boardKey];
   const board = entry === 'failed' ? undefined : entry;
 
-  // The INVITE tap's own state: its bootstrap in flight, and which failure the error
-  // surface reports. The tap exists to deliver a link, and saying nothing leaves the
-  // player tapping a button that appears to do nothing.
-  const [inviting, setInviting] = useState(false);
-  const [inviteFailed, setInviteFailed] = useState<'account' | 'share' | null>(null);
+  // ---- the deliberate acts: CREATE, INVITE, LEAVE, REMOVE — on the group's own screens,
+  // never on the board. Each write answers the list as it now stands, published through
+  // `adoptGroups`; a failure lands on the app's error surface, since saying nothing leaves
+  // the player tapping a button that appears to do nothing.
+  const [busy, setBusy] = useState<'create' | 'invite' | 'leave' | 'remove' | null>(null);
+  const [failure, setFailure] = useState<'account' | 'share' | 'group' | 'limit' | null>(null);
+  // WHICH SCREEN is up over the board, and WHICH CONFIRMATION over that.
+  const [screen, setScreen] = useState<'group' | 'create' | null>(null);
+  const [confirming, setConfirming] = useState<{ kind: 'remove'; member: BoardPlayer } | { kind: 'leave' } | null>(null);
+  const [successor, setSuccessor] = useState<string | null>(null);
+  // The members DRESSED (name + mark) for the successor picker: the list carries ids
+  // alone, and `GET /groups?id=` is the public face that names them. Decoration — until
+  // it lands, and if it never does, the rows wear the assigned identities.
+  const [faces, setFaces] = useState<Record<string, BoardPlayer>>({});
+  const { share, copied } = useShare({ tracked: false });
+  useEffect(() => {
+    if (identity === null) prefetchTurnstileTokens(1);
+  }, [identity]);
 
-  // The invite link is both "add me" and "come play" (#189): one line of copy, then the
-  // URL. Delivery (native sheet -> clipboard + COPIED) is useShare's, like every result.
-  //
-  // **THE INVITE TAP IS THE TRIGGER (#216), AND IT IS ONE TAP** (user-decided 2026-08-24,
-  // superseding the two-phase mint-then-ask: "always a single tap"): a tokenless tap
-  // bootstraps and then delivers in the same gesture. The physics the two-phase design
-  // guarded against still exist — Turnstile + /devices can outlive the transient user
-  // activation, and past it navigator.share rejects by spec and the async clipboard does
-  // on WebKit — so `useShare.share` REPORTS delivery, and a share neither channel could
-  // make raises the error surface (`failedShare`) instead of being swallowed: its TRY
-  // AGAIN runs inside its own fresh activation, with the identity now in hand, which is
-  // exactly the delivery the first tap could not make. Desktop and an already-deployed
-  // account never hit that path — the common case stays one tap, one sheet.
-  const invite = async () => {
-    if (inviting) return;
-    setInviteFailed(null);
-    let held = identity;
-    if (held === null) {
-      // The deliberate act that creates the account (LoadingWave in the button, the Word
-      // gate's PLAY shape; a failure created nothing and says so).
-      setInviting(true);
+  // ONE gesture for every write: the deploy (a tokenless tap mints the account first, the
+  // button holding its loading state for both legs), then the signed POST, then the list.
+  const write = async (
+    kind: NonNullable<typeof busy>,
+    body: (token: string) => Parameters<typeof postGroupsBody>[1],
+  ): Promise<{ ok: true; created?: string } | { ok: false; error: string | null }> => {
+    setBusy(kind);
+    setFailure(null);
+    try {
+      let request;
       try {
-        const request = await ensureRequestIdentity(null);
-        // A cross-tab replacement landed mid-mint: the screen is already re-keying on the
-        // adopted identity — share ITS link, the one the button now stands for.
-        held = request?.identity ?? deviceIdentity();
-        if (held === null) return;
+        request = await ensureRequestIdentity(null);
       } catch {
-        setInviteFailed('account');
-        return;
-      } finally {
-        setInviting(false);
+        setFailure('account');
+        return { ok: false, error: null };
       }
+      if (!request) return { ok: false, error: null };
+      const response = await postGroupsBody(groupsUrl(), body(request.identity.token));
+      if (identityEpoch() !== request.epoch) return { ok: false, error: null };
+      if (!response.ok) {
+        await adoptSignedOutVerdict(response, request.epoch);
+        let error: string | null = null;
+        try {
+          error = String(((await response.clone().json()) as { error?: unknown }).error ?? '');
+        } catch {
+          error = null;
+        }
+        setFailure(error === 'group_limit' ? 'limit' : 'group');
+        return { ok: false, error };
+      }
+      const answer = parseGroups(await response.json());
+      adoptGroups(answer, request.identity.accountId);
+      return { ok: true, created: answer.created };
+    } catch {
+      setFailure('group');
+      return { ok: false, error: null };
+    } finally {
+      setBusy(null);
     }
+  };
+
+  // The create screen closes ITSELF once the group exists (it plays the name inked in
+  // first); the board is already on the new group when it does.
+  const create = async (name: string): Promise<boolean> => {
+    if (busy) return false;
+    const result = await write('create', (token) => ({ token, create: true, name }));
+    if (result.ok && result.created) {
+      setLastGroup(result.created);
+      setTab('group');
+      setPeriod('day');
+      return true;
+    }
+    return false;
+  };
+
+  // The invite link is both "join us" and "come play": one line of copy, then the URL.
+  // Delivery (native sheet -> clipboard + COPIED) is useShare's, like every result.
+  const invite = async () => {
+    if (busy || !active) return;
+    setFailure(null);
     const delivered = await share(
-      `${t(lang, 'boardInviteText')}\n${window.location.origin}${pathForInvite(held.accountId)}`,
+      `${t(lang, 'boardInviteText')}\n${window.location.origin}${pathForGroupInvite(active.id)}`,
     );
-    if (!delivered) setInviteFailed('share');
+    if (!delivered) setFailure('share');
+  };
+
+  const creator = active !== null && active.createdBy === meId;
+  // The succession the LEAVE carries, read off the list the server last answered (the
+  // same rule the server applies — `successionFor`): who else is in the group decides
+  // whether the owner names somebody. A list gone stale by the time the tap lands is the
+  // server's 409 `successor_required`, which re-reads the list below.
+  const others = active ? active.members.filter((id) => id !== meId) : [];
+  const leaveKind = !creator
+    ? 'plain'
+    : others.length === 0
+      ? 'last'
+      : others.length === 1
+        ? 'handover'
+        : 'pick';
+
+  // Opening the owner's leave with a choice to make DRESSES the candidates.
+  useEffect(() => {
+    if (confirming?.kind !== 'leave' || leaveKind !== 'pick' || !active) return;
+    const controller = new AbortController();
+    void readGroup(active.id, controller.signal).then((read) => {
+      if (read.status !== 'shown' || controller.signal.aborted) return;
+      setFaces(Object.fromEntries(read.group.members.map((member) => [member.publicId, member])));
+    });
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirming?.kind, leaveKind, active?.id]);
+
+  const leave = async () => {
+    if (busy || !active) return;
+    if (leaveKind === 'pick' && successor === null) return;
+    const id = active.id;
+    const named = leaveKind === 'pick' ? successor : null;
+    const result = await write('leave', (token) => ({ token, leave: id, ...(named ? { successor: named } : {}) }));
+    setConfirming(null);
+    setSuccessor(null);
+    if (result.ok) {
+      setScreen(null);
+    } else if (result.error === 'successor_required') {
+      // The list this screen decided from was stale: re-read it, and the next LEAVE asks.
+      loadGroups();
+    }
+  };
+
+  const remove = async (member: string) => {
+    if (busy || !active) return;
+    const result = await write('remove', (token) => ({ token, remove: active.id, member }));
+    setConfirming(null);
+    if (result.ok) setAttempt((n) => n + 1);
   };
 
   return (
     <div className="board-screen">
       {/* THE BOARD KEEPS THE PUZZLE'S TITLE and takes no title of its own (user-decided
-          2026-08-30). A board is a view OF a daily — it is addressed by (day, lang, mode)
-          like everything else — so naming the daily names this screen too, and the sheet
-          behind it still switches which daily's board this is, exactly as the retired
-          centre tabs did. What the screen IS gets said by the LIT crown instead of by a
-          word, which is the group's whole grammar.
-
-          The way OUT is any other key of the same, unmoving row — HOME above all
-          (`HeaderKeys`, user-decided 2026-08-31 after a lit-crown-as-exit and then a ✕
-          were each rejected: the first was not intuitive, the second rearranged the row). */}
+          2026-08-30): a board is a view OF a daily, and the lit crown says what the screen
+          is. The way OUT is any other key of the same, unmoving row. */}
       <HeaderLeft>
         <PuzzleTitle lang={lang} mode={mode} surface="board" />
       </HeaderLeft>
 
-      {/* FRIENDS first — the trusted default; GLOBAL is the fun view. The segmented
-          control is the header mode switcher's own dress, stretched to the column. */}
-      <nav className="board-tabs" aria-label={t(lang, 'boardTitle')}>
-        {(['friends', 'global'] as const).map((view) => (
-          <button
-            key={view}
-            type="button"
-            className={`board-tab${tab === view ? ' active' : ''}`}
-            aria-current={tab === view || undefined}
-            onClick={() => setTab(view)}
-          >
-            {t(lang, view === 'friends' ? 'boardFriends' : 'boardGlobal')}
-          </button>
-        ))}
-      </nav>
+      {/* WHICH BOARD: the pager. A tap on the middle page goes into it — the group's own
+          screen; GLOBAL and the no-group page have nothing to open. The plus after the
+          dots creates. */}
+      {scopes.length > 0 ? (
+        <ScopePager
+          lang={lang}
+          scopes={scopes}
+          active={activeIndex}
+          onChange={showScope}
+          onNew={() => setScreen('create')}
+          onOpen={(index) => {
+            const key = scopes[index]?.key;
+            if (key !== 'global' && key !== 'none' && key !== undefined) {
+              loadGroups();
+              setScreen('group');
+            }
+          }}
+        />
+      ) : (
+        <div className="scope scope-blank" aria-hidden />
+      )}
+
+      {/* WHICH of the group's three boards: one framed switch, three equal cells. */}
+      {tab === 'group' && active && (
+        <nav className="board-tabs period-tabs" aria-label={t(lang, 'boardPeriods')}>
+          {PERIODS.map((view) => (
+            <button
+              key={view}
+              type="button"
+              className={`board-tab${period === view ? ' active' : ''}`}
+              aria-current={period === view || undefined}
+              onClick={() => isBoardPeriod(view) && setPeriod(view)}
+            >
+              {t(lang, view === 'day' ? 'periodDay' : view === 'week' ? 'periodWeek' : 'periodMonth')}
+            </button>
+          ))}
+        </nav>
+      )}
 
       <div className="board-body">
-        {entry === 'failed' ? (
+        {tab === 'group' && groupsPhase === 'failed' && groups === null ? (
+          <LoadError message={t(lang, 'failedBoard')} lang={lang} onRetry={() => loadGroups()} />
+        ) : tab === 'group' && onNone ? (
+          // No group at all: the ghost and the one call.
+          <div className="board-empty">
+            <span className="board-ghost" aria-hidden="true" />
+            <button type="button" className="btn btn-primary" disabled={busy !== null} onClick={() => setScreen('create')}>
+              {t(lang, 'groupCreate')}
+            </button>
+          </div>
+        ) : entry === 'failed' ? (
           <LoadError
             message={t(lang, 'failedBoard')}
             lang={lang}
             onRetry={() => setAttempt((n) => n + 1)}
           />
         ) : board ? (
-          <BoardList
-            key={tab}
-            board={board}
-            tab={tab}
-            lang={lang}
-            mode={mode}
-            meId={meId ?? undefined}
-            // Only the GLOBAL list marks friends: on the friends board every row is one,
-            // and marking everything marks nothing.
-            friendIds={tab === 'global' ? friendIds : null}
-          />
+          isPeriodBoard(board) ? (
+            <PeriodList key={boardKey} board={board} lang={lang} mode={mode} meId={meId ?? undefined} />
+          ) : (
+            <BoardList
+              key={boardKey}
+              board={board}
+              tab={tab}
+              lang={lang}
+              mode={mode}
+              meId={meId ?? undefined}
+              // Only the GLOBAL list marks the reader's people: on a group's board every
+              // row is one, and marking everything marks nothing.
+              mates={tab === 'global' ? mates : null}
+              // A group of one is the moment INVITE matters: it is the empty state's call.
+              onInvite={tab === 'group' ? () => void invite() : undefined}
+              inviteLabel={copied ? t(lang, 'copied') : t(lang, 'boardInvite')}
+            />
+          )
         ) : (
           <p className="status">
             <LoadingWave text={t(lang, 'loading')} />
@@ -382,36 +466,114 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
         )}
       </div>
 
-      {/* The invite link's sending surface (#189): the screen's one big action — and the
-          route's account-creating trigger (#216, user-decided 2026-08-24), so it is live
-          for a brand-new visitor and holds a LoadingWave while its own mint is in flight
-          (the Word gate's PLAY shape). The line above it carries the tap's outcome: the
-          fresh-tap ask after a mint, or the loud failure whose retry is the button itself.
-          The label swaps to COPIED on the clipboard path, the share button's own gesture. */}
-      <button
-        type="button"
-        className="mix-btn board-invite"
-        disabled={inviting}
-        onClick={() => void invite()}
-      >
-        {inviting ? (
-          <LoadingWave text={t(lang, 'loading')} />
-        ) : copied ? (
-          t(lang, 'copied')
-        ) : (
-          t(lang, 'boardInvite')
-        )}
-      </button>
+      {screen === 'group' && active && (
+        <GroupScreen
+          lang={lang}
+          group={active}
+          meId={meId}
+          busy={busy !== null}
+          copied={copied}
+          onInvite={() => void invite()}
+          onRemove={(member) => setConfirming({ kind: 'remove', member })}
+          onLeave={() => {
+            setSuccessor(null);
+            setConfirming({ kind: 'leave' });
+          }}
+          onClose={() => setScreen(null)}
+        />
+      )}
+      {screen === 'create' && (
+        <GroupCreate lang={lang} busy={busy === 'create'} onCreate={create} onClose={() => setScreen(null)} />
+      )}
 
-      {/* The tap's failure, on the app's error surface (#216 rework): the deploy failing
-          created nothing; a delivery failing has the account in hand, and TRY AGAIN
-          shares inside its own fresh activation. */}
-      {inviteFailed !== null && (
+      {/* REMOVE: the member's face over the act. */}
+      {confirming?.kind === 'remove' && active && (
+        <ConfirmScreen
+          lang={lang}
+          title={t(lang, 'groupRemoveTitle')}
+          note={t(lang, 'groupRemoveNote')}
+          action={t(lang, 'groupRemoveAction')}
+          busy={busy === 'remove'}
+          onConfirm={() => void remove(confirming.member.publicId)}
+          onClose={() => setConfirming(null)}
+        >
+          <Face player={confirming.member} />
+        </ConfirmScreen>
+      )}
+
+      {/* LEAVE: the group's name over the act, the note by what the succession does —
+          and, for an owner of three or more, the picker: who takes it over. */}
+      {confirming?.kind === 'leave' && active && (
+        <ConfirmScreen
+          lang={lang}
+          title={t(lang, 'groupLeaveTitle')}
+          note={t(
+            lang,
+            leaveKind === 'last'
+              ? 'groupLeaveLastNote'
+              : leaveKind === 'handover'
+                ? 'groupLeaveHandoverNote'
+                : leaveKind === 'pick'
+                  ? 'groupLeaveSuccessorNote'
+                  : 'groupLeaveNote',
+          )}
+          action={t(lang, 'groupLeaveAction')}
+          busy={busy === 'leave'}
+          disabled={leaveKind === 'pick' && successor === null}
+          onConfirm={() => void leave()}
+          onClose={() => setConfirming(null)}
+        >
+          <span className="confirm-group">{active.name}</span>
+          {leaveKind === 'pick' && (
+            <div className="board-list confirm-pick" role="radiogroup" aria-label={t(lang, 'groupMembers')}>
+              {others.map((id, index) => {
+                const face = faces[id];
+                const picked = successor === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    role="radio"
+                    aria-checked={picked}
+                    className={`board-row waiting${picked ? ' picked' : ''}`}
+                    style={{ '--i': index } as CSSProperties}
+                    onClick={() => setSuccessor(id)}
+                  >
+                    <span className="board-norank" aria-hidden="true" />
+                    <Avatar avatar={face?.avatar ?? defaultAvatar(id)} size={28} />
+                    <span className={`board-name${face?.name ? '' : ' anon'}`}>{face?.name || anonName(id)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </ConfirmScreen>
+      )}
+
+      {failure !== null && (
         <ErrorScreen
           lang={lang}
-          title={t(lang, inviteFailed === 'account' ? 'failedAccount' : 'failedShare')}
-          note={t(lang, inviteFailed === 'account' ? 'failedAccountNote' : 'failedShareNote')}
-          onClose={() => setInviteFailed(null)}
+          title={t(
+            lang,
+            failure === 'account'
+              ? 'failedAccount'
+              : failure === 'share'
+                ? 'failedShare'
+                : failure === 'limit'
+                  ? 'groupLimit'
+                  : 'failedGroup',
+          )}
+          note={t(
+            lang,
+            failure === 'account'
+              ? 'failedAccountNote'
+              : failure === 'share'
+                ? 'failedShareNote'
+                : failure === 'limit'
+                  ? 'groupLimitNote'
+                  : 'failedGroupNote',
+          )}
+          onClose={() => setFailure(null)}
         />
       )}
     </div>
@@ -424,37 +586,41 @@ function BoardList({
   lang,
   mode,
   meId,
-  friendIds,
+  mates,
+  onInvite,
+  inviteLabel,
 }: {
   board: Board;
   tab: Tab;
   lang: LangCode;
   mode: Mode;
   meId?: string;
-  friendIds: ReadonlySet<string> | null;
+  mates: ReadonlySet<string> | null;
+  // A group of one: the empty state's call is INVITE.
+  onInvite?: () => void;
+  inviteLabel?: string;
 }) {
-  // Empty is per TAB. The GLOBAL board is empty when nobody played. The FRIENDS board
-  // is empty when the caller has NO EDGES: the server always includes the caller's own
-  // row once they played, and a board of exactly yourself — under an identity strip
-  // already wearing your name and mark — still means "no friends yet", which is what
-  // the ghost says and the INVITE button below remedies (user-decided 2026-08-20; a
-  // friend who merely has not played is a waiting row, never empty).
+  // Empty is per TAB. The GLOBAL board is empty when nobody played. A GROUP's board is
+  // empty when the caller is ALONE in it: the server includes the caller's own row once
+  // they played, and a board of exactly yourself still means "nobody else yet", which is
+  // what the ghost says and INVITE below remedies (a member who merely has not played is
+  // a waiting row, never empty).
   const others = board.rows.filter((row) => row.publicId !== meId);
   const playingOthers = board.playing.filter((row) => row.publicId !== meId);
   const empty =
-    (tab === 'friends'
-      ? others.length === 0 && playingOthers.length === 0
-      : board.rows.length === 0) &&
+    (tab === 'group' ? others.length === 0 && playingOthers.length === 0 : board.rows.length === 0) &&
     (board.own?.length ?? 0) === 0 &&
     board.waiting.length === 0;
   if (empty) {
-    // A sad ghost over a terse line: an empty FRIENDS tab means no edges at all (the
-    // merely-unplayed show as waiting rows), an empty GLOBAL one means nobody played.
-    // The ghost is the user's own pixel art, masked so it tints like an icon (CSS).
     return (
       <div className="board-empty">
         <span className="board-ghost" aria-hidden="true" />
-        <p>{t(lang, tab === 'friends' ? 'boardEmptyFriends' : 'boardEmptyGlobal')}</p>
+        <p>{t(lang, tab === 'group' ? 'boardEmptyGroup' : 'boardEmptyGlobal')}</p>
+        {onInvite && (
+          <button type="button" className="btn btn-primary" onClick={onInvite}>
+            {inviteLabel}
+          </button>
+        )}
       </div>
     );
   }
@@ -464,17 +630,12 @@ function BoardList({
       key={row.publicId}
       row={row}
       me={row.publicId === meId}
-      friend={friendIds?.has(row.publicId) ?? false}
+      mate={mates?.has(row.publicId) ?? false}
       index={index++}
     />
   );
   return (
     <>
-      {/* The unit column caption: which way is better is the mode's, and naming the
-          unit is how the list says it (the score headline's own rule). Only over
-          actual numbers — a board of nothing but waiting friends has no score column
-          to caption (user feedback 2026-08-20); the in-progress rows' try counts sit
-          in the same column, so they earn it too. */}
       {(board.rows.length > 0 || board.playing.length > 0) && (
         <div className="board-unit" aria-hidden="true">
           {t(lang, mode === 'word' ? 'words' : 'tries')}
@@ -484,29 +645,20 @@ function BoardList({
         {board.rows.map(item)}
         {board.own && board.own.length > 0 && (
           <>
-            {/* The gap says "the line continues below the cut" in the app's own dashed
-                vocabulary before the caller's own neighborhood. */}
             <li className="board-gap" aria-hidden="true" />
             {board.own.map(item)}
           </>
         )}
-        {/* Friends STILL PLAYING today (#206, friends board only), below every finished
-            row: the live try count and reconstruction percentage, in the server's own
-            order (`orderPlaying`), each with the no-rank tick — a mid-round position is
-            never a rank claim. ONE section caption, the waiting group's rule. */}
-        {board.playing.length > 0 && (
-          <li className="board-section">{t(lang, 'boardPlaying')}</li>
-        )}
+        {board.playing.length > 0 && <li className="board-section">{t(lang, 'boardPlaying')}</li>}
         {board.playing.map((row) => (
-          <PlayingRowItem key={row.publicId} row={row} me={row.publicId === meId} index={index++} />
+          <PlayingRowItem
+            key={row.publicId}
+            row={row}
+            me={row.publicId === meId}
+            index={index++}
+          />
         ))}
-        {/* Friends with no score today (friends board only): named, never dropped.
-            ONE section caption says why for all of them (user feedback 2026-08-20 —
-            the per-row label read as a stutter); each row keeps the dashed "not yet"
-            frame and a centered no-rank tick where its rank would be. */}
-        {board.waiting.length > 0 && (
-          <li className="board-section">{t(lang, 'boardNotPlayed')}</li>
-        )}
+        {board.waiting.length > 0 && <li className="board-section">{t(lang, 'boardNotPlayed')}</li>}
         {board.waiting.map((player) => (
           <WaitingRowItem key={player.publicId} player={player} index={index++} />
         ))}
@@ -515,50 +667,124 @@ function BoardList({
   );
 }
 
-function PlayingRowItem({
+// A WEEK or a MONTH (#271): the shared period rule's three numbers per member — podium
+// POINTS under the caption, then the days and the total as the row's quiet detail.
+function PeriodList({
+  board,
+  lang,
+  mode,
+  meId,
+}: {
+  board: PeriodBoard;
+  lang: LangCode;
+  mode: Mode;
+  meId?: string;
+}) {
+  if (board.rows.length === 0) {
+    return (
+      <div className="board-empty">
+        <span className="board-ghost" aria-hidden="true" />
+        <p>{t(lang, 'boardEmptyPeriod')}</p>
+      </div>
+    );
+  }
+  return (
+    <>
+      <div className="board-unit" aria-hidden="true">
+        {t(lang, 'points')}
+      </div>
+      <ol className="board-list pixel-scroll">
+        {board.rows.map((row, index) => (
+          <PeriodRowItem key={row.publicId} row={row} me={row.publicId === meId} index={index} lang={lang} mode={mode} />
+        ))}
+      </ol>
+    </>
+  );
+}
+
+function PeriodRowItem({
   row,
   me,
   index,
+  lang,
+  mode,
 }: {
-  row: PlayingRow;
+  row: PeriodRow;
   me: boolean;
   index: number;
+  lang: LangCode;
+  mode: Mode;
 }) {
   return (
-    <li
-      className={`board-row playing${me ? ' me' : ''}`}
-      // The row's heat is its progress read straight on the app's ONE ramp (heat.ts:
-      // "every progress surface"), feeding the % ink. The ink ALONE carries it (user
-      // feedback 2026-08-26, dropping the first cut's bottom filament: too much colour
-      // pressed against the avatars, and it fattened the playing rows against their
-      // ranked neighbors).
-      style={{ '--i': index, '--play-heat': progressHeatColor(row.progress) } as CSSProperties}
-      aria-current={me || undefined}
-    >
-      {/* No rank — the waiting rows' centered tick: an order is not a rank claim. */}
-      <span className="board-norank" aria-hidden="true" />
+    <li className={`board-row period${me ? ' me' : ''}`} style={{ '--i': index } as CSSProperties} aria-current={me || undefined}>
+      <span className="board-rank">#{row.rank}</span>
       <Avatar avatar={row.avatar ?? defaultAvatar(row.publicId)} size={28} />
-      <span className={`board-name${row.name ? '' : ' anon'}`}>
-        {row.name || anonName(row.publicId)}
+      <span className="board-ident">
+        <span className={`board-name${row.name ? '' : ' anon'}`}>{row.name || anonName(row.publicId)}</span>
+        {/* The tiebreakers, said small under the name: the days that recorded a score,
+            and the total in the mode's own unit. */}
+        <span className="board-detail">
+          {row.solvedDays} {t(lang, row.solvedDays === 1 ? 'dayUnit' : 'daysUnit')} · {row.total}{' '}
+          {t(lang, mode === 'word' ? 'words' : 'tries').toLowerCase()}
+        </span>
       </span>
-      {/* The reconstruction % in the game's own progress dress — pixel face, heat-ramp
-          ink — then the live try count under the unit caption's column. */}
-      <span className="board-progress">{Math.round(row.progress)}%</span>
-      <span className="board-score">{row.tries}</span>
+      <span className="board-score">{row.points}</span>
     </li>
   );
 }
 
-function WaitingRowItem({ player, index }: { player: BoardPlayer; index: number }) {
+// WHO is at stake, over a confirmation: the mark and the name, the crossroads' own stack.
+function Face({ player }: { player: BoardPlayer }) {
   return (
-    <li className="board-row waiting" style={{ '--i': index } as CSSProperties}>
-      {/* No rank yet — a small centered tick where the number would be, so the cell
-          never reads as a rendering hole. */}
+    <span className="confirm-face">
+      <Avatar avatar={player.avatar ?? defaultAvatar(player.publicId)} size={44} />
+      <span className={`confirm-name${player.name ? '' : ' anon'}`}>{player.name || anonName(player.publicId)}</span>
+    </span>
+  );
+}
+
+function PlayingRowItem({
+  row,
+  me,
+  index,
+  trailing = null,
+}: {
+  row: PlayingRow;
+  me: boolean;
+  index: number;
+  trailing?: React.ReactNode;
+}) {
+  return (
+    <li
+      className={`board-row playing${me ? ' me' : ''}${trailing ? ' managed' : ''}`}
+      style={{ '--i': index, '--play-heat': progressHeatColor(row.progress) } as CSSProperties}
+      aria-current={me || undefined}
+    >
+      <span className="board-norank" aria-hidden="true" />
+      <Avatar avatar={row.avatar ?? defaultAvatar(row.publicId)} size={28} />
+      <span className={`board-name${row.name ? '' : ' anon'}`}>{row.name || anonName(row.publicId)}</span>
+      <span className="board-progress">{Math.round(row.progress)}%</span>
+      <span className="board-score">{row.tries}</span>
+      {trailing}
+    </li>
+  );
+}
+
+function WaitingRowItem({
+  player,
+  index,
+  trailing = null,
+}: {
+  player: BoardPlayer;
+  index: number;
+  trailing?: React.ReactNode;
+}) {
+  return (
+    <li className={`board-row waiting${trailing ? ' managed' : ''}`} style={{ '--i': index } as CSSProperties}>
       <span className="board-norank" aria-hidden="true" />
       <Avatar avatar={player.avatar ?? defaultAvatar(player.publicId)} size={28} />
-      <span className={`board-name${player.name ? '' : ' anon'}`}>
-        {player.name || anonName(player.publicId)}
-      </span>
+      <span className={`board-name${player.name ? '' : ' anon'}`}>{player.name || anonName(player.publicId)}</span>
+      {trailing}
     </li>
   );
 }
@@ -566,28 +792,29 @@ function WaitingRowItem({ player, index }: { player: BoardPlayer; index: number 
 function BoardRowItem({
   row,
   me,
-  friend,
+  mate,
   index,
+  trailing = null,
 }: {
   row: BoardRow;
   me: boolean;
-  friend: boolean;
+  mate: boolean;
   index: number;
+  trailing?: React.ReactNode;
 }) {
   return (
     <li
-      // `me` wins over `friend`: your own row is never one of your edges, but a stale
-      // list could say so, and two markers on one row is a rendering bug on screen.
-      className={`board-row${me ? ' me' : friend ? ' friend' : ''}`}
+      // `me` wins over `mate`: your own row is never one of your people, but a stale list
+      // could say so, and two markers on one row is a rendering bug on screen.
+      className={`board-row${me ? ' me' : mate ? ' mate' : ''}${trailing ? ' managed' : ''}`}
       style={{ '--i': index } as CSSProperties}
       aria-current={me || undefined}
     >
       <span className="board-rank">#{row.rank}</span>
       <Avatar avatar={row.avatar ?? defaultAvatar(row.publicId)} size={28} />
-      <span className={`board-name${row.name ? '' : ' anon'}`}>
-        {row.name || anonName(row.publicId)}
-      </span>
+      <span className={`board-name${row.name ? '' : ' anon'}`}>{row.name || anonName(row.publicId)}</span>
       <span className="board-score">{row.score}</span>
+      {trailing}
     </li>
   );
 }

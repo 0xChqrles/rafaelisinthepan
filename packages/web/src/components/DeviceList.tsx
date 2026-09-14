@@ -71,7 +71,7 @@ export default function DeviceList({ lang }: { lang: string }) {
   const [attempt, setAttempt] = useState(0);
 
   // ONE call answers both the read and every write: the route always returns the list as it
-  // now stands, so the screen never has to guess what a write did (the /friends house rule).
+  // now stands, so the screen never has to guess what a write did (the live routes' house rule).
   const talk = useCallback(
     async (revoke?: DeviceRow): Promise<{ listing: DeviceListing; epoch: string } | null> => {
       // Never a bootstrap (#216 trigger rework): this list is mounted only when an account
