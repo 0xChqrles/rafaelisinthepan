@@ -7,6 +7,7 @@ judgement itself is the model's (`llm.grammar_check`).
 import _paths  # noqa: F401
 from slug import slug
 from start_word import START_RANK_MAX, START_RANK_MIN, is_variant
+from rules import PLAIN_WORD_RANK
 
 # Words that elide before a vowel: « le effet » is never French.
 ELIDING = frozenset({"le", "la", "de", "ne", "que", "se", "ce", "je", "me", "te",
@@ -21,8 +22,9 @@ START_ROUNDS = 3
 # Candidates shown to the model for one re-pick.
 START_OPTIONS = 40
 # A start word past this place in the corpus frequency order is too rare to be a plain
-# word a player knows (« hétéroptère » is out, « bestiole » is in).
-MAX_START_FREQ_RANK = 40000
+# word a player knows (« hétéroptère » is out, « bestiole » is in) — ONE boundary with the
+# obviousness filter's plain-word test (`rules.PLAIN_WORD_RANK`).
+MAX_START_FREQ_RANK = PLAIN_WORD_RANK
 
 
 def displayed(words: list[str], holes: list[dict], starts: dict[str, str] | None = None) -> str:

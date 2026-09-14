@@ -492,7 +492,7 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
 
     filter_log = rules.SearchLog()
     candidates = rules.open_candidates(candidates, fillers=fillers, neighbour_rank=neighbour_rank,
-                                       log=filter_log)
+                                       frequency_rank=frequency_rank, log=filter_log)
     for event in filter_log.events:
         log(f"- {event}")
     if len({t.slug for t in candidates}) < rules.TRIO:
