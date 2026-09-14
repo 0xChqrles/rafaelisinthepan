@@ -820,8 +820,9 @@ The live routes then share:
   The hand-over is an Update of `createdBy` conditioned on it still naming the leaver. The
   web asks the successor on the leave's full-screen confirmation.
 - **A deleted account leaves every group**: the link flow's departure job (above), under
-  the same rule with nobody choosing — its owned groups go to the OLDEST other membership
-  (a refused succession falls back to the bare row deletes).
+  the same rule with nobody choosing — its owned groups go to the OLDEST other membership.
+  A hand-over refused by its condition (the owner already changed) falls back to the bare
+  row deletes; a membership whose group row is gone is deleted by the next list.
 
 ### Leaderboard reads (#190/#206/#271)
 

@@ -214,7 +214,7 @@ describe('dynamoGroupStore (#271)', () => {
     await expect(dynamoGroupStore(stuck.client, 'scores').leaveAll(ME)).rejects.toThrow(/converge/);
   });
 
-  it('leaveAll falls back to the bare row deletes when a succession is refused', async () => {
+  it('a refused hand-over falls back to the bare row deletes (the departure rides it)', async () => {
     let passes = 0;
     let attempts = 0;
     const { client } = fakeClient({ mine: 1, members: 1 });

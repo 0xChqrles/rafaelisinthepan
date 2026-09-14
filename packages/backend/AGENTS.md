@@ -232,10 +232,12 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   conditioned on the leaver) or the deletion of a group left empty — in ONE transaction,
   the route deciding the options through `successionFor` off a fresh read of the group and
   its members (409 `successor_required` when the owner of three or more names nobody);
-  `leaveAll` is the #204 departure, re-reading the player's partition until empty
-  (bounded), each group under `successionFor` with nobody choosing (oldest member), a
-  refused hand-over retried as the bare deletes. `listGroups` reads each group's row for
-  its owner and drops a membership whose row is gone. Every Query is STRONGLY CONSISTENT
+  a hand-over REFUSED by its condition (the owner changed under the caller) falls back to
+  the bare row deletes inside `leave` itself; `leaveAll` is the #204 departure, re-reading
+  the player's partition until empty (bounded), each group under `successionFor` with
+  nobody choosing (oldest member). `listGroups` reads each group's row for its owner and
+  DELETES a membership whose row is gone (a join that landed as the last leave deleted the
+  group), so a stray pair never holds a GROUPS_MAX slot. Every Query is STRONGLY CONSISTENT
   (the profile read's rule). `remove` is authorized by the group row's `createdBy`, never
   by the caller's say-so. Reads NO query but `id`, which the
   CloudFront `groups*` behavior forwards; the day it reads another, that behavior has to

@@ -276,14 +276,19 @@ export async function handleGroups(
 // each with its owner (the group row's fact — it changes hands) and who is in it (one
 // consistent read + one Query per group, GROUPS_MAX at most) — what the board's picker,
 // the global board's marks and the landing's "already a member" all read. A membership
-// whose group row is gone (the last leave's deletion racing a join) is dropped from the
-// answer rather than shown as a group nobody owns.
+// whose group row is GONE — a join that landed as the last member's leave deleted the
+// group — is a stray pair pointing at nothing: it is dropped from the answer AND deleted
+// (the idempotent leave), so it neither shows as a group nobody owns nor holds one of the
+// caller's GROUPS_MAX slots for good.
 export async function listGroups(groups: GroupStore, publicId: string): Promise<GroupSummary[]> {
   const mine = await groups.listMine(publicId);
   const rows = await Promise.all(
     mine.map(async (held) => {
       const [group, members] = await Promise.all([groups.get(held.id), groups.members(held.id)]);
-      if (!group) return null;
+      if (!group) {
+        await groups.leave(held.id, publicId);
+        return null;
+      }
       return { ...held, createdBy: group.createdBy, members: members.map((member) => member.publicId) };
     }),
   );

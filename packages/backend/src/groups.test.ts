@@ -134,6 +134,16 @@ describe('groups route (#271) — create, join, leave, remove', () => {
     expect((await groups.members(id)).map((m) => m.publicId)).toEqual([third.accountId]);
   });
 
+  it('drops AND deletes a membership whose group row is gone', async () => {
+    const { handler, me, them, groups } = await makeHandler();
+    const id = await create(handler, me);
+    await call(handler, { token: them.token, join: id });
+    // The group row goes under a member (the store's own delete, as the last leave does).
+    await groups.leave(id, me.accountId, { deleteGroup: true });
+    expect((await call(handler, { token: them.token })).groups).toEqual([]);
+    await expect(groups.listMine(them.accountId)).resolves.toEqual([]);
+  });
+
   it('leaveAll (the departure) hands an owned group to its OLDEST member', async () => {
     const { handler, me, them, devices, groups } = await makeHandler();
     const third = await seedDevice(devices);

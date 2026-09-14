@@ -245,31 +245,33 @@ export function dynamoGroupStore(client: DynamoDBClient, tableName: string): Gro
       return 'joined';
     },
 
+    // The row deletes are unconditional; the hand-over is conditioned on the leaver still
+    // owning the group, and a REFUSED hand-over (the owner changed under the caller — a
+    // departure racing a deliberate leave, two devices leaving at once) means the group
+    // already has its owner: the rows then go without it. Anything else is thrown.
     async leave(id, publicId, options = {}) {
-      await client.send(
-        new TransactWriteItemsCommand({ TransactItems: leaveItems(tableName, id, publicId, options) }),
-      );
+      try {
+        await client.send(
+          new TransactWriteItemsCommand({ TransactItems: leaveItems(tableName, id, publicId, options) }),
+        );
+      } catch (error) {
+        if (options.successor === undefined || classifyTransaction(error).kind !== 'refused') throw error;
+        await client.send(new TransactWriteItemsCommand({ TransactItems: leaveItems(tableName, id, publicId) }));
+      }
     },
 
     // #204's departure: a deleted account leaves every group, each under the succession
     // rule with nobody choosing (`successionFor`). Read the partition, leave each group in
     // its own transaction, and read again until nothing is left — a join landing between
     // two passes is simply seen by the next one. The row deletes are unconditional, so
-    // replaying a pass changes nothing; a succession already handed over is refused by its
-    // own condition and the rows go without it.
+    // replaying a pass changes nothing.
     async leaveAll(publicId) {
       for (let pass = 0; pass < LEAVE_ALL_MAX_PASSES; pass += 1) {
         const mine = await this.listMine(publicId);
         if (mine.length === 0) return;
         for (const held of mine) {
           const [group, members] = await Promise.all([this.get(held.id), this.members(held.id)]);
-          const options = group ? successionFor(group, members, publicId).options : {};
-          try {
-            await this.leave(held.id, publicId, options);
-          } catch (error) {
-            if (classifyTransaction(error).kind !== 'refused') throw error;
-            await this.leave(held.id, publicId);
-          }
+          await this.leave(held.id, publicId, group ? successionFor(group, members, publicId).options : {});
         }
       }
       throw new Error(`Group departure of ${publicId} did not converge.`);
