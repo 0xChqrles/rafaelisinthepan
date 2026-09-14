@@ -101,11 +101,19 @@ describe('Whippin tools are read-only structured answers (#236)', () => {
 
   it('computes history, head-to-head and win streaks from the rows', async () => {
     const { tools } = await harness();
-    expect(await tools.run('get_player_history', { player: 'gab', days: 7 })).toMatchObject({
-      daysPlayed: 4,
-      best: 2,
-      average: 3.5,
-    });
+    // A form is PLACES among each day's players, never scores (v13): Gab beat none, both,
+    // half (a tie) and two of three — about one in two, as the share line reads it.
+    const form = (await tools.run('get_player_form', { player: 'gab', days: 7 })) as { recent: unknown[] };
+    expect(form).toMatchObject({ daysPlayed: 4, usuallyBeats: '1 in 2' });
+    expect(form.recent).toEqual(
+      expect.arrayContaining([
+        { date: '2026-08-31', place: 2, of: 2 },
+        { date: '2026-09-01', place: 1, of: 2 },
+        { date: '2026-09-02', place: 1, of: 2 },
+        { date: '2026-09-03', place: 2, of: 4 },
+      ]),
+    );
+    expect(JSON.stringify(form)).not.toMatch(/"(score|best|average)"/);
     expect(await tools.run('get_head_to_head', { left: 'Gab', right: 'Zou', days: 7 })).toEqual({
       left: 'Gab 🔥',
       right: 'Zou',
@@ -199,12 +207,12 @@ describe('Whippin tools are read-only structured answers (#236)', () => {
       lines: [{ position: 1, score: 4, names: ['Gab'] }],
     });
     // The filtered-out row is not even a player the group knows.
-    expect(await tools.run('get_player_history', { player: 'Zou' })).toMatchObject({ unknown: true });
+    expect(await tools.run('get_player_form', { player: 'Zou' })).toMatchObject({ unknown: true });
   });
 
   it('never promises a window wider than it reads, and takes a numeric string', async () => {
     const { tools } = await harness();
-    const asked = (await tools.run('get_player_history', { player: 'gab', days: 90 })) as {
+    const asked = (await tools.run('get_player_form', { player: 'gab', days: 90 })) as {
       windowDays: number;
     };
     expect(asked.windowDays).toBe(HISTORY_WINDOW_DAYS);
@@ -215,7 +223,7 @@ describe('Whippin tools are read-only structured answers (#236)', () => {
     })) as { windowDays: number };
     expect(stringly.windowDays).toBe(30);
     // And what the model is TOLD matches what it gets.
-    const history = TOOL_DEFINITIONS.find((t) => t.name === 'get_player_history')!;
+    const history = TOOL_DEFINITIONS.find((t) => t.name === 'get_player_form')!;
     const days = (history.parameters.properties as Record<string, { description: string }>).days;
     expect(days.description).toContain(`max ${HISTORY_WINDOW_DAYS}`);
   });

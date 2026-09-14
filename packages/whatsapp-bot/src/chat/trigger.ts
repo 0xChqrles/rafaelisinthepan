@@ -130,12 +130,21 @@ export function quotesBot(message: InboundMessage, identity: BotIdentity): boole
   return message.quoted !== undefined && namesBot(message.quoted, identity);
 }
 
-// The names a QUOTED text is rewritten with: the message's own resolved mentions, plus the
-// bot under its name — a reply often quotes a line that @-mentioned the bot, and the token
-// would otherwise come back as the `…last4` handle of the bot's own number.
-export function namesWithBot(names: ReadonlyMap<string, string>, identity: BotIdentity): Map<string, string> {
+// The names a remembered message is rewritten with, BODY AND QUOTE alike: the message's
+// own resolved mentions, plus the bot under its name in every spelling it can arrive in —
+// its listed JIDs, and a mention whose PLAYER key is the bot's (an unlisted LID the mapping
+// resolved). Otherwise the bot's own token comes back as the `…last4` handle of its
+// number: first seen in quotes of lines that @-mentioned it, and until 2026-09-14 in every
+// BODY that did — "Pas vrai @bot ?" reached the model as "Pas vrai …8262 ?", which it
+// answered with "Je réponds à un seul nom, et 8262 n'en est pas un".
+export function namesWithBot(
+  names: ReadonlyMap<string, string>,
+  identity: BotIdentity,
+  mentions: readonly Mention[] = [],
+): Map<string, string> {
   const all = new Map(names);
   for (const jid of identity.jids) all.set(jidUser(jid), identity.name);
+  for (const m of mentions) if (namesBot(m, identity)) all.set(jidUser(m.jid), identity.name);
   return all;
 }
 

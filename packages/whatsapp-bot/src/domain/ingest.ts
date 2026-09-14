@@ -44,8 +44,9 @@ export interface IngestDeps {
   // Writes the line for `acknowledge: "say"`. A function rather than a provider, so the
   // domain stays model-free and testable: whoever supplies it owns the prompt, the ceiling
   // and the retries (`llm/shareComment.ts`, wired in main.ts). Absent, or answering null,
-  // means the emoji stands in.
-  comment?: (group: GroupConfig, facts: ShareFacts, key: { dayNumber: number; sender: string }) => Promise<string | null>;
+  // means the emoji stands in. `said` is what the player wrote around the share, as the
+  // caller remembered it (below).
+  comment?: (group: GroupConfig, facts: ShareFacts, key: { dayNumber: number; sender: string; said?: string }) => Promise<string | null>;
   // Told a line ONCE IT IS QUEUED — the line is a turn in the group's conversation and the
   // caller remembers it as one (main.ts) — and never for a line the queue refused for
   // good: remembered, that would be a message the bot believes it sent and nobody read.
@@ -95,7 +96,15 @@ export function createIngest(deps: IngestDeps) {
     }
   }
 
-  return async function ingest(message: InboundMessage): Promise<IngestOutcome> {
+  // `said`: WHAT THE PLAYER WROTE AROUND THE SHARE, as the caller already remembered it for
+  // the conversation — the generated share block out, every mention named (main.ts
+  // `remember`) — and only where the group's chat is on, since that is where such text
+  // already reaches the model. The share line answers it too (2026-09-14): "fais un
+  // commentaire gentil, c'était déjà assez chiant de faire 64 essais" came in the same
+  // message as the share, and the line — which was never shown it — answered with the
+  // player's worst score of the fortnight. The acknowledgement is that message's answer,
+  // so it is the one that has to have read it.
+  return async function ingest(message: InboundMessage, said?: string): Promise<IngestOutcome> {
     const group = deps.groups.get(message.group);
     if (!group || message.fromMe) return 'ignored';
     const shares = sharesIn(message.text, deps.siteOrigin);
@@ -234,7 +243,7 @@ export function createIngest(deps: IngestDeps) {
       // unavailable model may cost the words but never the acknowledgement itself.
       const line =
         group.acknowledge === 'say' && deps.comment
-          ? await deps.comment(group, facts, { dayNumber: best?.dayNumber ?? word!.dayNumber, sender: message.sender }).catch((error) => {
+          ? await deps.comment(group, facts, { dayNumber: best?.dayNumber ?? word!.dayNumber, sender: message.sender, ...(said ? { said } : {}) }).catch((error) => {
               deps.log.warn(
                 { event: 'share.comment_threw', group: tag(group.id), error: (error as Error).message },
                 'the line failed; acknowledging with the emoji',
