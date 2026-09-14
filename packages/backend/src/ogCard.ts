@@ -12,16 +12,17 @@ import { readFile } from 'node:fs/promises';
 import { Resvg, initWasm } from '@resvg/resvg-wasm';
 import {
   anonName,
-  inviteCardPath,
-  inviteLandingPath,
+  groupCardPath,
+  groupLandingPath,
   renderCardSvg,
-  renderInviteCardSvg,
+  renderGroupCardSvg,
   renderWordCardSvg,
   shareCardPath,
   dateForDayNumber,
   wordShareScore,
   type CardData,
-  type InviteCardData,
+  type GroupCardData,
+  type CardFace,
   type ShareResult,
   type WordCardData,
   type WordShareResult,
@@ -57,7 +58,7 @@ async function rasterize(svg: string): Promise<Buffer> {
 
 // `by` is the SIGNATURE (user-decided 2026-09-05): the player's mark and name on the
 // card when the share is signed, nothing when it is not.
-export async function renderCardPng(data: CardData, by: InviteCardData | null = null): Promise<Buffer> {
+export async function renderCardPng(data: CardData, by: CardFace | null = null): Promise<Buffer> {
   return rasterize(renderCardSvg(data, by));
 }
 
@@ -66,15 +67,15 @@ export async function renderCardPng(data: CardData, by: InviteCardData | null = 
 // in the word token, so this render stays self-contained.
 export async function renderWordCardPng(
   data: WordCardData,
-  by: InviteCardData | null = null,
+  by: CardFace | null = null,
 ): Promise<Buffer> {
   return rasterize(renderWordCardSvg(data, by));
 }
 
-// The #189 invite link's card: the same rasterizer, its own SVG — the player's mark,
-// their name, the app name (user-decided 2026-08-20).
-export async function renderInviteCardPng(data: InviteCardData): Promise<Buffer> {
-  return rasterize(renderInviteCardSvg(data));
+// The #271 group invite link's card: the same rasterizer, its own SVG — the group's name,
+// its members' marks, the app name.
+export async function renderGroupCardPng(data: GroupCardData): Promise<Buffer> {
+  return rasterize(renderGroupCardSvg(data));
 }
 
 const escapeAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -167,20 +168,17 @@ export function renderWordShareHtml(
   );
 }
 
-// The #189 invite page: `/i/<publicId>` is the link a player SHARES, so it is the page a
-// chat unfurls — and what it unfurls into is that player, not the app's stock card
-// (user-decided 2026-08-20). The card draws their mark and name; the TITLE says the same
-// two things in text, and nothing else: no "friend invite" line, no pitch. A person sent
-// this link to a person, and their own message already says what it is.
+// The #271 group invite page: `/g/<groupId>` is the link a member SHARES, so it is the
+// page a chat unfurls — and what it unfurls into is the group: its name over its members'
+// marks. The TITLE says the name, and nothing else: no "join my group" line, no pitch. A
+// person sent this link to their people, and their own message already says what it is.
 //
-// Language-neutral: an invite belongs to a player, not to a daily, and the landing
-// resolves the reader's own language the way `/` does. `name` is the STORED profile name
-// ('' when never customized) — the card resolves the assigned identity itself, and the
-// title resolves the same one so the two halves of a preview can never disagree.
-export function renderInviteHtml(publicId: string, name: string, base: string): string {
-  const title = `Whippin AI — ${name || anonName(publicId)}`;
-  const landing = `${base}${inviteLandingPath(publicId)}`;
-  return previewPage('en', title, `${base}${inviteCardPath(publicId)}`, landing, 'Whippin AI');
+// Language-neutral: a group belongs to its members, not to a daily, and the landing
+// resolves the reader's own language the way `/` does.
+export function renderGroupHtml(groupId: string, name: string, base: string): string {
+  const title = `Whippin AI — ${name}`;
+  const landing = `${base}${groupLandingPath(groupId)}`;
+  return previewPage('en', title, `${base}${groupCardPath(groupId)}`, landing, 'Whippin AI');
 }
 
 // The preview page every shared link is served as: OG/Twitter meta carrying the card,

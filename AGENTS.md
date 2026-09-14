@@ -27,8 +27,8 @@ packages/
                 candidate puzzle via gen_phrase, Claude on the subscription choosing, code
                 enforcing. Never publishes.
   backend/      daily-puzzle backend (#2): ONE handler for Lambda + local serve; puzzle store
-                (S3/FS) + publish; every live route (/scores /profile /friends /board /round
-                /history /devices /link) and the share/invite preview pages.
+                (S3/FS) + publish; every live route (/scores /profile /groups /board /round
+                /history /devices /link) and the share/group preview pages.
   infra/        AWS CDK app: backend (#3) + web hosting (#21) + WhatsApp bot (#236) sibling stacks.
   shared/       cross-cutting TS: slug/fold contract, game-day logic, schema types, scoring,
                 identity, codecs. Every module is the ONE source of truth for its concern.
@@ -404,7 +404,8 @@ packages agree on each list; `backend:dev` has no CDN and cannot show a drift.
 | `/round` | `lang`, `date`, `mode` | same |
 | `/history` | `lang`, `mode`, `month` | same |
 | `/profile` | `id` | same |
-| `/friends`, `/devices`, `/link` | none (empty allowList) | same |
+| `/groups` | `id` | same |
+| `/devices`, `/link` | none (empty allowList) | same |
 
 - **The PUZZLE route is CACHED** (`max-age=300, s-maxage=31536000`): an unlisted parameter
   both collapses two responses onto one year-long edge entry and never reaches the origin.
@@ -412,9 +413,9 @@ packages agree on each list; `backend:dev` has no CDN and cannot show a drift.
   (its query allowList plus the Lambda-URL-safe `allExcept: Host` headers) and `no-store`
   answers; an unlisted parameter never reaches the origin. The day a handler reads a new
   parameter, name it in that policy too.
-- **The share page (`/s/*`), the cards (`/og/*`) and the invite preview (`/i/*`) are NOT
-  live routes**: they are CACHED behaviors on the WEB distribution (`infra/lib/web-stack.ts`)
-  handed to the API origin — a year for content-addressed share tokens, 300s for the invite
+- **The share page (`/s/*`), the cards (`/og/*`) and the group invite preview (`/g/*`) are
+  NOT live routes**: they are CACHED behaviors on the WEB distribution (`infra/lib/web-stack.ts`)
+  handed to the API origin — a year for content-addressed share tokens, 300s for the group
   preview AND for a SIGNED share (`/s/<token>/<publicId>`, `/og/<token>/<publicId>.png`),
   which names a player who can rename or redraw.
 
@@ -432,7 +433,8 @@ The live routes then share:
   `x-amz-content-sha256` under any single header mode; the function overwrites the header from
   the TCP peer.) Three packages agree on the header name — a drift is a 500 on every gated write.
 - **Turnstile sits on the request that CREATES state**: device bootstrap, round creation
-  (Word START; the sentence append whose pre-read finds nothing), the link code SEND. Tokens
+  (Word START; the sentence append whose pre-read finds nothing), the link code SEND. A
+  group write is authenticated, bounded by `GROUPS_MAX`, and not gated. Tokens
   are prefetched into a two-slot single-use queue so a brand-new player's first PLAY (bootstrap
   + round start = two challenges, deliberately) costs no visible wait. Local: accept-all verifier.
 - **Clients act on the error CODE, never on the status alone.** What a given code means —
@@ -469,15 +471,15 @@ The live routes then share:
   effect** (user-decided 2026-08-24). Six triggers, each a single primary-button tap that
   chains its real action behind the bootstrap and reports failure on the full-screen
   `ErrorScreen` (no retry button; the player returns to the button): sentence gate **PLAY** ·
-  Word **PLAY** · **accepting an invite** · **sending an invite link** · profile **SAVE** ·
-  the link flow's **SEND CODE**. Consequences: the sentence game shows the full rules gate
+  Word **PLAY** · **joining a group** · **creating a group** (its INVITE then shares) ·
+  profile **SAVE** · the link flow's **SEND CODE**. Consequences: the sentence game shows the full rules gate
   whenever the device has no account (archive days included); the engines never mint — an
   append/submission resolves the identity it holds or stands down; a tokenless leaderboard /
   profile editor renders a LOCAL PLACEHOLDER identity from a persisted seed
   (`gameStore.localSeed`, publicId-shaped); **the username is decided locally, then deployed**:
   on acquiring an account the client stores the placeholder name + mark as the profile, only
   into an account with NO stored row (`createOnly: true`; a lost race is 409 `profile_exists`,
-  settled). Invites are gated on neither side.
+  settled). Group invites are gated on neither side.
 - **NO TOKEN MEANS NO PRIVATE FETCH**: a tokenless device knows its server state is empty and
   publishes ready-and-empty round/history state without calling `/round` or `/history`.
 - **First bootstrap is ONE origin-wide critical section** (Web Lock over re-read → mint/persist
@@ -639,8 +641,8 @@ The live routes then share:
 ### Email account linking (#204, decided 2026-08-26)
 
 - **Email is the account's backup: a 6-DIGIT CODE, never a magic link.** ONE engine,
-  **`POST /link`**: `{token}` reads what the account is saved as (and drains a queued friend
-  merge — the resume path; also answers the account's `createdAt`); `{token, email,
+  **`POST /link`**: `{token}` reads what the account is saved as (and drains a queued group
+  departure — the resume path; also answers the account's `createdAt`); `{token, email,
   turnstileToken, lang}` sends a code; `{token, email, code, erase?, leave?, bind?}` verifies
   and links. **The server branches only AFTER the code is verified** (the SEND's answer is
   byte-identical for known and unknown addresses — no enumeration). Endings: address unknown →
@@ -659,21 +661,22 @@ The live routes then share:
   PLAY (`guesses.length > 0 || submittedAt exists`, ONE predicate on source and destination)
   and the leaving one does, the round row and its score row MOVE, and a moved sentence solve
   credits the collection. Never extended past the active day; two real logs never merge.
-- **FRIEND MERGE**: keep the adopting account's friends, drop the two accounts and duplicates,
-  fill remaining capacity oldest-`createdAt` first up to `FRIENDS_MAX`, rewrite BOTH
-  directions of every kept edge, delete both edges of a dropped one — no edge ever points at a
-  deleted account. Too big for one transaction, so it is a durable, idempotent, RESUMABLE job
-  drained after the commit; the answer's `mergePending` says whether it is done and the client
-  resumes the drain. A drop-then-reappear window on boards is accepted.
+- **GROUP DEPARTURE (#271, replacing the friend merge)**: a deleted account LEAVES EVERY
+  GROUP it was in — its memberships are dropped, never carried onto the adopting account.
+  A membership can land between a read and the commit, so the drop is a durable, idempotent,
+  RESUMABLE job (`depart#<to>` / `from#<from>`) drained after the commit by `GroupStore.leaveAll`,
+  which re-reads until the partition is empty; the answer's `departurePending` says whether it
+  is done and the client resumes the drain. Until it drains, a board dresses the ghost as
+  gone (dropped); accepted.
 - **The core commits identity AND the active day's play in ONE transaction**: consume the
   challenge, move the device item, delete the left account's row + profile row, persist the
-  merge job, and every planned round/score move conditioned on a per-row `version` (round) /
+  departure job, and every planned round/score move conditioned on a per-row `version` (round) /
   `stamp` (score) unchanged since planning. The solved-day credit follows as a logged side
   effect. Backend `AGENTS.md` holds the versioning model.
 - **A deleted account stops being rendered everywhere**: `GET /profile?id=` → 410
   `account_gone` (distinct from 404 "never customized", which is dressed with the assigned
-  identity); `/board` DROPS the row; `/i/` preview → 404; `POST /friends {add}` → 404
-  `unknown_player`. `web/src/api.ts` `readProfile` is the ONE place the four answers are told
+  identity); `/board` and the `/g/` preview DROP the row; a join by the deleted account is
+  refused inside the store's own transaction. `web/src/api.ts` `readProfile` is the ONE place the four answers are told
   apart. Anonymous aggregates (`/scores`) keep counting an orphan score until a sweeper exists.
 - **Send**: Turnstile checked BEFORE the allowances; metered per ADDRESS
   (`LINK_SENDS_PER_ADDRESS` = 5) and per IP (`LINK_SENDS_PER_IP` = 20) per rolling hour, keyed
@@ -701,6 +704,7 @@ The live routes then share:
   (sign out, then sign in); it is reached through RECONNECT. Repo-wide consequences: RECONNECT lands on
   `/account/signin`; SEND CODE is the sixth deploy trigger; **a link signs the account's
   OTHER devices out** when the left account is deleted (they fail the account-existence check).
+  The erase crossroads names what does NOT survive: *Your groups and the rest are lost.*
 - **Infra**: SES domain identity with EasyDKIM in the API's hosted zone; `ses:SendEmail` on
   every identity of the account (`identity/*` — a verified RECIPIENT is an identity the send is
   authorized against too, 2026-09-12) and one `ses:FromAddress`. **By hand, never automated**: SES sandbox exit,
@@ -731,7 +735,7 @@ The live routes then share:
 
 - **Identity stance**: public id `[a-z2-7]{16}` (what `shared/src/assigned.ts` derives a
   pseudonym and mark from); no unique usernames, no registration; **assume heavy cheating and
-  design so it doesn't matter** — global rankings are decorative, trust is the friends graph.
+  design so it doesn't matter** — global rankings are decorative, trust is the group.
 - **`GET /scores?lang=&date=&mode=&id=`** is READ-ONLY (a POST is 405); `mode` required. The
   histogram is DERIVED from the day's per-player rows at read time: `{ buckets, total,
   bucket }`, one exact band per distinct score, ascending; empty population → `buckets: []`;
@@ -761,7 +765,8 @@ The live routes then share:
   is idempotent and `isValidName` = "the sanitizer leaves it alone". The WEB sanitizes what it
   writes; the BACKEND REFUSES a non-conforming name (400). Empty is valid.
 - Moderation best-effort on write: banned-strings name filter (`name_rejected`), exhaustive
-  swastika template match (`avatar_rejected`). Symbolic; the friends graph is the containment.
+  swastika template match (`avatar_rejected`). Symbolic; the group is the containment. A
+  GROUP NAME takes the same filter and the same charset (`shared/src/name.ts`), never empty.
 - The copyable-key backup UI was removed (2026-08-19); #204's email link is the backup.
 - **A RESULT SHARE WEARS ITS PLAYER'S FACE, AND CARRIES NO INVITE (decided 2026-09-05;
   made unconditional and invite-free 2026-09-10).** Both result screens sign every share
@@ -776,36 +781,92 @@ The live routes then share:
   strip, the gap and the result as ONE block (the result moves down; the plain card is
   untouched).
 
-### Friends graph (#189)
+### Groups (#271, user-decided 2026-09-07; they REPLACED the #189 friends graph — no back-compat)
 
-- **MUTUAL edges from a one-click invite link; the graph is the leaderboard's trust
-  boundary.** Link `<site>/i/<publicId>` — SERVER-rendered preview (mark + name + app name,
-  cached 300s; `GET /og/i/<publicId>.png`) that `location.replace`s onto the SPA landing
-  `/join/<publicId>`, whose ADD FRIEND tap records the edge (never the load). Paths live in
-  `shared/src/invite.ts` (infra routes `/i/*` to the API origin, backend serves, web builds).
-  A deleted sender's link expires (404).
-- **`POST /friends`**: `{token}` reads, `{token, add}` links, `{token, remove}` unlinks;
-  every answer `{ friends: [publicId] }`. Storage: one row per DIRECTION,
-  `friends#<publicId>` / friend id, `createdAt` from the first link; both rows written (and
-  deleted) in ONE transaction, on EVERY accepted link. **`FRIENDS_MAX` = 200**, checked on
-  both sides, COUNTED off rows (a bound, not an invariant). Self-add → `self_link`; a gone
-  target → `unknown_player`.
+- **A GROUP is a named set of members with an invite link; the group is the trust
+  boundary and the leaderboard's social unit** (a pair of friends is a group of two).
+  `POST /groups`: `{token}` lists mine, `{token, create: true, name}` creates (creator is a
+  member; answers `created`), `{token, join}` joins by group id, `{token, leave[,
+  successor]}` leaves (the SUCCESSION below), `{token, remove, member}` removes (the OWNER
+  only, 403 `not_creator`; never oneself). Every answer carries `{ groups: [{id, name,
+  createdBy, joinedAt, members[]}] }` as they now stand — `createdBy` read off the GROUP
+  row (it changes hands), a membership whose group row is gone dropped.
+  `GET /groups?id=` is a group's PUBLIC face `{id, name, createdBy, members: [{publicId,
+  name, avatar}]}` (a gone account dropped; 404 `unknown_group`) — the landing's read and
+  what the preview renders. Caps in `shared/src/scores.ts`: **`GROUPS_MAX` = 10** per player
+  (409 `group_limit`), **`GROUP_MEMBERS_MAX` = 50** per group (409 `group_full`), COUNTED off
+  rows (a bound, not an invariant). Name = the player name rules (`shared/src/name.ts`) + the
+  banned-strings filter, 1–16 chars. Ids are `GROUP_ID_PATTERN` (the public id's shape).
+- **Invite** `<site>/g/<groupId>` — a SERVER-rendered preview (name + member marks + app
+  name, `GET /og/g/<groupId>.png`, cached 300s) that `location.replace`s onto the SPA
+  landing `/join/g/<groupId>`, whose JOIN tap records the membership (never the load); a
+  member already skips the landing onto the group's board. Paths live in
+  `shared/src/invite.ts` (infra routes `/g/*` to the API origin, backend serves, web builds
+  + parses). A link naming no group expires (404). **A result share carries NO group** — the
+  2026-09-10 "share carries no invite" decision stands over the issue's earlier drum.
+- **Storage**: `group#<id>` / `group` (name, createdBy, createdAt) + ONE membership as TWO
+  rows in one transaction — `group#<id>` / `member#<publicId>` and `player#<publicId>` /
+  `group#<id>` (the latter denormalizing the immutable NAME only, so the list is one Query;
+  the owner is the group row's fact). A create asserts the creator's account, a join
+  asserts the account AND the group row; a leave deletes both rows unconditionally AND, in
+  the SAME transaction, does what the succession rule says to the group row. Nothing reads
+  across players outside a group's member list.
+- **THE SUCCESSION RULE (user-decided 2026-09-14; `successionFor`, `backend/src/
+  groupStore.ts`, ONE spelling for the route and the departure):** a member whose leaving
+  EMPTIES the group DELETES it (its link then 404s; no lingering empty groups); an OWNER
+  leaving a group of TWO hands it to the other member; an OWNER leaving a group of THREE OR
+  MORE must NAME a member as `successor` (409 `successor_required` until they do; a
+  non-member named is the same refusal); a member who is not the owner hands nothing over.
+  A leave must commit only while the membership and ownership it was decided from still
+  stand; a concurrent join must not be erased, and a departed member must not become owner.
+  The web asks the successor on the leave's full-screen confirmation.
+- **A deleted account leaves every group**: the link flow's departure job (above), under
+  the same rule with nobody choosing — its owned groups go to the OLDEST other membership.
+  A stale leave re-reads and applies the succession rule again, never falling back to bare
+  row deletes; a membership whose group row is gone is deleted by the next list.
 
-### Leaderboard reads (#190/#206)
+### Leaderboard reads (#190/#206/#271)
 
 - **`/board`** per `(day, lang, mode)`: `GET …[&id=]` = the GLOBAL top 50, anonymous
   (`id` widens with the caller's below-the-cut window; unbound to the caller, deliberately);
-  `POST {token}` = the FRIENDS board, the trusted surface. Ranking rules are shared pure
-  functions (`shared/src/leaderboard.ts`): competition tie ranks, the plain top-50 cut, the
-  ±2 own-row window. Rows dressed with profiles (a missing or FAILED profile read dresses
+  `POST {token, group}` = the group's DAY board, the trusted surface (403 `not_member` for a
+  group the caller is not in — an unknown group answers the same); `POST {token, group,
+  period: 'week' | 'month'}` = the PERIOD board; `POST {token, standing: true}` = where the
+  caller stands today in EACH of their groups (`{standings: [{group, rank, of}]}`, only the
+  groups they hold a recorded row in). Ranking rules are shared pure functions
+  (`shared/src/leaderboard.ts`): competition tie ranks, the plain top-50 cut, the ±2 own-row
+  window, `standingIn`. Rows dressed with profiles (a missing or FAILED profile read dresses
   blank → assigned identity; a GONE account is dropped).
-- **Three states on the friends board**: `waiting` (edge with neither a round nor a score;
+- **THE PERIOD RULE (`rankPeriod`, ONE spelling for both ends and any later consumer):** each
+  day of the range is ranked on its own and pays PODIUM POINTS 3 / 2 / 1 to the first three
+  RANKS (a shared first pays both 3; the next rank is then third); then SOLVED DAYS (days with
+  a recorded score); then the TOTAL of the scores in the mode's direction (sentence: fewer
+  tries; Word: more words); publicId last as a row order. Rows equal on all three share a rank.
+  The range is `periodRange` (`shared/src/groups.ts`): the calendar WEEK, Monday first, and
+  the calendar MONTH, both ending on the day addressed. The read is the day board's own
+  exact-key batch once per day of the range — score rows only, so a late or capped round
+  counts for nothing (#211's on-time rule already decided which rows exist). Not done,
+  deliberately: ALL-TIME and the median/outsider stats (an aggregate row per (group, member)
+  written by the solving append — the second step, once a group asks).
+- **Three states on the day board**: `waiting` (a member with neither a round nor a score;
   never the caller), **`playing`** (#206: a round for the CURRENT revision and no score row —
   exact `countTries` over the FULL artifact read fresh, stored `progress`, ordered by the shared
-  `orderPlaying` with NO rank number; friends only, sentence only; a failed read fails the
+  `orderPlaying` with NO rank number; members only, sentence only; a failed read fails the
   POST), finished. A round that ended without a score (capped, late, IP-refused) stays IN
   PROGRESS — accepted; the fourth state is #224. The caller's own playing row never defeats
-  the empty-board ghost.
+  the just-you ghost.
+- **The solved screen's standing line is DROPPED (user-decided 2026-09-14, "for now at
+  least"): the web reads no standing; `POST /board {token, standing: true}` still answers
+  (retiring it is a separate call). What it was, for when it returns:** ONE line — "2ND OF
+  7" (no "today": the result screen is today's, and the word pushed the line off a phone's
+  card) — for the group last opened
+  (`gameStore.lastGroupId`, account-owned, persisted) when the player stands in it, else the
+  best standing (lowest rank, then the larger field); a tap opens that group's board; nothing
+  when the player is in no group or holds no row (late, capped). It REPLACED the #170 TOP-%
+  badge (`ScoreTop`, `scoreStanding`, `useScoreHistogram` and the web's `/scores` client are
+  gone; the `/scores` route itself still answers — no consumer, the user's call to retire).
+  `of` is the members who RECORDED a score today, never the group's size: a rank over people
+  who have not played is a claim.
 - Entry: the header's crown on every game surface (archive days included since 2026-08-31).
 
 ### The WhatsApp bot boundary (#236, decided 2026-09-03)
@@ -813,7 +874,8 @@ The live routes then share:
 - **`packages/whatsapp-bot` lives inside the monorepo and OUTSIDE the game runtime.** It may
   import `@whippin/shared`; nothing imports it. A consumer of the PUBLIC share-token contract,
   never a source of game truth: no WhatsApp identity on an account, no share-encoding change
-  for it, no LLM deciding a score or a rank.
+  for it, no LLM deciding a score or a rank. A WhatsApp group is NOT a #271 group (it reads
+  share tokens, never a membership); #271 left it untouched.
 - **Its stack is a sibling** (`WhippinBotStack`, `infra/lib/bot-stack.ts`): one Fargate task
   (`desiredCount 1`, stop-before-start — one Baileys session is a correctness rule), a
   bot-owned table, an SQS outbound queue, a podium Lambda with one schedule per group, alarms
@@ -899,7 +961,7 @@ bot:start/pair/cli/groups (whatsapp-bot) — are documented in the owning packag
   `esbuild`'s postinstall.
 - **The PRIVACY NOTICE describes what this repo STORES (#229):** `/privacy`
   (`web/src/screens/privacyDoc.ts`), both languages, every category the backend keeps and why
-  (account email, hashed device token + parsed user-agent, guess logs, scores, friends,
+  (account email, hashed device token + parsed user-agent, guess logs, scores, groups,
   profile, HMAC-of-IP rows, inbound mail for about 30 days, and the provider hosting the
   operator inbox — `PRIVACY_MAILBOX_PROVIDER`, read off `OPERATOR_EMAIL`'s host). Reachable
   from `/account` only. It is what the SES production-access review is pointed at.

@@ -1,9 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { activeDate, dayNumber, LINK_SENDS_PER_ADDRESS } from '@whippin/shared';
-import { FRIENDS_MAX } from './friendStore';
 import { createHandler } from './handler';
 import { memoryDeviceStore } from './memoryDeviceStore';
-import { memoryFriendStore } from './memoryFriendStore';
+import { memoryGroupStore } from './memoryGroupStore';
 import { memoryHistoryStore } from './memoryHistoryStore';
 import { memoryLinkStore } from './memoryLinkStore';
 import { emailHash } from './linkStore';
@@ -20,7 +19,7 @@ import { seedDevice } from './testDevice';
 // they own it is account enumeration — and the three branches are bind / already-bound /
 // adopt. The account being LEFT is deleted only when it carries no address of its own, the
 // erase is CONFIRMED rather than inferred, the active day's play moves with it, and the
-// friend graph is merged.
+// deleted account leaves every group (#271).
 
 const emptyStore: PuzzleStore = {
   getPuzzle: async () => null,
@@ -39,7 +38,7 @@ const HASH = 'a'.repeat(64);
 function harness(clock: { now: Date } = { now: NOW }, mail: { fail?: unknown } = {}) {
   const devices = memoryDeviceStore();
   const profiles = memoryProfileStore((id) => devices.accountExists(id));
-  const friends = memoryFriendStore();
+  const groups = memoryGroupStore((id) => devices.accountExists(id));
   const rounds = memoryRoundStore();
   const scores = memoryScoreStore(() => clock.now);
   const history = memoryHistoryStore();
@@ -50,12 +49,12 @@ function harness(clock: { now: Date } = { now: NOW }, mail: { fail?: unknown } =
     now: () => clock.now,
     scores: { scoreStore: scores },
     profiles,
-    friends,
+    groups,
     deviceStore: devices,
     devices: { turnstile: { verify: async () => true }, allowSourceIp: true },
     link: {
       links,
-      friends,
+      groups,
       history,
       mailer: {
         async send(message) {
@@ -68,7 +67,7 @@ function harness(clock: { now: Date } = { now: NOW }, mail: { fail?: unknown } =
       allowSourceIp: true,
     },
   });
-  return { handler, devices, profiles, friends, rounds, scores, history, links, sent };
+  return { handler, devices, profiles, groups, rounds, scores, history, links, sent };
 }
 
 function post(body: unknown, path = '/link'): FnUrlEvent {
@@ -1094,8 +1093,8 @@ describe('email account linking (#204) — a failed SEND', () => {
   });
 });
 
-describe('email account linking (#204) — the friend merge', () => {
-  it('merges the leaving account’s friends in both directions, dropping duplicates', async () => {
+describe('email account linking (#204) — the departure (#271)', () => {
+  it('drops every membership of the deleted account, and nothing of the adopting one', async () => {
     const h = harness();
     const saved = await seedDevice(h.devices);
     await h.handler(
@@ -1106,15 +1105,13 @@ describe('email account linking (#204) — the friend merge', () => {
       }),
     );
     const leaving = await seedDevice(h.devices);
-    const shared = await seedDevice(h.devices);
-    const onlyTheirs = await seedDevice(h.devices);
+    const other = await seedDevice(h.devices);
 
     const at = '2026-08-01T00:00:00.000Z';
-    await h.friends.link({ publicId: saved.accountId, friendId: shared.accountId, createdAt: at });
-    await h.friends.link({ publicId: leaving.accountId, friendId: shared.accountId, createdAt: at });
-    await h.friends.link({ publicId: leaving.accountId, friendId: onlyTheirs.accountId, createdAt: at });
-    // The two accounts had even friended each other across devices.
-    await h.friends.link({ publicId: leaving.accountId, friendId: saved.accountId, createdAt: at });
+    await h.groups.create({ id: 'aaaaaaaaaaaaaaaa', name: 'Kept', createdBy: saved.accountId, now: at });
+    await h.groups.create({ id: 'bbbbbbbbbbbbbbbb', name: 'Left', createdBy: other.accountId, now: at });
+    await h.groups.join({ id: 'bbbbbbbbbbbbbbbb', publicId: leaving.accountId, now: at });
+    await h.groups.join({ id: 'aaaaaaaaaaaaaaaa', publicId: leaving.accountId, now: at });
 
     const answer = await h.handler(
       post({
@@ -1123,18 +1120,17 @@ describe('email account linking (#204) — the friend merge', () => {
         code: await askForCode(h, leaving.token, 'zoe@example.com'),
       }),
     );
-    expect(JSON.parse(answer.body).mergePending).toBe(false);
+    expect(answer.statusCode).toBe(200);
+    expect(JSON.parse(answer.body).departurePending).toBe(false);
 
-    await expect(h.friends.list(saved.accountId)).resolves.toEqual(
-      [shared.accountId, onlyTheirs.accountId].sort(),
-    );
-    // Both directions, and nothing left pointing at the deleted account.
-    await expect(h.friends.list(onlyTheirs.accountId)).resolves.toEqual([saved.accountId]);
-    await expect(h.friends.list(shared.accountId)).resolves.toEqual([saved.accountId]);
-    await expect(h.friends.list(leaving.accountId)).resolves.toEqual([]);
+    // The deleted account is in no group; memberships are never carried across.
+    await expect(h.groups.listMine(leaving.accountId)).resolves.toEqual([]);
+    expect((await h.groups.members('bbbbbbbbbbbbbbbb')).map((m) => m.publicId)).toEqual([other.accountId]);
+    expect((await h.groups.members('aaaaaaaaaaaaaaaa')).map((m) => m.publicId)).toEqual([saved.accountId]);
+    await expect(h.links.pendingDepartures(saved.accountId)).resolves.toEqual([]);
   });
 
-  it('drops the friendships that do not fit, leaving no edge on a deleted account', async () => {
+  it('reports an unfinished departure and finishes it on the next read', async () => {
     const h = harness();
     const saved = await seedDevice(h.devices);
     await h.handler(
@@ -1145,48 +1141,31 @@ describe('email account linking (#204) — the friend merge', () => {
       }),
     );
     const leaving = await seedDevice(h.devices);
-    // The adopting account is FULL, so every one of the leaving account's own friendships
-    // has to be dropped — and both facing rows have to go with them.
-    const base32 = 'abcdefghijklmnopqrstuvwxyz234567';
-    const fakeId = (n: number) => {
-      let out = '';
-      let value = n;
-      for (let i = 0; i < 16; i += 1) {
-        out = base32[value % 32] + out;
-        value = Math.floor(value / 32);
-      }
-      return out;
-    };
-    for (let i = 0; i < FRIENDS_MAX; i += 1) {
-      await h.friends.link({
-        publicId: saved.accountId,
-        friendId: fakeId(i),
-        createdAt: '2026-08-01T00:00:00.000Z',
-      });
-    }
-    const orphaned = await seedDevice(h.devices);
-    await h.friends.link({
-      publicId: leaving.accountId,
-      friendId: orphaned.accountId,
-      createdAt: '2026-08-02T00:00:00.000Z',
-    });
-
-    await h.handler(
+    await h.groups.create({ id: 'bbbbbbbbbbbbbbbb', name: 'Left', createdBy: leaving.accountId, now: NOW.toISOString() });
+    // The store fails ONCE, on the link's own drain: the job survives and the answer says so.
+    const leaveAll = vi.spyOn(h.groups, 'leaveAll').mockRejectedValueOnce(new Error('throttled'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const answer = await h.handler(
       post({
         token: leaving.token,
         email: 'zoe@example.com',
         code: await askForCode(h, leaving.token, 'zoe@example.com'),
       }),
     );
+    expect(JSON.parse(answer.body).departurePending).toBe(true);
+    await expect(h.links.pendingDepartures(saved.accountId)).resolves.toEqual([leaving.accountId]);
 
-    await expect(h.friends.list(saved.accountId)).resolves.toHaveLength(FRIENDS_MAX);
-    await expect(h.friends.list(orphaned.accountId)).resolves.toEqual([]);
-    await expect(h.friends.list(leaving.accountId)).resolves.toEqual([]);
+    const read = await h.handler(post({ token: leaving.token }));
+    expect(JSON.parse(read.body).departurePending).toBe(false);
+    await expect(h.links.pendingDepartures(saved.accountId)).resolves.toEqual([]);
+    expect((await h.groups.members('bbbbbbbbbbbbbbbb')).map((m) => m.publicId)).toEqual([]);
+    expect(leaveAll).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
   });
 });
 
 describe('email account linking (#204) — what a deleted account stops being', () => {
-  it('expires its invite link and refuses the edge, rather than dressing a player who is gone', async () => {
+  it('answers `account_gone`, and can join nothing, rather than being dressed as a player', async () => {
     const h = harness();
     const saved = await seedDevice(h.devices);
     await h.handler(
@@ -1221,10 +1200,14 @@ describe('email account linking (#204) — what a deleted account stops being', 
     expect(profile.statusCode).toBe(410);
     expect(JSON.parse(profile.body).error).toBe('account_gone');
 
-    // And accepting their old invite link creates no edge.
-    const stranger = await seedDevice(h.devices);
-    const add = await h.handler(post({ token: stranger.token, add: leaving.accountId }, '/friends'));
-    expect(add.statusCode).toBe(404);
-    expect(JSON.parse(add.body).error).toBe('unknown_player');
+    // And the deleted account's own device is signed out of every private route.
+    const join = await h.handler(post({ token: leaving.token }, '/groups'));
+    expect(join.statusCode).toBe(200);
+    // (the device MOVED to the saved account — that is the adoption — so it still
+    // authenticates; what is gone is the account it left, which no store can join.)
+    const groups = memoryGroupStore((id) => h.devices.accountExists(id));
+    await expect(
+      groups.join({ id: 'cccccccccccccccc', publicId: leaving.accountId, now: NOW.toISOString() }),
+    ).resolves.toBe('unknown_group');
   });
 });

@@ -1,30 +1,27 @@
-// The #189 invite link's three paths, in ONE place because THREE packages have to agree
-// on them (2026-08-20, when the link gained a server-rendered preview):
+// The GROUP invite link's three paths (#271, replacing #189's player invite), in ONE
+// place because THREE packages have to agree on them:
 //
-//   /i/<publicId>          the LINK a player shares. Served by the BACKEND, so the
-//                          unfurl carries that player's own mark and name instead of
-//                          the SPA's generic card. It carries no behavior of its own —
-//                          it renders the preview and bounces a human onward.
-//   /join/<publicId>       the SPA landing it bounces to: the screen that actually
-//                          records the mutual edge with the CLICKER's key.
-//   /og/i/<publicId>.png   the preview image the link's OG tags point at.
+//   /g/<groupId>           the LINK a member shares. Served by the BACKEND, so the unfurl
+//                          carries the group's name and its members' marks instead of the
+//                          SPA's generic card. It carries no behavior of its own — it
+//                          renders the preview and bounces a human onward.
+//   /join/g/<groupId>      the SPA landing it bounces to: the screen whose JOIN tap
+//                          actually records the membership with the CLICKER's key.
+//   /og/g/<groupId>.png    the preview image the link's OG tags point at.
 //
-// INFRA routes `/i/*` to the API origin, the BACKEND answers it and writes the landing
+// INFRA routes `/g/*` to the API origin, the BACKEND answers it and writes the landing
 // URL into its redirect, and the WEB builds the shared link and parses the landing. A
-// drift between any two of them is an invite that silently lands nobody on the board,
+// drift between any two of them is an invite that silently lands nobody in a group,
 // which is why they are one module, like VIEWER_IP_HEADER.
 //
 // The web's DEV SERVER proxies the same paths to the local backend (vite.config.ts), so
-// a pasted link walks the same two steps locally that it does in production. It did not
-// at first, and the failure had no symptom: the SPA fallback answered `/i/<id>` with
-// index.html, the router saw a path it no longer owned, and the click landed on the game
-// with nothing said and no edge written.
-//
-// The link stayed `/i/<publicId>` through the change so every link already in the wild
-// keeps working and simply gains a preview; what moved is the SPA landing underneath it.
+// a pasted link walks the same two steps locally that it does in production. The player
+// invite did not at first, and the failure had no symptom: the SPA fallback answered the
+// link with index.html, the router saw a path it no longer owned, and the click landed
+// on the game with nothing said and nothing written.
 
-export const INVITE_SEGMENT = 'i';
-export const INVITE_LANDING_SEGMENT = 'join';
+export const GROUP_SEGMENT = 'g';
+export const GROUP_LANDING_SEGMENT = 'join';
 export const SHARE_SEGMENT = 's';
 
 // A share token's alphabet (base64url), the ONE spelling every reader of a share PATH
@@ -48,7 +45,7 @@ export const SHARE_TOKEN_SOURCE = '[A-Za-z0-9_-]+';
 // reads a signed share exactly as it reads a plain one. The identity rides a second path
 // segment, so the plain link is the signed one minus it, byte for byte. A signed page is
 // NOT content-addressed (the player can rename or redraw), so the backend serves it with
-// the invite preview's short TTL.
+// the group preview's short TTL.
 export function sharePath(token: string, by?: string | null): string {
   return by ? `/${SHARE_SEGMENT}/${token}/${by}` : `/${SHARE_SEGMENT}/${token}`;
 }
@@ -59,18 +56,21 @@ export function shareCardPath(token: string, by?: string | null): string {
 
 // The shared link. The id is validated where it is READ (the backend route, the SPA's
 // parseRoute), so a mistyped link is an unknown path rather than a lookup.
-export function invitePath(publicId: string): string {
-  return `/${INVITE_SEGMENT}/${publicId}`;
+export function groupInvitePath(groupId: string): string {
+  return `/${GROUP_SEGMENT}/${groupId}`;
 }
 
-export function inviteLandingPath(publicId: string): string {
-  return `/${INVITE_LANDING_SEGMENT}/${publicId}`;
+// `/join/g/<id>` rather than `/join/<id>`: the landing segment names WHAT is being joined,
+// so the path stays open for another kind of landing without the SPA guessing from the
+// id's shape (a group id and a player id are the same 16 characters).
+export function groupLandingPath(groupId: string): string {
+  return `/${GROUP_LANDING_SEGMENT}/${GROUP_SEGMENT}/${groupId}`;
 }
 
 // The preview image sits under `/og/` with the share cards, so the CDN behavior that
-// already proxies them covers it. The `i/` segment is what keeps it out of the share
-// token's namespace: a publicId is 16 base32 characters, which a token regex would
+// already proxies them covers it. The `g/` segment is what keeps it out of the share
+// token's namespace: a group id is 16 base32 characters, which a token regex would
 // otherwise be free to read as a (malformed) token.
-export function inviteCardPath(publicId: string): string {
-  return `/og/${INVITE_SEGMENT}/${publicId}.png`;
+export function groupCardPath(groupId: string): string {
+  return `/og/${GROUP_SEGMENT}/${groupId}.png`;
 }

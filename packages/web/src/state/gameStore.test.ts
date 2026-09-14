@@ -22,6 +22,7 @@ import {
   roundLoadFor,
   persistedStateOf,
   initialPersistedState,
+  applyGameMutation,
 } from './gameStore';
 import { useHistoryStore } from './history';
 
@@ -60,7 +61,8 @@ beforeEach(() => {
       lastLang: null,
       lastMode: null,
       onboarded: false,
-      boardTab: 'friends',
+      boardTab: 'group',
+      lastGroupId: null,
       sentenceRulesSeen: false,
       roundLoads: {},
       activeWordKey: null,
@@ -733,20 +735,38 @@ describe('setLastLang — remembers the last valid language', () => {
 
 // CONTRACT (#190, user feedback 2026-08-20): the board tab belongs to a VISIT. It is
 // persisted so the two remounts that do NOT end a visit — a refresh and a header mode
-// switch — keep it, and LEAVING the leaderboard resets it, so the next open is FRIENDS.
+// switch — keep it, and LEAVING the leaderboard resets it, so the next open is the GROUP.
 // App fires the reset on any non-board route; what is pinned here is that the reset
 // exists and is idempotent.
 describe('boardTab — the leaderboard tab, scoped to a visit', () => {
   it('holds the chosen tab, and reset returns it to the trusted default', () => {
     const { setBoardTab, resetBoardTab } = useGameStore.getState();
-    expect(useGameStore.getState().boardTab).toBe('friends');
+    expect(useGameStore.getState().boardTab).toBe('group');
     setBoardTab('global');
     expect(useGameStore.getState().boardTab).toBe('global');
     resetBoardTab();
-    expect(useGameStore.getState().boardTab).toBe('friends');
+    expect(useGameStore.getState().boardTab).toBe('group');
     // Idempotent: App calls it on EVERY non-board route, so it must not churn the blob.
     resetBoardTab();
-    expect(useGameStore.getState().boardTab).toBe('friends');
+    expect(useGameStore.getState().boardTab).toBe('group');
+  });
+
+  // The group last opened (#271) OUTLIVES the visit — the standing line reads it — and it
+  // belongs to the ACCOUNT: leaving one drops it.
+  it('remembers the group last opened, and drops it with the account', () => {
+    const { setLastGroup } = useGameStore.getState();
+    expect(useGameStore.getState().lastGroupId).toBeNull();
+    setLastGroup('abcdefghij234567');
+    expect(useGameStore.getState().lastGroupId).toBe('abcdefghij234567');
+    const owner = { accountId: 'lfd5pqz5pa7zjm5u', deviceId: 'd'.repeat(16) };
+    useGameStore.setState({ identityOwner: owner }, false);
+    const moved = applyGameMutation(persistedStateOf(useGameStore.getState()), {
+      type: 'reconcileIdentity',
+      expectedOwner: owner,
+      identity: { accountId: 'nq2yv6cme4jkbhtx', deviceId: 'd'.repeat(16) },
+      pendingBootstrap: false,
+    });
+    expect(moved.state.lastGroupId).toBeNull();
   });
 });
 
@@ -767,7 +787,8 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       lastLang: null,
       lastMode: null,
       onboarded: false,
-      boardTab: 'friends',
+      boardTab: 'group',
+      lastGroupId: null,
       sentenceRulesSeen: false,
       localSeed: null,
     });
@@ -816,7 +837,8 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       lastLang: 'en',
       lastMode: null,
       onboarded: true,
-      boardTab: 'friends',
+      boardTab: 'group',
+      lastGroupId: null,
       sentenceRulesSeen: false,
       localSeed: null,
     });
@@ -836,7 +858,8 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       lastLang: 'fr',
       lastMode: null,
       onboarded: true,
-      boardTab: 'friends',
+      boardTab: 'group',
+      lastGroupId: null,
       sentenceRulesSeen: false,
       localSeed: null,
     });
@@ -862,7 +885,8 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       lastLang: 'fr',
       lastMode: null,
       onboarded: true,
-      boardTab: 'friends',
+      boardTab: 'group',
+      lastGroupId: null,
       sentenceRulesSeen: false,
       localSeed: null,
     });
@@ -1016,11 +1040,16 @@ describe('migratePersisted — persisted-blob upgrades', () => {
   // v8 -> v9 (2026-08-20): which #190 board tab is up. Older blobs get 'friends'
   // — the default the screen already opened on, so nobody's board moves under them; the
   // field only starts remembering from the first flip. An unknown value is not a tab.
-  it('v8 -> v9 defaults boardTab to friends and keeps a stored global', () => {
+  it('v8 -> v9 defaults boardTab to the group tab and keeps a stored global (v19 renamed it)', () => {
     const blob = { rounds: {}, lastLang: 'fr', onboarded: true, solvedDays: {} };
-    expect(migratePersisted(blob, 8).boardTab).toBe('friends');
+    expect(migratePersisted(blob, 8).boardTab).toBe('group');
     expect(migratePersisted({ ...blob, boardTab: 'global' }, 9).boardTab).toBe('global');
-    expect(migratePersisted({ ...blob, boardTab: 'nonsense' }, 9).boardTab).toBe('friends');
+    expect(migratePersisted({ ...blob, boardTab: 'nonsense' }, 9).boardTab).toBe('group');
+    // v18 -> v19: the retired 'friends' reads as the default, and a stored group survives
+    // only when it is a group id.
+    expect(migratePersisted({ ...blob, boardTab: 'friends' }, 18).boardTab).toBe('group');
+    expect(migratePersisted({ ...blob, lastGroupId: 'abcdefghij234567' }, 19).lastGroupId).toBe('abcdefghij234567');
+    expect(migratePersisted({ ...blob, lastGroupId: 'NOPE' }, 19).lastGroupId).toBeNull();
   });
 
   // v11 -> v12 (#203): the retired scoreRecorded VALUE, on BOTH round maps. There is no

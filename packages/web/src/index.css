@@ -2375,45 +2375,6 @@ input {
   position: relative;
   display: inline-block;
 }
-/* An OUTLINED badge — a hairline rule around foreground type, no ground at all
-   (user-decided 2026-08-17: a filled block shouted louder than the score it qualifies,
-   where an outline still frames the claim as a stamp). Pixel type, like the number it
-   stands beside; the explicit height keeps the overrunning pixel glyphs centred, and the
-   page's global text-shadow is OFF inside the frame. */
-.score-top {
-  position: absolute;
-  left: 100%;
-  top: 50%;
-  translate: 14px -50%;
-  display: inline-flex;
-  align-items: center;
-  height: 30px;
-  padding: 0 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-md);
-  color: var(--fg);
-  font-family: var(--pixel-font);
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1;
-  letter-spacing: 0;
-  white-space: nowrap;
-  text-shadow: none;
-}
-@media (max-width: 380px) {
-  .score-top {
-    translate: 10px -50%;
-    height: 26px;
-    padding: 0 10px;
-    font-size: 10px;
-  }
-}
-/* The badge arrives on the app's one "list arriving" gesture; a rehydrated result wears
-   `.settled` and replays nothing. */
-.score-top.in {
-  animation: rung-in 220ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
-}
-
 /* Actions row: SHARE (and TOMORROW). Inside the CARD it is the caption row under the
    well, so it carries the well's side inset and a floor of its own. */
 .result-actions {
@@ -2782,8 +2743,32 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .result-action {
   min-width: 180px;
 }
+/* COPIED lands in the accent on the white cap — the one moment the cap's ink is coloured. */
 .result-action.copied {
-  color: var(--accent);
+  --cap-ink: var(--accent);
+}
+/* TOMORROW is SHARE's equal on the row, not its answer: a cap, never the quiet word. */
+.result-actions .btn-primary + .btn-secondary {
+  --print: color-mix(in srgb, var(--fg) 26%, var(--bg));
+  --cap-ground: var(--surface);
+  --cap-ink: var(--fg);
+  min-height: 48px;
+  padding: 14px 40px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  box-shadow: 4px 4px 0 0 var(--print);
+}
+.result-actions .btn-primary + .btn-secondary:hover:not(:disabled) {
+  translate: -1px -1px;
+  box-shadow: 5px 5px 0 0 var(--print);
+}
+.result-actions .btn-primary + .btn-secondary:active:not(:disabled) {
+  translate: 3px 3px;
+  box-shadow: 1px 1px 0 0 var(--print);
+  color: var(--fg);
 }
 /* TOMORROW beside SHARE (#273): two actions share the row as equals — each gives up the
    lone button's floor width and takes half the row instead, capped so the pair does not
@@ -3276,88 +3261,126 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   border: 0;
   cursor: pointer;
 }
-/* Primary (user-decided 2026-09-01, superseding the 2026-08-18 device card — glass,
-   hairline, LED): SIMPLE. The accent colour as the background, with a discreet DIAGONAL
-   gradient into a slightly darker accent — `--accent-deep`, derived at startup by
-   `polished.darken` from the live `--accent` (src/theme.ts), never a second typed hex.
-   White bold label, no border, no LED. Hover brightens; a press is a state. */
-.btn-primary {
+/* ── BUTTONS, THIRD DESIGN (user-decided 2026-09-14: "we should completely update the
+   buttons design, they're really ugly and boring" — superseding the flat cobalt
+   gradient slab of 2026-09-01 and the device card before it). A button is a KEYCAP IN
+   THE APP'S OWN PIXEL GRAMMAR: a sharp tile with a HARD PRINT — the 1-bit drop shadow
+   every pixel sprite here already carries (the floating hits, the loot) — offset down
+   and right, and a press pushes the cap DOWN ONTO its print (the cap travels the print's
+   own 4px and the print collapses), which is the one motion a hard print makes
+   physical. Three caps, one geometry:
+     PRIMARY   — the HELD WORD as a button: `--fg` ground, `--bg` ink, the print in the
+                 game's accent (cobalt, the step toward the solve — the ENTER key's colour
+                 under the hole chip's ground). The app's one emphasis gesture, pressed.
+     SECONDARY — the keyboard's letter tile: `--surface` ground, a hairline, `--fg` ink,
+                 the print in a dim grey. Same cap, quieter.
+     DANGER    — the secondary in the danger ink (destruction never glows).
+   And the QUIET word (`.link-quiet-btn`) is not a cap at all: a bare tracked word on a
+   short print line. Sized TO THE WORD, never stretched by default — a column that wants
+   the deploy geometry (the bottom-edge PLAY / MIX / SAVE) says so (`.mix-btn`). */
+.btn-primary,
+.btn-secondary,
+.mix-btn {
+  --print: var(--accent);
+  --cap-ground: var(--fg);
+  --cap-ink: var(--bg);
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 12px;
-  padding: 18px 30px;
-  font-size: clamp(15px, 2vh, 17px);
+  /* A word needs air in a cap: 40px a side (user-reported 2026-09-14, CREATE "very
+     narrow" at 28). */
+  padding: 14px 40px;
+  min-height: 48px;
+  font-family: var(--ui);
+  font-size: 14px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--fg);
-  background: linear-gradient(135deg, var(--accent), var(--accent-deep, #3352e6));
-  border: 1px solid transparent;
-  border-radius: var(--r-lg);
+  line-height: 1;
+  color: var(--cap-ink);
+  background: var(--cap-ground);
+  border: 1px solid var(--cap-ground);
+  border-radius: var(--r-sm);
+  box-shadow: 4px 4px 0 0 var(--print);
   text-shadow: none;
-  transition: filter 0.08s linear;
-  /* A FLOOR under the app's one big action (user-decided 2026-08-26): sized to its label
-     alone, a short word ("PLAY") drew a small card in the middle of a wide column and read
-     as a minor control. Every screen that hands this button a column already stretches it
-     to 100% (the tutorial invitation, the invite landing, this screen), so this only ever
-     bites where a primary is dropped with no width of its own — and `min()` is what keeps
-     the floor from overflowing a column narrower than it. */
-  min-width: min(240px, 100%);
+  cursor: pointer;
+  transition:
+    translate 70ms ease-out,
+    box-shadow 70ms ease-out,
+    filter 80ms linear;
 }
-.btn-primary:hover {
-  filter: brightness(1.1);
+.btn-primary:hover:not(:disabled),
+.btn-secondary:hover:not(:disabled),
+.mix-btn:hover:not(:disabled) {
+  translate: -1px -1px;
+  box-shadow: 5px 5px 0 0 var(--print);
 }
-/* A press is a STATE, not travel (the flat rule, 2026-08-18). */
-.btn-primary:active {
-  filter: brightness(1.2);
+/* The press: the cap goes down onto its print. */
+.btn-primary:active:not(:disabled),
+.btn-secondary:active:not(:disabled),
+.mix-btn:active:not(:disabled) {
+  translate: 3px 3px;
+  box-shadow: 1px 1px 0 0 var(--print);
 }
-/* ── THE SECONDARY IS A BUTTON, AND IT HAS TO LOOK LIKE ONE (user-decided 2026-08-30) ──
-   No border, no fill, the body ink: that dress reads as a CONTROL in exactly one position —
-   directly beneath a primary, answering what the primary just proposed, at the primary's own
-   size. There the primary establishes the action zone and the secondary is plainly its
-   sibling. The app wore it everywhere instead: the game's CHANGE LANGUAGE, NoPuzzle's two,
-   the archive's RETRY, `/account`'s second door — all floating on screens with no primary
-   above them to borrow the meaning from. They read as lines of copy that happen to be
-   tappable, found by luck.
-
-   So the DRESS FOLLOWS THE RELATIONSHIP rather than each call site's memory of the rule:
-   boxed by default, bare only where it literally follows a primary. A site that gets it
-   wrong then fails toward the VISIBLE treatment, which is the direction a mistake should
-   fail in. The box is the hairline the primary already wears; what the primary KEEPS is the
-   glass fill and the lit LED, which is the whole hierarchy — and `border-box` means the two
-   dresses are the same geometry, so nothing moves between them.
-
-   (2026-08-29's half of this stands: the SIZE was the other bug. At 14px in 8px of padding
-   it sat under a primary three times its height and read as a caption somebody had made
-   clickable. 14px of padding, not 13, so it clears the 44px touch floor like everything
-   else in the area.) */
+.btn-primary:disabled,
+.btn-secondary:disabled,
+.mix-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+/* A floor under the app's one big action (user-decided 2026-08-26): sized to its label
+   alone, a short word ("PLAY") read as a minor control in a wide column. */
+.btn-primary {
+  min-width: min(220px, 100%);
+}
 .btn-secondary {
-  padding: calc(14px + var(--cap-shift)) 20px calc(14px - var(--cap-shift));
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  background: transparent;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-lg);
-  color: var(--fg);
+  --print: color-mix(in srgb, var(--fg) 26%, var(--bg));
+  --cap-ground: var(--surface);
+  --cap-ink: var(--fg);
+  border-color: var(--line-strong);
 }
-.btn-secondary:hover {
-  border-color: var(--fg);
+.btn-danger {
+  --print: color-mix(in srgb, var(--danger) 45%, var(--bg));
+  --cap-ink: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
 }
-/* THE ONE POSITION THE BARE DRESS EARNS. `border-color: transparent` rather than `border:
-   0`, so the two are the same box to the pixel and a screen that mounts both keeps one
-   rhythm. */
+/* THE ONE POSITION THE CAP COMES OFF (user-decided 2026-08-30, restated 2026-09-14:
+   "when a label button is below a bigger button it always has the same underline
+   design"): directly under a primary, answering it, a secondary is THE QUIET WORD —
+   `.link-quiet-btn`'s exact dress, the tracked word on its print line — so the pair reads
+   as one action and its way out, on every screen the same. Restated in full here rather
+   than shared through a class, because the sibling rule has to WIN over the cap's. */
 .btn-primary + .btn-secondary,
 .mix-btn + .btn-secondary {
-  border-color: transparent;
-  opacity: 0.75;
+  --print: var(--line-strong);
+  --cap-ground: transparent;
+  --cap-ink: var(--fg);
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 14px 4px 12px;
+  border: 0;
+  border-radius: 0;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.14em;
+  box-shadow: inset 0 -2px 0 0 var(--print);
+  transition: color 120ms, box-shadow 120ms;
 }
-.btn-primary + .btn-secondary:hover,
-.mix-btn + .btn-secondary:hover {
-  border-color: transparent;
-  opacity: 1;
+.btn-primary + .btn-secondary:hover:not(:disabled),
+.mix-btn + .btn-secondary:hover:not(:disabled) {
+  --print: var(--fg);
+  translate: 0;
+  box-shadow: inset 0 -2px 0 0 var(--print);
+}
+.btn-primary + .btn-secondary:active:not(:disabled),
+.mix-btn + .btn-secondary:active:not(:disabled) {
+  --print: var(--fg);
+  translate: 0;
+  box-shadow: inset 0 -2px 0 0 var(--print);
+  color: var(--muted);
 }
 
 /* ===================== mobile / small screens ===================== */
@@ -3856,8 +3879,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    on. `margin-top: auto` parks it against the tray's bottom edge in both. An auto margin
    beats the tray's own `justify-content`, so the keyboard and the transient loading/error
    lines keep the tray's centring — the button is the only thing this moves. */
-/* The tutorial's action is the same PRIMARY as .btn-primary (one big-action design),
-   full width; disabled dims it. */
+/* The tutorial's action is the PRIMARY cap (one big-action design) in the DEPLOY
+   geometry: full width, on the column's bottom edge. */
 .mix-btn {
   margin-top: auto;
   width: 100%;
@@ -3865,37 +3888,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
      primary button on the leaderboard and account page should also apply to the mix
      button"): the board column's 430px, which the account column now shares — so MIX,
      both gates' PLAY, INVITE and SAVE are the same button at the same size on every
-     screen. It was 680px, the keyboard's own footprint, on the tutorial's reasoning that
-     the button stands in for the keys; the desktop showed one button stretched across
-     the keyboard on one screen and a card-width one on the next. */
+     screen. */
   max-width: 430px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  font-family: var(--ui);
-  font-size: clamp(15px, 2vh, 17px);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--fg);
-  background: linear-gradient(135deg, var(--accent), var(--accent-deep, #3352e6));
-  border: 1px solid transparent;
-  border-radius: var(--r-lg);
-  padding: 18px 30px;
-  cursor: pointer;
-  text-shadow: none;
-  transition: filter 0.08s linear;
-}
-.mix-btn:hover:not(:disabled) {
-  filter: brightness(1.1);
-}
-.mix-btn:active:not(:disabled) {
-  filter: brightness(1.2);
-}
-.mix-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
+  min-height: 52px;
 }
 /* The ladder ending: the tray holds ONE button and the keyboard has dropped for good, so it
    stops reserving the keyboard's footprint and shrinks to the button. The page's own frame
@@ -4010,9 +4005,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 .invite-actions .btn-primary {
   width: 100%;
-}
-.invite-actions .btn-secondary {
-  font-size: 14px;
 }
 
 @media (max-width: 640px) {
@@ -5110,34 +5102,50 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   border-color: var(--fg);
   box-shadow: 0 0 0 1px var(--fg);
 }
-/* CLEAR: a quiet hairline chip — it undoes, so it never competes with the swatches.
-   The leaderboard's EDIT chip (#190) is the same control in the same voice: it leads
-   away from the board rather than acting on it, so it wears this rule rather than a
-   copy of it. */
+/* THE COMPACT CAP (third button design, 2026-09-14): the secondary keycap at a row's
+   size — CLEAR on the editor's tool row, EDIT on the account masthead, SIGN OUT and RETRY
+   on the device rows. Same tile, same print (3px at this size), same press. */
 .profile-clear,
-.board-chip {
+.board-chip,
+.device-signout,
+.device-retry {
+  --print: color-mix(in srgb, var(--fg) 26%, var(--bg));
   flex: none;
-  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 16px;
   font-family: var(--ui);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--fg);
-  background: var(--glass);
+  background: var(--surface);
   border: 1px solid var(--line-strong);
   border-radius: var(--r-sm);
-  padding: 0 14px;
+  box-shadow: 3px 3px 0 0 var(--print);
   cursor: pointer;
   text-shadow: none;
-  transition: filter 0.08s linear, border-color 0.12s linear;
+  transition: translate 70ms ease-out, box-shadow 70ms ease-out;
 }
 .profile-clear:hover:not(:disabled),
-.board-chip:hover {
-  filter: brightness(1.3);
-  border-color: var(--fg);
+.board-chip:hover,
+.device-signout:hover:not(:disabled),
+.device-retry:hover {
+  translate: -1px -1px;
+  box-shadow: 4px 4px 0 0 var(--print);
 }
-.profile-clear:disabled {
+.profile-clear:active:not(:disabled),
+.board-chip:active,
+.device-signout:active:not(:disabled),
+.device-retry:active {
+  translate: 2px 2px;
+  box-shadow: 1px 1px 0 0 var(--print);
+}
+.profile-clear:disabled,
+.device-signout:disabled {
   opacity: 0.45;
   cursor: default;
 }
@@ -5640,44 +5648,32 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   justify-content: center;
   gap: 10px;
 }
+/* THE QUIET WORD (third button design, 2026-09-14): a bare tracked word on a short PRINT
+   LINE — the cap's hard print with the cap taken away — at a finger's height. It is the
+   dress of every secondary act that is not the answer to a primary right above it
+   (RESEND, LEAVE THE GROUP, CANCEL under a danger cap); hover lifts the line to the ink. */
 .link-quiet-btn {
-  /* Generous padding around small type: the visible word stays quiet while the tap
-     target stays a finger's — 15px is what makes that literally true (44px), where 12px
-     measured 38 and the one tappable thing on the code step was the smallest. */
-  padding: 14px 16px;
-  /* AND IT IS BOXED, by the same rule as `.btn-secondary` above: RESEND sits under the code
-     cells and the second door under a paragraph, with no primary anywhere near either, so
-     bare they were two more sentences that happened to be tappable. The small-control dress
-     is the one `.board-chip` and `.device-signout` already wear — a `--line-strong`
-     hairline at the sharp radius, no fill. Bare only where it follows the screen's action,
-     which is the crossroads' CANCEL. */
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-sm);
+  --print: var(--line-strong);
+  padding: 14px 4px 12px;
+  border: 0;
   background: none;
-  /* AN ACTION, IN THE ACTION INK. At `--muted` it was the same colour as the help text
-     around it and a size smaller, so the one tappable thing on the screen was the quietest
-     — the chrome's ONE INK rule, which reserves `--muted` for secondary VALUES rather than
-     for controls. */
   color: var(--fg);
-  /* Its OWN dress, not `inherit`: the erase step mounts one of these alone (CANCEL),
-     outside the `.link-quiet` row that used to supply the typography. */
   font-family: var(--ui);
   font-size: 12px;
   font-weight: 650;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
+  line-height: 1;
+  box-shadow: inset 0 -2px 0 0 var(--print);
   cursor: pointer;
-  transition: color 120ms;
+  transition: color 120ms, box-shadow 120ms;
 }
 .link-quiet-btn:hover:not(:disabled) {
-  color: var(--accent);
-  border-color: var(--accent);
+  --print: var(--fg);
 }
-.btn + .link-quiet-btn {
-  border-color: transparent;
-}
-.btn + .link-quiet-btn:hover:not(:disabled) {
-  border-color: transparent;
+.link-quiet-btn:active:not(:disabled) {
+  --print: var(--fg);
+  color: var(--muted);
 }
 /* A CONTROL THAT IS NOT A CONTROL YET LOSES ITS BOX (2026-08-30). RESEND spends its first
    ~30 seconds counting down, and a dimmed hairline box held that long reads as a broken
@@ -5688,22 +5684,16 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .link-quiet-btn:disabled {
   opacity: 0.5;
   cursor: default;
-  border-color: transparent;
+  --print: transparent;
 }
 
-/* DESTRUCTION NEVER GLOWS: the confirming control is the quiet variant wearing the danger
-   ink, so the lit LED button is never the one that deletes an account. */
+/* DESTRUCTION NEVER GLOWS: the quiet word in the danger ink, its print line the same. */
 .link-danger {
+  --print: color-mix(in srgb, var(--danger) 45%, transparent);
   color: var(--danger);
-  border: 1px solid rgba(255, 61, 46, 0.45);
-  border-radius: var(--r-md);
-  /* Matches `.btn-secondary`'s box (it overrides that rule), so the one control that
-     DELETES an account is not the smallest target on its own screen. */
-  padding: 14px 12px;
 }
 .link-danger:hover:not(:disabled) {
-  border-color: var(--danger);
-  background: rgba(255, 61, 46, 0.06);
+  --print: var(--danger);
 }
 
 /* The address step's LEAD: WHO is being saved. A touch of air between it and the input it
@@ -6188,38 +6178,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.device-signout,
-.device-retry {
-  flex: 0 0 auto;
-  /* The one destructive control on `/account`, and it measured 82x27. The height is STATED
-     rather than reached through padding (`.board-chip`'s own shape), so the floor cannot
-     drift with the label's line box. The row grows with it rather than the chip being given
-     an invisible overhang: two SIGN OUT buttons one gap apart would then have OVERLAPPING
-     hit areas, and a tap landing on the wrong row's sign-out is the exact accident this
-     list must never have. */
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  padding: 0 14px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-sm);
-  background: none;
-  font-family: var(--ui);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--fg);
-  cursor: pointer;
-}
-.device-signout:hover:not(:disabled),
-.device-retry:hover {
-  filter: brightness(1.3);
-}
-.device-signout:disabled {
-  color: var(--muted);
-  cursor: default;
-}
 
 /* On a phone the mobile .app is top-anchored (16px), so the column's top padding sets
    where the editor starts: 48px puts it at 64px from the viewport top — exactly where
@@ -6332,14 +6290,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    masthead squeezed the account's own name to `ShinyGobl…`. Both are bought back in
    PADDING, so no type shrinks and no label is rewritten. */
 @media (max-width: 380px) {
-  /* Measured: at 16px of side padding the label still wrapped and 14 was the exact
-     threshold, so this takes 12 — two pixels of slack against a device whose metrics round
-     the other way. */
-  .btn-primary {
-    padding-left: 12px;
-    padding-right: 12px;
-  }
-  /* And the masthead hands the name back what MODIFIER took: 132px of column became 150,
+  /* The masthead hands the name back what MODIFIER took: 132px of column became 150,
      which fits every assigned name up to 14 characters where 13 was already clipping. The
      longest two the generator can make still ellipsize, which is what the ellipsis is for. */
   .account-id {
@@ -6459,14 +6410,14 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   }
 }
 
-/* ---- The LEADERBOARD screen (#190): friends board first, global top 50 as the
+/* ---- The LEADERBOARD screen (#190/#271): the player's groups first, global top 50 as the
    untrusted tab. A full-height column in the app's chrome voice — glass rows on
    hairlines, primary `--fg` for what matters and plain `--muted` for SECONDARY text
    and icons (user-decided 2026-08-20, amending the one-ink rule: never `--fg` +
    opacity for a resting secondary; opacity stays an interaction treatment) — with
    the game's numbers (ranks, scores) in the pixel face, since a score is something
    the game produced. Rows CONNECTED to the reader are marked in the accent — a quiet
-   left edge on a friend, that edge plus a tint on your own row (user-decided
+   left edge on one of your people, that edge plus a tint on your own row (user-decided
    2026-08-20, superseding the inverted selection box here). ---- */
 .board-screen {
   width: min(430px, 100%);
@@ -6491,6 +6442,287 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   padding: 2px;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
+}
+/* THE SCOPE PAGER (#271, user-decided 2026-09-14 — the third design of this control; the
+   reasoning is in ScopePager.tsx). One horizontal line of PAGES, native scroll-snap: the
+   page in the middle at full strength, its neighbours peeking in at the sides at a
+   quarter, both edges fading into the ground; under it the DOTS, the active one long. */
+.scope {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  flex: none;
+}
+.scope-blank {
+  height: 84px;
+}
+.scope-pager {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 5%, #000 95%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 5%, #000 95%, transparent);
+}
+.scope-pager::-webkit-scrollbar {
+  display: none;
+}
+/* A PAGE: 60% of the line, snapped to its centre — the neighbours peek in over the
+   remaining 20% a side, the outer 8% fading; the first and last carry the margin that
+   lets them reach the middle. */
+.scope-page {
+  flex: 0 0 60%;
+  scroll-snap-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0 6px;
+  margin: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--fg);
+  cursor: pointer;
+  /* A neighbour is READABLE (user-reported 2026-09-14: "the group on the left is almost
+     invisible" at a quarter) — half strength, the outer 5% of the line fading. */
+  opacity: 0.55;
+  transition: opacity 160ms linear;
+}
+.scope-page.on {
+  opacity: 1;
+}
+.scope-page:first-child {
+  margin-left: 20%;
+}
+.scope-page:last-child {
+  margin-right: 20%;
+}
+/* THE TITLE: the scope's name in the chrome's voice, one size, and — on the middle page —
+   the app's CORNER BRACKETS around it (the device frame's selection mark, the focus's
+   own): this is the framed one, and a tap goes into it. */
+.scope-title {
+  position: relative;
+  display: inline-block;
+  padding: 8px 12px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ui);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+.scope-corner {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--fg);
+  animation: scope-corner-in 160ms ease-out both;
+}
+.scope-corner.tl { top: 0; left: 0; border-right: 0; border-bottom: 0; }
+.scope-corner.tr { top: 0; right: 0; border-left: 0; border-bottom: 0; }
+.scope-corner.bl { bottom: 0; left: 0; border-right: 0; border-top: 0; }
+.scope-corner.br { bottom: 0; right: 0; border-left: 0; border-top: 0; }
+@keyframes scope-corner-in {
+  from { opacity: 0; scale: 1.6; }
+  to { opacity: 1; scale: 1; }
+}
+.scope-page:hover:not(.on) {
+  opacity: 0.8;
+}
+.scope-page.on:active .scope-title {
+  color: var(--muted);
+}
+/* The line under the name: which of a thing (a group's size, GLOBAL's TOP 50), the
+   archive day's tag dress. */
+.scope-sub {
+  font-family: var(--ui);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+/* THE DOTS: one per page, the active one drawn long — and it TRAVELS: the width moves
+   from dot to dot, so the change reads as one mark sliding rather than two appearing. */
+.scope-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 14px;
+}
+.scope-dot {
+  width: 6px;
+  height: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 1px;
+  background: var(--fg);
+  opacity: 0.28;
+  cursor: pointer;
+  transition: width 180ms cubic-bezier(0.2, 1, 0.3, 1), opacity 120ms linear;
+}
+.scope-dot.on {
+  width: 18px;
+  opacity: 1;
+}
+@media (max-width: 400px) {
+  .scope-title {
+    font-size: 15px;
+  }
+}
+
+/* The three boards of a group: ONE framed switch, three EQUAL cells (user-reported
+   2026-09-14: bare labels of three widths "float in the screen with no purpose, no
+   affordance"). The frame is the affordance; the inverted cell is the state. */
+.period-tabs {
+  flex: none;
+}
+.period-tabs .board-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+@media (max-width: 400px) {
+  .period-tabs .board-tab {
+    font-size: 11px;
+    letter-spacing: 0.04em;
+  }
+}
+
+/* THE GROUP'S OWN SCREEN (#271, user-decided 2026-09-14: "managing the group should have
+   its own screen"): the selection's shell (flat `--bg`, the header row with the way back
+   and the name), the members as the board's own rows, the owner's ✕ at every other row's
+   end (opening the confirmation — the act lands there, never on the row), then INVITE
+   and the quiet LEAVE. */
+.group-screen .modal-bar .topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.group-body {
+  width: min(430px, 100% - 28px);
+  margin: 0 auto;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0 24px;
+}
+.group-body .board-section {
+  margin-top: 6px;
+}
+.group-members {
+  flex: none;
+  overflow: visible;
+}
+.group-calls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  margin-top: auto;
+  padding-top: 32px;
+}
+.group-calls .btn-primary {
+  width: 100%;
+}
+/* NAMING A NEW GROUP: one field in the middle of the screen, the call under it. The
+   field is the account area's input at the step's own size, centred type, 16px so a
+   phone never zooms to it. */
+.group-create {
+  width: min(360px, 100% - 28px);
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 24px;
+  padding-bottom: 72px;
+}
+.group-create-input {
+  width: 100%;
+  padding: 16px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--fg);
+  font-family: var(--ui);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+.group-create-input::placeholder {
+  color: var(--muted);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+.group-create-input:focus {
+  outline: none;
+  border-color: var(--fg);
+}
+/* The owner's ✕ at a managed row's end (the group screen): a small square that opens
+   the confirmation. */
+.board-row.managed {
+  grid-template-columns: 42px 28px minmax(0, 1fr) auto auto;
+}
+.board-row.playing.managed {
+  grid-template-columns: 42px 28px minmax(0, 1fr) auto auto auto;
+}
+.board-row.waiting.managed .board-name {
+  grid-column: 3 / 4;
+}
+.board-remove {
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--fg);
+  border-radius: var(--r-sm);
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  text-shadow: none;
+}
+.board-remove:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* A WEEK or a MONTH row: the podium points under the unit caption, the tiebreakers as a
+   quiet second line under the name (beside it they ate the name on a phone). */
+.board-ident {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.board-detail {
+  font-family: var(--ui);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .board-tab {
   flex: 1;
@@ -6650,7 +6882,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   color: var(--fg);
   translate: 0 1px;
 }
-/* No rank yet (a waiting friend): a small solid tick, CENTERED in the rank column
+/* No rank yet (a waiting member): a small solid tick, CENTERED in the rank column
    (user feedback 2026-08-20, second pass — the pixel hyphen sat left and thin), so
    the cell never reads as a rendering hole. Secondary ink, like the ranks around it. */
 .board-norank {
@@ -6688,14 +6920,14 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    history line's own marker), as a 2px inset left edge. It is ONE family said at two
    strengths (user-decided 2026-08-20, superseding the inverted selection box on the own
    row: a solid block of foreground in a list of glass rows shouted, and it left nothing
-   quieter for a friend to wear).
-     - a FRIEND among the global rows: the edge alone, nothing else touched;
+   quieter for a member to wear).
+     - one of your GROUPS' members among the global rows: the edge alone, nothing else touched;
      - YOUR row: that edge, plus a whisper of the accent in the fill and the hairline,
        plus the name at the action weight.
    The edge is an INSET SHADOW rather than a border-left, so marking a row cannot shift
-   the grid under it by a pixel. Scoped to the GLOBAL list in the screen — on the friends
-   board every row is a friend, and marking everything marks nothing. */
-.board-row.friend,
+   the grid under it by a pixel. Scoped to the GLOBAL list in the screen — on a group's
+   board every row is one of your people (#271), and marking everything marks nothing. */
+.board-row.mate,
 .board-row.me {
   box-shadow: inset 2px 0 0 var(--accent);
 }
@@ -6775,21 +7007,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   border-top: 2px dashed var(--rail);
 }
 
-/* INVITE is the screen's one big action — the device-card button, parked on the
-   column's bottom edge. */
-.board-invite {
-  flex: none;
-}
-/* ON THE SAME EDGE AS THE TUTORIAL'S MIX (user-reported 2026-09-02: the two buttons sat
-   at different heights, "a weird feeling of the same button being moved around"): MIX
-   sits 14px off a phone's bottom, and this one sat 38 — `.app`'s 28px pad plus the
-   `.mix-btn` phone margin. The pad is given back here, so both land on 14. */
-@media (max-width: 640px) {
-  .board-invite {
-    margin-bottom: -14px;
-  }
-}
-
 @media (max-width: 640px) {
   .board-screen {
     /* The mobile .app scrolls the page; the board keeps its own internal scroll by
@@ -6801,9 +7018,10 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   }
 }
 
-/* ---- The invite landing's confirmation (#189, user feedback 2026-08-20): the click
-   now SAYS what it did — the inviter's mark and name over FRIEND ADDED, PLAY onward.
-   Vertically self-centering (auto margins), like the app's other HUD-less screens. ---- */
+/* ---- The group invite landing (#271; the shape is #189's, user feedback 2026-08-20): the
+   group's name over its members' marks, JOIN, and after the tap it SAYS what it did —
+   JOINED, the board and PLAY onward. Vertically self-centering (auto margins), like the
+   app's other HUD-less screens. ---- */
 .invite-done {
   width: min(340px, 100%);
   margin: auto 0;
@@ -6823,6 +7041,22 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   font-weight: 650;
   letter-spacing: 0.03em;
 }
+/* The members' marks in a row that wraps, each a small framed tile. */
+.invite-marks {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-width: 100%;
+}
+.invite-marks .avatar {
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
 .invite-done-line {
   margin: 0;
   font-family: var(--ui);
@@ -6836,11 +7070,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   width: 100%;
   margin-top: 12px;
 }
-/* PLAY under ADD FRIEND wears the bare secondary dress (`.mix-btn + .btn-secondary`, the
-   one position that earns it); the pair's seam is the group's own gap. */
-.invite-done .btn-secondary {
-  width: 100%;
-}
+/* PLAY under JOIN is the quiet word (`.mix-btn + .btn-secondary`); the pair's seam is the
+   group's own gap. */
 
 /* ---- The signed-out screen (#216, reshaped 2026-08-26 on user feedback: the
    sentence-only frame was hard to understand). The invite landing's own shape — the
@@ -6879,12 +7110,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    and every other big action in the app — the first cut sized it to its label and read as
    too narrow (user feedback 2026-08-26). The first one keeps the invite CTA's breathing
    room off the note above it. */
-.signed-out .btn {
+.signed-out .btn-primary {
   width: 100%;
   margin-top: 12px;
-}
-.signed-out .btn + .btn {
-  margin-top: 0;
 }
 
 /* ---------------------------------------------------------------------------
@@ -7071,6 +7299,96 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   to {
     opacity: 0;
   }
+}
+
+/* THE CONFIRMATION (#271, user-decided 2026-09-14): the error screen's shape and beats,
+   in the plain voice — nothing has gone wrong yet, so the title is `--fg`, not the danger
+   ink — with the act as the QUIET DANGER control (destruction never glows) over CANCEL.
+   What is at stake stands above the title: a member's face, or the group's name. */
+.confirm-screen .error-title {
+  color: var(--fg);
+}
+.confirm-screen .error-body .btn-danger {
+  width: 100%;
+  margin-top: 12px;
+}
+.confirm-screen .link-quiet-btn {
+  margin-top: 4px;
+}
+.confirm-face {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.confirm-face .avatar {
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.confirm-name {
+  font-family: var(--ui);
+  font-size: 14px;
+  font-weight: 550;
+  letter-spacing: 0.02em;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.confirm-name.anon {
+  color: var(--muted);
+}
+/* The group's name as the held word it is on the board's head row. */
+.confirm-group {
+  display: inline-block;
+  padding: 8px 10px 7px;
+  margin-bottom: 8px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1;
+  background: var(--fg);
+  color: var(--bg);
+  border-radius: 2px;
+}
+/* WHO TAKES IT OVER: the board's own rows as radios — the picked one wears the reader's
+   own-row dress (the accent edge and tint), one picked at a time. A row is a <button>,
+   so the list's grid dress is restated on it. */
+.confirm-pick {
+  width: 100%;
+  flex: none;
+  max-height: 40vh;
+  padding: 0;
+  margin: 4px 0 8px;
+  text-align: left;
+}
+.confirm-pick .board-row {
+  width: 100%;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  color: var(--fg);
+  border-style: dashed;
+}
+.confirm-pick .board-row:hover {
+  border-color: var(--line-strong);
+}
+.confirm-pick .board-row.picked {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  background: color-mix(in srgb, var(--accent) 12%, var(--glass));
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.confirm-pick .board-row.picked .board-name {
+  font-weight: 700;
 }
 @media (max-width: 640px), (max-height: 500px) {
   /* 4x rather than 5x — the standing pixel-art rule allows only WHOLE steps. */

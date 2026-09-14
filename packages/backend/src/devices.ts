@@ -11,7 +11,7 @@
 //                                    — SIGN OUT one listed device by deleting its base item
 //                                      directly, then answer with the list as it now stands.
 //
-// POST-only for the /friends reason — the token is the auth and it travels in the BODY,
+// POST-only — the token is the auth and it travels in the BODY,
 // never a query string, so there is no way to ask about an account without proving you hold
 // one of its devices. The route reads NO query parameter, which is what its CloudFront
 // behavior's EMPTY allow-list says (the root AGENTS.md three-package contract); a production
@@ -194,7 +194,7 @@ export async function handleDevices(
     // Revoking the CALLING device is allowed — signing this one out is a thing a person may
     // want, and refusing it would be a rule the screen then has to explain. A device id that
     // is not on this account simply removes nothing; the answer is the list either way, so
-    // the screen never has to guess what a write did (the /friends house rule).
+    // the screen never has to guess what a write did (the live routes' house rule).
     const outcome = await devices.revoke(resolved.account.accountId, target, revokeKey);
     // `absent` is idempotent success: another concurrent request removed the BASE item, and
     // the eventually-consistent GSI is precisely where its stale row may remain. A mismatch

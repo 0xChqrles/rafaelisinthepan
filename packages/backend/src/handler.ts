@@ -7,12 +7,13 @@ import {
   decodeWordResult,
   nextResetAt,
   secondsUntilNextReset,
-  INVITE_SEGMENT,
+  GROUP_ID_PATTERN,
+  GROUP_SEGMENT,
   PUBLIC_ID_PATTERN,
   SHARE_TOKEN_SOURCE,
   RESET_HOUR,
   TIME_ZONE,
-  type InviteCardData,
+  type CardFace,
 } from '@whippin/shared';
 import {
   type FnUrlEvent,
@@ -31,8 +32,8 @@ import {
 } from './respond';
 import {
   renderCardPng,
-  renderInviteCardPng,
-  renderInviteHtml,
+  renderGroupCardPng,
+  renderGroupHtml,
   renderShareHtml,
   renderWordCardPng,
   renderWordShareHtml,
@@ -42,8 +43,8 @@ import { isValidDate } from './layout';
 import { handleBoard } from './board';
 import { handleDevices, type DeviceHandlerDeps } from './devices';
 import type { DeviceStore } from './deviceStore';
-import { handleFriends } from './friends';
-import type { FriendStore } from './friendStore';
+import type { GroupStore } from './groupStore';
+import { handleGroups, readGroupFace } from './groups';
 import { handleHistory } from './history';
 import { handleLink, type LinkHandlerDeps } from './link';
 import { handleProfile } from './profile';
@@ -66,10 +67,11 @@ export interface HandlerDeps {
   scores?: ScoreHandlerDeps;
   // Player profiles (#188), same optionality rationale.
   profiles?: ProfileStore;
-  // The friends graph (#189), same optionality rationale.
-  friends?: FriendStore;
+  // Groups (#271), same optionality rationale: the /groups route, the trusted boards and
+  // the `/g/<id>` preview all read them.
+  groups?: GroupStore;
   // Devices and the accounts they belong to (#216). EVERY authenticated route (/devices,
-  // /profile, /friends, /board, /round, /history) resolves its caller through this ONE
+  // /profile, /groups, /board, /round, /history) resolves its caller through this ONE
   // top-level store — deliberately not a field of a route bundle, so two routes can never
   // be wired to two different stores, with half the private surface authenticating a
   // token the other half answers 401 `unknown_device` for.
@@ -85,8 +87,9 @@ export interface HandlerDeps {
   rounds?: RoundHandlerDeps;
   // Email account linking (#204), same optionality rationale. It is the one route bundle
   // that reaches ACROSS the others — a verified link moves the day's round and score rows,
-  // credits the adopting account's solved days and merges the friend graph — so it carries
-  // those stores explicitly rather than reading them off another route's deps.
+  // credits the adopting account's solved days and drops a deleted account's group
+  // memberships — so it carries those stores explicitly rather than reading them off
+  // another route's deps.
   link?: LinkHandlerDeps;
 }
 
@@ -119,20 +122,20 @@ const SHARE_MAX_AGE = 31_536_000;
 // A SIGNED share (user-decided 2026-09-05) carries the player's publicId as a second
 // segment — `/s/<token>/<publicId>`, card `/og/<token>/<publicId>.png` (`shared/invite.ts`
 // spells both). The token is read exactly as before; the id is validated with the SHARED
-// pattern, and the page is served under the invite preview's short TTL because, like the
-// invite, it names a player who can rename or redraw.
+// pattern, and the page is served under the group preview's short TTL because, like the
+// group's, it names a player who can rename or redraw.
 const OG_PNG_RE = new RegExp(`^/og/(${SHARE_TOKEN_SOURCE})(?:/([^/]+))?\\.png$`);
 const SHARE_RE = new RegExp(`^/s/(${SHARE_TOKEN_SOURCE})(?:/([^/]+))?$`);
 
-// The #189 invite link and its card. Unlike a share token these are NOT content-addressed
-// — the player behind the id can rename themselves or redraw their mark — so they carry a
-// short TTL instead of the share routes' year: a profile edit reaches new unfurls in
-// minutes, and the apps that already unfurled the link cached the picture on their side
-// anyway. The id is matched loosely and validated with the SHARED pattern, so there is one
-// spelling of what a publicId is.
-const INVITE_MAX_AGE = 300;
-const INVITE_PAGE_RE = new RegExp(`^/${INVITE_SEGMENT}/([^/]+)$`);
-const INVITE_CARD_RE = new RegExp(`^/og/${INVITE_SEGMENT}/([^/]+)\\.png$`);
+// The #271 group invite link and its card. Unlike a share token these are NOT
+// content-addressed — members join, leave and redraw their marks — so they carry a short
+// TTL instead of the share routes' year: a change reaches new unfurls in minutes, and the
+// apps that already unfurled the link cached the picture on their side anyway. The id is
+// matched loosely and validated with the SHARED pattern, so there is one spelling of what a
+// group id is. The signed share's page (a player who can rename) shares the same TTL.
+const PREVIEW_MAX_AGE = 300;
+const GROUP_PAGE_RE = new RegExp(`^/${GROUP_SEGMENT}/([^/]+)$`);
+const GROUP_CARD_RE = new RegExp(`^/og/${GROUP_SEGMENT}/([^/]+)\\.png$`);
 
 // Absolute origin of THIS request — the same host serves /s, /og and the SPA, so it is the
 // base for the OG image URL and the game redirect. Honors the CloudFront forwarded headers.
@@ -148,14 +151,13 @@ export function createHandler(deps: HandlerDeps) {
   const origin = deps.allowedOrigin ?? '*';
   const cors = corsHeaders(origin);
 
-  // The face a PUBLIC page draws for a player — the invite preview's, and a signed
-  // share's. Best-effort, exactly like a board row's dressing: the preview must always
-  // draw a face, so a failed read falls back to the ASSIGNED identity (`anonName` /
-  // `defaultAvatar`, which the renderers resolve) rather than failing the link. That
-  // fallback is the one answer NOT cached — an assigned face held at the edge for a
-  // player who has drawn a real one is simply wrong, where a 404 ("never customized") is
-  // the right answer and caches like any other. `live` is false for an account an email
-  // link deleted (#204): each page decides what that means for it.
+  // The face a PUBLIC page draws for a player — a signed share's. Best-effort, exactly
+  // like a board row's dressing: the preview must always draw a face, so a failed read
+  // falls back to the ASSIGNED identity (`anonName` / `defaultAvatar`, which the renderers
+  // resolve) rather than failing the link. That fallback is the one answer NOT cached — an
+  // assigned face held at the edge for a player who has drawn a real one is simply wrong,
+  // where a 404 ("never customized") is the right answer and caches like any other. `live`
+  // is false for an account an email link deleted (#204): the share falls back to plain.
   async function readFace(
     publicId: string,
   ): Promise<{ profile: ProfileRecord | null; answered: boolean; live: boolean }> {
@@ -173,14 +175,15 @@ export function createHandler(deps: HandlerDeps) {
     const rawPath = event.rawPath ?? '/';
     const normalizedPath = rawPath.replace(/\/+$/, '') || '/';
     const isScoresRoute = normalizedPath === '/scores';
-    // The profile route (#188) is live data with a write path, like /scores. The friends
-    // route (#189) is the same shape again — and POST-only, which it enforces itself.
+    // The profile route (#188) is live data with a write path, like /scores.
     const isProfileRoute = normalizedPath === '/profile';
-    const isFriendsRoute = normalizedPath === '/friends';
+    // Groups (#271): GET is a group's public face, POST the caller's own groups and every
+    // membership write — the device token is the auth, in the body.
+    const isGroupsRoute = normalizedPath === '/groups';
     // The leaderboard reads (#190): the same live shape once more — GET is the global
-    // top 50, POST the authenticated friends board.
+    // top 50, POST a group's boards (#271).
     const isBoardRoute = normalizedPath === '/board';
-    // The per-round guess log (#201) — POST-only like /friends (the device token is the auth).
+    // The per-round guess log (#201) — POST-only (the device token is the auth).
     const isRoundRoute = normalizedPath === '/round';
     // The private player history (#211): the archive calendar's month, the chooser's
     // status strip and the streak's solved-day list. POST-only for the same reason.
@@ -194,7 +197,7 @@ export function createHandler(deps: HandlerDeps) {
     const isLiveRoute =
       isScoresRoute ||
       isProfileRoute ||
-      isFriendsRoute ||
+      isGroupsRoute ||
       isBoardRoute ||
       isRoundRoute ||
       isHistoryRoute ||
@@ -218,44 +221,39 @@ export function createHandler(deps: HandlerDeps) {
     }
 
     try {
-      // The #189 invite link — the page a chat unfurls, and the card it unfurls into.
-      // Both are addressed by the SENDER's publicId, which is public by design (an
-      // invite link IS one), so nothing here is authenticated. Nothing here writes
-      // either: the mutual edge is recorded by the SPA landing this page bounces to,
-      // with the CLICKER's own key. Resolves before the puzzle logic for the share
-      // routes' reason — no lang, no day, nothing to 400 on.
-      const inviteCard = INVITE_CARD_RE.exec(normalizedPath);
-      const invitePage = inviteCard ? null : INVITE_PAGE_RE.exec(normalizedPath);
-      const inviteMatch = inviteCard ?? invitePage;
-      if (inviteMatch) {
-        const publicId = inviteMatch[1];
-        if (!PUBLIC_ID_PATTERN.test(publicId)) {
+      // The #271 group invite link — the page a chat unfurls, and the card it unfurls
+      // into. Both are addressed by the GROUP id, which is public by design (an invite link
+      // IS one), so nothing here is authenticated. Nothing here writes either: the
+      // membership is recorded by the SPA landing this page bounces to, with the CLICKER's
+      // own key. Resolves before the puzzle logic for the share routes' reason — no lang,
+      // no day, nothing to 400 on.
+      const groupCard = GROUP_CARD_RE.exec(normalizedPath);
+      const groupPage = groupCard ? null : GROUP_PAGE_RE.exec(normalizedPath);
+      const groupMatch = groupCard ?? groupPage;
+      if (groupMatch) {
+        const groupId = groupMatch[1];
+        if (!GROUP_ID_PATTERN.test(groupId)) {
           return errorResponse(404, 'not_found', 'Invalid invite link.', cors);
         }
-        const { profile, answered, live } = await readFace(publicId);
-        // An invite link carries the SENDER's account id, and an email link can delete
-        // that account (#204). The link then names nobody: it expires rather than
-        // unfurling as the assigned face of a player who is gone, and the SPA landing it
-        // bounces to refuses the edge for the same reason (`/friends` checks the target).
-        if (answered && !live) {
+        if (!deps.groups || !deps.profiles) throw new Error('Groups are not configured.');
+        const face = await readGroupFace(deps.groups, deps.profiles, groupId);
+        // A link naming no group is over: it expires rather than unfurling as an empty
+        // card, and the landing it would bounce to refuses the join for the same reason.
+        if (!face) {
           return errorResponse(404, 'not_found', 'This invite link has expired.', {
             ...cors,
-            'Cache-Control': `public, max-age=${INVITE_MAX_AGE}`,
+            'Cache-Control': `public, max-age=${PREVIEW_MAX_AGE}`,
           });
         }
-        const cacheControl = answered ? `public, max-age=${INVITE_MAX_AGE}` : 'no-store';
-        if (inviteCard) {
-          // An EMPTY stored avatar is no avatar (the board's rule): '' is not a decodable
-          // drawing, and the assigned mark is keyed on the absence.
-          const buffer = await renderInviteCardPng({
-            publicId,
-            name: profile?.name ?? '',
-            avatar: profile?.avatar || null,
-          });
+        // A face drawn from a FAILED profile read is the assigned fallback, and holding it
+        // at the edge would put a stranger's mark on a member who drew their own.
+        const cacheControl = face.answered ? `public, max-age=${PREVIEW_MAX_AGE}` : 'no-store';
+        if (groupCard) {
+          const buffer = await renderGroupCardPng({ name: face.group.name, members: face.members });
           return png(200, buffer, { 'Cache-Control': cacheControl });
         }
         const base = deps.siteOrigin ?? requestOrigin(event);
-        return html(200, renderInviteHtml(publicId, profile?.name ?? '', base), {
+        return html(200, renderGroupHtml(groupId, face.group.name, base), {
           'Cache-Control': cacheControl,
         });
       }
@@ -273,15 +271,15 @@ export function createHandler(deps: HandlerDeps) {
         }
         // WHO signed it. An account an email link deleted (#204) signs nothing: the
         // result is still real, so the page falls back to the PLAIN share — the card
-        // without a face — rather than expiring like an invite does, since the score was
-        // never the part that went away. A failed read draws the assigned identity and,
-        // like the invite preview, is the one answer not cached; an answered one is held
-        // for the invite preview's minutes.
-        let by: (InviteCardData & ShareSigner) | null = null;
+        // without a face — rather than expiring, since the score was never the part that
+        // went away. A failed read draws the assigned identity and,
+        // like the group preview, is the one answer not cached; an answered one is held
+        // for the group preview's minutes.
+        let by: (CardFace & ShareSigner) | null = null;
         let cacheControl = `public, max-age=${SHARE_MAX_AGE}, immutable`;
         if (signedBy !== undefined) {
           const { profile, answered, live } = await readFace(signedBy);
-          cacheControl = answered ? `public, max-age=${INVITE_MAX_AGE}` : 'no-store';
+          cacheControl = answered ? `public, max-age=${PREVIEW_MAX_AGE}` : 'no-store';
           if (!answered || live) {
             by = { publicId: signedBy, name: profile?.name ?? '', avatar: profile?.avatar || null };
           }
@@ -350,18 +348,23 @@ export function createHandler(deps: HandlerDeps) {
         return await handleProfile(event, deps.profiles, deps.deviceStore, instant, cors);
       }
 
-      if (isFriendsRoute) {
-        if (!deps.friends) throw new Error('The friends graph is not configured.');
+      if (isGroupsRoute) {
+        if (!deps.groups || !deps.profiles) throw new Error('Groups are not configured.');
         if (!deps.deviceStore) throw new Error('Device identity is not configured.');
-        return await handleFriends(event, deps.friends, deps.deviceStore, instant, cors);
+        return await handleGroups(
+          event,
+          { groups: deps.groups, devices: deps.deviceStore, profiles: deps.profiles },
+          instant,
+          cors,
+        );
       }
 
       if (isBoardRoute) {
         // The board is a READ over what the stores already hold — score rows for the
-        // population, edges for the trusted tab, profiles to dress the rows, and since
-        // #206 the friends' stored ROUNDS plus the day's full artifact, which the
-        // in-progress rows' exact try counts are deduped against.
-        if (!deps.scores || !deps.profiles || !deps.friends || !deps.deviceStore) {
+        // population, member lists for the trusted boards (#271), profiles to dress the
+        // rows, and since #206 the members' stored ROUNDS plus the day's full artifact,
+        // which the in-progress rows' exact try counts are deduped against.
+        if (!deps.scores || !deps.profiles || !deps.groups || !deps.deviceStore) {
           throw new Error('The leaderboard is not configured.');
         }
         return await handleBoard(
@@ -369,7 +372,7 @@ export function createHandler(deps: HandlerDeps) {
           {
             scores: deps.scores.scoreStore,
             profiles: deps.profiles,
-            friends: deps.friends,
+            groups: deps.groups,
             devices: deps.deviceStore,
             rounds: deps.rounds?.roundStore,
             puzzles: deps.store,

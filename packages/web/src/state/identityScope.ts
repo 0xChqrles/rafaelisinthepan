@@ -19,6 +19,7 @@
 import { onIdentityChange } from '../identity';
 import { resetAccountSummary } from './account';
 import { reconcileGameStateIdentity } from './gameStore';
+import { resetGroups } from './groups';
 import { rearmPlayerHistory, resetPlayerHistory } from './history';
 import { kickRoundSync, rearmRoundSync, resetRoundSync } from './roundSync';
 import { kickWordRoundSync, rearmWordRoundSync, resetWordRoundSync } from './wordRoundSync';
@@ -79,6 +80,8 @@ export function installIdentityScope(): () => void {
       resetRoundSync();
       resetPlayerHistory();
       resetAccountSummary();
+      // …and the groups (#271): a device that leaves an account may not keep its tabs.
+      resetGroups();
     }
     // One state write owns the persisted owner tag and the selective map clearing. It is
     // also the first-acquisition bind above, where the triggering act must survive.

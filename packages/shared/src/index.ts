@@ -19,5 +19,6 @@ export * from './avatar';
 export * from './avatarOutline';
 export * from './assigned';
 export * from './invite';
+export * from './groups';
 export * from './name';
 export * from './vocab';

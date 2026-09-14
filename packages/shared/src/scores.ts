@@ -79,3 +79,11 @@ export const EARLY_GUESS_CAP = 3;
 // that mode already carries. It is unspoofable because the function OVERWRITES it from
 // CloudFront's own read of the TCP peer, whatever the viewer sent under that name.
 export const VIEWER_IP_HEADER = 'x-whippin-viewer-ip';
+
+// GROUPS (#271, user-decided 2026-09-07): a named set of members with an invite link, the
+// unit every trusted board is drawn over — a pair of friends is a group of two. Both caps
+// are cross-package: the backend refuses past them and the web sizes its tabs and rows
+// from them. Counted off the membership rows (a bound, never an invariant — the friends
+// graph's rule): two simultaneous joins may land one member over.
+export const GROUPS_MAX = 10;
+export const GROUP_MEMBERS_MAX = 50;

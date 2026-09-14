@@ -5,7 +5,7 @@
 //   { token, puzzle, guesses: [...] } — append to its ordered guess log.
 //
 // WORD mode writes exactly TWICE (#202) — the intuition says the opposite, but the fast
-// game benefits least: what syncing buys is the live friends board, and a 60-second run is
+// game benefits least: what syncing buys is the live group board, and a 60-second run is
 // over before anyone opens it.
 //   { token, puzzle, turnstileToken } — START: stamp this round's clock from the SERVER's
 //                                       own clock, onto the same record, FOR THE CALLING
@@ -20,7 +20,7 @@
 // against stale local state, the server answers with truth, and the tab re-renders correct.
 // `now` is the server's own clock at the moment it answered, which is what lets a client
 // anchor its countdown to the server's `startedAt` without trusting its own device clock.
-// The route is POST-only for the /friends reason — the device token is the auth (#216) and
+// The route is POST-only — the device token is the auth (#216) and
 // it travels in the BODY, never in a query string, so there is no way to ask without proving
 // who you are. Its CloudFront behavior forwards exactly the three addressing queries (the
 // root AGENTS.md allowList contract); a production POST still needs

@@ -23,7 +23,7 @@ export function recoveredLinkResult(input: {
     accountId: summary.accountId,
     deviceId: summary.deviceId,
     email: requestedEmail,
-    mergePending: summary.mergePending,
+    departurePending: summary.departurePending,
     stakes: null,
   };
 }

@@ -67,8 +67,8 @@ export default defineConfig(({ command, mode }) => {
     // THE CDN'S OWN PATH LIST, restated for local development. In production the WEB
     // distribution hands these three patterns to the API origin instead of the bucket
     // (infra/lib/web-stack.ts `additionalBehaviors`): `/s/*` the share page, `/og/*`
-    // every card image, and `/i/*` #189's invite link, which the backend renders so it
-    // unfurls in a chat as the sender's own mark and name.
+    // every card image, and `/g/*` #271's group invite link, which the backend renders so
+    // it unfurls in a chat as the group's name and its members' marks.
     //
     // Without this the dev server's SPA fallback answers them with index.html and the
     // app's router sees a path it no longer owns — a pasted invite link silently lands
@@ -81,13 +81,13 @@ export default defineConfig(({ command, mode }) => {
     // With no siteOrigin configured the backend builds its redirect and its og:image
     // URLs from the REQUEST's Host, so forwarding the browser's own Host is what makes
     // those absolute URLs point back at this dev server. Vite's string shorthand
-    // (`'^/i/': apiBase`) does NOT leave them off — measured: the invite page came back
+    // (`'^/g/': apiBase`) does NOT leave them off — measured: the invite page came back
     // redirecting to `http://localhost:8787/join/…`, the backend rather than the app,
     // which is a dead end wearing a working page's clothes. Hence the explicit object.
     server: apiBase
       ? {
           proxy: Object.fromEntries(
-            ['^/i/', '^/s/', '^/og/'].map((pattern) => [
+            ['^/g/', '^/s/', '^/og/'].map((pattern) => [
               pattern,
               { target: apiBase, changeOrigin: false, xfwd: false },
             ]),

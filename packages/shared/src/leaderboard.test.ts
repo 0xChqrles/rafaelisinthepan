@@ -6,7 +6,10 @@ import {
   cutBoard,
   orderPlaying,
   rankBoard,
+  rankPeriod,
+  standingIn,
   type BoardScore,
+  type PeriodDay,
   type PlayingScore,
 } from './leaderboard';
 
@@ -176,5 +179,97 @@ describe('orderPlaying (#206)', () => {
       'bbbbbbbbbbbbbbbb',
       'aaaaaaaaaaaaaaaa',
     ]);
+  });
+});
+
+// The #271 PERIOD rule: podium points per day (3/2/1 by competition rank), then solved
+// days, then the total in the mode's direction, publicId last; equal lines share a rank.
+describe('rankPeriod (#271)', () => {
+  const day = (publicId: string, date: string, score: number): PeriodDay => ({ publicId, date, score });
+  const A = 'aaaaaaaaaaaaaaaa';
+  const B = 'bbbbbbbbbbbbbbbb';
+  const C = 'cccccccccccccccc';
+  const D = 'dddddddddddddddd';
+
+  it('pays podium points per day and ranks by them first', () => {
+    const ranked = rankPeriod(
+      [
+        // Day 1: A first (3), B second (2), C third (1).
+        day(A, '2026-09-07', 3), day(B, '2026-09-07', 5), day(C, '2026-09-07', 9),
+        // Day 2: C first (3), A second (2); B absent.
+        day(C, '2026-09-08', 4), day(A, '2026-09-08', 6),
+      ],
+      'sentence',
+    );
+    expect(ranked.map((row) => [row.publicId, row.rank, row.points, row.solvedDays, row.total])).toEqual([
+      [A, 1, 5, 2, 9],
+      [C, 2, 4, 2, 13],
+      [B, 3, 2, 1, 5],
+    ]);
+  });
+
+  it('pays a shared first place to both, and the next rank is then third', () => {
+    const ranked = rankPeriod(
+      [day(A, '2026-09-07', 4), day(B, '2026-09-07', 4), day(C, '2026-09-07', 7)],
+      'sentence',
+    );
+    expect(ranked.map((row) => [row.publicId, row.points])).toEqual([[A, 3], [B, 3], [C, 1]]);
+    // Equal on every number: a shared rank, never a fake ordering.
+    expect(ranked.map((row) => row.rank)).toEqual([1, 1, 3]);
+  });
+
+  it('breaks equal points by solved days, then by fewer tries', () => {
+    const ranked = rankPeriod(
+      [
+        // Day 1: B first (3), C second (2), A third (1).
+        day(B, '2026-09-07', 2), day(C, '2026-09-07', 5), day(A, '2026-09-07', 9),
+        // Day 2: D first (3), A second (2).
+        day(D, '2026-09-08', 8), day(A, '2026-09-08', 9),
+      ],
+      'sentence',
+    );
+    // A, B and D all hold 3 points: A played two days and leads them; B and D played one
+    // each, and B's 2 tries beat D's 8. C's 2 points come last.
+    expect(ranked.map((row) => [row.publicId, row.rank, row.points, row.solvedDays, row.total])).toEqual([
+      [A, 1, 3, 2, 18],
+      [B, 2, 3, 1, 2],
+      [D, 3, 3, 1, 8],
+      [C, 4, 2, 1, 5],
+    ]);
+  });
+
+  it('reads the total in Word mode the other way: more words is better', () => {
+    const ranked = rankPeriod(
+      [day(A, '2026-09-07', 10), day(B, '2026-09-08', 30)],
+      'word',
+    );
+    // Each is first on their own day: equal points and days, so the total decides.
+    expect(ranked.map((row) => row.publicId)).toEqual([B, A]);
+  });
+
+  it('is empty for an empty range and pure for its input', () => {
+    expect(rankPeriod([], 'sentence')).toEqual([]);
+    const input = [day(A, '2026-09-07', 1)];
+    const before = [...input];
+    rankPeriod(input, 'sentence');
+    expect(input).toEqual(before);
+  });
+});
+
+// The #271 standing line reads the caller's DAY rank off the same competition ranking the
+// board draws, out of the members who recorded a score today.
+describe('standingIn (#271)', () => {
+  it('is the caller rank out of the ranked rows, ties shared', () => {
+    const ranked = rankBoard(rows(5, 3, 5, 9), 'sentence');
+    expect(standingIn(ranked, id(1))).toEqual({ rank: 1, of: 4 });
+    // The two 5s share second place, competition style.
+    expect(standingIn(ranked, id(0))).toEqual({ rank: 2, of: 4 });
+    expect(standingIn(ranked, id(2))).toEqual({ rank: 2, of: 4 });
+    expect(standingIn(ranked, id(3))).toEqual({ rank: 4, of: 4 });
+  });
+
+  it('is null for a caller with no recorded score on the board', () => {
+    expect(standingIn(rankBoard(rows(4), 'sentence'), 'z'.repeat(16))).toBeNull();
+    expect(standingIn([], id(0))).toBeNull();
   });
 });

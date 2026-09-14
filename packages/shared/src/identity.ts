@@ -3,7 +3,7 @@
 // Until #216 the identity WAS a 128-bit secret in localStorage (#187), and the account id
 // was derived from it on the client. Every device that reached an account held that same
 // secret, so nothing was device-specific and nothing could be revoked: the only remedy for
-// a leaked account was to abandon it — losing the archive, the streak and every friend.
+// a leaked account was to abandon it — losing the archive, the streak and every group.
 // A device now holds its own REVOCABLE token, and the account id is assigned by the server.
 //
 // This module is a cross-package contract. The WEB mints the token and sends it; the

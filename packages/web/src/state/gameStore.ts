@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { generatePublicId, PUBLIC_ID_PATTERN } from '@whippin/shared';
+import { generatePublicId, GROUP_ID_PATTERN, PUBLIC_ID_PATTERN } from '@whippin/shared';
 import { isLang, type Mode } from '../langs';
 import { CLAIM_ZONE, runMs } from '../game/wordGame';
 import {
@@ -8,10 +8,10 @@ import {
 } from './gamePersistence';
 import type { RoundRunner } from '../api';
 
-// Which crowd the #190 leaderboard is showing: the friends graph (the trusted default)
+// Which crowd the #190 leaderboard is showing: a GROUP (the trusted default, #271)
 // or the global top 50. It lives here rather than in the screen because the screen
 // remounts under it without the visit ending — see `boardTab` below.
-export type BoardTab = 'friends' | 'global';
+export type BoardTab = 'group' | 'global';
 
 // A sentence round is identified by its `roundKey` = (server day, language, mode).
 //
@@ -235,16 +235,23 @@ export interface PersistedState {
   // The onboarding tutorial (#51) has been completed or skipped. Global, not
   // per-language — the mechanic is the same in both.
   onboarded: boolean;
-  // Which #190 board tab is up — FRIENDS (the trusted default) or GLOBAL. It belongs to
+  // Which #190 board tab is up — a GROUP (the trusted default, #271) or GLOBAL. It belongs to
   // the current VISIT to the leaderboard, not to the player (user feedback 2026-08-20,
   // narrowing the first cut, which made it a standing preference). Two things remount
   // that screen without ending the visit — a page REFRESH and a header MODE SWITCH (App
   // keys it on lang:mode) — and both were dropping a player who had chosen GLOBAL back
-  // onto FRIENDS. So it is PERSISTED, which is the only way to survive the reload; and
+  // onto the group. So it is PERSISTED, which is the only way to survive the reload; and
   // App RESETS it the moment a non-board route renders, which is what ends the visit.
   // That reset lives in App rather than at each entry point precisely because an entry
   // that forgot it would silently reopen on the old tab forever.
   boardTab: BoardTab;
+  // WHICH group the board last showed (#271): the tab the leaderboard reopens on, and the
+  // group whose standing the solved screen prints (user-decided 2026-09-07: "the group
+  // last opened"). Persisted like the tab, and ACCOUNT-owned — a device that leaves an
+  // account may not keep pointing at a group it is no longer in (`reconcileIdentity`).
+  // A stale id (left, removed) is simply not among the groups the server lists, and the
+  // screen falls back to the first one.
+  lastGroupId: string | null;
   // The sentence game's one-time instructions gate has been passed (2026-08-11). Unlike
   // Word mode's gate — whose START is mandatory because it starts the clock — the sentence
   // gate exists only to state the rules, so it is shown ONCE ever, globally: the rules are
@@ -291,9 +298,12 @@ interface GameState extends PersistedState {
   // Remember the last-played mode (#156, drives where `/` lands).
   setLastMode: (mode: Mode) => void;
 
-  // Which board tab is up (#190), and the end of a visit to it: FRIENDS again.
+  // Which board tab is up (#190), and the end of a visit to it: the GROUP again.
   setBoardTab: (tab: BoardTab) => void;
   resetBoardTab: () => void;
+  // The group the board last showed (#271) — set by the leaderboard on every group tab it
+  // opens, and by the solved screen's standing line on its way to the board.
+  setLastGroup: (group: string | null) => void;
 
   // Mark the onboarding tutorial as seen (finish AND skip both count — never re-nag).
   setOnboarded: () => void;
@@ -393,7 +403,7 @@ interface GameState extends PersistedState {
   recordWordGuess: (typed: string, replay: (tried: string[]) => WordRunCache) => boolean;
 }
 
-export const GAME_PERSIST_VERSION = 18;
+export const GAME_PERSIST_VERSION = 19;
 
 // Version upgrades for the persisted blob (exported for the invariant tests).
 //   v0 was a single top-level round ({ roundKey, holes, ... }); the shape is now a keyed
@@ -423,6 +433,8 @@ export const GAME_PERSIST_VERSION = 18;
 //     gate. Older blobs get false — deliberately NOT grandfathered the way `onboarded`
 //     is, because the gate teaches the history tap, which is newer than any existing
 //     player's play state; every player sees it exactly once.
+//   v19 (#271) renames the trusted tab 'friends' -> 'group' and adds `lastGroupId`; an
+//     older blob's tab reads as the default, its group as none.
 //   v9 adds `boardTab` (2026-08-20): which #190 board tab is up. Older blobs get
 //     'friends', the default the screen already opens on, so nothing changes for anyone
 //     already using it. It is persisted only so a REFRESH does not end a visit to the
@@ -573,7 +585,8 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
       lastLang: null,
       lastMode: null,
       onboarded: false,
-      boardTab: 'friends',
+      boardTab: 'group',
+      lastGroupId: null,
       sentenceRulesSeen: false,
       localSeed: null,
     };
@@ -595,7 +608,9 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
   // The pre-account seed is display-only, so a malformed one simply re-mints on next need.
   const localSeed =
     typeof p.localSeed === 'string' && PUBLIC_ID_PATTERN.test(p.localSeed) ? p.localSeed : null;
-  const boardTab = p.boardTab === 'global' ? 'global' : 'friends';
+  const boardTab = p.boardTab === 'global' ? 'global' : 'group';
+  const lastGroupId =
+    typeof p.lastGroupId === 'string' && GROUP_ID_PATTERN.test(p.lastGroupId) ? p.lastGroupId : null;
   const parsedOwner = version < 17 ? null : parseIdentityOwner(p.identityOwner);
   // `undefined` means a current-version blob claimed an owner but did not carry a valid
   // one. Fail closed: neither map may survive malformed ownership metadata.
@@ -614,6 +629,7 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
     lastMode,
     onboarded,
     boardTab,
+    lastGroupId,
     sentenceRulesSeen,
     localSeed,
   };
@@ -642,7 +658,8 @@ export function initialPersistedState(): PersistedState {
     lastLang: null,
     lastMode: null,
     onboarded: false,
-    boardTab: 'friends',
+    boardTab: 'group',
+    lastGroupId: null,
     sentenceRulesSeen: false,
     localSeed: null,
   };
@@ -654,6 +671,7 @@ export type GameMutation =
   | { type: 'setLastLang'; lang: string }
   | { type: 'setLastMode'; mode: Mode }
   | { type: 'setBoardTab'; tab: BoardTab }
+  | { type: 'setLastGroup'; group: string | null }
   | { type: 'setOnboarded' }
   | { type: 'setSentenceRulesSeen' }
   | { type: 'ensureLocalSeed'; seed: string }
@@ -757,6 +775,10 @@ export function applyGameMutation(
       return state.boardTab === mutation.tab
         ? changed(state, state)
         : changed(state, { ...state, boardTab: mutation.tab });
+    case 'setLastGroup':
+      return state.lastGroupId === mutation.group
+        ? changed(state, state)
+        : changed(state, { ...state, lastGroupId: mutation.group });
     case 'setOnboarded':
       return state.onboarded ? changed(state, state) : changed(state, { ...state, onboarded: true });
     case 'setSentenceRulesSeen':
@@ -945,7 +967,13 @@ export function applyGameMutation(
         ) {
           return changed(state, state);
         }
-        return changed(state, { ...state, identityOwner: null, outbox: {}, wordRounds: {} });
+        return changed(state, {
+          ...state,
+          identityOwner: null,
+          outbox: {},
+          wordRounds: {},
+          lastGroupId: null,
+        });
       }
       if (state.identityOwner === null) {
         return changed(state, { ...state, identityOwner: mutation.identity });
@@ -957,7 +985,7 @@ export function applyGameMutation(
         ...state,
         identityOwner: mutation.identity,
         ...(accountChanged || deviceChanged ? { wordRounds: {} } : {}),
-        ...(accountChanged ? { outbox: {} } : {}),
+        ...(accountChanged ? { outbox: {}, lastGroupId: null } : {}),
       });
     }
   }
@@ -972,6 +1000,7 @@ export function persistedStateOf(state: GameState): PersistedState {
     lastMode: state.lastMode,
     onboarded: state.onboarded,
     boardTab: state.boardTab,
+    lastGroupId: state.lastGroupId,
     sentenceRulesSeen: state.sentenceRulesSeen,
     localSeed: state.localSeed,
   };
@@ -1008,7 +1037,10 @@ export const useGameStore = create<GameState>((set, get) => {
       commit({ type: 'setBoardTab', tab });
     },
     resetBoardTab: () => {
-      commit({ type: 'setBoardTab', tab: 'friends' });
+      commit({ type: 'setBoardTab', tab: 'group' });
+    },
+    setLastGroup: (group) => {
+      commit({ type: 'setLastGroup', group });
     },
     setOnboarded: () => {
       commit({ type: 'setOnboarded' });

@@ -12,7 +12,7 @@ import { createHandler } from './handler';
 import { fsStore } from './fsStore';
 import { defaultLocalStoreRoot } from './layout';
 import { memoryDeviceStore } from './memoryDeviceStore';
-import { memoryFriendStore } from './memoryFriendStore';
+import { memoryGroupStore } from './memoryGroupStore';
 import { memoryHistoryStore } from './memoryHistoryStore';
 import { memoryLinkStore } from './memoryLinkStore';
 import { memoryProfileStore } from './memoryProfileStore';
@@ -43,9 +43,9 @@ const localScoreStore = memoryScoreStore(() => new Date(), LOCAL_SUBMISSION_LIMI
 // what a wiped table does.
 const localDeviceStore = memoryDeviceStore();
 // One instance of each store the LINK route also acts on (#204): a verified link moves the
-// day's round and score rows, credits solved days and rewrites friend edges, so it has to
+// day's round and score rows, credits solved days and drops group memberships, so it has to
 // hold the very same objects the other routes read.
-const localFriendStore = memoryFriendStore((publicId) => localDeviceStore.accountExists(publicId));
+const localGroupStore = memoryGroupStore((publicId) => localDeviceStore.accountExists(publicId));
 const localRoundStore = memoryRoundStore();
 const localHistoryStore = memoryHistoryStore();
 // `live` is the DEVICE store's answer (#204): a deleted account must stop dressing board
@@ -65,7 +65,7 @@ const handler = createHandler({
   // Read-only since #203 — the population is written by the round route below.
   scores: { scoreStore: localScoreStore },
   profiles: localProfileStore,
-  friends: localFriendStore,
+  groups: localGroupStore,
   // The ONE store every authenticated route resolves its caller through (#216).
   deviceStore: localDeviceStore,
   devices: {
@@ -99,7 +99,7 @@ const handler = createHandler({
       rounds: localRoundStore,
       scores: localScoreStore,
     }),
-    friends: localFriendStore,
+    groups: localGroupStore,
     history: localHistoryStore,
     mailer: consoleMailer,
     turnstile: localTurnstileVerifier,
@@ -148,7 +148,7 @@ server.listen(PORT, () => {
   console.log(`[backend]   origin: ${ALLOWED_ORIGIN}`);
   console.log(`[backend]   scores + devices: in-memory; Turnstile accept-all (local only)`);
   console.log(`[backend]   GET /?lang=<xx>&date=<YYYY-MM-DD>[&mode=word]  GET /scores?lang=&date=&mode=`);
-  console.log(`[backend]   GET /profile?id=<publicId>  POST /profile  POST /friends`);
+  console.log(`[backend]   GET /profile?id=<publicId>  POST /profile  GET|POST /groups`);
   console.log(`[backend]   GET|POST /board?lang=&date=&mode=[&id=]  POST /round?lang=&date=&mode=`);
   console.log(`[backend]   POST /history?lang=&mode=[&month=YYYY-MM]  POST /devices  POST /link`);
   console.log(`[backend]   GET /today  GET /s/<token>  GET /og/<token>.png`);

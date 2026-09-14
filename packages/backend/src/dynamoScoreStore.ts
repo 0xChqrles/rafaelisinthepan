@@ -95,7 +95,7 @@ export function dynamoScoreStore(
     // Query's own reason (a player opening the board right after a solving round write must
     // see their row). UnprocessedKeys are retried; keys still unprocessed after that
     // surface as the operational error they are — silently dropping them would drop a
-    // friend's score from the board.
+    // member's score from the board.
     async getMany(key, publicIds) {
       const pk = dayKey(key);
       const rows: ScoreRow[] = [];
