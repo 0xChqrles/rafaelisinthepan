@@ -786,9 +786,11 @@ The live routes then share:
 - **A GROUP is a named set of members with an invite link; the group is the trust
   boundary and the leaderboard's social unit** (a pair of friends is a group of two).
   `POST /groups`: `{token}` lists mine, `{token, create: true, name}` creates (creator is a
-  member; answers `created`), `{token, join}` joins by group id, `{token, leave}` leaves,
-  `{token, remove, member}` removes (creator only, 403 `not_creator`; never oneself). Every
-  answer carries `{ groups: [{id, name, createdBy, joinedAt, members[]}] }` as they now stand.
+  member; answers `created`), `{token, join}` joins by group id, `{token, leave[,
+  successor]}` leaves (the SUCCESSION below), `{token, remove, member}` removes (the OWNER
+  only, 403 `not_creator`; never oneself). Every answer carries `{ groups: [{id, name,
+  createdBy, joinedAt, members[]}] }` as they now stand — `createdBy` read off the GROUP
+  row (it changes hands), a membership whose group row is gone dropped.
   `GET /groups?id=` is a group's PUBLIC face `{id, name, createdBy, members: [{publicId,
   name, avatar}]}` (a gone account dropped; 404 `unknown_group`) — the landing's read and
   what the preview renders. Caps in `shared/src/scores.ts`: **`GROUPS_MAX` = 10** per player
@@ -804,12 +806,22 @@ The live routes then share:
   2026-09-10 "share carries no invite" decision stands over the issue's earlier drum.
 - **Storage**: `group#<id>` / `group` (name, createdBy, createdAt) + ONE membership as TWO
   rows in one transaction — `group#<id>` / `member#<publicId>` and `player#<publicId>` /
-  `group#<id>` (the latter denormalizing the immutable name + creator, so the list is one
-  Query). A create asserts the creator's account, a join asserts the account AND the group
-  row; leave deletes both rows unconditionally. Nothing reads across players outside a
-  group's member list. A group emptied by leaves lingers, joinable through its link
-  (accepted); a creator who leaves simply leaves.
-- **A deleted account leaves every group**: the link flow's departure job (above).
+  `group#<id>` (the latter denormalizing the immutable NAME only, so the list is one Query;
+  the owner is the group row's fact). A create asserts the creator's account, a join
+  asserts the account AND the group row; a leave deletes both rows unconditionally AND, in
+  the SAME transaction, does what the succession rule says to the group row. Nothing reads
+  across players outside a group's member list.
+- **THE SUCCESSION RULE (user-decided 2026-09-14; `successionFor`, `backend/src/
+  groupStore.ts`, ONE spelling for the route and the departure):** a member whose leaving
+  EMPTIES the group DELETES it (its link then 404s; no lingering empty groups); an OWNER
+  leaving a group of TWO hands it to the other member; an OWNER leaving a group of THREE OR
+  MORE must NAME a member as `successor` (409 `successor_required` until they do; a
+  non-member named is the same refusal); a member who is not the owner hands nothing over.
+  The hand-over is an Update of `createdBy` conditioned on it still naming the leaver. The
+  web asks the successor on the leave's full-screen confirmation.
+- **A deleted account leaves every group**: the link flow's departure job (above), under
+  the same rule with nobody choosing — its owned groups go to the OLDEST other membership
+  (a refused succession falls back to the bare row deletes).
 
 ### Leaderboard reads (#190/#206/#271)
 

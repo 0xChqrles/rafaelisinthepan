@@ -100,6 +100,11 @@
       screens/GroupInvite.tsx  the #271 group invite link's landing (/join/g/<groupId>): JOIN
                               with this device's token, then the board or the game. The link
                               members SHARE is /g/<groupId>, served by the backend for its preview
+      components/GroupSelect.tsx  WHICH GROUP (#271): the title's selection dress, one drum —
+                              every group, then NEW GROUP — behind the board's group chip
+      components/ConfirmScreen.tsx  the app's CONFIRMATION surface (#271): the error screen's
+                              shape in the plain voice, the act as the quiet danger control
+                              over CANCEL; the leave's successor picker rides it
       screens/Leaderboard.tsx the #190/#271 leaderboard (/<lang>[/word]/board): the player's
                               groups first (day / week / month), global top 50; NEW GROUP,
                               INVITE, LEAVE, the creator's MANAGE
@@ -1812,10 +1817,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `/<lang>/board` and `/<lang>/word/board` (`pathForBoard`; a board is per (day, lang,
   mode), always the ACTIVE day), `screens/Leaderboard.tsx`, entered from the header's CROWN
   KEY (lit while the board is up; the way out is any other key, HOME above all). The
-  player's GROUPS are the tabs — a scrolling strip of names, then `+` (NEW GROUP), then
-  GLOBAL, the untrusted top 50 — and a group has THREE boards under a second row: DAY (the
-  live one: finished, IN PROGRESS, NOT PLAYED YET), WEEK and MONTH (the shared period rule,
-  `PeriodList`: podium POINTS under the caption, the days and the total as a quiet detail).
+  HEAD ROW is a two-way switch (user-decided 2026-09-14: "wheel group on the left, global
+  on the right"): the active GROUP's name as a held-word chip with the title's chevron on
+  the left, opening `GroupSelect` — the selection's dress, ONE drum of every group plus a
+  last NEW GROUP row that opens the create form, the pick landing as the fold begins — and
+  GLOBAL, the untrusted top 50, on the right; exactly one of the two is lit (the chip reads
+  NEW GROUP and opens the form directly while the player has no group). It replaced a
+  scrolling strip of named tabs. A group has THREE boards under a second row: TODAY (the
+  live one: finished, IN PROGRESS, NOT PLAYED YET — TODAY, not DAY, user-decided
+  2026-09-14), WEEK and MONTH (the shared period rule, `PeriodList`: podium POINTS under
+  the caption, the days and the total as a quiet detail).
   **WHICH TAB belongs to a VISIT** (user feedback 2026-08-20; `boardTab` is `'group' |
   'global'` since persist **v19**, App resets it on any non-board route); **WHICH GROUP
   outlives it** — `gameStore.lastGroupId` (v19, account-owned: `reconcileIdentity` drops it
@@ -1834,10 +1845,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   and INVITE (shares `boardInviteText` + `/g/<id>` via `useShare`, `tracked: false`);
   both are ONE TAP for a tokenless device (the mint, then the act, the button holding a
   LoadingWave; failures on the `ErrorScreen` — `failedAccount`, `failedShare`,
-  `groupLimit`, `failedGroup`). LEAVE and — for the group's creator, on the DAY board —
+  `groupLimit`, `failedGroup`). LEAVE and — for the group's owner, on the TODAY board —
   MANAGE are two quiet `.link-quiet-btn`s under the list; MANAGE turns every other row's
-  end into a `✕` (`.board-remove`), and both destructive taps CONFIRM ON A SECOND TAP by
-  changing their own word (`LEAVE?`, `REMOVE?`), never with a dialog. A WEEK/MONTH row
+  end into a `✕` (`.board-remove`), and BOTH DESTRUCTIVE ACTS CONFIRM ON A FULL-SCREEN
+  MODAL (`ConfirmScreen`, user-decided 2026-09-14 — "for such an important action, we
+  actually need a fullscreen modal", replacing the two-tap word swap `LEAVE?` / `REMOVE?`):
+  the member's face or the group's name over the act's title, one sentence, the act in the
+  quiet danger dress, CANCEL. The leave's note follows the SUCCESSION RULE (root
+  `AGENTS.md`, Groups) off the list on screen: last member → "the group will be deleted";
+  owner of two → "the other member takes it over"; owner of three or more → a PICKER of the
+  others (the board's rows as radios, dressed by `readGroup`), LEAVE held back until one is
+  picked, sent as `successor`; a stale list's 409 `successor_required` re-reads the list.
+  A WEEK/MONTH row
   stacks its tiebreakers under the name (`.board-ident`) — beside it they ate the name on
   a phone. **A member already skips the landing onto the board, but never one this tab
   just joined** (`GroupInvite`'s module-level `joinedHere`): the tap that joins can also

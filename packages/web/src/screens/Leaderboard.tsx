@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import {
   anonName,
   dateForDayNumber,
@@ -24,8 +24,13 @@ import {
   parsePeriodBoard,
   postBoardBody,
   postGroupsBody,
+  readGroup,
 } from '../api';
+import ChevronDownIcon from '../assets/icons/chevron-down.svg?react';
+import CloseIcon from '../assets/icons/close.svg?react';
 import Avatar from '../components/Avatar';
+import ConfirmScreen from '../components/ConfirmScreen';
+import GroupSelect from '../components/GroupSelect';
 import LoadError from '../components/LoadError';
 import LoadingWave from '../components/LoadingWave';
 import PuzzleTitle from '../components/PuzzleTitle';
@@ -56,7 +61,16 @@ import { t } from '../i18n';
 // playing, waiting — the live one), and the WEEK and MONTH ranked by the shared period
 // rule (podium points, then solved days, then fewer tries). This screen is also where a
 // player CREATES a group, INVITES into it (the `/g/<id>` link), LEAVES it, and — as its
-// creator — shows a member out.
+// owner — shows a member out.
+//
+// WHICH GROUP is a WHEEL, not a strip (user-decided 2026-09-14: "reuse the wheel component
+// to select the group — wheel group on the left, global on the right"): the head row holds
+// the active group's name as a held-word CHIP with a chevron, opening `GroupSelect` (one
+// drum: every group, then NEW GROUP), and GLOBAL as the row's other end. LEAVING and
+// REMOVING confirm on a FULL-SCREEN modal (`ConfirmScreen`, same decision: "for such an
+// important action, we actually need a fullscreen modal"), and the owner's leave carries
+// the SUCCESSION the server demands (root AGENTS.md, Groups): alone, the group is deleted;
+// with one other member that member takes it; with more, the owner picks one here.
 //
 // The rows come ranked from the server (competition ties, the plain top-50 cut, the
 // own-row window, the period rule — @whippin/shared's leaderboard rules); this screen only
@@ -199,8 +213,15 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
   const [failure, setFailure] = useState<'account' | 'share' | 'group' | 'limit' | null>(null);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
-  // A two-tap confirm for the two destructive taps: LEAVE, and a member's ✕.
-  const [confirm, setConfirm] = useState<string | null>(null);
+  const nameInput = useRef<HTMLInputElement>(null);
+  // The group WHEEL, and the CONFIRMATION up: a member to remove, or the leave.
+  const [picking, setPicking] = useState(false);
+  const [confirming, setConfirming] = useState<{ kind: 'remove'; member: BoardPlayer } | { kind: 'leave' } | null>(null);
+  const [successor, setSuccessor] = useState<string | null>(null);
+  // The members DRESSED (name + mark) for the successor picker: the list carries ids
+  // alone, and `GET /groups?id=` is the public face that names them. Decoration — until
+  // it lands, and if it never does, the rows wear the assigned identities.
+  const [faces, setFaces] = useState<Record<string, BoardPlayer>>({});
   const [managing, setManaging] = useState(false);
   const { share, copied } = useShare({ tracked: false });
   useEffect(() => {
@@ -273,29 +294,54 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
     if (!delivered) setFailure('share');
   };
 
+  const creator = active !== null && active.createdBy === meId;
+  // The succession the LEAVE carries, read off the list the server last answered (the
+  // same rule the server applies — `successionFor`): who else is in the group decides
+  // whether the owner names somebody. A list gone stale by the time the tap lands is the
+  // server's 409 `successor_required`, which re-reads the list below.
+  const others = active ? active.members.filter((id) => id !== meId) : [];
+  const leaveKind = !creator
+    ? 'plain'
+    : others.length === 0
+      ? 'last'
+      : others.length === 1
+        ? 'handover'
+        : 'pick';
+
+  // Opening the owner's leave with a choice to make DRESSES the candidates.
+  useEffect(() => {
+    if (confirming?.kind !== 'leave' || leaveKind !== 'pick' || !active) return;
+    const controller = new AbortController();
+    void readGroup(active.id, controller.signal).then((read) => {
+      if (read.status !== 'shown' || controller.signal.aborted) return;
+      setFaces(Object.fromEntries(read.group.members.map((member) => [member.publicId, member])));
+    });
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirming?.kind, leaveKind, active?.id]);
+
   const leave = async () => {
     if (busy || !active) return;
-    if (confirm !== `leave:${active.id}`) {
-      setConfirm(`leave:${active.id}`);
-      return;
+    if (leaveKind === 'pick' && successor === null) return;
+    const id = active.id;
+    const named = leaveKind === 'pick' ? successor : null;
+    const result = await write('leave', (token) => ({ token, leave: id, ...(named ? { successor: named } : {}) }));
+    setConfirming(null);
+    setSuccessor(null);
+    if (result.ok) {
+      setManaging(false);
+    } else if (result.error === 'successor_required') {
+      // The list this screen decided from was stale: re-read it, and the next LEAVE asks.
+      loadGroups(true);
     }
-    setConfirm(null);
-    setManaging(false);
-    await write('leave', (token) => ({ token, leave: active.id }));
   };
 
   const remove = async (member: string) => {
     if (busy || !active) return;
-    if (confirm !== `remove:${member}`) {
-      setConfirm(`remove:${member}`);
-      return;
-    }
-    setConfirm(null);
     const result = await write('remove', (token) => ({ token, remove: active.id, member }));
+    setConfirming(null);
     if (result.ok) setAttempt((n) => n + 1);
   };
-
-  const creator = active !== null && active.createdBy === meId;
 
   return (
     <div className="board-screen">
@@ -306,49 +352,90 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
         <PuzzleTitle lang={lang} mode={mode} surface="board" />
       </HeaderLeft>
 
-      {/* THE GROUPS first — the trusted default — then NEW, then GLOBAL, the fun view. The
-          strip scrolls sideways once the names outrun it; the segmented control is the
-          header mode switcher's own dress. */}
-      <nav className="board-tabs group-tabs" aria-label={t(lang, 'boardTitle')}>
-        {(groups ?? []).map((group) => (
+      {/* THE HEAD ROW: the GROUP on the left — its name as a held-word chip with a chevron,
+          the wheel behind it (or NEW GROUP, opening the form, while there is none) — and
+          GLOBAL on the right, the fun view. Exactly one of the two is lit. */}
+      <div className="board-head">
+        {groups === null ? (
+          <span className="board-pick" aria-hidden />
+        ) : active ? (
           <button
-            key={group.id}
             type="button"
-            className={`board-tab${tab === 'group' && active?.id === group.id ? ' active' : ''}`}
-            aria-current={(tab === 'group' && active?.id === group.id) || undefined}
+            className={`board-pick${tab === 'group' ? ' on' : ''}`}
+            aria-label={`${active.name}, ${t(lang, 'groupMenu')}`}
+            aria-haspopup="dialog"
+            aria-expanded={picking}
+            onClick={() => setPicking(true)}
+          >
+            <span className="board-pick-chip">{active.name}</span>
+            <ChevronDownIcon className="ui-icon" aria-hidden />
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={`board-pick${tab === 'group' ? ' on' : ''}`}
+            aria-expanded={creating}
             onClick={() => {
-              setLastGroup(group.id);
               setTab('group');
-              setConfirm(null);
-              setManaging(false);
+              setCreating((open) => !open);
             }}
           >
-            {group.name}
+            <span className="board-pick-chip">{t(lang, 'groupNew')}</span>
           </button>
-        ))}
+        )}
         <button
           type="button"
-          className="board-tab board-tab-new"
-          aria-label={t(lang, 'groupNew')}
-          onClick={() => setCreating((open) => !open)}
-        >
-          +
-        </button>
-        <button
-          type="button"
-          className={`board-tab${tab === 'global' ? ' active' : ''}`}
+          className={`board-tab board-global${tab === 'global' ? ' active' : ''}`}
           aria-current={tab === 'global' || undefined}
-          onClick={() => setTab('global')}
+          onClick={() => {
+            setTab('global');
+            setCreating(false);
+          }}
         >
           {t(lang, 'boardGlobal')}
         </button>
-      </nav>
+      </div>
+
+      {picking && groups !== null && (
+        <GroupSelect
+          lang={lang}
+          groups={groups}
+          current={active?.id ?? null}
+          onPick={(id) => {
+            setLastGroup(id);
+            setTab('group');
+            setManaging(false);
+            setCreating(false);
+          }}
+          onNew={() => {
+            setTab('group');
+            setCreating(true);
+          }}
+          onClose={() => {
+            setPicking(false);
+            // The wheel's fold on NEW GROUP opened the form under it; the dialog's close
+            // hands the focus back to the chip, so the field takes it here, after that.
+            nameInput.current?.focus();
+          }}
+        />
+      )}
 
       {/* NEW GROUP: a name — the player name's own charset, never empty — and CREATE, which
           is a deploy button: a tokenless tap mints the account and then creates. */}
       {creating && (
         <form className="group-form" onSubmit={(event) => void create(event)}>
+          {/* The form's way out without creating (a pick in the wheel and GLOBAL close it
+              too): the dialogs' own ✕, at the row's start. */}
+          <button
+            type="button"
+            className="group-form-close"
+            aria-label={t(lang, 'ariaClose')}
+            onClick={() => setCreating(false)}
+          >
+            <CloseIcon className="ui-icon" aria-hidden />
+          </button>
           <input
+            ref={nameInput}
             className="group-form-input"
             type="text"
             value={name}
@@ -359,7 +446,12 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
             autoCorrect="off"
             autoCapitalize="off"
             spellCheck={false}
+            autoFocus
             onChange={(event) => setName(sanitizeName(event.target.value))}
+            // The form's way out without creating: Escape, a pick in the wheel, or GLOBAL.
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setCreating(false);
+            }}
           />
           <button
             type="submit"
@@ -417,8 +509,7 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
               // Only the GLOBAL list marks the reader's people: on a group's board every
               // row is one, and marking everything marks nothing.
               mates={tab === 'global' ? mates : null}
-              onRemove={managing && creator ? remove : undefined}
-              confirming={confirm}
+              onRemove={managing && creator ? (member) => setConfirming({ kind: 'remove', member }) : undefined}
             />
           )
         ) : (
@@ -428,31 +519,92 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
         )}
       </div>
 
-      {/* A group's own two quiet acts under its board: LEAVE, and — for its creator —
-          MANAGE, which turns every row's end into a ✕. Both destructive taps confirm on a
-          second tap by changing their own word, never with a dialog. */}
+      {/* A group's own two quiet acts under its board: LEAVE, and — for its owner —
+          MANAGE, which turns every row's end into a ✕. Both destructive acts confirm on
+          the full-screen `ConfirmScreen` below. */}
       {tab === 'group' && active && (
         <div className="group-actions">
-          <button type="button" className="link-quiet-btn" disabled={busy !== null} onClick={() => void leave()}>
-            {busy === 'leave'
-              ? t(lang, 'loading')
-              : confirm === `leave:${active.id}`
-                ? t(lang, 'groupLeaveConfirm')
-                : t(lang, 'groupLeave')}
+          <button
+            type="button"
+            className="link-quiet-btn"
+            disabled={busy !== null}
+            onClick={() => {
+              setSuccessor(null);
+              setConfirming({ kind: 'leave' });
+            }}
+          >
+            {t(lang, 'groupLeave')}
           </button>
           {creator && period === 'day' && (
-            <button
-              type="button"
-              className="link-quiet-btn"
-              onClick={() => {
-                setManaging((open) => !open);
-                setConfirm(null);
-              }}
-            >
+            <button type="button" className="link-quiet-btn" onClick={() => setManaging((open) => !open)}>
               {t(lang, managing ? 'groupManageDone' : 'groupManage')}
             </button>
           )}
         </div>
+      )}
+
+      {/* REMOVE: the member's face over the act. */}
+      {confirming?.kind === 'remove' && active && (
+        <ConfirmScreen
+          lang={lang}
+          title={t(lang, 'groupRemoveTitle')}
+          note={t(lang, 'groupRemoveNote')}
+          action={t(lang, 'groupRemoveAction')}
+          busy={busy === 'remove'}
+          onConfirm={() => void remove(confirming.member.publicId)}
+          onClose={() => setConfirming(null)}
+        >
+          <Face player={confirming.member} />
+        </ConfirmScreen>
+      )}
+
+      {/* LEAVE: the group's name over the act, the note by what the succession does —
+          and, for an owner of three or more, the picker: who takes it over. */}
+      {confirming?.kind === 'leave' && active && (
+        <ConfirmScreen
+          lang={lang}
+          title={t(lang, 'groupLeaveTitle')}
+          note={t(
+            lang,
+            leaveKind === 'last'
+              ? 'groupLeaveLastNote'
+              : leaveKind === 'handover'
+                ? 'groupLeaveHandoverNote'
+                : leaveKind === 'pick'
+                  ? 'groupLeaveSuccessorNote'
+                  : 'groupLeaveNote',
+          )}
+          action={t(lang, 'groupLeaveAction')}
+          busy={busy === 'leave'}
+          disabled={leaveKind === 'pick' && successor === null}
+          onConfirm={() => void leave()}
+          onClose={() => setConfirming(null)}
+        >
+          <span className="confirm-group">{active.name}</span>
+          {leaveKind === 'pick' && (
+            <div className="board-list confirm-pick" role="radiogroup" aria-label={t(lang, 'groupMembers')}>
+              {others.map((id, index) => {
+                const face = faces[id];
+                const picked = successor === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    role="radio"
+                    aria-checked={picked}
+                    className={`board-row waiting${picked ? ' picked' : ''}`}
+                    style={{ '--i': index } as CSSProperties}
+                    onClick={() => setSuccessor(id)}
+                  >
+                    <span className="board-norank" aria-hidden="true" />
+                    <Avatar avatar={face?.avatar ?? defaultAvatar(id)} size={28} />
+                    <span className={`board-name${face?.name ? '' : ' anon'}`}>{face?.name || anonName(id)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </ConfirmScreen>
       )}
 
       {/* The screen's one big action, on the column's bottom edge: INVITE into the group
@@ -516,7 +668,6 @@ function BoardList({
   meId,
   mates,
   onRemove,
-  confirming,
 }: {
   board: Board;
   tab: Tab;
@@ -524,8 +675,7 @@ function BoardList({
   mode: Mode;
   meId?: string;
   mates: ReadonlySet<string> | null;
-  onRemove?: (publicId: string) => void;
-  confirming: string | null;
+  onRemove?: (member: BoardPlayer) => void;
 }) {
   // Empty is per TAB. The GLOBAL board is empty when nobody played. A GROUP's board is
   // empty when the caller is ALONE in it: the server includes the caller's own row once
@@ -547,13 +697,9 @@ function BoardList({
     );
   }
   let index = 0;
-  const removal = (publicId: string) =>
-    onRemove && publicId !== meId ? (
-      <RemoveButton
-        lang={lang}
-        confirming={confirming === `remove:${publicId}`}
-        onClick={() => onRemove(publicId)}
-      />
+  const removal = (player: BoardPlayer) =>
+    onRemove && player.publicId !== meId ? (
+      <RemoveButton lang={lang} onClick={() => onRemove({ publicId: player.publicId, name: player.name, avatar: player.avatar })} />
     ) : null;
   const item = (row: BoardRow) => (
     <BoardRowItem
@@ -562,7 +708,7 @@ function BoardList({
       me={row.publicId === meId}
       mate={mates?.has(row.publicId) ?? false}
       index={index++}
-      trailing={removal(row.publicId)}
+      trailing={removal(row)}
     />
   );
   return (
@@ -587,12 +733,12 @@ function BoardList({
             row={row}
             me={row.publicId === meId}
             index={index++}
-            trailing={removal(row.publicId)}
+            trailing={removal(row)}
           />
         ))}
         {board.waiting.length > 0 && <li className="board-section">{t(lang, 'boardNotPlayed')}</li>}
         {board.waiting.map((player) => (
-          <WaitingRowItem key={player.publicId} player={player} index={index++} trailing={removal(player.publicId)} />
+          <WaitingRowItem key={player.publicId} player={player} index={index++} trailing={removal(player)} />
         ))}
       </ol>
     </>
@@ -665,24 +811,22 @@ function PeriodRowItem({
   );
 }
 
-function RemoveButton({
-  lang,
-  confirming,
-  onClick,
-}: {
-  lang: LangCode;
-  confirming: boolean;
-  onClick: () => void;
-}) {
+// The owner's ✕ at a managed row's end: it opens the confirmation, it removes nobody.
+function RemoveButton({ lang, onClick }: { lang: LangCode; onClick: () => void }) {
   return (
-    <button
-      type="button"
-      className={`board-remove${confirming ? ' confirming' : ''}`}
-      aria-label={t(lang, 'groupRemove')}
-      onClick={onClick}
-    >
-      {confirming ? t(lang, 'groupRemoveConfirm') : '✕'}
+    <button type="button" className="board-remove" aria-label={t(lang, 'groupRemove')} onClick={onClick}>
+      ✕
     </button>
+  );
+}
+
+// WHO is at stake, over a confirmation: the mark and the name, the crossroads' own stack.
+function Face({ player }: { player: BoardPlayer }) {
+  return (
+    <span className="confirm-face">
+      <Avatar avatar={player.avatar ?? defaultAvatar(player.publicId)} size={44} />
+      <span className={`confirm-name${player.name ? '' : ' anon'}`}>{player.name || anonName(player.publicId)}</span>
+    </span>
   );
 }
 

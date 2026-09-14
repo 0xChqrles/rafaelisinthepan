@@ -641,7 +641,9 @@ const STRINGS = {
   boardTitle: { en: 'LEADERBOARD', fr: 'CLASSEMENT' },
   boardGlobal: { en: 'GLOBAL', fr: 'GLOBAL' },
   boardPeriods: { en: 'Period', fr: 'Période' },
-  periodDay: { en: 'DAY', fr: 'JOUR' },
+  // TODAY, not DAY (user-decided 2026-09-14): the live board is today's, and a period
+  // named DAY beside WEEK and MONTH read as "any day".
+  periodDay: { en: 'TODAY', fr: "AUJOURD'HUI" },
   periodWeek: { en: 'WEEK', fr: 'SEMAINE' },
   periodMonth: { en: 'MONTH', fr: 'MOIS' },
   // The empty states, one per view (user feedback 2026-08-20: TERSE, under a small sad
@@ -683,11 +685,38 @@ const STRINGS = {
   // PLAY below it.
   groupJoined: { en: 'JOINED', fr: 'REJOINT' },
   groupLeave: { en: 'LEAVE GROUP', fr: 'QUITTER LE GROUPE' },
-  groupLeaveConfirm: { en: 'LEAVE?', fr: 'QUITTER ?' },
   groupManage: { en: 'MANAGE', fr: 'GÉRER' },
   groupManageDone: { en: 'DONE', fr: 'OK' },
   groupRemove: { en: 'Remove from the group', fr: 'Retirer du groupe' },
-  groupRemoveConfirm: { en: 'REMOVE?', fr: 'RETIRER ?' },
+  // The group picker (user-decided 2026-09-14): the wheel behind the board's group chip.
+  groupMenu: { en: 'Change group', fr: 'Changer de groupe' },
+  // The two CONFIRMATIONS (user-decided 2026-09-14: a full-screen modal for both). The
+  // title says the act, the note what it means; the button is the act's own word. The
+  // owner's leave has three notes, by what the succession rule does (root AGENTS.md).
+  groupRemoveTitle: { en: 'REMOVE FROM THE GROUP', fr: 'RETIRER DU GROUPE' },
+  groupRemoveNote: {
+    en: 'They will no longer see the group. An invite link brings them back.',
+    fr: "Cette personne ne verra plus le groupe. Un lien d'invitation la fera revenir.",
+  },
+  groupRemoveAction: { en: 'REMOVE', fr: 'RETIRER' },
+  groupLeaveTitle: { en: 'LEAVE THE GROUP', fr: 'QUITTER LE GROUPE' },
+  groupLeaveNote: {
+    en: 'You will no longer see the group. An invite link brings you back.',
+    fr: "Vous ne verrez plus le groupe. Un lien d'invitation vous fera revenir.",
+  },
+  groupLeaveLastNote: {
+    en: 'You are its last member. The group will be deleted.',
+    fr: 'Vous en êtes le dernier membre. Le groupe sera supprimé.',
+  },
+  groupLeaveHandoverNote: {
+    en: 'You created this group. The other member takes it over.',
+    fr: "Vous avez créé ce groupe. L'autre membre le reprend.",
+  },
+  groupLeaveSuccessorNote: {
+    en: 'You created this group. Choose who takes it over.',
+    fr: 'Vous avez créé ce groupe. Choisissez qui le reprend.',
+  },
+  groupLeaveAction: { en: 'LEAVE', fr: 'QUITTER' },
   failedBoard: { en: 'FAILED TO LOAD LEADERBOARD', fr: 'ÉCHEC DU CHARGEMENT DU CLASSEMENT' },
   ariaLeaderboard: { en: 'Leaderboard', fr: 'Classement' },
 } satisfies Record<string, Record<UiLang, string>>;

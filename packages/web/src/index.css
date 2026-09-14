@@ -6501,30 +6501,85 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
 }
-/* The GROUP strip (#271): as many named tabs as the player has groups, then NEW (+),
-   then GLOBAL. It scrolls sideways once the names outrun the column, each tab as wide
-   as its name, never squeezed; the scrollbar is hidden (the strip is a row of chips,
-   not a document). */
-.group-tabs {
-  overflow-x: auto;
-  scrollbar-width: none;
+/* THE HEAD ROW (#271, user-decided 2026-09-14 — "wheel group on the left, global on the
+   right"): the active GROUP as a held-word chip with the title's own chevron, the wheel
+   (`GroupSelect`) behind it; GLOBAL as a bare tab at the other end. Exactly ONE of the
+   two is lit — the chip inverted when a group's board is up, GLOBAL inverted when the
+   global one is — so the row reads as a two-way switch whose left side also names WHICH
+   group. It replaced a strip of named tabs that scrolled sideways past four names. */
+.board-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   flex: none;
+  min-height: 30px;
 }
-.group-tabs::-webkit-scrollbar {
-  display: none;
+.board-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--fg);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.1s linear;
 }
-.group-tabs .board-tab {
-  flex: none;
+.board-pick.on {
+  opacity: 1;
+}
+.board-pick:not(.on):hover {
+  opacity: 0.9;
+}
+/* The header chip's exact dress (`.topbar .topbar-title`), one size: the group's name
+   is a held word here the way the daily's is in the header. Plain type while the row's
+   other side is lit. */
+.board-pick-chip {
+  display: inline-block;
+  padding: 8px 10px 7px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1;
+  border-radius: 2px;
+  transition: background-color 0.1s linear, color 0.1s linear;
 }
-.group-tabs .board-tab:last-child {
-  margin-left: auto;
+.board-pick.on .board-pick-chip {
+  background: var(--fg);
+  color: var(--bg);
 }
-.board-tab-new {
-  font-size: 15px;
-  font-weight: 500;
-  padding-top: 5px;
-  padding-bottom: 4px;
+.board-pick.on:hover .board-pick-chip {
+  background: color-mix(in srgb, var(--fg) 80%, var(--bg));
+}
+.board-pick.on:active .board-pick-chip {
+  background: color-mix(in srgb, var(--fg) 68%, var(--bg));
+}
+.board-pick .ui-icon {
+  flex: none;
+}
+.board-head .board-global {
+  flex: none;
+}
+/* The group wheel: one drum, the selection's dress, its rows CENTRED on the slot (two
+   drums share a line; one stands alone). Its last row, NEW GROUP, is not a pick, and says
+   so in the secondary weight. */
+.group-select .ps-row {
+  width: 100%;
+  justify-content: center;
+}
+.group-select .ps-row-new:not(.on) .ps-chip {
+  font-weight: 400;
+  color: var(--muted);
 }
 /* The three boards of a group. The row is the same segmented control, quieter: no
    frame of its own, the active period in weight alone. */
@@ -6566,6 +6621,23 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   flex: none;
   min-width: 96px;
 }
+.group-form-close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+.group-form-close:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 
 /* A group's two quiet acts, under its board: LEAVE, and the creator's MANAGE. */
 .group-actions {
@@ -6574,8 +6646,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   gap: 12px;
   flex: none;
 }
-/* The creator's ✕ at a managed row's end: a small square that turns into REMOVE? on the
-   first tap and acts on the second (no dialog). */
+/* The owner's ✕ at a managed row's end: a small square that opens the confirmation
+   (`ConfirmScreen`) — the act lands there, never on the row. */
 .board-row.managed {
   grid-template-columns: 42px 28px minmax(0, 1fr) auto auto;
 }
@@ -6600,10 +6672,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   cursor: pointer;
   text-shadow: none;
 }
-.board-remove.confirming {
-  background: var(--danger);
+.board-remove:hover {
   border-color: var(--danger);
-  color: var(--fg);
+  color: var(--danger);
 }
 
 /* A WEEK or a MONTH row: the podium points under the unit caption, the tiebreakers as a
@@ -7219,6 +7290,97 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   to {
     opacity: 0;
   }
+}
+
+/* THE CONFIRMATION (#271, user-decided 2026-09-14): the error screen's shape and beats,
+   in the plain voice — nothing has gone wrong yet, so the title is `--fg`, not the danger
+   ink — with the act as the QUIET DANGER control (destruction never glows) over CANCEL.
+   What is at stake stands above the title: a member's face, or the group's name. */
+.confirm-screen .error-title {
+  color: var(--fg);
+}
+.confirm-action {
+  width: 100%;
+  margin-top: 12px;
+}
+.confirm-screen .error-body .btn {
+  margin-top: 0;
+  border-color: transparent;
+}
+.confirm-face {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.confirm-face .avatar {
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.confirm-name {
+  font-family: var(--ui);
+  font-size: 14px;
+  font-weight: 550;
+  letter-spacing: 0.02em;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.confirm-name.anon {
+  color: var(--muted);
+}
+/* The group's name as the held word it is on the board's head row. */
+.confirm-group {
+  display: inline-block;
+  padding: 8px 10px 7px;
+  margin-bottom: 8px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1;
+  background: var(--fg);
+  color: var(--bg);
+  border-radius: 2px;
+}
+/* WHO TAKES IT OVER: the board's own rows as radios — the picked one wears the reader's
+   own-row dress (the accent edge and tint), one picked at a time. A row is a <button>,
+   so the list's grid dress is restated on it. */
+.confirm-pick {
+  width: 100%;
+  flex: none;
+  max-height: 40vh;
+  padding: 0;
+  margin: 4px 0 8px;
+  text-align: left;
+}
+.confirm-pick .board-row {
+  width: 100%;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  color: var(--fg);
+  border-style: dashed;
+}
+.confirm-pick .board-row:hover {
+  border-color: var(--line-strong);
+}
+.confirm-pick .board-row.picked {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  background: color-mix(in srgb, var(--accent) 12%, var(--glass));
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.confirm-pick .board-row.picked .board-name {
+  font-weight: 700;
 }
 @media (max-width: 640px), (max-height: 500px) {
   /* 4x rather than 5x — the standing pixel-art rule allows only WHOLE steps. */

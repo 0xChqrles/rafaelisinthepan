@@ -19,15 +19,14 @@ import {
   memberSortKey,
   playerGroupSortKey,
   playerGroupsKey,
+  successionFor,
   type GroupMember,
   type GroupMembership,
   type GroupRecord,
   type GroupStore,
+  type LeaveOptions,
 } from './groupStore';
 
-// Two delete items per membership, so 50 of them exactly fill DynamoDB's 100-item
-// transaction limit — and GROUPS_MAX is far under it, so a departure is one transaction.
-const LEAVE_ALL_BATCH = 50;
 // A pass that finds nothing ends the loop; this bound only catches a store that is not
 // shrinking the partition it was told to, which is a bug rather than a retry.
 const LEAVE_ALL_MAX_PASSES = 4;
@@ -71,8 +70,8 @@ export function dynamoGroupStore(client: DynamoDBClient, tableName: string): Gro
     (await query(groupKey(id), MEMBER_SORT_PREFIX, 'COUNT')).count;
 
   // The membership pair, as the items ONE transaction writes: the group-side row and the
-  // player-side row, the latter carrying the group's immutable name and creator so the
-  // caller's list is one Query.
+  // player-side row, the latter carrying the group's immutable NAME so the caller's list
+  // is one Query (who owns it is the group row's, since it changes hands).
   const membershipItems = (
     group: GroupRecord,
     publicId: string,
@@ -97,7 +96,6 @@ export function dynamoGroupStore(client: DynamoDBClient, tableName: string): Gro
           sk: { S: playerGroupSortKey(group.id) },
           joinedAt: { S: joinedAt },
           name: { S: group.name },
-          createdBy: { S: group.createdBy },
         },
         ConditionExpression: 'attribute_not_exists(pk)',
       },
@@ -156,7 +154,6 @@ export function dynamoGroupStore(client: DynamoDBClient, tableName: string): Gro
         rows.push({
           id: sk.slice(PLAYER_GROUP_SORT_PREFIX.length),
           name: item.name?.S ?? '',
-          createdBy: item.createdBy?.S ?? '',
           joinedAt: item.joinedAt?.S ?? '',
         });
       }
@@ -248,25 +245,31 @@ export function dynamoGroupStore(client: DynamoDBClient, tableName: string): Gro
       return 'joined';
     },
 
-    async leave(id, publicId) {
+    async leave(id, publicId, options = {}) {
       await client.send(
-        new TransactWriteItemsCommand({ TransactItems: leaveItems(tableName, id, publicId) }),
+        new TransactWriteItemsCommand({ TransactItems: leaveItems(tableName, id, publicId, options) }),
       );
     },
 
-    // #204's departure: a deleted account leaves every group. Read the partition, delete
-    // every pair in batches of LEAVE_ALL_BATCH memberships (one transaction each), and
-    // read again until nothing is left — a join landing between two passes is simply seen
-    // by the next one. The deletes are unconditional, so replaying a batch changes nothing.
+    // #204's departure: a deleted account leaves every group, each under the succession
+    // rule with nobody choosing (`successionFor`). Read the partition, leave each group in
+    // its own transaction, and read again until nothing is left — a join landing between
+    // two passes is simply seen by the next one. The row deletes are unconditional, so
+    // replaying a pass changes nothing; a succession already handed over is refused by its
+    // own condition and the rows go without it.
     async leaveAll(publicId) {
       for (let pass = 0; pass < LEAVE_ALL_MAX_PASSES; pass += 1) {
         const mine = await this.listMine(publicId);
         if (mine.length === 0) return;
-        for (let i = 0; i < mine.length; i += LEAVE_ALL_BATCH) {
-          const items = mine
-            .slice(i, i + LEAVE_ALL_BATCH)
-            .flatMap((group) => leaveItems(tableName, group.id, publicId));
-          await client.send(new TransactWriteItemsCommand({ TransactItems: items }));
+        for (const held of mine) {
+          const [group, members] = await Promise.all([this.get(held.id), this.members(held.id)]);
+          const options = group ? successionFor(group, members, publicId).options : {};
+          try {
+            await this.leave(held.id, publicId, options);
+          } catch (error) {
+            if (classifyTransaction(error).kind !== 'refused') throw error;
+            await this.leave(held.id, publicId);
+          }
         }
       }
       throw new Error(`Group departure of ${publicId} did not converge.`);
@@ -276,8 +279,32 @@ export function dynamoGroupStore(client: DynamoDBClient, tableName: string): Gro
 
 // The two rows one membership is, both deleted: no membership may be left pointing at an
 // account that is about to stop existing, and no group may keep listing a member who left.
-function leaveItems(tableName: string, id: string, publicId: string): TransactWriteItem[] {
+// Plus what the leave does to the GROUP row (`LeaveOptions`): the owner's succession,
+// conditioned on the row still naming the leaver, or the deletion of a group left empty.
+function leaveItems(
+  tableName: string,
+  id: string,
+  publicId: string,
+  options: LeaveOptions = {},
+): TransactWriteItem[] {
+  const groupRow: TransactWriteItem[] = options.deleteGroup
+    ? [{ Delete: { TableName: tableName, Key: { pk: { S: groupKey(id) }, sk: { S: GROUP_SORT_KEY } } } }]
+    : options.successor !== undefined
+      ? [
+          {
+            Update: {
+              TableName: tableName,
+              Key: { pk: { S: groupKey(id) }, sk: { S: GROUP_SORT_KEY } },
+              UpdateExpression: 'SET #createdBy = :successor',
+              ConditionExpression: '#createdBy = :leaver',
+              ExpressionAttributeNames: { '#createdBy': 'createdBy' },
+              ExpressionAttributeValues: { ':successor': { S: options.successor }, ':leaver': { S: publicId } },
+            },
+          },
+        ]
+      : [];
   return [
+    ...groupRow,
     {
       Delete: {
         TableName: tableName,

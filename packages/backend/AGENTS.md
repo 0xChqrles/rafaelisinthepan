@@ -227,10 +227,17 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   `already` writes nothing — the pair is one transaction, so there is no half to repair),
   COUNTs both caps, then writes the pair asserting the caller's account AND the group row,
   reading a refusal off the reasons (account → `gone` = 401 `unknown_device`, group →
-  `unknown_group`, pair → `already`); `leave` is two unconditional deletes; `leaveAll` is
-  the #204 departure, re-reading the player's partition until empty (bounded). Every Query
-  is STRONGLY CONSISTENT (the profile read's rule). `remove` is authorized by the group
-  row's `createdBy`, never by the caller's say-so. Reads NO query but `id`, which the
+  `unknown_group`, pair → `already`); `leave` is two unconditional deletes plus what
+  `LeaveOptions` says for the group row — the owner's hand-over (an Update of `createdBy`
+  conditioned on the leaver) or the deletion of a group left empty — in ONE transaction,
+  the route deciding the options through `successionFor` off a fresh read of the group and
+  its members (409 `successor_required` when the owner of three or more names nobody);
+  `leaveAll` is the #204 departure, re-reading the player's partition until empty
+  (bounded), each group under `successionFor` with nobody choosing (oldest member), a
+  refused hand-over retried as the bare deletes. `listGroups` reads each group's row for
+  its owner and drops a membership whose row is gone. Every Query is STRONGLY CONSISTENT
+  (the profile read's rule). `remove` is authorized by the group row's `createdBy`, never
+  by the caller's say-so. Reads NO query but `id`, which the
   CloudFront `groups*` behavior forwards; the day it reads another, that behavior has to
   name it (root `AGENTS.md` contract). Production POST needs `x-amz-content-sha256`.
 - **Leaderboard reads (#190/#271):** the ONE handler also serves `/board` — the product

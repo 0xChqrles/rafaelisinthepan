@@ -810,6 +810,9 @@ export interface GroupsBody {
   name?: string;
   join?: string;
   leave?: string;
+  // With `leave`: the member who takes the group over when its OWNER leaves a group of
+  // three or more (409 `successor_required` without it — #271).
+  successor?: string;
   remove?: string;
   member?: string;
 }

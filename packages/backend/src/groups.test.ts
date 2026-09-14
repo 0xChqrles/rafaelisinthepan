@@ -87,10 +87,66 @@ describe('groups route (#271) — create, join, leave, remove', () => {
     await call(handler, { token: them.token, join: id });
     expect((await call(handler, { token: them.token, leave: id })).groups).toEqual([]);
     expect((await call(handler, { token: them.token, leave: id })).groups).toEqual([]);
-    // The creator leaving leaves the group standing for the others.
     await call(handler, { token: them.token, join: id });
+    // The OWNER leaving a group of two hands it to the other member (successionFor).
     expect((await call(handler, { token: me.token, leave: id })).groups).toEqual([]);
     expect((await groups.members(id)).map((m) => m.publicId)).toEqual([them.accountId]);
+    expect((await groups.get(id))?.createdBy).toBe(them.accountId);
+    expect((await call(handler, { token: them.token })).groups[0]).toMatchObject({ id, createdBy: them.accountId });
+  });
+
+  it('DELETES a group its last member leaves', async () => {
+    const { handler, me, groups } = await makeHandler();
+    const id = await create(handler, me);
+    expect((await call(handler, { token: me.token, leave: id })).groups).toEqual([]);
+    await expect(groups.get(id)).resolves.toBeNull();
+    expect((await handler(get(id))).statusCode).toBe(404);
+    // A join after that is an unknown group, not a resurrection.
+    expect((await handler(post({ token: me.token, join: id }))).statusCode).toBe(404);
+  });
+
+  it('makes the owner of three or more NAME a successor, and takes only a member', async () => {
+    const { handler, me, them, devices, groups } = await makeHandler();
+    const third = await seedDevice(devices);
+    const outsider = await seedDevice(devices);
+    const id = await create(handler, me);
+    await call(handler, { token: them.token, join: id });
+    await call(handler, { token: third.token, join: id });
+    const refused = await handler(post({ token: me.token, leave: id }));
+    expect(refused.statusCode).toBe(409);
+    expect(JSON.parse(refused.body).error).toBe('successor_required');
+    // Still there, still the owner.
+    expect((await groups.members(id)).map((m) => m.publicId)).toContain(me.accountId);
+    // A successor who is not a member is the same refusal; a malformed one is a 400.
+    expect((await handler(post({ token: me.token, leave: id, successor: outsider.accountId }))).statusCode).toBe(409);
+    expect((await handler(post({ token: me.token, leave: id, successor: 'nope' }))).statusCode).toBe(400);
+    // A member leaving names nobody, whatever they send.
+    await call(handler, { token: third.token, join: id });
+    expect((await call(handler, { token: third.token, leave: id, successor: them.accountId })).groups).toEqual([]);
+    expect((await groups.get(id))?.createdBy).toBe(me.accountId);
+    await call(handler, { token: third.token, join: id });
+    // The named member takes the group over.
+    expect((await call(handler, { token: me.token, leave: id, successor: third.accountId })).groups).toEqual([]);
+    expect((await groups.get(id))?.createdBy).toBe(third.accountId);
+    expect((await groups.members(id)).map((m) => m.publicId).sort()).toEqual([them.accountId, third.accountId].sort());
+    // And the new owner can remove; the old one is no longer a member to argue.
+    await call(handler, { token: third.token, remove: id, member: them.accountId });
+    expect((await groups.members(id)).map((m) => m.publicId)).toEqual([third.accountId]);
+  });
+
+  it('leaveAll (the departure) hands an owned group to its OLDEST member', async () => {
+    const { handler, me, them, devices, groups } = await makeHandler();
+    const third = await seedDevice(devices);
+    const id = await create(handler, me);
+    await call(handler, { token: them.token, join: id });
+    await call(handler, { token: third.token, join: id });
+    const alone = await create(handler, me, 'Solo');
+    await groups.leaveAll(me.accountId);
+    // Both joined at the same instant (the test clock stands still), so the OLDEST is the
+    // tie rule's: `byJoinedAt` orders equal instants by id.
+    expect((await groups.get(id))?.createdBy).toBe([them.accountId, third.accountId].sort()[0]);
+    await expect(groups.get(alone)).resolves.toBeNull();
+    await expect(groups.listMine(me.accountId)).resolves.toEqual([]);
   });
 
   it('lets the CREATOR remove a member, and nobody else', async () => {

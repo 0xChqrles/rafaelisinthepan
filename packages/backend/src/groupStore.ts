@@ -44,13 +44,44 @@ export interface GroupMember {
 }
 
 // One of a player's memberships, read off their own partition: the group's immutable
-// facts (denormalized onto the row) and when this player joined. The route adds who else
-// is in it before answering.
+// NAME (denormalized onto the row) and when this player joined. Who owns the group is
+// the GROUP row's fact (it changes hands when an owner leaves), so the route reads it
+// there before answering.
 export interface GroupMembership {
   id: string;
   name: string;
-  createdBy: string;
   joinedAt: string;
+}
+
+// What leaving DOES to the group besides dropping the two membership rows (#271,
+// user-decided 2026-09-14): an OWNER who leaves hands the group to a SUCCESSOR, and a
+// member whose leaving EMPTIES the group deletes it — one transaction either way.
+export interface LeaveOptions {
+  // The member the group row's `createdBy` moves to, conditioned on it naming the leaver.
+  successor?: string;
+  // Delete the group row: the leaver was the last member.
+  deleteGroup?: boolean;
+}
+
+// THE SUCCESSION RULE, spelled once for the route (a deliberate leave) and the departure
+// job (an account deleted under the owner): with nobody left the group goes; with ONE
+// other member that member takes it; with MORE the owner must PICK — except when nobody
+// can (the departure), where the OLDEST membership takes it. A member who is not the
+// owner hands nothing over.
+export function successionFor(
+  group: GroupRecord,
+  members: readonly GroupMember[],
+  leaving: string,
+  chosen?: string,
+): { options: LeaveOptions; needsChoice: boolean } {
+  const others = members.filter((member) => member.publicId !== leaving);
+  if (others.length === 0) return { options: { deleteGroup: true }, needsChoice: false };
+  if (group.createdBy !== leaving) return { options: {}, needsChoice: false };
+  if (others.length === 1) return { options: { successor: others[0].publicId }, needsChoice: false };
+  if (chosen !== undefined && others.some((member) => member.publicId === chosen)) {
+    return { options: { successor: chosen }, needsChoice: false };
+  }
+  return { options: { successor: others[0].publicId }, needsChoice: true };
 }
 
 export interface GroupCreateInput {
@@ -103,14 +134,15 @@ export interface GroupStore {
   // account both still exist. Refuses at either cap for a membership the caller does not
   // already hold.
   join(input: GroupJoinInput): Promise<GroupJoinOutcome>;
-  // Both rows or neither, idempotent: leaving a group one is not in is a no-op, so a
-  // stray half-membership can always be cleared from either side too. The creator's
-  // REMOVE of a member is this same write, authorized by the route.
-  leave(id: string, publicId: string): Promise<void>;
-  // Every membership of one player, for the #204 departure a deleted account owes:
-  // re-read until the partition is empty, so a membership landing between two passes
-  // goes with the rest. IDEMPOTENT (deletes are no-ops), because the job that drives it
-  // is resumed after partial batches.
+  // Both rows or neither, and — per `LeaveOptions` — the group row's succession or
+  // deletion in the SAME transaction. Idempotent on the rows: leaving a group one is not
+  // in is a no-op. The owner's REMOVE of a member is this same write with no options,
+  // authorized by the route (a removed member is never the owner).
+  leave(id: string, publicId: string, options?: LeaveOptions): Promise<void>;
+  // Every membership of one player, for the #204 departure a deleted account owes,
+  // each under `successionFor` with nobody choosing: re-read until the partition is
+  // empty, so a membership landing between two passes goes with the rest. IDEMPOTENT,
+  // because the job that drives it is resumed after partial batches.
   leaveAll(publicId: string): Promise<void>;
 }
 

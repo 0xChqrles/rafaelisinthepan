@@ -2,6 +2,7 @@ import {
   GROUP_MEMBERS_MAX,
   GROUPS_MAX,
   byJoinedAt,
+  successionFor,
   type GroupMember,
   type GroupMembership,
   type GroupRecord,
@@ -42,7 +43,7 @@ export function memoryGroupStore(
         const joinedAt = members.get(publicId);
         const group = groups.get(id);
         if (joinedAt === undefined || !group) continue;
-        rows.push({ id, name: group.name, createdBy: group.createdBy, joinedAt });
+        rows.push({ id, name: group.name, joinedAt });
       }
       return byJoinedAt(rows, (row) => row.id);
     },
@@ -70,12 +71,32 @@ export function memoryGroupStore(
       return 'joined';
     },
 
-    async leave(id, publicId) {
+    async leave(id, publicId, options = {}) {
       of(id).delete(publicId);
+      const group = groups.get(id);
+      if (!group) return;
+      if (options.deleteGroup) {
+        groups.delete(id);
+        memberships.delete(id);
+      } else if (options.successor !== undefined && group.createdBy === publicId) {
+        groups.set(id, { ...group, createdBy: options.successor });
+      }
     },
 
     async leaveAll(publicId) {
-      for (const members of memberships.values()) members.delete(publicId);
+      for (const [id, members] of [...memberships]) {
+        if (!members.has(publicId)) continue;
+        const group = groups.get(id);
+        if (!group) {
+          members.delete(publicId);
+          continue;
+        }
+        const rows = byJoinedAt(
+          [...members].map(([member, joinedAt]) => ({ publicId: member, joinedAt })),
+          (row) => row.publicId,
+        );
+        await this.leave(id, publicId, successionFor(group, rows, publicId).options);
+      }
     },
   };
 }
