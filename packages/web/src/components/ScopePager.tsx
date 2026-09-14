@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import PlusIcon from '../assets/icons/plus.svg?react';
 import { t } from '../i18n';
 import type { LangCode } from '../langs';
 
@@ -6,7 +7,7 @@ import type { LangCode } from '../langs';
 // strip of named tabs and a chip opening a wheel: "it's weird to have the header wheel
 // just above the group wheel… come up with a totally new leaderboard control design").
 //
-// The board's SCOPES — every group the player is in, NEW GROUP, then GLOBAL — are PAGES
+// The board's SCOPES — every group the player is in, then GLOBAL — are PAGES
 // on one horizontal line, and the head of the screen is a PAGER through them: the page in
 // the middle names what the list below shows, its neighbours peek in from the sides at a
 // quarter strength, and a row of DOTS under it says where in the line you are (the active
@@ -22,7 +23,9 @@ import type { LangCode } from '../langs';
 // swipe across three groups fetches one board, not three.
 //
 // The pager is the ONE control: there is no chip, no wheel and no tab strip left on the
-// board, and the period switch under it is the only other thing before the list.
+// board, and the period switch under it is the only other thing before the list. CREATING
+// a group is the PLUS after the last dot (user-decided 2026-09-14: a NEW GROUP page wore
+// the title's dress on what is a button — "feels like bad UX").
 export interface Scope {
   key: string;
   title: string;
@@ -38,6 +41,7 @@ export default function ScopePager({
   active,
   onChange,
   onOpen,
+  onNew,
 }: {
   lang: LangCode;
   scopes: readonly Scope[];
@@ -48,6 +52,8 @@ export default function ScopePager({
   onChange: (index: number) => void;
   // A tap on the middle page.
   onOpen: (index: number) => void;
+  // The plus after the dots.
+  onNew: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   // The page nearest the middle RIGHT NOW (the dress follows it as the finger moves).
@@ -172,6 +178,9 @@ export default function ScopePager({
             onClick={() => onChange(i)}
           />
         ))}
+        <button type="button" className="scope-add" aria-label={t(lang, 'groupNew')} onClick={onNew}>
+          <PlusIcon className="ui-icon" aria-hidden />
+        </button>
       </div>
     </div>
   );
