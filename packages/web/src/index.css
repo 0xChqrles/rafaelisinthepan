@@ -6446,7 +6446,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 /* THE SCOPE PAGER (#271, user-decided 2026-09-14 — the third design of this control; the
    reasoning is in ScopePager.tsx). One horizontal line of PAGES, native scroll-snap: the
-   page in the middle at full strength, its neighbours' names right beside it at half,
+   page in the middle at full strength, one neighbour peeking in at each edge at half,
    both edges fading into the ground; under it the DOTS, the active one long. */
 .scope {
   display: flex;
@@ -6459,38 +6459,53 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   height: 84px;
 }
 .scope-pager {
+  /* THE PEEK: what each end of the line keeps for a neighbour — the first or last few
+     letters of its name, the rest past the edge, the outer part fading. */
+  --peek: 44px;
   display: flex;
-  gap: 20px;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
   overscroll-behavior-x: contain;
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 5%, #000 95%, transparent);
-  mask-image: linear-gradient(to right, transparent, #000 5%, #000 95%, transparent);
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 calc(var(--peek) * 0.6),
+    #000 calc(100% - var(--peek) * 0.6),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 calc(var(--peek) * 0.6),
+    #000 calc(100% - var(--peek) * 0.6),
+    transparent
+  );
 }
 .scope-pager::-webkit-scrollbar {
   display: none;
 }
-/* Half a line of room at each end, so the first and the last page can reach the middle
-   whatever their widths. Real flex items rather than padding, whose inline-end half
-   engines have long left out of a flex scroller's scrollable area. */
+/* A peek of room at each end, so the first and the last page reach the middle. Real
+   flex items rather than padding, whose inline-end half engines have long left out of a
+   flex scroller's scrollable area. */
 .scope-pager::before,
 .scope-pager::after {
   content: '';
-  flex: 0 0 50%;
+  flex: 0 0 var(--peek);
 }
-/* A PAGE: as wide as its NAME (user-reported 2026-09-14: a 60% page centred a short
-   neighbour's name out past the edge, so often no neighbour showed at all), snapped to
-   its centre, never wider than the line. ONE PAGE A SWIPE (`scroll-snap-stop`): pages a
-   name's width apart sit about half as far apart as the 60% ones did, so a flick would
-   sail past the neighbour it had just shown — the name beside the brackets is where a
-   swipe lands.
+/* A PAGE: the line less a peek at each end, snapped to its centre — so a neighbour's
+   page begins exactly where the peek does, and the next one out a whole page further,
+   past the edge (user-reported 2026-09-14: the neighbours "should only be on the side,
+   and you should see part of one neighbour per side maximum"). Its name LEANS
+   (`--lean`, written by ScopePager off the scroll position): centred on the middle page,
+   against the inner edge on a neighbour's, so the peek shows the name's end nearest the
+   middle whatever its length. ONE PAGE A SWIPE (`scroll-snap-stop`): a fling would
+   otherwise sail past the neighbour the peek promised.
    A neighbour is READABLE (user-reported the same day: "the group on the left is almost
    invisible" at a quarter) — half strength. */
 .scope-page {
-  flex: none;
+  flex: 0 0 calc(100% - 2 * var(--peek));
   min-width: 0;
-  max-width: 100%;
   scroll-snap-align: center;
   scroll-snap-stop: always;
   display: flex;
@@ -6528,6 +6543,10 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   text-transform: uppercase;
   line-height: 1;
 }
+.scope-title,
+.scope-sub {
+  translate: var(--lean, 0px) 0;
+}
 .scope-corner {
   position: absolute;
   width: 8px;
@@ -6550,14 +6569,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   color: var(--muted);
 }
 /* The line under the name: which of a thing (a group's size, GLOBAL's TOP 50), the
-   archive day's tag dress. The MIDDLE page's alone — under every name the captions would
-   run into each other — and it takes NO width: a zero-wide box centring its overflow, so
-   the name alone sizes the page and a caption wider than its name ("AB", "2 MEMBERS")
-   hangs centred under it without pushing the neighbours away. */
+   archive day's tag dress. The MIDDLE page's alone: a peek is a name's few letters, not
+   a caption. */
 .scope-sub {
-  display: flex;
-  justify-content: center;
-  width: 0;
   font-family: var(--ui);
   font-size: 10px;
   font-weight: 500;

@@ -10,26 +10,29 @@ import type { LangCode } from '../langs';
 //
 // The board's SCOPES — every group the player is in, then GLOBAL — are PAGES
 // on one horizontal line, and the head of the screen is a PAGER through them: the page in
-// the middle names what the list below shows, its neighbours stand beside it at half
-// strength, and a row of DOTS under it says where in the line you are (the active
-// dot drawn long — the carousel grammar of the user's own reference, `inspiration/modern`).
-// The middle page wears the app's CORNER BRACKETS, the device frame's selection mark:
-// this is the framed one, and tapping it goes INTO it (the group's own screen).
+// the middle names what the list below shows, a neighbour's first or last letters peek
+// in at each edge at half strength, and a row of DOTS under it says where in the line
+// you are (the active dot drawn long — the carousel grammar of the user's own reference,
+// `inspiration/modern`). The middle page wears the app's CORNER BRACKETS, the device
+// frame's selection mark: this is the framed one, and tapping it goes INTO it (the
+// group's own screen).
 //
-// A PAGE IS AS WIDE AS ITS NAME, one fixed gap from the next (user-reported 2026-09-14:
-// "you're not always seeing other groups/global on the left/right of the current group…
-// it might not be obvious that you can swipe"). Pages were 60% of the line with the name
-// centred in each, which left a neighbour's name out past the edge unless it was long
-// enough to reach back in — a short one never showed at all. Sized to their names, the
-// neighbours are the words right beside the brackets, the camera app's mode strip: the
-// line says what a swipe does before anyone swipes. Only the middle page shows its
-// caption — under every name they would run into each other — and the caption takes no
-// width, so the line's rhythm is its names'.
+// A PAGE IS THE LINE LESS A PEEK AT EACH END, and a neighbour's name LEANS against the
+// edge its page shares with the middle one. User-reported 2026-09-14, twice: pages 60% of
+// the line with every name centred left a short neighbour out past the edge ("it might
+// not be obvious that you can swipe"); pages cut to their names' widths then packed the
+// neighbours against the brackets ("the other groups names are too close to the current
+// group name, they should only be on the side, and you should see part of one neighbour
+// per side maximum"). Names differ in length, so no fixed spacing can put every
+// neighbour's edge at the peek; the lean does, whatever the lengths: it follows the
+// scroll, a name sliding from its page's inner edge to its centre as the page comes to
+// the middle, so a swipe carries the peeking name into the brackets. The next page out
+// sits a whole page further, past the edge. Only the middle page shows its caption.
 //
 // A SWIPE turns it — native scroll-snap, so the physics are the platform's own (momentum,
 // the rubber ends, the snap) and nothing is re-implemented — and so do a tap on a
-// neighbour, a tap on a dot, and the arrow keys. A swipe moves ONE page (the name beside
-// the brackets is where it lands); a dot glides as far as it names. Which page is in the
+// neighbour, a tap on a dot, and the arrow keys. A swipe moves ONE page (the name peeking
+// at the edge is where it lands); a dot glides as far as it names. Which page is in the
 // middle is read off the scroll position (the nearest page centre to the pager's centre),
 // LIVE for the dress and SETTLED (a short quiet after the last scroll event) for the
 // caller, so a glide across three groups fetches one board, not three.
@@ -107,6 +110,25 @@ export default function ScopePager({
     el.scrollTo({ left: centreOf(el, page) - el.clientWidth / 2, behavior });
   };
 
+  // THE LEAN, for the scroll position right now: a page's distance from the middle, in
+  // pages and held to one, moves its name from the page's centre (0) to the page's edge
+  // nearest the middle (±1) — the edge the peek shows. Every width is read before any
+  // lean is written, so a frame lays out once.
+  const place = () => {
+    const el = box.current;
+    if (!el) return;
+    const mid = el.scrollLeft + el.clientWidth / 2;
+    const pages = Array.from(el.children) as HTMLElement[];
+    const leans = pages.map((page) => {
+      const title = page.firstElementChild as HTMLElement | null;
+      const width = page.getBoundingClientRect().width;
+      if (!title || width === 0) return 0;
+      const away = Math.max(-1, Math.min(1, (centreOf(el, page) - mid) / width));
+      return Math.round((-away * (width - title.getBoundingClientRect().width)) / 2);
+    });
+    pages.forEach((page, i) => page.style.setProperty('--lean', `${leans[i]}px`));
+  };
+
   // Open ON the held page, before paint; glide there when the caller moves it later (a
   // cut under reduced motion, the app's standing rule).
   const mounted = useRef(false);
@@ -115,31 +137,34 @@ export default function ScopePager({
     scrollTo(active, mounted.current && !prefersReducedMotion() ? 'smooth' : 'instant');
     mounted.current = true;
     setNear(active);
+    place();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, scopes.length]);
 
-  // RE-CENTRE the held page, instantly, when a width CHANGES: the pager's own (the column
-  // settling on a desktop, a rotation) or a page's — a page is as wide as its name, so
-  // every centre moves when the web font lands. Only a CHANGE: an observer's first report
-  // of an element is its arrival, and answering that one — the observer used to be rebuilt
-  // on every page turn — re-centred instantly and cut short the glide just started above,
-  // so a tap on a dot jumped.
+  // RE-CENTRE the held page, instantly, when the pager's width CHANGES (the column
+  // settling on a desktop, a rotation): a snapped position is a fraction of a width. Only
+  // a CHANGE: an observer's first report of an element is its arrival, and answering that
+  // one — the observer used to be rebuilt on every page turn — re-centred instantly and
+  // cut short the glide just started above, so a tap on a dot jumped. The NAMES are
+  // watched too, for the lean alone: a lean is measured off a name's width, which moves
+  // when the web font lands.
   const pageKeys = scopes.map((scope) => scope.key).join(' ');
   useLayoutEffect(() => {
     const el = box.current;
     if (!el || typeof ResizeObserver === 'undefined') return undefined;
-    const widths = new WeakMap<Element, number>();
+    let width: number | undefined;
     const observer = new ResizeObserver((entries) => {
-      let changed = false;
-      for (const { target, contentRect } of entries) {
-        const before = widths.get(target);
-        widths.set(target, contentRect.width);
-        if (before !== undefined && before !== contentRect.width) changed = true;
+      const line = entries.find((entry) => entry.target === el);
+      if (line) {
+        if (width !== undefined && width !== line.contentRect.width) scrollTo(held.current, 'instant');
+        width = line.contentRect.width;
       }
-      if (changed) scrollTo(held.current, 'instant');
+      place();
     });
     observer.observe(el);
-    for (const page of Array.from(el.children)) observer.observe(page);
+    for (const page of Array.from(el.children)) {
+      if (page.firstElementChild) observer.observe(page.firstElementChild);
+    }
     return () => observer.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageKeys]);
@@ -153,6 +178,7 @@ export default function ScopePager({
   );
 
   const onScroll = () => {
+    place();
     cancelAnimationFrame(raf.current);
     raf.current = requestAnimationFrame(() => setNear(nearest()));
     window.clearTimeout(settle.current);

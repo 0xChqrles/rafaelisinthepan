@@ -101,8 +101,8 @@
                               with this device's token, then the board or the game. The link
                               members SHARE is /g/<groupId>, served by the backend for its preview
       components/ScopePager.tsx  WHICH BOARD (#271): the pager of scopes — every group, then
-                              GLOBAL, each page as wide as its name — swiped on native
-                              scroll-snap, brackets on the middle page, dots under it
+                              GLOBAL, one neighbour peeking in at each edge — swiped on
+                              native scroll-snap, brackets on the middle page, dots under it
       components/GroupScreen.tsx  a group's own screen (#271): members (the owner's ✕),
                               INVITE, LEAVE — everything there is to do with a group
       components/GroupCreate.tsx  naming a new group (#271): the GAME'S PROMPT alone on the
@@ -1876,11 +1876,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
   group, then GLOBAL (the untrusted top 50); with no group at all, ONE page that says so
   (`boardEmptyGroups`, a state, its body carrying CREATE GROUP) — are pages on one
   horizontal line on
-  native scroll-snap, EACH PAGE AS WIDE AS ITS NAME, 20px from the next, ONE PAGE A SWIPE
-  (`scroll-snap-stop`), so the neighbours' names stand right beside the middle one at half
-  strength, the outer 5% fading (user-reported 2026-09-14: 60%-wide pages centred a short
-  neighbour's name out past the edge — "it might not be obvious that you can swipe"); only
-  the middle page shows its caption, which takes no width. The middle page wears the app's
+  native scroll-snap, EACH PAGE THE LINE LESS A 44px PEEK AT EACH END, ONE PAGE A SWIPE
+  (`scroll-snap-stop`), a neighbour's name LEANING against its page's inner edge (`--lean`,
+  written off the scroll position, so a swipe carries it from the edge into the middle): the
+  middle name stands alone and exactly ONE neighbour peeks in per side at half strength, its
+  nearest letters showing, the outer part fading, whatever the names' lengths (user-reported
+  2026-09-14, twice: a short neighbour centred in a 60% page never showed — "it might not be
+  obvious that you can swipe" — and pages cut to their names' widths packed the neighbours
+  against the brackets — "they should only be on the side, and you should see part of one
+  neighbour per side maximum"); only the middle page shows its caption. The middle page wears the app's
   CORNER BRACKETS and a row of DOTS sits under it (the active one long). A swipe, a tap on
   a neighbour or a dot, and the arrow keys turn it (a dot or a key GLIDES, a cut under
   reduced motion); the dress follows the nearest page LIVE, the caller is told once the
