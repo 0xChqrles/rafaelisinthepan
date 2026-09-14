@@ -64,9 +64,9 @@ describe('sendJoin — the tap carries the CLICKER key and the GROUP id', () => 
     await expect(answer(400, { error: 'bad_request' })).resolves.toBe('settled');
   });
 
-  it('says so when a cap refused the join, instead of continuing silently', async () => {
+  it('says WHICH cap refused the join, read off the code, instead of continuing silently', async () => {
     await expect(answer(409, { error: 'group_full' })).resolves.toBe('full');
-    await expect(answer(409, { error: 'group_limit' })).resolves.toBe('full');
+    await expect(answer(409, { error: 'group_limit' })).resolves.toBe('limit');
   });
 
   it('an unknown group is an EXPIRED link, read off the code', async () => {

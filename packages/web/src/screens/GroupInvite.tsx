@@ -39,11 +39,13 @@ import { timeoutSignal } from '../timeout';
 // the landing, since losing the write quietly would leave everyone none the wiser, and the
 // write is the one thing this tap existed to do. The CAPS (409 `group_full` — the group
 // holds `GROUP_MEMBERS_MAX` — and 409 `group_limit` — the clicker is in `GROUPS_MAX`
-// groups) are verdicts too, but ones the player could act on, so they say so and their
-// button plays. **EXPIRED** (404 `unknown_group`) is neither a hiccup nor a cap: a link
+// groups) are verdicts too, but ones the player could act on — and DIFFERENT acts (ask
+// the owner for room / leave one of your own), so each is read off its CODE and named
+// for what it is, never off the 409 alone (the repo-wide rule: clients act on the code).
+// **EXPIRED** (404 `unknown_group`) is neither a hiccup nor a cap: a link
 // naming no group is over, and the profile-style read already knows it before anything
 // is offered.
-export type JoinOutcome = 'joined' | 'settled' | 'full' | 'failed' | 'expired';
+export type JoinOutcome = 'joined' | 'settled' | 'full' | 'limit' | 'failed' | 'expired';
 
 // The groups THIS tab joined from a landing. Module-level, because the tap that joins can
 // also MINT the identity, and an acquired identity remounts the routed surface — a
@@ -69,13 +71,14 @@ export async function sendJoin(groupId: string): Promise<JoinOutcome> {
     return 'joined';
   }
   if (response.status >= 500) return 'failed';
-  if (response.status === 409) return 'full';
   let error: unknown;
   try {
     error = ((await response.clone().json()) as { error?: unknown }).error;
   } catch {
     error = undefined;
   }
+  if (error === 'group_limit') return 'limit';
+  if (response.status === 409) return 'full';
   if (error === 'unknown_group') return 'expired';
   await adoptSignedOutVerdict(response, epoch);
   return 'settled';
@@ -95,7 +98,7 @@ const continueToGame = () => navigate('/', { replace: true });
 
 export default function GroupInvite({ groupId, lang }: { groupId: string; lang: string }) {
   const [group, setGroup] = useState<GroupState>(null);
-  const [phase, setPhase] = useState<'idle' | 'busy' | 'done' | 'full' | 'expired'>('idle');
+  const [phase, setPhase] = useState<'idle' | 'busy' | 'done' | 'full' | 'limit' | 'expired'>('idle');
   const [failed, setFailed] = useState(false);
   const [readAttempt, setReadAttempt] = useState(0);
   const identity = useDeviceIdentity();
@@ -149,7 +152,7 @@ export default function GroupInvite({ groupId, lang }: { groupId: string; lang: 
           setPhase('done');
           return;
         }
-        if (outcome === 'full' || outcome === 'expired') {
+        if (outcome === 'full' || outcome === 'limit' || outcome === 'expired') {
           setPhase(outcome);
           return;
         }
@@ -174,10 +177,10 @@ export default function GroupInvite({ groupId, lang }: { groupId: string; lang: 
     );
   }
   // A confirmed cap or missing group offers PLAY; a failed read above offers RETRY.
-  if (phase === 'full' || phase === 'expired' || group === 'gone') {
+  if (phase === 'full' || phase === 'limit' || phase === 'expired' || group === 'gone') {
     return (
       <LoadError
-        message={t(lang, phase === 'full' ? 'groupFull' : 'inviteExpired')}
+        message={t(lang, phase === 'full' ? 'groupFull' : phase === 'limit' ? 'groupLimit' : 'inviteExpired')}
         lang={lang}
         onRetry={continueToGame}
         actionLabel={t(lang, 'gatePlay')}

@@ -1839,9 +1839,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the BOARD as the primary way on and PLAY under it — and the answered list is published
   through `adoptGroups`, so the board opens on the group without a second read. The
   landing replaces itself in history. A NON-CAP 4xx is a VERDICT and continues into the
-  game silently; **the two CAPS (409 `group_full` / `group_limit`) and an EXPIRED link
-  (404 `unknown_group`) speak** on the `LoadError` surface with PLAY as the way onward
-  (`groupFull`, `inviteExpired`). Contract-tested (`GroupInvite.test.ts`).
+  game silently; **the two CAPS (409 `group_full` / `group_limit`, each read off its CODE:
+  the group's room and the clicker's own `GROUPS_MAX` are different acts) and an EXPIRED
+  link (404 `unknown_group`) speak** on the `LoadError` surface with PLAY as the way onward
+  (`groupFull`, `groupLimit`, `inviteExpired`). Contract-tested (`GroupInvite.test.ts`).
 
 - **Leaderboard screen (#190; drawn over GROUPS since #271, user-decided 2026-09-07):**
   `/<lang>/board` and `/<lang>/word/board` (`pathForBoard`; a board is per (day, lang,
