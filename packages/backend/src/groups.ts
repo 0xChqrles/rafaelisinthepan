@@ -29,7 +29,7 @@
 import {
   GROUP_ID_PATTERN,
   generateGroupId,
-  isValidName,
+  isValidGroupName,
   PUBLIC_ID_PATTERN,
   type BoardPlayer,
   type GroupSummary,
@@ -158,14 +158,14 @@ export async function handleGroups(
       return errorResponse(400, 'bad_request', 'Body field "create" must be true.', responseHeaders);
     }
     // The NAME wears the player name's own charset (#188's shared rule: alphanumerics and
-    // underscores, at most 16) — one rule for everything a person names here — and unlike
+    // underscores) at the group's cap, 20 (`isValidGroupName`) — and unlike
     // a player it cannot be empty: a tab with nothing on it is not a group.
     const name = body.name;
-    if (typeof name !== 'string' || name.length === 0 || !isValidName(name)) {
+    if (typeof name !== 'string' || name.length === 0 || !isValidGroupName(name)) {
       return errorResponse(
         400,
         'bad_request',
-        'Body field "name" must be 1 to 16 letters, digits or underscores.',
+        'Body field "name" must be 1 to 20 letters, digits or underscores.',
         responseHeaders,
       );
     }
