@@ -208,9 +208,9 @@ export default function Hole({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revealed]);
   const endBurst = useCallback(() => setBurst(0), []);
-  // SPENT: the meter has done its one job. As the letter pops in, the bar fades out and the
-  // chip gives back the band it held for it (user-decided 2026-09-15, "once the progress
-  // bar is full, we can just remove it during the first letter apparition animation").
+  // SPENT: the meter has done its one job. As the letter lands, the level fades out
+  // (user-decided 2026-09-15, "once the progress bar is full, we can just remove it during
+  // the first letter apparition animation").
   const spent = revealed && initialShown;
   // Where this hit's sparks gather: the meter after it, fixed per hit (see the loot below).
   const [lootFill, setLootFill] = useState(0);
@@ -293,10 +293,11 @@ export default function Hole({
   // touching it: the floating-hit/scramble choreography keys off this exact structure.
   const body = (
     <>
-      {/* THE REVEALED INITIAL (#301): the one persistent clue a full meter earns, worn as a
-          mark BEFORE the chip the way the exponent is worn after it — the letter alone,
-          never the word's length. Decorative here: the hole's description says it. Gone
-          with the chip once the hole is inked in. */}
+      {/* THE REVEALED INITIAL (#301): the one persistent clue a full meter earns — a TAG
+          pinned on the chip's corner, drawn out of flow so the hole's width never moves
+          (user-decided 2026-09-15) — the letter alone, never the word's length. Decorative
+          here: the hole's description says it. Gone with the chip once the hole is inked
+          in. */}
       {!resolved && initialShown && charge?.initial ? (
         <span className="hole-initial" aria-hidden="true">
           {charge.initial}
@@ -310,7 +311,7 @@ export default function Hole({
             changing it restarts the shake even on two consecutive hits (see `lastHit`). */}
         <span
           key={`word-${lastHit.current}`}
-          className={`hole-word${hit ? ' hit-shake' : ''}${strikeArt ? ' struck' : ''}${spent ? ' spent' : ''}${waving ? ' wave' : ''}`}
+          className={`hole-word${hit ? ' hit-shake' : ''}${strikeArt ? ' struck' : ''}${waving ? ' wave' : ''}`}
           style={wordStyle}
         >
           {/* One span per letter — the structure the wave moves. Keyed by position, so the
@@ -322,16 +323,16 @@ export default function Hole({
             </span>
           ))}
           {/* THE METER (#301) rides the chip: the same box as the chip's ground, drawn
-              UNDER the ink and OVER the chip, its fill a line along the chip's bottom edge
-              — the hole's unresolved dress, now visibly filling. On the shaking word, not
+              UNDER the ink and OVER the chip — the solve ink rising inside the chip as a
+              LEVEL, the hole's unresolved dress visibly filling. On the shaking word, not
               the static wrap, for the chip's own reason: it is part of the chip. */}
           {!resolved && charge ? (
             <span className={`hole-meter${spent ? ' spent' : ''}`} aria-hidden="true">
               <span
-                className="hole-meter-fill"
+                className={`hole-meter-fill${charge.value > 0 ? ' charged' : ''}`}
                 style={
                   {
-                    width: `${charge.value}%`,
+                    height: `${charge.value}%`,
                     '--meter-ms': `${METER_MS}ms`,
                     '--meter-delay': `${meterDelayMs}ms`,
                   } as CSSProperties

@@ -1415,14 +1415,10 @@ input {
    4px chip came to 23.75px inside a 23.6px line box — TALLER THAN THE LINE — and two holes
    on consecutive lines fused into one white block.
 
-   SINCE #301 IT CARRIES A BAND UNDER THE LETTERS FOR THE METER (user-decided 2026-09-15,
-   "make sure the progress bar doesn't touch the letters"): the bottom padding is 0.24em
-   where the top stays 0.1335em, so the bar (0.16em) sits in its own track under the em box
-   with 0.08em of air above it (measured: the 0.06em of the first cut rounded onto the em
-   box's last pixel on a phone) — the chip is 1.374em tall, its centre 0.053em under the
-   word's, and its bottom edge lands at 0.74em below the word's centre, inside the line's
-   0.75em half-leading at both breakpoints (the phrase is 1.5 everywhere). Two lines of
-   chips keep 0.13em between a bar and the chip below it.
+   SINCE #301 IT IS ALSO THE METER: the level of solve ink that rises inside it as near
+   guesses charge the hole (`.hole-meter`, below) is drawn in this exact box, so the chip's
+   geometry is the meter's too. (A first cut drew the meter as a line along the chip's
+   bottom edge and grew the chip a band to keep it off the letters; both are gone.)
 
    IT IS CENTRED AND SIZED IN `em`, NOT INSET. `.hole-word` is an inline box 1em tall AT
    REST and an inline-BLOCK box a full line-height tall while `.hit-shake` runs (a transform
@@ -1447,8 +1443,8 @@ input {
   left: -0.2em; /* 6px at the sentence's 30px */
   right: -0.2em;
   top: 50%;
-  height: 1.374em; /* the word's own 1em, 4px above and the bar's band below (#301) */
-  translate: 0 calc(-50% + 0.053em);
+  height: 1.267em; /* the word's own 1em, plus 4px above and below at that size */
+  translate: 0 -50%;
   z-index: -1;
   background: var(--chip-bg, var(--fg));
 }
@@ -1512,61 +1508,100 @@ input {
 
 /* --- THE CHARGE METER (#301, user-decided 2026-09-15) -----------------------------------
    A near guess that is not a new best still CHARGES the hole, and the hole's own unresolved
-   dress — the chip — is where the charge shows: the meter is a line along the chip's
-   bottom edge that fills as charge lands. It takes the chip's exact box (same overhang,
-   same height, same centring) and sits in the chip's own stacking layer, AFTER the `::before`
-   in paint order, so it draws over the white ground and under the ink. Nothing is laid out:
-   it is absolute like the chip, and rides `.hole-word` like the chip, so the shake carries
-   it and no letter of the sentence moves. The fill's TRAVEL is `--meter-ms` (Hole's
-   `METER_MS`): the loot lands on the release beat and the fill is what it lands as. */
+   dress — the chip — is where the charge shows: THE CHIP FILLS WITH THE SOLVE INK FROM THE
+   BOTTOM, a level rising behind the dark letters (user-decided 2026-09-15, "try something
+   else than a progress bar" — the first cut was a line along the chip's bottom edge, which
+   wanted a band of its own to keep off the letters). The level is the meter's reading of
+   the chip's height; a full chip is all cobalt — the ink the word will wear once found —
+   and the burst and the letter follow. It takes the chip's exact box (same overhang, same
+   height, same centring), sits in the chip's own stacking layer AFTER the `::before` in
+   paint order — over the white ground, under the ink — and clips to itself. Nothing is laid
+   out: it is absolute like the chip and rides `.hole-word` like the chip, so the shake
+   carries it and no letter of the sentence moves. The fill's TRAVEL is `--meter-ms` (Hole's
+   `METER_MS`) and it WAITS for the blood (`--meter-delay`, Hole's): the release beat moves
+   the height, the transition holds until the drops have gathered on the surface, then the
+   level rises. */
 .hole-meter {
   position: absolute;
   left: -0.2em;
   right: -0.2em;
   top: 50%;
-  height: 1.374em; /* the chip's box, band included */
-  translate: 0 calc(-50% + 0.053em);
+  height: 1.267em;
+  translate: 0 -50%;
   z-index: -1;
+  overflow: hidden;
   pointer-events: none;
 }
-/* SPENT (user-decided 2026-09-15): once full, the bar has said everything it will — it
-   fades out on the letter's own pop (the `rank-pop` 0.4s), and the chip gives back the band
-   it held for it, shrinking to the plain held word's 1.267em on the same beat. A hole
-   mounted revealed (a reload) is spent from its first frame, nothing transitions. */
+.hole-meter-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--accent);
+  transition: height var(--meter-ms, 300ms) ease-out var(--meter-delay, 0ms);
+}
+/* The SURFACE: one lit row on the level, so the liquid has a top the drops land on. Only
+   once there is a level (`.charged`): at 0% it would read as a line on the chip's floor. */
+.hole-meter-fill.charged::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 0.1em;
+  background: color-mix(in srgb, var(--accent) 55%, var(--fg));
+}
+/* SPENT (user-decided 2026-09-15): once full, the level has said everything it will — it
+   fades out on the letter's own arrival (0.4s). A hole mounted revealed (a reload) is spent
+   from its first frame, nothing transitions. */
 .hole-meter.spent {
   opacity: 0;
   transition: opacity 0.4s ease-out;
 }
-.hole:not(.resolved) .hole-word.spent::before {
-  height: 1.267em;
-  translate: 0 -50%;
-  transition:
-    height 0.4s ease-out,
-    translate 0.4s ease-out;
-}
-/* The fill WAITS for the sparks (`--meter-delay`, Hole's): the release beat moves the
-   width, the transition holds until the shower has gathered on the bar, then travels. */
-.hole-meter-fill {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  height: 0.16em; /* 5px at the sentence's 30px (0.1em read as a hairline, 2026-09-15) */
-  background: var(--accent);
-  transition: width var(--meter-ms, 300ms) ease-out var(--meter-delay, 0ms);
-}
-/* THE REVEALED INITIAL: a mark BEFORE the chip, mirrored on the exponent after it — the
-   exponent's size, superscript, in the meter's own colour, nudged clear of the chip's
-   overhang exactly as the exponent is on the far side (the same `0.2em / 0.55`). It pops
-   in on the exponent's own hop. A LAYOUT box, deliberately: it arrives once per hole per
-   round, on the burst, and the sentence taking it in on that beat is the reveal. */
+/* THE REVEALED INITIAL IS A TAG PINNED ON THE CHIP'S CORNER (user-decided 2026-09-15 —
+   "the first letter as a left exponent feels weird… make sure that when you make it
+   appear, it doesn't impact the width of the hole"): a small tile of the solve ink with the
+   letter in white, hung off the chip's top-left corner, DRAWN AND NEVER LAID OUT — absolute
+   in the hole, so the sentence cannot reflow when it lands. Sized in PIXELS, not em: the
+   letter is the pixel font at its native 8px, crisp on any word size, on a 16px tile (14 on
+   a phone); a little over half of it hangs outside the chip, up and left, so it reads as
+   pinned to the corner and covers no more than the corner pixel of the first glyph. It drops
+   in from above on the reveal. At the worst alignment it may touch a chip on the line above
+   by a couple of pixels; accepted. */
 .hole-initial {
-  display: inline-block;
-  font-size: calc(1em * var(--rank-size, 0.55));
-  margin-right: 1px;
-  color: var(--accent);
-  vertical-align: super;
-  translate: calc(-0.2em / var(--rank-size, 0.55)) 0;
-  animation: rank-pop 0.4s ease-out;
+  position: absolute;
+  left: -0.2em;
+  top: calc(50% - 0.6335em);
+  translate: -55% -50%;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  background: var(--accent);
+  color: var(--fg);
+  font-family: var(--pixel-font);
+  font-size: 8px;
+  line-height: 1;
+  pointer-events: none;
+  animation: initial-drop 0.4s cubic-bezier(0.2, 1.3, 0.4, 1);
+}
+.phrase .hole-btn .hole-initial {
+  text-shadow: none;
+}
+.hole.veiled .hole-initial {
+  visibility: hidden;
+}
+@keyframes initial-drop {
+  from {
+    opacity: 0;
+    translate: -55% -110%;
+  }
+  to {
+    opacity: 1;
+    translate: -55% -50%;
+  }
 }
 /* THE LOOT IS BLOOD (user-decided 2026-09-15, in three passes: "a bit shy" → "drops
    particles around the hole, then gathers them on the bar" → "it should feel like blood…
@@ -1574,11 +1609,13 @@ input {
    bar, with a trail"). ONE colour — the meter's, no brightness or opacity per drop — and a
    PHYSICAL throw: the hit sends every drop out on its own arc under gravity (up, then the
    fall), it SPLATS where it lands around and below the word (a squash on impact), lies
-   there through a pause, and is then pulled onto the bar at the fill's new tip, each drop
-   dragging a TRAIL — two smaller copies of itself running the same path a few frames behind,
-   shown only for the gather. Rolled per hit (`--spark-dx`/`--spark-dy` where it lands,
-   `--spark-up` how high it flies first, `--spark-s` its size); `--spark-lx` is the landing on
-   the bar, in the wrap's own width. The flight animates `left`/`top` (a few dozen absolute
+   there through a pause, and is then pulled onto the SURFACE of the level the chip is
+   about to reach, each drop dragging a TRAIL — two smaller copies of itself running the same
+   path a few frames behind, shown only for the gather. HOW MANY is the hit's gain (a drop
+   per 2.5 points, user-decided 2026-09-15: "proportional to the progression"). Rolled per hit
+   (`--spark-dx`/`--spark-dy` where it splats, `--spark-up` how high it flies first,
+   `--spark-s` its size, `--spark-lx` where along the chip it comes to rest); `--spark-ly` is
+   the surface, in the wrap's own height. The flight animates `left`/`top` (a few dozen absolute
    boxes, cheap) so the landing can be a percentage of the WORD's width — a translate's
    percentage is the spark's own. `forwards` and NOT `both`: with a delay, a backwards fill
    would show the first frame during the wait. Timing comes down from ChargeLoot. */
@@ -1651,7 +1688,7 @@ input {
   100% {
     opacity: 0;
     left: var(--spark-lx, 50%);
-    top: calc(50% + 0.66em); /* the bar's centre line, under the letters */
+    top: var(--spark-ly, 50%); /* the level's surface */
     scale: 1;
   }
 }
@@ -1673,8 +1710,7 @@ input {
    frame under its own rule.) */
 @media (prefers-reduced-motion: reduce) {
   .hole-meter-fill,
-  .hole-meter.spent,
-  .hole:not(.resolved) .hole-word.spent::before {
+  .hole-meter.spent {
     transition: none;
   }
   .charge-spark {
