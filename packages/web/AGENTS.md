@@ -254,7 +254,9 @@ These are decided and verified against the code. Treat them as load-bearing.
   deferred-board beat, `shownCharge`) and the fill's transition WAITS for the landing
   (`--meter-delay`, `sparkLandMs`), the burst and the letter waiting with it; the chip
   carries a BAND under the letters for the bar (0.24em below the em box, the chip 1.374em,
-  bottom edge at 0.74em inside the 0.75em half-leading), so the bar never touches a letter; at 100 `meter fills → BURST
+  bottom edge at 0.74em inside the 0.75em half-leading), so the bar never touches a letter; ONCE FULL THE BAR GOES — it fades on the letter's
+  own pop and the chip shrinks back to the plain held word's box (`.spent`, user-decided
+  2026-09-15); at 100 `meter fills → BURST
   → initial`, timed off `METER_MS` in `Hole`. The exact hit wears the ULTRA star and takes
   no cut, loot or burst (the solve supersedes); a miss, a repeat and a rank past the table
   keep the float alone; a guess that also improves the hole keeps the word/rank swap

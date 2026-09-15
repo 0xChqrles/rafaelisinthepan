@@ -208,6 +208,10 @@ export default function Hole({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revealed]);
   const endBurst = useCallback(() => setBurst(0), []);
+  // SPENT: the meter has done its one job. As the letter pops in, the bar fades out and the
+  // chip gives back the band it held for it (user-decided 2026-09-15, "once the progress
+  // bar is full, we can just remove it during the first letter apparition animation").
+  const spent = revealed && initialShown;
   // Where this hit's sparks gather: the meter after it, fixed per hit (see the loot below).
   const [lootFill, setLootFill] = useState(0);
   const lootHitId = hit?.charge ? hit.id : null;
@@ -306,7 +310,7 @@ export default function Hole({
             changing it restarts the shake even on two consecutive hits (see `lastHit`). */}
         <span
           key={`word-${lastHit.current}`}
-          className={`hole-word${hit ? ' hit-shake' : ''}${strikeArt ? ' struck' : ''}${waving ? ' wave' : ''}`}
+          className={`hole-word${hit ? ' hit-shake' : ''}${strikeArt ? ' struck' : ''}${spent ? ' spent' : ''}${waving ? ' wave' : ''}`}
           style={wordStyle}
         >
           {/* One span per letter — the structure the wave moves. Keyed by position, so the
@@ -322,7 +326,7 @@ export default function Hole({
               — the hole's unresolved dress, now visibly filling. On the shaking word, not
               the static wrap, for the chip's own reason: it is part of the chip. */}
           {!resolved && charge ? (
-            <span className="hole-meter" aria-hidden="true">
+            <span className={`hole-meter${spent ? ' spent' : ''}`} aria-hidden="true">
               <span
                 className="hole-meter-fill"
                 style={

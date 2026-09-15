@@ -1529,6 +1529,21 @@ input {
   z-index: -1;
   pointer-events: none;
 }
+/* SPENT (user-decided 2026-09-15): once full, the bar has said everything it will — it
+   fades out on the letter's own pop (the `rank-pop` 0.4s), and the chip gives back the band
+   it held for it, shrinking to the plain held word's 1.267em on the same beat. A hole
+   mounted revealed (a reload) is spent from its first frame, nothing transitions. */
+.hole-meter.spent {
+  opacity: 0;
+  transition: opacity 0.4s ease-out;
+}
+.hole:not(.resolved) .hole-word.spent::before {
+  height: 1.267em;
+  translate: 0 -50%;
+  transition:
+    height 0.4s ease-out,
+    translate 0.4s ease-out;
+}
 /* The fill WAITS for the sparks (`--meter-delay`, Hole's): the release beat moves the
    width, the transition holds until the shower has gathered on the bar, then travels. */
 .hole-meter-fill {
@@ -1657,7 +1672,9 @@ input {
    flight: the fill snaps, nothing flies, the letter simply appears. (The strike holds one
    frame under its own rule.) */
 @media (prefers-reduced-motion: reduce) {
-  .hole-meter-fill {
+  .hole-meter-fill,
+  .hole-meter.spent,
+  .hole:not(.resolved) .hole-word.spent::before {
     transition: none;
   }
   .charge-spark {
