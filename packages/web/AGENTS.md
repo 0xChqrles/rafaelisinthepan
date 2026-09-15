@@ -126,8 +126,19 @@
       screens/WordGame.tsx    Word mode's three phases: rules gate -> timed run -> post-mortem
       game/wordGame.ts        Word mode's rules + economy (shared WORD_CLAIM_ZONE re-export, rarity ladder, clock)
       game/wordBoard.ts       Word mode's post-mortem board: the zone as RARITY-graded stations
-      components/rarity.ts    a rarity grade's pinned colour, and how many times a find is struck
-      components/WordSlash.tsx    the slash a claim cuts the day's word with
+      components/rarity.ts    a rarity grade's pinned colour, and which sheet a grade is struck with
+      components/strikeArt.ts the three strike sheets and their animation contract (#301: a
+                              generic primitive — Word mode's ladder and the sentence's holes
+                              both land them)
+      components/Strike.tsx   one blow of one sheet on a game word (was WordSlash)
+      components/Loot.tsx     what a hit knocks off a game word: the rank exponent (+ Word
+                              mode's grade) popping up and falling away (was WordLoot)
+      game/charge.ts          #301's hole CHARGE METER: the rank -> charge table, the replay of
+                              the play log onto every hole's meter, the revealed initial
+      components/ChargeLoot.tsx  the blood a charging guess knocks out of the hole, gathered
+                              onto the meter
+      components/MeterCanvas.tsx  the meter's drawing: the chip converting as an ordered
+                              dither, tweened
       components/WordSubject.tsx  the day's word while the run is on: the word alone, centred
       hooks/useCountdown.ts   the run's deadline, as a ticking clock (HUD) and as one flip (screen)
       game/scoring.ts         the SCREEN's reading: applyGuessToHoles + replayHoles +
@@ -212,6 +223,71 @@ These are decided and verified against the code. Treat them as load-bearing.
   solved (accented secret, no exponent).
 - **Feedback grammar:** under-the-input message = info about *what you typed* (only
   INVALID uses it now); on-hole floating number/"MISS" = info about *a hole*.
+- **NEAR GUESSES CHARGE THE HOLE (#301, user-decided 2026-09-15).** Every COUNTED guess
+  charges every UNSOLVED hole by its rank in that secret's map, best word or not
+  (`game/charge.ts`): rank 1–3 +30 · 4–10 +20 · 11–25 +14 · 26–50 +10 · 51–100 +7 ·
+  101–250 +3.5 · past 250 / absent 0; rank 0 is the solve and pays nothing. (TUNED TO A
+  RUN, user-decided 2026-09-15 in two passes on play: the issue's 30/18/12/7.5/4.5/1.5 was
+  "quite hard to unlock", a 50/34/25/18/12/6 answer "a bit too much" — "it should unlock
+  naturally around 25/30 (good and bad) tries". A TYPICAL round — about half the tries far
+  or missed, a quarter at 101–250, the rest spread closer — fills it at ~27 tries, a sharp
+  one at ~19; `charge.test.ts` pins both mixes, so a retune restates the yardstick.) ONE meter per
+  logical secret (repeated occurrences share it), capped at `CHARGE_TARGET` = 100, and
+  reaching it REVEALS THE SECRET'S FIRST LETTER — automatically, once, the initial only
+  (never the length); a full meter takes no more charge. No separate try/time gate, no
+  charge-specific dedup or farming rule: the play log's own canonical identity is what a
+  counted guess is. **DERIVED from the play log, never persisted** — `replayCharge` over
+  the same log the board replays, so a reload or another device reconstructs the same
+  meter and the same initial. Presentation (user-decided 2026-09-15, the third cut: "try
+  something else than a progress bar"; "the first letter as a left exponent feels weird…
+  make sure that when you make it appear, it doesn't impact the width of the hole"): THE
+  CHIP CONVERTS TO THE SOLVE INK EDGE TO EDGE ACROSS THE WORD — `.hole-meter`, the chip's
+  own box and layer: the white ground turns cobalt from the left behind the dark letters,
+  the chip's whole height, AS AN ORDERED DITHER (`components/MeterCanvas.tsx`: Bayer 8×8
+  thresholds on 2px cells, the density ramping over about a chip's height ahead of the
+  front, cells lighting in threshold order as the front advances — a canvas, tweened in JS
+  on the meter's own delay and travel; user-decided 2026-09-15, replacing a hard-edged sweep
+  with a checker fringe, "a basic animation"), a full chip all cobalt (the ink the word
+  wears once found); and THE INITIAL IS THE WORD'S FIRST CELL — `.hole-initial`,
+  a chip-high tile of the solve ink over the chip's left overhang (0.6em, flush with the
+  chip, 0.4em into the word gap) with the letter in white (the pixel font at half the word's size, never under 8px), ABSOLUTE in the hole and
+  never laid out, so the hole's width and the sentence's layout cannot move when it lands.
+  Nothing under the sentence, no `+7.5` parked anywhere. Retired the same day, each on the
+  user's review: a line along the chip's bottom edge and the band the chip grew for it (a
+  bar); a level rising inside the chip with a lit surface row ("barely moves… the top
+  border feels weird"); a superscript mark before the chip and a 16px tag on its corner
+  (both "a left exponent"). **The cut is WHITE, WORD MODE'S SIZE, and the hit is Word mode's
+  hit (user-decided 2026-09-15 across three passes on the first cut: "always white", then
+  "x3 bigger", then "the same slash size that is used on the word mode, with the same
+  shake animation and exponent animation")**: `--fg` through the mask at `.strike`'s own
+  5x / 4x with NO `.phrase` geometry; the recoil is the Word subject's BLOW (`STRUCK_MS`,
+  `strikeArt.ts`, as `--shake-ms`) and for that blow the chip INVERTS — ground `--bg`, ink
+  `--fg` (`hole-invert`); and on a cut the rank is the LOOT exponent (`Loot`, the Word
+  claim's, generic since #301: with no grade the exponent flies alone) instead of the
+  float, which stays for a miss, a repeat and the solve. The SENTENCE's exponent is 0.75em
+  (`--rank-size` on `.phrase` and the wheel's slot row; 0.55 where `.hole-rank` is
+  reused). The sequence is `cut → BLOOD: drops fly out on their own
+  arcs and SPLAT around and below the word, lie there a pause, then are GATHERED at the
+  conversion's front, each with a trail → the front sweeps on` — a drop per 2.5 points of the
+  hit's gain ("proportional to the progression") — on the hit's own stagger beat
+  (user-decided 2026-09-15 in three passes — "a bit shy", "particles around the hole then
+  gathered", "it should feel like blood… something physical that dropped onto the screen…
+  a trail following their trajectory" — replacing one arc into the bar; ONE colour, the
+  meter's, no opacity or tone per drop): the width moves on the guess's RELEASE (the
+  deferred-board beat, `shownCharge`) and the fill's transition WAITS for the landing
+  (`--meter-delay`, `sparkLandMs`), the burst and the letter waiting with it; ONCE FULL THE
+  CONVERSION GOES — it fades on the letter's own arrival (`.spent`, user-decided 2026-09-15); at 100 `meter fills → BURST
+  → initial`, timed off `METER_MS` in `Hole`. The exact hit wears the ULTRA star and takes
+  no cut, loot or burst (the solve supersedes); a miss, a repeat and a rank past the table
+  keep the float alone; a guess that also improves the hole keeps the word/rank swap
+  choreography (charging is additive). The sheets are the Word-mode art, extracted to
+  `components/strikeArt.ts` + `Strike.tsx` (`.strike`, its own integer scales under
+  `.phrase`) — never a rarity grade, never the heat. A11y: the meter and the
+  initial are the hole button's DESCRIPTION (`srHoleCharge` / `srHoleInitial`, sr-only
+  spans outside the sentence like the exploration hints, never words in the prose); the
+  reveal is also announced with the guess. Reduced motion keeps the state and snaps: no
+  sparks, no fill travel, the letter simply appears. Not done, deliberately: second
+  letters, a manual hint button, a hint currency, adaptive thresholds.
 - **THE PALETTE IS THREE INDEPENDENT AXES (user-decided 2026-08-17): weird/calm +
   hole/solve + accent — in STAMP-INK tones** (retuned the same day against the user's
   /inspiration set — vintage offset stamps, riso posters — after the first calm cut went
@@ -2321,14 +2397,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `WordSubject.useStruck` owns it — struck for `STRUCK_MS` from the hit's mount, keyed per
   hit so a claim landing on another restarts the recoil. A MISS lands no blow. **The plain
   slash lands RANDOMLY MIRRORED** (user-decided 2026-08-11, repurposing the cross's flip):
-  rolled once per hit in `WordSlash` — a state initializer, so a re-render cannot flip a
+  rolled once per hit in `Strike` (`WordSlash` until #301) — a state initializer, so a re-render cannot flip a
   stroke mid-swing — and ONLY for `slash.png`: the burst and the ultra are near-symmetric
   art with nothing to say backwards. There
   is no text that PARKS: a name has to be read, and a run against a clock has no time for
   that. The grade is carried by the strike's COLOUR, by the word taking that colour under
   it — and, since 2026-08-10 (user-decided, superseding "colour alone"), by the hit's LOOT:
   the claim knocks the guess's rank exponent and the grade's NAME off the word
-  (`components/WordLoot.tsx` + `.word-loot` in index.css), popping up and apart off the
+  (`components/Loot.tsx` + `.loot` in index.css), popping up and apart off the
   impact like drops off a struck enemy, hanging, then falling away — in the air for 840ms,
   never parked. The exponent wears the heat colour every other exponent wears (the shared
   `rankHeatColor(rank)`, whose absolute cap is internal), the grade its `RARITY_COLORS` colour. The flight is
@@ -2337,12 +2413,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `rotate` tilt. **The throw is ROLLED per hit** (user-decided 2026-08-10): which side
   each piece takes (sometimes the exponent flies left, sometimes the grade does — always
   opposite sides), which launches first, and a bounded jitter on each piece's distance,
-  height, drop and tilt (`--loot-j*` factors from `WordLoot`, multiplied into the CSS
+  height, drop and tilt (`--loot-j*` factors from `Loot`, multiplied into the CSS
   geometry — never pixel values, so the ≤640px step-down keeps working; the jitter ceiling
   is part of the 320px overflow sum commented in index.css). The pieces are EDGE-anchored
   (a piece's whole box stays on its own side of its anchor), so they cannot overlap
   whichever way the dice land — centred anchors measurably put `-5` on top of `ARCANE`
-  for the first half of the flight. Timing is handed from `WordLoot` to CSS as variables
+  for the first half of the flight. Timing is handed from `Loot` to CSS as variables
   (the `--slash-ms` rule); base geometry is per piece in CSS with a ≤640px step-down. The loot always outlives every sheet, so ITS
   timer is what reports a claim's hit done (`hitDurationMs` = max of strike and loot, and
   the ending's hold covers it); under reduced motion the global collapse leaves each piece
@@ -2377,7 +2453,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   offset is half a pixel of resampling on a sprite whose whole point is hard edges. Verified no
   page overflow at 320px, where the widest of them spans x 18..302.
   **Under reduced motion each sheet holds ONE frame**, and the ultra needs **its own
-  `animation: none`** rather than the stroke's: the base `.word-slash.ultra` declares the walk
+  `animation: none`** rather than the stroke's: the base `.strike.ultra` declares the walk
   at a higher specificity, so it won, the global rule collapsed its duration to nothing, and
   the sheet landed on its LAST, near-empty frame with a `both` fill (measured:
   `background-position: 100% 0%`, an ARCANE find showing almost nothing). It holds its THIRD

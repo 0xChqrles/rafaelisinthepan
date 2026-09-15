@@ -1,5 +1,5 @@
 import { Fragment } from 'react';
-import Hole from './Hole';
+import Hole, { type HoleChargeView } from './Hole';
 import { capitalize, sentenceStarts } from '../game/sentenceCase';
 import type { HitState, Hole as PuzzleHole, RuntimeHole } from '@whippin/shared';
 
@@ -19,6 +19,7 @@ export default function Phrase({
   onExplore,
   quiet = false,
   veiledHole = null,
+  charges,
 }: {
   words: string[];
   holes: RuntimeHole[];
@@ -38,6 +39,9 @@ export default function Phrase({
   quiet?: boolean;
   // The hole the wheel is open over, whose word is hidden in place meanwhile (see Hole).
   veiledHole?: number | null;
+  // The holes' CHARGE METERS (#301), by hole index: what each shows, and the sr-only
+  // description of it (empty for a hole with nothing to describe — a solved one).
+  charges?: (HoleChargeView & { hint: string })[];
 }) {
   const holeIndexByPos = new Map<number, number>(holes.map((h, i) => [h.pos, i]));
   // Sentence case is a DISPLAY rule (`game/sentenceCase.ts`): the first token and every
@@ -46,6 +50,7 @@ export default function Phrase({
   const starts = sentenceStarts(words);
   const puzzleHoleByPos = new Map<number, PuzzleHole>(puzzleHoles.map((h) => [h.pos, h]));
   const hintId = (holeIndex: number) => `hole-explore-${holeIndex}`;
+  const chargeId = (holeIndex: number) => `hole-charge-${holeIndex}`;
 
   return (
     <>
@@ -58,6 +63,7 @@ export default function Phrase({
           const activeHit = hits.find((h) => h.holeIndex === idx) ?? null;
           const { prefix, suffix } = puzzleHoleByPos.get(i) ?? {};
           const exploreLabel = exploreLabels?.[idx] ?? null;
+          const charge = charges?.[idx];
           // Prefix (leading clitic) and suffix (trailing punctuation) are sentence
           // context and always show. They live with the blank in a nowrap group so
           // they can never break onto a different line from it.
@@ -83,6 +89,8 @@ export default function Phrase({
                   onResolved={onHoleResolved}
                   quiet={quiet}
                   veiled={veiledHole === idx}
+                  charge={charge && { value: charge.value, initial: charge.initial }}
+                  chargeHintId={charge?.hint ? chargeId(idx) : undefined}
                   explore={
                     exploreLabel && onExplore
                       ? {
@@ -119,6 +127,16 @@ export default function Phrase({
           </span>
         ),
       )}
+    {/* The meters' descriptions (#301), outside the sentence for the same reason: the
+        charge and the revealed initial are the hole's STATE, read as a description of the
+        hole, never as words in the prose. */}
+    {charges?.map((charge, idx) =>
+      charge.hint ? (
+        <span key={idx} id={chargeId(idx)} className="sr-only">
+          {charge.hint}
+        </span>
+      ) : null,
+    )}
     </>
   );
 }

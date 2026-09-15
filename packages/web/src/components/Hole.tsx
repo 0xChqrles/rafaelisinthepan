@@ -1,6 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
+import Strike from './Strike';
+import Loot from './Loot';
+import ChargeLoot, { sparkLandMs } from './ChargeLoot';
+import MeterCanvas from './MeterCanvas';
+import { BURST_ART, SLASH_ART, STRUCK_MS, ULTRA_ART } from './strikeArt';
 import { MISS_COLOR, rankHeatColor } from '@whippin/shared';
 import useAnimatedNumber, { linearEasing } from '../hooks/useAnimatedNumber';
 import { capitalize } from '../game/sentenceCase';
@@ -32,6 +37,20 @@ function rankTweenDuration(fromRank: number, toRank: number): number {
   return prefersReducedMotion() ? 0 : rankTransitionDuration(fromRank, toRank);
 }
 
+// THE CHARGE METER (#301): what the hole shows of its meter — the charge, and the initial
+// once the meter is full (null until then). Both are the round's DERIVED reading of the
+// play log; the hole owns only the choreography that lands them.
+export interface HoleChargeView {
+  value: number;
+  initial: string | null;
+}
+
+// How long the meter's fill takes to travel (the CSS transition's length, handed down so
+// the burst that follows a full meter waits for exactly it), and where in the burst the
+// letter appears — on its impact frames, not after the last wisp.
+const METER_MS = 300;
+const INITIAL_AT_MS = METER_MS + BURST_ART.ms * 0.6;
+
 // A hole: "displayed_word^current_rank" (ex: sailor^87). Rank 0 = solved. The exponent is
 // written WITHOUT a leading minus (user-decided 2026-08-16): it is a distance, and distances
 // are not negative — the app writes a rank the same bare way everywhere it shows one.
@@ -43,11 +62,18 @@ export default function Hole({
   onHitDone,
   onResolved,
   explore,
+  charge,
+  chargeHintId,
   quiet = false,
   veiled = false,
 }: {
   hole: RuntimeHole;
   hit: HitState | null;
+  // The hole's meter (#301), and its sr-only description's id (rendered by Phrase outside
+  // the sentence, exactly like the exploration hint — the meter and the initial are STATE,
+  // and a hole is described by them, never re-labelled).
+  charge?: HoleChargeView;
+  chargeHintId?: string;
   holeIndex: number;
   onHitDone: (id: number) => void;
   onResolved?: (index: number) => void;
@@ -143,6 +169,64 @@ export default function Hole({
   // Accent ("resolved") styling only once the FINAL secret word is on screen —
   // not during the exponent drop / scramble that precedes the swap.
   const resolved = hole.rank === 0 && displayWord === hole.word;
+
+  // THE REVEAL (#301): `charge lands → meter fills → burst → first letter`. The initial is
+  // derived state and arrives on the same render that fills the meter; the hole holds it
+  // back for the fill's travel and the burst's impact, then lets it in. A hole MOUNTED
+  // revealed (a reload, a replay on another device) shows the letter at once — a burst is
+  // for the moment it happens, not for history. Under reduced motion everything snaps.
+  const revealed = charge?.initial != null;
+  // An exact hit wins immediately, before the deferred board finishes its word swap.
+  const solving = hole.rank === 0 || hit?.strike === 'ultra';
+  const [initialShown, setInitialShown] = useState(revealed);
+  const [burst, setBurst] = useState(0); // a nonce: >0 keeps a burst strike mounted
+  // THE FILL WAITS FOR THE SPARKS: the round releases the guess on the floating hit's beat
+  // (`fadeDelayMs`), and the shower lands later, so the meter's transition is delayed by
+  // the difference — and so is everything that follows the fill (the burst, the letter).
+  // Read off the hit in flight; a meter moving with no hit on it (a reload, another
+  // device's guess) moves at once.
+  const meterDelayMs = hit?.charge
+    ? Math.max(0, sparkLandMs(hit.startDelayMs) - hit.fadeDelayMs)
+    : 0;
+  const meterDelayRef = useRef(meterDelayMs);
+  meterDelayRef.current = meterDelayMs;
+  useEffect(() => {
+    if (!revealed || solving) {
+      setInitialShown(false);
+      setBurst(0);
+      return undefined;
+    }
+    if (initialShown) return undefined;
+    if (prefersReducedMotion()) {
+      setInitialShown(true);
+      return undefined;
+    }
+    const wait = meterDelayRef.current;
+    const strike = window.setTimeout(() => setBurst((n) => n + 1), wait + METER_MS);
+    const letter = window.setTimeout(() => setInitialShown(true), wait + INITIAL_AT_MS);
+    return () => {
+      window.clearTimeout(strike);
+      window.clearTimeout(letter);
+    };
+    // A solve cancels both pending timers, including before the board's deferred release.
+    // `initialShown` is what this choreography sets, not a reason to restart it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealed, solving]);
+  const endBurst = useCallback(() => setBurst(0), []);
+  // SPENT: the meter has done its one job. As the letter lands, the level fades out
+  // (user-decided 2026-09-15, "once the progress bar is full, we can just remove it during
+  // the first letter apparition animation").
+  const spent = revealed && initialShown;
+  // Where this hit's sparks gather: the meter after it, fixed per hit (see the loot below).
+  const [lootFill, setLootFill] = useState(0);
+  const lootHitId = hit?.charge ? hit.id : null;
+  const chargeNow = charge?.value ?? 0;
+  const chargeGain = hit?.charge ?? 0;
+  useLayoutEffect(() => {
+    if (lootHitId !== null) setLootFill(Math.min(100, chargeNow + chargeGain));
+    // Fixed when the hit MOUNTS: the reading then is the pre-release one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lootHitId]);
   useEffect(() => {
     if (resolved) onResolved?.(holeIndex);
   }, [holeIndex, onResolved, resolved]);
@@ -196,21 +280,45 @@ export default function Hole({
   // lands. So this component sets no colour at all any more.
   const wordStyle: CSSProperties & Record<string, string> = {};
   if (hit) wordStyle['--hit-delay'] = `${hit.startDelayMs}ms`;
+  // The word is KEYED on the last hit that LANDED, not on whether a hit is on it: a new
+  // hit still remounts it (which is what restarts the shake on two consecutive hits), but
+  // a hit ENDING no longer does — the meter rides the word, and a remount at that moment
+  // cut the fill's transition short (found 2026-09-15 on the fill's timeline: the width
+  // jumped to its target the instant the loot's timer cleared the hit).
+  const lastHit = useRef(0);
+  if (hit) lastHit.current = hit.id;
+  // A STRUCK word recoils and inverts its chip for the BLOW (#301, user-decided 2026-09-15):
+  // Word mode's own `STRUCK_MS`, from the hit's beat, handed to CSS so the two cannot
+  // disagree.
+  const strikeArt = hit?.strike === 'ultra' ? ULTRA_ART : hit?.strike === 'slash' ? SLASH_ART : null;
+  if (strikeArt) wordStyle['--shake-ms'] = `${STRUCK_MS}ms`;
   if (waving) Object.assign(wordStyle, WAVE_VARS);
 
   // The word + its exponent. The route button (below) wraps this whole group WITHOUT
   // touching it: the floating-hit/scramble choreography keys off this exact structure.
   const body = (
     <>
+      {/* THE REVEALED INITIAL (#301): the one persistent clue a full meter earns — the
+          word's FIRST CELL, a chip-high tile before the chip, drawn out of flow so the
+          hole's width never moves (user-decided 2026-09-15) — the letter alone, never the
+          word's length. Decorative
+          here: the hole's description says it. Gone with the chip once the hole is inked
+          in. */}
+      {!solving && initialShown && charge?.initial ? (
+        <span className="hole-initial" aria-hidden="true">
+          {/* The letter's size is its own, so the cell keeps measuring in the word's em. */}
+          <span className="hole-initial-letter">{charge.initial}</span>
+        </span>
+      ) : null}
       {/* The hit is positioned against this wrapper, which is sized to the WORD
           only (the exponent sits outside it), so the floating number stays centered
           over the word and not the word+exponent. */}
       <span className="hole-word-wrap">
         {/* Key distinct from FloatingHit (otherwise collision -> duplicated word);
-            changing it restarts the shake even on two consecutive hits. */}
+            changing it restarts the shake even on two consecutive hits (see `lastHit`). */}
         <span
-          key={hit ? `word-${hit.id}` : 'word'}
-          className={`hole-word${hit ? ' hit-shake' : ''}${waving ? ' wave' : ''}`}
+          key={`word-${lastHit.current}`}
+          className={`hole-word${hit ? ' hit-shake' : ''}${strikeArt ? ' struck' : ''}${waving ? ' wave' : ''}`}
           style={wordStyle}
         >
           {/* One span per letter — the structure the wave moves. Keyed by position, so the
@@ -221,6 +329,15 @@ export default function Hole({
               {ch}
             </span>
           ))}
+          {/* THE METER (#301) rides the chip: the same box as the chip's ground, drawn
+              UNDER the ink and OVER the chip — the chip CONVERTING to the solve ink from
+              the left, edge to edge, the hole's unresolved dress visibly filling. On the shaking word, not
+              the static wrap, for the chip's own reason: it is part of the chip. */}
+          {!solving && charge ? (
+            <span className={`hole-meter${spent ? ' spent' : ''}`} aria-hidden="true">
+              <MeterCanvas value={charge.value} delayMs={meterDelayMs} durationMs={METER_MS} />
+            </span>
+          ) : null}
         </span>
         {/* Floating "damage"-style indicator: a distance number coloured by the shared
             rank scale, or "MISS" in the ramp's own weird red terminus when too far
@@ -228,7 +345,20 @@ export default function Hole({
             same terminus — a 100-away exponent and a MISS share the colour, and only the
             label tells them apart. The float and the exponent are the round's ONLY
             gradient surfaces on the board — the words wear the flat hole colour. */}
-        {hit && (
+        {/* On a CUT the rank is Word mode's LOOT instead (#301, user-decided 2026-09-15,
+            "the same exponent animation"): the exponent pops off the struck word and falls
+            away, its timer the hit's lifetime. A miss, a repeat and the solve keep the
+            float. */}
+        {hit && hit.strike === 'slash' ? (
+          <Loot
+            key={hit.id}
+            id={hit.id}
+            rank={hit.value}
+            delayMs={hit.startDelayMs}
+            // The throw outlives the exponent when there is one: it reports the hit done.
+            onDone={hit.charge ? undefined : onHitDone}
+          />
+        ) : hit ? (
           <FloatingHit
             key={hit.id}
             id={hit.id}
@@ -238,6 +368,48 @@ export default function Hole({
             fadeDelayMs={hit.fadeDelayMs}
             color={hit.miss ? MISS_COLOR : rankHeatColor(hit.value)}
             onDone={onHitDone}
+          />
+        ) : null}
+        {/* THE STRIKE (#301): the cut of a charging guess, or the ultra star of the exact
+            hit. The cut is WHITE — always (user-decided 2026-09-15; the heat is the float's
+            and the exponent's, never the blow's) — and the ultra carries its own palette.
+            It lands on the hit's stagger beat and needs no `onDone`: the floating hit
+            outlives every sheet, and its timer is what clears the hit. A solve supersedes
+            the cut and the loot — the round never hands both to one hole. */}
+        {strikeArt && hit && (
+          <Strike
+            key={`strike-${hit.id}`}
+            id={hit.id}
+            art={strikeArt}
+            color="var(--fg)"
+            delayMs={hit.startDelayMs}
+          />
+        )}
+        {/* THE LOOT (#301): what the cut shook loose — scattered around the hole, then
+            gathered onto the bar at the fill's new tip, which is where the meter goes the
+            moment they land. The tip is the reading BEFORE the release plus this hit's gain,
+            read once when the hit mounts (the release changes `charge.value` under a throw
+            already in the air, and `key`ing on the hit keeps the dice; the landing must not
+            move either, so it is fixed the same way). */}
+        {hit?.charge && charge ? (
+          <ChargeLoot
+            key={`loot-${hit.id}`}
+            id={hit.id}
+            charge={hit.charge}
+            fill={lootFill}
+            startDelayMs={hit.startDelayMs}
+            onDone={onHitDone}
+          />
+        ) : null}
+        {/* THE BURST (#301): the meter reached its target — one detonation in the meter's
+            own colour, and the initial appears on its impact. */}
+        {!solving && burst > 0 && (
+          <Strike
+            key={`burst-${burst}`}
+            id={burst}
+            art={BURST_ART}
+            color="var(--accent)"
+            onDone={endBurst}
           />
         )}
       </span>
@@ -267,7 +439,7 @@ export default function Hole({
           // button deleted it from the button AND from the sentence a screen reader reads,
           // leaving "Explore word 2" where "attends -87" belongs. Named by its own content,
           // the hole reads as what it shows and the exploration hint stays supplementary.
-          aria-describedby={explore.hintId}
+          aria-describedby={chargeHintId ? `${explore.hintId} ${chargeHintId}` : explore.hintId}
           data-hole-explore={holeIndex}
           disabled={explore.disabled}
           onClick={explore.onOpen}

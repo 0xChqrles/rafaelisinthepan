@@ -8,6 +8,7 @@ import { wheelOrder } from '../game/wordWheel';
 import { holeTitle, srRouteStop, t } from '../i18n';
 import useDrum from '../hooks/useDrum';
 import useModalDismiss from '../hooks/useModalDismiss';
+import MeterCanvas from './MeterCanvas';
 
 // The hole WHEEL (user-decided 2026-09-01 — the day's fifth approach, after the history
 // modal's line, a radial net with lines twice revised, and a plain stack; the brief was
@@ -112,7 +113,10 @@ export default function HistoryWheel({
   model: HistoryModel;
   // What the tapped control SHOWS — the hole's word and rank as the sentence has them
   // (a pick included), or the secret at rank 0 on the solved stage.
-  hub: { word: string; rank: number };
+  // The meter's reading (#301), so the slot row — the hole as the sentence draws it —
+  // carries it too. NOT the revealed initial: that cell stays where it is, under the veil
+  // (user-decided 2026-09-15 — a copy in the slot row sat a pixel off the sentence's).
+  hub: { word: string; rank: number; meter?: number };
   // The `data-hole-explore` index of the control the wheel turns through.
   hostIndex: number;
   // The hole opens its sentence and carries the capital itself (sentence case, the
@@ -310,6 +314,12 @@ export default function HistoryWheel({
                 {ch}
               </span>
             ))}
+            {/* The meter as it stands (drawn at once, no travel); spent once full. */}
+            {hub.meter !== undefined && hub.meter < 100 && stop.rank > 0 ? (
+              <span className="hole-meter" aria-hidden="true">
+                <MeterCanvas value={hub.meter} delayMs={0} durationMs={0} />
+              </span>
+            ) : null}
           </span>
         </span>
         {stop.rank > 0 && <sup className="hole-rank">{stop.rank}</sup>}

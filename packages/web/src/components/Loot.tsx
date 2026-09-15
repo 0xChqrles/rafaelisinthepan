@@ -3,12 +3,15 @@ import type { CSSProperties } from 'react';
 import type { Rarity } from '../game/wordGame';
 import { rankHeatColor } from '@whippin/shared';
 
-// The LOOT a claim knocks out of the day's word (decided 2026-08-10): the guess's rank
-// exponent and its rarity grade pop off the struck word like drops off a hit enemy — up
-// and apart on the impact, a hang at the top of the throw, then the fall — so the two
-// numbers the bare run screen stopped stating (the distance, and the grade's NAME) are
-// said for exactly the moment they are news, and are gone before the next guess needs
-// the screen. The strike stays what it was; this is what the hit shakes loose.
+// The LOOT a hit knocks out of a game word (decided 2026-08-10 for Word mode's claims; a
+// generic primitive since #301, when the sentence's holes took it — user-decided
+// 2026-09-15, "the same exponent animation"): the guess's rank exponent and, in Word mode,
+// its rarity grade pop off the struck word like drops off a hit enemy — up and apart on
+// the impact, a hang at the top of the throw, then the fall — so the numbers the screen
+// does not park are said for exactly the moment they are news, and are gone before the
+// next guess needs the screen. The strike stays what it was; this is what the hit shakes
+// loose. With no `grade` the exponent flies alone (the sentence's cut): one piece, a
+// random side, the same throw.
 //
 // TWO pieces, one event: the exponent, written the one way the app writes ranks and in
 // the heat colour every other exponent wears (the shared `rankHeatColor`), flies up one
@@ -43,23 +46,26 @@ const jitter = () =>
     '--loot-jt': roll(0.7, 1.3).toFixed(3),
   }) as CSSProperties;
 
-export default function WordLoot({
+export default function Loot({
   id,
   rank,
   grade,
   color,
+  delayMs = 0,
   onDone,
 }: {
-  id: number; // monotonic, like the strike's: a new claim replaces the loot in the air
+  id: number; // monotonic, like the strike's: a new hit replaces the loot in the air
   rank: number;
-  grade: Rarity;
-  color: string; // the grade's colour, already resolved by the screen
+  grade?: Rarity; // Word mode's second piece; absent, the exponent flies alone
+  color?: string; // the grade's colour, already resolved by the screen
+  // How long after mount the throw starts — the sentence staggers its holes' feedback.
+  delayMs?: number;
   onDone?: (id: number) => void;
 }) {
   useEffect(() => {
-    const t = setTimeout(() => onDone && onDone(id), lootDurationMs);
+    const t = setTimeout(() => onDone && onDone(id), delayMs + lootDurationMs);
     return () => clearTimeout(t);
-  }, [id, onDone]);
+  }, [id, delayMs, onDone]);
 
   // The hit's roll, once per claim (the component is re-keyed per hit, so a new claim is
   // a new throw). The two pieces always take OPPOSITE sides — that, with the edge
@@ -73,28 +79,30 @@ export default function WordLoot({
   const pieces = [
     {
       key: 'exp',
-      css: `word-loot-exp ${flight.expLeft ? 'word-loot-to-left' : 'word-loot-to-right'}`,
+      css: `loot-exp ${flight.expLeft ? 'loot-to-left' : 'loot-to-right'}`,
       text: String(rank),
       color: rankHeatColor(rank),
-      delay: flight.expFirst ? 0 : LOOT_STAGGER_MS,
+      delay: delayMs + (grade && !flight.expFirst ? LOOT_STAGGER_MS : 0),
       dice: flight.exp,
     },
-    {
-      key: 'grade',
-      css: `word-loot-grade ${flight.expLeft ? 'word-loot-to-right' : 'word-loot-to-left'}`,
-      text: grade,
-      color,
-      delay: flight.expFirst ? LOOT_STAGGER_MS : 0,
-      dice: flight.grade,
-    },
   ];
+  if (grade) {
+    pieces.push({
+      key: 'grade',
+      css: `loot-grade ${flight.expLeft ? 'loot-to-right' : 'loot-to-left'}`,
+      text: grade,
+      color: color ?? rankHeatColor(rank),
+      delay: delayMs + (flight.expFirst ? LOOT_STAGGER_MS : 0),
+      dice: flight.grade,
+    });
+  }
 
   return (
     <>
       {pieces.map((piece) => (
         <span
           key={piece.key}
-          className={`word-loot ${piece.css}`}
+          className={`loot ${piece.css}`}
           style={
             {
               ...piece.dice,
@@ -105,7 +113,7 @@ export default function WordLoot({
             } as CSSProperties
           }
         >
-          <span className="word-loot-lift">{piece.text}</span>
+          <span className="loot-lift">{piece.text}</span>
         </span>
       ))}
     </>

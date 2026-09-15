@@ -30,11 +30,12 @@ import CoachText from '../tutorial/CoachText';
 import LoadError from '../components/LoadError';
 import FlipCountdown from '../components/FlipCountdown';
 import { earlyLocked } from '../game/earlyPlay';
+import { chargeForRank, initialOf, replayCharge } from '../game/charge';
 import { navigate } from '../routing';
 import { pathForDay, pathForMode } from '../langs';
 import { buildHistory } from '../game/history';
 import type { HistoryStop } from '../game/history';
-import { t, ariaHoleHistory, srHoleResult } from '../i18n';
+import { t, ariaHoleHistory, srHoleCharge, srHoleInitial, srHoleResult } from '../i18n';
 import { track } from '../analytics';
 import { fold, dateForDayNumber, ROUND_GUESS_CAP } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
@@ -271,6 +272,14 @@ function Round({
   );
   const holes = useMemo(
     () => replayHoles(freshHoles, ranks, withoutDeferred(ranks, playLog, deferred)),
+    [freshHoles, ranks, playLog, deferred],
+  );
+  // THE CHARGE METERS (#301): the same projection, twice. `chargeState` reads the FULL log
+  // — what a submit measures its gain against; `shownCharge` reads the board's deferred
+  // view, so a meter advances on the release beat the swap does, as the loot lands.
+  const chargeState = useMemo(() => replayCharge(freshHoles, ranks, playLog), [freshHoles, ranks, playLog]);
+  const shownCharge = useMemo(
+    () => replayCharge(freshHoles, ranks, withoutDeferred(ranks, playLog, deferred)),
     [freshHoles, ranks, playLog, deferred],
   );
   // Score = number of unique tries. A try is a submitted word that exists in the
@@ -707,6 +716,23 @@ function Round({
     () => holeNumbers.map((n) => ariaHoleHistory(lang, n)),
     [holeNumbers, lang],
   );
+  // The meters as the sentence shows them (#301): the deferred reading, the initial once
+  // revealed, and the description a screen reader gets in the meter's place — nothing for
+  // a hole already found (its chip, and the meter with it, are gone).
+  const charges = useMemo(
+    () =>
+      shownCharge.map((c, i) => {
+        const initial = c.revealed ? initialOf(puzzleHoles[i].secret.word) : null;
+        const hint =
+          holes[i].rank === 0
+            ? ''
+            : initial !== null
+              ? srHoleInitial(lang, initial)
+              : srHoleCharge(lang, c.charge);
+        return { value: c.charge, initial, hint };
+      }),
+    [shownCharge, puzzleHoles, holes, lang],
+  );
   // The result's own view of the secrets (#266): where each sits in `words[]`, the word
   // and affixes it displays, its own index — the history modal's key, so the tap opens
   // the history of the word that was tapped — and the shared distinct-secret `number`, so
@@ -864,9 +890,19 @@ function Round({
       // Announce the guess's outcome to assistive tech — the audible twin of the
       // floating numbers below. One sentence covering every impacted hole (1-based, in
       // sentence order). The solved fanfare stays last when this guess finishes the round.
+      // THE CHARGE this guess lands (#301): the meters after it, against the meters before
+      // — per hole, read off the full log, so a hole's gain is exactly what the replay will
+      // show when the guess is released. A repeat is not a counted guess and moves nothing.
+      const charged = isNew ? replayCharge(freshHoles, ranks, [...playLog, typed]) : chargeState;
       const parts = impacted.map(({ index, entry }) =>
         srHoleResult(lang, index + 1, entry ? entry.rank : null),
       );
+      // A meter this guess fills says so in the same breath — the initial is news.
+      for (const { index } of impacted) {
+        if (charged[index].revealed && !chargeState[index].revealed) {
+          parts.push(srHoleInitial(lang, initialOf(puzzleHoles[index].secret.word), index + 1));
+        }
+      }
       say(solvesAll ? [...parts, t(lang, 'srSolvedAll')].join(', ') : parts.join(', '));
 
       // Every impacted hole shows a floating indicator: the distance number when
@@ -876,14 +912,33 @@ function Round({
       // handed over as its number begins to fade, and Hole stages the rest (decrease
       // the exponent one rank at a time, then scramble out the old word and reveal the
       // new one).
+      // And since #301 the hole is STRUCK: the exact hit wears the ultra star and takes no
+      // charge (the solve supersedes the cut, the loot and any burst); a guess the charge
+      // table pays for is cut, and what it paid flies into the meter as loot. A miss, a
+      // repeat and a rank past the table keep the float alone.
       const fadeDelayMs = Math.max(0, impacted.length - 1) * STAGGER_MS + FLOATING_HIT_INTRO_MS;
       impacted.forEach(({ index, entry }, step) => {
         const startDelayMs = step * STAGGER_MS;
         const hit = (hitId.current += 1);
+        const gained = charged[index].charge - chargeState[index].charge;
+        const strike =
+          entry?.rank === 0
+            ? ('ultra' as const)
+            : isNew && chargeForRank(entry?.rank) > 0
+              ? ('slash' as const)
+              : undefined;
         setHits((prev) => [
           ...prev,
           entry != null
-            ? { holeIndex: index, value: entry.rank, id: hit, startDelayMs, fadeDelayMs }
+            ? {
+                holeIndex: index,
+                value: entry.rank,
+                id: hit,
+                startDelayMs,
+                fadeDelayMs,
+                strike,
+                charge: strike === 'slash' && gained > 0 ? gained : undefined,
+              }
             : { holeIndex: index, value: 0, id: hit, startDelayMs, fadeDelayMs, miss: true },
         ]);
       });
@@ -906,6 +961,9 @@ function Round({
       holes,
       playLog,
       ranks,
+      freshHoles,
+      puzzleHoles,
+      chargeState,
       boardComplete,
       finished,
       promptExiting,
@@ -1018,6 +1076,7 @@ function Round({
                   onExplore={openHistory}
                   quiet={quiet}
                   veiledHole={wheelOpen ? historyHole : null}
+                  charges={charges}
                 />
               )}
             </div>
@@ -1146,7 +1205,11 @@ function Round({
       {historyModel && historyHole !== null && wheelOpen && (
         <HistoryWheel
           model={historyModel}
-          hub={{ word: shownHoles[historyHole].word, rank: shownHoles[historyHole].rank }}
+          hub={{
+            word: shownHoles[historyHole].word,
+            rank: shownHoles[historyHole].rank,
+            meter: charges[historyHole]?.value,
+          }}
           hostIndex={historyHole}
           number={holeNumbers[historyHole]}
           lang={lang}
