@@ -2,10 +2,10 @@ import { Fragment, useEffect, useLayoutEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
 import Strike from './Strike';
-import WordLoot, { lootDurationMs } from './WordLoot';
+import Loot, { lootDurationMs } from './Loot';
 import type { Rarity } from '../game/wordGame';
 import type { StrikeArt } from './strikeArt';
-import { STRUCK_MS } from './rarity';
+import { STRUCK_MS } from './strikeArt';
 import useLetterWave, { WAVE_VARS } from '../hooks/useLetterWave';
 import { srWordBoardWord } from '../i18n';
 
@@ -40,7 +40,7 @@ function fitWord(word: string, max: number): string {
 // anything, you know which one happened.
 //
 //   claim — the word is STRUCK — a cut, a burst, or the ultra star — and it SHAKES; and
-//           the hit knocks LOOT out of it (`WordLoot`, 2026-08-10): the guess's rank
+//           the hit knocks LOOT out of it (`Loot`, 2026-08-10): the guess's rank
 //           exponent and its grade's name pop off the word and fall away, the run's one
 //           statement of either number. No text ever PARKS on the screen — the loot is in
 //           the air for under a second; the board still reads the run back at the end.
@@ -73,7 +73,7 @@ export function hitDurationMs(hit: WordHit): number {
 // The first letter leans left, the last leans right, and everything between follows the same
 // arc, so the day's word reads as something someone is HOLDING rather than something
 // printed. This is the ambient life of the run's screen — and it is deliberately separate
-// from the GUESS FEEDBACK (the strike and its loot, `Strike`/`WordLoot`): one is what
+// from the GUESS FEEDBACK (the strike and its loot, `Strike`/`Loot`): one is what
 // the screen is doing while you think, the other is what it says back when you act.
 //
 // Two numbers describe the fan. The lean is the obvious one; the DROP is what makes it a
@@ -201,7 +201,7 @@ export default function WordSubject({
               {/* The strike does not report done — the loot always outlives it (see
                   hitDurationMs), so the loot's timer is the claim's one lifetime. */}
               <Strike id={hit.id} color={hit.color} art={hit.strike} />
-              <WordLoot
+              <Loot
                 id={hit.id}
                 rank={hit.rank}
                 grade={hit.grade}

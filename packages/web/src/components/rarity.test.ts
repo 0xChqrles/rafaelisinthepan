@@ -9,8 +9,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { MISS_COLOR, WORD_RARITY_COLORS, heatColor } from '@whippin/shared';
-import { RARITY_COLORS, STRUCK_MS, strikeFor } from './rarity';
-import { SLASH_ART, STRIKE_ARTS } from './strikeArt';
+import { RARITY_COLORS, strikeFor } from './rarity';
+import { SLASH_ART, STRIKE_ARTS, STRUCK_MS } from './strikeArt';
 import { RARITY_NAMES } from '../game/wordGame';
 
 function hex(rgb: string): string {

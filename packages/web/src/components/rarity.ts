@@ -1,6 +1,6 @@
 import type { Rarity } from '../game/wordGame';
 import type { StrikeArt } from './strikeArt';
-import { BURST_ART, SLASH_ART, SLASH_FRAME_MS, ULTRA_ART } from './strikeArt';
+import { BURST_ART, SLASH_ART, ULTRA_ART } from './strikeArt';
 
 // How a rarity grade LOOKS and how hard it lands (#163). The ladder itself — the names,
 // the corpus fractions, the seconds — is the game's rule and lives in `game/wordGame.ts`;
@@ -51,7 +51,7 @@ export const RARITY_COLORS: Record<Rarity, string> = {
 // A find HITS the word (decided 2026-08-09, replacing the grade name that used to stamp onto
 // it). A name has to be read, and a run against a clock has no time for that — so nothing
 // here PARKS: the hit's colour carries the grade, the word takes it under the strike, and
-// the grade's name + the guess's rank fly off the word as the hit's LOOT (`WordLoot`,
+// the grade's name + the guess's rank fly off the word as the hit's LOOT (`Loot`,
 // 2026-08-10), gone within the second. What the strike adds is the moment.
 //
 // THE SHEETS THEMSELVES live in `strikeArt.ts` (a generic primitive since #301 — the sentence
@@ -79,10 +79,3 @@ export function strikeFor(rarity: Rarity): StrikeArt {
   return STRIKES[rarity];
 }
 
-// How long the WORD reacts to the blow — its recoil and the grade's colour on it. FOUR
-// frames, which is one short of the shortest sheet, so the last frame of the blow lands on a
-// word already back at rest (decided 2026-08-09): on a longer sheet the same rule is what
-// makes the extra frames read as DISSIPATION. Stated in the ART's own frames rather than as
-// a duration, because it is a claim about which frames of the hit the word is answering.
-const STRUCK_FRAMES = 4;
-export const STRUCK_MS = STRUCK_FRAMES * SLASH_FRAME_MS;

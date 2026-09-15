@@ -1444,17 +1444,19 @@ input {
   background: var(--chip-bg, var(--fg));
 }
 /* THE HIT INVERTS THE CHIP (user-decided 2026-09-15, "the hit animation should be more
-   intense… make the background and foreground of the hole word switch during the slash"):
-   for exactly the strike's length (`--strike-ms`, Hole's, the art's own ms) from the hit's
-   stagger beat, the chip's ground goes `--bg` and its ink `--fg` — a photographic negative
-   under the blow, back to the held word the frame the sheet ends. ONE animation on the
-   shaking word beside the shake, flipping the ground through the `--chip-bg` variable the
-   chip's pseudo reads (a custom property animates as a discrete switch, which is what a
-   switch wants); no fill, so nothing lingers. */
+   intense… make the background and foreground of the hole word switch during the slash"),
+   AND THE RECOIL IS WORD MODE'S BLOW (same day: "the same shake animation"): for exactly
+   `STRUCK_MS` (`--shake-ms`, Hole's — four frames, one short of the shortest sheet, the
+   Word subject's own rule) from the hit's stagger beat, the word shakes and the chip's
+   ground goes `--bg`, its ink `--fg` — a photographic negative under the blow, back to the
+   held word while the sheet's last frame dissipates. ONE animation beside the shake,
+   flipping the ground through the `--chip-bg` variable the chip's pseudo reads (a custom
+   property animates as a discrete switch, which is what a switch wants); no fill, so
+   nothing lingers. A MISS keeps the hole's own longer shake. */
 .hole:not(.resolved) .hole-word.hit-shake.struck {
   animation:
-    word-shake 0.4s ease-in-out var(--hit-delay, 0ms),
-    hole-invert var(--strike-ms, 250ms) linear var(--hit-delay, 0ms);
+    word-shake var(--shake-ms, 200ms) ease-in-out var(--hit-delay, 0ms),
+    hole-invert var(--shake-ms, 200ms) linear var(--hit-delay, 0ms);
 }
 @keyframes hole-invert {
   from,
@@ -1573,55 +1575,13 @@ input {
     translate: calc(-50% + var(--spark-x) * 0.3em) calc(-50% + 0.6em);
   }
 }
-/* THE STRIKE ON A HOLE: the same sheets Word mode cuts its word with (`.strike`), `.phrase`
-   prefixed so these outrank the Word-mode geometry at every width; every drop re-derived
-   from the sheet's measured ink at its scale and kept in whole pixels (the slash's 19% of
-   its height, the burst's 6%, the ultra centred).
-   THE CUT IS BIG AND WHITE (user-decided 2026-09-15: "always be white, and x3 bigger" — the
-   first cut landed at 3x in the hit's heat colour): 9x on desktop (324x414, wider than the
-   phrase's column is tall, and the point — a hit on a word is an EVENT, not a footnote),
-   6x on a phone (216x276), painted in `--fg` by Hole. The burst keeps the meter's colour at
-   the 3x/2x step the first cut set, the ultra its own palette. */
+/* THE STRIKE ON A HOLE is Word mode's, UNCHANGED (user-decided 2026-09-15, the third pass on
+   the size — a 3x step-down, then 9x, then "the same slash size that is used on the word
+   mode"): `.strike`'s own 5x on desktop and 4x on a phone, no `.phrase` override at all, so
+   the two games cut with one blow. What the sentence keeps of its own is the exponent's
+   size (`--rank-size`, above). */
 .phrase, .wheel-row {
   --rank-size: 0.75;
-}
-.phrase .strike {
-  width: 324px;
-  height: 414px;
-  transform: translate(-50%, calc(-50% + 79px));
-}
-.phrase .strike.mirrored {
-  transform: translate(-50%, calc(-50% + 79px)) scaleX(-1);
-}
-.phrase .strike.burst {
-  width: 159px;
-  height: 198px;
-  transform: translate(-50%, calc(-50% + 12px));
-}
-.phrase .strike.ultra {
-  width: 213px;
-  height: 198px;
-  transform: translate(-50%, -50%);
-}
-@media (max-width: 640px) {
-  .phrase .strike {
-    width: 216px;
-    height: 276px;
-    transform: translate(-50%, calc(-50% + 52px));
-  }
-  .phrase .strike.mirrored {
-    transform: translate(-50%, calc(-50% + 52px)) scaleX(-1);
-  }
-  .phrase .strike.burst {
-    width: 106px;
-    height: 132px;
-    transform: translate(-50%, calc(-50% + 8px));
-  }
-  .phrase .strike.ultra {
-    width: 142px;
-    height: 132px;
-    transform: translate(-50%, -50%);
-  }
 }
 /* Reduced motion keeps the STATE — the meter's reading and the initial — and drops the
    flight: the fill snaps, nothing flies, the letter simply appears. (The strike holds one
@@ -4792,7 +4752,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    launch and after its fall. Under reduced motion the global collapse (durations to ~0,
    delays KEPT) leaves each piece resting at its apex for the fall's delay — shown, held,
    gone, the floating numbers' own degradation, so no extra rule is needed. */
-.word-loot {
+.loot {
   position: absolute;
   left: 50%;
   top: 50%;
@@ -4817,7 +4777,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   animation: loot-drift calc(var(--loot-rise, 340ms) + var(--loot-fall, 440ms)) linear
     var(--loot-delay, 0ms) forwards;
 }
-.word-loot-lift {
+.loot-lift {
   display: inline-block;
   --loot-apex-j: calc(var(--loot-apex, -48px) * var(--loot-jy, 1));
   --loot-drop-j: calc(var(--loot-drop, 28px) * var(--loot-jd, 1));
@@ -4837,11 +4797,11 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    one's right of its own, so the pieces CANNOT overlap whichever way the dice land —
    centred anchors put `-5` on top of `ARCANE` for the first half of the flight
    (measured). */
-.word-loot-to-left {
+.loot-to-left {
   --loot-sign: -1;
   transform: translate(-100%, -50%);
 }
-.word-loot-to-right {
+.loot-to-right {
   --loot-sign: 1;
   transform: translate(0, -50%);
 }
@@ -4849,12 +4809,12 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    every other exponent wears (WordLoot hands it down from the shared rankHeatColor). It
    flies HIGHER and shorter than the grade — two different arcs are what read as things
    scattering rather than a symmetric split. */
-.word-loot-exp {
+.loot-exp {
   --loot-mag0: 12px;
   --loot-mag: 46px;
   font-size: 28px;
 }
-.word-loot-exp .word-loot-lift {
+.loot-exp .loot-lift {
   --loot-apex: -58px;
   --loot-drop: 26px;
   --loot-tilt: 5deg;
@@ -4862,12 +4822,12 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 /* The grade's name in the grade's own colour — the ladder's word, untranslated. Smaller
    than the exponent: it is a WORD (UNCOMMON is 8 glyphs), and the word under it is the
    screen's subject. */
-.word-loot-grade {
+.loot-grade {
   --loot-mag0: 12px;
   --loot-mag: 52px;
   font-size: 20px;
 }
-.word-loot-grade .word-loot-lift {
+.loot-grade .loot-lift {
   --loot-apex: -44px;
   --loot-drop: 30px;
   --loot-tilt: 4deg;
@@ -4954,20 +4914,20 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
      roll — the grade flying right at `--loot-jx` 1.15, UNCOMMON's 120px of glyphs behind
      it — ends at 160 + 37 + 120 = 317px of a 320px screen. Widen either and re-run that
      sum. */
-  .word-loot-exp {
+  .loot-exp {
     --loot-mag0: 10px;
     --loot-mag: 36px;
     font-size: 22px;
   }
-  .word-loot-exp .word-loot-lift {
+  .loot-exp .loot-lift {
     --loot-apex: -48px;
   }
-  .word-loot-grade {
+  .loot-grade {
     --loot-mag0: 10px;
     --loot-mag: 32px;
     font-size: 15px;
   }
-  .word-loot-grade .word-loot-lift {
+  .loot-grade .loot-lift {
     --loot-apex: -36px;
   }
   /* The keyboard goes full-bleed here — 10px past the page inset on each side (see

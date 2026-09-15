@@ -2,8 +2,9 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import type { CSSProperties } from 'react';
 import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
 import Strike from './Strike';
+import Loot from './Loot';
 import ChargeLoot from './ChargeLoot';
-import { BURST_ART, SLASH_ART, ULTRA_ART } from './strikeArt';
+import { BURST_ART, SLASH_ART, STRUCK_MS, ULTRA_ART } from './strikeArt';
 import { MISS_COLOR, rankHeatColor } from '@whippin/shared';
 import useAnimatedNumber, { linearEasing } from '../hooks/useAnimatedNumber';
 import { capitalize } from '../game/sentenceCase';
@@ -249,10 +250,11 @@ export default function Hole({
   // lands. So this component sets no colour at all any more.
   const wordStyle: CSSProperties & Record<string, string> = {};
   if (hit) wordStyle['--hit-delay'] = `${hit.startDelayMs}ms`;
-  // A STRUCK word inverts its chip for the blow (#301, user-decided 2026-09-15): the sheet's
-  // own length, from the hit's beat, handed to CSS so the two cannot disagree.
+  // A STRUCK word recoils and inverts its chip for the BLOW (#301, user-decided 2026-09-15):
+  // Word mode's own `STRUCK_MS`, from the hit's beat, handed to CSS so the two cannot
+  // disagree.
   const strikeArt = hit?.strike === 'ultra' ? ULTRA_ART : hit?.strike === 'slash' ? SLASH_ART : null;
-  if (strikeArt) wordStyle['--strike-ms'] = `${strikeArt.ms}ms`;
+  if (strikeArt) wordStyle['--shake-ms'] = `${STRUCK_MS}ms`;
   if (waving) Object.assign(wordStyle, WAVE_VARS);
 
   // The word + its exponent. The route button (below) wraps this whole group WITHOUT
@@ -306,7 +308,13 @@ export default function Hole({
             same terminus — a 100-away exponent and a MISS share the colour, and only the
             label tells them apart. The float and the exponent are the round's ONLY
             gradient surfaces on the board — the words wear the flat hole colour. */}
-        {hit && (
+        {/* On a CUT the rank is Word mode's LOOT instead (#301, user-decided 2026-09-15,
+            "the same exponent animation"): the exponent pops off the struck word and falls
+            away, its timer the hit's lifetime. A miss, a repeat and the solve keep the
+            float. */}
+        {hit && hit.strike === 'slash' ? (
+          <Loot key={hit.id} id={hit.id} rank={hit.value} delayMs={hit.startDelayMs} onDone={onHitDone} />
+        ) : hit ? (
           <FloatingHit
             key={hit.id}
             id={hit.id}
@@ -317,7 +325,7 @@ export default function Hole({
             color={hit.miss ? MISS_COLOR : rankHeatColor(hit.value)}
             onDone={onHitDone}
           />
-        )}
+        ) : null}
         {/* THE STRIKE (#301): the cut of a charging guess, or the ultra star of the exact
             hit. The cut is WHITE — always (user-decided 2026-09-15; the heat is the float's
             and the exponent's, never the blow's) — and the ultra carries its own palette.

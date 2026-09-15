@@ -34,3 +34,12 @@ export const ULTRA_ART = art('ultra', 7);
 
 // Smallest first: THIS ORDER IS THE ESCALATION, and `rarity.test.ts` reads it as one.
 export const STRIKE_ARTS: readonly StrikeArt[] = [SLASH_ART, BURST_ART, ULTRA_ART];
+
+// How long the WORD reacts to the blow — its recoil (and, in Word mode, the grade's colour
+// on it; in the sentence, the chip's inversion). FOUR frames, which is one short of the
+// shortest sheet, so the last frame of the blow lands on a word already back at rest
+// (decided 2026-08-09): on a longer sheet the same rule is what makes the extra frames read
+// as DISSIPATION. Stated in the ART's own frames rather than as a duration, because it is a
+// claim about which frames of the hit the word is answering.
+const STRUCK_FRAMES = 4;
+export const STRUCK_MS = STRUCK_FRAMES * SLASH_FRAME_MS;

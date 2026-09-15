@@ -131,6 +131,8 @@
                               generic primitive — Word mode's ladder and the sentence's holes
                               both land them)
       components/Strike.tsx   one blow of one sheet on a game word (was WordSlash)
+      components/Loot.tsx     what a hit knocks off a game word: the rank exponent (+ Word
+                              mode's grade) popping up and falling away (was WordLoot)
       game/charge.ts          #301's hole CHARGE METER: the rank -> charge table, the replay of
                               the play log onto every hole's meter, the revealed initial
       components/ChargeLoot.tsx  the sparks a charging guess knocks into the meter
@@ -232,12 +234,16 @@ These are decided and verified against the code. Treat them as load-bearing.
   edge (`.hole-meter`, the chip's own box and layer — the hole's unresolved dress, visibly
   filling), the initial a superscript mark BEFORE the chip in the accent (`.hole-initial`,
   the exponent's size; a layout box, arriving once on the burst), nothing under the
-  sentence, no `+7.5` parked anywhere. **The cut is WHITE and BIG, and it INVERTS the chip
-  (user-decided 2026-09-15, on the first cut's review: "always white, x3 bigger, more
-  intense")**: `--fg` through the mask, 9x on desktop / 6x on a phone (`.phrase .strike`,
-  three times the first cut's step), and for the sheet's length the chip's ground goes
-  `--bg` and its ink `--fg` (`hole-invert`, off `--strike-ms`); the SENTENCE's exponent is
-  0.75em (`--rank-size` on `.phrase` and the wheel's slot row; 0.55 where `.hole-rank` is
+  sentence, no `+7.5` parked anywhere. **The cut is WHITE, WORD MODE'S SIZE, and the hit is Word mode's
+  hit (user-decided 2026-09-15 across three passes on the first cut: "always white", then
+  "x3 bigger", then "the same slash size that is used on the word mode, with the same
+  shake animation and exponent animation")**: `--fg` through the mask at `.strike`'s own
+  5x / 4x with NO `.phrase` geometry; the recoil is the Word subject's BLOW (`STRUCK_MS`,
+  `strikeArt.ts`, as `--shake-ms`) and for that blow the chip INVERTS — ground `--bg`, ink
+  `--fg` (`hole-invert`); and on a cut the rank is the LOOT exponent (`Loot`, the Word
+  claim's, generic since #301: with no grade the exponent flies alone) instead of the
+  float, which stays for a miss, a repeat and the solve. The SENTENCE's exponent is 0.75em
+  (`--rank-size` on `.phrase` and the wheel's slot row; 0.55 where `.hole-rank` is
   reused). The sequence is `cut → sparks fly into the meter →
   meter advances` on the hit's own stagger beat, the meter moving on the guess's RELEASE
   (the deferred-board beat, `shownCharge`) as the loot lands; at 100 `meter fills → BURST
@@ -2368,7 +2374,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   that. The grade is carried by the strike's COLOUR, by the word taking that colour under
   it — and, since 2026-08-10 (user-decided, superseding "colour alone"), by the hit's LOOT:
   the claim knocks the guess's rank exponent and the grade's NAME off the word
-  (`components/WordLoot.tsx` + `.word-loot` in index.css), popping up and apart off the
+  (`components/Loot.tsx` + `.loot` in index.css), popping up and apart off the
   impact like drops off a struck enemy, hanging, then falling away — in the air for 840ms,
   never parked. The exponent wears the heat colour every other exponent wears (the shared
   `rankHeatColor(rank)`, whose absolute cap is internal), the grade its `RARITY_COLORS` colour. The flight is
@@ -2377,12 +2383,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `rotate` tilt. **The throw is ROLLED per hit** (user-decided 2026-08-10): which side
   each piece takes (sometimes the exponent flies left, sometimes the grade does — always
   opposite sides), which launches first, and a bounded jitter on each piece's distance,
-  height, drop and tilt (`--loot-j*` factors from `WordLoot`, multiplied into the CSS
+  height, drop and tilt (`--loot-j*` factors from `Loot`, multiplied into the CSS
   geometry — never pixel values, so the ≤640px step-down keeps working; the jitter ceiling
   is part of the 320px overflow sum commented in index.css). The pieces are EDGE-anchored
   (a piece's whole box stays on its own side of its anchor), so they cannot overlap
   whichever way the dice land — centred anchors measurably put `-5` on top of `ARCANE`
-  for the first half of the flight. Timing is handed from `WordLoot` to CSS as variables
+  for the first half of the flight. Timing is handed from `Loot` to CSS as variables
   (the `--slash-ms` rule); base geometry is per piece in CSS with a ≤640px step-down. The loot always outlives every sheet, so ITS
   timer is what reports a claim's hit done (`hitDurationMs` = max of strike and loot, and
   the ending's hold covers it); under reduced motion the global collapse leaves each piece
