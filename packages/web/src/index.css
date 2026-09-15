@@ -1415,6 +1415,15 @@ input {
    4px chip came to 23.75px inside a 23.6px line box — TALLER THAN THE LINE — and two holes
    on consecutive lines fused into one white block.
 
+   SINCE #301 IT CARRIES A BAND UNDER THE LETTERS FOR THE METER (user-decided 2026-09-15,
+   "make sure the progress bar doesn't touch the letters"): the bottom padding is 0.24em
+   where the top stays 0.1335em, so the bar (0.16em) sits in its own track under the em box
+   with 0.08em of air above it (measured: the 0.06em of the first cut rounded onto the em
+   box's last pixel on a phone) — the chip is 1.374em tall, its centre 0.053em under the
+   word's, and its bottom edge lands at 0.74em below the word's centre, inside the line's
+   0.75em half-leading at both breakpoints (the phrase is 1.5 everywhere). Two lines of
+   chips keep 0.13em between a bar and the chip below it.
+
    IT IS CENTRED AND SIZED IN `em`, NOT INSET. `.hole-word` is an inline box 1em tall AT
    REST and an inline-BLOCK box a full line-height tall while `.hit-shake` runs (a transform
    needs one) — so a top/bottom inset would grow the chip by the leading, 15px, on every
@@ -1438,8 +1447,8 @@ input {
   left: -0.2em; /* 6px at the sentence's 30px */
   right: -0.2em;
   top: 50%;
-  height: 1.267em; /* the word's own 1em, plus 4px above and below at that size */
-  translate: 0 -50%;
+  height: 1.374em; /* the word's own 1em, 4px above and the bar's band below (#301) */
+  translate: 0 calc(-50% + 0.053em);
   z-index: -1;
   background: var(--chip-bg, var(--fg));
 }
@@ -1515,18 +1524,20 @@ input {
   left: -0.2em;
   right: -0.2em;
   top: 50%;
-  height: 1.267em;
-  translate: 0 -50%;
+  height: 1.374em; /* the chip's box, band included */
+  translate: 0 calc(-50% + 0.053em);
   z-index: -1;
   pointer-events: none;
 }
+/* The fill WAITS for the sparks (`--meter-delay`, Hole's): the release beat moves the
+   width, the transition holds until the shower has gathered on the bar, then travels. */
 .hole-meter-fill {
   position: absolute;
   left: 0;
   bottom: 0;
-  height: 0.18em; /* 5px at the sentence's 30px (0.1em read as a hairline, 2026-09-15) */
+  height: 0.16em; /* 5px at the sentence's 30px (0.1em read as a hairline, 2026-09-15) */
   background: var(--accent);
-  transition: width var(--meter-ms, 300ms) ease-out;
+  transition: width var(--meter-ms, 300ms) ease-out var(--meter-delay, 0ms);
 }
 /* THE REVEALED INITIAL: a mark BEFORE the chip, mirrored on the exponent after it — the
    exponent's size, superscript, in the meter's own colour, nudged clear of the chip's
@@ -1542,40 +1553,55 @@ input {
   translate: calc(-0.2em / var(--rank-size, 0.55)) 0;
   animation: rank-pop 0.4s ease-out;
 }
-/* THE LOOT: sparks of the meter's colour that pop off the struck word and fall to the
-   chip's bottom edge — into the meter — landing as the fill advances. Rolled per hit
-   (`--spark-x` a side and scatter, `--spark-h` the height, `--spark-s` the size,
-   `--spark-l` how far toward `--fg` the accent is lifted — the brightest ones flash white),
-   factors on em geometry so the throw scales with the type. A SHOWER, not a trickle
-   (user-decided 2026-09-15, "a bit shy"): bigger squares, thrown higher and wider, in the
-   count ChargeLoot rolls. `forwards` and NOT `both`: with a delay, a backwards fill would
-   show the first frame during the wait. Timing comes down from ChargeLoot. */
+/* THE LOOT: sparks of the meter's colour that the hit knocks out of the word IN EVERY
+   DIRECTION — they scatter around the hole, hang a beat, then are all GATHERED onto the bar
+   at the fill's new tip, and the fill travels the moment they land (user-decided
+   2026-09-15: "drops particles around the hole on the screen, then all the particles are
+   gathered on the progress bar"; the first throw was one arc into the bar). Rolled per hit
+   (`--spark-dx`/`--spark-dy` the scatter point in em, `--spark-s` the size, `--spark-l` how
+   far toward `--fg` the accent is lifted — the brightest ones flash white), and `--spark-lx`
+   is the landing: the bar's fill tip, in the wrap's own width. The flight animates
+   `left`/`top` (a dozen absolute boxes, cheap) so the landing can be a percentage of the
+   WORD's width — a translate's percentage is the spark's own. Ease-out into the scatter,
+   linear drift through the hang, ease-in home. `forwards` and NOT `both`: with a delay, a
+   backwards fill would show the first frame during the wait. Timing comes down from
+   ChargeLoot. */
 .charge-spark {
   position: absolute;
   left: 50%;
   top: 50%;
   width: calc(0.28em * var(--spark-s, 1));
   height: calc(0.28em * var(--spark-s, 1));
+  translate: -50% -50%;
   background: color-mix(in srgb, var(--accent), var(--fg) var(--spark-l, 0%));
   opacity: 0;
   pointer-events: none;
-  animation: charge-spark var(--spark-ms, 220ms) ease-in var(--spark-delay, 0ms) forwards;
+  animation: charge-spark var(--spark-ms, 700ms) linear var(--spark-delay, 0ms) forwards;
 }
 @keyframes charge-spark {
   0% {
     opacity: 1;
-    translate: calc(-50% + var(--spark-x) * 0.4em) -50%;
+    left: 50%;
+    top: 50%;
+    animation-timing-function: cubic-bezier(0.1, 0.8, 0.3, 1);
   }
-  40% {
-    opacity: 1;
-    translate: calc(-50% + var(--spark-x) * 1.3em) calc(-50% - var(--spark-h) * 0.9em);
+  38% {
+    left: calc(50% + var(--spark-dx, 0em));
+    top: calc(50% + var(--spark-dy, 0em));
+    animation-timing-function: linear;
   }
-  90% {
+  56% {
+    left: calc(50% + var(--spark-dx, 0em) * 1.08);
+    top: calc(50% + var(--spark-dy, 0em) * 1.08 + 0.12em);
+    animation-timing-function: cubic-bezier(0.55, 0, 0.85, 0.35);
+  }
+  94% {
     opacity: 1;
   }
   100% {
     opacity: 0;
-    translate: calc(-50% + var(--spark-x) * 0.45em) calc(-50% + 0.55em);
+    left: var(--spark-lx, 50%);
+    top: calc(50% + 0.66em); /* the bar's centre line, under the letters */
   }
 }
 /* THE STRIKE ON A HOLE is Word mode's, UNCHANGED (user-decided 2026-09-15, the third pass on

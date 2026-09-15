@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react';
 import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
 import Strike from './Strike';
 import Loot from './Loot';
-import ChargeLoot from './ChargeLoot';
+import ChargeLoot, { sparkLandMs } from './ChargeLoot';
 import { BURST_ART, SLASH_ART, STRUCK_MS, ULTRA_ART } from './strikeArt';
 import { MISS_COLOR, rankHeatColor } from '@whippin/shared';
 import useAnimatedNumber, { linearEasing } from '../hooks/useAnimatedNumber';
@@ -177,6 +177,16 @@ export default function Hole({
   const revealed = charge?.initial != null;
   const [initialShown, setInitialShown] = useState(revealed);
   const [burst, setBurst] = useState(0); // a nonce: >0 keeps a burst strike mounted
+  // THE FILL WAITS FOR THE SPARKS: the round releases the guess on the floating hit's beat
+  // (`fadeDelayMs`), and the shower lands later, so the meter's transition is delayed by
+  // the difference — and so is everything that follows the fill (the burst, the letter).
+  // Read off the hit in flight; a meter moving with no hit on it (a reload, another
+  // device's guess) moves at once.
+  const meterDelayMs = hit?.charge
+    ? Math.max(0, sparkLandMs(hit.startDelayMs) - hit.fadeDelayMs)
+    : 0;
+  const meterDelayRef = useRef(meterDelayMs);
+  meterDelayRef.current = meterDelayMs;
   useEffect(() => {
     if (!revealed) {
       setInitialShown(false);
@@ -187,8 +197,9 @@ export default function Hole({
       setInitialShown(true);
       return undefined;
     }
-    const strike = window.setTimeout(() => setBurst((n) => n + 1), METER_MS);
-    const letter = window.setTimeout(() => setInitialShown(true), INITIAL_AT_MS);
+    const wait = meterDelayRef.current;
+    const strike = window.setTimeout(() => setBurst((n) => n + 1), wait + METER_MS);
+    const letter = window.setTimeout(() => setInitialShown(true), wait + INITIAL_AT_MS);
     return () => {
       window.clearTimeout(strike);
       window.clearTimeout(letter);
@@ -197,6 +208,16 @@ export default function Hole({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revealed]);
   const endBurst = useCallback(() => setBurst(0), []);
+  // Where this hit's sparks gather: the meter after it, fixed per hit (see the loot below).
+  const [lootFill, setLootFill] = useState(0);
+  const lootHitId = hit?.charge ? hit.id : null;
+  const chargeNow = charge?.value ?? 0;
+  const chargeGain = hit?.charge ?? 0;
+  useLayoutEffect(() => {
+    if (lootHitId !== null) setLootFill(Math.min(100, chargeNow + chargeGain));
+    // Fixed when the hit MOUNTS: the reading then is the pre-release one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lootHitId]);
   useEffect(() => {
     if (resolved) onResolved?.(holeIndex);
   }, [holeIndex, onResolved, resolved]);
@@ -250,6 +271,13 @@ export default function Hole({
   // lands. So this component sets no colour at all any more.
   const wordStyle: CSSProperties & Record<string, string> = {};
   if (hit) wordStyle['--hit-delay'] = `${hit.startDelayMs}ms`;
+  // The word is KEYED on the last hit that LANDED, not on whether a hit is on it: a new
+  // hit still remounts it (which is what restarts the shake on two consecutive hits), but
+  // a hit ENDING no longer does — the meter rides the word, and a remount at that moment
+  // cut the fill's transition short (found 2026-09-15 on the fill's timeline: the width
+  // jumped to its target the instant the loot's timer cleared the hit).
+  const lastHit = useRef(0);
+  if (hit) lastHit.current = hit.id;
   // A STRUCK word recoils and inverts its chip for the BLOW (#301, user-decided 2026-09-15):
   // Word mode's own `STRUCK_MS`, from the hit's beat, handed to CSS so the two cannot
   // disagree.
@@ -275,9 +303,9 @@ export default function Hole({
           over the word and not the word+exponent. */}
       <span className="hole-word-wrap">
         {/* Key distinct from FloatingHit (otherwise collision -> duplicated word);
-            changing it restarts the shake even on two consecutive hits. */}
+            changing it restarts the shake even on two consecutive hits (see `lastHit`). */}
         <span
-          key={hit ? `word-${hit.id}` : 'word'}
+          key={`word-${lastHit.current}`}
           className={`hole-word${hit ? ' hit-shake' : ''}${strikeArt ? ' struck' : ''}${waving ? ' wave' : ''}`}
           style={wordStyle}
         >
@@ -297,7 +325,13 @@ export default function Hole({
             <span className="hole-meter" aria-hidden="true">
               <span
                 className="hole-meter-fill"
-                style={{ width: `${charge.value}%`, '--meter-ms': `${METER_MS}ms` } as CSSProperties}
+                style={
+                  {
+                    width: `${charge.value}%`,
+                    '--meter-ms': `${METER_MS}ms`,
+                    '--meter-delay': `${meterDelayMs}ms`,
+                  } as CSSProperties
+                }
               />
             </span>
           ) : null}
@@ -341,15 +375,19 @@ export default function Hole({
             delayMs={hit.startDelayMs}
           />
         )}
-        {/* THE LOOT (#301): what the cut shook loose, falling into the meter and landing
-            as the round releases the guess into the board — the fill it triggers. */}
-        {hit?.charge ? (
+        {/* THE LOOT (#301): what the cut shook loose — scattered around the hole, then
+            gathered onto the bar at the fill's new tip, which is where the meter goes the
+            moment they land. The tip is the reading BEFORE the release plus this hit's gain,
+            read once when the hit mounts (the release changes `charge.value` under a throw
+            already in the air, and `key`ing on the hit keeps the dice; the landing must not
+            move either, so it is fixed the same way). */}
+        {hit?.charge && charge ? (
           <ChargeLoot
             key={`loot-${hit.id}`}
             id={hit.id}
             charge={hit.charge}
+            fill={lootFill}
             startDelayMs={hit.startDelayMs}
-            landAtMs={hit.fadeDelayMs}
           />
         ) : null}
         {/* THE BURST (#301): the meter reached its target — one detonation in the meter's
