@@ -135,7 +135,9 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
           ...(groups.length === 0 ? [{ key: 'none', title: t(lang, 'boardEmptyGroups') }] : []),
           { key: 'global', title: t(lang, 'boardGlobal'), sub: t(lang, 'scopeGlobalSub') },
         ];
-  const onNone = tab === 'group' && active === null;
+  // "No group" is an ANSWER, never the wait for one: while the list is unknown (null) the
+  // body is LOADING, so a player who has groups never sees CREATE GROUP flash first.
+  const onNone = tab === 'group' && groups?.length === 0;
   const activeIndex =
     scopes.length === 0
       ? 0
