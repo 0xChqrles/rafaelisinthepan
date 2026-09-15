@@ -1590,7 +1590,10 @@ input {
   text-shadow: none;
 }
 .hole.veiled .hole-initial {
-  visibility: hidden;
+  visibility: hidden; /* the wheel's slot row wears the cell meanwhile */
+}
+.wheel-row .hole-initial {
+  animation: none; /* already revealed: the slot row does not replay the arrival */
 }
 @keyframes initial-in {
   from {

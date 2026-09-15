@@ -1205,7 +1205,12 @@ function Round({
       {historyModel && historyHole !== null && wheelOpen && (
         <HistoryWheel
           model={historyModel}
-          hub={{ word: shownHoles[historyHole].word, rank: shownHoles[historyHole].rank }}
+          hub={{
+            word: shownHoles[historyHole].word,
+            rank: shownHoles[historyHole].rank,
+            meter: charges[historyHole]?.value,
+            initial: charges[historyHole]?.initial,
+          }}
           hostIndex={historyHole}
           number={holeNumbers[historyHole]}
           lang={lang}
