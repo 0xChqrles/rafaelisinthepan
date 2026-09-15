@@ -176,6 +176,8 @@ export default function Hole({
   // revealed (a reload, a replay on another device) shows the letter at once — a burst is
   // for the moment it happens, not for history. Under reduced motion everything snaps.
   const revealed = charge?.initial != null;
+  // An exact hit wins immediately, before the deferred board finishes its word swap.
+  const solving = hole.rank === 0 || hit?.strike === 'ultra';
   const [initialShown, setInitialShown] = useState(revealed);
   const [burst, setBurst] = useState(0); // a nonce: >0 keeps a burst strike mounted
   // THE FILL WAITS FOR THE SPARKS: the round releases the guess on the floating hit's beat
@@ -189,8 +191,9 @@ export default function Hole({
   const meterDelayRef = useRef(meterDelayMs);
   meterDelayRef.current = meterDelayMs;
   useEffect(() => {
-    if (!revealed) {
+    if (!revealed || solving) {
       setInitialShown(false);
+      setBurst(0);
       return undefined;
     }
     if (initialShown) return undefined;
@@ -205,9 +208,10 @@ export default function Hole({
       window.clearTimeout(strike);
       window.clearTimeout(letter);
     };
-    // The choreography is armed by the reveal alone; `initialShown` is what it sets.
+    // A solve cancels both pending timers, including before the board's deferred release.
+    // `initialShown` is what this choreography sets, not a reason to restart it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [revealed]);
+  }, [revealed, solving]);
   const endBurst = useCallback(() => setBurst(0), []);
   // SPENT: the meter has done its one job. As the letter lands, the level fades out
   // (user-decided 2026-09-15, "once the progress bar is full, we can just remove it during
@@ -300,7 +304,7 @@ export default function Hole({
           word's length. Decorative
           here: the hole's description says it. Gone with the chip once the hole is inked
           in. */}
-      {!resolved && initialShown && charge?.initial ? (
+      {!solving && initialShown && charge?.initial ? (
         <span className="hole-initial" aria-hidden="true">
           {/* The letter's size is its own, so the cell keeps measuring in the word's em. */}
           <span className="hole-initial-letter">{charge.initial}</span>
@@ -329,7 +333,7 @@ export default function Hole({
               UNDER the ink and OVER the chip — the chip CONVERTING to the solve ink from
               the left, edge to edge, the hole's unresolved dress visibly filling. On the shaking word, not
               the static wrap, for the chip's own reason: it is part of the chip. */}
-          {!resolved && charge ? (
+          {!solving && charge ? (
             <span className={`hole-meter${spent ? ' spent' : ''}`} aria-hidden="true">
               <MeterCanvas value={charge.value} delayMs={meterDelayMs} durationMs={METER_MS} />
             </span>
@@ -399,7 +403,7 @@ export default function Hole({
         ) : null}
         {/* THE BURST (#301): the meter reached its target — one detonation in the meter's
             own colour, and the initial appears on its impact. */}
-        {burst > 0 && (
+        {!solving && burst > 0 && (
           <Strike
             key={`burst-${burst}`}
             id={burst}
