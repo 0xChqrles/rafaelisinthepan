@@ -293,14 +293,16 @@ export default function Hole({
   // touching it: the floating-hit/scramble choreography keys off this exact structure.
   const body = (
     <>
-      {/* THE REVEALED INITIAL (#301): the one persistent clue a full meter earns — a TAG
-          pinned on the chip's corner, drawn out of flow so the hole's width never moves
-          (user-decided 2026-09-15) — the letter alone, never the word's length. Decorative
+      {/* THE REVEALED INITIAL (#301): the one persistent clue a full meter earns — the
+          word's FIRST CELL, a chip-high tile before the chip, drawn out of flow so the
+          hole's width never moves (user-decided 2026-09-15) — the letter alone, never the
+          word's length. Decorative
           here: the hole's description says it. Gone with the chip once the hole is inked
           in. */}
       {!resolved && initialShown && charge?.initial ? (
         <span className="hole-initial" aria-hidden="true">
-          {charge.initial}
+          {/* The letter's size is its own, so the cell keeps measuring in the word's em. */}
+          <span className="hole-initial-letter">{charge.initial}</span>
         </span>
       ) : null}
       {/* The hit is positioned against this wrapper, which is sized to the WORD
@@ -323,8 +325,8 @@ export default function Hole({
             </span>
           ))}
           {/* THE METER (#301) rides the chip: the same box as the chip's ground, drawn
-              UNDER the ink and OVER the chip — the solve ink rising inside the chip as a
-              LEVEL, the hole's unresolved dress visibly filling. On the shaking word, not
+              UNDER the ink and OVER the chip — the chip CONVERTING to the solve ink from
+              the left, edge to edge, the hole's unresolved dress visibly filling. On the shaking word, not
               the static wrap, for the chip's own reason: it is part of the chip. */}
           {!resolved && charge ? (
             <span className={`hole-meter${spent ? ' spent' : ''}`} aria-hidden="true">
@@ -332,7 +334,7 @@ export default function Hole({
                 className={`hole-meter-fill${charge.value > 0 ? ' charged' : ''}`}
                 style={
                   {
-                    height: `${charge.value}%`,
+                    width: `${charge.value}%`,
                     '--meter-ms': `${METER_MS}ms`,
                     '--meter-delay': `${meterDelayMs}ms`,
                   } as CSSProperties

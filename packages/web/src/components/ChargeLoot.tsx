@@ -63,7 +63,7 @@ export default function ChargeLoot({
 }: {
   id: number; // the hit's id: a new hit is a new throw
   charge: number; // what the hit added to the meter
-  fill: number; // the meter's reading once it lands, 0-100: the surface the drops gather on
+  fill: number; // the meter's reading once it lands, 0-100: the front the drops gather at
   startDelayMs: number; // the hit's own start (the sentence's stagger)
   onDone?: (id: number) => void; // the throw is over: every drop and its trail is in
 }) {
@@ -85,16 +85,16 @@ export default function ChargeLoot({
           up: `${roll(UP_MIN_EM, UP_MAX_EM).toFixed(2)}em`,
           s: roll(0.8, 1.5).toFixed(3),
           delay: Math.round(roll(0, 90)),
-          // Where along the chip it comes to rest — anywhere on the surface.
-          rest: roll(0.06, 0.94).toFixed(3),
+          // Where on the front it comes to rest — anywhere down the chip's height.
+          rest: roll(0.15, 0.85).toFixed(3),
         };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [id],
   );
-  // The level's SURFACE after this hit, in the wrap's own box: the chip is 1.267em tall,
-  // centred on the word (`.hole-word::before`), and the level fills it from the bottom.
-  const landY = `calc(50% + 0.6335em - ${(fill / 100).toFixed(4)} * 1.267em)`;
+  // The FRONT after this hit, in the wrap's own width: the chip spans the word plus its
+  // 0.2em overhang a side (`.hole-word::before`), and the conversion sweeps it from the left.
+  const landX = `calc(-0.2em + ${(fill / 100).toFixed(4)} * (100% + 0.4em))`;
 
   return (
     <>
@@ -111,9 +111,9 @@ export default function ChargeLoot({
                 '--spark-dy': spark.dy,
                 '--spark-up': spark.up,
                 '--spark-s': spark.s,
-                // The chip spans the word plus its 0.2em overhang a side.
-                '--spark-lx': `calc(-0.2em + ${spark.rest} * (100% + 0.4em))`,
-                '--spark-ly': landY,
+                '--spark-lx': landX,
+                // The chip is 1.267em tall, centred on the word.
+                '--spark-ly': `calc(50% + ${(Number(spark.rest) * 1.267 - 0.6335).toFixed(3)}em)`,
                 '--spark-delay': `${launch + spark.delay + copy * TRAIL_LAG_MS}ms`,
                 '--spark-ms': `${SPARK_FLIGHT_MS - spark.delay}ms`,
               } as CSSProperties

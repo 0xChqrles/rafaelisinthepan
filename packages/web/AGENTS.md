@@ -238,14 +238,18 @@ These are decided and verified against the code. Treat them as load-bearing.
   meter and the same initial. Presentation (user-decided 2026-09-15, the third cut: "try
   something else than a progress bar"; "the first letter as a left exponent feels weird…
   make sure that when you make it appear, it doesn't impact the width of the hole"): THE
-  CHIP FILLS WITH THE SOLVE INK FROM THE BOTTOM — `.hole-meter`, the chip's own box and
-  layer, a level rising behind the dark letters, a full chip all cobalt (the ink the word
-  wears once found), one lit row for its surface; and THE INITIAL IS A TAG PINNED ON THE
-  CHIP'S TOP-LEFT CORNER — `.hole-initial`, a 16px (14 on a phone) tile of the solve ink
-  with the letter in the pixel font at its native 8px, ABSOLUTE in the hole and never laid
-  out, so the hole's width and the sentence's layout cannot move when it lands. Nothing
-  under the sentence, no `+7.5` parked anywhere. Retired the same day: the line along the
-  chip's bottom edge, the band the chip grew for it, the superscript mark before the chip. **The cut is WHITE, WORD MODE'S SIZE, and the hit is Word mode's
+  CHIP CONVERTS TO THE SOLVE INK EDGE TO EDGE ACROSS THE WORD — `.hole-meter`, the chip's
+  own box and layer: the white ground turns cobalt from the left behind the dark letters,
+  the chip's whole height, behind a 2px-checker DITHERED FRONT, a full chip all cobalt (the
+  ink the word wears once found); and THE INITIAL IS THE WORD'S FIRST CELL — `.hole-initial`,
+  a chip-high tile of the solve ink over the chip's left overhang (0.6em, flush with the
+  chip, 0.4em into the word gap) with the letter in white (the pixel font at half the word's size, never under 8px), ABSOLUTE in the hole and
+  never laid out, so the hole's width and the sentence's layout cannot move when it lands.
+  Nothing under the sentence, no `+7.5` parked anywhere. Retired the same day, each on the
+  user's review: a line along the chip's bottom edge and the band the chip grew for it (a
+  bar); a level rising inside the chip with a lit surface row ("barely moves… the top
+  border feels weird"); a superscript mark before the chip and a 16px tag on its corner
+  (both "a left exponent"). **The cut is WHITE, WORD MODE'S SIZE, and the hit is Word mode's
   hit (user-decided 2026-09-15 across three passes on the first cut: "always white", then
   "x3 bigger", then "the same slash size that is used on the word mode, with the same
   shake animation and exponent animation")**: `--fg` through the mask at `.strike`'s own
@@ -256,8 +260,8 @@ These are decided and verified against the code. Treat them as load-bearing.
   float, which stays for a miss, a repeat and the solve. The SENTENCE's exponent is 0.75em
   (`--rank-size` on `.phrase` and the wheel's slot row; 0.55 where `.hole-rank` is
   reused). The sequence is `cut → BLOOD: drops fly out on their own
-  arcs and SPLAT around and below the word, lie there a pause, then are GATHERED onto the
-  level's surface, each with a trail → the level rises` — a drop per 2.5 points of the
+  arcs and SPLAT around and below the word, lie there a pause, then are GATHERED at the
+  conversion's front, each with a trail → the front sweeps on` — a drop per 2.5 points of the
   hit's gain ("proportional to the progression") — on the hit's own stagger beat
   (user-decided 2026-09-15 in three passes — "a bit shy", "particles around the hole then
   gathered", "it should feel like blood… something physical that dropped onto the screen…
@@ -265,7 +269,7 @@ These are decided and verified against the code. Treat them as load-bearing.
   meter's, no opacity or tone per drop): the width moves on the guess's RELEASE (the
   deferred-board beat, `shownCharge`) and the fill's transition WAITS for the landing
   (`--meter-delay`, `sparkLandMs`), the burst and the letter waiting with it; ONCE FULL THE
-  LEVEL GOES — it fades on the letter's own arrival (`.spent`, user-decided 2026-09-15); at 100 `meter fills → BURST
+  CONVERSION GOES — it fades on the letter's own arrival (`.spent`, user-decided 2026-09-15); at 100 `meter fills → BURST
   → initial`, timed off `METER_MS` in `Hole`. The exact hit wears the ULTRA star and takes
   no cut, loot or burst (the solve supersedes); a miss, a repeat and a rank past the table
   keep the float alone; a guess that also improves the hole keeps the word/rank swap
