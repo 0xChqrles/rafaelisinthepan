@@ -232,15 +232,21 @@ These are decided and verified against the code. Treat them as load-bearing.
   edge (`.hole-meter`, the chip's own box and layer — the hole's unresolved dress, visibly
   filling), the initial a superscript mark BEFORE the chip in the accent (`.hole-initial`,
   the exponent's size; a layout box, arriving once on the burst), nothing under the
-  sentence, no `+7.5` parked anywhere. The sequence is `cut → sparks fly into the meter →
+  sentence, no `+7.5` parked anywhere. **The cut is WHITE and BIG, and it INVERTS the chip
+  (user-decided 2026-09-15, on the first cut's review: "always white, x3 bigger, more
+  intense")**: `--fg` through the mask, 9x on desktop / 6x on a phone (`.phrase .strike`,
+  three times the first cut's step), and for the sheet's length the chip's ground goes
+  `--bg` and its ink `--fg` (`hole-invert`, off `--strike-ms`); the SENTENCE's exponent is
+  0.75em (`--rank-size` on `.phrase` and the wheel's slot row; 0.55 where `.hole-rank` is
+  reused). The sequence is `cut → sparks fly into the meter →
   meter advances` on the hit's own stagger beat, the meter moving on the guess's RELEASE
   (the deferred-board beat, `shownCharge`) as the loot lands; at 100 `meter fills → BURST
   → initial`, timed off `METER_MS` in `Hole`. The exact hit wears the ULTRA star and takes
   no cut, loot or burst (the solve supersedes); a miss, a repeat and a rank past the table
   keep the float alone; a guess that also improves the hole keeps the word/rank swap
   choreography (charging is additive). The sheets are the Word-mode art, extracted to
-  `components/strikeArt.ts` + `Strike.tsx` (`.strike`, one integer step smaller under
-  `.phrase`), in the hit's heat colour — never a rarity grade. A11y: the meter and the
+  `components/strikeArt.ts` + `Strike.tsx` (`.strike`, its own integer scales under
+  `.phrase`) — never a rarity grade, never the heat. A11y: the meter and the
   initial are the hole button's DESCRIPTION (`srHoleCharge` / `srHoleInitial`, sr-only
   spans outside the sentence like the exploration hints, never words in the prose); the
   reveal is also announced with the guess. Reduced motion keeps the state and snaps: no

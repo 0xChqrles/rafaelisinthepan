@@ -249,6 +249,10 @@ export default function Hole({
   // lands. So this component sets no colour at all any more.
   const wordStyle: CSSProperties & Record<string, string> = {};
   if (hit) wordStyle['--hit-delay'] = `${hit.startDelayMs}ms`;
+  // A STRUCK word inverts its chip for the blow (#301, user-decided 2026-09-15): the sheet's
+  // own length, from the hit's beat, handed to CSS so the two cannot disagree.
+  const strikeArt = hit?.strike === 'ultra' ? ULTRA_ART : hit?.strike === 'slash' ? SLASH_ART : null;
+  if (strikeArt) wordStyle['--strike-ms'] = `${strikeArt.ms}ms`;
   if (waving) Object.assign(wordStyle, WAVE_VARS);
 
   // The word + its exponent. The route button (below) wraps this whole group WITHOUT
@@ -272,7 +276,7 @@ export default function Hole({
             changing it restarts the shake even on two consecutive hits. */}
         <span
           key={hit ? `word-${hit.id}` : 'word'}
-          className={`hole-word${hit ? ' hit-shake' : ''}${waving ? ' wave' : ''}`}
+          className={`hole-word${hit ? ' hit-shake' : ''}${strikeArt ? ' struck' : ''}${waving ? ' wave' : ''}`}
           style={wordStyle}
         >
           {/* One span per letter — the structure the wave moves. Keyed by position, so the
@@ -315,16 +319,17 @@ export default function Hole({
           />
         )}
         {/* THE STRIKE (#301): the cut of a charging guess, or the ultra star of the exact
-            hit, in the hit's own heat colour (the ultra carries its own palette). It lands
-            on the hit's stagger beat and needs no `onDone`: the floating hit outlives every
-            sheet, and its timer is what clears the hit. A solve supersedes the cut and the
-            loot — the round never hands both to one hole. */}
-        {hit?.strike && (
+            hit. The cut is WHITE — always (user-decided 2026-09-15; the heat is the float's
+            and the exponent's, never the blow's) — and the ultra carries its own palette.
+            It lands on the hit's stagger beat and needs no `onDone`: the floating hit
+            outlives every sheet, and its timer is what clears the hit. A solve supersedes
+            the cut and the loot — the round never hands both to one hole. */}
+        {strikeArt && hit && (
           <Strike
             key={`strike-${hit.id}`}
             id={hit.id}
-            art={hit.strike === 'ultra' ? ULTRA_ART : SLASH_ART}
-            color={rankHeatColor(hit.value)}
+            art={strikeArt}
+            color="var(--fg)"
             delayMs={hit.startDelayMs}
           />
         )}

@@ -1441,7 +1441,27 @@ input {
   height: 1.267em; /* the word's own 1em, plus 4px above and below at that size */
   translate: 0 -50%;
   z-index: -1;
-  background: var(--fg);
+  background: var(--chip-bg, var(--fg));
+}
+/* THE HIT INVERTS THE CHIP (user-decided 2026-09-15, "the hit animation should be more
+   intense… make the background and foreground of the hole word switch during the slash"):
+   for exactly the strike's length (`--strike-ms`, Hole's, the art's own ms) from the hit's
+   stagger beat, the chip's ground goes `--bg` and its ink `--fg` — a photographic negative
+   under the blow, back to the held word the frame the sheet ends. ONE animation on the
+   shaking word beside the shake, flipping the ground through the `--chip-bg` variable the
+   chip's pseudo reads (a custom property animates as a discrete switch, which is what a
+   switch wants); no fill, so nothing lingers. */
+.hole:not(.resolved) .hole-word.hit-shake.struck {
+  animation:
+    word-shake 0.4s ease-in-out var(--hit-delay, 0ms),
+    hole-invert var(--strike-ms, 250ms) linear var(--hit-delay, 0ms);
+}
+@keyframes hole-invert {
+  from,
+  to {
+    color: var(--fg);
+    --chip-bg: var(--bg);
+  }
 }
 /* The sentence's hard 2px black print is legibility ON THE GROUND; on the chip it is a
    dark smear under near-black ink. The boosted selectors are what it takes to beat
@@ -1513,11 +1533,11 @@ input {
    round, on the burst, and the sentence taking it in on that beat is the reveal. */
 .hole-initial {
   display: inline-block;
-  font-size: 0.55em;
+  font-size: calc(1em * var(--rank-size, 0.55));
   margin-right: 1px;
   color: var(--accent);
   vertical-align: super;
-  translate: calc(-0.2em / 0.55) 0;
+  translate: calc(-0.2em / var(--rank-size, 0.55)) 0;
   animation: rank-pop 0.4s ease-out;
 }
 /* THE LOOT: sparks of the meter's colour that pop off the struck word and fall to the
@@ -1553,18 +1573,25 @@ input {
     translate: calc(-50% + var(--spark-x) * 0.3em) calc(-50% + 0.6em);
   }
 }
-/* THE STRIKE ON A HOLE: the same sheets Word mode cuts its word with (`.strike`), one
-   integer step smaller — 3x on desktop (the sentence's words are 30px where the day's word
-   is 40), 2x on a phone — every drop re-derived from the sheet's measured ink at that scale
-   and kept in whole pixels: the slash's 19% of its height, the burst's 6%, the ultra centred.
-   `.phrase` prefixed so these outrank the Word-mode geometry at every width. */
+/* THE STRIKE ON A HOLE: the same sheets Word mode cuts its word with (`.strike`), `.phrase`
+   prefixed so these outrank the Word-mode geometry at every width; every drop re-derived
+   from the sheet's measured ink at its scale and kept in whole pixels (the slash's 19% of
+   its height, the burst's 6%, the ultra centred).
+   THE CUT IS BIG AND WHITE (user-decided 2026-09-15: "always be white, and x3 bigger" — the
+   first cut landed at 3x in the hit's heat colour): 9x on desktop (324x414, wider than the
+   phrase's column is tall, and the point — a hit on a word is an EVENT, not a footnote),
+   6x on a phone (216x276), painted in `--fg` by Hole. The burst keeps the meter's colour at
+   the 3x/2x step the first cut set, the ultra its own palette. */
+.phrase, .wheel-row {
+  --rank-size: 0.75;
+}
 .phrase .strike {
-  width: 108px;
-  height: 138px;
-  transform: translate(-50%, calc(-50% + 26px));
+  width: 324px;
+  height: 414px;
+  transform: translate(-50%, calc(-50% + 79px));
 }
 .phrase .strike.mirrored {
-  transform: translate(-50%, calc(-50% + 26px)) scaleX(-1);
+  transform: translate(-50%, calc(-50% + 79px)) scaleX(-1);
 }
 .phrase .strike.burst {
   width: 159px;
@@ -1578,12 +1605,12 @@ input {
 }
 @media (max-width: 640px) {
   .phrase .strike {
-    width: 72px;
-    height: 92px;
-    transform: translate(-50%, calc(-50% + 18px));
+    width: 216px;
+    height: 276px;
+    transform: translate(-50%, calc(-50% + 52px));
   }
   .phrase .strike.mirrored {
-    transform: translate(-50%, calc(-50% + 18px)) scaleX(-1);
+    transform: translate(-50%, calc(-50% + 52px)) scaleX(-1);
   }
   .phrase .strike.burst {
     width: 106px;
@@ -1645,16 +1672,20 @@ input {
    in ITS context — the division is the unit conversion, written out rather than resolved
    to a number that would silently stop matching the chip. */
 .hole:not(.resolved) .hole-rank {
-  translate: calc(0.2em / 0.55) 0;
+  translate: calc(0.2em / var(--rank-size, 0.55)) 0;
 }
 .hole:not(.resolved) ~ .word {
   translate: 0.2em 0;
 }
 .hole-rank {
   /* inline-block (not inline) so the rank-pop transform applies; width fits the
-     exponent's own content so a trailing suffix hugs the number, no reserved gap. */
+     exponent's own content so a trailing suffix hugs the number, no reserved gap.
+     THE SIZE IS ONE VARIABLE (`--rank-size`, the exponent's em over the word's): 0.55
+     where the class is reused (the coach text's hint words), 0.75 on the SENTENCE and the
+     wheel's slot row (user-decided 2026-09-15, "the exponent number should be bigger");
+     the chip nudges below divide by the same variable, so they cannot drift from it. */
   display: inline-block;
-  font-size: 0.55em;
+  font-size: calc(1em * var(--rank-size, 0.55));
   margin-left: 1px;
   color: var(--rank-color);
   vertical-align: super;
