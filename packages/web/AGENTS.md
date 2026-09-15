@@ -225,13 +225,17 @@ These are decided and verified against the code. Treat them as load-bearing.
   INVALID uses it now); on-hole floating number/"MISS" = info about *a hole*.
 - **NEAR GUESSES CHARGE THE HOLE (#301, user-decided 2026-09-15).** Every COUNTED guess
   charges every UNSOLVED hole by its rank in that secret's map, best word or not
-  (`game/charge.ts`): rank 1–3 +30 · 4–10 +20 · 11–25 +14 · 26–50 +10 · 51–100 +7 ·
-  101–250 +3.5 · past 250 / absent 0; rank 0 is the solve and pays nothing. (TUNED TO A
-  RUN, user-decided 2026-09-15 in two passes on play: the issue's 30/18/12/7.5/4.5/1.5 was
-  "quite hard to unlock", a 50/34/25/18/12/6 answer "a bit too much" — "it should unlock
-  naturally around 25/30 (good and bad) tries". A TYPICAL round — about half the tries far
-  or missed, a quarter at 101–250, the rest spread closer — fills it at ~27 tries, a sharp
-  one at ~19; `charge.test.ts` pins both mixes, so a retune restates the yardstick.) ONE meter per
+  (`game/charge.ts`): a CONTINUOUS function of the rank, never a table of bands —
+  `28 − 26.5 × ln(rank) / ln(1000)`: 28 for the nearest word, the same 2.66 less every time
+  the distance doubles, 1.5 at rank 1000; past 1000 / absent 0; rank 0 is the solve and
+  pays nothing. (User-decided 2026-09-15: "words from 0 to 1000 should give you points", a
+  rank-999 word included, and "use a function and not a table". CALIBRATED ON REAL ROUNDS
+  to the user's targets — "around 25/30 (good and bad) tries", then "reduce this a bit, by
+  maybe ~20%": half the holes a player is stuck on reveal by try ~37. `charge.test.ts` pins
+  the stuck-hole mix, so a retune restates it — from production logs, never an assumed mix
+  (the last assumed one put 55% of tries inside 250 where real play puts 20%). Keep the top
+  this gentle: a steeper one fires the initial just before solves that were coming anyway;
+  the three nearest words pay 77 together.) ONE meter per
   logical secret (repeated occurrences share it), capped at `CHARGE_TARGET` = 100, and
   reaching it REVEALS THE SECRET'S FIRST LETTER — automatically, once, the initial only
   (never the length); a full meter takes no more charge. No separate try/time gate, no
