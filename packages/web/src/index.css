@@ -1589,12 +1589,9 @@ input {
 .phrase .hole-btn .hole-initial-letter {
   text-shadow: none;
 }
-.hole.veiled .hole-initial {
-  visibility: hidden; /* the wheel's slot row wears the cell meanwhile */
-}
-.wheel-row .hole-initial {
-  animation: none; /* already revealed: the slot row does not replay the arrival */
-}
+/* Under the wheel the cell STAYS, dimmed by the veil like the sentence around it, exactly
+   where it is (user-decided 2026-09-15): the veil hides the hole's word for the slot row
+   that stands in, and the cell is not part of what the slot row redraws. */
 @keyframes initial-in {
   from {
     opacity: 0;

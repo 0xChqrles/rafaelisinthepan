@@ -54,10 +54,6 @@ const GAP = 6;
 // row's chip — and the plain rows' grounds — are not clipped by the scroller's edge
 // (user-reported 2026-09-02: "when you click on a hole word, the left padding disappears").
 const OVERHANG_EM = 0.2;
-// With the initial REVEALED (#301) the hole wears its first cell before the chip — 0.6em
-// wide, 0.04em off the word — so the column's inset grows to keep it (user-decided
-// 2026-09-15: the cell used to vanish under the veil; the slot row wears it now).
-const INITIAL_EM = 0.64;
 // The room a column needs on the word's right before it stands on the word's RIGHT edge
 // instead — a word near the right edge of a phone leaves nothing to left-align on.
 const MIN_COLUMN = 160;
@@ -117,9 +113,10 @@ export default function HistoryWheel({
   model: HistoryModel;
   // What the tapped control SHOWS — the hole's word and rank as the sentence has them
   // (a pick included), or the secret at rank 0 on the solved stage.
-  // The meter's reading and the revealed initial (#301), so the slot row — the hole as the
-  // sentence draws it — carries them too instead of losing them under the veil.
-  hub: { word: string; rank: number; meter?: number; initial?: string | null };
+  // The meter's reading (#301), so the slot row — the hole as the sentence draws it —
+  // carries it too. NOT the revealed initial: that cell stays where it is, under the veil
+  // (user-decided 2026-09-15 — a copy in the slot row sat a pixel off the sentence's).
+  hub: { word: string; rank: number; meter?: number };
   // The `data-hole-explore` index of the control the wheel turns through.
   hostIndex: number;
   // The hole opens its sentence and carries the capital itself (sentence case, the
@@ -282,7 +279,7 @@ export default function HistoryWheel({
   // edge for a column to stand there, on its right edge.
   const flip = anchor.width - EDGE - anchor.wrap.x < MIN_COLUMN;
   const column = flip ? anchor.wrap.x + anchor.wrap.w - EDGE : anchor.width - EDGE - anchor.wrap.x;
-  const inset = Math.ceil(anchor.fontSize * (hub.initial ? INITIAL_EM : OVERHANG_EM)) + 1;
+  const inset = Math.ceil(anchor.fontSize * OVERHANG_EM) + 1;
   const origin = anchor.top - EDGE;
   const height = anchor.height - origin;
   const rowH = anchor.lineHeight;
@@ -310,11 +307,6 @@ export default function HistoryWheel({
   const body = (stop: HistoryStop, inSlot: boolean) =>
     inSlot ? (
       <span className={`hole${stop.rank === 0 ? ' resolved' : ''}`}>
-        {hub.initial && stop.rank > 0 ? (
-          <span className="hole-initial" aria-hidden="true">
-            <span className="hole-initial-letter">{hub.initial}</span>
-          </span>
-        ) : null}
         <span className="hole-word-wrap" data-focus-box>
           <span className="hole-word">
             {Array.from(shown(stop)).map((ch, k) => (
@@ -322,8 +314,8 @@ export default function HistoryWheel({
                 {ch}
               </span>
             ))}
-            {/* The meter as it stands (drawn at once, no travel); spent once revealed. */}
-            {hub.meter !== undefined && !hub.initial && stop.rank > 0 ? (
+            {/* The meter as it stands (drawn at once, no travel); spent once full. */}
+            {hub.meter !== undefined && hub.meter < 100 && stop.rank > 0 ? (
               <span className="hole-meter" aria-hidden="true">
                 <MeterCanvas value={hub.meter} delayMs={0} durationMs={0} />
               </span>

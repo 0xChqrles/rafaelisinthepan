@@ -1209,7 +1209,6 @@ function Round({
             word: shownHoles[historyHole].word,
             rank: shownHoles[historyHole].rank,
             meter: charges[historyHole]?.value,
-            initial: charges[historyHole]?.initial,
           }}
           hostIndex={historyHole}
           number={holeNumbers[historyHole]}
