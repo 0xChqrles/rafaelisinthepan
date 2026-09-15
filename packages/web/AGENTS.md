@@ -135,7 +135,10 @@
                               mode's grade) popping up and falling away (was WordLoot)
       game/charge.ts          #301's hole CHARGE METER: the rank -> charge table, the replay of
                               the play log onto every hole's meter, the revealed initial
-      components/ChargeLoot.tsx  the sparks a charging guess knocks into the meter
+      components/ChargeLoot.tsx  the blood a charging guess knocks out of the hole, gathered
+                              onto the meter
+      components/MeterCanvas.tsx  the meter's drawing: the chip converting as an ordered
+                              dither, tweened
       components/WordSubject.tsx  the day's word while the run is on: the word alone, centred
       hooks/useCountdown.ts   the run's deadline, as a ticking clock (HUD) and as one flip (screen)
       game/scoring.ts         the SCREEN's reading: applyGuessToHoles + replayHoles +
@@ -240,8 +243,12 @@ These are decided and verified against the code. Treat them as load-bearing.
   make sure that when you make it appear, it doesn't impact the width of the hole"): THE
   CHIP CONVERTS TO THE SOLVE INK EDGE TO EDGE ACROSS THE WORD — `.hole-meter`, the chip's
   own box and layer: the white ground turns cobalt from the left behind the dark letters,
-  the chip's whole height, behind a 2px-checker DITHERED FRONT, a full chip all cobalt (the
-  ink the word wears once found); and THE INITIAL IS THE WORD'S FIRST CELL — `.hole-initial`,
+  the chip's whole height, AS AN ORDERED DITHER (`components/MeterCanvas.tsx`: Bayer 8×8
+  thresholds on 2px cells, the density ramping over about a chip's height ahead of the
+  front, cells lighting in threshold order as the front advances — a canvas, tweened in JS
+  on the meter's own delay and travel; user-decided 2026-09-15, replacing a hard-edged sweep
+  with a checker fringe, "a basic animation"), a full chip all cobalt (the ink the word
+  wears once found); and THE INITIAL IS THE WORD'S FIRST CELL — `.hole-initial`,
   a chip-high tile of the solve ink over the chip's left overhang (0.6em, flush with the
   chip, 0.4em into the word gap) with the letter in white (the pixel font at half the word's size, never under 8px), ABSOLUTE in the hole and
   never laid out, so the hole's width and the sentence's layout cannot move when it lands.

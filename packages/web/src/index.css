@@ -1509,19 +1509,20 @@ input {
 /* --- THE CHARGE METER (#301, user-decided 2026-09-15) -----------------------------------
    A near guess that is not a new best still CHARGES the hole, and the hole's own unresolved
    dress — the chip — is where the charge shows: THE CHIP CONVERTS TO THE SOLVE INK, EDGE TO
-   EDGE ACROSS THE WORD. The white ground turns cobalt from the left as charge lands — the
-   whole chip's height, never a bar — behind a DITHERED FRONT (a 2px checker, the pixel
-   art's own edge), so a big gain visibly sweeps across the word (user-decided 2026-09-15,
-   the fourth cut: a line along the chip's bottom edge was a bar; a level rising inside the
-   chip "barely moves even with a huge score increase" and its surface row "feels weird").
-   A full chip is all cobalt — the ink the word will wear once found — and the burst and the
-   letter follow. It takes the chip's exact box (same overhang, same height, same centring),
-   sits in the chip's own stacking layer AFTER the `::before` in paint order — over the
-   white ground, under the ink — and clips to itself. Nothing is laid out: it is absolute
-   like the chip and rides `.hole-word` like the chip, so the shake carries it and no letter
-   of the sentence moves. The fill's TRAVEL is `--meter-ms` (Hole's `METER_MS`) and it WAITS
-   for the blood (`--meter-delay`, Hole's): the release beat moves the width, the transition
-   holds until the drops have gathered at the front, then the front sweeps on. */
+   EDGE ACROSS THE WORD, AS AN ORDERED DITHER (`MeterCanvas`): every 2px cell has a Bayer
+   8×8 threshold, the ink's density ramps from solid to nothing over about a chip's height
+   ahead of the front, and a cell is inked when its threshold is under the density at its
+   column — so a gain does not slide an edge, it lights cells up one by one in threshold
+   order across the ramp (user-decided 2026-09-15, the fifth cut: a line along the chip's
+   bottom edge was a bar; a level rising inside the chip barely moved; a hard-edged sweep
+   behind a checker fringe was "a basic animation"). A full chip is all cobalt — the ink the
+   word will wear once found — and the burst and the letter follow. The box is the chip's
+   exact box (same overhang, same height, same centring), in the chip's own stacking layer
+   AFTER the `::before` in paint order — over the white ground, under the ink — and clips to
+   itself. Nothing is laid out: it is absolute like the chip and rides `.hole-word` like the
+   chip, so the shake carries it and no letter of the sentence moves. The canvas fills the
+   box and paints in the box's `color`; its travel and its wait for the blood are the
+   component's (Hole's `METER_MS` and `meterDelayMs`). */
 .hole-meter {
   position: absolute;
   left: -0.2em;
@@ -1533,25 +1534,14 @@ input {
   overflow: hidden;
   pointer-events: none;
 }
-.hole-meter-fill {
+.hole-meter-canvas {
   position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  background: var(--accent);
-  transition: width var(--meter-ms, 300ms) ease-out var(--meter-delay, 0ms);
-}
-/* The FRONT: a 0.2em fringe of 2px checker past the fill's edge, so the conversion has a
-   pixel edge rather than a ruled line. Only once there IS a fill (`.charged`): at 0% it
-   would show as a sliver on the chip's left edge. */
-.hole-meter-fill.charged::after {
-  content: '';
-  position: absolute;
-  left: 100%;
-  top: 0;
-  bottom: 0;
-  width: 0.2em;
-  background: repeating-conic-gradient(var(--accent) 0 25%, transparent 0 50%) 0 0 / 4px 4px;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  color: var(--accent);
+  image-rendering: pixelated;
 }
 /* SPENT (user-decided 2026-09-15): once full, the conversion has said everything it will —
    it fades out on the letter's own arrival (0.4s). A hole mounted revealed (a reload) is
@@ -1718,7 +1708,6 @@ input {
    flight: the fill snaps, nothing flies, the letter simply appears. (The strike holds one
    frame under its own rule.) */
 @media (prefers-reduced-motion: reduce) {
-  .hole-meter-fill,
   .hole-meter.spent {
     transition: none;
   }

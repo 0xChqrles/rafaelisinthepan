@@ -4,6 +4,7 @@ import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
 import Strike from './Strike';
 import Loot from './Loot';
 import ChargeLoot, { sparkLandMs } from './ChargeLoot';
+import MeterCanvas from './MeterCanvas';
 import { BURST_ART, SLASH_ART, STRUCK_MS, ULTRA_ART } from './strikeArt';
 import { MISS_COLOR, rankHeatColor } from '@whippin/shared';
 import useAnimatedNumber, { linearEasing } from '../hooks/useAnimatedNumber';
@@ -330,16 +331,7 @@ export default function Hole({
               the static wrap, for the chip's own reason: it is part of the chip. */}
           {!resolved && charge ? (
             <span className={`hole-meter${spent ? ' spent' : ''}`} aria-hidden="true">
-              <span
-                className={`hole-meter-fill${charge.value > 0 ? ' charged' : ''}`}
-                style={
-                  {
-                    width: `${charge.value}%`,
-                    '--meter-ms': `${METER_MS}ms`,
-                    '--meter-delay': `${meterDelayMs}ms`,
-                  } as CSSProperties
-                }
-              />
+              <MeterCanvas value={charge.value} delayMs={meterDelayMs} durationMs={METER_MS} />
             </span>
           ) : null}
         </span>
