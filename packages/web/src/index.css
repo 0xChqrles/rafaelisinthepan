@@ -1524,7 +1524,7 @@ input {
   position: absolute;
   left: 0;
   bottom: 0;
-  height: 0.1em; /* 3px at the sentence's 30px */
+  height: 0.18em; /* 5px at the sentence's 30px (0.1em read as a hairline, 2026-09-15) */
   background: var(--accent);
   transition: width var(--meter-ms, 300ms) ease-out;
 }
@@ -1544,16 +1544,19 @@ input {
 }
 /* THE LOOT: sparks of the meter's colour that pop off the struck word and fall to the
    chip's bottom edge — into the meter — landing as the fill advances. Rolled per hit
-   (`--spark-x` a side and scatter, `--spark-h` the height), factors on em geometry so the
-   throw scales with the type. `forwards` and NOT `both`: with a delay, a backwards fill
-   would show the first frame during the wait. Timing comes down from ChargeLoot. */
+   (`--spark-x` a side and scatter, `--spark-h` the height, `--spark-s` the size,
+   `--spark-l` how far toward `--fg` the accent is lifted — the brightest ones flash white),
+   factors on em geometry so the throw scales with the type. A SHOWER, not a trickle
+   (user-decided 2026-09-15, "a bit shy"): bigger squares, thrown higher and wider, in the
+   count ChargeLoot rolls. `forwards` and NOT `both`: with a delay, a backwards fill would
+   show the first frame during the wait. Timing comes down from ChargeLoot. */
 .charge-spark {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 0.2em;
-  height: 0.2em;
-  background: var(--accent);
+  width: calc(0.28em * var(--spark-s, 1));
+  height: calc(0.28em * var(--spark-s, 1));
+  background: color-mix(in srgb, var(--accent), var(--fg) var(--spark-l, 0%));
   opacity: 0;
   pointer-events: none;
   animation: charge-spark var(--spark-ms, 220ms) ease-in var(--spark-delay, 0ms) forwards;
@@ -1561,18 +1564,18 @@ input {
 @keyframes charge-spark {
   0% {
     opacity: 1;
-    translate: calc(-50% + var(--spark-x) * 0.35em) -50%;
+    translate: calc(-50% + var(--spark-x) * 0.4em) -50%;
   }
   40% {
     opacity: 1;
-    translate: calc(-50% + var(--spark-x) * 0.8em) calc(-50% - var(--spark-h) * 0.55em);
+    translate: calc(-50% + var(--spark-x) * 1.3em) calc(-50% - var(--spark-h) * 0.9em);
   }
   90% {
     opacity: 1;
   }
   100% {
     opacity: 0;
-    translate: calc(-50% + var(--spark-x) * 0.3em) calc(-50% + 0.6em);
+    translate: calc(-50% + var(--spark-x) * 0.45em) calc(-50% + 0.55em);
   }
 }
 /* THE STRIKE ON A HOLE is Word mode's, UNCHANGED (user-decided 2026-09-15, the third pass on
