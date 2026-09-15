@@ -17,33 +17,29 @@ import type { RankMap, RuntimeHole } from '@whippin/shared';
 // The meter's target; charge caps here and the reveal fires the moment it is reached.
 export const CHARGE_TARGET = 100;
 
-// What a guess's rank in a secret's map pays, as `[rank ceiling, charge]` rows, ascending.
-// A rank past the last row — or absent from the map — pays nothing; rank 0 is the solve and
-// never consults the table.
+// What a guess's rank in a secret's map pays is a CONTINUOUS FUNCTION of the rank, never a
+// table of bands (user-decided 2026-09-15): CHARGE_NEAR for the nearest word, falling by the
+// same amount every time the distance doubles — linear in ln(rank), the log reading of
+// distance the progress score and the heat already use; 2.66 a doubling — down to
+// CHARGE_FAR at CHARGE_REACH, so a word ranked 999 still pays ("words from 0 to 1000 should
+// give you points"). Past the reach, or absent from the map, a guess pays nothing; rank 0 is
+// the solve and never asks.
 //
-// TUNED TO A RUN, NOT TO A BAND (user-decided 2026-09-15, in two passes on play: the
-// issue's 30 / 18 / 12 / 7.5 / 4.5 / 1.5 was "quite hard to unlock", a 50 / 34 / 25 / 18 /
-// 12 / 6 answer "a bit too much" — "it should be something that unlocks naturally around
-// 25/30 (good and bad) tries"). The yardstick is a TYPICAL ROUND: about half the tries far
-// or missed (0), a quarter in the 101–250 band, 15% at 51–100, 10% at 26–50, 4% at 11–25,
-// 1% at 4–10 — that mix pays ~3.7 a try here, so the initial comes at ~27 tries; a sharper
-// run (a third far, the rest spread closer) pays ~5.4 and gets it at ~19. Band by band,
-// with nothing else landing: four in the top three · five at 4–10 · eight at 11–25 · ten at
-// 26–50 · fifteen at 51–100 · twenty-nine at 101–250. A far guess still pays nothing: the
-// meter rewards the neighbourhood, not persistence.
-export const CHARGE_TABLE: readonly (readonly [number, number])[] = [
-  [3, 30],
-  [10, 20],
-  [25, 14],
-  [50, 10],
-  [100, 7],
-  [250, 3.5],
-];
+// CALIBRATED ON REAL PLAY: replayed over the production rounds of 2026-09-15, half the holes
+// a player is stuck on get their initial by try ~37 (the user's "around 25/30 tries", then
+// "reduce this a bit, by maybe ~20%"), and a fast solve almost never sees one.
+// `charge.test.ts` pins the mix those holes actually see, so a retune restates it from real
+// logs, never from an assumed mix. Keep the top this gentle: a steeper one fires the initial
+// just before solves that were coming anyway — the three nearest words pay 77 together.
+const CHARGE_REACH = 1000;
+const CHARGE_NEAR = 28;
+const CHARGE_FAR = 1.5;
 
 export function chargeForRank(rank: number | undefined): number {
-  if (rank === undefined || rank <= 0) return 0;
-  for (const [ceiling, charge] of CHARGE_TABLE) if (rank <= ceiling) return charge;
-  return 0;
+  if (rank === undefined || rank <= 0 || rank > CHARGE_REACH) return 0;
+  // Where the rank sits on the log scale: 0 at rank 1, 1 at the reach.
+  const far = Math.log(rank) / Math.log(CHARGE_REACH);
+  return CHARGE_NEAR + (CHARGE_FAR - CHARGE_NEAR) * far;
 }
 
 // One hole's meter: its charge in [0, CHARGE_TARGET] and whether the initial is out.

@@ -43,8 +43,8 @@ export function chargeLootMs(startDelayMs: number): number {
   return sparkLandMs(startDelayMs) + TRAIL_COPIES * TRAIL_LAG_MS;
 }
 
-// A drop per `POINTS_PER_SPARK` of the gain, at least two: the top band's 30 throws twelve,
-// the outermost band's 3.5 throws two.
+// A drop per `POINTS_PER_SPARK` of the gain, at least two: the nearest word's 28 throws
+// eleven, the farthest rewarded one's 1.5 throws two.
 const POINTS_PER_SPARK = 2.5;
 const SPARKS_MIN = 2;
 export function sparkCount(charge: number): number {

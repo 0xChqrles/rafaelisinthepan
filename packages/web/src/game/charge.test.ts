@@ -7,9 +7,16 @@
 import { describe, expect, it } from 'vitest';
 import type { RankMap, RuntimeHole } from '@whippin/shared';
 import { CHARGE_TARGET, chargeForRank, initialOf, replayCharge } from './charge';
+import type { HoleCharge } from './charge';
 import { replayHoles } from './scoring';
 
-// One secret's map with a key at every rank the table's rows and edges need.
+// A meter's reading, its charge compared with a float's tolerance: the pay is continuous.
+function expectMeter(meter: HoleCharge, charge: number, revealed: boolean) {
+  expect(meter.charge).toBeCloseTo(charge, 9);
+  expect(meter.revealed).toBe(revealed);
+}
+
+// One secret's map with a key at every rank the tests below name.
 function mapAt(secret: string, ranks: number[]): RankMap[string] {
   const inner: RankMap[string] = { [secret]: { word: secret, rank: 0 } };
   for (const r of ranks) inner[`${secret}${r}`] = { word: `${secret}${r}`, rank: r };
@@ -17,7 +24,7 @@ function mapAt(secret: string, ranks: number[]): RankMap[string] {
 }
 
 const RANKS: RankMap = {
-  honnete: mapAt('honnete', [1, 3, 4, 8, 10, 11, 14, 17, 25, 26, 50, 51, 100, 101, 250, 251]),
+  honnete: mapAt('honnete', [1, 2, 3, 5, 8, 10, 11, 14, 21, 50, 51, 100, 999, 1000, 1001]),
   foret: mapAt('foret', [2, 5, 30, 300]),
 };
 // A guess both maps know, at different ranks — the multi-hole case.
@@ -36,37 +43,42 @@ function holes(): RuntimeHole[] {
   ];
 }
 
-describe('chargeForRank — the table', () => {
-  it('pays each band its charge, edges inclusive', () => {
-    expect(chargeForRank(1)).toBe(30);
-    expect(chargeForRank(3)).toBe(30);
-    expect(chargeForRank(4)).toBe(20);
-    expect(chargeForRank(10)).toBe(20);
-    expect(chargeForRank(11)).toBe(14);
-    expect(chargeForRank(25)).toBe(14);
-    expect(chargeForRank(26)).toBe(10);
-    expect(chargeForRank(50)).toBe(10);
-    expect(chargeForRank(51)).toBe(7);
-    expect(chargeForRank(100)).toBe(7);
-    expect(chargeForRank(101)).toBe(3.5);
-    expect(chargeForRank(250)).toBe(3.5);
+describe('chargeForRank — a continuous function of the rank', () => {
+  it('pays 28 for the nearest word and 1.5 at rank 1000, so a word ranked 999 still pays', () => {
+    expect(chargeForRank(1)).toBe(28);
+    expect(chargeForRank(1000)).toBe(1.5);
+    expect(chargeForRank(999)).toBeGreaterThan(1.5);
   });
 
-  it('a TYPICAL round unlocks the initial around 25-30 tries, a sharp one under 20 (2026-09-15)', () => {
-    // The mixes the table was tuned on: a share of tries per band, worst rank of the band.
-    const triesToFill = (mix: [number, number][]) => {
-      const perTry = mix.reduce((sum, [share, rank]) => sum + share * chargeForRank(rank), 0);
-      return CHARGE_TARGET / perTry;
-    };
-    const typical: [number, number][] = [[0.45, 999], [0.25, 250], [0.15, 100], [0.1, 50], [0.04, 25], [0.01, 10]];
-    const sharp: [number, number][] = [[0.3, 999], [0.25, 250], [0.2, 100], [0.15, 50], [0.07, 25], [0.03, 10]];
-    expect(triesToFill(typical)).toBeGreaterThan(24);
-    expect(triesToFill(typical)).toBeLessThan(31);
-    expect(triesToFill(sharp)).toBeLessThan(21);
+  it('falls by the same 2.66 every time the distance doubles, and never rises', () => {
+    const doubling = (rank: number) => chargeForRank(rank) - chargeForRank(2 * rank);
+    expect(doubling(1)).toBeCloseTo(2.66, 2);
+    expect(doubling(7)).toBeCloseTo(doubling(1), 10);
+    expect(doubling(250)).toBeCloseTo(doubling(1), 10);
+    for (let rank = 1; rank < 1000; rank++) {
+      expect(chargeForRank(rank + 1)).toBeLessThan(chargeForRank(rank));
+    }
   });
 
-  it('a rank past 250, an absent rank and the solve pay nothing', () => {
-    expect(chargeForRank(251)).toBe(0);
+  it('a hole a player is STUCK on unlocks its initial around 37 tries, on the real mix (2026-09-15)', () => {
+    // What the holes a round never solved actually saw, replayed from production rounds: a
+    // share of their tries per band of ranks, paid at the band's geometric middle — 70% past
+    // 1000 or off the map, which pays nothing.
+    const stuck: [number, number, number][] = [
+      [0.016, 1, 5], [0.009, 6, 10], [0.015, 11, 20], [0.01, 21, 30], [0.021, 31, 50],
+      [0.036, 51, 100], [0.022, 101, 150], [0.032, 151, 250], [0.063, 251, 500],
+      [0.074, 501, 1000],
+    ];
+    const perTry = stuck.reduce(
+      (sum, [share, low, high]) => sum + share * chargeForRank(Math.sqrt(low * high)),
+      0,
+    );
+    expect(CHARGE_TARGET / perTry).toBeGreaterThan(34);
+    expect(CHARGE_TARGET / perTry).toBeLessThan(40);
+  });
+
+  it('a rank past 1000, an absent rank and the solve pay nothing', () => {
+    expect(chargeForRank(1001)).toBe(0);
     expect(chargeForRank(undefined)).toBe(0);
     expect(chargeForRank(0)).toBe(0);
   });
@@ -81,41 +93,40 @@ describe('replayCharge — the meter as the play log describes it', () => {
   });
 
   it('a guess that is NOT a new best still charges the hole', () => {
-    // The hole shows rank 3; later guesses at 50 and 100 leave the board alone…
-    const log = ['honnete3', 'honnete50', 'honnete100'];
+    // The hole shows rank 3; later guesses at 50, 100 and 999 leave the board alone…
+    const log = ['honnete3', 'honnete50', 'honnete100', 'honnete999'];
     const board = replayHoles(holes(), RANKS, log);
     expect(board[0].rank).toBe(3);
-    // …and each pays the meter by its own rank: 30 + 10 + 7.
-    expect(replayCharge(holes(), RANKS, log)[0]).toEqual({ charge: 47, revealed: false });
+    // …and each pays the meter by its own rank: ≈ 23.8 + 13.0 + 10.3 + 1.5.
+    const pays = chargeForRank(3) + chargeForRank(50) + chargeForRank(100) + chargeForRank(999);
+    expectMeter(replayCharge(holes(), RANKS, log)[0], pays, false);
   });
 
   it('caps at the target and reveals the moment it is reached', () => {
-    // 30 + 30 + 20 = 80: not yet.
-    const three = ['honnete1', 'honnete3', 'honnete4'];
-    expect(replayCharge(holes(), RANKS, three)[0]).toEqual({ charge: 80, revealed: false });
-    // 80 + 7 = 87: still not.
-    expect(replayCharge(holes(), RANKS, [...three, 'honnete100'])[0]).toEqual({
-      charge: 87,
-      revealed: false,
-    });
-    // 87 + 20 ≥ 100: capped, revealed.
-    const full = replayCharge(holes(), RANKS, [...three, 'honnete100', 'honnete10'])[0];
+    // The three nearest words pay ≈ 28 + 25.3 + 23.8 = 77: never the initial on their own.
+    const nearest = ['honnete1', 'honnete2', 'honnete3'];
+    const nearestPay = chargeForRank(1) + chargeForRank(2) + chargeForRank(3);
+    expectMeter(replayCharge(holes(), RANKS, nearest)[0], nearestPay, false);
+    // Four near guesses, ≈ 28 + 21.8 + 19.2 + 18.8 = 87.8: still not.
+    const four = ['honnete1', 'honnete5', 'honnete10', 'honnete11'];
+    const fourPay = chargeForRank(1) + chargeForRank(5) + chargeForRank(10) + chargeForRank(11);
+    expectMeter(replayCharge(holes(), RANKS, four)[0], fourPay, false);
+    // + ≈ 17.9 ≥ 100: capped, revealed.
+    const full = replayCharge(holes(), RANKS, [...four, 'honnete14'])[0];
     expect(full).toEqual({ charge: CHARGE_TARGET, revealed: true });
     // Once full, further near guesses change nothing.
-    expect(replayCharge(holes(), RANKS, [...three, 'honnete100', 'honnete10', 'honnete1'])[0])
-      .toEqual(full);
+    expect(replayCharge(holes(), RANKS, [...four, 'honnete14', 'honnete3'])[0]).toEqual(full);
   });
 
-  it('a miss and a far rank pay nothing', () => {
-    expect(replayCharge(holes(), RANKS, ['zzz', 'honnete251'])[0].charge).toBe(0);
+  it('a miss and a rank past 1000 pay nothing', () => {
+    expect(replayCharge(holes(), RANKS, ['zzz', 'honnete1001'])[0].charge).toBe(0);
   });
 
   it('one guess charges several holes, each by its own rank in its own map', () => {
-    // `bois` is rank 9 for the first secret (+20) and rank 2 for the second (+30).
-    expect(replayCharge(holes(), RANKS, ['bois'])).toEqual([
-      { charge: 20, revealed: false },
-      { charge: 30, revealed: false },
-    ]);
+    // `bois` is rank 9 for the first secret (≈ 19.6) and rank 2 for the second (≈ 25.3).
+    const [first, second] = replayCharge(holes(), RANKS, ['bois']);
+    expectMeter(first, chargeForRank(9), false);
+    expectMeter(second, chargeForRank(2), false);
   });
 
   it('repeated occurrences of one secret share one meter', () => {
@@ -123,17 +134,17 @@ describe('replayCharge — the meter as the play log describes it', () => {
       ...holes(),
       { pos: 7, secret: 'honnete', word: 'honnete50', rank: 50, startRank: 50 },
     ];
-    const meters = replayCharge(twice, RANKS, ['honnete26', 'honnete8']);
-    expect(meters[0]).toEqual({ charge: 30, revealed: false });
+    const meters = replayCharge(twice, RANKS, ['honnete21', 'honnete8']);
+    expectMeter(meters[0], chargeForRank(21) + chargeForRank(8), false);
     expect(meters[2]).toEqual(meters[0]);
   });
 
   it('the exact hit is the solve: it pays nothing, and nothing after it touches the hole', () => {
     expect(replayCharge(holes(), RANKS, ['honnete'])[0]).toEqual({ charge: 0, revealed: false });
     const log = ['honnete3', 'honnete', 'honnete1', 'honnete1'];
-    expect(replayCharge(holes(), RANKS, log)[0]).toEqual({ charge: 30, revealed: false });
+    expectMeter(replayCharge(holes(), RANKS, log)[0], chargeForRank(3), false);
     // The other hole is untouched by that secret's solve and keeps charging.
-    expect(replayCharge(holes(), RANKS, [...log, 'foret2'])[1].charge).toBe(30);
+    expectMeter(replayCharge(holes(), RANKS, [...log, 'foret2'])[1], chargeForRank(2), false);
   });
 
   it('replaying the same log reconstructs the same state', () => {
