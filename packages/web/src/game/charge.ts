@@ -20,13 +20,21 @@ export const CHARGE_TARGET = 100;
 // What a guess's rank in a secret's map pays, as `[rank ceiling, charge]` rows, ascending.
 // A rank past the last row — or absent from the map — pays nothing; rank 0 is the solve and
 // never consults the table.
+//
+// RETUNED 2026-09-15 (user-decided, on play: "it's actually quite hard to unlock a hint…
+// a user cannot be stuck for too long after too many tries once he's close enough and got
+// the concept"). The issue's table (30 / 18 / 12 / 7.5 / 4.5 / 1.5) needed nine guesses
+// at rank 11–25 and fourteen at 26–50. What "close enough" now buys, in guesses to the
+// initial with nothing else landing: TWO in the top three · THREE at 4–10 · FOUR at 11–25
+// · SIX at 26–50 · NINE at 51–100 · seventeen at 101–250. A far guess still pays nothing:
+// the meter rewards the neighbourhood, not persistence.
 export const CHARGE_TABLE: readonly (readonly [number, number])[] = [
-  [3, 30],
-  [10, 18],
-  [25, 12],
-  [50, 7.5],
-  [100, 4.5],
-  [250, 1.5],
+  [3, 50],
+  [10, 34],
+  [25, 25],
+  [50, 18],
+  [100, 12],
+  [250, 6],
 ];
 
 export function chargeForRank(rank: number | undefined): number {

@@ -222,8 +222,12 @@ These are decided and verified against the code. Treat them as load-bearing.
   INVALID uses it now); on-hole floating number/"MISS" = info about *a hole*.
 - **NEAR GUESSES CHARGE THE HOLE (#301, user-decided 2026-09-15).** Every COUNTED guess
   charges every UNSOLVED hole by its rank in that secret's map, best word or not
-  (`game/charge.ts`): rank 1–3 +30 · 4–10 +18 · 11–25 +12 · 26–50 +7.5 · 51–100 +4.5 ·
-  101–250 +1.5 · past 250 / absent 0; rank 0 is the solve and pays nothing. ONE meter per
+  (`game/charge.ts`): rank 1–3 +50 · 4–10 +34 · 11–25 +25 · 26–50 +18 · 51–100 +12 ·
+  101–250 +6 · past 250 / absent 0; rank 0 is the solve and pays nothing. (RETUNED
+  2026-09-15 from the issue's 30/18/12/7.5/4.5/1.5, user-decided on play — "quite hard to
+  unlock a hint… a user cannot be stuck for too long once he's close enough and got the
+  concept": close enough now means two top-three guesses, three at 4–10, four at 11–25,
+  six at 26–50, nine at 51–100; `charge.test.ts` pins those counts.) ONE meter per
   logical secret (repeated occurrences share it), capped at `CHARGE_TARGET` = 100, and
   reaching it REVEALS THE SECRET'S FIRST LETTER — automatically, once, the initial only
   (never the length); a full meter takes no more charge. No separate try/time gate, no
