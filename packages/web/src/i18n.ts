@@ -783,6 +783,23 @@ export function srHoleResult(lang: string, n: number, rank: number | null): stri
   return `word ${n}: ${rank} away`;
 }
 
+// The hole's CHARGE METER, in words (#301): the state a screen reader gets where a sighted
+// player sees the meter filling under the word, attached to the hole as a description —
+// never injected into the sentence itself.
+export function srHoleCharge(lang: string, charge: number): string {
+  const pct = Math.round(charge);
+  return uiLang(lang) === 'fr' ? `jauge à ${pct} %` : `meter at ${pct}%`;
+}
+
+// The revealed initial (#301): the persistent clue a full meter earns. With `n`, the live
+// announcement the moment it is revealed; without, the hole's standing description.
+export function srHoleInitial(lang: string, letter: string, n?: number): string {
+  if (uiLang(lang) === 'fr') {
+    return n === undefined ? `commence par ${letter}` : `mot ${n} : commence par ${letter}`;
+  }
+  return n === undefined ? `starts with ${letter}` : `word ${n}: starts with ${letter}`;
+}
+
 // The history modal's title (2026-08-10, keeping the route map's naming): a hole is named
 // by its 1-based sentence position among DISTINCT secrets — the run ruler's tick numbers
 // (the same numbering the run ruler's ticks and the share row's keycaps use, so two

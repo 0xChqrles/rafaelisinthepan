@@ -1,6 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
+import Strike from './Strike';
+import ChargeLoot from './ChargeLoot';
+import { BURST_ART, SLASH_ART, ULTRA_ART } from './strikeArt';
 import { MISS_COLOR, rankHeatColor } from '@whippin/shared';
 import useAnimatedNumber, { linearEasing } from '../hooks/useAnimatedNumber';
 import { capitalize } from '../game/sentenceCase';
@@ -32,6 +35,20 @@ function rankTweenDuration(fromRank: number, toRank: number): number {
   return prefersReducedMotion() ? 0 : rankTransitionDuration(fromRank, toRank);
 }
 
+// THE CHARGE METER (#301): what the hole shows of its meter — the charge, and the initial
+// once the meter is full (null until then). Both are the round's DERIVED reading of the
+// play log; the hole owns only the choreography that lands them.
+export interface HoleChargeView {
+  value: number;
+  initial: string | null;
+}
+
+// How long the meter's fill takes to travel (the CSS transition's length, handed down so
+// the burst that follows a full meter waits for exactly it), and where in the burst the
+// letter appears — on its impact frames, not after the last wisp.
+const METER_MS = 300;
+const INITIAL_AT_MS = METER_MS + BURST_ART.ms * 0.6;
+
 // A hole: "displayed_word^current_rank" (ex: sailor^87). Rank 0 = solved. The exponent is
 // written WITHOUT a leading minus (user-decided 2026-08-16): it is a distance, and distances
 // are not negative — the app writes a rank the same bare way everywhere it shows one.
@@ -43,11 +60,18 @@ export default function Hole({
   onHitDone,
   onResolved,
   explore,
+  charge,
+  chargeHintId,
   quiet = false,
   veiled = false,
 }: {
   hole: RuntimeHole;
   hit: HitState | null;
+  // The hole's meter (#301), and its sr-only description's id (rendered by Phrase outside
+  // the sentence, exactly like the exploration hint — the meter and the initial are STATE,
+  // and a hole is described by them, never re-labelled).
+  charge?: HoleChargeView;
+  chargeHintId?: string;
   holeIndex: number;
   onHitDone: (id: number) => void;
   onResolved?: (index: number) => void;
@@ -143,6 +167,35 @@ export default function Hole({
   // Accent ("resolved") styling only once the FINAL secret word is on screen —
   // not during the exponent drop / scramble that precedes the swap.
   const resolved = hole.rank === 0 && displayWord === hole.word;
+
+  // THE REVEAL (#301): `charge lands → meter fills → burst → first letter`. The initial is
+  // derived state and arrives on the same render that fills the meter; the hole holds it
+  // back for the fill's travel and the burst's impact, then lets it in. A hole MOUNTED
+  // revealed (a reload, a replay on another device) shows the letter at once — a burst is
+  // for the moment it happens, not for history. Under reduced motion everything snaps.
+  const revealed = charge?.initial != null;
+  const [initialShown, setInitialShown] = useState(revealed);
+  const [burst, setBurst] = useState(0); // a nonce: >0 keeps a burst strike mounted
+  useEffect(() => {
+    if (!revealed) {
+      setInitialShown(false);
+      return undefined;
+    }
+    if (initialShown) return undefined;
+    if (prefersReducedMotion()) {
+      setInitialShown(true);
+      return undefined;
+    }
+    const strike = window.setTimeout(() => setBurst((n) => n + 1), METER_MS);
+    const letter = window.setTimeout(() => setInitialShown(true), INITIAL_AT_MS);
+    return () => {
+      window.clearTimeout(strike);
+      window.clearTimeout(letter);
+    };
+    // The choreography is armed by the reveal alone; `initialShown` is what it sets.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealed]);
+  const endBurst = useCallback(() => setBurst(0), []);
   useEffect(() => {
     if (resolved) onResolved?.(holeIndex);
   }, [holeIndex, onResolved, resolved]);
@@ -202,6 +255,15 @@ export default function Hole({
   // touching it: the floating-hit/scramble choreography keys off this exact structure.
   const body = (
     <>
+      {/* THE REVEALED INITIAL (#301): the one persistent clue a full meter earns, worn as a
+          mark BEFORE the chip the way the exponent is worn after it — the letter alone,
+          never the word's length. Decorative here: the hole's description says it. Gone
+          with the chip once the hole is inked in. */}
+      {!resolved && initialShown && charge?.initial ? (
+        <span className="hole-initial" aria-hidden="true">
+          {charge.initial}
+        </span>
+      ) : null}
       {/* The hit is positioned against this wrapper, which is sized to the WORD
           only (the exponent sits outside it), so the floating number stays centered
           over the word and not the word+exponent. */}
@@ -221,6 +283,18 @@ export default function Hole({
               {ch}
             </span>
           ))}
+          {/* THE METER (#301) rides the chip: the same box as the chip's ground, drawn
+              UNDER the ink and OVER the chip, its fill a line along the chip's bottom edge
+              — the hole's unresolved dress, now visibly filling. On the shaking word, not
+              the static wrap, for the chip's own reason: it is part of the chip. */}
+          {!resolved && charge ? (
+            <span className="hole-meter" aria-hidden="true">
+              <span
+                className="hole-meter-fill"
+                style={{ width: `${charge.value}%`, '--meter-ms': `${METER_MS}ms` } as CSSProperties}
+              />
+            </span>
+          ) : null}
         </span>
         {/* Floating "damage"-style indicator: a distance number coloured by the shared
             rank scale, or "MISS" in the ramp's own weird red terminus when too far
@@ -238,6 +312,42 @@ export default function Hole({
             fadeDelayMs={hit.fadeDelayMs}
             color={hit.miss ? MISS_COLOR : rankHeatColor(hit.value)}
             onDone={onHitDone}
+          />
+        )}
+        {/* THE STRIKE (#301): the cut of a charging guess, or the ultra star of the exact
+            hit, in the hit's own heat colour (the ultra carries its own palette). It lands
+            on the hit's stagger beat and needs no `onDone`: the floating hit outlives every
+            sheet, and its timer is what clears the hit. A solve supersedes the cut and the
+            loot — the round never hands both to one hole. */}
+        {hit?.strike && (
+          <Strike
+            key={`strike-${hit.id}`}
+            id={hit.id}
+            art={hit.strike === 'ultra' ? ULTRA_ART : SLASH_ART}
+            color={rankHeatColor(hit.value)}
+            delayMs={hit.startDelayMs}
+          />
+        )}
+        {/* THE LOOT (#301): what the cut shook loose, falling into the meter and landing
+            as the round releases the guess into the board — the fill it triggers. */}
+        {hit?.charge ? (
+          <ChargeLoot
+            key={`loot-${hit.id}`}
+            id={hit.id}
+            charge={hit.charge}
+            startDelayMs={hit.startDelayMs}
+            landAtMs={hit.fadeDelayMs}
+          />
+        ) : null}
+        {/* THE BURST (#301): the meter reached its target — one detonation in the meter's
+            own colour, and the initial appears on its impact. */}
+        {burst > 0 && (
+          <Strike
+            key={`burst-${burst}`}
+            id={burst}
+            art={BURST_ART}
+            color="var(--accent)"
+            onDone={endBurst}
           />
         )}
       </span>
@@ -267,7 +377,7 @@ export default function Hole({
           // button deleted it from the button AND from the sentence a screen reader reads,
           // leaving "Explore word 2" where "attends -87" belongs. Named by its own content,
           // the hole reads as what it shows and the exploration hint stays supplementary.
-          aria-describedby={explore.hintId}
+          aria-describedby={chargeHintId ? `${explore.hintId} ${chargeHintId}` : explore.hintId}
           data-hole-explore={holeIndex}
           disabled={explore.disabled}
           onClick={explore.onOpen}

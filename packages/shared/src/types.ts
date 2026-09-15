@@ -161,4 +161,11 @@ export interface HitState {
   startDelayMs: number;
   fadeDelayMs: number;
   miss?: boolean; // true => the guess was too far for this hole; render "MISS", not a number
+  // #301: the blow this guess lands on the hole — the CUT of a guess that charges the
+  // hole's meter, the ULTRA star of the exact hit. Absent on a miss, a repeat, or a rank
+  // the charge table pays nothing for.
+  strike?: 'slash' | 'ultra';
+  // #301: what this guess added to the hole's meter — the loot that flies into it. Absent
+  // (or 0) when the meter did not move: nothing to throw.
+  charge?: number;
 }

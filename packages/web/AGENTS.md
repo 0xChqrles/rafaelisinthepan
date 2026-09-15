@@ -126,8 +126,14 @@
       screens/WordGame.tsx    Word mode's three phases: rules gate -> timed run -> post-mortem
       game/wordGame.ts        Word mode's rules + economy (shared WORD_CLAIM_ZONE re-export, rarity ladder, clock)
       game/wordBoard.ts       Word mode's post-mortem board: the zone as RARITY-graded stations
-      components/rarity.ts    a rarity grade's pinned colour, and how many times a find is struck
-      components/WordSlash.tsx    the slash a claim cuts the day's word with
+      components/rarity.ts    a rarity grade's pinned colour, and which sheet a grade is struck with
+      components/strikeArt.ts the three strike sheets and their animation contract (#301: a
+                              generic primitive — Word mode's ladder and the sentence's holes
+                              both land them)
+      components/Strike.tsx   one blow of one sheet on a game word (was WordSlash)
+      game/charge.ts          #301's hole CHARGE METER: the rank -> charge table, the replay of
+                              the play log onto every hole's meter, the revealed initial
+      components/ChargeLoot.tsx  the sparks a charging guess knocks into the meter
       components/WordSubject.tsx  the day's word while the run is on: the word alone, centred
       hooks/useCountdown.ts   the run's deadline, as a ticking clock (HUD) and as one flip (screen)
       game/scoring.ts         the SCREEN's reading: applyGuessToHoles + replayHoles +
@@ -212,6 +218,34 @@ These are decided and verified against the code. Treat them as load-bearing.
   solved (accented secret, no exponent).
 - **Feedback grammar:** under-the-input message = info about *what you typed* (only
   INVALID uses it now); on-hole floating number/"MISS" = info about *a hole*.
+- **NEAR GUESSES CHARGE THE HOLE (#301, user-decided 2026-09-15).** Every COUNTED guess
+  charges every UNSOLVED hole by its rank in that secret's map, best word or not
+  (`game/charge.ts`): rank 1–3 +30 · 4–10 +18 · 11–25 +12 · 26–50 +7.5 · 51–100 +4.5 ·
+  101–250 +1.5 · past 250 / absent 0; rank 0 is the solve and pays nothing. ONE meter per
+  logical secret (repeated occurrences share it), capped at `CHARGE_TARGET` = 100, and
+  reaching it REVEALS THE SECRET'S FIRST LETTER — automatically, once, the initial only
+  (never the length); a full meter takes no more charge. No separate try/time gate, no
+  charge-specific dedup or farming rule: the play log's own canonical identity is what a
+  counted guess is. **DERIVED from the play log, never persisted** — `replayCharge` over
+  the same log the board replays, so a reload or another device reconstructs the same
+  meter and the same initial. Presentation: the meter is a line along the CHIP's bottom
+  edge (`.hole-meter`, the chip's own box and layer — the hole's unresolved dress, visibly
+  filling), the initial a superscript mark BEFORE the chip in the accent (`.hole-initial`,
+  the exponent's size; a layout box, arriving once on the burst), nothing under the
+  sentence, no `+7.5` parked anywhere. The sequence is `cut → sparks fly into the meter →
+  meter advances` on the hit's own stagger beat, the meter moving on the guess's RELEASE
+  (the deferred-board beat, `shownCharge`) as the loot lands; at 100 `meter fills → BURST
+  → initial`, timed off `METER_MS` in `Hole`. The exact hit wears the ULTRA star and takes
+  no cut, loot or burst (the solve supersedes); a miss, a repeat and a rank past the table
+  keep the float alone; a guess that also improves the hole keeps the word/rank swap
+  choreography (charging is additive). The sheets are the Word-mode art, extracted to
+  `components/strikeArt.ts` + `Strike.tsx` (`.strike`, one integer step smaller under
+  `.phrase`), in the hit's heat colour — never a rarity grade. A11y: the meter and the
+  initial are the hole button's DESCRIPTION (`srHoleCharge` / `srHoleInitial`, sr-only
+  spans outside the sentence like the exploration hints, never words in the prose); the
+  reveal is also announced with the guess. Reduced motion keeps the state and snaps: no
+  sparks, no fill travel, the letter simply appears. Not done, deliberately: second
+  letters, a manual hint button, a hint currency, adaptive thresholds.
 - **THE PALETTE IS THREE INDEPENDENT AXES (user-decided 2026-08-17): weird/calm +
   hole/solve + accent — in STAMP-INK tones** (retuned the same day against the user's
   /inspiration set — vintage offset stamps, riso posters — after the first calm cut went
@@ -2321,7 +2355,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `WordSubject.useStruck` owns it — struck for `STRUCK_MS` from the hit's mount, keyed per
   hit so a claim landing on another restarts the recoil. A MISS lands no blow. **The plain
   slash lands RANDOMLY MIRRORED** (user-decided 2026-08-11, repurposing the cross's flip):
-  rolled once per hit in `WordSlash` — a state initializer, so a re-render cannot flip a
+  rolled once per hit in `Strike` (`WordSlash` until #301) — a state initializer, so a re-render cannot flip a
   stroke mid-swing — and ONLY for `slash.png`: the burst and the ultra are near-symmetric
   art with nothing to say backwards. There
   is no text that PARKS: a name has to be read, and a run against a clock has no time for
@@ -2377,7 +2411,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   offset is half a pixel of resampling on a sprite whose whole point is hard edges. Verified no
   page overflow at 320px, where the widest of them spans x 18..302.
   **Under reduced motion each sheet holds ONE frame**, and the ultra needs **its own
-  `animation: none`** rather than the stroke's: the base `.word-slash.ultra` declares the walk
+  `animation: none`** rather than the stroke's: the base `.strike.ultra` declares the walk
   at a higher specificity, so it won, the global rule collapsed its duration to nothing, and
   the sheet landed on its LAST, near-empty frame with a `both` fill (measured:
   `background-position: 100% 0%`, an ARCANE find showing almost nothing). It holds its THIRD

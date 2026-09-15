@@ -1478,6 +1478,138 @@ input {
 .hole-letter.gone {
   visibility: hidden;
 }
+
+/* --- THE CHARGE METER (#301, user-decided 2026-09-15) -----------------------------------
+   A near guess that is not a new best still CHARGES the hole, and the hole's own unresolved
+   dress — the chip — is where the charge shows: the meter is a line along the chip's
+   bottom edge that fills as charge lands. It takes the chip's exact box (same overhang,
+   same height, same centring) and sits in the chip's own stacking layer, AFTER the `::before`
+   in paint order, so it draws over the white ground and under the ink. Nothing is laid out:
+   it is absolute like the chip, and rides `.hole-word` like the chip, so the shake carries
+   it and no letter of the sentence moves. The fill's TRAVEL is `--meter-ms` (Hole's
+   `METER_MS`): the loot lands on the release beat and the fill is what it lands as. */
+.hole-meter {
+  position: absolute;
+  left: -0.2em;
+  right: -0.2em;
+  top: 50%;
+  height: 1.267em;
+  translate: 0 -50%;
+  z-index: -1;
+  pointer-events: none;
+}
+.hole-meter-fill {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 0.1em; /* 3px at the sentence's 30px */
+  background: var(--accent);
+  transition: width var(--meter-ms, 300ms) ease-out;
+}
+/* THE REVEALED INITIAL: a mark BEFORE the chip, mirrored on the exponent after it — the
+   exponent's size, superscript, in the meter's own colour, nudged clear of the chip's
+   overhang exactly as the exponent is on the far side (the same `0.2em / 0.55`). It pops
+   in on the exponent's own hop. A LAYOUT box, deliberately: it arrives once per hole per
+   round, on the burst, and the sentence taking it in on that beat is the reveal. */
+.hole-initial {
+  display: inline-block;
+  font-size: 0.55em;
+  margin-right: 1px;
+  color: var(--accent);
+  vertical-align: super;
+  translate: calc(-0.2em / 0.55) 0;
+  animation: rank-pop 0.4s ease-out;
+}
+/* THE LOOT: sparks of the meter's colour that pop off the struck word and fall to the
+   chip's bottom edge — into the meter — landing as the fill advances. Rolled per hit
+   (`--spark-x` a side and scatter, `--spark-h` the height), factors on em geometry so the
+   throw scales with the type. `forwards` and NOT `both`: with a delay, a backwards fill
+   would show the first frame during the wait. Timing comes down from ChargeLoot. */
+.charge-spark {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0.2em;
+  height: 0.2em;
+  background: var(--accent);
+  opacity: 0;
+  pointer-events: none;
+  animation: charge-spark var(--spark-ms, 220ms) ease-in var(--spark-delay, 0ms) forwards;
+}
+@keyframes charge-spark {
+  0% {
+    opacity: 1;
+    translate: calc(-50% + var(--spark-x) * 0.35em) -50%;
+  }
+  40% {
+    opacity: 1;
+    translate: calc(-50% + var(--spark-x) * 0.8em) calc(-50% - var(--spark-h) * 0.55em);
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    translate: calc(-50% + var(--spark-x) * 0.3em) calc(-50% + 0.6em);
+  }
+}
+/* THE STRIKE ON A HOLE: the same sheets Word mode cuts its word with (`.strike`), one
+   integer step smaller — 3x on desktop (the sentence's words are 30px where the day's word
+   is 40), 2x on a phone — every drop re-derived from the sheet's measured ink at that scale
+   and kept in whole pixels: the slash's 19% of its height, the burst's 6%, the ultra centred.
+   `.phrase` prefixed so these outrank the Word-mode geometry at every width. */
+.phrase .strike {
+  width: 108px;
+  height: 138px;
+  transform: translate(-50%, calc(-50% + 26px));
+}
+.phrase .strike.mirrored {
+  transform: translate(-50%, calc(-50% + 26px)) scaleX(-1);
+}
+.phrase .strike.burst {
+  width: 159px;
+  height: 198px;
+  transform: translate(-50%, calc(-50% + 12px));
+}
+.phrase .strike.ultra {
+  width: 213px;
+  height: 198px;
+  transform: translate(-50%, -50%);
+}
+@media (max-width: 640px) {
+  .phrase .strike {
+    width: 72px;
+    height: 92px;
+    transform: translate(-50%, calc(-50% + 18px));
+  }
+  .phrase .strike.mirrored {
+    transform: translate(-50%, calc(-50% + 18px)) scaleX(-1);
+  }
+  .phrase .strike.burst {
+    width: 106px;
+    height: 132px;
+    transform: translate(-50%, calc(-50% + 8px));
+  }
+  .phrase .strike.ultra {
+    width: 142px;
+    height: 132px;
+    transform: translate(-50%, -50%);
+  }
+}
+/* Reduced motion keeps the STATE — the meter's reading and the initial — and drops the
+   flight: the fill snaps, nothing flies, the letter simply appears. (The strike holds one
+   frame under its own rule.) */
+@media (prefers-reduced-motion: reduce) {
+  .hole-meter-fill {
+    transition: none;
+  }
+  .charge-spark {
+    display: none;
+  }
+  .hole-initial {
+    animation: none;
+  }
+}
 /* The wave (#129): a hole ripples its letters, up then down in sequence. EVERY hole runs its
    own clock (Hole.tsx, 3–10s re-rolled per wave), so several words can be mid-wave at once —
    a single ripple travelling around the sentence reads as a cursor pointing somewhere, where
@@ -1633,7 +1765,7 @@ input {
    This is the SENTENCE game's and the tutorial's, and it is byte for byte what it always
    was — and it is what Word mode shows on a MISS too (2026-08-09), unparameterised: the same
    word, in the same red, with the same pop and rise it has everywhere else. A Word-mode CLAIM
-   is a different event entirely and does not come through here at all (`.word-slash`). --- */
+   is a different event entirely and does not come through here at all (`.strike`). --- */
 .floating-hit {
   position: absolute;
   left: 50%;
@@ -1689,7 +1821,7 @@ input {
 }
 
 /* Word mode's claim feedback used to be a RARITY LABEL here — the grade's name, shown on the
-   day's word. It was replaced by the SLASH (`.word-slash`, 2026-08-09): a name has to be
+   day's word. It was replaced by the SLASH (`.strike`, 2026-08-09): a name has to be
    read, and a run against a clock has no time for that. Two rules it cost real work to learn
    are worth keeping wherever type lands on type again: NOTHING IN THIS APP OUTLINES TYPE (a
    knockout ring to separate the label from the word read as a cheap sticker), and ANIMATING
@@ -4471,7 +4603,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    `mask-position` from one end to the other in `steps(5, jump-none)` — which lands exactly on
    0/25/50/75/100% with no sixth position past the end, where the looping `.cal-ripple` needs
    its `n/(n-1)` overshoot instead. */
-.word-slash {
+.strike {
   position: absolute;
   left: 50%;
   top: 50%;
@@ -4504,13 +4636,13 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
      single-blow strikes, where it also kept a waiting second blow off the screen.) */
   opacity: 0;
   animation:
-    slash-frames var(--slash-ms, 250ms) steps(5, jump-none) both,
-    slash-show var(--slash-ms, 250ms) linear;
+    slash-frames var(--slash-ms, 250ms) steps(5, jump-none) var(--strike-delay, 0ms) both,
+    slash-show var(--slash-ms, 250ms) linear var(--strike-delay, 0ms);
 }
 /* The stroke lands randomly mirrored (2026-08-11, the RARE cross's flip repurposed): rolled
    once per hit by WordSlash, and only for the plain slash — the burst and the ultra are
    near-symmetric art with nothing to say backwards. */
-.word-slash.mirrored {
+.strike.mirrored {
   transform: translate(-50%, calc(-50% + 44px)) scaleX(-1);
 }
 /* OBSCURE gets the BURST instead of a cross (2026-08-09): `burst.png`, a 5-frame 53x66 sheet,
@@ -4522,7 +4654,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    word would sit a touch high. Whole pixels at both scales, for the same reason the stroke's
    drop is: half a pixel of offset is half a pixel of resampling on a sprite whose whole point
    is hard edges. Its frame count matches the stroke's, so it inherits the walk unchanged. */
-.word-slash.burst {
+.strike.burst {
   width: 265px;
   height: 330px;
   transform: translate(-50%, calc(-50% + 20px));
@@ -4541,7 +4673,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    It is also CENTRED — no drop. That is not a different choice from the stroke's 19%, it is
    the same rule reading a different sheet: the stroke's ink is top-weighted, this one's
    centroid is y=33 of 66, dead centre (both measured off the art). */
-.word-slash.ultra {
+.strike.ultra {
   width: 355px;
   height: 330px;
   transform: translate(-50%, -50%);
@@ -4552,8 +4684,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   -webkit-mask-image: none;
   mask-image: none;
   animation:
-    ultra-frames var(--slash-ms, 350ms) steps(7, jump-none) both,
-    slash-show var(--slash-ms, 350ms) linear;
+    ultra-frames var(--slash-ms, 350ms) steps(7, jump-none) var(--strike-delay, 0ms) both,
+    slash-show var(--slash-ms, 350ms) linear var(--strike-delay, 0ms);
 }
 @keyframes slash-frames {
   from {
@@ -4585,7 +4717,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    (The rest of the claim's feedback does not depend on this: the clock still gains and the
    loot still shows, holds and goes on its kept delays.) */
 @media (prefers-reduced-motion: reduce) {
-  .word-slash {
+  .strike {
     animation: none;
     /* The base opacity above is 0, which only the animation lifts — so with the animation
        off it has to be lifted here, or the strike never appears at all. */
@@ -4594,7 +4726,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     mask-position: 25% 0%;
   }
   /* Same rule for the ULTRA — and it needs its OWN `animation: none`, not the one above:
-     the base `.word-slash.ultra` declares the walk at a higher specificity, so it wins, the
+     the base `.strike.ultra` declares the walk at a higher specificity, so it wins, the
      global rule collapses its duration to nothing and the sheet lands on its LAST, near-empty
      frame (21 ink pixels) with a `both` fill. Measured before the fix: `background-position:
      100% 0%`, i.e. an ARCANE find showing almost nothing at all.
@@ -4602,7 +4734,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
      white disc that covers the word completely — right for 50ms, wrong to park on. Frame 3 is
      the star at full spread with the word readable through it, which is what the burst LOOKS
      like to anyone who sees it move. (`steps(7, jump-none)` walks k/6, so frame 3 is 33.3%.) */
-  .word-slash.ultra {
+  .strike.ultra {
     animation: none;
     background-position: 33.3333% 0%;
   }
@@ -4625,7 +4757,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    TIMING comes down from WordLoot (`--loot-rise` / `--loot-fall` / `--loot-delay`), so the
    JS timer that ends the loot and the flight CSS draws cannot disagree; GEOMETRY (drift,
    apex, drop, tilt, size) is per piece below, where the phone shortens the throw. Base
-   opacity 0 with no backwards fill, the `.word-slash` rule: a piece is invisible until its
+   opacity 0 with no backwards fill, the `.strike` rule: a piece is invisible until its
    launch and after its fall. Under reduced motion the global collapse (durations to ~0,
    delays KEPT) leaves each piece resting at its apex for the fall's delay — shown, held,
    gone, the floating numbers' own degradation, so no extra rule is needed. */
@@ -4765,21 +4897,21 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   /* One integer step down here — 4x rather than 5x. At 320px the page leaves 292px of
      column, and 5x would put a 180px stroke on it: still inside, but reading as a strike
      the width of the screen rather than one that crosses the word. */
-  .word-slash {
+  .strike {
     width: 144px;
     height: 184px;
     transform: translate(-50%, calc(-50% + 35px));
   }
-  .word-slash.mirrored {
+  .strike.mirrored {
     transform: translate(-50%, calc(-50% + 35px)) scaleX(-1);
   }
-  .word-slash.burst {
+  .strike.burst {
     width: 212px;
     height: 264px;
     transform: translate(-50%, calc(-50% + 16px));
   }
   /* 4x here too: at 320px the page leaves 292px of column, which 355 would overrun. */
-  .word-slash.ultra {
+  .strike.ultra {
     width: 284px;
     height: 264px;
     transform: translate(-50%, -50%);
@@ -6846,7 +6978,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 /* The ghost is the USER'S OWN pixel art (assets/ghost.png, 13x18) and it TINTS LIKE AN
    ICON: the sprite is a pure black-on-transparent silhouette, so it is painted through
-   a CSS MASK in `currentColor` — the strike sheets' technique (see `.word-slash`) —
+   a CSS MASK in `currentColor` — the strike sheets' technique (see `.strike`) —
    which is what lets it wear this block's secondary ink instead of shipping its own.
    At an EXACT INTEGER SCALE (4x = 52x72) with `image-rendering: pixelated`, the
    app's standing pixel-art rule: whole multiples alone are not enough, since bilinear
