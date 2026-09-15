@@ -347,7 +347,14 @@ export default function Hole({
             away, its timer the hit's lifetime. A miss, a repeat and the solve keep the
             float. */}
         {hit && hit.strike === 'slash' ? (
-          <Loot key={hit.id} id={hit.id} rank={hit.value} delayMs={hit.startDelayMs} onDone={onHitDone} />
+          <Loot
+            key={hit.id}
+            id={hit.id}
+            rank={hit.value}
+            delayMs={hit.startDelayMs}
+            // The throw outlives the exponent when there is one: it reports the hit done.
+            onDone={hit.charge ? undefined : onHitDone}
+          />
         ) : hit ? (
           <FloatingHit
             key={hit.id}
@@ -388,6 +395,7 @@ export default function Hole({
             charge={hit.charge}
             fill={lootFill}
             startDelayMs={hit.startDelayMs}
+            onDone={onHitDone}
           />
         ) : null}
         {/* THE BURST (#301): the meter reached its target — one detonation in the meter's

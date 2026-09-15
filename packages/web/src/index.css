@@ -1553,19 +1553,20 @@ input {
   translate: calc(-0.2em / var(--rank-size, 0.55)) 0;
   animation: rank-pop 0.4s ease-out;
 }
-/* THE LOOT: sparks of the meter's colour that the hit knocks out of the word IN EVERY
-   DIRECTION — they scatter around the hole, hang a beat, then are all GATHERED onto the bar
-   at the fill's new tip, and the fill travels the moment they land (user-decided
-   2026-09-15: "drops particles around the hole on the screen, then all the particles are
-   gathered on the progress bar"; the first throw was one arc into the bar). Rolled per hit
-   (`--spark-dx`/`--spark-dy` the scatter point in em, `--spark-s` the size, `--spark-l` how
-   far toward `--fg` the accent is lifted — the brightest ones flash white), and `--spark-lx`
-   is the landing: the bar's fill tip, in the wrap's own width. The flight animates
-   `left`/`top` (a dozen absolute boxes, cheap) so the landing can be a percentage of the
-   WORD's width — a translate's percentage is the spark's own. Ease-out into the scatter,
-   linear drift through the hang, ease-in home. `forwards` and NOT `both`: with a delay, a
-   backwards fill would show the first frame during the wait. Timing comes down from
-   ChargeLoot. */
+/* THE LOOT IS BLOOD (user-decided 2026-09-15, in three passes: "a bit shy" → "drops
+   particles around the hole, then gathers them on the bar" → "it should feel like blood…
+   the hole is an enemy, you hit it, blood around it, a short pause, then gathered on the
+   bar, with a trail"). ONE colour — the meter's, no brightness or opacity per drop — and a
+   PHYSICAL throw: the hit sends every drop out on its own arc under gravity (up, then the
+   fall), it SPLATS where it lands around and below the word (a squash on impact), lies
+   there through a pause, and is then pulled onto the bar at the fill's new tip, each drop
+   dragging a TRAIL — two smaller copies of itself running the same path a few frames behind,
+   shown only for the gather. Rolled per hit (`--spark-dx`/`--spark-dy` where it lands,
+   `--spark-up` how high it flies first, `--spark-s` its size); `--spark-lx` is the landing on
+   the bar, in the wrap's own width. The flight animates `left`/`top` (a few dozen absolute
+   boxes, cheap) so the landing can be a percentage of the WORD's width — a translate's
+   percentage is the spark's own. `forwards` and NOT `both`: with a delay, a backwards fill
+   would show the first frame during the wait. Timing comes down from ChargeLoot. */
 .charge-spark {
   position: absolute;
   left: 50%;
@@ -1573,44 +1574,84 @@ input {
   width: calc(0.28em * var(--spark-s, 1));
   height: calc(0.28em * var(--spark-s, 1));
   translate: -50% -50%;
-  background: color-mix(in srgb, var(--accent), var(--fg) var(--spark-l, 0%));
+  background: var(--accent);
   opacity: 0;
   pointer-events: none;
-  animation: charge-spark var(--spark-ms, 700ms) linear var(--spark-delay, 0ms) forwards;
+  animation: charge-spark var(--spark-ms, 900ms) linear var(--spark-delay, 0ms) forwards;
+}
+/* The trail: the same drop, smaller, on the same path a beat behind — invisible until the
+   gather (the second animation owns the opacity and is listed last, so it wins). */
+.charge-spark.trail {
+  animation:
+    charge-spark var(--spark-ms, 900ms) linear var(--spark-delay, 0ms) forwards,
+    charge-trail var(--spark-ms, 900ms) linear var(--spark-delay, 0ms) forwards;
+}
+.charge-spark.trail-1 {
+  width: calc(0.2em * var(--spark-s, 1));
+  height: calc(0.2em * var(--spark-s, 1));
+}
+.charge-spark.trail-2 {
+  width: calc(0.13em * var(--spark-s, 1));
+  height: calc(0.13em * var(--spark-s, 1));
 }
 @keyframes charge-spark {
+  /* the throw: out and up… */
   0% {
     opacity: 1;
     left: 50%;
     top: 50%;
-    animation-timing-function: cubic-bezier(0.1, 0.8, 0.3, 1);
+    scale: 1;
+    animation-timing-function: cubic-bezier(0.2, 0.7, 0.4, 1);
   }
-  38% {
+  /* …the apex… */
+  12% {
+    left: calc(50% + var(--spark-dx, 0em) * 0.62);
+    top: calc(50% - var(--spark-up, 0.6em));
+    animation-timing-function: cubic-bezier(0.45, 0, 0.9, 0.55);
+  }
+  /* …the fall and the SPLAT where it lands… */
+  26% {
     left: calc(50% + var(--spark-dx, 0em));
     top: calc(50% + var(--spark-dy, 0em));
-    animation-timing-function: linear;
+    scale: 1;
+    animation-timing-function: ease-out;
   }
+  29% {
+    scale: 1.6 0.5;
+  }
+  35% {
+    scale: 1;
+  }
+  /* …the pause, lying there… */
   56% {
-    left: calc(50% + var(--spark-dx, 0em) * 1.08);
-    top: calc(50% + var(--spark-dy, 0em) * 1.08 + 0.12em);
-    animation-timing-function: cubic-bezier(0.55, 0, 0.85, 0.35);
+    left: calc(50% + var(--spark-dx, 0em));
+    top: calc(50% + var(--spark-dy, 0em));
+    scale: 1;
+    animation-timing-function: cubic-bezier(0.55, 0, 0.75, 0.3);
   }
-  94% {
+  /* …then gathered onto the bar. */
+  96% {
     opacity: 1;
   }
   100% {
     opacity: 0;
     left: var(--spark-lx, 50%);
     top: calc(50% + 0.66em); /* the bar's centre line, under the letters */
+    scale: 1;
   }
 }
-/* THE STRIKE ON A HOLE is Word mode's, UNCHANGED (user-decided 2026-09-15, the third pass on
-   the size — a 3x step-down, then 9x, then "the same slash size that is used on the word
-   mode"): `.strike`'s own 5x on desktop and 4x on a phone, no `.phrase` override at all, so
-   the two games cut with one blow. What the sentence keeps of its own is the exponent's
-   size (`--rank-size`, above). */
-.phrase, .wheel-row {
-  --rank-size: 0.75;
+@keyframes charge-trail {
+  0%,
+  55% {
+    opacity: 0;
+  }
+  58%,
+  94% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 /* Reduced motion keeps the STATE — the meter's reading and the initial — and drops the
    flight: the fill snaps, nothing flies, the letter simply appears. (The strike holds one
