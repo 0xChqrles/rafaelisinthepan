@@ -92,3 +92,11 @@ def test_work_of_reads_the_shelf_work_off_a_puzzle_source():
     assert work_of({"author": "Despentes Virginie", "work": "Vernon Subutex 2"}, works) is None
     assert work_of({}, works) is None
 
+
+def test_list_works_reports_a_file_it_cannot_open(tmp_path):
+    # A shelf file that is not a readable epub is LISTED with its error, never raised:
+    # the curator skips it instead of spending a pick on a work it cannot read.
+    (tmp_path / "broken.epub").write_bytes(b"not a zip at all")
+    works = shelf.list_works(tmp_path)
+    assert [w["file"] for w in works] == ["broken.epub"]
+    assert works[0]["error"] and works[0]["title"] == "broken" and works[0]["author"] == ""

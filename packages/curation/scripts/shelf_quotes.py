@@ -112,7 +112,7 @@ def main() -> None:
     p.add_argument("--work", help="one shelf file (default: every book without a quotes file)")
     p.add_argument("--force", action="store_true", help="refetch books that already have a file")
     args = p.parse_args()
-    books = [w for w in shelf_mod.list_works() if w["kind"] == "book"]
+    books = [w for w in shelf_mod.list_works() if w["kind"] == "book" and not w.get("error")]
     if args.work:
         books = [w for w in books if w["file"] == args.work]
         if not books:

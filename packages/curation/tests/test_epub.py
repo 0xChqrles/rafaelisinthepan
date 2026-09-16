@@ -31,3 +31,16 @@ def test_html_to_text_reads_a_hard_wrapped_paragraph_as_one_line():
     assert html_to_text("<p>une ligne\ncoupée en\n   deux</p><p>puis<br/>autre</p>") == \
         "une ligne coupée en deux\n\npuis\n\nautre"
 
+
+def test_a_document_the_archive_cannot_produce_is_skipped(tmp_path):
+    # Calibre rewrites an epub and leaves a central directory pointing at the wrong
+    # offsets: zipfile raises BadZipFile on that document. The book keeps what reads.
+    path = tmp_path / "mangled.epub"
+    make_epub(path)
+    with zipfile.ZipFile(path) as zf:
+        offset = zf.getinfo("OEBPS/b.xhtml").header_offset
+    raw = bytearray(path.read_bytes())
+    raw[offset:offset + 4] = b"XXXX"  # no local file header there any more
+    path.write_bytes(raw)
+    assert epub_metadata(path) == {"title": "Mes amis", "author": "Emmanuel Bove"}
+    assert epub_text(path) == "Premier chapitre.\n\nDeux."

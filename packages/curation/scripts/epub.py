@@ -89,7 +89,10 @@ def epub_text(path) -> str:
         for name in ordered:
             try:
                 raw = zf.read(name)
-            except KeyError:
+            except (KeyError, zipfile.BadZipFile):
+                # A document the archive cannot produce — absent, or named at an offset
+                # that holds another file (Calibre rewrites an epub and leaves a stale
+                # central directory) — is skipped like a missing one, never fatal.
                 continue
             chunks.append(html_to_text(raw.decode("utf-8", errors="replace")))
     return "\n\n".join(chunks)
