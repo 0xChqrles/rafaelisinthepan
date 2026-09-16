@@ -3984,14 +3984,14 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .coach--bot {
   top: calc(78px + 56px);
 }
+/* The step counter (n/4) speaks the game's own pixel face (user-decided 2026-09-17). */
 .coach-step {
   position: absolute;
   right: 0;
   bottom: calc(100% + 8px);
   color: var(--muted);
-  font-family: var(--ui);
+  font-family: var(--pixel-font);
   font-size: 12px;
-  font-variant-numeric: tabular-nums;
 }
 .coach-bot {
   position: absolute;
