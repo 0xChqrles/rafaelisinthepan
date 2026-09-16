@@ -9,6 +9,7 @@
 import type { RankEntry, RuntimeHole } from '@whippin/shared';
 import { t } from '../i18n';
 import type { LessonStage, StageKind } from './script';
+import { initialOf } from '../game/charge';
 
 export type Stage = StageKind;
 
@@ -19,6 +20,10 @@ export interface GuessEvent {
   typed: string;
   entries: (RankEntry | undefined)[];
   improved: boolean[];
+  // The meter stage: this guess added charge to some hole, and the hole whose meter it
+  // FILLED (its initial is out), if any.
+  charged?: boolean;
+  filled?: number | null;
 }
 
 export interface CoachState {
@@ -38,6 +43,7 @@ export type CoachLine =
   // shows; on the sentence, that there are two of them now.
   | { kind: 'intro'; hole: RuntimeHole }
   | { kind: 'introSentence' }
+  | { kind: 'introMeter' }
   // The first guess that ranks but does not move the hole: what the number IS, against the
   // number the hole already shows.
   | { kind: 'away'; guess: RankEntry; hole: RuntimeHole }
@@ -53,7 +59,12 @@ export type CoachLine =
   // (there is a try to look at), until it is done.
   | { kind: 'tap' }
   // The sentence solved: the tries it took — the score, said once.
-  | { kind: 'solved'; tries: number };
+  | { kind: 'solved'; tries: number }
+  // The meter stage: the first guess that filled a chip a little; a chip filled to the top,
+  // and the letter it revealed; the run's end.
+  | { kind: 'charged' }
+  | { kind: 'letter'; holeIndex: number }
+  | { kind: 'done'; tries: number };
 
 // Guesses a hole may resist before each rung of the ladder. The sentence gets more room:
 // two holes are in play, and a guess that moves one is progress the other cannot show.
@@ -61,6 +72,7 @@ export const STUCK: Record<Stage, readonly [number, number, number]> = {
   reveal: [2, 4, 6], // the answer was just on screen: nudge early
   word: [3, 6, 9],
   sentence: [4, 8, 12],
+  meter: [6, 10, 14], // a stall here fills the meter: give it room to pay off
 };
 
 // For each hole still open, how many guesses it has resisted since it last moved (or since
@@ -80,8 +92,12 @@ function stuckPerHole({ holes, events }: CoachState): (number | null)[] {
 export function coachLine(state: CoachState): CoachLine | null {
   const { stage, holes, events, tapped, revealed, finished } = state;
   if (stage === 'reveal' && revealed) return { kind: 'reveal', holeIndex: 0 };
-  // The end: the sentence's tries are its score, said once; a found word needs no comment.
-  if (finished) return stage === 'sentence' ? { kind: 'solved', tries: events.length } : null;
+  // The end: a sentence's tries are its score, said once; a found word needs no comment.
+  if (finished) {
+    if (stage === 'sentence') return { kind: 'solved', tries: events.length };
+    if (stage === 'meter') return { kind: 'done', tries: events.length };
+    return null;
+  }
   const [near, hint, answer] = STUCK[stage];
 
   // The ladder first: the hole that has resisted longest sets the rung.
@@ -104,9 +120,18 @@ export function coachLine(state: CoachState): CoachLine | null {
 
   if (events.length === 0) {
     if (stage === 'reveal') return { kind: 'hidden', hole: holes[0] };
-    return stage === 'word' ? { kind: 'intro', hole: holes[0] } : { kind: 'introSentence' };
+    if (stage === 'word') return { kind: 'intro', hole: holes[0] };
+    return stage === 'meter' ? { kind: 'introMeter' } : { kind: 'introSentence' };
   }
-  if (stage !== 'sentence') {
+  if (stage === 'meter') {
+    // The chip that just filled to the top names its letter; the first chip to fill a little
+    // says what filling is. Both from what the last guess did — never ahead of it.
+    const last = events[events.length - 1];
+    if (last.filled != null) return { kind: 'letter', holeIndex: last.filled };
+    if (last.charged && events.findIndex((e) => e.charged) === events.length - 1) return { kind: 'charged' };
+    return null;
+  }
+  if (stage === 'reveal' || stage === 'word') {
     const last = events[events.length - 1];
     const entry = last.entries[0];
     if (entry && !last.improved[0]) {
@@ -155,6 +180,17 @@ export function coachCopy(
         .replace('{m}', ordinal(lang, line.hole.rank));
     case 'introSentence':
       return t(lang, 'tutSentenceIntro');
+    case 'introMeter':
+      return t(lang, 'tutMeterIntro');
+    case 'charged':
+      return t(lang, 'tutCharged');
+    case 'letter':
+      return t(lang, 'tutLetter').replace(
+        '{letter}',
+        `[[b:${initialOf(stage.puzzle.holes[line.holeIndex].secret.word)}]]`,
+      );
+    case 'done':
+      return t(lang, 'tutMeterSolved').replace('{n}', String(line.tries));
     case 'away':
       return t(lang, 'tutAway')
         .replace('{guess}', chip(line.guess.word, line.guess.rank))

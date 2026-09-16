@@ -10,6 +10,8 @@
 //   - THE SENTENCE is TWO holes with start words in generation's own 50–150 band — the
 //     game's difficulty, one new thing at a time — each secret sitting in `words[]` at its
 //     `pos` with its affixes, and every hole carrying its own hint copy;
+//   - THE METER is a second sentence, harder (clues 80–150), four new words, with the
+//     lesson's meter boost set so the first letter lands inside the run;
 //   - every board stays byte-compatible with the real per-puzzle schema (parsePuzzle-valid —
 //     they feed the REAL game components), rank 0 is the secret, every key folds to itself
 //     (the free typing lands on them), and the start words are READ OFF the maps.
@@ -61,10 +63,10 @@ const SEARCH_START_MAX = 20;
 for (const lang of ['en', 'fr'] as const) {
   describe(`lesson script (${lang})`, () => {
     const script = scriptFor(lang);
-    const [reveal, word, sentence] = script.stages;
+    const [reveal, word, sentence, meter] = script.stages;
 
-    it('plays the reveal, then a word, then the sentence', () => {
-      expect(script.stages.map((s) => s.kind)).toEqual(['reveal', 'word', 'sentence']);
+    it('plays the reveal, a word, the sentence, then the meter', () => {
+      expect(script.stages.map((s) => s.kind)).toEqual(['reveal', 'word', 'sentence', 'meter']);
     });
 
     describe('the reveal: one word, hidden behind its closest word', () => {
@@ -104,6 +106,24 @@ for (const lang of ['en', 'fr'] as const) {
       it('uses words the single-word stages did not', () => {
         const used = [reveal, word].map((s) => s.puzzle.holes[0].secret.slug);
         for (const hole of sentence.puzzle.holes) expect(used).not.toContain(hole.secret.slug);
+      });
+    });
+
+    describe('the meter: a harder sentence, the meters shown', () => {
+      checkBoard(meter);
+      it('is two new secrets with clues farther out, and a boost that lands the letter in the run', () => {
+        const { puzzle } = meter;
+        expect(puzzle.holes).toHaveLength(2);
+        expect(puzzle.words.length).toBeLessThanOrEqual(8);
+        const used = new Set(
+          [reveal, word, sentence].flatMap((s) => s.puzzle.holes.map((h) => h.secret.slug)),
+        );
+        for (const hole of puzzle.holes) {
+          expect(used.has(hole.secret.slug)).toBe(false);
+          expect(hole.start_rank).toBeGreaterThanOrEqual(80);
+          expect(hole.start_rank).toBeLessThanOrEqual(150);
+        }
+        expect(meter.chargeBoost).toBeGreaterThan(1);
       });
     });
   });

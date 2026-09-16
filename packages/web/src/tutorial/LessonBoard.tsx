@@ -16,12 +16,13 @@ import type { LessonStage } from './script';
 import { canExtend } from '../game/keyboard';
 import { buildHistory, type HistoryStop } from '../game/history';
 import { guessKey } from '../game/scoring';
+import { chargeForRank, initialOf, replayCharge, type HoleCharge } from '../game/charge';
 import { sentenceStarts } from '../game/sentenceCase';
 import { SCRAMBLE_MS } from '../hooks/useScramble';
 import type { Vocab } from '../hooks/useVocab';
 import { fold } from '@whippin/shared';
 import type { HitState, RankEntry, RuntimeHole } from '@whippin/shared';
-import { t, ariaHoleHistory, srHoleResult } from '../i18n';
+import { t, ariaHoleHistory, srHoleCharge, srHoleInitial, srHoleResult } from '../i18n';
 import type { LangCode } from '../langs';
 import botIdle from '../assets/error-bot-idle.png';
 
@@ -99,6 +100,22 @@ export default function LessonBoard({
   const { puzzle, kind: stage } = script;
   const { ranks } = puzzle;
   const puzzleHoles = puzzle.holes;
+  // A sentence-shaped stage: the game's own layout, the try count behind the sentence, a
+  // button (CONTINUE / PLAY) once solved — where a single word rolls on by itself.
+  const sentenceLike = stage === 'sentence' || stage === 'meter';
+  // THE METER STAGE (#301 taught, user-decided 2026-09-16): the meters are SHOWN — on this
+  // stage alone, the game's own reading (`replayCharge`) scaled by the lesson's boost so the
+  // reveal lands inside the run.
+  const boost = stage === 'meter' ? script.chargeBoost ?? 1 : 0;
+  const fresh = useMemo(() => freshHoles(script), [script]);
+  const meters = useCallback(
+    (log: readonly string[]): HoleCharge[] =>
+      replayCharge(fresh, ranks, log).map((c) => {
+        const charge = Math.min(100, c.charge * boost);
+        return { charge, revealed: charge >= 100 };
+      }),
+    [fresh, ranks, boost],
+  );
 
   // THE REVEAL (user-decided 2026-09-16): the secret word is SHOWN first, then hidden in
   // front of the player — its closest word takes its place, wearing a 1 — so the two things
@@ -210,8 +227,19 @@ export default function LessonBoard({
         return [{ index, entry }];
       });
       const fadeDelayMs = Math.max(0, impacted.length - 1) * STAGGER_MS + FLOATING_HIT_INTRO_MS;
+      // The meters before and after this guess (the meter stage only): what each chip gains
+      // flies into it as loot, exactly as on the day (#301).
+      const before = boost ? meters(tried) : null;
+      const after = boost && isNew ? meters([...tried, typed]) : before;
       impacted.forEach(({ index, entry }, step) => {
         const hit = (hitId.current += 1);
+        const gained = before && after ? after[index].charge - before[index].charge : 0;
+        const strike =
+          entry?.rank === 0
+            ? ('ultra' as const)
+            : boost && isNew && chargeForRank(entry?.rank) > 0
+              ? ('slash' as const)
+              : undefined;
         setHits((prev) => [
           ...prev,
           entry != null
@@ -221,7 +249,8 @@ export default function LessonBoard({
                 id: hit,
                 startDelayMs: step * STAGGER_MS,
                 fadeDelayMs,
-                strike: entry.rank === 0 ? ('ultra' as const) : undefined,
+                strike,
+                charge: strike === 'slash' && gained > 0 ? gained : undefined,
               }
             : { holeIndex: index, value: 0, id: hit, startDelayMs: step * STAGGER_MS, fadeDelayMs, miss: true },
         ]);
@@ -246,12 +275,16 @@ export default function LessonBoard({
         );
       }
       if (isNew) {
+        const filled =
+          before && after ? after.findIndex((c, i) => c.revealed && !before[i].revealed) : -1;
         setEvents((prev) => [
           ...prev,
           {
             typed,
             entries: holes.map((h) => (h.rank === 0 ? undefined : ranks[h.secret][typed])),
             improved,
+            charged: !!before && !!after && after.some((c, i) => c.charge > before[i].charge),
+            filled: filled >= 0 ? filled : null,
           },
         ]);
       }
@@ -281,18 +314,20 @@ export default function LessonBoard({
         later(() => setPhase('done'), settleMs);
       }
     },
-    [playing, vocab, lang, ranks, tried, holes, say, later],
+    [playing, vocab, lang, ranks, tried, holes, say, later, boost, meters],
   );
 
   // --- the stage's end ---
   const done = phase === 'done';
   useEffect(() => {
-    if (done && !final) later(onComplete, STAGE_HOLD_MS);
-  }, [done, final, later, onComplete]);
-  // The final stage: the keyboard leaves the way it does in a solved round, and PLAY renders
-  // only once it is gone (`kbGone`) — with the same deadline as Game's identical beat, so a
-  // lost `animationend` cannot strand the player.
-  const ending = done && final;
+    if (done && !final && !sentenceLike) later(onComplete, STAGE_HOLD_MS);
+  }, [done, final, sentenceLike, later, onComplete]);
+  // A sentence solved: the keyboard leaves the way it does in a solved round, and the button
+  // renders only once it is gone (`kbGone`) — with the same deadline as Game's identical
+  // beat, so a lost `animationend` cannot strand the player. The button is PLAY on the last
+  // stage and CONTINUE before it: the solved line stands until the player acts on it (the
+  // coach never skips a line without an interaction).
+  const ending = done && (final || sentenceLike);
   const [kbGone, setKbGone] = useState(false);
   useEffect(() => {
     if (ending) later(() => setKbGone(true), KB_EXIT_FALLBACK_MS);
@@ -352,11 +387,22 @@ export default function LessonBoard({
 
   const quiet = playing && historyHole === null && hits.length === 0;
   const starts = sentenceStarts(puzzle.words);
+  // The meters as the sentence shows them (the meter stage only): the reading, the initial
+  // once revealed, and the sr-only description in the meter's place (#301).
+  const charges = useMemo(() => {
+    if (!boost) return undefined;
+    return meters(tried).map((c, i) => {
+      const initial = c.revealed ? initialOf(puzzleHoles[i].secret.word) : null;
+      const hint =
+        holes[i].rank === 0 ? '' : initial !== null ? srHoleInitial(lang, initial) : srHoleCharge(lang, c.charge);
+      return { value: c.charge, initial, hint };
+    });
+  }, [boost, meters, tried, puzzleHoles, holes, lang]);
 
   return (
     // tutorial--word: the word stage is deliberately CLEAN — one big centered word in the
     // middle; the sentence stage wears the game's own layout.
-    <div className={`game tutorial${stage !== 'sentence' ? ' tutorial--word' : ''}`}>
+    <div className={`game tutorial${sentenceLike ? '' : ' tutorial--word'}`}>
       <div className="sr-only" role="status" aria-live="polite">
         {announce}
       </div>
@@ -379,7 +425,7 @@ export default function LessonBoard({
         <div className="phrase-anchor">
           {/* The sentence stage shows the try count behind the sentence, as the day does:
               fewer tries is the score, and the number says so without a word. */}
-          {stage === 'sentence' && (
+          {sentenceLike && (
             <div className="progress-background" aria-hidden="true">
               <CellDigits value={events.length} />
             </div>
@@ -395,8 +441,9 @@ export default function LessonBoard({
             onExplore={openHistory}
             quiet={quiet}
             veiledHole={wheelOpen ? historyHole : null}
-            // A lone word is a word, not a sentence: no capital on the word stage.
-            capital={stage === 'sentence'}
+            // A lone word is a word, not a sentence: no capital on the word stages.
+            capital={sentenceLike}
+            charges={charges}
           />
         </div>
         {/* Once there is nothing left to type the prompt retires in place — still laid out,
@@ -432,8 +479,8 @@ export default function LessonBoard({
             <LoadingWave text={t(lang, 'loading')} />
           </p>
         ) : kbGone ? (
-          <button type="button" className="mix-btn" onClick={onPlay}>
-            {t(lang, 'tutPlay')}
+          <button type="button" className="mix-btn" onClick={final ? onPlay : onComplete}>
+            {t(lang, final ? 'tutPlay' : 'tutContinue')}
           </button>
         ) : revealed ? (
           // The reveal's one action, in the keyboard's place: the keyboard takes over the
@@ -470,13 +517,15 @@ export default function LessonBoard({
       {historyModel && historyHole !== null && wheelOpen && (
         <HistoryWheel
           model={historyModel}
-          hub={{ word: shownHoles[historyHole].word, rank: shownHoles[historyHole].rank }}
+          hub={{
+            word: shownHoles[historyHole].word,
+            rank: shownHoles[historyHole].rank,
+            meter: charges?.[historyHole]?.value,
+          }}
           hostIndex={historyHole}
           number={historyHole + 1}
           lang={lang}
-          capital={
-            stage === 'sentence' && starts[puzzleHoles[historyHole].pos] && !puzzleHoles[historyHole].prefix
-          }
+          capital={sentenceLike && starts[puzzleHoles[historyHole].pos] && !puzzleHoles[historyHole].prefix}
           onPick={(stop) => pickWord(historyHole, stop)}
           onClose={closeHistory}
         />

@@ -442,6 +442,27 @@ const STRINGS = {
     en: 'You found both in {n} tries. This one was easy: the daily sentences are harder.',
     fr: 'Trouvés en {n} essais ! Celle-ci était facile, les vraies phrases sont plus dures.',
   },
+  // CONTINUE leads from that line into the meter stage — the one control, named for what
+  // it does (never "tap anywhere").
+  tutContinue: { en: 'CONTINUE', fr: 'CONTINUER' },
+  // THE METER STAGE (#301 taught, user-decided 2026-09-16): nothing said before it is seen —
+  // the chip is named once it starts filling, the letter once it lands.
+  tutMeterIntro: {
+    en: 'A harder sentence. Find the two secret words.',
+    fr: 'Une phrase plus dure. Trouve les deux mots secrets.',
+  },
+  tutCharged: {
+    en: 'A close guess fills the word up. Full, it reveals the first letter.',
+    fr: 'Un essai proche remplit le mot. Plein, il révèle la première lettre.',
+  },
+  tutLetter: {
+    en: 'Full! The secret word starts with {letter}.',
+    fr: 'Plein ! Le mot secret commence par {letter}.',
+  },
+  tutMeterSolved: {
+    en: 'You found both in {n} tries. You know everything now. Go play.',
+    fr: 'Trouvés en {n} essais ! Tu sais tout, maintenant. À toi de jouer.',
+  },
   tutAway: {
     en: '{guess} is the {n} closest word to the secret. {start} is the {m}.',
     fr: '{guess} est le {n} mot le plus proche du secret. {start} est le {m}.',
@@ -473,6 +494,10 @@ const STRINGS = {
   tutHintDog: { en: 'Man’s best friend.', fr: 'Le meilleur ami de l’homme.' },
   tutHintMoon: { en: 'It lights the night.', fr: 'Elle éclaire la nuit.' },
   tutHintChien: { en: 'Man’s best friend.', fr: 'Le meilleur ami de l’homme.' },
+  tutHintCat: { en: 'It purrs.', fr: 'Il ronronne.' },
+  tutHintChat: { en: 'It purrs.', fr: 'Il ronronne.' },
+  tutHintRoof: { en: 'The top of a house.', fr: 'Le dessus d’une maison.' },
+  tutHintToit: { en: 'The top of a house.', fr: 'Le dessus d’une maison.' },
   tutHintLune: { en: 'It lights the night.', fr: 'Elle éclaire la nuit.' },
   // The lesson's wordless ending: the solved sentence stands, and PLAY graduates into the game.
   tutPlay: { en: 'PLAY', fr: 'JOUER' },

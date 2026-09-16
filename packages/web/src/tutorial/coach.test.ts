@@ -9,7 +9,9 @@
 //   - a hole resisting STUCK[0] / [1] / [2] guesses: near → the board's hint → the answer;
 //   - the sentence: the tap is taught from the first guess that lands a number, until it is
 //     done, and never while a hint or the answer is due; the away / miss lines belong to the
-//     single-word stages; solved, the bot counts the tries.
+//     single-word stages; solved, the bot counts the tries;
+//   - the meter stage: filling is named on the first guess that charges a chip, the letter
+//     when a chip fills, the count at the end.
 //   Every line is written for someone who has never heard of the game: it names the HIDDEN
 //   WORD the numbers are about (coachCopy below).
 import { describe, it, expect } from 'vitest';
@@ -39,10 +41,10 @@ function board(stage: Stage, starts: number[]) {
     finished,
   });
   // `ranks[i]` is the guess's rank on hole i, or null for a MISS there.
-  const guess = (typed: string, ranks: (number | null)[]) => {
+  const guess = (typed: string, ranks: (number | null)[], meter?: { charged: boolean; filled: number | null }) => {
     const entries = holes.map((h, i) => (h.rank === 0 || ranks[i] === null ? undefined : entry(typed, ranks[i] as number)));
     const improved = holes.map((h, i) => entries[i] !== undefined && (entries[i] as RankEntry).rank < h.rank);
-    events.push({ typed, entries, improved });
+    events.push({ typed, entries, improved, ...meter });
     holes.forEach((h, i) => {
       if (improved[i]) {
         h.rank = (entries[i] as RankEntry).rank;
@@ -164,6 +166,22 @@ describe('ordinal', () => {
   });
 });
 
+describe('the meter stage', () => {
+  it('opens on its line, names filling once, names the letter when a chip fills, and ends on the count', () => {
+    const b = board('meter', [99, 147]);
+    expect(coachLine(b.state())).toEqual({ kind: 'introMeter' });
+    b.guess('x', [null, null], { charged: false, filled: null });
+    expect(coachLine(b.state())).toBeNull();
+    b.guess('a', [40, null], { charged: true, filled: null });
+    expect(coachLine(b.state())).toEqual({ kind: 'charged' });
+    b.guess('b', [30, 200], { charged: true, filled: null });
+    expect(coachLine(b.state())).toBeNull(); // filling was explained once
+    b.guess('c', [3, null], { charged: true, filled: 0 });
+    expect(coachLine(b.state())).toEqual({ kind: 'letter', holeIndex: 0 });
+    expect(coachLine(b.state(false, false, true))).toEqual({ kind: 'done', tries: 4 });
+  });
+});
+
 describe('coachCopy', () => {
   const stage: LessonStage = {
     kind: 'word',
@@ -201,6 +219,12 @@ describe('coachCopy', () => {
     expect(coachCopy('en', { kind: 'tap' }, stage, true)).toMatch(/^Tap/);
     expect(coachCopy('en', { kind: 'solved', tries: 7 }, stage, true)).toBe(
       'You found both in 7 tries. This one was easy: the daily sentences are harder.',
+    );
+    expect(coachCopy('en', { kind: 'letter', holeIndex: 0 }, stage, true)).toBe(
+      'Full! The secret word starts with [[b:O]].',
+    );
+    expect(coachCopy('en', { kind: 'done', tries: 9 }, stage, true)).toBe(
+      'You found both in 9 tries. You know everything now. Go play.',
     );
     expect(coachCopy('en', { kind: 'tap' }, stage, false)).toMatch(/^Click/);
   });

@@ -8,22 +8,28 @@
 //   pnpm gen:word montagne --lang fr --form montagne=n:s
 //   pnpm gen:word chien --lang fr --form chien=n:s
 //   pnpm gen:word lune --lang fr --form lune=n:s
+//   pnpm gen:word chat --lang fr --form chat=n:s
+//   pnpm gen:word toit --lang fr --form toit=n:s
 //   node packages/web/scripts/prune-word-map.mjs \
 //     --in packages/generation/output/single-word/fr/ocean.json \
 //     --out packages/web/src/tutorial/scripts/fr.ocean.json --top 150
-//   (et de même pour montagne, chien et lune)
+//   (et de même pour montagne, chien, lune, chat et toit)
 //
 // LA RÉVÉLATION : OCÉAN, montré, puis caché derrière MER — son mot le plus proche, rang 1 —
 // et retapé. LE MOT : MONTAGNE, jamais montré, derrière SKI (14) : une vraie recherche,
 // indice intuitif, colline / vallée / cime font tous avancer le trou. LA PHRASE : « un chien
 // aboie à la lune. » — CHIEN derrière LOUP (52), LUNE derrière PÉNOMBRE (63), dans la bande
-// de départ 50–150 de la génération.
+// de départ 50–150 de la génération. LA JAUGE : « le chat dort sur le toit. » — CHAT derrière
+// MUSEAU (92), TOIT derrière LUCARNE (136), plus loin, avec les jauges #301 visibles et
+// remplies 3× plus vite.
 import type { WordPuzzle } from '@whippin/shared';
 import type { LessonScript } from '../script';
 import ocean from './fr.ocean.json';
 import montagne from './fr.montagne.json';
 import chien from './fr.chien.json';
 import lune from './fr.lune.json';
+import chat from './fr.chat.json';
+import toit from './fr.toit.json';
 
 function hole(artifact: WordPuzzle, pos: number, start: string, suffix?: string) {
   const entry = artifact.ranks[start];
@@ -60,6 +66,18 @@ const script: LessonScript = {
         ranks: { [chien.word.slug]: chien.ranks, [lune.word.slug]: lune.ranks },
       },
       hints: ['tutHintChien', 'tutHintLune'],
+    },
+    {
+      kind: 'meter',
+      chargeBoost: 3,
+      puzzle: {
+        lang: 'fr',
+        revision: 'lesson',
+        words: ['le', 'chat', 'dort', 'sur', 'le', 'toit.'],
+        holes: [hole(chat, 1, 'museau'), hole(toit, 5, 'lucarne', '.')],
+        ranks: { [chat.word.slug]: chat.ranks, [toit.word.slug]: toit.ranks },
+      },
+      hints: ['tutHintChat', 'tutHintToit'],
     },
   ],
 };

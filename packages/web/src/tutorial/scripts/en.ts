@@ -8,15 +8,19 @@
 //   pnpm gen:word mountain --lang en
 //   pnpm gen:word dog --lang en
 //   pnpm gen:word moon --lang en
+//   pnpm gen:word cat --lang en
+//   pnpm gen:word roof --lang en
 //   node packages/web/scripts/prune-word-map.mjs \
 //     --in packages/generation/output/single-word/en/ocean.json \
 //     --out packages/web/src/tutorial/scripts/en.ocean.json --top 150
-//   (and the same for mountain, dog and moon)
+//   (and the same for mountain, dog, moon, cat and roof)
 //
 // THE REVEAL: OCEAN, shown, then hidden behind SEA — its closest word, rank 1 — and typed
 // back. THE WORD: MOUNTAIN, never shown, behind SNOW (13): a real search, intuitive clue,
 // slopes / alps / hills / peaks all move the hole. THE SENTENCE: "a dog barks at the moon."
 // — DOG behind COYOTE (55) and MOON behind STARS (62), the game's own 50–150 band.
+// THE METER: "the cat sleeps on the roof." — CAT behind WHISKERS (99) and ROOF behind
+// LADDER (147), farther out, with the #301 meters shown and filling 3× faster.
 //
 // scripts.test.ts replays this file and fails if an edit breaks the lesson's shape.
 import type { WordPuzzle } from '@whippin/shared';
@@ -25,6 +29,8 @@ import ocean from './en.ocean.json';
 import mountain from './en.mountain.json';
 import dog from './en.dog.json';
 import moon from './en.moon.json';
+import cat from './en.cat.json';
+import roof from './en.roof.json';
 
 // A hole at its start word, both READ OFF the map rather than restated here, so the board can
 // never disagree with its own neighborhood.
@@ -65,6 +71,18 @@ const script: LessonScript = {
         ranks: { [dog.word.slug]: dog.ranks, [moon.word.slug]: moon.ranks },
       },
       hints: ['tutHintDog', 'tutHintMoon'],
+    },
+    {
+      kind: 'meter',
+      chargeBoost: 3,
+      puzzle: {
+        lang: 'en',
+        revision: 'lesson',
+        words: ['the', 'cat', 'sleeps', 'on', 'the', 'roof.'],
+        holes: [hole(cat, 1, 'whiskers'), hole(roof, 5, 'ladder', '.')],
+        ranks: { [cat.word.slug]: cat.ranks, [roof.word.slug]: roof.ranks },
+      },
+      hints: ['tutHintCat', 'tutHintRoof'],
     },
   ],
 };

@@ -2773,7 +2773,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (see the gate bullet). Replaying a done level is allowed. The row dress is the device
   list's; the done mark is a small accent SQUARE where the chevron of a level still to do sits.
   **LEVEL 1 (`tutorial/LevelOne.tsx` over `LessonBoard.tsx`, one screen, the script's
-  STAGES in order — `scripts/<lang>.ts` `stages[]`, each `{kind, puzzle, hints}`):**
+  STAGES in order — `scripts/<lang>.ts` `stages[]`, each `{kind, puzzle, hints}`; a
+  sentence-shaped stage ends on a button, a single word rolls on by itself):**
   - **THE REVEAL (user-decided 2026-09-16, fifth pass — "you land on a page with mer¹ and
     it tells you to guess the secret word: where is the secret word?")** — NOTHING IS SAID
     THAT THE PLAYER HAS NOT JUST SEEN. The secret word is SHOWN on the board (rank 0, the
@@ -2810,6 +2811,22 @@ it to the local store — see `packages/backend/AGENTS.md`).
     tries (wheel / grid, picking included), fewer tries is the score. Solving it drops the
     keyboard (`kb-drop`, `KB_EXIT_FALLBACK_MS`) and offers **PLAY** in its place, the
     graduation: `markLessonDone(1)`, `setOnboarded`, `track finish`, the game.
+  - **THE METER (#301 TAUGHT; user-decided 2026-09-16: "after saying that real sentences
+    are harder, the onboarding should continue and explain the first letter concept")** —
+    CONTINUE from the sentence's solved line (the line stands until it is pressed) into a
+    HARDER sentence with the meters SHOWN for the first time (en "the cat sleeps on the
+    roof." from `whiskers^99` / `ladder^147`; fr « le chat dort sur le toit. » from
+    `museau^92` / `lucarne^136`; the test wants 80–150 and four new words). The chip fills,
+    the loot flies, the initial lands exactly as on the day (`replayCharge`, `chargeForRank`,
+    `initialOf` — the one reading), SCALED by the stage's **`chargeBoost` = 3** so the letter
+    lands inside the run (the day's rule reveals by try ~37; a lesson cannot wait that long
+    — the earlier stages hide the meters entirely). The coach names nothing before it is
+    seen: `tutMeterIntro` ("A harder sentence. Find the two secret words."); the FIRST guess
+    that charges a chip → `tutCharged` ("A close guess fills the word up. Full, it reveals
+    the first letter."), once; a chip filled to the top → `tutLetter` ("Full! The secret word
+    starts with C."); solved → `tutMeterSolved` ("You found both in 9 tries. You know
+    everything now. Go play.") and PLAY. Ladder `STUCK.meter` = 6/10/14 (a stall here pays
+    into the meter). Not taught: the exact rate.
   **THE COACH IS THE ERROR BOT (user-decided 2026-09-16, "people would want to read it more
   if it's something telling it"):** the error screen's character (`error-bot-idle.png`, its
   idle bob, at 2x) stands on the coach box's top-left edge (`.coach--bot` / `.coach-bot`,
@@ -2835,8 +2852,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (`tutTap`/`tutClick`, the coarse-pointer verb), below a hint or an answer and above near;
   SOLVED, the bot counts the tries and sets up what comes next (`tutSolved`, "You found both
   in 7 tries. This one was easy: the daily sentences are harder." — the score, said once,
-  and the hook the FIRST-LETTER lesson (#301's meter, not taught yet) will hang from,
-  user-decided 2026-09-16; a found single word still says nothing). The `{braces}` are filled from the board itself, so a line can never
+  and the hook the METER stage hangs from, user-decided 2026-09-16; a found single word
+  still says nothing). The `{braces}` are filled from the board itself, so a line can never
   name a word the map does not rank. The three-line coach box and its copy budget stand.
   **The invitation is unchanged** (`tutorial/Invite.tsx`, no header): a first visit (no
   `onboarded`) lands on it; TUTORIAL navigates to level 1 (the lesson's PLAY or a header exit
@@ -2845,8 +2862,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   keep the three events (`start` / `skip` / `finish`). The boards are pruned #154 artifacts
   (`scripts/<lang>.<word>.json`, `prune-word-map.mjs --top 150`; the exact commands in each
   script's header), never published or served; a lesson board touches no `rounds`, no outbox,
-  no server. **Not done, deliberately: levels 2–4** (their rows show the road), and the
-  first-letter meter (#301) is not taught yet.
+  no server. **Not done, deliberately: levels 2–4** (their rows show the road).
 - **App header — TWO SLOTS (user-decided 2026-08-30, superseding the 2026-08-18
   three-slot finalization recorded below).** The BAND is unchanged — `--glass` +
   hairline + backdrop blur (`components/TopBar.tsx`), full-bleed with one bottom
