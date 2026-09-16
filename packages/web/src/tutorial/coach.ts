@@ -29,8 +29,10 @@ export interface CoachState {
 }
 
 export type CoachLine =
-  // Before the first guess of the word stage: the goal, in one line.
-  | { kind: 'intro' }
+  // Before the first guess: the goal in one line — on the word, naming the clue the hole
+  // shows; on the sentence, that there are two of them now.
+  | { kind: 'intro'; hole: RuntimeHole }
+  | { kind: 'introSentence' }
   // The first guess that ranks but does not move the hole: what the number IS, against the
   // number the hole already shows.
   | { kind: 'away'; guess: RankEntry; hole: RuntimeHole }
@@ -89,8 +91,8 @@ export function coachLine(state: CoachState): CoachLine | null {
 
   if (worst >= near) return { kind: 'near', hole: holes[target] };
 
+  if (events.length === 0) return stage === 'word' ? { kind: 'intro', hole: holes[0] } : { kind: 'introSentence' };
   if (stage === 'word') {
-    if (events.length === 0) return { kind: 'intro' };
     const last = events[events.length - 1];
     const entry = last.entries[0];
     if (entry && !last.improved[0]) {
@@ -117,7 +119,9 @@ export function coachCopy(
   const chip = (word: string, rank: number) => `[[w:${word}^${rank}]]`;
   switch (line.kind) {
     case 'intro':
-      return t(lang, 'tutIntro');
+      return t(lang, 'tutIntro').replace('{start}', chip(line.hole.word, line.hole.rank));
+    case 'introSentence':
+      return t(lang, 'tutSentenceIntro');
     case 'away':
       return t(lang, 'tutAway')
         .replace('{guess}', chip(line.guess.word, line.guess.rank))

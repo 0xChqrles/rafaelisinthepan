@@ -1,13 +1,15 @@
 // CONTRACT: the reactive coach (#269). It speaks on a mistake or a stall, never on success —
 // replayed here over guess sequences on a synthetic board, against the rule as decided:
 //
-//   - before the first guess: the goal (word stage only);
+//   - before the first guess: the goal — the clue named on the word, "two now" on the sentence;
 //   - a guess that ranks but moves nothing: what the number means — ONCE, the first time;
 //   - a MISS: too far to count — ONCE, the first time;
 //   - a guess that moves the hole: SILENCE;
 //   - a hole resisting STUCK[0] / [1] / [2] guesses: near → the board's hint → the answer;
 //   - the sentence: the tap is taught after TAP_AFTER counted guesses, until it is done, and
 //     never while a hint or the answer is due; the away / miss lines belong to the word stage.
+//   Every line is written for someone who has never heard of the game: it names the HIDDEN
+//   WORD the numbers are about (coachCopy below).
 import { describe, it, expect } from 'vitest';
 import type { RankEntry, RuntimeHole } from '@whippin/shared';
 import { coachLine, coachCopy, STUCK, TAP_AFTER, type CoachState, type GuessEvent, type Stage } from './coach';
@@ -45,7 +47,7 @@ function board(stage: Stage, starts: number[]) {
 describe('the word stage', () => {
   it('opens on the goal and falls silent on an improving guess', () => {
     const b = board('word', [10]);
-    expect(coachLine(b.state())).toEqual({ kind: 'intro' });
+    expect(coachLine(b.state())).toEqual({ kind: 'intro', hole: expect.objectContaining({ word: 'start0', rank: 10 }) });
     b.guess('sea', [3]);
     expect(coachLine(b.state())).toBeNull();
   });
@@ -87,9 +89,9 @@ describe('the word stage', () => {
 });
 
 describe('the sentence stage', () => {
-  it('says nothing at the start, nothing on away or miss, and teaches the tap after TAP_AFTER guesses until it is done', () => {
+  it('opens on its own line, says nothing on away or miss, and teaches the tap after TAP_AFTER guesses until it is done', () => {
     const b = board('sentence', [55, 62]);
-    expect(coachLine(b.state())).toBeNull();
+    expect(coachLine(b.state())).toEqual({ kind: 'introSentence' });
     b.guess('a', [90, null]);
     expect(coachLine(b.state())).toBeNull();
     b.guess('b', [12, 30]);
@@ -134,12 +136,17 @@ describe('coachCopy', () => {
   };
   it('prints the board’s words in their in-game dress', () => {
     const hole: RuntimeHole = { pos: 0, secret: 'ocean', word: 'islands', rank: 10, startRank: 10 };
-    expect(coachCopy('en', { kind: 'away', guess: entry('boat', 45), hole }, stage, true)).toBe(
-      '[[w:boat^45]] is 45 words away. [[w:islands^10]] is 10 away.',
+    expect(coachCopy('en', { kind: 'intro', hole }, stage, true)).toBe(
+      'A word is hidden. [[w:islands^10]] is close to it. Type a guess.',
     );
-    expect(coachCopy('en', { kind: 'miss', typed: 'violin' }, stage, true)).toBe('[[m:violin]] is too far to count.');
-    expect(coachCopy('en', { kind: 'near', hole }, stage, true)).toBe('Try words near [[w:islands^10]].');
-    expect(coachCopy('en', { kind: 'answer', holeIndex: 0 }, stage, true)).toBe('It is [[b:ocean]].');
+    expect(coachCopy('en', { kind: 'away', guess: entry('boat', 45), hole }, stage, true)).toBe(
+      '[[w:boat^45]] is 45 words away from the hidden word. [[w:islands^10]] is closer: 10.',
+    );
+    expect(coachCopy('en', { kind: 'miss', typed: 'violin' }, stage, true)).toBe(
+      '[[m:violin]] is too far from the hidden word to get a number.',
+    );
+    expect(coachCopy('en', { kind: 'near', hole }, stage, true)).toBe('Try words related to [[w:islands^10]].');
+    expect(coachCopy('en', { kind: 'answer', holeIndex: 0 }, stage, true)).toBe('The hidden word is [[b:ocean]]. Type it.');
     expect(coachCopy('en', { kind: 'tap' }, stage, true)).toMatch(/^Tap/);
     expect(coachCopy('en', { kind: 'tap' }, stage, false)).toMatch(/^Click/);
   });

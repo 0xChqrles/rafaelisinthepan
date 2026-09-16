@@ -415,20 +415,37 @@ const STRINGS = {
   // [[b:secret]] solve cobalt, [[w:hint^rank]] the held word's chip + rank exponent,
   // [[m:miss]] MISS's red. The {braces} are filled by coach.ts from the board itself, so a
   // line can never name a word the map does not rank.
-  tutIntro: { en: 'Find the hidden word.', fr: 'Retrouve le mot caché.' },
-  tutAway: {
-    en: '{guess} is {n} words away. {start} is {m} away.',
-    fr: '{guess} est à {n} mots. {start} est à {m}.',
+  // The lines are written for someone who has NEVER heard of the game (user-decided
+  // 2026-09-16): every one names the HIDDEN WORD, the thing the numbers are about, and the
+  // opening line names the clue word itself, so the chip on screen is explained by the line
+  // above it.
+  tutIntro: {
+    en: 'A word is hidden. {start} is close to it. Type a guess.',
+    fr: 'Un mot est caché. {start} en est proche. Tape un essai.',
   },
-  tutMiss: { en: '{miss} is too far to count.', fr: '{miss} est trop loin pour compter.' },
-  tutNear: { en: 'Try words near {word}.', fr: 'Essaie des mots proches de {word}.' },
-  tutAnswer: { en: 'It is {answer}.', fr: "C'est {answer}." },
+  tutSentenceIntro: {
+    en: 'Now two words are hidden. Each guess is tried on both.',
+    fr: 'Maintenant deux mots sont cachés. Chaque essai compte pour les deux.',
+  },
+  tutAway: {
+    en: '{guess} is {n} words away from the hidden word. {start} is closer: {m}.',
+    fr: '{guess} est à {n} mots du mot caché. {start} est plus proche : {m}.',
+  },
+  tutMiss: {
+    en: '{miss} is too far from the hidden word to get a number.',
+    fr: '{miss} est trop loin du mot caché pour avoir un nombre.',
+  },
+  tutNear: { en: 'Try words related to {word}.', fr: 'Essaie des mots liés à {word}.' },
+  tutAnswer: { en: 'The hidden word is {answer}. Type it.', fr: 'Le mot caché est {answer}. Tape-le.' },
   // The sentence's one mechanic worth a line, in the input device's own verb (the
   // tapAnywhere/clickAnywhere pattern).
-  tutTap: { en: 'Tap a word to see your tries on it.', fr: 'Touche un mot pour revoir tes essais.' },
+  tutTap: {
+    en: 'Tap a highlighted word to see all your tries on it.',
+    fr: 'Touche un mot surligné pour revoir tous tes essais dessus.',
+  },
   tutClick: {
-    en: 'Click a word to see your tries on it.',
-    fr: 'Clique sur un mot pour revoir tes essais.',
+    en: 'Click a highlighted word to see all your tries on it.',
+    fr: 'Clique sur un mot surligné pour revoir tous tes essais dessus.',
   },
   // Each board's own hint about its word — what the coach says once a hole has resisted long
   // enough, before it gives the answer (scripts/<lang>.ts names them per hole).

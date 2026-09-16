@@ -2792,10 +2792,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
     keyboard (`kb-drop`, `KB_EXIT_FALLBACK_MS`) and offers **PLAY** in its place, the
     graduation: `markLessonDone(1)`, `setOnboarded`, `track finish`, the game.
   **THE REACTIVE COACH (`tutorial/coach.ts`, pure; `coach.test.ts` replays sequences):**
-  the one line the board's state calls for, else nothing (the box disappears). Word stage:
-  the goal before the first guess; the FIRST ranked guess that moves nothing → what the
-  number is against the hole's own (`tutAway`: "boat⁴⁵ is 45 words away. islands¹⁰ is 10
-  away."), once; the FIRST MISS → `tutMiss`, once; a moving guess → SILENCE. Both stages: a
+  the one line the board's state calls for, else nothing (the box disappears). **Every line
+  is written for someone who has NEVER heard of the game (user-decided 2026-09-16): it names
+  the HIDDEN WORD the numbers are about.** Before the first guess: the goal, naming the clue
+  the hole shows (`tutIntro`: "A word is hidden. atlantic³ is close to it. Type a guess."),
+  and on the sentence that there are two now (`tutSentenceIntro`). Word stage: the FIRST
+  ranked guess that moves nothing → what the number is against the hole's own (`tutAway`:
+  "boat⁴⁵ is 45 words away from the hidden word. atlantic³ is closer: 3."), once; the FIRST
+  MISS → `tutMiss` ("too far from the hidden word to get a number"), once; a moving guess →
+  SILENCE. Both stages: a
   hole resisting `STUCK[stage]` guesses climbs near → the board's HINT (`hints[]`, per hole,
   `tutHint*`) → the ANSWER (`[3,6,9]` on the word, `[4,8,12]` on the sentence, the hole
   resisting longest chosen); the sentence teaches the TAP after `TAP_AFTER` = 3 counted
