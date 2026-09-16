@@ -372,9 +372,11 @@ export default function LessonBoard({
       )}
 
       <div className="play">
-        {/* key={revealed}: the hiding is a SWAP — the secret leaves, its stand-in arrives
-            (the app's one rung-in gesture) — not a word morphing into another. */}
-        <div className="phrase-anchor" key={String(revealed)}>
+        {/* The hiding PLAYS as the game's own word change (user-decided 2026-09-16): the Hole
+            scrambles the secret's letters into its stand-in's while the exponent arrives —
+            the same choreography every improving guess gets — so the player SEES one word
+            become the other, no remount. */}
+        <div className="phrase-anchor">
           {/* The sentence stage shows the try count behind the sentence, as the day does:
               fewer tries is the score, and the number says so without a word. */}
           {stage === 'sentence' && (

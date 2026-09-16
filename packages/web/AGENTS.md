@@ -2779,12 +2779,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
     THAT THE PLAYER HAS NOT JUST SEEN. The secret word is SHOWN on the board (rank 0, the
     solved look: "Here is a secret word: océan."), STANDS UNTIL THE PLAYER ACTS on ONE
     BUTTON in the tray, where the keyboard will land, named for what it does — **HIDE THE
-    WORD** (`tutHide`, `.mix-btn`; the prompt is retired meanwhile, so it is the one action).
+    WORD** / **MASQUER LE MOT** (`tutHide`, `.mix-btn`; « cacher » read as weird, 2026-09-16; the prompt is retired meanwhile, so it is the one action).
     **The coach never skips a line without an interaction, and the interaction is always an
     obvious control with a clear action — never "tap anywhere"** (user-decided 2026-09-16,
     the tap-anywhere cue rejected the same day). Pressing it is the hiding: the word is
-    HIDDEN in front of them: its closest word takes its place wearing a 1, on the app's rung-in
-    swap ("Now hidden. In its place, its closest word: mer¹. Type the secret word."). The player types it back — the loop, lived once. en OCEAN behind `sea^1`, fr
+    HIDDEN in front of them: its closest word takes its place wearing a 1, on the Hole's OWN word-change
+    choreography — the letters scramble from one word into the other while the exponent
+    arrives, the same beat every improving guess gets, never a remount (user-decided
+    2026-09-16: "the word transition animation should be played") — under "It is hidden
+    now. In its place, its closest word: mer¹. Type the secret word." (fr « Le voilà
+    caché. » — a bare « Caché. » "sounds stupid", same day). The player types it back — the loop, lived once. en OCEAN behind `sea^1`, fr
     OCÉAN behind `mer^1`; `scripts.test.ts` pins the clue at rank 1; the ladder is early
     (`STUCK.reveal` = 2/4/6 — the answer was just on screen). It replaced four single-word
     openings that each read as too hard or too abstract (TROPIQUES, `île^12`, `plage^28`,

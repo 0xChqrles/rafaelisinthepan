@@ -162,7 +162,7 @@ describe('coachCopy', () => {
     const hole: RuntimeHole = { pos: 0, secret: 'ocean', word: 'islands', rank: 10, startRank: 10 };
     expect(coachCopy('en', { kind: 'reveal', holeIndex: 0 }, stage, true)).toBe('Here is a secret word: [[b:ocean]].');
     expect(coachCopy('en', { kind: 'hidden', hole: { ...hole, word: 'sea', rank: 1 } }, stage, true)).toBe(
-      'Now hidden. In its place, its closest word: [[w:sea^1]]. Type the secret word.',
+      'It is hidden now. In its place, its closest word: [[w:sea^1]]. Type the secret word.',
     );
     expect(coachCopy('en', { kind: 'intro', hole }, stage, true)).toBe(
       'Another secret word. In its place, the 10th closest word: [[w:islands^10]]. Find it.',
