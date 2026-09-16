@@ -20,6 +20,10 @@ export default function Phrase({
   quiet = false,
   veiledHole = null,
   charges,
+  // Sentence case: the first letter of the sentence and of each new one gets a capital.
+  // OFF for a board that is ONE word (the tutorial's word stage): a lone word is a word, not
+  // a sentence, and a capital on it read wrong (user feedback 2026-09-16).
+  capital = true,
 }: {
   words: string[];
   holes: RuntimeHole[];
@@ -42,12 +46,13 @@ export default function Phrase({
   // The holes' CHARGE METERS (#301), by hole index: what each shows, and the sr-only
   // description of it (empty for a hole with nothing to describe — a solved one).
   charges?: (HoleChargeView & { hint: string })[];
+  capital?: boolean;
 }) {
   const holeIndexByPos = new Map<number, number>(holes.map((h, i) => [h.pos, i]));
   // Sentence case is a DISPLAY rule (`game/sentenceCase.ts`): the first token and every
   // token after a sentence-final mark open on a capital; a hole's prefix takes it when
   // the hole has one, else the hole's own displayed word.
-  const starts = sentenceStarts(words);
+  const starts = capital ? sentenceStarts(words) : words.map(() => false);
   const puzzleHoleByPos = new Map<number, PuzzleHole>(puzzleHoles.map((h) => [h.pos, h]));
   const hintId = (holeIndex: number) => `hole-explore-${holeIndex}`;
   const chargeId = (holeIndex: number) => `hole-charge-${holeIndex}`;

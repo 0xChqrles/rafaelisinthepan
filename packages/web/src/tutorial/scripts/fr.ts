@@ -4,22 +4,22 @@
 // Regenerate the boards with (from the REPO ROOT; the never-infer rule wants the agreement
 // named for a French word):
 //
-//   pnpm gen:word tropiques --lang fr --form tropiques=n:s
+//   pnpm gen:word océan --lang fr --form océan=n:s
 //   pnpm gen:word chien --lang fr --form chien=n:s
 //   pnpm gen:word lune --lang fr --form lune=n:s
 //   node packages/web/scripts/prune-word-map.mjs \
-//     --in packages/generation/output/single-word/fr/tropiques.json \
-//     --out packages/web/src/tutorial/scripts/fr.tropiques.json --top 150
+//     --in packages/generation/output/single-word/fr/ocean.json \
+//     --out packages/web/src/tutorial/scripts/fr.ocean.json --top 150
 //   (and the same for chien and lune)
 //
-// LE MOT : TROPIQUES, départ SOLEIL (rang 12 — un plateau FACILE : mer, palmier, climat,
-// exotique, cocotier font tous avancer le trou). L'accord est singulier (findings
-// 2026-08-04 : des voisins accordés au pluriel se lisent mal sur un plateau d'un mot).
+// LE MOT : OCÉAN, départ ÎLE (rang 12 — un plateau FACILE : mer, lagon, rivage, plage, eau
+// font tous avancer le trou ; et « île » se tape « ile »). Il a remplacé TROPIQUES sur le
+// retour utilisateur du 2026-09-16 (« way too hard »).
 // LA PHRASE : « un chien aboie à la lune. » — CHIEN part de LOUP (52), LUNE de PÉNOMBRE
 // (63), dans la bande de départ 50–150 de la génération.
 import type { WordPuzzle } from '@whippin/shared';
 import type { LessonScript } from '../script';
-import tropiques from './fr.tropiques.json';
+import ocean from './fr.ocean.json';
 import chien from './fr.chien.json';
 import lune from './fr.lune.json';
 
@@ -39,11 +39,11 @@ const script: LessonScript = {
     puzzle: {
       lang: 'fr',
       revision: 'lesson',
-      words: [tropiques.word.word],
-      holes: [hole(tropiques, 0, 'soleil')],
-      ranks: { [tropiques.word.slug]: tropiques.ranks },
+      words: [ocean.word.word],
+      holes: [hole(ocean, 0, 'ile')],
+      ranks: { [ocean.word.slug]: ocean.ranks },
     },
-    hints: ['tutHintTropiques'],
+    hints: ['tutHintOcean'],
   },
   sentence: {
     puzzle: {

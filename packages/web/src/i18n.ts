@@ -433,7 +433,6 @@ const STRINGS = {
   // Each board's own hint about its word — what the coach says once a hole has resisted long
   // enough, before it gives the answer (scripts/<lang>.ts names them per hole).
   tutHintOcean: { en: 'A very large body of water.', fr: 'Une très grande étendue d’eau.' },
-  tutHintTropiques: { en: 'Where it is always hot.', fr: 'Là où il fait toujours chaud.' },
   tutHintDog: { en: 'Man’s best friend.', fr: 'Le meilleur ami de l’homme.' },
   tutHintMoon: { en: 'It lights the night.', fr: 'Elle éclaire la nuit.' },
   tutHintChien: { en: 'Man’s best friend.', fr: 'Le meilleur ami de l’homme.' },

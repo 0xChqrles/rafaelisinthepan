@@ -364,6 +364,8 @@ export default function LessonBoard({
             onExplore={openHistory}
             quiet={quiet}
             veiledHole={wheelOpen ? historyHole : null}
+            // A lone word is a word, not a sentence: no capital on the word stage.
+            capital={stage === 'sentence'}
           />
         </div>
         {/* Once there is nothing left to type the prompt retires in place — still laid out,
@@ -430,7 +432,9 @@ export default function LessonBoard({
           hostIndex={historyHole}
           number={historyHole + 1}
           lang={lang}
-          capital={starts[puzzleHoles[historyHole].pos] && !puzzleHoles[historyHole].prefix}
+          capital={
+            stage === 'sentence' && starts[puzzleHoles[historyHole].pos] && !puzzleHoles[historyHole].prefix
+          }
           onPick={(stop) => pickWord(historyHole, stop)}
           onClose={closeHistory}
         />

@@ -3903,15 +3903,22 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   padding-top: 230px;
 }
 
-/* The concept stage is CLEAN: explanation on top, ONE big centered word in the
-   middle, the interaction at the bottom, nothing else. The word is the star. */
-.tutorial--word .play,
-.tutorial--word .input-area {
+/* The word stage is CLEAN: explanation on top, ONE big centered word in the middle, the
+   interaction at the bottom, nothing else. The word is the star. The PROMPT sits just above
+   the keyboard, on the LEFT — where the game's own prompt lives relative to the keys, and
+   off the word (user feedback 2026-09-16: centered under the word it read as part of it).
+   `margin-top: auto` parks it on the play area's bottom edge; the word keeps the centre. */
+.tutorial--word .play {
   align-items: center;
 }
 .tutorial--word .phrase {
   font-size: clamp(28px, 7vw, 48px);
   text-align: center;
+}
+.tutorial--word .input-area {
+  align-self: stretch;
+  align-items: start;
+  margin-top: auto;
 }
 
 /* The explanation box: app background + surface border (a dialog, not a modal),
