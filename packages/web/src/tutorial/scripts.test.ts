@@ -1,7 +1,7 @@
 // CONTRACT: the level-1 lesson scripts (#51, #155, remade by #269). The lesson is
-// data-driven — two boards per language in scripts/<lang>.ts over REAL generated
-// neighborhoods (scripts/<lang>.<word>.json, pruned #154 artifacts) — and both are meant to
-// be edited, so these tests guard what an edit must not break:
+// data-driven — the stages in scripts/<lang>.ts over REAL generated neighborhoods
+// (scripts/<lang>.<word>.json, pruned #154 artifacts) — and both are meant to be edited, so
+// these tests guard what an edit must not break:
 //
 //   - THE REVEAL is ONE hole whose clue is THE CLOSEST WORD, rank 1 (user-decided
 //     2026-09-16: the secret is shown, then hidden behind its synonym, and typed back);
@@ -10,8 +10,9 @@
 //   - THE SENTENCE is TWO holes with start words in generation's own 50–150 band — the
 //     game's difficulty, one new thing at a time — each secret sitting in `words[]` at its
 //     `pos` with its affixes, and every hole carrying its own hint copy;
-//   - THE METER is a second sentence, harder (clues 80–150), four new words, with the
-//     lesson's meter boost set so the first letter lands inside the run;
+//   - THE METER is a second sentence, harder (clues 80–150), two new words, that the BOT has
+//     half played (`played`): the first word found, the second's meter just under full and
+//     its best try no giveaway, so the player's first close guess lands the letter;
 //   - every board stays byte-compatible with the real per-puzzle schema (parsePuzzle-valid —
 //     they feed the REAL game components), rank 0 is the secret, every key folds to itself
 //     (the free typing lands on them), and the start words are READ OFF the maps.
@@ -19,10 +20,11 @@
 import { describe, it, expect } from 'vitest';
 import { fold } from '@whippin/shared';
 import { parsePuzzle } from '../api';
+import { replayHoles } from '../game/scoring';
+import { CHARGE_TARGET, chargeForRank, replayCharge } from '../game/charge';
 import { scriptFor } from './scripts';
 import type { LessonStage } from './script';
 import { t } from '../i18n';
-
 
 function checkBoard(stage: LessonStage) {
   const { puzzle } = stage;
@@ -109,9 +111,9 @@ for (const lang of ['en', 'fr'] as const) {
       });
     });
 
-    describe('the meter: a harder sentence, the meters shown', () => {
+    describe('the meter: a harder sentence the bot has half played', () => {
       checkBoard(meter);
-      it('is two new secrets with clues farther out, and a boost that lands the letter in the run', () => {
+      it('is two new secrets with clues farther out', () => {
         const { puzzle } = meter;
         expect(puzzle.holes).toHaveLength(2);
         expect(puzzle.words.length).toBeLessThanOrEqual(8);
@@ -123,7 +125,28 @@ for (const lang of ['en', 'fr'] as const) {
           expect(hole.start_rank).toBeGreaterThanOrEqual(80);
           expect(hole.start_rank).toBeLessThanOrEqual(150);
         }
-        expect(meter.chargeBoost).toBeGreaterThan(1);
+      });
+      it('the bot’s tries find the first word and leave the second’s meter just under full, its best try no giveaway', () => {
+        const { puzzle } = meter;
+        const played = meter.played ?? [];
+        expect(played.length).toBeGreaterThan(0);
+        for (const typed of played) expect(fold(typed)).toBe(typed);
+        const fresh = puzzle.holes.map((h) => ({
+          pos: h.pos,
+          secret: h.secret.slug,
+          word: h.start.word,
+          rank: h.start_rank,
+          startRank: h.start_rank,
+        }));
+        const holes = replayHoles(fresh, puzzle.ranks, played);
+        expect(holes[0].rank).toBe(0);
+        expect(holes[1].rank).toBeGreaterThanOrEqual(15);
+        const [, meterB] = replayCharge(fresh, puzzle.ranks, played);
+        expect(meterB.revealed).toBe(false);
+        expect(meterB.charge).toBeGreaterThanOrEqual(90);
+        // Any ranked guess within the near field fills it: the player's first close word
+        // lands the letter.
+        expect(meterB.charge + chargeForRank(200)).toBeGreaterThanOrEqual(CHARGE_TARGET);
       });
     });
   });

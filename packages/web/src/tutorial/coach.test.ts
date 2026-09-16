@@ -10,8 +10,9 @@
 //   - the sentence: the tap is taught from the first guess that lands a number, until it is
 //     done, and never while a hint or the answer is due; the away / miss lines belong to the
 //     single-word stages; solved, the bot counts the tries;
-//   - the meter stage: filling is named on the first guess that charges a chip, the letter
-//     when a chip fills, the count at the end.
+//   - the meter stage, scripted: the bot has played — tap to see its tries, then what they
+//     did; near until the chip fills; the letter and the player's turn; the end, found by the
+//     player or named by the bot.
 //   Every line is written for someone who has never heard of the game: it names the HIDDEN
 //   WORD the numbers are about (coachCopy below).
 import { describe, it, expect } from 'vitest';
@@ -166,19 +167,20 @@ describe('ordinal', () => {
   });
 });
 
-describe('the meter stage', () => {
-  it('opens on its line, names filling once, names the letter when a chip fills, and ends on the count', () => {
-    const b = board('meter', [99, 147]);
-    expect(coachLine(b.state())).toEqual({ kind: 'introMeter' });
+describe('the meter stage — the bot has half played it', () => {
+  it('asks for the tap, explains once tapped, nudges until the chip fills, hands the turn over, and ends either way', () => {
+    const b = board('meter', [0, 24]); // the bot found the first word; the second stands at its best try
+    expect(coachLine(b.state())).toEqual({ kind: 'introMeter', hole: expect.objectContaining({ rank: 24 }) });
+    expect(coachLine(b.state(true))).toEqual({ kind: 'meterTapped' });
     b.guess('x', [null, null], { charged: false, filled: null });
-    expect(coachLine(b.state())).toBeNull();
-    b.guess('a', [40, null], { charged: true, filled: null });
-    expect(coachLine(b.state())).toEqual({ kind: 'charged' });
-    b.guess('b', [30, 200], { charged: true, filled: null });
-    expect(coachLine(b.state())).toBeNull(); // filling was explained once
-    b.guess('c', [3, null], { charged: true, filled: 0 });
-    expect(coachLine(b.state())).toEqual({ kind: 'letter', holeIndex: 0 });
-    expect(coachLine(b.state(false, false, true))).toEqual({ kind: 'done', tries: 4 });
+    expect(coachLine(b.state(true))).toEqual({ kind: 'near', hole: expect.objectContaining({ rank: 24 }) });
+    b.guess('liberty', [null, 1], { charged: true, filled: 1 });
+    expect(coachLine(b.state(true))).toEqual({ kind: 'letter', holeIndex: 1 });
+    b.guess('y', [null, null], { charged: false, filled: null });
+    expect(coachLine(b.state(true))).toEqual({ kind: 'letter', holeIndex: 1 }); // the turn stands until the board acts
+    const bot: CoachState = { ...b.state(true, false, true), botFound: true };
+    expect(coachLine(bot)).toEqual({ kind: 'botFound', holeIndex: 1 });
+    expect(coachLine(b.state(true, false, true))).toEqual({ kind: 'found' });
   });
 });
 
@@ -221,10 +223,13 @@ describe('coachCopy', () => {
       'You found both in 7 tries. This one was easy: the daily sentences are harder.',
     );
     expect(coachCopy('en', { kind: 'letter', holeIndex: 0 }, stage, true)).toBe(
-      'Full! The secret word starts with [[b:O]].',
+      'Full! The secret word starts with [[b:O]]. Your turn: try a word.',
     );
-    expect(coachCopy('en', { kind: 'done', tries: 9 }, stage, true)).toBe(
-      'You found both in 9 tries. You know everything now. Go play.',
+    expect(coachCopy('en', { kind: 'introMeter', hole }, stage, true)).toBe(
+      'I already played a bit. Tap [[w:islands^10]] to see my tries.',
+    );
+    expect(coachCopy('en', { kind: 'botFound', holeIndex: 0 }, stage, true)).toBe(
+      'Got it, it was [[b:ocean]]! You are ready for the real game.',
     );
     expect(coachCopy('en', { kind: 'tap' }, stage, false)).toMatch(/^Click/);
   });

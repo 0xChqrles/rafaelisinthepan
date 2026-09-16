@@ -15,8 +15,8 @@ import { coachCopy, coachLine, type GuessEvent } from './coach';
 import type { LessonStage } from './script';
 import { canExtend } from '../game/keyboard';
 import { buildHistory, type HistoryStop } from '../game/history';
-import { guessKey } from '../game/scoring';
-import { chargeForRank, initialOf, replayCharge, type HoleCharge } from '../game/charge';
+import { guessKey, replayHoles } from '../game/scoring';
+import { chargeForRank, initialOf, replayCharge } from '../game/charge';
 import { sentenceStarts } from '../game/sentenceCase';
 import { SCRAMBLE_MS } from '../hooks/useScramble';
 import type { Vocab } from '../hooks/useVocab';
@@ -76,6 +76,9 @@ function hasCoarsePointer(): boolean {
 
 // Hold on a solved board before the next stage takes over.
 const STAGE_HOLD_MS = 600;
+// The bot's closing guess (the meter stage): how long after the player's last try has had
+// its moment it lands its own.
+const BOT_TURN_MS = 700;
 
 export default function LessonBoard({
   lang,
@@ -103,19 +106,15 @@ export default function LessonBoard({
   // A sentence-shaped stage: the game's own layout, the try count behind the sentence, a
   // button (CONTINUE / PLAY) once solved — where a single word rolls on by itself.
   const sentenceLike = stage === 'sentence' || stage === 'meter';
-  // THE METER STAGE (#301 taught, user-decided 2026-09-16): the meters are SHOWN — on this
-  // stage alone, the game's own reading (`replayCharge`) scaled by the lesson's boost so the
-  // reveal lands inside the run.
-  const boost = stage === 'meter' ? script.chargeBoost ?? 1 : 0;
+  // THE METER STAGE (#301 taught; scripted, user-decided 2026-09-16): the meters are SHOWN on
+  // this stage alone, and the BOT HAS ALREADY PLAYED — `played` is its log, replayed onto the
+  // board, the meters and the tries wheel exactly as a round's own log would be. One secret
+  // is found; the other's meter stands just under full, so the player's first close guess
+  // fills it. The player then tries one more word, and the bot lands the answer itself.
+  const withMeters = stage === 'meter';
+  const seed = useMemo(() => script.played ?? [], [script]);
   const fresh = useMemo(() => freshHoles(script), [script]);
-  const meters = useCallback(
-    (log: readonly string[]): HoleCharge[] =>
-      replayCharge(fresh, ranks, log).map((c) => {
-        const charge = Math.min(100, c.charge * boost);
-        return { charge, revealed: charge >= 100 };
-      }),
-    [fresh, ranks, boost],
-  );
+  const meters = useCallback((log: readonly string[]) => replayCharge(fresh, ranks, log), [fresh, ranks]);
 
   // THE REVEAL (user-decided 2026-09-16): the secret word is SHOWN first, then hidden in
   // front of the player — its closest word takes its place, wearing a 1 — so the two things
@@ -123,9 +122,22 @@ export default function LessonBoard({
   const [revealed, setRevealed] = useState(stage === 'reveal');
   // The board's local state — the ephemeral twin of Round's.
   const [holes, setHoles] = useState<RuntimeHole[]>(() =>
-    stage === 'reveal' ? revealedHoles(script) : freshHoles(script),
+    stage === 'reveal' ? revealedHoles(script) : replayHoles(fresh, ranks, seed),
   );
+  // The play log: the bot's tries first (the meter stage), then every counted guess — the
+  // player's, and the bot's closing one. `events` are the PLAYER's guesses alone (the coach
+  // reads those).
+  const [tried, setTried] = useState<string[]>(seed);
   const [events, setEvents] = useState<GuessEvent[]>([]);
+  const [botFound, setBotFound] = useState(false);
+  // The closing guess runs off a timer, after the player's own has settled: read the board
+  // as it stands then, not as the closure saw it.
+  const triedRef = useRef(tried);
+  triedRef.current = tried;
+  const holesRef = useRef(holes);
+  holesRef.current = holes;
+  const eventsRef = useRef(events);
+  eventsRef.current = events;
   const [hits, setHits] = useState<HitState[]>([]);
   const [input, setInput] = useState('');
   const [invalidAt, setInvalidAt] = useState(0);
@@ -193,28 +205,12 @@ export default function LessonBoard({
     setHits((prev) => prev.filter((h) => h.id !== id));
   }, []);
 
-  const tried = useMemo(() => events.map((e) => e.typed), [events]);
-
-  const submit = useCallback(
-    (raw: string) => {
-      if (!playing || !vocab) return;
-      guessField.current?.focus({ preventScroll: true });
-      const typed = fold(raw);
-      if (!typed) {
-        setInput('');
-        return;
-      }
-      // Existence is decided by the real vocabulary, exactly as in-game: an unknown word
-      // shakes + says so and reaches no hole.
-      if (!vocab.vocabSet.has(typed)) {
-        setInvalidAt(Date.now());
-        setFeedback(t(lang, 'notAWord'));
-        say(t(lang, 'notAWord'));
-        return;
-      }
-      setInput('');
-      setFeedback(null);
-
+  // ONE guess landing on the board — the player's (counted, coached) or the bot's closing
+  // one (`byBot`: not a player event, no vocabulary check, the answer by construction).
+  const land = useCallback(
+    (typed: string, byBot: boolean) => {
+      const tried = triedRef.current;
+      const holes = holesRef.current;
       // A counted guess is a NEW word identity (guessKey): a repeat still floats its numbers
       // but teaches nothing new and counts for nothing, as in the game.
       const id = guessKey(ranks, typed);
@@ -229,15 +225,15 @@ export default function LessonBoard({
       const fadeDelayMs = Math.max(0, impacted.length - 1) * STAGGER_MS + FLOATING_HIT_INTRO_MS;
       // The meters before and after this guess (the meter stage only): what each chip gains
       // flies into it as loot, exactly as on the day (#301).
-      const before = boost ? meters(tried) : null;
-      const after = boost && isNew ? meters([...tried, typed]) : before;
+      const before = withMeters ? meters(tried) : null;
+      const after = withMeters && isNew ? meters([...tried, typed]) : before;
       impacted.forEach(({ index, entry }, step) => {
         const hit = (hitId.current += 1);
         const gained = before && after ? after[index].charge - before[index].charge : 0;
         const strike =
           entry?.rank === 0
             ? ('ultra' as const)
-            : boost && isNew && chargeForRank(entry?.rank) > 0
+            : withMeters && isNew && chargeForRank(entry?.rank) > 0
               ? ('slash' as const)
               : undefined;
         setHits((prev) => [
@@ -274,19 +270,25 @@ export default function LessonBoard({
           fadeDelayMs,
         );
       }
+      // The letter was already out before this guess: this is the player's "one more try",
+      // and the bot closes after it (unless the try itself lands).
+      const letterOut = eventsRef.current.some((e) => e.filled != null);
       if (isNew) {
-        const filled =
-          before && after ? after.findIndex((c, i) => c.revealed && !before[i].revealed) : -1;
-        setEvents((prev) => [
-          ...prev,
-          {
-            typed,
-            entries: holes.map((h) => (h.rank === 0 ? undefined : ranks[h.secret][typed])),
-            improved,
-            charged: !!before && !!after && after.some((c, i) => c.charge > before[i].charge),
-            filled: filled >= 0 ? filled : null,
-          },
-        ]);
+        setTried((prev) => [...prev, typed]);
+        if (!byBot) {
+          const filled =
+            before && after ? after.findIndex((c, i) => c.revealed && !before[i].revealed) : -1;
+          setEvents((prev) => [
+            ...prev,
+            {
+              typed,
+              entries: holes.map((h) => (h.rank === 0 ? undefined : ranks[h.secret][typed])),
+              improved,
+              charged: !!before && !!after && after.some((c, i) => c.charge > before[i].charge),
+              filled: filled >= 0 ? filled : null,
+            },
+          ]);
+        }
       }
 
       const solvesAll = holes.every((h) => h.rank === 0 || ranks[h.secret][typed]?.rank === 0);
@@ -310,11 +312,45 @@ export default function LessonBoard({
             ),
           ) +
           250;
+        if (byBot) setBotFound(true);
         setPhase('settling');
         later(() => setPhase('done'), settleMs);
+      } else if (withMeters && !byBot && isNew && letterOut) {
+        // The bot's turn: it names the answer as if it had found it, once the player's try
+        // has had its moment on the board.
+        const open = holes.find((h) => h.rank !== 0);
+        if (open) {
+          const answer = puzzleHoles.find((h) => h.secret.slug === open.secret)?.secret.slug ?? open.secret;
+          setPhase('settling');
+          later(() => land(answer, true), fadeDelayMs + HIT_FADE_MS + BOT_TURN_MS);
+        }
       }
     },
-    [playing, vocab, lang, ranks, tried, holes, say, later, boost, meters],
+    [ranks, withMeters, meters, puzzleHoles, lang, say, later],
+  );
+
+  const submit = useCallback(
+    (raw: string) => {
+      if (!playing || !vocab) return;
+      guessField.current?.focus({ preventScroll: true });
+      const typed = fold(raw);
+      if (!typed) {
+        setInput('');
+        return;
+      }
+      // Existence is decided by the real vocabulary, exactly as in-game: an unknown word
+      // shakes + says so and reaches no hole.
+      if (!vocab.vocabSet.has(typed)) {
+        setInvalidAt(Date.now());
+        setFeedback(t(lang, 'notAWord'));
+        say(t(lang, 'notAWord'));
+        return;
+      }
+      setInput('');
+      setFeedback(null);
+      land(typed, false);
+    },
+    [playing, vocab, lang, say, land],
   );
 
   // --- the stage's end ---
@@ -376,8 +412,9 @@ export default function LessonBoard({
 
   // --- the coach: the one line the board's state calls for, or nothing ---
   const line = useMemo(
-    () => coachLine({ stage, holes, events, tapped, revealed, finished: phase !== 'play' }),
-    [phase, stage, holes, events, tapped, revealed],
+    () =>
+      coachLine({ stage, holes, events, tapped, revealed, finished: phase !== 'play', botFound }),
+    [phase, stage, holes, events, tapped, revealed, botFound],
   );
   const coach = line ? coachCopy(lang, line, script, coarse) : null;
   // Announce each new line once, in plain text (the visible typewriter is aria-hidden).
@@ -390,14 +427,14 @@ export default function LessonBoard({
   // The meters as the sentence shows them (the meter stage only): the reading, the initial
   // once revealed, and the sr-only description in the meter's place (#301).
   const charges = useMemo(() => {
-    if (!boost) return undefined;
+    if (!withMeters) return undefined;
     return meters(tried).map((c, i) => {
       const initial = c.revealed ? initialOf(puzzleHoles[i].secret.word) : null;
       const hint =
         holes[i].rank === 0 ? '' : initial !== null ? srHoleInitial(lang, initial) : srHoleCharge(lang, c.charge);
       return { value: c.charge, initial, hint };
     });
-  }, [boost, meters, tried, puzzleHoles, holes, lang]);
+  }, [withMeters, meters, tried, puzzleHoles, holes, lang]);
 
   return (
     // tutorial--word: the word stage is deliberately CLEAN — one big centered word in the

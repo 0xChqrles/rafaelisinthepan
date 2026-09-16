@@ -445,23 +445,28 @@ const STRINGS = {
   // CONTINUE leads from that line into the meter stage — the one control, named for what
   // it does (never "tap anywhere").
   tutContinue: { en: 'CONTINUE', fr: 'CONTINUER' },
-  // THE METER STAGE (#301 taught, user-decided 2026-09-16): nothing said before it is seen —
-  // the chip is named once it starts filling, the letter once it lands.
+  // THE METER STAGE (#301 taught; scripted, user-decided 2026-09-16): the bot has half
+  // played the sentence. Its lines follow the player's acts — the tap, the first close
+  // guess, one more try — and it names the answer as if it had found it.
   tutMeterIntro: {
-    en: 'A harder sentence. Find the two secret words.',
-    fr: 'Une phrase plus dure. Trouve les deux mots secrets.',
+    en: 'I already played a bit. Tap {word} to see my tries.',
+    fr: "J'ai déjà un peu joué. Touche {word} pour voir mes essais.",
   },
-  tutCharged: {
-    en: 'A close guess fills the word up. Full, it reveals the first letter.',
-    fr: 'Un essai proche remplit le mot. Plein, il révèle la première lettre.',
+  tutMeterTapped: {
+    en: 'My close tries filled the word up. Full, it reveals the first letter. Try one!',
+    fr: 'Mes essais proches ont rempli le mot. Plein, il révèle la première lettre. Essaie !',
   },
   tutLetter: {
-    en: 'Full! The secret word starts with {letter}.',
-    fr: 'Plein ! Le mot secret commence par {letter}.',
+    en: 'Full! The secret word starts with {letter}. Your turn: try a word.',
+    fr: 'Plein ! Le mot secret commence par {letter}. À toi : essaie un mot.',
   },
-  tutMeterSolved: {
-    en: 'You found both in {n} tries. You know everything now. Go play.',
-    fr: 'Trouvés en {n} essais ! Tu sais tout, maintenant. À toi de jouer.',
+  tutMeterFound: {
+    en: 'You found it! You are ready for the real game.',
+    fr: 'Trouvé ! Tu es prêt pour le vrai jeu.',
+  },
+  tutMeterBot: {
+    en: 'Got it, it was {answer}! You are ready for the real game.',
+    fr: "Ça y est, c'était {answer} ! Tu es prêt pour le vrai jeu.",
   },
   tutAway: {
     en: '{guess} is the {n} closest word to the secret. {start} is the {m}.',
@@ -496,8 +501,8 @@ const STRINGS = {
   tutHintChien: { en: 'Man’s best friend.', fr: 'Le meilleur ami de l’homme.' },
   tutHintCat: { en: 'It purrs.', fr: 'Il ronronne.' },
   tutHintChat: { en: 'It purrs.', fr: 'Il ronronne.' },
-  tutHintRoof: { en: 'The top of a house.', fr: 'Le dessus d’une maison.' },
-  tutHintToit: { en: 'The top of a house.', fr: 'Le dessus d’une maison.' },
+  tutHintFreedom: { en: 'Being free.', fr: 'Être libre.' },
+  tutHintLiberte: { en: 'Being free.', fr: 'Être libre.' },
   tutHintLune: { en: 'It lights the night.', fr: 'Elle éclaire la nuit.' },
   // The lesson's wordless ending: the solved sentence stands, and PLAY graduates into the game.
   tutPlay: { en: 'PLAY', fr: 'JOUER' },

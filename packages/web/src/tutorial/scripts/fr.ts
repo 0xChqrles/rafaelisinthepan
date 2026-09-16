@@ -9,19 +9,21 @@
 //   pnpm gen:word chien --lang fr --form chien=n:s
 //   pnpm gen:word lune --lang fr --form lune=n:s
 //   pnpm gen:word chat --lang fr --form chat=n:s
-//   pnpm gen:word toit --lang fr --form toit=n:s
+//   pnpm gen:word liberté --lang fr --form liberté=n:s
 //   node packages/web/scripts/prune-word-map.mjs \
 //     --in packages/generation/output/single-word/fr/ocean.json \
 //     --out packages/web/src/tutorial/scripts/fr.ocean.json --top 150
-//   (et de même pour montagne, chien, lune, chat et toit)
+//   (et de même pour montagne, chien, lune, chat et liberté)
 //
 // LA RÉVÉLATION : OCÉAN, montré, puis caché derrière MER — son mot le plus proche, rang 1 —
 // et retapé. LE MOT : MONTAGNE, jamais montré, derrière SKI (14) : une vraie recherche,
 // indice intuitif, colline / vallée / cime font tous avancer le trou. LA PHRASE : « un chien
 // aboie à la lune. » — CHIEN derrière LOUP (52), LUNE derrière PÉNOMBRE (63), dans la bande
-// de départ 50–150 de la génération. LA JAUGE : « le chat dort sur le toit. » — CHAT derrière
-// MUSEAU (92), TOIT derrière LUCARNE (136), plus loin, avec les jauges #301 visibles et
-// remplies 3× plus vite.
+// de départ 50–150 de la génération. LA JAUGE : « le chat rêve de liberté. » — CHAT déjà trouvé
+// par le bot, LIBERTÉ derrière OPPRESSION (124) et trop abstrait pour se lire dans la
+// phrase ; les essais du bot (paix, justice, égalité, vérité, parole, religion, droits)
+// laissent sa jauge à ~95 avec ÉGALITÉ (23) pour meilleur mot : le premier essai proche du
+// joueur la remplit et le L apparaît.
 import type { WordPuzzle } from '@whippin/shared';
 import type { LessonScript } from '../script';
 import ocean from './fr.ocean.json';
@@ -29,7 +31,7 @@ import montagne from './fr.montagne.json';
 import chien from './fr.chien.json';
 import lune from './fr.lune.json';
 import chat from './fr.chat.json';
-import toit from './fr.toit.json';
+import liberte from './fr.liberte.json';
 
 function hole(artifact: WordPuzzle, pos: number, start: string, suffix?: string) {
   const entry = artifact.ranks[start];
@@ -69,15 +71,16 @@ const script: LessonScript = {
     },
     {
       kind: 'meter',
-      chargeBoost: 3,
       puzzle: {
         lang: 'fr',
         revision: 'lesson',
-        words: ['le', 'chat', 'dort', 'sur', 'le', 'toit.'],
-        holes: [hole(chat, 1, 'museau'), hole(toit, 5, 'lucarne', '.')],
-        ranks: { [chat.word.slug]: chat.ranks, [toit.word.slug]: toit.ranks },
+        words: ['le', 'chat', 'rêve', 'de', 'liberté.'],
+        holes: [hole(chat, 1, 'museau'), hole(liberte, 4, 'oppression', '.')],
+        ranks: { [chat.word.slug]: chat.ranks, [liberte.word.slug]: liberte.ranks },
       },
-      hints: ['tutHintChat', 'tutHintToit'],
+      // La partie du bot jusqu'ici : le chat trouvé, puis liberté tournée autour sans tomber.
+      played: ['chat', 'paix', 'justice', 'egalite', 'verite', 'parole', 'religion', 'droits'],
+      hints: ['tutHintChat', 'tutHintLiberte'],
     },
   ],
 };

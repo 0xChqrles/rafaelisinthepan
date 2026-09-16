@@ -33,6 +33,7 @@ export interface CoachState {
   tapped: boolean; // the player has opened a word's tries at least once
   revealed: boolean; // the reveal stage's secret is still on screen (nothing to guess yet)
   finished: boolean; // every hole reads 0 — the stage is over
+  botFound?: boolean; // the meter stage ended on the BOT's guess, not the player's
 }
 
 export type CoachLine =
@@ -43,7 +44,10 @@ export type CoachLine =
   // shows; on the sentence, that there are two of them now.
   | { kind: 'intro'; hole: RuntimeHole }
   | { kind: 'introSentence' }
-  | { kind: 'introMeter' }
+  // The meter stage's opening: the bot has played, tap the open word to see its tries — and
+  // once tapped, what those tries did to the chip.
+  | { kind: 'introMeter'; hole: RuntimeHole }
+  | { kind: 'meterTapped' }
   // The first guess that ranks but does not move the hole: what the number IS, against the
   // number the hole already shows.
   | { kind: 'away'; guess: RankEntry; hole: RuntimeHole }
@@ -60,11 +64,11 @@ export type CoachLine =
   | { kind: 'tap' }
   // The sentence solved: the tries it took — the score, said once.
   | { kind: 'solved'; tries: number }
-  // The meter stage: the first guess that filled a chip a little; a chip filled to the top,
-  // and the letter it revealed; the run's end.
-  | { kind: 'charged' }
+  // The meter stage: a chip filled to the top and the letter it revealed; the end — found by
+  // the player, or named by the bot as if it had.
   | { kind: 'letter'; holeIndex: number }
-  | { kind: 'done'; tries: number };
+  | { kind: 'found' }
+  | { kind: 'botFound'; holeIndex: number };
 
 // Guesses a hole may resist before each rung of the ladder. The sentence gets more room:
 // two holes are in play, and a guess that moves one is progress the other cannot show.
@@ -72,7 +76,7 @@ export const STUCK: Record<Stage, readonly [number, number, number]> = {
   reveal: [2, 4, 6], // the answer was just on screen: nudge early
   word: [3, 6, 9],
   sentence: [4, 8, 12],
-  meter: [6, 10, 14], // a stall here fills the meter: give it room to pay off
+  meter: [1, Infinity, Infinity], // its own script below: the bot names the answer itself
 };
 
 // For each hole still open, how many guesses it has resisted since it last moved (or since
@@ -90,14 +94,21 @@ function stuckPerHole({ holes, events }: CoachState): (number | null)[] {
 }
 
 export function coachLine(state: CoachState): CoachLine | null {
-  const { stage, holes, events, tapped, revealed, finished } = state;
+  const { stage, holes, events, tapped, revealed, finished, botFound } = state;
   if (stage === 'reveal' && revealed) return { kind: 'reveal', holeIndex: 0 };
-  // The end: a sentence's tries are its score, said once; a found word needs no comment.
-  if (finished) {
-    if (stage === 'sentence') return { kind: 'solved', tries: events.length };
-    if (stage === 'meter') return { kind: 'done', tries: events.length };
-    return null;
+  const open = holes.findIndex((h) => h.rank !== 0);
+  // THE METER STAGE IS SCRIPTED (user-decided 2026-09-16): the bot has half played it.
+  if (stage === 'meter') {
+    if (finished) return botFound ? { kind: 'botFound', holeIndex: open < 0 ? holes.length - 1 : open } : { kind: 'found' };
+    if (events.length === 0) return tapped ? { kind: 'meterTapped' } : { kind: 'introMeter', hole: holes[open] };
+    // The letter is out: the player's turn stands until their next try (the board acts on it).
+    const filledAt = events.findIndex((e) => e.filled != null);
+    if (filledAt >= 0) return { kind: 'letter', holeIndex: events[filledAt].filled as number };
+    // Not full yet: look near the word it shows.
+    return { kind: 'near', hole: holes[open] };
   }
+  // The end: a sentence's tries are its score, said once; a found word needs no comment.
+  if (finished) return stage === 'sentence' ? { kind: 'solved', tries: events.length } : null;
   const [near, hint, answer] = STUCK[stage];
 
   // The ladder first: the hole that has resisted longest sets the rung.
@@ -120,16 +131,7 @@ export function coachLine(state: CoachState): CoachLine | null {
 
   if (events.length === 0) {
     if (stage === 'reveal') return { kind: 'hidden', hole: holes[0] };
-    if (stage === 'word') return { kind: 'intro', hole: holes[0] };
-    return stage === 'meter' ? { kind: 'introMeter' } : { kind: 'introSentence' };
-  }
-  if (stage === 'meter') {
-    // The chip that just filled to the top names its letter; the first chip to fill a little
-    // says what filling is. Both from what the last guess did — never ahead of it.
-    const last = events[events.length - 1];
-    if (last.filled != null) return { kind: 'letter', holeIndex: last.filled };
-    if (last.charged && events.findIndex((e) => e.charged) === events.length - 1) return { kind: 'charged' };
-    return null;
+    return stage === 'word' ? { kind: 'intro', hole: holes[0] } : { kind: 'introSentence' };
   }
   if (stage === 'reveal' || stage === 'word') {
     const last = events[events.length - 1];
@@ -181,16 +183,21 @@ export function coachCopy(
     case 'introSentence':
       return t(lang, 'tutSentenceIntro');
     case 'introMeter':
-      return t(lang, 'tutMeterIntro');
-    case 'charged':
-      return t(lang, 'tutCharged');
+      return t(lang, 'tutMeterIntro').replace('{word}', chip(line.hole.word, line.hole.rank));
+    case 'meterTapped':
+      return t(lang, 'tutMeterTapped');
     case 'letter':
       return t(lang, 'tutLetter').replace(
         '{letter}',
         `[[b:${initialOf(stage.puzzle.holes[line.holeIndex].secret.word)}]]`,
       );
-    case 'done':
-      return t(lang, 'tutMeterSolved').replace('{n}', String(line.tries));
+    case 'found':
+      return t(lang, 'tutMeterFound');
+    case 'botFound':
+      return t(lang, 'tutMeterBot').replace(
+        '{answer}',
+        `[[b:${stage.puzzle.holes[line.holeIndex].secret.word}]]`,
+      );
     case 'away':
       return t(lang, 'tutAway')
         .replace('{guess}', chip(line.guess.word, line.guess.rank))

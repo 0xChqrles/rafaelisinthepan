@@ -2811,22 +2811,26 @@ it to the local store — see `packages/backend/AGENTS.md`).
     tries (wheel / grid, picking included), fewer tries is the score. Solving it drops the
     keyboard (`kb-drop`, `KB_EXIT_FALLBACK_MS`) and offers **PLAY** in its place, the
     graduation: `markLessonDone(1)`, `setOnboarded`, `track finish`, the game.
-  - **THE METER (#301 TAUGHT; user-decided 2026-09-16: "after saying that real sentences
-    are harder, the onboarding should continue and explain the first letter concept")** —
-    CONTINUE from the sentence's solved line (the line stands until it is pressed) into a
-    HARDER sentence with the meters SHOWN for the first time (en "the cat sleeps on the
-    roof." from `whiskers^99` / `ladder^147`; fr « le chat dort sur le toit. » from
-    `museau^92` / `lucarne^136`; the test wants 80–150 and four new words). The chip fills,
-    the loot flies, the initial lands exactly as on the day (`replayCharge`, `chargeForRank`,
-    `initialOf` — the one reading), SCALED by the stage's **`chargeBoost` = 3** so the letter
-    lands inside the run (the day's rule reveals by try ~37; a lesson cannot wait that long
-    — the earlier stages hide the meters entirely). The coach names nothing before it is
-    seen: `tutMeterIntro` ("A harder sentence. Find the two secret words."); the FIRST guess
-    that charges a chip → `tutCharged` ("A close guess fills the word up. Full, it reveals
-    the first letter."), once; a chip filled to the top → `tutLetter` ("Full! The secret word
-    starts with C."); solved → `tutMeterSolved` ("You found both in 9 tries. You know
-    everything now. Go play.") and PLAY. Ladder `STUCK.meter` = 6/10/14 (a stall here pays
-    into the meter). Not taught: the exact rate.
+  - **THE METER (#301 TAUGHT; user-decided 2026-09-16 — "after saying that real sentences
+    are harder, the onboarding should continue and explain the first letter concept",
+    SCRIPTED the same day)** — CONTINUE from the sentence's solved line (the line stands
+    until it is pressed) into a harder sentence THE BOT HAS ALREADY HALF PLAYED: en "the cat
+    dreams of freedom." (fr « le chat rêve de liberté. »), CAT found, FREEDOM behind
+    `revolution^132` (`oppression^124`) — too abstract to read off the sentence — with the
+    #301 meters SHOWN for the first time. `played` is the bot's log (en: cat, peace, justice,
+    hope, happiness, truth, speech, unity, religion), replayed onto the board, the meters and
+    the tries wheel exactly as a round's log would be, chosen so the open word's meter stands
+    JUST UNDER FULL (~99 en / ~95 fr, the day's own `replayCharge` — no lesson boost) with a
+    best try that is no giveaway (`speech^24` / `égalité^23`; the test wants ≥ 15, ≥ 90, and
+    that a rank-200 guess still fills it). The beats, each on the player's act: "I already
+    played a bit. Tap speech²⁴ to see my tries." → tapped: "My close tries filled the word
+    up. Full, it reveals the first letter. Try one!" → a guess that does not fill: `tutNear`
+    → the first close guess FILLS IT — no progress needed — and the F lands: "Full! The secret
+    word starts with F. Your turn: try a word." → ONE MORE TRY, then THE BOT LANDS THE
+    ANSWER ITSELF (`land(answer, true)`, `BOT_TURN_MS` after the try's moment; not a player
+    event): "Got it, it was freedom! You are ready for the real game." (a try that finds
+    it: "You found it! You are ready for the real game.") → PLAY. `STUCK.meter` is unused
+    (the stage is its own script). Not taught: the exact rate.
   **THE COACH IS THE ERROR BOT (user-decided 2026-09-16, "people would want to read it more
   if it's something telling it"):** the error screen's character (`error-bot-idle.png`, its
   idle bob, at 2x) stands on the coach box's top-left edge (`.coach--bot` / `.coach-bot`,
