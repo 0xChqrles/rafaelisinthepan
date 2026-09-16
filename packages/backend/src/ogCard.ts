@@ -16,16 +16,12 @@ import {
   groupLandingPath,
   renderCardSvg,
   renderGroupCardSvg,
-  renderWordCardSvg,
   shareCardPath,
   dateForDayNumber,
-  wordShareScore,
   type CardData,
   type GroupCardData,
   type CardFace,
   type ShareResult,
-  type WordCardData,
-  type WordShareResult,
   CARD_WIDTH,
   CARD_HEIGHT,
 } from '@whippin/shared';
@@ -60,16 +56,6 @@ async function rasterize(svg: string): Promise<Buffer> {
 // card when the share is signed, nothing when it is not.
 export async function renderCardPng(data: CardData, by: CardFace | null = null): Promise<Buffer> {
   return rasterize(renderCardSvg(data, by));
-}
-
-// Word mode's card (#156): same rasterizer, its own SVG (blue terminus + claim count + the
-// per-rarity chip row + date, no ruler). The display word and the rarity breakdown travel
-// in the word token, so this render stays self-contained.
-export async function renderWordCardPng(
-  data: WordCardData,
-  by: CardFace | null = null,
-): Promise<Buffer> {
-  return rasterize(renderWordCardSvg(data, by));
 }
 
 // The #271 group invite link's card: the same rasterizer, its own SVG — the group's name,
@@ -130,35 +116,6 @@ export function renderShareHtml(
   // which the front routes identically to /<lang>). Safe: base is server-set, lang is
   // /^[a-z]{2}$/, and dateForDayNumber emits only digits + hyphens.
   const gameUrl = `${base}/${lang}/${dateForDayNumber(result.dayNumber)}`;
-  return previewPage(
-    lang,
-    shareTitle(title, by),
-    `${base}${shareCardPath(token, by?.publicId)}`,
-    gameUrl,
-    L.play,
-  );
-}
-
-// Word mode's share page (#156): the same template, its own title ("N words" — higher is
-// better here) and click-through, which lands on the shared day's WORD route so the link
-// opens the daily the result belongs to.
-export function renderWordShareHtml(
-  token: string,
-  result: WordShareResult,
-  base: string,
-  by: ShareSigner | null = null,
-): string {
-  const lang = /^[a-z]{2}$/.test(result.lang) ? result.lang : 'en'; // sanitize (token-sourced)
-  const L =
-    lang === 'fr'
-      ? { one: 'mot', many: 'mots', play: 'Jouer à Whippin AI' }
-      : { one: 'word', many: 'words', play: 'Play Whippin AI' };
-  // The token stores the per-rarity breakdown; the headline's claim count is its sum.
-  const score = wordShareScore(result.counts);
-  const title = `Whippin AI ${dateForDayNumber(result.dayNumber)} — ${score} ${
-    score === 1 ? L.one : L.many
-  }`;
-  const gameUrl = `${base}/${lang}/word/${dateForDayNumber(result.dayNumber)}`;
   return previewPage(
     lang,
     shareTitle(title, by),

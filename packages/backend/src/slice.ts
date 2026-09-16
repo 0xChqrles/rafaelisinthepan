@@ -23,10 +23,6 @@
 // mean regenerating it. It is also TypeScript, like the backend that reads it — there is
 // already one cross-language contract to keep in step (slug() <=> fold()) and no reason for
 // a second.
-//
-// SENTENCE ONLY. Word mode reads its artifact once per run, at submit, so ~50 ms once is
-// fine and it needs no slice; its round START reads no store at all, which matters — that
-// is the one path where the player genuinely waits on the answer.
 
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { holeProgress, rankCount, type Puzzle } from '@whippin/shared';

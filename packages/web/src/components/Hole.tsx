@@ -288,8 +288,7 @@ export default function Hole({
   const lastHit = useRef(0);
   if (hit) lastHit.current = hit.id;
   // A STRUCK word recoils and inverts its chip for the BLOW (#301, user-decided 2026-09-15):
-  // Word mode's own `STRUCK_MS`, from the hit's beat, handed to CSS so the two cannot
-  // disagree.
+  // `STRUCK_MS`, from the hit's beat, handed to CSS so the two cannot disagree.
   const strikeArt = hit?.strike === 'ultra' ? ULTRA_ART : hit?.strike === 'slash' ? SLASH_ART : null;
   if (strikeArt) wordStyle['--shake-ms'] = `${STRUCK_MS}ms`;
   if (waving) Object.assign(wordStyle, WAVE_VARS);
@@ -345,10 +344,9 @@ export default function Hole({
             same terminus — a 100-away exponent and a MISS share the colour, and only the
             label tells them apart. The float and the exponent are the round's ONLY
             gradient surfaces on the board — the words wear the flat hole colour. */}
-        {/* On a CUT the rank is Word mode's LOOT instead (#301, user-decided 2026-09-15,
-            "the same exponent animation"): the exponent pops off the struck word and falls
-            away, its timer the hit's lifetime. A miss, a repeat and the solve keep the
-            float. */}
+        {/* On a CUT the rank is the LOOT instead (#301, user-decided 2026-09-15, "the same
+            exponent animation"): the exponent pops off the struck word and falls away, its
+            timer the hit's lifetime. A miss, a repeat and the solve keep the float. */}
         {hit && hit.strike === 'slash' ? (
           <Loot
             key={hit.id}

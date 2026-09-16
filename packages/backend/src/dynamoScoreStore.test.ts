@@ -10,7 +10,9 @@ import {
 import { dynamoScoreStore, planScoreMove } from './dynamoScoreStore';
 import { SCORE_SUBMISSION_LIMIT, type ScoreKey, type ScoreSubmission } from './scoreStore';
 
-const KEY: ScoreKey = { date: '2026-08-13', lang: 'fr', mode: 'word' };
+// The stored keys keep the `sentence` segment they have always carried: every recorded
+// score and allowance is addressed by it.
+const KEY: ScoreKey = { date: '2026-08-13', lang: 'fr' };
 const SUBMISSION: ScoreSubmission = {
   ...KEY,
   publicId: 'lfd5pqz5pa7zjm5u',
@@ -46,7 +48,7 @@ describe('dynamoScoreStore (#187)', () => {
       TableName: 'scores',
       ConsistentRead: true,
       KeyConditionExpression: '#pk = :pk',
-      ExpressionAttributeValues: { ':pk': { S: 'score#2026-08-13#fr#word' } },
+      ExpressionAttributeValues: { ':pk': { S: 'score#2026-08-13#fr#sentence' } },
     });
     expect(first.ExclusiveStartKey).toBeUndefined();
     const second = (send.mock.calls[1][0] as QueryCommand).input;
@@ -81,9 +83,9 @@ describe('dynamoScoreStore (#187)', () => {
     const first = (send.mock.calls[0][0] as BatchGetItemCommand).input;
     expect(first.RequestItems?.scores).toMatchObject({ ConsistentRead: true });
     expect(first.RequestItems?.scores.Keys).toEqual([
-      { pk: { S: 'score#2026-08-13#fr#word' }, sk: { S: 'player-a' } },
-      { pk: { S: 'score#2026-08-13#fr#word' }, sk: { S: 'player-b' } },
-      { pk: { S: 'score#2026-08-13#fr#word' }, sk: { S: 'never-played' } },
+      { pk: { S: 'score#2026-08-13#fr#sentence' }, sk: { S: 'player-a' } },
+      { pk: { S: 'score#2026-08-13#fr#sentence' }, sk: { S: 'player-b' } },
+      { pk: { S: 'score#2026-08-13#fr#sentence' }, sk: { S: 'never-played' } },
     ]);
   });
 
@@ -118,7 +120,7 @@ describe('dynamoScoreStore (#187)', () => {
     expect(dedup.Update).toMatchObject({
       TableName: 'scores',
       Key: {
-        pk: { S: `dedup#2026-08-13#fr#word#${SUBMISSION.ipHash}` },
+        pk: { S: `dedup#2026-08-13#fr#sentence#${SUBMISSION.ipHash}` },
         sk: { S: 'dedup' },
       },
       ConditionExpression: 'attribute_not_exists(#count) OR #count < :limit',
@@ -130,7 +132,7 @@ describe('dynamoScoreStore (#187)', () => {
     expect(row.Put).toMatchObject({
       TableName: 'scores',
       Item: {
-        pk: { S: 'score#2026-08-13#fr#word' },
+        pk: { S: 'score#2026-08-13#fr#sentence' },
         sk: { S: SUBMISSION.publicId },
         score: { N: '12' },
         submittedAt: { S: SUBMISSION.submittedAt },
@@ -155,7 +157,7 @@ describe('dynamoScoreStore (#187)', () => {
             {
               Code: 'ConditionalCheckFailed',
               Item: {
-                pk: { S: 'score#2026-08-13#fr#word' },
+                pk: { S: 'score#2026-08-13#fr#sentence' },
                 sk: { S: SUBMISSION.publicId },
                 revision: { S: 'retired-revision' },
               },
@@ -201,7 +203,7 @@ describe('dynamoScoreStore (#187)', () => {
             {
               Code: 'ConditionalCheckFailed',
               Item: {
-                pk: { S: 'score#2026-08-13#fr#word' },
+                pk: { S: 'score#2026-08-13#fr#sentence' },
                 sk: { S: SUBMISSION.publicId },
               },
             },
@@ -333,7 +335,7 @@ describe('the score stamp (#204)', () => {
 describe('planScoreMove (#204)', () => {
   const FROM = 'aaaaaaaaaaaaaaaa';
   const TO = 'bbbbbbbbbbbbbbbb';
-  const at = (publicId: string) => ({ pk: { S: 'score#2026-08-13#fr#word' }, sk: { S: publicId } });
+  const at = (publicId: string) => ({ pk: { S: 'score#2026-08-13#fr#sentence' }, sk: { S: publicId } });
   const row = {
     ...at(FROM),
     score: { N: '7' },

@@ -6,18 +6,16 @@ that provisions Lambda + Function URL + CloudFront + the bucket is issue #3.)
 
 ## Endpoints
 
-- `GET /?lang=<xx>&date=<YYYY-MM-DD>[&mode=word]` → that day's sentence puzzle, or Word
-  mode's single-word artifact under `mode=word`, in the front's
-  [`Puzzle`](../shared/src/types.ts) / [`WordPuzzle`](../shared/src/types.ts) shape.
+- `GET /?lang=<xx>&date=<YYYY-MM-DD>` → that day's puzzle, in the front's
+  [`Puzzle`](../shared/src/types.ts) shape.
   `404` (clean JSON error) when the day is unpublished or still in the future; `400` on a
-  missing/malformed `date`, `lang` or `mode`.
-- `GET /scores?lang=<en|fr>&date=<YYYY-MM-DD>&mode=<sentence|word>[&id=<publicId>]` →
+  missing/malformed `date` or `lang`.
+- `GET /scores?lang=<en|fr>&date=<YYYY-MM-DD>[&id=<publicId>]` →
   the published daily's live score histogram, derived at read time from its per-player
   rows (#187): one exact band per distinct recorded score. **READ-ONLY since #203** — a
   POST is a named `405`. The row itself is written by the `/round` route, from the guess
   log the server already holds, and only for a round played ON its day; `id` is the
-  caller's PUBLIC id, which is what makes the answer's `bucket` theirs. `mode` is
-  required here.
+  caller's PUBLIC id, which is what makes the answer's `bucket` theirs.
 
   ```json
   {
@@ -35,20 +33,19 @@ that provisions Lambda + Function URL + CloudFront + the bucket is issue #3.)
   holds no row for `id` (or none was sent). Score responses are `no-store`.
 - The LIVE routes split three ways (contracts in the root and per-package `AGENTS.md`;
   there is no client-side secret and no client-claimed score any more):
-  - **Public GETs, anonymous by design**: `GET /board?lang=&date=&mode=[&id=<publicId>]`
+  - **Public GETs, anonymous by design**: `GET /board?lang=&date=[&id=<publicId>]`
     (the global top 50; the optional `id` is a PUBLIC id that widens the answer with that
     player's own window) and `GET /profile?id=<publicId>` (a public profile row). Nothing
     in them authenticates.
-  - **Authenticated POSTs**: `POST /round` (#201/#202/#203: the per-round guess log, Word
-    mode's start/submit, the derived score), `POST /history` (#211), `GET|POST /groups`
+  - **Authenticated POSTs**: `POST /round` (#201/#203: the per-round guess log, the derived
+    score), `POST /history` (#211), `GET|POST /groups`
     (#271), `POST /board` (a group's faces, #190), `POST /profile` (the own-row upsert,
     #188), and `POST /devices` for the device list and revocation — each carries the
     **DEVICE TOKEN in the body** (`{ "token": "<64-hex>" }`, #216), which the server
     resolves to the account.
   - **`POST /devices` bootstrap** is CREATION, not authentication: the Turnstile-gated
     request that mints the device row and its account. Turnstile gates exactly the
-    requests that CREATE state — this bootstrap, sentence round creation, and the Word
-    round start.
+    requests that CREATE state — this bootstrap and round creation.
 
   In production, every live POST serializes its body once, hashes those exact UTF-8
   bytes, and sends the digest as lowercase hexadecimal in `x-amz-content-sha256` —
@@ -88,11 +85,10 @@ correction up on a normal reload.
 ## S3 layout
 
 ```
-s3://<bucket>/<YYYY-MM-DD>.<lang>.json        — the sentence puzzle
-s3://<bucket>/<YYYY-MM-DD>.<lang>.word.json   — Word mode's artifact (#156)
+s3://<bucket>/<YYYY-MM-DD>.<lang>.json        — the puzzle
 ```
 
-The key is fully determined by (game day, lang, mode), so the Lambda `GetObject`s the one
+The key is fully determined by (game day, lang), so the Lambda `GetObject`s the one
 object directly — no `ListObjects` scan — and a flat key stays listable by a date
 prefix (`2026-06` for a month, `2026` for a year). The puzzle's words live in the file,
 not the key. The publish step (issue #4) maps the generator's
@@ -146,11 +142,10 @@ Mirrors S3 one-to-one (the prefix is a dir instead of a bucket); encoded once in
 
 ```
 <store-root>/<YYYY-MM-DD>.<lang>.json
-<store-root>/<YYYY-MM-DD>.<lang>.word.json
 ```
 
 `<YYYY-MM-DD>` is the **game day** (the 22:00-ET day, not the generation day); `<lang>`
-is the language. The key is flat and fully determined by (date, lang, mode) — read directly,
+is the language. The key is flat and fully determined by (date, lang) — read directly,
 no listing — and listable by a date prefix. The store root defaults to
 `packages/backend/.local-store` (gitignored); override with `PUZZLE_STORE`.
 
@@ -162,7 +157,7 @@ no listing — and listable by a date prefix. The store root defaults to
 | `SITE_ORIGIN`  | request origin          | apex used for the share card's absolute URLs |
 
 The local in-memory stores and accept-all Turnstile require no additional environment
-variables. The gated writes (identity bootstrap, round creation, Word round start) still
+variables. The gated writes (identity bootstrap, round creation) still
 require a nonempty `turnstileToken` field so the request contract stays real. The local
 server has no CloudFront OAC, so it does not require `x-amz-content-sha256`.
 

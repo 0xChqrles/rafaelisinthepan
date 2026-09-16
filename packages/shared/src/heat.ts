@@ -6,7 +6,7 @@
 // strange rose-orchid, settling into the cobalt ink (peace, the solve). STAMP-INK saturations (retuned same day against the user's
 // /inspiration set — vintage offset stamps, riso posters): real printed-ink chroma, not
 // arcade neon and not the dusty first cut ("almost creepy") — the calm comes from the
-// grain and the print softness, never from draining the colour. It colours the rank exponents, the floating hits, a claim's loot, every
+// grain and the print softness, never from draining the colour. It colours the rank exponents, the floating hits, a hit's loot, every
 // route row — and every progress surface (the run ruler on screen AND on the share card,
 // the share text's emoji row, the archive's day fills, the chooser's status strips), a
 // progress % reading STRAIGHT as the scale.
@@ -67,7 +67,7 @@ export function heatColor(heat: number) {
 // say, and the floating number does not improve any hole anyway. And that level IS the
 // MISS red: the cap collapses every far rank onto the gradient's weird terminus. It
 // is the app's ABSOLUTE rank scale: the floating hits, every route row's exponent, a
-// claim's loot and every tutorial example read a rank against it, so a rank is the same
+// hit's loot and every tutorial example read a rank against it, so a rank is the same
 // colour wherever it is drawn. The scale lives here so callers cannot choose their own
 // denominator and make an identical rank change colour between surfaces.
 export const HIT_HEAT_CAP = 100;

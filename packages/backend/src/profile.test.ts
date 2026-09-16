@@ -9,7 +9,6 @@ import { seedDevice } from './testDevice';
 
 const emptyStore: PuzzleStore = {
   getPuzzle: async () => null,
-  getWordPuzzle: async () => null,
   getSlice: async () => null,
 };
 

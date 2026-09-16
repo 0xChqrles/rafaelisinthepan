@@ -15,7 +15,6 @@ import { seedDevice, type TestDevice } from './testDevice';
 
 const emptyStore: PuzzleStore = {
   getPuzzle: async () => null,
-  getWordPuzzle: async () => null,
   getSlice: async () => null,
 };
 const NOW = new Date('2026-09-13T12:00:00Z');

@@ -20,14 +20,13 @@ import {
   type RoundBoardRow,
   type RoundDaySummary,
   type RoundKey,
-  type RoundRunner,
   type RoundState,
   type RoundStore,
 } from './roundStore';
 
 // THE ROUND VERSION (#204's adoption model, decided on the PR-227 review). Every mutation
-// of a round item — the sentence append and its retired-puzzle restart, the corrective
-// settle, the word start and submit — bumps `version`, and the adoption transaction
+// of a round item — the append and its retired-puzzle restart, and the corrective settle —
+// bumps `version`, and the adoption transaction
 // conditions on it instead of on any list of fields: a condition written by hand protects
 // exactly the fields somebody remembered (the settle rewrites `progress`/`solved` with the
 // log untouched, which is what a guesses-and-puzzle condition let through). Arithmetic is
@@ -45,8 +44,8 @@ export interface DynamoRoundStoreOptions {
 }
 
 // Production round records live in the score table (#201): one item per
-// (date, lang, mode, publicId), in the PLAYER's own `round#<publicId>` partition under a
-// `<date>#<lang>#<mode>` sort key (see roundStore.ts for why the day is not the partition).
+// (date, lang, publicId), in the PLAYER's own `round#<publicId>` partition under a
+// `<lang>#sentence#<date>` sort key (see roundStore.ts for why the day is not the partition).
 //
 // The append is ONE conditional UpdateItem — the cap, the per-player write interval and
 // the puzzle identity are three clauses of the same ConditionExpression as the
@@ -55,9 +54,6 @@ export interface DynamoRoundStoreOptions {
 // condition reads the item once, consistently, to classify the refusal — the condition
 // cannot say which clause rejected it, and the caller owes the client the distinction (a
 // cap stops the round; a rate refusal only delays it; a retired puzzle restarts it).
-//
-// WORD mode's two writes (#202) land on the SAME item: `start` stamps `startedAt` (one
-// conditional UpdateItem, the append's shape) and `submit` records the whole log once.
 export function dynamoRoundStore(
   client: DynamoDBClient,
   tableName: string,
@@ -97,9 +93,6 @@ export function dynamoRoundStore(
     puzzle: '#p',
     lastWriteAt: '#last',
     createdAt: '#created',
-    startedAt: '#started',
-    startedBy: '#by',
-    submittedAt: '#sub',
     progress: '#prog',
     solved: '#solved',
     version: '#v',
@@ -296,8 +289,7 @@ export function dynamoRoundStore(
             // the result may REACH the cap, never pass it.
             //
             // The last clause is #203's FREEZE: once `solved` is set, further appends are
-            // refused — evaluated as part of the same write, so it costs no extra read
-            // (Word mode's submit already works this way, `attribute_not_exists(#sub)`).
+            // refused — evaluated as part of the same write, so it costs no extra read.
             // It is not an anti-cheat measure: sentence score is unique tries and lower is
             // better, so padding a log after the solve only ever makes the score worse.
             // What it prevents is a RECORDED SCORE SILENTLY CHANGING after it is on the
@@ -350,7 +342,7 @@ export function dynamoRoundStore(
               Key: itemKey(input, input.publicId),
               // A restart takes the RETIRED puzzle's derived summary with it: its `solved`
               // would otherwise freeze the fresh round on a sentence nobody is playing any
-              // more (the word start's `REMOVE #g, #sub` rule).
+              // more.
               UpdateExpression:
                 `SET #g = :batch, #p = :puzzle, #last = :now, #created = :created, ${VERSION_BUMP}, ` +
                 (input.solved
@@ -457,132 +449,6 @@ export function dynamoRoundStore(
       }
     },
 
-    // WORD mode's first write (#202): stamp the round's start from THIS server's clock —
-    // and, since #217, the DEVICE it belongs to.
-    //
-    // ONE conditional UpdateItem, and the condition is the whole ownership model:
-    // `attribute_not_exists(#sub) OR #p <> :puzzle` passes for a record that does not exist
-    // (the first clause — a missing attribute makes the comparison in the second FALSE,
-    // never true), for an unsubmitted run whoever started it, and for one naming a RETIRED
-    // word. It fails for exactly the state that ends a daily: this puzzle's log is already
-    // RECORDED, which the classification read below answers with. Everything it passes for
-    // is REPLACED, atomically, so nothing can observe a clock without its owner.
-    async start(input) {
-      const stampedAt = input.now.toISOString();
-      try {
-        const response = await client.send(
-          new UpdateItemCommand({
-            TableName: tableName,
-            Key: itemKey(input, input.publicId),
-            // A RESTART takes the run it replaces with it — its LOG, and the mark saying
-            // that log was recorded (a retired word's), or the fresh round would read as
-            // already submitted and never write.
-            UpdateExpression:
-              `SET #started = :now, #by = :runner, #p = :puzzle, #created = :now, ${VERSION_BUMP} ` +
-              'REMOVE #g, #sub',
-            ConditionExpression: 'attribute_not_exists(#sub) OR #p <> :puzzle',
-            ExpressionAttributeNames: aliases(
-              'startedAt',
-              'startedBy',
-              'puzzle',
-              'createdAt',
-              'guesses',
-              'submittedAt',
-              'version',
-            ),
-            ExpressionAttributeValues: {
-              ':puzzle': { S: input.puzzle },
-              ':now': { S: stampedAt },
-              ':runner': runnerValue(input.runner),
-              ...VERSION_BUMP_VALUES,
-            },
-            ReturnValues: 'ALL_NEW',
-          }),
-        );
-        return { outcome: 'started', state: itemToState(response.Attributes)! };
-      } catch (error) {
-        if (!isConditionFailure(error)) throw error;
-      }
-      // A submission won the race: the recorded run is what stands, and the answer carries
-      // it so the caller adopts the final run instead of wiping it. `stateForTag` is belt
-      // and braces — the condition only fails for this puzzle's own record.
-      return {
-        outcome: 'already_submitted',
-        state: stateForTag(await readItem(input, input.publicId), input.puzzle),
-      };
-    },
-
-    // WORD mode's second and last write (#202): the whole log, once, from the device that
-    // played it (#217).
-    //
-    // It reads BEFORE writing, unlike the streaming append, because the two refusals it owes
-    // the caller are not expressible as conditions: the wait check compares instants
-    // arithmetically (DynamoDB's condition grammar has none) and the caller has to be told
-    // WHICH bound refused it. Neither is racy — the write itself carries the ownership and
-    // the first-write-wins clauses, so both verdicts are decided by the store rather than by
-    // the read that preceded it.
-    async submit(input) {
-      const stored = stateForTag(await readItem(input, input.publicId), input.puzzle);
-      if (!stored.startedAt) return { outcome: 'not_started', state: empty() };
-      // `submittedAt`, never the log's length: a run that claimed nothing records an EMPTY
-      // log, and reading that back as "nothing recorded" is what let a second submission
-      // overwrite it (roundStore.ts).
-      if (stored.submittedAt) return { outcome: 'already_submitted', state: stored };
-      // The stamp names another device: this run was restarted while its player was away,
-      // so the log offered here belongs to a clock that no longer exists (#217).
-      if (stored.startedBy?.deviceId !== input.deviceId) {
-        return { outcome: 'started_elsewhere', state: stored };
-      }
-      if (input.now.getTime() - Date.parse(stored.startedAt) < input.minElapsedMs) {
-        return { outcome: 'too_early', state: stored };
-      }
-
-      try {
-        const response = await client.send(
-          new UpdateItemCommand({
-            TableName: tableName,
-            Key: itemKey(input, input.publicId),
-            UpdateExpression: `SET #g = :log, #sub = :now, ${VERSION_BUMP}`,
-            // Path-only condition syntax, the append's rule: the record must still be this
-            // puzzle's, still stamped for THIS device, and still unsubmitted. The device
-            // clause is what makes ownership a store decision rather than a read's opinion —
-            // a restart can land between the read above and this write.
-            ConditionExpression:
-              '#p = :puzzle AND #by.#dev = :device AND attribute_not_exists(#sub)',
-            ExpressionAttributeNames: {
-              ...aliases('guesses', 'submittedAt', 'puzzle', 'startedBy', 'version'),
-              '#dev': 'deviceId',
-            },
-            ExpressionAttributeValues: {
-              ':puzzle': { S: input.puzzle },
-              ':device': { S: input.deviceId },
-              ':log': { L: input.guesses.map((guess) => ({ S: guess })) },
-              ':now': { S: input.now.toISOString() },
-              ...VERSION_BUMP_VALUES,
-            },
-            ReturnValues: 'ALL_NEW',
-          }),
-        );
-        return { outcome: 'submitted', state: itemToState(response.Attributes)! };
-      } catch (error) {
-        if (!isConditionFailure(error)) throw error;
-      }
-      // Lost the race. Re-read and let what STANDS say which race it was: another device's
-      // submission landing first, another device's RESTART taking the clock, or the daily
-      // being re-published under us — where this log describes a retired word and the round
-      // has restarted without it.
-      const now = stateForTag(await readItem(input, input.publicId), input.puzzle);
-      if (now.submittedAt) return { outcome: 'already_submitted', state: now };
-      return now.startedBy === undefined
-        ? { outcome: 'not_started', state: now }
-        : { outcome: 'started_elsewhere', state: now };
-    },
-
-    // #204's active-day transfer. ONE transaction — a create-only Put of the whole item
-    // under the adopting account, and a Delete of the source under the condition it still
-    // holds the log this call read — so the round exists under exactly ONE account at every
-    // instant. The item is copied VERBATIM apart from its partition key: this store's own
-    // attribute shape is the one thing a move must not reinterpret.
   };
 }
 
@@ -601,40 +467,8 @@ function stateForTag(item: Item, puzzle: string): RoundState {
 
 type Item = Record<string, AttributeValue> | undefined;
 
-// The run's OWNER as one attribute (#217): the device id the submission's condition
-// compares, plus the parsed user-agent fields the screen names that device with. ONE map
-// rather than four top-level attributes, so the stamp is written, replaced and read as the
-// single fact it is.
-function runnerValue(runner: RoundRunner): AttributeValue {
-  return {
-    M: {
-      deviceId: { S: runner.deviceId },
-      device: { S: runner.device },
-      os: { S: runner.os },
-      browser: { S: runner.browser },
-    },
-  };
-}
-
-// …and back. A stamp with no device id is not a stamp — the two are written together, and
-// half of one says nothing about who is running the round.
-function runnerOf(item: Item): RoundRunner | undefined {
-  const map = item?.startedBy?.M;
-  const deviceId = map?.deviceId?.S;
-  if (!deviceId) return undefined;
-  return {
-    deviceId,
-    device: map?.device?.S ?? '',
-    os: map?.os?.S ?? '',
-    browser: map?.browser?.S ?? '',
-  };
-}
-
 function itemToState(item: Item): RoundState | null {
   if (!item) return null;
-  const startedAt = item.startedAt?.S;
-  const startedBy = runnerOf(item);
-  const submittedAt = item.submittedAt?.S;
   const progress = numberOf(item.progress);
   return {
     guesses: item.guesses?.L?.map((v) => v.S ?? '') ?? [],
@@ -644,17 +478,9 @@ function itemToState(item: Item): RoundState | null {
     // silent — the `?? ''` fallback makes every response carry an empty createdAt for
     // the item's whole life — so the two spellings are kept next to each other.
     createdAt: item.createdAt?.S ?? '',
-    // ABSENT rather than empty when unstamped (a sentence round, an unstarted word one):
-    // the word submit's "is there a run to end?" test reads exactly this, and `''` would
-    // pass a truthiness check into `Date.parse` and answer NaN. `submittedAt` is the
-    // submission's own marker and follows the same rule, and so does the run's OWNER
-    // (#217), which the same write stamps.
-    ...(startedAt === undefined ? {} : { startedAt }),
-    ...(startedBy === undefined ? {} : { startedBy }),
-    ...(submittedAt === undefined ? {} : { submittedAt }),
     // The derived summary (#203). ABSENT rather than 0/false on a round that has none —
-    // a word round, or a sentence round written before its first append — for the
-    // `startedAt` reason: the freeze and the corrective write both test presence.
+    // a round written before its first append: the freeze and the corrective write both
+    // test presence.
     ...(progress === undefined ? {} : { progress }),
     ...(item.solved?.BOOL === true ? { solved: true } : {}),
   };
@@ -710,21 +536,10 @@ function unchanged(
   };
 }
 
-// RECORDED PLAY: `guesses.length > 0 || submittedAt exists` (PR-227 review, 2026-09-02).
-// ONE predicate, read for the SOURCE and the DESTINATION alike — which is what makes the
-// decision table symmetric and leaves no state uncovered.
-//
-// The log alone was not enough, because an empty log is TWO different Word states. A run
-// merely STARTED holds no guesses server-side (its claims live on the playing device until
-// it submits) and is not play: a recorded run may move in over it, which is #204's own
-// rule. A run SUBMITTED WITH ZERO CLAIMS also holds an empty log — and #202 is explicit
-// that the marker is `submittedAt`, never the length — but it is a recorded, unrepeatable
-// day carrying a real score row of 0. Reading only the log made a submitted empty round
-// invisible from both sides: as a SOURCE it did not move (the day was erased with the
-// account), and as a DESTINATION it did not block one (a source's play was written over
-// a day the destination had already recorded).
+// RECORDED PLAY: a stored guess. ONE predicate, read for the SOURCE and the DESTINATION
+// alike — which is what makes the decision table symmetric and leaves no state uncovered.
 function hasPlay(item: Record<string, AttributeValue> | undefined): boolean {
-  return (item?.guesses?.L?.length ?? 0) > 0 || item?.submittedAt?.S !== undefined;
+  return (item?.guesses?.L?.length ?? 0) > 0;
 }
 
 // #204's active-day transfer, PLANNED here and COMMITTED by `dynamoLinkStore` inside the
@@ -733,13 +548,11 @@ function hasPlay(item: Record<string, AttributeValue> | undefined): boolean {
 // because the items are this store's shape: the item is copied VERBATIM apart from its
 // partition key and its version, and the conditions name its attributes.
 //
-// Nothing moves when the source holds no RECORDED PLAY (`hasPlay` above — a word round
-// that was merely STARTED holds none, and a recorded run may move in over one), or when
-// the destination already holds some — two real logs for one day have no honest merge, and
-// a submitted 0-claim run IS a real one. Either
+// Nothing moves when the source holds no RECORDED PLAY (`hasPlay` above), or when the
+// destination already holds some — two real logs for one day have no honest merge. Either
 // way BOTH rows read are guarded (the model's mechanical rule: two reads, two items), so a
-// first guess landing on an empty source, a settle rewriting a summary, or a start wiping a
-// log between this read and the commit refuses the transaction — the caller plans again.
+// first guess landing on an empty source, or a settle rewriting a summary, between this read
+// and the commit refuses the transaction — the caller plans again.
 //
 // THE COPIED ITEM TAKES THE DESTINATION'S NEXT VERSION, never the source's. Two adoptions
 // from two different sources onto one target condition on the same destination version;

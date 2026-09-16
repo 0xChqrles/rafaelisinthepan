@@ -1,35 +1,28 @@
 import { type S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
-import type { Puzzle, WordPuzzle } from '@whippin/shared';
+import type { Puzzle } from '@whippin/shared';
 import { isNotFound, type PuzzleStore } from './store';
 import { decodeSlice } from './slice';
-import { sliceKey, storeKey, type PuzzleMode } from './layout';
+import { sliceKey, storeKey } from './layout';
 
 // S3 layout (shared with the local store via `layout.storeKey`):
-// s3://<bucket>/<YYYY-MM-DD>.<lang>.json          — the sentence puzzle
-// s3://<bucket>/<YYYY-MM-DD>.<lang>.word.json     — Word mode's #154 artifact (#156)
+// s3://<bucket>/<YYYY-MM-DD>.<lang>.json — the day's puzzle
 //
-// The key is fully determined by (date, lang, mode), so the Lambda GETs the one object
-// directly — no ListObjects scan. A missing object (NoSuchKey / 404) is a clean null
-// -> 404 upstream, NOT an error/500.
+// The key is fully determined by (date, lang), so the Lambda GETs the one object directly —
+// no ListObjects scan. A missing object (NoSuchKey / 404) is a clean null -> 404 upstream,
+// NOT an error/500.
 export function s3Store(client: S3Client, bucket: string): PuzzleStore {
-  async function read(date: string, lang: string, mode: PuzzleMode): Promise<unknown> {
-    try {
-      const got = await client.send(
-        new GetObjectCommand({ Bucket: bucket, Key: storeKey(date, lang, mode) }),
-      );
-      if (!got.Body) return null;
-      return JSON.parse(await got.Body.transformToString());
-    } catch (err) {
-      if (isNotFound(err)) return null;
-      throw err;
-    }
-  }
   return {
     async getPuzzle(date, lang) {
-      return (await read(date, lang, 'sentence')) as Puzzle | null;
-    },
-    async getWordPuzzle(date, lang) {
-      return (await read(date, lang, 'word')) as WordPuzzle | null;
+      try {
+        const got = await client.send(
+          new GetObjectCommand({ Bucket: bucket, Key: storeKey(date, lang) }),
+        );
+        if (!got.Body) return null;
+        return JSON.parse(await got.Body.transformToString()) as Puzzle;
+      } catch (err) {
+        if (isNotFound(err)) return null;
+        throw err;
+      }
     },
     // #203's slice: the object IS gzip, so it is read as BYTES and decoded — never
     // `transformToString`, which would hand JSON.parse a mangled binary blob.

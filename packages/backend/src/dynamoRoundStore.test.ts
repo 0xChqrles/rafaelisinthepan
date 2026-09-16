@@ -1,4 +1,4 @@
-// CONTRACT (#201): the production round store. One item per (date, lang, mode, publicId)
+// CONTRACT (#201): the production round store. One item per (date, lang, publicId)
 // in the PLAYER's own partition; the append is ONE conditional UpdateItem carrying the
 // cap, the write interval and the puzzle identity, classified by a single consistent read
 // when it is refused.
@@ -19,7 +19,7 @@ import { dynamoRoundStore, planRoundMove } from './dynamoRoundStore';
 
 const PUBLIC_ID = 'lfd5pqz5pa7zjm5u';
 const NOW = new Date('2026-08-21T14:00:00.000Z');
-const KEY = { date: '2026-08-21', lang: 'fr', mode: 'sentence' } as const;
+const KEY = { date: '2026-08-21', lang: 'fr' } as const;
 const PUZZLE = 'a1b2c3d4';
 
 function storedItem(
@@ -444,285 +444,6 @@ describe('dynamoRoundStore (#201)', () => {
   });
 });
 
-// CONTRACT (#202, owned by a DEVICE since #217): Word mode's two writes land on the SAME
-// item. START is one conditional UpdateItem stamping `startedAt` AND the device it belongs
-// to — accepted for any run that is not yet RECORDED, which makes it a restart as much as a
-// start. SUBMIT reads once (the wait check is arithmetic, which a condition cannot express,
-// and the caller has to be told WHICH bound refused it) and then writes first-write-wins,
-// under a condition that still names the calling device.
-describe('dynamoRoundStore — word mode (#202/#217)', () => {
-  const WORD_KEY = { date: '2026-08-21', lang: 'fr', mode: 'word' } as const;
-  const PHONE = { deviceId: 'phone000000000000', device: 'iPhone', os: 'iOS 17', browser: 'Safari' };
-  const LAPTOP = { deviceId: 'laptop00000000000', device: 'Mac', os: 'macOS', browser: 'Chrome' };
-  const START_INPUT = {
-    ...WORD_KEY,
-    publicId: PUBLIC_ID,
-    puzzle: PUZZLE,
-    runner: PHONE,
-    now: NOW,
-  };
-  const submitInput = (extra: Partial<{ deviceId: string; guesses: string[]; minElapsedMs: number }>) => ({
-    ...WORD_KEY,
-    publicId: PUBLIC_ID,
-    puzzle: PUZZLE,
-    deviceId: PHONE.deviceId,
-    guesses: [] as string[],
-    minElapsedMs: 64_000,
-    now: NOW,
-    ...extra,
-  });
-
-  // A submitted round carries BOTH its log and `submittedAt`: the marker is the attribute,
-  // never the log's length, or a recorded 0-claim run reads as unsubmitted. The RUNNER is
-  // stamped by the same write as the clock, so the two travel together.
-  function startedItem(
-    startedAt: string,
-    guesses?: string[],
-    puzzle: string = PUZZLE,
-    runner = PHONE,
-  ): Record<string, AttributeValue> {
-    return {
-      ...(guesses ? { guesses: { L: guesses.map((g) => ({ S: g })) }, submittedAt: { S: startedAt } } : {}),
-      puzzle: { S: puzzle },
-      createdAt: { S: startedAt },
-      startedAt: { S: startedAt },
-      startedBy: {
-        M: {
-          deviceId: { S: runner.deviceId },
-          device: { S: runner.device },
-          os: { S: runner.os },
-          browser: { S: runner.browser },
-        },
-      },
-    };
-  }
-
-  it('stamps the clock AND its device in ONE conditional write, from the SERVER\'s own instant', async () => {
-    const send = vi.fn(async (_command: unknown) => ({
-      Attributes: startedItem(NOW.toISOString()),
-    }));
-    const { store } = makeStore(send);
-
-    const result = await store.start(START_INPUT);
-    expect(result.outcome).toBe('started');
-    // A STRING, like createdAt: the Number spelling is reserved for the one attribute a
-    // condition compares arithmetically.
-    expect(result.state.startedAt).toBe(NOW.toISOString());
-    // The run's owner rides with it — the id the submission is checked against, plus the
-    // label the screen names that device with.
-    expect(result.state.startedBy).toEqual(PHONE);
-
-    const command = send.mock.calls[0][0] as UpdateItemCommand;
-    expect(command.input).toMatchObject({
-      Key: { pk: { S: `round#${PUBLIC_ID}` }, sk: { S: 'fr#word#2026-08-21' } },
-      ReturnValues: 'ALL_NEW',
-    });
-    expectConditionSyntax(command.input.ConditionExpression);
-    // Anything not yet RECORDED may be replaced — a fresh record, this device's own run,
-    // another device's, or a retired word's. Only a stored submission stops it.
-    expect(command.input.ConditionExpression).toContain('attribute_not_exists(#sub)');
-    expect(command.input.ConditionExpression).toContain('#p <> :puzzle');
-    // A restart takes the run it replaces with it.
-    expect(command.input.UpdateExpression).toContain('REMOVE #g');
-    expect(command.input.UpdateExpression).toContain('#by = :runner');
-  });
-
-  it('RESTARTS a run another device left unsubmitted, and the stamp moves', async () => {
-    const send = vi.fn(async (_command: unknown) => ({
-      Attributes: startedItem(NOW.toISOString(), undefined, PUZZLE, LAPTOP),
-    }));
-    const { store } = makeStore(send);
-
-    const result = await store.start({ ...START_INPUT, runner: LAPTOP });
-    // No refusal to classify: an unsubmitted run is replaced by the write itself.
-    expect(result.outcome).toBe('started');
-    expect(result.state.startedBy).toEqual(LAPTOP);
-    expect(send).toHaveBeenCalledTimes(1);
-  });
-
-  it('refuses to restart a RECORDED run, and answers with the final one', async () => {
-    const stamped = '2026-08-21T13:59:00.000Z';
-    const send = refuseOnce(startedItem(stamped, ['mer']));
-    const { store } = makeStore(send);
-
-    const result = await store.start(START_INPUT);
-    // The daily is one-shot once its log is stored: the caller adopts the run that stands
-    // rather than wiping it.
-    expect(result.outcome).toBe('already_submitted');
-    expect(result.state.guesses).toEqual(['mer']);
-    expect(result.state.submittedAt).toBe(stamped);
-  });
-
-  it('records the whole log once the run could be over, first write wins', async () => {
-    const stamped = '2026-08-21T13:00:00.000Z';
-    const send = vi.fn(async (command: unknown) => {
-      if (command instanceof UpdateItemCommand) {
-        return { Attributes: startedItem(stamped, ['mer', 'loin']) };
-      }
-      return { Item: startedItem(stamped) };
-    });
-    const { store } = makeStore(send);
-
-    const result = await store.submit(submitInput({ guesses: ['mer', 'loin'] }));
-    expect(result.outcome).toBe('submitted');
-    expect(result.state.guesses).toEqual(['mer', 'loin']);
-
-    const write = send.mock.calls.find(([c]) => c instanceof UpdateItemCommand)![0] as UpdateItemCommand;
-    expectConditionSyntax(write.input.ConditionExpression);
-    // Still this word's, still stamped for THIS device, still unsubmitted — both verdicts
-    // are decided by the STORE, not by the read that preceded it.
-    expect(write.input.ConditionExpression).toContain('attribute_not_exists(#sub)');
-    expect(write.input.ConditionExpression).toContain('#by.#dev = :device');
-    expect(write.input.ConditionExpression).toContain('#p = :puzzle');
-    expect(write.input.ExpressionAttributeValues![':device']).toEqual({ S: PHONE.deviceId });
-  });
-
-  it('refuses a submission that arrives before the run can be over — and writes nothing', async () => {
-    const stamped = new Date(NOW.getTime() - 10_000).toISOString();
-    const send = vi.fn(async (_command: unknown) => ({ Item: startedItem(stamped) }));
-    const { store } = makeStore(send);
-
-    const refused = await store.submit(submitInput({ guesses: ['mer'] }));
-    expect(refused.outcome).toBe('too_early');
-    expect(refused.state.startedAt).toBe(stamped);
-    expect(send.mock.calls.every(([c]) => !(c instanceof UpdateItemCommand))).toBe(true);
-  });
-
-  it('refuses a submission for a run nobody started here', async () => {
-    const send = vi.fn(async (_command: unknown) => ({}));
-    const { store } = makeStore(send);
-    await expect(store.submit(submitInput({ minElapsedMs: 60_000 }))).resolves.toMatchObject({
-      outcome: 'not_started',
-    });
-  });
-
-  it('refuses a submission for a run the stamp gives to ANOTHER device, writing nothing', async () => {
-    const stamped = '2026-08-21T13:00:00.000Z';
-    const send = vi.fn(async (_command: unknown) => ({
-      Item: startedItem(stamped, undefined, PUZZLE, LAPTOP),
-    }));
-    const { store } = makeStore(send);
-
-    const refused = await store.submit(submitInput({ guesses: ['mer'] }));
-    // The phone's log describes a clock the server no longer holds; recording it would bury
-    // the run the laptop is playing, permanently, since the write is first-write-wins.
-    expect(refused.outcome).toBe('started_elsewhere');
-    expect(refused.state.startedBy).toEqual(LAPTOP);
-    expect(send.mock.calls.every(([c]) => !(c instanceof UpdateItemCommand))).toBe(true);
-  });
-
-  it('classifies a LOST race by what stands: a restart that landed after the read', async () => {
-    const stamped = '2026-08-21T13:00:00.000Z';
-    let reads = 0;
-    const send = vi.fn(async (command: unknown) => {
-      if (command instanceof UpdateItemCommand) {
-        throw new ConditionalCheckFailedException({ message: 'refused', $metadata: {} });
-      }
-      reads += 1;
-      // The first read sees this device's own run; by the re-read the laptop has taken it.
-      return { Item: startedItem(stamped, undefined, PUZZLE, reads === 1 ? PHONE : LAPTOP) };
-    });
-    const { store } = makeStore(send);
-
-    const refused = await store.submit(submitInput({ guesses: ['mer'] }));
-    expect(refused.outcome).toBe('started_elsewhere');
-    expect(refused.state.startedBy).toEqual(LAPTOP);
-  });
-
-  it('answers a SECOND submission with the run that was recorded', async () => {
-    const stamped = '2026-08-21T13:00:00.000Z';
-    const send = vi.fn(async (_command: unknown) => ({
-      Item: startedItem(stamped, ['mer']),
-    }));
-    const { store } = makeStore(send);
-
-    const again = await store.submit(submitInput({ guesses: ['mer', 'ocean'] }));
-    expect(again.outcome).toBe('already_submitted');
-    expect(again.state.guesses).toEqual(['mer']);
-  });
-
-  it('never hands back a RETIRED word\'s state', async () => {
-    const send = vi.fn(async (_command: unknown) => ({
-      Item: startedItem('2026-08-21T13:00:00.000Z', ['ancien'], 'deadbeef'),
-    }));
-    const { store } = makeStore(send);
-    const refused = await store.submit(submitInput({ guesses: ['mer'] }));
-    // The record names a word this submission knows nothing about: there is no run of THIS
-    // one to end, and the retired one's log must not travel back to the client.
-    expect(refused.outcome).toBe('not_started');
-    expect(refused.state.guesses).toEqual([]);
-    expect(refused.state.startedAt).toBeUndefined();
-    expect(refused.state.startedBy).toBeUndefined();
-  });
-});
-
-// CONTRACT (#202): the submission's marker is `submittedAt`, never the LOG'S LENGTH. A run
-// that claimed nothing records an EMPTY log, which by length alone is indistinguishable
-// from an unsubmitted round — so a second submission overwrote it, a retry of it
-// classified as `not_started` (a VERDICT the client closes on), and a mount read could not
-// tell the day was already recorded.
-describe('a recorded 0-claim run (#202)', () => {
-  const WORD_KEY = { date: '2026-08-21', lang: 'fr', mode: 'word' } as const;
-  const STAMP = '2026-08-21T13:00:00.000Z';
-  const RUNNER = { deviceId: 'phone000000000000', device: 'iPhone', os: 'iOS 17', browser: 'Safari' };
-  const submitInput = (guesses: string[]) => ({
-    ...WORD_KEY,
-    publicId: PUBLIC_ID,
-    puzzle: PUZZLE,
-    deviceId: RUNNER.deviceId,
-    guesses,
-    minElapsedMs: 60_000,
-    now: NOW,
-  });
-
-  function item(extra: Record<string, AttributeValue> = {}): Record<string, AttributeValue> {
-    return {
-      puzzle: { S: PUZZLE },
-      createdAt: { S: STAMP },
-      startedAt: { S: STAMP },
-      startedBy: {
-        M: {
-          deviceId: { S: RUNNER.deviceId },
-          device: { S: RUNNER.device },
-          os: { S: RUNNER.os },
-          browser: { S: RUNNER.browser },
-        },
-      },
-      ...extra,
-    };
-  }
-
-  it('is marked by an attribute, so the write records one', async () => {
-    const send = vi.fn(async (command: unknown) => {
-      if (command instanceof UpdateItemCommand) {
-        return { Attributes: item({ guesses: { L: [] }, submittedAt: { S: NOW.toISOString() } }) };
-      }
-      return { Item: item() };
-    });
-    const { store } = makeStore(send);
-    const first = await store.submit(submitInput([]));
-    expect(first.outcome).toBe('submitted');
-    expect(first.state.guesses).toEqual([]);
-    expect(first.state.submittedAt).toBe(NOW.toISOString());
-  });
-
-  it('cannot be overwritten by a later submission, and is not mistaken for "never started"', async () => {
-    // What stands is an EMPTY recorded run.
-    const send = vi.fn(async (_command: unknown) => ({
-      Item: item({ guesses: { L: [] }, submittedAt: { S: STAMP } }),
-    }));
-    const { store, send: checked } = makeStore(send);
-
-    const again = await store.submit(submitInput(['mer']));
-    // Answered with what was recorded — not overwritten, and NOT `not_started`, which the
-    // client treats as a verdict and closes the conversation on.
-    expect(again.outcome).toBe('already_submitted');
-    expect(again.state.guesses).toEqual([]);
-    // Refused before the store was touched at all.
-    expect(checked.mock.calls.every(([c]) => !(c instanceof UpdateItemCommand))).toBe(true);
-  });
-});
-
 // CONTRACT (#203): the derived summary rides the append's own mutation, a SOLVED round is
 // frozen by one more clause on the condition it already sends, and the corrective write is
 // the one small extra mutation — issued only when the returned log disagrees.
@@ -930,7 +651,7 @@ describe('dynamoRoundStore — the corrective write is MONOTONIC (#203)', () => 
 // behind a month prefix, projected down to the summary the server derived, paged so a
 // partial month can never be rendered as a whole one.
 describe('listMonth — the private calendar Query (#211)', () => {
-  const MONTH = { lang: 'fr', mode: 'sentence', month: '2026-08' } as const;
+  const MONTH = { lang: 'fr', month: '2026-08' } as const;
 
   function row(date: string, progress?: number, solved?: boolean): Record<string, AttributeValue> {
     return {
@@ -1113,31 +834,14 @@ describe('planRoundMove (#204)', () => {
       TO,
     );
   const played = versioned({ ...at(FROM), ...storedItem(['bois', 'foret'], 1_000), solved: { BOOL: true } }, 7);
-  const startedRun = versioned(
-    { ...at(TO), puzzle: { S: PUZZLE }, startedAt: { S: '2026-08-21T09:00:00.000Z' } },
-    2,
-  );
-  // THE STATE THE LOG ALONE CANNOT SEE (PR-227 review): a Word run SUBMITTED having
-  // claimed nothing. #202 makes `submittedAt` the marker and not the log's length, so this
-  // is a recorded, unrepeatable day carrying a real score row of 0 — and an empty
-  // `guesses` list, exactly like the merely-started run above it.
-  const submittedEmpty = (publicId: string, version: number) =>
-    versioned(
-      {
-        ...at(publicId),
-        guesses: { L: [] },
-        puzzle: { S: PUZZLE },
-        startedAt: { S: '2026-08-21T09:00:00.000Z' },
-        submittedAt: { S: '2026-08-21T09:01:00.000Z' },
-      },
-      version,
-    );
+  // A row that holds NO guess: not play, so a played round may move in over it — and the
+  // copy has to take that row's NEXT version.
+  const emptyRow = versioned({ ...at(TO), guesses: { L: [] }, puzzle: { S: PUZZLE } }, 2);
   const destinationPlayed = versioned({ ...at(TO), ...storedItem(['souris'], 1_000) }, 5);
-  // The FOUR observations a row can present, for the table rows that read "any".
+  // The observations a row can present, for the table rows that read "any".
   const anyDestination: [string, Record<string, AttributeValue> | undefined][] = [
     ['absent', undefined],
-    ['started, unplayed', startedRun],
-    ['submitted with no claims', submittedEmpty(TO, 6)],
+    ['holding no guess', emptyRow],
     ['played', destinationPlayed],
   ];
 
@@ -1158,8 +862,8 @@ describe('planRoundMove (#204)', () => {
     });
   });
 
-  it('moves OVER a started, unplayed destination run at its version, and the copy takes the NEXT one', async () => {
-    const result = await plan({ from: played, to: startedRun });
+  it('moves OVER a destination row holding no guess at its version, and the copy takes the NEXT one', async () => {
+    const result = await plan({ from: played, to: emptyRow });
     expect(result.moved).toBe(true);
     expect(result.items[0].Put).toMatchObject({
       Item: { ...played, ...at(TO), version: { N: '3' } },
@@ -1187,8 +891,8 @@ describe('planRoundMove (#204)', () => {
       );
     });
 
-    it(`guards BOTH rows on a no-move — source started but UNSUBMITTED, destination ${label}`, async () => {
-      const result = await plan({ from: { ...startedRun, ...at(FROM) }, to });
+    it(`guards BOTH rows on a no-move — source holding no guess, destination ${label}`, async () => {
+      const result = await plan({ from: { ...emptyRow, ...at(FROM) }, to });
       expect(result.moved).toBe(false);
       expect(result.items[0].ConditionCheck).toMatchObject({
         Key: at(FROM),
@@ -1211,45 +915,6 @@ describe('planRoundMove (#204)', () => {
     expect(result.items[1].ConditionCheck).toMatchObject({
       Key: at(TO),
       ExpressionAttributeValues: { ':v': { N: '5' } },
-    });
-  });
-
-  // RECORDED PLAY is `guesses.length > 0 || submittedAt exists` — ONE predicate, read on
-  // BOTH sides. These three rows are what the log-only version got wrong, and each of them
-  // loses a recorded day.
-  it('MOVES a submitted 0-claim run onto an absent destination — an empty log is still a day', async () => {
-    const result = await plan({ from: submittedEmpty(FROM, 7) });
-    expect(result.moved).toBe(true);
-    expect(result.items[0].Put).toMatchObject({
-      Item: { ...submittedEmpty(FROM, 7), ...at(TO), version: { N: '1' } },
-      ConditionExpression: 'attribute_not_exists(pk)',
-    });
-    expect(result.items[1].Delete).toMatchObject({
-      Key: at(FROM),
-      ExpressionAttributeValues: { ':v': { N: '7' } },
-    });
-  });
-
-  it('MOVES a submitted 0-claim run OVER a merely started one — only one of them is recorded', async () => {
-    const result = await plan({ from: submittedEmpty(FROM, 7), to: startedRun });
-    expect(result.moved).toBe(true);
-    expect(result.items[0].Put).toMatchObject({
-      Item: { ...submittedEmpty(FROM, 7), ...at(TO), version: { N: '3' } },
-      ConditionExpression: '#v = :v',
-      ExpressionAttributeValues: { ':v': { N: '2' } },
-    });
-  });
-
-  it('BLOCKS a move onto a submitted 0-claim destination — both sides hold recorded play', async () => {
-    const result = await plan({ from: played, to: submittedEmpty(TO, 6) });
-    expect(result.moved).toBe(false);
-    expect(result.items[0].ConditionCheck).toMatchObject({
-      Key: at(FROM),
-      ExpressionAttributeValues: { ':v': { N: '7' } },
-    });
-    expect(result.items[1].ConditionCheck).toMatchObject({
-      Key: at(TO),
-      ExpressionAttributeValues: { ':v': { N: '6' } },
     });
   });
 

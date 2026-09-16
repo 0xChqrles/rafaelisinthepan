@@ -19,9 +19,8 @@
 // summarises this same bar into a bounded 3..18 cells on the same ramp (it has to fit a text
 // message); the card draws every try AND the ticks, so it stays the richer view.
 //
-// Sentence-card strings are numeric fields plus fixed units. Word mode additionally carries
-// the day's accented display word in its token; that one value is XML-escaped before it is
-// interpolated into the SVG.
+// Result-card strings are numeric fields plus fixed units. The one free text a card draws is
+// a NAME (a signed share's signer, a group card's group), XML-escaped before interpolation.
 
 import { anonName, defaultAvatar } from './assigned';
 import { AVATAR_PALETTES, AVATAR_SIZE, decodeAvatar } from './avatar';
@@ -34,19 +33,17 @@ import {
   PIXEL_INK_LIFT_EM,
 } from './glyphs';
 import { progressHeatColor } from './heat';
-import type { ShareResult, WordShareResult } from './shareCard';
+import type { ShareResult } from './shareCard';
 
 // Standard OG image size (Twitter/Slack/Discord `summary_large_image`).
 export const CARD_WIDTH = 1200;
 export const CARD_HEIGHT = 630;
 
 // Palette — mirrors :root in web/src/index.css (the 2026-09-01 rebrand: white fg on a
-// near-black ground, and the SOLVE ink — the blue every solved word wears, the card's
-// day word included).
+// near-black ground).
 const BG = '#050507';
 const FG = '#ffffff';
 const MUTED = '#a6adb8';
-const SOLVE = '#4a6aff';
 
 const CARD_FONT = 'Press Start 2P';
 
@@ -75,54 +72,6 @@ const UNITS: Record<string, { one: string; many: string }> = {
 // What the card draws IS what the token carries, so the renderer takes the codec's own
 // result type rather than a second declaration of the same five fields.
 export type CardData = ShareResult;
-
-// Word mode's card (#156): the run has no trajectory to draw — the result is the claim
-// count and, since the v5 token (2026-08-11), its PER-RARITY breakdown — so the card is
-// the day's word in the game's accent, the count with its unit named ("12 WORDS":
-// higher is better here), the breakdown as a row of grade-coloured chips, and the day.
-// **The word is the WORD ALONE, centred — no node square** (user-decided 2026-08-11,
-// superseding the terminus lockup): the in-game square marks the end of a LINE, and this
-// card draws no line, so it was a station badge with nothing to be a station of. The
-// colour already says the word is the solved target, and dropping the square hands the
-// full column back to the type — a 25-letter French word now sets at 40px where the
-// lockup left it 36.
-const WORD_UNITS: Record<string, { one: string; many: string }> = {
-  en: { one: 'WORD', many: 'WORDS' },
-  fr: { one: 'MOT', many: 'MOTS' },
-};
-
-// The rarity chip colours, commonest first (COMMON..ARCANE) — PINNED COPIES of the web's
-// RARITY_COLORS (web/src/components/rarity.ts), the same one-way copy the BG/FG/MUTED/
-// SOLVE palette above makes of :root. The web's rarity.test.ts asserts the two stay
-// identical, so a grade retune fails there instead of the card silently wearing a stale
-// ladder. A FIXED table of constants (never interpolated input), so the renderer's "no
-// text to escape" guarantee holds for the chip row.
-export const WORD_RARITY_COLORS: readonly string[] = [
-  '#97a3c9', // COMMON
-  '#4fd2e8', // UNCOMMON
-  '#64a0ff', // RARE
-  '#bd68ff', // OBSCURE
-  '#ff5ce0', // ARCANE
-];
-
-export type WordCardData = WordShareResult;
-
-const WORD_ROW_Y = 165;
-const WORD_MAX_SIZE = 76;
-const WORD_SCORE_Y = 335;
-// The breakdown AS A BAR (user-decided 2026-09-05, superseding the chip row): the
-// sentence ruler's band in this mode's terms — one segment per grade CLAIMED across the
-// ruler's own column, as wide as its share of the claims, in the grade's colour, its count
-// centred under it like a tick's number. Every segment keeps a FLOOR width, so one claim
-// beside two hundred still shows and still fits its count (five 5-digit forgeries fit
-// five floors), and the remainder is shared by count — the bar always fills the column.
-const WORD_BAR_Y = 408;
-const WORD_BAR_H = 40;
-const WORD_BAR_GAP = 6;
-const WORD_BAR_MIN_W = 140; // five digits at WORD_NUM_SIZE, with air
-const WORD_NUM_SIZE = 26;
-const WORD_NUM_TOP = WORD_BAR_Y + WORD_BAR_H + 10 + WORD_NUM_SIZE; // baseline
-const WORD_DATE_Y = 555;
 
 function escapeSvgText(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -205,15 +154,11 @@ function markTile(
 const SIGN_AVATAR_PX = 64;
 const SIGN_GAP = 22;
 const SIGN_NAME_SIZE = 28;
-// Sentence: the ruler's tick tops start at BAR_Y − TICK_OVERHANG = 171 and the date sits
-// at 500; moved down 30 the result runs 201..538, and the strip at 97..161 leaves 40 to
-// the ticks — 97 above, 92 below.
-const SENTENCE_SIGN_Y = 97;
-const SENTENCE_SIGN_SHIFT = 30;
-// Word: the word row's glyphs top out near 127 and the date sits at 555; moved down 14 the
-// word starts at 141, the strip at 44..108 leaves 33 to it, and ~55 stays under the date.
-const WORD_SIGN_Y = 44;
-const WORD_SIGN_SHIFT = 14;
+// The ruler's tick tops start at BAR_Y − TICK_OVERHANG = 171 and the date sits at 500;
+// moved down 30 the result runs 201..538, and the strip at 97..161 leaves 40 to the ticks —
+// 97 above, 92 below.
+const SIGN_Y = 97;
+const SIGN_SHIFT = 30;
 
 function signatureStrip({ publicId, name, avatar }: CardFace, y: number): string {
   const shown = name || anonName(publicId);
@@ -286,63 +231,7 @@ export function renderGroupCardSvg({ name, members }: GroupCardData): string {
   ].join('');
 }
 
-export function renderWordCardSvg(
-  { lang, dayNumber, counts, word }: WordCardData,
-  by: CardFace | null = null,
-): string {
-  const unit = WORD_UNITS[lang] ?? WORD_UNITS.en;
-  const score = counts.reduce((sum, n) => sum + n, 0);
-  const cx = CARD_WIDTH / 2;
-  // Press Start 2P advances exactly 1em per glyph once ligatures are disabled, so the word
-  // fits the column at `size = width / glyphs`. Keep the complete word on ONE line — it is
-  // the thing the card is about, and a wrapped one reads as two.
-  const glyphs = Math.max(1, Array.from(word).length);
-  const wordSize = Math.min(
-    WORD_MAX_SIZE,
-    Math.max(1, Math.floor((CARD_WIDTH - 2 * MARGIN) / glyphs)),
-  );
-
-  // One segment per grade the run actually claimed, commonest first, zero grades omitted —
-  // the same breakdown the share text's beads make. Segment edges are rounded to whole
-  // pixels so the crisp-edged rects never seam.
-  const segments = counts
-    .map((count, step) => ({ count, color: WORD_RARITY_COLORS[step] ?? MUTED }))
-    .filter((seg) => seg.count > 0);
-  let bar = '';
-  if (segments.length > 0) {
-    const total = segments.reduce((sum, seg) => sum + seg.count, 0);
-    const free = BAR_W - WORD_BAR_GAP * (segments.length - 1) - WORD_BAR_MIN_W * segments.length;
-    let x = BAR_X;
-    bar = segments
-      .map((seg) => {
-        const w = WORD_BAR_MIN_W + (free * seg.count) / total;
-        const left = Math.round(x);
-        const right = Math.round(x + w);
-        x += w + WORD_BAR_GAP;
-        const cx = Math.round((left + right) / 2);
-        return (
-          `<rect x="${left}" y="${WORD_BAR_Y}" width="${right - left}" height="${WORD_BAR_H}" fill="${seg.color}" shape-rendering="crispEdges"/>` +
-          `<text x="${cx}" y="${WORD_NUM_TOP}" text-anchor="middle" font-family="${CARD_FONT}" font-size="${WORD_NUM_SIZE}" fill="${seg.color}">${seg.count}</text>`
-        );
-      })
-      .join('');
-  }
-
-  return [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}">`,
-    `<rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="${BG}"/>`,
-    by ? signatureStrip(by, WORD_SIGN_Y) : '',
-    `<g transform="translate(0 ${by ? WORD_SIGN_SHIFT : 0})">`,
-    `<text x="${cx}" y="${WORD_ROW_Y}" dy="0.16em" dominant-baseline="middle" text-anchor="middle" font-family="${CARD_FONT}" font-size="${wordSize}" font-variant-ligatures="none" fill="${SOLVE}">${escapeSvgText(word)}</text>`,
-    `<text x="${cx}" y="${WORD_SCORE_Y}" text-anchor="middle" font-family="${CARD_FONT}" font-size="76" fill="${FG}">${score} ${score === 1 ? unit.one : unit.many}</text>`,
-    bar,
-    `<text x="${cx}" y="${WORD_DATE_Y}" text-anchor="middle" font-family="${CARD_FONT}" font-size="30" fill="${MUTED}">${dateForDayNumber(dayNumber)}</text>`,
-    `</g>`,
-    `</svg>`,
-  ].join('');
-}
-
-// The sentence headline's own band: `<n> TRIES`, or `∞ TRIES` for a #214 capped round.
+// The headline's own band: `<n> TRIES`, or `∞ TRIES` for a #214 capped round.
 // Press Start 2P advances exactly 1em per glyph, so a lockup's width is a SUM OF EMS and a
 // centred one needs no measuring — which is what lets the ∞ (a path, since the face has no
 // such glyph and the rasterizer loads no other font) sit on the line as if it were type.
@@ -428,8 +317,8 @@ export function renderCardSvg(
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}">`,
     `<rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="${BG}"/>`,
-    by ? signatureStrip(by, SENTENCE_SIGN_Y) : '',
-    `<g transform="translate(0 ${by ? SENTENCE_SIGN_SHIFT : 0})">`,
+    by ? signatureStrip(by, SIGN_Y) : '',
+    `<g transform="translate(0 ${by ? SIGN_SHIFT : 0})">`,
     `<g shape-rendering="crispEdges">${cells}</g>`,
     marks,
     // "N TRIES", not "SCORE N": naming the unit is what tells a stranger seeing the

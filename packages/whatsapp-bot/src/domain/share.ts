@@ -1,32 +1,16 @@
 // A Whippin share is DETERMINISTIC input (#236): the token in a `…/s/<token>` link carries
 // the day and the score, decoded with the game's own codec. No model is anywhere on this
 // path, and the token's day — never the WhatsApp receive date — is what groups the result.
-//
-// BOTH dailies decode (user-decided 2026-09-05; it was sentence-only until then). A
-// SENTENCE result is RECORDED — it is what the podium ranks. A WORD result is ACKNOWLEDGED
-// and nothing more: the group has no product rule yet for a Word podium, and nothing is
-// stored for one — the declarations key a (group, day, sender) and a word row there would
-// collide with the sentence row of the same day. When a Word podium is decided, its rows
-// get their own key; until then a Word share earns the emoji or the line, and no history.
 
-import { PUBLIC_ID_SOURCE, SHARE_TOKEN_SOURCE, decodeResult, decodeWordResult, type ShareResult } from '@whippin/shared';
+import { PUBLIC_ID_SOURCE, SHARE_TOKEN_SOURCE, decodeResult } from '@whippin/shared';
 
-export type DecodedShare =
-  | {
-      mode: 'sentence';
-      token: string;
-      lang: string;
-      dayNumber: number;
-      score: number; // unique tries — lower is better
-      capped: boolean; // the run ended at ∞ (#214): recorded, never positioned
-    }
-  | {
-      mode: 'word';
-      token: string;
-      lang: string;
-      dayNumber: number;
-      claims: number; // words found — higher is better
-    };
+export interface DecodedShare {
+  token: string;
+  lang: string;
+  dayNumber: number;
+  score: number; // unique tries — lower is better
+  capped: boolean; // the run ended at ∞ (#214): recorded, never positioned
+}
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -55,21 +39,16 @@ export function findShareTokens(text: string, siteOrigin: string): string[] {
   return tokens;
 }
 
-// THE GENERATED SHARE, AS THE WEB COMPOSES IT (`web/src/game/share.ts` `shareText` /
-// `wordShareText`): a headline `Whippin AI <date> — <score> <unit>`, the run as a row of
-// emoji (a sentence result: the progress squares and the keycaps of the solve moments; a
-// word result: the WORD in capitals over its rarity beads), a blank line, the link. The
-// bot cannot import the web, so the shape is restated here and pinned by the tests against
-// the web's own output. The alphabets are the web's, verbatim: `progressEmoji`'s four
-// squares and `HOLE_KEYCAPS`; `RARITY_EMOJI`'s five beads.
+// THE GENERATED SHARE, AS THE WEB COMPOSES IT (`web/src/game/share.ts` `shareText`): a
+// headline `Whippin AI <date> — <score> <unit>`, the run as a row of emoji (the progress
+// squares and the keycaps of the solve moments), a blank line, the link. The bot cannot
+// import the web, so the shape is restated here and pinned by the tests against the web's
+// own output. The alphabets are the web's, verbatim: `progressEmoji`'s four squares and
+// `HOLE_KEYCAPS`.
 const HEADLINE = /^[ \t]*Whippin AI \d{4}-\d{2}-\d{2} — [^\n]*$/u;
-const SENTENCE_ROW = /^[ \t]*(?:[🟥🟨🟪🟦]|[1-9]\uFE0F?\u20E3)+[ \t]*$/u;
-const WORD_ROW = /^[ \t]*(?:[⚪🟢🔵🟣🩷]\d+[ \t]*)+$/u;
-// The word line: ONE token in capitals, and only ever INSIDE a headline block — a member
-// shouting "BRAVO" on a line of their own is commentary.
-const WORD_LINE = /^[ \t]*[\p{Lu}][\p{Lu}\p{M}'’-]*[ \t]*$/u;
+const ROW = /^[ \t]*(?:[🟥🟨🟪🟦]|[1-9]\uFE0F?\u20E3)+[ \t]*$/u;
 
-const isRow = (line: string) => SENTENCE_ROW.test(line) || WORD_ROW.test(line);
+const isRow = (line: string) => ROW.test(line);
 const isBlank = (line: string) => line.trim() === '';
 
 // The text WITHOUT the share it carried — the LINK, and the whole GENERATED BLOCK the web
@@ -79,7 +58,7 @@ const isBlank = (line: string) => line.trim() === '';
 // comes back EMPTY and becomes no context at all, while whatever the player typed around
 // it — the commentary — is what stays. A bare row of the share alphabet is dropped even
 // with no headline over it (a share pasted in pieces); a headline is dropped wherever it
-// stands; the word-mode WORD line is dropped only between a headline and its link.
+// stands.
 export function withoutShares(text: string, siteOrigin: string): string {
   const link = shareLink(siteOrigin, 'u');
   const lines = text.split('\n');
@@ -89,7 +68,7 @@ export function withoutShares(text: string, siteOrigin: string): string {
     if (HEADLINE.test(line)) {
       // Skip the block: everything generated between the headline and the link line.
       let j = i + 1;
-      while (j < lines.length && !link.test(lines[j]) && (isBlank(lines[j]) || isRow(lines[j]) || WORD_LINE.test(lines[j]))) {
+      while (j < lines.length && !link.test(lines[j]) && (isBlank(lines[j]) || isRow(lines[j]))) {
         j += 1;
       }
       // Resume AT the line the walk stopped on: the link line is kept and the link itself
@@ -112,31 +91,18 @@ export function withoutShares(text: string, siteOrigin: string): string {
 }
 
 export function decodeShare(token: string): DecodedShare | null {
-  const result: ShareResult | null = decodeResult(token);
-  if (result) {
-    return {
-      mode: 'sentence',
-      token,
-      lang: result.lang,
-      dayNumber: result.dayNumber,
-      score: result.score,
-      capped: result.capped === true,
-    };
-  }
-  // The WORD itself is decoded and dropped: the share text prints it in capitals anyway,
-  // and nothing here has a use for it — least of all a prompt.
-  const word = decodeWordResult(token);
-  if (!word) return null;
+  const result = decodeResult(token);
+  if (!result) return null;
   return {
-    mode: 'word',
     token,
-    lang: word.lang,
-    dayNumber: word.dayNumber,
-    claims: word.counts.reduce((n, c) => n + c, 0),
+    lang: result.lang,
+    dayNumber: result.dayNumber,
+    score: result.score,
+    capped: result.capped === true,
   };
 }
 
-// The shares a message carries, either daily. A malformed token is simply not a share — it
+// The shares a message carries. A malformed token is simply not a share — it
 // is never a reason to do anything else with the message.
 export function sharesIn(text: string, siteOrigin: string): DecodedShare[] {
   const shares: DecodedShare[] = [];

@@ -239,7 +239,7 @@ describe('what a reload finds (#216)', () => {
   it('reports an UNREADABLE storage as unknown, never as emptiness', () => {
     // Blocked site data / a private mode whose `localStorage` PROPERTY throws. The null
     // identity is then UNPROVEN — `readable: false` is what tells startup not to treat it
-    // as a fresh device and clear identity-owned state (the outbox, the Word rounds) out
+    // as a fresh device and clear identity-owned state (the outbox) out
     // of an intact game database.
     const denied = fakeWindow(storage);
     Object.defineProperty(denied, 'localStorage', {
@@ -500,7 +500,6 @@ describe('local state follows the identity that owns it (#216)', () => {
       previous: null,
       next: identity,
       accountChanged: true,
-      deviceChanged: true,
       // MINTED by this tab's own bootstrap: the account is empty by construction, so the
       // scope listener must not re-read the tokenless projections for it.
       adopted: false,
@@ -575,7 +574,7 @@ describe('localStorage is shared by every TAB (#216)', () => {
   it('publishes a STORAGE-RECOVERED pending bootstrap as an ADOPTION, never a fresh mint', async () => {
     // A bare {token} in storage does NOT prove an empty account (PR-219 round-2 review):
     // the original session's bootstrap may have ANSWERED and its acts run — a profile
-    // saved, a friend added, a word round started — with only the completed identity's
+    // saved, a friend added, a round started — with only the completed identity's
     // write failing behind it. Recovering the token through the server's idempotence
     // returns that very account, so the acquisition must announce `adopted` and let the
     // scope owner re-read the tokenless projections, or the real state stays hidden

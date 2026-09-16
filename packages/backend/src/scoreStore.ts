@@ -1,12 +1,9 @@
-import type { ScoreMode } from './scoreLimits';
-
 export const SCORE_SUBMISSION_LIMIT = 5;
 export const SCORE_DEDUP_TTL_SECONDS = 48 * 60 * 60;
 
 export interface ScoreKey {
   date: string;
   lang: string;
-  mode: ScoreMode;
 }
 
 // One recorded score per player per daily (#187): the row IS the population — the
@@ -56,14 +53,18 @@ export interface ScoreStore {
   submit(input: ScoreSubmission): Promise<ScoreSubmitOutcome>;
 }
 
+// The `sentence` segment is a FIXED part of both keys: it named the daily while Word mode
+// stood beside it, and the recorded scores and allowances are addressed by it.
+const KEY_DAILY = 'sentence';
+
 // Partition of a daily's score rows; the sort key is the row's publicId.
 export function dayKey(key: ScoreKey): string {
-  return `score#${key.date}#${key.lang}#${key.mode}`;
+  return `score#${key.date}#${key.lang}#${KEY_DAILY}`;
 }
 
 // The dedup item keeps its own partition so a day Query never reads allowance items.
 export function dedupKey(key: ScoreKey, ipHash: string): string {
-  return `dedup#${key.date}#${key.lang}#${key.mode}#${ipHash}`;
+  return `dedup#${key.date}#${key.lang}#${KEY_DAILY}#${ipHash}`;
 }
 
 // The table now has a composite key, so single items carry a constant sort key.

@@ -4,7 +4,7 @@
 // Opening a daily still loads its complete authoritative round (`state/roundSync.ts`), but
 // the archive calendar, the language chooser and the streak cannot open every daily merely
 // to discover what happened — so they read the server's own summary instead: one Query per
-// (month, language, mode) for the calendar, and the language's solved-day collection for
+// (month, language) for the calendar, and the language's solved-day collection for
 // the streak. Both come back from ONE call, because both are facts about the same player.
 //
 // **The cache is IN-MEMORY and nothing here is persisted.** Archive days are playable, so a
@@ -35,11 +35,10 @@ import {
   identityEpochOf,
 } from '../identity';
 import { adoptSignedOutVerdict } from './signedOutVerdict';
-import type { Mode } from '../langs';
 import { statusOf, type RoundSummary, type Status } from './status';
 
-// Where one summary read is. `idle` = nothing has asked for it (a Word mode archive never
-// asks); the rest are the read's own three outcomes.
+// Where one summary read is. `idle` = nothing has asked for it; the rest are the read's own
+// three outcomes.
 export type HistoryPhase = 'idle' | 'loading' | 'ready' | 'failed';
 
 interface MonthEntry {
@@ -70,7 +69,7 @@ export const useHistoryStore = create<HistoryState>(() => ({ months: {}, solved:
 const IDLE_MONTH: MonthEntry = { phase: 'idle', days: null };
 const IDLE_SOLVED: SolvedEntry = { phase: 'idle', days: null };
 
-const monthKey = (lang: string, mode: Mode, month: string) => `${lang}:${mode}:${month}`;
+const monthKey = (lang: string, month: string) => `${lang}:${month}`;
 
 // ONE conversation per request key, shared across component lifetimes (the
 // `activeScoreFlights` pattern): the chooser mounts two languages at once and React's
@@ -80,7 +79,7 @@ const monthKey = (lang: string, mode: Mode, month: string) => `${lang}:${mode}:$
 const flights = new Map<string, Promise<void>>();
 
 // WHICH flight drives `solved[lang]`'s PHASE: the most recently started one that reads the
-// collection. The entry is keyed by language while several (lang, mode, month) flights can
+// collection. The entry is keyed by language while several (lang, month) flights can
 // be in the air at once — paging the archive quickly does exactly that — and letting every
 // settle write the phase is a last-writer-wins race: a failing OLD month read landing last
 // stamps `failed` onto a collection that loaded fine. Only the FAILURE is driver-gated,
@@ -94,7 +93,7 @@ const solvedReads = new Map<string, string>();
 // device with no account, and the adopted account may hold the rows they claimed absent.
 // A MINTED first identity never replays them — that account is empty by construction, so
 // the tokenless answers stay true.
-const answeredTokenless = new Map<string, [string, Mode, string | undefined, boolean]>();
+const answeredTokenless = new Map<string, [string, string | undefined, boolean]>();
 
 function setMonth(key: string | null, entry: (previous: MonthEntry) => MonthEntry): void {
   if (key === null) return;
@@ -114,7 +113,6 @@ function setSolved(lang: string, entry: (previous: SolvedEntry) => SolvedEntry):
 // Callers still use the hook below.
 export async function loadPlayerHistory(
   lang: string,
-  mode: Mode,
   month: string | undefined,
   // `false` opts OUT of the solved-day collection — the language chooser wants a month
   // strip and never renders the streak, so its read must not spend the collection's
@@ -122,18 +120,18 @@ export async function loadPlayerHistory(
   // solved entry entirely alone).
   collection = true,
 ): Promise<void> {
-  const key = `${lang}:${mode}:${month ?? ''}:${collection ? 'c' : ''}`;
+  const key = `${lang}:${month ?? ''}:${collection ? 'c' : ''}`;
   const existing = flights.get(key);
   if (existing) return existing;
 
-  const monthId = month === undefined ? null : monthKey(lang, mode, month);
+  const monthId = month === undefined ? null : monthKey(lang, month);
   const identity = deviceIdentity();
   if (!identity) {
     // Known empty, and said as an ANSWER — `ready` with real values, never `idle` or a
     // pending null, or every surface would breathe forever behind a request nobody made.
     // A collection-less flight still leaves the solved entry entirely alone. The request
     // is remembered so a later ADOPTED identity can replay it (`rearmPlayerHistory`).
-    answeredTokenless.set(key, [lang, mode, month, collection]);
+    answeredTokenless.set(key, [lang, month, collection]);
     setMonth(monthId, (previous) => ({ phase: 'ready', days: previous.days ?? new Map() }));
     if (collection) {
       setSolved(lang, (previous) => ({ phase: 'ready', days: previous.days ?? [] }));
@@ -152,7 +150,7 @@ export async function loadPlayerHistory(
       setSolved(lang, (previous) => ({ phase: 'loading', days: previous.days }));
     }
     try {
-      const response = await postHistoryBody(historyUrl(lang, mode, month), {
+      const response = await postHistoryBody(historyUrl(lang, month), {
         token: identity.token,
         ...(collection ? {} : { collection: false }),
       });
@@ -244,41 +242,38 @@ export interface HistoryView {
 
 // Read one player's private history. `month` is omitted by the surfaces that only need the
 // streak (the game screen), which is what keeps a game load from spending a whole
-// calendar's Query. `enabled` is false where the summary is not the server's at all — Word
-// mode's calendar is still local state (#214 deliberately kept its clock/outbox), and a
-// server-backed Word month needs its own product contract.
+// calendar's Query. `enabled` is false where nothing on screen reads the history (the game
+// screen on a day other than today's).
 export function usePlayerHistory({
   lang,
-  mode = 'sentence',
   month,
   enabled = true,
   collection = true,
 }: {
   lang: string;
-  mode?: Mode;
   month?: string;
   enabled?: boolean;
   // `false` skips the solved-day collection (the chooser: a month strip, no streak) —
   // see `loadPlayerHistory`.
   collection?: boolean;
 }): HistoryView {
-  const monthId = month === undefined ? null : monthKey(lang, mode, month);
+  const monthId = month === undefined ? null : monthKey(lang, month);
   const monthEntry = useHistoryStore((state) =>
     monthId === null ? undefined : state.months[monthId],
   );
   const solvedEntry = useHistoryStore((state) => state.solved[lang]);
 
-  // REVALIDATE whenever this (language, mode, month) becomes the view on screen — a mount,
+  // REVALIDATE whenever this (language, month) becomes the view on screen — a mount,
   // a month step, a language switch. An archive day is playable, so a past month is not
   // immutable and an earlier visit's answer is not evidence.
   useEffect(() => {
     if (!enabled) return;
-    void loadPlayerHistory(lang, mode, month, collection);
-  }, [enabled, lang, mode, month, collection]);
+    void loadPlayerHistory(lang, month, collection);
+  }, [enabled, lang, month, collection]);
 
   const retry = useCallback(() => {
-    if (enabled) void loadPlayerHistory(lang, mode, month, collection);
-  }, [enabled, lang, mode, month, collection]);
+    if (enabled) void loadPlayerHistory(lang, month, collection);
+  }, [enabled, lang, month, collection]);
 
   const monthState = monthEntry ?? IDLE_MONTH;
   const solvedState = solvedEntry ?? IDLE_SOLVED;
@@ -320,7 +315,7 @@ export function useAccountStats(activeDay: number): AccountStats {
   const solved = useHistoryStore((state) => state.solved);
 
   useEffect(() => {
-    for (const lang of SUPPORTED_LANGS) void loadPlayerHistory(lang, 'sentence', undefined, true);
+    for (const lang of SUPPORTED_LANGS) void loadPlayerHistory(lang, undefined, true);
   }, []);
 
   const entries = SUPPORTED_LANGS.map((lang) => solved[lang] ?? IDLE_SOLVED);
@@ -344,7 +339,7 @@ export function useAccountStats(activeDay: number): AccountStats {
   return { streak, best, days, phase };
 }
 
-// One SENTENCE day's status, straight off a month read — the one place the difference
+// One day's status, straight off a month read — the one place the difference
 // between "the server holds no round for this day" and "this month has not arrived" is
 // turned into something a surface can draw. A missing DAY is `none`; a missing MONTH is
 // `unknown`, and the two must never collapse into each other.
@@ -352,10 +347,8 @@ export function useAccountStats(activeDay: number): AccountStats {
 // `loading` says a read is IN FLIGHT, so it is read off that phase alone — never as "not
 // failed". The placeholder breathes to mean "an answer is coming", and an IDLE surface (one
 // whose read is disabled, or the frame before the effect fires) has nothing coming: it must
-// rest still, like a read that failed. Idle is unreachable on today's surfaces — Word mode
-// is the only `enabled: false` caller and it reads `wordStatusOf` instead — but a
-// placeholder that breathes forever with no request behind it is the exact false promise
-// the explicit-loading rule exists to prevent.
+// rest still, like a read that failed: a placeholder that breathes forever with no request
+// behind it is the exact false promise the explicit-loading rule exists to prevent.
 export function daySummaryStatus(view: HistoryView, date: string): Status {
   if (view.days === null) return { kind: 'unknown', loading: view.daysPhase === 'loading' };
   return statusOf(view.days.get(date));
@@ -412,8 +405,8 @@ export function rearmPlayerHistory(): void {
   // rejects — its failures are its own phase), and the months a surface is actually
   // looking at revalidate through their own hooks anyway.
   void (async () => {
-    for (const [lang, mode, month, collection] of replay) {
-      await loadPlayerHistory(lang, mode, month, collection);
+    for (const [lang, month, collection] of replay) {
+      await loadPlayerHistory(lang, month, collection);
     }
   })();
 }

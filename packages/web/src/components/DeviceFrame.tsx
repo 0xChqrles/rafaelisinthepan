@@ -7,7 +7,7 @@
 //
 // The sign-off is `MADE WITH <3` (user-picked 2026-08-18, replacing the localized
 // tagline — "a daily word game" read flat): universal, so it lives outside the STRINGS
-// table like the rarity grades do.
+// table.
 //
 // Purely decorative furniture: aria-hidden, pointer-events none, and DESKTOP ONLY (the
 // CSS hides it under 641px — a phone's viewport has no room for a frame). It sits under

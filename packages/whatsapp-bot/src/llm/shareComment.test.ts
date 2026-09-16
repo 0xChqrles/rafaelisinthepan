@@ -17,7 +17,6 @@ const group = parseGroupConfig('g.json', {
   acknowledge: 'say',
 });
 const DAY = 20700;
-const facts = { mode: 'sentence' as const, player: 'Gab', score: 7, capped: false };
 const log = createLog('silent');
 
 function row(day: number, sender: string, score: number, capped = false): Declaration {
@@ -66,7 +65,7 @@ function provider(
 describe('the spoken acknowledgement of a share is commentary from the numbers (user-decided 2026-09-07)', () => {
   it('hands the model the FACTS of the day and the form, and returns the line cleaned', async () => {
     const p = provider([{ text: '  **Sept**,\n derrière Zou.  ' }]);
-    expect(await generateShareComment(p.provider, group, facts, depsFor(await store()), log)).toBe('Sept, derrière Zou.');
+    expect(await generateShareComment(p.provider, group, depsFor(await store()), log)).toBe('Sept, derrière Zou.');
     // The user turn is the facts as JSON — the exact score, the board with this share
     // placed, who is above, where Gab usually lands — and no band word anywhere.
     const sent = JSON.parse(p.written()[0].messages[0].content);
@@ -92,16 +91,13 @@ describe('the spoken acknowledgement of a share is commentary from the numbers (
   it('shows the writer AND the judge what the player wrote with the share, beside the facts', async () => {
     const p = provider([{ text: 'Voilà, gentil : sept, juste derrière Zou.' }]);
     const deps = { ...depsFor(await store()), said: 'fais un commentaire gentil' };
-    expect(await generateShareComment(p.provider, group, facts, deps, log)).toBe('Voilà, gentil : sept, juste derrière Zou.');
+    expect(await generateShareComment(p.provider, group, deps, log)).toBe('Voilà, gentil : sept, juste derrière Zou.');
     expect(JSON.parse(p.written()[0].messages[0].content)).toMatchObject({ score: 7, said: 'fais un commentaire gentil' });
     expect(p.written()[0].system).toContain('"said"');
     expect(p.calls.find((c) => c.system === FACT_JUDGE_SYSTEM)!.messages[0].content).toContain('fais un commentaire gentil');
-    // A Word share carries it the same way; without it, there is no such field at all.
-    const word = provider([{ text: 'Vingt-six.' }]);
-    await generateShareComment(word.provider, group, { mode: 'word', player: 'Gab', claims: 26 }, { ...depsFor(await store()), said: 'dur' }, log);
-    expect(JSON.parse(word.written()[0].messages[0].content)).toEqual({ player: 'Gab', found: 26, said: 'dur' });
+    // Without it, there is no such field at all.
     const plain = provider([{ text: 'Sept.' }]);
-    await generateShareComment(plain.provider, group, facts, depsFor(await store()), log);
+    await generateShareComment(plain.provider, group, depsFor(await store()), log);
     expect(JSON.parse(plain.written()[0].messages[0].content)).not.toHaveProperty('said');
   });
 
@@ -109,40 +105,40 @@ describe('the spoken acknowledgement of a share is commentary from the numbers (
     const broken = await store();
     broken.day = async () => { throw new Error('dynamo down'); };
     const p = provider([]);
-    expect(await generateShareComment(p.provider, group, facts, depsFor(broken), log)).toBeNull();
+    expect(await generateShareComment(p.provider, group, depsFor(broken), log)).toBeNull();
     expect(p.calls).toHaveLength(0); // no facts, no words
     const stranger = provider([]);
-    expect(await generateShareComment(stranger.provider, group, facts, depsFor(await store(), 'Nobody'), log)).toBeNull();
+    expect(await generateShareComment(stranger.provider, group, depsFor(await store(), 'Nobody'), log)).toBeNull();
     expect(stranger.calls).toHaveLength(0);
   });
 
   it('writes every candidate at once; a failed or unfinished one is dropped and the others stand', async () => {
     const flaky = provider([new LlmUnavailable('503'), { text: 'Sept, derrière Zou.' }]);
-    expect(await generateShareComment(flaky.provider, group, facts, depsFor(await store()), log)).toBe('Sept, derrière Zou.');
+    expect(await generateShareComment(flaky.provider, group, depsFor(await store()), log)).toBe('Sept, derrière Zou.');
     const dead = provider([new LlmUnavailable('503'), new LlmUnavailable('503'), new LlmUnavailable('503')]);
-    expect(await generateShareComment(dead.provider, group, facts, depsFor(await store()), log)).toBeNull();
+    expect(await generateShareComment(dead.provider, group, depsFor(await store()), log)).toBeNull();
     expect(dead.calls).toHaveLength(3); // and nothing reached the judge
     // A truncated or interrupted answer is a fragment, refused on the reason.
     const cut = provider([{ text: 'Sept, derr', finish: 'length' }, { text: 'Sept, derr', finish: 'other' }, { text: 'Sept, derrière Zou.' }]);
-    expect(await generateShareComment(cut.provider, group, facts, depsFor(await store()), log)).toBe('Sept, derrière Zou.');
+    expect(await generateShareComment(cut.provider, group, depsFor(await store()), log)).toBe('Sept, derrière Zou.');
     // Too long is a paragraph, not a bubble.
     const long = provider([{ text: 'x'.repeat(COMMENTARY_MAX_CHARS + 1) }, { text: 'x'.repeat(COMMENTARY_MAX_CHARS + 1) }, { text: 'x'.repeat(COMMENTARY_MAX_CHARS + 1) }]);
-    expect(await generateShareComment(long.provider, group, facts, depsFor(await store()), log)).toBeNull();
+    expect(await generateShareComment(long.provider, group, depsFor(await store()), log)).toBeNull();
   });
 
   it('THE JUDGE reads each line against the facts: the first kept is posted, none kept is the emoji, and so is no verdict at all', async () => {
     const picky = provider([{ text: 'Zou est derrière toi.' }, { text: 'Sept, derrière Zou.' }], (line) => ({ text: line === 'Sept, derrière Zou.' ? '1' : '0' }));
-    expect(await generateShareComment(picky.provider, group, facts, depsFor(await store()), log)).toBe('Sept, derrière Zou.');
+    expect(await generateShareComment(picky.provider, group, depsFor(await store()), log)).toBe('Sept, derrière Zou.');
     expect(picky.judged).toHaveLength(3);
     const strict = provider([{ text: 'Zou est derrière toi.' }], () => ({ text: '0' }));
-    expect(await generateShareComment(strict.provider, group, facts, depsFor(await store()), log)).toBeNull();
+    expect(await generateShareComment(strict.provider, group, depsFor(await store()), log)).toBeNull();
     expect(strict.written()).toHaveLength(6); // two rounds, and no third
     // A judge that never answered posts NOTHING here (2026-09-14): the emoji stands in for a
     // share anyway, where the podium has nothing to fall back on and posts the first.
     const down = provider([{ text: 'Sept, derrière Zou.' }], () => new LlmUnavailable('503'));
-    expect(await generateShareComment(down.provider, group, facts, depsFor(await store()), log)).toBeNull();
+    expect(await generateShareComment(down.provider, group, depsFor(await store()), log)).toBeNull();
     const cut = provider([{ text: 'Sept, derrière Zou.' }], () => ({ text: '', finish: 'length' as const }));
-    expect(await generateShareComment(cut.provider, group, facts, depsFor(await store()), log)).toBeNull();
+    expect(await generateShareComment(cut.provider, group, depsFor(await store()), log)).toBeNull();
   });
 
   it('writes ONE more round when the judge kept nothing, with the judge\'s reasons in front of the writer', async () => {
@@ -150,7 +146,7 @@ describe('the spoken acknowledgement of a share is commentary from the numbers (
       [{ text: 'Zou est derrière toi.' }, { text: 'Zou est derrière toi.' }, { text: 'Zou est derrière toi.' }, { text: 'Sept, derrière Zou.' }],
       (line) => ({ text: line === 'Sept, derrière Zou.' ? '1: placing right' : '0: Zou is ahead in the facts, not behind' }),
     );
-    expect(await generateShareComment(second.provider, group, facts, depsFor(await store()), log)).toBe('Sept, derrière Zou.');
+    expect(await generateShareComment(second.provider, group, depsFor(await store()), log)).toBe('Sept, derrière Zou.');
     const writes = second.written();
     expect(writes).toHaveLength(6);
     expect(writes[0].messages[0].content).not.toContain('refused');
@@ -164,25 +160,15 @@ describe('the spoken acknowledgement of a share is commentary from the numbers (
     // check, and an unchecked line is not posted (the emoji is).
     let units = 0;
     const metered = provider([{ text: 'Sept, derrière Zou.' }]);
-    expect(await generateShareComment(metered.provider, group, facts, depsFor(await store()), log, async () => (units += 1) <= 4)).toBe('Sept, derrière Zou.');
+    expect(await generateShareComment(metered.provider, group, depsFor(await store()), log, async () => (units += 1) <= 4)).toBe('Sept, derrière Zou.');
     expect(metered.written()).toHaveLength(3);
     expect(metered.judged).toHaveLength(1);
     let one = 0;
     const unchecked = provider([{ text: 'Sept, derrière Zou.' }]);
-    expect(await generateShareComment(unchecked.provider, group, facts, depsFor(await store()), log, async () => (one += 1) <= 1)).toBeNull();
+    expect(await generateShareComment(unchecked.provider, group, depsFor(await store()), log, async () => (one += 1) <= 1)).toBeNull();
     expect(unchecked.written()).toHaveLength(1);
     const closed = provider([{ text: 'Sept, derrière Zou.' }]);
-    expect(await generateShareComment(closed.provider, group, facts, depsFor(await store()), log, async () => false)).toBeNull();
+    expect(await generateShareComment(closed.provider, group, depsFor(await store()), log, async () => false)).toBeNull();
     expect(closed.calls).toHaveLength(0);
-  });
-
-  it('tells the model a WORD result by its own rules, from the claims alone — nothing is recorded to read', async () => {
-    const p = provider([{ text: 'Vingt-six, joli.' }]);
-    const s = await store();
-    s.day = async () => { throw new Error('must not be read'); };
-    expect(await generateShareComment(p.provider, group, { mode: 'word', player: 'Gab', claims: 26 }, depsFor(s), log)).toBe('Vingt-six, joli.');
-    expect(JSON.parse(p.written()[0].messages[0].content)).toEqual({ player: 'Gab', found: 26 });
-    expect(p.written()[0].system).toContain('WORD MODE');
-    expect(p.written()[0].system).toContain('MORE is better');
   });
 });

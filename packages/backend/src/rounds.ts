@@ -1,28 +1,15 @@
-// The round route on the ONE handler: POST /round?lang=&date=&mode=.
+// The round route on the ONE handler: POST /round?lang=&date=.
 //
-// SENTENCE mode STREAMS its guess log (#201):
+// The client STREAMS its guess log (#201):
 //   { token, puzzle }                 — your stored round for that daily (404 = none yet);
 //   { token, puzzle, guesses: [...] } — append to its ordered guess log.
 //
-// WORD mode writes exactly TWICE (#202) — the intuition says the opposite, but the fast
-// game benefits least: what syncing buys is the live group board, and a 60-second run is
-// over before anyone opens it.
-//   { token, puzzle, turnstileToken } — START: stamp this round's clock from the SERVER's
-//                                       own clock, onto the same record, FOR THE CALLING
-//                                       DEVICE (#217). A run that is not yet recorded is
-//                                       replaced — this is a restart as much as a start;
-//   { token, puzzle, guesses: [...] } — SUBMIT the whole log, once, at the end of the run,
-//                                       and only from the device the stamp names.
-//
-// Every call answers with the FULL stored state
-// `{ guesses, createdAt, startedAt?, startedBy?, now }` —
-// a 200 and EVERY refusal — so a write is also a reconciliation: the caller computes
+// Every call answers with the FULL stored state `{ guesses, createdAt, progress?, solved? }`
+// — a 200 and EVERY refusal — so a write is also a reconciliation: the caller computes
 // against stale local state, the server answers with truth, and the tab re-renders correct.
-// `now` is the server's own clock at the moment it answered, which is what lets a client
-// anchor its countdown to the server's `startedAt` without trusting its own device clock.
 // The route is POST-only — the device token is the auth (#216) and
 // it travels in the BODY, never in a query string, so there is no way to ask without proving
-// who you are. Its CloudFront behavior forwards exactly the three addressing queries (the
+// who you are. Its CloudFront behavior forwards exactly the two addressing queries (the
 // root AGENTS.md allowList contract); a production POST still needs
 // `x-amz-content-sha256` over the exact body bytes (OAC).
 //
@@ -30,13 +17,12 @@
 // server only ever compares it, which is the same "stores strings, interprets nothing"
 // rule the log itself follows.
 //
-// Since #203 the SENTENCE append READS THE DAY'S PUZZLE too — overturning #201's explicit
-// "there is NO puzzle-store read". The score stops being something the client claims: the
-// server derives `progress` and `solved` from the stored log on every append and records
-// the score row itself when the round finishes. What it reads is the small DERIVATION
-// SLICE (slice.ts), not the multi-megabyte artifact — and the full artifact only when a
-// round actually solves, because only the score needs every rank. Word mode's SUBMIT
-// already read the artifact (#202); it is simply no longer the only path that does.
+// Since #203 the append READS THE DAY'S PUZZLE — overturning #201's explicit "there is NO
+// puzzle-store read". The score stops being something the client claims: the server derives
+// `progress` and `solved` from the stored log on every append and records the score row
+// itself when the round finishes. What it reads is the small DERIVATION SLICE (slice.ts),
+// not the multi-megabyte artifact — and the full artifact only when a round actually
+// solves, because only the score needs every rank.
 
 import {
   activeDate,
@@ -45,11 +31,7 @@ import {
   fold,
   ROUND_GUESS_CAP,
   VOCAB_BUILDS,
-  WORD_CLAIM_ZONE,
-  WORD_MISS_CAP,
-  wordRunFloorMs,
   type Puzzle,
-  type WordRanks,
 } from '@whippin/shared';
 import { createHash } from 'node:crypto';
 import {
@@ -72,7 +54,6 @@ import {
 } from './roundStore';
 import { hashClientIp } from './scores';
 import { SCORE_DEDUP_TTL_SECONDS, type ScoreStore } from './scoreStore';
-import { wordScoreMaximum, type ScoreMode } from './scoreLimits';
 import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respond';
 import type { PuzzleStore } from './store';
 import type { TurnstileVerifier } from './turnstile';
@@ -89,11 +70,11 @@ export interface RoundHandlerDeps {
   // The #169 volume floor under those rows moved here with the write: the round path is
   // where a score is now recorded, so it is where the address is hashed.
   ipHmacSecret: string;
-  // Turnstile gates ROUND START in both modes (#203 moved it off the score POST): Word
-  // mode's explicit START, and the sentence append that CREATES a round. Round creation is
-  // available to every unlinked visitor, so it carries more weight than it did.
+  // Turnstile gates ROUND START (#203 moved it off the score POST): the append that CREATES
+  // a round. Round creation is available to every unlinked visitor, so it carries more
+  // weight than it did.
   turnstile: TurnstileVerifier;
-  // The streak's solved-day collection (#211). A confirmed sentence solve credits its day
+  // The streak's solved-day collection (#211). A confirmed solve credits its day
   // here, idempotently, so the private history read can answer the streak without replaying
   // a year of round rows. It is a rebuildable CACHE of those rows, never a second
   // authority — which is what makes crediting it a fire-and-log side effect below.
@@ -102,22 +83,14 @@ export interface RoundHandlerDeps {
   allowSourceIp?: boolean;
 }
 
-// The longest log each mode may carry, and therefore the biggest body this route reads.
-// SENTENCE: one coalesced flush is bounded by the guess cap itself. WORD: the whole run in
-// one write — at most the field's own size in claims plus `WORD_MISS_CAP` misses.
-function maxGuesses(mode: ScoreMode): number {
-  return mode === 'word' ? WORD_CLAIM_ZONE + WORD_MISS_CAP : ROUND_GUESS_CAP;
-}
-
-// …at most that many slugs of at most the longest language's maxSlugLength (#200) plus JSON
+// The biggest body this route reads: one coalesced flush is bounded by the guess cap itself,
+// so at most that many slugs of at most the longest language's maxSlugLength (#200) plus JSON
 // framing (`"…",`), with slack for the device token, the puzzle tag, a Turnstile token and the
 // field names. DERIVED rather than hand-picked, so a longer vocabulary cannot silently
 // outgrow it — still small, since the point is bounding JSON.parse rather than serving
 // uploads.
 const LONGEST_SLUG = Math.max(...Object.values(VOCAB_BUILDS).map((build) => build.maxSlugLength));
-function bodyMaxBytes(mode: ScoreMode): number {
-  return maxGuesses(mode) * (LONGEST_SLUG + 3) + 4_096;
-}
+const BODY_MAX_BYTES = ROUND_GUESS_CAP * (LONGEST_SLUG + 3) + 4_096;
 
 export async function handleRound(
   event: FnUrlEvent,
@@ -140,17 +113,17 @@ export async function handleRound(
     );
   }
 
-  // The shared (lang, mode, date) guard triple + future guard (liveRoute.ts).
+  // The shared (lang, date) guard pair + future guard (liveRoute.ts).
   const params = requireDayParams(event, serverDate, responseHeaders);
   if (!params.ok) return params.response;
-  const { lang, mode, date } = params.value;
+  const { lang, date } = params.value;
 
-  const parsed = readJsonObject(event, 'Round', responseHeaders, bodyMaxBytes(mode));
+  const parsed = readJsonObject(event, 'Round', responseHeaders, BODY_MAX_BYTES);
   if (!parsed.ok) return parsed.response;
   const body = parsed.value;
 
   // Validated BEFORE authentication: it costs no I/O, and knowing the tag is what lets
-  // the hot sentence append start its slice fetch beside the auth reads below.
+  // the hot append start its slice fetch beside the auth reads below.
   const puzzle = body.puzzle;
   if (typeof puzzle !== 'string' || !PUZZLE_TAG_SHAPE.test(puzzle)) {
     return errorResponse(
@@ -164,14 +137,11 @@ export async function handleRound(
   // The game's hottest write pays latency directly: the web paces its flushes from the
   // previous write's ANSWER, so every serial round trip here cuts the sustained sync rate.
   // Authentication is two sequential DynamoDB reads since #216 (the device row, then its
-  // account row); the sentence append's derivation slice (#203) depends on neither, so its
-  // S3 GET starts FIRST and hides inside them — the same overlap #203 built against the
-  // round read. The word paths and the plain read still await auth alone: everything they
-  // fetch needs the resolved account.
+  // account row); the append's derivation slice (#203) depends on neither, so its S3 GET
+  // starts FIRST and hides inside them — the same overlap #203 built against the round read.
+  // The plain read still awaits auth alone: everything it fetches needs the resolved account.
   const slicePromise =
-    mode !== 'word' && body.guesses !== undefined
-      ? loadSlice(puzzleStore, date, lang, puzzle)
-      : null;
+    body.guesses !== undefined ? loadSlice(puzzleStore, date, lang, puzzle) : null;
   // A path that returns before awaiting it (a refused auth, a malformed batch) must not
   // leave the rejection unhandled; the append path awaits the ORIGINAL promise, so a real
   // failure still surfaces there.
@@ -181,118 +151,40 @@ export async function handleRound(
   if (!auth.ok) return auth.response;
   const publicId = auth.value.account.accountId;
 
-  const answer = (state: RoundState) => json(200, roundBody(state, instant), responseHeaders);
-
-  // START (word only): the round's clock, stamped from THIS server's clock. Not for cheat
-  // prevention — the day's artifact is public and anyone determined can type its words —
-  // but because the end-of-run wait check needs an anchor the client cannot move. A
-  // client-supplied start is simply backdated and the bound evaporates.
-  //
-  // A SENTENCE round has no clock, so it has no START message: its Turnstile token rides
-  // the append that CREATES the round (#203) and is checked there, once the pre-read has
-  // said whether anything is stored for this puzzle yet.
-  if (mode === 'word' && body.turnstileToken !== undefined) {
-    if (body.guesses !== undefined) {
-      // The two word writes are separate messages and no client sends both. Dispatching on
-      // the token and silently DROPPING the guesses would answer 200 to a caller whose log
-      // was never stored, which is the one failure this route must never fake.
-      return errorResponse(
-        400,
-        'bad_request',
-        'A round is either started or submitted, never both in one call.',
-        responseHeaders,
-      );
-    }
-    const token = requireTurnstileToken(body, responseHeaders);
-    if (!token.ok) return token.response;
-    const remoteIp = clientIp(event, deps.allowSourceIp === true);
-    if (!remoteIp) {
-      throw new Error('Word round start has no trusted client IP address.');
-    }
-    // One server-side Siteverify call. A false result is an authentication rejection;
-    // transport/service errors throw and follow the handler's operational 500 path.
-    if (!(await deps.turnstile.verify(token.value, remoteIp))) {
-      return errorResponse(
-        403,
-        'turnstile_rejected',
-        'Turnstile token is invalid.',
-        responseHeaders,
-      );
-    }
-    // A START is a RESTART as much as a first start (#217): an unsubmitted run is replaced
-    // — this device's, another device's, or a retired word's — and the new stamp names the
-    // CALLER. The one thing that refuses it is a run already RECORDED, which is answered
-    // with that final run rather than as an error: the daily is one-shot once its log is
-    // stored, and the caller adopts what stands instead of wiping it.
-    //
-    // The device stamp is what replaced #202's `resumed` flag and every inference the
-    // client hung off it. A device could tell "I am running this" from "I merely joined a
-    // clock somebody else is playing" only by remembering that its own start stamped it —
-    // and a joiner that got that wrong buried a real run under an empty log. Now the answer
-    // simply says whose run it is.
-    const { outcome, state } = await rounds.start({
-      date,
-      lang,
-      mode,
-      publicId,
-      puzzle,
-      runner: { deviceId: auth.value.device.deviceId, ...auth.value.device.agent },
-      now: instant,
-    });
-    // …and that refusal IS the run the answer carries: there is no error code for it, so
-    // the caller reads it off `submittedAt`. An `already_submitted` carrying NO recorded run
-    // therefore says nothing at all, and a 200 would read as a start that silently did
-    // nothing — the one failure this route must never fake. It happens when a republish
-    // lands between the condition failing and the strongly consistent read that classifies
-    // it: the record has moved on to the word that replaced this one, so the server
-    // genuinely holds no round for the puzzle asked about. That is the READ's own answer.
-    if (outcome === 'already_submitted' && state.submittedAt === undefined) {
-      return errorResponse(404, 'not_found', 'No round recorded.', responseHeaders);
-    }
-    return answer(state);
-  }
-
   const rawGuesses = body.guesses;
-  if (mode !== 'word' && body.turnstileToken !== undefined && rawGuesses === undefined) {
-    // A sentence round is created BY its first append, so a bare token names no write. It
-    // is a protocol violation rather than a free challenge to burn.
+  if (body.turnstileToken !== undefined && rawGuesses === undefined) {
+    // A round is created BY its first append, so a bare token names no write. It is a
+    // protocol violation rather than a free challenge to burn.
     return errorResponse(
       400,
       'bad_request',
-      'A sentence round has no clock to start: its token rides the first append.',
+      'A round starts with its first append: the token rides that append.',
       responseHeaders,
     );
   }
   if (rawGuesses === undefined) {
     // READ: the caller's stored round FOR THIS PUZZLE. A 404 is the honest "nothing
     // yet" — a fresh round (or a re-published daily whose old log is retired), local
-    // state authoritative until the first write lands. For a word round it is what says
-    // WHOSE run the daily holds (#217): the answer carries the start and the device it was
-    // stamped for, and the caller turns that into a phase — resume, submit, or start over.
-    // *(It used to be what made the daily one-shot across devices, by handing a second
-    // device the clock to resume; #217 replaced that with an honest restart, since the
-    // run's claims live in the playing device's storage until it submits.)*
-    const state = await rounds.get({ date, lang, mode }, publicId, puzzle);
+    // state authoritative until the first write lands.
+    const state = await rounds.get({ date, lang }, publicId, puzzle);
     if (!state) {
       return errorResponse(404, 'not_found', 'No round recorded.', responseHeaders);
     }
-    return answer(state);
+    return json(200, state, responseHeaders);
   }
 
   // WRITE: validate before touching the store — a malformed batch is a protocol violation,
-  // never a partial write. An EMPTY array is a real word submission (a run that claimed
-  // nothing still ends and still counts as played); the sentence stream never sends one.
-  const cap = maxGuesses(mode);
+  // never a partial write.
   if (
     !Array.isArray(rawGuesses) ||
-    (mode !== 'word' && rawGuesses.length === 0) ||
-    rawGuesses.length > cap ||
+    rawGuesses.length === 0 ||
+    rawGuesses.length > ROUND_GUESS_CAP ||
     !rawGuesses.every((g) => typeof g === 'string')
   ) {
     return errorResponse(
       400,
       'bad_request',
-      `Body field "guesses" must be an array of at most ${cap} strings.`,
+      `Body field "guesses" must be an array of at most ${ROUND_GUESS_CAP} strings.`,
       responseHeaders,
     );
   }
@@ -311,18 +203,7 @@ export async function handleRound(
     );
   }
 
-  if (mode === 'word') {
-    return await submitWordRound(
-      { date, lang, mode, publicId, deviceId: auth.value.device.deviceId, puzzle, guesses },
-      puzzleStore,
-      deps,
-      event,
-      instant,
-      responseHeaders,
-    );
-  }
-
-  const key: RoundKey = { date, lang, mode };
+  const key: RoundKey = { date, lang };
   // The two reads the derivation needs, CONCURRENTLY: neither depends on the other, so the
   // slice's GET — started above, before authentication — hides inside round trips already
   // being paid for. The round read is EVENTUALLY consistent (roundStore.ts states why that
@@ -386,7 +267,6 @@ export async function handleRound(
       'early_locked',
       'This batch continues past the first early-play improvement.',
       (await rounds.get(key, publicId, puzzle)) ?? { guesses: [], createdAt: '' },
-      instant,
       responseHeaders,
     );
   }
@@ -394,7 +274,6 @@ export async function handleRound(
   const { outcome, state } = await rounds.append({
     date,
     lang,
-    mode,
     publicId,
     guesses,
     puzzle,
@@ -413,7 +292,6 @@ export async function handleRound(
       'early_locked',
       `This round is played before its day and accepts no further guesses until ${date}.`,
       state,
-      instant,
       responseHeaders,
     );
   }
@@ -428,7 +306,6 @@ export async function handleRound(
       'round_solved',
       'This round is solved and accepts no further guesses.',
       state,
-      instant,
       responseHeaders,
     );
   }
@@ -443,7 +320,7 @@ export async function handleRound(
     const full = state.guesses.length >= ROUND_GUESS_CAP;
     if (full) {
       console.warn(
-        `[round] round_full: ${date} ${lang} ${mode} ${publicId} refused ` +
+        `[round] round_full: ${date} ${lang} ${publicId} refused ` +
           `${guesses.length} further guess(es) past the ${ROUND_GUESS_CAP}-guess cap.`,
       );
     }
@@ -454,7 +331,6 @@ export async function handleRound(
         ? `This round already holds the maximum of ${ROUND_GUESS_CAP} guesses.`
         : `This batch of ${guesses.length} would push the round past ${ROUND_GUESS_CAP} guesses.`,
       state,
-      instant,
       responseHeaders,
     );
   }
@@ -466,7 +342,6 @@ export async function handleRound(
       // granularity the client paces at too (root AGENTS.md).
       'Guess writes are limited to about one per second for this daily.',
       state,
-      instant,
       // Exposed to script by the CORS headers: a browser can read no response header
       // outside the safelist without it, so an unexposed Retry-After is a value only
       // curl and `backend:dev` ever see.
@@ -486,9 +361,9 @@ export async function handleRound(
   );
 }
 
-// The Turnstile gate on a sentence ROUND START (#203). Returns the refusal to answer with,
-// or null when the caller may create the round. It is the same challenge Word mode's START
-// runs, on the one sentence write that mints state for a caller who has done nothing yet.
+// The Turnstile gate on a ROUND START (#203). Returns the refusal to answer with, or null
+// when the caller may create the round: the one write that mints state for a caller who has
+// done nothing yet.
 async function requireRoundStart(
   body: Record<string, unknown>,
   event: FnUrlEvent,
@@ -595,7 +470,7 @@ async function settleAppend(
       // one response the solving device's celebration is waiting on.
       [credited] = await Promise.all([
         creditSolvedDay(round, deps),
-        recordSentenceScore(round, puzzleStore, deps, event, instant),
+        recordScore(round, puzzleStore, deps, event, instant),
       ]);
     }
     // The answer that confirms a solve also says whether it EARNED the day (#211's streak
@@ -607,19 +482,17 @@ async function settleAppend(
     // that failed answers false, or the client celebrates and transiently holds a day the
     // server's collection lost — the exact phantom the flag exists to prevent. The score
     // row stays independent and silent: a missing standing, never a withheld celebration.
-    return json(200, { ...roundBody(state, instant), credited }, headers);
+    return json(200, { ...state, credited }, headers);
   }
-  return json(200, roundBody(state, instant), headers);
+  return json(200, state, headers);
 }
 
 // **ON TIME MEANS ON THE DAY, and LATE HAS NO GRADATIONS** (user-decided 2026-08-23): a
 // millisecond late is a decade late. A round only earns the day's rewards — the streak
-// credit AND the leaderboard row — when the day it is playing IS the day it was PLAYED on.
-// For a sentence that is the day the solving append lands; for a WORD run it is the day of
-// its server-stamped START, because the submission is deferred by design (see
-// `recordScoreRow`). A sentence carried across the 22:00 flip and finished at 22:00:01 was
-// not finished on time; an archive replay never was on time at all; and the two are the
-// same thing.
+// credit AND the leaderboard row — when the day it is playing IS the day it was PLAYED on:
+// the day the solving append lands. A sentence carried across the 22:00 flip and finished at
+// 22:00:01 was not finished on time; an archive replay never was on time at all; and the two
+// are the same thing.
 //
 // That single rule replaced a window tolerating `activeDay - 1` for the flip-edge, plus a
 // second gate in the CLIENT (the route) to tell that edge from a deliberate archive replay
@@ -670,7 +543,7 @@ async function creditSolvedDay(round: AppendedRound, deps: RoundHandlerDeps): Pr
 // Every failure here is SILENT to the caller. The guesses are stored, the round is settled,
 // and the answer is about the LOG; a population that could not be written is a missing
 // standing, never a refused append.
-async function recordSentenceScore(
+async function recordScore(
   round: AppendedRound,
   puzzleStore: PuzzleStore,
   deps: RoundHandlerDeps,
@@ -708,7 +581,7 @@ async function recordSentenceScore(
 }
 
 // One recorded score per player per daily (#187), written by the SERVER now that the log
-// is (#203) — the shape both modes share, since only what the score COUNTS differs.
+// is (#203).
 //
 // **A LATE finish records NOTHING** (user-decided 2026-08-23). The gate lives here because
 // it is one rule about the day's competition: a leaderboard is a day's, so a round not
@@ -716,17 +589,6 @@ async function recordSentenceScore(
 // replay therefore records no row and draws no standing — `/scores` answers `bucket: null`
 // for a caller the population does not hold, and the solved screen simply shows no rank
 // line. It also stops spending a #169 address allowance on a day nobody is competing in.
-//
-// **What the gate judges is `earnedAt` — the instant the round was PLAYED, which is not
-// always the write's arrival.** A sentence solve is earned by the append that lands it, so
-// its two instants are one. A WORD run's submission is deferred BY DESIGN: the wait check
-// refuses a write before the run's own floor has elapsed (so a run started near the 22:00
-// flip can ONLY submit after it), and #202 explicitly lets the log arrive hours later on
-// the revisit that finds the run over — so the arrival instant says nothing about when the
-// run happened, and judging it there dropped the row of a run genuinely played on its day.
-// The server-stamped `startedAt` is the instant that does: the run began there and lasted
-// its own bounded clock, and an archive word replay's start is just as late as its
-// submission, so the late-records-nothing rule loses nothing.
 //
 // Every failure here is SILENT to the caller. The guesses are stored and the answer is
 // about the LOG; a population that could not be written is a missing standing, never a
@@ -740,16 +602,9 @@ async function recordScoreRow(
   deps: RoundHandlerDeps,
   event: FnUrlEvent,
   instant: Date,
-  // When the round was PLAYED (see above): the append's own instant for a sentence, the
-  // server-stamped start for a word run.
-  earnedAt: Date = instant,
 ): Promise<void> {
   try {
-    // Inside the try like every other step here: `activeDate` THROWS on an Invalid Date
-    // (Intl refuses one), and `earnedAt` comes from a stored `startedAt` on the word
-    // path — a throw escaping this function would 500 a submission that already
-    // committed, and the `already_submitted` retry then never records the row at all.
-    if (!onTime(key.date, earnedAt)) return;
+    if (!onTime(key.date, instant)) return;
     // The #169 volume floor, unchanged in shape: the address is HMACed and only the digest
     // reaches the store. A caller with no trusted address cannot be metered, so its score
     // is not recorded — the same stance the retired score POST took.
@@ -772,12 +627,12 @@ async function recordScoreRow(
       // without it, a corrected round's submission looks to DynamoDB like a replay of the
       // retired one's and is silently dropped before its condition is ever evaluated.
       requestToken: createHash('sha256')
-        .update(`${key.date}#${key.lang}#${key.mode}#${publicId}#${revision}`)
+        .update(`${key.date}#${key.lang}#${publicId}#${revision}`)
         .digest('hex')
         .slice(0, 36),
     });
     if (outcome === 'capped') {
-      console.warn(`[round] score not recorded (IP allowance): ${key.date} ${key.lang} ${key.mode}.`);
+      console.warn(`[round] score not recorded (IP allowance): ${key.date} ${key.lang}.`);
     }
   } catch (error) {
     console.error(`[round] failed to record the score for ${key.date} ${key.lang}:`, error);
@@ -806,170 +661,6 @@ async function confirmWrite(write: () => Promise<boolean>): Promise<boolean> {
   }
 }
 
-interface WordSubmission {
-  date: string;
-  lang: string;
-  mode: ScoreMode;
-  publicId: string;
-  // The device offering the log (#217): a run belongs to the device that started it, and
-  // only that device may end it.
-  deviceId: string;
-  puzzle: string;
-  guesses: string[];
-}
-
-// Word mode's ONE end-of-run write (#202). Unlike every other path here it READS THE DAY'S
-// ARTIFACT, because the two things it owes the population cannot be answered without one:
-// how many of the log's entries are CLAIMS (which is what the wait check is priced from),
-// and whether that number is even reachable on this board.
-async function submitWordRound(
-  input: WordSubmission,
-  puzzleStore: PuzzleStore,
-  deps: RoundHandlerDeps,
-  event: FnUrlEvent,
-  instant: Date,
-  headers: Record<string, string>,
-): Promise<FnUrlResult> {
-  const { date, lang, mode, publicId, deviceId, puzzle, guesses } = input;
-  const rounds = deps.roundStore;
-  const artifact = await puzzleStore.getWordPuzzle(date, lang);
-  if (!artifact) {
-    // A run can only ever have been started on a published artifact, so this is the
-    // day-addressed 404 every other route answers for an unpublished daily.
-    return errorResponse(404, 'not_found', `No word puzzle for ${date} (${lang}).`, headers, {
-      date,
-      lang,
-    });
-  }
-
-  const { claims, misses } = readWordLog(artifact.ranks, guesses);
-  // The caps are the CLIENT's too — it truncates its own log to them — but a malicious
-  // client will not, so they are enforced here. Claims are bounded by the FIELD rather
-  // than by the zone constant: a short artifact holds fewer claimable groups than the zone
-  // allows, which is the same ceiling /scores validates a Word score against.
-  const claimable = wordScoreMaximum(artifact);
-  if (claims > claimable || misses > WORD_MISS_CAP) {
-    return errorResponse(
-      400,
-      'bad_request',
-      `A word round holds at most ${claimable} claim(s) and ${WORD_MISS_CAP} miss(es).`,
-      headers,
-    );
-  }
-
-  const { outcome, state } = await rounds.submit({
-    date,
-    lang,
-    mode,
-    publicId,
-    deviceId,
-    puzzle,
-    guesses,
-    // The game's OWN FLOOR, not a tuning knob: Word mode has no early finish, so a run
-    // that claimed N groups ran for at least `START_SECONDS + MIN_BONUS * N` seconds
-    // (every claim buys at least the COMMON rung). It therefore cannot block honest play,
-    // and it needs no retuning as the ladder moves. What it does NOT check is the TIMING
-    // of individual guesses — without per-guess arrival stamps there is no way to know
-    // 200 claims were not typed over an hour, and the stance is that cheating does not
-    // matter (sentence mode is equally unverifiable).
-    minElapsedMs: wordRunFloorMs(claims),
-    now: instant,
-  });
-
-  if (outcome === 'not_started') {
-    return refusal(
-      409,
-      'not_started',
-      'No run of this word has been started on this server.',
-      state,
-      instant,
-      headers,
-    );
-  }
-  if (outcome === 'started_elsewhere') {
-    // This device played a run the server no longer holds: another device restarted the
-    // daily while it was away (#217). The answer carries the stamp that stands, so the
-    // screen learns whose run it is now — and offers to start over rather than reporting a
-    // failure the player can do nothing about.
-    return refusal(
-      409,
-      'started_elsewhere',
-      'This run was restarted on another device.',
-      state,
-      instant,
-      headers,
-    );
-  }
-  if (outcome === 'too_early') {
-    return refusal(
-      409,
-      'too_early',
-      `A run holding ${claims} claim(s) cannot be over yet.`,
-      state,
-      instant,
-      headers,
-    );
-  }
-  // The RUN was recorded here, so this is where its score joins the day's population
-  // (#203): the claim count is what the client used to POST, derived from the same log and
-  // the same artifact the write just validated against. `already_submitted` records
-  // nothing — first write wins, and that earlier submission already recorded its own.
-  //
-  // ON TIME is judged at the run's server-stamped START, not at this write's arrival (see
-  // `recordScoreRow`): the submission is deferred by the wait check and by #202's own
-  // revisit shape, so a run played on its day must not lose its row to when the log landed.
-  if (outcome === 'submitted') {
-    // Parse-checked: a stored start that does not parse cannot say when the run happened,
-    // and an Invalid Date handed onward would make `onTime` throw. The write's arrival is
-    // the honest — and always valid — fallback instant.
-    const startedMs = state.startedAt == null ? Number.NaN : Date.parse(state.startedAt);
-    const earnedAt = Number.isFinite(startedMs) ? new Date(startedMs) : instant;
-    await recordScoreRow(
-      { date, lang, mode },
-      publicId,
-      claims,
-      puzzle,
-      deps,
-      event,
-      instant,
-      earnedAt,
-    );
-  }
-  // `already_submitted` is not a refusal but the /scores answer: the daily is one-shot and
-  // cannot be replayed, so the FIRST write stands and the caller is told what it says.
-  return json(200, roundBody(state, instant), headers);
-}
-
-// How a stored log reads against the day's field: how many distinct GROUPS it claimed, and
-// how many entries claimed nothing. Distinct RANKS, never raw entries — aliases of one
-// group share its rank (#104), which is exactly the identity the client's own dedup uses
-// and the count /scores validates. `Object.hasOwn` and not an index read: a folded slug is
-// all lowercase letters, so `constructor` is a guess a player can actually type, and a bare
-// `ranks[g]` would answer it with a function off the prototype chain.
-function readWordLog(ranks: WordRanks, guesses: readonly string[]): {
-  claims: number;
-  misses: number;
-} {
-  const claimed = new Set<number>();
-  let misses = 0;
-  for (const guess of guesses) {
-    const entry = Object.hasOwn(ranks, guess) ? ranks[guess] : undefined;
-    if (entry && entry.rank >= 1 && entry.rank <= WORD_CLAIM_ZONE) claimed.add(entry.rank);
-    else misses += 1;
-  }
-  return { claims: claimed.size, misses };
-}
-
-// What every answer carries: the stored state, plus the server's own clock at the moment it
-// answered. `now` is what lets a client anchor a word run's countdown to the server's
-// `startedAt` WITHOUT trusting its own device clock — it holds `now - startedAt` (an elapsed
-// span both ends agree on) rather than an instant, and the request's own travel time lands
-// inside the run rather than outside it, which is what keeps an honest submission clear of
-// the wait check.
-function roundBody(state: RoundState, instant: Date): Record<string, unknown> {
-  return { ...state, now: instant.toISOString() };
-}
-
 // A refusal is an ANSWER: it carries the UNCHANGED stored state, which is already the
 // truth the client reconciles against. That is also what pays for the extra consistent
 // read the Dynamo store spends classifying one — without it, the read exists only to
@@ -980,8 +671,7 @@ function refusal(
   error: string,
   message: string,
   state: RoundState,
-  instant: Date,
   headers: Record<string, string>,
 ): FnUrlResult {
-  return errorResponse(statusCode, error, message, headers, roundBody(state, instant));
+  return errorResponse(statusCode, error, message, headers, { ...state });
 }

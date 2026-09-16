@@ -1,18 +1,12 @@
 import { useEffect, useState } from 'react';
 import { prefersReducedMotion } from './useScramble';
 
-// The letter WAVE (#129): a word's letters ripple, quick and transform-only. It began as
-// the sentence hole's tap affordance, and now says the same thing wherever a word can be
-// tapped or is simply alive on screen — the day's word during a Word run, and the sentence
-// result's guessed words. This hook is the third surface's doing: two copies were a
-// recorded decision ("importing half a component's internals is not sharing it"), but the
-// scheduling here is PURE — two timers and a random band, with no knowledge of holes,
-// strikes or solved stages — so at three copies the drift costs more than the sharing does.
-// Retuning the band or the stagger is now one edit that cannot leave one surface behind.
+// The letter WAVE (#129): a sentence hole's letters ripple, quick and transform-only — the
+// hole's tap affordance. The scheduling here is PURE (two timers and a random band, with no
+// knowledge of holes), so it lives apart from the component that draws the wave.
 //
-// What is NOT here is each surface's own answer to "is this word free to ripple right now?"
-// — a hole's `ticking`, a word's letter count, a solved word's arrival. That is `active`,
-// and it stays with the caller, because it is the one part the three genuinely disagree on.
+// What is NOT here is the caller's answer to "is this word free to ripple right now?" — a
+// hole's `ticking`. That is `active`, and it stays with the caller.
 
 // One letter's whole up-and-down, and the delay between two consecutive letters.
 export const WAVE_LETTER_MS = 300;

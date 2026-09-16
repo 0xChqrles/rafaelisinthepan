@@ -17,10 +17,6 @@
 //   - A CALLER OUTSIDE THE CUT still sees their own row with the two neighbors directly
 //     above and below.
 
-// Which way is BETTER is the mode's (the standing line's own rule): sentence counts
-// tries — lower is better — and Word counts claims, higher is better.
-export type BoardMode = 'sentence' | 'word';
-
 export interface BoardScore {
   publicId: string;
   score: number;
@@ -37,12 +33,13 @@ export const BOARD_TOP_LIMIT = 50;
 // How many neighbors flank the caller's own row on each side when it sits below the cut.
 export const BOARD_WINDOW_SPAN = 2;
 
-// Sort a day's rows best-first and assign competition ranks. Ties are ordered by
-// publicId — NOT a ranking claim (they share the rank), only a deterministic row order
-// so two reads of one population never shuffle the board between them.
-export function rankBoard(rows: readonly BoardScore[], mode: BoardMode): RankedScore[] {
+// Sort a day's rows best-first — a score counts tries, so LOWER is better — and assign
+// competition ranks. Ties are ordered by publicId — NOT a ranking claim (they share the
+// rank), only a deterministic row order so two reads of one population never shuffle the
+// board between them.
+export function rankBoard(rows: readonly BoardScore[]): RankedScore[] {
   const sorted = [...rows].sort((a, b) => {
-    const byScore = mode === 'word' ? b.score - a.score : a.score - b.score;
+    const byScore = a.score - b.score;
     if (byScore !== 0) return byScore;
     return a.publicId < b.publicId ? -1 : a.publicId > b.publicId ? 1 : 0;
   });
@@ -141,9 +138,7 @@ export interface Board {
   // GROUP MEMBERS mid-round today (#206), in `orderPlaying`'s order: the board is alive
   // while the day is still being played, instead of only filling in once everybody
   // finished. MEMBERS ONLY, always empty on the global board — a membership is consented
-  // by construction; strangers watching you play is not the same thing. Sentence mode
-  // only in practice: a Word run is 60 seconds plus bonuses, over before anyone looks,
-  // and its log reaches the server only at submission anyway.
+  // by construction; strangers watching you play is not the same thing.
   playing: PlayingRow[];
   // MEMBERS who have no recorded score today (user-decided 2026-08-20): a member is a
   // person in a group you chose, so the board names them even before they play — with
@@ -160,8 +155,7 @@ export interface Board {
 //      ties), and the first three RANKS pay 3 / 2 / 1 — a tie for first pays both 3,
 //      and the next rank is then third (1), the competition rule's own arithmetic.
 //   2. then SOLVED DAYS — how many days of the range recorded a score at all;
-//   3. then the TOTAL of the recorded scores, in the mode's own direction (sentence:
-//      fewer tries; Word: more words);
+//   3. then the TOTAL of the recorded scores — fewer tries is better;
 //   4. publicId last — a deterministic row order, never a ranking claim (`rankBoard`'s
 //      own tie rule). Rows equal on all three numbers share their rank.
 //
@@ -190,7 +184,7 @@ function podiumPoints(rank: number): number {
   return PODIUM_POINTS[rank - 1] ?? 0;
 }
 
-export function rankPeriod(days: readonly PeriodDay[], mode: BoardMode): RankedPeriod[] {
+export function rankPeriod(days: readonly PeriodDay[]): RankedPeriod[] {
   const byDate = new Map<string, PeriodDay[]>();
   for (const day of days) {
     const rows = byDate.get(day.date) ?? [];
@@ -199,7 +193,7 @@ export function rankPeriod(days: readonly PeriodDay[], mode: BoardMode): RankedP
   }
   const totals = new Map<string, PeriodScore>();
   for (const rows of byDate.values()) {
-    for (const row of rankBoard(rows, mode)) {
+    for (const row of rankBoard(rows)) {
       const held = totals.get(row.publicId) ?? {
         publicId: row.publicId,
         points: 0,
@@ -215,7 +209,7 @@ export function rankPeriod(days: readonly PeriodDay[], mode: BoardMode): RankedP
   const sorted = [...totals.values()].sort((a, b) => {
     if (a.points !== b.points) return b.points - a.points;
     if (a.solvedDays !== b.solvedDays) return b.solvedDays - a.solvedDays;
-    if (a.total !== b.total) return mode === 'word' ? b.total - a.total : a.total - b.total;
+    if (a.total !== b.total) return a.total - b.total;
     return a.publicId < b.publicId ? -1 : a.publicId > b.publicId ? 1 : 0;
   });
   let rank = 1;

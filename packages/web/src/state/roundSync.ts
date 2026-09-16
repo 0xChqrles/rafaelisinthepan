@@ -14,7 +14,7 @@
 //
 //   guess lands -> board reacts -> outbox grows -> POST goes out -> answer replaces truth.
 //
-// Writes are COALESCED (sentence mode streams: fast typing accumulates while the
+// Writes are COALESCED (the client streams: fast typing accumulates while the
 // ~ROUND_WRITE_MIN_MS pacing waits, then flushes as one batch) and every answer — a 200 and
 // BOTH refusals — carries the FULL stored state, which REPLACES the server snapshot. So an
 // open tab reconciles on its own next write, and a second device's tries merge into the same
@@ -49,13 +49,6 @@ import { turnstileToken } from '../turnstile';
 export interface RoundSyncContext {
   roundKey: string;
   lang: string;
-  // Sentence mode only, deliberately. The route, the URL and the stored partition are all
-  // mode-generic, but the two CONVERSATIONS are not: Word mode writes twice where this one
-  // streams, and its round lives in its own map under a `w:` key. It has its own engine
-  // (state/wordRoundSync.ts) rather than a widened one — the type refuses a word round here
-  // rather than leaving a silent no-op that would look like "my history doesn't follow me"
-  // instead of a compile error.
-  mode: 'sentence';
   date: string;
   // WHICH PUBLISHED VERSION of this daily is being played — the round's identity everywhere
   // (#203). The hole layout used to play that part and could not tell a corrected puzzle
@@ -117,11 +110,6 @@ const MAX_FLIGHTS = 3;
 
 // Ceiling on the retry window, so an outage cannot spin a request a second.
 const MAX_BACKOFF_MS = 30_000;
-
-// Word mode still derives its tag from the day's word (`wordRoundSync`); the SENTENCE
-// daily's is the published puzzle's own `revision` (#203), which is what the context above
-// carries. Re-exported because `wordRoundSync` names it.
-export { fnvTag } from '@whippin/shared';
 
 // How long the next APPEND must wait for the per-player write interval — measured from
 // when the previous write SETTLED, not from when it was sent.
@@ -365,8 +353,6 @@ function adopt(f: RoundFlight, key: string, state: RoundState, byAppend: boolean
     // Same shape: only the CONFIRMING append's answer carries it, and later answers about
     // the same solve must not take it back.
     credited: (f.server.solved && f.server.credited) || (state.solved && state.credited),
-    // Word mode's own (#217): a sentence round has no clock, so it has no owning device.
-    startedBy: null,
   });
 }
 
@@ -426,7 +412,7 @@ async function readRound(f: RoundFlight, key: string): Promise<void> {
   let response: Response;
   try {
     response = await postRoundBody(
-      roundUrl(f.lang, f.date, f.mode),
+      roundUrl(f.lang, f.date),
       requestBody(f, identity.token),
     );
   } catch {
@@ -503,8 +489,7 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
     // ROUND CREATION carries a Turnstile challenge (#203). It is prefetched while the
     // puzzle loads, so by the first guess it is normally already in hand; a failure here
     // is an ordinary failed write, retried with the rest — the round keeps playing
-    // locally either way, which is why nothing is said on screen (Word mode's PLAY is the
-    // one write that speaks, because nothing begins without it).
+    // locally either way, which is why nothing is said on screen.
     const challenge = f.created ? undefined : await turnstileToken();
     // Challenge acquisition is another await. If A left during it, consuming the token is
     // harmless; authenticating A's captured batch as B is not — so this attempt stands
@@ -514,7 +499,7 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
     // `retryRoundSync` cannot reopen a settled flight, and nothing else does.
     if (identityEpoch() !== epoch) return;
     response = await postRoundBody(
-      roundUrl(f.lang, f.date, f.mode),
+      roundUrl(f.lang, f.date),
       requestBody(f, identity.token, batch, challenge),
     );
   } catch {

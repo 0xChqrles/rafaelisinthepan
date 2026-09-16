@@ -6,17 +6,11 @@ Asserted against the schema in AGENTS.md, not against the implementation:
     `words` / `holes` / `start` / `start_rank` (there is no sentence) and no `source`
     (a lone word has no attribution);
   - the sentence schema's rank semantics, unchanged: rank 0 is the word itself and
-    carries NO `dq`, every rank >= 1 entry carries one, and word/rank/dq/freq are
-    GROUP properties every alias key of the group repeats;
-  - `freq` (#163), this artifact's OWN annotation: the 1-based position, in the
-    frequency-ordered EXISTENCE SET (distinct slugs, which is what the client loads),
-    of the group's most frequent OWNED KEY — the commonest thing a player can type to
-    claim it, never a surface another group owns — a group property like the rest, on
-    every entry including rank 0, and emitted by this command alone (a sentence puzzle
-    has no consumer for it);
+    carries NO `dq`, every rank >= 1 entry carries one, and word/rank/dq are GROUP
+    properties every alias key of the group repeats;
   - the rank map is the SAME artifact the sentence pipeline builds for that secret.
     Both commands walk through gen_phrase.walk_secret, so a word's neighborhood can
-    never differ by which game asked for it.
+    never differ by which command built it.
 """
 
 import gen_phrase  # noqa: E402
@@ -50,14 +44,10 @@ class _Embedding:
         return self.ranking
 
 
-def _word_map(word, ranking, kv, vset=VSET, table=TABLE, forms=FORMS, vocab=None):
-    """gen_word's shipped rank map for `word`.
-
-    `vocab` is V — the reduced vocabulary in FREQUENCY order, which is what `freq`
-    reads positions out of. Tests that do not care about rarity leave it unordered."""
+def _word_map(word, ranking, kv, vset=VSET, table=TABLE, forms=FORMS):
+    """gen_word's shipped rank map for `word`."""
     module = _Embedding(ranking)
-    return gen_word.build_word_map(word, word, {"module": module}, kv,
-                                   list(vset) if vocab is None else vocab,
+    return gen_word.build_word_map(word, word, {"module": module}, kv, list(vset),
                                    object(), vset, table, forms)
 
 
@@ -112,105 +102,14 @@ def test_alias_keys_of_a_group_repeat_their_group_values():
     assert rank_map["felin"]["dq"] == 0
 
 
-# --- freq: the group's corpus rarity, what Word mode's clock pays by (#163) ------
-
-# The reduced vocabulary in FREQUENCY order. Built so that one group's commonest
-# key is NOT its representative: félins (position 6) outranks félin (position 8),
-# which is the whole point of "most frequent owned key, not the representative".
-FREQ_VOCAB = ["chat", "chien", "noir", "chiens", "dort", "félins", "chats", "félin"]
-
-
-def test_freq_is_the_group_most_frequent_owned_key_one_based():
-    rank_map = _word_map("chat", RANKING, KV, vocab=FREQ_VOCAB)
-
-    # 1-based, so the commonest word the game admits is 1 and never a falsy 0.
-    assert rank_map["chat"]["freq"] == 1                       # chat, position 1
-    assert rank_map["chien"]["freq"] == 2                      # chien, position 2
-    # félin's group: its representative sits at position 8, but the group is as
-    # common as its commonest typable key — félins, position 6.
-    assert rank_map["felin"]["freq"] == 6
-    assert rank_map["felin"]["word"] == "félin"                # display is untouched
-
-
-def test_freq_prices_a_group_by_its_owned_keys_never_a_stolen_surface():
-    """« bois » embeds both the tree and « je bois », but the walk keys an ambiguous
-    surface to ONE group, closest-first (#104/#134). Pricing must read that settled
-    ownership: grading « boire » by « bois »'s position would call a rare lexeme
-    COMMON by a word that can never claim it, and the error only ever runs cheaper
-    (min over a superset). Unit-level on the settled map, because ownership is the
-    walk's job and already tested there."""
-    rank_map = {
-        "bois": {"word": "bois", "rank": 1, "dq": 255},
-        "boire": {"word": "boire", "rank": 2, "dq": 128},
-        "buvait": {"word": "boire", "rank": 2, "dq": 128},
-        "arbre": {"word": "arbre", "rank": 3, "dq": 0},
-    }
-    gen_word.annotate_freq(rank_map, ["bois", "boire", "buvait", "arbre"])
-
-    assert rank_map["bois"]["freq"] == 1
-    # boire's group is priced over ITS keys (boire 2, buvait 3) — never bois's 1.
-    assert rank_map["boire"]["freq"] == 2
-    assert rank_map["buvait"]["freq"] == 2                     # alias repeats the group's
-    assert rank_map["arbre"]["freq"] == 4
-
-
-def test_a_group_with_no_key_in_the_existence_set_ships_no_freq():
-    """The borrowed-vector case (#119): a secret whose slug embeds nothing has no
-    position to read, so its entry simply has no `freq` — the field is OPTIONAL to
-    consumers, which floor an unknown rarity at COMMON rather than minting a
-    windfall (web/src/game/wordGame.ts rarityOf)."""
-    rank_map = {
-        "zzyzx": {"word": "zzyzx", "rank": 0},
-        "chat": {"word": "chat", "rank": 1, "dq": 255},
-    }
-    gen_word.annotate_freq(rank_map, ["chat", "chien"])
-
-    assert "freq" not in rank_map["zzyzx"]
-    assert rank_map["chat"]["freq"] == 1
-
-
-def test_freq_is_a_group_property_every_alias_key_repeats():
-    rank_map = _word_map("chat", RANKING, KV, vocab=FREQ_VOCAB)
-
-    # Like word/rank/dq: one value per group, on every key that reaches it —
-    # including the word's own rank-0 aliases, which carry no dq.
-    assert rank_map["chat"] == rank_map["chats"]
-    assert rank_map["chien"] == rank_map["chiens"]
-    assert rank_map["felin"] == rank_map["felins"]
-    assert all("freq" in entry for entry in rank_map.values())
-
-
-def test_freq_ranks_the_existence_set_not_the_raw_forms():
-    """The consumer divides `freq` by the size of the existence set it loaded, so the
-    numerator has to count that same population. Two forms that FOLD TOGETHER are one
-    entry there and must be one rank here — otherwise the fraction is not a fraction,
-    and it is wrong by a language-dependent amount (measured 4.1% in fr, 0.0% in en)."""
-    # « coté » and « côté » are two reduced forms and ONE slug, so everything after them
-    # in frequency order shifts down by exactly one against a raw-form ranking.
-    vocab = ["chat", "coté", "côté", "chien", "chiens", "félin", "félins", "chats"]
-    rank_map = _word_map("chat", RANKING, KV, vocab=vocab)
-
-    # chat 1, cote 2 (both spellings), chien 3 — not 4, which is what counting raw
-    # forms would give.
-    assert rank_map["chat"]["freq"] == 1
-    assert rank_map["chien"]["freq"] == 3
-    # And no group can be ranked past the existence set it is a position in — the
-    # denominator pinned by ITS producer's own expression (slug.write_vocab), so the
-    # two populations cannot drift apart without failing here.
-    existence_set = {s for s in (slug(w) for w in vocab) if s}
-    assert all(entry["freq"] <= len(existence_set) for entry in rank_map.values())
-
-
 # --- parity with the sentence pipeline ------------------------------------------
 
 def test_the_rank_map_is_the_one_the_sentence_pipeline_builds(monkeypatch):
-    """One word, two games, one neighborhood.
+    """One word, two commands, one neighborhood.
 
     Drives the sentence path end to end (holes_from_words) and the word path
     (build_word_map) over the same vocabulary and the same walk, then compares the
-    maps key by key. `freq` is the one annotation only the word path stamps: it is
-    asserted here as absent from the sentence map and stripped from the word map
-    before the comparison.
+    maps key by key.
     """
     module = _Embedding(RANKING)
     cfg = dict(gen_phrase.CONFIG["fr"], module=module)
@@ -226,12 +125,6 @@ def test_the_rank_map_is_the_one_the_sentence_pipeline_builds(monkeypatch):
 
     word_map = _word_map("chat", RANKING, KV)
 
-    # A sentence puzzle carries no rarity: nothing there consumes it, and those maps
-    # are already ~500 KB gzipped.
-    assert all("freq" not in entry for entry in ranks["chat"].values())
-
-    # Otherwise: same keys, same display forms, same ranks, same dq — including the
-    # rank-0 inflection alias and both grouped neighbors.
-    stripped = {key: {k: v for k, v in entry.items() if k != "freq"}
-                for key, entry in word_map.items()}
-    assert ranks["chat"] == stripped
+    # Same keys, same display forms, same ranks, same dq — including the rank-0
+    # inflection alias and both grouped neighbors.
+    assert ranks["chat"] == word_map

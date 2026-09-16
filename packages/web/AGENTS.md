@@ -14,7 +14,7 @@
       hooks/usePuzzle.ts      fetch the client-computed day's puzzle from the backend
       hooks/puzzleCache.ts    the last 3 PARSED artifacts kept across mounts, no longer than the
                               CDN's own 300s (2026-09-11): today <-> tomorrow without a reload
-      api.ts                  backend client: puzzleUrl/wordPuzzleUrl, 404->NO PUZZLE, and
+      api.ts                  backend client: puzzleUrl, 404->NO PUZZLE, and
                               `readProfile` — the ONE place `GET /profile`'s four answers
                               (shown / blank / GONE / failed) are told apart (#204)
       identity.ts             the #216 DEVICE identity: a localStorage token minted on the
@@ -41,12 +41,13 @@
       components/TopBar.tsx   the header row itself, mounted ONCE by App: it holds the
                               places on the right and hosts the left slot screens publish
                               into (`HeaderLeft`, `HeaderBack`)
-      components/PuzzleTitle.tsx  what most screens put there: WHICH DAILY (+ the day on an
+      components/PuzzleTitle.tsx  what most screens put there: the LANGUAGE (+ the day on an
                               archive route) as a held-word CHIP, over the selection that
                               switches it
-      components/PuzzleSelect.tsx  that selection: a flat full screen holding two picker
-                              DRUMS (daily, language) on one slot line, the pick landing
-                              on the fold; a back chevron in the header's left slot
+      components/PuzzleSelect.tsx  that selection: a flat full screen holding the language's
+                              picker DRUM, the pick landing on the fold (the caller decides
+                              what a pick means, `onLang`); a back chevron in the header's
+                              left slot
       hooks/useDrum.ts        the picker-drum physics both wheels turn on (drag, fling,
                               wheel, keys, the slot row)
       components/HeaderKeys.tsx  the header's right group: the SAME five keys on every
@@ -83,11 +84,6 @@
                               the streak credit a fresh solve rides
       hooks/useRoundSync.ts   its React binding: registers the round's context on mount and
                               reports WHERE its authoritative state is (the load gate)
-      state/wordRoundSync.ts  Word mode's #202 conversation: the Turnstile-gated round start
-                              (a RESTART owned by this device since #217), the clock it opens,
-                              ONE end-of-run submission
-      hooks/useWordRoundSync.ts  its React binding (the mount read; the run's END is the
-                              screen's own `finishWordRound`, #217)
       screens/Profile.tsx     the #188 profile editor (/profile): name, tap-to-paint 10×10 grid,
                               ground-swatch palette picker (#190 wires the entry point)
       screens/Privacy.tsx     `/privacy` (#229): what the game keeps, why, and how to be rid
@@ -110,7 +106,7 @@
       components/ConfirmScreen.tsx  the app's CONFIRMATION surface (#271): the error screen's
                               shape in the plain voice, the act as the quiet danger control
                               over CANCEL; the leave's successor picker rides it
-      screens/Leaderboard.tsx the #190/#271 leaderboard (/<lang>[/word]/board): the player's
+      screens/Leaderboard.tsx the #190/#271 leaderboard (/<lang>/board): the player's
                               groups first (day / week / month), global top 50; NEW GROUP,
                               INVITE, LEAVE, the creator's MANAGE
       components/Avatar.tsx   a stored avatar rendered as SVG (editor preview + #190 board rows);
@@ -123,32 +119,22 @@
       tutorial/               onboarding (#51/#155): Tutorial.tsx + data scripts/<lang>.ts
                               (+ <lang>.word.json, the pruned #154 board it plays on)
       screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
-      screens/WordGame.tsx    Word mode's three phases: rules gate -> timed run -> post-mortem
-      game/wordGame.ts        Word mode's rules + economy (shared WORD_CLAIM_ZONE re-export, rarity ladder, clock)
-      game/wordBoard.ts       Word mode's post-mortem board: the zone as RARITY-graded stations
-      components/rarity.ts    a rarity grade's pinned colour, and which sheet a grade is struck with
-      components/strikeArt.ts the three strike sheets and their animation contract (#301: a
-                              generic primitive — Word mode's ladder and the sentence's holes
-                              both land them)
+      components/strikeArt.ts the three strike sheets and their animation contract (#301: the
+                              sentence's holes land them)
       components/Strike.tsx   one blow of one sheet on a game word (was WordSlash)
-      components/Loot.tsx     what a hit knocks off a game word: the rank exponent (+ Word
-                              mode's grade) popping up and falling away (was WordLoot)
+      components/Loot.tsx     what a hit knocks off a game word: the rank exponent popping up
+                              and falling away
       game/charge.ts          #301's hole CHARGE METER: the rank -> charge table, the replay of
                               the play log onto every hole's meter, the revealed initial
       components/ChargeLoot.tsx  the blood a charging guess knocks out of the hole, gathered
                               onto the meter
       components/MeterCanvas.tsx  the meter's drawing: the chip converting as an ordered
                               dither, tweened
-      components/WordSubject.tsx  the day's word while the run is on: the word alone, centred
-      hooks/useCountdown.ts   the run's deadline, as a ticking clock (HUD) and as one flip (screen)
       game/scoring.ts         the SCREEN's reading: applyGuessToHoles + replayHoles +
                               computeProgress over RuntimeHoles (the arithmetic itself is
                               @whippin/shared's since #203)
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
-      hooks/useLetterWave.ts  #129's ambient ripple, shared by every surface that waves
-      components/WordBoard.tsx  Word mode's post-mortem: the zone as a GRID of words in their
-                              rarity colours, the claimed ones chipped (the route drawing
-                              that drew it as one trunk retired 2026-09-01)
+      hooks/useLetterWave.ts  #129's ambient ripple on the holes
       game/history.ts         a hole's guess log ranked against its secret (buildHistory)
       game/wordWheel.ts       the order those words scroll through the tapped hole in
                               (wheelOrder): farther above, closer below, behind-the-start apart
@@ -156,8 +142,8 @@
                               word's own place — the word the wheel folds on is the sentence's
       components/HistoryModal.tsx  a COMPLETED hole's tap: its words as a plain grid, full
                               screen, as many columns as the width holds
-      game/share.ts           what a RESULT says: both modes' share text + link (emoji row,
-                              rarity bead row, the composed messages)
+      game/share.ts           what a RESULT says: the share text + link (emoji row, the
+                              composed message)
       hooks/useShare.ts       how a RESULT leaves the app (native sheet -> clipboard + COPIED)
     public/                   served at site root (web assets + generated data)
       vocab/<lang>.json       full slugged reduced vocab (existence set) — fetched by the SPA
@@ -190,13 +176,11 @@ These are decided and verified against the code. Treat them as load-bearing.
        `@whippin/shared`, and `heatColor(0)` IS it. A 100-away exponent therefore wears
        the same colour as a MISS (the fixed absolute cap collapses every farther rank
        onto the terminus); only the label distinguishes them. It is legible on `--bg`,
-       pinned by the heat and rarity tests. **It is NO LONGER distinct from the
-       timer/invalid `--danger` red, and that is deliberate (user-decided 2026-08-27):**
+       pinned by the heat tests. **It is NO LONGER distinct from the
+       invalid `--danger` red, and that is deliberate (user-decided 2026-08-27):**
        `--danger` moved to the ERROR BOT's own ink `#ff2e38`, which sits 7.7 dE from
-       MISS_COLOR — the two are one red now, where they used to be held ~31 apart. The
-       claim that the separation was "pinned by the heat and rarity tests" was never true
-       either: those pin the GRADES against each red (still >30, measured 83.7), never the
-       two reds against each other. Re-separating them means moving MISS_COLOR, which is
+       MISS_COLOR — the two are one red now, where they used to be held ~31 apart, and no
+       test pins the two reds apart. Re-separating them means moving MISS_COLOR, which is
        the heat ramp's terminus and takes `heat.test.ts` and the share card with it.
      - **Warm + improves** (entry's rank beats the hole's current rank) → the hole
        **additionally** swaps to the entry's **accented `word`** and lower `rank`,
@@ -260,15 +244,13 @@ These are decided and verified against the code. Treat them as load-bearing.
   user's review: a line along the chip's bottom edge and the band the chip grew for it (a
   bar); a level rising inside the chip with a lit surface row ("barely moves… the top
   border feels weird"); a superscript mark before the chip and a 16px tag on its corner
-  (both "a left exponent"). **The cut is WHITE, WORD MODE'S SIZE, and the hit is Word mode's
-  hit (user-decided 2026-09-15 across three passes on the first cut: "always white", then
-  "x3 bigger", then "the same slash size that is used on the word mode, with the same
-  shake animation and exponent animation")**: `--fg` through the mask at `.strike`'s own
-  5x / 4x with NO `.phrase` geometry; the recoil is the Word subject's BLOW (`STRUCK_MS`,
-  `strikeArt.ts`, as `--shake-ms`) and for that blow the chip INVERTS — ground `--bg`, ink
-  `--fg` (`hole-invert`); and on a cut the rank is the LOOT exponent (`Loot`, the Word
-  claim's, generic since #301: with no grade the exponent flies alone) instead of the
-  float, which stays for a miss, a repeat and the solve. The SENTENCE's exponent is 0.75em
+  (both "a left exponent"). **The cut is WHITE, at the strike art's full size, with its
+  full hit (user-decided 2026-09-15 across three passes on the first cut: "always white",
+  then "x3 bigger", then the full slash size with its shake and exponent animation)**:
+  `--fg` through the mask at `.strike`'s own 5x / 4x with NO `.phrase` geometry; the recoil
+  is the BLOW (`STRUCK_MS`, `strikeArt.ts`, as `--shake-ms`) and for that blow the chip
+  INVERTS — ground `--bg`, ink `--fg` (`hole-invert`); and on a cut the rank is the LOOT
+  exponent (`Loot`) instead of the float, which stays for a miss, a repeat and the solve. The SENTENCE's exponent is 0.75em
   (`--rank-size` on `.phrase` and the wheel's slot row; 0.55 where `.hole-rank` is
   reused). The sequence is `cut → BLOOD: drops fly out on their own
   arcs and SPLAT around and below the word, lie there a pause, then are GATHERED at the
@@ -284,9 +266,9 @@ These are decided and verified against the code. Treat them as load-bearing.
   → initial`, timed off `METER_MS` in `Hole`. The exact hit wears the ULTRA star and takes
   no cut, loot or burst (the solve supersedes); a miss, a repeat and a rank past the table
   keep the float alone; a guess that also improves the hole keeps the word/rank swap
-  choreography (charging is additive). The sheets are the Word-mode art, extracted to
-  `components/strikeArt.ts` + `Strike.tsx` (`.strike`, its own integer scales under
-  `.phrase`) — never a rarity grade, never the heat. A11y: the meter and the
+  choreography (charging is additive). The sheets are `components/strikeArt.ts` +
+  `Strike.tsx` (`.strike`, its own integer scales under `.phrase`; see THE HIT ART) —
+  never the heat. A11y: the meter and the
   initial are the hole button's DESCRIPTION (`srHoleCharge` / `srHoleInitial`, sr-only
   spans outside the sentence like the exploration hints, never words in the prose); the
   reveal is also announced with the guess. Reduced motion keeps the state and snaps: no
@@ -317,22 +299,20 @@ These are decided and verified against the code. Treat them as load-bearing.
     lesson props, not blanks to fill. It sits at the wrap's bottom edge) — and solving
     INKS IT IN: `--solve` #4a6aff cobalt, blank gone. The ink IS the gradient's calm terminus, so a
     solve lands exactly on the peace the scale runs toward. It paints everything
-    reached: resolved holes (and the solved page's secrets), both termini found, Word
-    mode's day word, the OG card's word, the tutorial's `[[b:]]` secret (`.rt-target`) —
+    reached: resolved holes (and the solved page's secrets), both termini found, the tutorial's `[[b:]]` secret (`.rt-target`) —
     and done-for-the-day strips/cells. The pale hole is strongly legible on `--bg`; the
     blank line and exponent carry the rest of the unresolved-state distinction.
   - **the ACCENT is POSTER VIOLET** — `--accent` #8f7bff (user-decided 2026-08-18,
     REMOVING the stamp orange outright — "keep the blue/violet palette for all accent
     and actions"; the hex is the ground's violet orb lifted to text contrast, chosen
-    clear of the solve cobalt, the pale hole blue, RARE's cyan and OBSCURE's pinker
-    #b164f2): the chrome (prompt caret, loading status, COPIED), the `+Ns` gain, the
+    clear of the solve cobalt and the pale hole blue): the chrome (prompt caret, loading status, COPIED), the `+Ns` gain, the
     history "you are here" node, the streak, the source credit's headline, the
     standing's rank number. The keyboard's ENTER cap is the one exception, lit in a
     COBALT gradient (the macropad's "Publish" blue — submitting is the step toward the
     solve); the ground's old orange corner orb went cobalt with the accent. Never a
     scale value, never a word state.
-  The palette tests pin the required legibility and reservations around MISS, solve,
-  danger and the rarity ladder; retune those relationships deliberately, never by a
+  The palette tests pin the required legibility and reservations around MISS, solve and
+  danger; retune those relationships deliberately, never by a
   copied stale hex.
   **The saturation level is the THIRD cut and it is the one that stuck** (user-iterated
   2026-08-17, same day): dusty print tones read "almost creepy", the mid-saturation inks
@@ -439,7 +419,7 @@ These are decided and verified against the code. Treat them as load-bearing.
     alone at 0.7 strength, lifted to 1 on hover — nothing drawn that is not the word. The
     result row's TOMORROW beside SHARE (an equal, not an answer) and the COMPACT
     secondary (`.board-chip` EDIT, `.profile-clear`, `.device-signout`, `.device-retry`,
-    40px tall) are the shape. SHARE is the primary on both result screens; the paired row
+    40px tall) are the shape. SHARE is the primary on the result screen; the paired row
     narrows its air to 12px so both fit a phone. No other button dress remains.
     *(The two paragraphs below are the designs it replaced, kept for their reasoning.)*
   - **THE BUTTONS ARE KEYCAPS WITH A HARD PRINT (user-decided 2026-09-14: "we should
@@ -462,7 +442,7 @@ These are decided and verified against the code. Treat them as load-bearing.
     the same underline design" — `.btn-primary + .btn-secondary`, `.mix-btn +
     .btn-secondary`, restating `.link-quiet-btn`'s dress so the sibling rule wins over the
     cap's; the result row's TOMORROW beside SHARE is the one sibling that stays a cap, an
-    equal, not an answer). SHARE is the PRIMARY cap on both result screens. The COMPACT CAP
+    equal, not an answer). SHARE is the PRIMARY cap on the result screen. The COMPACT CAP
     (`.board-chip` EDIT, `.profile-clear`, `.device-signout`, `.device-retry`) is the
     secondary tile at a row's size with a 3px print. No other button dress remains: the
     header keys, the calendar arrows and the game's own controls are not buttons of this
@@ -483,13 +463,10 @@ These are decided and verified against the code. Treat them as load-bearing.
   AND the Instrument Serif display face both retired for ONE mono).** All faces
   self-hosted (`assets/fonts/`, latin + latin-ext subsets so French accents never fall
   back).
-  - **PIXEL (Press Start 2P)** is reserved for the PLAY surfaces: the sentence and its
-    holes, Word mode's day word, the route drawings entire (words, rank gutters, MISSED
-    shelf), the prompt/input and its hint, the keyboard (keys + its `.kb-icon` pixel
+  - **PIXEL (Press Start 2P)** is reserved for the PLAY surfaces: the sentence and its holes, the prompt/input and its hint, the keyboard (keys + its `.kb-icon` pixel
     enter/backspace), the floating hits, the loot, the strike sheets, the CellDigits
-    watermark, the rarity ladder's EXAMPLE words,
-    MixWord — and, since the same day's later passes, the whole SOLVED STACK's data:
-    both result counts (`.solved-score-num`), the ENTIRE standing line (labels, the
+    watermark, MixWord — and, since the same day's later passes, the whole SOLVED STACK's data:
+    the result count (`.solved-score-num`), the ENTIRE standing line (labels, the
     accent rank number AND the TOP badge — one face, so `standingUnits` is back to
     rank-digits-count-DOUBLE with one unit = one label glyph), the SOURCE CREDIT (both
     lines — the source is the puzzle's content, not chrome, and it is EXEMPT from the
@@ -497,13 +474,12 @@ These are decided and verified against the code. Treat them as load-bearing.
     carrying the phrase contrast), the run ruler's tick numbers, and the streak
     celebration's digits (wheel slots at the pixel
     1em advance, the flame's HARD 6px indigo underprint restored — a soft glow clips
-    square inside the overflow-hidden slots). **Every monospace layout assumption therefore still holds** — fitWord, the
-    route `--gutter` arithmetic, MixWord's ch reservations and CellDigits' grid all sit
-    on surfaces that stayed pixel. The coach text's inline `[[b:]]`/`[[w:]]` words are
+    square inside the overflow-hidden slots). **Every monospace layout assumption therefore still holds** — MixWord's ch
+    reservations and CellDigits' grid sit on surfaces that stayed pixel. The coach text's inline `[[b:]]`/`[[w:]]` words are
     pixel at 0.82em INSIDE modern copy — game words quoted in chrome.
   - **MONO (Azeret Mono variable 100-900, `--ui`)** is EVERYTHING else — body default,
-    header (title/date and Word mode's clock), buttons, coach copy, the standing line,
-    calendar, streak, rarity chip counts, statuses, and every moment the retired serif
+    header (title/date), buttons, coach copy, the standing line,
+    calendar, streak, statuses, and every moment the retired serif
     used to headline (chooser names, the invite title — the credit, the result numbers
     and the streak digits all moved ON to the pixel face the same day, see above). A monospace is tabular by construction, so everything that ticks is stable
     for free. **The chrome is ALL-CAPS (user-decided 2026-08-18) — every mono surface wears
@@ -523,8 +499,8 @@ These are decided and verified against the code. Treat them as load-bearing.
     primary buttons, the outlined TOP badge, glass result actions, calendar cells and
     week tiles. **THE DESIGN STAYS SHARP (user-decided 2026-08-18): 4px is the absolute
     radius ceiling — no pills, no circles anywhere in the chrome** (the SHARE pill, the
-    TOP-badge pill, the rounded scrollbar thumb and the round rarity bead of the first
-    cut are all squared back off; the run ruler's filament rounds at 3px).
+    TOP-badge pill and the rounded scrollbar thumb of the first cut are all squared back
+    off; the run ruler's filament rounds at 3px).
     **ONE INK (user-decided the same day): chrome text and ICONS are `--fg`** — `--muted`
     survives only on GAME surfaces (the route drawing's dresses, the keyboard's control
     keys, the watermark) — with hierarchy carried by weight and opacity, never by a
@@ -614,8 +590,7 @@ These are decided and verified against the code. Treat them as load-bearing.
     cells exactly.
 - **A RANK IS WRITTEN BARE — no leading minus, anywhere (user-decided 2026-08-16).** A rank
   is a DISTANCE, and a distance is not negative; `sailor^87`, not `sailor^-87`. This is the
-  app's ONE way of writing a rank, so it holds on every surface that shows one: the hole's
-  exponent, the floating hit, Word mode's loot, every route row (history line + Word board),
+  app's ONE way of writing a rank, so it holds on every surface that shows one: the hole's exponent, the floating hit, the loot, the hole wheel and the words modal,
   the tutorial's mix demo and its coach text — and the curation CLI's `^N` output in
   `generation`, which echoes the same notation. Two widths follow it rather than being
   restated: `rankGutterChars` reserves the digits alone (one cell narrower than before), and
@@ -753,19 +728,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
     re-adopt the stale revoked value it can still read.
   - **`state/identityScope.ts` clears on LEAVING an identity, never on acquiring one**
     (corrected on review): a bootstrap is triggered BY an act, so clearing there destroyed the
-    guess in the outbox that asked for it and the `wordRounds` entry the word start's own
-    answer checks itself against. The change carries its PREVIOUS value for exactly that test.
+    guess in the outbox that asked for it. The change carries its PREVIOUS value for exactly that test.
     `App` keys every routed surface on the identity's scope revision, so component-local
     profile fields, board rows, invite outcomes and device rows are remounted too. Every
     transition except the first-ever acquisition advances it: A → null clears the old mount,
     and a later null → B remounts B's private reads; first bootstrap leaves it unchanged for
     the same reason it leaves the stores intact.
-  - **Persist v16 DROPS the outbox and the word rounds**: both are owed to #187's retired
+  - **Persist v16 DROPS the outbox**: it is owed to #187's retired
     identity, and the tokenless branch would otherwise pump a surviving outbox on the first
     page load — bootstrapping a brand-new account and filing another identity's guesses
     against it. **Persist v17 adds `identityOwner`** and `main.tsx` reconciles it against the
-    loaded device before rendering: exact ownership keeps both maps, a same-account new device
-    keeps only the account-owned outbox, and no proof drops them. An ownerless first act is kept
+    loaded device before rendering: an owner on the same account keeps the outbox, and no proof
+    drops it. An ownerless first act is kept
     only when `whippin-device` holds its pending bootstrap token, then bound to the returned
     identity; a missing/corrupt device key never turns old state into a new account's first act.
     **Persist v18 moves the same state into IndexedDB**; the retired v17 localStorage blob
@@ -785,11 +759,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     bootstrap race, or a pending bootstrap RECOVERED from storage; never a token this
     session itself minted, whose account is empty by construction) may already own rounds
     and history — while a first acquisition bumps no scope revision, so nothing else would ever
-    re-read them. `identityScope` calls `rearmRoundSync`/`rearmWordRoundSync` (the open
+    re-read them. `identityScope` calls `rearmRoundSync` (the open
     conversations start over with a read, the republish reset's shape) and
     `rearmPlayerHistory` (replays exactly the reads the tokenless branch answered). A
-    RE-ARM, never a clear: the outbox and the word clock hold what THIS device played, owed
-    to the adopted account.
+    RE-ARM, never a clear: the outbox holds what THIS device played, owed to the adopted
+    account.
   - **THE USERNAME IS DEPLOYED, NOT SWAPPED (`state/localIdentityDeploy.ts`,
     user-decided 2026-08-26 — the root `AGENTS.md` #216 section holds the decision):**
     on ANY identity acquisition the module reads the account's profile and, only when it
@@ -812,23 +786,22 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **Persisted game state is TRANSACTIONAL across tabs** (PR-219 final review, replacing
     rounds 2–3's snapshot merge). Zustand is now only the synchronous UI cache. Every
     persisted action emits an explicit domain mutation — append/acknowledge/discard one
-    outbox, start/settle/record one Word run, change one preference, reconcile one owner —
+    outbox, change one preference, reconcile one owner —
     and `state/gamePersistence.ts` applies it to the latest committed state inside ONE
     IndexedDB readwrite transaction. Overlapping transactions serialize origin-wide, so
     there is no get/merge/set gap, no lifetime “touched key” guess, and no stale full-state
     snapshot to clobber a sibling. Acknowledgement removes only the request snapshot and
     preserves concurrently appended guesses; terminal discard is a separate mutation;
     retention and ownership clears run against the complete committed maps; every
-    account/device-owned mutation carries its expected owner, so a delayed write from A
-    cannot enter B, and a Word mutation also names its word so an answer for a republished
-    daily cannot settle or extend the replacement. A permanently failed transaction moves
+    account-owned mutation carries its expected owner, so a delayed write from A
+    cannot enter B. A permanently failed transaction moves
     the whole session to memory-only persistence: later writes are not allowed to commit a
     suffix past the missing mutation and then roll the live cache backward.
     `installGameStoreSync` uses BroadcastChannel (storage-event fallback)
     only to refresh each tab's cache after commit — correctness never depends on delivery,
     because the next mutation re-reads inside the transaction. The adversarial suite uses
     two independent database connections and pins same-key writes, owner transitions,
-    acknowledgement races, eviction, first-write seed and Word-run convergence.
+    acknowledgement races, eviction and first-write seed.
   - **`markDeviceSignedOut` requires the request's identity epoch.** Every refusal caller reads
     the body and acts only on `401 unknown_device`; a 5xx, a dropped connection or any other
     4xx must never take a player's account away, and a late verdict for A must never remove B.
@@ -1337,24 +1310,22 @@ it to the local store — see `packages/backend/AGENTS.md`).
   RETRY is untouched: that is a screen that could not open, where this is an act that did
   not land.
 - **EVERY PAGE CAN CHANGE LANGUAGE (user-decided 2026-09-03).** The game routes always
-  could — `PuzzleTitle`'s selection holds the language beside the daily — and the ACCOUNT
+  could — `PuzzleTitle`'s selection is the language — and the ACCOUNT
   AREA could not: `/account` carried a plain name and its steps carried a back control, so a
   player who landed there in the wrong language had to go back to a game to get out of it.
   - **`components/LangTitle.tsx` is the other clickable title**: the screen's own name in the
     header chip, the LANGUAGE beside it in the ARCHIVE DAY's exact dress, the same chevron,
-    and `PuzzleSelect` behind it with the daily drum left out. It wears `.puzzle-title`,
+    and `PuzzleSelect` behind it. It wears `.puzzle-title`,
     which is the dress of BOTH titles rather than the puzzle one's alone — the row's phone
     step-downs are tuned on that class, and a second class beside it would be three more
     overrides nothing forces to agree. `.puzzle-title-day` became `.title-tag` for the same
     reason: the day and the language are one KIND of value (which of a thing), so they are
     one class.
-  - **`PuzzleSelect` takes `mode: Mode | null`.** Null is the language-only face — same
-    screen, same drum, same fold — and what differs is what the FOLD does: a daily and a
-    language are both in the game's URL, so picking them NAVIGATES, while the account area's
-    routes are global and the pick is the PREFERENCE every screen there reads its chrome
-    language from (`lastLang` → `resolveHomeLang`), so the page re-renders where it stands.
-    One component, because the two faces differ by which drums render and one branch in the
-    fold.
+  - **`PuzzleSelect` is the language drum alone, and the CALLER decides what a pick means**
+    (`onLang`): on a game surface the language is in the URL, so the pick NAVIGATES; the
+    account area's routes are global, so the pick is the PREFERENCE every screen there reads
+    its chrome language from (`lastLang` → `resolveHomeLang`), and the page re-renders where
+    it stands.
   - **`HeaderBack` IS THE ARROW ALONE now, and it is the SELECTION's way out too.** It
     carried the screen's NAME as one target (2026-08-29), which was right while the name said
     only which screen you were on; the name opens a wheel now, and one target cannot do
@@ -1414,17 +1385,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
       reload. Found in a browser, not in a test.
   - **THE TUTORIAL SWITCHES TOO** (user-decided: "even on the tutorial"). Its left slot was a
     plain name; it is a `LangTitle` whose pick NAVIGATES — the lesson sits on `/fr` or `/en`,
-    and `App` keys it on that language, so it restarts in the one it lands in. `Tutorial` takes a `mode` for that
-    one reason: the lesson is mode-agnostic, but the pick should put the player back on the
-    daily they came from. **`PuzzleSelect`'s language-only fold is a CALLBACK** (`onLang`)
-    rather than a store write, because the two screens that mount that face answer it
-    differently — the account area has no URL to move to and stores a preference, the
-    tutorial travels. The component knows the drums; the screen knows what its own language
-    means.
-  - **A PICK KEEPS YOU ON THE KIND OF SCREEN YOU WERE ON** (user-reported: changing either
-    axis on the leaderboard dropped the player onto the puzzle). `onArchive: boolean` became
-    `surface: 'game' | 'archive' | 'board'`, and `PATH_FOR` maps it to `pathForMode` /
-    `pathForArchive` / `pathForBoard`. A selection answers "which daily am I looking at",
+    and `App` keys it on that language, so it restarts in the one it lands in. The pick is
+    `PuzzleSelect`'s `onLang` like every caller's: the account area has no URL to move to
+    and stores a preference, the tutorial travels.
+  - **A PICK KEEPS YOU ON THE KIND OF SCREEN YOU WERE ON** (user-reported: changing the
+    language on the leaderboard dropped the player onto the puzzle). `PuzzleTitle` takes
+    `surface: 'game' | 'archive' | 'board'`, and `PATH_FOR` maps it to `pathForGame` /
+    `pathForArchive` / `pathForBoard`. A selection answers "which language am I looking at",
     never "take me somewhere else" — the rule the archive already followed, said once for
     all three.
   - **THREE SURFACES STILL CANNOT SWITCH FROM WITHIN, each by an older decision**: the
@@ -1450,10 +1417,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   blocks, then a square 3%/6% tile — were reviewed as not it.
   **WHERE IT LIVES (user-decided 2026-09-11: "everywhere in the app where it makes sense —
   view separation, these informations are together, those are separate — but not
-  everything needs a card").** Four consumers: the sentence RESULT (score + ruler in the
-  well, SHARE/TOMORROW the caption row); Word mode's RESULT (`.solved-results`, the twin:
-  count + rarity bar in the well, SHARE under; it sits on the footer's bottom edge at its
-  own height, no longer filling it); the ACCOUNT's three numbers (`AccountStats`, a panel
+  everything needs a card").** Three consumers: the RESULT (score + ruler in the well, SHARE/TOMORROW the
+  caption row);
+  the ACCOUNT's three numbers (`AccountStats`, a panel
   with no well — a simple group takes the panel alone); the archive CALENDAR (`.cal` —
   nav, weekdays, grid and the failure note in one panel). Deliberately NOT: the sentence's
   page (prose is not a tile), the leaderboard (its rows are already tiles — a panel round
@@ -1542,16 +1508,6 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `.solved-score-num` (`.solved-score-inf`, `crispEdges`, sized in `em` off the number it
     replaces) with an `sr-only` `∞` beside it; the unit stays PLURAL, since there is no count
     for a "1" to agree with. `SolvedScreen` takes `capped` and shares a v6 capped token.
-  - **WORD mode gained the same load gate** (`useWordRoundSync` returns a `RoundLoad`, the
-    engine publishes it): its run UI waits for the mount read, which also closed the hazard
-    recorded in the #202 bullet below — PLAY was tappable while that read was in flight, and
-    a session that starts a run it cannot see becomes its writer. Since #217 the wait earns
-    its keep differently: that read is where the screen learns WHOSE run the daily holds, and
-    a PLAY on a day started elsewhere is a RESTART the gate has to be able to warn about. A recorded answer publishes
-    the server log into that transient load; `settleWordRun` then clears the acknowledged
-    persisted outbox, marks the run submitted, clamps any still-live deadline to now and caches
-    the authoritative claim count clamped to `CLAIM_ZONE`, so neither the prompt nor summary
-    progress can remain live after settlement.
   - **`statusOf` takes a SERVER summary** (`{progress, solved}`), and #211 is its producer —
     the two shipped together, as the Ordering note on both issues required.
 
@@ -1559,10 +1515,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   have no local source after #214, the explicit-loading rule, the streak window, the metering
   stance — lives in the root `AGENTS.md`. What is this package's:
   - **`state/history.ts` is the whole client half**: a transient zustand store of months
-    (keyed `lang:mode:month`) and per-language solved-day collections, ONE flight per request
+    (keyed `lang:month`) and per-language solved-day collections, ONE flight per request
     key (the `activeScoreFlights` pattern — the chooser mounts two languages at once and
     React's development effect replay fires every effect twice), and `usePlayerHistory`, whose
-    effect REVALIDATES whenever a (language, mode, month) becomes the view on screen. Nothing
+    effect REVALIDATES whenever a (language, month) becomes the view on screen. Nothing
     is persisted: an archive day is playable, so a past month is not immutable and an earlier
     visit's answer is not evidence.
   - **A month that has not arrived is `days: null`, never an empty Map** — an empty Map is the
@@ -1571,10 +1527,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     MONTH is `{kind:'unknown', loading}` — the third `Status` kind, whose `loading` half only
     decides whether the placeholder BREATHES. **It is read off the phase being `loading`, never
     off "not failed"** (corrected on review): breathing PROMISES an answer is coming, so a read
-    that failed and a surface that never asked both rest still. Idle is unreachable today (Word
-    mode is the only `enabled: false` caller and it reads `wordStatusOf`), but a placeholder
-    breathing forever with no request behind it is the same false claim the explicit-loading
-    rule exists to prevent. The calendar draws unknown as a muted, unfilled, un-rippled cell
+    that failed and a surface that never asked both rest still. An idle read (`enabled: false`)
+    rests too: a placeholder breathing forever with no request behind it is the same false
+    claim the explicit-loading rule exists to prevent. The calendar draws unknown as a muted, unfilled, un-rippled cell
     that keeps its number
     and its tap (the day is playable whether or not we know what happened on it); the chooser
     draws the app's skeleton strip; `srStatus` says `srStatusUnknown`, because silence there
@@ -1691,9 +1646,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **An ADOPTED solve is not a fresh solve** — the beats belong to a solve the server
   confirmed on a batch THIS device sent (`solvedByAppend`, #214, replacing the submit-time
   `solvedByPlay` guess), so a second tab finishing the board under this one replays no
-  celebration and fires no second `solve` event. `RoundSyncContext.mode`
-  stays TYPED `'sentence'`: Word mode got its OWN conversation (below) rather than a widened
-  one, because the two shapes share only the transport.
+  celebration and fires no second `solve` event.
   A changed revision resets the local board too, while an unstamped pre-deploy round with
   matching holes is adopted and stamped in place. The reset deliberately leaves the streak's
   solved-day collection alone (the server's since #211, held transiently): a republish is
@@ -1705,8 +1658,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   Turnstile challenge — the sentence round has no START message, so the token rides the
   append whose read found nothing (`RoundFlight.created`), and every later append carries
   none. A failure there is an ordinary failed write, retried with the rest: the round keeps
-  playing locally, which is why nothing is said on screen (Word mode's PLAY is the one write
-  that speaks, because nothing begins without it). (2) The SERVER's `solved` is adopted as a
+  playing locally, which is why nothing is said on screen. (2) The SERVER's `solved` is adopted as a
   FACT (`markRoundRecorded`) — it says the day's score row exists, and it says the round is
   FROZEN, so the conversation closes — and its log is adopted SERVER-ONLY, where every other
   answer merges the local one under it: a frozen round's stored log is final, so keeping the
@@ -1723,90 +1675,6 @@ it to the local store — see `packages/backend/AGENTS.md`).
   DEMONSTRATES a record** (its `createdAt`): a rate-refused RESTART carries the EMPTY state,
   and taking that as creation makes the retry omit the challenge — a 403, which is a verdict,
   closing the conversation on a round that was never created.
-
-- **Word mode's round start and end-of-run submission (#202; the run belongs to a DEVICE
-  since #217):** `state/wordRoundSync.ts`,
-  bound by `hooks/useWordRoundSync`. The product contract — why the fast game syncs LEAST,
-  the server-stamped clock, the wait check, the caps, and #217's two server conditions — is
-  in the root `AGENTS.md`. What is this package's:
-  - **PLAY is an ACT the gate WAITS ON.** `WordGame.handlePlay` awaits `startWordRound`,
-    which fetches an invisible Turnstile token and POSTs the start; the button holds a
-    `LoadingWave` and is disabled meanwhile, and a failure shows `failedStart` with PLAY
-    itself as the retry — LOUD, unlike a score submission's silence, because nothing began
-    and a silent failure leaves the player tapping a gate that never opens. The visible
-    clock starts when the ANSWER lands, never on the tap: the store's mutation is
-    `openWordRun(key, startedAt)` (`anchorWordRun` until #217 made a start a RESTART — it
-    now REPLACES the round it lands on, log and count included, because that is what the
-    write it reports did), keyed because the answer can land
-    after navigation has moved on. PLAY also reads a 401's error code: `unknown_device`
-    raises the signed-out screen instead of leaving a revoked player retrying a gate that can
-    never open; another refusal remains the ordinary failed-start state.
-  - **THE SCREEN PICKS THE PHASE, from the server's answer and its own deadline** (#217,
-    `screens/WordGame.tsx`): `settled` (the server holds a recorded run) is the final screen;
-    `mine` — the answer's `startedBy.deviceId` is THIS device's and the local deadline is
-    here — is the run; everything else is the gate, whose PLAY restarts. Two consequences
-    worth naming. The post-mortem is keyed on `finished` rather than on the raw `ended`, or a
-    stale local deadline would draw the revealed board behind a gate. And the run's END is
-    reported to the engine by the screen (`finishWordRound`) instead of riding
-    `beginWordRoundSync(ctx, over)`: whose run it is and whether its clock has died are the
-    same two facts the phase comes from, so the report belongs where that decision is made.
-  - **The gate NAMES what a restart destroys** — `wordRestartNote` through `tDevice` (the
-    STRINGS table's second placeholder, `{device}`), over `deviceLabel`, the same label the
-    sign-out screen prints; the button swaps to `gateRestart`. `deviceLabel` therefore takes
-    the three label FIELDS rather than a `DeviceRow`, so the run's stamp and the device list
-    read as one thing.
-  - **The anchor is an ELAPSED SPAN** (`anchorFrom`): `Date.now() − (now − startedAt)` off
-    the answer's two instants, so a device clock minutes off still runs a 60-second run and
-    the request's own travel time lands INSIDE the run — the margin that keeps an honest
-    submission clear of the server's wait check. Only a START writes it (#217): the span it
-    translates is the one the answer's own write just stamped, and a re-read never shifts a
-    run under the player because a read anchors nothing at all. *(Until #217 the span also
-    let a device JOIN a run in progress with the real time left, and re-anchoring had to be
-    a no-op for that reason.)*
-  - **The MOUNT READ writes no SERVER state, and since #217 ANCHORS NOTHING either** — it
-    reports WHOSE run the daily holds (it used to resume any clock it found, which is what
-    made the daily one-shot across devices); it also carries a finished day's RECORDED run
-    to a device that never played it. That log is published into transient `roundLoads`, while `settleWordRun` clears the
-    persisted local outbox and marks the round submitted: the server demonstrably holds a
-    run for it, so this device owes nothing. A non-null deadline becomes
-    `min(localDeadline, now)`: settlement ends a still-live local phase immediately and never
-    reopens one already finished. The server deadline is not adopted; only the authoritative
-    claim count is cached for unloaded summary surfaces.
-  - **The run's END asks for the one write.** `finishWordRound(ctx)` carries the deadline's
-    own fact (a log cannot see a wall clock); the log is truncated to what the
-    route accepts (`submittableLog` — only misses can run away), then a valid 2xx publishes
-    the server's first-write-wins log and settles the persisted outbox. `submitted` is kept
-    purely so a recorded run that claimed nothing does not re-POST on every mount, since an
-    empty server log otherwise reads exactly like an unsubmitted one. A `too_early` refusal
-    is waited out; every other 4xx closes the conversation — and one that CARRIES state
-    (`started_elsewhere`) is adopted on the way out, so the screen learns who holds the run
-    now instead of showing a result the server will never record.
-    **An accepted START reopens the conversation** (`closed`, `failures`, `wantSubmit` —
-    the republish reset's shape, found on review): a verdict CLOSES a flight, and
-    `started_elsewhere` is the verdict #217 put on the happy path, so without this the run
-    the player restarts from that gate reaches its deadline against an engine that has
-    stopped listening — no submission, no score row, no standing, until a reload. Clearing
-    `wantSubmit` with it is not tidiness: carried across, the fresh round's first act is a
-    submission of the empty log the restart just gave it, refused `too_early` and retried
-    behind the backoff until it records the run MID-PLAY, first-write-wins.
-    **A pending submission is the RETIRED run's fact once a different word is published**,
-    so a republish resets it with everything else the flight knows: carrying it across made
-    the fresh round's first act a submission of the empty log the reset had just given it,
-    refused, taken as the verdict it would be for a round nobody started, and the
-    conversation closed for the session — so the word the player then actually played never
-    synced at all.
-  - **Only the run this device HOLDS is written**, and the SCREEN is what says so (#217):
-    the engine writes when the phase above reports the run over, so there is no `mayWrite`
-    predicate and no session-scoped `startedHere` set left — the server's stamp answers what
-    they inferred. The round is marked submitted off the server's
-    `submittedAt`, not off the log's length, or a recorded 0-claim run reads as unrecorded
-    forever.
-  - **Persist v11 DROPS every pre-#202 word round** (the v7 strike-run precedent): their
-    clock was a local stamp no server ever saw.
-  - `rankEntry` (`game/wordGame.ts`) is what every rank-map lookup goes through now — a
-    folded slug is all lowercase letters, so `constructor` is a word a player can genuinely
-    type, and a bare `ranks[typed]` answered it off the prototype with a rankless "near".
-    The backend reads a submitted log the same way, so both ends agree on what a claim is.
 
 - **Profile editor (#188; two-colour rework + key-UI removal user-decided
   2026-08-19):** `/profile` (`screens/Profile.tsx`), a global route (an identity is not
@@ -1897,9 +1765,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the header carries a BACK control — its title, per 2026-08-29 — to what opened it (user
   feedback 2026-08-20: the screen was unleavable) — **to the surface that
   actually opened it** (corrected 2026-08-20 on review): `/profile` is a GLOBAL route,
-  so that board's (lang, mode) is not in the URL, and rebuilding it from
-  `lastLang`/`lastMode` describes the last loaded GAME instead — editing from the Word
-  board landed you back on the Sentence one, and a board opened before ever playing
+  so that board's language is not in the URL, and rebuilding it from
+  `lastLang` describes the last loaded GAME instead — a board opened before ever playing
   could return in another language. The opener states its own route in the transient
   store (`profileReturn`, the `tutorialOpen` pattern — set by the EDIT chip, cleared on
   use, never persisted); only an editor reached with nothing set (a deep link, a
@@ -1927,7 +1794,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `/og/*`) to the local backend** — `vite.config.ts`, the CDN's own behavior list restated
   (the reasoning, and the pinned-OFF `changeOrigin`/`xfwd`, are #189's, unchanged).
   **A RESULT SHARE IS SIGNED AND OPENS THE DAY** (root `AGENTS.md`, Player profile):
-  `SolvedScreen` and `WordEndScreen` sign every link with the device's account, with no
+  `SolvedScreen` signs every link with the device's account, with no
   control beside SHARE; a share carries NO group (the 2026-09-10 decision stands over the
   issue's earlier AS drum), so `/join/` carries the group landing alone.
   **JOINING IS A BUTTON, for everyone** (#216's trigger rule): the landing draws the group
@@ -1947,8 +1814,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (`groupFull`, `groupLimit`, `inviteExpired`). Contract-tested (`GroupInvite.test.ts`).
 
 - **Leaderboard screen (#190; drawn over GROUPS since #271, user-decided 2026-09-07):**
-  `/<lang>/board` and `/<lang>/word/board` (`pathForBoard`; a board is per (day, lang,
-  mode), always the ACTIVE day), `screens/Leaderboard.tsx`, entered from the header's CROWN
+  `/<lang>/board` (`pathForBoard`; a board is per (day, lang), always the ACTIVE day), `screens/Leaderboard.tsx`, entered from the header's CROWN
   KEY (lit while the board is up; the way out is any other key, HOME above all). The
   HEAD is a PAGER (`ScopePager`, user-decided 2026-09-14 — the THIRD design of this
   control, after a strip of named tabs and a chip opening a wheel under the header's own
@@ -2080,813 +1946,44 @@ it to the local store — see `packages/backend/AGENTS.md`).
   collapses). Board VISUALS carry no tests per policy; the contract-y parts are the
   shared ranking rules, `parseBoard`, and the route grammar (langs.test.ts).
 
-- **Word mode's POST-MORTEM is a GRID (user-decided 2026-09-01: "apply this new design
-  to the solved word mode too" — the sentence game's words modal, applied).** The one
-  trunk of dq-spaced stations, its rail and nodes, the torn `.scroll-torn` edges, the
-  MISSED shelf and the near misses riding the trunk are ALL GONE, and with them
-  `components/routeDrawing.tsx` (WordBoard was its last composer; `fitWord` moved into
-  `WordSubject`, its one remaining consumer), `hooks/useScrollEdges.ts`, every `.route-*`
-  rule, `.word-frame`/`.word-cut`/`.word-terminus`, `srRouteOffMap` and the `routeOffMap`
-  string. `game/wordBoard.ts` states NO geometry any more — no `dq` gate (a zone group
-  with no `dq` is simply a word now), no `outside`, no `misses`, no `maxRank` — and
-  `buildWordBoard` never returns null. What the grid says: every group of the zone at ONE
-  type size (the column is as wide as the longest word needs, `repeat(auto-fill,
-  minmax(<that>px, 1fr))` set inline, so a wide screen fills its width — the post-mortem
-  window opens to the modal's 1100px, `.word-window.wb-open` — and a phone gets one or
-  two columns), FARTHEST at the top and CLOSEST at the bottom, next to the day's word —
-  the grid's LAST ROW, `WordFoot` (`.word-foot`, the solve ink, where the terminus row
-  stood; pinned under the window for one pass, then moved into the scroller, user-decided:
-  "the starting word should be in the scrollable view too"); each word in its RARITY grade's colour with its exponent in the heat; a
-  CLAIMED word wears its grade's colour as a CHIP (the held word's inverted chip in the
-  grade's ink — a claimed word reads as yours the way a found word does in the sentence
-  modal); a word merely NAMED by the reveal stands plain in its colour; a still-censored
-  one is `???` at 0.55. The scroller opens PARKED at the bottom and is kept there by a
-  `ResizeObserver` through the ending's beats until the player takes the wheel, and it
-  FADES ITS OWN TOP (a 36px mask — user-reported: it starts under the header's reserve,
-  so the header's gradient never reached its content), with the post-mortem window pulled
-  up to the header's bottom edge (`.word-window.wb-open`, −8px desktop / −18px phone
-  against the screen's 66px reserve) so that fade sits right under the bar rather than a
-  band below it (user-reported: "the gradient starts way too low"), plus 36px of top
-  padding — the fade's own height — so the farthest word rests clear of it at the top
-  (user-reported). On a phone the post-mortem window BLEEDS to the screen's edges
-  (`.word-window.wb-open` at −14px sides, the scroller's right padding 0, the grid and the
-  word padded 14px), so the scrollbar sits on the screen's border with no padding
-  (user-decided). The sr mirror is unchanged (`srWordBoardWord`, `srWordRarities`, `srRouteStop` per named word).
-  *(The bullets below describe the trunk it replaced; their reasoning stands where it is
-  about the MODEL and the phases, not the drawing.)*
-- **Word mode (#156, the second daily; RETIMED by #163 on 2026-08-08):** one app, two faces
-  — `/<lang>/word` (plus `/word/<date>` and `/word/archive`, same date rules) plays the day's
-  #154 artifact: the word is PUBLIC and the player claims its top-`CLAIM_ZONE` (**1000**
-  since 2026-08-11; 250 before it, 150 before that) groups **against a COUNTDOWN**; the score
-  is the claim count. **Since 2026-08-11 the number is also TOLD to the player**, on the
-  gate's first rule — see the gate bullet.
-  **`CLAIM_ZONE` remains the WEB's product tuning knob since 2026-08-10**, freely movable
-  with no republish and no regeneration, but #169 made its numeric value a CLIENT/SERVER
-  contract: `shared/src/scores.ts` now owns `WORD_CLAIM_ZONE`, `wordGame.ts` re-exports it
-  under the existing name, and the backend uses the same value to reject impossible Word
-  scores. Moving it therefore requires a backend deploy, not an artifact regeneration. Its
-  only real ceiling is generation's `TOP_K` (10 000),
-  past which a rank has no entry to claim. **Two things SCALE with it**, neither a blocker
-  but both worth knowing before it moves again: the post-mortem board draws every zone group
-  as a station, so this is also the board's ROW COUNT (1000 rows since the widening — the
-  reveal's scrambles were already disabled, so the cost is DOM, not animation); and
-  `wordStatusOf` reads progress as claimed/zone, so the archive's and chooser's percentages
-  are proportionally smaller (a 25-claim run reads 3% where it read 10% — honest, since the
-  field is deliberately unclearable and is now four times more so). It is pinned to nothing in generation: the board
-  paints its station words by RARITY (see the board bullet below) off `freq`, and `dq` —
-  what the drawing spaces its stations by — runs to the map's own `TOP_K` edge.
-  **The CLOCK replaced the strike system (#163).** Two dailies should be two games:
-  Sentence mode is think slowly, Word mode is think fast and beat the clock.
-  Everything the strikes legislated, the timer legislates for free — a repeat, an invalid
-  word or a far miss punishes itself in the seconds it cost to type — so `STRIKES_TO_END`,
-  the consecutive rule, end-by-strikes, `WordFailures`, the crosses row, `assets/cross-button.png`
-  and the `--strike-gap` responsive override are all GONE, along with `srWordFailures` /
-  `srWordStrike`. Neither mode shows bots (the sentence game's LLM benchmark display was
-  removed 2026-08-12 — see the solved-result bullet): the comparison story is other
-  players (a score percentile, later), not AIs.
-  **The economy is `game/wordGame.ts`, and every constant in it is a declared TUNING KNOB**
-  (the way `STRIKES_TO_END` was): `START_SECONDS` (**60**) and the `RARITY_LADDER`. Nothing
-  restates them — the HUD reads them and the tests DERIVE their expectations from them — so
-  retuning after a play session stays a one-line change. **The values are placeholders until
-  played** (solo, then beta testers); the margin question is whether an average claim's bonus
-  roughly covers the typing cost of the next guess on MOBILE, the slower device. Mis-tuned
-  low, runs end in 90 seconds and feel unwinnable; high, every run exhausts the zone.
-  **That claim has been EXERCISED and it held** (2026-08-11): the start went to 120 and every
-  rung doubled, then both were rolled back the same day — exactly the round trip
-  `STRIKES_TO_END` made at 5-and-back-to-3. Nothing moved in either direction: no test, no
-  component, no artifact, because the tests assert the ladder's SHAPE (ratios and ordering)
-  and a scalar leaves that alone. Two findings worth keeping for the next attempt: the
-  START value is a **width** decision as well as an economic one — at 120 the HUD reads three
-  digits from the very first frame where 60 reads two — and a scalar on the ladder cannot
-  change the balance BETWEEN grades, only how fast the whole run breathes. The open question
-  is what a claim is worth against its own typing cost, and only play answers it.
-  **FIVE NAMED RARITY GRADES, and they are the game's visible vocabulary** (decided
-  2026-08-08): `COMMON` / `UNCOMMON` / `RARE` / `OBSCURE` / `ARCANE`, **UNTRANSLATED in every
-  language** like MISS / YOU / DNF — one word per grade, identical everywhere. A claim's
-  grade is what floats on the word, and it is what pays the clock: **4 / 6 / 9 / 14 / 21
-  seconds, a geometric ×1.5 ladder**. EXPONENTIAL and not linear on purpose — rarity should
-  PAY OFF rather than tick up, and an ARCANE worth five COMMONs is what makes hunting depth a
-  real strategy against spamming short frequent words. (The ladder also roughly DOUBLES what
-  a claim used to be worth: measured over 1750 real zone groups, the retired 2/3/4/5 tiers
-  averaged 3.34s a claim against this ladder's 6.82s.)
-  **A grade is a FRACTION OF THE CORPUS, never an absolute frequency rank** (decided
-  2026-08-08, and the one part of this that is not a free knob): `rarityOf(freq, corpusSize)`
-  divides the shipped `freq` by `vocabSet.size` — the existence set the round already loads
-  before it can accept a guess — and the ladder's cuts are the commonest **10% / 22% / 50% /
-  85%** of the language. Absolute cutoffs were tried FIRST and measured on real generated
-  artifacts: en's vocabulary is 75k words and fr's 128k, so the same rank means very
-  different things in them, and on the SAME artifacts with the SAME seconds ladder an
-  average claim paid **5.26s in en against 10.12s in fr — fr runs lasting 1.93× longer for
-  no reason but the size of its dictionary**. Dividing by the corpus brings that to
-  **1.47×**. Both halves count the same population, which is why generation ranks `freq`
-  over DISTINCT SLUGS rather than raw forms (#163 fix): V and the existence set differ by
-  exactly the accent collisions, 4.1% in fr against 0.0% in en — a language-dependent skew in
-  the one number that exists to make rarity language-independent.
-  **The 1.47× that REMAINS is a product call, not a bug, and no cut set removes it:** en's
-  250-word neighborhoods do not reach as far down their corpus as fr's (zone p98 at 0.43 of
-  the vocabulary against fr's 0.94), so with these cuts an en board grades **59/29/12/1/0**
-  across the five where an fr board grades **36/28/15/15/5** — English players top out at
-  RARE in practice. Cuts low enough to give en a real ARCANE hand fr ~19% of every board as
-  ARCANE, so the shipped cuts favour fr's pyramid and the doubling target; the measured
-  alternative is **0.08/0.18/0.34/0.55**, which makes all five reachable in en (52/28/16/4/1)
-  at the cost of fr's shape. It is a true statement about the two embeddings (GloVe 6B vs
-  fastText cc.fr) and the tuning sessions are where it gets decided.
-  An ENTRY with no `freq` (a borrowed-vector group) grades COMMON — the floor, never a
-  windfall for missing data — but an artifact with no `freq` ANYWHERE is a stale pre-#163
-  map that would silently halve the economy, and `parseWordPuzzle` refuses it at load (the
-  no-back-compat rule: a stale artifact is republished, never limped on).
-  Rarity feeds the CLOCK only, never the score — one resource, one number. Total time is
-  bounded by construction (`START_SECONDS` + the zone's summed bonuses), so no run is
-  infinite and the zone stays unclearable in practice.
-  A claim is a valid vocab word, not already tried, ranked inside the zone. **Anything the
-  run cannot claim floats `MISS`, in the ramp's weird red terminus (`MISS_COLOR` — see
-  the sentence loop's MISS bullet) — a near miss (ranked, just outside the
-  zone) and an off-map guess alike** (decided 2026-08-08, superseding the near miss's rank
-  float). The
-  rank was justified as the zone's teaching signal, and it was the right call on a
-  contemplative board; on a clock it is a number the player can do nothing with, and the two
-  outcomes are identical in every way that matters to them — no time gained, no time lost but
-  the seconds spent typing. It survives where it still teaches: the post-mortem draws that
-  guess on the trunk at its real rank, showing the form the player TYPED (per the naming rule
-  in the route-map bullet below). `srWordMiss` says the same thing the screen does.
-  Not-in-vocab, group-level repeats (#104) and the day's word itself stay free non-events —
-  **and since #175 (2026-09-05) they are VISIBLE non-events**: each says what it was on
-  the prompt's message line (the sentence game's `.hint`, in its own place under the
-  prompt; `notAWord` / `wordRepeat` / `wordItself`, cleared by the next edit), a non-word
-  and a repeat also shake the prompt (a repeat still CLEARS it — nothing to correct, and a
-  ten-letter repeat must not cost ten backspaces on a clock — so the empty line shakes),
-  the day's word only speaks. Nothing counts, nothing enters the log, the sr announcements
-  are unchanged: #175 added the visible channel, it moved nothing. On a clock silence had
-  read as a dropped keystroke, and the natural reaction was to type the word again.
-  The pure rules live in `game/wordGame.ts` (`judgeWordGuess` / `wordGuessKey` /
-  `replayWordRun` / `bonusSeconds` / `runMs` — a round replays from its counted-guess log
-  exactly like the sentence game), the board model in `game/wordBoard.ts` (a SIBLING of
-  `buildRoute`: no departure, no "you are here"), and the surface in `screens/WordGame.tsx`
-  + `components/WordBoard.tsx` + `components/WordTimer.tsx`.
-  **The clock is a wall-clock DEADLINE, not a ticking counter, and there is NO PAUSE**
-  (decided 2026-08-08). The round persists `startedAt` and a `deadline` = `startedAt +
-  runMs(Σ bonuses)`, re-derived from the WHOLE log on every write, so the clock can never
-  drift from the guesses that bought it; the run is over when `now > deadline`, whatever
-  happened to the tab in between. Backgrounding, reloading or closing it does not stop the
-  clock — an interrupted run is a ruined run ("it is what it is") — and that shape is also
-  what makes the rule enforceable: there is no remaining-seconds value to freeze, so there
-  is nothing to cheese by closing the tab mid-bad-run. A submit is judged against the
-  deadline at the moment Enter lands, in the STORE, so a guess in flight when the clock dies
-  is dead; past the deadline the round is FROZEN, re-pricing included (re-pricing a finished
-  run could hand it a later deadline and revive it). A reload rehydrates from the log +
-  deadline: time left resumes with the real remaining time, none renders ended. The daily is
-  one-shot — no render path can reopen a finished day, since only an accepted START writes
-  the clock (`openWordRun`; `startWordRun` stamped it locally and idempotently until #202
-  made the instant the SERVER's, and #217 made every accepted start a RESTART that the
-  server refuses once a run is recorded). Verified end to end at 320/430: reload mid-run resumes, a
-  ten-minute background jump lands on the finished screen, and a guess typed before the
-  deadline but entered after it never enters the log.
-  **Two hooks, one deadline, for a REASON** (`hooks/useCountdown.ts`): `useCountdown`
-  returns the remaining ms and re-renders ~10×/s, and is used ONLY inside `WordTimer`;
-  the SCREEN uses `useDeadlinePassed`, which schedules ONE timeout for the deadline itself
-  and re-renders once. Subscribing the screen to the fine clock re-rendered the prompt and
-  the whole keyboard at 10 Hz for the entire run — during exactly the phase where a fast
-  game must not make the player wait on a keystroke. Both DERIVE from `Date.now()` at render
-  rather than storing a countdown: the deadline appears in the same commit that starts the
-  run, so a value only an effect could refresh would paint one frame reading zero — which is
-  the run's own end condition, and the whole ending would fire on the PLAY tap.
-  **`replayWordRun` is the ONE walk of a word round** (2026-08-06): it returns the ordered
-  `counted` guesses with their judgements plus the seconds they bought, and `buildWordBoard`
-  sorts THOSE into claims / trunk stops / the misses shelf rather than re-deriving the dedup
-  a second time — the score, the clock and the drawing cannot disagree about what one log
-  means. What it does NOT return is `ended`: that is the deadline's, and a log cannot see a
-  wall clock (`WordBoardModel` lost its `ended` field with it).
-  **The screen runs in THREE phases** (#163), each putting one thing in front of the player.
-  **GATE** — the day's word, and the sentence gate's EXACT stack (user-decided
-  2026-08-11): two bulleted rules in the shared `.coach-rules` dialog over a full-width
-  PLAY (the sentence gate's own label, user-decided 2026-08-11 — one shared `gatePlay`
-  key), in `.rules-gate` on the tray's bottom edge (see the sentence gate bullet). A
-  timer needs a start
-  control anyway, and the control is where the rules live, so this screen is Word mode's
-  whole onboarding and no tutorial change was needed. The clock previews `START_SECONDS`
-  greyed beside it, so the number teaches what it is before it starts moving; the copy
-  states no duration (the HUD is already saying it, and stating it twice would be
-  restating a tuning knob).
-  **The rules state EXACTLY ONE number, and it is the ZONE** (user-decided 2026-08-11,
-  superseding "neither rule states a number"): the goal line names how many words count.
-  "Find words close to it" gave the player nothing to aim at, where a count is a target
-  they can hold. **It is never SPELLED into the copy** — `wordRulesGoal` carries a `{n}`
-  placeholder that the screen fills from `CLAIM_ZONE` via `tn()`, so the rule and the
-  sentence announcing it cannot drift; a hardcoded "1000" would start lying the first time
-  the zone moved, and a gate that lies about the field is worse than one that says nothing.
-  `{n}` is the STRINGS table's only placeholder, which is what keeps the line in the
-  type-checked en+fr table (parity by compiler) rather than in a hand-written bilingual
-  function like the `sr*` helpers. `wordGame.test.ts` pins both halves: the placeholder
-  survives in both languages, and the gate's whole copy contains exactly one number. **RUN** — the word, the prompt, the
-  keyboard, the timer and the score, and **NO BOARD**: this is a fast game, and a live map
-  to read is a contemplative surface pulling against the clock. **OVER** — the board
-  arrives, revealed, as the post-mortem the run earned.
-  **During the GATE and the RUN the day's word is JUST THE WORD — centred, in the solved
-  blue, no node, no rail, no rank gutter** (`components/WordSubject`, decided 2026-08-08).
-  It is deliberately NOT the route drawing's terminus row: that row carries a square node and
-  a rail stub because it is the END OF A LINE, and none of that means anything while there is
-  no line. `WordTerminus` still mounts at the bottom of the revealed board, so the word is
-  the same word in two registers — a subject during the run, a station in the post-mortem —
-  and it is the reveal beat that swaps them. Two consequences worth knowing: the run's word
-  brings its own `--wordw` (the WHOLE page column, where the route frame's is what survives
-  the gutter and rail) so the shared `fitWord` still guarantees no mid-word break; and it
-  carries the word as REAL sr text (`srWordBoardWord`), which fixed a live accessibility hole
-  — the board's sr mirror is post-mortem-only and `WordTerminus` is `aria-hidden`, so before
-  this the day's word was spoken NOWHERE for the whole game. `WordTerminus` lost its hit
-  plumbing with the move: no guess can land while it is on screen.
-  **The word is HELD, like a hand of playing cards** (decided 2026-08-09): the first letter
-  leans left, the last leans right and everything between follows the same arc, with the
-  outer letters falling away from the middle — the drop is what makes it a HAND rather than
-  skewed type, since cards splay from a pivot below and their outer ends dip. `WordSubject`
-  splits the word into `.hole-letter` boxes for this — the pixel font is monospace, so the
-  word measures exactly as plain text and `fitWord` is untouched.
-  **And the hand BREATHES: it rises and, in the same breath, spreads.** Two elements, one
-  rhythm — the rise on the WRAP so the word and any grade label on it move as one object, the
-  spread (`letter-spacing`) on the TEXT, since spacing is inherited and would otherwise reach
-  the label too. Same duration, same easing, both started at mount, so they stay in phase
-  with nothing synchronising them. The spread is the one thing here that changes the word's
-  WIDTH, which is why `.word-subject`'s `--wordw` reserves 5% for it — the same kind of
-  allowance the route frame's `--wordw` makes for a scrollbar it cannot see. Verified on the
-  worst case, a 25-letter French word at the top of its breath: 290px of the 292 a 320px
-  screen holds.
-  **Now and then the letters RIPPLE** — #129's wave, the sentence holes' own, on the same
-  random 3–10s clock (2026-08-09, replacing a single letter that rose every 750ms as though
-  about to be drawn). Its scheduling is `hooks/useLetterWave`'s, shared with the holes and
-  the solved stage since 2026-08-16 (it was restated here while there were two copies —
-  importing half a component's internals is not sharing it — but the third copy tipped it;
-  see the #129 bullet). What stays this surface's own is the `active` gate it passes:
-  never a one-letter word, since there is nothing to ripple.
-  **The lean and the drop go on the INDEPENDENT transform properties** (`rotate` /
-  `translate`), never into one `transform` string, and that is load-bearing rather than tidy:
-  it leaves `transform` free, which is exactly what lets the wave — an ordinary transform
-  animation — ride ON TOP of the fan instead of flattening it for the length of a ripple.
-  Under reduced motion the float, the breath and the ripple are all switched OFF (infinite
-  decorations, the rule the timer's warning pulse follows) — but **the fan itself stays**,
-  because it is a POSTURE and not motion. All of this is the screen being alive while the
-  player THINKS; it is deliberately separate from the guess FEEDBACK, which is what the
-  screen says back when they ACT (the slash, below).
-  **The TIMER sits UNDER THE WORD and the SCORE is the watermark (clock placement
-  user-decided 2026-08-18, superseding the header corner: the header's left slot went to
-  which-puzzle — the date chip then, `PuzzleTitle` since 2026-08-30 — and the clock — in the PIXEL face now, like every number
-  the game produces — lives in `.word-clock` right under the day's word, where the
-  playing eye already is; the gate previews it there, and the post-mortem mounts no clock
-  at all).** And the count becomes the big `CellDigits` watermark behind the
-  word (`.word-anchor`, the standing watermark rule: what is displayed better later, since
-  the count is this mode's end-screen headline). **That watermark is sized for at least TWO
-  digits whatever it currently reads** (`MIN_SIZED_DIGITS`, decided 2026-08-09) — a rule of
-  the SHARED component, so the sentence game's try count gets it too. Both numbers count
-  play, so both cross 10 in the first minute, and the width budget is what bites on a phone:
-  measured at 320/375/430px, the count rendered 252px tall for claims 1–9 and **halved to
-  126 on the tenth**, mid-round. A watermark is the screen's fixed furniture; it must not
-  resize because the game went well. So the glyph-pixel size is computed from the widest
-  2-digit value the number could become while the BOX stays the real number's width (it
-  still centres on its own ink) — which costs the 1–9 window some size and buys a count
-  that never moves again. Past two digits it does move, because there is no honest way to
-  reserve for a number with no bound; 99 → 100 is a milestone where 9 → 10 is the tenth
-  guess of every single round.
-  **The watermark is a PLAIN FILL, in `--fg` at 20% (user-decided 2026-09-01).** `CellDigits`
-  fills one block per lit cell of the 7-row masks — collected into ONE path and filled ONCE,
-  because a `fillRect` per block is a separate composite and at a fractional dpr (1.5, 2.5)
-  two neighbours each paint a half-covered pixel along the edge they share, showing a
-  hairline seam through the middle of a solid stroke. The ink moved from `--muted` to `--fg`:
-  the ground's own white mixed into the ground, where the muted grey put a blue-grey cast on
-  the one shape that must not draw the eye. **Measured, because the intent was "a bit
-  darker" and the arithmetic does not agree:** `--fg` at 0.20 lands on rgb(55, 55, 57) over
-  the ground, against the retired `--muted` at 0.30's rgb(53, 55, 60) — the SAME weight,
-  just neutral. Dimmer means dropping the alpha (0.14 ≈ rgb(40,40,42)); `INK_ALPHA` is the
-  one knob and it is the whole change.
-  *(A hollow 1px CONTOUR shipped for one pass the same day — the union outline of the blocks,
-  stroked with a device-pixel snap — and was rolled back: the number reads as a mass, not as
-  a wireframe.)*
-  **THE HALO WENT WITH THE FILL, and so did the opaque base.** From 2026-08-17 the canvas
-  painted a radial pool of the ground around the digits, and an opaque ground block under
-  every ink cell, so the ground's halftone DITHER could never show through a stroke. The
-  2026-09-01 rebrand made the ground one FLAT sheet, which left both painting `--bg` onto
-  `--bg`: invisible, and not free — the halo alone made the canvas 2.8× the number's height
-  and 1.9× its width, cleared and gradient-filled on every draw. Both are deleted
-  (`bgChannels` with them); the canvas is now the number plus room for its stroke, and the
-  horizontal clamp bounds that instead of a halo margin.
-  **It still sizes from the VIEWPORT ALONE (user-decided 2026-08-17):** the old
-  implementation quantized the glyph-pixel to whole `--cell` grid squares and snapped the
-  number to the graph-paper grid — that alignment served the deleted Perlin field, so the
-  size now comes continuously (whole device pixels) from the height/width budgets
-  (`cellSize.ts` retired; `--cell` retired with the dot matrix). That split IS the mode's
-  feedback grammar:
-  **a float on the WORD is about the guess** (its GRADE, or MISS), **a gain on the TIMER is
-  about your clock** — `+4s` in the solved-word gold, keyed by a monotonic id so two claims
-  in a row replay it. The clock reads **`seconds.decisecond`** and goes `--danger` red for
-  the **last 20 seconds** (`WARN_SECONDS`); the tenth renders smaller than the seconds,
-  which is width before it is taste — the header corner holds ~104px at 320px before the
-  icon group, and a three-digit clock plus a full-size `.0` does not fit it (measured: it
-  pushed the help icon off the screen). `useCountdown` ticks at 50ms so the last digit does
-  not stutter.
-  **A CLAIM SLASHES THE WORD; A MISS JOLTS IT** (decided 2026-08-09 as "a miss does not
-  touch it"; AMENDED by #175 on 2026-09-05 — user-decided 2026-08-16, every action has a
-  physical feel). The two outcomes are different EVENTS and look nothing alike, which is
-  the point: before reading anything you know which one happened. A MISS takes the same
-  recoil a claim takes (`word-shake` for `STRUCK_MS`, `WordSubject.useBlow` — one shake
-  vocabulary, `.jolted`) and NOTHING else: no grade colour (red stays the MISS float's
-  own), no sheet, no loot — a miss stays visibly LESSER than a claim.
-  A claim HITS the word with one of three sheets in `assets/hits/` (see the ladder below) —
-  the default being `slash.png`, a 5-frame 36x46 stroke landing and dissipating, 50ms a frame
-  — in the claimed grade's COLOUR wherever the sheet is a mask, **and while a stroke is on
-  the word the word RECOILS and takes that colour too**, returning to the accent when it
-  goes. **A strike is ONE BLOW of one sheet** (user-decided 2026-08-11, retiring the RARE
-  cross and the whole multi-blow machinery — `blows`, `blowDelayMs`, `useStrikeBlow`'s
-  per-blow choreography and its measured cross timings are gone), **and the blow is the
-  stroke's first FOUR frames of five** (`STRUCK_FRAMES`/`STRUCK_MS`, decided 2026-08-09):
-  stopping a frame SHORT is what makes a sheet's remaining frames read as dissipation over a
-  word already back at rest. It is stated in the ART's own frames rather than as a duration,
-  because it is a claim about which frames of the stroke the word is answering.
-  `WordSubject.useStruck` owns it — struck for `STRUCK_MS` from the hit's mount, keyed per
-  hit so a claim landing on another restarts the recoil. A MISS lands no blow. **The plain
-  slash lands RANDOMLY MIRRORED** (user-decided 2026-08-11, repurposing the cross's flip):
-  rolled once per hit in `Strike` (`WordSlash` until #301) — a state initializer, so a re-render cannot flip a
-  stroke mid-swing — and ONLY for `slash.png`: the burst and the ultra are near-symmetric
-  art with nothing to say backwards. There
-  is no text that PARKS: a name has to be read, and a run against a clock has no time for
-  that. The grade is carried by the strike's COLOUR, by the word taking that colour under
-  it — and, since 2026-08-10 (user-decided, superseding "colour alone"), by the hit's LOOT:
-  the claim knocks the guess's rank exponent and the grade's NAME off the word
-  (`components/Loot.tsx` + `.loot` in index.css), popping up and apart off the
-  impact like drops off a struck enemy, hanging, then falling away — in the air for 840ms,
-  never parked. The exponent wears the heat colour every other exponent wears (the shared
-  `rankHeatColor(rank)`, whose absolute cap is internal), the grade its `RARITY_COLORS` colour. The flight is
-  the parabola trick — an outer box drifting sideways linearly, an inner one rising
-  ease-out and falling ease-in — with NO `scale` (the pixel-font rule) and a fixed
-  `rotate` tilt. **The throw is ROLLED per hit** (user-decided 2026-08-10): which side
-  each piece takes (sometimes the exponent flies left, sometimes the grade does — always
-  opposite sides), which launches first, and a bounded jitter on each piece's distance,
-  height, drop and tilt (`--loot-j*` factors from `Loot`, multiplied into the CSS
-  geometry — never pixel values, so the ≤640px step-down keeps working; the jitter ceiling
-  is part of the 320px overflow sum commented in index.css). The pieces are EDGE-anchored
-  (a piece's whole box stays on its own side of its anchor), so they cannot overlap
-  whichever way the dice land — centred anchors measurably put `-5` on top of `ARCANE`
-  for the first half of the flight. Timing is handed from `Loot` to CSS as variables
-  (the `--slash-ms` rule); base geometry is per piece in CSS with a ≤640px step-down. The loot always outlives every sheet, so ITS
-  timer is what reports a claim's hit done (`hitDurationMs` = max of strike and loot, and
-  the ending's hold covers it); under reduced motion the global collapse leaves each piece
-  resting at its apex for the fall's kept delay — shown, held, gone, the floating numbers'
-  own degradation, no dedicated rule. **The strike ESCALATES IN THREE GESTURES across the
-  five grades** (user-decided 2026-08-11, retiring the RARE cross — RARE now takes the same
-  single cut as COMMON/UNCOMMON), all three sheets in `assets/hits/`, all walked at one 50ms
-  frame rate: a CUT (`slash.png` — COMMON, UNCOMMON, RARE), a BURST (`burst.png` — OBSCURE)
-  and the ULTRA star (`ultra-slash.png` — ARCANE). The same escalation the seconds ladder
-  makes, said in gestures instead of five sizes.
-  **The ladder is a TABLE indexed by grade** (`STRIKES`, `components/rarity.ts`, now mapping
-  a grade straight to its sheet) — the shape `RARITY_COLORS` already has, complete by type.
-  **What escalates is the EVENT, not the duration.** The burst is a step UP from the cut and
-  the ultra a step up again. Reading intensity off a clock would rank the ladder backwards,
-  so `rarity.test.ts` weighs a strike by its sheet's place in `STRIKE_ARTS`, whose ORDER is
-  what says which sheet is bigger.
-  **Two sheets are masks and one is an image, which is a property of the ART, not a
-  preference.** `slash.png` and `burst.png` are pure white, so they are painted through a CSS
-  mask in the grade's colour — the header globe's technique, and the reason one sheet serves
-  several grades. `ultra-slash.png` is authored IN COLOUR (seven fully opaque palette entries),
-  so it is drawn as an ordinary background image and ignores the grade: masking it would
-  flatten all seven into one flat colour, which is most of what the art is. It therefore also
-  needs its own frame-walk keyframes (`ultra-frames`, over `background-position`, where the
-  masked pair walk `mask-position`).
-  **Each sheet's geometry is MEASURED off its own ink**, at the app's exact integer scales
-  (5x, 4x at ≤640px), and the numbers differ because the art does:
-  - stroke 36x46 → 180x230 / 144x184, dropped 44px / 35px (its ink is top-weighted);
-  - burst 53x66 → 265x330 / 212x264, dropped 20px / 16px (its impact ink — frames 1–3, 90% of
-    it — centres at 44% of the frame's height, so a box centred on the word sits a touch high);
-  - ultra 71x66 → 355x330 / 284x264, NOT dropped at all (centroid y=33 of 66, dead centre).
-  Every offset is a whole pixel at both scales, for the reason the stroke's is: half a pixel of
-  offset is half a pixel of resampling on a sprite whose whole point is hard edges. Verified no
-  page overflow at 320px, where the widest of them spans x 18..302.
-  **Under reduced motion each sheet holds ONE frame**, and the ultra needs **its own
-  `animation: none`** rather than the stroke's: the base `.strike.ultra` declares the walk
-  at a higher specificity, so it won, the global rule collapsed its duration to nothing, and
-  the sheet landed on its LAST, near-empty frame with a `both` fill (measured:
-  `background-position: 100% 0%`, an ARCANE find showing almost nothing). It holds its THIRD
-  frame — frame 1 is the impact flash, a solid white disc that covers the word completely,
-  right for 50ms and wrong to park on. The masked pair hold their second, which is the fullest
-  frame of both.
-  A miss shows the SENTENCE game's `FloatingHit`, unparameterised — the same MISS, the same
-  red, the same pop and rise it has everywhere else — and, since #175, **the word JOLTS
-  under it** (the claim's recoil with no colour — see the bullet's heading; until then it
-  stood perfectly still, on the reasoning that nothing was struck).
-  **Three things about how the strike is drawn**, each of which was a decision:
-  it is a MASK, not an image — the sheet is pure white, so painting `currentColor` through it
-  gives one sheet in five grade colours (the header globe's technique, for the same reason);
-  it is at an EXACT INTEGER SCALE (the stroke 5x = 180x230 desktop, 4x at ≤640px), the app's
-  standing pixel-art rule, **and it takes `image-rendering: pixelated` WITH it** — an earlier note here
-  claimed the integer scale made nearest sampling unnecessary, which is wrong: bilinear blends
-  neighbouring texels wherever a destination pixel misses a texel CENTRE, which at 5x is four
-  pixels in five. Measured on the rendered output, 51.5% of the ink was partial (a soft ring
-  round every edge) against 7.5% with `pixelated`. The whole-pixel `translate` is the other
-  half of the same point: a percentage drop resolved to -71.3px, and half a pixel of offset is
-  half a pixel of resampling on a sprite whose entire point is hard edges. That also makes the
-  SCALE the one dimension this can be tuned in, in whole steps and no others, and it is why
-  the size is FIXED rather than sized off the word (whose own type is a `clamp()` landing on
-  fractions, and a strike is an impact, not a property of what it hits);
-  and it is DROPPED 19% of its own height below the word's centre, which is a property of the
-  ART and was measured — the sheet's ink is top-weighted and only the first two frames carry
-  real ink, so a box centred on the word puts the strike above it.
-  Two smaller mechanics worth keeping: the frame walk is `steps(<the sheet's frames>,
-  jump-none)` over `mask-position` (or `background-position`) 0→100%, which lands exactly on the five frames with no sixth position past
-  the end (where the LOOPING `.cal-ripple` needs its `n/(n-1)` overshoot instead); and the strike is
-  INVISIBLE unless an animation is actively running on it — base `opacity: 0`, lifted for
-  exactly the frame walk's length by a `slash-show` animation carrying NO fill. That one rule
-  buys both ends: a waiting second blow is not sitting on frame 1 in plain sight, and the
-  FIFTH frame gets its own 50ms and leaves like every other one instead of holding until
-  React unmounts the element (which, for the first of two blows, meant it hung on screen
-  through the whole of the second). Under reduced motion the walk would collapse to nothing, which for a sprite sheet
-  means the strike never appears at all, so a dedicated rule holds ONE frame instead.
-  The shake is the shared `word-shake` — the sentence hole's, this word's AND the standings
-  sprite's, at one amplitude — and this surface hands down only its LENGTH (`--shake-ms` =
-  `STRUCK_MS`), so the JS that ends the recoil and the CSS that draws it cannot disagree.
-  **What the strike REPLACED, and what that cost, is worth keeping**: a RARITY LABEL, the
-  grade's name stamped onto the word (`RarityHit`, deleted with it). Several choreographies
-  were built on that label and every one was rejected — a pop, a stamp falling onto the word,
-  a shockwave through the letters — and two rules were learned expensively enough to record
-  wherever type lands on type again: NOTHING IN THIS APP OUTLINES TYPE (a knockout ring to
-  separate the label from the word read as a cheap sticker), and ANIMATING `scale` ON THE
-  PIXEL FONT renders blurry intermediate frames for the whole transition, the same reason
-  every sprite here takes an exact integer scale.
-  Three things learned on the way, kept because they cost real iterations and the next attempt
-  should not pay for them again:
-  - **NOTHING IN THIS APP OUTLINES TYPE.** A hard knockout ring was added to separate the
-    label from the word beneath it and rejected on sight — it is not the artistic direction,
-    and it read as a cheap sticker.
-  - **ANIMATING `scale` ON THE PIXEL FONT is not available.** It renders blurry intermediate
-    frames for the whole transition, the same reason every sprite here takes an exact integer
-    scale. Rotation is nearly as bad past a few degrees.
-  - **The word must step back for the label to be readable at all.** They occupy the same
-    place, and two words of the same size superimposed are mud whatever their hue — a cyan
-    RARE over the day's word (then blue) measures 77 dE apart and is illegible. `word-dim` (0.2,
-    measured against 0.45 and 0.32, both mud) is therefore load-bearing rather than
-    decorative, and it is a plain STATE with no transition on it.
-  What is left of the intensity table is what a grade IS on screen rather than how it moves:
-  `scale` and `holdMs`, both monotonic across the ladder and both pinned by `rarity.test.ts`.
-  **The ladder is tuned AGAINST THE WORD**: the label sits on a word `fitWord` draws at up to
-  40px and is a badge on it, so it stays clearly smaller — desktop 18→30px, mobile 14→24px.
-  Two earlier cuts overshot in both directions: one so small the grades barely differed, one
-  where ARCANE matched the word and swallowed it.
-  Everything the animations borrowed has been handed back: `word-shake`, `hole-wave` and
-  `FloatingHit` are byte-identical to what they were before #163, so the sentence board, the
-  tutorial and the standings sprite are untouched by any of it.
-  **The run's screen carries NO READOUTS AT ALL** (decided 2026-08-10, removing the last of
-  them). It briefly had two, bracketing the prompt — a guess HISTORY above it and a per-grade
-  `found/total` TALLY below — and both are gone, along with `WordHistory`, `WordTally`,
-  `srWordTally`, `tallyRarity`, `zoneGroups`, `RarityTally` and their CSS: nothing else
-  consumed any of it, and the standing rule is to remove an obsolete path rather than keep it
-  for a use nobody has asked for. What is left during a run is the word, its score watermark,
-  the clock, the prompt and the keys.
-  **Know the one thing that went with them.** The history was where the RANK lived: the float
-  carries a claim's GRADE and not its distance, on the reasoning that a timed run cannot act on
-  a number, and the log was the answer to "how close was that one?" a moment later. Since
-  2026-08-10 the LOOT answers it in the moment itself — the rank and the grade's name fly off
-  the word for under a second (see the strike bullet above) — and the post-mortem board is
-  still the only place it can be READ BACK later, drawing every claim at its real rank once
-  the clock dies. The screen stays bare between guesses, which was the point of the removal.
-  Two of the tally's findings are worth keeping in case a census ever returns: it counted a
-  group by its RANK, once, however many aliases key it (the identity `wordGuessKey` uses), and
-  it DROPPED a grade the day's zone does not contain rather than showing `0/0`, because an
-  English board often has no ARCANE group at all and a permanent `0/0` reads as a goal being
-  failed rather than one the day never offered.
-  **The PROMPT is exactly as wide as the KEYBOARD's row of keys and sits on its left edge**
-  (`--play-w` on `.word-footer-play`, decided 2026-08-09). It used to take the BOARD's column
-  instead (430 + the scroller's side + its scrollbar = 456), which on a desktop left it a few
-  dozen pixels narrower than the keys under it — ALMOST aligned, which reads worse than either
-  aligned or plainly not. The row is not the keyboard's BOX either: `.keyboard` is capped at
-  680px but its keys are capped at 46px each, so ten of them plus nine gaps come to 514px and
-  centre inside that box. The column therefore recomputes the row from `--kb-gap`/`--kb-key-max`,
-  which live on `:root` for exactly this reason — the row width is not only the keyboard's
-  business — and it follows the keyboard's full-bleed shift on a phone, or the prompt sits 10px
-  inboard of the Q key it answers. Verified equal to the real key extents at
-  320/430/700/900/1200/1400. The board's own window keeps the 456 column: it draws a 430px
-  line, and it is never on screen at the same time as the prompt.
-  **All three of the prompt's seams are now the WIDE one** (`.word-footer-play`'s gap widened
-  2026-08-10 from `clamp(6px, 1vh, 12px)`, which measured 7–9px, to the
-  `clamp(16px, 2.4vh, 24px)` it already had above and inside it — measured 17/19/21px at
-  320/430/1280). The tight seam was chosen when this footer stacked FOUR things and had to keep
-  them from sprawling; it stacks two, and the prompt is what the player acts through, so it
-  takes the room. It opens the GATE's rules→PLAY seam by the same amount, which that screen
-  wants for the same reason.
-  **The word stays centred in what is left between the HEADER and the PROMPT**, with its score
-  watermark, and lands within 9px of that centre at every width (measured 6/7/9 at
-  320/430/1280). That survived both removals because the history hung OUT OF FLOW to begin
-  with — `.word-readouts` was absolute, so it never took height off the window above it. The
-  reason it hung there is worth keeping for the next thing that wants a place on this screen:
-  everything the player ACTS THROUGH is in flow and owns its space, and a log of what has
-  already happened is not a control. Both extremes were built and rejected on sight — in flow
-  the history pushed the window's centre up with it and the word read as TOP-ALIGNED (measured
-  126px high); given the whole band down to the KEYBOARD the word read as TOO LOW.
-  **The rarity COLOURS are the authored AURA LADDER, measured and pinned**
-  (`components/rarity.ts` + `rarity.test.ts`; user-decided 2026-08-18, superseding the
-  stamp inks — "the dull grey, the ugly green, the weird blue"): five steps of EMITTED
-  LIGHT sweeping the app's own aura cool→hot — slate `#97a3c9`, LED cyan `#4fd2e8`,
-  azure `#64a0ff`, violet `#bd68ff`, laser magenta `#ff5ce0` — ALL five authored now
-  (COMMON no longer tracks `--muted`). They are not copies of heat-ramp stops. **THE MISS COLOUR IS NO GRADE'S:** every grade stays perceptually clear
-  of `MISS_COLOR`, `--danger` and the cobalt `--solve` word it can be rendered beside;
-  the grades also remain mutually distinguishable. Those relationships and the exact
-  authored hexes are contract-tested, including the shared OG-card copy.
-  **The `WORD_END_HOLD_MS` beat is a FLOOR, not a length** (2026-08-08): a rarer grade holds
-  longer, so an ARCANE landing on the buzzer outlives the old static 840ms by nearly a
-  second. The screen tracks when the live float actually ends and waits for the later of the
-  two, or the run's best moment gets cut off mid-air to make room for the board. The gain sits UNDER the clock,
-  not beside it: measured at 320px, a `+5s` to the right of a two-digit number runs 15px
-  into the header's icon group, where below it has the empty top of the play area to itself
-  at every width (and a gain only ever plays during a run, where the word is centred far
-  below). The clock is `--fg`, goes `--danger` + a 1s pulse under
-  `WARN_SECONDS` (**20**, not the 10 this line claimed until 2026-08-11 — the code is
-  ground truth and `WordTimer` has read 20 throughout), and
-  at ZERO goes `.spent` — red but STILL, because an alarm about time running out has nothing
-  left to say once it has, and it would otherwise beat under the whole result screen —
-  **and since #175 (2026-09-05) it SAYS the end: `TIME UP` / `TEMPS ÉCOULÉ` (`wordTimeUp`)
-  pops in IN PLACE OF the dead `0.0`** (`.timer-up`, the gain's own pop-in, no fade-out —
-  the clock leaves with the reveal), the one visible statement of the run's end during the
-  ending hold. Two things ride on it: the SCORE WATERMARK now stays up through that hold
-  (`underway && !postMortem`, where it went with `playing`) so the number HANDS OFF to the
-  board rather than vanishing the frame the clock dies; and a guess entered in the dead
-  window — which the store rightly refuses with no grade, no `+s`, no announcement — is
-  absorbed by that same beat instead of silently disappearing. The GATE's clock is passed a
-  null deadline whatever the device still holds, so a stale local clock can never read TIME
-  UP over PLAY. The sr announcement (`srWordTimeUp`) is unchanged. No
-  ramp colour is borrowed for it: the heat ramp means DISTANCE (and, since 2026-08-16,
-  progress read as the distance still to go), and a clock is neither. `role="timer"` is a live region defaulting to OFF, which is the point — the
-  number must be readable on demand and never announced every second; the run's END is
-  announced once (`srWordTimeUp`), on the transition only.
-  **The board is the END SCREEN's reward, and the word never moves to get there.** The
-  `.word-window` is `justify-content: center`, which puts the word in the middle of the
-  screen while it is alone there and needs no phase class to stop doing so: once
-  `.word-cut` mounts it is `flex: 1 1 0` and eats every spare pixel, leaving the word
-  pinned to the window's bottom edge with the line running down into it. So the reveal moves
-  the FIELD in around a word that stays put. Nothing was rebuilt for this — `WordBoard` /
-  `routeDrawing` / the censored census / the torn edges / the MISSED shelf are the same
-  components, mounted at a different moment — and the whole claim-scroll animation the
-  screen used to run (`SCROLL_MIN_MS`/`SCROLL_MAX_MS`/`SCROLL_PX_PER_MS`, the focused rank,
-  the rAF loop) is GONE with the live board: there is no station to scroll onto during a run
-  any more. The ending keeps its BEAT structure, adapted to "the clock hits zero": the
-  killing moment plays out on the surface the player was looking at (`WORD_END_HOLD_MS` =
-  the hit's own intro + fade), then the field arrives and the prompt leaves
-  (`WORD_END_SETTLE_MS`), then the keyboard drops and the result rises. A rehydrated ended
-  round seeds every beat settled, and reduced motion zeroes the JS-timer holds.
-  **The drawing itself is `components/routeDrawing`** (extracted 2026-08-06, superseding
-  "the board imports RouteModal's exported geometry helpers"): the geometry, the frame
-  variables, the shelf, the tail, the connector rule and the station ROW are
-  one module belonging to neither surface. Importing half a component's internals is not
-  sharing it — the modal ended up owning a vocabulary it only half-uses while the board
-  re-implemented everything it had not imported, which is how the two came to hold separate
-  copies of the same shelf, tail, row markup and CSS-variable block. A detail of the line
-  changed in that module now changes it on EVERY route the app draws, which is the rule:
-  there is ONE routes component, never a second version of it. What each surface keeps is
-  what is genuinely its own — the modal's sticky "you are here" plumbing, the board's
-  censored field, claim reveal and pinned terminus footer, and their two screen-reader
-  mirrors. (The ONE CSS
-  difference stays: `.word-frame` re-derives `--wordw` minus the app's page inset, since the
-  board lives in the page rather than a full-bleed dialog.)
-  **The TERMINUS is the board's PINNED FOOTER, not a sticky row** (decided 2026-08-06). Its
-  other half — "and every counted guess lands its hit ON it", and "never leaves the screen" —
-  was retired by #163: the board is the post-mortem, so this row is only ever on screen when
-  no guess can land, and the run's word is `WordSubject`'s instead. The day's word is
-  the whole game, so its row (`WordBoard.WordTerminus`) lives OUTSIDE the scroller, pinned
-  under the window as the board's own footer: nothing ever scrolls behind it, so it needs no
-  masking background at all. A sticky in-scroller row wearing the route map's "you are here"
-  mechanics was BUILT FIRST the same day and rejected on sight ("remove this ugly black
-  background"): the parked row needs an opaque `--bg` box to float over the line, which the
-  modal gets away with only because its dialog is flat `--bg` — on this page it stamps a
-  black patch over the animated-waves backdrop, which no CSS background can reproduce (it is
-  a canvas). The footer re-derives the same `routeFrameVars` from the same model and pads for
-  the scroller's right side + its 6px pixel scrollbar (`.word-terminus`), so its grid lands on
-  the line's columns to the pixel; `.word-frame .route` dropped its bottom padding so, scrolled
-  to the bottom, the merge's last link runs out of the scroller straight into the terminus's
-  own rail. The TORN EDGES moved onto a new `.word-cut` box between the window and the
-  scroller: the footer is the window's last child, and a tear on the window's own bottom edge
-  would draw UNDER it — on the cut, the bottom rule lands exactly on the footer's top edge,
-  where the terminus's rail stub runs into it, so a line severed mid-field wears the modal's
-  parked-separator reading for free. **While torn, the content stops 8px SHORT of that rule**
-  (decided 2026-08-07): the old modal's parked separator kept the same 8px clearance, so this
-  one does too — via a MASK on the scroller (`.word-cut.more-down .word-scroll`), never a painted
-  strip (a strip is a box over the waves again), and only while torn, since at the true bottom
-  the merge link must run flush into the terminus's rail.
-  The HIT is the sentence game's own feedback grammar on the word that is always visible —
-  but since #163 it lands on `WordSubject`'s bare centred word, NOT on this row, which by
-  then is not on screen: a guess and the post-mortem board never coexist. Every counted
-  guess floats its rarity GRADE (or MISS) plus the word's shake; free guesses (repeats,
-  invalid words, the day's word itself) land nothing ON THE WORD, exactly as they float
-  nothing in the sentence game — they speak on the prompt's message line since #175 (see
-  the MISS bullet above). A single target means a single hit: no stagger, and the lone-hit fade delay
-  (`FLOATING_HIT_INTRO_MS`) plus whatever hold the grade buys. The hit state is `WordGame`'s.
-  **Only a CLAIM scrambles its station** (decided 2026-08-06): the slot-machine reveal is the
-  beat that says "you found this", and the run's END reveals the whole ~150-row field at once
-  — 150 scrambles starting in one frame, each its own 40ms interval writing state for 650ms —
-  for a moment that is not a find at all but the post-mortem naming what was always there.
-  Those land outright (`StationWord`'s `animate`); the initial
-  target is likewise seeded settled, so a rehydrated round replays nothing.
-  The reveal beat rides `buildWordBoard`'s optional `reveal` — presentation pacing only,
-  which is why it is a parameter and not something the model derives: since #163 the run's
-  END is the deadline's fact, and the board is not on screen at all until this beat says so
-  (see the three-phase bullet above for the beat order).
-  **RARITY IS SAID IN THE WORD'S COLOUR, ON ONE TRUNK — the sentence route's exact drawing**
-  (user-decided 2026-08-11). Every zone station's word is painted in
-  its grade's own `RARITY_COLORS` colour (`--rarity-c`, set per station by WordBoard) — the
-  same colour the strike and the loot wore when the claim landed — where the sentence line
-  paints its stops gold; the drawing itself is the history line's: the same
-  `routeFrameVars`, the same `LEAP_H` (56) solid run into the terminus, the same
-  shared `--word-gap` and 48px shelf air (both promoted to the shared drawing on user
-  review — "the gaps and sizings are not the same" — 2026-08-11), the terminus as
-  `RouteWord` in `route-found`'s accent (the colour rule is keyed on the `graded`
-  class per zone station, not on every station, exactly so the arrival's own colour survives —
-  an unkeyed first cut painted the day's word `--fg`). The
-  post-mortem still answers *where were the expensive words?* — in the type now, the way
-  the sentence map says its zones. A station is NEVER colourless (COMMON is `rarityOf`'s
-  floor); what stays `--fg` on the trunk is the near misses, which belong to no grade.
-  `WordBoardModel` is UNCHANGED — it still grades every station and ships `grades` (ladder
-  order, only the grades the field holds), whose consumer is now the sr census:
-  `srWordRarities` states the field per grade and a named stop carries its grade
-  (`srRouteStop`'s `rarity`), the word's colour said in words; grade names stay
-  untranslated there as everywhere else.
-  **The whole FIELD is drawn, censored until it is claimed** (decided 2026-08-05, restoring
-  the `???` census after a day without it — the sparse variant that drew only found words
-  and dashed the ground between them is gone, `.route-link.dashed` with it): every group of
-  the claimable zone is a station wearing the route map's fixed-width `???`, so the line
-  shows its real length and population — the one thing a list of your own words can never
-  say — and a claim lands ON a stop that was already there rather than appearing out of
-  nothing. The run's end reveals every word and turns the board into the post-mortem, where
-  a group merely NAMED keeps the small node and the dimmed word that tell it from one you
-  found (`route-unknown route-revealed`, the map's own distinction).
-  **The TAIL is the board's only broken run** (same decision): dashes mean "the line
-  continues into words with no distance at all", which is true at the cold top end and
-  nowhere else here — every rank between two stations is itself a station, so no connector
-  hides ground. Consecutive ranks are one row apart (`LINK_MIN`) and only the sparse trunk
-  between far strikes keeps a proportional length, exactly as on the map. The line's final
-  run into the word is SOLID at the sentence line's own `LEAP_H` (2026-08-11 — the two
-  drawings share their arrival). The rank gutter fits the farthest row drawn,
-  which with the whole field on the line is the field's own outer edge until a near strike
-  lands beyond it.
-  **The window wears the teaser's TORN EDGES** (decided 2026-08-05): the line outruns the
-  screen as soon as a few claims land, and an edge that simply ends reads as the end of the
-  map, so whichever side still has line beyond it gets the 9px-on/9px-off rule — the same
-  vocabulary as the route map's parked separator. That needs the
-  board to be TWO boxes (`.word-window` around `.word-scroll`), because a pseudo-element
-  inside a scroller scrolls away with the content, and — since a rule spans its WINDOW —
-  that window is capped at the line's own width (`430 + 20 + 6`: the drawing, the scroller's
-  ONE side, the pixel scrollbar) and centred, with the PROMPT sharing the column. Uncapped it
-  was the whole 1200px page column on a desktop while the line inside it was 430, so the
-  tears ran nearly three times the width of what they were tearing and the prompt answered
-  from a third of a screen away. Both caps are no-ops on a phone.
-  **The scroller's LEFT side is 0** (decided 2026-08-06, superseding a symmetric `0 20px`):
-  the drawing is a left-aligned block — the rank gutter opens it and the words run off to the
-  right — so an inset there only held the whole board 20px in from the prompt beneath it and
-  from the torn rules that bracket it, and it read as a box floating inside the page instead
-  of as the page's own content. The board's left edge, the prompt's and the window's are now
-  one line at every width. The RIGHT side keeps its 20px — that is the clearance the pixel
-  scrollbar needs off the words. Three numbers move together with it and are the thing to
-  re-check if it changes again: the window/prompt cap above, `.word-frame`'s `--wordw`, and
-  `--promptw` (456, not 476). Verified after the change: all 156 words of a fully revealed
-  field fit on one line at 320/360/390/430/900, none wrapping mid-word. **In HEIGHT it is the
-  opposite — the window takes everything left over** (decided 2026-08-05): on the end screen
-  the board IS this screen, and every row of the line the player can see is more of the
-  journey made visible, where the space around it says nothing. So `.game.word-game` cuts its own
-  chrome — the HUD's row reserved with 48px rather than 76 (clearing the fixed header while
-  balancing its screen-top inset against the gap before the board), and the seams below it:
-  the PROMPT is what the player acts through, so it takes the room on BOTH of its sides
-  (`.game.word-game` above it, `.input-area.word-prompt` below) rather than reading as one
-  more band in a stack. (The third seam this rule used to describe was the cross row's tight
-  gap against the keyboard; that row went with the strikes in #163, and the prompt now sits
-  directly on the tray.) Measured with the earlier even seams: 53% of the viewport → 59% at
-  1440×900, and 45% → 52% on a 700px-tall one, which is where it mattered — the prompt bought
-  its room from the board, on purpose.
-  **ONE prompt for BOTH games, at a flat 24px, and a long guess CROPS ITS OWN HEAD**
-  (decided 2026-08-06). `WordInput` is a single control doing the same job on both screens, so
-  it has one size and one behaviour: `.word-input` is 24px everywhere, and the sentence game's
-  own smaller `clamp(13px, 4.2vw, 19px)` — which it shared with `.phrase` on mobile so the
-  input MIRRORED the sentence — no longer applies to it (that rule is `.phrase` alone now).
-  24px was walked DOWN to: 40 dominated the screen the BOARD is supposed to own, 28 was still
-  a touch heavy. Note the consequence on the sentence screen — the prompt is now LARGER than
-  the phrase it answers, inverting the old "input is a footnote to the phrase" hierarchy.
-  **When a guess outruns its column the TEXT crops at the head**, not the size: the letters
-  just typed and the caret hold their place at full size and the beginning slides off the
-  left, a terminal's behaviour. `.wi-text` is a `justify-content: flex-end` flex window with
-  `overflow: hidden` around a `.wi-text-run` holding the whole string — pinning the run to the
-  window's right edge is what puts the spill on the LEFT. The nesting is required: one element
-  cannot both clip and overflow its own start. The value stays whole in the DOM, so a reader
-  still gets the real guess.
-  Two `min-width: 0`s are load-bearing and were each found by a real overflow: on `.wi-text`
-  (a flex item will not shrink below its content without it, so the window grows instead of
-  cropping) and on `.input-area` (a GRID item of `.prompt-zone`, whose default `min-width:
-  auto` let it inflate to its content — so `max-width: 100%` on the input resolved against the
-  grown width, never bit, and the sentence prompt pushed the whole page sideways).
-  This replaced a shrink-to-fit (`promptFontSize` / `--promptw`, both deleted) that divided
-  the column by the glyph count: it kept every letter, but rendered fr's longest word
-  (`anticonstitutionnellement`) at ~10px and resized the whole line on almost every keystroke.
-  Both approaches fixed the same original bug — at the old fixed size the prompt simply ran
-  off the page from about 16 letters on, pushing the document to 508px on a 320px screen.
-  (Unrelated latent bug found while measuring, deliberately NOT fixed: `.word-input`'s
-  `padding` shorthand computes to 0 because `calc(4px + var(--text-shift))` adds a UNITLESS
-  zero, which is invalid in calc and voids the whole shorthand. It has always been 0;
-  restoring it would push the prompt 8px off the page's left edge, which is exactly the
-  alignment the board was just given.) The sentence screen keeps its generous rhythm untouched — there the phrase is the
-  content and the air around it is what makes it legible — which is why every one of these is
-  scoped to `.word-game`. The rules live on the shared
-  `.scroll-torn` utility (beside `.pixel-scroll`) with `hooks/useScrollEdges` behind them —
-  BOTH shared with the onboarding teaser, which was refactored onto them rather than
-  leaving two copies of the slack/bail-out/resize details to drift. `WordGame` re-reads the
-  edges when the MODEL changes too: a claim adds rows and the run's end reveals the whole
-  field, neither of which fires a scroll event.
-  **The board no longer SCROLLS ITSELF at all** (#163, 2026-08-08). It arrives already
-  parked at its bottom, on the terminus, and stays where the player puts it. The two
-  decisions that used to govern the live board are RETIRED with the board's live phase, not
-  reversed — recorded because the reasoning still applies to any future live route surface:
-  *only a CLAIM moved the board* (2026-08-06; a miss scrolling out to its own trunk row
-  carried the player AWAY from the field they were working on, as the answer to a FAILURE,
-  and the floating rank already reported it without moving the ground — verified by measuring
-  a LANDMARK ROW's on-screen position rather than `scrollTop`, since inserting a row above
-  the view makes the browser's scroll anchoring bump `scrollTop` by that row's height
-  precisely IN ORDER TO hold the content still), and *the move ran on the APP's clock*
-  (2026-08-05; `scrollIntoView({ behavior: 'smooth' })` times itself by the DISTANCE
-  travelled, so a claim at the far edge of a ~150-row field crawled for the better part of a
-  second while the next guess was already typeable). `SCROLL_MIN_MS`/`SCROLL_MAX_MS`/
-  `SCROLL_PX_PER_MS`, the focused rank and the rAF loop are all gone.
-  **The end screen is the SENTENCE result's stack, exactly** (user-decided 2026-08-15, "the
-  exact same layout and sizing"): the day's STANDING first, then the run's own number, then
-  SHARE on the tray's bottom edge — the shared `.solved-score` sizing and `.solved-numbers`'s
-  spacing, which is now stated ONCE on `.solved-results` and worn by both. The standing
-  arrives WITH the block (`chartStart = resultsIn`) for the sentence screen's reason: a line
-  sitting above the tally must not land after it. What this replaced: the count at
-  `clamp(52px, 10vh, 88px)` in a `flex: 1` region that centred it in whatever the tray had
-  spare, with the standing UNDER it — arcade weight, and a stack sharing only its action
-  baseline with the screen it was meant to rhyme with. The only word-specific thing left in
-  the stack is the rarity CHIP ROW, which the sentence result has no equivalent of (its
-  ruler is likewise the sentence's alone). The end screen
-  (`components/WordEndScreen.tsx`) is the named `<n> WORDS/MOTS` count + SHARE via the
-  v5 word token — which carries the claims PER RARITY GRADE, ladder order; the screen
-  takes that breakdown (`counts`, computed by `WordGame` from the one replay) and DERIVES
-  the count as its sum, so the tally, the text, the token and the card speak one set of
-  numbers (decided 2026-08-11, superseding the v4 single-score token); **the score OG card
-  draws the accented display word ALONE in the global accent — centred, NO node square
-  (user-decided 2026-08-11, superseding the 2026-08-08 terminus lockup: the in-game square
-  marks the end of a LINE and this card draws none, so it was a station badge with nothing
-  to be a station of; the colour already says the word is the target, and the freed column
-  sets a 25-letter word at 40px where the lockup left it 36) — above the count, the rarity
-  CHIP ROW (one grade-coloured square + count per claimed grade, commonest first, zero
-  grades omitted) and the date** (chip row 2026-08-11; the token carries the display word
-  and the breakdown so the preview is self-contained).
-  **The plain share text stacks the localized headline, a blank line, the RESULT BLOCK —
-  `<DISPLAY WORD IN LOCALE-AWARE UPPERCASE>` on its own line with the rarity BEAD ROW
-  directly under it, `⚪7 🟢3 🔵1 🟣1 🩷1` — a blank line, then the URL** (word line
-  2026-08-08, bead row 2026-08-11; accents stay display accents, never a slug). **The word
-  carries NO leading emoji** (user-decided 2026-08-11, dropping the 🟦 with the card's
-  square): uppercase on its own line already sets it apart, and a bullet on the one line
-  that is not a list reads as a stray. The beads are ONE SHAPE — circles — so the row reads
-  as five steps of one thing; the pink heart is the lone exception, since Unicode has no
-  pink circle and red stays MISS's. **The composition lives in `game/share.ts`
-  (`wordShareText`/`wordShareUrl`/`rarityRow`/`RARITY_EMOJI`), NOT in the component**: this
-  module is where a result becomes the text and link it travels as, for BOTH modes, and the
-  bead row is the exact analogue of the sentence `emojiRow` beside it. **The headline's SHAPE
-  moved there too** (`shareHeadline`, 2026-08-16): it is one message format for both dailies,
-  and it was a template literal hand-copied into both result screens, where one mode's message
-  could quietly drift from the other's. Each screen still owns the only part that is genuinely
-  its own — its localized UNIT (tries against words). That is also what lets `share.test.ts` assert the visit card's
-  exact string, and what lets preview tooling render the REAL message instead of a copy that
-  can drift (it did, the first time). A grade's SCREEN presentation stays in
-  `components/rarity.ts`; `game/` must not import from `components/` (the dependency runs
-  the other way).
-  Its tally lands on a one-shot scale pop (`score-land`, 2026-08-07 — never at 0, never on
-  rehydration, collapsed under reduced motion), and **the BREAKDOWN is the result's LAST
-  beat since 2026-08-11** (superseding "the count is the last beat"): the screen draws the
-  claims per grade under the unit AS A BAR (`.word-bar`, user-decided 2026-09-05 over the
-  chip row: "too many centered informations" — the sentence result's run ruler in this
-  mode's terms: the same 16px band in the same frame, one segment per grade CLAIMED with
-  `flex-grow` = its count, in its `RARITY_COLORS` colour, commonest first, zeroes absent,
-  the count under its segment the way a tick is numbered) — and once the count settles (the
-  pop's own moment) each segment rises in on its own delay via the tutorial ladder's
-  `rung-in`, unpacking the number that just landed. The frame holds its layout space while
-  invisible, so its arrival moves nothing; a rehydrated result wears `.settled` and replays
-  nothing; reduced motion collapses the rise and keeps the delays (the floating numbers'
-  degradation). It is decorative (`role="img"`) with `srWordBreakdown` as its accessible
-  line — grade names untranslated, as everywhere. ONE component, `WordRarityBar`, draws it
-  on the result screen; the OG card draws the same bar in SVG
-  (`shared/cardSvg.ts`, floor-width segments over the ruler's column); only the share
-  TEXT keeps its bead row. Identity is mode-addressed everywhere: `roundKeyForDay(day, lang,
-  'word')` = `w:` keys into the store's own `wordRounds` map (persist **v8** since the
-  sentence gate flag, 2026-08-11; the word rounds' own shape is v7's, #163;
-  `ensureWordRound` resets on a republished different word), `lastMode` decides where `/` lands (like
-  `lastLang`; the header's Whippin mark opening the mode CHOOSER is the deliberate switch —
-  see the chooser bullet) — but **only a LOADED artifact records it** (2026-08-06): unlike a
-  language, a mode can be genuinely absent, since word artifacts are published per day and
-  past days are not backfilled. Written on arrival instead, one tap of the toggle on a day
-  with no word artifact pinned every later visit to a route showing NO PUZZLE TODAY and
-  nothing else. Arrival lands where you last PLAYED, and a 404 is not play.
-  **The store's v6 → v7 migration DROPS every pre-clock word round** (#163, the standing
-  no-back-compat rule): a v6 round recorded a strike run — three consecutive misses, no
-  clock — and there is no honest clock to invent for it. Nothing else moves: sentence
-  rounds, solved days and the mode preference all survive, because the retiming touched
-  none of them.
-  The archive/selector read word statuses via `wordStatusOf`, which takes `now` and reads
-  the round's own DEADLINE — never a stored flag, so a tab closed mid-run comes back to a
-  finished day (past deadline = done-for-the-day gold; live = claimed/zone %; not yet
-  started = nothing, since a fetched day still at its rules gate has not been played).
-  **A finished word run is DONE, not SOLVED** (decided 2026-08-08): `Status` carries both
-  kinds, they render as the SAME gold, and only the spoken status distinguishes them
-  (`srWordDone`, en "done" / fr « terminé ») — a timed-out run is finished, and calling it
-  solved would claim an achievement this mode does not have. The visual surfaces read
-  `isComplete(status)` so the calendar cell (`Archive`) does not restate the pair. Word runs never touch the streak and fire no new analytics
-  events.
+- **THE HIT ART (decided 2026-08-09 to 2026-08-11; the sentence's holes land it since #301).**
+  `components/strikeArt.ts` + `Strike.tsx` + `Loot.tsx`; every measured number lives in
+  `index.css` beside the rule it sizes.
+  - **Three sheets in `assets/hits/`, one frame rate** (`SLASH_FRAME_MS` 50): the CUT
+    (`slash.png`), the BURST (`burst.png`) and the ULTRA star (`ultra-slash.png`). A strike is
+    ONE BLOW of one sheet; the plain slash lands randomly MIRRORED, rolled once per hit.
+  - **Two are MASKS, one is an IMAGE, which is a property of the art**: the white slash and
+    burst are painted through a CSS mask in the strike's colour; the ultra is authored in
+    colour and drawn as a background image (a mask would flatten its palette).
+  - **An exact integer scale AND `image-rendering: pixelated`** (5x desktop, 4x at ≤640px):
+    bilinear softens every edge that misses a texel centre, whole multiples included. Offsets
+    are whole pixels, each MEASURED off its sheet's ink (the slash drops, the burst drops
+    less, the ultra is centred). The size is fixed, never sized off the word.
+  - **Invisible unless animating**: base `opacity: 0`, lifted by a fill-less `slash-show` for
+    exactly the frame walk (`steps(n, jump-none)`). Under reduced motion each sheet holds ONE
+    frame (the masks their second, the ultra its third, since frame 1 is a white flash), and
+    the ultra needs its own `animation: none`.
+  - **The word answers the blow for `STRUCK_MS`**: four frames, one short of the shortest
+    sheet, so the sheet's last frame dissipates over a word already at rest; JS and CSS share
+    it through `--shake-ms`.
+  - **The LOOT is ballistics, never a float**: an outer box drifts linearly while the inner
+    one rises ease-out and falls ease-in. The side and bounded jitter factors on distance,
+    height, drop and tilt are ROLLED per hit (`--loot-j*`, factors on the CSS geometry so the
+    ≤640px step-down still reaches them); the timing is handed to CSS as variables.
+  - **Two rules learned on it, for wherever type lands on type again: NOTHING IN THIS APP
+    OUTLINES TYPE, and `scale` IS NEVER ANIMATED ON THE PIXEL FONT** (blurry frames for the
+    whole transition, the integer-scale rule).
+- **The score WATERMARK is `CellDigits`**: sized from the VIEWPORT alone, in whole device
+  pixels, and for at least TWO digits whatever it reads (`MIN_SIZED_DIGITS`, decided
+  2026-08-09), so 9 → 10 never halves it mid-round; past two digits it moves. A PLAIN FILL in
+  `--fg` at 20% (`INK_ALPHA`, user-decided 2026-09-01), every lit cell collected into ONE path
+  filled ONCE (a `fillRect` per block seams at a fractional dpr); no halo, no opaque base.
+- **A long guess CROPS ITS OWN HEAD** (decided 2026-08-06): `.wi-text` is a
+  `justify-content: flex-end` window with `overflow: hidden` around `.wi-text-run`, so the
+  letters just typed and the caret hold their place and the beginning slides off the left; the
+  value stays whole in the DOM. Two `min-width: 0`s are load-bearing: on `.wi-text`, and on
+  `.input-area` (a grid item that otherwise inflates to its content and pushes the page
+  sideways).
 - **Hole WHEEL (user-decided 2026-09-01, REPLACING the history modal below):** tapping a
   HOLE no longer opens a screen — its place in the sentence becomes a fixed SLOT, and the
   words already found for it stand in ONE column that SCROLLS THROUGH that slot with
@@ -2993,7 +2090,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   GONE with the modal (no-back-compat): the MISSED shelf (a miss is not a found word and
   cannot be picked), the `dq`-spaced line and the `???` terminus, `Game.openHistory`'s
   measuring, the zoom/retract keyframes, `.history-*` CSS, `ModalHeader` on this surface
-  and `srRouteDestination`. `routeDrawing` now serves Word mode's board alone.
+  and `srRouteDestination`.
   *(The paragraph below describes the modal it replaced, kept for the decisions that
   survive in the wheel.)*
 - **Hole HISTORY modal (user-decided 2026-08-10, REPLACING the #117 route map; ITSELF
@@ -3069,8 +2166,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (the point to reach is a square in the solved-word colour — what the secret wears once
   won, so the `???` square says what it is before it is), and the word beside it joins
   it, blank line gone, at the solve. The MISSED shelf's words wear the same weird-red
-  `MISS_COLOR` as its heading (see the front-loop MISS bullet), dimmed to the same 0.55 (`.route-miss` —
-  a SHARED shelf, so Word mode's post-mortem gets the one-voice frozen block too), and the
+  `MISS_COLOR` as its heading (see the front-loop MISS bullet), dimmed to the same 0.55 (`.route-miss`), and the
   shelf holds 48px off the line
   (SHARED `.route-misses` since 2026-08-11, superseding the history-only override — on a
   one-trunk line the shelf is the drawing's top neighbour and read as the first stop's
@@ -3095,8 +2191,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   for its themes tap. The drawing is decorative with the sr-only prose mirror the map had
   (`srRouteDestination`, `srRouteStop` with départ / vous êtes ici, `srRouteOffMap`).
   **The entry point is UNGATED:** a history exists on every puzzle, so every hole is a
-  button (`game/route.ts`, `RouteModal.tsx` and their tests are deleted; `routeDrawing`
-  serves both this modal and Word mode's board, `DQ_MAX` moved into it).
+  button (`game/route.ts`, `RouteModal.tsx` and their tests are deleted).
 - **Route discoverability (#129, decided 2026-07-27):** #117 made every hole a button and
   nothing said so. Two fixes, both in the show-don't-tell grammar — no permanent chrome, no
   tooltip, no message band (all three considered and rejected the same day).
@@ -3118,14 +2213,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   picked ONE hole at a time): each waits a fresh random `WAVE_MIN_MS`–`WAVE_MAX_MS` (3–10s,
   re-rolled per wave and whenever the sentence goes quiet again), so several words can stir at
   once and the holes scatter on their own instead of being kept apart.
-  **That clock is `hooks/useLetterWave` since 2026-08-16, shared by all THREE surfaces that
-  wave** — the holes, Word mode's day word (`WordSubject`) and the solved stage's guessed
-  words (`SolvedScreen`). Two copies were a recorded decision; at three, retuning the band
-  or the stagger took three coordinated edits that nothing forced to agree, and the
-  scheduling itself is pure — two timers and a random band, knowing nothing about holes or
-  strikes. What each surface keeps is the one part they genuinely disagree on: `active`,
-  its own answer to "is this word free to ripple right now?" (a hole's `ticking`, a word's
-  letter count, a solved word's arrival). `WAVE_VARS` hands CSS the same two numbers the
+  **That clock is `hooks/useLetterWave`**: pure scheduling — two timers and a random band,
+  knowing nothing about holes — while the hole keeps `active`, its own answer to "is this
+  word free to ripple right now?" (`ticking`). `WAVE_VARS` hands CSS the same two numbers the
   hook ends a wave on. A lone ripple travelling
   around the sentence reads as a cursor pointing somewhere; several words breathing on separate
   rhythms read as the words being alive, which is the claim the affordance makes. The round
@@ -3163,8 +2253,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `usePuzzle(lang, date?)` fetches the given date, else the active day (unchanged); the
   404→`noPuzzle` path is reused as-is. The calendar reads each SENTENCE day's status
   from the **private server summary** (#211's month read, `state/history.ts`) through
-  `state/status.ts` `statusOf` — shared with the language selector, and with Word mode, whose
-  cells still read the persisted word rounds (`wordStatusOf`). It was the persisted rounds
+  `state/status.ts` `statusOf`. It was the persisted rounds
   until #214 removed them. **Cell coloring (decided 2026-07-08):** a day with
   any reconstruction (>0%) is FILLED with its `progressHeatColor(pct)` (solved counts as
   **100%** — the calm cobalt ramp top), and its number is drawn in `--bg`
@@ -3364,8 +2453,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     at frame zero behind a modal this round never sees. The standing slot snaps to
     whatever is true right now: `ScoreTop` renders nothing while the population read is
     out and appears settled when it lands, so the skip never blocks on, or fakes, the
-    network. Reduced motion is unchanged (already near-instant). **The WORD end screen's
-    own beats are deliberately out of scope**, as is skipping the SOLVING choreography.
+    network. Reduced motion is unchanged (already near-instant). **Skipping the SOLVING
+    choreography is deliberately out of scope.**
   - **REMOVED with the 2026-08-14 redesign** (no-back-compat rule, all were left without a
     consumer): the caption's `masked` veil and its prompt-zone overlay (the caption mounts
     only WITH the result, so an unsolved round's DOM never carries the author hint at all —
@@ -3404,9 +2493,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   is derived from the play log like everything else, and the archive/chooser read the
   SERVER's summary instead — #211.)* **The SHARE CARD draws the SAME
   ruler (decided 2026-07-25, superseding the bucketed-squares card):** the share token
-  was bumped to **v2** — and to **v6** by #214, which added the CAPPED flag and skipped
-  Word mode's ids 3–5 — carrying the RAW per-try trajectory plus the solve moments
-  instead of the `bucketMeans` squares, so `renderCardSvg` renders the on-screen ruler
+  was bumped to **v2** — and to **v6** by #214, which added the CAPPED flag and skipped the retired Word mode's ids 3–5 — carrying the RAW per-try
+  trajectory plus the solve moments instead of the `bucketMeans` squares, so `renderCardSvg` renders the on-screen ruler
   scaled to the OG image — same `progressHeatColor` cells, same ticks, same sentence
   indices. v1 tokens (bucketed squares) no longer decode: `decodeResult` rejects them
   on the version check, so a pre-bump link can never mis-draw. It is not a dead end
@@ -3414,10 +2502,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `decodeLegacyShareTarget` recovers a SUPERSEDED token's lang + day and
   `/s/<v1token>` **301s to `/<lang>/<date>`**, the archived day it named. That fallback is
   restricted to a NAMED LIST of retired SENTENCE versions — **1 and 2** — rather than to
-  "strictly older than the current one" (#214, when the sentence version passed Word mode's
-  ids): a corrupted or hand-crafted CURRENT-version token still gets the flat 404, and a
-  retired or malformed WORD token does too, so a forgery can never earn a redirect. `/og/<v1token>.png` stays a 404 (there is no ruler to
-  draw). Cell count is
+  "strictly older than the current one" (#214, when the version passed the retired Word mode's ids): a corrupted or
+  hand-crafted CURRENT-version token still gets the flat 404, and so does a retired Word
+  token, so a forgery can never earn a redirect. `/og/<v1token>.png` stays a 404 (there is
+  no ruler to draw). Cell count is
   still DERIVED from the score (one cell per counted try, never stored), and a try that
   did not improve costs ONE bit, which is what keeps a long game's link short. The card
   itself draws at most ONE rect per pixel column: the score field is 15 bits, so a
@@ -3545,7 +2633,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   deleted, the `.solved-score-line` slot stays empty, and the server's `standing: true`
   read still answers with no consumer. The paragraph below is what it was.**
 - **Solved-screen STANDING — the GROUP line (#271, user-decided 2026-09-07; it REPLACED
-  the #170 TOP-% badge below; DROPPED 2026-09-14):** both result stacks show `2ND OF 7` beside the score (no
+  the #170 TOP-% badge below; DROPPED 2026-09-14):** the result stack showed `2ND OF 7` beside the score (no
   "today": the result screen is today's, and the word clipped at a 375px card's edge)
   (`components/GroupStanding`, in the badge's exact `.standing-line` slot, a BUTTON onto the
   group's board that sets `lastGroupId` first), read by `hooks/useGroupStanding` — ONE
@@ -3560,22 +2648,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the backend's `/scores` route still answers with no consumer (the user's call).
   *(The paragraphs below describe the #170 badge this replaced; what survives of them is the
   SERVER-holds-the-round gate, the one-conversation-per-round flight and the silent failure.)*
-  Both modes' result stacks used to show where the finished score sits
-  in the day's anonymous population (#169), above the mode's own metrics and SHARE — the
+  The result stack used to show where the finished score sits
+  in the day's anonymous population (#169), above its own metrics and SHARE — the
   comparison story that replaced the removed LLM benchmark.
   ONE rule (`hooks/useScoreHistogram`), and since #203 it is a plain READ: a round the
-  SERVER holds — its transient `solved` for a sentence round since #214 dropped the
-  persisted `recorded` mirror, `submitted` for a word run —
+  SERVER holds — its transient `solved` since #214 dropped the
+  persisted `recorded` mirror —
   GETs the day's bands and locates itself in them by its own score. Both ends read the same
   log — and the read NAMES the caller (`id`, the PUBLIC id, the /board rule) so the band it
   gets back is THEIRS, not whoever else recorded the same number (corrected on review:
-  matching by value gave a round the IP cap refused, or a Word daily another device
-  submitted first, an unrelated player's rank). A population holding no row for the caller
+  matching by value gave a round the IP cap refused an unrelated player's rank). A population holding no row for the caller
   answers `bucket: null` and no standing is drawn; `bucketIndexOf` retired with the guess.
   **What #203 RETIRED here** (no-back-compat): the score POST, the invisible Turnstile token
   it carried (`turnstile.ts` serves ROUND START instead, and gained
-  `prefetchTurnstileTokens` — asked for while the puzzle loads and while the Word gate is on
-  screen, so the challenges are in hand before the player acts; a device with no identity
+  `prefetchTurnstileTokens` — asked for while the puzzle loads, so the challenges are in hand before the player acts; a device with no identity
   fills TWO slots (bootstrap then round creation), while an existing identity fills one, and
   each prefetched token is consumed EXACTLY ONCE), the OAC-hashed `api.postScoreBody`, the
   persisted `scoreRecorded` VALUE and the whole ask-until-recorded state machine of
@@ -3607,8 +2693,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   line of 2026-08-15, which itself replaced the brick histogram):
 
   - **The rank is still COMPUTED, never drawn** (`game/scores.ts` `scoreStanding`,
-    contract-tested): competition ranking — everyone strictly ahead, plus one — in the
-    mode's own direction (sentence: the bands BEFORE mine; Word: the bands AFTER mine),
+    contract-tested): competition ranking — everyone strictly ahead, plus one — (the bands BEFORE mine),
     clamped to the population. It exists because the second gate below reads it.
   - **TOP uses the MIDPOINT of the shared bucket** (user-decided 2026-08-16):
     `(strictly ahead + bucket count / 2) / total`, the standard percentile-rank treatment
@@ -3640,12 +2725,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `beatenCount`, `scoreFirst`/`scoreOther`/`scoreOthers`/`scoreBeat`): `TOP x%` and "you
   beat x%" are the same claim inverted, and the rank says it once.
 - **The sentence game's PLAY gate (user-decided 2026-08-11; DEPLOY duty added by the #216
-  trigger rework, user-decided 2026-08-24):** each mode explains
-  ITS OWN rules before the first round, once — the tutorial teaches only the shared core
-  concepts (semantic distance, word rarity). Word mode already had this by construction:
-  its GATE is mandatory because PLAY starts the clock (the button wears the sentence
-  gate's own PLAY label — one shared `gatePlay` key, user-decided 2026-08-11). The sentence game's gate exists
-  only for the instructions, so it is shown **ONCE ever** — a persisted global flag,
+  trigger rework, user-decided 2026-08-24):** the game explains
+  its rules before the first round, once — the tutorial teaches only the core concept
+  (semantic distance). The gate exists only for the instructions, so it is shown **ONCE
+  ever** — a persisted global flag,
   `sentenceRulesSeen` (store **v8**; older blobs get false, deliberately NOT grandfathered
   the way `onboarded` is: the gate teaches the history tap, which is newer than any
   existing play state, so every player sees it exactly once) — and PLAY
@@ -3653,14 +2736,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   round holds back: the prompt lays out `retired` (invisible, inert, height reserved), the
   holes are untappable and waveless
   (`gateOpen` feeds `exploreDisabled` and vetoes `quiet`), and the TRAY holds the rules +
-  PLAY in the keyboard's own footprint (`.rules-gate` — renamed from `.sentence-gate`
-  when Word mode adopted the exact same stack the same day), so PLAY swaps what the tray
+  PLAY in the keyboard's own footprint (`.rules-gate`), so PLAY swaps what the tray
   holds and moves nothing else. **The rules wear the app's ONE rules dress (user-decided
   2026-08-11, second pass): `.coach-rules` — the tutorial's coach dialog, in flow and
   sized to its copy (680px cap, the keyboard's own footprint, after "narrow for no reason"
   desktop feedback) — typewritten by `CoachText`, as BULLETED lines, with an sr-only
-  plain-text mirror (the visible box is aria-hidden like every coach box). Both gates wear
-  it, so anything in this box reads as "here to help"; and PLAY is the tutorial's own
+  plain-text mirror (the visible box is aria-hidden like every coach box). The gate and the
+  tutorial wear it, so anything in this box reads as "here to help"; and PLAY is the tutorial's own
   full-width `.mix-btn`, so the gate and the graduation speak one button.** TWO rules, one
   idea each (`sentenceRulesGoal` / `sentenceRulesHistoryTap|Click`, the tap line in the
   input device's own verb — the streak hint's coarse-pointer test): the goal and the
@@ -3678,7 +2760,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   with TRY AGAIN on failure, nothing created on a failure) and then marks the rules seen.
   An account-holding player who has read the rules never sees the gate again; the flag
   still keeps them from seeing the rules twice when their account arrived through another
-  door (Word PLAY, an invite). The round engine's append NEVER mints an identity any more
+  door (an invite, a profile save). The round engine's append NEVER mints an identity any more
   (`currentRequestIdentity`): a tokenless outbox — the pending-bootstrap recovery — waits
   behind the gate, and the deploy's identity listener kicks every conversation loose
   (`kickRoundSync`).
@@ -3713,59 +2795,21 @@ it to the local store — see `packages/backend/AGENTS.md`).
   prompt (no after-panels); finally the player types back to the secret with the
   REAL vocabulary (`useVocab` loads in the tutorial), nudged with the answer after 3
   straight MISSes.
-  **It ENDS on word RARITY (user-decided 2026-08-11, superseding the #155 THEMES/routes
-  ending):** the tutorial teaches the CORE CONCEPTS the modes share — semantic distance
-  (the mix demo and the guided guesses) and word rarity — and nothing mode-specific: each
-  mode's own rules live on that mode's pre-game gate (Word mode's gate screen; the
-  sentence game's one-time PLAY gate, below). Finding the word retires the prompt and
-  DROPS the keyboard out of the tray (the game's own `kb-drop`, same `KB_EXIT_FALLBACK_MS`
-  deadline behind its `animationend`). **The ending then runs TWO beats, one idea each**
-  (the tutorial's own grammar): the CLAIM — « Une dernière chose : chaque mot a une
-  rareté. » (`tutRarityIntro`) — over the found word, with the tray's NEXT as its only
-  control; then the word gives way to the **RARITY LADDER**
-  (`tutorial/RarityLadder.tsx`), a **SIGNAL METER since 2026-08-18** (user-decided,
-  superseding the size-ramped two-column rungs — "the difference in font size are
-  terrible", and the two same-size fonts competed): five rows, commonest first, each
-  carrying a five-cell LED METER with one more cell lit per grade — rarity as signal
-  strength, the member cards' own cell vocabulary — the grade's name as a small quiet
-  mono label (11px, `--fg`), and **one OBVIOUS example word per grade** (user-decided
-  2026-08-11: the ladder teaches by evidence — en house / twilight / obelisk /
-  reliquary / apricity, fr maison / crépuscule / alambic / cénotaphe / zinzolin,
-  `tutRarityEx*`, hand-authored per language for intuition) in the PIXEL face at ONE
-  size (15px, 13px ≤640px), right-aligned, wearing the grade's aura colour with the
-  game words' soft glow. Fits by arithmetic at 320px (label 9ch + meter + crépuscule at
-  13px ≈ 263 of 292). Each row rises on its own `rung-in` delay (reduced motion
-  collapses durations, keeps delays). The coach line states the CONCEPT and no value —
-  « Des mots de tous les jours aux mots presque oubliés. » (`tutRarity`) — and
-  deliberately NOT what a grade pays: the seconds are Word mode's rule, stated on its
-  gate (`wordRulesBonus`). The grade names are the game's untranslated vocabulary from
-  `RARITY_NAMES`; the ladder is decorative (`role="img"`) with `srRarityLadder` + the
-  names and examples as its accessible line.
-  The tray then offers **PLAY (`tutPlay`), which is the graduation**: `onDone`, no
-  SolvedScreen (a lesson has no score to show).
-  **The ACTION BUTTON keeps ONE place for the whole lesson** (decided 2026-08-04): MIX, the
-  ending's NEXT and PLAY are the same control in the same spot — parked against the tray's
-  BOTTOM edge (`.mix-btn`'s `margin-top: auto`, which beats the tray's own centring), so the
-  page's frame inset is its whole margin below and it sits the same distance from the bottom as
-  from the left and right. That has to be stated as a rule because the tray's HEIGHT changes
-  under it — the keyboard's full footprint while the word is on screen, the button's own height
-  once the ladder replaces it — so a button centred in the tray drifted: measured 87px above the
-  bottom on the earlier beats against 24px on the final one (desktop), 54.5 against 14 on a
-  phone, and the only control on screen jumped the moment the lesson moved on. On a phone the
-  button carries its own +10px back to the 14px page inset (the same rule as
-  `.tray.tray-results`, and the reason that offset lives on the BUTTON rather than on the
-  ending tray's padding: the earlier beats need it inside a tray whose height must stay the
-  keyboard's). The keyboard and the tray's transient loading/error lines keep the tray's
-  centring — the auto margin moves the button only.
-  **From the ladder on, the TRAY stops reserving the keyboard's footprint** (`tutorial--ending`
-  on the root, decided 2026-08-04 as `tutorial--themes`, renamed with the re-arc): the
-  keyboard has dropped for good and the tray holds one
-  button, so it shrinks to that button — which does NOT move it (it was already on the tray's
-  bottom edge); only the space ABOVE it changes. The ~120px that
-  empty footprint held goes to the ladder's breathing room. It cannot start any EARLIER:
-  while the word is still on screen
-  the tray's fixed height is exactly what keeps the word from moving between beats, so the
-  claim beat keeps the full tray.
+  **It ENDS WORDLESS (2026-09-16, with Word mode's removal):** the tutorial teaches the
+  CORE CONCEPT — semantic distance, through the mix demo and the guided guesses — and the
+  game's own rules live on its pre-game gate (below). Finding the word retires the prompt
+  and DROPS the keyboard out of the tray (the game's own `kb-drop`, same
+  `KB_EXIT_FALLBACK_MS` deadline behind its `animationend`); the found word stands, the
+  coach says nothing more (a found word needs no comment), and the tray offers **PLAY
+  (`tutPlay`), which is the graduation**: `onDone`, no SolvedScreen (a lesson has no score
+  to show).
+  **The ACTION BUTTON keeps ONE place for the whole lesson** (decided 2026-08-04): MIX and
+  PLAY are the same control in the same spot — parked against the tray's BOTTOM edge
+  (`.mix-btn`'s `margin-top: auto`, which beats the tray's own centring), and the tray keeps
+  the keyboard's footprint to the end, so the found word never moves between beats. On a
+  phone the button carries its own +10px back to the 14px page inset. The keyboard and the
+  tray's transient loading/error lines keep the tray's centring — the auto margin moves the
+  button only.
   **The board's ranks are a REAL generated neighborhood:** the mix ladder walks real ranks
   and the free find lands on real groups. Each language embeds a #154
   single-word artifact (`pnpm gen:word`) PRUNED to the word + the top-150 near field + the
@@ -3867,9 +2911,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   a crown, in an app whose whole identity model is that the account is already there.
   **THE TWO SLOTS, and each has ONE meaning:**
   - **LEFT — WHAT YOU ARE LOOKING AT.** On a play surface that is `PuzzleTitle`: the
-    daily's NAME with a chevron (`SENTENCE ⌄`), opening the wheel below. It routes by the
-    SURFACE it was opened from, which is exactly what the retired tabs did: from the
-    archive, the other daily means that daily's CALENDAR. On a screen you navigated INTO
+    LANGUAGE's own name with a chevron (`FRANÇAIS ⌄`), opening the drum below (the daily's
+    name held this slot until Word mode was retired, 2026-09-16). It routes by the SURFACE
+    it was opened from: from the archive, the other language means that language's
+    CALENDAR. On a screen you navigated INTO
     it is `back` — the arrow and the screen's own name as one target (2026-08-29).
     **THE TITLE IS A HELD WORD, AND ITS MENU IS A FULLSCREEN SELECTION IN THE HOLE
     WHEEL'S DRESS (user-decided 2026-09-02, in two passes: "add a `--fg` background, like
@@ -3882,8 +2927,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the chip the way a hole's exponent does; hover and press DIM the chip by the hole's
     own mixes, since white cannot brighten. The day states its own 12px now that it sits
     outside the chip's rule (it inherited the body's 16px for one measurement), and the
-    320px budget was re-measured with the chip: SENTENCE AUG 29 beside the five keys ends
-    at 153 of 158, the chip's padding stepping to 5px at ≤340.
+    320px budget was re-measured with the chip: SENTENCE AUG 29 beside the five keys ended
+    at 153 of 158, the chip's padding stepping to 5px at ≤340 (the chrome face is
+    monospace, so FRANÇAIS is SENTENCE's width).
     What hangs off it is `PuzzleSelect`, replacing the `PuzzleSheet` dropdown (rows,
     hairline, LED tick — deleted with its CSS), and it took FOUR passes in one day to
     land, each on the user's review:
@@ -3909,28 +2955,27 @@ it to the local store — see `packages/backend/AGENTS.md`).
        (`assets/icons/chevron-left.svg`), where the modals' ✕ sits top-right.
     **What stands:** the hole wheel's fade in and out (`.wheel-dialog`, `wheel-out`) on
     flat `--bg`; the app's header row with the back chevron; and in the middle of the
-    screen TWO DRUMS side by side, the DAILY's and the LANGUAGE's, in their canonical
-    order, each scrolling through a slot on one shared line (five rows' room, the slot in
+    screen ONE DRUM, the LANGUAGE's (the DAILY's stood beside it until Word mode was
+    retired), scrolling through a slot (five rows' room, the slot in
     the middle, both ends fading over 44px, every number set inline from ONE measured chip
     — `.ps-probe`). The row in a slot wears the title's chip at 22px (18 ≤640, 16 ≤360),
     the others stand plain at the same size, and the chip hands itself from row to row
-    on a 120ms cross-fade as a drum turns; rows arrive on the wheel's stagger counted out
+    on a 120ms cross-fade as the drum turns; rows arrive on the wheel's stagger counted out
     from the slot. **The drum IS the hole wheel's** — its physics moved out of
     `HistoryWheel` into `hooks/useDrum` (`current`/`peek`/`jump`/`glideTo`/`glideBy`/
     `tap`/`endedDrag`; the caller supplies only `write`, a scrollTop there and a translate
     here), so a drag, a fling, a wheel delta, an arrow key and a tap on a row all feel the
-    same on both surfaces. ArrowUp/Down turn the drum holding focus (the daily's by
-    default), Left/Right hand focus across. **THE PICK LANDS AS THE FOLD BEGINS, under
+    same on both surfaces. ArrowUp/Down turn the drum. **THE PICK LANDS AS THE FOLD BEGINS, under
     the veil** (user-reported the same day, fifth pass): the back chevron, a slot row's
-    tap, a tap outside the drums, or Escape sets `closing`, and an effect on it navigates
-    at once to whatever BOTH slots hold — or nowhere when neither moved — so the NEW
-    screen's loading state is what stands under the veil as it lifts. Navigating on the
-    dialog's `close` (the hole wheel's rule, kept for one pass) showed the old mode's
+    tap, a tap outside the drum, or Escape sets `closing`, and an effect on it hands the
+    caller (`onLang`) whatever the slot holds at once — or nothing when it did not move —
+    so the NEW screen's loading state is what stands under the veil as it lifts. Navigating on the
+    dialog's `close` (the hole wheel's rule, kept for one pass) showed the old
     screen for the fade, then a beat of loading, then the new one — "a sensation of rapid
     blinking between multiple screens". Measured: 22ms after the tap the old screen is
     gone and the loading line is up under the closing veil, which lifts at 170ms. The
     hole wheel keeps its rule for its own reason (a pick reflows the sentence it stands
-    on). A tap on a plain row only TURNS its drum.
+    on). A tap on a plain row only TURNS the drum.
   - **RIGHT — WHERE YOU ARE AND WHERE YOU CAN GO: the app's PLACES, the current one
     LIT — and it is THE SAME ROW ON EVERY SCREEN THAT HAS A HEADER** (user-decided
     2026-08-31: "the header is supposed to be something stable", then extended the same
@@ -4036,14 +3081,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
     The FACE is the deliberate exception: its 1px `--line-strong` ring is drawn outside the
     20px tile, so the frame hangs a pixel below that line while the drawing itself sits on
     it — the mark cannot shrink to 18px without leaving the integer 2px-a-cell scale.
-  - **A CHEVRON, NOT TABS.** The segmented switcher showed both dailies at once, which is
-    what killed the 2026-08-06 icon toggle — but a title NAMES the current mode, which
-    the toggle never did, and switching dailies is a once-a-day act rather than a flip.
-    The sheet costs one tap for a choice nobody makes twice in a session. The LANGUAGE
-    chip went into the same sheet, and `components/LangButton.tsx` is deleted with it.
-  **THE BUDGET, re-measured.** Worst case (320px, English, a PAST day — the title carries
-  the day — and the fixed five-key group): title 147px + keys 165px = 312 of the row's
-  316px content box, against the 336–359px the three-slot row wanted; the live daily has
+  - **A CHEVRON, NOT A CHIP OF ITS OWN.** The title NAMES the current language, and
+    switching it is a rare act, so the selection costs one tap for a choice nobody makes
+    twice in a session. `components/LangButton.tsx` is deleted with the chip it drew.
+  **THE BUDGET, re-measured.** Worst case (320px, a PAST day — the title carries
+  the day — and the fixed five-key group; measured with SENTENCE, which FRANÇAIS matches in
+  the monospace chrome face): title 147px + keys 165px = 312 of the row's 316px content
+  box, against the 336–359px the three-slot row wanted; the live daily has
   60px to spare. **The title has ONE size on every screen — 12px, the chrome's own
   small-caps size — and never steps down** (user-decided 2026-08-31: a viewport clamp
   plus two phone overrides had COMPTE at 14px over PROFIL at 11, one tap apart); what
@@ -4055,7 +3099,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   The ≤400px step-down (32px controls) and the ≤340 one (30px, tighter gaps) are what
   hold the five-key row; the arithmetic is commented at the step-downs under "THE
   NARROW-PHONE HEADER BUDGET" — re-measure before a SIXTH key.
-  Word mode's top reserve is 66px and the archive's 70px, clearing the band.
+  The archive's top reserve is 70px, clearing the band.
   **What this DELETED** (the standing no-back-compat rule): `components/ModeTabs.tsx`,
   `components/PuzzleDate.tsx`, `components/LangButton.tsx`, the leaderboard's IDENTITY
   STRIP (`.board-me`, its own profile read, `chevron-right.svg` — see the leaderboard
@@ -4076,15 +3120,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (ARCHIVE / TUTORIAL, plus any inline stat like the tutorial's counter), or a loaded game's
   own left chip: **the sentence game's is the DAY'S DATE** (`components/PuzzleDate`,
   user-decided 2026-08-16, replacing the reconstruction-% counter that held this corner —
-  the percentage now speaks only through the run ruler's colours at the end of the round),
-  Word mode's is its live score. The date is `dateForDayNumber(dayNumber)`, the same
+  the percentage now speaks only through the run ruler's colours at the end of the round).
+  The date is `dateForDayNumber(dayNumber)`, the same
   `2026-08-16` spelling the card, the OG title, the shared text and the archive URL use, so
   an archived day reads as the day it is from the moment it loads. CHROME, not a stat:
   `.topbar-title`'s muted weight and none of the counter's live colour, and sized against
   the corner's REAL budget, which four glyphs never tested — ten glyphs plus the group's
   padding have to clear the four 38px controls opposite, which is what the 10px/no-tracking
-  step at ≤640px is for (measured 320/360/390/430). Word mode's cross failure row stays with
-  its play controls, directly above the keyboard. Both left and right groups are children of
+  step at ≤640px is for (measured 320/360/390/430). Both left and right groups are children of
   the actual `<header>`; game bodies never render a separate fixed header half. The
   full-width progress BAR is gone — and since 2026-08-16 so is the number that replaced
   it. **RIGHT is the one action
@@ -4369,7 +3412,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   when replaying a past archive day (#55), `'no'` for the live daily puzzle);
   `share {method:'native'|'clipboard'}` — `SolvedScreen`
   success paths; `tutorial {action:'start'|'finish'|'skip'}` — invite accept / the ending's
-  PLAY under the routes teaser (#155) / skip (fast-forward or invite SKIP). Plus automatic
+  PLAY / skip (fast-forward or invite SKIP). Plus automatic
   pageviews.
 - **Stale-tab auto-reload (user-decided 2026-08-16):** a deployed release must reach tabs
   already open — an SPA loads its JS once, and the deploy's `prune: false` deliberately
@@ -4405,8 +3448,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   WATCHED, not assumed** (corrected 2026-08-20 on review): the check is a network round
   trip that can land up to the 10s abort later, by which time React has mounted and the
   app is playable, so the startup reload is gated on the page still being PRISTINE — one
-  `pointerdown` or `keydown` (capture, `once`) ends it, since a Word run's clock starts on
-  a tap and a guess, a name and a drawing are typed or tapped in. A touched page KEEPS the
+  `pointerdown` or `keydown` (capture, `once`) ends it, since a guess, a name and a drawing
+  are typed or tapped in. A touched page KEEPS the
   mismatch and spends it on the next return like every other trigger, and it does not
   claim the once-per-build budget below, which the next load may still need. Gating the
   first RENDER on the check was the alternative and is rejected: it would delay every cold

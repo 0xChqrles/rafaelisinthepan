@@ -23,8 +23,8 @@
 // in the token — it is still the ruler's cell count, and the ruler is still one cell per
 // canonical try, never 500 raw storage entries — so the flag changes only what the HEADLINE
 // says. A capped token carries NO solve ticks: the run never finished, and the result the
-// card draws is the reconstruction it reached. v3–v5 are Word mode's ids in this one
-// namespace, so the next sentence format is 6 rather than 3.
+// card draws is the reconstruction it reached. v3–v5 were the retired Word mode's ids in
+// this one namespace, so the sentence format went from 2 to 6.
 //
 // The payload is BIT-packed (not byte-aligned), then base64url'd, to keep the URL short:
 //   version 4b | lang 2b | day 15b | capped 1b | scoreLen 4b | score <scoreLen>b
@@ -39,30 +39,10 @@ const SHARE_VERSION = 6;
 
 // The RETIRED sentence formats — the ones `decodeLegacyShareTarget` still recovers a
 // language and a day from. Named EXPLICITLY rather than as "anything older than the
-// current version" (#214): v3–v5 are Word mode's ids, and once the sentence version passed
-// them a range test would have handed a malformed or retired WORD token the redirect the
-// codec promises to refuse. A valid current Word token is decoded by its own decoder first;
-// anything else stays a flat 404.
+// current version" (#214): v3–v5 were the retired Word mode's ids, and a range test would
+// hand one of those old links the redirect the codec promises to refuse — it stays a flat
+// 404.
 const LEGACY_SENTENCE_VERSIONS: readonly number[] = [1, 2];
-
-// Word mode's token (#156) lives in the SAME version namespace — the version field is a
-// FORMAT id, and the word result is a different format: no trajectory or ticks — the
-// common `version | lang | day` opening, ONE claim count PER RARITY GRADE (v5, decided
-// 2026-08-11: the share surfaces break the score down by rarity, and the OG card renders
-// from the token alone, so the breakdown must travel in it; the total claim count is
-// DERIVED as the counts' sum, never stored, so the two can never disagree), then the
-// day's UTF-8 DISPLAY word. The card needs that word to reproduce the game's blue
-// terminus while remaining content-addressed by the token (no puzzle-store lookup on an
-// OG request). v3 (score only) and v4 (score + word, no breakdown) are retired; the
-// sentence format SKIPPED all three ids when #214 bumped it (2 -> 6), and
-// `LEGACY_SENTENCE_VERSIONS` names what may be redirected, so a superseded or malformed
-// Word token still 404s rather than earning a redirect.
-const WORD_SHARE_VERSION = 5;
-
-// How many rarity counts a word token carries — the web's ladder order, commonest first
-// (COMMON..ARCANE). The COUNT of grades is this codec's contract; what a grade MEANS
-// (its name, threshold, colour) stays the consumers' own tuning.
-export const WORD_RARITY_GRADES = 5;
 
 // --- field widths ------------------------------------------------------------------------
 const VERSION_BITS = 4;
@@ -70,8 +50,6 @@ const LANG_BITS = 2; // room for 4 languages before a version bump
 const DAY_BITS = 15; // days since ID_EPOCH -> ~89 years of headroom
 const SCORE_LEN_BITS = 4; // holds the bit-length of the score (0..15)
 const SCORE_MAX = 0x7fff; // 15-bit scores (32767) — far above any real game
-const WORD_LEN_BITS = 8; // UTF-8 bytes; 255 comfortably covers any generated display word
-const WORD_MAX_BYTES = (1 << WORD_LEN_BITS) - 1;
 const CELL_BITS = 5;
 const QUANT_MAX = (1 << CELL_BITS) - 1; // 31 reconstruction levels
 const TICK_COUNT_BITS = 3; // a puzzle has 3 distinct secrets; 0..7 leaves headroom
@@ -181,22 +159,6 @@ const bitLength = (x: number) => (x <= 0 ? 0 : 32 - Math.clz32(x));
 const quant = (pct: number) => Math.round((clamp(pct, 0, 100) / 100) * QUANT_MAX);
 const dequant = (level: number) => (level / QUANT_MAX) * 100;
 
-// The Word display form is interpolated into XML after escaping markup characters. Reject
-// control/surrogate/noncharacter scalars that XML 1.0 cannot represent at all, so a forged
-// but otherwise well-packed token still fails flat instead of reaching the rasterizer as a
-// malformed document. Generated words are ordinary letters/marks/dashes and pass unchanged.
-function isXmlText(value: string): boolean {
-  if (value.length === 0) return false;
-  return Array.from(value).every((char) => {
-    const cp = char.codePointAt(0)!;
-    return (
-      (cp >= 0x20 && cp <= 0xd7ff) ||
-      (cp >= 0xe000 && cp <= 0xfffd) ||
-      (cp >= 0x10000 && cp <= 0x10ffff)
-    );
-  });
-}
-
 export function encodeResult(r: ShareResult): string {
   const w = new BitWriter();
   w.write(SHARE_VERSION, VERSION_BITS);
@@ -249,81 +211,6 @@ export function encodeResult(r: ShareResult): string {
   return bytesToB64url(w.toBytes());
 }
 
-// --- Word mode (#156) ---------------------------------------------------------------------
-// One daily word, claims until the clock dies: the gameplay result is the CLAIM COUNT
-// BROKEN DOWN BY RARITY GRADE, followed by the day's display word solely so the OG card can
-// reproduce the public blue terminus. Encoded/decoded by its own pair rather than a mode
-// bit inside the sentence token, so neither format pays for the other's fields.
-export interface WordShareResult {
-  lang: string; // 2-letter code; drives the click-through redirect (/<lang>/word/<date>)
-  dayNumber: number; // the puzzle's stable ID (server-owned day), shown as its calendar date
-  counts: readonly number[]; // claims per rarity grade, commonest first (WORD_RARITY_GRADES entries)
-  word: string; // accented display form — never the slug
-}
-
-// The claim count IS the counts' sum — derived wherever a surface names it, never stored,
-// so the headline and the breakdown cannot disagree.
-export function wordShareScore(counts: readonly number[]): number {
-  return counts.reduce((sum, n) => sum + n, 0);
-}
-
-export function encodeWordResult(r: WordShareResult): string {
-  if (r.counts.length !== WORD_RARITY_GRADES) {
-    throw new RangeError(`Word share carries exactly ${WORD_RARITY_GRADES} rarity counts.`);
-  }
-  const w = new BitWriter();
-  w.write(WORD_SHARE_VERSION, VERSION_BITS);
-  w.write(Math.max(0, SHARE_LANGS.indexOf(r.lang)), LANG_BITS); // unknown -> 0 (en)
-  w.write(clamp(Math.round(r.dayNumber) - ID_EPOCH, 0, (1 << DAY_BITS) - 1), DAY_BITS);
-  // Each count in the score field's own variable-length scheme: a grade the run never
-  // claimed costs 4 bits, so the common case (a couple of grades hit) stays short.
-  for (const raw of r.counts) {
-    const count = clamp(Math.round(raw), 0, SCORE_MAX);
-    const len = bitLength(count);
-    w.write(len, SCORE_LEN_BITS);
-    w.write(count, len);
-  }
-
-  const word = new TextEncoder().encode(r.word);
-  if (!isXmlText(r.word) || word.length > WORD_MAX_BYTES) {
-    throw new RangeError(`Word share display form must occupy 1..${WORD_MAX_BYTES} UTF-8 bytes.`);
-  }
-  w.write(word.length, WORD_LEN_BITS);
-  for (const byte of word) w.write(byte, 8);
-  return bytesToB64url(w.toBytes());
-}
-
-// Decode + validate a word-mode token. Null on ANY malformation (bad chars, wrong
-// version, overrun, leftover bytes), the same flat refusal the sentence decoder gives —
-// its only free text is length-bounded, valid UTF-8/XML and escaped by the SVG renderer.
-export function decodeWordResult(token: string): WordShareResult | null {
-  const bytes = b64urlToBytes(token);
-  if (!bytes) return null;
-  try {
-    const rd = new BitReader(bytes);
-    if (rd.read(VERSION_BITS) !== WORD_SHARE_VERSION) return null;
-    const lang = SHARE_LANGS[rd.read(LANG_BITS)];
-    if (!lang) return null;
-    const dayNumber = rd.read(DAY_BITS) + ID_EPOCH;
-    const counts: number[] = [];
-    for (let i = 0; i < WORD_RARITY_GRADES; i += 1) {
-      const len = rd.read(SCORE_LEN_BITS);
-      counts.push(len === 0 ? 0 : rd.read(len));
-    }
-    const wordLength = rd.read(WORD_LEN_BITS);
-    if (wordLength === 0) return null;
-    const wordBytes = new Uint8Array(wordLength);
-    for (let i = 0; i < wordLength; i += 1) wordBytes[i] = rd.read(8);
-    const word = new TextDecoder('utf-8', { fatal: true }).decode(wordBytes);
-    if (!isXmlText(word)) return null;
-    // Only the final byte's padding bits (0..7) may remain.
-    if (rd.remainingBits >= 8) return null;
-    return { lang, dayNumber, counts, word };
-  } catch {
-    return null; // bit overrun (truncated token)
-  }
-}
-
 // Every version so far opens with the SAME header — `version | lang | day` — and only the
 // payload after it differs. That is what lets an OLD link stay useful: a v1 token can't
 // feed the v6 ruler, but its language and day are right there, so `/s/<v1token>` can send
@@ -332,10 +219,9 @@ export function decodeWordResult(token: string): WordShareResult | null {
 // A NAMED LIST of retired SENTENCE versions, never a range (#214). A CURRENT-version token
 // that `decodeResult` rejected is malformed, not legacy, and must keep 404-ing — otherwise
 // a hand-crafted token would earn a redirect instead of the flat refusal the codec
-// promises. And since the sentence version passed Word mode's ids (3–5) at the v6 bump, a
-// range would additionally have handed a RETIRED or malformed Word token that same
-// redirect; a valid current Word token is decoded by `decodeWordResult` first and never
-// reaches here at all.
+// promises. And since the sentence version passed the retired Word mode's ids (3–5) at
+// the v6 bump, a range would additionally hand one of those old Word links that same
+// redirect.
 interface LegacyShareTarget {
   version: number;
   lang: string;

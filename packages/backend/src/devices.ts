@@ -122,9 +122,8 @@ export async function handleDevices(
   if (!parsed.ok) return parsed.response;
   const body = parsed.value;
 
-  // BOOTSTRAP dispatches on the challenge, the way Word mode's round START does: it is the
-  // one message here that may create state, so it is the one that has to prove it is not a
-  // bot. A body carrying both a challenge and a revocation is asking for two different
+  // BOOTSTRAP dispatches on the challenge: it is the one message here that may create
+  // state, so it is the one that has to prove it is not a bot. A body carrying both a challenge and a revocation is asking for two different
   // things at once.
   if (body.turnstileToken !== undefined) {
     if (body.revoke !== undefined || body.revokeKey !== undefined) {

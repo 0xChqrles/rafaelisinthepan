@@ -79,8 +79,8 @@ async function deploy(identity: DeviceIdentity): Promise<void> {
 async function run(identity: DeviceIdentity): Promise<void> {
   const epoch = identityEpochOf(identity);
   const stale = () => identityEpoch() !== epoch;
-  // The seed may still be null on a first act that never opened a board or editor (Word
-  // mode's PLAY): deciding it HERE keeps the rule honest — the username exists locally
+  // The seed may still be null on a first act that never opened a board or editor (the
+  // sentence gate's PLAY): deciding it HERE keeps the rule honest — the username exists locally
   // from the first moment anything needed it, and this is the same value such a visit
   // would have been shown.
   const seed = useGameStore.getState().ensureLocalSeed();

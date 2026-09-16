@@ -22,7 +22,7 @@ Provisions the backend (#2) so it is reproducible and deployable from one comman
   Holds `<YYYY-MM-DD>.<lang>.json` objects keyed by
   [`backend/src/layout.ts`](../backend/src/layout.ts). Upload target for #4.
 - **DynamoDB score table** — on-demand, encrypted, retained on teardown, composite
-  `pk`/`sk` key (#187). One first-write-wins score row per `(date, lang, mode, publicId)`
+  `pk`/`sk` key (#187). One first-write-wins score row per `(date, lang, publicId)`
   is permanent — a daily's partition is read back whole by one Query — while HMAC-IP
   dedup items have an `expiresAt` TTL and disappear after 48 hours. PITR is intentionally
   disabled so backups cannot extend the pseudonymous dedup data's lifetime. There are no
@@ -35,13 +35,13 @@ Provisions the backend (#2) so it is reproducible and deployable from one comman
   on the two exact SecureString ARNs; the Function URL is
   **IAM-auth** so only CloudFront can invoke it.
 - **CloudFront** — CDN in front of the Function URL via **Origin Access Control**. Cache
-  key = request path + the `lang`, `date` and `mode` query strings (the allowList in
+  key = request path + the `lang` and `date` query strings (the allowList in
   `lib/backend-stack.ts` — with no origin request policy on that behavior, an unlisted
   parameter never reaches the Lambda at all); the origin's `Cache-Control`
   (`max-age=300, s-maxage=31536000`) drives the TTL, purged by
   `pnpm puzzle:publish --s3` and by the backend deploy job.
   `/scores` is a separate zero-TTL behavior: it allows POST, uses AWS's managed
-  `CachingDisabled` policy, and forwards exactly `lang`, `date`, `mode` through its origin
+  `CachingDisabled` policy, and forwards exactly `lang`, `date`, `id` through its origin
   request policy outside the unused cache key. That policy uses CloudFront's Lambda-URL-safe
   `allExcept: Host` header mode, which carries the viewer-supplied `x-amz-content-sha256`
   (required for OAC to sign a Lambda-URL POST; explicitly allowlisting the reserved `x-amz-*`

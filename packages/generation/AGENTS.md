@@ -372,11 +372,13 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json + shared/src/vocab.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct words; all occurrences hole (no `--`)
 
 # 4. Generate a SINGLE-WORD artifact (#154): one word + its ranked neighborhood, no
-#    sentence. -> packages/generation/output/single-word/<lang>/<slug>.json (--out-dir
-#    overrides the root). Every per-secret rule is gen_phrase's, imported not copied
+#    sentence — the source the onboarding tutorial's board is pruned from
+#    (packages/web/scripts/prune-word-map.mjs).
+#    -> packages/generation/output/single-word/<lang>/<slug>.json (--out-dir overrides the
+#    root). Every per-secret rule is gen_phrase's, imported not copied
 #    (walk_secret): merge walk, #133 form confirmation, #119 donors, TOP_K, dq,
-#    slug collisions. Two differences: every group carries `freq` (#163, this command
-#    only), and the output has one flat `ranks` map with no words/holes/start/source. Unlike gen:phrase it does NOT rewrite
+#    slug collisions. One difference: the output has one flat `ranks` map with no
+#    words/holes/start/source. Unlike gen:phrase it does NOT rewrite
 #    web/public/vocab/<lang>.json (that is reduce's output).
 pnpm gen:word phare --lang fr --form phare=n:s   # --form required per fr word off a TTY
 ```
@@ -394,8 +396,8 @@ output filename contains the three distinct secret slugs in sentence order.
 
 - All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` (reduce),
   `TOP_K = 10000` / curator report window `PLAYABILITY_TOP = 150` (gen),
-  start-rank band `100–150` (`start_word.py`, user-decided 2026-09-07; was 50–150). Note `PLAYABILITY_TOP` stayed at 150: it is
-  a curator report window sized for a sentence hole's near field, not the word game's field.
+  start-rank band `100–150` (`start_word.py`, user-decided 2026-09-07; was 50–150).
+  `PLAYABILITY_TOP` is a curator report window sized for a sentence hole's near field.
 - **Playability report (#135):** `build_playability_report` reads (never mutates)
   the final groups at ranks 1..`PLAYABILITY_TOP`; both `--words` and the raw-mode
   selector feed the same `PlayabilityReporter`, whose output is deferred until the
@@ -498,18 +500,10 @@ output filename contains the three distinct secret slugs in sentence order.
   parsing → tables → the #134 gate → vectors → the three resolvers, one fail-fast
   order) and `report_run_adjustments` (donor/agreement/`*`-fallback/collision/--form
   reporting, parameterized on the command's wording), so neither the rules nor the
-  setup/reporting around them can drift; its own code is `annotate_freq`,
-  the artifact dict, the output path, a reject-early guard on
-  multi-word/clitic input (whitespace or apostrophes die with a clear "one word" error
+  setup/reporting around them can drift; its own code is the artifact dict, the output
+  path, a reject-early guard on multi-word/clitic input (whitespace or apostrophes die with a clear "one word" error
   before the loads; dashes stay legal) and the CLI.
-  **`annotate_freq` (#163) lives HERE and not in `gen_phrase`** because it is
-  the one annotation only this artifact carries — `gen_phrase` must not grow a pass it
-  never calls. It is a plain min over the group's OWNED KEYS' positions among the
-  distinct slugs of `V` in frequency order (the existence set — never the whole
-  paradigm, whose shared surfaces belong to other groups), stamped by rank like `dq`
-  and BEFORE the agreement pass for the same reason, so a rewritten display inherits
-  its group's value.
-  The rule and the field's meaning are in the root `AGENTS.md`. Measured on `phare` (fr): 10 000
+  Measured on `phare` (fr): 10 000
   ranked groups, 25 497 keys, ~1.5 MB raw — the same order as one sentence hole's map,
   which is what it is. `--no-lemmas`/`--no-inflect`/`--donor`/`--form`
   behave exactly as on `gen:phrase`, including the off-TTY hard errors.

@@ -43,8 +43,8 @@ existence set into `packages/web/public/vocab/<lang>.json` plus its metadata int
 PUBLISH LEDGER (user-decided 2026-09-08): one JSON line per SENTENCE puzzle published to
 S3 — `day` (the game day served), `lang`, `publishedAt`, `revision`, `source`, `sentence`
 (`words[]` joined) and `holes` as `{secret, word, start, startRank}` — appended by
-`pnpm puzzle:publish --s3` and by nothing else (a local publish is a test bed, a word
-artifact is not recorded), GITIGNORED — the BUCKET is the truth and the file its local,
+`pnpm puzzle:publish --s3` and by nothing else (a local publish is a test bed),
+GITIGNORED — the BUCKET is the truth and the file its local,
 readable copy, rebuilt on any machine by `pnpm puzzle:ledger --s3` — and the ONE record
 the curator's archive (secret cooldown, secret/start pair blacklist, works, sentences,
 artist cooldown) reads; it reads nothing else, and refuses to run without the file.
@@ -185,18 +185,19 @@ is applied only to the player's raw keystrokes.
   hash of the complete content, rank maps included. Identical republish = same value; any
   correction mints a new one and restarts the retired round (see *Sentence round*).
 
-### Single-word artifact schema (#154; `freq` #163)
+### Single-word artifact schema (#154)
 
-The second puzzle type: one word and its ranked neighborhood. Produced by
-`packages/generation/scripts/gen_word.py` (`pnpm gen:word`), typed `WordPuzzle` in
-`shared/src/types.ts`, served under `mode=word`.
+One word and its ranked neighborhood — what the onboarding tutorial's board is cut from.
+Produced by `packages/generation/scripts/gen_word.py` (`pnpm gen:word`), typed `WordPuzzle`
+in `shared/src/types.ts`, pruned into `web/src/tutorial/scripts/<lang>.word.json` by
+`web/scripts/prune-word-map.mjs`. Never published or served (`puzzle:publish` refuses it).
 
 ```jsonc
 {
   "lang": "fr",
   "word": { "word": "phare", "slug": "phare" },
   "ranks": {                                       // ONE FLAT map
-    "<input-slug>": { "word": "<accented>", "rank": 12, "dq": 231, "freq": 8412 }, ...
+    "<input-slug>": { "word": "<accented>", "rank": 12, "dq": 231 }, ...
   }
 }
 ```
@@ -204,21 +205,7 @@ The second puzzle type: one word and its ranked neighborhood. Produced by
 - **Inner rank-map semantics are the sentence schema's, unchanged**, produced by the ONE
   shared per-secret pipeline (`gen_phrase.walk_secret`): merge walk, #133 confirmation,
   donors, `TOP_K`, `dq`, collisions. Rank 0 carries no `dq`.
-- **`freq` — the group's corpus rarity: the 1-based position, in the frequency-ordered
-  EXISTENCE SET (distinct slugs), of the group's MOST FREQUENT OWNED KEY** (1 = commonest word
-  the game admits). Read off the reduced file's preserved frequency order
-  (`gen_word.annotate_freq`), over the exact population written to
-  `web/public/vocab/<lang>.json`. An owned key, never a surface another group owns. A GROUP
-  property; present on **every** entry, rank 0 included; absent only for a group with no key in
-  the existence set (a borrowed-vector secret). A map with NO `freq` anywhere is a stale
-  artifact the web REFUSES (`parseWordPuzzle`). **Emitted by `gen_word.py` only.**
-- **The WEB maps `freq` → rarity grade + bonus seconds** (`web/src/game/wordGame.ts`
-  `rarityOf`/`bonusSeconds`), reading it as a **fraction of the corpus** (en 75k vs fr 128k):
-  the shipped number is a corpus fact, what counts as rare is a web tuning. Word mode's board
-  paints stations by that grade (`web/src/game/wordBoard.ts`); there is no semantic clustering.
-- **One flat `ranks`**; no `words`/`holes`/`start`/`start_rank`/`source`. **`WORD_CLAIM_ZONE`
-  (`shared/src/scores.ts`) is pinned to nothing in generation** — `dq` runs to the map's own
-  `TOP_K` edge, so the zone moves with no republish.
+- **One flat `ranks`**; no `words`/`holes`/`start`/`start_rank`/`source`.
 
 ### Vocab metadata (#200/#201)
 
@@ -236,9 +223,7 @@ The second puzzle type: one word and its ranked neighborhood. Produced by
 
 - `shared/src/day.ts` is the ONE 22:00-ET DST-correct day definition (web, handler, publish).
   The **client computes the active day itself**; normal play is ONE fetch:
-  `GET <VITE_API_BASE_URL>/?lang=<lang>&date=<YYYY-MM-DD>[&mode=word]`. `mode` absent or
-  `sentence` = the sentence puzzle, `word` = the word artifact, else 400. Store keys
-  `<date>.<lang>.json` / `<date>.<lang>.word.json`.
+  `GET <VITE_API_BASE_URL>/?lang=<lang>&date=<YYYY-MM-DD>`. Store key `<date>.<lang>.json`.
 - The server serves **any past day** (date-addressed archive, #53) and the **future only
   within +1 day** of its own active day (clock-skew tolerance); beyond → 404. `date`
   missing/malformed → 400. Backend 404 → `noPuzzle` (NO PUZZLE TODAY); any other failure →
@@ -259,11 +244,11 @@ packages agree on each list; `backend:dev` has no CDN and cannot show a drift.
 
 | Route | Forwarded query | Policy |
 | --- | --- | --- |
-| `/` (puzzle, both modes) | `lang`, `date`, `mode` | **CACHE POLICY** allowList: the cache key, and — with no origin-request policy — exactly what reaches the Lambda |
-| `/scores` | `lang`, `date`, `mode`, `id` | origin-request allowList, **caching DISABLED** |
-| `/board` | `lang`, `date`, `mode`, `id` | same |
-| `/round` | `lang`, `date`, `mode` | same |
-| `/history` | `lang`, `mode`, `month` | same |
+| `/` (puzzle) | `lang`, `date` | **CACHE POLICY** allowList: the cache key, and — with no origin-request policy — exactly what reaches the Lambda |
+| `/scores` | `lang`, `date`, `id` | origin-request allowList, **caching DISABLED** |
+| `/board` | `lang`, `date`, `id` | same |
+| `/round` | `lang`, `date` | same |
+| `/history` | `lang`, `month` | same |
 | `/profile` | `id` | same |
 | `/groups` | `id` | same |
 | `/devices`, `/link` | none (empty allowList) | same |
@@ -294,10 +279,11 @@ The live routes then share:
   `x-amz-content-sha256` under any single header mode; the function overwrites the header from
   the TCP peer.) Three packages agree on the header name — a drift is a 500 on every gated write.
 - **Turnstile sits on the request that CREATES state**: device bootstrap, round creation
-  (Word START; the sentence append whose pre-read finds nothing), the link code SEND. A
+  (the append whose pre-read finds nothing), the link code SEND. A
   group write is authenticated, bounded by `GROUPS_MAX`, and not gated. Tokens
   are prefetched into a two-slot single-use queue so a brand-new player's first PLAY (bootstrap
-  + round start = two challenges, deliberately) costs no visible wait. Local: accept-all verifier.
+  + round creation = two challenges, deliberately) costs no visible wait. Local: accept-all
+  verifier.
 - **Clients act on the error CODE, never on the status alone.** What a given code means —
   a verdict that closes a conversation (`round_solved`), a wait (`too_early`), an input to
   correct (`bad_code`), a confirmation to advance to (`would_erase`, `would_switch`) — is each
@@ -329,13 +315,13 @@ The live routes then share:
   **RECONNECT** (primary, lifts the tombstone and lands on `/account/signin`) and **SKIP**
   (removes it; the next deploy button mints fresh).
 - **AN ACCOUNT IS CREATED ON THE DEPLOY BUTTONS ALONE — never on load, never as a side
-  effect** (user-decided 2026-08-24). Six triggers, each a single primary-button tap that
+  effect** (user-decided 2026-08-24). Five triggers, each a single primary-button tap that
   chains its real action behind the bootstrap and reports failure on the full-screen
-  `ErrorScreen` (no retry button; the player returns to the button): sentence gate **PLAY** ·
-  Word **PLAY** · **joining a group** · **creating a group** (its INVITE then shares) ·
-  profile **SAVE** · the link flow's **SEND CODE**. Consequences: the sentence game shows the full rules gate
-  whenever the device has no account (archive days included); the engines never mint — an
-  append/submission resolves the identity it holds or stands down; a tokenless leaderboard /
+  `ErrorScreen` (no retry button; the player returns to the button): the rules gate's **PLAY** ·
+  **joining a group** · **creating a group** (its INVITE then shares) ·
+  profile **SAVE** · the link flow's **SEND CODE**. Consequences: the game shows the full rules gate
+  whenever the device has no account (archive days included); the engine never mints — an
+  append resolves the identity it holds or stands down; a tokenless leaderboard /
   profile editor renders a LOCAL PLACEHOLDER identity from a persisted seed
   (`gameStore.localSeed`, publicId-shaped); **the username is decided locally, then deployed**:
   on acquiring an account the client stores the placeholder name + mark as the profile, only
@@ -347,16 +333,17 @@ The live routes then share:
   pending token → bootstrap → commit); a pending token in storage is retried, not replaced. No
   Web Locks → fail before minting.
 - **Local state follows the identity that owns it** (`web/state/identityScope.ts`): the first
-  acquisition clears nothing; an `accountId` change clears the sentence outbox, transient round
-  loads and private summaries; a `deviceId`-only change clears device-owned state (the Word
-  round); binding an email changes neither. Persisted state is tagged with its owner; every
-  in-flight private request captures the `(accountId, deviceId)` epoch and is aborted/ignored
-  if it changes. Persisted game state lives behind ONE transactional IndexedDB record
+  acquisition clears nothing; an `accountId` change clears the outbox, transient round
+  loads and private summaries; a `deviceId`-only change clears nothing (no local state is
+  owned by a device alone); binding an email changes neither. Persisted state is tagged
+  with its owner; every in-flight private request captures the `(accountId, deviceId)` epoch
+  and is aborted/ignored if it changes. Persisted game state lives behind ONE transactional
+  IndexedDB record
   (`web/state/gamePersistence.ts`); localStorage holds only the device token / tombstone.
 
 ### Sentence round: server-owned log, outbox, derived score (#201/#203/#214)
 
-- **The server owns game state from the first guess**, linked or not. **`POST /round?lang=&date=&mode=`**:
+- **The server owns game state from the first guess**, linked or not. **`POST /round?lang=&date=`**:
   `{token, puzzle}` reads (404 = none for THIS revision), `{token, puzzle, guesses}` appends.
   Every answer — refusals included — carries the full stored state of the PUZZLE ASKED ABOUT
   (`{guesses, createdAt, progress, solved, …}`), never a different revision's log. Archive
@@ -369,7 +356,7 @@ The live routes then share:
 - **Bounds are cross-package constants** (`shared/src/scores.ts`): **`ROUND_GUESS_CAP` = 500**
   raw entries per round, enforced inside the append's own condition (as ROOM — DynamoDB
   conditions have no arithmetic); **`ROUND_WRITE_MIN_MS` = 1000 ms** between writes per player
-  **per daily**, one spelling for the server's condition and the web's pacing, which paces
+  **per round**, one spelling for the server's condition and the web's pacing, which paces
   from the previous ANSWER, not the send. Refusals: 429 `too_fast` (+`Retry-After: 1`, exposed
   by CORS), 409 `round_full`, 409 `round_solved`. Nothing is partially appended.
 - **Local storage is an OUTBOX (#214).** Three values kept apart: **SERVER STATE** (raw log +
@@ -412,12 +399,13 @@ The live routes then share:
   `round_full` at the cap is logged server-side as puzzle-curation signal; a client already at
   the cap spends no request. The `∞` glyph is pixel-art SVG path data in `shared/glyphs.ts`
   (Press Start 2P has none; the OG card loads no system fonts), used by `cardSvg.ts` and the web.
-- **Share token v6** is the sentence format (capped flag + numeric score + trajectory +
-  ticks; a capped token carries no ticks). `decodeLegacyShareTarget` recognizes ONLY sentence
-  versions 1 and 2 (a named list); Word v5 is decoded by its own decoder first.
+- **Share token v6** is the result format (capped flag + numeric score + trajectory +
+  ticks; a capped token carries no ticks). `decodeLegacyShareTarget` recognizes ONLY
+  versions 1 and 2 (a named list); every other version — the retired Word mode's 3–5
+  included — is a flat 404.
 - **EARLY PLAY (#273, user-decided 2026-09-08): after today's result, TOMORROW opens the
   next day's sentence tonight** — beside SHARE, the result screen's ONE onward action
-  (sentence only; from TODAY's result only). The web's dated route reaches `activeDate + 1`
+  (from TODAY's result only). The web's dated route reaches `activeDate + 1`
   (`web/src/langs.ts` `ROUTE_FUTURE_DAYS`), the server's own skew window. **Play stops at the
   FIRST PROGRESS (`holeProgress > 0` on any hole, an exact hit included) or after
   `EARLY_GUESS_CAP` = 3 guesses (`shared/src/scores.ts`), whichever comes first.** The
@@ -432,55 +420,21 @@ The live routes then share:
   (`FlipCountdown`). The log STAYS: the early guesses count as tries, the on-time verdict is
   unchanged (the solving append lands on the day). An early SOLVE is impossible by
   construction (a hit is progress), so the on-time rule never denies an early round a credit.
-  Not done, deliberately: Word mode; a NEXT-DAY preview beyond +1.
+  Not done, deliberately: a NEXT-DAY preview beyond +1.
 - **Storage**: the score table, partition `round#<publicId>`, sort key
-  `<lang>#<mode>#<date>` (language first so a month is one Query), attributes `guesses`,
+  `<lang>#sentence#<date>` (language first so a month is one Query; `sentence` is a fixed
+  segment, the retired daily `mode`'s, kept so stored rows stay addressable — the score
+  rows' `score#<date>#<lang>#sentence` likewise), attributes `guesses`,
   `puzzle`, `createdAt`, `lastWriteAt`, `progress`, `solved`, `version`. Per PLAYER, not per
   day: one hot day partition cannot be split. Nothing reads across players.
 
-### Word round: two writes, owned by a device (#202/#217)
-
-- **Word mode writes TWICE** on the same `/round` record (`mode=word`) — a 60-second run is
-  over before a live board could show it. **START**: Turnstile-gated, stamps `startedAt` from
-  the SERVER clock plus **`startedBy`** (device id + parsed user-agent snapshot) in ONE Map;
-  condition `attribute_not_exists(#sub) OR #p <> :puzzle`, REMOVE the previous unsubmitted log
-  — so a start is a RESTART, and only a SUBMITTED run refuses one (answered 200 with the
-  recorded run). The client shows loading and starts its clock only when the reply lands.
-  **SUBMIT**: one post carrying the whole log, condition
-  `#p = :puzzle AND #by.#dev = :device AND attribute_not_exists(#sub)`; first write wins; a
-  repeat is 200 with what was recorded; another device's stamp → 409 `started_elsewhere`
-  (adopted, closes). **`submittedAt` is the marker, never the log's length** (a 0-claim run
-  records an empty log).
-- **Wait check**: refuse (409 `too_early`, waited out by the client) until
-  `now − startedAt ≥ WORD_START_SECONDS + WORD_MIN_BONUS_SECONDS × claims`
-  (`shared/src/scores.ts` `wordRunMs`/`wordRunFloorMs`); it is the game's own floor — the
-  ladder authors its cheapest rung from the constant and `wordGame.test.ts` pins no rung pays
-  less — so it can never block honest play. Every answer carries the server's `now`; the
-  client anchors an ELAPSED span, never an instant.
-- **Caps**: `WORD_CLAIM_ZONE` claims + `WORD_MISS_CAP` (500) misses; claims are validated
-  against the day's artifact (in the map, inside the zone, at most the board's distinct
-  claimable ranks). Timing is deliberately NOT validated; cheating does not matter here.
-  SUBMIT is the one round path that reads the word artifact; START reads no store.
-- **The screen picks its phase from the server answer + whether THIS device holds the
-  deadline**: submitted → final screen; not started → PLAY; started here with a local
-  deadline → resume / submit; anything else → PLAY as a **confirmed RESTART** naming the device
-  (*Started on iPhone / Chrome. Starting here ends that run.*, button START OVER). The mount
-  read anchors no clock for a run this device does not hold. Cross-device RESUME is not a
-  thing; the daily is one-shot only once SUBMITTED; concurrent devices are last-commit-wins
-  inside the two conditions.
-- **A recorded log settles every local run** (transient; never copied into persisted `tried`),
-  ending any live prompt with `min(localDeadline, now)`. Word mode KEEPS its persisted
-  clock/outbox (losing it loses the whole run). Word's calendar stays LOCAL (#211 gap,
-  explicit). Client engine: `web/state/wordRoundSync.ts`, separate from the sentence engine.
-- Not done, deliberately: one-active-round-per-player, per-IP start rate limits.
-
 ### Server-backed player history (#211, decided 2026-08-23)
 
-- **`POST /history?lang=&mode=[&month=]` → `{ days, solvedDays }`** serves the archive
+- **`POST /history?lang=[&month=]` → `{ days, solvedDays }`** serves the archive
   calendar and the streak for EVERY identity. `month` optional (the game screen wants only
   the collection); body `collection: false` skips the solved-day read (the archive, since
   2026-08-28). No `date` in its allowList.
-- **The calendar has no storage of its own**: one Query over `<lang>#<mode>#<month>-`,
+- **The calendar has no storage of its own**: one Query over `<lang>#sentence#<month>-`,
   projected to `progress`/`solved`, PAGED, never revision-scoped. Client keeps an IN-MEMORY
   cache only and revalidates when a month comes on screen. **Loading is a THIRD status
   (unknown), never "not started"**; a failed read says so and offers to ask again.
@@ -492,9 +446,8 @@ The live routes then share:
   republish never removes a credited day; solving the correction cannot add it twice.
 - **ON TIME means ON THE DAY; late has no gradations** (user-decided 2026-08-23). A round
   earns the streak credit AND the leaderboard row only when the day played IS the day it was
-  played on: ONE server predicate (`rounds.ts` `onTime`), judging a SENTENCE solve by the
-  landing append's arrival and a WORD run by its server-stamped START (its submission is
-  deferred by design). The client makes no comparison: the confirming answer carries the
+  played on: ONE server predicate (`rounds.ts` `onTime`), judging a solve by the landing
+  append's arrival. The client makes no comparison: the confirming answer carries the
   verdict (`credited`); a collection not yet arrived credits and celebrates nothing.
 - Unmetered private read; Turnstile does not fit a navigation read. Monitor, act on the
   account; a separate summary row is the lever if read amplification becomes material.
@@ -518,8 +471,8 @@ The live routes then share:
   `leave`. The erase confirmation is skipped when `stakes.days` (solved days) is 0 — **known
   gap, user's call**: a player with rounds but no solve is erased without a dialog.
 - **The ACTIVE-DAY TRANSFER**, only when the left account is being deleted: for every
-  supported language × mode of the active day, where the adopting account holds no RECORDED
-  PLAY (`guesses.length > 0 || submittedAt exists`, ONE predicate on source and destination)
+  supported language of the active day, where the adopting account holds no RECORDED
+  PLAY (`guesses.length > 0`, ONE predicate on source and destination)
   and the leaving one does, the round row and its score row MOVE, and a moved sentence solve
   credits the collection. Never extended past the active day; two real logs never merge.
 - **GROUP DEPARTURE (#271, replacing the friend merge)**: a deleted account LEAVES EVERY
@@ -563,7 +516,7 @@ The live routes then share:
   (`/account`, `/profile`, the flow); the code prompt; the copy rule — are recorded in the
   web `AGENTS.md` (#204 bullet). Since 2026-09-05 the RETURN door has no row on `/account`
   (sign out, then sign in); it is reached through RECONNECT. Repo-wide consequences: RECONNECT lands on
-  `/account/signin`; SEND CODE is the sixth deploy trigger; **a link signs the account's
+  `/account/signin`; SEND CODE is a deploy trigger; **a link signs the account's
   OTHER devices out** when the left account is deleted (they fail the account-existence check).
   The erase crossroads names what does NOT survive: *Your groups and the rest are lost.*
 - **Infra**: SES domain identity with EasyDKIM in the API's hosted zone; `ses:SendEmail` on
@@ -597,18 +550,17 @@ The live routes then share:
 - **Identity stance**: public id `[a-z2-7]{16}` (what `shared/src/assigned.ts` derives a
   pseudonym and mark from); no unique usernames, no registration; **assume heavy cheating and
   design so it doesn't matter** — global rankings are decorative, trust is the group.
-- **`GET /scores?lang=&date=&mode=&id=`** is READ-ONLY (a POST is 405); `mode` required. The
+- **`GET /scores?lang=&date=&id=`** is READ-ONLY (a POST is 405). The
   histogram is DERIVED from the day's per-player rows at read time: `{ buckets, total,
   bucket }`, one exact band per distinct score, ascending; empty population → `buckets: []`;
   `bucket` is the CALLER's band (`bucket: null` when the population holds no row for them —
   never a number match).
-- **The score row is written by the ROUND route** (the solving append / Word submission),
-  ONE row per `(date, lang, mode, publicId)` carrying the `revision`, **only when `onTime`**.
+- **The score row is written by the ROUND route** (the solving append),
+  ONE row per `(date, lang, publicId)` carrying the `revision`, **only when `onTime`**.
   First write wins within a revision; a new revision replaces the row (no new IP allowance).
-  Population reads do not filter by revision (accepted). The Word claim ceiling is a FIELD
-  check against `WORD_CLAIM_ZONE`; the sentence score has no claimed number left to bound.
+  Population reads do not filter by revision (accepted).
 - **Volume floor**: the write dedups by `HMAC-SHA256(client IP, server secret)` (never a raw
-  IP): at most **5** rows per `(date, lang, mode, ipHash)`, dedup item TTL 48h, counted and
+  IP): at most **5** rows per `(date, lang, ipHash)`, dedup item TTL 48h, counted and
   created in one transaction. A refused row is logged and swallowed — the answer is about the log.
 
 ### Player profile (#188)
@@ -631,7 +583,7 @@ The live routes then share:
   cap of 20 (`GROUP_NAME_MAX_LENGTH`, user-decided 2026-09-14), never empty.
 - The copyable-key backup UI was removed (2026-08-19); #204's email link is the backup.
 - **A RESULT SHARE WEARS ITS PLAYER'S FACE, AND CARRIES NO INVITE (decided 2026-09-05;
-  made unconditional and invite-free 2026-09-10).** Both result screens sign every share
+  made unconditional and invite-free 2026-09-10).** The result screen signs every share
   with the device's account, `/s/<token>/<publicId>` (`shared/src/invite.ts` `sharePath`):
   the card wears the player's mark and name, the page title names them, the page is served
   at the invite's 300s TTL, and the click opens the shared day exactly as a plain link does
@@ -692,7 +644,7 @@ The live routes then share:
 
 ### Leaderboard reads (#190/#206/#271)
 
-- **`/board`** per `(day, lang, mode)`: `GET …[&id=]` = the GLOBAL top 50, anonymous
+- **`/board`** per `(day, lang)`: `GET …[&id=]` = the GLOBAL top 50, anonymous
   (`id` widens with the caller's below-the-cut window; unbound to the caller, deliberately);
   `POST {token, group}` = the group's DAY board, the trusted surface (403 `not_member` for a
   group the caller is not in — an unknown group answers the same); `POST {token, group,
@@ -705,8 +657,8 @@ The live routes then share:
 - **THE PERIOD RULE (`rankPeriod`, ONE spelling for both ends and any later consumer):** each
   day of the range is ranked on its own and pays PODIUM POINTS 3 / 2 / 1 to the first three
   RANKS (a shared first pays both 3; the next rank is then third); then SOLVED DAYS (days with
-  a recorded score); then the TOTAL of the scores in the mode's direction (sentence: fewer
-  tries; Word: more words); publicId last as a row order. Rows equal on all three share a rank.
+  a recorded score); then the TOTAL of the scores (fewer tries first); publicId last as a
+  row order. Rows equal on all three share a rank.
   The range is `periodRange` (`shared/src/groups.ts`): the calendar WEEK, Monday first, and
   the calendar MONTH, both ending on the day addressed. The read is the day board's own
   exact-key batch once per day of the range — score rows only, so a late or capped round
@@ -716,7 +668,7 @@ The live routes then share:
 - **Three states on the day board**: `waiting` (a member with neither a round nor a score;
   never the caller), **`playing`** (#206: a round for the CURRENT revision and no score row —
   exact `countTries` over the FULL artifact read fresh, stored `progress`, ordered by the shared
-  `orderPlaying` with NO rank number; members only, sentence only; a failed read fails the
+  `orderPlaying` with NO rank number; members only; a failed read fails the
   POST), finished. A round that ended without a score (capped, late, IP-refused) stays IN
   PROGRESS — accepted; the fourth state is #224. The caller's own playing row never defeats
   the just-you ghost.
@@ -754,8 +706,8 @@ The live routes then share:
   time — **editing SSM does not change production; a deploy promotes it.** The image is built
   from the REPO ROOT against the root `.dockerignore`, whose whitelist must name each
   re-included directory outright — **a new workspace package needs a line there too.**
-- The podium ranking is the bot's own dense ordering, not `shared/src/leaderboard.ts`'s. It
-  reads both share codecs but RECORDS only sentence results. Everything else: its `AGENTS.md`.
+- The podium ranking is the bot's own dense ordering, not `shared/src/leaderboard.ts`'s.
+  Everything else: its `AGENTS.md`.
 
 ---
 

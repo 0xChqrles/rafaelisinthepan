@@ -16,16 +16,13 @@
 // acknowledgement: `null` here means the emoji stands in (`domain/ingest.ts`).
 
 import type { GroupConfig } from '../config/groupConfig';
-import type { ShareFacts } from '../domain/reactions';
-import { FORM_DAYS, buildShareContext, type ShareContext } from '../domain/shareContext';
+import { FORM_DAYS, buildShareContext } from '../domain/shareContext';
 import type { Declaration, DeclarationStore } from '../domain/declarations';
 import type { Log } from '../log';
 import { FACT_JUDGE_SYSTEM, chooseLine } from './lineJudge';
 import { buildSystemPrompt } from './personality';
 import { writeCandidate, type CandidateShape } from './podiumComments';
 import type { LlmProvider } from './types';
-
-export type { ShareFacts } from '../domain/reactions';
 
 // Where the facts come from: the day's rows and the group's window before it — and what
 // the player wrote around the share, when the caller had it to give (`ingest.ts` says when).
@@ -57,17 +54,13 @@ const SHAPE: CandidateShape = { maxChars: COMMENTARY_MAX_CHARS, refuse: () => nu
 // What the player wrote around the share, when it is in the facts (`ShareCommentDeps.said`).
 const SAID = `If the facts carry "said", that is what the player wrote with their share: when it asks you something or says something worth an answer, your line answers it — in place of the commentary, not on top of it, at the same length.`;
 
-const TASK = (mode: ShareFacts['mode']) =>
-  mode === 'word'
-    ? `Task: react in one short line to the WORD MODE result below, as a message in the group. The score is how many words they named from one word's neighbourhood against a countdown, where rarer words earn more time; MORE is better, there is no cap; a typical run names about ten, a good one twenty or more. ${SAID} Plain text only, no quotes. Never name the word.`
-    : `Task: comment on the Whippin result below, as a message in the group, from the FACTS given and nothing else. Every number, name, position and comparison you write must come from the facts; you never invent or round one.
+const TASK = `Task: comment on the Whippin result below, as a message in the group, from the FACTS given and nothing else. Every number, name, position and comparison you write must come from the facts; you never invent or round one.
 
 A score on its own says nothing, and neither does a score held against another day's: what it is worth depends on how the others did with the SAME sentence. So the news is where it lands among today's posters — who it beats, who is still above, how the others are doing — and how that compares with where this player usually lands: how many of the others they usually beat, their recent places, their record against the people on today's board (beating somebody they usually lose to, losing to somebody they usually beat). When nobody else has posted, there is nothing to compare it with yet: say so in a few words, with at most where they usually land. When few have posted, say the reading is early. Say what is interesting in these numbers and skip what is not — one thing said well beats three listed; a share with nothing notable gets a plain short acknowledgement. This line is about the result: your own life stays out of it. ${SAID} Speak to the player as "tu" and about the others by name. Plain text only, no quotes, one or two short sentences.`;
 
 export async function generateShareComment(
   provider: LlmProvider,
   group: GroupConfig,
-  facts: ShareFacts,
   deps: ShareCommentDeps,
   log: Log,
   // Spends one unit of the daily CALL ceiling per model call — every candidate and every
@@ -79,36 +72,30 @@ export async function generateShareComment(
     name: group.chat.name,
     language: group.language,
     groupPrePrompt: group.chat.prePrompt,
-    extra: TASK(facts.mode),
+    extra: TASK,
   });
-  let shown: string;
-  let context: ShareContext | null = null;
   // What they wrote with it travels beside the facts, so the judge reads it too: a line
   // that answers it is supported by it.
   const said = deps.said ? { said: deps.said } : {};
-  if (facts.mode === 'word') {
-    shown = JSON.stringify({ player: facts.player, found: facts.claims, ...said });
-  } else {
-    let todayRows: Declaration[];
-    let windowRows: Declaration[];
-    try {
-      [todayRows, windowRows] = await Promise.all([
-        deps.declarations.day(group.id, deps.dayNumber),
-        deps.declarations.range(group.id, deps.dayNumber - FORM_DAYS, deps.dayNumber - 1),
-      ]);
-    } catch (error) {
-      // No facts, no commentary: a line written without them is the empty one this
-      // replaced. The share is recorded either way; the emoji acknowledges it.
-      log.warn({ event: 'share.facts_failed', error: (error as Error).message }, 'could not read the facts; the emoji stands in');
-      return null;
-    }
-    context = buildShareContext({ group, dayNumber: deps.dayNumber, sender: deps.sender, todayRows, windowRows });
-    if (!context) {
-      log.warn({ event: 'share.facts_missing' }, 'the share is not on the board; the emoji stands in');
-      return null;
-    }
-    shown = JSON.stringify({ ...context, ...said });
+  let todayRows: Declaration[];
+  let windowRows: Declaration[];
+  try {
+    [todayRows, windowRows] = await Promise.all([
+      deps.declarations.day(group.id, deps.dayNumber),
+      deps.declarations.range(group.id, deps.dayNumber - FORM_DAYS, deps.dayNumber - 1),
+    ]);
+  } catch (error) {
+    // No facts, no commentary: a line written without them is the empty one this
+    // replaced. The share is recorded either way; the emoji acknowledges it.
+    log.warn({ event: 'share.facts_failed', error: (error as Error).message }, 'could not read the facts; the emoji stands in');
+    return null;
   }
+  const context = buildShareContext({ group, dayNumber: deps.dayNumber, sender: deps.sender, todayRows, windowRows });
+  if (!context) {
+    log.warn({ event: 'share.facts_missing' }, 'the share is not on the board; the emoji stands in');
+    return null;
+  }
+  const shown = JSON.stringify({ ...context, ...said });
   let refused: string[] = [];
   for (let round = 1; round <= ROUNDS; round += 1) {
     const content =

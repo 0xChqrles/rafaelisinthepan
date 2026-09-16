@@ -1,10 +1,9 @@
 // Invisible Cloudflare Turnstile (#170): the ONLY module that knows Turnstile exists —
-// the analytics.ts pattern. Creating an IDENTITY and creating a sentence/Word round each
-// need their own fresh token, verified server-side; the widget is invisible, so there is
-// nothing to render. A brand-new player's first action therefore consumes TWO single-use
-// tokens back-to-back. Both are prefetched while the puzzle/rules gate loads, never at app
-// startup. A sentence-round failure retries silently with its sync queue; Word mode reports
-// a failed PLAY because no server clock was started.
+// the analytics.ts pattern. Creating an IDENTITY and creating a round each need their own
+// fresh token, verified server-side; the widget is invisible, so there is nothing to
+// render. A brand-new player's first action therefore consumes TWO single-use tokens
+// back-to-back. Both are prefetched while the puzzle loads, never at app startup. A
+// round-creation failure retries silently with its sync queue.
 //
 // **The site key MUST be provisioned as an INVISIBLE widget** — Cloudflare's default is
 // "Managed", which is not a stricter version of the same thing but a different widget: it
@@ -115,17 +114,15 @@ function discardStalePrefetches(now = Date.now()): void {
   prefetched = prefetched.filter((held) => now - held.at < PREFETCH_MAX_AGE_MS);
 }
 
-// Start challenges NOW, so they are in hand before the player acts (#203/#216). Both places
-// that need one are moments the player is reading rather than playing — the sentence puzzle
-// loading, and Word mode's rules gate — and in Word mode round start IS clock start, so a
-// bot check landing exactly then costs real seconds on a 60-second game.
+// Start challenges NOW, so they are in hand before the player acts (#203/#216): on the
+// screens whose button will need one, while the player is still reading them.
 //
 // Fire-and-forget by design: a failure here is not a failure of anything, because the
 // caller that actually needs a token mints a fresh one when the held one is stale or
 // rejected. Cheap to call repeatedly — live prefetches are left alone.
 //
 // Fill the held-token queue to `count`. A first action with no device identity asks for
-// two: bootstrap consumes one, then round creation/start consumes the next. Repeated screen
+// two: bootstrap consumes one, then round creation consumes the next. Repeated screen
 // effects only top up the queue, and the cap keeps a programming error from spawning an
 // arbitrary number of invisible widgets.
 export function prefetchTurnstileTokens(
@@ -148,8 +145,7 @@ export function prefetchTurnstileTokens(
 }
 
 // One fresh token for one write. Rejects when unconfigured, blocked, errored or timed out —
-// the caller treats every rejection the same way (no write, no message; Word mode's PLAY is
-// the one exception and says so on screen).
+// the caller treats every rejection the same way (no write, no message).
 //
 // A PREFETCHED challenge is consumed here, and consumed EXACTLY ONCE: a Turnstile token is
 // single-use, so handing the same one to two writes would have the second refused 403 by

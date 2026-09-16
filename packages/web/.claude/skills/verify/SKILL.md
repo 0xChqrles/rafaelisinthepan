@@ -43,14 +43,14 @@ open http://localhost:5199/en
       // version must match GAME_PERSIST_VERSION (src/state/gameStore.ts); a mismatch
       // just runs migratePersisted, which fills every missing field, so `onboarded`
       // is all the seed needs.
-      tx.objectStore('state').put({ version: 18, state: { onboarded: true } }, 'game');
+      tx.objectStore('state').put({ version: 19, state: { onboarded: true } }, 'game');
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     };
   }));
   ```
 - The SERVER owns a sentence round's log since #214 — what persists locally is only
-  the unacknowledged OUTBOX (and Word mode's clock/outbox). To restart a round,
+  the unacknowledged OUTBOX. To restart a round,
   restart `pnpm backend:dev` (its in-memory rounds AND devices reset — the app then
   shows START FRESH, exactly like a wiped production table) or use a fresh browser
   context.
@@ -72,8 +72,8 @@ Useful hooks:
 
 - Live count / score watermark: `.progress-background` text.
 - Persisted state: IndexedDB `whippin-game` → object store `state`, key `game` →
-  `.state.outbox` (unacknowledged sentence guesses) / `.state.wordRounds` (the #214
-  rounds map and `solvedDays` no longer exist).
+  `.state.outbox` (unacknowledged sentence guesses; the #214 rounds map and
+  `solvedDays` no longer exist).
 - SR live region: `.sr-only[role="status"]` text.
 - Reduced motion: `page.emulateMedia({ reducedMotion: 'reduce' })` (global CSS
   collapses durations, never removes animations; standalone infinite decorations

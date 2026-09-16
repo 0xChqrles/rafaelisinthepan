@@ -6,12 +6,9 @@ import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   type Puzzle,
-  type WordPuzzle,
   anonName,
   blankAvatar,
-  dateForDayNumber,
   encodeResult,
-  encodeWordResult,
   groupCardPath,
   groupLandingPath,
   shareCardPath,
@@ -19,7 +16,7 @@ import {
   GROUP_SEGMENT,
 } from '@whippin/shared';
 import { createHandler, type HandlerDeps } from './handler';
-import { renderCardPng, renderGroupCardPng, renderWordCardPng } from './ogCard';
+import { renderCardPng, renderGroupCardPng } from './ogCard';
 import { memoryGroupStore } from './memoryGroupStore';
 import type { ProfileRecord, ProfileStore } from './profileStore';
 import { LAMBDA_MAX_RESPONSE_BYTES, envelopeBytes, type FnUrlEvent } from './respond';
@@ -30,7 +27,7 @@ import type { PuzzleStore } from './store';
 vi.mock('./ogCard', async () => {
   const actual = await vi.importActual<typeof import('./ogCard')>('./ogCard');
   const stub = () => vi.fn(async () => Buffer.from([0x89, 0x50, 0x4e, 0x47]));
-  return { ...actual, renderCardPng: stub(), renderGroupCardPng: stub(), renderWordCardPng: stub() };
+  return { ...actual, renderCardPng: stub(), renderGroupCardPng: stub() };
 });
 
 // A minimal but schema-valid puzzle, keyed by the date the fixed clock resolves to.
@@ -66,24 +63,10 @@ const ORIGIN = 'https://whippin.example';
 // +2 days — so the handler's future guard (not store emptiness) is what rejects +2.
 const PUBLISHED_FR = new Set([ACTIVE_DATE, PAST_30, NEXT_DAY, DAY_AFTER_NEXT]);
 
-// Word mode's #154 artifact for the same days (#156): served by the same endpoint under
-// `mode=word`, from its own store key.
-const WORD_PUZZLE: WordPuzzle = {
-  lang: 'fr',
-  word: { word: 'forêt', slug: 'foret' },
-  ranks: {
-    foret: { word: 'forêt', rank: 0 },
-    bois: { word: 'bois', rank: 1, dq: 255 },
-  },
-};
-
 function fakeStore(): PuzzleStore {
   return {
     async getPuzzle(date, lang) {
       return PUBLISHED_FR.has(date) && lang === 'fr' ? PUZZLE : null;
-    },
-    async getWordPuzzle(date, lang) {
-      return PUBLISHED_FR.has(date) && lang === 'fr' ? WORD_PUZZLE : null;
     },
     async getSlice() {
       return null;
@@ -137,7 +120,6 @@ function oversizedHandler() {
   return makeHandler({
     store: {
       async getPuzzle(date, lang) { return date === ACTIVE_DATE && lang === 'fr' ? puzzle : null; },
-      async getWordPuzzle() { return null; },
       async getSlice() { return null; },
     },
   });
@@ -210,67 +192,6 @@ describe('puzzle endpoint — date-addressed (GET /?lang=&date=)', () => {
     expect(res.headers['Access-Control-Allow-Origin']).toBe(ORIGIN);
   });
 
-  // --- Word mode (#156): the same endpoint serves the #154 artifact under mode=word,
-  // with the sentence contract's date-addressing, 404 semantics and caching.
-  it('mode=word serves the word artifact for the (date, lang), unchanged', async () => {
-    const res = await makeHandler()(
-      event({ query: { lang: 'fr', date: ACTIVE_DATE, mode: 'word' } }),
-    );
-    expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body)).toEqual(WORD_PUZZLE);
-    expect(res.headers['Cache-Control']).toContain('s-maxage=31536000');
-  });
-
-  it('mode=sentence (explicit) serves the sentence puzzle', async () => {
-    const res = await makeHandler()(
-      event({ query: { lang: 'fr', date: ACTIVE_DATE, mode: 'sentence' } }),
-    );
-    expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body)).toEqual(PUZZLE);
-  });
-
-  it('an unknown mode -> 400 bad_request (protocol violation)', async () => {
-    const res = await makeHandler()(
-      event({ query: { lang: 'fr', date: ACTIVE_DATE, mode: 'sonnet' } }),
-    );
-    expect(res.statusCode).toBe(400);
-    expect(JSON.parse(res.body).error).toBe('bad_request');
-  });
-
-  it('a missing word artifact -> clean 404, even when the sentence day exists', async () => {
-    const handler = makeHandler({
-      store: {
-        async getPuzzle() {
-          return PUZZLE;
-        },
-        async getWordPuzzle() {
-          return null;
-        },
-        async getSlice() {
-          return null;
-        },
-      },
-    });
-    const res = await handler(event({ query: { lang: 'fr', date: ACTIVE_DATE, mode: 'word' } }));
-    expect(res.statusCode).toBe(404);
-    expect(JSON.parse(res.body).error).toBe('not_found');
-  });
-
-  it('mode=word keeps the future guard: active day +2 -> 404 before the store', async () => {
-    const res = await makeHandler()(
-      event({ query: { lang: 'fr', date: DAY_AFTER_NEXT, mode: 'word' } }),
-    );
-    expect(res.statusCode).toBe(404);
-  });
-
-  it('mode=word serves any archive past day', async () => {
-    const res = await makeHandler()(
-      event({ query: { lang: 'fr', date: PAST_30, mode: 'word' } }),
-    );
-    expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body)).toEqual(WORD_PUZZLE);
-  });
-
   it('missing lang -> 400 bad_request', async () => {
     const res = await makeHandler()(event({}));
     expect(res.statusCode).toBe(400);
@@ -287,9 +208,6 @@ describe('puzzle endpoint — date-addressed (GET /?lang=&date=)', () => {
     const handler = createHandler({
       store: {
         async getPuzzle() {
-          throw new Error('s3 boom');
-        },
-        async getWordPuzzle() {
           throw new Error('s3 boom');
         },
         async getSlice() {
@@ -462,31 +380,6 @@ describe('share-card /og route — lang passthrough (#59)', () => {
   });
 });
 
-describe('word-mode share routes (#156)', () => {
-  // 12 claims broken down by rarity (v5): the page's headline is the counts' sum.
-  const wordToken = encodeWordResult({
-    lang: 'fr',
-    dayNumber: 20638,
-    counts: [7, 3, 1, 1, 0],
-    word: 'forêt',
-  });
-
-  it('/s/<word token> serves the share page, click-through to the word route', async () => {
-    const res = await makeHandler()(event({ path: `/s/${wordToken}` }));
-    expect(res.statusCode).toBe(200);
-    expect(res.headers['Content-Type']).toMatch(/text\/html/);
-    // The token names the day; the page sends the reader to that day's WORD route.
-    expect(res.body).toContain(`/fr/word/${dateForDayNumber(20638)}`);
-    expect(res.body).toContain('12 mots');
-  });
-
-  it('/og/<word token>.png renders a PNG', async () => {
-    const res = await makeHandler()(event({ path: `/og/${wordToken}.png` }));
-    expect(res.statusCode).toBe(200);
-    expect(res.headers['Content-Type']).toMatch(/image\/png/);
-  });
-});
-
 // CONTRACT (#271): `/g/<groupId>` is the link a member SHARES, so the server owns it — the
 // page a chat unfurls carries the group's name and its members' marks, and it bounces a
 // human onto the SPA landing that actually records the membership. The paths come from
@@ -611,7 +504,6 @@ describe('a signed share (the result wearing its player)', () => {
     trajectory: [8, 8, 33, 33, 70, 100],
     solvedAt: [3, 6, 5],
   });
-  const wordToken = encodeWordResult({ lang: 'fr', dayNumber: 20638, counts: [7, 3, 1, 1, 0], word: 'forêt' });
   const stored = (row: ProfileRecord | null, fails = false, live = true): ProfileStore => ({
     async get() {
       if (fails) throw new Error('profile store is down');
@@ -636,7 +528,7 @@ describe('a signed share (the result wearing its player)', () => {
     expect(res.headers['Cache-Control']).toBe('public, max-age=300');
   });
 
-  it('renders the signed card from the stored profile, both modes', async () => {
+  it('renders the signed card from the stored profile', async () => {
     const profiles = stored({ publicId: ID, name: 'Chqrles', avatar: '' });
     const handler = makeHandler({ profiles });
     const sentence = await handler(event({ path: shareCardPath(token, ID) }));
@@ -647,21 +539,14 @@ describe('a signed share (the result wearing its player)', () => {
       name: 'Chqrles',
       avatar: null,
     });
-    const word = await handler(event({ path: shareCardPath(wordToken, ID) }));
-    expect(word.statusCode).toBe(200);
-    expect(renderWordCardPng).toHaveBeenLastCalledWith(expect.objectContaining({ word: 'forêt' }), {
-      publicId: ID,
-      name: 'Chqrles',
-      avatar: null,
-    });
   });
 
   it('names the ASSIGNED identity for a signer who never customized one', async () => {
     const res = await makeHandler({ siteOrigin: ORIGIN, profiles: stored(null) })(
-      event({ path: sharePath(wordToken, ID) }),
+      event({ path: sharePath(token, ID) }),
     );
-    expect(res.body).toContain(`<title>${anonName(ID)} · Whippin AI 2026-07-04 — 12 mots</title>`);
-    expect(res.body).toContain(`location.replace("${ORIGIN}/fr/word/2026-07-04")`);
+    expect(res.body).toContain(`<title>${anonName(ID)} · Whippin AI 2026-07-04 — 6 tries</title>`);
+    expect(res.body).toContain(`location.replace("${ORIGIN}/en/2026-07-04")`);
   });
 
   it('a deleted signer leaves the PLAIN share: no face, the click into the game', async () => {

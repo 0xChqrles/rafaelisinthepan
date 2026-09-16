@@ -1,4 +1,4 @@
-// The French onboarding script (#51, re-arced by #155; rarity ending 2026-08-11) — same
+// The French onboarding script (#51, re-arced by #155) — same
 // one-board lesson arc as en.ts (see the header there). A French extra it teaches for
 // free: accented display words are typed UNACCENTED, which the find step forces (the
 // ladder words float accented).
@@ -12,9 +12,7 @@
 //     --out packages/web/src/tutorial/scripts/fr.word.json --top 150 --keep neige
 //
 // (the prune keeps the word, the top-150 groups — the committed zone — and the group of
-// the `--keep` word, the lesson's deliberately-outside "far" guess). The committed map
-// predates #163's `freq` (no entry carries it — fine, the ladder teaches the GRADES, not
-// this board's data).
+// the `--keep` word, the lesson's deliberately-outside "far" guess).
 //
 // TROPIQUES replaced PHARE on findings 2026-08-04 (phare is a homonym, and its
 // neighborhood read as two definitions at once). The
@@ -28,8 +26,7 @@
 // hint stays — snow is INTUITIVELY the anti-tropics, climate-adjacent but far, on a
 // READABLE scale), MISS (guitare, which the real map does not rank at all), and
 // improvement (lagon, 22: closer, hint moves). The player then finds their way back to
-// TROPIQUES, and the ending states the game's other core concept — word RARITY, the
-// five-grade ladder — before JOUER ends the lesson.
+// TROPIQUES, and JOUER ends the lesson.
 import type { WordPuzzle } from '@whippin/shared';
 import type { TutorialScript } from '../script';
 import artifact from './fr.word.json';
@@ -72,9 +69,8 @@ const script: TutorialScript = {
     { kind: 'guess', expect: 'guitare', copyKey: 'tutGuessMiss' },
     { kind: 'guess', expect: 'lagon', copyKey: 'tutGuessCloser' },
     { kind: 'find', target: word.slug, copyKey: 'tutFind', nudgeKey: 'tutFindNudge' },
-    // La fin : le second concept du jeu — chaque mot a une RARETÉ, dite sur l'échelle des
-    // cinq grades — puis JOUER.
-    { kind: 'rarity', introCopyKey: 'tutRarityIntro', ladderCopyKey: 'tutRarity' },
+    // La fin : le mot trouvé reste, sans commentaire, et JOUER termine la leçon.
+    { kind: 'play' },
   ],
 };
 

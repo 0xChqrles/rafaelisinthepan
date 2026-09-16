@@ -23,7 +23,6 @@ import { seedDevice, type TestDevice } from './testDevice';
 
 const emptyStore: PuzzleStore = {
   getPuzzle: async () => null,
-  getWordPuzzle: async () => null,
   getSlice: async () => null,
 };
 
@@ -63,7 +62,7 @@ function postBody(query: Record<string, string>, body: unknown): FnUrlEvent {
 const post = (query: Record<string, string>, me: TestDevice) =>
   postBody(query, { token: me.token });
 
-const MONTH = { lang: 'fr', mode: 'sentence', month: '2026-08' };
+const MONTH = { lang: 'fr', month: '2026-08' };
 
 // Seed a stored round the way an accepted append leaves it — the summary attributes
 // beside the log, which is exactly what #203 writes.
@@ -78,7 +77,6 @@ async function playDay(
   await rounds.append({
     date,
     lang,
-    mode: 'sentence',
     publicId,
     puzzle: 'rev1',
     guesses: ['bois'],
@@ -106,7 +104,7 @@ describe('history route (#211)', () => {
     expect(result.body).not.toContain('bois');
   });
 
-  it('is scoped to the asked-for month, language and mode', async () => {
+  it('is scoped to the asked-for month and language', async () => {
     const { handler, roundStore, me } = await makeHandler();
     await playDay(roundStore, me.accountId, '2026-08-03', 40, false);
     await playDay(roundStore, me.accountId, '2026-09-03', 50, false); // another month
@@ -136,7 +134,7 @@ describe('history route (#211)', () => {
     await history.recordSolvedDay({ publicId: me.accountId, lang: 'fr', day: 20_669 });
 
     const body = JSON.parse(
-      (await handler(post({ lang: 'fr', mode: 'sentence' }, me))).body,
+      (await handler(post({ lang: 'fr' }, me))).body,
     ) as PlayerHistory;
     expect(body).toEqual({ days: [], solvedDays: [20_669] });
   });
@@ -178,12 +176,12 @@ describe('history route (#211)', () => {
     expect(JSON.parse(result.body).error).toBe('method_not_allowed');
   });
 
-  it('refuses a malformed token, an unsupported language, a missing mode and a bad month', async () => {
+  it('refuses a malformed token, a missing or unsupported language and a bad month', async () => {
     const { handler, me } = await makeHandler();
     const bad = [
       postBody(MONTH, { token: 'nope' }),
       post({ ...MONTH, lang: 'zz' }, me),
-      post({ lang: 'fr', month: '2026-08' }, me),
+      post({ month: '2026-08' }, me),
       post({ ...MONTH, month: '2026-13' }, me),
       post({ ...MONTH, month: '2026-08-03' }, me),
     ];

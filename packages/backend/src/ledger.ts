@@ -78,8 +78,8 @@ export async function appendPublished(entry: PublishedEntry, file = publishLedge
 }
 
 // ---------------------------------------------------------------------------------------
-// `pnpm puzzle:ledger --s3`: rebuild the ledger from the bucket — every sentence puzzle
-// object (`<day>.<lang>.json`; word artifacts and slices are not recorded), `publishedAt`
+// `pnpm puzzle:ledger --s3`: rebuild the ledger from the bucket — every puzzle object
+// (`<day>.<lang>.json`; no other object in the bucket is a published day), `publishedAt`
 // being the object's own last-modified instant. The bucket is the truth of what is served;
 // the file is its readable record.
 

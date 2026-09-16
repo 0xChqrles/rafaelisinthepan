@@ -32,7 +32,7 @@ import FlipCountdown from '../components/FlipCountdown';
 import { earlyLocked } from '../game/earlyPlay';
 import { chargeForRank, initialOf, replayCharge } from '../game/charge';
 import { navigate } from '../routing';
-import { pathForDay, pathForMode } from '../langs';
+import { pathForDay, pathForGame } from '../langs';
 import { buildHistory } from '../game/history';
 import type { HistoryStop } from '../game/history';
 import { t, ariaHoleHistory, srHoleCharge, srHoleInitial, srHoleResult } from '../i18n';
@@ -235,7 +235,6 @@ function Round({
   const load = useRoundSync({
     roundKey,
     lang,
-    mode: 'sentence',
     date: dateForDayNumber(dayNumber),
     // The round's identity on the wire (#203): the version this puzzle was published as.
     revision,
@@ -1149,7 +1148,7 @@ function Round({
               /* THE NIGHT'S LOCK (#273): the countdown to the flip takes the keyboard's
                  place — the whole statement, in the keys' own footprint, so nothing above
                  it moves when the keys go or when they come back. */
-              <FlipCountdown lang={lang} onToday={() => navigate(pathForMode(lang, 'sentence'))} />
+              <FlipCountdown lang={lang} onToday={() => navigate(pathForGame(lang))} />
             ) : (
               <div
                 className={`kb-exit${keyboardLeaving ? ' leaving' : ''}`}

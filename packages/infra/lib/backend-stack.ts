@@ -135,7 +135,7 @@ export class BackendStack extends Stack {
     });
 
     // ── DynamoDB: per-player daily score rows (#169/#187) ────────────────────
-    // One first-write-wins row per (date, lang, mode, publicId) — the day partition IS
+    // One first-write-wins row per (date, lang, publicId) — the day partition IS
     // the population, read back whole by one Query — plus one short-lived HMAC-IP dedup
     // item in its own partition. Every access names its exact keys; no scan or secondary
     // index is needed. The composite (pk, sk) schema replaced #169's single-key
@@ -356,11 +356,9 @@ export class BackendStack extends Stack {
     }
 
     // ── CloudFront: CDN in front of the Function URL ──────────────────────────
-    // Cache key = request path (`/` vs `/today`) + the `lang`, `date` and `mode` query
-    // strings — the puzzle URL is DATE-addressed (the client computes the active 22:00-ET
-    // day via the shared day.ts and names it) and `mode` picks which of the two dailies it
-    // asks for (#156: absent/`sentence` = the sentence puzzle, `word` = the #154 artifact).
-    // The origin drives the TTL via Cache-Control: the
+    // Cache key = request path (`/` vs `/today`) + the `lang` and `date` query strings —
+    // the puzzle URL is DATE-addressed (the client computes the active 22:00-ET day via the
+    // shared day.ts and names it). The origin drives the TTL via Cache-Control: the
     // puzzle is held long on the CDN (s-maxage; `pnpm puzzle:publish --s3` invalidates on
     // republish) with a short browser max-age, while `/today` (diagnostic) is `no-store`.
     // minTtl 0 lets `no-store`/the short 404 TTL through; maxTtl allows the year-long
@@ -369,18 +367,15 @@ export class BackendStack extends Stack {
     // **Every query string the handler READS has to be listed here.** A cache policy is
     // both halves of the contract: absent an origin request policy — and there is none on
     // this behavior — CloudFront forwards to the origin EXACTLY the values in the cache
-    // key, so an unlisted parameter is not merely uncached, it never reaches the Lambda.
-    // Leaving `mode` off did both at once: `/?lang&date` and `/?lang&date&mode=word`
-    // collapsed onto one entry held for a year, and the origin never saw the mode, so
-    // every Word mode request came back as that day's SENTENCE puzzle — which the client
-    // rejects as a malformed word artifact. It cannot show up in local development either
-    // (`pnpm backend:dev` is the handler with no CDN in front of it), so the rule is
-    // written down rather than left to be rediscovered.
+    // key, so an unlisted parameter is not merely uncached, it never reaches the Lambda:
+    // two requests differing only by it collapse onto one entry held for a year. It cannot
+    // show up in local development either (`pnpm backend:dev` is the handler with no CDN in
+    // front of it), so the rule is written down rather than left to be rediscovered.
     const cachePolicy = new cloudfront.CachePolicy(this, 'PuzzleCachePolicy', {
       cachePolicyName: 'WhippinDailyPuzzle',
       comment:
-        'Daily puzzle: cache key = path + ?lang + ?date + ?mode; TTL from origin Cache-Control.',
-      queryStringBehavior: cloudfront.CacheQueryStringBehavior.allowList('lang', 'date', 'mode'),
+        'Daily puzzle: cache key = path + ?lang + ?date; TTL from origin Cache-Control.',
+      queryStringBehavior: cloudfront.CacheQueryStringBehavior.allowList('lang', 'date'),
       headerBehavior: cloudfront.CacheHeaderBehavior.none(),
       cookieBehavior: cloudfront.CacheCookieBehavior.none(),
       minTtl: Duration.seconds(0),
@@ -392,7 +387,7 @@ export class BackendStack extends Stack {
 
     // `/scores` is live data: use AWS's managed zero-TTL policy for GET and POST alike.
     // CloudFront rejects a CUSTOM policy whose min/default/max TTL are all zero when that
-    // same policy includes any cache-key query strings. Forward the three protocol values
+    // same policy includes any cache-key query strings. Forward the protocol values
     // through the origin policy instead: they reach Lambda but remain outside a cache key
     // that can never be used.
     const scoreCachePolicy = cloudfront.CachePolicy.CACHING_DISABLED;
@@ -400,8 +395,8 @@ export class BackendStack extends Stack {
     // The Turnstile-gated WRITES need TWO things at the origin, and no single header mode
     // carries both — which is the whole reason this function exists. It was the score POST
     // when it was written; since #203 that POST is retired and the writes are `/round`'s
-    // (both modes' round START verifies a challenge against the connecting address, and a
-    // finished round records the score row the POST used to, IP-metered the same way), so
+    // (round creation verifies a challenge against the connecting address, and a finished
+    // round records the score row the POST used to, IP-metered the same way), so
     // the function is associated with BOTH behaviors.
     //
     //  - The viewer's `x-amz-content-sha256`: OAC cannot sign a POST to a Lambda URL
@@ -468,7 +463,7 @@ export class BackendStack extends Stack {
         cookieBehavior: cloudfront.OriginRequestCookieBehavior.none(),
       });
 
-    // `id` joined the three addressing queries with #203: the read reports the CALLER's own
+    // `id` joined the addressing queries with #203: the read reports the CALLER's own
     // band, so the handler needs the publicId naming them (never the secret — that would be
     // a query string, which no route here puts one in). An unlisted parameter never reaches
     // the Lambda at all, so the standing would silently go blank for everybody.
@@ -476,7 +471,7 @@ export class BackendStack extends Stack {
       'ScoreOriginRequestPolicy',
       'WhippinLiveScoresOrigin',
       'Live scores: forward exact queries and Lambda-URL-safe headers outside cache.',
-      ['lang', 'date', 'mode', 'id'],
+      ['lang', 'date', 'id'],
     );
 
     // `/profile` (#188) reads ONE query, the public id a board row resolves by.
@@ -498,24 +493,24 @@ export class BackendStack extends Stack {
       ['id'],
     );
 
-    // `/board` (#190) reads FOUR: `lang`/`date`/`mode` address the day's board, and `id`
-    // (the caller's PUBLIC id, never the secret) widens the global GET with a
-    // below-the-cut window. A group's boards (#271) name the group in the POST BODY.
+    // `/board` (#190) reads THREE: `lang`/`date` address the day's board, and `id` (the
+    // caller's PUBLIC id, never the secret) widens the global GET with a below-the-cut
+    // window. A group's boards (#271) name the group in the POST BODY.
     const boardOriginRequestPolicy = liveOriginRequestPolicy(
       'BoardOriginRequestPolicy',
       'WhippinLeaderboardOrigin',
-      'Leaderboard: forward the four board queries and Lambda-URL-safe headers outside cache.',
-      ['lang', 'date', 'mode', 'id'],
+      'Leaderboard: forward the three board queries and Lambda-URL-safe headers outside cache.',
+      ['lang', 'date', 'id'],
     );
 
-    // `/round` (#201) reads THREE — the same day-addressing triple as /scores, since the
-    // guess log is one item per (date, lang, mode, account). The device token travels in
-    // the POST body, never in a query.
+    // `/round` (#201) reads TWO — the same day-addressing pair as /scores, since the guess
+    // log is one item per (date, lang, account). The device token travels in the POST body,
+    // never in a query.
     const roundOriginRequestPolicy = liveOriginRequestPolicy(
       'RoundOriginRequestPolicy',
       'WhippinRoundOrigin',
-      'Round guess log: forward the three addressing queries and Lambda-URL-safe headers outside cache.',
-      ['lang', 'date', 'mode'],
+      'Round guess log: forward the two addressing queries and Lambda-URL-safe headers outside cache.',
+      ['lang', 'date'],
     );
 
     // `/devices` (#216) reads NO query at all — the device token is the auth and it travels
@@ -538,15 +533,15 @@ export class BackendStack extends Stack {
       [],
     );
 
-    // `/history` (#211) reads THREE — `lang`/`mode` name which game, and `month` the
-    // calendar page. NOT `date`: this read is addressed by a MONTH, which is exactly the
-    // sort-key prefix a player's calendar is one Query over. The device token travels in the
-    // POST body like every other private read.
+    // `/history` (#211) reads TWO — `lang` names which daily, and `month` the calendar page.
+    // NOT `date`: this read is addressed by a MONTH, which is exactly the sort-key prefix a
+    // player's calendar is one Query over. The device token travels in the POST body like
+    // every other private read.
     const historyOriginRequestPolicy = liveOriginRequestPolicy(
       'HistoryOriginRequestPolicy',
       'WhippinPlayerHistoryOrigin',
-      'Player history: forward the game + month queries and Lambda-URL-safe headers outside cache.',
-      ['lang', 'mode', 'month'],
+      'Player history: forward the language + month queries and Lambda-URL-safe headers outside cache.',
+      ['lang', 'month'],
     );
 
     // Security response headers for the API. CORS stays owned by the Lambda (it echoes the
@@ -623,8 +618,8 @@ export class BackendStack extends Stack {
       // policy. Each pattern also catches a harmless trailing slash; the handler still
       // accepts only the exact normalized route. Two of them differ, by the one thing that
       // is not shared: the viewer-IP function, wanted wherever the handler needs a TRUSTED
-      // client address. Since #203 that is `/round` — both modes' Turnstile-gated round
-      // START verifies the challenge against it, and a finished round records the day's
+      // client address. Since #203 that is `/round` — its Turnstile-gated round creation
+      // verifies the challenge against it, and a finished round records the day's
       // score row metered by its HMAC — as well as `/scores`, kept because the route's
       // shape is otherwise unchanged. Runs before the cache lookup, so the header it
       // stamps IS a viewer header by the time the origin request policy decides what to

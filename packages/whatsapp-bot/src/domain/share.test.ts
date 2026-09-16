@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dayNumber, encodeResult, encodeWordResult } from '@whippin/shared';
+import { dayNumber, encodeResult } from '@whippin/shared';
 import { findShareTokens, sharesIn, withoutShares } from './share';
 
 const ORIGIN = 'https://whippin.ai';
@@ -49,19 +49,7 @@ describe('share links are deterministic input (#236)', () => {
   it('keeps a capped (∞) run as a share with its flag', () => {
     const t = sentenceToken({ capped: true, solvedAt: [] });
     const [share] = sharesIn(`https://whippin.ai/s/${t}`, ORIGIN);
-    expect(share?.mode === 'sentence' && share.capped).toBe(true);
-  });
-
-  it('decodes a WORD token to its day and claim count, and never carries the word', () => {
-    const word = encodeWordResult({
-      lang: 'fr',
-      dayNumber: dayNumber('2026-09-03'),
-      word: 'phare',
-      counts: [1, 2, 3, 0, 0],
-    });
-    expect(sharesIn(`https://whippin.ai/s/${word}`, ORIGIN)).toEqual([
-      { mode: 'word', token: word, lang: 'fr', dayNumber: dayNumber('2026-09-03'), claims: 6 },
-    ]);
+    expect(share?.capped).toBe(true);
   });
 
   it('ignores garbage', () => {

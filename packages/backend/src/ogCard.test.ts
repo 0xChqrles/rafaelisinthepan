@@ -10,7 +10,6 @@ import type { PuzzleStore } from './store';
 // The card routes never touch the store; stub it so nothing else is exercised.
 const store: PuzzleStore = {
   getPuzzle: async () => null,
-  getWordPuzzle: async () => null,
   getSlice: async () => null,
 };
 const handler = createHandler({ store });

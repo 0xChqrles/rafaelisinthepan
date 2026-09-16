@@ -45,8 +45,7 @@ import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   postRoundBody: vi.fn(),
-  roundUrl: (lang: string, date: string, mode: string) =>
-    `https://api.test/round?lang=${lang}&date=${date}&mode=${mode}`,
+  roundUrl: (lang: string, date: string) => `https://api.test/round?lang=${lang}&date=${date}`,
 }));
 
 // ROUND CREATION is Turnstile-gated (#203): the engine mints a challenge for the append
@@ -120,7 +119,6 @@ function ctx(key: string = KEY, revision: string = REVISION, early = false) {
   return {
     roundKey: key,
     lang: 'fr',
-    mode: 'sentence',
     date: '2026-08-21',
     revision,
     ranks: SECRET_MAP,
@@ -234,10 +232,7 @@ beforeEach(() => {
   };
   identity.beforeChallenge = null;
   identity.signedOut.mockReset();
-  useGameStore.setState(
-    { outbox: {}, wordRounds: {}, roundLoads: {}, activeWordKey: null },
-    false,
-  );
+  useGameStore.setState({ outbox: {}, roundLoads: {} }, false);
 });
 
 afterEach(() => {
@@ -296,8 +291,6 @@ describe('the mount read — what the screen waits on', () => {
         solved: false,
         solvedByAppend: false,
         credited: false,
-        // Word mode's own (#217): a sentence round has no clock, so it names no device.
-        startedBy: null,
       },
     });
     // A READ never writes: the request carries no guesses.
@@ -312,7 +305,7 @@ describe('the mount read — what the screen waits on', () => {
     expect(load()).toEqual({
       status: 'ready',
       puzzle: REVISION,
-      server: { guesses: [], solved: false, solvedByAppend: false, credited: false, startedBy: null },
+      server: { guesses: [], solved: false, solvedByAppend: false, credited: false },
     });
   });
 
@@ -645,7 +638,6 @@ describe('the four refusals', () => {
       // Learned from a refusal, not confirmed on this device's batch: adopted history.
       solvedByAppend: false,
       credited: false,
-      startedBy: null,
     });
     // The guesses it refused are never stored, so keeping them would leave the screen
     // counting tries the recorded score does not.
@@ -737,7 +729,6 @@ describe('the SERVER\'s solve (#203/#214)', () => {
       solved: true,
       solvedByAppend: true,
       credited: false,
-      startedBy: null,
     });
   });
 
@@ -900,7 +891,7 @@ describe('no token, no private fetch (#216)', () => {
     expect(load()).toEqual({
       status: 'ready',
       puzzle: REVISION,
-      server: { guesses: [], solved: false, solvedByAppend: false, credited: false, startedBy: null },
+      server: { guesses: [], solved: false, solvedByAppend: false, credited: false },
     });
   });
 

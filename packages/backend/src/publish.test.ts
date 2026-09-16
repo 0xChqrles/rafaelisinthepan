@@ -46,32 +46,18 @@ describe('planPublish — (day, lang) -> store key + destination', () => {
   it('--s3 with no resolved bucket is rejected (no silent local fallback)', () => {
     expect(() => planPublish({ s3: true }, 'fr', NOON_UTC)).toThrow(/bucket/i);
   });
-
-  // Word mode (#156): the #154 artifact routes under its OWN key — the same key the
-  // readers' getWordPuzzle GETs — so the two dailies can never overwrite each other.
-  it('a word artifact routes to the word key, distinct from the sentence key', () => {
-    const plan = planPublish({ s3: false, day: '2026-07-01' }, 'fr', NOON_UTC, undefined, 'word');
-    expect(plan.key).toBe('2026-07-01.fr.word.json');
-    expect(plan.key).toBe(storeKey('2026-07-01', 'fr', 'word'));
-    expect(plan.key).not.toBe(storeKey('2026-07-01', 'fr'));
-  });
 });
 
-// CONTRACT (#203): a SENTENCE publish also places the derivation slice the round route
+// CONTRACT (#203): a publish also places the derivation slice the round route
 // reads. It is part of the same publish rather than a follow-up, because the backend has
 // NO fallback — a day whose slice is missing answers the day-addressed 404 — and it is
 // keyed exactly like the puzzle so the two describe one daily by construction.
 describe('planPublish — the derivation slice beside the puzzle (#203)', () => {
-  it('plans a slice for a sentence puzzle, keyed like the readers ask for it', () => {
+  it('plans a slice, keyed like the readers ask for it', () => {
     const plan = planPublish({ s3: false, day: '2026-07-01' }, 'fr', NOON_UTC);
     expect(plan.slice).toBe(sliceKey('2026-07-01', 'fr'));
     // Same day, same lang — one publish cannot leave the two describing different dailies.
     expect(plan.key).toBe(storeKey('2026-07-01', 'fr'));
-  });
-
-  it('plans NO slice for a word artifact: Word mode reads its whole map once, at submit', () => {
-    const plan = planPublish({ s3: false, day: '2026-07-01' }, 'fr', NOON_UTC, undefined, 'word');
-    expect(plan.slice).toBeUndefined();
   });
 
   it('carries the slice to S3 too, so a deployed day is never published half-way', () => {

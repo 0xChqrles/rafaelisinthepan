@@ -1,7 +1,7 @@
-// The #190 leaderboard reads on the ONE handler: `/board`, addressed per (day, lang,
-// mode) like everything else.
+// The #190 leaderboard reads on the ONE handler: `/board`, addressed per (day, lang) like
+// everything else.
 //
-//   GET  /board?lang=&date=&mode=[&id=<publicId>] — the GLOBAL top 50, anonymous: the
+//   GET  /board?lang=&date=[&id=<publicId>] — the GLOBAL top 50, anonymous: the
 //     population is public by design (and untrusted by design, #187 — nothing treats it
 //     as truth). `id` is the caller's PUBLIC id — never the device token, so it may
 //     travel in the query — and widens the answer with their own below-the-cut window.
@@ -35,8 +35,7 @@
 // (`countTries` dedups on a guess's rank in EVERY map, which no summary answers — the raw
 // stored log can hold one identity twice whenever two devices merge), so the day POST is
 // the one board read that touches the puzzle store, read FRESH like every other artifact
-// read (#203's rule, puzzleReads.ts). Sentence mode only: a Word run's log reaches the
-// server at submission, so mid-run there is honestly nothing to read.
+// read (#203's rule, puzzleReads.ts).
 //
 // The GLOBAL GET, the period boards and the standing read no puzzle store: a population
 // only ever exists for a published daily (the round route's guards enforce it — it is
@@ -175,7 +174,7 @@ async function loadPlaying(
   key: RoundKey,
   members: readonly string[],
 ): Promise<PlayingScore[]> {
-  if (key.mode !== 'sentence' || !rounds || !puzzles) return [];
+  if (!rounds || !puzzles) return [];
   const [puzzle, stored] = await Promise.all([
     puzzles.getPuzzle(key.date, key.lang),
     rounds.getMany(key, members),
@@ -202,8 +201,8 @@ export async function handleBoard(
   const responseHeaders = { ...cors, ...LIVE_HEADERS };
   const method = event.requestContext?.http?.method ?? 'GET';
 
-  // The same protocol guards as /scores: a supported language, an explicit mode, a real
-  // date no further than one day ahead of the server's own active day.
+  // The same protocol guards as /scores: a supported language and a real date no further
+  // than one day ahead of the server's own active day.
   const params = requireDayParams(event, serverDate, responseHeaders);
   if (!params.ok) return params.response;
   const key: ScoreKey = params.value;
@@ -221,7 +220,7 @@ export async function handleBoard(
         responseHeaders,
       );
     }
-    const ranked = rankBoard(await deps.scores.list(key), key.mode);
+    const ranked = rankBoard(await deps.scores.list(key));
     const cut = cutBoard(ranked);
     const own = id === undefined ? null : boardOwnRows(ranked, cut, id);
     const { dress, live } = await dressRows(deps.profiles, cut, own ?? []);
@@ -306,7 +305,7 @@ export async function handleBoard(
     deps.scores.getMany(key, members),
     loadPlaying(deps.rounds, deps.puzzles, key, members),
   ]);
-  const ranked = rankBoard(rows, key.mode);
+  const ranked = rankBoard(rows);
   const scored = new Set(rows.map((row) => row.publicId));
   // A member the population already ranks is FINISHED, whatever their round row says —
   // the recorded score is the day's final word on them.
@@ -366,7 +365,7 @@ async function readPeriodBoard(
   const days: PeriodDay[] = perDay.flatMap((rows, i) =>
     rows.map((row) => ({ ...row, date: dates[i] })),
   );
-  const ranked = rankPeriod(days, key.mode);
+  const ranked = rankPeriod(days);
   const { dress, live } = await dressRows(deps.profiles, ranked);
   return {
     from: dates[0],
@@ -403,7 +402,7 @@ async function readStandings(
       const row = byId.get(member.publicId);
       return row ? [row] : [];
     });
-    const standing = standingIn(rankBoard(groupRows, key.mode), publicId);
+    const standing = standingIn(rankBoard(groupRows), publicId);
     return standing ? [{ group: group.id, ...standing }] : [];
   });
 }

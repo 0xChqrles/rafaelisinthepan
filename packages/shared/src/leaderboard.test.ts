@@ -23,42 +23,34 @@ const rows = (...scores: number[]): BoardScore[] =>
   scores.map((score, i) => ({ publicId: id(i), score }));
 
 describe('rankBoard', () => {
-  it('sorts best-first per mode: sentence ascending, word descending', () => {
+  it('sorts best-first: fewer tries ranks higher', () => {
     const population = rows(7, 3, 12);
-    expect(rankBoard(population, 'sentence').map((r) => r.score)).toEqual([3, 7, 12]);
-    expect(rankBoard(population, 'word').map((r) => r.score)).toEqual([12, 7, 3]);
+    expect(rankBoard(population).map((r) => r.score)).toEqual([3, 7, 12]);
   });
 
   it('gives tied scores EQUAL ranks, competition style — never a fake ordering', () => {
     // Scores 3, 5, 5, 5, 9 (tries: lower is better): the three 5s all rank 2, and the
     // 9 ranks 5 (everyone strictly ahead, plus one), never 3.
-    const ranked = rankBoard(rows(5, 9, 3, 5, 5), 'sentence');
+    const ranked = rankBoard(rows(5, 9, 3, 5, 5));
     expect(ranked.map((r) => r.rank)).toEqual([1, 2, 2, 2, 5]);
   });
 
-  it('ranks ties identically in word mode (higher is better)', () => {
-    const ranked = rankBoard(rows(10, 25, 25, 4), 'word');
-    expect(ranked.map((r) => r.score)).toEqual([25, 25, 10, 4]);
-    expect(ranked.map((r) => r.rank)).toEqual([1, 1, 3, 4]);
-  });
-
   it('orders inside a tie deterministically (row order, not a ranking claim)', () => {
-    const a = rankBoard([{ publicId: 'b'.repeat(16), score: 5 }, { publicId: 'a'.repeat(16), score: 5 }], 'sentence');
-    const b = rankBoard([{ publicId: 'a'.repeat(16), score: 5 }, { publicId: 'b'.repeat(16), score: 5 }], 'sentence');
+    const a = rankBoard([{ publicId: 'b'.repeat(16), score: 5 }, { publicId: 'a'.repeat(16), score: 5 }]);
+    const b = rankBoard([{ publicId: 'a'.repeat(16), score: 5 }, { publicId: 'b'.repeat(16), score: 5 }]);
     expect(a).toEqual(b);
   });
 });
 
 describe('cutBoard', () => {
   it('returns everyone when the board fits', () => {
-    const ranked = rankBoard(rows(1, 2, 3), 'sentence');
+    const ranked = rankBoard(rows(1, 2, 3));
     expect(cutBoard(ranked)).toEqual(ranked);
   });
 
   it('shows at most 50 rows — nothing folded (user-decided 2026-08-20)', () => {
     const ranked = rankBoard(
       Array.from({ length: 80 }, (_, i) => ({ publicId: id(i), score: i + 1 })),
-      'sentence',
     );
     const cut = cutBoard(ranked);
     expect(cut).toHaveLength(BOARD_TOP_LIMIT);
@@ -73,7 +65,6 @@ describe('cutBoard', () => {
         ...Array.from({ length: 40 }, (_, i) => i + 1),
         ...Array.from({ length: 30 }, () => 77),
       ].map((score, i) => ({ publicId: id(i), score })),
-      'sentence',
     );
     const cut = cutBoard(ranked);
     expect(cut).toHaveLength(BOARD_TOP_LIMIT);
@@ -84,7 +75,6 @@ describe('cutBoard', () => {
 describe('boardWindow / boardOwnRows', () => {
   const ranked = rankBoard(
     Array.from({ length: 100 }, (_, i) => ({ publicId: id(i), score: i + 1 })),
-    'sentence',
   );
 
   it('selects the own row with two neighbors directly above and below', () => {
@@ -125,7 +115,6 @@ describe('boardWindow / boardOwnRows', () => {
         ...Array.from({ length: 40 }, (_, i) => i + 1),
         ...Array.from({ length: 30 }, () => 77),
       ].map((score, i) => ({ publicId: id(i), score })),
-      'sentence',
     );
     const cut = cutBoard(tied);
     // Positions 41-50 of the tie are shown; a member past the cut still gets a window,
@@ -183,7 +172,7 @@ describe('orderPlaying (#206)', () => {
 });
 
 // The #271 PERIOD rule: podium points per day (3/2/1 by competition rank), then solved
-// days, then the total in the mode's direction, publicId last; equal lines share a rank.
+// days, then the total (fewer tries), publicId last; equal lines share a rank.
 describe('rankPeriod (#271)', () => {
   const day = (publicId: string, date: string, score: number): PeriodDay => ({ publicId, date, score });
   const A = 'aaaaaaaaaaaaaaaa';
@@ -192,15 +181,12 @@ describe('rankPeriod (#271)', () => {
   const D = 'dddddddddddddddd';
 
   it('pays podium points per day and ranks by them first', () => {
-    const ranked = rankPeriod(
-      [
-        // Day 1: A first (3), B second (2), C third (1).
-        day(A, '2026-09-07', 3), day(B, '2026-09-07', 5), day(C, '2026-09-07', 9),
-        // Day 2: C first (3), A second (2); B absent.
-        day(C, '2026-09-08', 4), day(A, '2026-09-08', 6),
-      ],
-      'sentence',
-    );
+    const ranked = rankPeriod([
+      // Day 1: A first (3), B second (2), C third (1).
+      day(A, '2026-09-07', 3), day(B, '2026-09-07', 5), day(C, '2026-09-07', 9),
+      // Day 2: C first (3), A second (2); B absent.
+      day(C, '2026-09-08', 4), day(A, '2026-09-08', 6),
+    ]);
     expect(ranked.map((row) => [row.publicId, row.rank, row.points, row.solvedDays, row.total])).toEqual([
       [A, 1, 5, 2, 9],
       [C, 2, 4, 2, 13],
@@ -209,25 +195,19 @@ describe('rankPeriod (#271)', () => {
   });
 
   it('pays a shared first place to both, and the next rank is then third', () => {
-    const ranked = rankPeriod(
-      [day(A, '2026-09-07', 4), day(B, '2026-09-07', 4), day(C, '2026-09-07', 7)],
-      'sentence',
-    );
+    const ranked = rankPeriod([day(A, '2026-09-07', 4), day(B, '2026-09-07', 4), day(C, '2026-09-07', 7)]);
     expect(ranked.map((row) => [row.publicId, row.points])).toEqual([[A, 3], [B, 3], [C, 1]]);
     // Equal on every number: a shared rank, never a fake ordering.
     expect(ranked.map((row) => row.rank)).toEqual([1, 1, 3]);
   });
 
   it('breaks equal points by solved days, then by fewer tries', () => {
-    const ranked = rankPeriod(
-      [
-        // Day 1: B first (3), C second (2), A third (1).
-        day(B, '2026-09-07', 2), day(C, '2026-09-07', 5), day(A, '2026-09-07', 9),
-        // Day 2: D first (3), A second (2).
-        day(D, '2026-09-08', 8), day(A, '2026-09-08', 9),
-      ],
-      'sentence',
-    );
+    const ranked = rankPeriod([
+      // Day 1: B first (3), C second (2), A third (1).
+      day(B, '2026-09-07', 2), day(C, '2026-09-07', 5), day(A, '2026-09-07', 9),
+      // Day 2: D first (3), A second (2).
+      day(D, '2026-09-08', 8), day(A, '2026-09-08', 9),
+    ]);
     // A, B and D all hold 3 points: A played two days and leads them; B and D played one
     // each, and B's 2 tries beat D's 8. C's 2 points come last.
     expect(ranked.map((row) => [row.publicId, row.rank, row.points, row.solvedDays, row.total])).toEqual([
@@ -238,20 +218,11 @@ describe('rankPeriod (#271)', () => {
     ]);
   });
 
-  it('reads the total in Word mode the other way: more words is better', () => {
-    const ranked = rankPeriod(
-      [day(A, '2026-09-07', 10), day(B, '2026-09-08', 30)],
-      'word',
-    );
-    // Each is first on their own day: equal points and days, so the total decides.
-    expect(ranked.map((row) => row.publicId)).toEqual([B, A]);
-  });
-
   it('is empty for an empty range and pure for its input', () => {
-    expect(rankPeriod([], 'sentence')).toEqual([]);
+    expect(rankPeriod([])).toEqual([]);
     const input = [day(A, '2026-09-07', 1)];
     const before = [...input];
-    rankPeriod(input, 'sentence');
+    rankPeriod(input);
     expect(input).toEqual(before);
   });
 });
@@ -260,7 +231,7 @@ describe('rankPeriod (#271)', () => {
 // board draws, out of the members who recorded a score today.
 describe('standingIn (#271)', () => {
   it('is the caller rank out of the ranked rows, ties shared', () => {
-    const ranked = rankBoard(rows(5, 3, 5, 9), 'sentence');
+    const ranked = rankBoard(rows(5, 3, 5, 9));
     expect(standingIn(ranked, id(1))).toEqual({ rank: 1, of: 4 });
     // The two 5s share second place, competition style.
     expect(standingIn(ranked, id(0))).toEqual({ rank: 2, of: 4 });
@@ -269,7 +240,7 @@ describe('standingIn (#271)', () => {
   });
 
   it('is null for a caller with no recorded score on the board', () => {
-    expect(standingIn(rankBoard(rows(4), 'sentence'), 'z'.repeat(16))).toBeNull();
+    expect(standingIn(rankBoard(rows(4)), 'z'.repeat(16))).toBeNull();
     expect(standingIn([], id(0))).toBeNull();
   });
 });

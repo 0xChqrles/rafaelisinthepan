@@ -27,18 +27,17 @@
     src/
       handler.ts              createHandler() — the ONE day/404/CORS/Puzzle logic (Lambda + local);
                               also the share routes and #271's group invite preview (/g/<groupId>)
-      store.ts                PuzzleStore interface (date+lang -> Puzzle | WordPuzzle | PuzzleSlice | null)
+      store.ts                PuzzleStore interface (date+lang -> Puzzle | PuzzleSlice | null)
       s3Store.ts, fsStore.ts  store impls: S3 (prod) and local FS (#17), both read the same key
       slice.ts                #203's DERIVATION SLICE: build it from a puzzle, read a log against
                               it (progress + solved), its gzip codec and its shape check
       puzzleReads.ts          #203's artifact reads: the slice (every append) and the full
                               puzzle (a solve), BOTH fresh, both gated on the caller's revision
       scores.ts               /scores GET route (READ-ONLY since #203): params, derived histogram
-      scoreLimits.ts          the Word field's claim ceiling (the sentence one retired with #203)
       liveRoute.ts            what the LIVE routes share: no-store headers, the JSON-body
                               reader + size cap, #216's device-token check and the
-                              `unknown_device` resolution behind it, the (lang, mode,
-                              date) + future-skew guard, the trusted viewer address and the
+                              `unknown_device` resolution behind it, the (lang, date)
+                              + future-skew guard, the trusted viewer address and the
                               Turnstile-token check the gated writes share
       devices.ts              POST /devices (#216): the Turnstile-gated idempotent bootstrap,
                               the sign-out screen's list, and revocation by device id + opaque key
@@ -82,24 +81,22 @@
                               since #206 the day POST also answers `playing` (round rows
                               deduped against the day's full artifact)
       history.ts              POST /history (#211): the PRIVATE player history — one month of
-                              (lang, mode) summaries + the language's solved-day collection
+                              one language's summaries + its solved-day collection
       historyStore.ts         solved-day storage contract; the private player#<publicId>
                               partition, history#<lang> sort key
       dynamoHistoryStore.ts   prod NUMBER-SET credit (idempotent ADD) + an ADD/DELETE overflow trim
       memoryHistoryStore.ts   process-local implementation for backend:dev/tests
-      rounds.ts               POST /round (#201/#202/#203): the per-round state — read, sentence
-                              append, Word mode's Turnstile-gated start + end-of-run submission;
-                              slug + length validation, cap / interval / wait / freeze refusals,
+      rounds.ts               POST /round (#201/#203): the per-round state — read and append;
+                              slug + length validation, cap / interval / freeze refusals,
                               the DERIVED progress + solve and the score row they record,
-                              full-state answers carrying the server's own clock
+                              full-state answers
       roundStore.ts           round storage contract; round#<publicId> partition, sort key
-                              <lang>#<mode>#<date> (#203); the published-version tag +
-                              ROUND_GUESS_CAP / ROUND_WRITE_MIN_MS semantics, Word mode's
-                              startedAt / first-write-wins log, #203's stored summary and
-                              #211's month prefix + projected day summary
+                              <lang>#sentence#<date> (#203; `sentence` is a fixed segment, the
+                              retired daily mode's); the published-version tag +
+                              ROUND_GUESS_CAP / ROUND_WRITE_MIN_MS semantics, #203's stored
+                              summary and #211's month prefix + projected day summary
       dynamoRoundStore.ts     prod ONE conditional UpdateItem (both bounds in the condition) +
-                              consistent classification read on a refusal; the word start's own
-                              conditional stamp and the submit's read-then-conditional-write
+                              consistent classification read on a refusal
       memoryRoundStore.ts     process-local implementation for backend:dev/tests
       nameFilter.ts           #188 banned-strings display-name MODERATION (normalize + substring); the charset is shared/name.ts
       avatarModeration.ts     #188 best-effort swastika template match on the decoded grid
@@ -130,8 +127,8 @@
 
 ```bash
 # Local backend harness (@whippin/backend, #17) — no AWS creds needed.
-pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output). Sentence puzzles AND #154 word artifacts (#156): the artifact type is detected from the file's SHAPE and routed to its own key.
-pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--mode sentence|word] [--ci]  # publish-buffer coverage (#61); --mode word probes the #156 word-artifact buffer; reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
+pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output). Sentence puzzles only: a file with no holes (e.g. a #154 single-word artifact) is refused.
+pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--ci]  # publish-buffer coverage (#61); reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
 pnpm puzzle:ledger --s3     # rebuild packages/generation/published.jsonl (gitignored — the bucket is the truth) from every sentence puzzle in the bucket; an S3 publish appends to it itself; the curator refuses to run without it
 pnpm backend:dev                # local server (puzzles + /scores + /profile + /groups + /board + /round + /history + /devices + /link + /today) on :8787; FS puzzles, in-memory scores/profiles/groups/rounds/history/devices/links, local Turnstile accept-all, and #204's link codes PRINTED to this log
 pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server with a #190 board population + a seeded group (in-memory — re-run after a restart); --group also lands five seeds in YOUR group
@@ -144,7 +141,7 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
 *(Safe to update without touching the invariants above.)*
 
 - **Score population (#169; per-player rows + identity #187; READ-ONLY since #203):** the
-  ONE handler serves `GET /scores?lang=&date=&mode=sentence|word`; `mode` is mandatory. A
+  ONE handler serves `GET /scores?lang=&date=`. A
   successful response is `{ buckets: [{ min, max, count }], total, bucket }`, inclusive
   ranges **derived at read time from the day's per-player rows** (one exact ascending band
   per distinct recorded score; an empty population is `buckets: []`), with `bucket` always
@@ -157,7 +154,7 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   `hashClientIp` stays here beside the store contract, but its caller is `rounds.ts`.
   It still reads the published puzzle, so an unpublished daily 404s rather than getting an
   empty population. `dynamoScoreStore` creates a row with ONE transaction — the conditional
-  5-count/48h-TTL dedup update plus a create-only put of the `(date, lang, mode, publicId)`
+  5-count/48h-TTL dedup update plus a create-only put of the `(date, lang, publicId)`
   row. The row and its idempotency token both carry the published `revision`: a second
   submission on that version is `already_recorded`, while a different revision conditionally
   replaces the SAME row in a one-item transaction and consumes no new IP allowance. The
@@ -247,7 +244,7 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
 - **Leaderboard reads (#190/#271):** the ONE handler also serves `/board` — the product
   contract (the faces, the shared ranking and period rules, the standing, the four-query
   allowList) lives in the root `AGENTS.md`. Implementation notes: `handleBoard` reuses the
-  /scores param guards (supported lang, required mode, valid date, +1-day future guard).
+  /scores param guards (supported lang, valid date, +1-day future guard).
   *(This said the route reads NO puzzle store; #206 overturned it for the DAY POST — see
   below. The GLOBAL GET, the period boards and the standing still read none:* a population
   only exists for a published daily, so an unpublished day answers empty.*)* GET's optional
@@ -297,10 +294,9 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   artifact.
   **The LIVE routes share their plumbing** (`liveRoute.ts`, extracted 2026-08-20 when
   `/board` became the FOURTH byte-identical copy): the `no-store` header, the body
-  reader with its 4 KB cap, the `{token}` device resolution, and the `(lang, mode, date)` guard
-  triple with the +1-day future skew. **`clientIp` and `requireTurnstileToken` moved here
-  from /scores with #202**, when the word round start became the SECOND Turnstile-gated
-  write: a route reaching into `scores.ts` for them would make that file a utility module
+  reader with its 4 KB cap, the `{token}` device resolution, and the `(lang, date)` guard
+  pair with the +1-day future skew. **`clientIp` and `requireTurnstileToken` live here**,
+  shared by the gated writes (round creation and the device bootstrap): a route reaching into `scores.ts` for them would make that file a utility module
   for routes it knows nothing about. `hashClientIp` stays in /scores — only the score
   submission dedups by address. A supported language is one the pipeline has built
   a vocabulary for (shared `VOCAB_BUILDS`, #200 — the same record the sentence ceiling
@@ -318,7 +314,7 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   that is why it is a script, not a fixture); it copies the newest local fr sentence
   puzzle forward to the active day when that key is missing.
 
-- **Round guess-log sync (#201):** the ONE handler also serves `POST /round?lang=&date=&mode=`
+- **Round guess-log sync (#201):** the ONE handler also serves `POST /round?lang=&date=`
   — the product contract (server-authoritative state, strings-not-indices, the two
   bounds, cap semantics) lives in the root `AGENTS.md`. Implementation notes: POST-only
   (a GET is a named 405); the shared `requireDayParams` guard triple
@@ -334,7 +330,7 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   body cap is this route's own (`readJsonObject`'s optional bound), DERIVED from the cap
   and the longest `maxSlugLength` rather than hand-picked — a coalesced flush of 500 slugs
   legitimately exceeds the default 4 KB live-body cap. Storage is the score table:
-  partition `round#<publicId>`, sort key `<lang>#<mode>#<date>` (per PLAYER — the reason is
+  partition `round#<publicId>`, sort key `<lang>#sentence#<date>` (per PLAYER — the reason is
   in the root `AGENTS.md`; the order is #203's), attributes `guesses` (string list),
   `puzzle`, `createdAt`, `lastWriteAt` (ms epoch), plus #203's `progress`/`solved`. `lastWriteAt` is the ONE Number here because it is the only one
   compared arithmetically in the condition; `createdAt` is a String, and writing it as a
@@ -381,62 +377,23 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   (`roundStore.earlyLocked`, the two clauses restated for the read and for the memory store)
   → cap → interval. `early_locked` is a 409 carrying the stored state; the day itself lifts
   it (the route stops asking). The rule lives in the root `AGENTS.md` (Sentence round).
-- **Word mode's two round writes (#202), owned by a DEVICE since #217:** the same route,
-  `mode=word`. The product contract (why the fast game syncs least, the server-stamped clock,
-  the wait check, the caps, what is deliberately NOT validated, and #217's two conditions)
-  lives in the root `AGENTS.md`. Implementation
-  notes: the route DISPATCHES on the body — `turnstileToken` = START (a 400 on a sentence
-  round, which has no clock), `guesses` = append or submit by mode, neither = read. START
-  is one conditional UpdateItem stamping `startedAt` AND `startedBy` (the caller's device id
-  plus its parsed user-agent fields, ONE Map attribute) under
-  `attribute_not_exists(#sub) OR #p <> :puzzle`, with `REMOVE #g, #sub` so the run it
-  replaces leaves with its clock; everything the condition passes for is REPLACED, so a
-  start is a RESTART and only a RECORDED run refuses one (`already_submitted`, answered 200
-  with the run that stands). *(#202's condition was `attribute_not_exists(#started) OR …`,
-  which made the start idempotent instead.)* SUBMIT is the
-  one path here that READS A PUZZLE STORE (`getWordPuzzle`) — only the artifact can tell a
-  claim from a miss, and both the claim ceiling (`wordScoreMaximum`, distinct ranks) and
-  the wait check are priced from that count. The store reads once, consistently, then
-  writes under `#p = :puzzle AND #by.#dev = :device AND attribute_not_exists(#sub)`:
-  the wait check is arithmetic (which DynamoDB's condition grammar has none of) and the
-  caller has to be told WHICH bound refused it, but first-write-wins AND the ownership check
-  are still decided by the write's own condition rather than by the read before it — a
-  restart can land between them, and a lost race is re-read and classified by what STANDS
-  (`already_submitted`, or `started_elsewhere` when the stamp names another device: a 409
-  carrying that stamp, which the client adopts on its way out). `startedAt` and
-  `submittedAt` are STRINGS like
-  `createdAt`, and no word path touches `lastWriteAt` (the streaming interval's attribute).
-  **Every command's `ExpressionAttributeNames` holds exactly the aliases ITS OWN
-  expressions name** — DynamoDB rejects an unused entry, and an undeclared alias, with a
-  ValidationException before anything is written, so one union map covering every attribute
-  the store knows about fails EVERY write in production while looking perfectly fine
-  against a mocked client (it shipped that way once). `dynamoRoundStore.test.ts` runs the
-  correspondence check on every command any test issues, in both directions and for values
-  too, so a new write path is covered by the tests that already exist.
-  **The START's answer NAMES the run's device** (#217, replacing #202's `resumed` flag):
-  every answer on this route carries `startedBy` when a clock is stamped, so the client asks
-  whose run it is instead of remembering whether its own start was the one that opened it.
-  The root `AGENTS.md` records what turns on that, and what it retired.
-  **Every answer, refusals included, carries the server's own `now`** — the client anchors
-  `now − startedAt`, an elapsed span, which is what makes the visible clock immune to
-  device-clock skew. `too_early`/`not_started` are 409s, an over-cap or unclaimable log is
-  a 400, a missing artifact the day-addressed 404, a rejected challenge a 403
-  `turnstile_rejected` (the shared `requireTurnstileToken`, extracted from /scores when
-  this became the second gated write), and a submission for a run the stamp gives to another
-  device a 409 `started_elsewhere`. `HandlerDeps.rounds` is a `RoundHandlerDeps` for that
-  gate — the /scores deps' shape — and since the PR-219 review it carries NO DeviceStore:
-  every authenticated route resolves its caller through the ONE top-level
-  `HandlerDeps.deviceStore`, so two routes can never be wired to two different stores
-  (half the private surface answering 401 `unknown_device` for a token the other half
-  authenticates).
+- **Two rules the round store's writes carry:** **every command's
+  `ExpressionAttributeNames` holds exactly the aliases ITS OWN expressions name** — DynamoDB
+  rejects an unused entry, and an undeclared alias, with a ValidationException before
+  anything is written, so one union map covering every attribute the store knows about
+  fails EVERY write in production while looking perfectly fine against a mocked client (it
+  shipped that way once); `dynamoRoundStore.test.ts` runs the correspondence check on every
+  command any test issues, in both directions and for values too. And `HandlerDeps.rounds`
+  carries NO DeviceStore (PR-219 review): every authenticated route resolves its caller
+  through the ONE top-level `HandlerDeps.deviceStore`, so two routes can never be wired to
+  two different stores.
   **The CORS PREFLIGHT is cached** (`PREFLIGHT_MAX_AGE_SECONDS`, applied on the OPTIONS
   branch and deliberately WITHOUT the live routes' `no-store` — a preflight carries no
-  data, and what governs its reuse is `Access-Control-Max-Age`). /round is the first route
-  that POSTs continuously, about once a second while a player types, so the default
-  few-second preflight cache costs an extra OPTIONS invocation and an RTT stall every few
-  writes.
+  data, and what governs its reuse is `Access-Control-Max-Age`). /round POSTs continuously,
+  about once a second while a player types, so the default few-second preflight cache costs
+  an extra OPTIONS invocation and an RTT stall every few writes.
 
-- **Derived scores (#203):** the same route, `mode=sentence`. The product contract (why the
+- **Derived scores (#203):** the same route. The product contract (why the
   score stops being claimed, the slice, the loading rule, the freeze, the corrective write,
   the sort-key reorder) lives in the root `AGENTS.md`. Implementation notes: an APPEND now
   fires `rounds.get(..., { consistent: false })` and `loadSlice` CONCURRENTLY — neither
@@ -479,15 +436,15 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   than reaching into `deps.scores` for them, which would make that file a utility module for
   a route it knows nothing about. **`round*` gained the CDN's viewer-request function**
   (`infra/lib/backend-stack.ts`): both the gate and the IP-metered score row need a trusted
-  address, and its absence there was already a latent 500 on every #202 word round start.
+  address.
   **`pnpm board:seed` PLAYS the day** now rather than posting numbers: one append per seed
   carrying the puzzle's secrets plus enough distinct misses to land on the score it wants
   (`playthrough`), which is also why it reads the day's puzzle and copies a slice forward
   with it.
-- **Server-backed player history (#211):** the ONE handler also serves `POST /history?lang=&mode=[&month=]`
+- **Server-backed player history (#211):** the ONE handler also serves `POST /history?lang=[&month=]`
   — the product contract (why it exists after #214, the explicit-loading rule, the streak
   window, the metering stance) lives in the root `AGENTS.md`. Implementation notes: POST-only
-  (a GET is a named 405), the `{token}` body check and the `lang`/`mode` guard
+  (a GET is a named 405), the `{token}` body check and the `lang` guard
   are the SHARED `liveRoute.ts` (`requireGameParams`, split out of `requireDayParams` because
   this read is addressed by a MONTH rather than a day); `month` is validated against the
   shared `HISTORY_MONTH_PATTERN` and is OPTIONAL, and there is deliberately NO future guard —
@@ -495,17 +452,14 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   (PR-218 review) to skip the solved-day read entirely — the chooser's month-only shape;
   absent means true. The two reads go out CONCURRENTLY (the
   /round rule): `RoundStore.listMonth` — one Query over the caller's own partition behind the
-  `<lang>#<mode>#<YYYY-MM>-` prefix, `ProjectionExpression`-limited to `sk`/`progress`/`solved`
+  `<lang>#sentence#<YYYY-MM>-` prefix, `ProjectionExpression`-limited to `sk`/`progress`/`solved`
   so the raw guess logs never leave the store, strongly consistent (a player opens the archive
   right after finishing a day) and PAGED — and `PlayerHistoryStore.solvedDays`. Every response
   is `no-store`; a player with nothing played answers `{days: [], solvedDays: []}`, which is an
   ANSWER. **The write is the ROUND route's**: the append that CONFIRMS a solve credits the day
   when the round was played ON THE DAY — `onTime`, ONE predicate, checked once in
   `settleAppend` for BOTH rewards (before the scoring artifact is even loaded, so an
-  archive solve never parses a multi-MB puzzle for a row that will not be written) and worn
-  by `recordScoreRow` for Word mode, where the judged instant is the run's server-stamped
-  START — its submission is deferred by design, so the write's arrival says nothing about
-  when the run was played (PR-218 review; see the root `AGENTS.md`). The confirming
+  archive solve never parses a multi-MB puzzle for a row that will not be written). The confirming
   answer carries the verdict (`credited`), which is what the client's celebration rides.
   A late finish earns neither the streak credit nor the leaderboard row (see the root
   `AGENTS.md` on why the flip-edge tolerance had to go, and on what that narrowed for
@@ -602,7 +556,7 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   restoring what #204 itself specified): they used to run as separate writes BEFORE the
   commit, and no claim on the source account could honestly own play that had already
   moved when the commit then failed or a rival took the claim over. So `adopt` takes
-  `moves` (every supported language × mode of the active day) and, per tuple, the owning
+  `moves` (every supported language of the active day) and, per tuple, the owning
   stores PLAN the items — `planRoundMove` and, only for a round that moves, `planScoreMove`
   — and `dynamoLinkStore` commits them beside the identity items.
   **THE MODEL, decided on that review's fourth round (2026-09-02):** *every row the plan
@@ -625,14 +579,8 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   one resting on a row: a first guess, or the solving append's score row written a beat
   after the log, landing between plan and commit would otherwise be orphaned under the
   deleted account).
-  **WHAT MOVES is RECORDED PLAY — `guesses.length > 0 || submittedAt exists`, ONE predicate
-  (`hasPlay`), read on the SOURCE and the DESTINATION alike** (corrected 2026-09-02 on that
-  same review; it read the log alone until then, and `memoryRoundStore.move` spells the same
-  rule). An empty `guesses` list is TWO Word states: a run merely STARTED, which is not play
-  and may be moved over, and a run SUBMITTED having claimed nothing — #202 makes
-  `submittedAt` the marker, never the length — which is a recorded, unrepeatable day with a
-  real score row of 0. The log-only reading lost that day from both sides: as a source it
-  did not move, as a destination it did not block. **The copied round takes the DESTINATION's next version, never the
+  **WHAT MOVES is RECORDED PLAY — `guesses.length > 0`, ONE predicate (`hasPlay`), read on
+  the SOURCE and the DESTINATION alike** (`memoryRoundStore.move` spells the same rule). **The copied round takes the DESTINATION's next version, never the
   source's** — two sources adopting one target both condition on the target's version, and
   the first must change it or the second's Put still passes and overwrites the moved log.
   A `TransactionCanceledException` is classified by `dynamoErrors.ts` — the ONE reading,
@@ -752,26 +700,6 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
     addressed to PLAYERS; anything beyond a six-digit code needs its own sender, template and
     unsubscribe story. The forwarder addresses the OPERATOR, sends raw MIME, shares no code
     with it.
-- **Word mode's daily artifact (#154/#156):** the ONE puzzle endpoint also serves the
-  single-word artifact under `mode=word` (`GET /?lang=&date=&mode=word`; absent/
-  `sentence` = the sentence puzzle, anything else = 400) with identical day-addressing,
-  404 semantics, caching and compression. **A new query parameter here is only half the
-  change:** the CDN cache policy (`infra/lib/backend-stack.ts`) has to list it too, or
-  CloudFront both collapses the two responses onto one year-long edge entry and — having no
-  origin request policy — strips the parameter before this handler ever sees it. See the
-  routing contract in the root `AGENTS.md`; `backend:dev` has no CDN and cannot show it. The
-  store key is
-  `<date>.<lang>.word.json` (`layout.storeKey(date, lang, 'word')`), read by
-  `PuzzleStore.getWordPuzzle` in both store impls; `publish` detects the artifact type
-  from the JSON shape (`holes` = sentence, `word` + flat `ranks` = word) and routes it
-  to that key, and `inventory --mode word` probes the word buffer. The share routes
-  additionally decode Word mode's v5 token (`decodeWordResult`) into its own card
-  (`renderWordCardPng`) and share page. The token carries the accented display word and
-  the per-rarity claim counts, so the card draws the day's word (alone, in the game's
-  solved blue — no node square since 2026-08-11) and its rarity chip row without a store
-  lookup (the page title's claim count is the counts' sum, `wordShareScore`); its
-  click-through lands on
-  `/<lang>/word/<date>`.
 - **Puzzle responses are content-negotiated AT THE ORIGIN (#123/#124, decided
   2026-07-26).** A puzzle is megabytes of rank maps (#104's alias expansion roughly tripled
   them), and Lambda refuses a response **envelope** over ~6.29 MB with a 413 the caller only

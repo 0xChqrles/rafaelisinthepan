@@ -135,8 +135,7 @@ export function installVersionCheck(current: string = __BUILD_ID__): void {
   // a network round trip that can land up to FETCH_TIMEOUT_MS later — long after React
   // mounted and the app became playable. So "nothing typed, nothing in flight" is
   // WATCHED, not assumed from the moment the question was asked: one pointer or key
-  // event ends it, because a Word run's clock starts on a tap and a guess, a name and a
-  // drawing are all typed or tapped in. A touched page keeps the mismatch and spends it
+  // event ends it, because a guess, a name and a drawing are all typed or tapped in. A touched page keeps the mismatch and spends it
   // on the next return, like every other trigger here. Capture phase and `once`, so a
   // handler that stops propagation cannot hide the first touch from us and nothing has
   // to be torn down afterwards.

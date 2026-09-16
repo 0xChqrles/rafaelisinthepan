@@ -1,21 +1,13 @@
 // CONTRACT (light): the share-card SVG (packages/shared/src/cardSvg.ts) must render the
 // player's RUN RULER — one cell per counted try on the SHARED heat ramp (so the card
 // matches the on-screen ruler), a tick per solving try with the dropped hole's sentence
-// index under it — plus the score and the day's calendar date. Word mode instead draws the
-// day's accented word alone in the solve cobalt, then its claim count, the per-rarity chip
-// row (one grade-coloured square + count per claimed grade), and the date.
+// index under it — plus the score and the day's calendar date.
 // Exact positions are cosmetic and not asserted; they get tuned against the rasterized PNG.
 
 import { describe, it, expect } from 'vitest';
 import { anonName, defaultAvatar } from './assigned';
 import { decodeAvatar, encodeAvatar, AVATAR_CELLS, AVATAR_PALETTES } from './avatar';
-import {
-  renderCardSvg,
-  renderGroupCardSvg,
-  renderWordCardSvg,
-  CARD_WIDTH,
-  WORD_RARITY_COLORS,
-} from './cardSvg';
+import { renderCardSvg, renderGroupCardSvg, CARD_WIDTH } from './cardSvg';
 import { dateForDayNumber } from './day';
 import { INFINITY_EM_HEIGHT, INFINITY_GLYPH, PIXEL_INK_LIFT_EM } from './glyphs';
 import { progressHeatColor } from './heat';
@@ -190,94 +182,6 @@ describe('renderCardSvg', () => {
   });
 });
 
-describe('renderWordCardSvg', () => {
-  const data = { lang: 'fr', dayNumber: 20638, counts: [7, 3, 1, 1, 0], word: 'forêt' };
-
-  it('draws the accented word ALONE, in the game\'s accent — no node square', () => {
-    const svg = renderWordCardSvg(data);
-    expect(svg).toMatch(/<text[^>]+fill="#4a6aff">forêt<\/text>/);
-    expect(svg).not.toContain('foret');
-    // The in-game square marks the end of a LINE and this card draws none; the only
-    // rects left are the background and the rarity bar's segments.
-    expect(svg).not.toMatch(/<rect[^>]+fill="#4a6aff"/);
-  });
-
-  it("names the claim count as the counts' sum, with the calendar date below", () => {
-    const svg = renderWordCardSvg(data);
-    expect(svg).toContain('12 MOTS');
-    expect(svg).toContain(dateForDayNumber(data.dayNumber));
-  });
-
-  // A segment's RECT is the tell (COMMON's grey doubles as the date's muted text colour,
-  // so the raw hex alone cannot prove a grade's absence).
-  const segment = (color: string) => new RegExp(`<rect[^>]+fill="${color}"`);
-
-  it('draws one BAR segment per CLAIMED grade — its colour + its count under it, zero grades omitted', () => {
-    const svg = renderWordCardSvg(data);
-    for (const [step, count] of data.counts.entries()) {
-      const color = WORD_RARITY_COLORS[step];
-      if (count > 0) {
-        expect(svg, color).toMatch(segment(color));
-        expect(svg, color).toMatch(new RegExp(`<text[^>]+fill="${color}">${count}</text>`));
-      } else {
-        expect(svg, color).not.toMatch(segment(color)); // an unclaimed grade draws nothing
-      }
-    }
-  });
-
-  it('sizes each segment by its share of the claims, over the ruler\'s own column', () => {
-    const svg = renderWordCardSvg(data);
-    const widths = [...svg.matchAll(/<rect x="(\d+)" y="408" width="(\d+)"/g)].map((m) => ({
-      x: Number(m[1]),
-      w: Number(m[2]),
-    }));
-    expect(widths).toHaveLength(4);
-    // Commonest first, and a bigger count is a wider segment.
-    expect(widths[0].w).toBeGreaterThan(widths[1].w);
-    expect(widths[1].w).toBeGreaterThan(widths[2].w);
-    expect(widths[2].w).toBe(widths[3].w);
-    // The bar fills the sentence ruler's column exactly: from its left edge to its right.
-    expect(widths[0].x).toBe(90);
-    expect(widths[3].x + widths[3].w).toBe(CARD_WIDTH - 90);
-  });
-
-  it('draws no bar at all for a scoreless run', () => {
-    const svg = renderWordCardSvg({ ...data, counts: [0, 0, 0, 0, 0] });
-    expect(svg).toContain('0 MOTS');
-    for (const color of WORD_RARITY_COLORS) expect(svg).not.toMatch(segment(color));
-  });
-
-  it('pins the grade colours to the rarity ladder they were copied from', () => {
-    // One colour per grade, commonest first — pinned copies of the web's RARITY_COLORS
-    // (components/rarity.ts); the web's rarity.test.ts asserts the identity from its side,
-    // so this pins the shape and the exact values the card is allowed to speak.
-    expect(WORD_RARITY_COLORS).toEqual(['#97a3c9', '#4fd2e8', '#64a0ff', '#bd68ff', '#ff5ce0']);
-  });
-
-  it('keeps a forged token\'s huge counts inside the card (every segment keeps a floor)', () => {
-    // Every decoded count fits 15 bits, so a hand-built token can declare five 32767s — and
-    // one claim beside them must still show and still carry its count.
-    const svg = renderWordCardSvg({ ...data, counts: [32767, 32767, 1, 32767, 32767] });
-    const nums = [...svg.matchAll(/<text x="(\d+)"[^>]*font-size="(\d+)"[^>]*fill="(#[0-9a-f]{6})">(\d+)<\/text>/g)]
-      .filter((m) => WORD_RARITY_COLORS.includes(m[3]));
-    expect(nums).toHaveLength(5);
-    for (const [, x, size, , count] of nums) {
-      // Centred under its segment; Press Start 2P advances 1em per glyph.
-      const half = (String(count).length * Number(size)) / 2;
-      expect(Number(x) - half).toBeGreaterThanOrEqual(0);
-      expect(Number(x) + half).toBeLessThanOrEqual(CARD_WIDTH);
-    }
-    const widths = [...svg.matchAll(/<rect x="\d+" y="408" width="(\d+)"/g)].map((m) => Number(m[1]));
-    expect(Math.min(...widths)).toBeGreaterThanOrEqual(140);
-  });
-
-  it('escapes the display word before interpolating it into the SVG', () => {
-    const svg = renderWordCardSvg({ ...data, word: 'cœur & <île>' });
-    expect(svg).toContain('cœur &amp; &lt;île&gt;');
-    expect(svg).not.toContain('cœur & <île>');
-  });
-});
-
 // CONTRACT (#271): the group card carries THREE things and no fourth — the group's name,
 // its members' marks, the app name. What is pinned here is the identity each mark
 // resolves, not the layout: a card that drew a member differently from every board row
@@ -337,7 +241,7 @@ describe('renderGroupCardSvg', () => {
 
 // CONTRACT (user-decided 2026-09-05): a SIGNED share — every share the result screens make
 // from a device holding an account — draws the player's mark and name on the result card,
-// both modes, and a plain share draws neither. The strip sits in the top band the result
+// and a plain share draws neither. The strip sits in the top band the result
 // leaves empty, and the name is bounded by the profile's own cap so the widest signature
 // clears the margins.
 describe('a signed result card (the share link wearing its player)', () => {
@@ -349,7 +253,6 @@ describe('a signed result card (the share link wearing its player)', () => {
     trajectory: [8, 8, 33, 33, 70, 100],
     solvedAt: [3, 6, 5],
   };
-  const word = { lang: 'fr', dayNumber: 123, counts: [3, 2, 0, 0, 0], word: 'forêt' };
 
   it('draws the stored name and mark on the sentence card', () => {
     const avatar = encodeAvatar(2, new Array<number>(AVATAR_CELLS).fill(0).map((_, i) => (i % 3 === 0 ? 1 : 0)));
@@ -361,19 +264,17 @@ describe('a signed result card (the share link wearing its player)', () => {
     expect(svg).toContain(dateForDayNumber(123));
   });
 
-  it('draws the ASSIGNED identity on the word card for a player who never customized', () => {
-    const svg = renderWordCardSvg(word, { publicId: id, name: '', avatar: null });
+  it('draws the ASSIGNED identity for a player who never customized', () => {
+    const svg = renderCardSvg(sentence, { publicId: id, name: '', avatar: null });
     expect(svg).toContain(`>${anonName(id)}<`);
     const { palette } = decodeAvatar(defaultAvatar(id));
     expect(svg).toContain(AVATAR_PALETTES[palette].bg);
-    expect(svg).toContain('5 MOTS');
+    expect(svg).toContain('6 TRIES');
   });
 
   it('draws no face on a plain share, and moves nothing', () => {
     expect(renderCardSvg(sentence)).not.toContain('clipPath');
-    expect(renderWordCardSvg(word)).not.toContain('clipPath');
     expect(renderCardSvg(sentence)).toContain('translate(0 0)');
-    expect(renderWordCardSvg(word)).toContain('translate(0 0)');
   });
 
   it('makes room for the strip by moving the whole RESULT down, never by squeezing it', () => {

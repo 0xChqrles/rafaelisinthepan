@@ -40,8 +40,7 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
       podiumText.ts             the renderer (positions/names/scores/framing are ITS; comments keyed by line id),
                                 and `renderReminder`, the morning line
       names.ts                  display name = operator override ?? latest snapshot ?? …last4
-      reactions.ts              score band → emoji, no model (the `acknowledge: "react"` shape); BOTH ladders
-                                (sentence: lower is better; word: higher is better) and the `ShareFacts` they judge
+      reactions.ts              score band → emoji, no model (the `acknowledge: "react"` shape)
       leader.ts                 the new-leader event + its anti-spam row (LEAD#<day>)
       whippinGroup.ts           the Whippin group's invite link (`?v=<day>`) and the public read that says
                                 whether it still stands (`GET /groups?id=`)
@@ -211,18 +210,8 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   session is not the one it just made. `bot:pair` closes BEFORE clearing the invalidation
   flag and printing success; the task logs it on shutdown.
 - **A share is deterministic input.** The token's day and score, decoded with the shared
-  codec; the WhatsApp receive date never groups a result. **BOTH dailies decode, and only
-  the SENTENCE is recorded** (user-decided 2026-09-05; Word tokens were ignored until then).
-  A WORD share is ACKNOWLEDGED — the emoji or the line, by its own ladder (`reactions.ts`
-  `wordBand`: claims, MORE is better, no floor and no cap, so no `failed` and no exact
-  `perfect`; cut on the ~50 recorded French runs of 2026-08-28 → 09-04, median ~10, upper
-  quartile ~17, best 58) — and NOTHING is stored for it: there is no Word podium yet, and
-  the declarations key a (group, day, sender) where a word row would collide with the
-  sentence row of the same day. When a Word podium is decided its rows get their own key;
-  until then a Word share earns the acknowledgement and no history (`ingest` answers
-  `acknowledged`). A message carrying both dailies is acknowledged for the SENTENCE, the
-  one on the podium. The word itself is decoded and dropped — nothing has a use for it,
-  least of all a prompt, and the share text prints it anyway.
+  codec; the WhatsApp receive date never groups a result. Every decoded share is recorded;
+  the retired Word mode's tokens (v3–v5) decode as nothing (2026-09-16).
   The sender JID (phone-number form preferred over a LID) is the player key; names are a
   snapshot. **A person is one key, a message keeps its own** (PR-237 review): a LID that
   came without its number is mapped through the LID↔PN store Baileys keeps in the auth
@@ -314,9 +303,7 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   **HOW a share is acknowledged is `acknowledge` in the group config (user-decided
   2026-09-04):** `react` is the deterministic emoji, `say` is one short line the model
   writes (`llm/shareComment.ts`, quoting the share so a busy group can tell whose result it
-  is about), `none` is silence — for EITHER daily since 2026-09-05, the line's prompt
-  branching on the mode (a Word result is "found" words, more is better, and the word is
-  never named). It REPLACED a `reactions` boolean — the choice is one axis,
+  is about), `none` is silence. It REPLACED a `reactions` boolean — the choice is one axis,
   and a second flag beside it would have spelled "both off" two ways. **A `say` group still
   falls back to the EMOJI** whenever the line does not arrive: the share is durable by then
   and is owed a sign that it landed, so an unavailable model, an unusable answer or a spent
@@ -479,8 +466,7 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   deterministic reminder repeats). What a turn may hold is
   bounded by WHAT IT IS, not by who typed it (PR-243 review, the three rules unchanged):
   - **A SHARE'S RAW CONTENTS never travel.** `withoutShares` strips the whole GENERATED
-    block the web composes — the headline, the emoji row, the word-mode WORD and its beads,
-    and the link — not only the token. A message that was ONLY a share leaves nothing to
+    block the web composes — the headline, the emoji row and the link — not only the token. A message that was ONLY a share leaves nothing to
     remember; what the player typed around it is the conversation and stays. The shape is
     restated in the bot (it cannot import the web) and pinned by tests against the web's
     own output.
@@ -570,8 +556,8 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   measured), and any future example goes through the same `KeyedVectors` check before it is
   written. v5 also gives it the facts a player actually asks about: a guess lands on every
   hole it improves, holes start with a hint word, a MISS has no rank and still costs a try,
-  an unknown word is refused for free, 500 unsolved is ∞, and Word mode exists (timed,
-  higher is better) while the podium ranks the sentence alone.
+  an unknown word is refused for free, and 500 unsolved is ∞. (v5's Word mode line left
+  with the mode in v16, 2026-09-16.)
   **THE SCORE IS THE JOKE, THE PERSON NEVER IS (v8, user-decided 2026-09-06 — it
   supersedes v4's "encouraging is the default; sarcasm is opted into").** v2 and v3 built
   an UNIMPRESSED bot — "very little impresses you", bands from "grudging respect" down to
@@ -714,8 +700,7 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   le début, cinquième, toi qui tournes à 9,4 de moyenne" — every number checked against
   the seed. 12–21s a share, judge included; the emoji stands in when the facts cannot be
   read (`share.facts_failed`). The ingest callback now names WHICH share (`{dayNumber,
-  sender}`) so the writer can read the board. Word shares keep the claims alone (nothing
-  is recorded for them). **The voice is v11: v3's, back by the group's request** (the user,
+  sender}`) so the writer can read the board. **The voice is v11: v3's, back by the group's request** (the user,
   2026-09-07: "users are telling me that they liked the v3 voice more") — unimpressed,
   understating, no emoji, teases the top and stays with the bottom — over v10's facts,
   with the two v3 rules the facts contradict changed: the score and the names are said
@@ -872,9 +857,9 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
     backend is a different host from `BOT_SITE_ORIGIN`, which is only ever a pattern for
     recognising share links and is never called.
   - **NOT DONE: hole difficulty.** The user also asked for the three secrets' "ranking in
-    the vocab list", and it does not exist anywhere the bot can reach. `freq` is emitted by
-    `gen_word.py` ONLY (the root `AGENTS.md` contract — a sentence puzzle carries none);
-    the served `vocab/<lang>.json` is written SORTED and deduplicated, so the frequency
+    the vocab list", and it does not exist anywhere the bot can reach. no puzzle carries a
+    frequency rank (the single-word artifact's `freq` left with Word mode, 2026-09-16); the
+    served `vocab/<lang>.json` is written SORTED and deduplicated, so the frequency
     order is destroyed; and the order survives only inside the reduced embedding, a local
     generation artifact that never deploys. `start_rank` is NOT a substitute — measured
     across five days it is 101-151 on every hole of every day, a generation constant with

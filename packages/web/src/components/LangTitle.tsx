@@ -1,14 +1,14 @@
 // THE SCREEN'S NAME, AND THE LANGUAGE IT IS SPEAKING (user-decided 2026-09-03: "on every
 // page of the game we should be able to switch lang").
 //
-// The game routes could always switch — `PuzzleTitle` names the daily and the selection
-// behind it holds the language beside it. The ACCOUNT AREA could not: `/account` carried a
+// The play surfaces could always switch — `PuzzleTitle` names the language they show and
+// the selection behind it turns it. The ACCOUNT AREA could not: `/account` carried a
 // plain name and its steps carried a back control, so a player who landed there in the wrong
 // language had to go back to a game to get out of it. This is the same control for a screen
 // that is not a puzzle: the name in the header's chip, the language beside it in the ARCHIVE
 // DAY's exact dress (`.title-tag` — quieter than the name it qualifies, outside the chip,
-// like a hole's exponent), the same chevron, and the same selection behind it with the daily
-// drum left out (`PuzzleSelect`, `mode: null`).
+// like a hole's exponent), the same chevron, and the same selection behind it
+// (`PuzzleSelect`).
 //
 // **THE TAG IS THE FIRST THING TO GIVE, and the name is the last** (`.lang-tag`, measured
 // 2026-09-03). A step's left slot holds FOUR things now — arrow, name, language, chevron —
@@ -77,12 +77,7 @@ export default function LangTitle({
         <ChevronDownIcon className="ui-icon" aria-hidden />
       </button>
       {open && (
-        <PuzzleSelect
-          lang={lang}
-          mode={null}
-          onLang={pick}
-          onClose={() => setOpen(false)}
-        />
+        <PuzzleSelect lang={lang} onLang={pick} onClose={() => setOpen(false)} />
       )}
     </>
   );

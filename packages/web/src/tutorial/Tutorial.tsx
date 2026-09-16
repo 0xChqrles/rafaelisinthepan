@@ -4,12 +4,11 @@ import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import LoadError from '../components/LoadError';
 import LoadingWave from '../components/LoadingWave';
-import RarityLadder from './RarityLadder';
 import { HIT_FADE_MS } from '../components/FloatingHit';
 import { RANK_MAX_MS, rankTransitionDuration } from '../components/Hole';
 import LangTitle from '../components/LangTitle';
 import { HeaderLeft } from '../components/TopBar';
-import { pathForMode, type LangCode, type Mode } from '../langs';
+import { pathForGame, type LangCode } from '../langs';
 import { FLOATING_HIT_INTRO_MS, KB_EXIT_FALLBACK_MS } from '../screens/Game';
 import MixWord from './MixWord';
 import CoachText, { richToPlain } from './CoachText';
@@ -22,7 +21,7 @@ import { t, srHoleResult, type UiKey } from '../i18n';
 import { track } from '../analytics';
 import { scriptFor } from './scripts';
 
-// The onboarding tutorial (#51, re-arced by #155; rarity ending 2026-08-11). Screen
+// The onboarding tutorial (#51, re-arced by #155; wordless ending 2026-09-16). Screen
 // contract: EXPLANATIONS in the top box (typewritten, in-game word styling), INTERACTIONS
 // at the bottom (the mix button, then the keyboard), the word in the middle. No SKIP button
 // in the body (the header fast-forward is the exit), no flag (the language was already
@@ -34,12 +33,10 @@ import { scriptFor } from './scripts';
 //   keyboard and three gated guesses show distance (farther, no move), MISS, and improvement,
 //   each rolling straight into the next prompt. Then the player types back to the secret with
 //   the real vocabulary (free exploration; a nudge reveals the word after 3 straight MISSes).
-//   Finding it rolls into the ENDING — the game's other core concept, word RARITY: the coach
-//   states the claim over the found word, NEXT swaps the word for the five-grade ladder
-//   (RarityLadder) under the line that says what it means, and PLAY in the tray is the
-//   graduation. There is no score to show, so there is no screen for it. Mode-specific rules
-//   (the clock, the history tap) are deliberately NOT here: each mode's pre-game
-//   gate teaches its own.
+//   Finding it rolls into the ENDING, which says nothing: the found word stands, the keyboard
+//   drops the way it does on a solved round, and PLAY in the tray is the graduation. There is
+//   no score to show, so there is no screen for it. The game's own rules (the history tap)
+//   are deliberately NOT here: its one-time PLAY gate teaches them.
 //
 // Everything that reacts is the real components with the real timing constants; the scripts
 // are data (./scripts/<lang>.ts) over a REAL generated neighborhood (a pruned #154
@@ -82,15 +79,9 @@ function freshHole(h: PuzzleHole): RuntimeHole[] {
 // and a skip.
 export default function Tutorial({
   lang,
-  // The daily the lesson was opened from. The lesson itself is MODE-AGNOSTIC — it teaches
-  // what both dailies share — and this is only where a LANGUAGE pick has to land: the
-  // tutorial lives on `/fr` or `/en`, so switching language is a navigation, and it should
-  // put the player back on the daily they came from.
-  mode,
   onDone,
 }: {
   lang: LangCode;
-  mode: Mode;
   onDone: () => void;
 }) {
   const script = useMemo(() => scriptFor(lang), [lang]);
@@ -147,8 +138,8 @@ export default function Tutorial({
     setAnnounce(text + (announceFlip.current ? '' : '​'));
   }, []);
 
-  // Advance to the next step. The LAST step is the rarity ending, which no guess can
-  // leave: only its PLAY ends the tutorial.
+  // Advance to the next step. The LAST step is the graduation, which no guess can leave:
+  // only its PLAY ends the tutorial.
   const advance = useCallback(() => {
     setPhase('idle');
     setStepIndex((i) => Math.min(i + 1, script.steps.length - 1));
@@ -313,39 +304,32 @@ export default function Tutorial({
     }, SCRAMBLE_MS + MIX_SETTLE_MS);
   }, [step, mixBusy, mixStop, ladder, later, advance]);
 
-  // --- the ending (2026-08-11, superseding the #155 themes tap): word RARITY ---
-  // Two beats, one idea each. The CLAIM first — "every word has a rarity", stated over the
-  // found word once the keyboard has dropped, with the tray's NEXT as its only control —
-  // and then the LADDER: the word gives way to the five grade names in their own colours
-  // (RarityLadder) while the coach says what the ladder means, and PLAY ends the lesson.
-  const [ladderOpen, setLadderOpen] = useState(false);
+  // --- the ending: the found word stands, and PLAY ends the lesson ---
   const finish = useCallback(() => {
     track('tutorial', { action: 'finish' });
     onDone();
   }, [onDone]);
 
   // The keyboard leaves the way it does in a solved round: it drops out of the tray once
-  // there is nothing left to type. The ending WAITS on its `animationend`: the claim's NEXT
-  // renders only once the keyboard is gone (`kbGone`), so a lost event would strand the
-  // player with no way forward but the header fast-forward. Same signal as Game's identical
-  // beat, so it carries the same deadline (KB_EXIT_FALLBACK_MS) — the genuine event lands
-  // long before it, and firing after it is a no-op.
-  const ending = step.kind === 'rarity';
+  // there is nothing left to type. The ending WAITS on its `animationend`: PLAY renders only
+  // once the keyboard is gone (`kbGone`), so a lost event would strand the player with no
+  // way forward but the header's keys. Same signal as Game's identical beat, so it carries
+  // the same deadline (KB_EXIT_FALLBACK_MS) — the genuine event lands long before it, and
+  // firing after it is a no-op.
+  const ending = step.kind === 'play';
   const [kbGone, setKbGone] = useState(false);
   useEffect(() => {
     if (ending) later(() => setKbGone(true), KB_EXIT_FALLBACK_MS);
   }, [ending, later]);
 
   // The explanation currently in the top box. Mix stop copy overrides the step's standing
-  // copy; the ending's two beats each carry their own line.
+  // copy; the ending carries none — a found word needs no comment.
   let coachKey: UiKey | null = null;
   let coachCopy: string | null = null;
   if (step.kind === 'mix') coachKey = mixCopy ?? step.copyKey;
   else if (step.kind === 'guess') coachKey = step.copyKey;
   else if (step.kind === 'find') {
     coachKey = missStreak >= NUDGE_AFTER_MISSES ? step.nudgeKey : step.copyKey;
-  } else if (step.kind === 'rarity') {
-    coachKey = ladderOpen ? step.ladderCopyKey : step.introCopyKey;
   }
   if (coachKey) coachCopy = t(lang, coachKey);
 
@@ -360,17 +344,11 @@ export default function Tutorial({
   return (
     // tutorial--word: the board is deliberately CLEAN — explanation on top, one big centered
     // word in the middle, the interaction at the bottom.
-    // tutorial--ending: the word has given way to the rarity ladder and the keyboard is
-    // gone for good, so the tray drops the keyboard's reserved footprint and closes up around
-    // its one button — the height goes to the ladder, which is what needs it.
-    <div className={`game tutorial tutorial--word${ladderOpen ? ' tutorial--ending' : ''}`}>
+    <div className="game tutorial tutorial--word">
       <div className="sr-only" role="status" aria-live="polite">
         {announce}
       </div>
 
-      {/* The floating header: "TUTORIAL" in the top-left status chip — no progress
-          counter here, the tutorial keeps its chrome minimal — and the globe + a
-          fast-forward that SKIPS the tutorial on the right. */}
       {/* The row itself is App's, with the BOOK lit: this is the rules' place, and any
           other key leaves the lesson (which is a SKIP — App's `leaveTutorial`). What this
           screen owns is its NAME. */}
@@ -382,7 +360,7 @@ export default function Tutorial({
         <LangTitle
           lang={lang}
           title={t(lang, 'inviteTutorial')}
-          to={(picked) => pathForMode(picked, mode)}
+          to={pathForGame}
         />
       </HeaderLeft>
 
@@ -420,10 +398,6 @@ export default function Tutorial({
               <p className="hint"> </p>
             </div>
           </>
-        ) : ladderOpen ? (
-          // The word gave way to the ending's display: the five rarity grades, in the
-          // colours they wear everywhere else in the game.
-          <RarityLadder lang={lang} />
         ) : (
           <>
             <Phrase
@@ -457,7 +431,7 @@ export default function Tutorial({
       </div>
 
       {/* The bottom is for INTERACTIONS: the mix button, then the keyboard — which drops
-          away for the ending, leaving one button under the coach's line. */}
+          away for the ending, leaving one button under the found word. */}
       <div className={`tray${ending && !kbGone ? ' kb-leaving' : ''}`}>
         {step.kind === 'mix' ? (
           mixLabel && (
@@ -471,17 +445,11 @@ export default function Tutorial({
           <p className="status">
             <LoadingWave text={t(lang, 'loading')} />
           </p>
-        ) : ladderOpen ? (
+        ) : kbGone ? (
           // The graduation: the same full-width interaction the mix button opened the
           // lesson with closes it — PLAY.
           <button type="button" className="mix-btn" onClick={finish}>
             {t(lang, 'tutPlay')}
-          </button>
-        ) : kbGone ? (
-          // The claim's own beat: the keyboard has dropped and NEXT is the only thing on
-          // screen, so the line above it is the only thing to read.
-          <button type="button" className="mix-btn" onClick={() => setLadderOpen(true)}>
-            {t(lang, 'tutNext')}
           </button>
         ) : (
           <div

@@ -200,7 +200,7 @@ const byRank = (a: Declaration, b: Declaration) => {
   return ra === rb ? 0 : ra < rb ? -1 : 1;
 };
 
-export interface ShareContext {
+interface ShareContext {
   reading: string; // how to read the rest — the one paragraph both the writer and the judge need
   date: string;
   weekday: string;

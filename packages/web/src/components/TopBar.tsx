@@ -18,13 +18,12 @@ import ChevronLeftIcon from '../assets/icons/chevron-left.svg?react';
 // it says there, and the state its controls close over comes with it) without the screen
 // owning the row.
 //
-// **TWO SLOTS, AND EACH HAS ONE MEANING** (user-decided 2026-08-30, retiring the three-slot
-// row whose centre held the segmented mode switcher):
+// **TWO SLOTS, AND EACH HAS ONE MEANING** (user-decided 2026-08-30):
 //
-//   LEFT   WHAT YOU ARE LOOKING AT, and the axes of it you can change. On a play surface
-//          that is the daily itself (`PuzzleTitle` — "SENTENCE ⌄", and the day too on an
-//          archive route), whose selection holds every axis of which puzzle: language,
-//          daily, day. On a screen you navigated INTO it is `HeaderBack` — the arrow — then
+//   LEFT   WHAT YOU ARE LOOKING AT, and the axis of it you can change. On a play surface
+//          that is the language's daily (`PuzzleTitle` — "FRANÇAIS ⌄", and the day too on
+//          an archive route), whose selection turns the language. On a screen you
+//          navigated INTO it is `HeaderBack` — the arrow — then
 //          `LangTitle`, the screen's own name with the LANGUAGE beside it and that one axis
 //          behind it (2026-09-03: every page of the game can change language now).
 //   RIGHT  WHERE YOU ARE AND WHERE YOU CAN GO: the state keys, the current one LIT.

@@ -132,19 +132,18 @@ describe('the day log (#277)', () => {
 });
 
 describe('what a share message contributes (#236)', () => {
-  // THE WEB'S OWN OUTPUT, verbatim (`web/src/game/share.ts` `shareText` / `wordShareText`,
-  // run against the real codec): a headline, the run as emoji, a blank line, the link. The
+  // THE WEB'S OWN OUTPUT, verbatim (`web/src/game/share.ts` `shareText`, run against the
+  // real codec): a headline, the run as emoji, a blank line, the link. The
   // bot cannot import the web, so the shape it strips is pinned here against what the web
   // actually sends.
   const SENTENCE = `Whippin AI 2026-09-03 — 7 essais\n🟥🟨1️⃣2️⃣3️⃣\n\n${ORIGIN}/s/ZBXY-GMSYiy-73w`;
   const CAPPED = `Whippin AI 2026-09-03 — ∞ essais\n🟥🟥🟨\n\n${ORIGIN}/s/ZBXefoGN______-A`;
-  const WORD = `Whippin AI 2026-09-03 — 12 mots\n\nPHARE\n⚪7 🟢3 🔵1 🩷1\n\n${ORIGIN}/s/VBXZ8sYDBXBoYXJl`;
 
   it('drops the WHOLE generated share — headline, row and link — not only the link', () => {
     // The link is what the bot reads a share from, but the block beside it spells the
     // same result out in words and emoji. "A score-only share never reaches the provider"
     // holds only if none of it is remembered: a message that was only a share is EMPTY.
-    for (const share of [SENTENCE, CAPPED, WORD]) {
+    for (const share of [SENTENCE, CAPPED]) {
       expect(withoutShares(share, ORIGIN)).toBe('');
     }
   });
@@ -152,7 +151,6 @@ describe('what a share message contributes (#236)', () => {
   it('keeps what the player typed around the share — the commentary is the conversation', () => {
     expect(withoutShares(`gg\n${SENTENCE}`, ORIGIN)).toBe('gg');
     expect(withoutShares(`${SENTENCE}\ntrop dur aujourd'hui`, ORIGIN)).toBe("trop dur aujourd'hui");
-    expect(withoutShares(`bon\n${WORD}\nqui fait mieux ?`, ORIGIN)).toBe('bon qui fait mieux ?');
     // Two shares in one message, words between them.
     expect(withoutShares(`hier\n${SENTENCE}\net aujourd'hui\n${CAPPED}`, ORIGIN)).toBe("hier et aujourd'hui");
   });
@@ -169,7 +167,6 @@ describe('what a share message contributes (#236)', () => {
     expect(withoutShares(`${ORIGIN}/s/ZBXg-ISaks2-fA`, ORIGIN)).toBe('');
     expect(withoutShares('Whippin AI 2026-09-03 — 7 essais', ORIGIN)).toBe('');
     expect(withoutShares('🟥🟨🟪🟦2️⃣', ORIGIN)).toBe('');
-    expect(withoutShares('⚪7 🟢3', ORIGIN)).toBe('');
     expect(withoutShares('BRAVO', ORIGIN)).toBe('BRAVO');
     expect(withoutShares(`PHARE\n${SENTENCE}`, ORIGIN)).toBe('PHARE');
     expect(withoutShares('trop fort 🟦🟦', ORIGIN)).toBe('trop fort 🟦🟦');

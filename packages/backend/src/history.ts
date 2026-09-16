@@ -1,8 +1,8 @@
-// The PRIVATE player-history route on the ONE handler: POST /history?lang=&mode=[&month=].
+// The PRIVATE player-history route on the ONE handler: POST /history?lang=[&month=].
 //
 //   { token }  — everything a summary surface may know about days it is not opening:
-//                 the asked-for MONTH of that (language, mode), and the language's
-//                 SOLVED-DAY collection.
+//                 the asked-for MONTH of that language, and the language's SOLVED-DAY
+//                 collection.
 //
 // #214 made the game deliberately network-dependent and removed the persisted sentence
 // round, so the archive calendar, the language chooser and the streak lost the local
@@ -15,7 +15,7 @@
 // two things it reads are already stored:
 //
 //   the MONTH  — ONE Query over the caller's own round partition behind the
-//                `<lang>#<mode>#<YYYY-MM>-` sort-key prefix #203 reordered the key for,
+//                `<lang>#sentence#<YYYY-MM>-` sort-key prefix #203 reordered the key for,
 //                projected down to the `progress`/`solved` the server derived (#203). NO
 //                second calendar row and no extra per-guess write: those fields already
 //                ride the round mutation.
@@ -34,7 +34,7 @@
 
 import { HISTORY_MONTH_PATTERN } from '@whippin/shared';
 import type { DeviceStore } from './deviceStore';
-import { LIVE_HEADERS, readJsonObject, requireDevice, requireGameParams } from './liveRoute';
+import { LIVE_HEADERS, readJsonObject, requireDevice, requireLangParams } from './liveRoute';
 import type { PlayerHistoryStore } from './historyStore';
 import type { RoundStore } from './roundStore';
 import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respond';
@@ -65,9 +65,9 @@ export async function handleHistory(
     );
   }
 
-  const game = requireGameParams(event, responseHeaders);
-  if (!game.ok) return game.response;
-  const { lang, mode } = game.value;
+  const params = requireLangParams(event, responseHeaders);
+  if (!params.ok) return params.response;
+  const { lang } = params.value;
 
   // A MONTH, never a day: `YYYY-MM`. Absent asks for the solved-day collection alone.
   // There is deliberately no future guard — a month past the active day simply holds no
@@ -100,7 +100,7 @@ export async function handleHistory(
   const [days, solvedDays] = await Promise.all([
     month === undefined
       ? Promise.resolve([])
-      : deps.rounds.listMonth({ lang, mode, month }, publicId),
+      : deps.rounds.listMonth({ lang, month }, publicId),
     collection ? deps.history.solvedDays(publicId, lang) : Promise.resolve([]),
   ]);
 

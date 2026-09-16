@@ -14,8 +14,8 @@
 // side effect nobody saw. A visit that taps none of these primary buttons mints no token
 // and no server row:
 //
-//   the sentence gate's PLAY · Word mode's PLAY · accepting an invite (its button) ·
-//   sending an invite link · saving a profile
+//   the sentence gate's PLAY · accepting an invite (its button) · sending an invite link ·
+//   saving a profile
 //
 // Each is a SINGLE tap that chains its real action behind the bootstrap, shows a loading
 // state on the button, and reports failure on the app's error surface (ErrorScreen).
@@ -377,7 +377,6 @@ export interface IdentityChange {
   previous: DeviceIdentity | null;
   next: DeviceIdentity | null;
   accountChanged: boolean;
-  deviceChanged: boolean;
   // A FIRST acquisition that ADOPTED an identity another tab created (a storage event, the
   // pre-mint re-read, losing the bootstrap race), as opposed to committing one this tab's
   // own bootstrap just minted. The minted account is empty BY CONSTRUCTION, so everything
@@ -444,7 +443,7 @@ function publish(
   // repopulate the one that replaced it, which is why every private request captures the
   // epoch above and drops an answer that outlived it.
   for (const listener of listeners)
-    listener({ previous, next, accountChanged, deviceChanged, adopted });
+    listener({ previous, next, accountChanged, adopted });
 }
 
 // Re-read the shared key and adopt what it says. Called before every mint and on every
@@ -804,7 +803,7 @@ export interface LoadedDeviceIdentity {
   // Whether the shared key could be READ at all. `false` says NOTHING about this device's
   // identity (`StoredRead`'s own rule): the caller must not treat the null above as
   // proven emptiness — startup's reconciliation would otherwise clear identity-owned
-  // state (the outbox, the Word rounds) off a denied localStorage read while the game
+  // state (the outbox) off a denied localStorage read while the game
   // database and the account are both intact.
   readable: boolean;
 }

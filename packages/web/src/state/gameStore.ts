@@ -1,19 +1,17 @@
 import { create } from 'zustand';
 import { generatePublicId, GROUP_ID_PATTERN, PUBLIC_ID_PATTERN } from '@whippin/shared';
-import { isLang, type Mode } from '../langs';
-import { CLAIM_ZONE, runMs } from '../game/wordGame';
+import { isLang } from '../langs';
 import {
   GameStateDatabase,
   type StoredGameState,
 } from './gamePersistence';
-import type { RoundRunner } from '../api';
 
 // Which crowd the #190 leaderboard is showing: a GROUP (the trusted default, #271)
 // or the global top 50. It lives here rather than in the screen because the screen
 // remounts under it without the visit ending — see `boardTab` below.
 export type BoardTab = 'group' | 'global';
 
-// A sentence round is identified by its `roundKey` = (server day, language, mode).
+// A round is identified by its `roundKey` = (server day, language).
 //
 // **Local storage stopped mirroring a sentence round at #214.** It used to hold a whole
 // materialized view — the holes, the try count, the cached reconstruction %, the counted
@@ -53,24 +51,18 @@ export interface RoundServer {
   // celebration reads this instead of comparing days on the device clock, which the
   // route's skew window lets disagree with the server's by a day.
   credited: boolean;
-  // WORD mode (#217): the device the server says this round's run belongs to, or null when
-  // nothing is stamped for this word. A sentence round has no clock and no owner, so it is
-  // always null there. It is what the Word screen picks its phase from, together with
-  // whether THIS device still holds the run's deadline.
-  startedBy: RoundRunner | null;
 }
 
 // Where a round's authoritative state is, for the ONE screen that has to wait on it. The
 // game is deliberately network-dependent since #214: it may not become interactive from a
 // guessed local mirror, so a failed read is a visible state rather than permission to
-// start. Word mode keeps its live clock/outbox in `wordRounds` and, once submitted, reads
-// the authoritative recorded log from the ready payload here.
+// start.
 export type RoundLoad =
   | { status: 'loading'; puzzle: string }
   | { status: 'failed'; puzzle: string }
   | { status: 'ready'; puzzle: string; server: RoundServer };
 
-// A round key is only (day, language, mode), so a corrected puzzle can reuse it while a
+// A round key is only (day, language), so a corrected puzzle can reuse it while a
 // passive effect has not yet registered the replacement with the sync engine. Never hand
 // that first render the retired puzzle's cached READY state: until THIS identity settles,
 // its honest state is loading.
@@ -85,37 +77,30 @@ export const EMPTY_ROUND_SERVER: RoundServer = {
   solved: false,
   solvedByAppend: false,
   credited: false,
-  startedBy: null,
 };
 
-// The canonical round key: (server day, language, MODE — #156: the two dailies would
-// otherwise collide on one key). Kept here so the game screens (which build it) and the
-// selector/archive (which look it up per language) agree byte-for-byte. Sentence rounds
-// keep their historical `d:` prefix; Word mode rounds live under `w:` (in their own map,
-// `wordRounds` — the two shapes differ).
-export function roundKeyForDay(dayNumber: number, lang: string, mode: Mode = 'sentence'): string {
-  return `${mode === 'word' ? 'w' : 'd'}:${dayNumber}:${lang}`;
+// The canonical round key: (server day, language). Kept here so the game screen (which
+// builds it) and the sync engine (which keys its conversations by it) agree byte-for-byte.
+// The `d:` prefix is historical, and the persisted outbox is keyed by it.
+export function roundKeyForDay(dayNumber: number, lang: string): string {
+  return `d:${dayNumber}:${lang}`;
 }
 
 // The dayNumber a day-keyed round belongs to, or null for a legacy non-day key. Orders
 // day rounds newest-first for the retention cap, and marks legacy rounds for dropping.
-// Both prefixes parse — the sentence and word maps are separate, but they share this
-// helper for their caps.
 function dayNumberOf(key: string): number | null {
-  const m = /^[dw]:(\d+):/.exec(key);
+  const m = /^d:(\d+):/.exec(key);
   return m ? Number(m[1]) : null;
 }
 
 // Retention cap: keep at most this many day-keyed entries (newest by dayNumber). ~800 ≈ a
-// year of daily play in two languages with headroom; word rounds are small (a log + a
-// clock) and an outbox is normally empty, so transaction clone/read cost stays bounded.
+// year of daily play in two languages with headroom; an outbox is normally empty, so
+// transaction clone/read cost stays bounded.
 const MAX_DAY_ROUNDS = 800;
 
 // Bound a day-keyed map: with more than MAX_DAY_ROUNDS entries, drop the oldest (lowest
 // dayNumber), always keeping `activeKey`. Anything that is not a day key (a legacy round
-// left by an older blob) is dropped outright. Written once for both maps — they hold
-// different shapes but the same retention story, and two copies of an eviction rule are
-// two chances to evict differently.
+// left by an older blob) is dropped outright.
 function capDayKeyed<T>(entries: Record<string, T>, activeKey: string): Record<string, T> {
   const dayKeys = Object.keys(entries).filter((k) => dayNumberOf(k) !== null);
   const survivors = new Set<string>();
@@ -134,112 +119,35 @@ function capDayKeyed<T>(entries: Record<string, T>, activeKey: string): Record<s
   return out;
 }
 
-// One Word mode round (#156, retimed by #163, server-anchored by #202). While a run is
-// live, `tried` is its OUTBOX — the counted guesses this device will submit (folded, in
-// order; free guesses never enter it), from which the whole run replays
-// (game/wordGame.ts replayWordRun) — and `startedAt` is the second source of truth: when
-// the run began. A successful submission clears that acknowledged log; the authoritative
-// recorded run then lives only in the transient `roundLoads` server snapshot above.
-//
-// Since #202 that instant is the SERVER's, translated into this device's clock: the sync
-// engine reads `startedAt` and the server's own `now` off the round-start answer and
-// anchors `Date.now() - (now - startedAt)`. It holds an ELAPSED SPAN rather than an
-// instant, so a device whose clock is minutes off still runs a 60-second run — and the
-// request's own travel time lands INSIDE the run, which is what keeps an honest submission
-// clear of the server's end-of-run wait check.
-//
-// **Since #217 only a START writes that clock, and only for the device that owns the run.**
-// The mount read anchors nothing: the server's stamp names a device, and a clock this
-// device does not hold is a run whose claims it cannot see — Word mode streams nothing, so
-// they live in the playing device's own storage until it submits. What such a device is
-// offered is a RESTART, which mints a new clock here and on the server together.
-//
-// While the run is unacknowledged, `deadline` is DERIVED from those two (startedAt + runMs
-// of the log's claimed bonuses) and recomputed on every write, so the clock cannot drift
-// away from the guesses that bought it. Once the server acknowledges the run, the outbox
-// clears and any still-live deadline clamps to now, then freezes. It is nevertheless
-// PERSISTED, because it is the ONE thing the status surfaces need and the one thing they
-// cannot compute: the archive
-// and the choosers badge a day without loading its rank map, so they cannot replay the log
-// to price it.
-//
-// There is NO `ended` field. Whether a run is over is `now > deadline`, wall-clock and
-// always current — a stored boolean would be a second answer to the same question, stale
-// the moment the tab is closed (which is exactly the case the no-pause rule is about).
-// `claimed` stays a cached derived value for those same status surfaces, like
-// RoundProgress.progress; never the source of truth. Once acknowledged it records the
-// authoritative run's count while the transient server log supplies the post-mortem.
-// `word` is the day's word slug: a republished different word under the same (day, lang)
-// key resets the round instead of replaying a stale log against the new map.
-export interface WordRoundProgress {
-  word: string;
-  // null until the SERVER has stamped this round's start (#202): a fetched-but-unplayed
-  // day sits at the rules gate, and the clock has not begun. PLAY asks the server and the
-  // visible clock starts when the answer lands. Since #217 that answer is also the ONLY
-  // thing that writes this: a mount read anchors nothing, because a clock stamped for
-  // another device times a log this one can never report.
-  startedAt: number | null;
-  deadline: number | null;
-  tried: string[];
-  claimed: number;
-  // The server has ACKNOWLEDGED this round's end-of-run log (#202). Only an optimization:
-  // the submission is first-write-wins and safe to repeat, so an unacknowledged round
-  // simply asks again on its next visit. Without it, a run that claimed NOTHING would
-  // re-POST on every mount forever, since an empty stored log reads exactly like an
-  // unsubmitted one.
-  submitted?: boolean;
-}
-
-// What a REPLAY of a word round's log makes of it — the two numbers the store needs to
-// keep the round's cached half honest. `recordWordGuess` takes the replay rather than
-// finished values so the cache can never describe a different log than the one it is
-// stored beside: handed values are derived from whatever `tried` the caller last
-// rendered, which two submissions batched into one tick would make stale — the second
-// would overwrite the first's count with a replay that never saw it. The persisted
-// deadline may also describe an older rank map after a same-word republish, and only a
-// replay against the CURRENT map can repair it. The store owns the log, so the store
-// decides what it means; the callback carries the rank map it must not know.
-interface WordRunCache {
-  claimed: number;
-  bonus: number; // seconds the claims bought, summed (game/wordGame.ts replayWordRun)
-}
-
 export interface IdentityOwner {
   accountId: string;
   deviceId: string;
 }
 
 export interface PersistedState {
-  // The proof that lets persisted game state cross a reload. The sentence outbox belongs
-  // to the ACCOUNT; a Word run belongs to the DEVICE. A missing/corrupt device key can no
-  // longer turn an ownerless blob into a first act for a newly bootstrapped account.
+  // The proof that lets persisted game state cross a reload. The outbox belongs to the
+  // ACCOUNT. A missing/corrupt device key can no longer turn an ownerless blob into a first
+  // act for a newly bootstrapped account.
   // `null` is valid only while a deliberate first act has begun a bootstrap that has not
   // answered yet; startup reconciliation checks the pending-token record before keeping it.
   identityOwner: IdentityOwner | null;
   // Unacknowledged sentence guesses, keyed by roundKey (#214). An entry exists only while
   // this device owes the server something: an accepted write removes what it acknowledged,
   // and an emptied entry is dropped, so a device that is caught up persists no rounds at
-  // all. Bounded like the word map, for the archive-day case where several outboxes are
+  // all. Bounded (`capDayKeyed`), for the archive-day case where several outboxes are
   // stranded offline at once.
   outbox: Record<string, RoundOutbox>;
-  // Word mode rounds (#156), keyed by roundKeyForDay(day, lang, 'word'). Their own map
-  // because the shape differs from a sentence round's; same retention policy.
-  wordRounds: Record<string, WordRoundProgress>;
   // Last-played language: seeds the `/` redirect so a return visit lands where you
   // last played (falls back to the browser language, then English).
   lastLang: string | null;
-  // Last-played MODE (#156): arrival lands on it (like lastLang) — the `/` redirect
-  // sends a word-mode player to /<lang>/word. Switching modes is a deliberate act
-  // (the header's Whippin mark opens the mode chooser); this only decides where "/" lands.
-  lastMode: Mode | null;
   // The onboarding tutorial (#51) has been completed or skipped. Global, not
   // per-language — the mechanic is the same in both.
   onboarded: boolean;
   // Which #190 board tab is up — a GROUP (the trusted default, #271) or GLOBAL. It belongs to
   // the current VISIT to the leaderboard, not to the player (user feedback 2026-08-20,
   // narrowing the first cut, which made it a standing preference). Two things remount
-  // that screen without ending the visit — a page REFRESH and a header MODE SWITCH (App
-  // keys it on lang:mode) — and both were dropping a player who had chosen GLOBAL back
+  // that screen without ending the visit — a page REFRESH and a header LANGUAGE PICK (App
+  // keys it on the language) — and both were dropping a player who had chosen GLOBAL back
   // onto the group. So it is PERSISTED, which is the only way to survive the reload; and
   // App RESETS it the moment a non-board route renders, which is what ends the visit.
   // That reset lives in App rather than at each entry point precisely because an entry
@@ -252,10 +160,9 @@ export interface PersistedState {
   // A stale id (left, removed) is simply not among the groups the server lists, and the
   // screen falls back to the first one.
   lastGroupId: string | null;
-  // The sentence game's one-time instructions gate has been passed (2026-08-11). Unlike
-  // Word mode's gate — whose START is mandatory because it starts the clock — the sentence
-  // gate exists only to state the rules, so it is shown ONCE ever, globally: the rules are
-  // the same in both languages and on every day. *(Amended by the #216 trigger rework,
+  // The sentence game's one-time instructions gate has been passed (2026-08-11). The gate
+  // exists only to state the rules, so it is shown ONCE ever, globally: the rules are the
+  // same in both languages and on every day. *(Amended by the #216 trigger rework,
   // user-decided 2026-08-24: a device with NO account shows the full rules gate again
   // whatever this flag says — its PLAY is what deploys the account. This flag still keeps
   // an account-holding player from ever seeing the rules twice.)*
@@ -273,14 +180,8 @@ export interface PersistedState {
 interface GameState extends PersistedState {
   // Where each round's AUTHORITATIVE state is (#214). NOT persisted, deliberately: the
   // server owns the log, the client holds its last answer for as long as the tab lives,
-  // and a new visit asks again rather than replaying a mirror that may be stale. Both
-  // modes register here — both read the server log, with Word doing so once its run has
-  // been submitted and its persisted outbox cleared.
+  // and a new visit asks again rather than replaying a mirror that may be stale.
   roundLoads: Record<string, RoundLoad>;
-
-  // Word mode's twin (#156): the word round being played. NOT persisted; set by
-  // ensureWordRound. recordWordGuess targets wordRounds[activeWordKey].
-  activeWordKey: string | null;
 
   // The tutorial currently on screen (transient, NOT persisted): 'first' = the run a
   // newcomer accepted from the invitation, 'replay' = summoned via the header's "?".
@@ -291,12 +192,8 @@ interface GameState extends PersistedState {
   openTutorial: (kind: 'first' | 'replay') => void;
   closeTutorial: () => void;
 
-
   // Remember the last-played language (drives the `/` redirect). Ignores non-languages.
   setLastLang: (lang: string) => void;
-
-  // Remember the last-played mode (#156, drives where `/` lands).
-  setLastMode: (mode: Mode) => void;
 
   // Which board tab is up (#190), and the end of a visit to it: the GROUP again.
   setBoardTab: (tab: BoardTab) => void;
@@ -319,8 +216,8 @@ interface GameState extends PersistedState {
 
   // Reconcile the persisted OUTBOX to `key` playing `puzzle` (#214). An outbox naming a
   // DIFFERENT published revision is DROPPED — its guesses answered a retired question —
-  // and any legacy non-day key goes with it; the map is then bounded by the same
-  // most-recent cap the word rounds use. Called before the round's first render, so no
+  // and any legacy non-day key goes with it; the map is then bounded by the most-recent
+  // cap. Called before the round's first render, so no
   // read path ever sees an outbox belonging to another puzzle.
   //
   // It never CREATES one. An outbox exists only while this device owes the server
@@ -355,52 +252,6 @@ interface GameState extends PersistedState {
   // FORGETS a round, which the engine does when it evicts that round's conversation: the
   // flight is what owns the state, and the next mount reads it again.
   setRoundLoad: (key: string, load: RoundLoad | null) => void;
-
-  // Reconcile the persisted WORD rounds to `key` (#156): a matching key playing the SAME
-  // word rehydrates untouched; a new key — or a republished different word under the same
-  // (day, lang) — starts fresh. Same retention/cap policy as ensureRound.
-  ensureWordRound: (key: string, word: string) => void;
-
-  // OPEN a word round's run (#163, server-stamped since #202, restarting since #217): the
-  // START's answer carries the SERVER's `startedAt`, translated into this device's clock,
-  // and stamps it here — opening the deadline at the full START_SECONDS with an empty log.
-  // Keyed rather than active-keyed, because the answer can land after navigation has moved
-  // on.
-  //
-  // It REPLACES whatever the round held, because that is what the write it reports did: a
-  // start is accepted for any run the server has not recorded, so the clock it just minted
-  // is the only run this daily has. Only a START calls it — the mount read anchors nothing,
-  // since a clock this device does not own is one it must not play (#217).
-  openWordRun: (key: string, startedAt: number) => void;
-
-  // Settle a Word run from the server's authoritative recorded log (#214). Its persisted
-  // guesses were an outbox and are now acknowledged, so clear them even when another
-  // device's first-write-wins log differs. Clamp a still-live deadline to now: a settled
-  // run must stop accepting input immediately, while an already-finished one never reopens.
-  settleWordRun: (key: string, claimed: number) => void;
-
-  // DISCARD a Word run the server has told us is gone (#217): its stamp names another
-  // device now, or the record holds no run of this word at all. The local husk is not
-  // merely unsubmittable — its clock and claim count are what the language chooser and the
-  // archive READ a Word day's status from (`wordStatusOf`), so leaving it would badge the
-  // day DONE, with a score, for a run the server destroyed, while the game itself offers
-  // START OVER. Keeps the round's entry (its word still names the daily on screen) and
-  // empties everything the retired run put in it.
-  discardWordRun: (key: string) => void;
-
-  // Count one Word mode guess (a claim or a near/off-map miss — free guesses never reach
-  // here) on the active word round: check the guess against the DEADLINE as of now,
-  // append it, then re-price the whole resulting log so the cached claim count and the
-  // deadline both describe exactly what is stored beside them. `replay` is the pure model
-  // (game/wordGame.ts replayWordRun) closed over this puzzle's ranks — see WordRunCache
-  // for why the store replays instead of being handed the numbers.
-  //
-  // RETURNS whether the guess actually LANDED, and the caller owes it a check. The screen
-  // decides what to show from `playing`, which is a rendered value and therefore lags the
-  // real clock by up to a frame; this reads `Date.now()` at the instant of the write. Both
-  // must agree or the player is told they claimed something the run never took — a float,
-  // a `+21s` gain and a spoken "claimed …" for a guess that changed nothing.
-  recordWordGuess: (typed: string, replay: (tried: string[]) => WordRunCache) => boolean;
 }
 
 export const GAME_PERSIST_VERSION = 19;
@@ -409,7 +260,9 @@ export const GAME_PERSIST_VERSION = 19;
 //   v0 was a single top-level round ({ roundKey, holes, ... }); the shape is now a keyed
 //     map, so discard the old state rather than mis-merge it (one-time reset).
 //   v1 may still carry the RETIRED keyboard `layout` preference (removed with the AZERTY
-//     layout) — picking only the current fields silently drops it. v1 also predates the
+//     layout) — picking only the current fields silently drops it. A v19 blob may likewise
+//     still carry the retired Word mode's `wordRounds` and `lastMode` (removed 2026-09-16),
+//     dropped the same way. v1 also predates the
 //     onboarding tutorial (#51): anyone with existing play state has already learned the
 //     game, so GRANDFATHER them (rounds or a lastLang -> onboarded) — a veteran must
 //     never be surprised by the tutorial.
@@ -420,15 +273,6 @@ export const GAME_PERSIST_VERSION = 19;
 //     RETIRES it with the auto-open itself (#155: the onboarding now ends by tapping a word,
 //     so the map no longer introduces itself mid-round). Like the retired keyboard `layout`
 //     before it, picking only the current fields silently drops it from any older blob.
-//   v6 adds Word mode (#156): the `wordRounds` map and `lastMode`. Older blobs get an
-//     empty map and no mode preference (arrival stays on the sentence until a word round
-//     is played).
-//   v7 RETIMES those word rounds (#163): the strike count gave way to a countdown, so a
-//     round now carries `startedAt`/`deadline` and no `ended`. A v6 word round has no
-//     clock and no way to invent one — it recorded a run under rules that no longer
-//     exist — so every one of them is DROPPED (the standing no-back-compat rule; the
-//     sentence rounds, the solved days and the streak are untouched). The cost is a
-//     device-local word history that predates the timer, which is pre-launch data.
 //   v8 adds `sentenceRulesSeen` (2026-08-11): the sentence game's one-time instructions
 //     gate. Older blobs get false — deliberately NOT grandfathered the way `onboarded`
 //     is, because the gate teaches the history tap, which is newer than any existing
@@ -440,14 +284,6 @@ export const GAME_PERSIST_VERSION = 19;
 //     already using it. It is persisted only so a REFRESH does not end a visit to the
 //     board — App clears it on leaving one — so a stored 'global' is at most one
 //     interrupted visit old, never a preference to honour forever.
-//   v11 SERVER-ANCHORS the word rounds (#202): a run's `startedAt` is the server's stamp
-//     now, and a v10 word round's is a local `Date.now()` the server never saw. There is no
-//     honest way to invent the missing record — its end-of-run submission would be refused
-//     as `not_started`, and its clock is unauditable — so every one of them is DROPPED,
-//     exactly as v7 dropped the pre-clock strike runs (the standing no-back-compat rule).
-//     Sentence rounds, solved days, the streak and the mode preference are untouched; the
-//     cost is a device-local word history that predates the server's clock, which is
-//     pre-launch data.
 //   v10 retires `scoreSubmitted` (2026-08-20): a finished round now asks the population
 //     until the population HOLDS it, so `scoreRecorded` alone settles a round and the old
 //     flag has no reader. It is STRIPPED rather than left as unread cruft (the v1 keyboard
@@ -455,14 +291,13 @@ export const GAME_PERSIST_VERSION = 19;
 //     round a 4xx burned (and, before the 2026-08-16 correction, every 5xx too) carried the
 //     flag with no recorded score, and now submits again on the next visit to its solved
 //     screen.
-//   v12 retires `scoreRecorded` from BOTH round maps (#203): there is no client-claimed
+//   v12 retires `scoreRecorded` from the round maps (#203): there is no client-claimed
 //     score left to reconcile — the server derives it from the guess log and records the
 //     row itself — so what a finished round persists is `recorded`, a plain "the server
 //     holds this round's solve", written from the round answers rather than from a score
 //     POST. STRIPPED, not translated (the v10 precedent, and the standing no-back-compat
-//     rule): a word round already carries `submitted` for exactly this, and a sentence
-//     round appended to AFTER this ships re-learns the fact from the answer that says
-//     `solved`.
+//     rule): a sentence round appended to AFTER this ships re-learns the fact from the
+//     answer that says `solved`.
 //     **A round already SOLVED before this ships does NOT recover, and never will**
 //     (corrected on review): its stored row was written by a pre-#203 append, so it carries
 //     no `solved` attribute, its mount READ answers `solved: false`, and with nothing left
@@ -478,11 +313,9 @@ export const GAME_PERSIST_VERSION = 19;
 //     version it was played against, and since rank 0 is a GROUP, a correction can move the
 //     aliases that decide `solved` without touching a single hole — so the holes matching
 //     proves nothing about the maps. Dropped at the migration rather than lazily on mount,
-//     exactly as v7 dropped the pre-clock strike runs and v11 the pre-#202 word rounds, so
-//     every round that survives carries a revision by construction and no read path needs a
-//     branch for one that does not. Solved days, the streak, the mode preference and the
-//     word rounds are untouched; the cost is device-local sentence play at most a day old,
-//     against an archive wiped before launch.
+//     so every round that survives carries a revision by construction and no read path needs
+//     a branch for one that does not. Solved days and the streak are untouched; the cost is
+//     device-local sentence play at most a day old, against an archive wiped before launch.
 //   v14 DROPS the sentence `rounds` map OUTRIGHT (#214), and with it every round-shaped
 //     migration this list has accumulated. Local storage is an OUTBOX now: the server owns a
 //     round's log from its first guess, so a persisted holes/progress/count/flags mirror was
@@ -493,9 +326,8 @@ export const GAME_PERSIST_VERSION = 19;
 //     cap on duplicates and — near the cap — cost an honest player their leaderboard entry.
 //     The mount READ recovers what the server has, which for anything that ever flushed is
 //     everything; the cost is guesses stranded on a device that has been offline since its
-//     last flush, at most one round's worth. The word rounds and every preference are
-//     untouched (the sentence archive/chooser/streak get their server-backed source in #211,
-//     which ships with this — see v15).
+//     last flush, at most one round's worth. Every preference is untouched (the archive and
+//     the streak get their server-backed source in #211, which ships with this — see v15).
 //   v15 DROPS `solvedDays` (#211), the last device-local half of a player's history. The
 //     per-language solved-day collection lives on the private player row now, credited by
 //     the append that CONFIRMS a solve and read back through the private history path, so a
@@ -506,23 +338,21 @@ export const GAME_PERSIST_VERSION = 19;
 //     standing no-back-compat rule says an obsolete path is removed, not accommodated. The
 //     cost is that a device whose rounds were never synced loses its streak; every round
 //     that ever flushed is on the server, and #214 already made that the only kind there is.
-//   v16 DROPS the OUTBOX and the WORD ROUNDS (#216), because both belong to an identity this
-//     device no longer has. Until #216 the identity was a shared secret (#187); it is now a
+//   v16 DROPS the OUTBOX (#216), because it belongs to an identity this device no longer
+//     has. Until #216 the identity was a shared secret (#187); it is now a
 //     device token resolving to a SERVER-assigned account, and there is no mapping between
 //     the two — the epic wipes the DB before launch and takes no migration. Left in place,
-//     these are worse than stale: the tokenless branch pumps a surviving outbox on the very
+//     it is worse than stale: the tokenless branch pumps a surviving outbox on the very
 //     first page load, which bootstraps a BRAND-NEW account and then appends the retired
-//     identity's guesses to it. A word round is the same shape of wrong — its clock was
-//     stamped for an account nobody now holds, and its submission would be refused
-//     `not_started` (the v11 precedent). Every preference survives, as at v14 and v15.
-//   v17 BINDS both maps to their #216 owner. A v16 blob can carry state but cannot prove
+//     identity's guesses to it. Every preference survives, as at v14 and v15.
+//   v17 BINDS the outbox to its #216 owner. A v16 blob can carry state but cannot prove
 //     which device/account produced it, so it is dropped under the same no-back-compat rule
 //     as v16's retired-secret state. New ownerless state survives only while the device key
 //     carries the pending token minted by the act that created it; startup reconciliation
 //     drops it when the key is missing or corrupt instead of bootstrapping a stranger.
 //   v18 changes the STORAGE boundary, not this content shape: the state lives behind the
 //     transactional IndexedDB record (gamePersistence.ts). The retired v17 localStorage
-//     blob is NOT read — the standing no-back-compat rule (v7/v11/v14 precedent): an
+//     blob is NOT read — the standing no-back-compat rule (the v14 precedent): an
 //     empty database starts from the initial state, and the one-time cost is pre-launch
 //     preferences on existing devices.
 function storedRecord(value: unknown): Record<string, unknown> {
@@ -546,44 +376,12 @@ function parseOutbox(value: unknown): Record<string, RoundOutbox> {
   return outbox;
 }
 
-function parseWordRounds(value: unknown): Record<string, WordRoundProgress> {
-  const rounds: Record<string, WordRoundProgress> = {};
-  for (const [key, candidate] of Object.entries(storedRecord(value))) {
-    const entry = storedRecord(candidate);
-    const startedAt = entry.startedAt;
-    const deadline = entry.deadline;
-    if (
-      typeof entry.word !== 'string' ||
-      !(startedAt === null || (typeof startedAt === 'number' && Number.isFinite(startedAt))) ||
-      !(deadline === null || (typeof deadline === 'number' && Number.isFinite(deadline))) ||
-      !Array.isArray(entry.tried) ||
-      !entry.tried.every((guess) => typeof guess === 'string') ||
-      typeof entry.claimed !== 'number' ||
-      !Number.isFinite(entry.claimed) ||
-      (entry.submitted !== undefined && entry.submitted !== true)
-    ) {
-      continue;
-    }
-    rounds[key] = {
-      word: entry.word,
-      startedAt,
-      deadline,
-      tried: entry.tried,
-      claimed: Math.min(CLAIM_ZONE, Math.max(0, Math.trunc(entry.claimed))),
-      ...(entry.submitted === true ? { submitted: true } : {}),
-    };
-  }
-  return rounds;
-}
-
 export function migratePersisted(persisted: unknown, version: number): PersistedState {
   if (version < 1) {
     return {
       identityOwner: null,
       outbox: {},
-      wordRounds: {},
       lastLang: null,
-      lastMode: null,
       onboarded: false,
       boardTab: 'group',
       lastGroupId: null,
@@ -603,7 +401,6 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
     typeof p.onboarded === 'boolean'
       ? p.onboarded
       : Object.keys(legacyRounds).length > 0 || lastLang != null;
-  const lastMode = p.lastMode === 'word' || p.lastMode === 'sentence' ? p.lastMode : null;
   const sentenceRulesSeen = p.sentenceRulesSeen === true;
   // The pre-account seed is display-only, so a malformed one simply re-mints on next need.
   const localSeed =
@@ -613,20 +410,17 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
     typeof p.lastGroupId === 'string' && GROUP_ID_PATTERN.test(p.lastGroupId) ? p.lastGroupId : null;
   const parsedOwner = version < 17 ? null : parseIdentityOwner(p.identityOwner);
   // `undefined` means a current-version blob claimed an owner but did not carry a valid
-  // one. Fail closed: neither map may survive malformed ownership metadata.
+  // one. Fail closed: the outbox may not survive malformed ownership metadata.
   const stateHasOwnerContract = version >= 17 && parsedOwner !== undefined;
   // The outbox arrives with v14 and holds only UNACKNOWLEDGED guesses, which no older blob
   // can distinguish inside its merged `tried` list (see the v14 note) — so an older one
   // starts empty rather than re-sending a log the server already holds. v16 raised that
   // floor for the retired secret; v17 raises it again for ownerless device-token state.
   const outbox = stateHasOwnerContract ? parseOutbox(p.outbox) : {};
-  const wordRoundsWithOwner = stateHasOwnerContract ? parseWordRounds(p.wordRounds) : {};
   return {
     identityOwner: parsedOwner ?? null,
     outbox,
-    wordRounds: wordRoundsWithOwner,
     lastLang,
-    lastMode,
     onboarded,
     boardTab,
     lastGroupId,
@@ -654,9 +448,7 @@ export function initialPersistedState(): PersistedState {
   return {
     identityOwner: null,
     outbox: {},
-    wordRounds: {},
     lastLang: null,
-    lastMode: null,
     onboarded: false,
     boardTab: 'group',
     lastGroupId: null,
@@ -669,7 +461,6 @@ type OwnedGameMutation = { expectedOwner: IdentityOwner | null };
 
 export type GameMutation =
   | { type: 'setLastLang'; lang: string }
-  | { type: 'setLastMode'; mode: Mode }
   | { type: 'setBoardTab'; tab: BoardTab }
   | { type: 'setLastGroup'; group: string | null }
   | { type: 'setOnboarded' }
@@ -685,18 +476,6 @@ export type GameMutation =
       after: string[];
     } & OwnedGameMutation)
   | ({ type: 'discardOutbox'; key: string; puzzle: string } & OwnedGameMutation)
-  | ({ type: 'ensureWordRound'; key: string; word: string } & OwnedGameMutation)
-  | ({ type: 'openWordRun'; key: string; word: string; startedAt: number } & OwnedGameMutation)
-  | ({ type: 'settleWordRun'; key: string; word: string; claimed: number; now: number } & OwnedGameMutation)
-  | ({ type: 'discardWordRun'; key: string; word: string } & OwnedGameMutation)
-  | ({
-      type: 'recordWordGuess';
-      key: string;
-      word: string;
-      typed: string;
-      now: number;
-      replay: (tried: string[]) => WordRunCache;
-    } & OwnedGameMutation)
   | {
       type: 'reconcileIdentity';
       expectedOwner: IdentityOwner | null;
@@ -746,10 +525,6 @@ function removeAcknowledged(current: string[], before: string[], after: string[]
   return didRemove ? next : current;
 }
 
-function freshWordRound(word: string): WordRoundProgress {
-  return { word, startedAt: null, deadline: null, tried: [], claimed: 0 };
-}
-
 // One pure interpreter is used twice: immediately against the tab's cache (the synchronous
 // UI contract), then inside one IndexedDB readwrite transaction against the latest committed
 // value (the durability/cross-tab contract). The mutation states intent; no stale snapshot is
@@ -767,10 +542,6 @@ export function applyGameMutation(
       return state.lastLang === mutation.lang
         ? changed(state, state)
         : changed(state, { ...state, lastLang: mutation.lang });
-    case 'setLastMode':
-      return state.lastMode === mutation.mode
-        ? changed(state, state)
-        : changed(state, { ...state, lastMode: mutation.mode });
     case 'setBoardTab':
       return state.boardTab === mutation.tab
         ? changed(state, state)
@@ -831,127 +602,6 @@ export function applyGameMutation(
       const { [mutation.key]: _discarded, ...outbox } = state.outbox;
       return changed(state, { ...state, outbox });
     }
-    case 'ensureWordRound': {
-      const existing = state.wordRounds[mutation.key];
-      const wordRounds = capDayKeyed(
-        {
-          ...state.wordRounds,
-          [mutation.key]: existing?.word === mutation.word ? existing : freshWordRound(mutation.word),
-        },
-        mutation.key,
-      );
-      const same =
-        Object.keys(wordRounds).length === Object.keys(state.wordRounds).length &&
-        Object.entries(wordRounds).every(([key, value]) => state.wordRounds[key] === value);
-      return same ? changed(state, state) : changed(state, { ...state, wordRounds });
-    }
-    case 'openWordRun': {
-      const existing = state.wordRounds[mutation.key];
-      if (existing && existing.word !== mutation.word) return changed(state, state);
-      // A FRESH run every time (#217), never a merge into what was here: the server write
-      // this reports wiped its own record, so an outbox or a claim count left over would
-      // describe a run that no longer exists on either end.
-      return changed(state, {
-        ...state,
-        wordRounds: capDayKeyed(
-          {
-            ...state.wordRounds,
-            [mutation.key]: {
-              ...freshWordRound(mutation.word),
-              startedAt: mutation.startedAt,
-              deadline: mutation.startedAt + runMs(0),
-            },
-          },
-          mutation.key,
-        ),
-      });
-    }
-    case 'settleWordRun': {
-      const round = state.wordRounds[mutation.key];
-      if (!round || round.word !== mutation.word) return changed(state, state);
-      const finiteClaimed = Number.isFinite(mutation.claimed) ? Math.trunc(mutation.claimed) : 0;
-      const claimed = Math.min(CLAIM_ZONE, Math.max(0, finiteClaimed));
-      const deadline = round.deadline === null ? null : Math.min(round.deadline, mutation.now);
-      if (
-        round.submitted &&
-        round.tried.length === 0 &&
-        round.claimed === claimed &&
-        round.deadline === deadline
-      ) {
-        return changed(state, state);
-      }
-      return changed(state, {
-        ...state,
-        wordRounds: {
-          ...state.wordRounds,
-          [mutation.key]: { ...round, tried: [], claimed, deadline, submitted: true },
-        },
-      });
-    }
-    case 'discardWordRun': {
-      const round = state.wordRounds[mutation.key];
-      // Word-qualified like every other Word mutation: a verdict about the retired daily
-      // must not empty the round a republish has already replaced it with.
-      if (!round || round.word !== mutation.word) return changed(state, state);
-      const fresh = freshWordRound(mutation.word);
-      const already =
-        round.startedAt === null &&
-        round.deadline === null &&
-        round.tried.length === 0 &&
-        round.claimed === 0 &&
-        round.submitted === undefined;
-      if (already) return changed(state, state);
-      return changed(state, {
-        ...state,
-        wordRounds: { ...state.wordRounds, [mutation.key]: fresh },
-      });
-    }
-    case 'recordWordGuess': {
-      const round = state.wordRounds[mutation.key];
-      if (
-        !round ||
-        round.word !== mutation.word ||
-        round.submitted ||
-        round.startedAt === null ||
-        round.deadline === null ||
-        mutation.now > round.deadline
-      ) {
-        return changed(state, state, false);
-      }
-      const price = (cache: WordRunCache) => ({
-        claimed: cache.claimed,
-        deadline: round.startedAt! + runMs(cache.bonus),
-      });
-      const current = price(mutation.replay(round.tried));
-      if (mutation.now > current.deadline || round.tried.includes(mutation.typed)) {
-        if (round.claimed === current.claimed && round.deadline === current.deadline) {
-          return changed(state, state, false);
-        }
-        return changed(
-          state,
-          {
-            ...state,
-            wordRounds: {
-              ...state.wordRounds,
-              [mutation.key]: { ...round, ...current },
-            },
-          },
-          false,
-        );
-      }
-      const tried = [...round.tried, mutation.typed];
-      return changed(
-        state,
-        {
-          ...state,
-          wordRounds: {
-            ...state.wordRounds,
-            [mutation.key]: { ...round, tried, ...price(mutation.replay(tried)) },
-          },
-        },
-        true,
-      );
-    }
     case 'reconcileIdentity': {
       // A late transition from A must not clear a state already rebound to B by a sibling.
       // If the target is already committed, the mutation is simply idempotent.
@@ -960,18 +610,13 @@ export function applyGameMutation(
       }
       if (mutation.identity === null) {
         if (mutation.pendingBootstrap && state.identityOwner === null) return changed(state, state);
-        if (
-          state.identityOwner === null &&
-          Object.keys(state.outbox).length === 0 &&
-          Object.keys(state.wordRounds).length === 0
-        ) {
+        if (state.identityOwner === null && Object.keys(state.outbox).length === 0) {
           return changed(state, state);
         }
         return changed(state, {
           ...state,
           identityOwner: null,
           outbox: {},
-          wordRounds: {},
           lastGroupId: null,
         });
       }
@@ -984,7 +629,6 @@ export function applyGameMutation(
       return changed(state, {
         ...state,
         identityOwner: mutation.identity,
-        ...(accountChanged || deviceChanged ? { wordRounds: {} } : {}),
         ...(accountChanged ? { outbox: {}, lastGroupId: null } : {}),
       });
     }
@@ -995,9 +639,7 @@ export function persistedStateOf(state: GameState): PersistedState {
   return {
     identityOwner: state.identityOwner,
     outbox: state.outbox,
-    wordRounds: state.wordRounds,
     lastLang: state.lastLang,
-    lastMode: state.lastMode,
     onboarded: state.onboarded,
     boardTab: state.boardTab,
     lastGroupId: state.lastGroupId,
@@ -1017,7 +659,6 @@ export const useGameStore = create<GameState>((set, get) => {
   return {
     ...initialPersistedState(),
     roundLoads: {},
-    activeWordKey: null,
     tutorialOpen: null,
 
     openTutorial: (kind) => set({ tutorialOpen: kind }),
@@ -1029,9 +670,6 @@ export const useGameStore = create<GameState>((set, get) => {
     setLastLang: (lang) => {
       if (!isLang(lang)) return;
       commit({ type: 'setLastLang', lang });
-    },
-    setLastMode: (mode) => {
-      commit({ type: 'setLastMode', mode });
     },
     setBoardTab: (tab) => {
       commit({ type: 'setBoardTab', tab });
@@ -1087,61 +725,6 @@ export const useGameStore = create<GameState>((set, get) => {
         return { roundLoads: { ...state.roundLoads, [key]: load } };
       }),
 
-    ensureWordRound: (key, word) => {
-      const expectedOwner = get().identityOwner;
-      set({ activeWordKey: key });
-      commit({ type: 'ensureWordRound', key, word, expectedOwner });
-    },
-    openWordRun: (key, startedAt) => {
-      const round = get().wordRounds[key];
-      if (!round) return;
-      commit({
-        type: 'openWordRun',
-        key,
-        word: round.word,
-        startedAt,
-        expectedOwner: get().identityOwner,
-      });
-    },
-    settleWordRun: (key, claimed) => {
-      const round = get().wordRounds[key];
-      if (!round) return;
-      commit({
-        type: 'settleWordRun',
-        key,
-        word: round.word,
-        claimed,
-        now: Date.now(),
-        expectedOwner: get().identityOwner,
-      });
-    },
-    discardWordRun: (key) => {
-      const round = get().wordRounds[key];
-      if (!round) return;
-      commit({
-        type: 'discardWordRun',
-        key,
-        word: round.word,
-        expectedOwner: get().identityOwner,
-      });
-    },
-    recordWordGuess: (typed, replay) => {
-      const state = get();
-      const key = state.activeWordKey;
-      const round = key === null ? undefined : state.wordRounds[key];
-      if (!key || !round) return false;
-      return (
-        commit({
-          type: 'recordWordGuess',
-          key,
-          word: round.word,
-          typed,
-          now: Date.now(),
-          replay,
-          expectedOwner: state.identityOwner,
-        }).landed === true
-      );
-    },
   };
 });
 
@@ -1181,8 +764,8 @@ function normalizedEnvelope(
 
 // Reuse the tab's CURRENT object identities wherever the committed value is structurally
 // equal. Every committed envelope is rebuilt from the stored record inside its
-// transaction, so without this each applied commit would hand the screens fresh
-// `outbox`/`wordRounds` objects about once a second while a player types — and every
+// transaction, so without this each applied commit would hand the screens a fresh
+// `outbox` object about once a second while a player types — and every
 // derivation downstream (the play log, the board replay, the run's trajectory) would
 // recompute for values that did not change (the roundSync `sameServer` rule).
 function stableEntries<T>(
@@ -1211,21 +794,12 @@ const sameLog = (a: readonly string[], b: readonly string[]) =>
 const sameOutboxEntry = (a: RoundOutbox, b: RoundOutbox) =>
   a.puzzle === b.puzzle && sameLog(a.guesses, b.guesses);
 
-const sameWordRound = (a: WordRoundProgress, b: WordRoundProgress) =>
-  a.word === b.word &&
-  a.startedAt === b.startedAt &&
-  a.deadline === b.deadline &&
-  a.claimed === b.claimed &&
-  a.submitted === b.submitted &&
-  sameLog(a.tried, b.tried);
-
 function applyCommittedState(state: PersistedState, forceOwner = false): void {
   const current = useGameStore.getState();
   const ownerMatches = sameOwner(current.identityOwner, state.identityOwner);
   const adoptOwned = forceOwner || ownerMatches;
   useGameStore.setState({
     lastLang: state.lastLang,
-    lastMode: state.lastMode,
     boardTab: state.boardTab,
     onboarded: state.onboarded,
     sentenceRulesSeen: state.sentenceRulesSeen,
@@ -1234,11 +808,6 @@ function applyCommittedState(state: PersistedState, forceOwner = false): void {
       ? {
           identityOwner: ownerMatches ? current.identityOwner : state.identityOwner,
           outbox: stableEntries(state.outbox, current.outbox, sameOutboxEntry),
-          wordRounds: stableEntries(state.wordRounds, current.wordRounds, sameWordRound),
-          activeWordKey:
-            current.activeWordKey !== null && current.activeWordKey in state.wordRounds
-              ? current.activeWordKey
-              : null,
         }
       : {}),
   });
@@ -1446,7 +1015,7 @@ export function installGameStoreSync(): () => void {
   };
 }
 
-// Bind the persisted maps to the identity that may send them. This runs once after the
+// Bind the persisted outbox to the identity that may send it. This runs once after the
 // device key is loaded and again on every live identity transition. Preferences are never
 // identity-owned and therefore never appear in these patches.
 export function reconcileGameStateIdentity(
@@ -1469,15 +1038,9 @@ export function reconcileGameStateIdentity(
 
   const accountChanged =
     owner !== null && (nextOwner === null || owner.accountId !== nextOwner.accountId);
-  const deviceChanged =
-    owner !== null &&
-    (nextOwner === null ||
-      owner.accountId !== nextOwner.accountId ||
-      owner.deviceId !== nextOwner.deviceId);
   const clearOwnerless = nextOwner === null && !(pendingBootstrap && owner === null);
   useGameStore.setState({
     ...result.state,
-    ...(deviceChanged || clearOwnerless ? { activeWordKey: null } : {}),
     ...(accountChanged || clearOwnerless ? { roundLoads: {} } : {}),
   });
   enqueueGameMutation(mutation);

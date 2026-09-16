@@ -6,8 +6,8 @@
 //
 //   1. COMMIT — `LinkStore.adopt`, ONE transaction: the challenge is consumed, the device
 //      moves, the account being left is deleted with its profile row, the departure job
-//      is persisted, and the ACTIVE DAY's play moves with the device (`supportedTuples`,
-//      every tuple where the destination has nothing and the source has play). Indivisible,
+//      is persisted, and the ACTIVE DAY's play moves with the device (`supportedLangs`,
+//      every language where the destination has nothing and the source has play). Indivisible,
 //      because the half-states are not equally harmless: a device left on a DELETED account
 //      is a player signed out mid-link with everything gone, and a round moved by an
 //      adoption that never commits is play under an account nobody holds — the first cut
@@ -20,7 +20,7 @@
 //      after the commit nothing new can land). The job written in step 1 is what makes it
 //      durable: idempotent, resumable, and its own last act is to delete itself.
 //
-// The solved-day credit a transferred sentence solve owes the adopting account's streak
+// The solved-day credit a transferred solve owes the adopting account's streak
 // follows step 1 as a logged, non-fatal side effect, the round route's own rule for that
 // rebuildable collection.
 
@@ -28,16 +28,14 @@ import { bestStreak, currentStreak, VOCAB_BUILDS } from '@whippin/shared';
 import type { GroupStore } from './groupStore';
 import type { PlayerHistoryStore } from './historyStore';
 import type { LinkStore } from './linkStore';
-import type { ScoreMode } from './scoreLimits';
 
-// EVERY supported language × BOTH modes — "the active day" means all of them, not whichever
-// route the linking device happens to be on (user-decided 2026-08-23). Which language a
-// player was on lives in the browser and nowhere else, so a server that guessed would erase
-// the round it guessed wrong about. The product is bounded (four tuples today), which is
-// what makes evaluating all of them the cheap answer as well as the right one.
-export function supportedTuples(): { lang: string; mode: ScoreMode }[] {
-  const modes: ScoreMode[] = ['sentence', 'word'];
-  return Object.keys(VOCAB_BUILDS).flatMap((lang) => modes.map((mode) => ({ lang, mode })));
+// EVERY supported language — "the active day" means all of them, not whichever route the
+// linking device happens to be on (user-decided 2026-08-23). Which language a player was on
+// lives in the browser and nowhere else, so a server that guessed would erase the round it
+// guessed wrong about. The product is bounded (two languages today), which is what makes
+// evaluating all of them the cheap answer as well as the right one.
+export function supportedLangs(): string[] {
+  return Object.keys(VOCAB_BUILDS);
 }
 
 // WHAT AN ACCOUNT IS WORTH, in the three numbers every surface that states one uses: the
