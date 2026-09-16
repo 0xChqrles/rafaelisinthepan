@@ -49,10 +49,19 @@ type GameSurface = 'invite' | 'game';
 
 export default function App() {
   const pathname = useLocation();
+  const [lessonReturn, setLessonReturn] = useState<string | undefined>();
+  const startOnboardingLesson = useCallback((lang: LangCode) => {
+    setLessonReturn(pathname);
+    track('tutorial', { action: 'start' });
+    navigate(pathForLesson(lang, PLAY_LEVEL));
+  }, [pathname]);
   // The client's active game day bounds the date deep-link range (a future date -> home),
   // so parsing gets it here (kept out of parseRoute so parsing stays pure/testable).
   const today = activeDate(new Date());
   const route = parseRoute(pathname, { activeDate: today });
+  useEffect(() => {
+    if (route.view !== 'lesson') setLessonReturn(undefined);
+  }, [route.view]);
   // The chrome language of every screen the URL does not name one for — the link's `?lang=`,
   // then the stored preference, then the browser's (`hooks/useUiLang`).
   const homeLang = useUiLang();
@@ -194,7 +203,9 @@ export default function App() {
         {!blocked && route.view === 'archive' && <Archive lang={route.lang} />}
         {/* The tutorial (#269): the list of levels, and one level's lesson on its own route. */}
         {!blocked && route.view === 'learn' && <Learn lang={route.lang} />}
-        {!blocked && route.view === 'lesson' && <Lesson lang={route.lang} level={route.level} />}
+        {!blocked && route.view === 'lesson' && (
+          <Lesson lang={route.lang} level={route.level} returnTo={lessonReturn} />
+        )}
         {/* The leaderboard screen (#190) — keyed so switching language drops the cached
             reads for that board's own. The TAB is deliberately outside the key: a language
             pick is still the same visit (see the reset effect above). */}
@@ -205,6 +216,7 @@ export default function App() {
             date={route.date}
             surface={gameSurface}
             settleOnboarding={setOnboarded}
+            startLesson={startOnboardingLesson}
             preview={{
               streak: streakPreview,
               dismissStreak: dismissStreakPreview,
@@ -264,12 +276,14 @@ function GameRoute({
   // this route's, because the puzzle and the callbacks live here.
   surface,
   settleOnboarding,
+  startLesson,
   preview,
 }: {
   lang: LangCode;
   date?: string;
   surface: GameSurface;
   settleOnboarding: () => void;
+  startLesson: (lang: LangCode) => void;
   preview: {
     streak: number | null;
     dismissStreak: () => void;
@@ -303,10 +317,7 @@ function GameRoute({
     return (
       <Invite
         lang={lang}
-        onAccept={() => {
-          track('tutorial', { action: 'start' });
-          navigate(pathForLesson(lang, PLAY_LEVEL));
-        }}
+        onAccept={() => startLesson(lang)}
         onSkip={() => {
           track('tutorial', { action: 'skip' });
           settleOnboarding();

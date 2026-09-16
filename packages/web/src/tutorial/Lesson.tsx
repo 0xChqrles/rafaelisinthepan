@@ -10,19 +10,24 @@ import { PLAY_LEVEL } from './levels';
 // done on this device, settles the onboarding question for good (the first visit's
 // invitation never asks again) and lands in the game. Leaving by the header instead is a
 // SKIP: App's `leave` settles the question the same way and records nothing done.
-export default function Lesson({ lang, level }: { lang: LangCode; level: number }) {
+export default function Lesson({ lang, level, returnTo }: {
+  lang: LangCode;
+  level: number;
+  returnTo?: string;
+}) {
+  const destination = returnTo ?? pathForGame(lang);
   const markLessonDone = useGameStore((s) => s.markLessonDone);
   const setOnboarded = useGameStore((s) => s.setOnboarded);
   const finish = useCallback(() => {
     track('tutorial', { action: 'finish' });
     markLessonDone(level);
     setOnboarded();
-    navigate(pathForGame(lang));
-  }, [lang, level, markLessonDone, setOnboarded]);
+    navigate(destination);
+  }, [destination, level, markLessonDone, setOnboarded]);
   const unavailable = useCallback(() => {
     setOnboarded();
-    navigate(pathForGame(lang));
-  }, [lang, setOnboarded]);
+    navigate(destination);
+  }, [destination, setOnboarded]);
 
   // Only level 1 is built (levels.ts); parseRoute lands every other level on the list.
   if (level !== PLAY_LEVEL) return null;
