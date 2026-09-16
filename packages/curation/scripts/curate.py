@@ -383,16 +383,26 @@ def choose_work(claude: llm.Claude, log: Log, args, archive: dict, index: dict, 
     works = shelf_mod.list_works()
     if not works:
         die(f"nothing on the shelf ({_paths.SHELF_DIR})")
+    # A file the shelf could not open (`list_works` puts the reason on its entry) is
+    # never offered to the model: the pick would spend a call and the run would die on
+    # the read. Named in the log so the file gets replaced.
+    broken = [w for w in works if w.get("error")]
+    if broken:
+        log("- unreadable, skipped: " + ", ".join(f"{w['file']} ({w['error']})" for w in broken))
     if args.work:
         work = next((w for w in works if w["file"] == args.work), None)
         if work is None:
             die(f"{args.work} is not on the shelf")
+        if work.get("error"):
+            die(f"{args.work} cannot be read: {work['error']}")
         return work
-    # Eligible: not in the archive and not mined by an earlier run (never the same work
-    # twice — `--retry` erases an attempt), not inside the artist cooldown.
+    # Eligible: readable, not in the archive and not mined by an earlier run (never the
+    # same work twice — `--retry` erases an attempt), not inside the artist cooldown.
     fresh = []
     cooled = set()
     for w in works:
+        if w.get("error"):
+            continue
         if shelf_mod.in_archive(w, archive["works"]) or w["file"] in index["books"]:
             continue
         if in_cooldown(w, archive, index, today):
