@@ -2787,9 +2787,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     HIDDEN in front of them: its closest word takes its place wearing a 1, on the Hole's OWN word-change
     choreography — the letters scramble from one word into the other while the exponent
     arrives, the same beat every improving guess gets, never a remount (user-decided
-    2026-09-16: "the word transition animation should be played") — under "I mixed the word up: sea¹ took its place, its closest word. Find the secret word."
-    (fr « J'ai mélangé le mot : à sa place, son plus proche, mer¹. Trouve le mot secret. »,
-    user-decided 2026-09-16 — the bot says what IT did). The player types it back — the loop, lived once. en OCEAN behind `sea^1`, fr
+    2026-09-16: "the word transition animation should be played") — under "I mixed the word up: in its place, the closest word, sea¹. Find the secret word."
+    (fr « J'ai mélangé le mot : voici le mot le plus proche. Retrouve le mot secret. »,
+    user-decided 2026-09-16 — the bot says what IT did; « son plus proche » and « Trouve »
+    rejected the same day). The player types it back — the loop, lived once. en OCEAN behind `sea^1`, fr
     OCÉAN behind `mer^1`; `scripts.test.ts` pins the clue at rank 1; the ladder is early
     (`STUCK.reveal` = 2/4/6 — the answer was just on screen). It replaced four single-word
     openings that each read as too hard or too abstract (TROPIQUES, `île^12`, `plage^28`,
@@ -2797,8 +2798,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **THE WORD** — another secret, never shown, its stand-in a dozen ranks out (en MOUNTAIN
     behind `snow^13`, fr MONTAGNE behind `ski^14`; the test wants 2–20): a real search that
     stays easy, the coach reacting to the guesses ("Another secret word. In its place, the
-    13th closest word: snow¹³. Find it."). The real keyboard and the real vocabulary from
-    the first frame. NO CAPITAL on a lone word (`Phrase`'s `capital={false}`: a word is not
+    13th closest word: snow¹³." — no "find it", user-decided 2026-09-16). The real keyboard
+    and the real vocabulary from the first frame. **A LONE WORD IS NOT TAPPABLE** (same day):
+    the wheel is the sentences' own. NO CAPITAL on a lone word (`Phrase`'s `capital={false}`: a word is not
     a sentence), and the PROMPT sits just above the keyboard on the LEFT (`.tutorial--word
     .input-area`, `margin-top: auto`), off the word — and at ONE X on every stage: its own
     680px box centred in the column (`.tutorial .input-area`), where stretching it to a 680px
@@ -2832,12 +2834,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
     and every rank-1 entry reads 0 (`ranks` view in `LessonBoard`), and the board, the
     meters, the wheel and every later guess replay against it. Once the letter is out there
     is no swap: the goal is only that the letter is seen before the solve. `played` is the
-    bot's log — FEW tries, five (en: cat, dignity, prosperity, respect, happiness, justice; fr
-    masculine tries so « le » holds; user-decided 2026-09-16) — replayed onto the board, the meters and the tries wheel exactly as a
+    bot's log — FEW tries, five, the best one an EASY SYNONYM of the obvious word (en: cat,
+    independence, respect, happiness, justice, truth; fr: chat, parcours, randonneur, détour,
+    hameau, tunnel — masculine so « le » holds; « belvédère » "was way too hard: the goal is
+    easy guesses that teach the other mechanics", user-decided 2026-09-16) — replayed onto the board, the meters and the tries wheel exactly as a
     round's log would be, chosen so the open word's meter stands at ABOUT THREE QUARTERS
-    (~79 en / ~77 fr, the day's own `replayCharge` — no lesson boost; "almost full, we don't
+    (~74 en / ~74 fr, the day's own `replayCharge` — no lesson boost; "almost full, we don't
     see it getting filled") with a best try that is no giveaway AND LONG ENOUGH for the fill
-    to read on its chip (`dignity^7` / `belvédère^15` — `col` "was too short to understand
+    to read on its chip (`independence^9` / `parcours^8` — `col` "was too short to understand
     the notion of progression", 2026-09-16;
     the test wants rank ≥ 5 and ≥ 6 letters, 65–80, ≤ 6 tries, `alt` at rank 1, untried, and
     filling it alone). THE WATERMARK COUNTS THE WHOLE LOG, the bot's tries included.
@@ -2846,11 +2850,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
     at; the keys arrive with the line that hands the turn over — which types only once the
     WHEEL IS CLOSED (`tapped` lands on close, same day).
     that a rank-200 guess still fills it). The beats, each on the player's act: "I already
-    played a bit. Tap dignity⁷ to see my tries." (CLICK on a fine pointer — every tap line
-    has its click twin) → tapped: "Close tries fill the word up.
-    Once full, its first letter shows. Try one!" → a guess that does not fill:
-    `tutNear` → the obvious guess FILLS IT — no progress needed — and the L lands: "Full!
-    Here is the first letter: the secret word starts with L. One more try." → a FAILED TRY after it earns the HINT
+    made some progress on this sentence, but I cannot find the last word." (its own beat, on
+    CONTINUE — the line is long) → "Click independence⁹ to see my tries." (TAP on a coarse
+    pointer — every tap line has its click twin) → tapped: "The 1000 closest words to the
+    secret fill its meter. Once full, you earn a clue." → a guess that does not fill:
+    `tutNear` → the obvious guess FILLS IT — no progress needed — and the L lands: "Great!
+    We just found the secret word's first letter: it starts with L." → a FAILED TRY after it
+    earns the HINT
     (`hints[]`, or `pair.hint` once swapped), NEVER THE WORD (user-decided 2026-09-16,
     retiring the bot's own closing guess) → found: "You found it! You are ready for the real
     game." → PLAY. `STUCK.meter` is unused
@@ -2872,19 +2878,19 @@ it to the local store — see `packages/backend/AGENTS.md`).
   itself; closeness is counted in ORDINALS (`ordinal`, en/fr), never an abstract distance.**
   The reveal's two lines (`tutReveal`, `tutHidden`) above; before the first guess of the
   word (`tutIntro`) and of the sentence (`tutSentenceIntro`: "Now a sentence, with two secret
-  words. Find them." — no mechanics explained, the floats show them; user-decided
+  words." — no mechanics explained, the floats show them; user-decided
   2026-09-16). Single-word stages: the FIRST ranked guess
-  that moves nothing → `tutAway` ("water²⁹ is the 29th closest word to the secret. sea¹ is
-  the 1st."), once;
-  the FIRST MISS → `tutMiss` ("too far from the secret to even get a number"), once; a
+  that moves nothing → `tutAway` ("water²⁹ is the 29th closest word to the secret." — the comparison to the clue
+  dropped as noise, user-decided 2026-09-16), once;
+  the FIRST MISS → `tutMiss` ("violin has nothing to do with the secret word: a MISS", the
+  MISS in its red), once; a
   moving guess → SILENCE. Both stages: a
   hole resisting `STUCK[stage]` guesses climbs near → the board's HINT (`hints[]`, per hole,
-  `tutHint*`) → the ANSWER (`[2,2,9]` on the word — TWO failed tries in a row earn a REALLY
+  `tutHint*` — a full sentence announced as one: "A hint: the secret word is very high,
+  with a peak and snow on top.", user-decided 2026-09-16) → the ANSWER (`[2,2,9]` on the word — TWO failed tries in a row earn a REALLY
   EASY hint outright, "montagne is a bit hard", user-decided 2026-09-16; `[4,8,12]` on the
-  sentence, the hole resisting longest chosen); the sentence teaches the TAP from the FIRST guess that lands a
-  number — there is a try to look at (user-decided 2026-09-16) — until it is done
-  (`tutTap`/`tutClick`, the coarse-pointer verb), below a hint or an answer and above near;
-  SOLVED, the bot counts the tries and sets up what comes next (`tutSolved`, "You found both
+  sentence, the hole resisting longest chosen); the sentence teaches NO tap (dropped 2026-09-16: "this concept
+  will be taught on the next sentence"); SOLVED, the bot counts the tries and sets up what comes next (`tutSolved`, "You found both
   in 7 tries. This one was easy: the daily sentences are harder." — the score, said once,
   and the hook the METER stage hangs from, user-decided 2026-09-16; a found single word
   still says nothing). The `{braces}` are filled from the board itself, so a line can never

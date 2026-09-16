@@ -31,7 +31,8 @@ export interface CoachState {
   stage: Stage;
   holes: RuntimeHole[]; // as they stand now
   events: GuessEvent[]; // counted guesses, in order
-  tapped: boolean; // the player has opened a word's tries at least once
+  tapped: boolean; // the player has opened a word's tries at least once (and closed them)
+  briefed: boolean; // the meter stage's briefing has been read (CONTINUE pressed)
   revealed: boolean; // the reveal stage's secret is still on screen (nothing to guess yet)
   finished: boolean; // every hole reads 0 — the stage is over
 }
@@ -44,9 +45,10 @@ export type CoachLine =
   // shows; on the sentence, that there are two of them now.
   | { kind: 'intro'; hole: RuntimeHole }
   | { kind: 'introSentence' }
-  // The meter stage's opening: the bot has played, tap the open word to see its tries — and
-  // once tapped, what those tries did to the chip.
-  | { kind: 'introMeter'; hole: RuntimeHole }
+  // The meter stage's opening: the bot has played (a beat of its own, on CONTINUE), then tap
+  // the open word to see its tries — and once tapped, what those tries did to the chip.
+  | { kind: 'introMeter' }
+  | { kind: 'meterTap'; hole: RuntimeHole }
   | { kind: 'meterTapped' }
   // The first guess that ranks but does not move the hole: what the number IS, against the
   // number the hole already shows.
@@ -59,9 +61,6 @@ export type CoachLine =
   | { kind: 'hint'; holeIndex: number }
   // …STUCK[2] guesses: the answer.
   | { kind: 'answer'; holeIndex: number }
-  // The sentence's one mechanic worth a line, said from the first guess that lands a number
-  // (there is a try to look at), until it is done.
-  | { kind: 'tap' }
   // The sentence solved: the tries it took — the score, said once.
   | { kind: 'solved'; tries: number }
   // The meter stage: a chip filled to the top and the letter it revealed; the end, found.
@@ -92,13 +91,16 @@ function stuckPerHole({ holes, events }: CoachState): (number | null)[] {
 }
 
 export function coachLine(state: CoachState): CoachLine | null {
-  const { stage, holes, events, tapped, revealed, finished } = state;
+  const { stage, holes, events, tapped, briefed, revealed, finished } = state;
   if (stage === 'reveal' && revealed) return { kind: 'reveal', holeIndex: 0 };
   const open = holes.findIndex((h) => h.rank !== 0);
   // THE METER STAGE IS SCRIPTED (user-decided 2026-09-16): the bot has half played it.
   if (stage === 'meter') {
     if (finished) return { kind: 'found' };
-    if (events.length === 0) return tapped ? { kind: 'meterTapped' } : { kind: 'introMeter', hole: holes[open] };
+    if (events.length === 0) {
+      if (!briefed) return { kind: 'introMeter' };
+      return tapped ? { kind: 'meterTapped' } : { kind: 'meterTap', hole: holes[open] };
+    }
     // The letter is out: the player's turn — and a failed try after it earns the HINT, never
     // the word (user-decided 2026-09-16).
     const filledAt = events.findIndex((e) => e.filled != null);
@@ -123,11 +125,6 @@ export function coachLine(state: CoachState): CoachLine | null {
   const worst = target < 0 ? 0 : (stuck[target] as number);
   if (worst >= answer) return { kind: 'answer', holeIndex: target };
   if (worst >= hint) return { kind: 'hint', holeIndex: target };
-
-  // The sentence teaches the tap from the first guess that landed a number — there is a try
-  // to look at — and stops once it is seen.
-  const landed = events.some((e) => e.entries.some((entry) => entry !== undefined));
-  if (stage === 'sentence' && !tapped && landed) return { kind: 'tap' };
 
   if (worst >= near) return { kind: 'near', hole: holes[target] };
 
@@ -189,7 +186,9 @@ export function coachCopy(
     case 'introSentence':
       return t(lang, 'tutSentenceIntro');
     case 'introMeter':
-      return t(lang, coarsePointer ? 'tutMeterIntroTap' : 'tutMeterIntroClick').replace(
+      return t(lang, 'tutMeterIntro');
+    case 'meterTap':
+      return t(lang, coarsePointer ? 'tutMeterTapWord' : 'tutMeterClickWord').replace(
         '{word}',
         chip(line.hole.word, line.hole.rank),
       );
@@ -219,8 +218,6 @@ export function coachCopy(
         '{answer}',
         `[[b:${stage.puzzle.holes[line.holeIndex].secret.word}]]`,
       );
-    case 'tap':
-      return t(lang, coarsePointer ? 'tutTap' : 'tutClick');
     case 'solved':
       return t(lang, 'tutSolved').replace('{n}', String(line.tries));
   }

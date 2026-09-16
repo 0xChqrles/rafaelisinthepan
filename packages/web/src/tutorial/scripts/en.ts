@@ -22,10 +22,11 @@
 // THE METER: "the cat dreams of liberty." — CAT already found by the bot; the secret is
 // LIBERTY and the OBVIOUS guess, FREEDOM, is its closest word (rank 1): typing it earns a 1,
 // never the solve — and typing LIBERTY first swaps the two (liberty reads 1, freedom becomes
-// the secret), so the letter is always seen before the solve. The bot's FIVE tries (dignity,
-// prosperity, respect, happiness, justice — few, user-decided 2026-09-16) leave the meter at
-// ~79 with DIGNITY (7) as the best word, so FREEDOM fills it — visibly — and the L lands; a
-// failed try then earns the hint, never the word.
+// the secret), so the letter is always seen before the solve. The bot's FIVE tries
+// (independence, respect, happiness, justice, truth — few, and the best one an EASY synonym,
+// user-decided 2026-09-16) leave the meter at ~74 with INDEPENDENCE (9) as the best word, so
+// FREEDOM fills it — visibly — and the L lands; a failed try then earns the hint, never the
+// word.
 //
 // scripts.test.ts replays this file and fails if an edit breaks the lesson's shape.
 import type { WordPuzzle } from '@whippin/shared';
@@ -87,7 +88,7 @@ const script: LessonScript = {
         ranks: { [cat.word.slug]: cat.ranks, [liberty.word.slug]: liberty.ranks },
       },
       // The bot's game so far: it found the cat, then circled liberty without landing.
-      played: ['cat', 'dignity', 'prosperity', 'respect', 'happiness', 'justice'],
+      played: ['cat', 'independence', 'respect', 'happiness', 'justice', 'truth'],
       pair: { alt: { word: 'freedom', slug: 'freedom' }, hint: 'tutHintFreedom' },
       hints: ['tutHintCat', 'tutHintLiberty'],
     },

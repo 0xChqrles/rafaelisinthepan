@@ -23,11 +23,11 @@
 // par le bot ; le secret est SENTIER et l'essai ÉVIDENT, CHEMIN, est son mot le plus proche
 // (rang 1) : le taper vaut un 1, jamais la solution — et taper SENTIER en premier échange les
 // deux (sentier lit 1, chemin devient le secret), pour que la lettre soit toujours vue avant
-// la solution. Les CINQ essais du bot (belvédère, canyon, pierrier, randonneur, village — peu,
-// et masculins pour que « le » tienne) laissent la jauge à ~77 avec BELVÉDÈRE (15) pour
-// meilleur mot — un mot LONG, pour que le remplissage se lise sur la puce (« col » était trop
-// court, retour utilisateur 2026-09-16) : CHEMIN la remplit, visiblement, et le S apparaît ;
-// un essai raté vaut ensuite l'indice, jamais le mot.
+// la solution. Les CINQ essais du bot (parcours, randonneur, détour, hameau, tunnel — peu,
+// masculins pour que « le » tienne, et le meilleur un synonyme FACILE de chemin : « belvédère »
+// était bien trop dur, retour utilisateur 2026-09-16) laissent la jauge à ~74 avec PARCOURS
+// (8) pour meilleur mot — assez long pour que le remplissage se lise sur la puce : CHEMIN la
+// remplit, visiblement, et le S apparaît ; un essai raté vaut ensuite l'indice, jamais le mot.
 import type { WordPuzzle } from '@whippin/shared';
 import type { LessonScript } from '../script';
 import ocean from './fr.ocean.json';
@@ -83,7 +83,7 @@ const script: LessonScript = {
         ranks: { [chat.word.slug]: chat.ranks, [sentier.word.slug]: sentier.ranks },
       },
       // La partie du bot jusqu'ici : le chat trouvé, puis le sentier tourné autour sans tomber.
-      played: ['chat', 'belvedere', 'canyon', 'pierrier', 'randonneur', 'village'],
+      played: ['chat', 'parcours', 'randonneur', 'detour', 'hameau', 'tunnel'],
       pair: { alt: { word: 'chemin', slug: 'chemin' }, hint: 'tutHintChemin' },
       hints: ['tutHintChat', 'tutHintSentier'],
     },

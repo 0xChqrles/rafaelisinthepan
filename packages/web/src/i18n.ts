@@ -422,16 +422,16 @@ const STRINGS = {
   // coach.ts fills the {braces} (`ordinal` for the ranks).
   tutReveal: { en: 'Here is a secret word: {answer}.', fr: 'Voici un mot secret : {answer}.' },
   tutHidden: {
-    en: 'I mixed the word up: {start} took its place, its closest word. Find the secret word.',
-    fr: "J'ai mélangé le mot : à sa place, son plus proche, {start}. Trouve le mot secret.",
+    en: 'I mixed the word up: in its place, the closest word, {start}. Find the secret word.',
+    fr: "J'ai mélangé le mot : voici le mot le plus proche. Retrouve le mot secret.",
   },
   tutIntro: {
-    en: 'Another secret word. In its place, the {m} closest word: {start}. Find it.',
-    fr: 'Un autre mot secret. À sa place, le {m} mot le plus proche : {start}. Trouve-le.',
+    en: 'Another secret word. In its place, the {m} closest word: {start}.',
+    fr: 'Un autre mot secret. À sa place, le {m} mot le plus proche : {start}.',
   },
   tutSentenceIntro: {
-    en: 'Now a sentence, with two secret words. Find them.',
-    fr: 'Maintenant une phrase, avec deux mots secrets. Trouve-les.',
+    en: 'Now a sentence, with two secret words.',
+    fr: 'Maintenant une phrase, avec deux mots secrets.',
   },
   // The sentence solved: the bot counts the tries — the score, said once — and says this one
   // was easy where the daily sentences are harder (user-decided 2026-09-16): the hook the
@@ -446,65 +446,64 @@ const STRINGS = {
   // THE METER STAGE (#301 taught; scripted, user-decided 2026-09-16): the bot has half
   // played the sentence. Its lines follow the player's acts — the tap, the first close
   // guess, one more try — and it names the answer as if it had found it.
-  tutMeterIntroTap: {
-    en: 'I already played a bit. Tap {word} to see my tries.',
-    fr: "J'ai déjà un peu joué. Touche {word} pour voir mes essais.",
+  // The briefing stands on its own beat (CONTINUE), then the click instruction (the wheel
+  // is the next thing to open; the keyboard waits behind it).
+  tutMeterIntro: {
+    en: 'I already made some progress on this sentence, but I cannot find the last word.',
+    fr: "J'ai déjà un peu avancé sur cette phrase mais je ne trouve pas le dernier mot.",
   },
-  tutMeterIntroClick: {
-    en: 'I already played a bit. Click {word} to see my tries.',
-    fr: "J'ai déjà un peu joué. Clique sur {word} pour voir mes essais.",
-  },
+  tutMeterTapWord: { en: 'Tap {word} to see my tries.', fr: 'Touche {word} pour voir mes essais.' },
+  tutMeterClickWord: { en: 'Click {word} to see my tries.', fr: 'Clique sur {word} pour voir mes essais.' },
   tutMeterTapped: {
-    en: 'Close tries fill the word up. Once full, its first letter shows. Try one!',
-    fr: 'Un essai proche remplit le mot. Plein, il montre sa première lettre. Essaie !',
+    en: 'The 1000 closest words to the secret fill its meter. Once full, you earn a clue.',
+    fr: 'Les 1000 mots proches du secret remplissent sa jauge. Pleine, on gagne un indice.',
   },
   tutLetter: {
-    en: 'Full! Here is the first letter: the secret word starts with {letter}. One more try.',
-    fr: 'Plein ! Le mot secret commence par {letter}. Encore un essai.',
+    en: 'Great! We just found the secret word’s first letter: it starts with {letter}.',
+    fr: 'Super ! On a la première lettre du mot secret : ça commence par {letter}.',
   },
   tutMeterFound: {
     en: 'You found it! You are ready for the real game.',
     fr: 'Trouvé ! Tu es prêt pour le vrai jeu.',
   },
   tutAway: {
-    en: '{guess} is the {n} closest word to the secret. {start} is the {m}.',
-    fr: '{guess} est le {n} mot le plus proche du secret. {start} est le {m}.',
+    en: '{guess} is the {n} closest word to the secret.',
+    fr: '{guess} est le {n} mot le plus proche du secret.',
   },
   tutMiss: {
-    en: '{miss} is too far from the secret to even get a number.',
-    fr: '{miss} est trop loin du secret pour avoir un nombre.',
+    en: '{miss} has nothing to do with the secret word: a [[m:MISS]].',
+    fr: "{miss} n'a aucun rapport avec le mot secret, c'est un [[m:MISS]].",
   },
   tutNear: {
     en: 'Try words with a meaning close to {word}.',
     fr: 'Essaie des mots au sens proche de {word}.',
   },
   tutAnswer: { en: 'The secret word is {answer}. Type it.', fr: 'Le mot secret est {answer}. Tape-le.' },
-  // The sentence's one mechanic worth a line, in the input device's own verb (the
-  // tapAnywhere/clickAnywhere pattern).
-  tutTap: {
-    en: 'Tap a highlighted word to see your previous tries on it.',
-    fr: 'Touche un mot surligné pour revoir tes essais précédents.',
-  },
-  tutClick: {
-    en: 'Click a highlighted word to see your previous tries on it.',
-    fr: 'Clique sur un mot surligné pour revoir tes essais précédents.',
-  },
   // Each board's own hint about its word — what the coach says once a hole has resisted long
-  // enough, before it gives the answer (scripts/<lang>.ts names them per hole).
-  tutHintOcean: { en: 'A very large body of water.', fr: 'Une très grande étendue d’eau.' },
-  // REALLY easy (user-decided 2026-09-16: montagne "is a bit hard to guess").
-  tutHintMountain: { en: 'Very high, with a peak and snow on top.', fr: 'Très haut, avec un sommet et de la neige.' },
-  tutHintMontagne: { en: 'Very high, with a peak and snow on top.', fr: 'Très haut, avec un sommet et de la neige.' },
-  tutHintDog: { en: 'Man’s best friend.', fr: 'Le meilleur ami de l’homme.' },
-  tutHintMoon: { en: 'It lights the night.', fr: 'Elle éclaire la nuit.' },
-  tutHintChien: { en: 'Man’s best friend.', fr: 'Le meilleur ami de l’homme.' },
-  tutHintCat: { en: 'It purrs.', fr: 'Il ronronne.' },
-  tutHintChat: { en: 'It purrs.', fr: 'Il ronronne.' },
-  tutHintLiberty: { en: 'Being free, with a capital L.', fr: 'Être libre, avec un grand L.' },
-  tutHintFreedom: { en: 'Being free, with a capital F.', fr: 'Être libre, avec un grand F.' },
-  tutHintSentier: { en: 'A narrow path through the woods.', fr: 'Un petit chemin dans les bois.' },
-  tutHintChemin: { en: 'A small road, or a way.', fr: 'Une petite route, ou une voie.' },
-  tutHintLune: { en: 'It lights the night.', fr: 'Elle éclaire la nuit.' },
+  // enough, before it gives the answer (scripts/<lang>.ts names them per hole). A full
+  // sentence, announced as a hint (user-decided 2026-09-16).
+  tutHintOcean: {
+    en: 'A hint: the secret word is a very large body of water.',
+    fr: 'Un indice : le mot secret est une très grande étendue d’eau.',
+  },
+  tutHintMountain: {
+    en: 'A hint: the secret word is very high, with a peak and snow on top.',
+    fr: 'Un indice : le mot secret est très haut, avec un sommet et de la neige.',
+  },
+  tutHintMontagne: {
+    en: 'A hint: the secret word is very high, with a peak and snow on top.',
+    fr: 'Un indice : le mot secret est très haut, avec un sommet et de la neige.',
+  },
+  tutHintDog: { en: 'A hint: the secret word is man’s best friend.', fr: 'Un indice : le mot secret est le meilleur ami de l’homme.' },
+  tutHintMoon: { en: 'A hint: the secret word lights the night.', fr: 'Un indice : le mot secret éclaire la nuit.' },
+  tutHintChien: { en: 'A hint: the secret word is man’s best friend.', fr: 'Un indice : le mot secret est le meilleur ami de l’homme.' },
+  tutHintLune: { en: 'A hint: the secret word lights the night.', fr: 'Un indice : le mot secret éclaire la nuit.' },
+  tutHintCat: { en: 'A hint: the secret word purrs.', fr: 'Un indice : le mot secret ronronne.' },
+  tutHintChat: { en: 'A hint: the secret word purrs.', fr: 'Un indice : le mot secret ronronne.' },
+  tutHintLiberty: { en: 'A hint: the secret word is being free, with a capital L.', fr: 'Un indice : le mot secret, c’est être libre, avec un grand L.' },
+  tutHintFreedom: { en: 'A hint: the secret word is being free, with a capital F.', fr: 'Un indice : le mot secret, c’est être libre, avec un grand F.' },
+  tutHintSentier: { en: 'A hint: the secret word is a narrow path through the woods.', fr: 'Un indice : le mot secret est un petit chemin dans les bois.' },
+  tutHintChemin: { en: 'A hint: the secret word is a small road, or a way.', fr: 'Un indice : le mot secret est une petite route, ou une voie.' },
   // The lesson's wordless ending: the solved sentence stands, and PLAY graduates into the game.
   tutPlay: { en: 'PLAY', fr: 'JOUER' },
   // ---- the LEVELS list (#269): the tutorial page, one row per level (tutorial/levels.ts).
