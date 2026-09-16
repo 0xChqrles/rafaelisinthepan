@@ -2798,8 +2798,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `atlantique^7`, then `mer^1` under an ordinal line).
   - **THE WORD** — another secret, never shown, its stand-in a dozen ranks out (en MOUNTAIN
     behind `snow^13`, fr MONTAGNE behind `ski^14`; the test wants 2–20): a real search that
-    stays easy, the coach reacting to the guesses ("Another secret word. In its place, the
-    13th closest word: snow¹³." — no "find it", user-decided 2026-09-16). The real keyboard
+    stays easy, the coach reacting to the guesses ("Now find another secret word. I give you
+    its 13th closest word, snow¹³." — user-decided 2026-09-16). The real keyboard
     and the real vocabulary from the first frame. **A LONE WORD IS NOT TAPPABLE** (same day):
     the wheel is the sentences' own. NO CAPITAL on a lone word (`Phrase`'s `capital={false}`: a word is not
     a sentence), and the PROMPT sits just above the keyboard on the LEFT (`.tutorial--word

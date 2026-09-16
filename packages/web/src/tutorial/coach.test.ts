@@ -211,7 +211,7 @@ describe('coachCopy', () => {
       'I mixed the word up: in its place, the closest word, [[w:sea^1]]. Find the secret word.',
     );
     expect(coachCopy('en', { kind: 'intro', hole }, stage, true)).toBe(
-      'Another secret word. In its place, the 10th closest word: [[w:islands^10]].',
+      'Now find another secret word. I give you its 10th closest word, [[w:islands^10]].',
     );
     expect(coachCopy('en', { kind: 'away', guess: entry('boat', 45), hole }, stage, true)).toBe(
       '[[w:boat^45]] is the 45th closest word to the secret.',

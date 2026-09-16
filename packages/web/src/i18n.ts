@@ -426,8 +426,8 @@ const STRINGS = {
     fr: "J'ai mélangé le mot : à sa place, le mot le plus proche, {start}. Retrouve le mot secret.",
   },
   tutIntro: {
-    en: 'Another secret word. In its place, the {m} closest word: {start}.',
-    fr: 'Un autre mot secret. À sa place, le {m} mot le plus proche : {start}.',
+    en: 'Now find another secret word. I give you its {m} closest word, {start}.',
+    fr: 'Maintenant retrouve un autre mot secret. Je te donne le {m} mot le plus proche, {start}.',
   },
   tutSentenceIntro: {
     en: 'Now a sentence, with two secret words.',
