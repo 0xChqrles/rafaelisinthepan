@@ -2914,7 +2914,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     APP'S MARK in the accent with the language CODE and a chevron (`▲ FR ⌄`, user-decided
     2026-09-16 — the daily's name held this slot until Word mode was retired). The mark is
     `public/logo.png`, the favicon's 22×22 white pixel logo, painted through a CSS mask in
-    `--accent` at its exact 1x with nearest sampling (`.app-title-mark`), opening the
+    `--accent` at its exact 1x with nearest sampling (`.app-title-mark`), 3px more air after
+    it than the title's own gap, and the text beside it set 2px down onto the bottom-heavy
+    mark's weight (a translate, measured at 4x), opening the
     drum below; the drum and the `aria-label` name the language in full. It routes by the SURFACE
     it was opened from: from the archive, the other language means that language's
     CALENDAR. On a screen you navigated INTO
@@ -2934,7 +2936,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     outside the chip's rule (it inherited the body's 16px for one measurement), and the
     320px budget was re-measured with the chip: SENTENCE AUG 29 beside the five keys ended
     at 153 of 158, the chip's padding stepping to 5px at ≤340. (The mark's title is
-    narrower: `▲ FR 10/09 ⌄` ends at 108 of the 158 at 320px, measured 2026-09-16.)
+    narrower: `▲ FR 10/09 ⌄` ends at 111 of the 158 at 320px, measured 2026-09-16.)
     What hangs off it is `PuzzleSelect`, replacing the `PuzzleSheet` dropdown (rows,
     hairline, LED tick — deleted with its CSS), and it took FOUR passes in one day to
     land, each on the user's review:
@@ -3090,7 +3092,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     and switching it is a rare act, so the selection costs one tap for a choice nobody makes
     twice in a session. `components/LangButton.tsx` is deleted with the chip it drew.
   **THE BUDGET, re-measured.** Worst case (320px, a PAST day — the title carries
-  the day — and the fixed five-key group; measured with the retired SENTENCE name — the mark's title is 102px dated at 320, so the tightest row is now the account area's): title 147px + keys 165px = 312 of the row's 316px content
+  the day — and the fixed five-key group; measured with the retired SENTENCE name — the mark's title is 105px dated at 320, so the tightest row is now the account area's): title 147px + keys 165px = 312 of the row's 316px content
   box, against the 336–359px the three-slot row wanted; the live daily has
   60px to spare. **The title has ONE size on every screen — 12px, the chrome's own
   small-caps size — and never steps down** (user-decided 2026-08-31: a viewport clamp

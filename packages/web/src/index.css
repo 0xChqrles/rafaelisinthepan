@@ -1120,10 +1120,24 @@ input {
   display: block;
   width: 22px;
   height: 22px;
+  /* A wider seam than the title's own gap (user-asked 2026-09-16): the mark and the code
+     are two things, the code, the day and the chevron one line of text. */
+  margin-right: 3px;
   background-color: var(--accent);
   -webkit-mask: url('/logo.png') center / 22px 22px no-repeat;
   mask: url('/logo.png') center / 22px 22px no-repeat;
   image-rendering: pixelated;
+}
+/* THE TEXT SITS ON THE MARK'S WEIGHT, not on its box (user-asked 2026-09-16, "align it
+   better"). The logo is bottom-heavy — its widest rows are the lower half, its ink's centre
+   of mass 2.2px below its box's centre — while flex centring put the code's capitals 0.9px
+   ABOVE the box's centre, so FR read high. Measured at 4x, 2px down puts the capitals'
+   centre between the two. A translate, never a margin: the row's layout stays the flex
+   centring, and the mark keeps its line with the header's icons. */
+.app-title-lang,
+.app-title .title-tag,
+.app-title .ui-icon {
+  translate: 0 2px;
 }
 .app-title-lang {
   font-size: 12px;
