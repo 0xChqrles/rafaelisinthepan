@@ -23,6 +23,7 @@ import { fold } from '@whippin/shared';
 import type { HitState, RankEntry, RuntimeHole } from '@whippin/shared';
 import { t, ariaHoleHistory, srHoleResult } from '../i18n';
 import type { LangCode } from '../langs';
+import botIdle from '../assets/error-bot-idle.png';
 
 // ONE STAGE OF THE LESSON, PLAYED (#269): a real board in the real game components, the real
 // keyboard and the real vocabulary from the first frame, and a coach that speaks only when a
@@ -74,9 +75,10 @@ function hasCoarsePointer(): boolean {
 
 // Hold on a solved board before the next stage takes over.
 const STAGE_HOLD_MS = 600;
-// The reveal: how long the secret word stands before its closest word takes its place — the
-// line above it has typed out and been read.
-const REVEAL_MS = 2_600;
+// The reveal WAITS FOR THE PLAYER (user-decided 2026-09-16: "the dialog box should never skip
+// a dialog without the user interacting with the screen"): the secret word stands until a tap,
+// a click or a key anywhere; the pulsing TAP ANYWHERE hint arrives once the line has typed.
+const REVEAL_HINT_MS = 1_400;
 
 export default function LessonBoard({
   lang,
@@ -143,12 +145,22 @@ export default function LessonBoard({
 
   const playing = phase === 'play' && !revealed;
   const prefixSet = vocab?.prefixSet ?? null;
+  const [revealHint, setRevealHint] = useState(false);
   useEffect(() => {
-    if (!revealed) return;
-    later(() => {
+    if (!revealed) return undefined;
+    later(() => setRevealHint(true), REVEAL_HINT_MS);
+    const hide = () => {
       setHoles(freshHoles(script));
       setRevealed(false);
-    }, REVEAL_MS);
+    };
+    // Capture phase, like the game's own tap-anywhere dismissals: the first interaction
+    // anywhere on the screen is the cue, whatever it lands on.
+    window.addEventListener('pointerdown', hide, true);
+    window.addEventListener('keydown', hide, true);
+    return () => {
+      window.removeEventListener('pointerdown', hide, true);
+      window.removeEventListener('keydown', hide, true);
+    };
   }, [revealed, script, later]);
 
   const appendChar = useCallback(
@@ -362,9 +374,18 @@ export default function LessonBoard({
         {announce}
       </div>
 
+      {/* THE COACH IS THE ERROR BOT (user-decided 2026-09-16: "people would want to read it
+          more if it's something telling it"): the game's one character stands on the box and
+          speaks it — the same sprite, the same idle bob, as on the error screen. */}
       {coach && (
-        <div className="coach">
+        <div className="coach coach--bot">
+          <div className="coach-bot" aria-hidden style={{ backgroundImage: `url(${botIdle})` }} />
           <CoachText key={coach} copy={coach} />
+          {revealed && revealHint && (
+            <span className="coach-hint" aria-hidden="true">
+              {t(lang, coarse ? 'tapAnywhere' : 'clickAnywhere')}
+            </span>
+          )}
         </div>
       )}
 

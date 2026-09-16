@@ -2777,8 +2777,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **THE REVEAL (user-decided 2026-09-16, fifth pass — "you land on a page with mer¹ and
     it tells you to guess the secret word: where is the secret word?")** — NOTHING IS SAID
     THAT THE PLAYER HAS NOT JUST SEEN. The secret word is SHOWN on the board (rank 0, the
-    solved look: "Here is a secret word: océan."), stands `REVEAL_MS` (2.6s), then is HIDDEN
-    in front of them: its closest word takes its place wearing a 1, on the app's rung-in
+    solved look: "Here is a secret word: océan."), STANDS UNTIL THE PLAYER ACTS — a tap, a
+    click or a key anywhere (capture-phase listeners, the pulsing TAP ANYWHERE cue after
+    `REVEAL_HINT_MS`); **the coach never skips a line without an interaction** (user-decided
+    2026-09-16) — then is HIDDEN in front of them: its closest word takes its place wearing a 1, on the app's rung-in
     swap ("Now hidden. In its place, its closest word: mer¹. Type the secret word."). The player types it back — the loop, lived once. en OCEAN behind `sea^1`, fr
     OCÉAN behind `mer^1`; `scripts.test.ts` pins the clue at rank 1; the ladder is early
     (`STUCK.reveal` = 2/4/6 — the answer was just on screen). It replaced four single-word
@@ -2799,6 +2801,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     tries (wheel / grid, picking included), fewer tries is the score. Solving it drops the
     keyboard (`kb-drop`, `KB_EXIT_FALLBACK_MS`) and offers **PLAY** in its place, the
     graduation: `markLessonDone(1)`, `setOnboarded`, `track finish`, the game.
+  **THE COACH IS THE ERROR BOT (user-decided 2026-09-16, "people would want to read it more
+  if it's something telling it"):** the error screen's character (`error-bot-idle.png`, its
+  idle bob, at 2x) stands on the coach box's top-left edge (`.coach--bot` / `.coach-bot`,
+  drawn ABOVE the box so the three-line text budget stands; the box and the board's
+  `padding-top` drop by the bot's 56px). One character, one voice, on both screens that talk.
   **THE REACTIVE COACH (`tutorial/coach.ts`, pure; `coach.test.ts` replays sequences):**
   the one line the board's state calls for, else nothing (the box disappears). **Every line
   is written for someone who knows NOTHING yet (user-decided 2026-09-16, three passes): the

@@ -3898,9 +3898,10 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    HUD (progress bar) shrinks with it. */
 .tutorial {
   max-width: 680px;
-  /* Clear the band + coach box, so the centered word never rides under them. Tracks
-     the coach's height: 78px top + 3 lines + its padding + a breath. */
-  padding-top: 230px;
+  /* Clear the band + the bot + the coach box, so the centered word never rides under them.
+     Tracks the coach's height: 78px top + the 56px the bot adds + 3 lines + its padding + a
+     breath. */
+  padding-top: 286px;
 }
 
 /* The word stage is CLEAN: explanation on top, ONE big centered word in the middle, the
@@ -3950,6 +3951,47 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   padding: 16px 20px;
+}
+/* THE BOT SPEAKS THE LESSON (user-decided 2026-09-16): the error screen's own character —
+   `error-bot-idle.png`, the 4-frame 32x32 idle bob, at an INTEGER 2x — stands on the box's
+   top-left edge, so the box reads as what it says. It is drawn OUTSIDE the box (absolute,
+   above), because the text area's three-line budget is an invariant: a bot beside the text
+   would have cost a fourth line at 320px. The box drops by the bot's height to make room. */
+.coach--bot {
+  top: calc(78px + 56px);
+}
+.coach-bot {
+  position: absolute;
+  left: 12px;
+  bottom: 100%;
+  width: 64px;
+  height: 64px;
+  margin-bottom: -8px; /* the feet sit on the box's top edge */
+  background-repeat: no-repeat;
+  background-size: 400% 100%;
+  image-rendering: pixelated;
+  animation: bot-idle 640ms steps(4) infinite;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .coach-bot {
+    animation: none;
+    background-position-x: 0%;
+  }
+}
+/* The reveal's cue, once the line has typed: the streak dialog's pulsing TAP ANYWHERE, in the
+   box's bottom-right corner. */
+.coach-hint {
+  position: absolute;
+  right: 14px;
+  bottom: 8px;
+  font-family: var(--ui);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  animation: streak-hint-pulse 1.6s ease-in-out infinite;
 }
 .coach-text {
   margin: 0;
@@ -4073,6 +4115,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     padding: 12px 14px;
     top: 64px; /* a breath under the phone's 48px full-bleed band */
   }
+  .coach--bot {
+    top: calc(64px + 56px);
+  }
   .coach-rules {
     padding: 12px 14px;
   }
@@ -4080,9 +4125,10 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     font-size: 14px; /* 3-line height scales with it (5.1em); the phone column is the
                         copy budget's own tuning width */
   }
-  /* Clear the band + coach (64px top + 3 lines + its padding + a breath). */
+  /* Clear the band + the bot + the coach (64px top + 56px of bot + 3 lines + padding + a
+     breath). */
   .tutorial {
-    padding-top: 180px;
+    padding-top: 236px;
   }
   /* The action button sits on the 14px page inset, not the keyboard's edge-to-edge hug, so
      like the solved results it gets +10px back over the keyboard's 4px bottom gap: bottom
