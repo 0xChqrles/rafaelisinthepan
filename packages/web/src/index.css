@@ -3992,6 +3992,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   color: var(--muted);
   font-family: var(--pixel-font);
   font-size: 12px;
+  letter-spacing: 0.12em;
 }
 .coach-bot {
   position: absolute;
