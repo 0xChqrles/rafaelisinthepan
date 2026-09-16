@@ -8,9 +8,9 @@
 // component renders it; coach.test.ts replays guess sequences against it.
 import type { RankEntry, RuntimeHole } from '@whippin/shared';
 import { t } from '../i18n';
-import type { LessonStage } from './script';
+import type { LessonStage, StageKind } from './script';
 
-export type Stage = 'word' | 'sentence';
+export type Stage = StageKind;
 
 // One counted guess as the board saw it: what each hole made of it (its rank entry, or
 // undefined for a MISS — a hole already found reads undefined too, it takes no guesses) and
@@ -26,9 +26,13 @@ export interface CoachState {
   holes: RuntimeHole[]; // as they stand now
   events: GuessEvent[]; // counted guesses, in order
   tapped: boolean; // the player has opened a word's tries at least once
+  revealed: boolean; // the reveal stage's secret is still on screen (nothing to guess yet)
 }
 
 export type CoachLine =
+  // The reveal: the secret word, shown; then, hidden, what took its place.
+  | { kind: 'reveal'; holeIndex: number }
+  | { kind: 'hidden'; hole: RuntimeHole }
   // Before the first guess: the goal in one line — on the word, naming the clue the hole
   // shows; on the sentence, that there are two of them now.
   | { kind: 'intro'; hole: RuntimeHole }
@@ -50,6 +54,7 @@ export type CoachLine =
 // Guesses a hole may resist before each rung of the ladder. The sentence gets more room:
 // two holes are in play, and a guess that moves one is progress the other cannot show.
 export const STUCK: Record<Stage, readonly [number, number, number]> = {
+  reveal: [2, 4, 6], // the answer was just on screen: nudge early
   word: [3, 6, 9],
   sentence: [4, 8, 12],
 };
@@ -72,7 +77,8 @@ function stuckPerHole({ holes, events }: CoachState): (number | null)[] {
 }
 
 export function coachLine(state: CoachState): CoachLine | null {
-  const { stage, holes, events, tapped } = state;
+  const { stage, holes, events, tapped, revealed } = state;
+  if (stage === 'reveal' && revealed) return { kind: 'reveal', holeIndex: 0 };
   const [near, hint, answer] = STUCK[stage];
 
   // The ladder first: the hole that has resisted longest sets the rung.
@@ -91,8 +97,11 @@ export function coachLine(state: CoachState): CoachLine | null {
 
   if (worst >= near) return { kind: 'near', hole: holes[target] };
 
-  if (events.length === 0) return stage === 'word' ? { kind: 'intro', hole: holes[0] } : { kind: 'introSentence' };
-  if (stage === 'word') {
+  if (events.length === 0) {
+    if (stage === 'reveal') return { kind: 'hidden', hole: holes[0] };
+    return stage === 'word' ? { kind: 'intro', hole: holes[0] } : { kind: 'introSentence' };
+  }
+  if (stage !== 'sentence') {
     const last = events[events.length - 1];
     const entry = last.entries[0];
     if (entry && !last.improved[0]) {
@@ -128,8 +137,17 @@ export function coachCopy(
 ): string {
   const chip = (word: string, rank: number) => `[[w:${word}^${rank}]]`;
   switch (line.kind) {
+    case 'reveal':
+      return t(lang, 'tutReveal').replace(
+        '{answer}',
+        `[[b:${stage.puzzle.holes[line.holeIndex].secret.word}]]`,
+      );
+    case 'hidden':
+      return t(lang, 'tutHidden').replace('{start}', chip(line.hole.word, line.hole.rank));
     case 'intro':
-      return t(lang, 'tutIntro').replace('{start}', chip(line.hole.word, line.hole.rank));
+      return t(lang, 'tutIntro')
+        .replace('{start}', chip(line.hole.word, line.hole.rank))
+        .replace('{m}', ordinal(lang, line.hole.rank));
     case 'introSentence':
       return t(lang, 'tutSentenceIntro');
     case 'away':

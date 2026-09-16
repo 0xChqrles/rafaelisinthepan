@@ -7,19 +7,18 @@ import { pathForLesson, type LangCode } from '../langs';
 import LessonBoard from './LessonBoard';
 import { LEVELS, PLAY_LEVEL } from './levels';
 import { scriptFor } from './scripts';
-import type { Stage } from './coach';
 
-// LEVEL 1 — THE GAME, PLAYED (#269): two stages on one screen, the word then the sentence,
-// each a real board (LessonBoard). The header stays in place throughout with the BOOK lit;
+// LEVEL 1 — THE GAME, PLAYED (#269): the script's stages on one screen — the reveal, the
+// word, the sentence — each a real board (LessonBoard). The header stays in place throughout with the BOOK lit;
 // its left slot is the level's name and the language it is taught in — a pick NAVIGATES to
 // the same lesson in that language, and App keys the screen on it, so it restarts there.
 export default function LevelOne({ lang, onDone }: { lang: LangCode; onDone: () => void }) {
   const script = useMemo(() => scriptFor(lang), [lang]);
-  const [stage, setStage] = useState<Stage>('word');
+  const [at, setAt] = useState(0);
   // ONE vocabulary for both stages, loaded at mount so the keyboard is live on the first
   // frame of the sentence — and already cached for the game right after.
   const { vocab, error, retry } = useVocab(lang);
-  const toSentence = useCallback(() => setStage('sentence'), []);
+  const next = useCallback(() => setAt((i) => i + 1), []);
   const title = t(lang, LEVELS.find((l) => l.level === PLAY_LEVEL)!.titleKey);
 
   return (
@@ -27,18 +26,17 @@ export default function LevelOne({ lang, onDone }: { lang: LangCode; onDone: () 
       <HeaderLeft>
         <LangTitle lang={lang} title={title} to={(picked) => pathForLesson(picked, PLAY_LEVEL)} />
       </HeaderLeft>
-      {/* key={stage}: a stage is a fresh board with fresh state; the tray remounts with it,
-          which is instant — nothing animates between the two. */}
+      {/* key={at}: a stage is a fresh board with fresh state; the tray remounts with it,
+          which is instant — nothing animates between two stages. */}
       <LessonBoard
-        key={stage}
+        key={at}
         lang={lang}
-        stage={stage}
-        script={script[stage]}
+        script={script.stages[at]}
         vocab={vocab}
         vocabError={error}
         retryVocab={retry}
-        final={stage === 'sentence'}
-        onComplete={toSentence}
+        final={at === script.stages.length - 1}
+        onComplete={next}
         onPlay={onDone}
       />
     </>

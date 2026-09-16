@@ -2772,20 +2772,26 @@ it to the local store — see `packages/backend/AGENTS.md`).
   DEVICE-LOCAL (`lessonsDone`, never on the account) and, for level 1, INFERRED FROM PLAY
   (see the gate bullet). Replaying a done level is allowed. The row dress is the device
   list's; the done mark is a small accent SQUARE where the chevron of a level still to do sits.
-  **LEVEL 1 (`tutorial/LevelOne.tsx` over `LessonBoard.tsx`, one screen, TWO STAGES,
-  `scripts/<lang>.ts`):**
-  - **THE WORD** — one hole whose clue is THE CLOSEST WORD, rank 1 (en OCEAN from `sea^1`,
-    fr OCÉAN from `mer^1`; `scripts.test.ts` pins the start at rank 1). **A SYNONYM FIRST**
-    (user-decided 2026-09-16, after TROPIQUES, `île^12`, `plage^28` and `atlantique^7` each
-    read as too hard or too abstract): the coach can say the clue in plain words — "sea is
-    the word closest to it in meaning" — with no ordinal to grasp, and the first win is one
-    guess away; a wrong guess earns a bigger number beside the 1, which is where "farther =
-    bigger" is learned, by the player's own word. The real keyboard and the real
-    vocabulary from the first frame, one line of copy at most (`tutIntro`, the goal). NO
-    CAPITAL on the lone word (`Phrase`'s `capital={false}`: a word is not a sentence), and
-    the PROMPT sits just above the keyboard on the LEFT (`.tutorial--word .input-area`,
-    `margin-top: auto`), off the word. Finding it ends the stage wordless and rolls into
-    the sentence.
+  **LEVEL 1 (`tutorial/LevelOne.tsx` over `LessonBoard.tsx`, one screen, the script's
+  STAGES in order — `scripts/<lang>.ts` `stages[]`, each `{kind, puzzle, hints}`):**
+  - **THE REVEAL (user-decided 2026-09-16, fifth pass — "you land on a page with mer¹ and
+    it tells you to guess the secret word: where is the secret word?")** — NOTHING IS SAID
+    THAT THE PLAYER HAS NOT JUST SEEN. The secret word is SHOWN on the board (rank 0, the
+    solved look: "Here is a secret word: océan."), stands `REVEAL_MS` (2.6s), then is HIDDEN
+    in front of them: its closest word takes its place wearing a 1, on the app's rung-in
+    swap ("Now hidden. In its place, its closest word: mer¹. Type the secret word."). The player types it back — the loop, lived once. en OCEAN behind `sea^1`, fr
+    OCÉAN behind `mer^1`; `scripts.test.ts` pins the clue at rank 1; the ladder is early
+    (`STUCK.reveal` = 2/4/6 — the answer was just on screen). It replaced four single-word
+    openings that each read as too hard or too abstract (TROPIQUES, `île^12`, `plage^28`,
+    `atlantique^7`, then `mer^1` under an ordinal line).
+  - **THE WORD** — another secret, never shown, its stand-in a dozen ranks out (en MOUNTAIN
+    behind `snow^13`, fr MONTAGNE behind `ski^14`; the test wants 2–20): a real search that
+    stays easy, the coach reacting to the guesses ("Another secret word. In its place, the
+    13th closest word: snow¹³. Find it."). The real keyboard and the real vocabulary from
+    the first frame. NO CAPITAL on a lone word (`Phrase`'s `capital={false}`: a word is not
+    a sentence), and the PROMPT sits just above the keyboard on the LEFT (`.tutorial--word
+    .input-area`, `margin-top: auto`), off the word. Finding it ends the stage wordless and
+    rolls into the sentence.
   - **THE SENTENCE** — two holes, start words in the game's own 50–150 band (en "a dog barks
     at the moon." from `coyote^55` / `stars^62`; fr « un chien aboie à la lune. » from
     `loup^52` / `pénombre^63`), the try count printed behind it as the day does. One new
@@ -2798,10 +2804,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   is written for someone who knows NOTHING yet (user-decided 2026-09-16, three passes): the
   opening says what the game IS — guess a SECRET word — and explains the number on the clue
   itself; closeness is counted in ORDINALS (`ordinal`, en/fr), never an abstract distance.**
-  Before the first guess (`tutIntro`): "Guess the secret word. sea¹ is the word closest to
-  it in meaning."; on the sentence (`tutSentenceIntro`): "Now two secret words, in a sentence.
-  Each guess is tested on both." Word stage: the FIRST ranked guess that moves nothing →
-  `tutAway` ("boat⁴⁵ is the 45th closest word to the secret. sea¹ is the 1st."), once;
+  The reveal's two lines (`tutReveal`, `tutHidden`) above; before the first guess of the
+  word (`tutIntro`) and of the sentence (`tutSentenceIntro`: "Now two secret words, hidden
+  in a sentence. Each guess is tested on both."). Single-word stages: the FIRST ranked guess
+  that moves nothing → `tutAway` ("water²⁹ is the 29th closest word to the secret. sea¹ is
+  the 1st."), once;
   the FIRST MISS → `tutMiss` ("too far from the secret to even get a number"), once; a
   moving guess → SILENCE. Both stages: a
   hole resisting `STUCK[stage]` guesses climbs near → the board's HINT (`hints[]`, per hole,

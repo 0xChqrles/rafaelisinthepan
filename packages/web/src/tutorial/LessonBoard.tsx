@@ -11,7 +11,7 @@ import { HIT_FADE_MS } from '../components/FloatingHit';
 import { RANK_MAX_MS, rankTransitionDuration } from '../components/Hole';
 import { FLOATING_HIT_INTRO_MS, KB_EXIT_FALLBACK_MS, STAGGER_MS } from '../screens/Game';
 import CoachText, { richToPlain } from './CoachText';
-import { coachCopy, coachLine, type GuessEvent, type Stage } from './coach';
+import { coachCopy, coachLine, type GuessEvent } from './coach';
 import type { LessonStage } from './script';
 import { canExtend } from '../game/keyboard';
 import { buildHistory, type HistoryStop } from '../game/history';
@@ -53,6 +53,16 @@ function freshHoles(stage: LessonStage): RuntimeHole[] {
     startRank: h.start_rank,
   }));
 }
+// The reveal's opening frame: the secret itself on the board, at rank 0 (the solved look).
+function revealedHoles(stage: LessonStage): RuntimeHole[] {
+  return stage.puzzle.holes.map((h) => ({
+    pos: h.pos,
+    secret: h.secret.slug,
+    word: h.secret.word,
+    rank: 0,
+    startRank: h.start_rank,
+  }));
+}
 
 function hasCoarsePointer(): boolean {
   return (
@@ -64,10 +74,12 @@ function hasCoarsePointer(): boolean {
 
 // Hold on a solved board before the next stage takes over.
 const STAGE_HOLD_MS = 600;
+// The reveal: how long the secret word stands before its closest word takes its place — the
+// line above it has typed out and been read.
+const REVEAL_MS = 2_600;
 
 export default function LessonBoard({
   lang,
-  stage,
   script,
   vocab,
   vocabError,
@@ -77,7 +89,6 @@ export default function LessonBoard({
   onPlay,
 }: {
   lang: LangCode;
-  stage: Stage;
   script: LessonStage;
   vocab: Vocab | null;
   vocabError: unknown | null;
@@ -87,12 +98,18 @@ export default function LessonBoard({
   onComplete: () => void;
   onPlay: () => void;
 }) {
-  const { puzzle } = script;
+  const { puzzle, kind: stage } = script;
   const { ranks } = puzzle;
   const puzzleHoles = puzzle.holes;
 
+  // THE REVEAL (user-decided 2026-09-16): the secret word is SHOWN first, then hidden in
+  // front of the player — its closest word takes its place, wearing a 1 — so the two things
+  // the first line names, the secret and the word standing in for it, were both just seen.
+  const [revealed, setRevealed] = useState(stage === 'reveal');
   // The board's local state — the ephemeral twin of Round's.
-  const [holes, setHoles] = useState<RuntimeHole[]>(() => freshHoles(script));
+  const [holes, setHoles] = useState<RuntimeHole[]>(() =>
+    stage === 'reveal' ? revealedHoles(script) : freshHoles(script),
+  );
   const [events, setEvents] = useState<GuessEvent[]>([]);
   const [hits, setHits] = useState<HitState[]>([]);
   const [input, setInput] = useState('');
@@ -124,8 +141,15 @@ export default function LessonBoard({
     setAnnounce(text + (announceFlip.current ? '' : '​'));
   }, []);
 
-  const playing = phase === 'play';
+  const playing = phase === 'play' && !revealed;
   const prefixSet = vocab?.prefixSet ?? null;
+  useEffect(() => {
+    if (!revealed) return;
+    later(() => {
+      setHoles(freshHoles(script));
+      setRevealed(false);
+    }, REVEAL_MS);
+  }, [revealed, script, later]);
 
   const appendChar = useCallback(
     (char: string) => {
@@ -318,8 +342,8 @@ export default function LessonBoard({
 
   // --- the coach: the one line the board's state calls for, or nothing ---
   const line = useMemo(
-    () => (playing ? coachLine({ stage, holes, events, tapped }) : null),
-    [playing, stage, holes, events, tapped],
+    () => (phase === 'play' ? coachLine({ stage, holes, events, tapped, revealed }) : null),
+    [phase, stage, holes, events, tapped, revealed],
   );
   const coach = line ? coachCopy(lang, line, script, coarse) : null;
   // Announce each new line once, in plain text (the visible typewriter is aria-hidden).
@@ -333,7 +357,7 @@ export default function LessonBoard({
   return (
     // tutorial--word: the word stage is deliberately CLEAN — one big centered word in the
     // middle; the sentence stage wears the game's own layout.
-    <div className={`game tutorial${stage === 'word' ? ' tutorial--word' : ''}`}>
+    <div className={`game tutorial${stage !== 'sentence' ? ' tutorial--word' : ''}`}>
       <div className="sr-only" role="status" aria-live="polite">
         {announce}
       </div>
@@ -345,7 +369,9 @@ export default function LessonBoard({
       )}
 
       <div className="play">
-        <div className="phrase-anchor">
+        {/* key={revealed}: the hiding is a SWAP — the secret leaves, its stand-in arrives
+            (the app's one rung-in gesture) — not a word morphing into another. */}
+        <div className="phrase-anchor" key={String(revealed)}>
           {/* The sentence stage shows the try count behind the sentence, as the day does:
               fewer tries is the score, and the number says so without a word. */}
           {stage === 'sentence' && (

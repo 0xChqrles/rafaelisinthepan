@@ -3,13 +3,14 @@
 // neighborhoods (scripts/<lang>.<word>.json, pruned #154 artifacts) — and both are meant to
 // be edited, so these tests guard what an edit must not break:
 //
-//   - THE WORD is ONE hole whose clue is THE CLOSEST WORD, rank 1 (user-decided 2026-09-16:
-//     a synonym first — the coach can then say "the closest word" in plain words, and the
-//     first win is one guess away);
+//   - THE REVEAL is ONE hole whose clue is THE CLOSEST WORD, rank 1 (user-decided
+//     2026-09-16: the secret is shown, then hidden behind its synonym, and typed back);
+//   - THE WORD is ONE hole, a different word, its clue a dozen ranks out (2–20): a real
+//     search that stays easy, the near field under it real (a word at every rank down to 1);
 //   - THE SENTENCE is TWO holes with start words in generation's own 50–150 band — the
 //     game's difficulty, one new thing at a time — each secret sitting in `words[]` at its
 //     `pos` with its affixes, and every hole carrying its own hint copy;
-//   - both boards stay byte-compatible with the real per-puzzle schema (parsePuzzle-valid —
+//   - every board stays byte-compatible with the real per-puzzle schema (parsePuzzle-valid —
 //     they feed the REAL game components), rank 0 is the secret, every key folds to itself
 //     (the free typing lands on them), and the start words are READ OFF the maps.
 
@@ -55,25 +56,43 @@ function checkBoard(stage: LessonStage) {
   });
 }
 
+const SEARCH_START_MAX = 20;
+
 for (const lang of ['en', 'fr'] as const) {
   describe(`lesson script (${lang})`, () => {
     const script = scriptFor(lang);
+    const [reveal, word, sentence] = script.stages;
 
-    describe('the word: one hole, an easy board', () => {
-      checkBoard(script.word);
-      it('is one word, its clue the closest word (rank 1)', () => {
-        expect(script.word.puzzle.words).toHaveLength(1);
-        expect(script.word.puzzle.holes).toHaveLength(1);
-        const [hole] = script.word.puzzle.holes;
-        expect(hole.pos).toBe(0);
-        expect(hole.start_rank).toBe(1);
+    it('plays the reveal, then a word, then the sentence', () => {
+      expect(script.stages.map((s) => s.kind)).toEqual(['reveal', 'word', 'sentence']);
+    });
+
+    describe('the reveal: one word, hidden behind its closest word', () => {
+      checkBoard(reveal);
+      it('is one word whose clue is rank 1', () => {
+        expect(reveal.puzzle.words).toHaveLength(1);
+        expect(reveal.puzzle.holes).toHaveLength(1);
+        expect(reveal.puzzle.holes[0].pos).toBe(0);
+        expect(reveal.puzzle.holes[0].start_rank).toBe(1);
+      });
+    });
+
+    describe('the word: one word, a real search', () => {
+      checkBoard(word);
+      it('is another word, its clue a dozen ranks out', () => {
+        expect(word.puzzle.words).toHaveLength(1);
+        expect(word.puzzle.holes).toHaveLength(1);
+        const [hole] = word.puzzle.holes;
+        expect(hole.secret.slug).not.toBe(reveal.puzzle.holes[0].secret.slug);
+        expect(hole.start_rank).toBeGreaterThan(1);
+        expect(hole.start_rank).toBeLessThanOrEqual(SEARCH_START_MAX);
       });
     });
 
     describe('the sentence: two holes, the game’s own start band', () => {
-      checkBoard(script.sentence);
+      checkBoard(sentence);
       it('is a short sentence with two distinct secrets started in the 50–150 band', () => {
-        const { puzzle } = script.sentence;
+        const { puzzle } = sentence;
         expect(puzzle.holes).toHaveLength(2);
         expect(puzzle.words.length).toBeLessThanOrEqual(8);
         expect(new Set(puzzle.holes.map((h) => h.secret.slug)).size).toBe(2);
@@ -82,9 +101,9 @@ for (const lang of ['en', 'fr'] as const) {
           expect(hole.start_rank).toBeLessThanOrEqual(150);
         }
       });
-      it('uses words the word stage did not', () => {
-        const wordSecret = script.word.puzzle.holes[0].secret.slug;
-        for (const hole of script.sentence.puzzle.holes) expect(hole.secret.slug).not.toBe(wordSecret);
+      it('uses words the single-word stages did not', () => {
+        const used = [reveal, word].map((s) => s.puzzle.holes[0].secret.slug);
+        for (const hole of sentence.puzzle.holes) expect(used).not.toContain(hole.secret.slug);
       });
     });
   });

@@ -5,24 +5,23 @@
 // named for a French word):
 //
 //   pnpm gen:word océan --lang fr --form océan=n:s
+//   pnpm gen:word montagne --lang fr --form montagne=n:s
 //   pnpm gen:word chien --lang fr --form chien=n:s
 //   pnpm gen:word lune --lang fr --form lune=n:s
 //   node packages/web/scripts/prune-word-map.mjs \
 //     --in packages/generation/output/single-word/fr/ocean.json \
 //     --out packages/web/src/tutorial/scripts/fr.ocean.json --top 150
-//   (and the same for chien and lune)
+//   (et de même pour montagne, chien et lune)
 //
-// LE MOT : OCÉAN, indice MER — LE MOT LE PLUS PROCHE, rang 1 (décision utilisateur
-// 2026-09-16, quatrième passe, après TROPIQUES, ÎLE, PLAGE puis ATLANTIQUE : « playing with a
-// -1 synonym at first would be easier »). L'indice étant un synonyme, le coach le dit en
-// mots simples — « mer est le mot le plus proche du mot secret » — sans ordinal à saisir, et
-// la première victoire est à un essai. Un mauvais essai gagne un nombre plus grand à côté du
-// 1 : c'est là que « plus loin = plus grand » s'apprend, par le mot du joueur.
-// LA PHRASE : « un chien aboie à la lune. » — CHIEN part de LOUP (52), LUNE de PÉNOMBRE
-// (63), dans la bande de départ 50–150 de la génération.
+// LA RÉVÉLATION : OCÉAN, montré, puis caché derrière MER — son mot le plus proche, rang 1 —
+// et retapé. LE MOT : MONTAGNE, jamais montré, derrière SKI (14) : une vraie recherche,
+// indice intuitif, colline / vallée / cime font tous avancer le trou. LA PHRASE : « un chien
+// aboie à la lune. » — CHIEN derrière LOUP (52), LUNE derrière PÉNOMBRE (63), dans la bande
+// de départ 50–150 de la génération.
 import type { WordPuzzle } from '@whippin/shared';
 import type { LessonScript } from '../script';
 import ocean from './fr.ocean.json';
+import montagne from './fr.montagne.json';
 import chien from './fr.chien.json';
 import lune from './fr.lune.json';
 
@@ -37,27 +36,32 @@ function hole(artifact: WordPuzzle, pos: number, start: string, suffix?: string)
   };
 }
 
+function single(artifact: WordPuzzle, start: string) {
+  return {
+    lang: 'fr',
+    revision: 'lesson',
+    words: [artifact.word.word],
+    holes: [hole(artifact, 0, start)],
+    ranks: { [artifact.word.slug]: artifact.ranks },
+  };
+}
+
 const script: LessonScript = {
-  word: {
-    puzzle: {
-      lang: 'fr',
-      revision: 'lesson',
-      words: [ocean.word.word],
-      holes: [hole(ocean, 0, 'mer')],
-      ranks: { [ocean.word.slug]: ocean.ranks },
+  stages: [
+    { kind: 'reveal', puzzle: single(ocean, 'mer'), hints: ['tutHintOcean'] },
+    { kind: 'word', puzzle: single(montagne, 'ski'), hints: ['tutHintMontagne'] },
+    {
+      kind: 'sentence',
+      puzzle: {
+        lang: 'fr',
+        revision: 'lesson',
+        words: ['un', 'chien', 'aboie', 'à', 'la', 'lune.'],
+        holes: [hole(chien, 1, 'loup'), hole(lune, 5, 'penombre', '.')],
+        ranks: { [chien.word.slug]: chien.ranks, [lune.word.slug]: lune.ranks },
+      },
+      hints: ['tutHintChien', 'tutHintLune'],
     },
-    hints: ['tutHintOcean'],
-  },
-  sentence: {
-    puzzle: {
-      lang: 'fr',
-      revision: 'lesson',
-      words: ['un', 'chien', 'aboie', 'à', 'la', 'lune.'],
-      holes: [hole(chien, 1, 'loup'), hole(lune, 5, 'penombre', '.')],
-      ranks: { [chien.word.slug]: chien.ranks, [lune.word.slug]: lune.ranks },
-    },
-    hints: ['tutHintChien', 'tutHintLune'],
-  },
+  ],
 };
 
 export default script;

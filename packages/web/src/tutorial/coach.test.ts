@@ -1,6 +1,7 @@
 // CONTRACT: the reactive coach (#269). It speaks on a mistake or a stall, never on success —
 // replayed here over guess sequences on a synthetic board, against the rule as decided:
 //
+//   - the reveal: the secret named while it shows, then what took its place; an early ladder;
 //   - before the first guess: the goal — the clue named on the word, "two now" on the sentence;
 //   - a guess that ranks but moves nothing: what the number means — ONCE, the first time;
 //   - a MISS: too far to count — ONCE, the first time;
@@ -28,7 +29,7 @@ function board(stage: Stage, starts: number[]) {
     startRank: rank,
   }));
   const events: GuessEvent[] = [];
-  const state = (tapped = false): CoachState => ({ stage, holes, events, tapped });
+  const state = (tapped = false, revealed = false): CoachState => ({ stage, holes, events, tapped, revealed });
   // `ranks[i]` is the guess's rank on hole i, or null for a MISS there.
   const guess = (typed: string, ranks: (number | null)[]) => {
     const entries = holes.map((h, i) => (h.rank === 0 || ranks[i] === null ? undefined : entry(typed, ranks[i] as number)));
@@ -43,6 +44,19 @@ function board(stage: Stage, starts: number[]) {
   };
   return { state, guess, holes };
 }
+
+describe('the reveal', () => {
+  it('names the secret while it shows, what replaced it once hidden, and nudges early', () => {
+    const b = board('reveal', [1]);
+    expect(coachLine(b.state(false, true))).toEqual({ kind: 'reveal', holeIndex: 0 });
+    expect(coachLine(b.state())).toEqual({ kind: 'hidden', hole: expect.objectContaining({ rank: 1 }) });
+    b.guess('water', [29]);
+    expect(coachLine(b.state())).toEqual({ kind: 'away', guess: expect.objectContaining({ rank: 29 }), hole: expect.objectContaining({ rank: 1 }) });
+    b.guess('boat', [45]);
+    expect(coachLine(b.state())).toEqual({ kind: 'near', hole: expect.objectContaining({ rank: 1 }) });
+    expect(STUCK.reveal[0]).toBeLessThan(STUCK.word[0]);
+  });
+});
 
 describe('the word stage', () => {
   it('opens on the goal and falls silent on an improving guess', () => {
@@ -134,6 +148,7 @@ describe('ordinal', () => {
 
 describe('coachCopy', () => {
   const stage: LessonStage = {
+    kind: 'word',
     puzzle: {
       lang: 'en',
       revision: 'lesson',
@@ -145,8 +160,12 @@ describe('coachCopy', () => {
   };
   it('prints the board’s words in their in-game dress', () => {
     const hole: RuntimeHole = { pos: 0, secret: 'ocean', word: 'islands', rank: 10, startRank: 10 };
+    expect(coachCopy('en', { kind: 'reveal', holeIndex: 0 }, stage, true)).toBe('Here is a secret word: [[b:ocean]].');
+    expect(coachCopy('en', { kind: 'hidden', hole: { ...hole, word: 'sea', rank: 1 } }, stage, true)).toBe(
+      'Now hidden. In its place, its closest word: [[w:sea^1]]. Type the secret word.',
+    );
     expect(coachCopy('en', { kind: 'intro', hole }, stage, true)).toBe(
-      'Guess the secret word. [[w:islands^10]] is the word closest to it in meaning.',
+      'Another secret word. In its place, the 10th closest word: [[w:islands^10]]. Find it.',
     );
     expect(coachCopy('en', { kind: 'away', guess: entry('boat', 45), hole }, stage, true)).toBe(
       '[[w:boat^45]] is the 45th closest word to the secret. [[w:islands^10]] is the 10th.',

@@ -5,25 +5,24 @@
 // groups. Regenerate them with (from the REPO ROOT):
 //
 //   pnpm gen:word ocean --lang en
+//   pnpm gen:word mountain --lang en
 //   pnpm gen:word dog --lang en
 //   pnpm gen:word moon --lang en
 //   node packages/web/scripts/prune-word-map.mjs \
 //     --in packages/generation/output/single-word/en/ocean.json \
 //     --out packages/web/src/tutorial/scripts/en.ocean.json --top 150
-//   (and the same for dog and moon)
+//   (and the same for mountain, dog and moon)
 //
-// THE WORD: OCEAN, its clue SEA — THE CLOSEST WORD, rank 1 (user-decided 2026-09-16, fourth
-// pass: "playing with a -1 synonym at first would be easier"). The clue being a synonym, the
-// coach can say it in plain words — "sea is the word closest to the secret word" — with no
-// ordinal to grasp, and the first win is one guess away. A wrong guess earns a bigger number
-// beside the 1, which is where "farther = bigger" is learned, by the player's own word.
-// THE SENTENCE: "a dog barks at the moon." — DOG started at COYOTE (55) and MOON at STARS
-// (62), both inside generation's own 50–150 start band, both intuitive neighbors.
+// THE REVEAL: OCEAN, shown, then hidden behind SEA — its closest word, rank 1 — and typed
+// back. THE WORD: MOUNTAIN, never shown, behind SNOW (13): a real search, intuitive clue,
+// slopes / alps / hills / peaks all move the hole. THE SENTENCE: "a dog barks at the moon."
+// — DOG behind COYOTE (55) and MOON behind STARS (62), the game's own 50–150 band.
 //
 // scripts.test.ts replays this file and fails if an edit breaks the lesson's shape.
 import type { WordPuzzle } from '@whippin/shared';
 import type { LessonScript } from '../script';
 import ocean from './en.ocean.json';
+import mountain from './en.mountain.json';
 import dog from './en.dog.json';
 import moon from './en.moon.json';
 
@@ -40,29 +39,34 @@ function hole(artifact: WordPuzzle, pos: number, start: string, suffix?: string)
   };
 }
 
+// A LESSON's boards, never a published daily: not served, not synced, never scored, so the
+// version is a constant rather than a publish stamp (#203).
+function single(artifact: WordPuzzle, start: string) {
+  return {
+    lang: 'en',
+    revision: 'lesson',
+    words: [artifact.word.word],
+    holes: [hole(artifact, 0, start)],
+    ranks: { [artifact.word.slug]: artifact.ranks },
+  };
+}
+
 const script: LessonScript = {
-  word: {
-    puzzle: {
-      lang: 'en',
-      // A LESSON's board, never a published daily: it is not served, not synced and never
-      // scored, so its version is a constant rather than a publish stamp (#203).
-      revision: 'lesson',
-      words: [ocean.word.word],
-      holes: [hole(ocean, 0, 'sea')],
-      ranks: { [ocean.word.slug]: ocean.ranks },
+  stages: [
+    { kind: 'reveal', puzzle: single(ocean, 'sea'), hints: ['tutHintOcean'] },
+    { kind: 'word', puzzle: single(mountain, 'snow'), hints: ['tutHintMountain'] },
+    {
+      kind: 'sentence',
+      puzzle: {
+        lang: 'en',
+        revision: 'lesson',
+        words: ['a', 'dog', 'barks', 'at', 'the', 'moon.'],
+        holes: [hole(dog, 1, 'coyote'), hole(moon, 5, 'stars', '.')],
+        ranks: { [dog.word.slug]: dog.ranks, [moon.word.slug]: moon.ranks },
+      },
+      hints: ['tutHintDog', 'tutHintMoon'],
     },
-    hints: ['tutHintOcean'],
-  },
-  sentence: {
-    puzzle: {
-      lang: 'en',
-      revision: 'lesson',
-      words: ['a', 'dog', 'barks', 'at', 'the', 'moon.'],
-      holes: [hole(dog, 1, 'coyote'), hole(moon, 5, 'stars', '.')],
-      ranks: { [dog.word.slug]: dog.ranks, [moon.word.slug]: moon.ranks },
-    },
-    hints: ['tutHintDog', 'tutHintMoon'],
-  },
+  ],
 };
 
 export default script;

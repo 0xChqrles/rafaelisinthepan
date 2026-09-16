@@ -415,18 +415,23 @@ const STRINGS = {
   // [[b:secret]] solve cobalt, [[w:hint^rank]] the held word's chip + rank exponent,
   // [[m:miss]] MISS's red. The {braces} are filled by coach.ts from the board itself, so a
   // line can never name a word the map does not rank.
-  // The lines are written for someone who knows NOTHING yet (user-decided 2026-09-16, four
-  // passes): the opening says what the game IS — guess a SECRET word — and the clue is a
-  // SYNONYM, the closest word, so the line needs no concept at all. Ordinals ("the 29th
-  // closest") appear only once the player has a number of their own to read them on;
-  // coach.ts fills the {braces} (`ordinal`).
+  // The lines are written for someone who knows NOTHING yet (user-decided 2026-09-16, five
+  // passes — "where is the secret word? what does 'mer est le plus proche' mean?"): nothing
+  // is said that the player has not just SEEN. The reveal shows the secret word, then hides
+  // it behind its closest word in front of them; every later line names what is on screen.
+  // coach.ts fills the {braces} (`ordinal` for the ranks).
+  tutReveal: { en: 'Here is a secret word: {answer}.', fr: 'Voici un mot secret : {answer}.' },
+  tutHidden: {
+    en: 'Now hidden. In its place, its closest word: {start}. Type the secret word.',
+    fr: 'Caché. À sa place, son mot le plus proche : {start}. Retape le mot secret.',
+  },
   tutIntro: {
-    en: 'Guess the secret word. {start} is the word closest to it in meaning.',
-    fr: 'Devine le mot secret. {start} est le mot le plus proche du mot secret.',
+    en: 'Another secret word. In its place, the {m} closest word: {start}. Find it.',
+    fr: 'Un autre mot secret. À sa place, le {m} mot le plus proche : {start}. Trouve-le.',
   },
   tutSentenceIntro: {
-    en: 'Now two secret words, in a sentence. Each guess is tested on both.',
-    fr: 'Maintenant deux mots secrets, dans une phrase. Chaque essai est testé sur les deux.',
+    en: 'Now two secret words, hidden in a sentence. Each guess is tested on both.',
+    fr: 'Deux mots secrets dans une phrase. Chaque essai compte pour les deux.',
   },
   tutAway: {
     en: '{guess} is the {n} closest word to the secret. {start} is the {m}.',
@@ -454,6 +459,8 @@ const STRINGS = {
   // Each board's own hint about its word — what the coach says once a hole has resisted long
   // enough, before it gives the answer (scripts/<lang>.ts names them per hole).
   tutHintOcean: { en: 'A very large body of water.', fr: 'Une très grande étendue d’eau.' },
+  tutHintMountain: { en: 'It is very high, and you climb it.', fr: 'C’est très haut, et ça se grimpe.' },
+  tutHintMontagne: { en: 'It is very high, and you climb it.', fr: 'C’est très haut, et ça se grimpe.' },
   tutHintDog: { en: 'Man’s best friend.', fr: 'Le meilleur ami de l’homme.' },
   tutHintMoon: { en: 'It lights the night.', fr: 'Elle éclaire la nuit.' },
   tutHintChien: { en: 'Man’s best friend.', fr: 'Le meilleur ami de l’homme.' },

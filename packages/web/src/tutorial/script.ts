@@ -6,9 +6,12 @@
 // feedback is the teacher (user-decided 2026-09-16, after watching newcomers press what they
 // were told to press and learn nothing from it).
 //
-//   THE WORD      one hole, its start word a few ranks out (an EASY board: the number falls
-//                 fast toward 0 and the hole moves on almost every good guess), found with
-//                 free typing. The coach speaks only when a guess calls for it — see coach.ts.
+//   THE REVEAL    (user-decided 2026-09-16, fifth pass: "where is the secret word? what does
+//                 'mer est le plus proche' mean?") — the secret word is SHOWN, then hidden in
+//                 front of the player: its closest word takes its place, wearing a 1. The
+//                 player types the secret back. Nothing is explained that was not just seen.
+//   THE WORD      another secret, never shown, its stand-in a dozen ranks out: a real search
+//                 on one word, with the coach reacting to the guesses (coach.ts).
 //   THE SENTENCE  two holes, start words in the game's own 50–150 band: one guess is tried on
 //                 every hole, a tap on a word opens the tries, fewer tries is the score. One
 //                 new thing at a time; the sentence solved ends the lesson on PLAY.
@@ -24,7 +27,10 @@
 import type { Puzzle } from '@whippin/shared';
 import type { UiKey } from '../i18n';
 
+export type StageKind = 'reveal' | 'word' | 'sentence';
+
 export interface LessonStage {
+  kind: StageKind;
   puzzle: Puzzle;
   // One hint per hole, in `puzzle.holes` order — what the coach says once a hole has resisted
   // long enough (coach.ts `STUCK`), before it gives the answer.
@@ -32,7 +38,6 @@ export interface LessonStage {
 }
 
 export interface LessonScript {
-  word: LessonStage;
-  sentence: LessonStage;
+  stages: LessonStage[]; // reveal, word, sentence — in the order they are played
 }
 // (The per-language script lookup lives in ./scripts/index.ts.)
