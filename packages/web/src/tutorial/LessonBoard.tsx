@@ -24,7 +24,7 @@ import { fold } from '@whippin/shared';
 import type { HitState, RankEntry, RankMap, RuntimeHole } from '@whippin/shared';
 import { t, ariaHoleHistory, srHoleCharge, srHoleInitial, srHoleResult } from '../i18n';
 import type { LangCode } from '../langs';
-import botIdle from '../assets/error-bot-idle.png';
+import playerIdle from '../assets/player-idle.png';
 
 // ONE STAGE OF THE LESSON, PLAYED (#269): a real board in the real game components, the real
 // keyboard and the real vocabulary from the first frame, and a coach that speaks only when a
@@ -495,12 +495,13 @@ export default function LessonBoard({
         {announce}
       </div>
 
-      {/* THE COACH IS THE ERROR BOT (user-decided 2026-09-16: "people would want to read it
-          more if it's something telling it"): the game's one character stands on the box and
-          speaks it — the same sprite, the same idle bob, as on the error screen. */}
+      {/* THE COACH IS THE PLAYER (user-decided 2026-09-16: "people would want to read it more
+          if it's something telling it"; the error bot stood in first, then the old lineup's
+          PLAYER idle sheet — 8 frames, 22x31 — was brought back for the part): a character
+          stands on the box and speaks it. */}
       {shownCoach && (
         <div className="coach coach--bot">
-          <div className="coach-bot" aria-hidden style={{ backgroundImage: `url(${botIdle})` }} />
+          <div className="coach-bot" aria-hidden style={{ backgroundImage: `url(${playerIdle})` }} />
           <CoachText key={shownCoach} copy={shownCoach} />
         </div>
       )}

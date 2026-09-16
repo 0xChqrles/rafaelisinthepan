@@ -3973,11 +3973,14 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   -webkit-backdrop-filter: blur(14px);
   padding: 16px 20px;
 }
-/* THE BOT SPEAKS THE LESSON (user-decided 2026-09-16): the error screen's own character —
-   `error-bot-idle.png`, the 4-frame 32x32 idle bob, at an INTEGER 2x — stands on the box's
-   top-left edge, so the box reads as what it says. It is drawn OUTSIDE the box (absolute,
-   above), because the text area's three-line budget is an invariant: a bot beside the text
-   would have cost a fourth line at 320px. The box drops by the bot's height to make room. */
+/* THE PLAYER SPEAKS THE LESSON (user-decided 2026-09-16): the old lineup's PLAYER idle sheet
+   — `player-idle.png`, 8 frames of 22x31, restored from the benchmark display's removal —
+   at an INTEGER 2x, standing on the box's top-left edge so the box reads as what it says.
+   It is drawn OUTSIDE the box (absolute, above), because the text area's line budget is an
+   invariant: a sprite beside the text would cost lines at 320px. The box drops by the
+   sprite's height to make room. The walk is the `.cal-ripple` way: background-size fits ONE
+   frame (800% x 100%) and steps(8) walks background-position-x, the end value 100% x 8/7 so
+   frame 7 lands on 100% and the loop wraps cleanly. */
 .coach--bot {
   top: calc(78px + 56px);
 }
@@ -3985,14 +3988,19 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   position: absolute;
   left: 12px;
   bottom: 100%;
-  width: 64px;
-  height: 64px;
+  width: 44px; /* 22 x 2 */
+  height: 62px; /* 31 x 2 */
   margin-bottom: -8px; /* the feet sit on the box's top edge */
   background-repeat: no-repeat;
-  background-size: 400% 100%;
+  background-size: 800% 100%;
   image-rendering: pixelated;
-  animation: bot-idle 640ms steps(4) infinite;
+  animation: player-idle 0.8s steps(8) infinite;
   pointer-events: none;
+}
+@keyframes player-idle {
+  to {
+    background-position-x: calc(100% * 8 / 7);
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .coach-bot {

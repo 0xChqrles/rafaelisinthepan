@@ -2866,11 +2866,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   2026-09-16 from the lesson: "when we click next to a word it scrolls to it instead of
   leaving the wheel"): the room beside a word is the scroller's own, and a click there folds
   the wheel — on the day's wheel too.
-  **THE COACH IS THE ERROR BOT (user-decided 2026-09-16, "people would want to read it more
-  if it's something telling it"):** the error screen's character (`error-bot-idle.png`, its
-  idle bob, at 2x) stands on the coach box's top-left edge (`.coach--bot` / `.coach-bot`,
-  drawn ABOVE the box so the text budget stands; the box and the board's
-  `padding-top` drop by the bot's 56px). One character, one voice, on both screens that talk.
+  **THE COACH IS THE PLAYER (user-decided 2026-09-16, "people would want to read it more if
+  it's something telling it"):** the old lineup's PLAYER idle sheet (`player-idle.png`, 8
+  frames of 22x31, restored from the benchmark display's removal — the error bot stood in
+  first, replaced the same day on the user's ask) at 2x stands on the coach box's top-left
+  edge (`.coach--bot` / `.coach-bot`, drawn ABOVE the box so the text budget stands; the box
+  and the board's `padding-top` drop by the sprite's 56px).
   **THE REACTIVE COACH (`tutorial/coach.ts`, pure; `coach.test.ts` replays sequences):**
   the one line the board's state calls for — and when a beat has nothing new to say THE BOX
   KEEPS THE LAST LINE UP, it never disappears (user-decided 2026-09-16). **Every line
