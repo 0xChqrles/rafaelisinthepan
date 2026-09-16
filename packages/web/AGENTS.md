@@ -2777,10 +2777,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **THE REVEAL (user-decided 2026-09-16, fifth pass — "you land on a page with mer¹ and
     it tells you to guess the secret word: where is the secret word?")** — NOTHING IS SAID
     THAT THE PLAYER HAS NOT JUST SEEN. The secret word is SHOWN on the board (rank 0, the
-    solved look: "Here is a secret word: océan."), STANDS UNTIL THE PLAYER ACTS — a tap, a
-    click or a key anywhere (capture-phase listeners, the pulsing TAP ANYWHERE cue after
-    `REVEAL_HINT_MS`); **the coach never skips a line without an interaction** (user-decided
-    2026-09-16) — then is HIDDEN in front of them: its closest word takes its place wearing a 1, on the app's rung-in
+    solved look: "Here is a secret word: océan."), STANDS UNTIL THE PLAYER ACTS on ONE
+    BUTTON in the tray, where the keyboard will land, named for what it does — **HIDE THE
+    WORD** (`tutHide`, `.mix-btn`; the prompt is retired meanwhile, so it is the one action).
+    **The coach never skips a line without an interaction, and the interaction is always an
+    obvious control with a clear action — never "tap anywhere"** (user-decided 2026-09-16,
+    the tap-anywhere cue rejected the same day). Pressing it is the hiding: the word is
+    HIDDEN in front of them: its closest word takes its place wearing a 1, on the app's rung-in
     swap ("Now hidden. In its place, its closest word: mer¹. Type the secret word."). The player types it back — the loop, lived once. en OCEAN behind `sea^1`, fr
     OCÉAN behind `mer^1`; `scripts.test.ts` pins the clue at rank 1; the ladder is early
     (`STUCK.reveal` = 2/4/6 — the answer was just on screen). It replaced four single-word

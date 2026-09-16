@@ -75,10 +75,6 @@ function hasCoarsePointer(): boolean {
 
 // Hold on a solved board before the next stage takes over.
 const STAGE_HOLD_MS = 600;
-// The reveal WAITS FOR THE PLAYER (user-decided 2026-09-16: "the dialog box should never skip
-// a dialog without the user interacting with the screen"): the secret word stands until a tap,
-// a click or a key anywhere; the pulsing TAP ANYWHERE hint arrives once the line has typed.
-const REVEAL_HINT_MS = 1_400;
 
 export default function LessonBoard({
   lang,
@@ -145,23 +141,14 @@ export default function LessonBoard({
 
   const playing = phase === 'play' && !revealed;
   const prefixSet = vocab?.prefixSet ?? null;
-  const [revealHint, setRevealHint] = useState(false);
-  useEffect(() => {
-    if (!revealed) return undefined;
-    later(() => setRevealHint(true), REVEAL_HINT_MS);
-    const hide = () => {
-      setHoles(freshHoles(script));
-      setRevealed(false);
-    };
-    // Capture phase, like the game's own tap-anywhere dismissals: the first interaction
-    // anywhere on the screen is the cue, whatever it lands on.
-    window.addEventListener('pointerdown', hide, true);
-    window.addEventListener('keydown', hide, true);
-    return () => {
-      window.removeEventListener('pointerdown', hide, true);
-      window.removeEventListener('keydown', hide, true);
-    };
-  }, [revealed, script, later]);
+  // The reveal WAITS FOR THE PLAYER (user-decided 2026-09-16: "the dialog box should never
+  // skip a dialog without the user interacting with the screen", and "it should always be
+  // obvious where to click, with a clear action"): ONE button in the tray, where the keyboard
+  // will land, named for what it does — HIDE THE WORD. Pressing it is the hiding.
+  const hide = useCallback(() => {
+    setHoles(freshHoles(script));
+    setRevealed(false);
+  }, [script]);
 
   const appendChar = useCallback(
     (char: string) => {
@@ -381,11 +368,6 @@ export default function LessonBoard({
         <div className="coach coach--bot">
           <div className="coach-bot" aria-hidden style={{ backgroundImage: `url(${botIdle})` }} />
           <CoachText key={coach} copy={coach} />
-          {revealed && revealHint && (
-            <span className="coach-hint" aria-hidden="true">
-              {t(lang, coarse ? 'tapAnywhere' : 'clickAnywhere')}
-            </span>
-          )}
         </div>
       )}
 
@@ -417,7 +399,11 @@ export default function LessonBoard({
         </div>
         {/* Once there is nothing left to type the prompt retires in place — still laid out,
             so the board does not move, but invisible and inert. */}
-        <div className={`input-area${ending ? ' retired' : ''}`} aria-hidden={ending || undefined}>
+        {/* …and the reveal has nothing to type yet: the button below is the one action. */}
+        <div
+          className={`input-area${ending || revealed ? ' retired' : ''}`}
+          aria-hidden={ending || revealed || undefined}
+        >
           <WordInput
             value={input}
             history={tried}
@@ -446,6 +432,13 @@ export default function LessonBoard({
         ) : kbGone ? (
           <button type="button" className="mix-btn" onClick={onPlay}>
             {t(lang, 'tutPlay')}
+          </button>
+        ) : revealed ? (
+          // The reveal's one action, in the keyboard's place: the keyboard takes over the
+          // moment the word is hidden (the tutorial's oldest gesture — "the button moves down,
+          // the keyboard moves up").
+          <button type="button" className="mix-btn" onClick={hide}>
+            {t(lang, 'tutHide')}
           </button>
         ) : (
           <div

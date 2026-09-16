@@ -3979,20 +3979,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     background-position-x: 0%;
   }
 }
-/* The reveal's cue, once the line has typed: the streak dialog's pulsing TAP ANYWHERE, in the
-   box's bottom-right corner. */
-.coach-hint {
-  position: absolute;
-  right: 14px;
-  bottom: 8px;
-  font-family: var(--ui);
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--muted);
-  animation: streak-hint-pulse 1.6s ease-in-out infinite;
-}
 .coach-text {
   margin: 0;
   font-family: var(--ui);

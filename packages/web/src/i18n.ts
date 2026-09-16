@@ -421,6 +421,8 @@ const STRINGS = {
   // it behind its closest word in front of them; every later line names what is on screen.
   // coach.ts fills the {braces} (`ordinal` for the ranks).
   tutReveal: { en: 'Here is a secret word: {answer}.', fr: 'Voici un mot secret : {answer}.' },
+  // The reveal's one action, a button in the tray: what pressing it does.
+  tutHide: { en: 'HIDE THE WORD', fr: 'CACHER LE MOT' },
   tutHidden: {
     en: 'Now hidden. In its place, its closest word: {start}. Type the secret word.',
     fr: 'Caché. À sa place, son mot le plus proche : {start}. Retape le mot secret.',
