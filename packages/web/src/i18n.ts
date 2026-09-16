@@ -501,8 +501,8 @@ const STRINGS = {
   tutHintChien: { en: 'Man’s best friend.', fr: 'Le meilleur ami de l’homme.' },
   tutHintCat: { en: 'It purrs.', fr: 'Il ronronne.' },
   tutHintChat: { en: 'It purrs.', fr: 'Il ronronne.' },
-  tutHintFreedom: { en: 'Being free.', fr: 'Être libre.' },
-  tutHintLiberte: { en: 'Being free.', fr: 'Être libre.' },
+  tutHintLiberty: { en: 'Being free.', fr: 'Être libre.' },
+  tutHintSentier: { en: 'A narrow path.', fr: 'Un petit chemin.' },
   tutHintLune: { en: 'It lights the night.', fr: 'Elle éclaire la nuit.' },
   // The lesson's wordless ending: the solved sentence stands, and PLAY graduates into the game.
   tutPlay: { en: 'PLAY', fr: 'JOUER' },

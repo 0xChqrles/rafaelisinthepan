@@ -9,21 +9,22 @@
 //   pnpm gen:word chien --lang fr --form chien=n:s
 //   pnpm gen:word lune --lang fr --form lune=n:s
 //   pnpm gen:word chat --lang fr --form chat=n:s
-//   pnpm gen:word liberté --lang fr --form liberté=n:s
+//   pnpm gen:word sentier --lang fr --form sentier=n:s
 //   node packages/web/scripts/prune-word-map.mjs \
 //     --in packages/generation/output/single-word/fr/ocean.json \
 //     --out packages/web/src/tutorial/scripts/fr.ocean.json --top 150
-//   (et de même pour montagne, chien, lune, chat et liberté)
+//   (et de même pour montagne, chien, lune, chat et sentier)
 //
 // LA RÉVÉLATION : OCÉAN, montré, puis caché derrière MER — son mot le plus proche, rang 1 —
 // et retapé. LE MOT : MONTAGNE, jamais montré, derrière SKI (14) : une vraie recherche,
 // indice intuitif, colline / vallée / cime font tous avancer le trou. LA PHRASE : « un chien
 // aboie à la lune. » — CHIEN derrière LOUP (52), LUNE derrière PÉNOMBRE (63), dans la bande
-// de départ 50–150 de la génération. LA JAUGE : « le chat rêve de liberté. » — CHAT déjà trouvé
-// par le bot, LIBERTÉ derrière OPPRESSION (124) et trop abstrait pour se lire dans la
-// phrase ; les essais du bot (paix, justice, égalité, vérité, parole, religion, droits)
-// laissent sa jauge à ~95 avec ÉGALITÉ (23) pour meilleur mot : le premier essai proche du
-// joueur la remplit et le L apparaît.
+// de départ 50–150 de la génération. LA JAUGE : « le chat suit le sentier. » — CHAT déjà trouvé
+// par le bot ; le secret est SENTIER et l'essai ÉVIDENT, CHEMIN, est son mot le plus proche
+// (rang 1) : le taper vaut un 1, jamais la solution. Les essais du bot (village, pont,
+// rocher, circuit, trottoir, refuge, col, versant — masculins, pour que « le » tienne)
+// laissent la jauge à ~78 avec COL (101) pour meilleur mot : CHEMIN la remplit, visiblement,
+// et le S apparaît ; le bot pose ensuite sentier lui-même.
 import type { WordPuzzle } from '@whippin/shared';
 import type { LessonScript } from '../script';
 import ocean from './fr.ocean.json';
@@ -31,7 +32,7 @@ import montagne from './fr.montagne.json';
 import chien from './fr.chien.json';
 import lune from './fr.lune.json';
 import chat from './fr.chat.json';
-import liberte from './fr.liberte.json';
+import sentier from './fr.sentier.json';
 
 function hole(artifact: WordPuzzle, pos: number, start: string, suffix?: string) {
   const entry = artifact.ranks[start];
@@ -74,13 +75,14 @@ const script: LessonScript = {
       puzzle: {
         lang: 'fr',
         revision: 'lesson',
-        words: ['le', 'chat', 'rêve', 'de', 'liberté.'],
-        holes: [hole(chat, 1, 'museau'), hole(liberte, 4, 'oppression', '.')],
-        ranks: { [chat.word.slug]: chat.ranks, [liberte.word.slug]: liberte.ranks },
+        words: ['le', 'chat', 'suit', 'le', 'sentier.'],
+        holes: [hole(chat, 1, 'museau'), hole(sentier, 4, 'falaise', '.')],
+        ranks: { [chat.word.slug]: chat.ranks, [sentier.word.slug]: sentier.ranks },
       },
-      // La partie du bot jusqu'ici : le chat trouvé, puis liberté tournée autour sans tomber.
-      played: ['chat', 'paix', 'justice', 'egalite', 'verite', 'parole', 'religion', 'droits'],
-      hints: ['tutHintChat', 'tutHintLiberte'],
+      // La partie du bot jusqu'ici : le chat trouvé, puis le sentier tourné autour sans tomber.
+      played: ['chat', 'village', 'pont', 'rocher', 'circuit', 'trottoir', 'refuge', 'col', 'versant'],
+      obvious: 'chemin',
+      hints: ['tutHintChat', 'tutHintSentier'],
     },
   ],
 };

@@ -9,20 +9,21 @@
 //   pnpm gen:word dog --lang en
 //   pnpm gen:word moon --lang en
 //   pnpm gen:word cat --lang en
-//   pnpm gen:word freedom --lang en
+//   pnpm gen:word liberty --lang en
 //   node packages/web/scripts/prune-word-map.mjs \
 //     --in packages/generation/output/single-word/en/ocean.json \
 //     --out packages/web/src/tutorial/scripts/en.ocean.json --top 150
-//   (and the same for mountain, dog, moon, cat and freedom)
+//   (and the same for mountain, dog, moon, cat and liberty)
 //
 // THE REVEAL: OCEAN, shown, then hidden behind SEA — its closest word, rank 1 — and typed
 // back. THE WORD: MOUNTAIN, never shown, behind SNOW (13): a real search, intuitive clue,
 // slopes / alps / hills / peaks all move the hole. THE SENTENCE: "a dog barks at the moon."
 // — DOG behind COYOTE (55) and MOON behind STARS (62), the game's own 50–150 band.
-// THE METER: "the cat dreams of freedom." — CAT already found by the bot, FREEDOM behind
-// REVOLUTION (132) and too abstract to read off the sentence; the bot's tries (peace,
-// justice, hope, happiness, truth, speech, unity, religion) leave its meter at ~99 with SPEECH
-// (24) as the best word, so the player's first close guess fills it and the F lands.
+// THE METER: "the cat dreams of liberty." — CAT already found by the bot; the secret is
+// LIBERTY and the OBVIOUS guess, FREEDOM, is its closest word (rank 1): typing it earns a 1,
+// never the solve. The bot's tries (justice, truth, unity, happiness, honor, religion) leave
+// the meter at ~74 with HAPPINESS (48) as the best word, so FREEDOM fills it — visibly, a
+// quarter of the chip — and the L lands; the bot then lands liberty itself.
 //
 // scripts.test.ts replays this file and fails if an edit breaks the lesson's shape.
 import type { WordPuzzle } from '@whippin/shared';
@@ -32,7 +33,7 @@ import mountain from './en.mountain.json';
 import dog from './en.dog.json';
 import moon from './en.moon.json';
 import cat from './en.cat.json';
-import freedom from './en.freedom.json';
+import liberty from './en.liberty.json';
 
 // A hole at its start word, both READ OFF the map rather than restated here, so the board can
 // never disagree with its own neighborhood.
@@ -79,13 +80,14 @@ const script: LessonScript = {
       puzzle: {
         lang: 'en',
         revision: 'lesson',
-        words: ['the', 'cat', 'dreams', 'of', 'freedom.'],
-        holes: [hole(cat, 1, 'whiskers'), hole(freedom, 4, 'revolution', '.')],
-        ranks: { [cat.word.slug]: cat.ranks, [freedom.word.slug]: freedom.ranks },
+        words: ['the', 'cat', 'dreams', 'of', 'liberty.'],
+        holes: [hole(cat, 1, 'whiskers'), hole(liberty, 4, 'revolution', '.')],
+        ranks: { [cat.word.slug]: cat.ranks, [liberty.word.slug]: liberty.ranks },
       },
-      // The bot's game so far: it found the cat, then circled freedom without landing.
-      played: ['cat', 'peace', 'justice', 'hope', 'happiness', 'truth', 'speech', 'unity', 'religion'],
-      hints: ['tutHintCat', 'tutHintFreedom'],
+      // The bot's game so far: it found the cat, then circled liberty without landing.
+      played: ['cat', 'justice', 'truth', 'unity', 'happiness', 'honor', 'religion'],
+      obvious: 'freedom',
+      hints: ['tutHintCat', 'tutHintLiberty'],
     },
   ],
 };

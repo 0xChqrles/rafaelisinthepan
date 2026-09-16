@@ -43,6 +43,11 @@ export interface LessonStage {
   // log the board, the meters and the tries wheel replay, before the player's own guesses.
   // Chosen so one secret is found and the other's meter stands just under full.
   played?: string[];
+  // The meter stage only: THE OBVIOUS GUESS — the word the sentence begs for, which is the
+  // secret's closest word (rank 1), not the secret. The player types it, gets a 1, the chip
+  // fills, and the answer stays the bot's to land (user-decided 2026-09-16: "if you type the
+  // word 0 it should become the word -1, to make sure it's impossible to guess in one try").
+  obvious?: string;
   // One hint per hole, in `puzzle.holes` order — what the coach says once a hole has resisted
   // long enough (coach.ts `STUCK`), before it gives the answer.
   hints: UiKey[];

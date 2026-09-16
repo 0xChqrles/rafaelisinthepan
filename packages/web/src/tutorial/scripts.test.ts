@@ -11,8 +11,10 @@
 //     game's difficulty, one new thing at a time — each secret sitting in `words[]` at its
 //     `pos` with its affixes, and every hole carrying its own hint copy;
 //   - THE METER is a second sentence, harder (clues 80–150), two new words, that the BOT has
-//     half played (`played`): the first word found, the second's meter just under full and
-//     its best try no giveaway, so the player's first close guess lands the letter;
+//     half played (`played`): the first word found, the second's meter around three quarters
+//     (the fill must be SEEN) and its best try no giveaway; the OBVIOUS guess is the secret's
+//     rank-1 word, not the secret, and fills the meter by itself (the letter cannot be
+//     skipped by a one-try solve, user-decided 2026-09-16);
 //   - every board stays byte-compatible with the real per-puzzle schema (parsePuzzle-valid —
 //     they feed the REAL game components), rank 0 is the secret, every key folds to itself
 //     (the free typing lands on them), and the start words are READ OFF the maps.
@@ -126,7 +128,7 @@ for (const lang of ['en', 'fr'] as const) {
           expect(hole.start_rank).toBeLessThanOrEqual(150);
         }
       });
-      it('the bot’s tries find the first word and leave the second’s meter just under full, its best try no giveaway', () => {
+      it('the bot’s tries find the first word and leave the second’s meter three quarters full, its best try no giveaway; the obvious guess is the rank-1 word and fills it', () => {
         const { puzzle } = meter;
         const played = meter.played ?? [];
         expect(played.length).toBeGreaterThan(0);
@@ -143,10 +145,15 @@ for (const lang of ['en', 'fr'] as const) {
         expect(holes[1].rank).toBeGreaterThanOrEqual(15);
         const [, meterB] = replayCharge(fresh, puzzle.ranks, played);
         expect(meterB.revealed).toBe(false);
-        expect(meterB.charge).toBeGreaterThanOrEqual(90);
-        // Any ranked guess within the near field fills it: the player's first close word
-        // lands the letter.
-        expect(meterB.charge + chargeForRank(200)).toBeGreaterThanOrEqual(CHARGE_TARGET);
+        expect(meterB.charge).toBeGreaterThanOrEqual(65);
+        expect(meterB.charge).toBeLessThanOrEqual(80);
+        // The obvious guess: the secret's closest word, untried by the bot, and enough on its
+        // own to fill the meter — so it earns the letter, never the solve.
+        const obvious = meter.obvious!;
+        const entry = puzzle.ranks[puzzle.holes[1].secret.slug][obvious];
+        expect(entry.rank).toBe(1);
+        expect(played).not.toContain(obvious);
+        expect(meterB.charge + chargeForRank(entry.rank)).toBeGreaterThanOrEqual(CHARGE_TARGET);
       });
     });
   });

@@ -2815,20 +2815,25 @@ it to the local store — see `packages/backend/AGENTS.md`).
     are harder, the onboarding should continue and explain the first letter concept",
     SCRIPTED the same day)** — CONTINUE from the sentence's solved line (the line stands
     until it is pressed) into a harder sentence THE BOT HAS ALREADY HALF PLAYED: en "the cat
-    dreams of freedom." (fr « le chat rêve de liberté. »), CAT found, FREEDOM behind
-    `revolution^132` (`oppression^124`) — too abstract to read off the sentence — with the
-    #301 meters SHOWN for the first time. `played` is the bot's log (en: cat, peace, justice,
-    hope, happiness, truth, speech, unity, religion), replayed onto the board, the meters and
-    the tries wheel exactly as a round's log would be, chosen so the open word's meter stands
-    JUST UNDER FULL (~99 en / ~95 fr, the day's own `replayCharge` — no lesson boost) with a
-    best try that is no giveaway (`speech^24` / `égalité^23`; the test wants ≥ 15, ≥ 90, and
+    dreams of liberty." (fr « le chat suit le sentier. »), CAT found, with the #301 meters
+    SHOWN for the first time. **THE SECRET IS THE CLOSE SYNONYM OF THE OBVIOUS WORD** (user-
+    decided 2026-09-16 after solving it in one try: "if you type the word 0 it should become
+    the word -1"): the sentence begs for FREEDOM / CHEMIN, and that word is the secret's
+    rank-1 neighbour (`obvious`) — typing it earns a 1 and fills the chip, never the solve;
+    both words read in the sentence ("both words relevant, e.g. mer/océan"). `played` is the
+    bot's log (en: cat, justice, truth, unity, happiness, honor, religion; fr masculine tries
+    so « le » holds), replayed onto the board, the meters and the tries wheel exactly as a
+    round's log would be, chosen so the open word's meter stands at ABOUT THREE QUARTERS
+    (~74 en / ~78 fr, the day's own `replayCharge` — no lesson boost; "almost full, we don't
+    see it getting filled") with a best try that is no giveaway (`happiness^48` / `col^101`;
+    the test wants ≥ 15, 65–80, the obvious word at rank 1, untried, and filling it alone).
     that a rank-200 guess still fills it). The beats, each on the player's act: "I already
-    played a bit. Tap speech²⁴ to see my tries." → tapped: "My close tries filled the word
+    played a bit. Tap happiness⁴⁸ to see my tries." → tapped: "My close tries filled the word
     up. Full, it reveals the first letter. Try one!" → a guess that does not fill: `tutNear`
-    → the first close guess FILLS IT — no progress needed — and the F lands: "Full! The secret
-    word starts with F. Your turn: try a word." → ONE MORE TRY, then THE BOT LANDS THE
+    → the obvious guess FILLS IT — no progress needed — and the L lands: "Full! The secret
+    word starts with L. Your turn: try a word." → ONE MORE TRY, then THE BOT LANDS THE
     ANSWER ITSELF (`land(answer, true)`, `BOT_TURN_MS` after the try's moment; not a player
-    event): "Got it, it was freedom! You are ready for the real game." (a try that finds
+    event): "Got it, it was liberty! You are ready for the real game." (a try that finds
     it: "You found it! You are ready for the real game.") → PLAY. `STUCK.meter` is unused
     (the stage is its own script). Not taught: the exact rate.
   **THE COACH IS THE ERROR BOT (user-decided 2026-09-16, "people would want to read it more
