@@ -1,31 +1,30 @@
 #!/usr/bin/env node
 // Prune a #154 single-word artifact down to what the onboarding tutorial embeds (#155).
 //
-// The tutorial plays on a REAL neighborhood — the mix ladder walks real ranks and the free
-// find step lands on real groups. But a generated artifact is the whole top-10 000 groups:
+// The tutorial plays on REAL neighborhoods — every guess lands on real groups. But a
+// generated artifact is the whole top-10 000 groups:
 // ~20-25k alias keys, ~1-1.5 MB, and every byte of it would ship in the main bundle for a
 // screen a player sees once.
 //
 // What the tutorial actually needs is small and exactly definable:
 //   - the word itself (rank 0);
 //   - the NEAR FIELD — every group of rank <= `--top` (the committed boards use 150: it
-//     comfortably contains the start band the mix demo lands in, and gives the free find a
-//     real neighborhood to type against);
-//   - the scripted guided words (`--keep`), which are deliberately outside the zone: the
-//     "far" guess of the lesson has to rank FARTHER than the start word.
+//     contains the game's own 50–150 start band and gives the free typing a real
+//     neighborhood to land on);
+//   - optionally, words outside that zone a board wants to name anyway (`--keep`; no board
+//     uses it since #269 retired the scripted guesses, kept for the next one that does).
 // A kept word brings its whole GROUP (every alias key at that rank), because `word`/`rank`/
 // `dq` are group properties and half a group is not a thing the schema describes.
 //
-// The board — which word, which start rank, which guided words — is declared ONCE, in
-// src/tutorial/scripts/<lang>.ts. This script takes it on the command line, the script file
-// records the exact invocation in its header, and scripts.test.ts fails if the two ever
-// drift (it replays the lesson arc against the embedded map).
+// The board — which word, which start word — is declared ONCE, in
+// src/tutorial/scripts/<lang>.ts. This script takes the word on the command line, the script
+// file records the exact invocation in its header, and scripts.test.ts fails if the two ever
+// drift (it checks the boards against the embedded maps).
 //
 // Usage (paths are cwd-relative; the script headers record the exact repo-root invocations):
 //   node packages/web/scripts/prune-word-map.mjs \
 //     --in packages/generation/output/single-word/en/ocean.json \
-//     --out packages/web/src/tutorial/scripts/en.word.json \
-//     --top 150 --keep forest
+//     --out packages/web/src/tutorial/scripts/en.ocean.json --top 150
 
 import { readFileSync, writeFileSync } from 'node:fs';
 

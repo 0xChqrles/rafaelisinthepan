@@ -6949,3 +6949,127 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     --balloon-scale: 4;
   }
 }
+
+/* ===================== the tutorial's LEVELS (#269) ===================== */
+/* The list of levels: the board column's width, one row per level in the device list's
+   dress (glass, hairline, uppercase mono), read top-down under the header. */
+.learn {
+  width: min(430px, 100%);
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  padding-top: 70px;
+}
+.learn-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.learn-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--glass);
+  color: var(--fg);
+  font-family: var(--ui);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  text-shadow: none;
+  cursor: pointer;
+  transition: background-color 0.1s linear, border-color 0.1s linear;
+}
+.learn-row:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--fg) 45%, transparent);
+}
+/* A level not built yet: greyed, not a target. */
+.learn-row:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+/* The level's number, in the game's own face. */
+.learn-num {
+  flex: 0 0 auto;
+  min-width: 1.4em;
+  font-family: var(--pixel-font);
+  font-size: 14px;
+  color: var(--muted);
+}
+.learn-row.done .learn-num {
+  color: var(--accent);
+}
+.learn-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.learn-name {
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.learn-sub {
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The done mark: a small accent square — the app's marker vocabulary (a square, never a
+   circle; 4px is the radius ceiling), where the chevron of a level still to do would sit. */
+.learn-mark {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin: 0 6px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.learn-row .ui-icon {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+@media (max-width: 640px) {
+  .learn {
+    padding-top: 64px;
+  }
+}
+
+/* THE BOOK'S BADGE (#269): the count of built levels this device has not done, a small
+   accent square on the key's top-right corner. A translation off the key's box, so the key
+   itself keeps the row's geometry and the dot under it never moves. */
+.home-btn {
+  position: relative;
+}
+.hk-badge {
+  position: absolute;
+  top: 4px;
+  right: 2px;
+  min-width: 12px;
+  height: 12px;
+  padding: 0 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+  background: var(--accent);
+  color: var(--bg);
+  font-family: var(--ui);
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}

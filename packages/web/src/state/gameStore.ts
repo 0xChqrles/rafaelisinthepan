@@ -160,13 +160,11 @@ export interface PersistedState {
   // A stale id (left, removed) is simply not among the groups the server lists, and the
   // screen falls back to the first one.
   lastGroupId: string | null;
-  // The sentence game's one-time instructions gate has been passed (2026-08-11). The gate
-  // exists only to state the rules, so it is shown ONCE ever, globally: the rules are the
-  // same in both languages and on every day. *(Amended by the #216 trigger rework,
-  // user-decided 2026-08-24: a device with NO account shows the full rules gate again
-  // whatever this flag says — its PLAY is what deploys the account. This flag still keeps
-  // an account-holding player from ever seeing the rules twice.)*
-  sentenceRulesSeen: boolean;
+  // The tutorial LEVELS this device has done (#269, 2026-09-16), by number, sorted. DEVICE-
+  // LOCAL and never on the account, by the issue's rule: linking an account on a new device
+  // shows its badge again by itself. Level 1 is also INFERRED from play — the game marks it
+  // the moment a real round holds a guess — so a veteran's badge clears on their first guess.
+  lessonsDone: number[];
   // The PRE-ACCOUNT identity seed (#216 trigger rework, user-decided 2026-08-24): a
   // publicId-shaped random value the leaderboard strip and the profile editor derive the
   // placeholder name and mark from (`anonName`/`defaultAvatar`) while the device has no
@@ -182,15 +180,6 @@ interface GameState extends PersistedState {
   // server owns the log, the client holds its last answer for as long as the tab lives,
   // and a new visit asks again rather than replaying a mirror that may be stale.
   roundLoads: Record<string, RoundLoad>;
-
-  // The tutorial currently on screen (transient, NOT persisted): 'first' = the run a
-  // newcomer accepted from the invitation, 'replay' = summoned via the header's "?".
-  // It lives in the store (not GameRoute state) so it survives a language pick —
-  // the route changes under the lesson, and it reopens INTO the tutorial in that
-  // language.
-  tutorialOpen: 'first' | 'replay' | null;
-  openTutorial: (kind: 'first' | 'replay') => void;
-  closeTutorial: () => void;
 
   // Remember the last-played language (drives the `/` redirect). Ignores non-languages.
   setLastLang: (lang: string) => void;
@@ -211,8 +200,9 @@ interface GameState extends PersistedState {
   // generating a local random value contacts no server and creates no account.
   ensureLocalSeed: () => string;
 
-  // Mark the sentence game's one-time instructions gate as passed (its PLAY tap).
-  markSentenceRulesSeen: () => void;
+  // Mark a tutorial level done (#269): its run ended on PLAY, or — level 1 — a real round
+  // holds a guess. Idempotent.
+  markLessonDone: (level: number) => void;
 
   // Reconcile the persisted OUTBOX to `key` playing `puzzle` (#214). An outbox naming a
   // DIFFERENT published revision is DROPPED — its guesses answered a retired question —
@@ -254,7 +244,7 @@ interface GameState extends PersistedState {
   setRoundLoad: (key: string, load: RoundLoad | null) => void;
 }
 
-export const GAME_PERSIST_VERSION = 19;
+export const GAME_PERSIST_VERSION = 20;
 
 // Version upgrades for the persisted blob (exported for the invariant tests).
 //   v0 was a single top-level round ({ roundKey, holes, ... }); the shape is now a keyed
@@ -279,6 +269,9 @@ export const GAME_PERSIST_VERSION = 19;
 //     player's play state; every player sees it exactly once.
 //   v19 (#271) renames the trusted tab 'friends' -> 'group' and adds `lastGroupId`; an
 //     older blob's tab reads as the default, its group as none.
+//   v20 (#269) RETIRES `sentenceRulesSeen` (the rules gate became an invitation into the
+//     tutorial's level 1) and adds `lessonsDone`, the levels this device has done. Older
+//     blobs start with none — level 1 is inferred back from play on the first guess.
 //   v9 adds `boardTab` (2026-08-20): which #190 board tab is up. Older blobs get
 //     'friends', the default the screen already opens on, so nothing changes for anyone
 //     already using it. It is persisted only so a REFRESH does not end a visit to the
@@ -385,7 +378,7 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
       onboarded: false,
       boardTab: 'group',
       lastGroupId: null,
-      sentenceRulesSeen: false,
+      lessonsDone: [],
       localSeed: null,
     };
   }
@@ -401,7 +394,7 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
     typeof p.onboarded === 'boolean'
       ? p.onboarded
       : Object.keys(legacyRounds).length > 0 || lastLang != null;
-  const sentenceRulesSeen = p.sentenceRulesSeen === true;
+  const lessonsDone = parseLessonsDone(p.lessonsDone);
   // The pre-account seed is display-only, so a malformed one simply re-mints on next need.
   const localSeed =
     typeof p.localSeed === 'string' && PUBLIC_ID_PATTERN.test(p.localSeed) ? p.localSeed : null;
@@ -424,9 +417,16 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
     onboarded,
     boardTab,
     lastGroupId,
-    sentenceRulesSeen,
+    lessonsDone,
     localSeed,
   };
+}
+
+// The done levels as a sorted set of positive integers; anything else reads as none done.
+function parseLessonsDone(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  const levels = value.filter((n): n is number => Number.isInteger(n) && n > 0);
+  return [...new Set(levels)].sort((a, b) => a - b);
 }
 
 function parseIdentityOwner(value: unknown): IdentityOwner | null | undefined {
@@ -452,7 +452,7 @@ export function initialPersistedState(): PersistedState {
     onboarded: false,
     boardTab: 'group',
     lastGroupId: null,
-    sentenceRulesSeen: false,
+    lessonsDone: [],
     localSeed: null,
   };
 }
@@ -464,7 +464,7 @@ export type GameMutation =
   | { type: 'setBoardTab'; tab: BoardTab }
   | { type: 'setLastGroup'; group: string | null }
   | { type: 'setOnboarded' }
-  | { type: 'setSentenceRulesSeen' }
+  | { type: 'markLessonDone'; level: number }
   | { type: 'ensureLocalSeed'; seed: string }
   | ({ type: 'ensureOutbox'; key: string; puzzle: string } & OwnedGameMutation)
   | ({ type: 'appendOutbox'; key: string; puzzle: string; typed: string } & OwnedGameMutation)
@@ -552,10 +552,13 @@ export function applyGameMutation(
         : changed(state, { ...state, lastGroupId: mutation.group });
     case 'setOnboarded':
       return state.onboarded ? changed(state, state) : changed(state, { ...state, onboarded: true });
-    case 'setSentenceRulesSeen':
-      return state.sentenceRulesSeen
+    case 'markLessonDone':
+      return state.lessonsDone.includes(mutation.level)
         ? changed(state, state)
-        : changed(state, { ...state, sentenceRulesSeen: true });
+        : changed(state, {
+            ...state,
+            lessonsDone: [...state.lessonsDone, mutation.level].sort((a, b) => a - b),
+          });
     case 'ensureLocalSeed':
       return state.localSeed !== null
         ? changed(state, state)
@@ -643,7 +646,7 @@ export function persistedStateOf(state: GameState): PersistedState {
     onboarded: state.onboarded,
     boardTab: state.boardTab,
     lastGroupId: state.lastGroupId,
-    sentenceRulesSeen: state.sentenceRulesSeen,
+    lessonsDone: state.lessonsDone,
     localSeed: state.localSeed,
   };
 }
@@ -659,10 +662,6 @@ export const useGameStore = create<GameState>((set, get) => {
   return {
     ...initialPersistedState(),
     roundLoads: {},
-    tutorialOpen: null,
-
-    openTutorial: (kind) => set({ tutorialOpen: kind }),
-    closeTutorial: () => set({ tutorialOpen: null }),
 
     // Do not short-circuit persisted intent merely because this tab's cache already holds
     // the value: a sibling may have committed a different one while its notification is
@@ -683,8 +682,8 @@ export const useGameStore = create<GameState>((set, get) => {
     setOnboarded: () => {
       commit({ type: 'setOnboarded' });
     },
-    markSentenceRulesSeen: () => {
-      commit({ type: 'setSentenceRulesSeen' });
+    markLessonDone: (level) => {
+      commit({ type: 'markLessonDone', level });
     },
     ensureLocalSeed: () => {
       const held = get().localSeed;
@@ -802,7 +801,7 @@ function applyCommittedState(state: PersistedState, forceOwner = false): void {
     lastLang: state.lastLang,
     boardTab: state.boardTab,
     onboarded: state.onboarded,
-    sentenceRulesSeen: state.sentenceRulesSeen,
+    lessonsDone: state.lessonsDone,
     localSeed: state.localSeed,
     ...(adoptOwned
       ? {

@@ -1,60 +1,38 @@
-// The onboarding tutorial's script contract (#51, re-arced by #155). The WHOLE tutorial — the board, the scripted guesses,
-// the coach-mark sequence — is data in scripts/<lang>.ts. Rewriting the onboarding later
-// means editing those files (and the i18n copy keys they reference): zero component changes.
-// Per-step outcomes of a guess are NEVER encoded in the steps — the Tutorial derives them
-// from the board's rank map at runtime, exactly like the real game, so a script edit cannot
-// drift out of sync with its own ranks (scripts.test.ts guards the intended lesson arc).
+// The onboarding lesson's script contract (#51, re-arced by #155, remade by #269).
 //
-// ONE board, one arc: a single word and its REAL neighborhood — the mix demo walks the
-// secret out to the start word, three gated guesses demonstrate distance / MISS /
-// improvement, the player finds their way back, and PLAY ends the lesson without a word. The
-// tutorial teaches the core concept — semantic distance — and nothing of the game's own
-// rules, which live on its one-time PLAY gate.
+// LEVEL 1 is the game, played: a guided run in two STAGES on real boards, with the real
+// keyboard and the real vocabulary from the first frame. Nothing is pressed for the player
+// and nothing is typed for them — every beat is a decision they can get wrong, and the
+// feedback is the teacher (user-decided 2026-09-16, after watching newcomers press what they
+// were told to press and learn nothing from it).
 //
-// The board's ranks are a REAL generated neighborhood (a #154 single-word artifact, pruned —
-// see scripts/<lang>.ts): the mix ladder and the free find play against real ranks.
+//   THE WORD      one hole, its start word a few ranks out (an EASY board: the number falls
+//                 fast toward 0 and the hole moves on almost every good guess), found with
+//                 free typing. The coach speaks only when a guess calls for it — see coach.ts.
+//   THE SENTENCE  two holes, start words in the game's own 50–150 band: one guess is tried on
+//                 every hole, a tap on a word opens the tries, fewer tries is the score. One
+//                 new thing at a time; the sentence solved ends the lesson on PLAY.
+//
+// A stage is a Puzzle (the real per-puzzle schema, parsePuzzle-valid, so it feeds the REAL
+// game components) plus, per hole, the one line of copy the coach says when the player is
+// stuck for long: a HINT about the word. The answer itself is read off the puzzle.
+//
+// Boards are REAL generated neighborhoods: #154 single-word artifacts pruned to the near
+// field by web/scripts/prune-word-map.mjs — the exact invocation is recorded in each
+// script's header, and scripts.test.ts fails if a board and its map ever drift.
 
 import type { Puzzle } from '@whippin/shared';
 import type { UiKey } from '../i18n';
 
-// The screen is split in two: EXPLANATIONS live in the top box (typewritten, with in-game
-// word styling — see CoachText's [[..]] markup in the copy), INTERACTIONS live at the bottom
-// (the mix button, then the keyboard, then PLAY). No modals, no NEXT, no SKIP — the flow
-// advances by playing.
-
-// One stop of the mix demo: pressing the button (labelled `labelKey`) animates the word to
-// `rank` — a single shake+swap for the first stop, a fast roll through every ladder word for
-// the others — then `copyKey` (if any) becomes the explanation.
-interface MixStop {
-  rank: number;
-  labelKey: UiKey;
-  copyKey?: UiKey;
+export interface LessonStage {
+  puzzle: Puzzle;
+  // One hint per hole, in `puzzle.holes` order — what the coach says once a hole has resisted
+  // long enough (coach.ts `STUCK`), before it gives the answer.
+  hints: UiKey[];
 }
 
-export type TutorialStep =
-  // The mix demo: the board's single hole shows its SECRET in blue; each press walks it
-  // further out (stops, e.g. 1 -> 10 -> 100), teaching the neighbor ladder. The last stop
-  // must land on the start word (rank = start_rank) — the demo IS the explanation of where
-  // start words come from. The ladder is derived from the board's own rank map (one entry per
-  // group, rank <= start_rank). After the last stop the button gives way to the keyboard and
-  // the next step's prompt.
-  | { kind: 'mix'; copyKey: UiKey; stops: MixStop[] }
-  // A prescribed guess: input is gated to `expect` (only its letters + enter are active), the
-  // submit plays the REAL feedback choreography, then the flow rolls to the next prompt — the
-  // feedback speaks for itself, no explanations after.
-  | { kind: 'guess'; expect: string; copyKey: UiKey }
-  // Free typing (real vocabulary) until `target` is typed, then auto-advance — solving it
-  // needs no comment. Exploration is welcome — any word gets its real float (a rank from the
-  // board's map, or MISS) — but after 3 consecutive MISSes the prompt swaps to `nudgeKey` in
-  // case they forgot the word.
-  | { kind: 'find'; target: string; copyKey: UiKey; nudgeKey: UiKey }
-  // The ending: the found word stands, the keyboard drops away, and the tray offers PLAY,
-  // which ends the tutorial. No copy — a found word needs no comment — and no graduation
-  // screen, because there is no score to show.
-  | { kind: 'play' };
-
-export interface TutorialScript {
-  puzzle: Puzzle; // same schema as a real puzzle (parsePuzzle-valid)
-  steps: TutorialStep[];
+export interface LessonScript {
+  word: LessonStage;
+  sentence: LessonStage;
 }
 // (The per-language script lookup lives in ./scripts/index.ts.)

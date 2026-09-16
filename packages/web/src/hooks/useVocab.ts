@@ -5,7 +5,7 @@ import { buildPrefixSet } from '../game/keyboard';
 // and days, so load it at most once per session. Alongside the existence Set we keep
 // the prefix Set (every prefix of every word, issue #36) the on-screen keyboard uses
 // to grey out dead-end letters. Both are derived once and cached together per language.
-interface Vocab {
+export interface Vocab {
   // Exact membership: fold(input) exists as a word. Decides validity on submit.
   vocabSet: Set<string>;
   // Every prefix of every word: (input + letter) membership answers "can this letter

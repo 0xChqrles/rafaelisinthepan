@@ -1,76 +1,66 @@
-// The English onboarding script (#51, re-arced by #155). Edit
-// THIS file (and the tut* copy in i18n.ts) to change the onboarding — the components read
-// everything from here.
+// The English level-1 script (#269). Edit THIS file (and the tut* copy in i18n.ts) to
+// change the lesson — the components read everything from here.
 //
-// The board is a REAL neighborhood: `en.word.json` is the #154 single-word artifact for
-// OCEAN, pruned to what the tutorial needs. Regenerate it with (both from the REPO ROOT):
+// The boards are REAL neighborhoods, #154 single-word artifacts pruned to their top-150
+// groups. Regenerate them with (from the REPO ROOT):
 //
 //   pnpm gen:word ocean --lang en
+//   pnpm gen:word dog --lang en
+//   pnpm gen:word moon --lang en
 //   node packages/web/scripts/prune-word-map.mjs \
 //     --in packages/generation/output/single-word/en/ocean.json \
-//     --out packages/web/src/tutorial/scripts/en.word.json --top 150 --keep forest
+//     --out packages/web/src/tutorial/scripts/en.ocean.json --top 150
+//   (and the same for dog and moon)
 //
-// (the prune keeps the word, the top-150 groups — the committed zone, sized so the mix
-// ladder and the free find have a real near field to play on — and the groups of the
-// `--keep` words, which is how the "far" guess survives being outside that zone).
+// THE WORD: OCEAN, started at ISLANDS (rank 10 — an EASY board, by design: the number can
+// only fall a little way, and sea / waters / coast / coral all move the hole, so the drop
+// toward 0 is felt on the second or third guess).
+// THE SENTENCE: "a dog barks at the moon." — DOG started at COYOTE (55) and MOON at STARS
+// (62), both inside generation's own 50–150 start band, both intuitive neighbors.
 //
-// OCEAN was picked over LIGHTHOUSE, the first candidate. Clarity beats en/fr symmetry
-// (#155) — the two languages do not share a word.
-//
-// The arc: the scramble ladder walks OCEAN out to its 96th neighbor (port — the start word
-// of the board, inside generation's own 50-150 start band), then three gated guesses teach
-// distance (forest, 214: farther, hint stays), MISS (violin, which the real map does not
-// rank at all), and improvement (boat, 45: closer, hint moves). The player then finds
-// their way back to OCEAN with free typing, and PLAY ends the lesson.
-//
-// scripts.test.ts replays this file and fails if an edit breaks the lesson arc.
+// scripts.test.ts replays this file and fails if an edit breaks the lesson's shape.
 import type { WordPuzzle } from '@whippin/shared';
-import type { TutorialScript } from '../script';
-import artifact from './en.word.json';
+import type { LessonScript } from '../script';
+import ocean from './en.ocean.json';
+import dog from './en.dog.json';
+import moon from './en.moon.json';
 
-const { lang, word, ranks }: WordPuzzle = artifact;
+// A hole at its start word, both READ OFF the map rather than restated here, so the board can
+// never disagree with its own neighborhood.
+function hole(artifact: WordPuzzle, pos: number, start: string, suffix?: string) {
+  const entry = artifact.ranks[start];
+  return {
+    pos,
+    secret: artifact.word,
+    start: { word: entry.word, slug: start },
+    start_rank: entry.rank,
+    ...(suffix ? { suffix } : {}),
+  };
+}
 
-// The departure. Its display form and rank are READ OFF the map rather than restated here,
-// so the board can never disagree with its own neighborhood.
-const START = 'port';
-
-const script: TutorialScript = {
-  puzzle: {
-    lang,
-    // A LESSON's board, never a published daily: it is not served, not synced and never
-    // scored, so its version is a constant rather than a publish stamp (#203).
-    revision: 'tutorial',
-    words: [word.word],
-    holes: [
-      {
-        pos: 0,
-        secret: word,
-        // The scramble demo ENDS here: the start word IS the secret's 96th neighbor — which
-        // is exactly what a real round's start word is.
-        start: { word: ranks[START].word, slug: START },
-        start_rank: ranks[START].rank,
-      },
-    ],
-    ranks: { [word.slug]: ranks },
-  },
-  steps: [
-    {
-      kind: 'mix',
-      copyKey: 'tutMixIntro',
-      stops: [
-        { rank: 1, labelKey: 'tutMix', copyKey: 'tutMixed1' },
-        { rank: 10, labelKey: 'tutMixAgain', copyKey: 'tutMixed10' },
-        { rank: ranks[START].rank, labelKey: 'tutMixMore' },
-      ],
+const script: LessonScript = {
+  word: {
+    puzzle: {
+      lang: 'en',
+      // A LESSON's board, never a published daily: it is not served, not synced and never
+      // scored, so its version is a constant rather than a publish stamp (#203).
+      revision: 'lesson',
+      words: [ocean.word.word],
+      holes: [hole(ocean, 0, 'islands')],
+      ranks: { [ocean.word.slug]: ocean.ranks },
     },
-    // The feedback teaches; each guess rolls straight into the next prompt.
-    { kind: 'guess', expect: 'forest', copyKey: 'tutGuessFar' },
-    { kind: 'guess', expect: 'violin', copyKey: 'tutGuessMiss' },
-    { kind: 'guess', expect: 'boat', copyKey: 'tutGuessCloser' },
-    { kind: 'find', target: word.slug, copyKey: 'tutFind', nudgeKey: 'tutFindNudge' },
-    // The ending: the found word stands, without comment, and PLAY ends the lesson.
-    { kind: 'play' },
-  ],
+    hints: ['tutHintOcean'],
+  },
+  sentence: {
+    puzzle: {
+      lang: 'en',
+      revision: 'lesson',
+      words: ['a', 'dog', 'barks', 'at', 'the', 'moon.'],
+      holes: [hole(dog, 1, 'coyote'), hole(moon, 5, 'stars', '.')],
+      ranks: { [dog.word.slug]: dog.ranks, [moon.word.slug]: moon.ranks },
+    },
+    hints: ['tutHintDog', 'tutHintMoon'],
+  },
 };
 
 export default script;

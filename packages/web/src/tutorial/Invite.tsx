@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import Button from '../components/Button';
 import { t } from '../i18n';
 import Logo from '../assets/logo.svg?react';
-import { preloadTutorial } from './LazyTutorial';
+import { preloadLevelOne } from './LazyLevelOne';
 
 // The title's LAST WORD wears the inverted highlight box (2026-08-18, the
 // /inspiration/modern board's selection-box gesture). Split on the final space —
@@ -38,7 +38,7 @@ export default function Invite({
   // The tutorial chunk fetches while the player reads the question, so TUTORIAL opens
   // without a network pause (see LazyTutorial).
   useEffect(() => {
-    preloadTutorial();
+    preloadLevelOne();
   }, []);
 
   return (

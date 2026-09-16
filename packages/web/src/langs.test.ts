@@ -22,6 +22,8 @@ import {
   resolveHomeLang,
   resolveUiLang,
   LANGS,
+  pathForLearn,
+  pathForLesson,
 } from './langs';
 
 describe('isLang', () => {
@@ -173,6 +175,26 @@ describe('leaderboard routes (#190)', () => {
     expect(pathForBoard('fr')).toBe('/fr/board');
     expect(pathForBoard('de')).toBe('/');
     expect(parseRoute(pathForBoard('en'))).toEqual({ view: 'board', lang: 'en' });
+  });
+});
+
+describe('tutorial routes (#269)', () => {
+  it('routes /<lang>/learn to the list and /<lang>/learn/<built level> to its lesson', () => {
+    expect(parseRoute('/fr/learn')).toEqual({ view: 'learn', lang: 'fr' });
+    expect(parseRoute('/en/learn/')).toEqual({ view: 'learn', lang: 'en' });
+    expect(parseRoute('/en/learn/1')).toEqual({ view: 'lesson', lang: 'en', level: 1 });
+  });
+  it('lands a level that is not built, or not a level, on the list', () => {
+    expect(parseRoute('/en/learn/2')).toEqual({ view: 'learn', lang: 'en' });
+    expect(parseRoute('/en/learn/99')).toEqual({ view: 'learn', lang: 'en' });
+    expect(parseRoute('/en/learn/x')).toEqual({ view: 'learn', lang: 'en' });
+  });
+  it('pathForLearn / pathForLesson round-trip through parseRoute, / for an unknown lang', () => {
+    expect(pathForLearn('fr')).toBe('/fr/learn');
+    expect(pathForLesson('fr', 1)).toBe('/fr/learn/1');
+    expect(pathForLearn('de')).toBe('/');
+    expect(pathForLesson('de', 1)).toBe('/');
+    expect(parseRoute(pathForLesson('en', 1))).toEqual({ view: 'lesson', lang: 'en', level: 1 });
   });
 });
 

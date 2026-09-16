@@ -26,13 +26,14 @@ import SolvedScreen, { type SolvedHole } from '../components/SolvedScreen';
 import LazyStreakDialog, { preloadStreakDialog } from '../components/LazyStreakDialog';
 import HistoryWheel from '../components/HistoryWheel';
 import HistoryModal from '../components/HistoryModal';
-import CoachText from '../tutorial/CoachText';
+import Button from '../components/Button';
+import { PLAY_LEVEL } from '../tutorial/levels';
 import LoadError from '../components/LoadError';
 import FlipCountdown from '../components/FlipCountdown';
 import { earlyLocked } from '../game/earlyPlay';
 import { chargeForRank, initialOf, replayCharge } from '../game/charge';
 import { navigate } from '../routing';
-import { pathForDay, pathForGame } from '../langs';
+import { pathForDay, pathForGame, pathForLesson } from '../langs';
 import { buildHistory } from '../game/history';
 import type { HistoryStop } from '../game/history';
 import { t, ariaHoleHistory, srHoleCharge, srHoleInitial, srHoleResult } from '../i18n';
@@ -61,7 +62,7 @@ import type {
 // Floating distance/MISS feedback uses the same start stagger, then fades as one batch.
 // (The tutorial's board is ONE hole, so it staggers nothing — it takes the intro constant
 // below instead, which is what makes its single hit read like a real one.)
-const STAGGER_MS = 200;
+export const STAGGER_MS = 200;
 export const FLOATING_HIT_INTRO_MS = 320;
 
 const STREAK_AFTER_WORDS_MS = 300;
@@ -185,8 +186,10 @@ function Round({
 
   const ensureOutbox = useGameStore((s) => s.ensureOutbox);
   const appendOutbox = useGameStore((s) => s.appendOutbox);
-  const sentenceRulesSeen = useGameStore((s) => s.sentenceRulesSeen);
-  const markSentenceRulesSeen = useGameStore((s) => s.markSentenceRulesSeen);
+  // The tutorial's level 1 (#269): done on this device, or not — the gate's invitation
+  // hangs on it, and a round holding a guess marks it done by itself (below).
+  const learned = useGameStore((s) => s.lessonsDone.includes(PLAY_LEVEL));
+  const markLessonDone = useGameStore((s) => s.markLessonDone);
   // Whether this device holds an account — REACTIVE, so the gate below closes on its own
   // when another tab deploys one (the storage adoption) and reopens after a sign-out.
   const identity = useDeviceIdentity();
@@ -390,18 +393,24 @@ function Round({
     navigate(pathForDay(lang, dateForDayNumber(dayNumber + 1)));
   }, [lang, dayNumber]);
 
-  // The instructions GATE (2026-08-11; reworked with the #216 triggers, user-decided
-  // 2026-08-24). Two reasons to hold the round back, one dialog:
-  //   - the RULES, stated once ever (the persisted flag) — an account-holding player who
-  //     has read them never sees the gate again;
-  //   - the ACCOUNT: a device with NO identity shows the full gate on EVERY sentence day
-  //     (archive included), whatever the flag says, because its PLAY is the deploy button —
-  //     the server owns the log from the first guess, so no guess may land before the
-  //     account exists, and there is no other trigger on this screen.
-  // Derived, not state. A tokenless device can hold a non-empty outbox only in the
-  // pending-bootstrap recovery, and the gate deliberately shows over it: PLAY resumes the
-  // interrupted deploy and the waiting guesses flush behind it.
-  const gateOpen = identity === null || (!sentenceRulesSeen && !finished && guessCount === 0);
+  // The pre-round GATE (2026-08-11; the #216 triggers 2026-08-24; an INVITATION since #269,
+  // user-decided 2026-09-16). Two reasons to hold the round back, one tray:
+  //   - the LESSON: until the tutorial's level 1 is done on this device, the gate offers LEARN
+  //     (into the lesson) and PLAY (skip) — it invites, never blocks, and there is ONE entry,
+  //     never a gate plus a nag. It states no rules: the lesson teaches by playing, and a
+  //     player who has played has learned them (a round holding a guess marks the level done);
+  //   - the ACCOUNT: a device with NO identity shows the gate on EVERY sentence day (archive
+  //     included), whatever is done, because its PLAY is the deploy button — the server owns
+  //     the log from the first guess, so no guess may land before the account exists, and
+  //     there is no other trigger on this screen.
+  // Derived, not state: a round already in progress (or solved, or rehydrated mid-play) never
+  // shows it for the lesson alone. PLAY without an account to deploy simply opens the round
+  // for this visit (`played`); nothing is recorded until a guess lands.
+  const [played, setPlayed] = useState(false);
+  const gateOpen = identity === null || (!learned && !played && !finished && guessCount === 0);
+  useEffect(() => {
+    if (guessCount > 0) markLessonDone(PLAY_LEVEL);
+  }, [guessCount, markLessonDone]);
   // PLAY, when it is the deploy button: a single tap that creates the account and opens
   // the round — a clear loading state while the bootstrap runs, and the app's error
   // surface when it fails (nothing was created; TRY AGAIN re-runs it).
@@ -409,37 +418,17 @@ function Round({
   const [deployFailed, setDeployFailed] = useState(false);
   const handleGatePlay = useCallback(() => {
     if (identity !== null) {
-      markSentenceRulesSeen();
+      setPlayed(true);
       return;
     }
     if (deploying) return;
     setDeploying(true);
     ensureDeviceIdentity()
-      .then(() => markSentenceRulesSeen())
+      .then(() => setPlayed(true))
       .catch(() => setDeployFailed(true))
       .finally(() => setDeploying(false));
-  }, [identity, deploying, markSentenceRulesSeen]);
-  // The history-tap rule speaks the input device's own verb — the same coarse-pointer test
-  // as the streak hint and the retired tutorial gesture line.
-  const coarse = useMemo(
-    () =>
-      typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(pointer: coarse)').matches,
-    [],
-  );
-  // The rules as ONE bulleted string: what the gate's dialog box types, and what the
-  // sr-only mirror states (the visible CoachText is aria-hidden, like every coach box).
-  const gateRules = useMemo(
-    () =>
-      [
-        t(lang, 'sentenceRulesGoal'),
-        t(lang, coarse ? 'sentenceRulesHistoryTap' : 'sentenceRulesHistoryClick'),
-      ]
-        .map((line) => `- ${line}`)
-        .join('\n'),
-    [lang, coarse],
-  );
+  }, [identity, deploying]);
+  const openLesson = useCallback(() => navigate(pathForLesson(lang, PLAY_LEVEL)), [lang]);
   // The celebration is deliberately code-split out of startup. Warm its chunk only while
   // an eligible unsolved daily round is idle; if a player solves before idle fires, the
   // just-solved transition below starts the same preload immediately. Both scheduling paths
@@ -1125,16 +1114,12 @@ function Round({
             }`}
           >
             {gateOpen ? (
-              /* The GATE, in the keyboard's own footprint: the rules in the app's shared
-                 dialog box (`.coach-rules` — the tutorial's coach, so one design says "this
-                 is here to help" everywhere), bulleted, and the PLAY that dismisses them for
-                 good — the tutorial's own full-width button, so the graduation and the gate
-                 speak one language. */
+              /* The GATE, in the keyboard's own footprint: PLAY (the tutorial's own full-width
+                 button, so the graduation and the gate speak one button) and, while the lesson
+                 is not done, LEARN under it as THE WORD — the pair reads as one action and its
+                 alternative. No copy: the sentence with its holes is on screen, and the lesson
+                 is one tap away for whoever wants it explained. */
               <div className="rules-gate">
-                <p className="sr-only">{gateRules}</p>
-                <div className="coach-rules" aria-hidden="true">
-                  <CoachText copy={gateRules} />
-                </div>
                 <button
                   type="button"
                   className="mix-btn"
@@ -1143,6 +1128,11 @@ function Round({
                 >
                   {deploying ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'gatePlay')}
                 </button>
+                {!learned && (
+                  <Button variant="secondary" onClick={openLesson}>
+                    {t(lang, 'gateLearn')}
+                  </Button>
+                )}
               </div>
             ) : resultUp ? null : locked ? (
               /* THE NIGHT'S LOCK (#273): the countdown to the flip takes the keyboard's
