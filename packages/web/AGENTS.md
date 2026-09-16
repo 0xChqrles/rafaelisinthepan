@@ -2824,8 +2824,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     bot's log (en: cat, justice, truth, unity, happiness, honor, religion; fr masculine tries
     so « le » holds), replayed onto the board, the meters and the tries wheel exactly as a
     round's log would be, chosen so the open word's meter stands at ABOUT THREE QUARTERS
-    (~74 en / ~78 fr, the day's own `replayCharge` — no lesson boost; "almost full, we don't
-    see it getting filled") with a best try that is no giveaway (`happiness^48` / `col^101`;
+    (~74 en / ~74 fr, the day's own `replayCharge` — no lesson boost; "almost full, we don't
+    see it getting filled") with a best try that is no giveaway AND LONG ENOUGH for the fill
+    to read on its chip (`happiness^48` / `randonneur^29` — `col` "was too short to understand
+    the notion of progression", 2026-09-16;
     the test wants ≥ 15, 65–80, the obvious word at rank 1, untried, and filling it alone).
     that a rank-200 guess still fills it). The beats, each on the player's act: "I already
     played a bit. Tap happiness⁴⁸ to see my tries." → tapped: "My close tries filled the word
