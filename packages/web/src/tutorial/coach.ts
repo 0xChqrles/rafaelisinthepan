@@ -107,6 +107,16 @@ export function coachLine(state: CoachState): CoachLine | null {
   return null;
 }
 
+// "3rd", "45th" / « 7e », « 1er » — the coach counts closeness in ordinals, which need no
+// concept to be understood.
+export function ordinal(lang: string, n: number): string {
+  if (lang === 'fr') return n === 1 ? '1er' : `${n}e`;
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  const suffix = { 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] ?? 'th';
+  return `${n}${suffix}`;
+}
+
 // The line as the coach box prints it: the copy key's text with the board's words in their
 // in-game dress (CoachText's [[..]] markup — the held word's chip and exponent, MISS red,
 // the secret's cobalt).
@@ -119,15 +129,17 @@ export function coachCopy(
   const chip = (word: string, rank: number) => `[[w:${word}^${rank}]]`;
   switch (line.kind) {
     case 'intro':
-      return t(lang, 'tutIntro').replace('{start}', chip(line.hole.word, line.hole.rank));
+      return t(lang, 'tutIntro')
+        .replace('{start}', chip(line.hole.word, line.hole.rank))
+        .replace('{m}', ordinal(lang, line.hole.rank));
     case 'introSentence':
       return t(lang, 'tutSentenceIntro');
     case 'away':
       return t(lang, 'tutAway')
         .replace('{guess}', chip(line.guess.word, line.guess.rank))
-        .replace('{n}', String(line.guess.rank))
+        .replace('{n}', ordinal(lang, line.guess.rank))
         .replace('{start}', chip(line.hole.word, line.hole.rank))
-        .replace('{m}', String(line.hole.rank));
+        .replace('{m}', ordinal(lang, line.hole.rank));
     case 'miss':
       return t(lang, 'tutMiss').replace('{miss}', `[[m:${line.typed}]]`);
     case 'near':

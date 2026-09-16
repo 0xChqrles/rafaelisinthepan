@@ -12,7 +12,7 @@
 //   WORD the numbers are about (coachCopy below).
 import { describe, it, expect } from 'vitest';
 import type { RankEntry, RuntimeHole } from '@whippin/shared';
-import { coachLine, coachCopy, STUCK, TAP_AFTER, type CoachState, type GuessEvent, type Stage } from './coach';
+import { coachLine, coachCopy, ordinal, STUCK, TAP_AFTER, type CoachState, type GuessEvent, type Stage } from './coach';
 import type { LessonStage } from './script';
 
 const entry = (word: string, rank: number): RankEntry => ({ word, rank, dq: rank === 0 ? undefined : 100 } as RankEntry);
@@ -123,6 +123,15 @@ describe('the sentence stage', () => {
   });
 });
 
+describe('ordinal', () => {
+  it('counts in English and French ordinals', () => {
+    expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 101, 111].map((n) => ordinal('en', n))).toEqual([
+      '1st', '2nd', '3rd', '4th', '11th', '12th', '13th', '21st', '22nd', '23rd', '101st', '111th',
+    ]);
+    expect([1, 2, 21].map((n) => ordinal('fr', n))).toEqual(['1er', '2e', '21e']);
+  });
+});
+
 describe('coachCopy', () => {
   const stage: LessonStage = {
     puzzle: {
@@ -137,16 +146,21 @@ describe('coachCopy', () => {
   it('prints the board’s words in their in-game dress', () => {
     const hole: RuntimeHole = { pos: 0, secret: 'ocean', word: 'islands', rank: 10, startRank: 10 };
     expect(coachCopy('en', { kind: 'intro', hole }, stage, true)).toBe(
-      'A word is hidden. [[w:islands^10]] is close to it. Type a guess.',
+      'Guess the secret word. [[w:islands^10]] is the 10th closest in meaning.',
     );
     expect(coachCopy('en', { kind: 'away', guess: entry('boat', 45), hole }, stage, true)).toBe(
-      '[[w:boat^45]] is 45 words away from the hidden word. [[w:islands^10]] is closer: 10.',
+      '[[w:boat^45]] is the 45th closest word to the secret. [[w:islands^10]] is the 10th.',
+    );
+    expect(coachCopy('fr', { kind: 'away', guess: entry('bateau', 21), hole: { ...hole, rank: 1 } }, stage, true)).toBe(
+      '[[w:bateau^21]] est le 21e mot le plus proche du secret. [[w:islands^1]] est le 1er.',
     );
     expect(coachCopy('en', { kind: 'miss', typed: 'violin' }, stage, true)).toBe(
-      '[[m:violin]] is too far from the hidden word to get a number.',
+      '[[m:violin]] is too far from the secret to even get a number.',
     );
-    expect(coachCopy('en', { kind: 'near', hole }, stage, true)).toBe('Try words related to [[w:islands^10]].');
-    expect(coachCopy('en', { kind: 'answer', holeIndex: 0 }, stage, true)).toBe('The hidden word is [[b:ocean]]. Type it.');
+    expect(coachCopy('en', { kind: 'near', hole }, stage, true)).toBe(
+      'Try words with a meaning close to [[w:islands^10]].',
+    );
+    expect(coachCopy('en', { kind: 'answer', holeIndex: 0 }, stage, true)).toBe('The secret word is [[b:ocean]]. Type it.');
     expect(coachCopy('en', { kind: 'tap' }, stage, true)).toMatch(/^Tap/);
     expect(coachCopy('en', { kind: 'tap' }, stage, false)).toMatch(/^Click/);
   });

@@ -415,36 +415,40 @@ const STRINGS = {
   // [[b:secret]] solve cobalt, [[w:hint^rank]] the held word's chip + rank exponent,
   // [[m:miss]] MISS's red. The {braces} are filled by coach.ts from the board itself, so a
   // line can never name a word the map does not rank.
-  // The lines are written for someone who has NEVER heard of the game (user-decided
-  // 2026-09-16): every one names the HIDDEN WORD, the thing the numbers are about, and the
-  // opening line names the clue word itself, so the chip on screen is explained by the line
-  // above it.
+  // The lines are written for someone who knows NOTHING yet (user-decided 2026-09-16, third
+  // pass): the opening says what the game IS — guess a SECRET word — and explains the number
+  // on the clue itself ("atlantic³ is the 3rd closest in meaning"); every later line speaks
+  // in the same ordinals, so "closer" is never an abstraction. {ordinals} are filled by
+  // coach.ts (`ordinal`).
   tutIntro: {
-    en: 'A word is hidden. {start} is close to it. Type a guess.',
-    fr: 'Un mot est caché. {start} en est proche. Tape un essai.',
+    en: 'Guess the secret word. {start} is the {m} closest in meaning.',
+    fr: 'Devine le mot secret. {start} est le {m} plus proche par le sens.',
   },
   tutSentenceIntro: {
-    en: 'Now two words are hidden. Each guess is tried on both.',
-    fr: 'Maintenant deux mots sont cachés. Chaque essai compte pour les deux.',
+    en: 'Now two secret words, in a sentence. Each guess is tested on both.',
+    fr: 'Maintenant deux mots secrets, dans une phrase. Chaque essai est testé sur les deux.',
   },
   tutAway: {
-    en: '{guess} is {n} words away from the hidden word. {start} is closer: {m}.',
-    fr: '{guess} est à {n} mots du mot caché. {start} est plus proche : {m}.',
+    en: '{guess} is the {n} closest word to the secret. {start} is the {m}.',
+    fr: '{guess} est le {n} mot le plus proche du secret. {start} est le {m}.',
   },
   tutMiss: {
-    en: '{miss} is too far from the hidden word to get a number.',
-    fr: '{miss} est trop loin du mot caché pour avoir un nombre.',
+    en: '{miss} is too far from the secret to even get a number.',
+    fr: '{miss} est trop loin du secret pour avoir un nombre.',
   },
-  tutNear: { en: 'Try words related to {word}.', fr: 'Essaie des mots liés à {word}.' },
-  tutAnswer: { en: 'The hidden word is {answer}. Type it.', fr: 'Le mot caché est {answer}. Tape-le.' },
+  tutNear: {
+    en: 'Try words with a meaning close to {word}.',
+    fr: 'Essaie des mots au sens proche de {word}.',
+  },
+  tutAnswer: { en: 'The secret word is {answer}. Type it.', fr: 'Le mot secret est {answer}. Tape-le.' },
   // The sentence's one mechanic worth a line, in the input device's own verb (the
   // tapAnywhere/clickAnywhere pattern).
   tutTap: {
-    en: 'Tap a highlighted word to see all your tries on it.',
+    en: 'Tap a highlighted word to see all your guesses for it.',
     fr: 'Touche un mot surligné pour revoir tous tes essais dessus.',
   },
   tutClick: {
-    en: 'Click a highlighted word to see all your tries on it.',
+    en: 'Click a highlighted word to see all your guesses for it.',
     fr: 'Clique sur un mot surligné pour revoir tous tes essais dessus.',
   },
   // Each board's own hint about its word — what the coach says once a hole has resisted long
@@ -459,7 +463,7 @@ const STRINGS = {
   // ---- the LEVELS list (#269): the tutorial page, one row per level (tutorial/levels.ts).
   learnTitle: { en: 'TUTORIAL', fr: 'TUTORIEL' },
   levelPlayTitle: { en: 'THE GAME', fr: 'LE JEU' },
-  levelPlaySub: { en: 'Find the hidden words', fr: 'Retrouver les mots cachés' },
+  levelPlaySub: { en: 'Guess the secret words', fr: 'Deviner les mots secrets' },
   levelDistanceTitle: { en: 'THE DISTANCE', fr: 'LA DISTANCE' },
   levelDistanceSub: { en: 'How closeness is measured', fr: 'Comment la proximité se mesure' },
   levelMeaningsTitle: { en: 'MANY MEANINGS', fr: 'PLUSIEURS SENS' },
