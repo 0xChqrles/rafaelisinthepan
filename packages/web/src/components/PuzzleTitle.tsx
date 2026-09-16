@@ -2,9 +2,10 @@
 //
 // The row's LEFT slot says what you are looking at and its RIGHT group where you are. On a
 // play surface — the game, the archive calendar, the leaderboard — what you are looking at
-// is ONE language's daily, so the title NAMES THE LANGUAGE, in the language itself (the
-// drum's own labels, `LANGS[].native`): FRANÇAIS, ENGLISH. The selection behind it turns
-// that one axis.
+// is THE GAME in one language, so the title is the APP'S MARK in the accent with the
+// language's CODE beside it (user-decided 2026-09-16): ▲ FR, ▲ EN. The selection behind it
+// turns that one axis, and its drum names each language in full (`LANGS[].native`); a reader
+// hears the full name too (the `aria-label` below).
 //
 // The DAY is not in it: a calendar is a PLACE, and the places are keys in the right group,
 // so it keeps its own door there rather than owning a second one here. The DATE is not
@@ -12,14 +13,14 @@
 // the day's game; on an ARCHIVE day it joins the title, so the abnormal state is the one
 // that is always labelled.
 //
-// THE TITLE IS A HELD WORD (user-decided 2026-09-02: "a --fg background, like on the hole
-// words"): the name wears the sentence chip — `--fg` ground, `--bg` ink — and what hangs off
-// it is a fullscreen selection in the hole wheel's dress (`PuzzleSelect`), not a dropdown.
-// The day and the chevron stand OUTSIDE the chip, the way a hole's exponent does: the chip
-// is exactly the word.
+// What hangs off it is a fullscreen selection in the hole wheel's dress (`PuzzleSelect`), not
+// a dropdown. The code wears no chip: the mark is the title's one emphasis, and a white chip
+// beside it would be a second one. (A screen that is not a puzzle keeps its NAME in the chip
+// and the code as a quiet tag — `LangTitle`.)
 import { dateForDayNumber } from '@whippin/shared';
 import { useState } from 'react';
 import ChevronDownIcon from '../assets/icons/chevron-down.svg?react';
+import Logo from '../assets/logo.svg?react';
 import PuzzleSelect from './PuzzleSelect';
 import { t } from '../i18n';
 import { LANGS, pathForArchive, pathForBoard, pathForGame, type LangCode } from '../langs';
@@ -61,16 +62,17 @@ export default function PuzzleTitle({
     <>
       <button
         type="button"
-        className="puzzle-title"
-        // The NAME first, then what the control does: an `aria-label` REPLACES the
-        // content, so labelling it "Change language" alone would take the language — and,
-        // on an archive route, the day — away from a reader entirely.
+        className="puzzle-title app-title"
+        // The language's NAME first, then what the control does: an `aria-label` REPLACES
+        // the content, so labelling it "Change language" alone would take the language —
+        // and, on an archive route, the day — away from a reader entirely.
         aria-label={`${day === null ? name : `${name} ${day}`}, ${t(lang, 'langMenu')}`}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen(true)}
       >
-        <span className="topbar-title">{name}</span>
+        <Logo className="app-title-mark" aria-hidden />
+        <span className="app-title-lang">{lang.toUpperCase()}</span>
         {day !== null && <span className="title-tag">{day}</span>}
         <ChevronDownIcon className="ui-icon" aria-hidden />
       </button>

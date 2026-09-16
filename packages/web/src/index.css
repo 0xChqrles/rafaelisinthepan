@@ -1068,9 +1068,10 @@ input {
 }
 
 /* WHICH PUZZLE, as the header's left slot (2026-08-30 — the reasoning is in
-   PuzzleTitle). The daily's name as the held-word chip, the day and the chevron standing
-   outside it the way a hole's exponent does. The button is only the finger's target
-   around them: it draws nothing of its own. */
+   PuzzleTitle). The game surfaces wear the app's mark and the language code
+   (`.app-title`, below); every other screen its NAME as the held-word chip (`LangTitle`),
+   the tag and the chevron standing outside it the way a hole's exponent does. The button
+   is only the finger's target around them: it draws nothing of its own. */
 .puzzle-title {
   display: inline-flex;
   align-items: center;
@@ -1106,6 +1107,32 @@ input {
 }
 .puzzle-title .ui-icon {
   flex: none;
+}
+/* THE GAME SURFACES' TITLE IS THE APP'S MARK (user-decided 2026-09-16): the logo in the
+   accent, the language's CODE beside it in the chrome's title type — no chip, the mark is
+   the one emphasis — then the day on an archive play and the chevron. The mark stands at
+   the header icons' own 20px height, so the row's two ends read as one line. Hover and
+   press answer on the whole title (there is no chip to dim). */
+.app-title-mark {
+  flex: none;
+  display: block;
+  height: 20px;
+  width: auto;
+  color: var(--accent);
+}
+.app-title-lang {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg);
+  white-space: nowrap;
+}
+.app-title:hover {
+  opacity: 0.8;
+}
+.app-title:active {
+  opacity: 0.68;
 }
 /* WHICH OF A THING, beside the name of it: the DAY on an archive route (PuzzleTitle's rule —
    the abnormal state is the one that is labelled) and, since 2026-09-03, the LANGUAGE on

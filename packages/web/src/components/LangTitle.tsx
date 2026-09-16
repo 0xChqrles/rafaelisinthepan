@@ -1,7 +1,7 @@
 // THE SCREEN'S NAME, AND THE LANGUAGE IT IS SPEAKING (user-decided 2026-09-03: "on every
 // page of the game we should be able to switch lang").
 //
-// The play surfaces could always switch — `PuzzleTitle` names the language they show and
+// The play surfaces could always switch — `PuzzleTitle` carries the language they show and
 // the selection behind it turns it. The ACCOUNT AREA could not: `/account` carried a
 // plain name and its steps carried a back control, so a player who landed there in the wrong
 // language had to go back to a game to get out of it. This is the same control for a screen

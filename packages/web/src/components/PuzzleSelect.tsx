@@ -7,9 +7,8 @@ import { HeaderBack } from './TopBar';
 import { t } from '../i18n';
 import { LANGS, type LangCode } from '../langs';
 
-// THE SELECTION BEHIND THE TITLE (user-decided 2026-09-02, over four passes). The title is
-// a HELD WORD — it wears the sentence chip — and what opens under it is the hole wheel's
-// grammar on a screen of its own: the LANGUAGE's picker DRUM, a column that scrolls THROUGH
+// THE SELECTION BEHIND THE TITLE (user-decided 2026-09-02, over four passes). What opens
+// under the title is the hole wheel's grammar on a screen of its own: the LANGUAGE's picker DRUM, a column that scrolls THROUGH
 // a fixed slot in the middle of the screen; the row in the slot wears the chip and the
 // others stand plain; and what the slot holds when the screen folds is the pick.
 //
