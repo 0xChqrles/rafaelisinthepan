@@ -205,8 +205,6 @@ export default function LessonBoard({
   // The meter stage opens WITHOUT the keyboard (user-decided 2026-09-16): the bot's tries are
   // the first thing to see, so the tap on the word comes first, and the keys arrive with the
   // line that hands the turn over.
-  // …after a briefing of its own, on CONTINUE (the line is long; the wheel is next).
-  const [briefed, setBriefed] = useState(stage !== 'meter');
   const waitingTap = stage === 'meter' && !tapped;
   const playing = phase === 'play' && !revealed && !waitingTap;
   const prefixSet = vocab?.prefixSet ?? null;
@@ -461,8 +459,8 @@ export default function LessonBoard({
   // --- the coach: the one line the board's state calls for, or nothing ---
   const line = useMemo(
     () =>
-      coachLine({ stage, holes, events, tapped, briefed, revealed, finished: phase !== 'play' }),
-    [phase, stage, holes, events, tapped, briefed, revealed],
+      coachLine({ stage, holes, events, tapped, revealed, finished: phase !== 'play' }),
+    [phase, stage, holes, events, tapped, revealed],
   );
   const coach = line ? coachCopy(lang, line, stageView, coarse) : null;
   // THE BOX NEVER DISAPPEARS (user-decided 2026-09-16): a beat with nothing new to say keeps
@@ -530,9 +528,9 @@ export default function LessonBoard({
             onHitDone={removeHit}
             // A WORD IS TAPPABLE ON THE SENTENCES ONLY (user-decided 2026-09-16): a lone word
             // has no tries worth a wheel. The tap works whenever a sentence board is live —
-            // including while the meter stage waits for exactly that tap (past its briefing).
+            // including while the meter stage waits for exactly that tap.
             exploreLabels={sentenceLike ? exploreLabels : undefined}
-            exploreDisabled={phase !== 'play' || revealed || (waitingTap && !briefed)}
+            exploreDisabled={phase !== 'play' || revealed}
             onExplore={sentenceLike ? openHistory : undefined}
             quiet={quiet}
             veiledHole={wheelOpen ? historyHole : null}
@@ -583,10 +581,6 @@ export default function LessonBoard({
           // moment the word is hidden (the tutorial's oldest gesture — "the button moves down,
           // the keyboard moves up").
           <button type="button" className="mix-btn" onClick={hide}>
-            {t(lang, 'tutContinue')}
-          </button>
-        ) : waitingTap && !briefed ? (
-          <button type="button" className="mix-btn" onClick={() => setBriefed(true)}>
             {t(lang, 'tutContinue')}
           </button>
         ) : waitingTap ? null : (

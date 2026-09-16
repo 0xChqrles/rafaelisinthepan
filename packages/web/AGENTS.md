@@ -2788,7 +2788,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     choreography — the letters scramble from one word into the other while the exponent
     arrives, the same beat every improving guess gets, never a remount (user-decided
     2026-09-16: "the word transition animation should be played") — under "I mixed the word up: in its place, the closest word, sea¹. Find the secret word."
-    (fr « J'ai mélangé le mot : voici le mot le plus proche. Retrouve le mot secret. »,
+    (fr « J'ai mélangé le mot : à sa place, le mot le plus proche, mer¹. Retrouve le mot
+    secret. »,
     user-decided 2026-09-16 — the bot says what IT did; « son plus proche » and « Trouve »
     rejected the same day). The player types it back — the loop, lived once. en OCEAN behind `sea^1`, fr
     OCÉAN behind `mer^1`; `scripts.test.ts` pins the clue at rank 1; the ladder is early
@@ -2850,9 +2851,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     at; the keys arrive with the line that hands the turn over — which types only once the
     WHEEL IS CLOSED (`tapped` lands on close, same day).
     that a rank-200 guess still fills it). The beats, each on the player's act: "I already
-    made some progress on this sentence, but I cannot find the last word." (its own beat, on
-    CONTINUE — the line is long) → "Click independence⁹ to see my tries." (TAP on a coarse
-    pointer — every tap line has its click twin) → tapped: "The 1000 closest words to the
+    made some progress on this sentence, but I cannot find the last word. Click
+    independence⁹ to see my tries." (ONE box, no beat between — user-decided 2026-09-16; TAP
+    on a coarse pointer — every tap line has its click twin) → tapped: "The 1000 closest words to the
     secret fill its meter. Once full, you earn a clue." → a guess that does not fill:
     `tutNear` → the obvious guess FILLS IT — no progress needed — and the L lands: "Great!
     We just found the secret word's first letter: it starts with L." → a FAILED TRY after it
@@ -2868,7 +2869,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **THE COACH IS THE ERROR BOT (user-decided 2026-09-16, "people would want to read it more
   if it's something telling it"):** the error screen's character (`error-bot-idle.png`, its
   idle bob, at 2x) stands on the coach box's top-left edge (`.coach--bot` / `.coach-bot`,
-  drawn ABOVE the box so the three-line text budget stands; the box and the board's
+  drawn ABOVE the box so the text budget stands; the box and the board's
   `padding-top` drop by the bot's 56px). One character, one voice, on both screens that talk.
   **THE REACTIVE COACH (`tutorial/coach.ts`, pure; `coach.test.ts` replays sequences):**
   the one line the board's state calls for — and when a beat has nothing new to say THE BOX
@@ -2894,7 +2895,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   in 7 tries. This one was easy: the daily sentences are harder." — the score, said once,
   and the hook the METER stage hangs from, user-decided 2026-09-16; a found single word
   still says nothing). The `{braces}` are filled from the board itself, so a line can never
-  name a word the map does not rank. The three-line coach box and its copy budget stand.
+  name a word the map does not rank. THE COACH BOX IS THREE LINES, FIVE AT MOST (user-decided 2026-09-16, lifting the
+  exact-three rule of 2026-08-04: the box is fixed-positioned and moves nothing beneath, and
+  the bot's briefing on the last sentence runs to five at 320px — `.coach-text`
+  `max-height: 8.5em`, the board's `padding-top` grown to match); copy past five lines is a
+  copy bug.
   **The invitation is unchanged** (`tutorial/Invite.tsx`, no header): a first visit (no
   `onboarded`) lands on it; TUTORIAL navigates to level 1 (the lesson's PLAY or a header exit
   settles the flag), SKIP settles it there. Its preload warms the level-1 chunk

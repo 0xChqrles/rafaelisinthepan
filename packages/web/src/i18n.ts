@@ -423,7 +423,7 @@ const STRINGS = {
   tutReveal: { en: 'Here is a secret word: {answer}.', fr: 'Voici un mot secret : {answer}.' },
   tutHidden: {
     en: 'I mixed the word up: in its place, the closest word, {start}. Find the secret word.',
-    fr: "J'ai mélangé le mot : voici le mot le plus proche. Retrouve le mot secret.",
+    fr: "J'ai mélangé le mot : à sa place, le mot le plus proche, {start}. Retrouve le mot secret.",
   },
   tutIntro: {
     en: 'Another secret word. In its place, the {m} closest word: {start}.',
@@ -446,17 +446,19 @@ const STRINGS = {
   // THE METER STAGE (#301 taught; scripted, user-decided 2026-09-16): the bot has half
   // played the sentence. Its lines follow the player's acts — the tap, the first close
   // guess, one more try — and it names the answer as if it had found it.
-  // The briefing stands on its own beat (CONTINUE), then the click instruction (the wheel
-  // is the next thing to open; the keyboard waits behind it).
-  tutMeterIntro: {
-    en: 'I already made some progress on this sentence, but I cannot find the last word.',
-    fr: "J'ai déjà un peu avancé sur cette phrase mais je ne trouve pas le dernier mot.",
+  // The briefing and the click instruction in ONE box (user-decided 2026-09-16; the wheel is
+  // the next thing to open, the keyboard waits behind it).
+  tutMeterIntroTap: {
+    en: 'I already made some progress on this sentence, but I cannot find the last word. Tap {word} to see my tries.',
+    fr: "J'ai déjà un peu avancé sur cette phrase mais je ne trouve pas le dernier mot. Touche {word} pour voir mes essais.",
   },
-  tutMeterTapWord: { en: 'Tap {word} to see my tries.', fr: 'Touche {word} pour voir mes essais.' },
-  tutMeterClickWord: { en: 'Click {word} to see my tries.', fr: 'Clique sur {word} pour voir mes essais.' },
+  tutMeterIntroClick: {
+    en: 'I already made some progress on this sentence, but I cannot find the last word. Click {word} to see my tries.',
+    fr: "J'ai déjà un peu avancé sur cette phrase mais je ne trouve pas le dernier mot. Clique sur {word} pour voir mes essais.",
+  },
   tutMeterTapped: {
     en: 'The 1000 closest words to the secret fill its meter. Once full, you earn a clue.',
-    fr: 'Les 1000 mots proches du secret remplissent sa jauge. Pleine, on gagne un indice.',
+    fr: 'Les 1000 mots les plus proches du secret remplissent sa jauge. Une fois pleine, on gagne un indice.',
   },
   tutLetter: {
     en: 'Great! We just found the secret word’s first letter: it starts with {letter}.',

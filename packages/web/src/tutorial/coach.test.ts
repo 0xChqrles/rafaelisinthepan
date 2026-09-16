@@ -32,12 +32,11 @@ function board(stage: Stage, starts: number[]) {
     startRank: rank,
   }));
   const events: GuessEvent[] = [];
-  const state = (tapped = false, revealed = false, finished = false, briefed = true): CoachState => ({
+  const state = (tapped = false, revealed = false, finished = false): CoachState => ({
     stage,
     holes,
     events,
     tapped,
-    briefed,
     revealed,
     finished,
   });
@@ -179,8 +178,7 @@ describe('ordinal', () => {
 describe('the meter stage — the bot has half played it', () => {
   it('asks for the tap, explains once tapped, nudges until the chip fills, hands the turn over, hints on a failed try, and ends found', () => {
     const b = board('meter', [0, 24]); // the bot found the first word; the second stands at its best try
-    expect(coachLine(b.state(false, false, false, false))).toEqual({ kind: 'introMeter' }); // the briefing, on its own beat
-    expect(coachLine(b.state())).toEqual({ kind: 'meterTap', hole: expect.objectContaining({ rank: 24 }) });
+    expect(coachLine(b.state())).toEqual({ kind: 'introMeter', hole: expect.objectContaining({ rank: 24 }) });
     expect(coachLine(b.state(true))).toEqual({ kind: 'meterTapped' });
     b.guess('x', [null, null], { charged: false, filled: null });
     expect(coachLine(b.state(true))).toEqual({ kind: 'near', hole: expect.objectContaining({ rank: 24 }) });
@@ -234,8 +232,8 @@ describe('coachCopy', () => {
     expect(coachCopy('en', { kind: 'letter', holeIndex: 0 }, stage, true)).toBe(
       'Great! We just found the secret word’s first letter: it starts with [[b:O]].',
     );
-    expect(coachCopy('en', { kind: 'meterTap', hole }, stage, true)).toBe('Tap [[w:islands^10]] to see my tries.');
-    expect(coachCopy('en', { kind: 'meterTap', hole }, stage, false)).toBe('Click [[w:islands^10]] to see my tries.');
+    expect(coachCopy('en', { kind: 'introMeter', hole }, stage, true)).toMatch(/last word\. Tap \[\[w:islands\^10\]\] to see my tries\.$/);
+    expect(coachCopy('en', { kind: 'introMeter', hole }, stage, false)).toMatch(/last word\. Click \[\[w:islands\^10\]\] to see my tries\.$/);
     expect(coachCopy('en', { kind: 'hint', holeIndex: 0 }, stage, true)).toBe(
       'A hint: the secret word is a very large body of water.',
     );

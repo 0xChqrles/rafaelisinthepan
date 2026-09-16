@@ -3905,7 +3905,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   /* Clear the band + the bot + the coach box, so the centered word never rides under them.
      Tracks the coach's height: 78px top + the 56px the bot adds + 3 lines + its padding + a
      breath. */
-  padding-top: 286px;
+  padding-top: 334px; /* 286 + two more coach lines */
 }
 /* THE LESSON'S BOARD IS CENTRED (user-decided 2026-09-16): the word, and the sentence too,
    sit on the column's centre line — and the sentence takes the game's full 1200px column, so
@@ -4006,10 +4006,13 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   font-size: 16px;
   font-weight: 350;
   line-height: 1.7;
-  /* EXACTLY three lines, top-aligned — the box is a fixed dialog window, not a
-     balloon. Copy that wraps past three lines is a COPY bug (too much to read);
-     the overflow clip makes that mistake visible instead of growing the box. */
-  height: 5.1em; /* 3 lines × line-height 1.7 */
+  /* THREE lines, FIVE at most (user-decided 2026-09-16, lifting the exact-three rule of
+     2026-08-04: the bot's briefing on the last sentence runs to five at 320px, and the box
+     is FIXED — growing it moves nothing beneath). Copy that wraps past five lines is a
+     COPY bug (too much to read); the overflow clip makes that mistake visible instead of
+     growing the box further. */
+  min-height: 5.1em; /* 3 lines × line-height 1.7 */
+  max-height: 8.5em; /* 5 lines */
   overflow: hidden;
   color: var(--fg);
   text-shadow: none;
@@ -4135,7 +4138,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   /* Clear the band + the bot + the coach (64px top + 56px of bot + 3 lines + padding + a
      breath). */
   .tutorial {
-    padding-top: 236px;
+    padding-top: 284px; /* 236 + two more coach lines */
   }
   /* The action button sits on the 14px page inset, not the keyboard's edge-to-edge hug, so
      like the solved results it gets +10px back over the keyboard's 4px bottom gap: bottom
