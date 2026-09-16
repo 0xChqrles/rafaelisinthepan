@@ -2,8 +2,9 @@
 //
 // The row's LEFT slot says what you are looking at and its RIGHT group where you are. On a
 // play surface — the game, the archive calendar, the leaderboard — what you are looking at
-// is THE GAME in one language, so the title is the APP'S MARK in the accent with the
-// language's CODE beside it (user-decided 2026-09-16): ▲ FR, ▲ EN. The selection behind it
+// is THE GAME in one language, so the title is the APP'S MARK in the accent — the favicon's
+// pixel logo, `public/logo.png` — with the language's CODE beside it (user-decided
+// 2026-09-16): ▲ FR, ▲ EN. The selection behind it
 // turns that one axis, and its drum names each language in full (`LANGS[].native`); a reader
 // hears the full name too (the `aria-label` below).
 //
@@ -20,7 +21,6 @@
 import { dateForDayNumber } from '@whippin/shared';
 import { useState } from 'react';
 import ChevronDownIcon from '../assets/icons/chevron-down.svg?react';
-import Logo from '../assets/logo.svg?react';
 import PuzzleSelect from './PuzzleSelect';
 import { t } from '../i18n';
 import { LANGS, pathForArchive, pathForBoard, pathForGame, type LangCode } from '../langs';
@@ -71,7 +71,8 @@ export default function PuzzleTitle({
         aria-expanded={open}
         onClick={() => setOpen(true)}
       >
-        <Logo className="app-title-mark" aria-hidden />
+        {/* The favicon's pixel mark (`public/logo.png`), painted in the accent by the CSS. */}
+        <span className="app-title-mark" aria-hidden="true" />
         <span className="app-title-lang">{lang.toUpperCase()}</span>
         {day !== null && <span className="title-tag">{day}</span>}
         <ChevronDownIcon className="ui-icon" aria-hidden />

@@ -41,9 +41,9 @@
       components/TopBar.tsx   the header row itself, mounted ONCE by App: it holds the
                               places on the right and hosts the left slot screens publish
                               into (`HeaderLeft`, `HeaderBack`)
-      components/PuzzleTitle.tsx  what the game surfaces put there: the app's MARK in the
-                              accent + the language CODE (+ the day on an archive route),
-                              over the selection that switches it
+      components/PuzzleTitle.tsx  what the game surfaces put there: the app's MARK
+                              (`public/logo.png`) in the accent + the language CODE (+ the
+                              day on an archive route), over the selection that switches it
       components/PuzzleSelect.tsx  that selection: a flat full screen holding the language's
                               picker DRUM, the pick landing on the fold (the caller decides
                               what a pick means, `onLang`); a back chevron in the header's
@@ -2912,7 +2912,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **THE TWO SLOTS, and each has ONE meaning:**
   - **LEFT — WHAT YOU ARE LOOKING AT.** On a play surface that is `PuzzleTitle`: the
     APP'S MARK in the accent with the language CODE and a chevron (`▲ FR ⌄`, user-decided
-    2026-09-16 — the daily's name held this slot until Word mode was retired), opening the
+    2026-09-16 — the daily's name held this slot until Word mode was retired). The mark is
+    `public/logo.png`, the favicon's 22×22 white pixel logo, painted through a CSS mask in
+    `--accent` at its exact 1x with nearest sampling (`.app-title-mark`), opening the
     drum below; the drum and the `aria-label` name the language in full. It routes by the SURFACE
     it was opened from: from the archive, the other language means that language's
     CALENDAR. On a screen you navigated INTO
@@ -2932,7 +2934,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     outside the chip's rule (it inherited the body's 16px for one measurement), and the
     320px budget was re-measured with the chip: SENTENCE AUG 29 beside the five keys ended
     at 153 of 158, the chip's padding stepping to 5px at ≤340. (The mark's title is
-    narrower: `▲ FR 10/09 ⌄` ends at 107 of the 158 at 320px, measured 2026-09-16.)
+    narrower: `▲ FR 10/09 ⌄` ends at 108 of the 158 at 320px, measured 2026-09-16.)
     What hangs off it is `PuzzleSelect`, replacing the `PuzzleSheet` dropdown (rows,
     hairline, LED tick — deleted with its CSS), and it took FOUR passes in one day to
     land, each on the user's review:
@@ -3088,8 +3090,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     and switching it is a rare act, so the selection costs one tap for a choice nobody makes
     twice in a session. `components/LangButton.tsx` is deleted with the chip it drew.
   **THE BUDGET, re-measured.** Worst case (320px, a PAST day — the title carries
-  the day — and the fixed five-key group; measured with the retired SENTENCE name — the
-  mark's title is 101px dated at 320, so the tightest row is now the account area's): title 147px + keys 165px = 312 of the row's 316px content
+  the day — and the fixed five-key group; measured with the retired SENTENCE name — the mark's title is 102px dated at 320, so the tightest row is now the account area's): title 147px + keys 165px = 312 of the row's 316px content
   box, against the 336–359px the three-slot row wanted; the live daily has
   60px to spare. **The title has ONE size on every screen — 12px, the chrome's own
   small-caps size — and never steps down** (user-decided 2026-08-31: a viewport clamp
