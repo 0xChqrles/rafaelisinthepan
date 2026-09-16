@@ -20,6 +20,7 @@ export interface GuessEvent {
   typed: string;
   entries: (RankEntry | undefined)[];
   improved: boolean[];
+  holeRanks: number[]; // each hole's rank BEFORE this guess landed
   // The meter stage: this guess added charge to some hole, and the hole whose meter it
   // FILLED (its initial is out), if any.
   charged?: boolean;
@@ -137,8 +138,9 @@ export function coachLine(state: CoachState): CoachLine | null {
   if (stage === 'reveal' || stage === 'word') {
     const last = events[events.length - 1];
     const entry = last.entries[0];
-    // Typing the very word the hole shows ranks where it stands — nothing to compare.
-    const farther = (e: GuessEvent) => e.entries[0] !== undefined && (e.entries[0] as RankEntry).rank > holes[0].rank;
+    // Typing the very word the hole shows ranks where it stands — nothing to compare. Judged
+    // against the hole AS IT STOOD when the guess landed.
+    const farther = (e: GuessEvent) => e.entries[0] !== undefined && (e.entries[0] as RankEntry).rank > e.holeRanks[0];
     if (entry && !last.improved[0] && farther(last)) {
       // The first ranked guess that landed farther than the hole: say what the number means,
       // once.

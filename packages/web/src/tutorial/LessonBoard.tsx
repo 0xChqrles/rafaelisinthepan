@@ -338,6 +338,7 @@ export default function LessonBoard({
               typed,
               entries: holes.map((h) => (h.rank === 0 ? undefined : ranks[h.secret][typed])),
               improved,
+              holeRanks: holes.map((h) => h.rank),
               charged: !!before && !!after && after.some((c, i) => c.charge > before[i].charge),
               filled: filled >= 0 ? filled : null,
             },

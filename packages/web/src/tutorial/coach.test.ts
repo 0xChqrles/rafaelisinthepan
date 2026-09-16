@@ -45,7 +45,7 @@ function board(stage: Stage, starts: number[]) {
   const guess = (typed: string, ranks: (number | null)[], meter?: { charged: boolean; filled: number | null }) => {
     const entries = holes.map((h, i) => (h.rank === 0 || ranks[i] === null ? undefined : entry(typed, ranks[i] as number)));
     const improved = holes.map((h, i) => entries[i] !== undefined && (entries[i] as RankEntry).rank < h.rank);
-    events.push({ typed, entries, improved, ...meter });
+    events.push({ typed, entries, improved, holeRanks: holes.map((h) => h.rank), ...meter });
     holes.forEach((h, i) => {
       if (improved[i]) {
         h.rank = (entries[i] as RankEntry).rank;
@@ -65,7 +65,7 @@ describe('the reveal', () => {
     expect(coachLine(b.state())).toEqual({ kind: 'away', guess: expect.objectContaining({ rank: 29 }), hole: expect.objectContaining({ rank: 1 }) });
     b.guess('boat', [45]);
     expect(coachLine(b.state())).toEqual({ kind: 'near', hole: expect.objectContaining({ rank: 1 }) });
-    expect(STUCK.reveal[1]).toBeLessThanOrEqual(STUCK.word[1]);
+    expect(STUCK.reveal[0]).toBeLessThanOrEqual(STUCK.word[0]);
   });
 });
 
