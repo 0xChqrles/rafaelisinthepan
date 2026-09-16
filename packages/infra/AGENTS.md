@@ -52,19 +52,18 @@
   **IAM-auth Function URL via OAC** (only CloudFront may invoke it). The Lambda gets
   **read-only** S3 (`bucket.grantRead`) and a **reserved concurrency of 10** (cost/abuse
   ceiling for the unauthenticated `/og` render until WAF is warranted). Cache policy keys
-  on path + the `lang`, `date` **and `mode`** query strings and honours the origin
+  on path + the `lang` and `date` query strings and honours the origin
   `Cache-Control`. **Every query string the handler reads must be in that allowList:** with
   no origin request policy on the behavior, CloudFront forwards to the origin exactly the
   cache-key values, so an unlisted parameter never reaches the Lambda AND collapses two
-  distinct responses onto one year-long edge entry (`mode` was missing when #156 landed —
-  Word mode got the day's sentence puzzle in production while local `backend:dev`, which has
-  no CDN, was fine). The puzzle endpoint **requires `date`** (400 otherwise) and is served
+  distinct responses onto one year-long edge entry (a missing parameter once served the
+  wrong puzzle in production while local `backend:dev`, which has no CDN, was fine). The puzzle endpoint **requires `date`** (400 otherwise) and is served
   `max-age=300, s-maxage=31536000` (CDN holds it until `puzzle:publish --s3` invalidates);
   `/today` (diagnostic) is `no-store`; maxTtl = 365 days.
   **Score collection (#169; per-player rows #187)** lives in this SAME stack: one
   on-demand, AWS-managed-encrypted DynamoDB table (composite string `pk`/`sk`, `expiresAt`
   TTL, `RETAIN`), with the Lambda limited to `Query`/`PutItem`/`UpdateItem` — one Query
-  reads a daily's whole `(date, lang, mode)` partition of per-player rows, the submission
+  reads a daily's whole `(date, lang)` partition of per-player rows, the submission
   transaction is a conditional Put (the first-write-wins row, sort key = publicId) plus a
   conditional Update (the dedup allowance). Score rows persist while HMAC-IP dedup items
   expire after 48h. Adding the sort key REPLACED #169's single-key table (2026-08-19): the
@@ -72,7 +71,7 @@
   off because a backup would retain the pseudonymous dedup items past their privacy
   lifetime. `/scores` has a separate `scores*` behavior that allows writes
   and uses AWS's managed zero-TTL `CachingDisabled` policy. Its origin-request policy
-  forwards exactly the `lang`/`date`/`mode`/`id` queries outside the unused cache key (`id`
+  forwards exactly the `lang`/`date`/`id` queries outside the unused cache key (`id`
   since #203: the read reports the CALLER's own band) and uses
   CloudFront's `allExcept: Host` header mode — the AWS Lambda-URL pattern, which carries the
   viewer's `x-amz-content-sha256` (mandatory for OAC to sign a Lambda-URL POST) and lets
@@ -85,10 +84,9 @@
   header mode can serve both halves. Removing that function ships a Lambda that throws on
   every gated write, which neither `backend:dev` nor a synthesized template can show;
   `backend-stack.test.ts` pins the associations and the stamp. **Since #203 it is
-  associated with `/round` as well** — both modes' Turnstile-gated round START verifies the
+  associated with `/round` as well** — its Turnstile-gated round creation verifies the
   challenge against the connecting address, and a finished round records the day's score
-  row metered by its HMAC (the score POST that used to do that is retired). Its absence
-  there was already a latent 500 on every #202 word round start. **`/profile` (#188)** has
+  row metered by its HMAC (the score POST that used to do that is retired). **`/profile` (#188)** has
   its own `profile*` behavior on the same shape: `CachingDisabled`, ALLOW_ALL methods,
   and an origin-request policy forwarding exactly the `id` query (the one parameter the
   profile handler reads) with `allExcept: Host` headers for the OAC-signed POST — no
@@ -99,17 +97,17 @@
   day it reads another, it has to be named there or CloudFront will strip it. **`/board`
   (#190)** is the fourth:
   `CachingDisabled`, ALLOW_ALL methods (a group's board read is an authenticated POST),
-  `allExcept: Host` headers, and an origin-request allow-list of exactly the FOUR queries
-  the board handler reads (`lang`/`date`/`mode`/`id`) — no viewer-IP function, no per-IP
+  `allExcept: Host` headers, and an origin-request allow-list of exactly the THREE queries
+  the board handler reads (`lang`/`date`/`id`) — no viewer-IP function, no per-IP
   logic. **`/round` (#201/#203)** is the fifth behavior on that shape — `CachingDisabled`,
   ALLOW_ALL methods (the route is POST-only; the player key authenticates in the body),
-  `allExcept: Host` headers, and an origin-request allow-list of exactly the THREE
-  addressing queries (`lang`/`date`/`mode`) — plus, since #203, the viewer-IP function,
+  `allExcept: Host` headers, and an origin-request allow-list of exactly the TWO
+  addressing queries (`lang`/`date`) — plus, since #203, the viewer-IP function,
   because this is now the route with per-address logic (see above). **`/history` (#211)** is
   the sixth and last on that shape — `CachingDisabled` (a player's own history is live AND
   private, so it must never sit at the edge), ALLOW_ALL methods (POST-only; the key
   authenticates in the body), `allExcept: Host` headers, and an allow-list of exactly
-  `lang`/`mode`/`month` — NOT `date`, because this read is addressed by a MONTH, which is the
+  `lang`/`month` — NOT `date`, because this read is addressed by a MONTH, which is the
   sort-key prefix #203 reordered the round key for; no viewer-IP function, no per-address
   logic. It adds NO table action: its calendar is a Query over the caller's own round
   partition and its solved-day collection a GetItem + UpdateItem on the private player row.

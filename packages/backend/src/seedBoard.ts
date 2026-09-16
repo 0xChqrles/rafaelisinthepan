@@ -38,7 +38,6 @@ import { defaultLocalStoreRoot, sliceKey } from './layout';
 const API = process.env.WHIPPIN_API ?? 'http://localhost:8787';
 const SITE = process.env.WHIPPIN_SITE ?? 'http://localhost:5199';
 const LANG = 'fr';
-const MODE = 'sentence';
 
 const NAMES = [
   'Zoe', 'Marius_R', 'Cosette', 'lea_bkr', 'Gavroche', 'Eponine', 'ValJean24',
@@ -111,7 +110,7 @@ function ensureLocalPuzzle(date: string): Puzzle {
     throw new Error(`no local puzzle store at ${root} — publish one first.`);
   }
   const candidates = readdirSync(root)
-    .filter((name) => name.endsWith(`.${LANG}.json`) && !name.endsWith(`.${LANG}.word.json`))
+    .filter((name) => name.endsWith(`.${LANG}.json`))
     // Only PAST days: a future-dated test fixture must not become today's sentence.
     .filter((name) => name.slice(0, 10) <= date)
     // …and only ones that carry a slice, since a puzzle without one cannot be played.
@@ -186,7 +185,7 @@ async function main() {
   }
   const date = today.date;
   const puzzle = ensureLocalPuzzle(date);
-  const roundPath = `/round?lang=${LANG}&date=${date}&mode=${MODE}`;
+  const roundPath = `/round?lang=${LANG}&date=${date}`;
 
   // 60 scored players: 40 distinct scores, then a 20-player tie across the top-50
   // cut. Every 9th-ish player skips the profile (the assigned-identity fallback).
@@ -260,7 +259,7 @@ async function main() {
       const r = await post('/groups', { token: tokenOf(i), join: seeded });
       if (!r.ok) console.log(`[seed] group join ${i} refused:`, r.status, await r.text());
     }
-    console.log(`[seed] done — ${LANG} ${MODE} board for ${date} holds 60 scores.`);
+    console.log(`[seed] done — ${LANG} board for ${date} holds 60 scores.`);
     console.log('[seed] group invite link (open it in the app to join a board with rows):');
     console.log(`[seed]   ${SITE}${groupInvitePath(seeded)}   (Les_Amis: 4 seeds, one has NOT played today)`);
   }

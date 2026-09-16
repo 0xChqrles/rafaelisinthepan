@@ -24,41 +24,33 @@ export function isLang(value: string | null | undefined): value is LangCode {
   return value != null && CODES.includes(value);
 }
 
-// The two daily games (#156): the sentence puzzle, and Word mode — one word, claim its
-// neighborhood against a countdown. One app, two faces: the mode is part of every identity
-// (URL, round key, share token), and the URL grammar gives Word mode its own segment —
-// sentence keeps /<lang> and /<lang>/<date>, Word mode lives under /<lang>/word.
-export type Mode = 'sentence' | 'word';
-const WORD_SEGMENT = 'word';
-
-// A mode's home for a language: /<lang> (sentence) or /<lang>/word.
-export function pathForMode(lang: string | null, mode: Mode): string {
+// Today's game for a language: /<lang>.
+export function pathForGame(lang: string | null): string {
   if (!isLang(lang)) return '/';
-  return mode === 'word' ? `/${lang}/${WORD_SEGMENT}` : `/${lang}`;
+  return `/${lang}`;
 }
 
-// The archive calendar for a language (and mode): /<lang>/archive or /<lang>/word/archive.
-export function pathForArchive(lang: string | null, mode: Mode = 'sentence'): string {
+// The archive calendar for a language: /<lang>/archive.
+export function pathForArchive(lang: string | null): string {
   if (!isLang(lang)) return '/';
-  return mode === 'word' ? `/${lang}/${WORD_SEGMENT}/archive` : `/${lang}/archive`;
+  return `/${lang}/archive`;
 }
 
-// A past day's game, deep-linkable/shareable: /<lang>/<YYYY-MM-DD>, or Word mode's
-// /<lang>/word/<YYYY-MM-DD>. The caller supplies a valid ISO date; range validation
-// happens in parseRoute on the way back in.
-export function pathForDay(lang: string | null, date: string, mode: Mode = 'sentence'): string {
+// A past day's game, deep-linkable/shareable: /<lang>/<YYYY-MM-DD>. The caller supplies a
+// valid ISO date; range validation happens in parseRoute on the way back in.
+export function pathForDay(lang: string | null, date: string): string {
   if (!isLang(lang)) return '/';
-  return mode === 'word' ? `/${lang}/${WORD_SEGMENT}/${date}` : `/${lang}/${date}`;
+  return `/${lang}/${date}`;
 }
 
-// The leaderboard screen (#190): each daily's boards for the active day —
-// /<lang>/board and /<lang>/word/board, the archive's own grammar. Language-scoped
-// because a board is addressed per (day, lang, mode) like everything else.
+// The leaderboard screen (#190): the day's boards for the active day — /<lang>/board, the
+// archive's own grammar. Language-scoped because a board is addressed per (day, lang) like
+// everything else.
 const BOARD_SEGMENT = 'board';
 
-export function pathForBoard(lang: string | null, mode: Mode = 'sentence'): string {
+export function pathForBoard(lang: string | null): string {
   if (!isLang(lang)) return '/';
-  return mode === 'word' ? `/${lang}/${WORD_SEGMENT}/${BOARD_SEGMENT}` : `/${lang}/${BOARD_SEGMENT}`;
+  return `/${lang}/${BOARD_SEGMENT}`;
 }
 
 // The ACCOUNT area (#204's UX rework, 2026-08-26). FOUR routes, because they answer four
@@ -121,13 +113,11 @@ export { groupInvitePath as pathForGroupInvite } from '@whippin/shared';
 // A parsed route. The game IS the home: /<lang> plays today's puzzle, /<lang>/<date>
 // plays a past day (archive, #55), /<lang>/archive is the calendar, /privacy is the data
 // notice, /join/g/<groupId> the group invite landing (#271), and anything else (/, unknown paths) is
-// a `home` redirect that bounces to the user's language (see resolveHomeLang). Word
-// mode (#156) mirrors the whole grammar under /<lang>/word: today's word,
-// /word/<date>, /word/archive.
+// a `home` redirect that bounces to the user's language (see resolveHomeLang).
 export type Route =
-  | { view: 'game'; lang: LangCode; mode: Mode; date?: string }
-  | { view: 'archive'; lang: LangCode; mode: Mode }
-  | { view: 'board'; lang: LangCode; mode: Mode }
+  | { view: 'game'; lang: LangCode; date?: string }
+  | { view: 'archive'; lang: LangCode }
+  | { view: 'board'; lang: LangCode }
   | { view: 'account' }
   | { view: 'accountEmail'; intent: LinkIntent }
   | { view: 'profile' }
@@ -185,9 +175,8 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
   // A dated deep link is honored only when it is a real calendar date within range; a
   // date-SHAPED segment that is malformed OR out of range is treated as unknown -> home
   // (a clearly date-like deep link that is broken should not silently fall through to
-  // today). Shared by both modes, so the two grammars cannot drift. The range reaches ONE
-  // day past the active one (#273): tomorrow's sentence is playable tonight, on the
-  // dated route the server already serves inside its skew window.
+  // today). The range reaches ONE day past the active one (#273): tomorrow's sentence is
+  // playable tonight, on the dated route the server already serves inside its skew window.
   const dateOf = (s: string): string | 'home' | null => {
     if (!DATE_RE.test(s)) return null; // not date-shaped at all
     if (!isCalendarDate(s)) return 'home';
@@ -198,31 +187,19 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
     return s;
   };
 
-  // /<lang>/word[/...] — Word mode (#156), the same grammar one segment deeper.
-  if (second === WORD_SEGMENT) {
-    if (!third) return { view: 'game', lang: seg, mode: 'word' };
-    if (third === 'archive') return { view: 'archive', lang: seg, mode: 'word' };
-    if (third === BOARD_SEGMENT) return { view: 'board', lang: seg, mode: 'word' };
-    const date = dateOf(third);
-    if (date === 'home') return { view: 'home' };
-    if (date) return { view: 'game', lang: seg, mode: 'word', date };
-    // Non-date, non-archive third segment: today's word, same tolerance as the sentence.
-    return { view: 'game', lang: seg, mode: 'word' };
-  }
-
   // /<lang> — today's game.
-  if (!second) return { view: 'game', lang: seg, mode: 'sentence' };
+  if (!second) return { view: 'game', lang: seg };
   // /<lang>/archive — the calendar.
-  if (second === 'archive') return { view: 'archive', lang: seg, mode: 'sentence' };
+  if (second === 'archive') return { view: 'archive', lang: seg };
   // /<lang>/board — the day's leaderboard (#190).
-  if (second === BOARD_SEGMENT) return { view: 'board', lang: seg, mode: 'sentence' };
+  if (second === BOARD_SEGMENT) return { view: 'board', lang: seg };
   // /<lang>/<YYYY-MM-DD> — a past day.
   const date = dateOf(second);
   if (date === 'home') return { view: 'home' };
-  if (date) return { view: 'game', lang: seg, mode: 'sentence', date };
+  if (date) return { view: 'game', lang: seg, date };
   // Any other non-date, non-archive segment keeps today's tolerance: /<lang>/xyz plays
-  // today's game (unchanged behavior, so old links never break).
-  return { view: 'game', lang: seg, mode: 'sentence' };
+  // today's game.
+  return { view: 'game', lang: seg };
 }
 
 // THE LINK'S OWN LANGUAGE (`?lang=`, user-decided 2026-09-03: "so you can send the privacy

@@ -49,7 +49,7 @@ import {
   PUBLIC_ID_PATTERN,
   VOCAB_BUILDS,
 } from '@whippin/shared';
-import { accountStakes, drainDepartures, supportedTuples } from './accountLink';
+import { accountStakes, drainDepartures, supportedLangs } from './accountLink';
 import { deviceTokenHash, type DeviceStore } from './deviceStore';
 import type { GroupStore } from './groupStore';
 import type { PlayerHistoryStore } from './historyStore';
@@ -463,8 +463,8 @@ export async function handleLink(
 
   // The identity and the active day's play, ONE transaction (#204): the device moves, the
   // account being left is deleted with its profile row, the departure job is persisted,
-  // and — when that account is being erased — every supported language × mode tuple of
-  // the active day moves with it where the destination has nothing and the source has
+  // and — when that account is being erased — every supported language's round of the
+  // active day moves with it where the destination has nothing and the source has
   // play. "Active day" means ALL of them, never whichever route the linking device is on:
   // which language a player was on lives in the browser and nowhere else, so a server that
   // guessed would erase the round it guessed wrong about. See `accountLink.ts`.
@@ -482,7 +482,7 @@ export async function handleLink(
     ...(erase
       ? {
           departFrom: leaving,
-          moves: supportedTuples().map((tuple) => ({ date: activeDate(instant), ...tuple })),
+          moves: supportedLangs().map((lang) => ({ date: activeDate(instant), lang })),
         }
       : {}),
     now: instant.toISOString(),
@@ -510,12 +510,12 @@ export async function handleLink(
     }
   }
 
-  // A transferred SENTENCE solve owes the adopting account's streak its day (#211). It
+  // A transferred solve owes the adopting account's streak its day (#211). It
   // follows the commit as the round route's own credit does: an idempotent set insert into
   // a rebuildable cache, LOGGED when it fails and never surfaced — the identity has already
   // changed, and the answer the player is waiting for is about that.
   for (const { key, solved } of adoption.moved) {
-    if (key.mode !== 'sentence' || !solved) continue;
+    if (!solved) continue;
     try {
       await deps.history.recordSolvedDay({ publicId: target, lang: key.lang, day: dayNumber(key.date) });
     } catch (error) {

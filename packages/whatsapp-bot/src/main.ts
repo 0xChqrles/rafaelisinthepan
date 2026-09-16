@@ -47,7 +47,7 @@ import { withoutShares } from './domain/share';
 import { dynamoLeaderStore } from './domain/leader';
 import type { InboundMessage, Mention } from './domain/message';
 import { createLlmProvider } from './llm';
-import { generateShareComment, type ShareFacts } from './llm/shareComment';
+import { generateShareComment } from './llm/shareComment';
 import { createLog, tag } from './log';
 import { commandIds, type OutboundQueue } from './outbound/commands';
 import { dynamoSentStore } from './outbound/dedupStore';
@@ -167,8 +167,8 @@ async function main(): Promise<void> {
   // day, and a second model path outside it would leave it bounding half the spend. Out of
   // budget answers null, which is the emoji — the share is still acknowledged.
   const comment = provider
-    ? (group: GroupConfig, facts: ShareFacts, key: { dayNumber: number; sender: string; said?: string }) =>
-        generateShareComment(provider, group, facts, { declarations, ...key }, log, async () => {
+    ? (group: GroupConfig, key: { dayNumber: number; sender: string; said?: string }) =>
+        generateShareComment(provider, group, { declarations, ...key }, log, async () => {
           const at = new Date();
           const { scope, key } = limitKeys.calls(at);
           return limits.take(scope, key, env.llm.dailyCallCeiling, limitExpiry(at));
@@ -327,7 +327,7 @@ async function main(): Promise<void> {
       const approach: Approach = address ?? 'ambient';
       const exchange = exchanges.get(group.id) ?? NEW_EXCHANGE;
       if (!address) {
-        const acknowledged = group.acknowledge !== 'none' && (ingested === 'recorded' || ingested === 'acknowledged');
+        const acknowledged = group.acknowledge !== 'none' && ingested === 'recorded';
         const wordless = !kept || (isWordless(kept) && !(message.quoted && !isWordless(message.quoted.text)));
         const reason = acknowledged ? 'acknowledged' : wordless ? 'wordless' : !mayVolunteer(exchange, at) ? 'exchange_budget' : null;
         if (reason) {

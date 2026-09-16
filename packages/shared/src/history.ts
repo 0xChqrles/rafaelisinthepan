@@ -9,10 +9,10 @@
 // server never meant.
 
 // A month is addressed as `YYYY-MM` — the sort-key prefix a player's calendar is ONE Query
-// over (`<lang>#<mode>#<month>-`, the order #203 established for exactly this read).
+// over (`<lang>#sentence#<month>-`, the order #203 established for exactly this read).
 export const HISTORY_MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 
-// One day of one (language, mode) as a summary surface sees it: never the raw guess log,
+// One day of one language as a summary surface sees it: never the raw guess log,
 // only what the server already derived from it.
 export interface HistoryDay {
   // The game day, "YYYY-MM-DD".

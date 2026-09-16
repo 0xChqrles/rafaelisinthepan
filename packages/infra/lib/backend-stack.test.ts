@@ -83,12 +83,12 @@ describe('score production boundary (#169)', () => {
       (policy) =>
         policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinLiveScoresOrigin',
     );
-    // `id` joined the addressing triple with #203: the read reports the CALLER's own band,
+    // `id` joined the addressing pair with #203: the read reports the CALLER's own band,
     // so the handler needs the publicId naming them. An unlisted parameter never reaches the
     // Lambda, so the standing would silently go blank for everybody.
     expect(scorePolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
       QueryStringBehavior: 'whitelist',
-      QueryStrings: ['lang', 'date', 'mode', 'id'],
+      QueryStrings: ['lang', 'date', 'id'],
     });
     expect(scorePolicy?.Properties.OriginRequestPolicyConfig.CookiesConfig).toEqual({
       CookieBehavior: 'none',
@@ -182,11 +182,11 @@ describe('score production boundary (#169)', () => {
     const boardPolicy = policies.find(
       (policy) => policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinLeaderboardOrigin',
     );
-    // The FOUR queries the board handler reads — lang/date/mode address the day, `id`
-    // (public, never the secret) widens the global GET with the caller's own window.
+    // The THREE queries the board handler reads — lang/date address the day, `id` (public,
+    // never the secret) widens the global GET with the caller's own window.
     expect(boardPolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
       QueryStringBehavior: 'whitelist',
-      QueryStrings: ['lang', 'date', 'mode', 'id'],
+      QueryStrings: ['lang', 'date', 'id'],
     });
     expect(boardPolicy?.Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
       HeaderBehavior: 'allExcept',
@@ -212,12 +212,12 @@ describe('score production boundary (#169)', () => {
     const roundPolicy = policies.find(
       (policy) => policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinRoundOrigin',
     );
-    // The THREE addressing queries — the same triple /scores forwards; the secret never
+    // The TWO addressing queries — the same pair /scores forwards; the secret never
     // travels in a query. The header mode is still the Lambda-URL-safe one, since it is
     // what carries the OAC-signed body hash.
     expect(roundPolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
       QueryStringBehavior: 'whitelist',
-      QueryStrings: ['lang', 'date', 'mode'],
+      QueryStrings: ['lang', 'date'],
     });
     expect(roundPolicy?.Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
       HeaderBehavior: 'allExcept',
@@ -320,12 +320,12 @@ describe('score production boundary (#169)', () => {
       (policy) =>
         policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinPlayerHistoryOrigin',
     );
-    // `lang`/`mode` name which game and `month` the calendar page — and NOT `date`: this
+    // `lang` names which daily and `month` the calendar page — and NOT `date`: this
     // read is addressed by a MONTH, which is exactly the sort-key prefix #203 reordered
     // the round key for. An unlisted parameter never reaches the Lambda at all.
     expect(historyPolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
       QueryStringBehavior: 'whitelist',
-      QueryStrings: ['lang', 'mode', 'month'],
+      QueryStrings: ['lang', 'month'],
     });
     expect(historyPolicy?.Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
       HeaderBehavior: 'allExcept',
@@ -340,9 +340,9 @@ describe('score production boundary (#169)', () => {
     // Nothing else can catch this: `pnpm backend:dev` has no CDN, and the handler's own
     // tests hand it the header directly.
     //
-    // Since #203 that is TWO routes, and since #216 THREE. `/round` verifies both modes'
-    // Turnstile-gated round START against the connecting address and records the day's score
-    // row metered by its HMAC; `/devices` verifies the gated bootstrap that mints an
+    // Since #203 that is TWO routes, and since #216 THREE. `/round` verifies the
+    // Turnstile-gated round creation against the connecting address and records the day's
+    // score row metered by its HMAC; `/devices` verifies the gated bootstrap that mints an
     // identity; `/scores` keeps the association because its own shape is unchanged.
     const functions = Object.values(template.findResources('AWS::CloudFront::Function'));
     expect(functions).toHaveLength(1);

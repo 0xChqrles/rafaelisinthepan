@@ -12,7 +12,6 @@ import {
   parseBoard,
   parseDeviceIdentity,
   puzzleUrl,
-  wordPuzzleUrl,
   puzzleOutcome,
   parseGroups,
   parsePeriodBoard,
@@ -23,7 +22,6 @@ import {
   parseLinkResult,
   parseProfile,
   parseRound,
-  parseWordPuzzle,
   profileUrl,
   readProfile,
   roundUrl,
@@ -58,16 +56,6 @@ describe('backend routing URLs', () => {
 
   it('fails loudly when the backend base is unset instead of using the web origin', () => {
     expect(() => puzzleUrl('fr', '2026-07-05', '')).toThrow(/VITE_API_BASE_URL/);
-  });
-
-  // Word mode names its daily with `mode=word` (#156) — a DISTINCT URL, which is the whole
-  // reason the CDN can hold the two dailies as separate entries. The parameter has to be in
-  // the CloudFront cache policy's allowList for that to be true (see infra/backend-stack).
-  it('wordPuzzleUrl is the same date-addressed URL, selected by mode=word', () => {
-    expect(wordPuzzleUrl('fr', '2026-07-05', base)).toBe(
-      'https://api.example/?lang=fr&date=2026-07-05&mode=word',
-    );
-    expect(wordPuzzleUrl('fr', '2026-07-05', base)).not.toBe(puzzleUrl('fr', '2026-07-05', base));
   });
 });
 
@@ -277,98 +265,6 @@ describe('parsePuzzle (shape validation)', () => {
     const p = valid();
     (p as { ranks: unknown }).ranks = [];
     expect(() => parsePuzzle(p)).toThrow(/ranks/);
-  });
-});
-
-// Word mode's artifact (#154/#156) gets the same guard as the sentence puzzle, for the same
-// reason: a truncated or wrong-shaped body must surface as the error state, never crash the
-// board mid-render. It is also the ONE thing standing between the network and the numbers the
-// drawing sizes itself by — and the failure that motivated it is real: with `mode` missing from
-// the CDN cache key the word route was served the day's SENTENCE puzzle, and this is what
-// turned that into a clean "failed to load" instead of a blank screen.
-describe('parseWordPuzzle (shape validation)', () => {
-  const valid = () => ({
-    lang: 'fr',
-    word: { word: 'forêt', slug: 'foret' },
-    ranks: {
-      foret: { word: 'forêt', rank: 0, freq: 812 },
-      bois: { word: 'bois', rank: 1, dq: 255, freq: 64 },
-      arbre: { word: 'arbre', rank: 2, dq: 240, freq: 230 },
-    },
-  });
-
-  it('accepts a well-formed artifact unchanged', () => {
-    const p = valid();
-    expect(parseWordPuzzle(p)).toBe(p);
-  });
-
-  it('rejects a non-object / a missing lang / a bad word', () => {
-    expect(() => parseWordPuzzle(null)).toThrow(/word puzzle/);
-    expect(() => parseWordPuzzle([])).toThrow(/word puzzle/);
-    const noLang = valid();
-    delete (noLang as { lang?: unknown }).lang;
-    expect(() => parseWordPuzzle(noLang)).toThrow(/lang/);
-    const badWord = valid();
-    (badWord as { word: unknown }).word = { word: 'forêt' }; // no slug
-    expect(() => parseWordPuzzle(badWord)).toThrow(/word/);
-  });
-
-  // The flat map has to hold the day's own word at rank 0 — that entry is what the board
-  // draws as its terminus and what makes typing the word itself free rather than a strike.
-  it('rejects a ranks map that does not hold the word itself at rank 0', () => {
-    const missing = valid();
-    delete (missing.ranks as Record<string, unknown>).foret;
-    expect(() => parseWordPuzzle(missing)).toThrow(/rank 0/);
-    const notZero = valid();
-    (notZero.ranks.foret as { rank: number }).rank = 3;
-    expect(() => parseWordPuzzle(notZero)).toThrow(/rank 0/);
-  });
-
-  it('rejects a malformed rank / dq / freq on any entry', () => {
-    const badRank = valid();
-    (badRank.ranks.bois as { rank: unknown }).rank = -1;
-    expect(() => parseWordPuzzle(badRank)).toThrow(/rank/);
-    const badDq = valid();
-    (badDq.ranks.bois as { dq: unknown }).dq = 256;
-    expect(() => parseWordPuzzle(badDq)).toThrow(/dq/);
-    // freq is 1-based on purpose: a 0 is indistinguishable from absent to a truthiness test.
-    const badFreq = valid();
-    (badFreq.ranks.bois as { freq: unknown }).freq = 0;
-    expect(() => parseWordPuzzle(badFreq)).toThrow(/freq/);
-  });
-
-  // dq/freq are optional PER ENTRY (rank 0 has no dq; a borrowed-vector group has no
-  // corpus position) — only a PRESENT one is checked, as long as freq appears SOMEWHERE.
-  it('accepts entries with no distance annotations', () => {
-    const bare = {
-      lang: 'en',
-      word: { word: 'ocean', slug: 'ocean' },
-      ranks: { ocean: { word: 'ocean', rank: 0 }, sea: { word: 'sea', rank: 1, freq: 3 } },
-    };
-    expect(() => parseWordPuzzle(bare)).not.toThrow();
-  });
-
-  // A map with NO freq anywhere is a pre-#163 artifact: every claim would grade at the
-  // COMMON floor and silently halve the economy. The no-back-compat rule says a stale
-  // artifact is republished, never limped on — so it must fail loudly at load.
-  it('rejects an artifact with no freq on any entry (pre-#163)', () => {
-    const stale = valid();
-    for (const entry of Object.values(stale.ranks)) {
-      delete (entry as { freq?: unknown }).freq;
-    }
-    expect(() => parseWordPuzzle(stale)).toThrow(/freq/);
-  });
-
-  // The two dailies' bodies must not pass for each other: this is exactly what a cache-key
-  // collision or a mis-published file delivers.
-  it('rejects a SENTENCE puzzle body', () => {
-    const sentence = {
-      lang: 'fr',
-      words: ['la', 'forêt'],
-      holes: [{ pos: 1, secret: { word: 'forêt', slug: 'foret' }, start: { word: 'bois', slug: 'bois' }, start_rank: 87 }],
-      ranks: { foret: { bois: { word: 'bois', rank: 12 } } },
-    };
-    expect(() => parseWordPuzzle(sentence)).toThrow(/word puzzle/);
   });
 });
 
@@ -601,17 +497,17 @@ describe('parsePeriodBoard (#271)', () => {
 });
 
 describe('boardUrl (#190)', () => {
-  it('addresses the /board route with lang, date, mode and the optional public id', () => {
-    expect(boardUrl('fr', '2026-08-19', 'sentence', undefined, 'https://api.example')).toBe(
-      'https://api.example/board?lang=fr&date=2026-08-19&mode=sentence',
+  it('addresses the /board route with lang, date and the optional public id', () => {
+    expect(boardUrl('fr', '2026-08-19', undefined, 'https://api.example')).toBe(
+      'https://api.example/board?lang=fr&date=2026-08-19',
     );
-    expect(boardUrl('en', '2026-08-19', 'word', 'abcdefghij234567', 'https://api.example')).toBe(
-      'https://api.example/board?lang=en&date=2026-08-19&mode=word&id=abcdefghij234567',
+    expect(boardUrl('en', '2026-08-19', 'abcdefghij234567', 'https://api.example')).toBe(
+      'https://api.example/board?lang=en&date=2026-08-19&id=abcdefghij234567',
     );
   });
 
   it('throws without a configured base (never a silent same-origin fetch)', () => {
-    expect(() => boardUrl('fr', '2026-08-19', 'sentence', undefined, '')).toThrow(
+    expect(() => boardUrl('fr', '2026-08-19', undefined, '')).toThrow(
       /VITE_API_BASE_URL/,
     );
   });
@@ -686,24 +582,19 @@ describe('parseBoard (shape validation, #190)', () => {
   });
 });
 
-describe('roundUrl + parseRound (#201/#202)', () => {
+describe('roundUrl + parseRound (#201/#203)', () => {
   const base = 'https://api.example';
-  const valid = () => ({ guesses: ['bois'], createdAt: '2026-08-21T09:00:00.000Z', now: '2026-08-21T09:30:00.000Z' });
+  const valid = () => ({ guesses: ['bois'], createdAt: '2026-08-21T09:00:00.000Z' });
 
-  it('is the day-addressed round route, mode included', () => {
-    expect(roundUrl('fr', '2026-08-21', 'word', base)).toBe(
-      'https://api.example/round?lang=fr&date=2026-08-21&mode=word',
+  it('is the day-addressed round route', () => {
+    expect(roundUrl('fr', '2026-08-21', base)).toBe(
+      'https://api.example/round?lang=fr&date=2026-08-21',
     );
   });
 
-  it('reads the stored state, with no start on a sentence round', () => {
+  it('reads the stored state', () => {
     expect(parseRound(valid())).toEqual({
       ...valid(),
-      startedAt: null,
-      // Word mode's run OWNER (#217) — null exactly when the clock is, since one write
-      // stamps both, and always null on a sentence round.
-      startedBy: null,
-      submittedAt: null,
       // The server's own reading of the log it stores (#203); absent means "not yet",
       // never "no longer", since it is only ever written true.
       solved: false,
@@ -718,47 +609,10 @@ describe('roundUrl + parseRound (#201/#202)', () => {
     expect(() => parseRound({ ...valid(), solved: 'yes' })).toThrow(/solved/);
   });
 
-  it("carries Word mode's server-stamped clock and the DEVICE it belongs to", () => {
-    // The id is what the screen reads against its own device; the parsed user-agent fields
-    // are how it NAMES that device before offering to end its run (#217).
-    const runner = { deviceId: 'd'.repeat(16), device: 'iPhone', os: 'iOS 17', browser: 'Safari' };
-    const started = { ...valid(), startedAt: '2026-08-21T09:10:00.000Z', startedBy: runner };
-    expect(parseRound(started).startedAt).toBe('2026-08-21T09:10:00.000Z');
-    expect(parseRound(started).startedBy).toEqual(runner);
-  });
-
-  it('REFUSES a half-shaped run owner rather than guessing at a device', () => {
-    // The phase this decides is whether the player may keep playing, so a stamp that does
-    // not name a device is a malformed answer — the parse failure the sync engine treats as
-    // a failed read, never a run silently attributed to nobody.
-    const runner = { deviceId: 'd'.repeat(16), device: 'iPhone', os: 'iOS 17', browser: 'Safari' };
-    expect(() => parseRound({ ...valid(), startedBy: { ...runner, deviceId: '' } })).toThrow(
-      /startedBy/,
-    );
-    expect(() => parseRound({ ...valid(), startedBy: { deviceId: 'd'.repeat(16) } })).toThrow(
-      /startedBy/,
-    );
-    expect(() => parseRound({ ...valid(), startedBy: 'iPhone' })).toThrow(/startedBy/);
-  });
-
-  it('carries the SUBMISSION\'s own marker, which a 0-claim run needs', () => {
-    // An empty stored log is indistinguishable from an unsubmitted one, so the marker is
-    // the attribute rather than the length.
-    const done = { ...valid(), guesses: [], submittedAt: '2026-08-21T09:20:00.000Z' };
-    expect(parseRound(done).submittedAt).toBe('2026-08-21T09:20:00.000Z');
-    expect(parseRound(valid()).submittedAt).toBeNull();
-  });
-
   it('rejects a wrong-shaped body (a silent sync failure, never garbage in the log)', () => {
     expect(() => parseRound(null)).toThrow(/round/);
     expect(() => parseRound({ ...valid(), guesses: 'bois' })).toThrow(/guesses/);
     expect(() => parseRound({ ...valid(), createdAt: 7 })).toThrow(/createdAt/);
-    // Both instants feed the deadline arithmetic, where a NaN ends a run instantly or
-    // never — so they are checked as PARSEABLE, not merely as strings.
-    expect(() => parseRound({ guesses: [], createdAt: valid().createdAt })).toThrow(/now/);
-    expect(() => parseRound({ ...valid(), now: 'whenever' })).toThrow(/now/);
-    expect(() => parseRound({ ...valid(), startedAt: 'whenever' })).toThrow(/startedAt/);
-    expect(() => parseRound({ ...valid(), submittedAt: 'whenever' })).toThrow(/submittedAt/);
   });
 });
 

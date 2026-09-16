@@ -52,10 +52,6 @@ const STRINGS = {
     en: 'The link could not be shared or copied. Try again — the next tap shares directly.',
     fr: "Le lien n'a pas pu être partagé ni copié. Réessayez — le prochain appui partage directement.",
   },
-  // Word mode's round start (#202), loud for that same reason and one more: the SERVER
-  // stamps the clock, so a failed start is a run that has not begun. Saying nothing would
-  // leave the player tapping PLAY at a gate that never opens.
-  failedStart: { en: 'FAILED TO START', fr: 'ÉCHEC DU DÉMARRAGE' },
   // The refusals a player can act on, so they are the refusals that speak (#271). Asking
   // again cannot change them — a full group is a state, not a hiccup — so this reads as a
   // fact and its button plays rather than retries. ONE line for both caps: the group is
@@ -82,10 +78,6 @@ const STRINGS = {
   failedAccountNote: {
     en: 'Your account could not be set up. Check your connection and try again.',
     fr: "Votre compte n'a pas pu être créé. Vérifiez votre connexion et réessayez.",
-  },
-  failedStartNote: {
-    en: 'The round did not start — the clock is not running. Check your connection and try again.',
-    fr: "La partie n'a pas démarré — le chrono ne tourne pas. Vérifiez votre connexion et réessayez.",
   },
   failedJoinNote: {
     en: 'You did not join the group. Check your connection and try again.',
@@ -249,7 +241,7 @@ const STRINGS = {
   // `linkEraseDays` while only the dialog said them, and the streak one rendered « SÉRIE »
   // there against the archive's « STREAK » for the same number: two French words for one
   // thing, on screens that now sit one tap apart. Unified on the older, game-facing one —
-  // STREAK is untranslated vocabulary here, the family MISS and the rarity grades belong to.
+  // STREAK is untranslated vocabulary here, the family MISS belongs to.
   statDays: { en: 'DAYS', fr: 'JOURS' },
   // The longest run the account has ever held, beside the one it is on. RECORD rather than
   // « MEILLEUR »: it is the word a French player would use for a personal best, and it is
@@ -356,92 +348,8 @@ const STRINGS = {
   // share card); the share text lowercases these.
   try: { en: 'TRY', fr: 'ESSAI' },
   tries: { en: 'TRIES', fr: 'ESSAIS' },
-  // ---- Word mode (#156, retimed by #163): the second daily — name the day's word's
-  // neighborhood against a countdown. Its score unit is likewise NAMED (higher is better
-  // here, and "WORDS" says what was counted).
-  word: { en: 'WORD', fr: 'MOT' },
-  words: { en: 'WORDS', fr: 'MOTS' },
-  // The final score names the achievement, not just the unit. Kept separate because the
-  // live header counter and the plain-text share result still use the compact unit above.
-  foundWord: { en: 'FOUND WORD', fr: 'MOT TROUVÉ' },
-  foundWords: { en: 'FOUND WORDS', fr: 'MOTS TROUVÉS' },
-  // Free-guess feedback: a group-level repeat (#104), and the day's word itself (it is
-  // public — on the board already).
-  wordRepeat: { en: 'already played', fr: 'déjà joué' },
-  wordItself: { en: "that's the word itself", fr: "c'est le mot lui-même" },
-  // The run's end, said ON THE CLOCK in place of its dead `0.0` (#175): the clock is what
-  // ended the run, so it is the surface that says so. Uppercase like MISS — a statement
-  // in the game's own pixel voice, not chrome.
-  wordTimeUp: { en: 'TIME UP', fr: 'TEMPS ÉCOULÉ' },
-  // The pre-run GATE (#163): the timer needs a start control anyway, and the control is
-  // where the rules belong — so this screen is also where a first-time player learns the
-  // game. TWO sentences, one idea each: what to do, and what buys more of it. Terse, in
-  // the app's show-don't-tell register.
-  //
-  // It states exactly ONE number, `{n}` — HOW MANY words count (user-decided 2026-08-11,
-  // superseding "neither of them states a number"): "close to it" gave the player no way
-  // to know what they were aiming at, where a count is a target they can hold. The clock's
-  // length is still NOT stated — that one the HUD shows, and showing it here would be
-  // saying twice what the timer already says once.
-  //
-  // The number is a PLACEHOLDER, never spelled into the copy: it is `CLAIM_ZONE`, a tuning
-  // knob, and a hardcoded "1000" would quietly start lying the first time the zone moves.
-  // `{n}` is the only placeholder this table uses (see `tn`), which is what keeps the line
-  // in the type-checked en+fr table — parity by compiler — instead of in a hand-written
-  // bilingual function like the sr helpers below.
-  wordRulesGoal: {
-    en: 'Find words among the {n} closest before the clock runs out.',
-    fr: 'Trouve des mots parmi les {n} plus proches avant la fin du chrono.',
-  },
-  // "Rarer", not "rare": RARE is now the name of one specific grade on screen, so the rule
-  // has to read as the general property rather than as a claim about that one grade.
-  wordRulesBonus: {
-    en: 'Every find adds time. Rarer words add more.',
-    fr: 'Chaque mot ajoute du temps. Plus il est rare, plus il en donne.',
-  },
-  // A word run belongs to the DEVICE that started it (#217), and a device that does not
-  // hold this day's run can only start it OVER. The gate says what that costs before the
-  // tap. Another device is NAMED — two open tabs is enough to lose a live run by accident,
-  // and the label is exactly what makes the loss legible. This device gets its own wording:
-  // repeating its Mac / Chrome label as though it were elsewhere is accurate but confusing.
-  // `{device}` is the table's second placeholder (see `tDevice`), for the reason `{n}` is
-  // its first: the fragment is a name, and a name belongs inside its sentence rather than
-  // concatenated onto one.
-  wordRestartNote: {
-    en: 'Started on {device}. Starting here ends that run.',
-    fr: 'Commencé sur {device}. Recommencer ici met fin à cette partie.',
-  },
-  wordRestartHereNote: {
-    en: 'A run was already started on this device. Starting over replaces it.',
-    fr: 'Une partie a déjà commencé sur cet appareil. Recommencer la remplace.',
-  },
-  // …and the button says so, rather than wearing PLAY over new copy: the tap is a
-  // deliberate act, so it takes a control of its own.
-  gateRestart: { en: 'START OVER', fr: 'RECOMMENCER' },
-  // A word run's day is FINISHED, never "solved" (decided 2026-08-08): the clock ran out,
-  // which is not an achievement the way a reconstructed sentence is. Visually it is the
-  // same gold as a solve; this is the distinction the reader hears.
-  srWordDone: { en: 'done', fr: 'terminé' },
-  // The header's Whippin mark opens the mode CHOOSER (2026-08-06, replacing the toggle
-  // whose label had to name the mode a tap landed on), and the chooser's two cards name
-  // the dailies themselves. The card names are display forms — the CSS uppercases them,
-  // like the language cards' native names.
-  ariaChangeMode: { en: 'Change game mode', fr: 'Changer de mode de jeu' },
-  modeSentence: { en: 'Sentence', fr: 'Phrase' },
-  modeWord: { en: 'Word', fr: 'Mot' },
-  // ── WHICH PUZZLE (2026-08-30, user-decided) ────────────────────────────────────────
-  // The header's left slot names the daily you are on, and one sheet behind it holds every
-  // axis of "which puzzle am I playing": the language, the daily, and the day. They were
-  // three separate controls in three places — a centred segmented switcher, a date chip and
-  // a language chip — which is what left the row with no space and the account with no door.
-  puzzleMenu: { en: 'Change puzzle', fr: 'Changer de puzzle' },
-  // THE SAME SELECTION WITH ONE DRUM (2026-09-03): a screen that is not a puzzle has no
-  // daily to name, so what hangs off its title is the LANGUAGE alone — and it says so, or a
-  // reader who cannot see the screen is told they are about to change a puzzle that is not
-  // there.
+  // What hangs off every header title (2026-09-03): the LANGUAGE selection.
   langMenu: { en: 'Change language', fr: 'Changer de langue' },
-  // The DAY row. It flips: from today it offers the calendar, from the calendar (or a past
-  // day) it offers the way back to the live one.
   share: { en: 'SHARE', fr: 'PARTAGER' },
   copied: { en: 'COPIED', fr: 'COPIÉ' },
   // The result screen's ONE onward action (#273): tomorrow's sentence, tonight.
@@ -459,20 +367,6 @@ const STRINGS = {
   // takes the headline itself.
   sourceBy: { en: 'by', fr: 'de' },
   ariaClose: { en: 'close', fr: 'fermer' },
-  // ---- the route drawing (#117): a hole's neighborhood drawn as a LINE you travel. The
-  // line teaches by SHAPE — the terminus, "you are here" and the departure are all said by
-  // a node's size and colour — so it carries no labels at all (the tags ARRIVAL / YOU ARE
-  // HERE / START were removed 2026-07-26). The screen-reader mirror still names every one
-  // of them: see `srRouteStop` below, which spells them out in prose rather than depending
-  // on any of this. The ONE string left is the heading over the words above the line —
-  // guesses that earned no rank at all, so they have no node and no distance to be read
-  // off, and nothing about them can be read off the drawing.
-  // It reads MISSED in BOTH languages (decided 2026-08-05, superseding OFF THE MAP / HORS
-  // CARTE): these words are exactly the ones the round answered with the floating `MISS`,
-  // which is itself untranslated everywhere it appears (the tutorial's fr copy says MISS
-  // too), so the shelf now names them in the vocabulary the player already met rather than
-  // describing where they sit. Untranslated for the same reason MISS is — one label,
-  // identical in every language.
   // The streak celebration's ending hint: pure "what to do" — the whole screen dismisses,
   // so naming a "why" (continue/close — continue to WHAT? the game is done) would only
   // raise a question it can't answer. Pointer-aware: coarse pointers read TAP.
@@ -484,7 +378,6 @@ const STRINGS = {
   streak: { en: 'STREAK', fr: 'STREAK' },
   dayStreak: { en: 'DAY STREAK', fr: 'DAY STREAK' },
   srSolvedAll: { en: 'sentence solved!', fr: 'phrase résolue !' },
-  ariaChangeLanguage: { en: 'Change language', fr: 'Changer de langue' },
   // What the guess PROMPT's own field is called (#267). The line the player reads is a
   // drawing of its value, hidden from assistive tech; this names the thing that holds it.
   ariaGuess: { en: 'your guess', fr: 'votre proposition' },
@@ -497,7 +390,6 @@ const STRINGS = {
   // ---- archive calendar (#55): playable past days behind a calendar screen.
   archive: { en: 'ARCHIVE', fr: 'ARCHIVE' },
   ariaArchive: { en: 'Past puzzles', fr: 'Puzzles précédents' },
-  ariaBackToToday: { en: "Back to today's puzzle", fr: 'Retour au puzzle du jour' },
   // The account area's way OUT, on the header's own title (2026-08-29). The visible words
   // are the screen's NAME; this is what the control is called for a reader.
   ariaBack: { en: 'Back', fr: 'Retour' },
@@ -559,44 +451,11 @@ const STRINGS = {
     en: 'Forgot it? It was [[b:ocean]].',
     fr: "Oublié ? C'était [[b:tropiques]].",
   },
-  // ---- the ending (2026-08-11, superseding the #155 themes tap): the game's second core
-  // concept, word RARITY, in two beats — the claim over the found word, then the five-grade
-  // ladder (RarityLadder) under the line that says what it means. The grade names are the
-  // game's own untranslated vocabulary (COMMON..ARCANE) and come from RARITY_NAMES, never
-  // from a string here. What a grade PAYS is deliberately not stated — that is Word mode's
-  // rule, and it lives on Word mode's own gate (wordRulesBonus).
-  tutRarityIntro: {
-    en: 'One last thing: every word has a rarity.',
-    fr: 'Une dernière chose : chaque mot a une rareté.',
-  },
-  // The ladder line states the CONCEPT and nothing more: rarity is a fact about the
-  // language (user-decided 2026-08-11 — "precious" was Word mode's framing, where a grade
-  // pays the clock, and the tutorial teaches core principles only).
-  tutRarity: {
-    en: 'From everyday words to nearly forgotten ones.',
-    fr: 'Des mots de tous les jours aux mots presque oubliés.',
-  },
-  // One OBVIOUS example word per grade (user-decided 2026-08-11): the ladder teaches by
-  // evidence, so the words are picked for intuition — a very common word for COMMON down
-  // to a genuinely unheard-of one for ARCANE — hand-authored per language, monotone by
-  // feel rather than measured against the corpus.
-  tutRarityExCommon: { en: 'house', fr: 'maison' },
-  tutRarityExUncommon: { en: 'twilight', fr: 'crépuscule' },
-  tutRarityExRare: { en: 'obelisk', fr: 'alambic' },
-  tutRarityExObscure: { en: 'reliquary', fr: 'cénotaphe' },
-  tutRarityExArcane: { en: 'apricity', fr: 'zinzolin' },
-  // The rarity ladder's screen-reader line; the component appends the grade names.
-  srRarityLadder: {
-    en: 'Word rarities, from most common to rarest:',
-    fr: 'Raretés des mots, du plus courant au plus rare :',
-  },
-  // Advances the ending's claim beat — one label for "go on".
-  tutNext: { en: 'NEXT', fr: 'SUIVANT' },
+  // The lesson's wordless ending: the found word stands, and PLAY graduates into the game.
   tutPlay: { en: 'PLAY', fr: 'JOUER' },
-  // ---- the sentence game's one-time PLAY gate (2026-08-11): each mode explains ITS OWN
-  // rules before the first round — Word mode's gate is mandatory (its PLAY starts the
-  // clock), this one exists only for the instructions, so it is shown ONCE ever (the
-  // persisted `sentenceRulesSeen` flag) and PLAY is its whole job. TWO rules, one idea
+  // ---- the sentence game's one-time PLAY gate (2026-08-11): the game's own rules before
+  // the first round, shown ONCE ever (the persisted `sentenceRulesSeen` flag) — PLAY is its
+  // whole job. TWO rules, one idea
   // each — the goal and the history tap, the tap line in the input device's own verb (the
   // tapAnywhere/clickAnywhere pattern). Rendered as BULLETS in the shared rules box
   // (the tutorial's coach dialog — see `.coach-rules`).
@@ -612,7 +471,6 @@ const STRINGS = {
     en: 'Click a word to see your tries on it.',
     fr: 'Clique sur un mot pour revoir tes essais.',
   },
-  // ONE action button for BOTH gates (word mode adopted the sentence gate's PLAY label).
   gatePlay: { en: 'PLAY', fr: 'JOUER' },
   // ---- the profile editor (#188): name + 10×10 palette avatar + the key as backup.
   // Show-don't-tell: terse labels, the surfaces demonstrate themselves.
@@ -625,7 +483,7 @@ const STRINGS = {
   profileNameRejected: { en: 'NAME NOT ALLOWED', fr: 'PSEUDO REFUSÉ' },
   profileAvatarRejected: { en: 'AVATAR NOT ALLOWED', fr: 'AVATAR REFUSÉ' },
   // Untranslated in every language (the user's call, 2026-08-19) — one word everywhere,
-  // like MISS, TOP and the rarity grades.
+  // like MISS and STREAK.
   profileClear: { en: 'CLEAR', fr: 'CLEAR' },
   ariaAvatarEditor: { en: 'Avatar editor: tap to paint', fr: "Éditeur d'avatar : touchez pour peindre" },
   ariaPalette: { en: 'Palette', fr: 'Palette' },
@@ -671,7 +529,6 @@ const STRINGS = {
   // showing a member out. The destructive two confirm by changing their own word.
   groupNew: { en: 'NEW GROUP', fr: 'NOUVEAU GROUPE' },
   groupName: { en: 'Group name', fr: 'Nom du groupe' },
-  groupNamePlaceholder: { en: 'NAME', fr: 'NOM' },
   // Explicit (user-decided 2026-09-14: "CREATE is not very explicit").
   groupCreate: { en: 'CREATE GROUP', fr: 'CRÉER UN GROUPE' },
   groupMembers: { en: 'Members', fr: 'Membres' },
@@ -753,21 +610,6 @@ export function tn(lang: string, key: UiKey, n: number): string {
   return t(lang, key).replace('{n}', String(n));
 }
 
-// The other placeholder: a DEVICE named inside its own sentence (#217 — "Started on
-// iPhone / Chrome."). The label is a name, so it takes a placeholder rather than being
-// concatenated onto a fragment — the two languages are free to put it where they want it.
-export function tDevice(lang: string, key: UiKey, device: string): string {
-  return t(lang, key).replace('{device}', device);
-}
-
-// Restarting always replaces a server-held Word run, but the owner changes how that cost
-// should be said: name a genuinely different device; call the device in hand "this device".
-export function wordRestartNote(lang: string, device: string, sameDevice: boolean): string {
-  return sameDevice
-    ? t(lang, 'wordRestartHereNote')
-    : tDevice(lang, 'wordRestartNote', device);
-}
-
 // Screen-reader feedback for one hole's reaction to a guess (the visual equivalent is
 // the floating distance number / "MISS"). `rank` is the guess's rank for that hole,
 // or null when it is too far (not in the top-K map). Holes are numbered 1-based in
@@ -820,9 +662,6 @@ export function srRouteStop(
   stop: {
     rank: number;
     word: string | null;
-    // What the word board says in a station word's COLOUR (#163). Untranslated like the
-    // grades are everywhere else on screen — one word per grade, identical in every language.
-    rarity?: string;
     start?: boolean;
     best?: boolean;
     // The history line's backwards stretch: farther than the departure, said in prose the
@@ -833,98 +672,15 @@ export function srRouteStop(
   const fr = uiLang(lang) === 'fr';
   const parts = [fr ? `rang ${stop.rank}` : `rank ${stop.rank}`];
   parts.push(stop.word ?? (fr ? 'caché' : 'hidden'));
-  if (stop.rarity) parts.push(stop.rarity);
   if (stop.start) parts.push(fr ? 'départ' : 'start');
   if (stop.best) parts.push(fr ? 'vous êtes ici' : 'you are here');
   if (stop.behind) parts.push(fr ? 'derrière le départ' : 'behind the start');
   return parts.join(' — ');
 }
 
-// ---- Word mode (#156). The board drawing is decorative like the route map's; these
-// carry it — and the per-guess outcomes — in words.
-export function srWordBoardWord(lang: string, word: string): string {
-  return uiLang(lang) === 'fr' ? `mot du jour : ${word}` : `word of the day: ${word}`;
-}
-
-// The board's census: what the sighted player reads off the station words' colours is how the
-// field is DISTRIBUTED across the rarity ladder — where the expensive words were. Stated as a
-// count rather than item by item: a few hundred entries of "rank 87, hidden" would bury the
-// words the player actually knows. The grade names are untranslated, exactly as they are on
-// screen; the prose around them is the reader's own language.
-export function srWordRarities(
-  lang: string,
-  perGrade: readonly { grade: string; count: number }[],
-  found: number,
-): string {
-  const total = perGrade.reduce((n, g) => n + g.count, 0);
-  const split = perGrade.map((g) => `${g.grade} ${g.count}`).join(', ');
-  return uiLang(lang) === 'fr'
-    ? `voisinage : ${total} arrêts par rareté (${split}), ${found} trouvés`
-    : `neighborhood: ${total} stops by rarity (${split}), ${found} found`;
-}
-
-// The END SCREEN's breakdown, the visible chip row said in words: each grade the run
-// claimed and its count, ladder order (zero grades are not on screen either). The grade
-// names are untranslated, exactly as they are on screen; the prose is the reader's own.
-export function srWordBreakdown(
-  lang: string,
-  perGrade: readonly { grade: string; count: number }[],
-): string {
-  const split = perGrade.map((g) => `${g.grade} ${g.count}`).join(', ');
-  return uiLang(lang) === 'fr' ? `par rareté : ${split}` : `by rarity: ${split}`;
-}
-
-// A CLAIM: what it was, its RARITY GRADE, the running count, and the seconds it bought.
-// The grade replaces the rank the exponent used to carry (#163) — the same thing the
-// sighted player reads off the word — and the grade names stay untranslated, exactly as
-// they are on screen.
-export function srWordClaim(
-  lang: string,
-  word: string,
-  rarity: string,
-  total: number,
-  gained: number,
-): string {
-  if (uiLang(lang) === 'fr') {
-    return `${word} trouvé — ${rarity}, ${total} mots, +${gained} s`;
-  }
-  return `claimed ${word} — ${rarity}, ${total} words, +${gained}s`;
-}
-
-// A guess that claimed nothing, whether it was ranked just outside the zone or nowhere on
-// the map at all: the run cannot use it either way, and it costs only the seconds spent
-// typing it. The spoken twin of the MISS the word floats — the exact distance of an
-// unclaimable word is a number a player racing a clock can do nothing with, and it is kept
-// where it still teaches, on the post-mortem's trunk.
-export function srWordMiss(lang: string): string {
-  return uiLang(lang) === 'fr' ? 'raté' : 'miss';
-}
-
-// The clock, read on demand rather than announced: `role="timer"` is a live region that
-// defaults to OFF, which is the whole point — a number changing every second must never
-// be spoken every second.
 // The early-play countdown (#273): what the clock that took the keyboard's place means —
 // the round continues at the day's flip. Whole minutes: it is a wait, not a run.
 export function srEarlyClock(lang: string, minutes: number): string {
   if (uiLang(lang) === 'fr') return `La partie reprend dans ${minutes} minutes`;
   return `The round continues in ${minutes} minutes`;
-}
-
-export function srWordClock(lang: string, seconds: number): string {
-  if (uiLang(lang) === 'fr') return `${seconds} secondes restantes`;
-  return `${seconds} seconds left`;
-}
-
-// The same clock BEFORE the run starts, when it previews the full length: "N seconds
-// left" would claim a countdown is running, and it is not — the gate's clock is a fact
-// about the run ahead, not time draining away.
-export function srWordClockIdle(lang: string, seconds: number): string {
-  if (uiLang(lang) === 'fr') return `chrono de ${seconds} secondes`;
-  return `${seconds}-second clock`;
-}
-
-// The run's end, announced once when the clock reaches zero.
-export function srWordTimeUp(lang: string, total: number): string {
-  if (uiLang(lang) === 'fr') return `temps écoulé — ${total} mots`;
-  return `time up — ${total} words`;
 }

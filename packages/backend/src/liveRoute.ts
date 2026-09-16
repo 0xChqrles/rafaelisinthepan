@@ -1,8 +1,8 @@
 // Shared plumbing of the LIVE routes (/scores, /profile, /groups, /board, /round): the
 // no-store header, the JSON-body reader with its size cap, the #216 device-token
 // authentication (`requireDevice`, which replaced the #187 secret check), the Turnstile
-// token check the gated writes share, and the (lang, mode, date) query guard
-// triple the day-addressed reads share. Each of these existed as a byte-identical copy
+// token check the gated writes share, and the (lang, date) query guard pair the
+// day-addressed reads share. Each of these existed as a byte-identical copy
 // per route (four by the time /board landed) — one spelling here is what keeps a guard
 // from quietly drifting between routes.
 
@@ -15,7 +15,6 @@ import {
   type DeviceStore,
   type ResolvedDevice,
 } from './deviceStore';
-import type { ScoreMode } from './scoreLimits';
 import { errorResponse, type FnUrlEvent, type FnUrlResult } from './respond';
 
 export const LIVE_HEADERS = { 'Cache-Control': 'no-store' } as const;
@@ -149,10 +148,9 @@ function header(event: FnUrlEvent, name: string): string | undefined {
 // viewer-supplied X-Forwarded-For chain is deliberately read by nothing here. Local serve
 // has no CDN and supplies requestContext.http.sourceIp instead.
 //
-// It lives HERE, with the other live plumbing, because the Turnstile-gated writes both need
-// it: /scores hashes it for the IP dedup, and #202's word round start hands it to
-// Siteverify. A second route reaching into /scores for it would make that file a utility
-// module for routes it knows nothing about.
+// It lives HERE, with the other live plumbing, because several routes need it: the round
+// route hashes it for the score row's IP dedup and hands it to Siteverify on a round start,
+// and the device bootstrap and the link send verify their challenges against it.
 export function clientIp(event: FnUrlEvent, allowSourceIp = false): string | null {
   const viewer = header(event, VIEWER_IP_HEADER);
   if (viewer && isIP(viewer)) return viewer;
@@ -166,9 +164,9 @@ export function clientIp(event: FnUrlEvent, allowSourceIp = false): string | nul
 // hand Siteverify a megabyte.
 export const TURNSTILE_TOKEN_MAX_LENGTH = 2_048;
 
-// The Turnstile-gated writes' shared token check (/scores' submission, #202's word round
-// start). A missing or implausible token is refused as the authentication failure it is,
-// before any network call is made.
+// The Turnstile-gated writes' shared token check (a round start, a device bootstrap, a link
+// code send). A missing or implausible token is refused as the authentication failure it
+// is, before any network call is made.
 export function requireTurnstileToken(
   body: Record<string, unknown>,
   headers: Record<string, string>,
@@ -186,27 +184,25 @@ export function requireTurnstileToken(
   return { ok: true, value: token };
 }
 
-export interface GameParams {
+interface LangParams {
   lang: string;
-  mode: ScoreMode;
 }
 
-export interface DayParams extends GameParams {
+export interface DayParams extends LangParams {
   date: string;
 }
 
-// WHICH GAME a live route is being asked about: a supported language and an explicit mode.
-// A supported language is one the pipeline has built a vocabulary for (#200's generated
-// metadata), which is the same set the score ceiling is read from. `Object.hasOwn` and not
-// an index read — a bare `map[lang] === undefined` walks the prototype chain, so
+// WHICH DAILY a live route is being asked about: a supported language. A supported language
+// is one the pipeline has built a vocabulary for (#200's generated metadata). `Object.hasOwn`
+// and not an index read — a bare `map[lang] === undefined` walks the prototype chain, so
 // `constructor`/`toString` would pass as "supported languages" and reach the store key.
 //
-// Split out from the day-addressed triple below with #211: the private history read is
-// addressed by a MONTH rather than a day, so it needs these two and not the third.
-export function requireGameParams(
+// Split out from the day-addressed pair below with #211: the private history read is
+// addressed by a MONTH rather than a day, so it needs the language and not the date.
+export function requireLangParams(
   event: FnUrlEvent,
   headers: Record<string, string>,
-): Guarded<GameParams> {
+): Guarded<LangParams> {
   const lang = event.queryStringParameters?.lang;
   if (!lang || !Object.hasOwn(VOCAB_BUILDS, lang)) {
     return refuse(
@@ -222,30 +218,19 @@ export function requireGameParams(
       ),
     );
   }
-  const mode = event.queryStringParameters?.mode;
-  if (mode !== 'sentence' && mode !== 'word') {
-    return refuse(
-      errorResponse(
-        400,
-        'bad_request',
-        'Query parameter "mode" is required and must be "sentence" or "word".',
-        headers,
-      ),
-    );
-  }
-  return { ok: true, value: { lang, mode } };
+  return { ok: true, value: { lang } };
 }
 
 // The protocol guards the day-addressed live routes share (/scores, /board, /round): which
-// game, plus a real date no further than one day ahead of the server's own active day.
+// language, plus a real date no further than one day ahead of the server's own active day.
 export function requireDayParams(
   event: FnUrlEvent,
   serverDate: string,
   headers: Record<string, string>,
 ): Guarded<DayParams> {
-  const game = requireGameParams(event, headers);
+  const game = requireLangParams(event, headers);
   if (!game.ok) return game;
-  const { lang, mode } = game.value;
+  const { lang } = game.value;
   const date = event.queryStringParameters?.date;
   if (!date || !isValidDate(date)) {
     return refuse(
@@ -268,5 +253,5 @@ export function requireDayParams(
       ),
     );
   }
-  return { ok: true, value: { lang, mode, date } };
+  return { ok: true, value: { lang, date } };
 }

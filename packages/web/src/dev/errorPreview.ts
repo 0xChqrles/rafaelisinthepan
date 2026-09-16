@@ -19,7 +19,6 @@ export const ERROR_VARIANTS = {
   // The one production reported on 2026-08-27, and the longest note.
   account: { title: 'failedAccount', note: 'failedAccountNote' },
   share: { title: 'failedShare', note: 'failedShareNote' },
-  start: { title: 'failedStart', note: 'failedStartNote' },
   join: { title: 'failedJoin', note: 'failedJoinNote' },
   group: { title: 'failedGroup', note: 'failedGroupNote' },
   save: { title: 'profileSaveFailed', note: 'failedSaveNote' },

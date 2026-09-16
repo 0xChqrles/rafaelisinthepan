@@ -4,7 +4,6 @@ import {
   dayNumber,
   decodeLegacyShareTarget,
   decodeResult,
-  decodeWordResult,
   nextResetAt,
   secondsUntilNextReset,
   GROUP_ID_PATTERN,
@@ -35,8 +34,6 @@ import {
   renderGroupCardPng,
   renderGroupHtml,
   renderShareHtml,
-  renderWordCardPng,
-  renderWordShareHtml,
   type ShareSigner,
 } from './ogCard';
 import { isValidDate } from './layout';
@@ -79,9 +76,9 @@ export interface HandlerDeps {
   // The device ROUTE's own extras (#216): the Turnstile verifier its bootstrap is gated
   // by, and the local-adapter address trust flag.
   devices?: DeviceHandlerDeps;
-  // The per-round guess log (#201), Word mode's two writes (#202) and the derived score
-  // (#203), same optionality rationale. It carries a Turnstile verifier of its own because
-  // ROUND START is gated in both modes, the score store because a finished round is
+  // The per-round guess log (#201) and the derived score (#203), same optionality
+  // rationale. It carries a Turnstile verifier of its own because ROUND START is gated,
+  // the score store because a finished round is
   // now what records the day's population, and the player-history store because a confirmed
   // solve credits the streak's solved day (#211) — which is also what `/history` reads.
   rounds?: RoundHandlerDeps;
@@ -285,7 +282,6 @@ export function createHandler(deps: HandlerDeps) {
           }
         }
         const result = decodeResult(token);
-        const word = result ? null : decodeWordResult(token);
         if (ogMatch) {
           // The DECODED result is handed straight to the renderer: `CardData` IS
           // `ShareResult`, so re-listing its fields here is a second declaration of the
@@ -295,10 +291,6 @@ export function createHandler(deps: HandlerDeps) {
           if (result) {
             return png(200, await renderCardPng(result, by), { 'Cache-Control': cacheControl });
           }
-          // Word mode's token (#156): its own format in the same version namespace.
-          if (word) {
-            return png(200, await renderWordCardPng(word, by), { 'Cache-Control': cacheControl });
-          }
           return errorResponse(404, 'not_found', 'Invalid share token.', cors);
         }
         // Canonical apex origin for both the og:image and the game redirect (so they never
@@ -307,11 +299,6 @@ export function createHandler(deps: HandlerDeps) {
         const base = deps.siteOrigin ?? requestOrigin(event);
         if (result) {
           const body = renderShareHtml(token, result, base, by);
-          return html(200, body, { 'Cache-Control': cacheControl });
-        }
-        // Word mode's token (#156): its own share page, click-through to the word route.
-        if (word) {
-          const body = renderWordShareHtml(token, word, base, by);
           return html(200, body, { 'Cache-Control': cacheControl });
         }
         // A SUPERSEDED token (v1's bucketed squares can't feed the v2 ruler) still names a
@@ -386,9 +373,8 @@ export function createHandler(deps: HandlerDeps) {
       if (isRoundRoute) {
         if (!deps.rounds) throw new Error('Round state sync is not configured.');
         if (!deps.deviceStore) throw new Error('Device identity is not configured.');
-        // The puzzle store is read on THREE paths here since #203 — the sentence append's
-        // derivation slice, the full artifact a solve is scored from, and Word mode's
-        // end-of-run submission (#202).
+        // The puzzle store is read on TWO paths here since #203 — the append's derivation
+        // slice, and the full artifact a solve is scored from.
         return await handleRound(event, deps.store, deps.deviceStore, deps.rounds, date, instant, cors);
       }
 
@@ -444,20 +430,6 @@ export function createHandler(deps: HandlerDeps) {
         );
       }
 
-      // Which daily artifact (#156): the sentence puzzle (default) or Word mode's #154
-      // single-word artifact. The mode is part of the URL, so the CDN caches the two
-      // dailies as distinct entries; an unknown value is a protocol violation.
-      const rawMode = event.queryStringParameters?.mode;
-      if (rawMode !== undefined && rawMode !== 'sentence' && rawMode !== 'word') {
-        return errorResponse(
-          400,
-          'bad_request',
-          'Query parameter "mode" must be "sentence" or "word" when present.',
-          cors,
-        );
-      }
-      const mode = rawMode ?? 'sentence';
-
       // The puzzle endpoint is DATE-addressed: the client computes the active 22:00-ET
       // day (shared day.ts) and names it explicitly, so what is served is exactly what
       // was asked. A missing or malformed date is a protocol violation.
@@ -487,16 +459,13 @@ export function createHandler(deps: HandlerDeps) {
         );
       }
 
-      const puzzle =
-        mode === 'word'
-          ? await deps.store.getWordPuzzle(requestedDate, lang)
-          : await deps.store.getPuzzle(requestedDate, lang);
+      const puzzle = await deps.store.getPuzzle(requestedDate, lang);
       if (puzzle == null) {
         // Missing puzzle is a clean 404, never a 500.
         return errorResponse(
           404,
           'not_found',
-          `No ${mode === 'word' ? 'word puzzle' : 'puzzle'} for ${requestedDate} (${lang}).`,
+          `No puzzle for ${requestedDate} (${lang}).`,
           { ...cors, 'Cache-Control': NOT_FOUND_CACHE_CONTROL },
           { date: requestedDate, lang },
         );

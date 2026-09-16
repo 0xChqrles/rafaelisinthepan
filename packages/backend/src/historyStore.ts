@@ -28,7 +28,7 @@ export interface PlayerHistoryStore {
 export const historyPartition = profileKey;
 
 // Per LANGUAGE, because the streak is: a solved day belongs to the language it was solved
-// in, and Word mode's runs never touch it (#156), so there is no mode in this key.
+// in.
 export function historySortKey(lang: string): string {
   return `history#${lang}`;
 }

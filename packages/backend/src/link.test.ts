@@ -23,7 +23,6 @@ import { seedDevice } from './testDevice';
 
 const emptyStore: PuzzleStore = {
   getPuzzle: async () => null,
-  getWordPuzzle: async () => null,
   getSlice: async () => null,
 };
 
@@ -476,7 +475,7 @@ describe('email account linking (#204) — one transaction owns the adoption', (
     }
     const first = await seedDevice(h.devices);
     const second = await seedDevice(h.devices, { accountId: first.accountId });
-    const key = { date: DATE, lang: 'fr', mode: 'sentence' as const };
+    const key = { date: DATE, lang: 'fr' };
     await h.rounds.append({
       ...key,
       publicId: first.accountId,
@@ -755,7 +754,7 @@ describe('email account linking (#204) — the active-day transfer', () => {
     // Someone plays today on a brand-new device, THEN links. Without the transfer they
     // would watch that round get erased.
     const playing = await seedDevice(h.devices);
-    const key = { date: DATE, lang: 'fr', mode: 'sentence' as const };
+    const key = { date: DATE, lang: 'fr' };
     await h.rounds.append({
       ...key,
       publicId: playing.accountId,
@@ -806,7 +805,7 @@ describe('email account linking (#204) — the active-day transfer', () => {
         code: await askForCode(h, saved.token, 'zoe@example.com'),
       }),
     );
-    const key = { date: DATE, lang: 'fr', mode: 'sentence' as const };
+    const key = { date: DATE, lang: 'fr' };
     await h.rounds.append({
       ...key,
       publicId: saved.accountId,
@@ -843,168 +842,7 @@ describe('email account linking (#204) — the active-day transfer', () => {
       guesses: ['souris'],
     });
   });
-
-  // THE REGRESSION (PR-227 review): a Word run that claimed NOTHING records an EMPTY log —
-  // #202 makes `submittedAt` its marker, never the log's length — and a real score row of
-  // 0. Read as "no guesses", it is indistinguishable from a run merely STARTED, so the
-  // transfer left it behind and the player's recorded, unrepeatable day was deleted with
-  // the account. It must MOVE, score row and all.
-  it('carries a SUBMITTED Word run that claimed nothing — with its score of 0', async () => {
-    const h = harness();
-    const saved = await seedDevice(h.devices);
-    await h.handler(
-      post({
-        token: saved.token,
-        email: 'zoe@example.com',
-        code: await askForCode(h, saved.token, 'zoe@example.com'),
-      }),
-    );
-
-    const key = { date: DATE, lang: 'fr', mode: 'word' as const };
-    const playing = await seedDevice(h.devices);
-    await h.rounds.start({
-      ...key,
-      publicId: playing.accountId,
-      puzzle: 'rev1',
-      runner: {
-        deviceId: playing.deviceId,
-        device: 'iPhone',
-        os: 'iOS',
-        browser: 'Chrome',
-      },
-      now: NOW,
-    });
-    await h.rounds.submit({
-      ...key,
-      publicId: playing.accountId,
-      puzzle: 'rev1',
-      deviceId: playing.deviceId,
-      guesses: [],
-      minElapsedMs: 0,
-      now: NOW,
-    });
-    await h.scores.submit({
-      ...key,
-      publicId: playing.accountId,
-      score: 0,
-      submittedAt: NOW.toISOString(),
-      revision: 'rev1',
-      ipHash: 'iphash',
-      expiresAt: Math.floor(NOW.getTime() / 1000) + 3600,
-      requestToken: 'tok',
-    });
-
-    const answer = await h.handler(
-      post({
-        token: playing.token,
-        email: 'zoe@example.com',
-        code: await askForCode(h, playing.token, 'zoe@example.com'),
-      }),
-    );
-    expect(answer.statusCode).toBe(200);
-
-    // The recorded run moved WHOLE — its empty log, and the submission stamp that says it
-    // is a finished day.
-    const moved = await h.rounds.get(key, saved.accountId, 'rev1');
-    expect(moved?.guesses).toEqual([]);
-    expect(moved?.submittedAt).toBeTruthy();
-    await expect(h.rounds.get(key, playing.accountId, 'rev1')).resolves.toBeNull();
-    // And the score of 0 followed it, exactly as a non-zero one does.
-    await expect(h.scores.list(key)).resolves.toEqual([{ publicId: saved.accountId, score: 0 }]);
-  });
-
-  it('does NOT carry a Word run that was merely STARTED — its claims are on the device', async () => {
-    const h = harness();
-    const saved = await seedDevice(h.devices);
-    await h.handler(
-      post({
-        token: saved.token,
-        email: 'zoe@example.com',
-        code: await askForCode(h, saved.token, 'zoe@example.com'),
-      }),
-    );
-
-    const key = { date: DATE, lang: 'fr', mode: 'word' as const };
-    const playing = await seedDevice(h.devices);
-    await h.rounds.start({
-      ...key,
-      publicId: playing.accountId,
-      puzzle: 'rev1',
-      runner: {
-        deviceId: playing.deviceId,
-        device: 'iPhone',
-        os: 'iOS',
-        browser: 'Chrome',
-      },
-      now: NOW,
-    });
-
-    await h.handler(
-      post({
-        token: playing.token,
-        email: 'zoe@example.com',
-        code: await askForCode(h, playing.token, 'zoe@example.com'),
-      }),
-    );
-    await expect(h.rounds.get(key, saved.accountId, 'rev1')).resolves.toBeNull();
-  });
-
-  it('lets a submitted 0-claim run at the DESTINATION block a move — both days are recorded', async () => {
-    const h = harness();
-    const saved = await seedDevice(h.devices);
-    await h.handler(
-      post({
-        token: saved.token,
-        email: 'zoe@example.com',
-        code: await askForCode(h, saved.token, 'zoe@example.com'),
-      }),
-    );
-
-    const key = { date: DATE, lang: 'fr', mode: 'word' as const };
-    const runner = (deviceId: string) => ({
-      deviceId,
-      device: 'iPhone',
-      os: 'iOS',
-      browser: 'Chrome',
-    });
-    // The DESTINATION already recorded an empty run of its own.
-    await h.rounds.start({ ...key, publicId: saved.accountId, puzzle: 'rev1', runner: runner(saved.deviceId), now: NOW });
-    await h.rounds.submit({
-      ...key,
-      publicId: saved.accountId,
-      puzzle: 'rev1',
-      deviceId: saved.deviceId,
-      guesses: [],
-      minElapsedMs: 0,
-      now: NOW,
-    });
-
-    const playing = await seedDevice(h.devices);
-    await h.rounds.start({ ...key, publicId: playing.accountId, puzzle: 'rev1', runner: runner(playing.deviceId), now: NOW });
-    await h.rounds.submit({
-      ...key,
-      publicId: playing.accountId,
-      puzzle: 'rev1',
-      deviceId: playing.deviceId,
-      guesses: ['chat'],
-      minElapsedMs: 0,
-      now: NOW,
-    });
-
-    await h.handler(
-      post({
-        token: playing.token,
-        email: 'zoe@example.com',
-        code: await askForCode(h, playing.token, 'zoe@example.com'),
-      }),
-    );
-    // The destination's own recorded day stands; the source's dies with its account.
-    const held = await h.rounds.get(key, saved.accountId, 'rev1');
-    expect(held?.guesses).toEqual([]);
-    expect(held?.submittedAt).toBeTruthy();
-  });
 });
-
 
 // CONTRACT (user-decided, PR-227 review): the send order is SPEND -> STORE -> SEND, and a
 // failed or ambiguous SES call is FAIL-CLOSED. Nothing is refunded and nothing is rolled

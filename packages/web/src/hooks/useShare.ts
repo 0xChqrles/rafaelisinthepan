@@ -1,15 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { track } from '../analytics';
 
-// How a RESULT leaves the app, for every daily. Both modes end on the same gesture — a
-// touch device gets its native share sheet, everything else copies the text and says so —
-// and the details are the whole of it: the AbortError that means "the user closed the
-// sheet" (not a failure to fall back from), the clipboard call that legitimately throws in
-// an insecure context, and the confirmation that has to be cleared on unmount. Shared
-// (2026-08-06) rather than written once per result screen, which is how the sentence and
-// word screens ended up with two copies of it.
+// How something leaves the app: a touch device gets its native share sheet, everything else
+// copies the text and says so — and the details are the whole of it: the AbortError that
+// means "the user closed the sheet" (not a failure to fall back from), the clipboard call
+// that legitimately throws in an insecure context, and the confirmation that has to be
+// cleared on unmount.
 //
-// The caller owns the TEXT (each mode's headline, its token, its row) and the label; this
+// The caller owns the TEXT (the result's headline, its token, its row) and the label; this
 // owns the delivery and — for a RESULT — the `share` analytics event. `tracked: false`
 // opts a non-result caller (the #190 invite link) out of the event: the pinned `share`
 // metric means "a result left the app" (the three-event invariant), and counting invites

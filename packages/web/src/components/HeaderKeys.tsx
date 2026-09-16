@@ -34,7 +34,7 @@ import CalendarIcon from '../assets/icons/calendar.svg?react';
 import BoardIcon from '../assets/icons/board.svg?react';
 import RulesIcon from '../assets/icons/rules.svg?react';
 import { t } from '../i18n';
-import { pathForArchive, pathForBoard, pathForMode, type Mode } from '../langs';
+import { pathForArchive, pathForBoard, pathForGame } from '../langs';
 import { navigate } from '../routing';
 
 export type HeaderPlace = 'home' | 'archive' | 'board' | 'rules' | 'account';
@@ -70,7 +70,6 @@ function hasMouse(): boolean {
 
 export default function HeaderKeys({
   lang,
-  mode,
   on,
   // An archive PLAY is on screen — a day other than today's, which is the archive's, so
   // `on` is 'archive' — rather than the calendar itself.
@@ -80,7 +79,6 @@ export default function HeaderKeys({
   leave,
 }: {
   lang: string;
-  mode: Mode;
   on: HeaderPlace;
   archivePlay?: boolean;
   leave?: () => void;
@@ -181,9 +179,9 @@ export default function HeaderKeys({
     >
       {mouse && <span ref={hoverDot} className="hk-dot hk-dot-hover" aria-hidden="true" />}
       <span ref={dot} className="hk-dot" aria-hidden="true" />
-      {key('home', t(lang, 'ariaHome'), pathForMode(lang, mode), HomeIcon)}
-      {key('archive', t(lang, 'ariaArchive'), pathForArchive(lang, mode), CalendarIcon)}
-      {key('board', t(lang, 'ariaLeaderboard'), pathForBoard(lang, mode), BoardIcon)}
+      {key('home', t(lang, 'ariaHome'), pathForGame(lang), HomeIcon)}
+      {key('archive', t(lang, 'ariaArchive'), pathForArchive(lang), CalendarIcon)}
+      {key('board', t(lang, 'ariaLeaderboard'), pathForBoard(lang), BoardIcon)}
       {/* The RULES — the onboarding tutorial (#51), lit while it is open. It mounts on the
           game route, so from anywhere else the tap goes home with it. */}
       <button
@@ -194,7 +192,7 @@ export default function HeaderKeys({
         onClick={() => {
           if (on === 'rules') return;
           openTutorial('replay');
-          if (on !== 'home') go(pathForMode(lang, mode));
+          if (on !== 'home') go(pathForGame(lang));
         }}
       >
         <RulesIcon className="ui-icon" aria-hidden />

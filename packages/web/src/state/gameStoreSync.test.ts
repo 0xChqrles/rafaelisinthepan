@@ -20,12 +20,10 @@ import {
   type IdentityOwner,
   type PersistedState,
 } from './gameStore';
-import { runMs } from '../game/wordGame';
 
 const A: IdentityOwner = { accountId: 'a'.repeat(16), deviceId: 'd'.repeat(16) };
 const B: IdentityOwner = { accountId: 'b'.repeat(16), deviceId: 'e'.repeat(16) };
 const REV = 'a1b2c3d4e5f60718';
-const T0 = 1_700_000_000_000;
 
 let serial = 0;
 let databaseName = '';
@@ -133,9 +131,6 @@ describe('transactional cross-tab game persistence', () => {
     await mutate(activeTab, {
       type: 'appendOutbox', key: 'd:5:fr', puzzle: REV, typed: 'private-a', expectedOwner: A,
     });
-    await mutate(activeTab, {
-      type: 'ensureWordRound', key: 'w:5:fr', word: 'phare', expectedOwner: A,
-    });
 
     await mutate(staleTab, {
       type: 'reconcileIdentity',
@@ -144,7 +139,7 @@ describe('transactional cross-tab game persistence', () => {
       pendingBootstrap: false,
     });
 
-    expect(await read(activeTab)).toMatchObject({ identityOwner: B, outbox: {}, wordRounds: {} });
+    expect(await read(activeTab)).toMatchObject({ identityOwner: B, outbox: {} });
   });
 
   it('an old identity’s delayed mutation cannot write into the replacement identity', async () => {
@@ -224,100 +219,6 @@ describe('transactional cross-tab game persistence', () => {
     expect(established === 'a'.repeat(16) || established === 'b'.repeat(16)).toBe(true);
     await mutate(first, { type: 'ensureLocalSeed', seed: 'c'.repeat(16) });
     expect((await read(second)).localSeed).toBe(established);
-  });
-
-  it('serializes same-run Word guesses and recomputes the cache from the committed log', async () => {
-    const first = tab();
-    const second = tab();
-    await seed(first, {
-      ...initialPersistedState(),
-      identityOwner: A,
-      wordRounds: {
-        'w:5:fr': {
-          word: 'phare',
-          startedAt: T0,
-          deadline: T0 + runMs(0),
-          tried: [],
-          claimed: 0,
-        },
-      },
-    });
-    const replay = (tried: string[]) => ({ claimed: tried.length, bonus: tried.length * 3 });
-
-    await Promise.all([
-      mutate(first, {
-        type: 'recordWordGuess',
-        key: 'w:5:fr',
-        word: 'phare',
-        typed: 'mer',
-        now: T0,
-        replay,
-        expectedOwner: A,
-      }),
-      mutate(second, {
-        type: 'recordWordGuess',
-        key: 'w:5:fr',
-        word: 'phare',
-        typed: 'sel',
-        now: T0,
-        replay,
-        expectedOwner: A,
-      }),
-    ]);
-
-    const round = (await read(first)).wordRounds['w:5:fr'];
-    expect(round).toMatchObject({
-      claimed: 2,
-      deadline: T0 + runMs(6),
-    });
-    expect([...(round?.tried ?? [])].sort()).toEqual(['mer', 'sel']);
-  });
-
-  it('rejects delayed Word writes for a word a sibling already replaced', async () => {
-    const staleTab = tab();
-    const activeTab = tab();
-    await seed(staleTab, {
-      ...initialPersistedState(),
-      identityOwner: A,
-      wordRounds: {
-        'w:5:fr': {
-          word: 'phare',
-          startedAt: T0,
-          deadline: T0 + runMs(0),
-          tried: [],
-          claimed: 0,
-        },
-      },
-    });
-    await mutate(activeTab, {
-      type: 'ensureWordRound', key: 'w:5:fr', word: 'ocean', expectedOwner: A,
-    });
-
-    await mutate(staleTab, {
-      type: 'recordWordGuess',
-      key: 'w:5:fr',
-      word: 'phare',
-      typed: 'mer',
-      now: T0,
-      replay: (tried) => ({ claimed: tried.length, bonus: 0 }),
-      expectedOwner: A,
-    });
-    await mutate(staleTab, {
-      type: 'settleWordRun',
-      key: 'w:5:fr',
-      word: 'phare',
-      claimed: 7,
-      now: T0,
-      expectedOwner: A,
-    });
-
-    expect((await read(activeTab)).wordRounds['w:5:fr']).toEqual({
-      word: 'ocean',
-      startedAt: null,
-      deadline: null,
-      tried: [],
-      claimed: 0,
-    });
   });
 });
 

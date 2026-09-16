@@ -48,8 +48,8 @@ const WIDTH_BUDGET = 0.88;
 const MAX_PX = 48;
 const MIN_PX = 6;
 // The width budget is spent on at least TWO digits, whatever the number currently is
-// (decided 2026-08-09). Both watermarks count PLAY — tries, claims — so both cross 10
-// within the first minute, and the width cap is what bites on a phone: a watermark is
+// (decided 2026-08-09). The watermark counts tries, so it crosses 10 early in a round,
+// and the width cap is what bites on a phone: a watermark is
 // the screen's fixed furniture, and it must not resize because the game went well. So
 // the number is sized for the widest 2-digit value it could become and merely rendered
 // at whatever it is. Beyond two digits it does move (there is no honest way to reserve

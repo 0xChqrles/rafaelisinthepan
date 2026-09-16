@@ -1,26 +1,20 @@
 // CONTRACT (#216): local state follows the identity that owns it — and ACQUIRING a first
 // identity is not the same event as LEAVING one.
 //
-// A bootstrap is triggered BY a deploy button: Sentence PLAY, Word PLAY, an invite or
-// Profile SAVE. The state on screen when it lands is therefore the state that ASKED for it,
-// including a recovered pending bootstrap's outbox and the `wordRounds` entry the Word start
-// answer checks itself against. Clearing is for leaving an identity behind.
+// A bootstrap is triggered BY a deploy button: PLAY, an invite or Profile SAVE. The state on
+// screen when it lands is therefore the state that ASKED for it, including a recovered
+// pending bootstrap's outbox. Clearing is for leaving an identity behind.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const resets = vi.hoisted(() => ({ round: vi.fn(), word: vi.fn(), history: vi.fn() }));
-const rearms = vi.hoisted(() => ({ round: vi.fn(), word: vi.fn(), history: vi.fn() }));
-const kicks = vi.hoisted(() => ({ round: vi.fn(), word: vi.fn() }));
+const resets = vi.hoisted(() => ({ round: vi.fn(), history: vi.fn() }));
+const rearms = vi.hoisted(() => ({ round: vi.fn(), history: vi.fn() }));
+const kicks = vi.hoisted(() => ({ round: vi.fn() }));
 
 vi.mock('./roundSync', () => ({
   resetRoundSync: resets.round,
   rearmRoundSync: rearms.round,
   kickRoundSync: kicks.round,
-}));
-vi.mock('./wordRoundSync', () => ({
-  resetWordRoundSync: resets.word,
-  rearmWordRoundSync: rearms.word,
-  kickWordRoundSync: kicks.word,
 }));
 vi.mock('./history', () => ({
   resetPlayerHistory: resets.history,
@@ -46,7 +40,6 @@ function announce(
     previous,
     next,
     accountChanged: (previous?.accountId ?? null) !== (next?.accountId ?? null),
-    deviceChanged: (previous?.deviceId ?? null) !== (next?.deviceId ?? null),
     adopted: previous === null && next !== null && !minted,
   };
   // `installIdentityScope` registers the only listener under test; calling it through the
@@ -68,25 +61,16 @@ vi.mock('../identity', async (importOriginal) => {
 
 const seeded = () => ({
   outbox: { 'd:5:fr': { puzzle: 'rev', guesses: ['bois'] } },
-  wordRounds: {
-    'w:5:fr': { word: 'phare', startedAt: 1, deadline: 2, tried: ['mer'], claimed: 1 },
-  },
 });
 
 beforeEach(() => {
   listeners.length = 0;
   resets.round.mockReset();
-  resets.word.mockReset();
   resets.history.mockReset();
   rearms.round.mockReset();
-  rearms.word.mockReset();
   rearms.history.mockReset();
   kicks.round.mockReset();
-  kicks.word.mockReset();
-  useGameStore.setState(
-    { ...seeded(), identityOwner: null, roundLoads: {}, activeWordKey: null },
-    false,
-  );
+  useGameStore.setState({ ...seeded(), identityOwner: null, roundLoads: {} }, false);
   installIdentityScope();
 });
 
@@ -94,11 +78,9 @@ describe('acquiring a FIRST identity (#216)', () => {
   it('clears NOTHING — the state on screen is what asked for the bootstrap', () => {
     announce(null, A);
     expect(resets.round).not.toHaveBeenCalled();
-    expect(resets.word).not.toHaveBeenCalled();
     expect(resets.history).not.toHaveBeenCalled();
     // The guess that triggered the bootstrap is still owed to the account it just got.
     expect(useGameStore.getState().outbox).toEqual(seeded().outbox);
-    expect(useGameStore.getState().wordRounds).toEqual(seeded().wordRounds);
     expect(useGameStore.getState().identityOwner).toEqual({
       accountId: A.accountId,
       deviceId: A.deviceId,
@@ -108,31 +90,25 @@ describe('acquiring a FIRST identity (#216)', () => {
   it('a MINTED first identity re-arms nothing — the account is empty by construction', () => {
     announce(null, A);
     expect(rearms.round).not.toHaveBeenCalled();
-    expect(rearms.word).not.toHaveBeenCalled();
     expect(rearms.history).not.toHaveBeenCalled();
-    // …but it KICKS both engines' conversations: what was WAITING for an identity is owed
-    // the moment one exists, and neither engine mints its own since the trigger rework —
-    // the sentence outbox parked behind the PLAY gate, and an ended word run's
-    // unsubmitted log (whose flight used to close for good on a tokenless submit).
+    // …but it KICKS the engine's conversations: what was WAITING for an identity is owed
+    // the moment one exists, and the engine mints none of its own since the trigger rework
+    // — the outbox parked behind the PLAY gate.
     expect(kicks.round).toHaveBeenCalledTimes(1);
-    expect(kicks.word).toHaveBeenCalledTimes(1);
   });
 
   it('an ADOPTED first identity re-reads the tokenless projections without clearing', () => {
     // Another tab bootstrapped and this one adopted its identity from storage. The
     // ready-and-empty round and the empty history this tab published while tokenless may
-    // be wrong about the adopted account — another tab's guesses, a live word run — and no
-    // scope bump fires on a first acquisition, so nothing else would ever re-read them.
+    // be wrong about the adopted account — another tab's guesses — and no scope bump fires
+    // on a first acquisition, so nothing else would ever re-read them.
     announce(null, A, false);
     expect(rearms.round).toHaveBeenCalledTimes(1);
-    expect(rearms.word).toHaveBeenCalledTimes(1);
     expect(rearms.history).toHaveBeenCalledTimes(1);
     // Still a RE-ARM, never a clear: what this device typed is owed to the adopted account.
     expect(resets.round).not.toHaveBeenCalled();
-    expect(resets.word).not.toHaveBeenCalled();
     expect(resets.history).not.toHaveBeenCalled();
     expect(useGameStore.getState().outbox).toEqual(seeded().outbox);
-    expect(useGameStore.getState().wordRounds).toEqual(seeded().wordRounds);
   });
 });
 
@@ -141,47 +117,39 @@ describe('leaving an identity (#216)', () => {
     useGameStore.setState({ identityOwner: { accountId: A.accountId, deviceId: A.deviceId } });
   });
 
-  it('clears the account-owned state AND the device-owned state on a sign-out', () => {
+  it('clears the account-owned state on a sign-out', () => {
     announce(A, null);
     expect(resets.round).toHaveBeenCalledTimes(1);
-    expect(resets.word).toHaveBeenCalledTimes(1);
     expect(resets.history).toHaveBeenCalledTimes(1);
     expect(useGameStore.getState().outbox).toEqual({});
-    expect(useGameStore.getState().wordRounds).toEqual({});
     expect(useGameStore.getState().identityOwner).toBeNull();
   });
 
-  it('clears both again when one identity replaces another', () => {
+  it('clears it again when one identity replaces another', () => {
     announce(A, B);
     expect(resets.round).toHaveBeenCalledTimes(1);
     expect(useGameStore.getState().outbox).toEqual({});
-    expect(useGameStore.getState().wordRounds).toEqual({});
     expect(useGameStore.getState().identityOwner).toEqual({
       accountId: B.accountId,
       deviceId: B.deviceId,
     });
   });
 
-  it('clears the Word run when the same device moves to a different account', () => {
+  it('clears the outbox when the same device moves to a different account', () => {
     // #204 can re-parent one device row from its temporary account to the linked account.
-    // The device id survives, but the old server-side Word start belongs to the account it
-    // left, so carrying its local run forward would submit against the wrong account.
+    // The device id survives, but the outbox is owed to the account it left.
     const linked = { ...A, accountId: B.accountId };
     announce(A, linked);
     expect(resets.round).toHaveBeenCalledTimes(1);
-    expect(resets.word).toHaveBeenCalledTimes(1);
     expect(useGameStore.getState().outbox).toEqual({});
-    expect(useGameStore.getState().wordRounds).toEqual({});
   });
 
-  it('clears only the DEVICE-owned state when the account is unchanged', () => {
+  it('clears nothing when only the DEVICE changes — the outbox is the account\'s', () => {
     // The shape #204's email link produces: this device moves to a new device row on the
-    // SAME account. A word run belongs to the device that played it — its bonus-adjusted
-    // deadline lives nowhere else until submission — while the outbox is the account's.
+    // SAME account. Nothing this app keeps belongs to a device alone.
     announce(A, { ...A, deviceId: 'q'.repeat(16) });
-    expect(resets.word).toHaveBeenCalledTimes(1);
     expect(resets.round).not.toHaveBeenCalled();
-    expect(useGameStore.getState().wordRounds).toEqual({});
+    expect(resets.history).not.toHaveBeenCalled();
     expect(useGameStore.getState().outbox).toEqual(seeded().outbox);
     expect(useGameStore.getState().identityOwner?.deviceId).toBe('q'.repeat(16));
   });

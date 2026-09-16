@@ -31,7 +31,6 @@ const DATE = activeDate(NOW);
 
 const emptyStore: PuzzleStore = {
   getPuzzle: async () => null,
-  getWordPuzzle: async () => null,
   getSlice: async () => null,
 };
 
@@ -114,23 +113,21 @@ function post(query: Record<string, string>, body: unknown): FnUrlEvent {
   };
 }
 
-const QUERY = { lang: 'fr', date: DATE, mode: 'sentence' };
+const QUERY = { lang: 'fr', date: DATE };
 
 describe('board route (#190)', () => {
-  it('rejects a missing/unsupported lang, mode and date (protocol violations)', async () => {
+  it('rejects a missing/unsupported lang and date (protocol violations)', async () => {
     const { handler } = await makeHandler([]);
-    expect((await handler(get({ date: DATE, mode: 'sentence' }))).statusCode).toBe(400);
-    expect((await handler(get({ lang: 'de', date: DATE, mode: 'sentence' }))).statusCode).toBe(400);
+    expect((await handler(get({ date: DATE }))).statusCode).toBe(400);
+    expect((await handler(get({ lang: 'de', date: DATE }))).statusCode).toBe(400);
     // The support check must be an OWN-property check: `map[lang] === undefined` walks
     // the prototype chain, so Object.prototype keys would pass as "languages" and reach
     // the store key. /scores is masked by its puzzle-store 404; /board reads no puzzle
     // store, so the hole would be reachable to a 200 here.
     for (const lang of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
-      expect((await handler(get({ lang, date: DATE, mode: 'sentence' }))).statusCode).toBe(400);
+      expect((await handler(get({ lang, date: DATE }))).statusCode).toBe(400);
     }
-    expect((await handler(get({ lang: 'fr', date: DATE }))).statusCode).toBe(400);
-    expect((await handler(get({ lang: 'fr', date: DATE, mode: 'x' }))).statusCode).toBe(400);
-    expect((await handler(get({ lang: 'fr', mode: 'sentence' }))).statusCode).toBe(400);
+    expect((await handler(get({ lang: 'fr' }))).statusCode).toBe(400);
     expect((await handler(get({ ...QUERY, id: 'NOT-AN-ID' }))).statusCode).toBe(400);
   });
 
@@ -436,7 +433,7 @@ describe('group period boards and the standing (#271)', () => {
 // the EXACT deduped try count (`countTries` over the raw log against the day's full
 // artifact, never the stored log's length) and the server-derived percentage, ordered by
 // `orderPlaying` below every finished row. Friends only: the global board never carries a
-// playing row. Sentence mode only: a Word run's log reaches the server at submission.
+// playing row.
 describe('board in-progress rows (#206)', () => {
   // Two holes whose maps share one surface family: `mer` and `mers` alias to ONE group in
   // the phare map and are unknown to the nuit map, so both resolve to the same guessKey
@@ -465,7 +462,6 @@ describe('board in-progress rows (#206)', () => {
   };
   const artifactStore: PuzzleStore = {
     getPuzzle: async (date, lang) => (date === DATE && lang === 'fr' ? ARTIFACT : null),
-    getWordPuzzle: async () => null,
     getSlice: async () => null,
   };
 
@@ -476,12 +472,11 @@ describe('board in-progress rows (#206)', () => {
     publicId: string,
     guesses: string[],
     progress: number,
-    over: { puzzle?: string; mode?: 'sentence' | 'word'; solved?: boolean } = {},
+    over: { puzzle?: string; solved?: boolean } = {},
   ) =>
     rounds.append({
       date: DATE,
       lang: 'fr',
-      mode: over.mode ?? 'sentence',
       publicId,
       guesses,
       puzzle: over.puzzle ?? ARTIFACT.revision,
@@ -603,25 +598,16 @@ describe('board in-progress rows (#206)', () => {
     expect(board.waiting).toEqual([]);
   });
 
-  it('carries no playing section in Word mode or on the global board', async () => {
+  it('carries no playing section on the global board', async () => {
     const me = generatePublicId();
     const friend = generatePublicId();
     const rounds = memoryRoundStore();
-    const { handler, groups, devices } = await makeHandler([{ publicId: me, score: 3 }], {
+    const { handler, groups } = await makeHandler([{ publicId: me, score: 3 }], {
       store: artifactStore,
       rounds,
     });
     await enroll(groups, me, friend);
     await seedRound(rounds, friend, ['mer'], 50);
-    await seedRound(rounds, friend, ['mer'], 50, { mode: 'word' });
-    const caller = await callerOn(devices, me);
-
-    // Word mode: a run's log reaches the server only at submission — nothing to read.
-    const word = JSON.parse(
-      (await handler(post({ ...QUERY, mode: 'word' }, { token: caller.token, group: GROUP }))).body,
-    ) as Board;
-    expect(word.playing).toEqual([]);
-    expect(word.waiting.map((row) => row.publicId)).toEqual([friend]);
 
     // The global board never watches anyone play — members only, by consent.
     const global = JSON.parse((await handler(get({ ...QUERY, id: me }))).body) as Board;

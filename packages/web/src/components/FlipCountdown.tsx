@@ -9,8 +9,8 @@ import ChevronLeftIcon from '../assets/icons/chevron-left.svg?react';
 // the whole statement — no caption: the sentence is still on screen with its guesses, the
 // prompt has gone, and a clock counting down where the keys were says when they return.
 //
-// A wall-clock DEADLINE read at render, Word mode's clock's own shape: nothing here
-// counts, so a throttled background tab is still right on its next read. The deadline is
+// A wall-clock DEADLINE read at render: nothing here counts, so a throttled background tab
+// is still right on its next read. The deadline is
 // the next 22:00-ET flip, the app's one day boundary (`shared/day.ts`); the screen that
 // mounts this unmounts it when `useToday` reports the flip, so the clock never has to
 // decide the round is open again.

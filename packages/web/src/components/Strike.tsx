@@ -5,13 +5,9 @@ import { SLASH_ART } from './strikeArt';
 
 // A STRIKE on a game word: one blow of one sheet (`strikeArt.ts`), in one colour.
 //
-// Born as Word mode's CLAIM feedback (#163, decided 2026-08-09): a slash across the day's
-// word in the claimed grade's colour, REPLACING the grade name that used to stamp onto the
-// word — a name had to be read; a strike is felt, which is the right register for a game
-// played against a clock. Since #301 the sentence game lands the same art on a hole: the
-// cut for a guess that charges the hole's meter, the burst when the meter fills, the ultra
-// star for the exact hit. The component knows nothing of either board: which sheet, what
-// colour and when are the caller's.
+// The sentence game lands it on a hole (#301): the cut for a guess that charges the hole's
+// meter, the burst when the meter fills, the ultra star for the exact hit. The component
+// knows nothing of the board: which sheet, what colour and when are the caller's.
 //
 // The art is drawn at an exact integer scale (see `.strike` in index.css; the sentence
 // steps it down under `.phrase`). The white sheets are used as a MASK painted in `color`

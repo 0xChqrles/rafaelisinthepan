@@ -1,19 +1,18 @@
-// CONTRACT (#169/#187, narrowed by #203): /scores is date/lang/mode-addressed and
+// CONTRACT (#169/#187, narrowed by #203): /scores is date/lang-addressed and
 // READ-ONLY. It serves the histogram DERIVED from the day's per-player rows (one exact
 // ascending band per distinct recorded score) for a PUBLISHED daily, and refuses every
 // other method.
 //
-// What #203 retired here: the POST, the client-claimed score it carried, its per-mode range
+// What #203 retired here: the POST, the client-claimed score it carried, its range
 // validation and its Turnstile gate. The server derives a round's score from the guess log
 // it already holds and records the row itself (rounds.test.ts covers that, including the
 // HMAC-IP volume cap that moved with the write). What stays is the address plumbing both
 // live routes share, and the digest the cap is keyed by.
 
 import { describe, expect, it } from 'vitest';
-import { VIEWER_IP_HEADER, type Puzzle, type ScoreHistogram, type WordPuzzle } from '@whippin/shared';
+import { VIEWER_IP_HEADER, type Puzzle, type ScoreHistogram } from '@whippin/shared';
 import { createHandler, type HandlerDeps } from './handler';
 import { memoryScoreStore } from './memoryScoreStore';
-import { WORD_SCORE_ZONE } from './scoreLimits';
 import { derivedHistogram, hashClientIp } from './scores';
 import { clientIp } from './liveRoute';
 import type { FnUrlEvent } from './respond';
@@ -41,26 +40,10 @@ const SENTENCE: Puzzle = {
   ranks: { un: { un: { word: 'un', rank: 0 }, autre: { word: 'autre', rank: 10 } } },
 };
 
-// Only two distinct groups are claimable, despite one alias and an out-of-zone entry.
-const WORD: WordPuzzle = {
-  lang: 'fr',
-  word: { word: 'océan', slug: 'ocean' },
-  ranks: {
-    ocean: { word: 'océan', rank: 0, freq: 10 },
-    mer: { word: 'mer', rank: 1, dq: 255, freq: 20 },
-    mers: { word: 'mer', rank: 1, dq: 255, freq: 20 },
-    eau: { word: 'eau', rank: 2, dq: 240, freq: 30 },
-    loin: { word: 'loin', rank: WORD_SCORE_ZONE + 1, dq: 2, freq: 40 },
-  },
-};
-
 function puzzleStore(): PuzzleStore {
   return {
     async getPuzzle(date, lang) {
       return [ACTIVE_DATE, NEXT_DATE].includes(date) && lang === 'fr' ? SENTENCE : null;
-    },
-    async getWordPuzzle(date, lang) {
-      return [ACTIVE_DATE, NEXT_DATE].includes(date) && lang === 'fr' ? WORD : null;
     },
     // The read never touches the slice — only the round route derives anything.
     async getSlice() {
@@ -91,7 +74,6 @@ function event(options: {
     queryStringParameters: options.query ?? {
       lang: 'fr',
       date: ACTIVE_DATE,
-      mode: 'sentence',
     },
     requestContext: { http: { method: options.method ?? 'GET', sourceIp: '127.0.0.1' } },
     headers: options.address
@@ -101,7 +83,7 @@ function event(options: {
   };
 }
 
-const QUERY = { lang: 'fr', date: ACTIVE_DATE, mode: 'sentence' };
+const QUERY = { lang: 'fr', date: ACTIVE_DATE };
 
 function parsed(response: { body: string }): ScoreHistogram {
   return JSON.parse(response.body) as ScoreHistogram;
@@ -140,7 +122,7 @@ describe('GET /scores', () => {
 
   it('serves the day\'s recorded rows as exact ascending bands with no caller bucket', async () => {
     const scoreStore = memoryScoreStore(() => NOW);
-    const key = { date: ACTIVE_DATE, lang: 'fr', mode: 'sentence' as const };
+    const key = { date: ACTIVE_DATE, lang: 'fr' };
     for (const [publicId, score] of [['a', 9], ['b', 4], ['c', 9]] as const) {
       await scoreStore.submit({
         ...key,
@@ -171,7 +153,7 @@ describe('GET /scores', () => {
   // recorded this number".
   it('reports the CALLER\'s own band when they name themselves', async () => {
     const scoreStore = memoryScoreStore(() => NOW);
-    const key = { date: ACTIVE_DATE, lang: 'fr', mode: 'sentence' as const };
+    const key = { date: ACTIVE_DATE, lang: 'fr' };
     const mine = 'lfd5pqz5pa7zjm5u';
     const other = 'z2ztx5ut4lj7ax47';
     for (const [publicId, score] of [[mine, 9], [other, 4]] as const) {
@@ -194,13 +176,12 @@ describe('GET /scores', () => {
   });
 
   it('answers NULL for a player the population does not hold, whatever anyone else scored', async () => {
-    // The round whose row the IP cap refused, or the Word daily another device submitted
-    // first: the number exists in the bands, but not as this player's.
+    // The round whose row the IP cap refused: the number exists in the bands, but not as this
+    // player's.
     const scoreStore = memoryScoreStore(() => NOW);
     await scoreStore.submit({
       date: ACTIVE_DATE,
       lang: 'fr',
-      mode: 'sentence',
       publicId: 'z2ztx5ut4lj7ax47',
       score: 9,
       submittedAt: NOW.toISOString(),
@@ -222,12 +203,10 @@ describe('GET /scores', () => {
   });
 
   it.each([
-    [{ date: ACTIVE_DATE, mode: 'sentence' }, 'missing lang'],
-    [{ lang: 'de', date: ACTIVE_DATE, mode: 'sentence' }, 'unsupported lang'],
-    [{ lang: 'fr', mode: 'sentence' }, 'missing date'],
-    [{ lang: 'fr', date: '2026-02-30', mode: 'sentence' }, 'malformed date'],
-    [{ lang: 'fr', date: ACTIVE_DATE }, 'missing mode'],
-    [{ lang: 'fr', date: ACTIVE_DATE, mode: 'arcade' }, 'unknown mode'],
+    [{ date: ACTIVE_DATE }, 'missing lang'],
+    [{ lang: 'de', date: ACTIVE_DATE }, 'unsupported lang'],
+    [{ lang: 'fr' }, 'missing date'],
+    [{ lang: 'fr', date: '2026-02-30' }, 'malformed date'],
   ])('rejects malformed daily parameters: %s (%s)', async (query, _label) => {
     const response = await makeHandler()(event({ query }));
     expect(response.statusCode).toBe(400);
@@ -235,16 +214,15 @@ describe('GET /scores', () => {
   });
 
   it('serves active +1 but hides active +2 even when a puzzle store could contain it', async () => {
-    const next = await makeHandler()(event({ query: { lang: 'fr', date: NEXT_DATE, mode: 'word' } }));
+    const next = await makeHandler()(event({ query: { lang: 'fr', date: NEXT_DATE } }));
     expect(next.statusCode).toBe(200);
 
     const futureStore: PuzzleStore = {
       async getPuzzle() { return SENTENCE; },
-      async getWordPuzzle() { return WORD; },
       async getSlice() { return null; },
     };
     const future = await makeHandler({ store: futureStore })(
-      event({ query: { lang: 'fr', date: FUTURE_DATE, mode: 'word' } }),
+      event({ query: { lang: 'fr', date: FUTURE_DATE } }),
     );
     expect(future.statusCode).toBe(404);
     expect(JSON.parse(future.body).error).toBe('not_found');
@@ -252,7 +230,7 @@ describe('GET /scores', () => {
 
   it('returns 404 for an unpublished daily instead of creating an empty population', async () => {
     const response = await makeHandler()(
-      event({ query: { lang: 'fr', date: '2026-08-01', mode: 'sentence' } }),
+      event({ query: { lang: 'fr', date: '2026-08-01' } }),
     );
     expect(response.statusCode).toBe(404);
   });

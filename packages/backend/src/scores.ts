@@ -1,8 +1,8 @@
-// The score route: `GET /scores?lang=&date=&mode=` — the day's anonymous population, as
+// The score route: `GET /scores?lang=&date=` — the day's anonymous population, as
 // the solved screen and the post-mortem read it.
 //
 // IT IS READ-ONLY SINCE #203. The score used to be something the CLIENT claimed, POSTed
-// with an invisible Turnstile token and validated against a per-mode ceiling. With the
+// with an invisible Turnstile token and validated against a ceiling. With the
 // guess log server-side (#201) the server derives it instead: the round route records one
 // row per player per daily the moment a round finishes (`rounds.ts`). So the POST, its
 // range validation, its Turnstile gate and the whole `scoreRecorded` state machine behind
@@ -64,16 +64,16 @@ export async function handleScores(
     );
   }
 
-  // The shared (lang, mode, date) guard triple + future guard (liveRoute.ts).
+  // The shared (lang, date) guard pair + future guard (liveRoute.ts).
   const params = requireDayParams(event, serverDate, responseHeaders);
   if (!params.ok) return params.response;
-  const { lang, mode, date } = params.value;
+  const { lang, date } = params.value;
 
   // The caller's PUBLIC id, never the device token — so it may travel in the query. It is what
   // makes the answer's `bucket` AUTHORITATIVE (added on review): without it a client can
   // only match its own count against the bands, which says "somebody scored this" and not
-  // "you are in here". A round whose row the IP cap refused, or a Word daily the other
-  // device submitted first, then borrows an unrelated player's standing.
+  // "you are in here". A round whose row the IP cap refused then borrows an unrelated
+  // player's standing.
   //
   // Nothing BINDS it to the caller, exactly as on /board: a publicId is broadcast by design
   // (an invite link IS one) and this only ever reads a population the same id can already
@@ -84,21 +84,18 @@ export async function handleScores(
   }
 
   // A score population exists only for a published daily.
-  const puzzle =
-    mode === 'word'
-      ? await puzzleStore.getWordPuzzle(date, lang)
-      : await puzzleStore.getPuzzle(date, lang);
+  const puzzle = await puzzleStore.getPuzzle(date, lang);
   if (puzzle == null) {
     return errorResponse(
       404,
       'not_found',
-      `No ${mode === 'word' ? 'word puzzle' : 'puzzle'} for ${date} (${lang}).`,
+      `No puzzle for ${date} (${lang}).`,
       responseHeaders,
       { date, lang },
     );
   }
 
-  const key: ScoreKey = { date, lang, mode };
+  const key: ScoreKey = { date, lang };
   const rows = await deps.scoreStore.list(key);
   // Null when the caller named nobody, and null when the population holds no row for them —
   // which is the honest "you are not in this" the client draws no standing for.

@@ -1,60 +1,33 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { CSSProperties, KeyboardEvent, RefObject } from 'react';
+import type { CSSProperties, KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import useDrum from '../hooks/useDrum';
 import useModalDismiss from '../hooks/useModalDismiss';
 import { HeaderBack } from './TopBar';
 import { t } from '../i18n';
-import {
-  LANGS,
-  pathForArchive,
-  pathForBoard,
-  pathForMode,
-  type LangCode,
-  type Mode,
-} from '../langs';
-import { navigate } from '../routing';
+import { LANGS, type LangCode } from '../langs';
 
-// WHICH SURFACE the selection was opened from — and so where a pick lands. A selection
-// changes what you are LOOKING AT, so it keeps you on the same kind of screen.
-export type SelectSurface = 'game' | 'archive' | 'board';
-
-const PATH_FOR: Record<SelectSurface, (l: LangCode, m: Mode) => string> = {
-  game: pathForMode,
-  archive: pathForArchive,
-  board: pathForBoard,
-};
-
-// THE SELECTION BEHIND THE TITLE (user-decided 2026-09-02, over four passes). The title is
-// a HELD WORD — it wears the sentence chip — and what opens under it is the hole wheel's
-// grammar on a screen of its own: two picker DRUMS side by side, the DAILY's and the
-// LANGUAGE's, each a column that scrolls THROUGH a fixed slot in the middle of the screen;
-// the row in a slot wears the chip and the others stand plain; and what BOTH slots hold when
-// the screen folds is the pick. The iOS date picker's day | month, in the app's own dress.
+// THE SELECTION BEHIND THE TITLE (user-decided 2026-09-02, over four passes). What opens
+// under the title is the hole wheel's grammar on a screen of its own: the LANGUAGE's picker DRUM, a column that scrolls THROUGH
+// a fixed slot in the middle of the screen; the row in the slot wears the chip and the
+// others stand plain; and what the slot holds when the screen folds is the pick.
 //
-// WHY A SCREEN, AND WHY DRUMS. The first cut stood the drums on the title's own chip in the
+// WHY A SCREEN, AND WHY A DRUM. The first cut stood the drums on the title's own chip in the
 // header, and the user retired it within the hour: a slot at the top of the screen has no
 // room above it, so rows "just get clipped" instead of turning. A one-tap menu replaced it —
-// and the user asked for the drums BACK, on the flat screen where there is room for them
-// ("make the mode/lang selection use the wheel scrolling, and bring back the 3 tap logic, so
-// users can change the mode and lang without having to reopen the menu"): turning both
-// drums and folding once is one errand, where a one-tap menu made switching both axes two
-// openings. So: open, turn (as many drums as you like), fold.
+// and the user asked for the drums BACK, on the flat screen where there is room for them.
+// So: open, turn, fold.
 //
 // THE PICK LANDS AS THE FOLD BEGINS — under the veil, not after it. The fold is ONE door
-// (the back chevron top-left, a tap on a slot row, a tap outside the drums, or Escape), and
-// the moment it opens the app navigates to whatever the two slots hold (or nowhere, when
-// neither moved), so the new screen — its loading state included — is what stands under
-// the veil while it lifts. Navigating on the dialog's `close` instead (the hole wheel's
-// "pick lands on the fold", kept here for one pass) showed the OLD mode's screen for the
-// length of the fade, then a beat of loading, then the new one — "a sensation of rapid
-// blinking between multiple screens" (user-reported 2026-09-02). The hole wheel keeps its
-// rule for its own reason (a pick reflows the sentence the wheel stands on); here the
-// screen under the veil is exactly what should change. It routes by the SURFACE it was
-// opened from, which is what the retired tabs did: from the archive, the other daily means
-// that daily's CALENDAR, and from the LEADERBOARD it means that daily's BOARD (user-reported
-// 2026-09-03: changing either axis there dropped the player onto the puzzle instead — a
-// selection answers "which daily am I looking at", never "take me somewhere else").
+// (the back chevron top-left, a tap on the slot row, a tap outside the drum, or Escape), and
+// the moment it opens the caller hears what the slot holds (or nothing, when it did not
+// move), so the new screen — its loading state included — is what stands under the veil
+// while it lifts. Answering on the dialog's `close` instead (the hole wheel's "pick lands on
+// the fold", kept here for one pass) showed the OLD screen for the length of the fade, then a
+// beat of loading, then the new one — "a sensation of rapid blinking between multiple
+// screens" (user-reported 2026-09-02). The hole wheel keeps its rule for its own reason (a
+// pick reflows the sentence the wheel stands on); here the screen under the veil is exactly
+// what should change.
 //
 // THE GROUND IS FLAT `--bg` (third pass: "make just the veil go all black" — two translucent
 // veils left the sentence and the rules printing behind the options; the hole wheel's dim
@@ -65,56 +38,39 @@ const PATH_FOR: Record<SelectSurface, (l: LangCode, m: Mode) => string> = {
 // the way out, rather than the modals' ✕. A native <dialog> on `useModalDismiss`, so the
 // screen under it is inert.
 //
-// **ONE DRUM, ON A SCREEN THAT IS NOT A PUZZLE** (user-decided 2026-09-03: every page of the
-// game should be able to switch language, and the account area could not). `mode: null` is
-// that face: the LANGUAGE alone, same screen, same drum, same fold. It is one component
-// rather than two because a second language wheel would be a second set of physics, a second
-// dress and a second thing to keep in step with this one — and the difference between the two
-// faces is genuinely two lines (which drums render, and what the fold does).
-//
-// What the FOLD does differs because the two axes are not the same kind of fact. A daily and
-// a language are both IN the game's URL, so picking them is a NAVIGATION; the account area's
-// routes are GLOBAL — an identity is not language-scoped — so there is no URL to move to and
-// the pick is a PREFERENCE: `lastLang`, which is exactly what every screen of that area reads
-// its chrome language from (`resolveHomeLang`), and where the `/` redirect will land.
+// WHAT A PICK MEANS IS THE CALLER'S (`onLang`), because the screens that mount this answer
+// it differently: a puzzle surface names its language in the URL, so a pick NAVIGATES —
+// and keeps you on the same kind of screen (from the archive, the other language's
+// CALENDAR; from the leaderboard, its BOARD; user-reported 2026-09-03: a pick there once
+// dropped the player onto the puzzle instead); the account area's routes are GLOBAL — an
+// identity is not language-scoped — so there is no URL to move to and the pick is a
+// PREFERENCE: `lastLang`, which is exactly what every screen of that area reads its chrome
+// language from (`resolveHomeLang`). This component knows the drum; the screen knows what
+// its own language means.
 
-// The air between rows, and between the two drums.
+// The air between rows.
 const GAP = 14;
 // Rows visible in a drum, the slot in the middle: room for a row above and below the ends
 // (the CSS fades the outer 44px of each end, so a row arrives out of the dark).
 const VISIBLE = 5;
 
-const MODES: { mode: Mode; key: 'modeSentence' | 'modeWord' }[] = [
-  { mode: 'sentence', key: 'modeSentence' },
-  { mode: 'word', key: 'modeWord' },
-];
-
 export default function PuzzleSelect({
   lang,
-  mode,
-  surface = 'game',
   onLang,
   onClose,
 }: {
   lang: LangCode;
-  // NULL is the language-only face: a screen that is not a puzzle has no daily to name.
-  mode: Mode | null;
-  surface?: SelectSurface;
-  // What a LANGUAGE-ONLY pick does. It is the caller's, because the two screens that mount
-  // this face answer it differently: the account area has no URL to move to and stores a
-  // preference, while the tutorial sits on a language-scoped route and navigates. This
-  // component knows the drums; the screen knows what its own language means.
-  onLang?: (lang: LangCode) => void;
+  // What a pick does — see above. Called once, as the fold begins, and only when the drum
+  // moved.
+  onLang: (lang: LangCode) => void;
   onClose: () => void;
 }) {
-  // Which question is on screen — it decides the drums, the fold and the dialog's own name.
-  const puzzle = mode !== null;
   // FIRST hook, per the contract: a closed <dialog> is `display: none`, and the row height
   // is measured below.
   const { closing, beginClose, dialogProps } = useModalDismiss('select-out');
 
   // A row is as tall as the chip it holds — measured once the dialog is open, off a chip
-  // in the tree, so the CSS owns the type and the drums follow it.
+  // in the tree, so the CSS owns the type and the drum follows it.
   const probe = useRef<HTMLSpanElement>(null);
   const [rowH, setRowH] = useState(0);
   useLayoutEffect(() => {
@@ -128,24 +84,9 @@ export default function PuzzleSelect({
   const pitch = rowH + GAP;
   const ready = rowH > 0;
 
-  const modeBox = useRef<HTMLDivElement>(null);
-  const modeTrack = useRef<HTMLDivElement>(null);
   const langBox = useRef<HTMLDivElement>(null);
   const langTrack = useRef<HTMLDivElement>(null);
-  // The mode drum is still HOOKED when it is not drawn (hooks are unconditional) — with no
-  // box in the tree `useDrum` binds no listener, so it sits inert.
-  const modeIndex = Math.max(0, MODES.findIndex((m) => m.mode === mode));
   const langIndex = Math.max(0, LANGS.findIndex((l) => l.code === lang));
-  const modeDrum = useDrum({
-    ref: modeBox,
-    active: ready,
-    count: MODES.length,
-    pitch,
-    initial: modeIndex,
-    write: (px) => {
-      if (modeTrack.current) modeTrack.current.style.translate = `0 ${-px}px`;
-    },
-  });
   const langDrum = useDrum({
     ref: langBox,
     active: ready,
@@ -156,115 +97,62 @@ export default function PuzzleSelect({
       if (langTrack.current) langTrack.current.style.translate = `0 ${-px}px`;
     },
   });
-  // Open ON the held pair: each drum's current row in its slot, before paint, once the
-  // pitch is known.
+  // Open ON the held language: its row in the slot, before paint, once the pitch is known.
   const opened = useRef(false);
   useLayoutEffect(() => {
     if (!ready || opened.current) return;
     opened.current = true;
-    modeDrum.jump(modeIndex);
     langDrum.jump(langIndex);
-  }, [langDrum, langIndex, modeDrum, modeIndex, ready]);
+  }, [langDrum, langIndex, ready]);
 
-  // The fold BEGINS (every door sets `closing`): the app moves to what both slots hold,
-  // once, while the veil is still up. A screen that unmounts this title with the route
-  // takes the dialog with it, which is the same picture a beat sooner.
+  // The fold BEGINS (every door sets `closing`): the caller hears what the slot holds, once,
+  // while the veil is still up. A screen that unmounts this title with the route takes the
+  // dialog with it, which is the same picture a beat sooner.
   const moved = useRef(false);
   useEffect(() => {
     if (!closing || moved.current) return;
     moved.current = true;
     const l = LANGS[langDrum.peek()]?.code ?? lang;
-    // A screen that is not a puzzle has no daily to move between: its caller says what a
-    // language means there.
-    if (mode === null) {
-      if (l !== lang) onLang?.(l);
-      return;
-    }
-    const m = MODES[modeDrum.peek()]?.mode ?? mode;
-    if (m !== mode || l !== lang) navigate(PATH_FOR[surface](l, m));
-  }, [closing, lang, langDrum, mode, modeDrum, onLang, surface]);
+    if (l !== lang) onLang(l);
+  }, [closing, lang, langDrum, onLang]);
 
-  // The arrow keys turn the drum that holds focus — the daily's when none does; Left and
-  // Right hand focus from one drum's slot row to the other's.
   // A drum that turns while one of its rows holds the focus carries the focus into the
   // slot (#267): the pick is the drum's one tab stop, so what the keyboard is on and what
   // the slot shows stay one thing. A drum turned by a pointer moves no focus.
   useEffect(() => {
-    for (const box of [modeBox.current, langBox.current]) {
-      if (box?.contains(document.activeElement)) {
-        box.querySelector<HTMLElement>('[aria-current="true"]')?.focus({ preventScroll: true });
-      }
+    const box = langBox.current;
+    if (box?.contains(document.activeElement)) {
+      box.querySelector<HTMLElement>('[aria-current="true"]')?.focus({ preventScroll: true });
     }
-  }, [modeDrum.current, langDrum.current]);
+  }, [langDrum.current]);
 
+  // The arrow keys turn the drum.
   const onKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      const inLang = langBox.current?.contains(document.activeElement) ?? false;
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         e.preventDefault();
-        (inLang || !puzzle ? langDrum : modeDrum).glideBy(e.key === 'ArrowDown' ? 1 : -1);
-        // With ONE drum there is nowhere to hand focus across.
-      } else if (puzzle && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
-        e.preventDefault();
-        const box = (e.key === 'ArrowRight' ? langBox : modeBox).current;
-        box?.querySelector<HTMLElement>('[aria-current="true"]')?.focus({ preventScroll: true });
+        langDrum.glideBy(e.key === 'ArrowDown' ? 1 : -1);
       }
     },
-    [langDrum, modeDrum, puzzle],
+    [langDrum],
   );
 
-  // A drum: the slot sits in the middle of `VISIBLE` rows, so row i is in it at
+  // The drum: the slot sits in the middle of `VISIBLE` rows, so row i is in it at
   // `translate = i × pitch` once the lead spacer holds the rows above it off the top.
   const half = Math.floor(VISIBLE / 2);
-  const drum = (
-    items: { key: string; label: string }[],
-    d: typeof modeDrum,
-    box: RefObject<HTMLDivElement | null>,
-    track: RefObject<HTMLDivElement | null>,
-    stagger: number,
-  ) => (
-    <div className="ps-drum" ref={box} style={{ height: VISIBLE * pitch - GAP }}>
-      <div className="ps-track" ref={track}>
-        <div className="ps-lead" style={{ height: half * pitch }} />
-        {items.map((item, i) => {
-          const inSlot = i === d.current;
-          return (
-            <button
-              key={item.key}
-              type="button"
-              className={`ps-row${inSlot ? ' on' : ''}`}
-              style={{ height: rowH, marginBottom: GAP, '--i': stagger + Math.abs(i - d.current) } as CSSProperties}
-              aria-current={inSlot ? 'true' : undefined}
-              // The drum's ONE tab stop is the row in the slot (#267): the arrows turn it.
-              tabIndex={inSlot ? 0 : -1}
-              aria-label={inSlot ? `${item.label}, ${t(lang, 'ariaClose')}` : item.label}
-              onClick={() => {
-                if (d.tap(i) === 'slot') beginClose();
-              }}
-            >
-              <span className="ps-chip" data-focus-box>
-                {item.label}
-              </span>
-            </button>
-          );
-        })}
-        <div className="ps-trail" style={{ height: half * pitch - GAP }} />
-      </div>
-    </div>
-  );
 
   return createPortal(
     <dialog
       {...dialogProps}
       className={`wheel-dialog puzzle-select${closing ? ' closing' : ''}`}
-      aria-label={t(lang, puzzle ? 'puzzleMenu' : 'langMenu')}
+      aria-label={t(lang, 'langMenu')}
       onClose={onClose}
       onKeyDown={onKeyDown}
       onClick={(e) => {
         // A drag that ended here is not a tap on anything.
-        if (modeDrum.endedDrag() || langDrum.endedDrag()) return;
-        // The dialog, the drums' boxes and their spacers have no content of their own, so
-        // a click that lands on one of them landed on nothing in the selection.
+        if (langDrum.endedDrag()) return;
+        // The dialog, the drum's box and its spacers have no content of their own, so a
+        // click that lands on one of them landed on nothing in the selection.
         const el = e.target as HTMLElement;
         const bare =
           el === e.currentTarget ||
@@ -296,21 +184,35 @@ export default function PuzzleSelect({
       </span>
       {ready && (
         <div className="ps-cols">
-          {puzzle &&
-            drum(
-              MODES.map((m) => ({ key: m.mode, label: t(lang, m.key).toUpperCase() })),
-              modeDrum,
-              modeBox,
-              modeTrack,
-              0,
-            )}
-          {drum(
-            LANGS.map((l) => ({ key: l.code, label: l.native.toUpperCase() })),
-            langDrum,
-            langBox,
-            langTrack,
-            puzzle ? 1 : 0,
-          )}
+          <div className="ps-drum" ref={langBox} style={{ height: VISIBLE * pitch - GAP }}>
+            <div className="ps-track" ref={langTrack}>
+              <div className="ps-lead" style={{ height: half * pitch }} />
+              {LANGS.map((item, i) => {
+                const inSlot = i === langDrum.current;
+                const label = item.native.toUpperCase();
+                return (
+                  <button
+                    key={item.code}
+                    type="button"
+                    className={`ps-row${inSlot ? ' on' : ''}`}
+                    style={{ height: rowH, marginBottom: GAP, '--i': Math.abs(i - langDrum.current) } as CSSProperties}
+                    aria-current={inSlot ? 'true' : undefined}
+                    // The drum's ONE tab stop is the row in the slot (#267): the arrows turn it.
+                    tabIndex={inSlot ? 0 : -1}
+                    aria-label={inSlot ? `${label}, ${t(lang, 'ariaClose')}` : label}
+                    onClick={() => {
+                      if (langDrum.tap(i) === 'slot') beginClose();
+                    }}
+                  >
+                    <span className="ps-chip" data-focus-box>
+                      {label}
+                    </span>
+                  </button>
+                );
+              })}
+              <div className="ps-trail" style={{ height: half * pitch - GAP }} />
+            </div>
+          </div>
         </div>
       )}
     </dialog>,

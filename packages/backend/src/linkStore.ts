@@ -114,9 +114,9 @@ export type LinkAdoptOutcome =
   | 'device_changed';
 
 // One tuple of play the adoption CARRIED across (#204's active-day transfer): the round row
-// and, when one existed, the score row, both addressed by (date, lang, mode) per player.
+// and, when one existed, the score row, both addressed by (date, lang) per player.
 // `solved` is what the moved round's own summary said, for the solved-day credit a
-// transferred SENTENCE solve owes the adopting account's streak.
+// transferred solve owes the adopting account's streak.
 export interface LinkMovedRound {
   key: RoundKey;
   solved: boolean;
@@ -150,9 +150,9 @@ export interface AccountAdoption {
   // A group-departure job for the account being deleted, queued under the surviving one;
   // present exactly when `erase` is.
   departFrom?: string;
-  // The ACTIVE DAY's tuples — every supported language × both modes — whose play moves with
-  // the device when the account it is in is being erased; present exactly when `erase` is.
-  // Each tuple moves only when the source holds RECORDED PLAY and the destination holds none,
+  // The ACTIVE DAY's rounds — one per supported language — whose play moves with the device
+  // when the account it is in is being erased; present exactly when `erase` is. Each round
+  // moves only when the source holds RECORDED PLAY and the destination holds none,
   // and it moves INSIDE the identity transaction: the round exists under exactly one account
   // at every instant, and there is no partial adoption for a retry or a rival to inherit.
   moves?: readonly RoundKey[];
@@ -244,9 +244,8 @@ export interface LinkProfileWrites {
 // memory link store's one critical section — what the round and score Put/Delete pairs are
 // inside the production transaction.
 export interface LinkRoundWrites {
-  // Move the round when the source holds RECORDED PLAY — a guess, or a Word submission,
-  // since a submitted 0-claim run is a real recorded day with an empty log — and the
-  // destination holds none; answers what moved, or null when nothing did.
+  // Move the round when the source holds RECORDED PLAY — a guess — and the destination holds
+  // none; answers what moved, or null when nothing did.
   move(key: RoundKey, from: string, to: string): LinkMovedRound | null;
 }
 

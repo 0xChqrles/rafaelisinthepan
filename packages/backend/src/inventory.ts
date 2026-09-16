@@ -2,7 +2,7 @@
 // game days × langs and reports which (date, lang) puzzles exist, so a thinning buffer is
 // visible BEFORE players hit a gap.
 //
-//   pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--mode sentence|word] [--ci]
+//   pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--ci]
 //
 // By default it just REPORTS and exits 0 — a gap is normal while buffering, not a command
 // failure, so an interactive run stays clean. `--ci` turns a gap into exit 1 for the
@@ -17,7 +17,7 @@ import { access } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { activeDate, dateForDayNumber, dayNumber } from '@whippin/shared';
-import { defaultLocalStoreRoot, isValidDate, storeKey, type PuzzleMode } from './layout';
+import { defaultLocalStoreRoot, isValidDate, storeKey } from './layout';
 import { isNotFound } from './store';
 import { STACK_REGION, stackOutputs } from './stack';
 
@@ -28,10 +28,6 @@ interface Args {
   s3: boolean;
   days: number;
   langs: string[];
-  // Which daily artifact to probe (#156): the sentence puzzle (default) or Word mode's
-  // #154 artifact. A separate run per mode, so the existing --ci cron alarm keeps its
-  // meaning while the word buffer gets its own report.
-  mode: PuzzleMode;
   ci: boolean; // opt in to exit 1 on a gap (the CI/cron alarm); default: report + exit 0
 }
 
@@ -45,7 +41,6 @@ function parseArgs(argv: string[]): Args {
     s3: false,
     days: DEFAULT_DAYS,
     langs: DEFAULT_LANGS,
-    mode: 'sentence',
     ci: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -74,14 +69,6 @@ function parseArgs(argv: string[]): Args {
           .map((s) => s.trim())
           .filter(Boolean);
         if (args.langs.length === 0) die('--langs is empty');
-        break;
-      }
-      case '--mode': {
-        const raw = argv[++i];
-        if (raw !== 'sentence' && raw !== 'word') {
-          die(`--mode must be "sentence" or "word" (got "${raw ?? ''}")`);
-        }
-        args.mode = raw;
         break;
       }
       default:
@@ -151,10 +138,10 @@ export async function takeInventory(
 }
 
 // An existence probe over the local filesystem store — the same key the readers GET.
-export function fsProbe(root: string, mode: PuzzleMode = 'sentence'): Probe {
+export function fsProbe(root: string): Probe {
   return async (date, lang) => {
     try {
-      await access(path.join(root, storeKey(date, lang, mode)));
+      await access(path.join(root, storeKey(date, lang)));
       return true;
     } catch {
       return false;
@@ -192,7 +179,7 @@ async function main() {
     probe = async (date, lang) => {
       try {
         await client.send(
-          new HeadObjectCommand({ Bucket: bucket, Key: storeKey(date, lang, args.mode) }),
+          new HeadObjectCommand({ Bucket: bucket, Key: storeKey(date, lang) }),
         );
         return true;
       } catch (err) {
@@ -202,11 +189,10 @@ async function main() {
     };
   } else {
     const root = process.env.PUZZLE_STORE ?? defaultLocalStoreRoot();
-    probe = fsProbe(root, args.mode);
+    probe = fsProbe(root);
   }
 
   const summary = await takeInventory(days, args.langs, probe);
-  if (args.mode === 'word') console.log('artifact: word (#154)');
   console.log(renderTable(days, args.langs, summary.present));
   console.log('');
   console.log(renderSummary(summary));

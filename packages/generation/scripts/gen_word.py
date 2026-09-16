@@ -7,7 +7,9 @@
 "One word + its ranked neighborhood" is a first-class artifact, not a by-product of a
 sentence. Getting one out of gen_phrase meant authoring a sentence, confirming three
 secrets and banding three start words only to throw two thirds of it away — the wrong
-tool. This script is the right one: give it a language and a word, get its map.
+tool. This script is the right one: give it a language and a word, get its map. Its
+consumer is the onboarding tutorial, whose board is cut from it by
+packages/web/scripts/prune-word-map.mjs.
 
 It is an EXTRACTION, not a second implementation. Every per-secret rule lives in
 gen_phrase and is imported from there, so the two commands cannot drift: the merge
@@ -15,24 +17,18 @@ walk and group semantics (#104/#134/#146), the #133 explicit-form confirmation, 
 vectors (#119), the TOP_K group cap, the dq stamping and the slug-collision rule are
 literally the same code (gen_phrase.walk_secret is the shared per-secret pipeline).
 
-Exactly TWO things differ — one because there is no sentence, one because only
-Word mode consumes it:
-
-  - No `words` / `holes` / `start` / `start_rank`, and no `source`: a lone word has no
-    attribution. The rank map is ONE flat map, not keyed by secret.
-  - Every group carries its corpus rarity, `freq` (#163) — see annotate_freq. A
-    sentence puzzle does not: nothing there consumes it, and those maps are already
-    ~500 KB gzipped.
+Exactly ONE thing differs, because there is no sentence: no `words` / `holes` / `start` /
+`start_rank`, and no `source` (a lone word has no attribution). The rank map is ONE flat
+map, not keyed by secret.
 
 Schema (see WordPuzzle in packages/shared/src/types.ts):
 
     {"lang": "fr",
      "word": {"word": "phare", "slug": "phare"},
-     "ranks": {"<input-slug>": {"word": "<accented>", "rank": 12, "dq": 231,
-                                "freq": 8412}}}
+     "ranks": {"<input-slug>": {"word": "<accented>", "rank": 12, "dq": 231}}}
 
 The inner semantics are the sentence schema's rank-map semantics, unchanged: alias
-keys per group, word/rank/dq/freq are GROUP properties, rank 0 = the word itself and
+keys per group, word/rank/dq are GROUP properties, rank 0 = the word itself and
 carries no dq, dq on every rank >= 1 entry.
 
 Written to packages/generation/output/single-word/<lang>/<slug>.json (override the
@@ -75,91 +71,19 @@ from gen_phrase import (CONFIG, GEN_OUTPUT, add_shared_args, die,  # noqa: E402
 from slug import slug  # noqa: E402
 
 
-def annotate_freq(rank_map, V):
-    """Stamp every group with `freq` — how common it is in the corpus (#163).
-
-    Word mode pays a claim in SECONDS scaled by the claimed group's rarity, and
-    rarity is orthogonal to the closeness the score already measures: it pays for
-    vocabulary depth rather than double-paying the find. The client cannot compute
-    it — it never sees the corpus — so the artifact ships it.
-
-    The value is a FREQUENCY RANK over the EXISTENCE SET — the slugged, deduplicated
-    vocabulary written to web/public/vocab/<lang>.json — in frequency order: 1 = the
-    most frequent word the game admits, larger = rarer. The reduced file preserves the
-    source embedding's frequency order (reduce_embedding streams it and keeps survivors
-    in place), so this is a READ of a position, not a computation. 1-based on purpose: a
-    0 would be indistinguishable from an absent field to a JS consumer testing the value.
-
-    RANKED OVER SLUGS, not over raw forms, and that is load-bearing rather than tidy.
-    The consumer divides this by the size of the existence set it loaded, to get a
-    fraction of the corpus; if the numerator counted a population the denominator does
-    not, the fraction is not one. V holds every reduced form while the existence set
-    holds distinct SLUGS, and the two differ by exactly the accent/case collisions —
-    measured, 4.1% in fr against 0.0% in en, i.e. a language-dependent skew in the one
-    number that exists to make rarity mean the same thing in every language.
-
-    A group's position is that of its most frequent OWNED KEY — the commonest thing a
-    player can actually TYPE to claim it. Not the representative alone (a player's
-    sense of a lexeme's rarity is its commonest inflection: « privées » is as rare as
-    « privé » is common), and not the whole paradigm either: a surface owned by
-    ANOTHER group is that group's key, and pricing this one by it would grade a rare
-    lexeme by a word that can never claim it (« boire » must not be COMMON because
-    « bois » is — « bois » claims the tree). The walk has already settled ownership
-    closest-first (#104/#134), so the pricing READS the rank map's keys instead of
-    re-deriving it from the paradigm. A GROUP property like word/rank/dq, stamped by
-    RANK — every alias key of a group therefore repeats its group's value, and
-    slug-collision resolution keeps the winning group's, both by construction.
-    Stamped BEFORE the agreement pass so a rewritten display inherits its group's
-    value like any other key.
-
-    A group none of whose keys is in the existence set — the secret of a borrowed
-    vector (#119), whose slug embeds nothing — simply gets no `freq`. The field is
-    optional to every consumer."""
-    # slug -> its 1-based place among distinct slugs in frequency order. Two forms that
-    # fold together are ONE entry in the existence set and so must be one rank here; the
-    # first (most frequent) occurrence names it, which is the same closest-wins rule the
-    # rank map resolves slug collisions by.
-    slug_rank = {}
-    for form in V:
-        key = slug(form)
-        if key and key not in slug_rank:
-            slug_rank[key] = len(slug_rank) + 1
-    # Group-min over the group's OWNED keys, then stamped by rank so every alias key
-    # repeats it (rank IS the group: the flat map is rank-unique per group).
-    freq_by_rank = {}
-    for key, entry in rank_map.items():
-        position = slug_rank.get(key)
-        if position is None:
-            continue
-        rank = entry["rank"]
-        if rank not in freq_by_rank or position < freq_by_rank[rank]:
-            freq_by_rank[rank] = position
-    for entry in rank_map.values():
-        freq = freq_by_rank.get(entry["rank"])
-        if freq is not None:
-            entry["freq"] = freq
-    return rank_map
-
-
 def build_word_map(word, donor, cfg, kv, V, M, Vset, lemma_table, forms_by_lemma,
                    donors=None, forms=None, reporter=None):
-    """One word's rank map AS SHIPPED: walked, dq-stamped, priced, agreed.
+    """One word's rank map AS SHIPPED: walked, dq-stamped, agreed.
 
     The sentence path's per-secret sequence with its two sentence-shaped steps
     removed. walk_secret settles the claim (#133 fires there, ahead of the walk) and
-    builds the dq-stamped map; then:
-
-      - FREQ (#163), this artifact's own annotation: what Word mode's clock pays a
-        claim by, and — since 2026-08-10 — what its board paints each station word by. See
-        annotate_freq; a sentence puzzle carries none.
-      - AGREEMENT (#133/#134): the whole map agrees with the word's confirmed
-        morphology. There is no start hint to alias afterwards — the display override
-        a hole's start word gets (#119 addendum) has no counterpart here.
+    builds the dq-stamped map; then AGREEMENT (#133/#134): the whole map agrees with the
+    word's confirmed morphology. There is no start hint to alias afterwards — the display
+    override a hole's start word gets (#119 addendum) has no counterpart here.
 
     Returns the rank map. Mutated in place by every pass, like the sentence path."""
     _merged, rank_map, groups = walk_secret(word, donor, cfg, kv, V, M, Vset,
                                             lemma_table, forms_by_lemma, donors, forms)
-    annotate_freq(rank_map, V)
     if forms is not None:
         forms.apply(rank_map, word, donors, lexemes=group_lexeme_map(groups))
     if reporter is not None:

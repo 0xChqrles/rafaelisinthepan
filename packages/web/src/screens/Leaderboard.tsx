@@ -47,12 +47,12 @@ import { adoptSignedOutVerdict } from '../state/signedOutVerdict';
 import { prefetchTurnstileTokens } from '../turnstile';
 import ErrorScreen from '../components/ErrorScreen';
 import { useGameStore } from '../state/gameStore';
-import { pathForGroupInvite, type LangCode, type Mode } from '../langs';
+import { pathForGroupInvite, type LangCode } from '../langs';
 import { t } from '../i18n';
 
 // The #190 leaderboard screen, drawn over GROUPS since #271 (user-decided 2026-09-07:
 // groups replace the friends graph — a pair of friends is a group of two). The boards are
-// per (day, lang, mode), for the active day. A GROUP is the DEFAULT and the trusted
+// per (day, lang), for the active day. A GROUP is the DEFAULT and the trusted
 // surface — the whole point of the design (#187's anti-cheat stance: trust comes from the
 // people you chose, not the global list) — with the GLOBAL top 50 as the last tab,
 // explicitly the fun/untrusted view. A group has THREE boards: the DAY (finished,
@@ -92,7 +92,7 @@ type AnyBoard = Board | PeriodBoard;
 
 const isPeriodBoard = (board: AnyBoard): board is PeriodBoard => 'from' in board;
 
-export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode }) {
+export default function Leaderboard({ lang }: { lang: LangCode }) {
   // The tab belongs to the VISIT (user feedback 2026-08-20): it lives in the store because
   // this screen remounts without the visit ending, and App resets it on any non-board route.
   const tab: Tab = useGameStore((s) => s.boardTab);
@@ -200,7 +200,7 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
       try {
         let board: AnyBoard;
         if (tab === 'group' && identity !== null && active !== null) {
-          const response = await postBoardBody(boardUrl(lang, date, mode), {
+          const response = await postBoardBody(boardUrl(lang, date), {
             token: identity.token,
             group: active.id,
             ...(period === 'day' ? {} : { period }),
@@ -215,7 +215,7 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
           const data: unknown = await response.json();
           board = period === 'day' ? parseBoard(data) : parsePeriodBoard(data);
         } else {
-          const response = await fetch(boardUrl(lang, date, mode, identity?.accountId));
+          const response = await fetch(boardUrl(lang, date, identity?.accountId));
           if (cancelled || (epochNow !== null && identityEpoch() !== epochNow)) return;
           if (!response.ok) throw new Error(`board answered ${response.status}`);
           board = parseBoard(await response.json());
@@ -238,7 +238,7 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
     };
     // `active?.id` rather than `active`: the list object is re-read, the group is not.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boardKey, tab, active?.id, period, lang, mode, date, attempt, identity]);
+  }, [boardKey, tab, active?.id, period, lang, date, attempt, identity]);
 
   const entry = boardKey === null ? undefined : boards[boardKey];
   const board = entry === 'failed' ? undefined : entry;
@@ -383,7 +383,7 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
           2026-08-30): a board is a view OF a daily, and the lit crown says what the screen
           is. The way OUT is any other key of the same, unmoving row. */}
       <HeaderLeft>
-        <PuzzleTitle lang={lang} mode={mode} surface="board" />
+        <PuzzleTitle lang={lang} surface="board" />
       </HeaderLeft>
 
       {/* WHICH BOARD: the pager. A tap on the middle page goes into it — the group's own
@@ -444,14 +444,13 @@ export default function Leaderboard({ lang, mode }: { lang: LangCode; mode: Mode
           />
         ) : board ? (
           isPeriodBoard(board) ? (
-            <PeriodList key={boardKey} board={board} lang={lang} mode={mode} meId={meId ?? undefined} />
+            <PeriodList key={boardKey} board={board} lang={lang} meId={meId ?? undefined} />
           ) : (
             <BoardList
               key={boardKey}
               board={board}
               tab={tab}
               lang={lang}
-              mode={mode}
               meId={meId ?? undefined}
               // Only the GLOBAL list marks the reader's people: on a group's board every
               // row is one, and marking everything marks nothing.
@@ -585,7 +584,6 @@ function BoardList({
   board,
   tab,
   lang,
-  mode,
   meId,
   mates,
   onInvite,
@@ -594,7 +592,6 @@ function BoardList({
   board: Board;
   tab: Tab;
   lang: LangCode;
-  mode: Mode;
   meId?: string;
   mates: ReadonlySet<string> | null;
   // A group of one: the empty state's call is INVITE.
@@ -639,7 +636,7 @@ function BoardList({
     <>
       {(board.rows.length > 0 || board.playing.length > 0) && (
         <div className="board-unit" aria-hidden="true">
-          {t(lang, mode === 'word' ? 'words' : 'tries')}
+          {t(lang, 'tries')}
         </div>
       )}
       <ol className="board-list pixel-scroll">
@@ -673,12 +670,10 @@ function BoardList({
 function PeriodList({
   board,
   lang,
-  mode,
   meId,
 }: {
   board: PeriodBoard;
   lang: LangCode;
-  mode: Mode;
   meId?: string;
 }) {
   if (board.rows.length === 0) {
@@ -696,7 +691,7 @@ function PeriodList({
       </div>
       <ol className="board-list pixel-scroll">
         {board.rows.map((row, index) => (
-          <PeriodRowItem key={row.publicId} row={row} me={row.publicId === meId} index={index} lang={lang} mode={mode} />
+          <PeriodRowItem key={row.publicId} row={row} me={row.publicId === meId} index={index} lang={lang} />
         ))}
       </ol>
     </>
@@ -708,13 +703,11 @@ function PeriodRowItem({
   me,
   index,
   lang,
-  mode,
 }: {
   row: PeriodRow;
   me: boolean;
   index: number;
   lang: LangCode;
-  mode: Mode;
 }) {
   return (
     <li className={`board-row period${me ? ' me' : ''}`} style={{ '--i': index } as CSSProperties} aria-current={me || undefined}>
@@ -723,10 +716,10 @@ function PeriodRowItem({
       <span className="board-ident">
         <span className={`board-name${row.name ? '' : ' anon'}`}>{row.name || anonName(row.publicId)}</span>
         {/* The tiebreakers, said small under the name: the days that recorded a score,
-            and the total in the mode's own unit. */}
+            and the total of their tries. */}
         <span className="board-detail">
           {row.solvedDays} {t(lang, row.solvedDays === 1 ? 'dayUnit' : 'daysUnit')} · {row.total}{' '}
-          {t(lang, mode === 'word' ? 'words' : 'tries').toLowerCase()}
+          {t(lang, 'tries').toLowerCase()}
         </span>
       </span>
       <span className="board-score">{row.points}</span>

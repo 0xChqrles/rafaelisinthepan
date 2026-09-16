@@ -11,12 +11,10 @@
   shared/                     cross-cutting TS consumed by web + backend (pkg @whippin/shared)
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
     src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
-    src/scores.ts             WORD_CLAIM_ZONE + Word mode's clock/caps (web+backend), the #201
-                              round bounds, #273's EARLY_GUESS_CAP, VIEWER_IP_HEADER (infra+backend)
+    src/scores.ts             the #201 round bounds, #273's EARLY_GUESS_CAP, the #271 group caps,
+                              VIEWER_IP_HEADER (infra+backend)
     src/scoring.ts            what a guess LOG means (#203): s()/holeProgress, rankCount,
                               guessKey, countTries — the readings BOTH ends now perform
-    src/puzzleTag.ts          fnvTag — Word mode's round tag. The SENTENCE daily's is the
-                              published puzzle's own `revision` (#203), stamped by publish
     src/identity.ts           #216's device-token shape + server-assigned account/device id minting
     src/email.ts              #204's account-link contract: normalizeEmail (web validates ⇔
                               backend stores), the 6-digit code's shape/TTL/attempts, the send bounds
@@ -40,8 +38,8 @@
     src/glyphs.ts             pixel-art glyphs the game DRAWS rather than sets: the #214 `∞`
                               path + view box, shared by the OG card and the web result
     src/heat.ts               the app's ONE weird→calm stop gradient: heatColor() + fixed-cap rankHeatColor()/HIT_HEAT_CAP (exponents, floating hits, loot, route rows) + progressHeatColor()/progressEmoji() (run rulers incl. the card, share-text emoji row, archive fills, chooser strips)
-    src/shareCard.ts          the share-token codec (both modes), browser + Lambda
-    src/cardSvg.ts            the OG cards' SVG: both dailies' results from a decoded token, and the #271 group card (name + member marks + app name)
+    src/shareCard.ts          the share-token codec, browser + Lambda
+    src/cardSvg.ts            the OG cards' SVG: a result from a decoded token, and the #271 group card (name + member marks + app name)
     src/index.ts              re-exports
 ```
 
@@ -148,16 +146,12 @@
   semantics, are in the root `AGENTS.md`. `src/vocab.ts` only types it (`VOCAB_BUILDS`).
   To change a value, re-run `pnpm vocab:<lang>` (or the reduce that produced the set) and
   commit what it wrote; `vocab.test.ts` asserts it still measures the committed sets.
-- `src/scores.ts` owns `WORD_CLAIM_ZONE` across the web's Word rules and the backend's
-  #169 possible-score validation. The web may tune the field without regenerating an
-  artifact, but the server must move/deploy with it so a real score is never rejected and
-  an impossible one is never admitted. `web/game/wordGame.ts` re-exports it as
-  `CLAIM_ZONE` for its existing consumers. It also owns the #201 round bounds —
+- `src/scores.ts` owns the #201 round bounds —
   `ROUND_GUESS_CAP` (enforced inside the append write's own condition) and
-  `ROUND_WRITE_MIN_MS` (one spelling of "~1s between writes, per player per DAILY" for
+  `ROUND_WRITE_MIN_MS` (one spelling of "~1s between writes, per player per ROUND" for
   BOTH the server's rate condition and the web's flush pacing, since two independent ones
   would drift into permanent 429s; the root `AGENTS.md` records why the bound is per
-  daily rather than global per player) — cross-package constants for the same reason.
+  round rather than global per player) — cross-package constants for the same reason.
   **One constant is only enough because the two ends measure the same GAP:** the server
   compares its own receipt
   instants with a strict `<`, so the web paces from the previous write's ANSWER rather
@@ -165,17 +159,6 @@
   round trip inside the interval. Pacing from the send instant leaves zero margin and
   refuses every request that travels faster than its predecessor — the same permanent-429
   outcome this one spelling exists to prevent.
-  **Since #202 it also owns Word mode's CLOCK** — `WORD_START_SECONDS`,
-  `WORD_MIN_BONUS_SECONDS`, `WORD_MISS_CAP`, and the `wordRunMs`/`wordRunFloorMs` pair —
-  because the server's end-of-run wait check is priced from the same economy the web plays:
-  a run with N claims lasts at least `wordRunFloorMs(N)`, so the check IS the game's own
-  floor and can never refuse honest play. **The floor is not a second opinion about the
-  ladder:** `web/game/wordGame.ts` authors its cheapest rung FROM `WORD_MIN_BONUS_SECONDS`
-  and re-exports `START_SECONDS`/`runMs`, and `wordGame.test.ts` pins that no rung pays
-  less — a retune that put a cheaper one on the ladder would silently make the guarantee
-  false, and real runs would start being refused as impossibly early. Retuning the clock
-  therefore moves this file and deploys the backend with it, exactly like
-  `WORD_CLAIM_ZONE`; the RARITY CUTS and the rest of the ladder stay the web's own knob.
   **Since #273 it also owns `EARLY_GUESS_CAP` (3)** — how many guesses tomorrow's sentence
   takes tonight before the first progress: ONE spelling for the server's append condition
   (`early_locked`) and the web's input lock, so the screen never locks on a guess the server
@@ -200,9 +183,7 @@
   strange, calm; cuts at 15/45/75). `rankHeatColor(rank)` owns that absolute logarithmic
   100-rank scale internally — consumers never supply a per-hole or per-surface denominator,
   so the same rank cannot change colour between renderers.
-  One web palette used to be pinned COPIES of ramp stops; with the calm redesign Word
-  mode's rarity ladder is AUTHORED instead (`rarity.test.ts` still pins its hexes and
-  re-measured dE constraints, so a retune stays a deliberate act).
+  
 - **`src/scoring.ts` is the ONE reading of a guess log (#203).** It moved here from the web
   when the SERVER started deriving a round's `solved`, its `progress` and its score from the
   log it stores: `s`/`holeProgress` (the reconstruction curve), `rankCount` (N is GROUPS, not
@@ -217,13 +198,12 @@
   slice alike, sent by the client, compared for equality by the
   server. It replaced a tag derived from the sentence's holes, which could not tell a
   corrected puzzle from the one it replaced whenever the sentence was unchanged — and since
-  rank 0 is a GROUP, that is exactly what a correction moves. `src/puzzleTag.ts` keeps only
-  `fnvTag`, which Word mode still derives its own tag with.
+  rank 0 is a GROUP, that is exactly what a correction moves.
 - `src/leaderboard.ts` is the ONE definition of the #190 board's ranking rules —
   competition-style tie ranks, the plain top-50 cut (nothing folded, user-decided
   2026-08-20), the own-row ±2 window — and, since #271, of the PERIOD rule (`rankPeriod`:
-  podium points 3/2/1 per day by competition rank, then solved days, then the total in
-  the mode's direction) and the STANDING (`standingIn`) — plus the `Board`/`BoardRow`/
+  podium points 3/2/1 per day by competition rank, then solved days, then the total, fewer
+  tries first) and the STANDING (`standingIn`) — plus the `Board`/`BoardRow`/
   `PeriodBoard` API types. The BACKEND applies them before attaching profiles and the WEB
   renders what they produced; a fork would let the ranks a board shows drift from the
   rows the server selected. Contract-tested (`leaderboard.test.ts`); the product rules
@@ -242,21 +222,13 @@
 - `src/shareCard.ts` is the share-token codec, running byte-identically in the
   browser and the Lambda; the token's product behavior and evolution rules are in the
   solved-result bullet of `packages/web/AGENTS.md`. Its leading VERSION field is a
-  **format id in ONE namespace shared by both dailies**: **v6 = the sentence result**
-  (the #214 CAPPED flag, then the ruler trajectory and — on an uncapped run only — its
-  solve ticks; v2, the same payload without the flag, is retired), **v5 = Word mode's (#156) — the common
-  `version | lang | day` opening, then ONE claim count per rarity grade (commonest first,
-  `WORD_RARITY_GRADES` = 5; the claim count a surface names is DERIVED as their sum,
-  `wordShareScore`, never stored), then the accented UTF-8 display word its OG card draws** (decided 2026-08-11, superseding v4's single score so the
-  share surfaces can break the score down by rarity; v3 and v4 are retired). A future
-  sentence bump must SKIP a value already taken. The card's rarity chip row paints
-  `cardSvg.ts`'s `WORD_RARITY_COLORS` — a pinned one-way COPY of the web's
-  `RARITY_COLORS`, asserted identical by the web's `rarity.test.ts`. Each format
-  has its own encode/decode pair, neither decodes the other, and
-  **`decodeLegacyShareTarget` recognizes a NAMED LIST of retired SENTENCE versions (1 and
-  2), never a range** — #214 bumped the sentence format PAST Word mode's ids, and a range
-  test would then have handed a retired or malformed Word token the redirect the codec
-  exists to refuse. A malformed token of either shape stays a flat 404.
+  **format id**: **v6 = the result** (the #214 CAPPED flag, then the ruler trajectory and —
+  on an uncapped run only — its solve ticks; v2, the same payload without the flag, is
+  retired). v3–v5 were the retired Word mode's (2026-09-16) and decode as nothing; a future
+  bump must SKIP them. **`decodeLegacyShareTarget` recognizes a NAMED LIST of retired
+  versions (1 and 2), never a range** — #214 bumped the format PAST Word mode's ids, and a
+  range test would hand a retired Word token the redirect the codec exists to refuse. A
+  malformed token stays a flat 404.
 - `src/glyphs.ts` is the ONE `∞` the app draws (#214): Press Start 2P has no such glyph and
   the OG rasterizer runs with `loadSystemFonts: false`, so the capped round's headline ships
   as pixel-art PATH DATA — one path, one view box, and one `INFINITY_EM_HEIGHT` both

@@ -99,8 +99,8 @@ export interface PrivacyDoc {
 // allowance's inside the hour, and DynamoDB's TTL sweep is best-effort besides — so a
 // promise of an exact moment is one the store does not make.
 //
-// `{mail}` and `{host}` are filled by the screen from PRIVACY_CONTACT / PRIVACY_HOST, so the two languages cannot name two
-// different inboxes — the `{n}` rule the Word gate's own copy follows.
+// `{mail}` and `{host}` are filled by the screen from PRIVACY_CONTACT / PRIVACY_HOST, so the
+// two languages cannot name two different inboxes — the `{n}` rule `tn` follows.
 export const PRIVACY: Record<UiLang, PrivacyDoc> = {
   en: {
     title: 'What Whippin keeps about you, and why',

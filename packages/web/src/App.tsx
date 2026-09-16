@@ -2,7 +2,6 @@ import { Fragment, useCallback, useEffect, useState } from 'react';
 import { activeDate, dayNumber as dayNumberOf } from '@whippin/shared';
 import LoadingWave from './components/LoadingWave';
 import usePuzzle from './hooks/usePuzzle';
-import useWordPuzzle from './hooks/useWordPuzzle';
 import Account from './screens/Account';
 import AccountEmail from './screens/AccountEmail';
 import Profile from './screens/Profile';
@@ -13,7 +12,6 @@ import Leaderboard from './screens/Leaderboard';
 import SignedOut from './screens/SignedOut';
 import { useIdentityScopeRevision, useSignedOut } from './identity';
 import Game from './screens/Game';
-import WordGame from './screens/WordGame';
 import TopBar, { HeaderLeft } from './components/TopBar';
 import PuzzleTitle from './components/PuzzleTitle';
 import HeaderKeys, { type HeaderPlace } from './components/HeaderKeys';
@@ -27,15 +25,7 @@ import Invite from './tutorial/Invite';
 import { useGameStore } from './state/gameStore';
 import { track } from './analytics';
 import { useLocation, navigate } from './routing';
-import {
-  parseRoute,
-  pathForMode,
-  pathForArchive,
-  pathForBoard,
-  type LangCode,
-  type Mode,
-  type Route,
-} from './langs';
+import { parseRoute, pathForGame, type LangCode, type Route } from './langs';
 // Inline SVG (vite-plugin-svgr): the header's leaderboard entry, painting with
 // currentColor like every chrome icon; the button's aria-label names it.
 import { t } from './i18n';
@@ -60,7 +50,6 @@ export default function App() {
   // so parsing gets it here (kept out of parseRoute so parsing stays pure/testable).
   const today = activeDate(new Date());
   const route = parseRoute(pathname, { activeDate: today });
-  const lastMode = useGameStore((s) => s.lastMode);
   // The chrome language of every screen the URL does not name one for — the link's `?lang=`,
   // then the stored preference, then the browser's (`hooks/useUiLang`).
   const homeLang = useUiLang();
@@ -118,18 +107,17 @@ export default function App() {
 
   // The game IS the home: `/` (and any unknown path) redirects to a language — the LINK's
   // own `?lang=` if it carries one, else the persisted last-played one, else the browser's
-  // (fr* -> /fr), else English — in the LAST-PLAYED MODE (#156: arrival lands on it, like
-  // the language; a first visit has no preference and lands on the sentence). replaceState
-  // so `/` never lingers in history: back from the game exits instead of bouncing through
-  // the redirect, and a deep link to /fr or /en never redirects.
+  // (fr* -> /fr), else English. replaceState so `/` never lingers in history: back from the
+  // game exits instead of bouncing through the redirect, and a deep link to /fr or /en never
+  // redirects.
   useEffect(() => {
     if (route.view !== 'home') return;
-    navigate(pathForMode(homeLang, lastMode ?? 'sentence'), { replace: true });
-  }, [route.view, homeLang, lastMode]);
+    navigate(pathForGame(homeLang), { replace: true });
+  }, [route.view, homeLang]);
 
   // The board's whose-scores tab belongs to a VISIT (user feedback 2026-08-20, narrowing
   // the first cut's standing preference). It has to survive the two things that remount
-  // the screen WITHOUT ending the visit — a page refresh and a header mode switch — so it
+  // the screen WITHOUT ending the visit — a page refresh and a header language pick — so it
   // is persisted; and leaving the leaderboard is what ends it, so the next open is the
   // GROUP, the trusted default. Rendering a non-board route IS the leaving, which is
   // why the rule lives here: an entry point that forgot to reset would silently reopen on
@@ -172,9 +160,6 @@ export default function App() {
   // DeviceFrame is decorative and deliberately remains outside.
   const identityScope = useIdentityScopeRevision();
 
-  // The row's own language and daily: the route's where it names one, the resolved home
-  // pair everywhere else — the same split `docLang` makes just above.
-  const routed = route.view === 'game' || route.view === 'archive' || route.view === 'board';
   const place = blocked ? null : headerPlace(route, gameSurface, today);
   // Leaving the lesson by the row IS skipping it, so the row says so before it goes.
   const leaveTutorial = useCallback(() => {
@@ -196,8 +181,9 @@ export default function App() {
           <TopBar
             right={
               <HeaderKeys
-                lang={routed ? route.lang : homeLang}
-                mode={routed ? route.mode : (lastMode ?? 'sentence')}
+                // The row's own language: the route's where it names one, the resolved home
+                // language everywhere else — the same split `docLang` makes above.
+                lang={docLang}
                 on={place}
                 archivePlay={place === 'archive' && route.view === 'game'}
                 leave={place === 'rules' ? leaveTutorial : undefined}
@@ -221,17 +207,14 @@ export default function App() {
         {!blocked && route.view === 'groupInvite' && (
           <GroupInvite groupId={route.groupId} lang={homeLang} />
         )}
-        {!blocked && route.view === 'archive' && <Archive lang={route.lang} mode={route.mode} />}
-        {/* The leaderboard screen (#190) — keyed so switching daily/language drops the
-            cached reads for that board's own. The TAB is deliberately outside the key: a
-            mode switch is still the same visit (see the reset effect above). */}
-        {!blocked && route.view === 'board' && (
-          <Leaderboard key={`${route.lang}:${route.mode}`} lang={route.lang} mode={route.mode} />
-        )}
+        {!blocked && route.view === 'archive' && <Archive lang={route.lang} />}
+        {/* The leaderboard screen (#190) — keyed so switching language drops the cached
+            reads for that board's own. The TAB is deliberately outside the key: a language
+            pick is still the same visit (see the reset effect above). */}
+        {!blocked && route.view === 'board' && <Leaderboard key={route.lang} lang={route.lang} />}
         {!blocked && route.view === 'game' && (
           <GameRoute
             lang={route.lang}
-            mode={route.mode}
             date={route.date}
             surface={gameSurface}
             closeTutorial={closeTutorial}
@@ -279,17 +262,13 @@ function headerPlace(route: Route, surface: GameSurface, today: string): HeaderP
   }
 }
 
-// One puzzle route: /<lang> plays today's sentence, /<lang>/<date> replays a past
-// archive day (#55), and /<lang>/word[/<date>] is Word mode's daily (#156) — one route
-// component for both faces, so the header, the tutorial gate and the transient states
-// (loading / error / missing-puzzle) cannot drift between them. Loads the day's
-// artifact for the language and records it as the last-played language AND mode. The
-// header (TopBar) is owned HERE — above every transient state and the loaded game alike.
-// A loaded screen only reports the live content for its left slot, so the header itself
-// stays put while the body swaps.
+// One puzzle route: /<lang> plays today's sentence and /<lang>/<date> replays a past
+// archive day (#55) — or tomorrow's (#273). Loads the day's puzzle for the language and
+// records it as the last-played language. What the route puts in the header's left slot is
+// identical through loading, error, missing-puzzle and the loaded game, so the header stays
+// put while the body swaps.
 function GameRoute({
   lang,
-  mode,
   date,
   // WHICH surface is App's call, because the header is (see `headerPlace`); rendering it is
   // this route's, because the puzzle and the callbacks live here.
@@ -298,7 +277,6 @@ function GameRoute({
   preview,
 }: {
   lang: LangCode;
-  mode: Mode;
   date?: string;
   surface: GameSurface;
   closeTutorial: () => void;
@@ -309,15 +287,8 @@ function GameRoute({
     cycleError: () => void;
   };
 }) {
-  // ONE of the two hooks fetches (the other idles on a null lang): the two dailies are
-  // separate artifacts behind separate URLs, and this route plays exactly one of them.
-  const sentence = usePuzzle(mode === 'sentence' ? lang : null, date);
-  const word = useWordPuzzle(mode === 'word' ? lang : null, date);
-  const { dayNumber, error, loading, noPuzzle, retry } =
-    mode === 'word' ? word : sentence;
+  const { puzzle, dayNumber, error, loading, noPuzzle, retry } = usePuzzle(lang, date);
   const setLastLang = useGameStore((s) => s.setLastLang);
-  const setLastMode = useGameStore((s) => s.setLastMode);
-  const setOnboarded = useGameStore((s) => s.setOnboarded);
 
   // A dated route replays a past day when its date is not today's active game day; the
   // undated route is always the active day. Gates the streak celebration + solve analytics.
@@ -333,18 +304,6 @@ function GameRoute({
     setLastLang(lang);
   }, [lang, setLastLang]);
 
-  // The MODE is only remembered once the day's artifact has actually LOADED (#156). It
-  // decides where `/` lands, and unlike a language a mode can be genuinely absent — word
-  // artifacts are published per day and past days are not backfilled, so a day without one
-  // is a plain 404. Recorded on arrival instead, a single tap on the header toggle on such
-  // a day would pin every later visit to a route that shows NO PUZZLE TODAY and nothing
-  // else, with only the toggle to escape it: arrival lands where you last PLAYED, and a
-  // 404 is not play.
-  const loaded = (mode === 'word' ? word.puzzle : sentence.puzzle) != null;
-  useEffect(() => {
-    if (loaded) setLastMode(mode);
-  }, [loaded, mode, setLastMode]);
-
   // Onboarding tutorial (#51): it NEVER starts without an action. A first visit (no
   // persisted `onboarded`) lands on the INVITATION — standing in for the loading
   // screen while the day's puzzle fetches behind it — and TUTORIAL / SKIP both settle
@@ -353,14 +312,12 @@ function GameRoute({
   // The open-tutorial state lives in the STORE (transient) so the tutorial's flag can
   // survive a language pick — the route changes, this component remounts, and the
   // tutorial is still open, now in that language.
-  // The tutorial is MODE-AGNOSTIC on purpose: it teaches the rank mechanic both dailies
-  // share, and its routes ending is Word mode's primer (#155/#156).
   const openTutorial = useGameStore((s) => s.openTutorial);
 
   // key={lang}: switching language mid-tutorial (the header's drums) restarts it in
   // that language.
   if (surface === 'tutorial') {
-    return <LazyTutorial key={lang} lang={lang} mode={mode} onDone={closeTutorial} />;
+    return <LazyTutorial key={lang} lang={lang} onDone={closeTutorial} />;
   }
   if (surface === 'invite') {
     return (
@@ -384,7 +341,7 @@ function GameRoute({
           missing-puzzle and the loaded game: which puzzle is a fact of the ROUTE, so it
           never waits on a game to report it. */}
       <HeaderLeft>
-        <PuzzleTitle lang={lang} mode={mode} dayNumber={isActiveDay ? null : dayNumber} />
+        <PuzzleTitle lang={lang} dayNumber={isActiveDay ? null : dayNumber} />
       </HeaderLeft>
       {loading && (
         <p className="status">
@@ -392,22 +349,15 @@ function GameRoute({
         </p>
       )}
       {error !== null && <LoadError message={t(lang, 'failedPuzzle')} lang={lang} onRetry={retry} />}
-      {/* `date` tells NoPuzzle whether this is an archive miss; `mode` keeps its return
-          route on the same daily game's calendar. */}
-      {noPuzzle && <NoPuzzle lang={lang} mode={mode} date={date} />}
-      {mode === 'sentence' && sentence.puzzle && (
+      {/* `date` tells NoPuzzle whether this is an archive miss. */}
+      {noPuzzle && <NoPuzzle lang={lang} date={date} />}
+      {puzzle && (
         <Game
-          puzzle={sentence.puzzle}
+          puzzle={puzzle}
           dayNumber={dayNumber}
           isActiveDay={isActiveDay}
           early={early}
           deferResultsAnimation={preview.streak != null}
-        />
-      )}
-      {mode === 'word' && word.puzzle && (
-        <WordGame
-          puzzle={word.puzzle}
-          dayNumber={dayNumber}
         />
       )}
       {preview.error != null && (

@@ -140,8 +140,7 @@ describe('installVersionCheck', () => {
       installVersionCheck('old');
 
       // The check is a network round trip (up to the 10s abort); the app mounts and
-      // becomes playable under it, so the answer can land on a running Word clock or a
-      // half-typed name.
+      // becomes playable under it, so the answer can land on a half-typed guess or name.
       h.touch(event);
       await h.settle();
       expect(h.reload).not.toHaveBeenCalled();

@@ -19,8 +19,8 @@ export interface VocabBuild {
   // suffix or extension ("cc.fr.300", "glove.6B.300d"): both sides of the reduction
   // name the same build, so whichever command refreshed the set recorded the same one.
   // Worth keeping because so much of the design is calibrated against corpus properties
-  // (Word mode's rarity cuts, the measured en-vs-fr gap) — a retune reads as evidence
-  // only if you know which corpus it was measured on.
+  // (the measured en-vs-fr gap) — a retune reads as evidence only if you know which corpus
+  // it was measured on.
   embedding: string;
   // UTC date (YYYY-MM-DD) of the run that first produced THIS vocabulary. An unchanged
   // rebuild keeps it, so it dates the corpus build and not the last time someone

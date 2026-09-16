@@ -61,8 +61,8 @@ function initializeHandler(): Promise<ProductionHandler> {
           // the same store the /scores read does — and the address secret that meters it.
           scoreStore,
           ipHmacSecret: secrets.ipHmacSecret,
-          // ROUND START is Turnstile-gated in both modes (#202/#203); since #216 the device
-          // bootstrap is the other gated write.
+          // ROUND START is Turnstile-gated (#203); since #216 the device bootstrap is the
+          // other gated write.
           turnstile,
           // A confirmed solve credits the streak's day (#211); `/history` reads it back.
           history: historyStore,

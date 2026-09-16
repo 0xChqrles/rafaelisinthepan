@@ -14,7 +14,7 @@
 //   - the scripted guided words (`--keep`), which are deliberately outside the zone: the
 //     "far" guess of the lesson has to rank FARTHER than the start word.
 // A kept word brings its whole GROUP (every alias key at that rank), because `word`/`rank`/
-// `dq`/`freq` are group properties and half a group is not a thing the schema describes.
+// `dq` are group properties and half a group is not a thing the schema describes.
 //
 // The board — which word, which start rank, which guided words — is declared ONCE, in
 // src/tutorial/scripts/<lang>.ts. This script takes it on the command line, the script file

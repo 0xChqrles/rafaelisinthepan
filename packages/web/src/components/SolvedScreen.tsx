@@ -344,10 +344,9 @@ export default function SolvedScreen({
       },
       by,
     );
-    // This screen owns only its localized UNIT; the line's shape is share.ts's, shared
-    // with Word mode so the two modes' messages cannot drift apart. A capped round names
-    // no count — `∞` stands where the number would, exactly as the card draws it — and
-    // the unit stays plural, since there is no "1" to agree with.
+    // This screen owns only its localized UNIT; the line's shape is share.ts's. A capped
+    // round names no count — `∞` stands where the number would, exactly as the card draws
+    // it — and the unit stays plural, since there is no "1" to agree with.
     const unit = t(lang, !capped && guessCount === 1 ? 'try' : 'tries').toLowerCase();
     const headline = shareHeadline(dayNumber, capped ? '∞' : guessCount, unit);
     // The card (via the token) draws the run in full; the plain-text row is the bounded

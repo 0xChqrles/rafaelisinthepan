@@ -63,7 +63,7 @@ async function mount(): Promise<void> {
   // mutation before a route can see or send an outbox. UNLESS the shared key could not be
   // read at all: an unreadable storage says nothing about this device's identity
   // (identity.ts's own rule), so its null is not proven emptiness — reconciling it would
-  // wipe the outbox and the Word rounds out of an intact database. Skipping leaves the
+  // wipe the outbox out of an intact database. Skipping leaves the
   // committed owner standing; every live transition still reconciles through the scope
   // listener above, off identities it actually proved.
   if (loadedIdentity.readable) {

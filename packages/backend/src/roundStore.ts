@@ -1,44 +1,19 @@
 import { EARLY_GUESS_CAP } from '@whippin/shared';
-import type { DeviceAgent } from './deviceStore';
-import type { ScoreMode } from './scoreLimits';
 
 // The server-authoritative round record (#201): the RAW ordered guess log of one
 // player's play on one daily. The log is stored as STRINGS — the folded forms the
 // player actually tried — and the client interprets it (dedup, hole states, score);
-// nothing here replays or scores anything. One item per (date, lang, mode, publicId).
+// nothing here replays or scores anything. One item per (date, lang, publicId).
 //
 // The two bounds live in @whippin/shared (`ROUND_GUESS_CAP`, `ROUND_WRITE_MIN_MS`)
 // because the web paces its flushes against the same numbers: the cap is enforced in
 // the append write's own condition so it cannot be raced, and the interval is the
-// per-player minimum between accepted writes (~1s between guesses).
-//
-// SENTENCE mode STREAMS into that log (`append`). WORD mode writes exactly TWICE (#202):
-// a Turnstile-gated `start` that stamps the server's own clock onto this same record, and
-// one end-of-run `submit` carrying the whole log. Neither word path touches
-// `lastWriteAt` — that attribute exists for the streaming interval, and a mode that writes
-// twice a day is not what it bounds.
-//
-// **A WORD RUN BELONGS TO THE DEVICE THAT STARTED IT (#217).** The stamp names that device,
-// and two conditions carry the whole model: a start is accepted only while the run is
-// UNSUBMITTED (and then always mints a fresh clock, wiping what it replaces), and a
-// submission only while the run is unsubmitted AND the stamp still names the caller. What
-// that removes is the client-side inference #202 needed — a device could tell "I am running
-// this" from "I merely joined it" only by remembering that its own start stamped the clock,
-// and everything downstream hung off that memory.
+// per-player minimum between accepted writes (~1s between guesses). The client STREAMS
+// into the log (`append`).
 
 export interface RoundKey {
   date: string;
   lang: string;
-  mode: ScoreMode;
-}
-
-// WHICH DEVICE a word run belongs to (#217), stamped by the start that minted the clock.
-// It carries the device's parsed user-agent FIELDS beside its id — a SNAPSHOT taken at the
-// start, so the screen offering to end that run can name it ("Started on iPhone / Chrome")
-// without a second lookup, and can still name it after that device has been signed out. The
-// id is what the two conditions compare; the label is never read by a rule.
-export interface RoundRunner extends DeviceAgent {
-  deviceId: string;
 }
 
 export interface RoundState {
@@ -46,8 +21,7 @@ export interface RoundState {
   createdAt: string;
   // What the server DERIVED from the log beside it (#203), written in the same mutation
   // that appended the guesses — so nothing can half-fail and no stored summary can
-  // disagree with the log it describes. Sentence rounds only: a word round is "done", not
-  // solved, and `submittedAt` already says so.
+  // disagree with the log it describes.
   //
   // `progress` is the reconstruction percentage (0-100). `solved` is ONLY EVER WRITTEN
   // TRUE and never cleared: a second device can append between this server's read and its
@@ -57,27 +31,6 @@ export interface RoundState {
   // is also what makes it usable as the append condition's freeze.
   progress?: number;
   solved?: boolean;
-  // WORD mode's clock (#202): the instant the SERVER stamped this round's start, ISO. It
-  // is the anchor the run's whole deadline hangs off, which is why the server owns it —
-  // a client-supplied one is simply backdated and the wait check below evaporates.
-  // Absent on a sentence round, and on a word round nobody has started.
-  //
-  // A STRING, like `createdAt` and unlike `lastWriteAt`: the Number spelling is reserved
-  // for the one attribute a DynamoDB CONDITION compares arithmetically, and this one is
-  // compared in the handler, after a read it has to do anyway.
-  startedAt?: string;
-  // WHO that clock belongs to (#217) — absent exactly when `startedAt` is, since one write
-  // stamps both. Every answer carries it, because it is half of what the screen picks its
-  // phase from: a run this device does not own is one it may neither play nor submit, and
-  // the only thing it can do with the day is start it over.
-  startedBy?: RoundRunner;
-  // When the word round's end-of-run log was RECORDED (#202). It is the submission's own
-  // marker, and it has to be: a run that claimed nothing submits an EMPTY log, which is
-  // indistinguishable from an unsubmitted one by the log alone. Inferring it from
-  // `guesses.length` let a second submission overwrite a recorded empty run, made a retry
-  // of one classify as `not_started` — a client VERDICT, so the conversation closed — and
-  // left a mount read unable to see that the day was already recorded.
-  submittedAt?: string;
 }
 
 // What one append did:
@@ -136,63 +89,6 @@ export interface RoundSettleInput extends RoundKey {
   solved: boolean;
 }
 
-export interface RoundStartInput extends RoundKey {
-  publicId: string;
-  puzzle: string;
-  // The device the run is being stamped FOR (#217) — the caller's own, resolved from its
-  // token. It is written beside the clock and compared by the submission's condition.
-  runner: RoundRunner;
-  now: Date;
-}
-
-// What one word-round START did (#217, replacing #202's `started | running`):
-//   started — the clock was stamped NOW, for THIS device. It is a RESTART as much as a
-//             first start: an unsubmitted run — this device's, another device's, or the
-//             retired puzzle's — is wiped and replaced, log and all. That is the whole
-//             trade the issue makes: cross-device RESUME becomes cross-device RESTART,
-//             because a run whose claims live in another device's local storage was never
-//             resumable in the first place (Word mode streams nothing).
-//   already_submitted — the run is RECORDED, so there is nothing left to restart: the
-//             daily is one-shot once its log is stored. The caller adopts the final run
-//             rather than wiping it.
-export type RoundStartOutcome = 'started' | 'already_submitted';
-
-export interface RoundSubmitInput extends RoundKey {
-  publicId: string;
-  puzzle: string;
-  // The device claiming to have PLAYED this run (#217). A submission is accepted only
-  // while the stamp still names it: a device whose run was restarted elsewhere has a log
-  // for a clock that no longer exists, and recording it would bury the live run.
-  deviceId: string;
-  guesses: string[];
-  // The shortest this run can possibly have lasted, in ms (`wordRunFloorMs` over the
-  // claims the log carries). The ROUTE computes it, because only it can tell a claim from
-  // a miss — that needs the day's artifact, which this store knows nothing about.
-  minElapsedMs: number;
-  now: Date;
-}
-
-// What one word-round SUBMIT did:
-//   submitted        — the whole log was recorded;
-//   not_started      — no round of this puzzle has a server-stamped start, so there is
-//                      nothing to end;
-//   started_elsewhere — the stamp names ANOTHER device (#217): this run was restarted
-//                      while its player was away, so the log offered here belongs to a
-//                      clock the server no longer has. Recording it would overwrite the
-//                      run somebody is playing now, and first-write-wins would make that
-//                      permanent. The caller adopts the answer and starts over.
-//   too_early        — `now - startedAt` is under `minElapsedMs`: a run of this shape
-//                      cannot be over yet;
-//   already_submitted — first write wins, like a score row: the daily is one-shot and
-//                      cannot be replayed, so a second submission changes nothing and is
-//                      answered with the log that was recorded.
-export type RoundSubmitOutcome =
-  | 'submitted'
-  | 'not_started'
-  | 'started_elsewhere'
-  | 'too_early'
-  | 'already_submitted';
-
 // What a group board reads of one stored round (#206): the RAW ordered log (the
 // route dedups it against the day's full artifact for the exact try count), the puzzle
 // tag that says which published revision the log answers, and the derived summary the
@@ -206,12 +102,11 @@ export interface RoundBoardRow {
   progress: number;
 }
 
-// One month of one (language, mode) for ONE player — the private calendar read (#211).
-// The month is `YYYY-MM`, which is exactly a prefix of the sort key that #203 reordered
-// for it: `<lang>#<mode>#<month>-` matches that game's days and nothing else.
+// One month of one language for ONE player — the private calendar read (#211). The month
+// is `YYYY-MM`, which is exactly a prefix of the sort key that #203 reordered for it:
+// `<lang>#sentence#<month>-` matches that language's days and nothing else.
 export interface RoundMonthKey {
   lang: string;
-  mode: ScoreMode;
   month: string;
 }
 
@@ -290,19 +185,6 @@ export interface RoundStore {
   // thing traded for the derived one. The append's job is to store guesses; the summary
   // rides along.
   settle(input: RoundSettleInput): Promise<boolean>;
-  // WORD mode's two writes (#202) — the mode streams nothing, because what syncing buys is
-  // the live group board and a 60-second run is over before anyone opens it.
-  //
-  // START stamps `startedAt` from the SERVER's clock on THIS record (never a separate
-  // short-lived item: the submission can arrive hours later, on the revisit that finds the
-  // run over) — and, since #217, the DEVICE it belongs to beside it. It is atomic and
-  // unconditional except for the one thing that ends a daily: a RECORDED run is refused,
-  // everything else is replaced.
-  start(input: RoundStartInput): Promise<{ outcome: RoundStartOutcome; state: RoundState }>;
-  // SUBMIT records the whole log at once, first-write-wins, no earlier than the run's own
-  // floor, and only for the DEVICE the stamp names (#217). Like `append`, every outcome
-  // answers with the stored state.
-  submit(input: RoundSubmitInput): Promise<{ outcome: RoundSubmitOutcome; state: RoundState }>;
 }
 
 // What the early-play bound (#273) refuses, read off the stored state of THIS puzzle: the
@@ -313,15 +195,15 @@ export function earlyLocked(stored: RoundState, batch: number): boolean {
   return (stored.progress ?? 0) > 0 || stored.guesses.length + batch > EARLY_GUESS_CAP;
 }
 
-// A round key is only (date, lang, mode), so RE-PUBLISHING keeps the key while changing the
+// A round key is only (date, lang), so RE-PUBLISHING keeps the key while changing the
 // puzzle. Without this tag the mount read would hand the RETIRED version's log straight back
 // and undo the client's reset for good. So the record names its puzzle, a read for a
 // different tag is an honest "nothing stored for this one", and an append carrying a
 // different tag REPLACES the log rather than growing it.
 //
-// For a sentence it is the content-derived revision `publish` stamps onto the puzzle and
-// slice; for Word mode the client derives it from the day's word. The server only compares
-// the value, which is the same "stores strings, interprets nothing" rule the log follows.
+// It is the content-derived revision `publish` stamps onto the puzzle and slice. The server
+// only compares the value, which is the same "stores strings, interprets nothing" rule the
+// log follows.
 // Bounded so a hostile value cannot bloat the item.
 export const PUZZLE_TAG_SHAPE = /^[a-z0-9]{1,32}$/;
 
@@ -336,27 +218,25 @@ export function roundPartition(publicId: string): string {
   return `round#${publicId}`;
 }
 
-// LANG, MODE, then DATE — reordered by #203 (it read `<date>#<lang>#<mode>` in #201).
+// LANG, then DATE — reordered by #203 (it read `<date>#<lang>#…` in #201): #211 reads a
+// player's calendar as ONE Query over a month, and with the date first a month prefix
+// matched every language. A `FilterExpression` does not help, because DynamoDB filters
+// AFTER reading: the cost and the 1 MB response limit are measured on what is READ.
 //
-// It lands here rather than in #211, which is what actually needs it, because this is the
-// first issue to write `progress`/`solved` onto round rows and reordering afterwards would
-// mean those rows had been written under two schemes. What it buys: #211 reads a player's
-// calendar as ONE Query over a month, and with the date first a month prefix matches every
-// language and every mode — up to ~124 rows for one calendar. Reordered,
-// `fr#sentence#2026-08-` returns exactly one game's month, about 31 rows. A
-// `FilterExpression` does not help, because DynamoDB filters AFTER reading: the cost and
-// the 1 MB response limit are measured on what is READ, and at 5-10 KB a round row ~124
-// rows can cross it and paginate where ~31 cannot. No migration — the archive is wiped
-// before launch and back-compat is not kept.
+// The middle `sentence` segment is a FIXED part of the key: it named the daily while Word
+// mode stood beside it (retired 2026-09-16), and every stored round is addressed by it —
+// dropping it would orphan every player's rounds, calendar and in-progress day.
+const SORT_KEY_DAILY = 'sentence';
+
 export function roundSortKey(key: RoundKey): string {
-  return `${key.lang}#${key.mode}#${key.date}`;
+  return `${key.lang}#${SORT_KEY_DAILY}#${key.date}`;
 }
 
 // The sort-key PREFIX one player's month sits behind (#211) — the same spelling as the key
-// above, minus the day, which is the whole reason the order is lang#mode#date. The trailing
-// dash is load-bearing: without it `2026-1` would also match `2026-10`.
+// above, minus the day, which is the whole reason the order is lang first and date last.
+// The trailing dash is load-bearing: without it `2026-1` would also match `2026-10`.
 export function roundMonthPrefix(key: RoundMonthKey): string {
-  return `${key.lang}#${key.mode}#${key.month}-`;
+  return `${key.lang}#${SORT_KEY_DAILY}#${key.month}-`;
 }
 
 // The formatters' one INVERSE: the DATE back out of a sort key the month prefix matched.
@@ -366,5 +246,5 @@ export function roundMonthPrefix(key: RoundMonthKey): string {
 // error, and the memory store's tests passing because it made the same mistake. One
 // spelling beside the formatters is what keeps the three in step.
 export function roundSortKeyDate(sortKey: string, key: RoundMonthKey): string {
-  return sortKey.slice(`${key.lang}#${key.mode}#`.length);
+  return sortKey.slice(`${key.lang}#${SORT_KEY_DAILY}#`.length);
 }

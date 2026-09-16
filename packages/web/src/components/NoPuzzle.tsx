@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import Button from './Button';
 import PuzzleSelect from './PuzzleSelect';
 import { navigate } from '../routing';
-import { pathForArchive, type LangCode, type Mode } from '../langs';
+import { pathForArchive, pathForGame, type LangCode } from '../langs';
 import { t } from '../i18n';
 
 // Shown when the backend has no puzzle for the requested day in this language (404 ->
@@ -19,21 +19,17 @@ import { t } from '../i18n';
 //
 // Neither is a failure to RETRY (nothing transient to re-fetch), so both offer only
 // navigation. Renders WITHOUT the HUD, on the shared .load-error surface — which is why
-// CHANGE LANGUAGE opens the header's own selection drums (`PuzzleSelect`, the daily and
-// the language, folding onto the pick) right here: the `/select` screen it used to send
+// CHANGE LANGUAGE opens the header's own selection drum (`PuzzleSelect`, folding onto
+// today's puzzle in the picked language) right here: the `/select` screen it used to send
 // the player to was retired 2026-09-05 (user-decided) for exactly that dialog.
-export default function NoPuzzle({
-  lang,
-  mode,
-  date,
-}: {
-  lang: LangCode;
-  mode: Mode;
-  date?: string;
-}) {
+export default function NoPuzzle({ lang, date }: { lang: LangCode; date?: string }) {
   const [selecting, setSelecting] = useState(false);
   const select = selecting && (
-    <PuzzleSelect lang={lang} mode={mode} onClose={() => setSelecting(false)} />
+    <PuzzleSelect
+      lang={lang}
+      onLang={(picked) => navigate(pathForGame(picked))}
+      onClose={() => setSelecting(false)}
+    />
   );
   // The day is worth naming: nothing else on this screen says WHICH day is missing (the
   // header carries no date). `parseRoute` only ever yields a real calendar date, but the
@@ -72,7 +68,7 @@ export default function NoPuzzle({
         )}
         {t(lang, 'noPuzzleDayNote')}
       </p>
-      <Button variant="secondary" onClick={() => navigate(pathForArchive(lang, mode))}>
+      <Button variant="secondary" onClick={() => navigate(pathForArchive(lang))}>
         {t(lang, 'backToArchive')}
       </Button>
       <Button variant="secondary" onClick={() => setSelecting(true)}>

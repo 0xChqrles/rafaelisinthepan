@@ -502,7 +502,7 @@ export function dynamoLinkStore(
       let conflicts = 0;
       for (let replans = 0; replans < MOVE_PLAN_ATTEMPTS; ) {
         // The active day's play, planned by the stores that own the rows and committed HERE,
-        // beside the identity — every tuple in parallel, each its own consistent reads.
+        // beside the identity — every language in parallel, each its own consistent reads.
         // EVERY plan contributes items, a no-move included: a decision resting on "nothing
         // here" is guarded exactly like one resting on a row, or a first guess landing on
         // an empty source between the plan and the commit would be orphaned under the

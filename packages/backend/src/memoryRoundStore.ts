@@ -9,7 +9,6 @@ import {
   type RoundBoardRow,
   type RoundDaySummary,
   type RoundKey,
-  type RoundRunner,
   type RoundState,
   type RoundStore,
 } from './roundStore';
@@ -20,13 +19,6 @@ interface RoundItem {
   puzzle: string;
   createdAt: string;
   lastWriteAt: number;
-  // Word mode's server-stamped clock (#202); absent on a sentence round.
-  startedAt?: string;
-  // The DEVICE that clock belongs to (#217), stamped by the same write.
-  startedBy?: RoundRunner;
-  // When the end-of-run log was RECORDED — the submission's own marker, never the log's
-  // length (roundStore.ts: a 0-claim run records an empty log).
-  submittedAt?: string;
   // The summary the server DERIVED from the log beside it (#203). `solved` is only ever
   // written true, and its presence is what freezes further appends.
   progress?: number;
@@ -35,7 +27,7 @@ interface RoundItem {
 
 // Process-local store for `pnpm backend:dev`: the same RoundStore contract as DynamoDB —
 // one append-or-refuse decision per write under both bounds, plus the puzzle-identity
-// restart, plus Word mode's two writes (#202) — with no AWS account. Restarting the local server intentionally resets this lab
+// restart — with no AWS account. Restarting the local server intentionally resets this lab
 // data. The bound constants are imported from @whippin/shared rather than parameterized, so
 // this implementation cannot drift from the production condition it mirrors.
 export function memoryRoundStore(): RoundStore & LinkRoundWrites {
@@ -46,12 +38,6 @@ export function memoryRoundStore(): RoundStore & LinkRoundWrites {
   const stateOf = (item: RoundItem): RoundState => ({
     guesses: [...item.guesses],
     createdAt: item.createdAt,
-    // ABSENT rather than empty when unstamped, the Dynamo store's rule: the submit's "is
-    // there a run to end?" test reads exactly this, and `submittedAt` is what says the run
-    // was recorded. The runner (#217) is stamped by the same write and travels with it.
-    ...(item.startedAt === undefined ? {} : { startedAt: item.startedAt }),
-    ...(item.startedBy === undefined ? {} : { startedBy: { ...item.startedBy } }),
-    ...(item.submittedAt === undefined ? {} : { submittedAt: item.submittedAt }),
     ...(item.progress === undefined ? {} : { progress: item.progress }),
     ...(item.solved === true ? { solved: true } : {}),
   });
@@ -186,67 +172,10 @@ export function memoryRoundStore(): RoundStore & LinkRoundWrites {
       return true;
     },
 
-    // Word mode's round START (#202, owned by a DEVICE since #217): stamp the server clock
-    // and the device it belongs to. The ONE thing that refuses it is a run already
-    // RECORDED for this puzzle — everything else is replaced, log and all, whether it was
-    // this device's clock, another device's, or the retired word's.
-    async start(input) {
-      const id = itemKey(input, input.publicId);
-      const existing = rounds.get(id);
-      if (
-        existing &&
-        existing.puzzle === input.puzzle &&
-        existing.submittedAt !== undefined
-      ) {
-        return { outcome: 'already_submitted' as const, state: stateOf(existing) };
-      }
-      const stampedAt = input.now.toISOString();
-      const item: RoundItem = {
-        guesses: [],
-        puzzle: input.puzzle,
-        createdAt: stampedAt,
-        // Word paths leave the streaming interval alone (roundStore.ts).
-        lastWriteAt: existing?.lastWriteAt ?? 0,
-        startedAt: stampedAt,
-        startedBy: { ...input.runner },
-      };
-      rounds.set(id, item);
-      return { outcome: 'started' as const, state: stateOf(item) };
-    },
-
-    // Word mode's end-of-run SUBMIT (#202): the whole log, first write wins, never before
-    // the run's own floor — and only from the device the stamp names (#217).
-    async submit(input) {
-      const existing = rounds.get(itemKey(input, input.publicId));
-      const stored = existing && existing.puzzle === input.puzzle ? existing : undefined;
-      if (!stored || stored.startedAt === undefined) {
-        return { outcome: 'not_started' as const, state: empty() };
-      }
-      // `submittedAt`, never the log's length: a run that claimed nothing records an EMPTY
-      // log, and reading that back as "nothing recorded" would let a second submission
-      // overwrite it — first-write-wins broken for exactly the rounds with least to say.
-      if (stored.submittedAt !== undefined) {
-        return { outcome: 'already_submitted' as const, state: stateOf(stored) };
-      }
-      // The stamp moved: another device restarted this daily, so the log offered here
-      // describes a clock the server no longer holds (#217).
-      if (stored.startedBy?.deviceId !== input.deviceId) {
-        return { outcome: 'started_elsewhere' as const, state: stateOf(stored) };
-      }
-      if (input.now.getTime() - Date.parse(stored.startedAt) < input.minElapsedMs) {
-        return { outcome: 'too_early' as const, state: stateOf(stored) };
-      }
-      stored.guesses = [...input.guesses];
-      stored.submittedAt = input.now.toISOString();
-      return { outcome: 'submitted' as const, state: stateOf(stored) };
-    },
-
     // #204's active-day transfer, the process-local half of `dynamoLinkStore`'s one
     // transaction — the SAME decision, from the same predicate (`planRoundMove`'s
     // `hasPlay`): the source must hold RECORDED PLAY, the destination none, and the whole
-    // item moves. Play is a guess OR a submission, so a word run merely STARTED is moved
-    // over while a submitted 0-claim run both moves and blocks — the two states an empty
-    // log can be in.
+    // item moves.
     move(key, from, to) {
       const source = rounds.get(itemKey(key, from));
       const destination = rounds.get(itemKey(key, to));
@@ -260,10 +189,9 @@ export function memoryRoundStore(): RoundStore & LinkRoundWrites {
 }
 
 // `planRoundMove`'s predicate, in this store's own shape: a round is RECORDED PLAY when it
-// holds a guess or a submission. #202 makes `submittedAt` the run's marker rather than the
-// log's length, which is why a 0-claim run counts here.
+// holds a guess.
 function recordedPlay(item: RoundItem): boolean {
-  return item.guesses.length > 0 || item.submittedAt !== undefined;
+  return item.guesses.length > 0;
 }
 
 function empty(): RoundState {

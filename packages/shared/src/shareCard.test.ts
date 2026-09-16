@@ -10,10 +10,6 @@ import {
   encodeResult,
   decodeResult,
   decodeLegacyShareTarget,
-  encodeWordResult,
-  decodeWordResult,
-  wordShareScore,
-  WORD_RARITY_GRADES,
   type ShareResult,
 } from './shareCard';
 
@@ -294,74 +290,9 @@ describe('decodeLegacyShareTarget — where an OLD link should still land', () =
         dayNumber: 20638,
       });
     }
-    // Word mode's ids — retired (3, 4) and current (5) — are NOT sentence legacy.
+    // The retired Word mode's ids (3–5) are NOT sentence legacy.
     for (const version of [0, 3, 4, 5, 6, 7]) {
       expect(decodeLegacyShareTarget(header(version))).toBeNull();
     }
-  });
-
-  it('refuses a malformed WORD token rather than redirecting it', () => {
-    const truncated = encodeWordResult({
-      lang: 'fr',
-      dayNumber: 20638,
-      counts: [1, 0, 0, 0, 0],
-      word: 'forêt',
-    }).slice(0, 4);
-    expect(decodeWordResult(truncated)).toBeNull();
-    expect(decodeLegacyShareTarget(truncated)).toBeNull();
-  });
-});
-
-// Word mode's token (#156): its own format in the same version namespace — the common
-// `version | lang | day` opening, the claims PER RARITY GRADE (v5 — commonest first; the
-// claim count is DERIVED as their sum, never stored), then the accented display word
-// needed by the self-contained OG card.
-describe('encodeWordResult / decodeWordResult', () => {
-  const word = { lang: 'fr', dayNumber: 20638, counts: [7, 3, 1, 1, 0], word: 'forêt' };
-
-  it('round-trips lang, dayNumber, the per-rarity counts and the accented display word', () => {
-    expect(decodeWordResult(encodeWordResult(word))).toEqual(word);
-    const none = { ...word, lang: 'en', counts: [0, 0, 0, 0, 0], word: 'heart' };
-    expect(decodeWordResult(encodeWordResult(none))).toEqual(none);
-  });
-
-  it("derives the claim count as the counts' sum — the two can never disagree", () => {
-    expect(wordShareScore(word.counts)).toBe(12);
-    expect(wordShareScore([0, 0, 0, 0, 0])).toBe(0);
-    const d = decodeWordResult(encodeWordResult(word));
-    expect(wordShareScore(d!.counts)).toBe(12);
-  });
-
-  it('refuses a breakdown that is not exactly one count per grade', () => {
-    expect(WORD_RARITY_GRADES).toBe(5);
-    expect(() => encodeWordResult({ ...word, counts: [12] })).toThrow(RangeError);
-    expect(() => encodeWordResult({ ...word, counts: [...word.counts, 0] })).toThrow(RangeError);
-  });
-
-  it('stays compact + URL-safe with the breakdown and display word included', () => {
-    const token = encodeWordResult(word);
-    expect(token).toMatch(/^[A-Za-z0-9_-]+$/);
-    expect(token.length).toBeLessThanOrEqual(24);
-  });
-
-  it('rejects a missing or impossibly long display word instead of truncating it', () => {
-    expect(() => encodeWordResult({ ...word, word: '' })).toThrow(RangeError);
-    expect(() => encodeWordResult({ ...word, word: 'é'.repeat(128) })).toThrow(RangeError);
-    expect(() => encodeWordResult({ ...word, word: 'forêt\u0000' })).toThrow(RangeError);
-  });
-
-  it('the two formats never decode each other', () => {
-    expect(decodeResult(encodeWordResult(word))).toBeNull();
-    expect(decodeWordResult(encodeResult(sample))).toBeNull();
-    // Nor does a word token look "legacy": a malformed or cross-format token still
-    // gets the flat refusal, never a redirect.
-    expect(decodeLegacyShareTarget(encodeWordResult(word))).toBeNull();
-  });
-
-  it('rejects malformed input (garbage, truncation, trailing data)', () => {
-    expect(decodeWordResult('not a token!!')).toBeNull();
-    expect(decodeWordResult('')).toBeNull();
-    expect(decodeWordResult(encodeWordResult(word).slice(0, 2))).toBeNull();
-    expect(decodeWordResult(`${encodeWordResult(word)}AAAA`)).toBeNull();
   });
 });

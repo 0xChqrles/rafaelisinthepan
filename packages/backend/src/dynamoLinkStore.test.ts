@@ -433,7 +433,7 @@ describe('dynamoLinkStore — the indivisible core', () => {
   // nothing. The plan is the stores' own (`planRoundMove` / `planScoreMove`, contract-tested
   // there); what is held here is that it rides the SAME commit, what happens when it goes
   // stale, and the two races the model was written against.
-  const KEY = { date: '2026-08-26', lang: 'fr', mode: 'sentence' as const };
+  const KEY = { date: '2026-08-26', lang: 'fr' };
   const roundKey = (publicId: string) => ({
     pk: { S: `round#${publicId}` },
     sk: { S: 'fr#sentence#2026-08-26' },
@@ -593,13 +593,13 @@ describe('dynamoLinkStore — the indivisible core', () => {
   });
 
   it('two sources adopting ONE target at equal versions cannot overwrite each other\'s moved log', async () => {
-    // The ABA the model was amended for: the target holds an unplayed word start at v2;
+    // The ABA the model was amended for: the target holds an unplayed row at v2;
     // both sources hold played rounds at v2; both condition the target on v2. The first
     // copy must take the target to v3 — never keep the source's own v2 — or the second's
     // Put still passes and replaces the log the first just moved.
     const OTHER = 'cccccccccccccccc';
     const table = new Map<string, Record<string, AttributeValue>>([
-      [`round#${PLAN.to}`, round(PLAN.to, [], 2, { startedAt: { S: NOW.toISOString() } })],
+      [`round#${PLAN.to}`, round(PLAN.to, [], 2)],
       [`round#${PLAN.from}`, round(PLAN.from, ['chat'], 2)],
       [`round#${OTHER}`, round(OTHER, ['chien'], 2)],
     ]);
@@ -644,7 +644,7 @@ describe('dynamoLinkStore — the indivisible core', () => {
     });
 
     // Both planned at v2: the second saw the target exactly as the first did.
-    snapshot = new Map([[`round#${PLAN.to}`, round(PLAN.to, [], 2, { startedAt: { S: NOW.toISOString() } })]]);
+    snapshot = new Map([[`round#${PLAN.to}`, round(PLAN.to, [], 2)]]);
     snapshot.set(`round#${OTHER}`, table.get(`round#${OTHER}`)!);
     const second = makeStore(send);
     await expect(
@@ -810,7 +810,7 @@ describe('dynamoLinkStore — transaction conflicts', () => {
   });
 
   it('ADOPT: a conflict RE-PLANS from fresh reads — the rival may have moved a guarded row', async () => {
-    const KEY = { date: '2026-08-26', lang: 'fr', mode: 'sentence' as const };
+    const KEY = { date: '2026-08-26', lang: 'fr' };
     let reads = 0;
     let sends = 0;
     const { store, send, waits } = makeStore(async (command) => {

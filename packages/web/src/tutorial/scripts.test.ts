@@ -1,4 +1,4 @@
-// CONTRACT: the onboarding scripts (#51, re-arced by #155; rarity ending 2026-08-11). The
+// CONTRACT: the onboarding scripts (#51, re-arced by #155). The
 // tutorial is data-driven — the board and the scripted guesses live in scripts/<lang>.ts
 // over a REAL generated neighborhood (scripts/<lang>.word.json, a pruned #154 artifact),
 // and both are meant to be edited — so these tests guard what an edit must not break:
@@ -11,9 +11,8 @@
 //       (shows a distance, changes nothing), the "miss" word is absent from the map (MISS,
 //       not INVALID), the "closer" word ranks CLOSER (the word moves), and the find target
 //       is the secret itself (rank 0);
-//     - it ENDS on the RARITY beats: the tutorial teaches the concepts the modes share
-//       (semantic distance, then the five-grade rarity ladder) and nothing mode-specific —
-//       each mode's own rules live on that mode's pre-game gate.
+//     - it ENDS on PLAY: the tutorial teaches the core concept (semantic distance) and
+//       nothing of the game's own rules, which live on its one-time PLAY gate.
 //
 // Plus: the board stays byte-compatible with the real per-puzzle schema (parsePuzzle-valid —
 // it feeds the REAL game components) and every scripted word is a fold-stable slug the gated
@@ -41,12 +40,12 @@ for (const lang of ['en', 'fr'] as const) {
         .map((e) => [e.rank, e] as const),
     );
 
-    it('is ONE single-word board: mix, guided guesses, find, then the rarity ending', () => {
+    it('is ONE single-word board: mix, guided guesses, find, then PLAY', () => {
       expect(puzzle.words).toHaveLength(1);
       expect(puzzle.holes).toHaveLength(1);
       expect(Object.keys(puzzle.ranks)).toEqual([hole.secret.slug]);
       expect(script.steps[0].kind).toBe('mix');
-      expect(script.steps.at(-1)?.kind).toBe('rarity');
+      expect(script.steps.at(-1)?.kind).toBe('play');
       // Exactly one of each free step, in this order — the arc is not a set of steps.
       expect(script.steps.map((s) => s.kind)).toEqual([
         'mix',
@@ -54,7 +53,7 @@ for (const lang of ['en', 'fr'] as const) {
         'guess',
         'guess',
         'find',
-        'rarity',
+        'play',
       ]);
     });
 
@@ -73,9 +72,6 @@ for (const lang of ['en', 'fr'] as const) {
         else if (s.kind === 'find') {
           keys.add(s.copyKey);
           keys.add(s.nudgeKey);
-        } else {
-          keys.add(s.introCopyKey);
-          keys.add(s.ladderCopyKey);
         }
       }
       // [[w:word^rank]] claims a rank the map must still assign to that word, and

@@ -14,10 +14,10 @@ import { beginRoundSync, type RoundSyncContext } from '../state/roundSync';
 // registers the round has not run yet, and an absent entry means exactly the same thing —
 // nothing has been read.
 export default function useRoundSync(ctx: RoundSyncContext): RoundLoad {
-  const { roundKey, lang, mode, date, revision, ranks, early } = ctx;
+  const { roundKey, lang, date, revision, ranks, early } = ctx;
   useEffect(() => {
-    beginRoundSync({ roundKey, lang, mode, date, revision, ranks, early });
-  }, [roundKey, lang, mode, date, revision, ranks, early]);
+    beginRoundSync({ roundKey, lang, date, revision, ranks, early });
+  }, [roundKey, lang, date, revision, ranks, early]);
   const load = useGameStore((s) => s.roundLoads[roundKey]);
   return roundLoadFor(load, revision);
 }

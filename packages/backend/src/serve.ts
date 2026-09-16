@@ -80,7 +80,7 @@ const handler = createHandler({
     // /scores read serves from.
     scoreStore: localScoreStore,
     ipHmacSecret: LOCAL_IP_HMAC_SECRET,
-    // ROUND START is gated in both modes (#202/#203) by the accept-all local verifier.
+    // ROUND START is gated (#203) by the accept-all local verifier.
     // Explicitly local-only: the production entrypoint always wires real Siteverify.
     turnstile: localTurnstileVerifier,
     // A confirmed solve credits the streak's day (#211); `/history` reads it back. In
@@ -147,10 +147,10 @@ server.listen(PORT, () => {
   console.log(`[backend]   store:  ${STORE_ROOT}`);
   console.log(`[backend]   origin: ${ALLOWED_ORIGIN}`);
   console.log(`[backend]   scores + devices: in-memory; Turnstile accept-all (local only)`);
-  console.log(`[backend]   GET /?lang=<xx>&date=<YYYY-MM-DD>[&mode=word]  GET /scores?lang=&date=&mode=`);
+  console.log(`[backend]   GET /?lang=<xx>&date=<YYYY-MM-DD>  GET /scores?lang=&date=`);
   console.log(`[backend]   GET /profile?id=<publicId>  POST /profile  GET|POST /groups`);
-  console.log(`[backend]   GET|POST /board?lang=&date=&mode=[&id=]  POST /round?lang=&date=&mode=`);
-  console.log(`[backend]   POST /history?lang=&mode=[&month=YYYY-MM]  POST /devices  POST /link`);
+  console.log(`[backend]   GET|POST /board?lang=&date=[&id=]  POST /round?lang=&date=`);
+  console.log(`[backend]   POST /history?lang=[&month=YYYY-MM]  POST /devices  POST /link`);
   console.log(`[backend]   GET /today  GET /s/<token>  GET /og/<token>.png`);
   console.log(`[backend] point the front at it: VITE_API_BASE_URL=http://localhost:${PORT}`);
 });

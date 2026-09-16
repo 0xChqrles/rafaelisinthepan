@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { memoryScoreStore } from './memoryScoreStore';
 import { SCORE_SUBMISSION_LIMIT, type ScoreKey, type ScoreSubmission } from './scoreStore';
 
-const KEY: ScoreKey = { date: '2026-08-13', lang: 'fr', mode: 'sentence' };
+const KEY: ScoreKey = { date: '2026-08-13', lang: 'fr' };
 
 function submission(overrides: Partial<ScoreSubmission> = {}): ScoreSubmission {
   return {
@@ -45,7 +45,7 @@ describe('memoryScoreStore — local mirror of storage semantics (#187)', () => 
     ]);
     expect(await store.getMany(KEY, [])).toEqual([]);
     // A different daily's partition is a different population.
-    expect(await store.getMany({ ...KEY, mode: 'word' }, ['player-a'])).toEqual([]);
+    expect(await store.getMany({ ...KEY, date: '2026-08-14' }, ['player-a'])).toEqual([]);
   });
 
   it('a refused duplicate consumes no IP allowance', async () => {
@@ -82,7 +82,7 @@ describe('memoryScoreStore — local mirror of storage semantics (#187)', () => 
     expect((await store.list(KEY)).length).toBe(SCORE_SUBMISSION_LIMIT);
   });
 
-  it('isolates rows and the cap by date, language, mode and HMAC hash', async () => {
+  it('isolates rows and the cap by date, language and HMAC hash', async () => {
     const store = memoryScoreStore(() => new Date(100_000_000));
     for (let index = 0; index < SCORE_SUBMISSION_LIMIT; index += 1) {
       await store.submit(
@@ -96,11 +96,11 @@ describe('memoryScoreStore — local mirror of storage semantics (#187)', () => 
     ).toBe('recorded');
     expect(
       await store.submit(
-        submission({ publicId: 'player-0', mode: 'word', score: 2, requestToken: 'other-mode' }),
+        submission({ publicId: 'player-0', lang: 'en', score: 2, requestToken: 'other-lang' }),
       ),
     ).toBe('recorded');
     expect((await store.list(KEY)).length).toBe(SCORE_SUBMISSION_LIMIT + 1);
-    expect(await store.list({ ...KEY, mode: 'word' })).toEqual([
+    expect(await store.list({ ...KEY, lang: 'en' })).toEqual([
       { publicId: 'player-0', score: 2 },
     ]);
   });
@@ -145,7 +145,7 @@ describe('memoryScoreStore — local mirror of storage semantics (#187)', () => 
 // the score that round earned must not stand in the way of the one the player then actually
 // earns — which is what `already_recorded` did, silently, leaving the old number on the day.
 describe('first-write-wins is per VERSION (#203)', () => {
-  const KEY = { date: '2026-08-13', lang: 'fr', mode: 'sentence' as const };
+  const KEY = { date: '2026-08-13', lang: 'fr' };
   // `token` varies independently so the two DIFFERENT things can be told apart: a replay of
   // one request (same token — answered with what it answered before) and a genuinely second
   // submission landing on the same row (different token — the condition decides).

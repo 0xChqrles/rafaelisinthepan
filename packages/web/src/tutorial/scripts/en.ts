@@ -1,4 +1,4 @@
-// The English onboarding script (#51, re-arced by #155; rarity ending 2026-08-11). Edit
+// The English onboarding script (#51, re-arced by #155). Edit
 // THIS file (and the tut* copy in i18n.ts) to change the onboarding — the components read
 // everything from here.
 //
@@ -14,10 +14,6 @@
 // ladder and the free find have a real near field to play on — and the groups of the
 // `--keep` words, which is how the "far" guess survives being outside that zone).
 //
-// The committed map predates #163's `freq` and still shows it: none of its entries carry
-// the field, which is fine — the tutorial's ladder teaches the GRADES, not this board's
-// data.
-//
 // OCEAN was picked over LIGHTHOUSE, the first candidate. Clarity beats en/fr symmetry
 // (#155) — the two languages do not share a word.
 //
@@ -25,8 +21,7 @@
 // of the board, inside generation's own 50-150 start band), then three gated guesses teach
 // distance (forest, 214: farther, hint stays), MISS (violin, which the real map does not
 // rank at all), and improvement (boat, 45: closer, hint moves). The player then finds
-// their way back to OCEAN with free typing, and the ending states the game's other core
-// concept — word RARITY, the five-grade ladder — before PLAY ends the lesson.
+// their way back to OCEAN with free typing, and PLAY ends the lesson.
 //
 // scripts.test.ts replays this file and fails if an edit breaks the lesson arc.
 import type { WordPuzzle } from '@whippin/shared';
@@ -73,9 +68,8 @@ const script: TutorialScript = {
     { kind: 'guess', expect: 'violin', copyKey: 'tutGuessMiss' },
     { kind: 'guess', expect: 'boat', copyKey: 'tutGuessCloser' },
     { kind: 'find', target: word.slug, copyKey: 'tutFind', nudgeKey: 'tutFindNudge' },
-    // The ending: the second core concept — every word has a RARITY, said over the five-
-    // grade ladder — then PLAY.
-    { kind: 'rarity', introCopyKey: 'tutRarityIntro', ladderCopyKey: 'tutRarity' },
+    // The ending: the found word stands, without comment, and PLAY ends the lesson.
+    { kind: 'play' },
   ],
 };
 

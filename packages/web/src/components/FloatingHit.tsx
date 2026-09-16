@@ -10,11 +10,9 @@ export const HIT_FADE_MS = 520;
 // the app dropped the exponent's leading minus on 2026-08-16 (a distance is not
 // negative), so `0` is simply `0` and needs no case of its own.
 //
-// This is the SENTENCE game's (and the tutorial's) — and Word mode's MISS, which borrows
-// it unparameterised. Word mode's CLAIM feedback is a different event entirely — the
-// strike + its loot (`components/Strike` / `components/Loot`). The two feedbacks
-// were briefly one parameterised component (#163) and were split when the animations
-// diverged: sharing a float whose every dimension is overridden is not sharing it.
+// This is the sentence game's (and the tutorial's) float. A CUT's feedback is a different
+// event entirely — the strike + its loot (`components/Strike` / `components/Loot`): sharing
+// a float whose every dimension is overridden would not be sharing it.
 export default function FloatingHit({
   id,
   value,

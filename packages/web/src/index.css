@@ -12,8 +12,7 @@
    THE TYPE SYSTEM IS TWO VOICES (user-decided 2026-08-18, third pass — the serif and
    the grotesk both retired for ONE chrome face):
    - PIXEL (Press Start 2P) is reserved for what the player PLAYS: the sentence and its
-     holes, Word mode's day word, the route drawings, the prompt, the keyboard, the
-     hit/loot feedback and the score watermark. Nothing else wears it.
+     holes, the prompt, the keyboard, the hit/loot feedback and the score watermark. Nothing else wears it.
    - MONO (Azeret Mono, variable 100-900) is everything else — the moodboard's own
      mono-caption voice, a natural cousin of the pixel grid, tabular by construction.
      Hierarchy comes from WEIGHT, not from families and not from colour: light for the
@@ -50,7 +49,7 @@
   /* THE REBRAND PALETTE (user-decided 2026-09-01, superseding the 2026-08-17 stamp-ink
      set): simple, clean, basic — a flat NEAR-BLACK ground, PLAIN WHITE foreground, and
      saturated vivid colours only where they mean something (the accents, the heat
-     ramp, the rarity ladder). Clean shapes, clear contrasts; no textures, no warm
+     ramp). Clean shapes, clear contrasts; no textures, no warm
      paper cast, no decorative glows. The weird→calm gradient in shared/heat.ts is
      unchanged. Every value measured on the ground (≥4.5:1). */
   --bg: #050507; /* near-black — one flat sheet, no texture (rebrand 2026-09-01) */
@@ -115,13 +114,11 @@
   --cap-shift: 0px;
   /* STILL BARE, deliberately: its one `calc()` consumer is `.word-input`, whose padding
      has always computed to 0 through exactly this bug, and giving it units restores an
-     8px inset that would push Word mode's prompt off the alignment its board was built
-     on. Fixing that is a Word-mode decision, not a units one. */
+     8px inset that would move the prompt off the edge it is laid out on. Fixing that is a
+     layout decision, not a units one. */
   --text-shift: 0;
 
-  /* The on-screen keyboard's key geometry. Here rather than on `.keyboard` because the ROW
-     width it produces (10 keys + 9 gaps) is mirrored by Word mode's guess prompt, which must
-     be exactly as wide as the keys. */
+  /* The on-screen keyboard's key geometry. */
   --kb-gap: 6px;
   --kb-key-max: 46px;
 }
@@ -349,8 +346,8 @@ input {
 
 /* Visually hidden but still announced: the screen-reader live region mirroring the
    per-hole guess feedback (floating numbers / MISS are invisible to assistive tech). */
-/* The app's scrollbar, on any scroller that opts in with this class (the history modal's
-   line, Word mode's board). The app draws in squares, so its scrollbar does too: a
+/* The app's scrollbar, on any scroller that opts in with this class (the words modal, the
+   result stage, the boards). The app draws in squares, so its scrollbar does too: a
    flat RECTANGLE in a flat channel — no rounding, no arrow buttons, no inset. Styling it
    also makes it always visible where the platform would overlay it, which is the point: a
    permanent bar is the one thing on a long line that says the line goes on.
@@ -384,7 +381,6 @@ input {
     scrollbar-color: var(--surface-hover) var(--surface);
   }
 }
-
 
 .sr-only {
   position: absolute;
@@ -709,9 +705,8 @@ input {
 .tray.kb-leaving {
   overflow: clip;
 }
-/* The pre-game GATES' one stack (2026-08-11; word mode adopted the sentence layout the
-   same day): the rules in the shared `.coach-rules` dialog + the tutorial's own full-width
-   button (PLAY / START), in the keyboard's footprint, so the button swaps what the tray
+/* The pre-game GATE's stack (2026-08-11): the rules in the shared `.coach-rules` dialog +
+   the tutorial's own full-width button (PLAY), in the keyboard's footprint, so the button swaps what the tray
    holds and moves nothing else. */
 .rules-gate {
   width: 100%;
@@ -727,23 +722,9 @@ input {
      left the box and PLAY 40px narrower than the tutorial's own button. */
   padding: 0;
 }
-/* What the gate's tap will DESTROY (#217): the run this daily already holds on another
-   device. Coach copy's voice — a sentence, not a label, so it keeps sentence case out of
-   the all-caps chrome rule — in the danger ink, because it is the one line on this screen
-   that warns rather than teaches. It sits between the rules and the button, inside the
-   gate's own gap, so it moves nothing when it is absent. */
-.gate-warning {
-  margin: 0;
-  width: min(680px, 100%);
-  font-size: 13px;
-  font-weight: 350;
-  line-height: 1.5;
-  text-transform: none;
-  color: var(--danger);
-}
 /* The rules can outgrow the keyboard's footprint on a phone, so the gate anchors to the
-   tray's BOTTOM and lets the extra height rise upward — into the sentence game's open
-   play area, or word mode's open window — never below the screen, where it put the
+   tray's BOTTOM and lets the extra height rise upward — into the open play area — never
+   below the screen, where it put the
    button out of reach. The tray's height never changes, so the button still swaps the
    keyboard in without moving the content above. */
 .tray.tray-gate {
@@ -945,9 +926,7 @@ input {
 /* ONE ink for the chrome (user-decided 2026-08-18, third pass): the icons sit in the
    page's own foreground — hierarchy is weight and the .home-btn opacity lift, never a
    second grey. */
-.home-btn,
-.help-btn,
-.board-btn {
+.home-btn {
   color: var(--fg);
 }
 /* Icon policy (revised 2026-09-02): ONE icon family, and it is PIXEL. `.ui-icon` is
@@ -1088,11 +1067,11 @@ input {
   cursor: default;
 }
 
-
 /* WHICH PUZZLE, as the header's left slot (2026-08-30 — the reasoning is in
-   PuzzleTitle). The daily's name as the held-word chip, the day and the chevron standing
-   outside it the way a hole's exponent does. The button is only the finger's target
-   around them: it draws nothing of its own. */
+   PuzzleTitle). The game surfaces wear the app's mark and the language code
+   (`.app-title`, below); every other screen its NAME as the held-word chip (`LangTitle`),
+   the tag and the chevron standing outside it the way a hole's exponent does. The button
+   is only the finger's target around them: it draws nothing of its own. */
 .puzzle-title {
   display: inline-flex;
   align-items: center;
@@ -1128,6 +1107,51 @@ input {
 }
 .puzzle-title .ui-icon {
   flex: none;
+}
+/* THE GAME SURFACES' TITLE IS THE APP'S MARK (user-decided 2026-09-16): the logo in the
+   accent, the language's CODE beside it in the chrome's title type — no chip, the mark is
+   the one emphasis — then the day on an archive play and the chevron. The logo is the
+   favicon's own pixel mark (`public/logo.png`, 22×22, pure white), so it is painted through
+   a MASK in the accent — the strike sheets' technique — at its exact 1x with nearest
+   sampling (the integer-scale rule): 22px, beside the header icons' 20px. Hover and press
+   answer on the whole title (there is no chip to dim). */
+.app-title-mark {
+  flex: none;
+  display: block;
+  width: 22px;
+  height: 22px;
+  /* A wider seam than the title's own gap (user-asked 2026-09-16): the mark and the code
+     are two things, the code, the day and the chevron one line of text. */
+  margin-right: 3px;
+  background-color: var(--accent);
+  -webkit-mask: url('/logo.png') center / 22px 22px no-repeat;
+  mask: url('/logo.png') center / 22px 22px no-repeat;
+  image-rendering: pixelated;
+}
+/* THE TEXT SITS ON THE MARK'S WEIGHT, not on its box (user-asked 2026-09-16, "align it
+   better"). The logo is bottom-heavy — its widest rows are the lower half, its ink's centre
+   of mass 2.2px below its box's centre — while flex centring put the code's capitals 0.9px
+   ABOVE the box's centre, so FR read high. Measured at 4x, 2px down puts the capitals'
+   centre between the two. A translate, never a margin: the row's layout stays the flex
+   centring, and the mark keeps its line with the header's icons. */
+.app-title-lang,
+.app-title .title-tag,
+.app-title .ui-icon {
+  translate: 0 2px;
+}
+.app-title-lang {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg);
+  white-space: nowrap;
+}
+.app-title:hover {
+  opacity: 0.8;
+}
+.app-title:active {
+  opacity: 0.68;
 }
 /* WHICH OF A THING, beside the name of it: the DAY on an archive route (PuzzleTitle's rule —
    the abnormal state is the one that is labelled) and, since 2026-09-03, the LANGUAGE on
@@ -1450,9 +1474,9 @@ input {
 }
 /* THE HIT INVERTS THE CHIP (user-decided 2026-09-15, "the hit animation should be more
    intense… make the background and foreground of the hole word switch during the slash"),
-   AND THE RECOIL IS WORD MODE'S BLOW (same day: "the same shake animation"): for exactly
-   `STRUCK_MS` (`--shake-ms`, Hole's — four frames, one short of the shortest sheet, the
-   Word subject's own rule) from the hit's stagger beat, the word shakes and the chip's
+   AND THE RECOIL IS THE BLOW (same day: "the same shake animation"): for exactly
+   `STRUCK_MS` (`--shake-ms`, Hole's — four frames, one short of the shortest sheet) from
+   the hit's stagger beat, the word shakes and the chip's
    ground goes `--bg`, its ink `--fg` — a photographic negative under the blow, back to the
    held word while the sheet's last frame dissipates. ONE animation beside the shake,
    flipping the ground through the `--chip-bg` variable the chip's pseudo reads (a custom
@@ -1731,8 +1755,7 @@ input {
    phrase must not reflow or shift width — and staggered off the letter's index, with both
    numbers handed down from Hole so the JS that ends the wave and the CSS that draws it
    cannot disagree. */
-.hole-word.wave .hole-letter,
-.word-subject-text.wave .hole-letter {
+.hole-word.wave .hole-letter {
   animation: hole-wave var(--wave-dur, 300ms) ease-in-out calc(var(--i) * var(--wave-step, 40ms));
 }
 @keyframes hole-wave {
@@ -1780,8 +1803,7 @@ input {
 /* THE GAME WORDS GLOW (user-decided 2026-08-17; it lived a moment on the exponents and
    moved here the same day — the words carry the aura, the numbers stay dry): a soft
    currentColor bloom on the hole word in BOTH its states (the pale draft and, via
-   currentColor, the inked solve), the solved screen's trophies and Word mode's day
-   word — the ink rendered as printed light, the Séance-poster read. ONE wide layer
+   currentColor, the inked solve) and the solved screen's trophies — the ink rendered as printed light, the Séance-poster read. ONE wide layer
    only, clear of the letterforms (the readability rule learned on the exponents), in em
    so it scales with each surface's own size. The `.phrase .hole-btn *` black shadow
    would beat the bare class inside a hole button, so the boosted selectors restate it
@@ -1801,9 +1823,7 @@ input {
    text-shadow draws from the glyph's alpha, not its (transparent) fill. */
 .hole-word,
 .hole-word .hole-letter,
-.phrase .hole-btn .hole-word .hole-letter,
-.word-subject-text,
-.word-subject-text .hole-letter {
+.phrase .hole-btn .hole-word .hole-letter {
   /* Rebrand 2026-09-01: the soft currentColor aura is gone — clean crisp ink, the
      hard 2px print alone (it is legibility, not decoration). */
   text-shadow: 2px 2px 0 black;
@@ -1880,10 +1900,7 @@ input {
    animations (pop-in then fade-out) timed so the pop always finishes before the
    synchronized batch fade-out begins.
 
-   This is the SENTENCE game's and the tutorial's, and it is byte for byte what it always
-   was — and it is what Word mode shows on a MISS too (2026-08-09), unparameterised: the same
-   word, in the same red, with the same pop and rise it has everywhere else. A Word-mode CLAIM
-   is a different event entirely and does not come through here at all (`.strike`). --- */
+   This is the sentence game's and the tutorial's. --- */
 .floating-hit {
   position: absolute;
   left: 50%;
@@ -1938,14 +1955,6 @@ input {
   }
 }
 
-/* Word mode's claim feedback used to be a RARITY LABEL here — the grade's name, shown on the
-   day's word. It was replaced by the SLASH (`.strike`, 2026-08-09): a name has to be
-   read, and a run against a clock has no time for that. Two rules it cost real work to learn
-   are worth keeping wherever type lands on type again: NOTHING IN THIS APP OUTLINES TYPE (a
-   knockout ring to separate the label from the word read as a cheap sticker), and ANIMATING
-   `scale` ON THE PIXEL FONT renders blurry intermediate frames for the whole transition —
-   the same reason every sprite here takes an exact integer scale. */
-
 /* --- prompt zone: input area ⇄ solved caption, no reserved heights ---
    The two occupants of the row under the sentence overlay in ONE grid cell, both
    mounted for the whole round (the retired/pending one visibility-hidden). The cell
@@ -1975,8 +1984,7 @@ input {
      `.prompt-zone`, and a grid item's default `min-width: auto` lets it inflate to its own
      content — so an over-long guess grew this box, `max-width: 100%` on the input resolved
      against the grown width and never bit, and the prompt pushed the whole page sideways.
-     Bounded, the input hits the column's real width and crops its head instead. Word mode
-     never showed this: `.word-prompt` carries its own `width: 100%` + cap. */
+     Bounded, the input hits the column's real width and crops its head instead. */
   min-width: 0;
   gap: 20px;
   opacity: 1;
@@ -1989,10 +1997,7 @@ input {
   transform: translateX(-24px);
 }
 
-/* ONE prompt for both games (2026-08-06): Word mode's larger, cropping prompt replaced the
-   sentence game's own smaller clamp rather than living beside it — it is the same control
-   doing the same job on both screens, and two sizes of it was a difference nothing asked for.
-   Its SIZE is the SENTENCE's (user-decided 2026-09-01, superseding the flat 24px): the
+/* The guess prompt. Its SIZE is the SENTENCE's (user-decided 2026-09-01, superseding the flat 24px): the
    prompt answers the phrase, so it wears the phrase's exact clamp at both breakpoints —
    `.phrase` and `.word-input` must move together. */
 .word-input {
@@ -2473,31 +2478,6 @@ input {
   animation: none;
 }
 
-/* Word mode's result: one stable hierarchy in the keyboard's footprint at every viewport
-   (the sentence result lived here too until the 2026-08-14 solved stage above took the
-   whole column). Player progression is deliberately outside this layout in .streak-dialog. */
-.solved-results {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  /* The sentence result's own rhythm (`.solved-numbers`) — the two stacks are ONE layout
-     since 2026-08-15, so the spacing is stated once: the well, then the caption row. */
-  gap: clamp(14px, 2.6vh, 22px);
-  width: 100%;
-  max-width: 680px; /* match the keyboard's max-width */
-  opacity: 0;
-  /* The results RISE into the space the keyboard just vacated (#110): a real upward
-     slide, not the old 8px settle. The stack fades in from 0 opacity, so the displaced
-     start position never paints outside the tray — no clipping needed here. */
-  transform: translateY(clamp(24px, 5vh, 44px));
-  /* Duration mirrored by resultAnimation.ts — keep the two in sync. */
-  transition: opacity 0.25s ease-out, transform 0.25s ease-out;
-}
-.solved-results.in {
-  opacity: 1;
-  transform: translateY(0);
-}
 /* "45 TRIES" is the result headline: one number/label treatment everywhere, so changing
    breakpoints never changes the meaning or visual weight of the metric. */
 .solved-score {
@@ -2518,8 +2498,7 @@ input {
   display: inline-block;
   font-family: var(--pixel-font);
   /* Bigger since 2026-09-11 (user-asked): the headline is the result, and it reads as
-     one from across the room. Shared with Word mode's end screen by the "exact same
-     layout and sizing" rule, so both grew. Three digits at the phone floor are 132px,
+     one from across the room. Three digits at the phone floor are 132px,
      well inside a 347px row with the TOP badge hung off its right edge. */
   font-size: clamp(44px, 6.5vh, 60px);
   font-weight: 400;
@@ -3041,7 +3020,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 
 /* The EARLY-PLAY clock (#273): tomorrow's round locked for the night, and in the
    keyboard's place the time until the day flips and it continues. The pixel face — it is
-   the game's own number, like Word mode's clock — centred in the tray's footprint, so it
+   the game's own number — centred in the tray's footprint, so it
    swaps the keys out and moves nothing above it. */
 .flip-clock {
   width: 100%;
@@ -3406,10 +3385,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   /* Uniform letter-key size: keys are a fixed size (NOT flex-grown), so every letter
      is identical across rows; each row then centers as a group (justify-content). The
      size is capped at --kb-key-max but shrinks to fit 10 keys + gaps on narrow screens,
-     derived from the row width so it never overflows.
-     --kb-gap and --kb-key-max live on :root (2026-08-09) because the ROW width they
-     produce is not only the keyboard's business: Word mode's play column spans the keys
-     and has to compute the same number. They are declared once so it cannot drift. */
+     derived from the row width so it never overflows. */
   --kb-key: min(var(--kb-key-max), calc((100% - 9 * var(--kb-gap)) / 10));
   align-self: center;
   width: 100%;
@@ -3716,14 +3692,14 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   /* The sentence: a touch smaller so a hole + its exponent near the right edge still fits
      (and otherwise the hole wraps as one unit to the next line).
      The PROMPT used to ride this same rule, mirroring the phrase's size. It no longer does
-     (2026-08-06): both games now share ONE 24px prompt that CROPS rather than shrinks, so
-     tying it to the phrase would have reintroduced exactly the shrinking that replaced. */
+     (2026-08-06): the prompt CROPS rather than shrinks, so tying it to the phrase would
+     have reintroduced exactly the shrinking that replaced. */
   .phrase {
     font-size: clamp(13px, 4.2vw, 19px);
   }
   /* The input must be able to shrink below its desktop min-width on a narrow screen — which
      is what lets `.wi-text` crop instead of the whole line overflowing (`max-width: 100%` is
-     on the base rule now, for both games). */
+     on the base rule now). */
   .word-input {
     min-width: 0;
     font-size: clamp(13px, 4.2vw, 19px); /* = the phone's .phrase */
@@ -3733,7 +3709,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   .floating-hit {
     font-size: 18px;
   }
-
 
   .input-area {
     gap: 14px;
@@ -3775,17 +3750,11 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     padding-right: 14px;
     padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   }
-  /* Word mode's overlaid result shares the same 14px phone-bottom frame. */
-  .game.word-game .word-footer-result {
-    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
-  }
-
   /* Archive: the centering column carries over from the base rule; just clear the
      compact (48px) mobile header. */
   .archive {
     padding-top: 56px;
   }
-
 }
 
 /* Very short viewports (older/smaller phones ≤600px tall, e.g. 320x568): tighten the
@@ -4055,64 +4024,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 /* (The cobalt CORNER TABS the dialogs wore from 2026-08-18 were retired by the
    2026-09-01 rebrand: a coach box is a plain hairline glass box now — clean shapes,
    nothing decorated.) */
-/* The tutorial's ending display — a SIGNAL METER since 2026-08-18 (user-decided,
-   superseding the size-ramped two-font rungs: "the difference in font size are
-   terrible"): five rows, commonest first — a five-cell LED meter with one more cell lit
-   per grade (rarity as signal strength, the member cards' own cell language), the
-   grade's name as a small quiet mono label, and the example word in the pixel face at
-   ONE size wearing the grade's colour + the game words' own soft glow. Each row's
-   colour is set inline from RARITY_COLORS (the same aura ladder the board's stations,
-   the strike and the loot wear). The entrance is the same per-row rise. */
-.rarity-ladder {
-  width: min(400px, 100%);
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: clamp(14px, 2.6vh, 22px);
-}
-.rarity-rung {
-  display: grid;
-  /* Label lane fits UNCOMMON (8 glyphs) at the mono's 0.6em advance; the meter is its
-     own fixed lane; the example takes the rest, right-aligned — a table read. */
-  grid-template-columns: 9ch auto 1fr;
-  align-items: center;
-  column-gap: 16px;
-  animation: rung-in 200ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
-  animation-delay: calc(var(--step, 0) * 140ms);
-}
-.rarity-name {
-  font-family: var(--ui);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  color: var(--fg);
-  opacity: 0.7;
-  text-align: left;
-}
-/* The LED meter: lit cells in the grade's colour with the LED self-glow, dark sockets
-   for the rest — the chooser mosaic's exact vocabulary. */
-.rarity-meter {
-  display: inline-flex;
-  gap: 3px;
-}
-.rarity-meter i {
-  width: 7px;
-  height: 7px;
-  border-radius: 1px;
-  background: rgba(255, 255, 255, 0.08);
-}
-.rarity-meter i.on {
-  background: currentColor;
-}
-/* The example word: the game's face, one size, in the grade's light. */
-.rarity-example {
-  font-family: var(--pixel-font);
-  font-style: normal;
-  font-weight: 400;
-  font-size: 15px;
-  letter-spacing: 0;
-  justify-self: end;
-}
 @keyframes rung-in {
   from {
     opacity: 0;
@@ -4124,17 +4035,14 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   }
 }
 
-/* The tutorial's ONE action button — MIX, then the ending's NEXT, then PLAY — standing
-   where the keyboard will land ("the mix button moves down, the keyboard moves up").
-   Full width of the keyboard's footprint.
-   It keeps the SAME PLACE for the whole lesson (decided 2026-08-04): the tray's height
-   changes under it — the keyboard's full footprint while the word is on screen, the
-   button's own height once the ladder replaces it (.tutorial--ending) — so a button
-   CENTRED in the tray sat ~60px higher through the mix demo and the claim beat than it
-   did on the ladder, and the only control on screen jumped the moment the lesson moved
-   on. `margin-top: auto` parks it against the tray's bottom edge in both. An auto margin
-   beats the tray's own `justify-content`, so the keyboard and the transient loading/error
-   lines keep the tray's centring — the button is the only thing this moves. */
+/* The tutorial's ONE action button — MIX, then PLAY — standing where the keyboard will land
+   ("the mix button moves down, the keyboard moves up"). Full width of the keyboard's
+   footprint.
+   It keeps the SAME PLACE for the whole lesson (decided 2026-08-04): the tray keeps the
+   keyboard's full footprint, and `margin-top: auto` parks the button against its bottom
+   edge rather than in its middle. An auto margin beats the tray's own `justify-content`,
+   so the keyboard and the transient loading/error lines keep the tray's centring — the
+   button is the only thing this moves. */
 /* The tutorial's action is the PRIMARY cap (one big-action design) in the DEPLOY
    geometry: full width, on the column's bottom edge. */
 .mix-btn {
@@ -4148,23 +4056,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   max-width: 430px;
   min-height: 52px;
 }
-/* The ladder ending: the tray holds ONE button and the keyboard has dropped for good, so it
-   stops reserving the keyboard's footprint and shrinks to the button. The page's own frame
-   inset is then the entire margin below it — the same distance as the button's left and right
-   — and the .game gap gives it the same again above. (On a phone the button carries the +10px
-   back to the 14px side inset itself, since the earlier beats need the same offset in a tray
-   that must keep the keyboard's height — see .mix-btn.) The button therefore does NOT move
-   here: it was already parked on the tray's bottom edge, and only the space ABOVE it changes.
-   The ~120px that empty footprint was holding goes to the ladder's breathing room.
-   It cannot start any earlier: while the WORD is still on screen the tray's fixed height is
-   exactly what keeps the word from moving between beats. */
-.tutorial--ending {
-  gap: 24px;
-}
-.tutorial--ending .tray {
-  height: auto;
-}
-
 @media (max-width: 640px) {
   .coach {
     padding: 12px 14px;
@@ -4172,15 +4063,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   }
   .coach-rules {
     padding: 12px 14px;
-  }
-  /* The meter ladder tightens for the phone: label 9ch (~54px) + meter 47px + gaps +
-     crépuscule (10 glyphs × 13px = 130) = ~263px against the 292 a 320px screen offers
-     (both faces advance fixed, so this is arithmetic, not hope). */
-  .rarity-rung {
-    column-gap: 10px;
-  }
-  .rarity-example {
-    font-size: 13px;
   }
   .coach-text {
     font-size: 14px; /* 3-line height scales with it (5.1em); the phone column is the
@@ -4192,9 +4074,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   }
   /* The action button sits on the 14px page inset, not the keyboard's edge-to-edge hug, so
      like the solved results it gets +10px back over the keyboard's 4px bottom gap: bottom
-     gap = side gap = 14px (the same rule as .tray.tray-results). On the BUTTON rather than
-     on the ending tray's padding, because the mix and claim beats need the very same offset
-     inside a tray whose height is the keyboard's and has to stay exactly that. */
+     gap = side gap = 14px. On the BUTTON rather than
+     on the tray's padding, because the tray's height is the keyboard's and has to stay
+     exactly that. */
   .mix-btn {
     margin-bottom: 10px;
   }
@@ -4303,408 +4185,16 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   }
 }
 
-/* --- Word mode (#156, retimed by #163): the second daily. The .game column is reused (HUD
-   corner, a middle that fills, the fixed-height tray). The middle holds the day's WORD in
-   every phase — the terminus row of the route drawing, where every guess reports — and the
-   post-mortem's full board grows in ABOVE it when the clock dies, so the word itself never
-   moves between the run and the reveal. --- */
-
-/* The top reserve is 48px: enough to clear the fixed header while balancing the header's
-   screen-top inset against the gap before the play area. The sentence screen keeps its own
-   generous rhythm — there the PHRASE is the content and the air around it is what makes it
-   legible — so all of this is scoped to `.word-game`.
-   The two seams around the PROMPT are deliberately the wide ones (retuned 2026-08-06): it is
-   what the player acts through, so it gets the room — this gap above it and
-   `.input-area.word-prompt`'s below — rather than reading as one more band in a stack.
-   `relative` + `isolation` make this the stacking context the score watermark's z-index:-1
-   stays inside (the watermark itself anchors tighter, to `.word-anchor` below) — the same
-   arrangement `.play` gives the sentence game's. */
-.game.word-game {
-  position: relative;
-  isolation: isolate;
-  /* Clears the glass band (8px float + 50px bar on desktop, 48px full-bleed on a
-     phone) with a breath. */
-  padding-top: 66px;
-  gap: clamp(22px, 3.4vh, 36px);
-}
-/* The SCORE watermark's anchor: a full-width relative wrapper around ONLY the day's word, so
-   the big count centres on the word the run is about. Deliberately NOT isolated, for the
-   same reason `.phrase-anchor` is not: the watermark's z-index:-1 has to escape into
-   `.game.word-game`'s isolated context to paint behind ALL of the play content, where an
-   isolated anchor would be a stacking context and lift the whole subtree — watermark
-   included — above its siblings. */
-.word-anchor {
-  position: relative;
-  width: 100%;
-}
-/* Prompt + keyboard are one stable footer footprint. The Word result is much shorter than
-   that pair, so putting it in `.tray` alone left the retired prompt's whole row plus the
-   tray's unused top half as one large blank band. Both footer states share a grid cell:
-   play keeps sizing the cell underneath, while the final score uses all of it. The inner
-   gap restores the prompt→keyboard seam that moved inside this wrapper. */
-.word-footer {
-  width: 100%;
-  display: grid;
-}
-.word-footer > * {
-  grid-area: 1 / 1;
-}
-.word-footer-play {
-  position: relative;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: start;
-  /* The seam between the prompt and the keyboard under it (widened 2026-08-10 from
-     `clamp(6px, 1vh, 12px)`, which measured 7-9px). The tight one was chosen when this footer
-     stacked FOUR things — a history, the prompt, a tally, the tray — and had to keep them from
-     sprawling. It stacks two now, and the prompt is what the player acts through, so it takes
-     the room: this is the same wide seam it already has above it (`.game.word-game`) and
-     inside it (`.input-area.word-prompt`), so all three of its edges finally match. It opens
-     the GATE's rules->PLAY seam by the same amount, which that screen wants for the same
-     reason — two sentences and the control they explain. */
-  gap: clamp(16px, 2.4vh, 24px);
-  /* THE PLAY COLUMN, and what the player acts through lines up on it: the prompt is
-     exactly as wide as the KEYBOARD's row of keys and sits on its
-     left edge (2026-08-09). They used to take the BOARD's column instead (430 + the
-     scroller's side + its scrollbar = 456), which on a desktop left the prompt a few dozen
-     pixels narrower than the keys under it — almost aligned, which reads worse than either
-     aligned or plainly not. The row is recomputed from the same `:root` constants the
-     keyboard uses: cap the box, fit ten keys in it, be exactly that wide. On a phone the
-     keyboard is full-bleed, 10px past the page inset on each side, so the column goes with
-     it — otherwise the prompt sits 10px inboard of the Q key it answers. */
-  --play-box: min(680px, 100%);
-  --play-shift: 0px;
-  --play-key: min(var(--kb-key-max), calc((var(--play-box) - 9 * var(--kb-gap)) / 10));
-  --play-w: calc(10 * var(--play-key) + 9 * var(--kb-gap));
-}
-/* The window fills what is left between the HEADER and the PROMPT, with the day's word and
-   its score watermark centred in that — everything the player ACTS THROUGH (the prompt, the
-   keys) is in flow below it and owns its space. */
-.word-prompt {
-  align-self: center;
-  width: var(--play-w);
-  margin-inline: var(--play-shift);
-}
-/* (The pre-run GATE's rules moved into the shared `.coach-rules` dialog on 2026-08-11 —
-   both gates wear the tutorial's box now. The START button still sits in a real `.tray`,
-   whose height is the keyboard's, so tapping it changes what the footer holds and not
-   where anything is.) */
-.word-footer-result {
-  z-index: 1;
-  min-width: 0;
-  display: flex;
-  align-items: stretch;
-  justify-content: center;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-}
-/* ONE result stack for BOTH modes (user-decided 2026-08-15, "the exact same layout and
-   sizing"): the standing, the number, then SHARE on the bottom edge — `.solved-numbers`'s
-   own rhythm and the shared `.solved-score` sizing, with nothing word-specific left but
-   the rarity chips the sentence result has no equivalent of. What this replaced: the
-   number at `clamp(52px, 10vh, 88px)` in a `flex: 1` region that centred it in whatever
-   the tray had spare — arcade weight, and a stack that shared only its action baseline
-   with the screen it was supposed to rhyme with. The shared `.solved-results` entrance
-   still moves the whole composition. */
-.word-footer-result .solved-results {
-  /* The CARD sits on the footer's bottom edge at its own height (2026-09-11) — it used
-     to fill the footer and push its content to the bottom, which a panel cannot do
-     without becoming a wall. */
-  align-self: flex-end;
-}
-/* The tally's landing: word mode's count is the result's LAST beat (no ruler colorize
-   follows it, as in the sentence tray), so the number marks its own arrival with a
-   one-shot scale pop when the count reaches its final value. */
-.word-footer-result .solved-score-num.landed {
-  animation: score-land 0.3s ease-out;
-}
-@keyframes score-land {
-  0% {
-    transform: scale(1);
-  }
-  35% {
-    transform: scale(1.12);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-/* The tally's BREAKDOWN as a BAR (user-decided 2026-09-05, superseding the chip row of
-   2026-08-11 — "too many centered informations"): the run ruler's geometry (the same 16px
-   band in the same 340px frame, the same padded lane under it for numbers) holding one
-   segment per grade CLAIMED, `flex-grow` = its count so a segment is as wide as its share,
-   in the grade's own RARITY_COLORS colour set inline, commonest first. The count sits
-   under its segment in the pixel face, like a tick's number. Segments arrive one by one
-   once the tally lands (the `--step` delay); a rehydrated result wears `.settled`. */
-.word-bar {
-  display: flex;
-  gap: 2px;
-  height: 16px;
-  padding: 15px 0;
-  box-sizing: content-box;
-}
-.word-bar-seg {
-  position: relative;
-  flex: 0 1 0;
-  min-width: 10px;
-  background: currentColor;
-  opacity: 0;
-}
-.word-bar.in .word-bar-seg {
-  animation: rung-in 200ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
-  animation-delay: calc(var(--step, 0) * 90ms);
-}
-.word-bar.settled .word-bar-seg {
-  opacity: 1;
-  animation: none;
-}
-.word-bar-num {
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  translate: -50% 0;
-  margin-top: 7px;
-  font-family: var(--pixel-font);
-  font-size: clamp(11px, 1.6vh, 13px);
-  line-height: 1;
-  color: currentColor;
-}
-.word-footer-result .result-actions {
-  flex: 0 0 auto;
-}
-/* INSIDE the prompt, under the caret: the seam to its own message line. Wide, like the two
-   around it (`.game.word-game` above, `.word-footer-play`'s gap below) — the three together
-   are what give the prompt its room. */
-.input-area.word-prompt {
-  gap: clamp(16px, 2.4vh, 24px);
-}
-
-/* The WINDOW: the frame around the post-mortem's scroller and the day's word under it.
-   `center` is what puts the word in the MIDDLE of the screen while it is alone there — the
-   gate and the run — and it needs no phase class to stop doing so: once `.word-scroll`
-   mounts it is `flex: 1 1 0` and eats every spare pixel, which leaves the word pinned to
-   the window's bottom edge with the grid above it. So the reveal moves the field in around
-   a word that does not move. */
-.word-window {
-  flex: 1 1 0;
-  min-height: 0;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-/* The board and its prompt share ONE COLUMN, capped at the line's own width (2026-08-05).
-   The drawing is `min(430px, 100%)` and centres itself inside the scroller, so on a desktop
-   the WINDOW was the whole 1200px page column while the line in it was 430 — and the torn
-   edges span the window, so they ran nearly three times the width of the thing they were
-   tearing. The cap is the line (430) + the scroller's ONE remaining 20px side + the 6px pixel
-   scrollbar, so the drawing still lands at its full width and the rules bracket it with
-   exactly the scroller's breathing room and no more. (It was 40px of sides until 2026-08-06,
-   when the left one went to 0 so the board's left edge lines up with the prompt's — see
-   `.word-scroll`.) The prompt takes the same column
-   because it belongs to the board: left-aligned against the page it sat a third of a screen
-   away from the line it answers. (The GATE's rules used to take it too; since 2026-08-11
-   they sit in the shared `.coach-rules` dialog at its own width.) The cap is a no-op on a
-   phone, where the column is already narrower than it. */
-.word-window {
-  max-width: calc(430px + 20px + 6px);
-  align-self: center;
-}
-/* The POST-MORTEM window opens to the words modal's own width (2026-09-01): the grid
-   takes as many columns as the screen holds, where the line it replaced was one 430px
-   trunk. The word under it keeps its place at the window's left edge. And it reaches UP
-   to the header's bottom edge — the screen reserves 66px, the desktop bar ends at 58
-   (8px float + 50px) — so the scroller's own fade sits right under the bar. */
-.word-window.wb-open {
-  max-width: calc(1100px + 20px + 6px);
-  margin-top: -8px;
-}
-.word-scroll {
-  flex: 1 1 0;
-  min-height: 0;
-  width: 100%;
-  overflow-y: auto;
-  overflow-x: hidden;
-  /* The board is the screen behind a live prompt — rubber-banding the page under it while
-     hunting the line would take the keyboard with it. */
-  overscroll-behavior: contain;
-  /* The LEFT side is 0 (2026-08-06): the board is a left-aligned block, and the prompt
-     under it lines up on the same edge. The RIGHT side keeps its 20px: the clearance the
-     pixel scrollbar needs off the words. And it FADES ITS OWN TOP (2026-09-01): a 36px
-     mask, exactly the header's gradient, drawn by the scroller because the header's own
-     only lights on a scroll it hears. For that fade to sit UNDER the header rather than
-     a band below it, the post-mortem window is pulled up to the header's bottom edge
-     (`.word-window.wb-open`) — the screen's reserve otherwise leaves a strip of bare
-     ground between the bar and the first word, where the fade started "way too low". The
-     36px of top padding is the fade's own height, so the farthest word rests CLEAR of it
-     at the top of the scroll (user-reported). */
-  padding: 36px 20px 0 0;
-  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 36px);
-  mask-image: linear-gradient(to bottom, transparent, #000 36px);
-}
-/* The board's grid (2026-09-01, replacing the route drawing's `.word-frame` rules, the
-   torn `.word-cut` and the `.word-terminus` rail footer): as many columns as the window
-   holds at ONE type size (`WordBoard` sets the column inline off the longest word), the
-   farthest words at the top and the closest at the bottom, next to the day's word pinned
-   under the window. The scroller opens parked at that bottom. */
-.wb-grid {
-  list-style: none;
-  margin: 0;
-  padding: 8px 0 12px;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 14px 20px;
-}
-/* One word, in its RARITY grade's colour (`--rarity-c`, set per word), its exponent raised
-   as the hole's in the shared heat. A CLAIMED word wears its grade's colour as a chip —
-   the held word's inverted chip, in the grade's ink, the sentence chip's em geometry —
-   so a claimed word reads as yours the way a found word does in the sentence modal; a
-   word still censored is `???`, quiet. */
-.wb-word {
-  font-family: var(--pixel-font);
-  font-size: 15px;
-  line-height: 1.3;
-  color: var(--rarity-c, var(--fg));
-  white-space: nowrap;
-  text-shadow: 2px 2px 0 black;
-}
-.wb-claimed .wb-text {
-  padding: 0.133em 0.2em;
-  margin: -0.133em 0;
-  background: var(--rarity-c, var(--fg));
-  color: var(--bg);
-  text-shadow: none;
-}
-.wb-unknown {
-  opacity: 0.55;
-}
-.wb-rank {
-  display: inline-block;
-  font-size: 0.55em;
-  margin-left: 1px;
-  color: var(--rank-color);
-  vertical-align: super;
-}
-/* The day's word as the grid's LAST ROW, in the solved ink, at the size the route
-   terminus wore — it scrolls with its words (user-decided 2026-09-01). */
-.word-foot {
-  margin: 22px 0 8px;
-  font-family: var(--pixel-font);
-  font-size: 24px;
-  line-height: 1.3;
-  color: var(--solve);
-  text-shadow: 2px 2px 0 black;
-  overflow-wrap: anywhere;
-}
-/* The day's word during the GATE and the RUN (#163): just the word, centred, in the solved
-   blue. No node, no rail, no rank gutter — there is no line yet for it to be the end of, and
-   the post-mortem's `.word-foot` is where it lands under the grid.
-   `--wordw` is what `fitWord` divides by, and here it is the WHOLE page column (the route
-   frame's is what survives the gutter and the rail), so a long word shrinks to fit rather
-   than ever breaking mid-word. The grade label's size is set below, and is much smaller than
-   the sentence game's 28px, because that label is a WORD (`UNCOMMON` is 8 characters where a
-   distance is 2-3) and the rarest grades multiply it. */
-.word-subject {
-  /* 95% of the column, not all of it: the word BREATHES (see `word-breathe`), and at the
-     top of that breath its letters carry 0.045em of extra spacing each — which for a word
-     `fitWord` has already sized to fill the column exactly is a hair under 5% of overflow.
-     Reserving it here keeps that arithmetic in the one place that owns the column's width,
-     the same way the route frame's `--wordw` reserves 18px for a scrollbar it cannot see. */
-  --wordw: calc(min(430px, calc(100vw - 48px)) * 0.95);
-  width: 100%;
-  display: flex;
-  justify-content: center;
-  text-align: center;
-}
-.word-subject-text {
-  display: inline-block;
-  font-family: var(--pixel-font);
-  line-height: 1.15;
-  color: var(--solve);
-  /* One line, whatever the word. */
-  white-space: nowrap;
-}
-/* The word is HELD LIKE A HAND OF CARDS (decided 2026-08-09): each letter leans by its place
-   in the word and the outer ones fall away, which `WordSubject` computes and hands down as
-   `rotate` / `translate`. The pivot is the letter's BOTTOM, so a lean reads as a card tipping
-   in a hand rather than a glyph spinning in place.
-   Both go on the INDEPENDENT transform properties, never into one `transform` string, and
-   that is load-bearing rather than tidy: it leaves `transform` free, which is exactly what
-   lets the letter WAVE — an ordinary transform animation, shared with the sentence game's
-   holes — ride ON TOP of the fan instead of flattening it for the length of a ripple. */
-.word-subject-text .hole-letter {
-  transform-origin: 50% 100%;
-}
-/* And the whole hand BREATHES: it rises and, in the same breath, spreads. Very subtly — this
-   is the screen being alive while the player thinks, not a thing to look at.
-   BOTH animations ride the WRAP — the rise and the spread — which is not where the spread
-   naturally belongs (letter-spacing is a text property) but is where it has to be: they
-   must stay in phase, and one element with one start is the only way to guarantee that. It
-   also leaves `transform` free on the text below, which is what the strike's recoil needs.
-   letter-spacing is inherited, so the MISS label opts out of it explicitly.
-   The spread is the one thing here that changes the word's WIDTH, which is why
-   `.word-subject`'s `--wordw` reserves room for it — see there. Both are infinite
-   decorations, so reduced motion switches them OFF rather than collapsing them (the rule the
-   timer's warning pulse follows); the fan itself stays, being a posture and not motion. */
-.word-subject .hole-word-wrap {
-  animation:
-    word-float 3.6s ease-in-out infinite,
-    word-breathe 3.6s ease-in-out infinite;
-}
-.word-subject .floating-hit {
-  letter-spacing: normal;
-}
-/* The word RECOILS from every judged guess. The sentence game's own shake vocabulary
-   (`word-shake`), run for the BLOW's own length: `--shake-ms` is handed down by
-   `WordSubject` (STRUCK_MS, a frame short of the shortest sheet), so the JS that ends the
-   recoil and the CSS that draws it cannot disagree about how long a blow is.
-   A STRIKE (a claim) also wears the strike's COLOUR while it is on the word, returning to
-   the solve blue when it goes: a plain state, like everything else here, not a transition.
-   A JOLT (a MISS — #175, decided 2026-08-16: every action has a physical feel) is the same
-   recoil and NOTHING else: no colour (red stays the MISS float's own), no sheet, no loot —
-   a miss must stay visibly LESSER than a claim, and until #175 it left the word perfectly
-   still, which on a clock read as nothing having happened. */
-.word-subject-text.struck {
-  color: var(--struck-c, var(--solve));
-  animation: word-shake var(--shake-ms, 0.4s) ease-in-out;
-}
-.word-subject-text.jolted {
-  animation: word-shake var(--shake-ms, 0.4s) ease-in-out;
-}
-@keyframes word-float {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-3.25px);
-  }
-}
-@keyframes word-breathe {
-  0%,
-  100% {
-    letter-spacing: 0;
-  }
-  50% {
-    letter-spacing: 0.045em;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .word-subject .hole-word-wrap {
-    animation: none;
-  }
-}
-
-/* --- the STRIKE: a claim hits the word (#163, decided 2026-08-09) ------------------------
+/* --- the STRIKE: a hit on a game word (decided 2026-08-09; a sentence hole's since #301) --
    `assets/hits/slash.png` is a 5-frame 36x46 sheet of a diagonal stroke landing and
-   dissipating — the DEFAULT hit. The rarest two grades take their own sheets from the same
-   folder (`.burst` / `.ultra` below), which is a class and a few numbers; everything else
-   here — the show/hide rule, the frame walk, the reduced-motion hold — is shared by all three.
+   dissipating — the DEFAULT hit. Two more sheets come from the same folder (`.burst` /
+   `.ultra` below), each a class and a few numbers; everything else here — the show/hide
+   rule, the frame walk, the reduced-motion hold — is shared by all three.
    Two things about how the default is drawn:
 
    It is a MASK, not an image. The sheet is pure white, so painting `currentColor` through it
-   gives one sheet in five grade colours — the technique the header globe uses, for the same
-   reason. The colour comes down from `WordSlash` as the element's own `color`.
+   gives one sheet in any colour — the technique the header globe uses, for the same reason.
+   The colour comes down from `Strike` as the element's own `color`.
 
    It is at an EXACT INTEGER SCALE (5x = 180x230 here, 4x = 144x184 on a phone), the app's
    standing rule for pixel art, and it takes `image-rendering: pixelated` WITH it. An earlier
@@ -4757,15 +4247,15 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     slash-frames var(--slash-ms, 250ms) steps(5, jump-none) var(--strike-delay, 0ms) both,
     slash-show var(--slash-ms, 250ms) linear var(--strike-delay, 0ms);
 }
-/* The stroke lands randomly mirrored (2026-08-11, the RARE cross's flip repurposed): rolled
-   once per hit by WordSlash, and only for the plain slash — the burst and the ultra are
+/* The stroke lands randomly mirrored (2026-08-11): rolled once per hit by `Strike`, and only
+   for the plain slash — the burst and the ultra are
    near-symmetric art with nothing to say backwards. */
 .strike.mirrored {
   transform: translate(-50%, calc(-50% + 44px)) scaleX(-1);
 }
-/* OBSCURE gets the BURST instead of a cross (2026-08-09): `burst.png`, a 5-frame 53x66 sheet,
-   at the stroke's own 5x (4x on a phone) — 265x330, wider and taller than the stroke, which is
-   the escalation. It is pure white like the stroke, so it stays a MASK and wears the grade's
+/* The BURST (2026-08-09; a full meter since #301): `burst.png`, a 5-frame 53x66 sheet, at the
+   stroke's own 5x (4x on a phone) — 265x330, wider and taller than the stroke, which is the
+   escalation. It is pure white like the stroke, so it stays a MASK and wears the strike's
    colour; only its geometry differs, and both numbers are measured off the art:
    its size, and a +20px drop (+16 at 4x) because its impact ink — frames 1-3, which carry 90%
    of it — centres at 44% of the frame's height rather than at 50%, so a box centred on the
@@ -4779,15 +4269,14 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   -webkit-mask-image: url('./assets/hits/burst.png');
   mask-image: url('./assets/hits/burst.png');
 }
-/* ARCANE gets the ULTRA star (2026-08-09): `ultra-slash.png`, a
-   7-frame 71x66 sheet, at the stroke's own 5x (4x on a phone) — 355x330, the widest of the
-   three, filling the word's band rather than crossing the word, and the point.
+/* The ULTRA star (2026-08-09; the exact hit since #301): `ultra-slash.png`, a 7-frame 71x66
+   sheet, at the stroke's own 5x (4x on a phone) — 355x330, the widest of the three, filling
+   the word's band rather than crossing the word, and the point.
    It is the ONE sheet drawn as an IMAGE rather than as a mask: it is authored in COLOUR —
    seven fully opaque palette entries — where the other two are pure white precisely so they
-   can be painted in the grade's colour. Masking this one would flatten all seven into one
+   can be painted in the strike's colour. Masking this one would flatten all seven into one
    flat colour, which is most of what the art is. So the mask is dropped and the currentColor
-   fill with it; the GRADE is still told by the word's own colour under it, and by the loot
-   the hit knocks off it.
+   fill with it.
    It is also CENTRED — no drop. That is not a different choice from the stroke's 19%, it is
    the same rule reading a different sheet: the stroke's ink is top-weighted, this one's
    centroid is y=33 of 66, dead centre (both measured off the art). */
@@ -4831,9 +4320,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 /* The global rule would collapse the frame walk to nothing, which for a sprite sheet means
    the strike never appears at all. Hold ONE frame instead — the fullest, second — for as
-   long as the component keeps it mounted: no motion, but the claim is still visibly struck.
-   (The rest of the claim's feedback does not depend on this: the clock still gains and the
-   loot still shows, holds and goes on its kept delays.) */
+   long as the component keeps it mounted: no motion, but the word is still visibly struck.
+   (The loot does not depend on this: it still shows, holds and goes on its kept delays.) */
 @media (prefers-reduced-motion: reduce) {
   .strike {
     animation: none;
@@ -4847,7 +4335,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
      the base `.strike.ultra` declares the walk at a higher specificity, so it wins, the
      global rule collapses its duration to nothing and the sheet lands on its LAST, near-empty
      frame (21 ink pixels) with a `both` fill. Measured before the fix: `background-position:
-     100% 0%`, i.e. an ARCANE find showing almost nothing at all.
+     100% 0%`, i.e. an exact hit showing almost nothing at all.
      It holds the THIRD frame, not the fullest first: frame 1 is the impact flash, a solid
      white disc that covers the word completely — right for 50ms, wrong to park on. Frame 3 is
      the star at full spread with the word readable through it, which is what the burst LOOKS
@@ -4858,26 +4346,25 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   }
 }
 
-/* --- the LOOT: what a claim knocks OUT of the word (decided 2026-08-10) ------------------
-   Two pieces pop off the struck word like drops off a hit enemy — the guess's rank exponent
-   in its heat colour up one way, the grade's name in its grade colour up the other, a beat
-   later — rise, hang at the top of the throw, and fall away, fading on the way down. The
-   strike says "hit"; the loot says what the hit was worth, and it is out of the air before
-   the next guess needs the screen, so no readout ever parks anywhere.
+/* --- the LOOT: what a hit knocks OUT of the word (decided 2026-08-10) --------------------
+   The guess's rank exponent pops off the struck word like a drop off a hit enemy, in its
+   heat colour — rises, hangs at the top of the throw, and falls away, fading on the way
+   down. The strike says "hit"; the loot says what the hit was worth, and it is out of the
+   air before the next guess needs the screen, so no readout ever parks anywhere.
 
    BALLISTICS, not a float: the OUTER box drifts sideways linearly for the whole flight
    while the INNER one rises on an ease-out and falls on an ease-in — the parabola trick,
    two elements because one `translate` cannot run two easings at once. No `scale`
    anywhere: the pop reads off the launch alone, because animating scale on the pixel font
    renders blurry frames (the standing rule). The tilt is a fixed `rotate` on the inner
-   box — a posture, like the fan's lean, not motion.
+   box — a posture, not motion.
 
-   TIMING comes down from WordLoot (`--loot-rise` / `--loot-fall` / `--loot-delay`), so the
+   TIMING comes down from `Loot` (`--loot-rise` / `--loot-fall` / `--loot-delay`), so the
    JS timer that ends the loot and the flight CSS draws cannot disagree; GEOMETRY (drift,
-   apex, drop, tilt, size) is per piece below, where the phone shortens the throw. Base
-   opacity 0 with no backwards fill, the `.strike` rule: a piece is invisible until its
-   launch and after its fall. Under reduced motion the global collapse (durations to ~0,
-   delays KEPT) leaves each piece resting at its apex for the fall's delay — shown, held,
+   apex, drop, tilt, size) is below, where the phone shortens the throw. Base opacity 0
+   with no backwards fill, the `.strike` rule: the number is invisible until its launch and
+   after its fall. Under reduced motion the global collapse (durations to ~0, delays KEPT)
+   leaves it resting at its apex for the fall's delay — shown, held,
    gone, the floating numbers' own degradation, so no extra rule is needed. */
 .loot {
   position: absolute;
@@ -4895,10 +4382,10 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   pointer-events: none;
   /* The throw, assembled from three owners (decided 2026-08-10, when the flight went
      random): the SIDE class below gives the sign and the anchor, the CONTENT class the
-     magnitude (where the ≤640px step-down can reach it), and WordLoot's per-hit dice the
+     magnitude (where the ≤640px step-down can reach it), and `Loot`'s per-hit dice the
      `--loot-j*` factors. `--loot-dx0` is the LAUNCH offset the drift starts from — the
-     pieces leave the word already apart, which is what makes the impact read as a burst
-     rather than a split. */
+     number leaves the word already off-centre, which is what makes the impact read as a
+     throw. */
   --loot-dx0: calc(var(--loot-sign, 1) * var(--loot-mag0, 12px));
   --loot-dx: calc(var(--loot-sign, 1) * var(--loot-mag, 46px) * var(--loot-jx, 1));
   animation: loot-drift calc(var(--loot-rise, 340ms) + var(--loot-fall, 440ms)) linear
@@ -4918,12 +4405,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     loot-fall var(--loot-fall, 440ms) cubic-bezier(0.5, 0, 0.85, 0.45)
       calc(var(--loot-delay, 0ms) + var(--loot-rise, 340ms)) forwards;
 }
-/* WHICH side is rolled per hit (WordLoot) — sometimes the exponent takes the left,
-   sometimes the grade does; the two always take opposite ones. EDGE-anchored, not
-   centred: a left-flying piece's whole box stays left of its anchor and a right-flying
-   one's right of its own, so the pieces CANNOT overlap whichever way the dice land —
-   centred anchors put `-5` on top of `ARCANE` for the first half of the flight
-   (measured). */
+/* WHICH side is rolled per hit (`Loot`). EDGE-anchored, not centred: a left-flying number's
+   whole box stays left of its anchor and a right-flying one's right of its own. */
 .loot-to-left {
   --loot-sign: -1;
   transform: translate(-100%, -50%);
@@ -4933,9 +4416,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   transform: translate(0, -50%);
 }
 /* The exponent: the rank, written the one way the app writes ranks, in the heat colour
-   every other exponent wears (WordLoot hands it down from the shared rankHeatColor). It
-   flies HIGHER and shorter than the grade — two different arcs are what read as things
-   scattering rather than a symmetric split. */
+   every other exponent wears (`Loot` hands it down from the shared rankHeatColor). */
 .loot-exp {
   --loot-mag0: 12px;
   --loot-mag: 46px;
@@ -4945,19 +4426,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   --loot-apex: -58px;
   --loot-drop: 26px;
   --loot-tilt: 5deg;
-}
-/* The grade's name in the grade's own colour — the ladder's word, untranslated. Smaller
-   than the exponent: it is a WORD (UNCOMMON is 8 glyphs), and the word under it is the
-   screen's subject. */
-.loot-grade {
-  --loot-mag0: 12px;
-  --loot-mag: 52px;
-  font-size: 20px;
-}
-.loot-grade .loot-lift {
-  --loot-apex: -44px;
-  --loot-drop: 30px;
-  --loot-tilt: 4deg;
 }
 @keyframes loot-drift {
   from {
@@ -4991,27 +4459,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   }
 }
 @media (max-width: 640px) {
-  .word-subject {
-    --wordw: calc(min(430px, calc(100vw - 28px)) * 0.95);
-  }
-  /* The phone's bar is 48px full-bleed under the same 66px reserve — and the post-mortem
-     window BLEEDS to the screen's edges (user-decided 2026-09-01): the scrollbar sits on
-     the screen's border with no padding, while the words keep the page's 14px inset. */
-  .word-window.wb-open {
-    margin-top: -18px;
-    margin-left: -14px;
-    margin-right: -14px;
-    width: 100vw;
-    max-width: none;
-  }
-  .word-window.wb-open .word-scroll {
-    padding-right: 0;
-  }
-  .word-window.wb-open .wb-grid,
-  .word-window.wb-open .word-foot {
-    padding-left: 14px;
-    padding-right: 14px;
-  }
   /* One integer step down here — 4x rather than 5x. At 320px the page leaves 292px of
      column, and 5x would put a 180px stroke on it: still inside, but reading as a strike
      the width of the screen rather than one that crosses the word. */
@@ -5034,13 +4481,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     height: 264px;
     transform: translate(-50%, -50%);
   }
-  /* The loot's throw shortens with the strike's own scale-down: the desktop drift on a
-     292px column runs the grade's word toward the edge (edge-anchored, UNCOMMON's 8
-     glyphs grow AWAY from centre, so the drift plus the word must fit the half-column).
-     The magnitudes are set against the DICE's ceiling, not the base throw: the worst
-     roll — the grade flying right at `--loot-jx` 1.15, UNCOMMON's 120px of glyphs behind
-     it — ends at 160 + 37 + 120 = 317px of a 320px screen. Widen either and re-run that
-     sum. */
+  /* The loot's throw shortens with the strike's own scale-down, so a number flung at the
+     dice's ceiling (`--loot-jx` 1.15) still lands inside a 320px screen. */
   .loot-exp {
     --loot-mag0: 10px;
     --loot-mag: 36px;
@@ -5048,174 +4490,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   }
   .loot-exp .loot-lift {
     --loot-apex: -48px;
-  }
-  .loot-grade {
-    --loot-mag0: 10px;
-    --loot-mag: 32px;
-    font-size: 15px;
-  }
-  .loot-grade .loot-lift {
-    --loot-apex: -36px;
-  }
-  /* The keyboard goes full-bleed here — 10px past the page inset on each side (see
-     `.keyboard`) — so the whole play column goes with it. */
-  .word-footer-play {
-    --play-box: calc(100% + 20px);
-    --play-shift: -10px;
-  }
-}
-
-/* The arcade header corner carries the CLOCK (#163) — the resource this mode is played
-   against, so it takes the spot the sentence game gives its progress counter. The SCORE is
-   not here: it is the watermark behind the word (`.word-anchor`), because it is the number
-   the end screen names.
-   Bigger than the sentence's counter on purpose: it is the one live number on the screen,
-   and the thing every claim visibly pays into. Tabular figures so the digits do not twitch
-   as they turn — which matters far more now that the last one turns ten times a second.
-   The corner it sits in holds ~104px at 320px before it reaches the icon group, which is
-   what sets the mobile size below: a three-digit clock and its tenth have to fit that. */
-/* The clock sits UNDER THE WORD since 2026-08-18 (the header's left slot went to the
-   date chip), centred in its own row — and it speaks the PIXEL face: the countdown is
-   the game's own number, like every number the game produces. */
-.word-clock {
-  display: flex;
-  justify-content: center;
-  margin-top: clamp(14px, 2.6vh, 24px);
-}
-.word-timer {
-  position: relative;
-  display: inline-block;
-  font-family: var(--pixel-font);
-  font-size: 24px;
-  font-weight: 400;
-  line-height: 1;
-  letter-spacing: 0;
-  color: var(--fg);
-  transition: color 0.25s linear;
-  pointer-events: none;
-}
-/* The tenth, smaller than the seconds it hangs off. Width is the hard reason (see above),
-   but it also reads right: the seconds are the number and the tenth is the number MOVING,
-   so the eye reads the value off the big glyphs and the motion off the small one. */
-.word-timer .timer-dec {
-  font-size: 0.55em;
-  font-weight: 550;
-  /* Dimmed via opacity, never a fixed colour: the warn/spent states recolour the whole
-     clock and the tenth must go with it. */
-  opacity: 0.75;
-}
-/* The mobile size lives HERE, immediately after the rule it overrides, and not up in the
-   stylesheet's shared mobile block — the two have equal specificity, so a media query
-   written earlier in the file simply loses to this rule and never applies. */
-@media (max-width: 640px) {
-  .word-timer {
-    font-size: 20px;
-  }
-}
-/* Before START the clock shows what a run is worth without having begun to spend it — a
-   preview, so it reads as chrome rather than as time already running out. Dimmed
-   foreground, never a second grey (the one-ink rule). */
-.word-timer.idle {
-  opacity: 0.55;
-}
-/* The last stretch. `--danger` and a pulse rather than a ramp: the two the app already owns
-   mean PROGRESS and DISTANCE, and a clock is neither — borrowing one would have the number
-   speak a vocabulary it does not belong to.
-   The pulse stops AT ZERO (`.spent`), where it would otherwise beat under the whole result
-   screen: the alarm is about time running out, and once it has there is nothing left to warn
-   about — the red number is a statement, not a countdown. Being infinite, it is also the
-   kind of decoration reduced motion switches OFF rather than collapses. */
-.word-timer.warn {
-  color: var(--danger);
-  animation: timer-pulse 1s ease-in-out infinite;
-}
-.word-timer.spent {
-  color: var(--danger);
-  animation: none;
-}
-/* At zero the clock SAYS it (#175): TIME UP / TEMPS ÉCOULÉ in place of the dead `0.0`,
-   the clock's own face and size, so the run's end is stated where the thing that ended it
-   is — and it is what absorbs a guess that died on the buzzer, which the store refuses
-   without a word. It POPS IN like a gain rather than swapping — an event, not a redraw —
-   and stays, since the clock leaves with the reveal. The pop is one animation with no
-   fade-out; reduced motion collapses it to the label simply being there.
-   Width: the longest label is 12 glyphs — 288px at the desktop 24px, inside the 430px
-   column; 240px at the phone's 20px, inside a 320px screen's 292. */
-.word-timer .timer-up {
-  display: inline-block;
-  white-space: nowrap;
-  animation: timer-gain-in 0.4s ease-out;
-}
-@media (prefers-reduced-motion: reduce) {
-  .word-timer .timer-up {
-    animation: none;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .word-timer.warn {
-    animation: none;
-  }
-}
-@keyframes timer-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.45;
-  }
-}
-/* The seconds a claim just bought, landing ON the clock: the other half of the mode's
-   feedback grammar (a float on the WORD is about the guess, a gain here is about your
-   time). It rises INTO the number in the solved-word gold and fades out under it, which is
-   the reading — time flowing into the clock — and it is keyed by the gain's id so two
-   claims in a row replay it instead of the second landing on a finished element.
-   `forwards` leaves it invisible rather than snapping back.
-   UNDER the clock rather than beside it: at 320px a `+5s` set to the right of a two-digit
-   number runs into the header's icon group (measured, 15px over). Below, it has the whole
-   empty top of the play area to itself at every width, and there is never a board there —
-   a gain only ever plays during a run, where the word sits centred far below. */
-/* TWO animations — a pop-in and a DELAYED fade-out — and the split is load-bearing, not
-   taste: it is `.floating-hit`'s exact shape, and it is what keeps the gain visible under
-   reduced motion. The global collapse zeroes DURATIONS but keeps DELAYS, so this shows,
-   holds for the out-delay, and goes — where the earlier single delay-less `forwards`
-   animation collapsed straight onto its last frame, `opacity: 0`, and the reward was
-   never seen at all. */
-.timer-gain {
-  position: absolute;
-  left: 0;
-  top: 100%;
-  font-size: 0.5em;
-  font-weight: 650;
-  white-space: nowrap;
-  color: var(--accent);
-  opacity: 0;
-  animation:
-    timer-gain-in 0.4s ease-out forwards,
-    timer-gain-out 0.5s ease-out 0.4s forwards;
-}
-@keyframes timer-gain-in {
-  0% {
-    opacity: 0;
-    transform: translateY(8px) scale(0.7);
-  }
-  55% {
-    opacity: 1;
-    transform: translateY(0) scale(1.15);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-@keyframes timer-gain-out {
-  0% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: translateY(-12px) scale(1);
   }
 }
 
@@ -5409,17 +4683,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .profile-save {
   margin-top: 6px;
 }
-.profile-status {
-  margin: 0;
-  font-family: var(--ui);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  text-align: center;
-  color: var(--danger);
-}
-
 /* ── THE ACCOUNT AREA (#204, reworked 2026-08-26) ──────────────────────────────────────
    Three screens, three questions — `/account` (is this mine, and safe?), `/profile` (how
    do others see me?), `/account/email` (save it / get it back). They share one column and
@@ -5451,7 +4714,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
      voids the whole declaration. No side padding: the column IS the button's width. */
   padding: 48px 0 24px;
 }
-.account-body,
 .link-step {
   display: flex;
   flex-direction: column;
@@ -5469,32 +4731,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   gap: 10px;
   margin-top: 20px;
 }
-.account-link {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  min-height: 52px;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  background: var(--glass);
-  font-family: var(--ui);
-  color: var(--fg);
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 120ms;
-}
-.account-link:hover {
-  border-color: var(--line-strong);
-}
-/* A row that is a FACT, not a control: the saved address, plainly. */
-/* The chevron says the row LEADS somewhere — the title's own 7×7 mark, pointing on. */
-.account-link .ui-icon {
-  flex: none;
-}
-
 /* THE ONE CALL: the screen's primary, in the tutorial's MIX / the board's INVITE / the
    gates' PLAY geometry (`.mix-btn`), the caption that explains it over it. On desktop it
    is the column's last item; on a phone the mobile block parks it on the bottom edge,
@@ -6095,7 +5331,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 /* Under `prefers-reduced-motion` the global rule collapses DURATIONS but deliberately
    keeps DELAYS — several surfaces need them (a floating hit that shows, holds and goes;
-   the loot's apex; the rarity ladder's rungs), so zeroing delay globally would break them.
+   the loot's apex; the board rows' rise), so zeroing delay globally would break them.
    Here the delay is the whole animation: with the duration gone, the ending's name,
    receipt, sentence and action simply stay invisible for up to 780ms and then snap in one
    at a time — more motion-like than the fade it replaced. So the delay is dropped HERE
@@ -6555,7 +5791,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     font-size: 15px;
   }
 }
-
 
 /* The SAVE button's loading choreography: the label always reads SAVE — on submit it
    rolls down and out while the three-dot loader drops in from the top, waves for at

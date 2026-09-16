@@ -26,9 +26,7 @@ import type {
   PublicGroup,
   Puzzle,
   Word,
-  WordPuzzle,
 } from '@whippin/shared';
-import type { Mode } from './langs';
 import { timeoutSignal } from './timeout';
 
 // Base URL of the backend, configured at build time via VITE_API_BASE_URL.
@@ -55,12 +53,6 @@ export function puzzleUrl(lang: string, date: string, base: string = apiBase()):
   return `${requireApiBase(base)}/?lang=${encodeURIComponent(lang)}&date=${encodeURIComponent(date)}`;
 }
 
-// Word mode's daily artifact (#154/#156): the same date-addressed endpoint, selected by
-// `mode=word` — a distinct URL, so the CDN caches the two dailies separately.
-export function wordPuzzleUrl(lang: string, date: string, base: string = apiBase()): string {
-  return `${puzzleUrl(lang, date, base)}&mode=word`;
-}
-
 // Routing outcome of the backend puzzle fetch, by HTTP status:
 //   200 -> a puzzle to load;
 //   404 -> no puzzle for today/lang -> the graceful "NO PUZZLE TODAY" state (#14);
@@ -80,21 +72,14 @@ function isWord(v: unknown): v is Word {
   return isRecord(v) && typeof v.word === 'string' && typeof v.slug === 'string';
 }
 
-// The optional group annotations on a rank entry (#115 distances, #163 rarity). They are
-// group properties generation adds — a rank-0 entry carries no `dq` and a borrowed-vector
-// group no `freq`, so ABSENT stays valid — but a PRESENT one must be well formed: scoring,
-// the history line and Word mode's clock read them as numbers, so a string or an
-// out-of-range value would corrupt them silently. `freq` is the one whose damage would be
-// invisible rather than visual: it buys SECONDS, and a NaN reaching the deadline arithmetic
-// ends a run instantly or never. Its upper end is deliberately unbounded — it is a
-// vocabulary position, and an implausibly large one simply lands in the rarest bonus tier.
+// The optional group annotation on a rank entry (#115 distances). It is a group property
+// generation adds — a rank-0 entry carries no `dq`, so ABSENT stays valid — but a PRESENT
+// one must be well formed: scoring and the history line read it as a number, so a string
+// or an out-of-range value would corrupt them silently.
 function checkRankAnnotations(entry: Record<string, unknown>): void {
-  const { dq, freq } = entry;
+  const { dq } = entry;
   if (dq !== undefined && (typeof dq !== 'number' || !Number.isInteger(dq) || dq < 0 || dq > 255)) {
     throw new Error('malformed puzzle: "dq" must be an integer 0-255');
-  }
-  if (freq !== undefined && (typeof freq !== 'number' || !Number.isInteger(freq) || freq < 1)) {
-    throw new Error('malformed puzzle: "freq" must be a positive integer');
   }
 }
 
@@ -169,40 +154,6 @@ function checkSource(source: unknown): void {
   if (url !== undefined && (typeof url !== 'string' || !/^https?:\/\//i.test(url))) {
     throw new Error('malformed puzzle: "source.url" must be a web link');
   }
-}
-
-// Runtime shape check for Word mode's fetched artifact (#154/#156) — the same job as
-// parsePuzzle for the same reason: a truncated/wrong body must surface as the error
-// state, never crash the board mid-render. Asserts the load-bearing structure: lang, the
-// public word {word, slug}, and the ONE flat rank map with well-formed rank/dq/freq
-// on every entry.
-export function parseWordPuzzle(data: unknown): WordPuzzle {
-  if (!isRecord(data)) throw new Error('malformed word puzzle: not an object');
-  const { lang, word, ranks } = data;
-  if (typeof lang !== 'string') throw new Error('malformed word puzzle: missing "lang"');
-  if (!isWord(word)) throw new Error('malformed word puzzle: bad "word"');
-  if (!isRecord(ranks)) throw new Error('malformed word puzzle: "ranks" must be an object');
-  if (!isRecord(ranks[word.slug]) || (ranks[word.slug] as { rank?: unknown }).rank !== 0) {
-    throw new Error('malformed word puzzle: "ranks" must hold the word itself at rank 0');
-  }
-  for (const entry of Object.values(ranks)) {
-    if (!isRecord(entry) || typeof entry.word !== 'string') {
-      throw new Error('malformed word puzzle: bad "ranks" entry');
-    }
-    if (typeof entry.rank !== 'number' || !Number.isInteger(entry.rank) || entry.rank < 0) {
-      throw new Error('malformed word puzzle: "rank" must be a non-negative integer');
-    }
-    checkRankAnnotations(entry);
-  }
-  // `freq` is optional PER ENTRY (a borrowed-vector group has no position to read) but a
-  // map carrying NONE is a pre-#163 artifact: every claim would silently grade at the
-  // COMMON floor and halve the run's economy with nothing anywhere looking wrong. The
-  // standing no-back-compat rule says a stale artifact is republished, never limped on —
-  // so it surfaces as the load failure it is.
-  if (!Object.values(ranks).some((entry) => isRecord(entry) && entry.freq !== undefined)) {
-    throw new Error('malformed word puzzle: no "freq" on any entry (pre-#163 artifact)');
-  }
-  return data as unknown as WordPuzzle;
 }
 
 // Production POSTs cross CloudFront's OAC in front of the Lambda URL, which refuses an
@@ -322,21 +273,18 @@ export function parseDeviceIdentity(data: unknown): DeviceListing {
   return data as unknown as DeviceListing;
 }
 
-// The round route (#201/#202/#203): the server-authoritative state of one player's play on
-// one daily, one item per (date, lang, mode, account). POST-only —
-// `{token, puzzle}` reads the stored round (404 = none yet); SENTENCE mode streams into it
-// with `{token, puzzle, guesses}`, carrying a `turnstileToken` on the append that CREATES
-// the round, while WORD mode writes twice, `{token, puzzle, turnstileToken}` to START its
-// server-stamped clock and one `{token, puzzle, guesses}` carrying the whole log at the
-// end. EVERY answer, refusals included, carries the full state, so a write is also a
-// reconciliation. In sentence mode `puzzle` is the published revision naming WHICH puzzle
-// the state belongs to, which is how a corrected daily restarts instead of inheriting the
-// retired one's log. The three query parameters are in the round CloudFront
-// behavior's allowList (the root AGENTS.md three-package contract).
-export function roundUrl(lang: string, date: string, mode: Mode, base: string = apiBase()): string {
+// The round route (#201/#203): the server-authoritative state of one player's play on one
+// daily, one item per (date, lang, account). POST-only — `{token, puzzle}` reads the stored
+// round (404 = none yet); the client streams into it with `{token, puzzle, guesses}`,
+// carrying a `turnstileToken` on the append that CREATES the round. EVERY answer, refusals
+// included, carries the full state, so a write is also a reconciliation. `puzzle` is the
+// published revision naming WHICH puzzle the state belongs to, which is how a corrected
+// daily restarts instead of inheriting the retired one's log. The two query parameters are
+// in the round CloudFront behavior's allowList (the root AGENTS.md three-package contract).
+export function roundUrl(lang: string, date: string, base: string = apiBase()): string {
   return `${requireApiBase(base)}/round?lang=${encodeURIComponent(lang)}&date=${encodeURIComponent(
     date,
-  )}&mode=${encodeURIComponent(mode)}`;
+  )}`;
 }
 
 export async function postRoundBody(
@@ -346,35 +294,10 @@ export async function postRoundBody(
   return postSignedJson(url, body);
 }
 
-// WHICH DEVICE a word run belongs to (#217): the id the server's own two conditions
-// compare, plus the device's parsed user-agent fields — a snapshot taken when the run was
-// stamped, so a screen offering to end that run can NAME it without a second lookup.
-export interface RoundRunner {
-  deviceId: string;
-  device: string;
-  os: string;
-  browser: string;
-}
-
 export interface RoundState {
   guesses: string[];
   createdAt: string;
-  // Word mode's SERVER-stamped clock (#202); null on a sentence round and on a word round
-  // nobody has started.
-  startedAt: string | null;
-  // WHO holds that clock (#217) — null exactly when `startedAt` is, since one write stamps
-  // both. It is half of what the Word screen picks its phase from: a run this device does
-  // not own is one it may neither play nor submit, only start over.
-  startedBy: RoundRunner | null;
-  // When the word round's end-of-run log was RECORDED; null while it has not been. It is
-  // the submission's own marker because an empty stored log — a run that claimed nothing —
-  // reads exactly like an unsubmitted one.
-  submittedAt: string | null;
-  // The server's own clock at the moment it answered. A client anchors a run's countdown
-  // to `now - startedAt` — an ELAPSED span, which both ends agree on — rather than to the
-  // instant itself, which a skewed device clock would misread.
-  now: string;
-  // Sentence mode: has the SERVER read this round's log as solved (#203)? It is the server
+  // Has the SERVER read this round's log as solved (#203)? It is the server
   // deriving what it stores, and it is what says the day's score row is recorded — which is
   // when a standing becomes readable. Only ever written true, so `false` means "not yet",
   // never "no longer".
@@ -389,36 +312,10 @@ export interface RoundState {
 
 // Runtime shape check for the round response — the parsePuzzle contract: a wrong-shaped
 // body surfaces as a sync failure (silent by design), never as garbage entering the
-// round's try log. The two instants are checked as PARSEABLE, not merely as strings:
-// they feed the deadline arithmetic, where a NaN ends a run instantly or never.
-function requireInstant(value: unknown, field: string): string {
-  if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) {
-    throw new Error(`malformed round: bad "${field}"`);
-  }
-  return value;
-}
-
-// The run's owner, as strict as the two instants beside it: the phase this decides is
-// whether a player may keep playing, so a half-shaped stamp is a malformed answer rather
-// than a device to guess at.
-function requireRunner(value: unknown): RoundRunner | null {
-  if (value === undefined) return null;
-  if (
-    !isRecord(value) ||
-    typeof value.deviceId !== 'string' ||
-    value.deviceId.length === 0 ||
-    typeof value.device !== 'string' ||
-    typeof value.os !== 'string' ||
-    typeof value.browser !== 'string'
-  ) {
-    throw new Error('malformed round: bad "startedBy"');
-  }
-  return { deviceId: value.deviceId, device: value.device, os: value.os, browser: value.browser };
-}
-
+// round's try log.
 export function parseRound(data: unknown): RoundState {
   if (!isRecord(data)) throw new Error('malformed round: not an object');
-  const { guesses, createdAt, startedAt, submittedAt, solved, credited } = data;
+  const { guesses, createdAt, solved, credited } = data;
   if (!Array.isArray(guesses) || !guesses.every((g) => typeof g === 'string')) {
     throw new Error('malformed round: "guesses" must be an array of strings');
   }
@@ -432,12 +329,7 @@ export function parseRound(data: unknown): RoundState {
   return {
     guesses: guesses as string[],
     createdAt,
-    startedAt: startedAt === undefined ? null : requireInstant(startedAt, 'startedAt'),
-    startedBy: requireRunner(data.startedBy),
-    submittedAt: submittedAt === undefined ? null : requireInstant(submittedAt, 'submittedAt'),
-    now: requireInstant(data.now, 'now'),
-    // Absent means the server holds no solve for this round — a word round, or a sentence
-    // one still being played.
+    // Absent means the server holds no solve for this round: it is still being played.
     solved: solved === true,
     // Absent means nothing was earned (or this answer is not the one confirming a solve).
     credited: credited === true,
@@ -449,17 +341,10 @@ export function parseRound(data: unknown): RoundState {
 // guess log (#203). POST-only — the device token authenticates in the BODY, so
 // there is no way to ask for someone else's history. `month` is OPTIONAL: the streak needs
 // the solved-day collection alone, and making that read spend a month Query would cost a
-// whole calendar per game load. All three queries are in the history CloudFront behavior's
+// whole calendar per game load. Both queries are in the history CloudFront behavior's
 // allowList (the root AGENTS.md three-package contract).
-export function historyUrl(
-  lang: string,
-  mode: Mode,
-  month?: string,
-  base: string = apiBase(),
-): string {
-  const root = `${requireApiBase(base)}/history?lang=${encodeURIComponent(
-    lang,
-  )}&mode=${encodeURIComponent(mode)}`;
+export function historyUrl(lang: string, month?: string, base: string = apiBase()): string {
+  const root = `${requireApiBase(base)}/history?lang=${encodeURIComponent(lang)}`;
   return month ? `${root}&month=${encodeURIComponent(month)}` : root;
 }
 
@@ -900,18 +785,12 @@ export async function readGroup(id: string, signal?: AbortSignal): Promise<Group
 // `{token, group[, period]}` is a GROUP's board (#271), the trusted surface, and
 // `{token, standing: true}` where the caller stands today in each of their groups (the
 // server still answers it; the web's standing line was dropped 2026-09-14).
-// Addressed per (day, lang, mode) like everything else; all four query parameters are in
-// the board CloudFront behavior's allowList (the root AGENTS.md three-package contract).
-export function boardUrl(
-  lang: string,
-  date: string,
-  mode: Mode,
-  id?: string,
-  base: string = apiBase(),
-): string {
+// Addressed per (day, lang) like everything else; all three query parameters are in the
+// board CloudFront behavior's allowList (the root AGENTS.md three-package contract).
+export function boardUrl(lang: string, date: string, id?: string, base: string = apiBase()): string {
   const root = `${requireApiBase(base)}/board?lang=${encodeURIComponent(lang)}&date=${encodeURIComponent(
     date,
-  )}&mode=${encodeURIComponent(mode)}`;
+  )}`;
   return id ? `${root}&id=${encodeURIComponent(id)}` : root;
 }
 

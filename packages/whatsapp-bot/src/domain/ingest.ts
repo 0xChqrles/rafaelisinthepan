@@ -13,7 +13,6 @@
 // lost share the log says so about — the accepted integration failure, made visible.
 
 import type { GroupConfig, GroupRegistry } from '../config/groupConfig';
-import type { ShareFacts } from '../llm/shareComment';
 import type { Log } from '../log';
 import { tag } from '../log';
 import { commandIds, type OutboundCommand, type OutboundQueue } from '../outbound/commands';
@@ -22,15 +21,12 @@ import type { LeaderStore } from './leader';
 import type { InboundMessage } from './message';
 import { displayName } from './names';
 import { renderLeader } from './podiumText';
-import { reactionForShare } from './reactions';
+import { reactionFor } from './reactions';
 import { sharesIn, type DecodedShare } from './share';
-
-type SentenceShare = Extract<DecodedShare, { mode: 'sentence' }>;
-type WordShare = Extract<DecodedShare, { mode: 'word' }>;
 
 // How good a result is, for picking the one a message is acknowledged for: lower is
 // better, and a run that ended at ∞ is behind every finite score.
-const rankOf = (share: SentenceShare) => (share.capped ? Infinity : share.score);
+const rankOf = (share: DecodedShare) => (share.capped ? Infinity : share.score);
 
 export interface IngestDeps {
   groups: GroupRegistry;
@@ -46,7 +42,7 @@ export interface IngestDeps {
   // and the retries (`llm/shareComment.ts`, wired in main.ts). Absent, or answering null,
   // means the emoji stands in. `said` is what the player wrote around the share, as the
   // caller remembered it (below).
-  comment?: (group: GroupConfig, facts: ShareFacts, key: { dayNumber: number; sender: string; said?: string }) => Promise<string | null>;
+  comment?: (group: GroupConfig, key: { dayNumber: number; sender: string; said?: string }) => Promise<string | null>;
   // Told a line ONCE IT IS QUEUED — the line is a turn in the group's conversation and the
   // caller remembers it as one (main.ts) — and never for a line the queue refused for
   // good: remembered, that would be a message the bot believes it sent and nobody read.
@@ -55,9 +51,8 @@ export interface IngestDeps {
 
 // `failed` WINS over `recorded`: a message carrying two days, one of which could not be
 // written, reports the LOSS, because the loss is the half a caller must not miss — the
-// share that did land is already durable and needs nobody's attention. `acknowledged` is
-// a WORD share's outcome: nothing recorded, the acknowledgement owed and sent.
-export type IngestOutcome = 'ignored' | 'no_share' | 'recorded' | 'unchanged' | 'failed' | 'acknowledged';
+// share that did land is already durable and needs nobody's attention.
+export type IngestOutcome = 'ignored' | 'no_share' | 'recorded' | 'unchanged' | 'failed';
 
 const WRITE_ATTEMPTS = 3;
 
@@ -110,10 +105,7 @@ export function createIngest(deps: IngestDeps) {
     const shares = sharesIn(message.text, deps.siteOrigin);
     // One declaration per day per message: a message pasting two tokens of one day means
     // the last one (the same message id cannot supersede itself).
-    const byDay = new Map<number, SentenceShare>();
-    // A WORD share is acknowledged and never recorded (share.ts says why); a message
-    // pasting several is acknowledged for the best of them.
-    let word: WordShare | null = null;
+    const byDay = new Map<number, DecodedShare>();
     for (const share of shares) {
       if (share.lang !== group.language) {
         deps.log.info(
@@ -122,23 +114,13 @@ export function createIngest(deps: IngestDeps) {
         );
         continue;
       }
-      if (share.mode === 'word') {
-        if (!word || share.claims > word.claims) word = share;
-        continue;
-      }
       byDay.set(share.dayNumber, share);
     }
-    if (byDay.size === 0 && !word) return 'no_share';
-    if (word) {
-      deps.log.info(
-        { event: 'share.word', group: tag(group.id), sender: tag(message.sender), messageId: message.id, day: word.dayNumber, claims: word.claims, live: message.live },
-        'word share',
-      );
-    }
+    if (byDay.size === 0) return 'no_share';
 
-    let outcome: IngestOutcome = byDay.size === 0 ? 'acknowledged' : 'unchanged';
+    let outcome: IngestOutcome = 'unchanged';
     let failed = false;
-    const recorded: SentenceShare[] = [];
+    const recorded: DecodedShare[] = [];
     const announcements: OutboundCommand[] = [];
     for (const share of byDay.values()) {
       const declaration: Declaration = {
@@ -225,25 +207,17 @@ export function createIngest(deps: IngestDeps) {
     // reaction per account per message and the command id is keyed by the message, so
     // queueing one per DAY would leave an arbitrary survivor to decide it. The best result
     // the message showed is the one it is acknowledged for; a ∞ run is the worst of them.
-    // A SENTENCE result that was recorded comes first — it is the one on the podium — and
-    // a Word result is acknowledged when the message carried nothing else to record.
-    const best = recorded.reduce<SentenceShare | null>(
+    const best = recorded.reduce<DecodedShare | null>(
       (kept, share) => (kept && rankOf(kept) <= rankOf(share) ? kept : share),
       null,
     );
-    const player = displayName(group, message.sender, message.senderName);
-    const facts: ShareFacts | null = best
-      ? { mode: 'sentence', player, score: best.score, capped: best.capped }
-      : word && byDay.size === 0
-        ? { mode: 'word', player, claims: word.claims }
-        : null;
-    if (group.acknowledge !== 'none' && message.live && facts) {
+    if (group.acknowledge !== 'none' && message.live && best) {
       // A LINE WHEN ASKED FOR ONE, THE EMOJI WHEN THERE IS NONE. The share is already
       // durable; what is being chosen here is only how it is acknowledged, and an
       // unavailable model may cost the words but never the acknowledgement itself.
       const line =
         group.acknowledge === 'say' && deps.comment
-          ? await deps.comment(group, facts, { dayNumber: best?.dayNumber ?? word!.dayNumber, sender: message.sender, ...(said ? { said } : {}) }).catch((error) => {
+          ? await deps.comment(group, { dayNumber: best.dayNumber, sender: message.sender, ...(said ? { said } : {}) }).catch((error) => {
               deps.log.warn(
                 { event: 'share.comment_threw', group: tag(group.id), error: (error as Error).message },
                 'the line failed; acknowledging with the emoji',
@@ -265,7 +239,7 @@ export function createIngest(deps: IngestDeps) {
               kind: 'reaction',
               group: group.id,
               target: { id: message.id, participant: message.participant },
-              emoji: reactionForShare(facts),
+              emoji: reactionFor(best.score, best.capped),
             },
         group.id,
       );
