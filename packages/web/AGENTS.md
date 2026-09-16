@@ -2774,11 +2774,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   list's; the done mark is a small accent SQUARE where the chevron of a level still to do sits.
   **LEVEL 1 (`tutorial/LevelOne.tsx` over `LessonBoard.tsx`, one screen, TWO STAGES,
   `scripts/<lang>.ts`):**
-  - **THE WORD** — one hole with its start word a FEW ranks out (en OCEAN from `islands^10`,
-    fr OCÉAN from `plage^28` — TROPIQUES was "way too hard" and `île` "not the easiest word
-    to start with", user feedback 2026-09-16; the start is an EVERYDAY word;
-    `scripts.test.ts` caps the start at 30): an EASY board by design, so the number falls
-    fast and the hole moves on the first good guesses. The real keyboard and the real
+  - **THE WORD** — one hole whose start word PRACTICALLY NAMES THE ANSWER (en OCEAN from
+    `atlantic^3`, fr OCÉAN from `atlantique^7`; `scripts.test.ts` caps the start at rank 10).
+    **THE FIRST TRY MUST BE VERY EASY** (user-decided 2026-09-16, after TROPIQUES, then
+    `île^12`, then `plage^28` each read as too hard): the first win is immediate, and sea /
+    mer still move the hole for whoever goes there first. The real keyboard and the real
     vocabulary from the first frame, one line of copy at most (`tutIntro`, the goal). NO
     CAPITAL on the lone word (`Phrase`'s `capital={false}`: a word is not a sentence), and
     the PROMPT sits just above the keyboard on the LEFT (`.tutorial--word .input-area`,

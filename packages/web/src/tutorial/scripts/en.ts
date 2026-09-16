@@ -12,9 +12,9 @@
 //     --out packages/web/src/tutorial/scripts/en.ocean.json --top 150
 //   (and the same for dog and moon)
 //
-// THE WORD: OCEAN, started at ISLANDS (rank 10 — an EASY board, by design: the number can
-// only fall a little way, and sea / waters / coast / coral all move the hole, so the drop
-// toward 0 is felt on the second or third guess).
+// THE WORD: OCEAN, started at ATLANTIC (rank 3). THE FIRST TRY MUST BE VERY EASY
+// (user-decided 2026-09-16): the start word practically names the answer, and sea / waters
+// still move the hole for whoever goes there first.
 // THE SENTENCE: "a dog barks at the moon." — DOG started at COYOTE (55) and MOON at STARS
 // (62), both inside generation's own 50–150 start band, both intuitive neighbors.
 //
@@ -46,7 +46,7 @@ const script: LessonScript = {
       // scored, so its version is a constant rather than a publish stamp (#203).
       revision: 'lesson',
       words: [ocean.word.word],
-      holes: [hole(ocean, 0, 'islands')],
+      holes: [hole(ocean, 0, 'atlantic')],
       ranks: { [ocean.word.slug]: ocean.ranks },
     },
     hints: ['tutHintOcean'],

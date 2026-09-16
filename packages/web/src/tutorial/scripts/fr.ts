@@ -12,10 +12,10 @@
 //     --out packages/web/src/tutorial/scripts/fr.ocean.json --top 150
 //   (and the same for chien and lune)
 //
-// LE MOT : OCÉAN, départ PLAGE (rang 28 — un mot de tous les jours qui mène tout seul à la
-// mer, sur un plateau FACILE : mer, vague, rivage, lagon, eau font tous avancer le trou).
-// OCÉAN a remplacé TROPIQUES (« way too hard ») et PLAGE a remplacé ÎLE (« definitely not
-// the easiest word to start with »), retours utilisateur du 2026-09-16.
+// LE MOT : OCÉAN, départ ATLANTIQUE (rang 7). LE PREMIER ESSAI DOIT ÊTRE TRÈS FACILE
+// (décision utilisateur 2026-09-16, après TROPIQUES « way too hard », puis ÎLE et PLAGE
+// encore trop durs) : le mot de départ nomme presque la réponse, et « mer » fait encore
+// avancer le trou pour qui passe par là.
 // LA PHRASE : « un chien aboie à la lune. » — CHIEN part de LOUP (52), LUNE de PÉNOMBRE
 // (63), dans la bande de départ 50–150 de la génération.
 import type { WordPuzzle } from '@whippin/shared';
@@ -41,7 +41,7 @@ const script: LessonScript = {
       lang: 'fr',
       revision: 'lesson',
       words: [ocean.word.word],
-      holes: [hole(ocean, 0, 'plage')],
+      holes: [hole(ocean, 0, 'atlantique')],
       ranks: { [ocean.word.slug]: ocean.ranks },
     },
     hints: ['tutHintOcean'],
