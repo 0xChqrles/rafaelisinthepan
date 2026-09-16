@@ -80,6 +80,8 @@ const STAGE_HOLD_MS = 600;
 export default function LessonBoard({
   lang,
   script,
+  step,
+  totalSteps,
   vocab,
   vocabError,
   retryVocab,
@@ -89,6 +91,8 @@ export default function LessonBoard({
 }: {
   lang: LangCode;
   script: LessonStage;
+  step: number;
+  totalSteps: number;
   vocab: Vocab | null;
   vocabError: unknown | null;
   retryVocab: () => void;
@@ -168,8 +172,6 @@ export default function LessonBoard({
   triedRef.current = tried;
   const ranksRef = useRef(ranks);
   ranksRef.current = ranks;
-  const holesRef = useRef(holes);
-  holesRef.current = holes;
   const eventsRef = useRef(events);
   eventsRef.current = events;
   const [hits, setHits] = useState<HitState[]>([]);
@@ -248,8 +250,9 @@ export default function LessonBoard({
   const land = useCallback(
     (typed: string, byBot: boolean) => {
       const tried = triedRef.current;
-      const holes = holesRef.current;
       let ranks = ranksRef.current;
+      // Judge against the log immediately, independently of the delayed visual swaps.
+      const holes = replayHoles(fresh, ranks, tried);
       // The letter was already out before this guess: this is the player's "one more try",
       // and the bot closes after it (unless the try itself lands).
       const letterOut = eventsRef.current.some((e) => e.filled != null);
@@ -267,6 +270,7 @@ export default function LessonBoard({
           else view[key] = entry;
         }
         ranks = { ...ranks, [open.secret]: view };
+        ranksRef.current = ranks;
       }
       // A counted guess is a NEW word identity (guessKey): a repeat still floats its numbers
       // but teaches nothing new and counts for nothing, as in the game.
@@ -328,7 +332,8 @@ export default function LessonBoard({
         );
       }
       if (isNew) {
-        setTried((prev) => [...prev, typed]);
+        triedRef.current = [...tried, typed];
+        setTried(triedRef.current);
         if (!byBot) {
           const filled =
             before && after ? after.findIndex((c, i) => c.revealed && !before[i].revealed) : -1;
@@ -371,7 +376,7 @@ export default function LessonBoard({
         later(() => setPhase('done'), settleMs);
       }
     },
-    [withMeters, swapped, script.pair, meters, lang, say, later],
+    [withMeters, swapped, script.pair, fresh, meters, lang, say, later],
   );
 
   const submit = useCallback(
@@ -501,6 +506,7 @@ export default function LessonBoard({
           stands on the box and speaks it. */}
       {shownCoach && (
         <div className="coach coach--bot">
+          <span className="coach-step">{step}/{totalSteps}</span>
           <div className="coach-bot" aria-hidden style={{ backgroundImage: `url(${playerIdle})` }} />
           <CoachText key={shownCoach} copy={shownCoach} />
         </div>

@@ -113,12 +113,9 @@ export default function App() {
 
   // Keep <html lang> honest: index.html ships lang="en", but on /fr both the puzzle
   // content and the UI chrome are French — screen readers pick pronunciation rules from
-  // this attribute. Language-scoped routes (game + archive + board) use their own lang;
+  // this attribute. Every language-scoped route uses its own lang;
   // the language-less routes use the same resolution as the `/` redirect.
-  const docLang =
-    route.view === 'game' || route.view === 'archive' || route.view === 'board'
-      ? route.lang
-      : homeLang;
+  const docLang = 'lang' in route ? route.lang : homeLang;
   useEffect(() => {
     document.documentElement.lang = docLang;
   }, [docLang]);

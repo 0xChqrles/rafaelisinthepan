@@ -36,7 +36,7 @@ export function preloadLevelOne(): void {
   });
 }
 
-export default function LazyLevelOne(props: LevelOneProps) {
+export default function LazyLevelOne({ onUnavailable, ...props }: LevelOneProps & { onUnavailable: () => void }) {
   const [Loaded, setLoaded] = useState<LevelOneComponent | null>(() => loaded);
 
   useEffect(() => {
@@ -49,12 +49,12 @@ export default function LazyLevelOne(props: LevelOneProps) {
       .catch(() => {
         // A lost chunk must never strand the player on a blank screen: skip the lesson and
         // land in the game — the header's book remains the way back once the network does.
-        if (!cancelled) props.onDone();
+        if (!cancelled) onUnavailable();
       });
     return () => {
       cancelled = true;
     };
-  }, [Loaded, props.onDone]);
+  }, [Loaded, onUnavailable]);
 
   return Loaded ? (
     <Loaded {...props} />

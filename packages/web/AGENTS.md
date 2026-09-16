@@ -2772,6 +2772,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   DEVICE-LOCAL (`lessonsDone`, never on the account) and, for level 1, INFERRED FROM PLAY
   (see the gate bullet). Replaying a done level is allowed. The row dress is the device
   list's; the done mark is a small accent SQUARE where the chevron of a level still to do sits.
+  **Stage progress (user-decided 2026-09-17):** the coach dialog shows `n/4` beside it,
+  driven by the current stage and `stages.length` in `LevelOne`.
   **LEVEL 1 (`tutorial/LevelOne.tsx` over `LessonBoard.tsx`, one screen, the script's
   STAGES in order — `scripts/<lang>.ts` `stages[]`, each `{kind, puzzle, hints}`; a
   sentence-shaped stage ends on a button, a single word rolls on by itself):**
@@ -2904,7 +2906,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **The invitation is unchanged** (`tutorial/Invite.tsx`, no header): a first visit (no
   `onboarded`) lands on it; TUTORIAL navigates to level 1 (the lesson's PLAY or a header exit
   settles the flag), SKIP settles it there. Its preload warms the level-1 chunk
-  (`LazyLevelOne`, the LazyStreakDialog pattern; a failed chunk calls `onDone`). Analytics
+  (`LazyLevelOne`, the LazyStreakDialog pattern; a failed chunk exits without completing the lesson). Analytics
   keep the three events (`start` / `skip` / `finish`). The boards are pruned #154 artifacts
   (`scripts/<lang>.<word>.json`, `prune-word-map.mjs --top 150`; the exact commands in each
   script's header), never published or served; a lesson board touches no `rounds`, no outbox,

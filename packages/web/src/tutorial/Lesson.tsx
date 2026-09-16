@@ -19,9 +19,13 @@ export default function Lesson({ lang, level }: { lang: LangCode; level: number 
     setOnboarded();
     navigate(pathForGame(lang));
   }, [lang, level, markLessonDone, setOnboarded]);
+  const unavailable = useCallback(() => {
+    setOnboarded();
+    navigate(pathForGame(lang));
+  }, [lang, setOnboarded]);
 
   // Only level 1 is built (levels.ts); parseRoute lands every other level on the list.
   if (level !== PLAY_LEVEL) return null;
   // key={lang}: a language pick in the header restarts the lesson in that language.
-  return <LazyLevelOne key={lang} lang={lang} onDone={finish} />;
+  return <LazyLevelOne key={lang} lang={lang} onDone={finish} onUnavailable={unavailable} />;
 }

@@ -32,6 +32,8 @@ export default function LevelOne({ lang, onDone }: { lang: LangCode; onDone: () 
         key={at}
         lang={lang}
         script={script.stages[at]}
+        step={at + 1}
+        totalSteps={script.stages.length}
         vocab={vocab}
         vocabError={error}
         retryVocab={retry}
