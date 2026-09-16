@@ -20,12 +20,14 @@ import FocusBrackets from './components/FocusBrackets';
 import LazyStreakDialog from './components/LazyStreakDialog';
 import LoadError from './components/LoadError';
 import NoPuzzle from './components/NoPuzzle';
-import LazyTutorial from './tutorial/LazyTutorial';
 import Invite from './tutorial/Invite';
+import Learn from './tutorial/Learn';
+import Lesson from './tutorial/Lesson';
+import { PLAY_LEVEL } from './tutorial/levels';
 import { useGameStore } from './state/gameStore';
 import { track } from './analytics';
 import { useLocation, navigate } from './routing';
-import { parseRoute, pathForGame, type LangCode, type Route } from './langs';
+import { parseRoute, pathForGame, pathForLesson, type LangCode, type Route } from './langs';
 // Inline SVG (vite-plugin-svgr): the header's leaderboard entry, painting with
 // currentColor like every chrome icon; the button's aria-label names it.
 import { t } from './i18n';
@@ -40,16 +42,26 @@ import {
   type ErrorVariantName,
 } from './dev/errorPreview';
 
-// The three things a game route can be showing. Named because App picks one and GameRoute
-// renders it: the header's presence follows this, not the other way round.
-type GameSurface = 'tutorial' | 'invite' | 'game';
+// The two things a game route can be showing. Named because App picks one and GameRoute
+// renders it: the header's presence follows this, not the other way round. (The tutorial was
+// a third until #269 gave it routes of its own — `/<lang>/learn`.)
+type GameSurface = 'invite' | 'game';
 
 export default function App() {
   const pathname = useLocation();
+  const [lessonReturn, setLessonReturn] = useState<string | undefined>();
+  const startOnboardingLesson = useCallback((lang: LangCode) => {
+    setLessonReturn(pathname);
+    track('tutorial', { action: 'start' });
+    navigate(pathForLesson(lang, PLAY_LEVEL));
+  }, [pathname]);
   // The client's active game day bounds the date deep-link range (a future date -> home),
   // so parsing gets it here (kept out of parseRoute so parsing stays pure/testable).
   const today = activeDate(new Date());
   const route = parseRoute(pathname, { activeDate: today });
+  useEffect(() => {
+    if (route.view !== 'lesson') setLessonReturn(undefined);
+  }, [route.view]);
   // The chrome language of every screen the URL does not name one for — the link's `?lang=`,
   // then the stored preference, then the browser's (`hooks/useUiLang`).
   const homeLang = useUiLang();
@@ -73,37 +85,18 @@ export default function App() {
     [],
   );
 
-  // The dev force-flag (`?tutorial=1`) opens the lesson before the first paint. It sits
-  // ABOVE the subscription below so the first render already sees it open — the store write
-  // is this component's own, and a write from the game route would now be a child updating
-  // its parent mid-render.
-  useState(() => {
-    const forced = new URLSearchParams(window.location.search).get('tutorial') === '1';
-    const store = useGameStore.getState();
-    if (forced && !store.tutorialOpen) store.openTutorial('first');
-    return null;
-  });
   const onboarded = useGameStore((s) => s.onboarded);
-  const tutorialOpen = useGameStore((s) => s.tutorialOpen);
+  // Answering the onboarding question settles it for good, whichever way it is answered:
+  // SKIP on the invitation, a lesson's PLAY (`Lesson`), or leaving a lesson by the header.
   const setOnboarded = useGameStore((s) => s.setOnboarded);
-  // Answering the onboarding question settles it for good, whichever way it is answered.
-  // Owned here because the header's own tutorial key leaves the lesson with it, and two
-  // spellings of "close the tutorial" would be one flag apart.
-  const closeTutorial = useCallback(() => {
-    setOnboarded();
-    useGameStore.getState().closeTutorial();
-  }, [setOnboarded]);
 
   // WHICH GAME-ROUTE SURFACE IS UP. It lives here because the header does (see `TopBar`):
   // the row is app chrome now, and whether a surface wears it is the router's question, not
   // the screen's. The onboarding INVITATION is the one game surface without the row — a
   // first visitor answers it before the app's places open up — and the two dev harnesses
   // bypass it, which is why their state is held here too.
-  const gameSurface: GameSurface = tutorialOpen
-    ? 'tutorial'
-    : !onboarded && streakPreview == null && errorPreview == null
-      ? 'invite'
-      : 'game';
+  const gameSurface: GameSurface =
+    !onboarded && streakPreview == null && errorPreview == null ? 'invite' : 'game';
 
   // The game IS the home: `/` (and any unknown path) redirects to a language — the LINK's
   // own `?lang=` if it carries one, else the persisted last-played one, else the browser's
@@ -129,12 +122,9 @@ export default function App() {
 
   // Keep <html lang> honest: index.html ships lang="en", but on /fr both the puzzle
   // content and the UI chrome are French — screen readers pick pronunciation rules from
-  // this attribute. Language-scoped routes (game + archive + board) use their own lang;
+  // this attribute. Every language-scoped route uses its own lang;
   // the language-less routes use the same resolution as the `/` redirect.
-  const docLang =
-    route.view === 'game' || route.view === 'archive' || route.view === 'board'
-      ? route.lang
-      : homeLang;
+  const docLang = 'lang' in route ? route.lang : homeLang;
   useEffect(() => {
     document.documentElement.lang = docLang;
   }, [docLang]);
@@ -161,11 +151,12 @@ export default function App() {
   const identityScope = useIdentityScopeRevision();
 
   const place = blocked ? null : headerPlace(route, gameSurface, today);
-  // Leaving the lesson by the row IS skipping it, so the row says so before it goes.
-  const leaveTutorial = useCallback(() => {
+  // Leaving a lesson by the row IS skipping it: tracked as such, and the onboarding question
+  // is settled so the invitation does not ask again (nothing is recorded as done).
+  const leaveLesson = useCallback(() => {
     track('tutorial', { action: 'skip' });
-    closeTutorial();
-  }, [closeTutorial]);
+    setOnboarded();
+  }, [setOnboarded]);
 
   return (
     <div className="app">
@@ -185,8 +176,10 @@ export default function App() {
                 // language everywhere else — the same split `docLang` makes above.
                 lang={docLang}
                 on={place}
-                archivePlay={place === 'archive' && route.view === 'game'}
-                leave={place === 'rules' ? leaveTutorial : undefined}
+                litLeads={
+                  (place === 'archive' && route.view === 'game') || route.view === 'lesson'
+                }
+                leave={route.view === 'lesson' ? leaveLesson : undefined}
               />
             }
           />
@@ -208,6 +201,11 @@ export default function App() {
           <GroupInvite groupId={route.groupId} lang={homeLang} />
         )}
         {!blocked && route.view === 'archive' && <Archive lang={route.lang} />}
+        {/* The tutorial (#269): the list of levels, and one level's lesson on its own route. */}
+        {!blocked && route.view === 'learn' && <Learn lang={route.lang} />}
+        {!blocked && route.view === 'lesson' && (
+          <Lesson lang={route.lang} level={route.level} returnTo={lessonReturn} />
+        )}
         {/* The leaderboard screen (#190) — keyed so switching language drops the cached
             reads for that board's own. The TAB is deliberately outside the key: a language
             pick is still the same visit (see the reset effect above). */}
@@ -217,7 +215,8 @@ export default function App() {
             lang={route.lang}
             date={route.date}
             surface={gameSurface}
-            closeTutorial={closeTutorial}
+            settleOnboarding={setOnboarded}
+            startLesson={startOnboardingLesson}
             preview={{
               streak: streakPreview,
               dismissStreak: dismissStreakPreview,
@@ -239,17 +238,20 @@ function headerPlace(route: Route, surface: GameSurface, today: string): HeaderP
   switch (route.view) {
     case 'game':
       if (surface === 'invite') return null;
-      // The tutorial is the RULES' place; any OTHER day is the ARCHIVE's — tomorrow's
-      // sentence included (#273, user-decided 2026-09-11 on the second pass: it "should
-      // actually live as an archive play, so you can just click the house to go back").
-      // HOME unlit is a live key, which is the way back before the night's lock; the
-      // locked round's own TODAY button is the way back after it.
-      if (surface === 'tutorial') return 'rules';
+      // Any OTHER day is the ARCHIVE's — tomorrow's sentence included (#273, user-decided
+      // 2026-09-11 on the second pass: it "should actually live as an archive play, so you
+      // can just click the house to go back"). HOME unlit is a live key, which is the way
+      // back before the night's lock; the locked round's own TODAY button is the way back
+      // after it.
       return route.date == null || route.date === today ? 'home' : 'archive';
     case 'archive':
       return 'archive';
     case 'board':
       return 'board';
+    // The tutorial is the RULES' place — its list of levels and a lesson alike (#269).
+    case 'learn':
+    case 'lesson':
+      return 'rules';
     // The whole account area is ONE place, its steps included (#204's UX rework) —
     // the privacy notice among them (#229), reached from this area and no other.
     case 'account':
@@ -273,13 +275,15 @@ function GameRoute({
   // WHICH surface is App's call, because the header is (see `headerPlace`); rendering it is
   // this route's, because the puzzle and the callbacks live here.
   surface,
-  closeTutorial,
+  settleOnboarding,
+  startLesson,
   preview,
 }: {
   lang: LangCode;
   date?: string;
   surface: GameSurface;
-  closeTutorial: () => void;
+  settleOnboarding: () => void;
+  startLesson: (lang: LangCode) => void;
   preview: {
     streak: number | null;
     dismissStreak: () => void;
@@ -304,32 +308,19 @@ function GameRoute({
     setLastLang(lang);
   }, [lang, setLastLang]);
 
-  // Onboarding tutorial (#51): it NEVER starts without an action. A first visit (no
-  // persisted `onboarded`) lands on the INVITATION — standing in for the loading
-  // screen while the day's puzzle fetches behind it — and TUTORIAL / SKIP both settle
-  // the question for good (either sets the flag). The header's book re-opens the tutorial
-  // as a `replay`; leaving the lesson by any other key skips it.
-  // The open-tutorial state lives in the STORE (transient) so the tutorial's flag can
-  // survive a language pick — the route changes, this component remounts, and the
-  // tutorial is still open, now in that language.
-  const openTutorial = useGameStore((s) => s.openTutorial);
-
-  // key={lang}: switching language mid-tutorial (the header's drums) restarts it in
-  // that language.
-  if (surface === 'tutorial') {
-    return <LazyTutorial key={lang} lang={lang} onDone={closeTutorial} />;
-  }
+  // Onboarding (#51, #269): the tutorial NEVER starts without an action. A first visit (no
+  // persisted `onboarded`) lands on the INVITATION — standing in for the loading screen while
+  // the day's puzzle fetches behind it. TUTORIAL opens level 1 on its own route (the lesson's
+  // PLAY, or leaving it by the header, settles the question); SKIP settles it here. The
+  // header's book is the way back, to the list of levels.
   if (surface === 'invite') {
     return (
       <Invite
         lang={lang}
-        onAccept={() => {
-          track('tutorial', { action: 'start' });
-          openTutorial('first');
-        }}
+        onAccept={() => startLesson(lang)}
         onSkip={() => {
           track('tutorial', { action: 'skip' });
-          closeTutorial();
+          settleOnboarding();
         }}
       />
     );

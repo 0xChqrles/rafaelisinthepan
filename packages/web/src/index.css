@@ -2872,7 +2872,11 @@ input {
 .wheel-row {
   position: relative;
   display: block;
-  width: 100%;
+  /* The row's hit area is ITS WORD, not the column's width (user-reported 2026-09-16: a
+     click beside a word turned the drum to it instead of folding the wheel): the room
+     beside a word is the scroller's own, and a click there is a click on nothing. */
+  width: fit-content;
+  max-width: 100%;
   box-sizing: border-box;
   margin: 0;
   padding: 0;
@@ -2889,6 +2893,7 @@ input {
 }
 .wheel-right .wheel-row {
   text-align: right;
+  margin-left: auto;
 }
 @keyframes wheel-row-in {
   from {
@@ -3897,21 +3902,50 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    so the sentence reads centered on desktop instead of hugging the left edge. The
    HUD (progress bar) shrinks with it. */
 .tutorial {
-  max-width: 680px;
-  /* Clear the band + coach box, so the centered word never rides under them. Tracks
-     the coach's height: 78px top + 3 lines + its padding + a breath. */
-  padding-top: 230px;
+  /* Clear the band + the bot + the coach box, so the centered word never rides under them.
+     Tracks the coach's height: 78px top + the 56px the bot adds + 3 lines + its padding + a
+     breath. */
+  padding-top: 334px; /* 286 + two more coach lines */
+}
+/* THE LESSON'S BOARD IS CENTRED (user-decided 2026-09-16): the word, and the sentence too,
+   sit on the column's centre line — and the sentence takes the game's full 1200px column, so
+   on a wide screen it stands on ONE line (the 680px cap it wore made it wrap "for no
+   reason"). The prompt keeps the left edge, as everywhere. */
+.tutorial .play {
+  align-items: center;
+}
+.tutorial .phrase {
+  text-align: center;
+}
+/* THE PROMPT KEEPS ONE X ACROSS THE STAGES (user-reported 2026-09-16: "on sentence mode it's
+   much more on the left"): the word stages sit in a 680px column and the sentence in the
+   game's 1200px one, so a prompt stretched to its column started at two different edges.
+   It is its own 680px box, centred in whichever column — the same left edge everywhere. */
+/* The board sits in the MIDDLE of the room between the coach and the prompt (user-reported
+   2026-09-16: hard against the box, the try count behind the sentence rode up into it). Two
+   auto margins split the free space: half above the board, half between it and the prompt. */
+.tutorial .phrase-anchor {
+  margin-top: auto;
+}
+.tutorial .input-area {
+  align-self: center;
+  width: min(680px, 100%);
+  align-items: start;
+  /* …and at ONE Y: parked on the play area's bottom edge, just above the keys, on every
+     stage (user-decided 2026-09-16, "stick the prompt to the same y too"). */
+  margin-top: auto;
 }
 
-/* The concept stage is CLEAN: explanation on top, ONE big centered word in the
-   middle, the interaction at the bottom, nothing else. The word is the star. */
-.tutorial--word .play,
-.tutorial--word .input-area {
-  align-items: center;
+/* The word stages are CLEAN: explanation on top, ONE big centered word in the middle, the
+   interaction at the bottom, nothing else. The word is the star. The PROMPT sits just above
+   the keyboard, on the LEFT — where the game's own prompt lives relative to the keys, and
+   off the word (user feedback 2026-09-16: centered under the word it read as part of it).
+   `margin-top: auto` parks it on the play area's bottom edge; the word keeps the centre. */
+.tutorial--word {
+  max-width: 680px;
 }
 .tutorial--word .phrase {
   font-size: clamp(28px, 7vw, 48px);
-  text-align: center;
 }
 
 /* The explanation box: app background + surface border (a dialog, not a modal),
@@ -3939,16 +3973,64 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   -webkit-backdrop-filter: blur(14px);
   padding: 16px 20px;
 }
+/* THE PLAYER SPEAKS THE LESSON (user-decided 2026-09-16): the old lineup's PLAYER idle sheet
+   — `player-idle.png`, 8 frames of 22x31, restored from the benchmark display's removal —
+   at an INTEGER 2x, standing on the box's top-left edge so the box reads as what it says.
+   It is drawn OUTSIDE the box (absolute, above), because the text area's line budget is an
+   invariant: a sprite beside the text would cost lines at 320px. The box drops by the
+   sprite's height to make room. The walk is the `.cal-ripple` way: background-size fits ONE
+   frame (800% x 100%) and steps(8) walks background-position-x, the end value 100% x 8/7 so
+   frame 7 lands on 100% and the loop wraps cleanly. */
+.coach--bot {
+  top: calc(78px + 56px);
+}
+/* The step counter (n/4) speaks the game's own pixel face (user-decided 2026-09-17). */
+.coach-step {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  color: var(--muted);
+  font-family: var(--pixel-font);
+  font-size: 12px;
+  letter-spacing: 0.2em;
+}
+.coach-bot {
+  position: absolute;
+  left: 12px;
+  bottom: 100%;
+  width: 44px; /* 22 x 2 */
+  height: 62px; /* 31 x 2 */
+  margin-bottom: -8px; /* the feet sit on the box's top edge */
+  background-repeat: no-repeat;
+  background-size: 800% 100%;
+  image-rendering: pixelated;
+  animation: player-idle 0.8s steps(8) infinite;
+  pointer-events: none;
+}
+@keyframes player-idle {
+  to {
+    background-position-x: calc(100% * 8 / 7);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .coach-bot {
+    animation: none;
+    background-position-x: 0%;
+  }
+}
 .coach-text {
   margin: 0;
   font-family: var(--ui);
   font-size: 16px;
   font-weight: 350;
   line-height: 1.7;
-  /* EXACTLY three lines, top-aligned — the box is a fixed dialog window, not a
-     balloon. Copy that wraps past three lines is a COPY bug (too much to read);
-     the overflow clip makes that mistake visible instead of growing the box. */
-  height: 5.1em; /* 3 lines × line-height 1.7 */
+  /* THREE lines, FIVE at most (user-decided 2026-09-16, lifting the exact-three rule of
+     2026-08-04: the bot's briefing on the last sentence runs to five at 320px, and the box
+     is FIXED — growing it moves nothing beneath). Copy that wraps past five lines is a
+     COPY bug (too much to read); the overflow clip makes that mistake visible instead of
+     growing the box further. */
+  min-height: 5.1em; /* 3 lines × line-height 1.7 */
+  max-height: 8.5em; /* 5 lines */
   overflow: hidden;
   color: var(--fg);
   text-shadow: none;
@@ -4061,6 +4143,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     padding: 12px 14px;
     top: 64px; /* a breath under the phone's 48px full-bleed band */
   }
+  .coach--bot {
+    top: calc(64px + 56px);
+  }
   .coach-rules {
     padding: 12px 14px;
   }
@@ -4068,9 +4153,10 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     font-size: 14px; /* 3-line height scales with it (5.1em); the phone column is the
                         copy budget's own tuning width */
   }
-  /* Clear the band + coach (64px top + 3 lines + its padding + a breath). */
+  /* Clear the band + the bot + the coach (64px top + 56px of bot + 3 lines + padding + a
+     breath). */
   .tutorial {
-    padding-top: 180px;
+    padding-top: 284px; /* 236 + two more coach lines */
   }
   /* The action button sits on the 14px page inset, not the keyboard's edge-to-edge hug, so
      like the solved results it gets +10px back over the keyboard's 4px bottom gap: bottom
@@ -6948,4 +7034,128 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   .error-balloon {
     --balloon-scale: 4;
   }
+}
+
+/* ===================== the tutorial's LEVELS (#269) ===================== */
+/* The list of levels: the board column's width, one row per level in the device list's
+   dress (glass, hairline, uppercase mono), read top-down under the header. */
+.learn {
+  width: min(430px, 100%);
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  padding-top: 70px;
+}
+.learn-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.learn-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--glass);
+  color: var(--fg);
+  font-family: var(--ui);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  text-shadow: none;
+  cursor: pointer;
+  transition: background-color 0.1s linear, border-color 0.1s linear;
+}
+.learn-row:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--fg) 45%, transparent);
+}
+/* A level not built yet: greyed, not a target. */
+.learn-row:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+/* The level's number, in the game's own face. */
+.learn-num {
+  flex: 0 0 auto;
+  min-width: 1.4em;
+  font-family: var(--pixel-font);
+  font-size: 14px;
+  color: var(--muted);
+}
+.learn-row.done .learn-num {
+  color: var(--accent);
+}
+.learn-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.learn-name {
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.learn-sub {
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The done mark: a small accent square — the app's marker vocabulary (a square, never a
+   circle; 4px is the radius ceiling), where the chevron of a level still to do would sit. */
+.learn-mark {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin: 0 6px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.learn-row .ui-icon {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+@media (max-width: 640px) {
+  .learn {
+    padding-top: 64px;
+  }
+}
+
+/* THE BOOK'S BADGE (#269): the count of built levels this device has not done, a small
+   accent square on the key's top-right corner. A translation off the key's box, so the key
+   itself keeps the row's geometry and the dot under it never moves. */
+.home-btn {
+  position: relative;
+}
+.hk-badge {
+  position: absolute;
+  top: 4px;
+  right: 2px;
+  min-width: 12px;
+  height: 12px;
+  padding: 0 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+  background: var(--accent);
+  color: var(--bg);
+  font-family: var(--ui);
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
 }

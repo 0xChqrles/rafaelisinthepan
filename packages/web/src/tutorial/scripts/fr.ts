@@ -1,76 +1,92 @@
-// The French onboarding script (#51, re-arced by #155) — same
-// one-board lesson arc as en.ts (see the header there). A French extra it teaches for
-// free: accented display words are typed UNACCENTED, which the find step forces (the
-// ladder words float accented).
+// The French level-1 script (#269) — same two-stage lesson as en.ts (see the header there).
+// A French extra it teaches for free: accented display words are typed UNACCENTED.
 //
-// The board is a REAL neighborhood: `fr.word.json` is the #154 single-word artifact for
-// TROPIQUES, pruned to what the tutorial needs. Regenerate it with (both from the REPO ROOT):
+// Regenerate the boards with (from the REPO ROOT; the never-infer rule wants the agreement
+// named for a French word):
 //
-//   pnpm gen:word tropiques --lang fr --form tropiques=n:s
+//   pnpm gen:word océan --lang fr --form océan=n:s
+//   pnpm gen:word montagne --lang fr --form montagne=n:s
+//   pnpm gen:word chien --lang fr --form chien=n:s
+//   pnpm gen:word lune --lang fr --form lune=n:s
+//   pnpm gen:word chat --lang fr --form chat=n:s
+//   pnpm gen:word sentier --lang fr --form sentier=n:s
 //   node packages/web/scripts/prune-word-map.mjs \
-//     --in packages/generation/output/single-word/fr/tropiques.json \
-//     --out packages/web/src/tutorial/scripts/fr.word.json --top 150 --keep neige
+//     --in packages/generation/output/single-word/fr/ocean.json \
+//     --out packages/web/src/tutorial/scripts/fr.ocean.json --top 150
+//   (et de même pour montagne, chien, lune, chat et sentier)
 //
-// (the prune keeps the word, the top-150 groups — the committed zone — and the group of
-// the `--keep` word, the lesson's deliberately-outside "far" guess).
-//
-// TROPIQUES replaced PHARE on findings 2026-08-04 (phare is a homonym, and its
-// neighborhood read as two definitions at once). The
-// AGREEMENT is singular (`--form tropiques=n:s`, findings 2026-08-04: plural-agreed
-// neighbors read oddly on a word board), while the word itself keeps its natural plural
-// display — « tropiques » is the rank-0 display either way.
-//
-// The arc: the scramble ladder walks TROPIQUES out to its 12th neighbor (soleil) and on to
-// its 97th (ananas — the start word, inside generation's own 50-150 start band, and
-// unmistakably tropical), then three gated guesses teach distance (neige, 353: farther,
-// hint stays — snow is INTUITIVELY the anti-tropics, climate-adjacent but far, on a
-// READABLE scale), MISS (guitare, which the real map does not rank at all), and
-// improvement (lagon, 22: closer, hint moves). The player then finds their way back to
-// TROPIQUES, and JOUER ends the lesson.
+// LA RÉVÉLATION : OCÉAN, montré, puis caché derrière MER — son mot le plus proche, rang 1 —
+// et retapé. LE MOT : MONTAGNE, jamais montré, derrière SKI (14) : une vraie recherche,
+// indice intuitif, colline / vallée / cime font tous avancer le trou. LA PHRASE : « un chien
+// aboie à la lune. » — CHIEN derrière LOUP (52), LUNE derrière PÉNOMBRE (63), dans la bande
+// de départ 50–150 de la génération. LA JAUGE : « le chat suit le sentier. » — CHAT déjà trouvé
+// par le bot ; le secret est SENTIER et l'essai ÉVIDENT, CHEMIN, est son mot le plus proche
+// (rang 1) : le taper vaut un 1, jamais la solution — et taper SENTIER en premier échange les
+// deux (sentier lit 1, chemin devient le secret), pour que la lettre soit toujours vue avant
+// la solution. Les CINQ essais du bot (parcours, randonneur, détour, hameau, tunnel — peu,
+// masculins pour que « le » tienne, et le meilleur un synonyme FACILE de chemin : « belvédère »
+// était bien trop dur, retour utilisateur 2026-09-16) laissent la jauge à ~74 avec PARCOURS
+// (8) pour meilleur mot — assez long pour que le remplissage se lise sur la puce : CHEMIN la
+// remplit, visiblement, et le S apparaît ; un essai raté vaut ensuite l'indice, jamais le mot.
 import type { WordPuzzle } from '@whippin/shared';
-import type { TutorialScript } from '../script';
-import artifact from './fr.word.json';
+import type { LessonScript } from '../script';
+import ocean from './fr.ocean.json';
+import montagne from './fr.montagne.json';
+import chien from './fr.chien.json';
+import lune from './fr.lune.json';
+import chat from './fr.chat.json';
+import sentier from './fr.sentier.json';
 
-const { lang, word, ranks }: WordPuzzle = artifact;
+function hole(artifact: WordPuzzle, pos: number, start: string, suffix?: string) {
+  const entry = artifact.ranks[start];
+  return {
+    pos,
+    secret: artifact.word,
+    start: { word: entry.word, slug: start },
+    start_rank: entry.rank,
+    ...(suffix ? { suffix } : {}),
+  };
+}
 
-// Le départ. Sa forme affichée et son rang sont LUS dans la carte plutôt que redits ici :
-// le plateau ne peut donc pas contredire son propre voisinage.
-const START = 'ananas';
+function single(artifact: WordPuzzle, start: string) {
+  return {
+    lang: 'fr',
+    revision: 'lesson',
+    words: [artifact.word.word],
+    holes: [hole(artifact, 0, start)],
+    ranks: { [artifact.word.slug]: artifact.ranks },
+  };
+}
 
-const script: TutorialScript = {
-  puzzle: {
-    lang,
-    // A LESSON's board, never a published daily: it is not served, not synced and never
-    // scored, so its version is a constant rather than a publish stamp (#203).
-    revision: 'tutorial',
-    words: [word.word],
-    holes: [
-      {
-        pos: 0,
-        secret: word,
-        start: { word: ranks[START].word, slug: START },
-        start_rank: ranks[START].rank,
-      },
-    ],
-    ranks: { [word.slug]: ranks },
-  },
-  steps: [
+const script: LessonScript = {
+  stages: [
+    { kind: 'reveal', puzzle: single(ocean, 'mer'), hints: ['tutHintOcean'] },
+    { kind: 'word', puzzle: single(montagne, 'ski'), hints: ['tutHintMontagne'] },
     {
-      kind: 'mix',
-      copyKey: 'tutMixIntro',
-      stops: [
-        { rank: 1, labelKey: 'tutMix', copyKey: 'tutMixed1' },
-        { rank: 12, labelKey: 'tutMixAgain', copyKey: 'tutMixed10' },
-        { rank: ranks[START].rank, labelKey: 'tutMixMore' },
-      ],
+      kind: 'sentence',
+      puzzle: {
+        lang: 'fr',
+        revision: 'lesson',
+        words: ['un', 'chien', 'aboie', 'à', 'la', 'lune.'],
+        holes: [hole(chien, 1, 'loup'), hole(lune, 5, 'penombre', '.')],
+        ranks: { [chien.word.slug]: chien.ranks, [lune.word.slug]: lune.ranks },
+      },
+      hints: ['tutHintChien', 'tutHintLune'],
     },
-    // Le feedback enseigne ; chaque essai enchaîne sur l'instruction suivante.
-    { kind: 'guess', expect: 'neige', copyKey: 'tutGuessFar' },
-    { kind: 'guess', expect: 'guitare', copyKey: 'tutGuessMiss' },
-    { kind: 'guess', expect: 'lagon', copyKey: 'tutGuessCloser' },
-    { kind: 'find', target: word.slug, copyKey: 'tutFind', nudgeKey: 'tutFindNudge' },
-    // La fin : le mot trouvé reste, sans commentaire, et JOUER termine la leçon.
-    { kind: 'play' },
+    {
+      kind: 'meter',
+      puzzle: {
+        lang: 'fr',
+        revision: 'lesson',
+        words: ['le', 'chat', 'suit', 'le', 'sentier.'],
+        holes: [hole(chat, 1, 'museau'), hole(sentier, 4, 'falaise', '.')],
+        ranks: { [chat.word.slug]: chat.ranks, [sentier.word.slug]: sentier.ranks },
+      },
+      // La partie du bot jusqu'ici : le chat trouvé, puis le sentier tourné autour sans tomber.
+      played: ['chat', 'parcours', 'randonneur', 'detour', 'hameau', 'tunnel'],
+      pair: { alt: { word: 'chemin', slug: 'chemin' }, hint: 'tutHintChemin' },
+      hints: ['tutHintChat', 'tutHintSentier'],
+    },
   ],
 };
 

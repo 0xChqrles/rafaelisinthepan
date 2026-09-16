@@ -406,71 +406,124 @@ const STRINGS = {
   },
   inviteTutorial: { en: 'TUTORIAL', fr: 'TUTORIEL' },
   inviteSkip: { en: 'SKIP', fr: 'PASSER' },
-  // ---- onboarding tutorial (#51). In guess-step copy, {WORD} is replaced by the
-  // script's expected word (uppercased) so the copy can never drift from the script.
-  // Tutorial copy is deliberately TERSE: the feedback on screen does the teaching,
-  // the top box only sets up the next move. No under-the-hood talk. HARD LIMIT: the
-  // coach box is exactly 3 lines and clips — if a string wraps past three lines
-  // (~60 chars incl. exponents at the mobile width), it is too much: cut it — or split
-  // it into two beats, which is what the ending's claim and its instruction became.
+  // ---- the LESSON (#51, remade by #269): level 1 is the game, played. The coach is
+  // REACTIVE — it speaks on a mistake or a stall, never on success (tutorial/coach.ts) — so
+  // every line here is the ONE thing a guess calls for. Deliberately TERSE, no under-the-hood
+  // talk. HARD LIMIT: the coach box is exactly 3 lines and clips — a string that wraps past
+  // three lines (~60 chars incl. exponents at the mobile width) is too much: cut it.
   // Copy uses CoachText's inline markup so words LOOK like what they are in-game:
-  // [[b:secret]] solve cobalt, [[w:hint^rank]] pale hole + rank exponent,
-  // [[m:miss]] MISS's weird red.
-  tutMixIntro: {
-    en: 'Welcome to Whippin AI, please start by mixing this word.',
-    fr: 'Bienvenue sur Whippin AI, commence par mélanger ce mot.',
+  // [[b:secret]] solve cobalt, [[w:hint^rank]] the held word's chip + rank exponent,
+  // [[m:miss]] MISS's red. The {braces} are filled by coach.ts from the board itself, so a
+  // line can never name a word the map does not rank.
+  // The lines are written for someone who knows NOTHING yet (user-decided 2026-09-16, five
+  // passes — "where is the secret word? what does 'mer est le plus proche' mean?"): nothing
+  // is said that the player has not just SEEN. The reveal shows the secret word, then hides
+  // it behind its closest word in front of them; every later line names what is on screen.
+  // coach.ts fills the {braces} (`ordinal` for the ranks).
+  tutReveal: { en: 'Here is a secret word: {answer}.', fr: 'Voici un mot secret : {answer}.' },
+  tutHidden: {
+    en: 'I mixed the word up: in its place, the closest word, {start}. Find the secret word.',
+    fr: "J'ai mélangé le mot : à sa place, le mot le plus proche, {start}. Retrouve le mot secret.",
   },
-  tutMix: { en: 'MIX', fr: 'MÉLANGER' },
-  tutMixAgain: { en: 'MIX AGAIN', fr: 'MÉLANGE ENCORE' },
-  tutMixMore: { en: 'MIX EVEN MORE', fr: 'ENCORE PLUS' },
-  tutMixed1: {
-    en: '[[w:sea^1]] is the closest word to [[b:ocean]].',
-    fr: '[[w:tropicales^1]] est le mot le plus proche de [[b:tropiques]].',
+  tutIntro: {
+    en: 'Now find another secret word. I give you its {m} closest word, {start}.',
+    fr: 'Maintenant retrouve un autre mot secret. Je te donne le {m} mot le plus proche, {start}.',
   },
-  tutMixed10: {
-    en: '[[w:islands^10]] is the 10th closest word to [[b:ocean]].',
-    fr: '[[w:soleil^12]] est le 12e mot le plus proche de [[b:tropiques]].',
+  tutSentenceIntro: {
+    en: 'Now a sentence, with two secret words.',
+    fr: 'Maintenant une phrase, avec deux mots secrets.',
   },
-  tutGuessFar: {
-    en: 'Now type [[w:forest^214]].',
-    fr: 'Maintenant tape [[w:neige^353]].',
+  // The sentence solved: the bot counts the tries — the score, said once — and says this one
+  // was easy where the daily sentences are harder (user-decided 2026-09-16): the hook the
+  // first-letter lesson will hang from.
+  tutSolved: {
+    en: 'You found both in {n} tries. This one was easy: the daily sentences are harder.',
+    fr: 'Trouvés en {n} essais ! Celle-ci était facile, les vraies phrases sont plus dures.',
   },
-  tutGuessMiss: {
-    en: 'Type a completely different word: [[m:violin]].',
-    fr: 'Tape un mot complètement différent : [[m:guitare]].',
+  // CONTINUE leads from that line into the meter stage — the one control, named for what
+  // it does (never "tap anywhere").
+  tutContinue: { en: 'CONTINUE', fr: 'CONTINUER' },
+  // THE METER STAGE (#301 taught; scripted, user-decided 2026-09-16): the bot has half
+  // played the sentence. Its lines follow the player's acts — the tap, the first close
+  // guess, one more try — and it names the answer as if it had found it.
+  // The briefing and the click instruction in ONE box (user-decided 2026-09-16; the wheel is
+  // the next thing to open, the keyboard waits behind it).
+  tutMeterIntroTap: {
+    en: 'I already made some progress on this sentence, but I cannot find the last word. Tap {word} to see my tries.',
+    fr: "J'ai déjà un peu avancé sur cette phrase mais je ne trouve pas le dernier mot. Touche {word} pour voir mes essais.",
   },
-  tutGuessCloser: {
-    en: '[[m:violin]] was a [[m:MISS]] — too far to rank. Now try [[w:boat^45]].',
-    fr: '[[m:guitare]] était trop loin — [[m:MISS]]. Essaie [[w:lagon^22]].',
+  tutMeterIntroClick: {
+    en: 'I already made some progress on this sentence, but I cannot find the last word. Click {word} to see my tries.',
+    fr: "J'ai déjà un peu avancé sur cette phrase mais je ne trouve pas le dernier mot. Clique sur {word} pour voir mes essais.",
   },
-  tutFind: {
-    en: 'Now, find the original word.',
-    fr: 'Maintenant, retrouve le mot du début.',
+  tutMeterTapped: {
+    en: 'The 1000 closest words to the secret fill its meter. Once full, you earn a clue.',
+    fr: 'Les 1000 mots les plus proches du secret remplissent sa jauge. Une fois pleine, on gagne un indice.',
   },
-  tutFindNudge: {
-    en: 'Forgot it? It was [[b:ocean]].',
-    fr: "Oublié ? C'était [[b:tropiques]].",
+  tutLetter: {
+    en: 'Great! We just found the secret word’s first letter: it starts with {letter}.',
+    fr: 'Super ! On a la première lettre du mot secret : ça commence par {letter}.',
   },
-  // The lesson's wordless ending: the found word stands, and PLAY graduates into the game.
+  tutMeterFound: {
+    en: 'You found it! You are ready for the real game.',
+    fr: 'Trouvé ! Tu es prêt pour le vrai jeu.',
+  },
+  tutAway: {
+    en: '{guess} is the {n} closest word to the secret.',
+    fr: '{guess} est le {n} mot le plus proche du secret.',
+  },
+  tutMiss: {
+    en: '{miss} has nothing to do with the secret word: a [[m:MISS]].',
+    fr: "{miss} n'a aucun rapport avec le mot secret, c'est un [[m:MISS]].",
+  },
+  tutNear: {
+    en: 'Try words with a meaning close to {word}.',
+    fr: 'Essaie des mots au sens proche de {word}.',
+  },
+  tutAnswer: { en: 'The secret word is {answer}. Type it.', fr: 'Le mot secret est {answer}. Tape-le.' },
+  // Each board's own hint about its word — what the coach says once a hole has resisted long
+  // enough, before it gives the answer (scripts/<lang>.ts names them per hole). A full
+  // sentence, announced as a hint (user-decided 2026-09-16).
+  tutHintOcean: {
+    en: 'A hint: the secret word is a very large body of water.',
+    fr: 'Un indice : le mot secret est une très grande étendue d’eau.',
+  },
+  tutHintMountain: {
+    en: 'A hint: the secret word is very high, with a peak and snow on top.',
+    fr: 'Un indice : le mot secret est très haut, avec un sommet et de la neige.',
+  },
+  tutHintMontagne: {
+    en: 'A hint: the secret word is very high, with a peak and snow on top.',
+    fr: 'Un indice : le mot secret est très haut, avec un sommet et de la neige.',
+  },
+  tutHintDog: { en: 'A hint: the secret word is man’s best friend.', fr: 'Un indice : le mot secret est le meilleur ami de l’homme.' },
+  tutHintMoon: { en: 'A hint: the secret word lights the night.', fr: 'Un indice : le mot secret éclaire la nuit.' },
+  tutHintChien: { en: 'A hint: the secret word is man’s best friend.', fr: 'Un indice : le mot secret est le meilleur ami de l’homme.' },
+  tutHintLune: { en: 'A hint: the secret word lights the night.', fr: 'Un indice : le mot secret éclaire la nuit.' },
+  tutHintCat: { en: 'A hint: the secret word purrs.', fr: 'Un indice : le mot secret ronronne.' },
+  tutHintChat: { en: 'A hint: the secret word purrs.', fr: 'Un indice : le mot secret ronronne.' },
+  tutHintLiberty: { en: 'A hint: the secret word is being free, with a capital L.', fr: 'Un indice : le mot secret, c’est être libre, avec un grand L.' },
+  tutHintFreedom: { en: 'A hint: the secret word is being free, with a capital F.', fr: 'Un indice : le mot secret, c’est être libre, avec un grand F.' },
+  tutHintSentier: { en: 'A hint: the secret word is a narrow path through the woods.', fr: 'Un indice : le mot secret est un petit chemin dans les bois.' },
+  tutHintChemin: { en: 'A hint: the secret word is a small road, or a way.', fr: 'Un indice : le mot secret est une petite route, ou une voie.' },
+  // The lesson's wordless ending: the solved sentence stands, and PLAY graduates into the game.
   tutPlay: { en: 'PLAY', fr: 'JOUER' },
-  // ---- the sentence game's one-time PLAY gate (2026-08-11): the game's own rules before
-  // the first round, shown ONCE ever (the persisted `sentenceRulesSeen` flag) — PLAY is its
-  // whole job. TWO rules, one idea
-  // each — the goal and the history tap, the tap line in the input device's own verb (the
-  // tapAnywhere/clickAnywhere pattern). Rendered as BULLETS in the shared rules box
-  // (the tutorial's coach dialog — see `.coach-rules`).
-  sentenceRulesGoal: {
-    en: 'Some words were swapped out. Guess the originals.',
-    fr: 'Des mots ont été remplacés. Retrouve les originaux.',
-  },
-  sentenceRulesHistoryTap: {
-    en: 'Tap a word to see your tries on it.',
-    fr: 'Touche un mot pour revoir tes essais.',
-  },
-  sentenceRulesHistoryClick: {
-    en: 'Click a word to see your tries on it.',
-    fr: 'Clique sur un mot pour revoir tes essais.',
-  },
+  // ---- the LEVELS list (#269): the tutorial page, one row per level (tutorial/levels.ts).
+  learnTitle: { en: 'TUTORIAL', fr: 'TUTORIEL' },
+  levelPlayTitle: { en: 'THE GAME', fr: 'LE JEU' },
+  levelPlaySub: { en: 'Guess the secret words', fr: 'Deviner les mots secrets' },
+  levelDistanceTitle: { en: 'THE DISTANCE', fr: 'LA DISTANCE' },
+  levelDistanceSub: { en: 'How closeness is measured', fr: 'Comment la proximité se mesure' },
+  levelMeaningsTitle: { en: 'MANY MEANINGS', fr: 'PLUSIEURS SENS' },
+  levelMeaningsSub: { en: 'One word, several places', fr: 'Un mot, plusieurs places' },
+  levelVectorsTitle: { en: 'UNDER THE HOOD', fr: 'SOUS LE CAPOT' },
+  levelVectorsSub: { en: 'Vectors, and what AIs do with them', fr: 'Les vecteurs, et ce que les IA en font' },
+  levelDone: { en: 'Done', fr: 'Fait' },
+  levelSoon: { en: 'SOON', fr: 'BIENTÔT' },
+  // ---- the game's pre-round gate (2026-08-11; #269 made it an INVITATION): until level 1 is
+  // done, LEARN opens it and PLAY skips it; a device with no account keeps PLAY as its
+  // deploy button.
+  gateLearn: { en: 'LEARN', fr: 'APPRENDRE' },
   gatePlay: { en: 'PLAY', fr: 'JOUER' },
   // ---- the profile editor (#188): name + 10×10 palette avatar + the key as backup.
   // Show-don't-tell: terse labels, the surfaces demonstrate themselves.

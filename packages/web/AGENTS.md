@@ -116,8 +116,10 @@
                               `AbortSignal.timeout()` is above the browser floor and throws
                               BEFORE the fetch (it took the #216 bootstrap out on iOS 15)
       i18n.ts                 UI chrome strings (en+fr), t(lang, key); parity type-enforced
-      tutorial/               onboarding (#51/#155): Tutorial.tsx + data scripts/<lang>.ts
-                              (+ <lang>.word.json, the pruned #154 board it plays on)
+      tutorial/               the tutorial (#51/#155/#269): Learn.tsx (the levels), Lesson.tsx,
+                              LevelOne.tsx over LessonBoard.tsx, coach.ts (the reactive coach),
+                              levels.ts + data scripts/<lang>.ts (+ <lang>.<word>.json, the
+                              pruned #154 boards it plays on)
       screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
       components/strikeArt.ts the three strike sheets and their animation contract (#301: the
                               sentence's holes land them)
@@ -666,7 +668,7 @@ pnpm build      # production build -> packages/web/dist (requires VITE_TURNSTILE
 pnpm typecheck  # tsc --noEmit
 ```
 
-Front-end dev harnesses: `?tutorial=1` forces the tutorial, `?streak=N` previews the
+Front-end dev harnesses: `/<lang>/learn/1` opens the tutorial's level 1, `?streak=N` previews the
 streak celebration, `?error=<variant>` previews the error screen against a real backdrop
 (`dev/errorPreview.ts` — every variant is a real call site's copy; bare `?error` takes the
 account one, closing CYCLES the set). All dev only — EXCEPT **`?keylog=1`** (`keylog.ts`,
@@ -1768,7 +1770,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   so that board's language is not in the URL, and rebuilding it from
   `lastLang` describes the last loaded GAME instead — a board opened before ever playing
   could return in another language. The opener states its own route in the transient
-  store (`profileReturn`, the `tutorialOpen` pattern — set by the EDIT chip, cleared on
+  store (`profileReturn`, a transient store flag — set by the EDIT chip, cleared on
   use, never persisted); only an editor reached with nothing set (a deep link, a
   reload) falls back to the old guess, which still lands on a board.
   **The avatar RENDERER is `components/Avatar.tsx` over `components/avatarOutline.ts`,
@@ -2724,137 +2726,194 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `.score-legend` CSS — and the N-adaptive copy line with it (`histogramCopy`,
   `beatenCount`, `scoreFirst`/`scoreOther`/`scoreOthers`/`scoreBeat`): `TOP x%` and "you
   beat x%" are the same claim inverted, and the rank says it once.
-- **The sentence game's PLAY gate (user-decided 2026-08-11; DEPLOY duty added by the #216
-  trigger rework, user-decided 2026-08-24):** the game explains
-  its rules before the first round, once — the tutorial teaches only the core concept
-  (semantic distance). The gate exists only for the instructions, so it is shown **ONCE
-  ever** — a persisted global flag,
-  `sentenceRulesSeen` (store **v8**; older blobs get false, deliberately NOT grandfathered
-  the way `onboarded` is: the gate teaches the history tap, which is newer than any
-  existing play state, so every player sees it exactly once) — and PLAY
-  (`markSentenceRulesSeen`) is its whole job. On the gate the PHRASE is on screen but the
-  round holds back: the prompt lays out `retired` (invisible, inert, height reserved), the
-  holes are untappable and waveless
-  (`gateOpen` feeds `exploreDisabled` and vetoes `quiet`), and the TRAY holds the rules +
-  PLAY in the keyboard's own footprint (`.rules-gate`), so PLAY swaps what the tray
-  holds and moves nothing else. **The rules wear the app's ONE rules dress (user-decided
-  2026-08-11, second pass): `.coach-rules` — the tutorial's coach dialog, in flow and
-  sized to its copy (680px cap, the keyboard's own footprint, after "narrow for no reason"
-  desktop feedback) — typewritten by `CoachText`, as BULLETED lines, with an sr-only
-  plain-text mirror (the visible box is aria-hidden like every coach box). The gate and the
-  tutorial wear it, so anything in this box reads as "here to help"; and PLAY is the tutorial's own
-  full-width `.mix-btn`, so the gate and the graduation speak one button.** TWO rules, one
-  idea each (`sentenceRulesGoal` / `sentenceRulesHistoryTap|Click`, the tap line in the
-  input device's own verb — the streak hint's coarse-pointer test): the goal and the
-  history tap. The famous-AI line was CUT on the same user review (and the standings
-  lineup it referred to was removed outright on 2026-08-12 with the benchmark display).
-  The gate is DERIVED, not state:
-  `identity === null || (!sentenceRulesSeen && !finished && guessCount === 0)`, so a round
-  already in progress (or solved, or rehydrated mid-play) never shows it for the rules
-  alone, and an unset flag re-offers it until PLAY is actually tapped. No
-  analytics event — the three-event invariant stands.
+- **The game's pre-round GATE is an INVITATION into the tutorial (2026-08-11's rules gate;
+  DEPLOY duty added by the #216 trigger rework, user-decided 2026-08-24; remade by #269,
+  user-decided 2026-09-16).** It states NO rules: the lesson teaches by playing, and a player
+  who has played has learned them. Until the tutorial's LEVEL 1 is done on this device
+  (`lessonsDone`, store **v20**, which retired `sentenceRulesSeen`), the tray holds **PLAY**
+  (the tutorial's own full-width `.mix-btn`) and **LEARN** under it as THE WORD
+  (`gateLearn`, `navigate(pathForLesson(lang, PLAY_LEVEL))`); it invites, never blocks — ONE
+  entry, never a gate plus a nag. Level 1 is INFERRED FROM PLAY: `Game` marks it done the
+  moment the round holds a guess (`guessCount > 0`), so a veteran's badge clears on their
+  first guess and the gate never returns. Derived, not state:
+  `identity === null || (!learned && !played && !finished && guessCount === 0)` — `played` is
+  this visit's PLAY (nothing is recorded until a guess lands), so a round already in progress
+  never shows it for the lesson alone. On the gate the PHRASE is on screen but the round holds
+  back: the prompt lays out `retired`, the holes are untappable and waveless (`gateOpen` feeds
+  `exploreDisabled` and vetoes `quiet`), and the TRAY holds the buttons in the keyboard's own
+  footprint (`.rules-gate`, anchored to the tray's bottom by `.tray-gate`). No analytics event.
   **Since the #216 trigger rework the gate is also the sentence game's DEPLOY BUTTON**: a
-  device with NO account shows the FULL rules gate on every sentence day (archive days and
-  post-sign-out included), whatever the flag says, because its PLAY is the only trigger on
-  the screen — the tap bootstraps the account (loading wave in the button, `ErrorScreen`
-  with TRY AGAIN on failure, nothing created on a failure) and then marks the rules seen.
-  An account-holding player who has read the rules never sees the gate again; the flag
-  still keeps them from seeing the rules twice when their account arrived through another
-  door (an invite, a profile save). The round engine's append NEVER mints an identity any more
-  (`currentRequestIdentity`): a tokenless outbox — the pending-bootstrap recovery — waits
-  behind the gate, and the deploy's identity listener kicks every conversation loose
-  (`kickRoundSync`).
-- **Onboarding tutorial (#51, redesigned 2026-07-06):** the tutorial **never starts
-  without an action**. A first visit (persisted `onboarded` unset) lands on an
-  **invitation** (`tutorial/Invite.tsx`, standing in for the loading screen: "New to
-  the game? …" + TUTORIAL / SKIP — either sets the flag, so a veteran on a new
-  device is one SKIP from playing). The header's `?` re-opens it as a **replay**.
-  The tutorial **keeps the app header** (decided 2026-07-06, superseding the earlier
-  header-less design): the flag (left) opens the **language screen — the ONE
-  language-switching gesture everywhere** (no per-context flag behavior; decided
-  2026-07-06 superseding a brief direct-toggle). The open-tutorial state is
-  **transient store state** (`tutorialOpen: 'first' | 'replay' | null`, NOT
-  persisted), so it survives a language pick: the lesson reopens in that language. The left slot reads **"TUTORIAL"**, and the right
-  group is the header's FIXED ROW with the BOOK lit (2026-08-31; see the header bullet
-  — it replaced a fast-forward SKIP control, `skip.svg`, in that slot): any other key
-  leaves the lesson through `onDone`, tracked as a `skip`, on the first run and replays
-  alike — a header affordance, NOT a coach-box `×` (which read as "close this box
-  only"). The tutorial
-  itself is **ONE board**, in the REAL game components. **Screen contract:**
-  explanations in a TOP box (typewritten like a game dialog — `tutorial/CoachText.tsx`,
-  app-bg + surface border — with inline markup so words look like what they are
-  in-game: `[[b:]]` blue secret, `[[w:word^rank]]` gold + heat exponent, `[[m:]]`
-  MISS red, `[[n:]]` heat number); INTERACTIONS at the bottom (mix button, then
-  keyboard), no modals until the last beat, no NEXT. The board is a single word,
-  concept-first: the secret is SHOWN (blue); **MIX** shakes it
-  to −1, **MIX AGAIN** fast-rolls to −10, **MIX EVEN MORE** rolls to the START word —
-  the demo explains where start words come from — where the
-  button gives way to the keyboard (`tutorial/MixWord.tsx` is the display-only
-  widget; Tutorial owns the animation); three gated guesses then show distance
-  (farther, no move), MISS, and improvement, each rolling straight into the next
-  prompt (no after-panels); finally the player types back to the secret with the
-  REAL vocabulary (`useVocab` loads in the tutorial), nudged with the answer after 3
-  straight MISSes.
-  **It ENDS WORDLESS (2026-09-16, with Word mode's removal):** the tutorial teaches the
-  CORE CONCEPT — semantic distance, through the mix demo and the guided guesses — and the
-  game's own rules live on its pre-game gate (below). Finding the word retires the prompt
-  and DROPS the keyboard out of the tray (the game's own `kb-drop`, same
-  `KB_EXIT_FALLBACK_MS` deadline behind its `animationend`); the found word stands, the
-  coach says nothing more (a found word needs no comment), and the tray offers **PLAY
-  (`tutPlay`), which is the graduation**: `onDone`, no SolvedScreen (a lesson has no score
-  to show).
-  **The ACTION BUTTON keeps ONE place for the whole lesson** (decided 2026-08-04): MIX and
-  PLAY are the same control in the same spot — parked against the tray's BOTTOM edge
-  (`.mix-btn`'s `margin-top: auto`, which beats the tray's own centring), and the tray keeps
-  the keyboard's footprint to the end, so the found word never moves between beats. On a
-  phone the button carries its own +10px back to the 14px page inset. The keyboard and the
-  tray's transient loading/error lines keep the tray's centring — the auto margin moves the
-  button only.
-  **The board's ranks are a REAL generated neighborhood:** the mix ladder walks real ranks
-  and the free find lands on real groups. Each language embeds a #154
-  single-word artifact (`pnpm gen:word`) PRUNED to the word + the top-150 near field + the
-  guided words, by `web/scripts/prune-word-map.mjs` (`--top` cuts the zone by RANK) — the
-  exact command is recorded in each script's header, and `scripts.test.ts` fails if board
-  and map ever drift. **en = OCEAN, fr = TROPIQUES** (en/fr symmetry a standing non-goal).
-  **The guided words obey two findings-decided rules (2026-08-03/04):** the far guess stays
-  on a READABLE scale — same order of magnitude as the start word, ≤ 500, guarded by
-  `scripts.test.ts` (fr `désert^1183` read as noise) — AND must make intuitive sense as a
-  somehow-close word (`casquette^330` did not; fr's is `neige^353` — snow is
-  climate-adjacent and intuitively the anti-tropics, so "farther" feels right); a mix stop's
-  word should likewise be an INTUITIVE neighbor (fr's second stop is `soleil^12`; the fr
-  board is agreed SINGULAR — `--form tropiques=n:s` — because plural-agreed neighbors read
-  oddly on a word board, findings 2026-08-04). Coach
-  copy must fit the coach box's THREE lines at 320px — split an idea into two beats before
-  growing the box (learned 2026-08-04, when the box briefly went to four lines and went
-  back the same day).
-  Copy is deliberately terse throughout, no under-the-hood talk.
-  **The coach's hint words wear the held word's CHIP** (user-decided 2026-09-02, "the hole
-  words in the dialog box should have the new hole word design"): `[[w:word^rank]]`
-  renders the word's text in its own `.rt-word-text` span on `--fg` ground in `--bg` ink,
-  the sentence chip's em geometry, the heat exponent standing outside it — and the chip is
-  drawn PER LETTER (user-reported the same day: the letters typed on one by one while the
-  ground was already there), each letter span carrying its own slice of ground, the first
-  the left overhang and the last the right, so the chip arrives with the letters. **And every floating hit's print is `--bg`**
-  (same day, from a half-black shadow): a hit lands on a white chip as often as on the
-  ground now.
-  **The floating hit on the lesson's word is the WORD'S OWN SIZE** (user-reported
-  2026-09-02: "way too small on desktop compared to the huge size of the word" — the
-  tutorial's one word is 48px on desktop where the sentence's are 30, and the game's fixed
-  28px number read as a footnote on it; `.tutorial .floating-hit` is `1em` off the wrap it
-  is positioned in, 48 on desktop and 28 on a phone, the game's own hits untouched).
-  The tutorial is **data-driven**:
-  the board, guesses and steps live in `web/src/tutorial/scripts/{en,fr}.ts`
-  (copy keys in `i18n.ts`) and `tutorial/scripts.test.ts` guards the lesson arc.
-  Gated steps use synthetic vocab/prefix sets (the keyboard's existing contract);
-  free steps use the real sets. The tutorial writes NOTHING to `rounds`; the store
-  `migrate` (v2) grandfathers any blob with prior play state so veterans never see it
-  uninvited. Replay via the header `?`; `?tutorial=1` forces it; the dev-only `?streak=`
-  preview suppresses the first-visit invitation. The tutorial ships in its OWN chunk
-  (`LazyTutorial`, the LazyStreakDialog pattern, 2026-08-04): most sessions never render it,
-  so the components and the two embedded word maps stay out of the startup bundle — the
-  invitation preloads it while the player reads the question, a replay lazy-loads it behind
-  the plain loading line, and a failed chunk calls `onDone` (into the game) rather than
-  stranding a blank screen.
+  device with NO account shows it on every sentence day (archive days and post-sign-out
+  included), whatever is done, because its PLAY is the only trigger on the screen — the tap
+  bootstraps the account (loading wave in the button, `ErrorScreen` with TRY AGAIN on failure,
+  nothing created on a failure) and then opens the round. The round engine's append NEVER
+  mints an identity (`currentRequestIdentity`): a tokenless outbox — the pending-bootstrap
+  recovery — waits behind the gate, and the deploy's identity listener kicks every
+  conversation loose (`kickRoundSync`).
+- **The tutorial is a LIST OF LEVELS, and level 1 is the game PLAYED (#51 → #155 → #269,
+  user-decided 2026-09-16).** Watching newcomers showed the old lesson's flaw: they pressed
+  MIX because they were told to, typed the words they were told to type, read nothing, and
+  asked "what do I do?" on the game. Reading works only for someone who decided to learn.
+  **The rule that replaced it: every beat is a real decision the player can get wrong, and
+  the feedback is the only teacher; the coach speaks on a mistake or a stall, never on
+  success.** The MIX demo, the gated keyboard and the prescribed guesses are gone.
+  **Routes, not a flag** (`langs.ts`): `/<lang>/learn` is the list (`tutorial/Learn.tsx`),
+  `/<lang>/learn/<n>` a BUILT level's lesson (`tutorial/Lesson.tsx`; an unbuilt or unknown `n`
+  lands on the list). `tutorialOpen` and `?tutorial=1` are gone — the route is the harness.
+  Both are the RULES' place (BOOK lit); on a lesson the lit book still LEADS to the list
+  (`HeaderKeys`' `litLeads`, the calendar-over-an-archive-play rule generalized), and any
+  other key leaves the lesson as a SKIP (`App`'s `leaveLesson`: tracked, `setOnboarded`).
+  **The LEVELS** (`tutorial/levels.ts`): 1 THE GAME (built) · 2 THE DISTANCE · 3 MANY MEANINGS
+  · 4 UNDER THE HOOD — each one layer deeper into the core concept (the user's four levels of
+  understanding: the UI and the distance; how the distance is computed; 300 dimensions, a
+  word holding several meanings; the vectors and what AIs do with them). Unbuilt rows are
+  greyed, not tappable, and say SOON; only a BUILT level counts toward the header's badge
+  (`.hk-badge`, `undoneLevels`) — a badge for something nobody can do is a nag. Completion is
+  DEVICE-LOCAL (`lessonsDone`, never on the account) and, for level 1, INFERRED FROM PLAY
+  (see the gate bullet). Replaying a done level is allowed. The row dress is the device
+  list's; the done mark is a small accent SQUARE where the chevron of a level still to do sits.
+  **Stage progress (user-decided 2026-09-17):** the coach dialog shows `n/4` beside it,
+  driven by the current stage and `stages.length` in `LevelOne`.
+  **LEVEL 1 (`tutorial/LevelOne.tsx` over `LessonBoard.tsx`, one screen, the script's
+  STAGES in order — `scripts/<lang>.ts` `stages[]`, each `{kind, puzzle, hints}`; a
+  sentence-shaped stage ends on a button, a single word rolls on by itself):**
+  - **THE REVEAL (user-decided 2026-09-16, fifth pass — "you land on a page with mer¹ and
+    it tells you to guess the secret word: where is the secret word?")** — NOTHING IS SAID
+    THAT THE PLAYER HAS NOT JUST SEEN. The secret word is SHOWN on the board (rank 0, the
+    solved look: "Here is a secret word: océan."), STANDS UNTIL THE PLAYER ACTS on ONE
+    BUTTON in the tray, where the keyboard will land — **CONTINUE** / **CONTINUER**
+    (`tutContinue`, `.mix-btn`; user-decided 2026-09-16 over HIDE THE WORD / MASQUER LE MOT; the prompt is retired meanwhile, so it is the one action).
+    **The coach never skips a line without an interaction, and the interaction is always an
+    obvious control with a clear action — never "tap anywhere"** (user-decided 2026-09-16,
+    the tap-anywhere cue rejected the same day). Pressing it is the hiding: the word is
+    HIDDEN in front of them: its closest word takes its place wearing a 1, on the Hole's OWN word-change
+    choreography — the letters scramble from one word into the other while the exponent
+    arrives, the same beat every improving guess gets, never a remount (user-decided
+    2026-09-16: "the word transition animation should be played") — under "I mixed the word up: in its place, the closest word, sea¹. Find the secret word."
+    (fr « J'ai mélangé le mot : à sa place, le mot le plus proche, mer¹. Retrouve le mot
+    secret. »,
+    user-decided 2026-09-16 — the bot says what IT did; « son plus proche » and « Trouve »
+    rejected the same day). The player types it back — the loop, lived once. en OCEAN behind `sea^1`, fr
+    OCÉAN behind `mer^1`; `scripts.test.ts` pins the clue at rank 1; the ladder is early
+    (`STUCK.reveal` = 2/4/6 — the answer was just on screen). It replaced four single-word
+    openings that each read as too hard or too abstract (TROPIQUES, `île^12`, `plage^28`,
+    `atlantique^7`, then `mer^1` under an ordinal line).
+  - **THE WORD** — another secret, never shown, its stand-in a dozen ranks out (en MOUNTAIN
+    behind `snow^13`, fr MONTAGNE behind `ski^14`; the test wants 2–20): a real search that
+    stays easy, the coach reacting to the guesses ("Now find another secret word. I give you
+    its 13th closest word, snow¹³." — user-decided 2026-09-16). The real keyboard
+    and the real vocabulary from the first frame. **A LONE WORD IS NOT TAPPABLE** (same day):
+    the wheel is the sentences' own. NO CAPITAL on a lone word (`Phrase`'s `capital={false}`: a word is not
+    a sentence), and the PROMPT sits just above the keyboard on the LEFT (`.tutorial--word
+    .input-area`, `margin-top: auto`), off the word — and at ONE X on every stage: its own
+    680px box centred in the column (`.tutorial .input-area`), where stretching it to a 680px
+    word column and a 1200px sentence column put it at two edges — and at ONE Y, parked on
+    the play area's bottom edge on every stage, the sentence's included (user-reported
+    2026-09-16). Finding it ends the stage wordless and
+    rolls into the sentence.
+  - **THE SENTENCE** — two holes, start words in the game's own 50–150 band (en "a dog barks
+    at the moon." from `coyote^55` / `stars^62`; fr « un chien aboie à la lune. » from
+    `loup^52` / `pénombre^63`), the try count printed behind it as the day does, CENTRED on
+    the game's full column so a wide screen shows it on one line (the word stages keep the
+    680px cap), and in the MIDDLE of the room between the coach and the prompt (two auto
+    margins; hard against the box the watermark rode into it, user-reported 2026-09-16). One new
+    thing at a time: one guess lands on every hole (the two floats say so), a tap opens the
+    tries (wheel / grid, picking included), fewer tries is the score. Solving it drops the
+    keyboard (`kb-drop`, `KB_EXIT_FALLBACK_MS`) and offers **PLAY** in its place, the
+    graduation: `markLessonDone(1)`, `setOnboarded`, `track finish`, and BACK WHERE THE
+    INVITATION STOOD (`App`'s `lessonReturn`, the path TUTORIAL was pressed on — a dated
+    link's day — cleared by any non-lesson route; the plain game otherwise, a reload
+    included; user-fixed 2026-09-17).
+  - **THE METER (#301 TAUGHT; user-decided 2026-09-16 — "after saying that real sentences
+    are harder, the onboarding should continue and explain the first letter concept",
+    SCRIPTED the same day)** — CONTINUE from the sentence's solved line (the line stands
+    until it is pressed) into a harder sentence THE BOT HAS ALREADY HALF PLAYED: en "the cat
+    dreams of liberty." (fr « le chat suit le sentier. »), CAT found, with the #301 meters
+    SHOWN for the first time. **THE SECRET IS THE CLOSE SYNONYM OF THE OBVIOUS WORD** (user-
+    decided 2026-09-16 after solving it in one try: "if you type the word 0 it should become
+    the word -1"): the sentence begs for FREEDOM / CHEMIN, and that word is the secret's
+    rank-1 neighbour (`pair.alt`) — typing it earns a 1 and fills the chip, never the solve;
+    both words read in the sentence ("both words relevant, e.g. mer/océan"). **AND THE TWO
+    SWAP ROLES if the secret is typed first, before the letter is out** (user-decided
+    2026-09-16 after typing « sentier » in one try): the secret reads 1 and `alt` becomes the
+    secret the bot lands. ONE map serves both readings — swapped, every rank-0 entry reads 1
+    and every rank-1 entry reads 0 (`ranks` view in `LessonBoard`), and the board, the
+    meters, the wheel and every later guess replay against it. Once the letter is out there
+    is no swap: the goal is only that the letter is seen before the solve. `played` is the
+    bot's log — FEW tries, five, the best one an EASY SYNONYM of the obvious word (en: cat,
+    independence, respect, happiness, justice, truth; fr: chat, parcours, randonneur, détour,
+    hameau, tunnel — masculine so « le » holds; « belvédère » "was way too hard: the goal is
+    easy guesses that teach the other mechanics", user-decided 2026-09-16) — replayed onto the board, the meters and the tries wheel exactly as a
+    round's log would be, chosen so the open word's meter stands at ABOUT THREE QUARTERS
+    (~74 en / ~74 fr, the day's own `replayCharge` — no lesson boost; "almost full, we don't
+    see it getting filled") with a best try that is no giveaway AND LONG ENOUGH for the fill
+    to read on its chip (`independence^9` / `parcours^8` — `col` "was too short to understand
+    the notion of progression", 2026-09-16;
+    the test wants rank ≥ 5 and ≥ 6 letters, 65–80, ≤ 6 tries, `alt` at rank 1, untried, and
+    filling it alone). THE WATERMARK COUNTS THE WHOLE LOG, the bot's tries included.
+    THE KEYBOARD IS HELD BACK UNTIL THE TAP (user-decided 2026-09-16): the stage opens with
+    the prompt retired and the tray empty, so the bot's tries are the first thing to look
+    at; the keys arrive with the line that hands the turn over — which types only once the
+    WHEEL IS CLOSED (`tapped` lands on close, same day).
+    that a rank-200 guess still fills it). The beats, each on the player's act: "I already
+    made some progress on this sentence, but I cannot find the last word. Click
+    independence⁹ to see my tries." (ONE box, no beat between — user-decided 2026-09-16; TAP
+    on a coarse pointer — every tap line has its click twin) → tapped: "The 1000 closest words to the
+    secret fill its meter. Once full, you earn a clue." → a guess that does not fill:
+    `tutNear` → the obvious guess FILLS IT — no progress needed — and the L lands: "Great!
+    We just found the secret word's first letter: it starts with L." → a FAILED TRY after it
+    earns the HINT
+    (`hints[]`, or `pair.hint` once swapped), NEVER THE WORD (user-decided 2026-09-16,
+    retiring the bot's own closing guess) → found: "You found it! You are ready for the real
+    game." → PLAY. `STUCK.meter` is unused
+    (the stage is its own script). Not taught: the exact rate.
+  **A WHEEL ROW'S HIT AREA IS ITS WORD** (`.wheel-row` `width: fit-content`, user-reported
+  2026-09-16 from the lesson: "when we click next to a word it scrolls to it instead of
+  leaving the wheel"): the room beside a word is the scroller's own, and a click there folds
+  the wheel — on the day's wheel too.
+  **THE COACH IS THE PLAYER (user-decided 2026-09-16, "people would want to read it more if
+  it's something telling it"):** the old lineup's PLAYER idle sheet (`player-idle.png`, 8
+  frames of 22x31, restored from the benchmark display's removal — the error bot stood in
+  first, replaced the same day on the user's ask) at 2x stands on the coach box's top-left
+  edge (`.coach--bot` / `.coach-bot`, drawn ABOVE the box so the text budget stands; the box
+  and the board's `padding-top` drop by the sprite's 56px).
+  **THE REACTIVE COACH (`tutorial/coach.ts`, pure; `coach.test.ts` replays sequences):**
+  the one line the board's state calls for — and when a beat has nothing new to say THE BOX
+  KEEPS THE LAST LINE UP, it never disappears (user-decided 2026-09-16). **Every line
+  is written for someone who knows NOTHING yet (user-decided 2026-09-16, three passes): the
+  opening says what the game IS — guess a SECRET word — and explains the number on the clue
+  itself; closeness is counted in ORDINALS (`ordinal`, en/fr), never an abstract distance.**
+  The reveal's two lines (`tutReveal`, `tutHidden`) above; before the first guess of the
+  word (`tutIntro`) and of the sentence (`tutSentenceIntro`: "Now a sentence, with two secret
+  words." — no mechanics explained, the floats show them; user-decided
+  2026-09-16). Single-word stages: the FIRST ranked guess
+  that moves nothing → `tutAway` ("water²⁹ is the 29th closest word to the secret." — the comparison to the clue
+  dropped as noise, user-decided 2026-09-16), once;
+  the FIRST MISS → `tutMiss` ("violin has nothing to do with the secret word: a MISS", the
+  MISS in its red), once; a
+  moving guess → SILENCE. Both stages: a
+  hole resisting `STUCK[stage]` guesses climbs near → the board's HINT (`hints[]`, per hole,
+  `tutHint*` — a full sentence announced as one: "A hint: the secret word is very high,
+  with a peak and snow on top.", user-decided 2026-09-16) → the ANSWER (`[2,2,9]` on the word — TWO failed tries in a row earn a REALLY
+  EASY hint outright, "montagne is a bit hard", user-decided 2026-09-16; `[4,8,12]` on the
+  sentence, the hole resisting longest chosen); the sentence teaches NO tap (dropped 2026-09-16: "this concept
+  will be taught on the next sentence"); SOLVED, the bot counts the tries and sets up what comes next (`tutSolved`, "You found both
+  in 7 tries. This one was easy: the daily sentences are harder." — the score, said once,
+  and the hook the METER stage hangs from, user-decided 2026-09-16; a found single word
+  still says nothing). The `{braces}` are filled from the board itself, so a line can never
+  name a word the map does not rank. THE COACH BOX IS THREE LINES, FIVE AT MOST (user-decided 2026-09-16, lifting the
+  exact-three rule of 2026-08-04: the box is fixed-positioned and moves nothing beneath, and
+  the bot's briefing on the last sentence runs to five at 320px — `.coach-text`
+  `max-height: 8.5em`, the board's `padding-top` grown to match); copy past five lines is a
+  copy bug.
+  **The invitation is unchanged** (`tutorial/Invite.tsx`, no header): a first visit (no
+  `onboarded`) lands on it; TUTORIAL navigates to level 1 (the lesson's PLAY or a header exit
+  settles the flag), SKIP settles it there. Its preload warms the level-1 chunk
+  (`LazyLevelOne`, the LazyStreakDialog pattern; a failed chunk exits without completing the lesson). Analytics
+  keep the three events (`start` / `skip` / `finish`). The boards are pruned #154 artifacts
+  (`scripts/<lang>.<word>.json`, `prune-word-map.mjs --top 150`; the exact commands in each
+  script's header), never published or served; a lesson board touches no `rounds`, no outbox,
+  no server. **Not done, deliberately: levels 2–4** (their rows show the road).
 - **App header — TWO SLOTS (user-decided 2026-08-30, superseding the 2026-08-18
   three-slot finalization recorded below).** The BAND is unchanged — `--glass` +
   hairline + backdrop blur (`components/TopBar.tsx`), full-bleed with one bottom
@@ -2892,7 +2951,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   surface wears the row is the router's business — `headerPlace()` reads the route, and
   `GameSurface` (tutorial / invite / game) is picked in App and rendered by `GameRoute`, the
   onboarding INVITATION being the one game surface with no header. The dev harnesses
-  (`?streak=`, `?error=`, `?tutorial=1`) moved up with that decision, because they are part
+  (`?streak=`, `?error=`) moved up with that decision, because they are part
   of the answer. Verified in the browser: the `header`, `.hk-row` and `.account-key` DOM
   nodes are the SAME elements across every key, and a deployed account's face never
   skeletons and issues no second profile read. (Not fixed by this, and worth naming: the
@@ -3004,9 +3063,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   Past day: ARCHIVE lit (a past day is the archive's). Calendar: ARCHIVE lit. Board:
   BOARD lit. Account area — `/account`, `/profile`, both email doors: FACE lit (the
   account is a place; the steps inside it keep their `back` on the LEFT while the face
-  stays lit on the right). Tutorial: BOOK lit (the rules' place; any other key leaves the
-  lesson, which is a SKIP — the fast-forward control that slot held, `skip.svg` and
-  `ariaSkipTutorial`, are retired). **`profileReturn` is GONE from the store**: every
+  stays lit on the right). Tutorial — its list of levels and a lesson alike (#269): BOOK lit
+  (the rules' place; on a lesson the lit book still leads to the list, and any other key
+  leaves the lesson, which is a SKIP — the fast-forward control that slot held, `skip.svg`
+  and `ariaSkipTutorial`, are retired). The book wears a BADGE with the count of built levels
+  this device has not done. **`profileReturn` is GONE from the store**: every
   place is one tap away, so nothing has to remember where it was opened from, and
   `/account`'s left slot is its plain NAME rather than a back control. **This OVERTURNS #190's ACTIVE-DAY-ONLY crown** (2026-08-20): that rule hid
   the crown on an archive day so a key could not silently swap the day under the player,

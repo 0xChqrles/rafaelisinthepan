@@ -1,5 +1,6 @@
 import { dayNumber, GROUP_ID_PATTERN, GROUP_LANDING_SEGMENT, GROUP_SEGMENT } from '@whippin/shared';
 import { FIRST_PUZZLE_DATE } from './config';
+import { levelOf } from './tutorial/levels';
 
 // How far past the client's active day a dated route may reach (#273): ONE day, the
 // server's own +1-day skew window — which is what lets tomorrow's sentence open tonight.
@@ -51,6 +52,23 @@ const BOARD_SEGMENT = 'board';
 export function pathForBoard(lang: string | null): string {
   if (!isLang(lang)) return '/';
   return `/${lang}/${BOARD_SEGMENT}`;
+}
+
+// THE TUTORIAL (#269): `/<lang>/learn` is the list of levels, `/<lang>/learn/<n>` one level's
+// lesson. Language-scoped like a board — the lesson is taught in a language, and the header's
+// language pick keeps you on it. They are ROUTES rather than a flag over the game (which the
+// tutorial was until 2026-09-16) so a level is linkable and the row's grammar — a lit key is
+// where you are — holds without a store trick.
+const LEARN_SEGMENT = 'learn';
+
+export function pathForLearn(lang: string | null): string {
+  if (!isLang(lang)) return '/';
+  return `/${lang}/${LEARN_SEGMENT}`;
+}
+
+export function pathForLesson(lang: string | null, level: number): string {
+  if (!isLang(lang)) return '/';
+  return `/${lang}/${LEARN_SEGMENT}/${level}`;
 }
 
 // The ACCOUNT area (#204's UX rework, 2026-08-26). FOUR routes, because they answer four
@@ -118,6 +136,8 @@ export type Route =
   | { view: 'game'; lang: LangCode; date?: string }
   | { view: 'archive'; lang: LangCode }
   | { view: 'board'; lang: LangCode }
+  | { view: 'learn'; lang: LangCode }
+  | { view: 'lesson'; lang: LangCode; level: number }
   | { view: 'account' }
   | { view: 'accountEmail'; intent: LinkIntent }
   | { view: 'profile' }
@@ -193,6 +213,12 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
   if (second === 'archive') return { view: 'archive', lang: seg };
   // /<lang>/board — the day's leaderboard (#190).
   if (second === BOARD_SEGMENT) return { view: 'board', lang: seg };
+  // /<lang>/learn — the tutorial's levels; /<lang>/learn/<n> — one BUILT level's lesson. A
+  // level that is not built (or not a level) lands on the list, where the road is shown.
+  if (second === LEARN_SEGMENT) {
+    const level = third && /^\d+$/.test(third) ? Number(third) : NaN;
+    return levelOf(level)?.built ? { view: 'lesson', lang: seg, level } : { view: 'learn', lang: seg };
+  }
   // /<lang>/<YYYY-MM-DD> — a past day.
   const date = dateOf(second);
   if (date === 'home') return { view: 'home' };

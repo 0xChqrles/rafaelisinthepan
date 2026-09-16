@@ -58,7 +58,7 @@ beforeEach(() => {
       onboarded: false,
       boardTab: 'group',
       lastGroupId: null,
-      sentenceRulesSeen: false,
+      lessonsDone: [],
       roundLoads: {},
     },
     false,
@@ -352,6 +352,16 @@ describe('onboarded — the tutorial flag (#51)', () => {
   });
 });
 
+describe('lessonsDone — the levels this device has done (#269)', () => {
+  it('markLessonDone is idempotent and keeps the list a sorted set', () => {
+    const { markLessonDone } = useGameStore.getState();
+    markLessonDone(2);
+    markLessonDone(1);
+    markLessonDone(2);
+    expect(useGameStore.getState().lessonsDone).toEqual([1, 2]);
+  });
+});
+
 describe('migratePersisted — persisted-blob upgrades', () => {
   it('discards a v0 blob entirely (one-time reset)', () => {
     expect(migratePersisted({ roundKey: 'x', holes: [] }, 0)).toEqual({
@@ -361,7 +371,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       onboarded: false,
       boardTab: 'group',
       lastGroupId: null,
-      sentenceRulesSeen: false,
+      lessonsDone: [],
       localSeed: null,
     });
   });
@@ -408,7 +418,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       onboarded: true,
       boardTab: 'group',
       lastGroupId: null,
-      sentenceRulesSeen: false,
+      lessonsDone: [],
       localSeed: null,
     });
     expect('layout' in out).toBe(false);
@@ -445,7 +455,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       onboarded: true,
       boardTab: 'group',
       lastGroupId: null,
-      sentenceRulesSeen: false,
+      lessonsDone: [],
       localSeed: null,
     });
   });
@@ -470,7 +480,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       onboarded: true,
       boardTab: 'group',
       lastGroupId: null,
-      sentenceRulesSeen: false,
+      lessonsDone: [],
       localSeed: null,
     });
   });
@@ -515,20 +525,18 @@ describe('migratePersisted — persisted-blob upgrades', () => {
     expect(migratePersisted({ rounds, lastLang: null }, 12).onboarded).toBe(true);
   });
 
-  // v7 -> v8 (2026-08-11): the sentence game's one-time instructions gate. Older blobs get
-  // false — deliberately NOT grandfathered like `onboarded`: the gate teaches the history
-  // tap, which is newer than any existing play state, so every player sees it exactly once.
-  it('v7 -> v8 defaults sentenceRulesSeen to false and keeps an explicit true', () => {
+  // v19 -> v20 (#269): the rules gate's `sentenceRulesSeen` is RETIRED (dropped, not
+  // translated — the standing no-back-compat rule) and `lessonsDone` arrives: older blobs
+  // start with no level done, and a stored list survives only as a sorted set of levels.
+  it('v19 -> v20 drops sentenceRulesSeen and reads lessonsDone as a sorted set of levels', () => {
+    const blob = { outbox: {}, lastLang: 'fr', onboarded: true, sentenceRulesSeen: true };
+    const out = migratePersisted(blob, 19);
+    expect(out.lessonsDone).toEqual([]);
+    expect('sentenceRulesSeen' in out).toBe(false);
     expect(
-      migratePersisted({ rounds: {}, lastLang: 'fr', onboarded: true, solvedDays: {} }, 7)
-        .sentenceRulesSeen,
-    ).toBe(false);
-    expect(
-      migratePersisted(
-        { rounds: {}, lastLang: 'fr', onboarded: true, sentenceRulesSeen: true, solvedDays: {} },
-        8,
-      ).sentenceRulesSeen,
-    ).toBe(true);
+      migratePersisted({ ...blob, lessonsDone: [3, 1, 1, 0, -2, 'x', 2.5] }, 20).lessonsDone,
+    ).toEqual([1, 3]);
+    expect(migratePersisted({ ...blob, lessonsDone: 'nope' }, 20).lessonsDone).toEqual([]);
   });
 
   // v8 -> v9 (2026-08-20): which #190 board tab is up. Older blobs get 'friends'
@@ -575,7 +583,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
         lastLang: 'fr',
         onboarded: true,
         boardTab: 'global',
-        sentenceRulesSeen: true,
+        lessonsDone: [1],
       },
       15,
     );
@@ -585,7 +593,7 @@ describe('migratePersisted — persisted-blob upgrades', () => {
       lastLang: 'fr',
       onboarded: true,
       boardTab: 'global',
-      sentenceRulesSeen: true,
+      lessonsDone: [1],
     });
   });
 });

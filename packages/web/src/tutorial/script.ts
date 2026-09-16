@@ -1,60 +1,61 @@
-// The onboarding tutorial's script contract (#51, re-arced by #155). The WHOLE tutorial — the board, the scripted guesses,
-// the coach-mark sequence — is data in scripts/<lang>.ts. Rewriting the onboarding later
-// means editing those files (and the i18n copy keys they reference): zero component changes.
-// Per-step outcomes of a guess are NEVER encoded in the steps — the Tutorial derives them
-// from the board's rank map at runtime, exactly like the real game, so a script edit cannot
-// drift out of sync with its own ranks (scripts.test.ts guards the intended lesson arc).
+// The onboarding lesson's script contract (#51, re-arced by #155, remade by #269).
 //
-// ONE board, one arc: a single word and its REAL neighborhood — the mix demo walks the
-// secret out to the start word, three gated guesses demonstrate distance / MISS /
-// improvement, the player finds their way back, and PLAY ends the lesson without a word. The
-// tutorial teaches the core concept — semantic distance — and nothing of the game's own
-// rules, which live on its one-time PLAY gate.
+// LEVEL 1 is the game, played: a guided run in two STAGES on real boards, with the real
+// keyboard and the real vocabulary from the first frame. Nothing is pressed for the player
+// and nothing is typed for them — every beat is a decision they can get wrong, and the
+// feedback is the teacher (user-decided 2026-09-16, after watching newcomers press what they
+// were told to press and learn nothing from it).
 //
-// The board's ranks are a REAL generated neighborhood (a #154 single-word artifact, pruned —
-// see scripts/<lang>.ts): the mix ladder and the free find play against real ranks.
+//   THE REVEAL    (user-decided 2026-09-16, fifth pass: "where is the secret word? what does
+//                 'mer est le plus proche' mean?") — the secret word is SHOWN, then hidden in
+//                 front of the player: its closest word takes its place, wearing a 1. The
+//                 player types the secret back. Nothing is explained that was not just seen.
+//   THE WORD      another secret, never shown, its stand-in a dozen ranks out: a real search
+//                 on one word, with the coach reacting to the guesses (coach.ts).
+//   THE SENTENCE  two holes, start words in the game's own 50–150 band: one guess is tried on
+//                 every hole, a tap on a word opens the tries, fewer tries is the score. One
+//                 new thing at a time. Solved, the bot says this one was easy and the daily
+//                 sentences are harder — and CONTINUE leads into:
+//   THE METER     (user-decided 2026-09-16, scripted the same day) a harder sentence the BOT
+//                 has already half played: one word found, the other's #301 meter nearly
+//                 full from its tries (`played`, the pre-played log — tap the word to see
+//                 them). The player's first close guess fills it and the first letter lands;
+//                 they try one more, and the bot names the answer as if it had found it.
+//                 Then PLAY: they are ready for the real game.
+//
+// A stage is a Puzzle (the real per-puzzle schema, parsePuzzle-valid, so it feeds the REAL
+// game components) plus, per hole, the one line of copy the coach says when the player is
+// stuck for long: a HINT about the word. The answer itself is read off the puzzle.
+//
+// Boards are REAL generated neighborhoods: #154 single-word artifacts pruned to the near
+// field by web/scripts/prune-word-map.mjs — the exact invocation is recorded in each
+// script's header, and scripts.test.ts fails if a board and its map ever drift.
 
-import type { Puzzle } from '@whippin/shared';
+import type { Puzzle, Word } from '@whippin/shared';
 import type { UiKey } from '../i18n';
 
-// The screen is split in two: EXPLANATIONS live in the top box (typewritten, with in-game
-// word styling — see CoachText's [[..]] markup in the copy), INTERACTIONS live at the bottom
-// (the mix button, then the keyboard, then PLAY). No modals, no NEXT, no SKIP — the flow
-// advances by playing.
+export type StageKind = 'reveal' | 'word' | 'sentence' | 'meter';
 
-// One stop of the mix demo: pressing the button (labelled `labelKey`) animates the word to
-// `rank` — a single shake+swap for the first stop, a fast roll through every ladder word for
-// the others — then `copyKey` (if any) becomes the explanation.
-interface MixStop {
-  rank: number;
-  labelKey: UiKey;
-  copyKey?: UiKey;
+export interface LessonStage {
+  kind: StageKind;
+  puzzle: Puzzle;
+  // The meter stage only: the BOT'S tries, already played when the stage opens — the play
+  // log the board, the meters and the tries wheel replay, before the player's own guesses.
+  // Chosen so one secret is found and the other's meter stands just under full.
+  played?: string[];
+  // The meter stage only: THE PAIR. The sentence begs for `alt` — the secret's closest word
+  // (rank 1), which reads in the sentence too — and before the letter is out the two SWAP
+  // ROLES on whichever the player types first: type the secret and it becomes the closest
+  // word (a 1, the chip fills) while `alt` becomes the secret the bot will land; type `alt`
+  // and nothing changes. Once the letter is out there is no swap. The goal is only that the
+  // first letter is seen before the sentence is solved (user-decided 2026-09-16).
+  pair?: { alt: Word; hint: UiKey }; // `hint`: the coach's hint once `alt` is the secret
+  // One hint per hole, in `puzzle.holes` order — what the coach says once a hole has resisted
+  // long enough (coach.ts `STUCK`), before it gives the answer.
+  hints: UiKey[];
 }
 
-export type TutorialStep =
-  // The mix demo: the board's single hole shows its SECRET in blue; each press walks it
-  // further out (stops, e.g. 1 -> 10 -> 100), teaching the neighbor ladder. The last stop
-  // must land on the start word (rank = start_rank) — the demo IS the explanation of where
-  // start words come from. The ladder is derived from the board's own rank map (one entry per
-  // group, rank <= start_rank). After the last stop the button gives way to the keyboard and
-  // the next step's prompt.
-  | { kind: 'mix'; copyKey: UiKey; stops: MixStop[] }
-  // A prescribed guess: input is gated to `expect` (only its letters + enter are active), the
-  // submit plays the REAL feedback choreography, then the flow rolls to the next prompt — the
-  // feedback speaks for itself, no explanations after.
-  | { kind: 'guess'; expect: string; copyKey: UiKey }
-  // Free typing (real vocabulary) until `target` is typed, then auto-advance — solving it
-  // needs no comment. Exploration is welcome — any word gets its real float (a rank from the
-  // board's map, or MISS) — but after 3 consecutive MISSes the prompt swaps to `nudgeKey` in
-  // case they forgot the word.
-  | { kind: 'find'; target: string; copyKey: UiKey; nudgeKey: UiKey }
-  // The ending: the found word stands, the keyboard drops away, and the tray offers PLAY,
-  // which ends the tutorial. No copy — a found word needs no comment — and no graduation
-  // screen, because there is no score to show.
-  | { kind: 'play' };
-
-export interface TutorialScript {
-  puzzle: Puzzle; // same schema as a real puzzle (parsePuzzle-valid)
-  steps: TutorialStep[];
+export interface LessonScript {
+  stages: LessonStage[]; // reveal, word, sentence, meter — in the order they are played
 }
 // (The per-language script lookup lives in ./scripts/index.ts.)

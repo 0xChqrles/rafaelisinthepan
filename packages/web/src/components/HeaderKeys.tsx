@@ -34,7 +34,8 @@ import CalendarIcon from '../assets/icons/calendar.svg?react';
 import BoardIcon from '../assets/icons/board.svg?react';
 import RulesIcon from '../assets/icons/rules.svg?react';
 import { t } from '../i18n';
-import { pathForArchive, pathForBoard, pathForGame } from '../langs';
+import { pathForArchive, pathForBoard, pathForGame, pathForLearn } from '../langs';
+import { undoneLevels } from '../tutorial/levels';
 import { navigate } from '../routing';
 
 export type HeaderPlace = 'home' | 'archive' | 'board' | 'rules' | 'account';
@@ -71,19 +72,21 @@ function hasMouse(): boolean {
 export default function HeaderKeys({
   lang,
   on,
-  // An archive PLAY is on screen — a day other than today's, which is the archive's, so
-  // `on` is 'archive' — rather than the calendar itself.
-  archivePlay = false,
-  // Run before ANY key leaves this surface — the tutorial closes itself here (a lesson
-  // left by the row is a lesson skipped, and the store must not reopen it on the game).
+  // The lit key still LEADS to its place: an archive PLAY is on screen (a day other than
+  // today's, which is the archive's, so `on` is 'archive') rather than the calendar itself;
+  // or a LESSON is on screen (the rules' place) rather than the tutorial's list of levels.
+  litLeads = false,
+  // Run before ANY key leaves this surface — a lesson left by the row is a lesson skipped,
+  // and App settles the onboarding question here.
   leave,
 }: {
   lang: string;
   on: HeaderPlace;
-  archivePlay?: boolean;
+  litLeads?: boolean;
   leave?: () => void;
 }) {
-  const openTutorial = useGameStore((s) => s.openTutorial);
+  // The BOOK's badge (#269): how many built tutorial levels this device has not done.
+  const undone = useGameStore((s) => undoneLevels(s.lessonsDone));
   const row = useRef<HTMLDivElement>(null);
   const dot = useRef<HTMLSpanElement>(null);
   const hoverDot = useRef<HTMLSpanElement>(null);
@@ -147,13 +150,14 @@ export default function HeaderKeys({
     leave?.();
     navigate(to);
   };
-  const key = (place: HeaderPlace, label: string, to: string, Icon: typeof HomeIcon) => {
+  const key = (place: HeaderPlace, label: string, to: string, Icon: typeof HomeIcon, badge = 0) => {
     const lit = on === place;
-    // Lit, a key goes nowhere: you are already there. The CALENDAR over an archive play is
-    // the one lit key that still leads somewhere (user-decided 2026-09-11): the day is the
-    // archive's, which is why the key is lit, but the calendar is not on screen, and
-    // getting back to it took another key and then this one.
-    const here = lit && !(place === 'archive' && archivePlay);
+    // Lit, a key goes nowhere: you are already there. The CALENDAR over an archive play
+    // (user-decided 2026-09-11) and the BOOK over a lesson (#269) are the lit keys that still
+    // lead somewhere: the day is the archive's — the lesson the rules' — which is why the key
+    // is lit, but the calendar (the list) is not on screen, and getting back to it took
+    // another key and then this one.
+    const here = lit && !litLeads;
     return (
       <button
         type="button"
@@ -165,6 +169,11 @@ export default function HeaderKeys({
         }}
       >
         <Icon className="ui-icon" aria-hidden />
+        {badge > 0 && (
+          <span className="hk-badge" aria-hidden="true">
+            {badge}
+          </span>
+        )}
       </button>
     );
   };
@@ -182,21 +191,15 @@ export default function HeaderKeys({
       {key('home', t(lang, 'ariaHome'), pathForGame(lang), HomeIcon)}
       {key('archive', t(lang, 'ariaArchive'), pathForArchive(lang), CalendarIcon)}
       {key('board', t(lang, 'ariaLeaderboard'), pathForBoard(lang), BoardIcon)}
-      {/* The RULES — the onboarding tutorial (#51), lit while it is open. It mounts on the
-          game route, so from anywhere else the tap goes home with it. */}
-      <button
-        type="button"
-        className={`home-btn${on === 'rules' ? ' on' : ''}`}
-        aria-label={t(lang, 'ariaHelp')}
-        aria-current={on === 'rules' ? 'page' : undefined}
-        onClick={() => {
-          if (on === 'rules') return;
-          openTutorial('replay');
-          if (on !== 'home') go(pathForGame(lang));
-        }}
-      >
-        <RulesIcon className="ui-icon" aria-hidden />
-      </button>
+      {/* The RULES — the tutorial's list of levels (#269), lit on it and on a lesson; the badge
+          counts the built levels this device has not done. */}
+      {key(
+        'rules',
+        undone > 0 ? `${t(lang, 'ariaHelp')} (${undone})` : t(lang, 'ariaHelp'),
+        pathForLearn(lang),
+        RulesIcon,
+        undone,
+      )}
       <AccountKey lang={lang} lit={on === 'account'} onLeave={leave} />
     </div>
   );
