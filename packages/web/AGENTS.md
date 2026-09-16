@@ -2820,7 +2820,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     thing at a time: one guess lands on every hole (the two floats say so), a tap opens the
     tries (wheel / grid, picking included), fewer tries is the score. Solving it drops the
     keyboard (`kb-drop`, `KB_EXIT_FALLBACK_MS`) and offers **PLAY** in its place, the
-    graduation: `markLessonDone(1)`, `setOnboarded`, `track finish`, the game.
+    graduation: `markLessonDone(1)`, `setOnboarded`, `track finish`, and BACK WHERE THE
+    INVITATION STOOD (`App`'s `lessonReturn`, the path TUTORIAL was pressed on — a dated
+    link's day — cleared by any non-lesson route; the plain game otherwise, a reload
+    included; user-fixed 2026-09-17).
   - **THE METER (#301 TAUGHT; user-decided 2026-09-16 — "after saying that real sentences
     are harder, the onboarding should continue and explain the first letter concept",
     SCRIPTED the same day)** — CONTINUE from the sentence's solved line (the line stands
