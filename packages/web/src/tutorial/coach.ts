@@ -129,9 +129,7 @@ export function coachCopy(
   const chip = (word: string, rank: number) => `[[w:${word}^${rank}]]`;
   switch (line.kind) {
     case 'intro':
-      return t(lang, 'tutIntro')
-        .replace('{start}', chip(line.hole.word, line.hole.rank))
-        .replace('{m}', ordinal(lang, line.hole.rank));
+      return t(lang, 'tutIntro').replace('{start}', chip(line.hole.word, line.hole.rank));
     case 'introSentence':
       return t(lang, 'tutSentenceIntro');
     case 'away':

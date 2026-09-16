@@ -12,9 +12,11 @@
 //     --out packages/web/src/tutorial/scripts/en.ocean.json --top 150
 //   (and the same for dog and moon)
 //
-// THE WORD: OCEAN, started at ATLANTIC (rank 3). THE FIRST TRY MUST BE VERY EASY
-// (user-decided 2026-09-16): the start word practically names the answer, and sea / waters
-// still move the hole for whoever goes there first.
+// THE WORD: OCEAN, its clue SEA — THE CLOSEST WORD, rank 1 (user-decided 2026-09-16, fourth
+// pass: "playing with a -1 synonym at first would be easier"). The clue being a synonym, the
+// coach can say it in plain words — "sea is the word closest to the secret word" — with no
+// ordinal to grasp, and the first win is one guess away. A wrong guess earns a bigger number
+// beside the 1, which is where "farther = bigger" is learned, by the player's own word.
 // THE SENTENCE: "a dog barks at the moon." — DOG started at COYOTE (55) and MOON at STARS
 // (62), both inside generation's own 50–150 start band, both intuitive neighbors.
 //
@@ -46,7 +48,7 @@ const script: LessonScript = {
       // scored, so its version is a constant rather than a publish stamp (#203).
       revision: 'lesson',
       words: [ocean.word.word],
-      holes: [hole(ocean, 0, 'atlantic')],
+      holes: [hole(ocean, 0, 'sea')],
       ranks: { [ocean.word.slug]: ocean.ranks },
     },
     hints: ['tutHintOcean'],

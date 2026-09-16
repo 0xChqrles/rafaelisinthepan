@@ -12,10 +12,12 @@
 //     --out packages/web/src/tutorial/scripts/fr.ocean.json --top 150
 //   (and the same for chien and lune)
 //
-// LE MOT : OCÉAN, départ ATLANTIQUE (rang 7). LE PREMIER ESSAI DOIT ÊTRE TRÈS FACILE
-// (décision utilisateur 2026-09-16, après TROPIQUES « way too hard », puis ÎLE et PLAGE
-// encore trop durs) : le mot de départ nomme presque la réponse, et « mer » fait encore
-// avancer le trou pour qui passe par là.
+// LE MOT : OCÉAN, indice MER — LE MOT LE PLUS PROCHE, rang 1 (décision utilisateur
+// 2026-09-16, quatrième passe, après TROPIQUES, ÎLE, PLAGE puis ATLANTIQUE : « playing with a
+// -1 synonym at first would be easier »). L'indice étant un synonyme, le coach le dit en
+// mots simples — « mer est le mot le plus proche du mot secret » — sans ordinal à saisir, et
+// la première victoire est à un essai. Un mauvais essai gagne un nombre plus grand à côté du
+// 1 : c'est là que « plus loin = plus grand » s'apprend, par le mot du joueur.
 // LA PHRASE : « un chien aboie à la lune. » — CHIEN part de LOUP (52), LUNE de PÉNOMBRE
 // (63), dans la bande de départ 50–150 de la génération.
 import type { WordPuzzle } from '@whippin/shared';
@@ -41,7 +43,7 @@ const script: LessonScript = {
       lang: 'fr',
       revision: 'lesson',
       words: [ocean.word.word],
-      holes: [hole(ocean, 0, 'atlantique')],
+      holes: [hole(ocean, 0, 'mer')],
       ranks: { [ocean.word.slug]: ocean.ranks },
     },
     hints: ['tutHintOcean'],

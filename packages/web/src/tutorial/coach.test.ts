@@ -146,7 +146,7 @@ describe('coachCopy', () => {
   it('prints the board’s words in their in-game dress', () => {
     const hole: RuntimeHole = { pos: 0, secret: 'ocean', word: 'islands', rank: 10, startRank: 10 };
     expect(coachCopy('en', { kind: 'intro', hole }, stage, true)).toBe(
-      'Guess the secret word. [[w:islands^10]] is the 10th closest in meaning.',
+      'Guess the secret word. [[w:islands^10]] is the word closest to it in meaning.',
     );
     expect(coachCopy('en', { kind: 'away', guess: entry('boat', 45), hole }, stage, true)).toBe(
       '[[w:boat^45]] is the 45th closest word to the secret. [[w:islands^10]] is the 10th.',

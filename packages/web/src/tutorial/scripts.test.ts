@@ -3,9 +3,9 @@
 // neighborhoods (scripts/<lang>.<word>.json, pruned #154 artifacts) — and both are meant to
 // be edited, so these tests guard what an edit must not break:
 //
-//   - THE WORD is ONE hole on a VERY EASY board (user-decided 2026-09-16: "the first try
-//     should be very easy"): its start word within the top 10, practically naming the
-//     answer, and the near field under it real (a word at every rank down to 1);
+//   - THE WORD is ONE hole whose clue is THE CLOSEST WORD, rank 1 (user-decided 2026-09-16:
+//     a synonym first — the coach can then say "the closest word" in plain words, and the
+//     first win is one guess away);
 //   - THE SENTENCE is TWO holes with start words in generation's own 50–150 band — the
 //     game's difficulty, one new thing at a time — each secret sitting in `words[]` at its
 //     `pos` with its affixes, and every hole carrying its own hint copy;
@@ -20,7 +20,6 @@ import { scriptFor } from './scripts';
 import type { LessonStage } from './script';
 import { t } from '../i18n';
 
-const EASY_START_MAX = 10;
 
 function checkBoard(stage: LessonStage) {
   const { puzzle } = stage;
@@ -62,13 +61,12 @@ for (const lang of ['en', 'fr'] as const) {
 
     describe('the word: one hole, an easy board', () => {
       checkBoard(script.word);
-      it('is one word, started a few ranks out', () => {
+      it('is one word, its clue the closest word (rank 1)', () => {
         expect(script.word.puzzle.words).toHaveLength(1);
         expect(script.word.puzzle.holes).toHaveLength(1);
         const [hole] = script.word.puzzle.holes;
         expect(hole.pos).toBe(0);
-        expect(hole.start_rank).toBeGreaterThan(1);
-        expect(hole.start_rank).toBeLessThanOrEqual(EASY_START_MAX);
+        expect(hole.start_rank).toBe(1);
       });
     });
 

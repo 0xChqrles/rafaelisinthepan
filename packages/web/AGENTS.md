@@ -2774,11 +2774,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   list's; the done mark is a small accent SQUARE where the chevron of a level still to do sits.
   **LEVEL 1 (`tutorial/LevelOne.tsx` over `LessonBoard.tsx`, one screen, TWO STAGES,
   `scripts/<lang>.ts`):**
-  - **THE WORD** — one hole whose start word PRACTICALLY NAMES THE ANSWER (en OCEAN from
-    `atlantic^3`, fr OCÉAN from `atlantique^7`; `scripts.test.ts` caps the start at rank 10).
-    **THE FIRST TRY MUST BE VERY EASY** (user-decided 2026-09-16, after TROPIQUES, then
-    `île^12`, then `plage^28` each read as too hard): the first win is immediate, and sea /
-    mer still move the hole for whoever goes there first. The real keyboard and the real
+  - **THE WORD** — one hole whose clue is THE CLOSEST WORD, rank 1 (en OCEAN from `sea^1`,
+    fr OCÉAN from `mer^1`; `scripts.test.ts` pins the start at rank 1). **A SYNONYM FIRST**
+    (user-decided 2026-09-16, after TROPIQUES, `île^12`, `plage^28` and `atlantique^7` each
+    read as too hard or too abstract): the coach can say the clue in plain words — "sea is
+    the word closest to it in meaning" — with no ordinal to grasp, and the first win is one
+    guess away; a wrong guess earns a bigger number beside the 1, which is where "farther =
+    bigger" is learned, by the player's own word. The real keyboard and the real
     vocabulary from the first frame, one line of copy at most (`tutIntro`, the goal). NO
     CAPITAL on the lone word (`Phrase`'s `capital={false}`: a word is not a sentence), and
     the PROMPT sits just above the keyboard on the LEFT (`.tutorial--word .input-area`,
@@ -2796,10 +2798,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   is written for someone who knows NOTHING yet (user-decided 2026-09-16, three passes): the
   opening says what the game IS — guess a SECRET word — and explains the number on the clue
   itself; closeness is counted in ORDINALS (`ordinal`, en/fr), never an abstract distance.**
-  Before the first guess (`tutIntro`): "Guess the secret word. atlantic³ is the 3rd closest
-  in meaning."; on the sentence (`tutSentenceIntro`): "Now two secret words, in a sentence.
+  Before the first guess (`tutIntro`): "Guess the secret word. sea¹ is the word closest to
+  it in meaning."; on the sentence (`tutSentenceIntro`): "Now two secret words, in a sentence.
   Each guess is tested on both." Word stage: the FIRST ranked guess that moves nothing →
-  `tutAway` ("boat⁴⁵ is the 45th closest word to the secret. atlantic³ is the 3rd."), once;
+  `tutAway` ("boat⁴⁵ is the 45th closest word to the secret. sea¹ is the 1st."), once;
   the FIRST MISS → `tutMiss` ("too far from the secret to even get a number"), once; a
   moving guess → SILENCE. Both stages: a
   hole resisting `STUCK[stage]` guesses climbs near → the board's HINT (`hints[]`, per hole,

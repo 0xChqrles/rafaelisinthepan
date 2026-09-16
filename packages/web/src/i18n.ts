@@ -415,14 +415,14 @@ const STRINGS = {
   // [[b:secret]] solve cobalt, [[w:hint^rank]] the held word's chip + rank exponent,
   // [[m:miss]] MISS's red. The {braces} are filled by coach.ts from the board itself, so a
   // line can never name a word the map does not rank.
-  // The lines are written for someone who knows NOTHING yet (user-decided 2026-09-16, third
-  // pass): the opening says what the game IS — guess a SECRET word — and explains the number
-  // on the clue itself ("atlantic³ is the 3rd closest in meaning"); every later line speaks
-  // in the same ordinals, so "closer" is never an abstraction. {ordinals} are filled by
-  // coach.ts (`ordinal`).
+  // The lines are written for someone who knows NOTHING yet (user-decided 2026-09-16, four
+  // passes): the opening says what the game IS — guess a SECRET word — and the clue is a
+  // SYNONYM, the closest word, so the line needs no concept at all. Ordinals ("the 29th
+  // closest") appear only once the player has a number of their own to read them on;
+  // coach.ts fills the {braces} (`ordinal`).
   tutIntro: {
-    en: 'Guess the secret word. {start} is the {m} closest in meaning.',
-    fr: 'Devine le mot secret. {start} est le {m} plus proche par le sens.',
+    en: 'Guess the secret word. {start} is the word closest to it in meaning.',
+    fr: 'Devine le mot secret. {start} est le mot le plus proche du mot secret.',
   },
   tutSentenceIntro: {
     en: 'Now two secret words, in a sentence. Each guess is tested on both.',
