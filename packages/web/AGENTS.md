@@ -2803,7 +2803,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     rolls into the sentence.
   - **THE SENTENCE** — two holes, start words in the game's own 50–150 band (en "a dog barks
     at the moon." from `coyote^55` / `stars^62`; fr « un chien aboie à la lune. » from
-    `loup^52` / `pénombre^63`), the try count printed behind it as the day does. One new
+    `loup^52` / `pénombre^63`), the try count printed behind it as the day does, CENTRED on
+    the game's full column so a wide screen shows it on one line (the word stages keep the
+    680px cap). One new
     thing at a time: one guess lands on every hole (the two floats say so), a tap opens the
     tries (wheel / grid, picking included), fewer tries is the score. Solving it drops the
     keyboard (`kb-drop`, `KB_EXIT_FALLBACK_MS`) and offers **PLAY** in its place, the
@@ -2819,17 +2821,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
   opening says what the game IS — guess a SECRET word — and explains the number on the clue
   itself; closeness is counted in ORDINALS (`ordinal`, en/fr), never an abstract distance.**
   The reveal's two lines (`tutReveal`, `tutHidden`) above; before the first guess of the
-  word (`tutIntro`) and of the sentence (`tutSentenceIntro`: "Now two secret words, hidden
-  in a sentence. Each guess is tested on both."). Single-word stages: the FIRST ranked guess
+  word (`tutIntro`) and of the sentence (`tutSentenceIntro`: "Now a sentence, with two secret
+  words. Find them." — no mechanics explained, the floats show them; user-decided
+  2026-09-16). Single-word stages: the FIRST ranked guess
   that moves nothing → `tutAway` ("water²⁹ is the 29th closest word to the secret. sea¹ is
   the 1st."), once;
   the FIRST MISS → `tutMiss` ("too far from the secret to even get a number"), once; a
   moving guess → SILENCE. Both stages: a
   hole resisting `STUCK[stage]` guesses climbs near → the board's HINT (`hints[]`, per hole,
   `tutHint*`) → the ANSWER (`[3,6,9]` on the word, `[4,8,12]` on the sentence, the hole
-  resisting longest chosen); the sentence teaches the TAP after `TAP_AFTER` = 3 counted
-  guesses until it is done (`tutTap`/`tutClick`, the coarse-pointer verb), below a hint or an
-  answer and above near. The `{braces}` are filled from the board itself, so a line can never
+  resisting longest chosen); the sentence teaches the TAP from the FIRST guess that lands a
+  number — there is a try to look at (user-decided 2026-09-16) — until it is done
+  (`tutTap`/`tutClick`, the coarse-pointer verb), below a hint or an answer and above near;
+  SOLVED, the bot counts the tries (`tutSolved`, "You found both in 7 tries." — the score,
+  said once; a found single word still says nothing). The `{braces}` are filled from the board itself, so a line can never
   name a word the map does not rank. The three-line coach box and its copy budget stand.
   **The invitation is unchanged** (`tutorial/Invite.tsx`, no header): a first visit (no
   `onboarded`) lands on it; TUTORIAL navigates to level 1 (the lesson's PLAY or a header exit

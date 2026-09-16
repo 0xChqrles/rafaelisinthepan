@@ -3897,28 +3897,38 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    so the sentence reads centered on desktop instead of hugging the left edge. The
    HUD (progress bar) shrinks with it. */
 .tutorial {
-  max-width: 680px;
   /* Clear the band + the bot + the coach box, so the centered word never rides under them.
      Tracks the coach's height: 78px top + the 56px the bot adds + 3 lines + its padding + a
      breath. */
   padding-top: 286px;
 }
+/* THE LESSON'S BOARD IS CENTRED (user-decided 2026-09-16): the word, and the sentence too,
+   sit on the column's centre line — and the sentence takes the game's full 1200px column, so
+   on a wide screen it stands on ONE line (the 680px cap it wore made it wrap "for no
+   reason"). The prompt keeps the left edge, as everywhere. */
+.tutorial .play {
+  align-items: center;
+}
+.tutorial .phrase {
+  text-align: center;
+}
+.tutorial .input-area {
+  align-self: stretch;
+  align-items: start;
+}
 
-/* The word stage is CLEAN: explanation on top, ONE big centered word in the middle, the
+/* The word stages are CLEAN: explanation on top, ONE big centered word in the middle, the
    interaction at the bottom, nothing else. The word is the star. The PROMPT sits just above
    the keyboard, on the LEFT — where the game's own prompt lives relative to the keys, and
    off the word (user feedback 2026-09-16: centered under the word it read as part of it).
    `margin-top: auto` parks it on the play area's bottom edge; the word keeps the centre. */
-.tutorial--word .play {
-  align-items: center;
+.tutorial--word {
+  max-width: 680px;
 }
 .tutorial--word .phrase {
   font-size: clamp(28px, 7vw, 48px);
-  text-align: center;
 }
 .tutorial--word .input-area {
-  align-self: stretch;
-  align-items: start;
   margin-top: auto;
 }
 

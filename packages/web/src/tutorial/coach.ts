@@ -27,6 +27,7 @@ export interface CoachState {
   events: GuessEvent[]; // counted guesses, in order
   tapped: boolean; // the player has opened a word's tries at least once
   revealed: boolean; // the reveal stage's secret is still on screen (nothing to guess yet)
+  finished: boolean; // every hole reads 0 — the stage is over
 }
 
 export type CoachLine =
@@ -48,8 +49,11 @@ export type CoachLine =
   | { kind: 'hint'; holeIndex: number }
   // …STUCK[2] guesses: the answer.
   | { kind: 'answer'; holeIndex: number }
-  // The sentence's one mechanic worth a line, said once the player has tries to look at.
-  | { kind: 'tap' };
+  // The sentence's one mechanic worth a line, said from the first guess that lands a number
+  // (there is a try to look at), until it is done.
+  | { kind: 'tap' }
+  // The sentence solved: the tries it took — the score, said once.
+  | { kind: 'solved'; tries: number };
 
 // Guesses a hole may resist before each rung of the ladder. The sentence gets more room:
 // two holes are in play, and a guess that moves one is progress the other cannot show.
@@ -58,9 +62,6 @@ export const STUCK: Record<Stage, readonly [number, number, number]> = {
   word: [3, 6, 9],
   sentence: [4, 8, 12],
 };
-// Counted guesses on the sentence before the tap is taught — never before there are tries
-// worth seeing.
-export const TAP_AFTER = 3;
 
 // For each hole still open, how many guesses it has resisted since it last moved (or since
 // the start).
@@ -77,8 +78,10 @@ function stuckPerHole({ holes, events }: CoachState): (number | null)[] {
 }
 
 export function coachLine(state: CoachState): CoachLine | null {
-  const { stage, holes, events, tapped, revealed } = state;
+  const { stage, holes, events, tapped, revealed, finished } = state;
   if (stage === 'reveal' && revealed) return { kind: 'reveal', holeIndex: 0 };
+  // The end: the sentence's tries are its score, said once; a found word needs no comment.
+  if (finished) return stage === 'sentence' ? { kind: 'solved', tries: events.length } : null;
   const [near, hint, answer] = STUCK[stage];
 
   // The ladder first: the hole that has resisted longest sets the rung.
@@ -92,8 +95,10 @@ export function coachLine(state: CoachState): CoachLine | null {
   if (worst >= answer) return { kind: 'answer', holeIndex: target };
   if (worst >= hint) return { kind: 'hint', holeIndex: target };
 
-  // The sentence teaches the tap once there is something to see, and stops once it is seen.
-  if (stage === 'sentence' && !tapped && events.length >= TAP_AFTER) return { kind: 'tap' };
+  // The sentence teaches the tap from the first guess that landed a number — there is a try
+  // to look at — and stops once it is seen.
+  const landed = events.some((e) => e.entries.some((entry) => entry !== undefined));
+  if (stage === 'sentence' && !tapped && landed) return { kind: 'tap' };
 
   if (worst >= near) return { kind: 'near', hole: holes[target] };
 
@@ -169,5 +174,7 @@ export function coachCopy(
       );
     case 'tap':
       return t(lang, coarsePointer ? 'tutTap' : 'tutClick');
+    case 'solved':
+      return t(lang, 'tutSolved').replace('{n}', String(line.tries));
   }
 }

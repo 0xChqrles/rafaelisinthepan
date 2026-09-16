@@ -341,7 +341,7 @@ export default function LessonBoard({
 
   // --- the coach: the one line the board's state calls for, or nothing ---
   const line = useMemo(
-    () => (phase === 'play' ? coachLine({ stage, holes, events, tapped, revealed }) : null),
+    () => coachLine({ stage, holes, events, tapped, revealed, finished: phase !== 'play' }),
     [phase, stage, holes, events, tapped, revealed],
   );
   const coach = line ? coachCopy(lang, line, script, coarse) : null;

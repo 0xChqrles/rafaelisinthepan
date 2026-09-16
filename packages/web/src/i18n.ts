@@ -432,8 +432,14 @@ const STRINGS = {
     fr: 'Un autre mot secret. À sa place, le {m} mot le plus proche : {start}. Trouve-le.',
   },
   tutSentenceIntro: {
-    en: 'Now two secret words, hidden in a sentence. Each guess is tested on both.',
-    fr: 'Deux mots secrets dans une phrase. Chaque essai compte pour les deux.',
+    en: 'Now a sentence, with two secret words. Find them.',
+    fr: 'Maintenant une phrase, avec deux mots secrets. Trouve-les.',
+  },
+  // The sentence solved: the bot counts the tries — the score, said once (user-decided
+  // 2026-09-16).
+  tutSolved: {
+    en: 'You found both in {n} tries.',
+    fr: 'Tu as trouvé les deux en {n} essais.',
   },
   tutAway: {
     en: '{guess} is the {n} closest word to the secret. {start} is the {m}.',
@@ -451,12 +457,12 @@ const STRINGS = {
   // The sentence's one mechanic worth a line, in the input device's own verb (the
   // tapAnywhere/clickAnywhere pattern).
   tutTap: {
-    en: 'Tap a highlighted word to see all your guesses for it.',
-    fr: 'Touche un mot surligné pour revoir tous tes essais dessus.',
+    en: 'Tap a highlighted word to see your previous tries on it.',
+    fr: 'Touche un mot surligné pour revoir tes essais précédents.',
   },
   tutClick: {
-    en: 'Click a highlighted word to see all your guesses for it.',
-    fr: 'Clique sur un mot surligné pour revoir tous tes essais dessus.',
+    en: 'Click a highlighted word to see your previous tries on it.',
+    fr: 'Clique sur un mot surligné pour revoir tes essais précédents.',
   },
   // Each board's own hint about its word — what the coach says once a hole has resisted long
   // enough, before it gives the answer (scripts/<lang>.ts names them per hole).

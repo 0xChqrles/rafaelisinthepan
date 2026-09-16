@@ -7,13 +7,14 @@
 //   - a MISS: too far to count — ONCE, the first time;
 //   - a guess that moves the hole: SILENCE;
 //   - a hole resisting STUCK[0] / [1] / [2] guesses: near → the board's hint → the answer;
-//   - the sentence: the tap is taught after TAP_AFTER counted guesses, until it is done, and
-//     never while a hint or the answer is due; the away / miss lines belong to the word stage.
+//   - the sentence: the tap is taught from the first guess that lands a number, until it is
+//     done, and never while a hint or the answer is due; the away / miss lines belong to the
+//     single-word stages; solved, the bot counts the tries.
 //   Every line is written for someone who has never heard of the game: it names the HIDDEN
 //   WORD the numbers are about (coachCopy below).
 import { describe, it, expect } from 'vitest';
 import type { RankEntry, RuntimeHole } from '@whippin/shared';
-import { coachLine, coachCopy, ordinal, STUCK, TAP_AFTER, type CoachState, type GuessEvent, type Stage } from './coach';
+import { coachLine, coachCopy, ordinal, STUCK, type CoachState, type GuessEvent, type Stage } from './coach';
 import type { LessonStage } from './script';
 
 const entry = (word: string, rank: number): RankEntry => ({ word, rank, dq: rank === 0 ? undefined : 100 } as RankEntry);
@@ -29,7 +30,14 @@ function board(stage: Stage, starts: number[]) {
     startRank: rank,
   }));
   const events: GuessEvent[] = [];
-  const state = (tapped = false, revealed = false): CoachState => ({ stage, holes, events, tapped, revealed });
+  const state = (tapped = false, revealed = false, finished = false): CoachState => ({
+    stage,
+    holes,
+    events,
+    tapped,
+    revealed,
+    finished,
+  });
   // `ranks[i]` is the guess's rank on hole i, or null for a MISS there.
   const guess = (typed: string, ranks: (number | null)[]) => {
     const entries = holes.map((h, i) => (h.rank === 0 || ranks[i] === null ? undefined : entry(typed, ranks[i] as number)));
@@ -103,17 +111,27 @@ describe('the word stage', () => {
 });
 
 describe('the sentence stage', () => {
-  it('opens on its own line, says nothing on away or miss, and teaches the tap after TAP_AFTER guesses until it is done', () => {
+  it('opens on its own line, stays silent on a miss, and teaches the tap from the first guess that lands a number, until it is done', () => {
     const b = board('sentence', [55, 62]);
     expect(coachLine(b.state())).toEqual({ kind: 'introSentence' });
+    b.guess('x', [null, null]);
+    expect(coachLine(b.state())).toBeNull();
     b.guess('a', [90, null]);
-    expect(coachLine(b.state())).toBeNull();
+    expect(coachLine(b.state())).toEqual({ kind: 'tap' });
     b.guess('b', [12, 30]);
-    expect(coachLine(b.state())).toBeNull();
-    b.guess('c', [5, 20]);
-    expect(b.state().events).toHaveLength(TAP_AFTER);
     expect(coachLine(b.state())).toEqual({ kind: 'tap' });
     expect(coachLine(b.state(true))).toBeNull();
+  });
+
+  it('counts the tries once the sentence is solved; a found word says nothing', () => {
+    const b = board('sentence', [55, 62]);
+    b.guess('a', [90, null]);
+    b.guess('dog', [0, 200]);
+    b.guess('moon', [null, 0]);
+    expect(coachLine(b.state(true, false, true))).toEqual({ kind: 'solved', tries: 3 });
+    const w = board('word', [13]);
+    w.guess('mountain', [0]);
+    expect(coachLine(w.state(false, false, true))).toBeNull();
   });
 
   it('nudges toward the hole that has resisted longest, and the hint outranks the tap', () => {
@@ -121,7 +139,7 @@ describe('the sentence stage', () => {
     const b = board('sentence', [55, 62]);
     // Every guess moves hole 0 and does nothing for hole 1.
     for (let i = 0; i < near; i += 1) b.guess(`w${i}`, [50 - i, 200]);
-    // The tap is due too (TAP_AFTER ≤ near) and wins over near…
+    // The tap is due too (a number landed) and wins over near…
     expect(coachLine(b.state())).toEqual({ kind: 'tap' });
     expect(coachLine(b.state(true))).toEqual({ kind: 'near', hole: expect.objectContaining({ rank: 62 }) });
     for (let i = near; i < hint; i += 1) b.guess(`w${i}`, [50 - i, null]);
@@ -181,6 +199,7 @@ describe('coachCopy', () => {
     );
     expect(coachCopy('en', { kind: 'answer', holeIndex: 0 }, stage, true)).toBe('The secret word is [[b:ocean]]. Type it.');
     expect(coachCopy('en', { kind: 'tap' }, stage, true)).toMatch(/^Tap/);
+    expect(coachCopy('en', { kind: 'solved', tries: 7 }, stage, true)).toBe('You found both in 7 tries.');
     expect(coachCopy('en', { kind: 'tap' }, stage, false)).toMatch(/^Click/);
   });
 });
