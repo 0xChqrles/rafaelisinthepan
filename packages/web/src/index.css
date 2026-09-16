@@ -3912,8 +3912,13 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .tutorial .phrase {
   text-align: center;
 }
+/* THE PROMPT KEEPS ONE X ACROSS THE STAGES (user-reported 2026-09-16: "on sentence mode it's
+   much more on the left"): the word stages sit in a 680px column and the sentence in the
+   game's 1200px one, so a prompt stretched to its column started at two different edges.
+   It is its own 680px box, centred in whichever column — the same left edge everywhere. */
 .tutorial .input-area {
-  align-self: stretch;
+  align-self: center;
+  width: min(680px, 100%);
   align-items: start;
 }
 

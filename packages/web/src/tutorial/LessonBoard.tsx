@@ -120,6 +120,9 @@ export default function LessonBoard({
   // front of the player — its closest word takes its place, wearing a 1 — so the two things
   // the first line names, the secret and the word standing in for it, were both just seen.
   const [revealed, setRevealed] = useState(stage === 'reveal');
+  // The player has opened a word's tries at least once (the coach reads it; the meter stage
+  // waits on it).
+  const [tapped, setTapped] = useState(false);
   // The board's local state — the ephemeral twin of Round's.
   const [holes, setHoles] = useState<RuntimeHole[]>(() =>
     stage === 'reveal' ? revealedHoles(script) : replayHoles(fresh, ranks, seed),
@@ -168,7 +171,11 @@ export default function LessonBoard({
     setAnnounce(text + (announceFlip.current ? '' : '​'));
   }, []);
 
-  const playing = phase === 'play' && !revealed;
+  // The meter stage opens WITHOUT the keyboard (user-decided 2026-09-16): the bot's tries are
+  // the first thing to see, so the tap on the word comes first, and the keys arrive with the
+  // line that hands the turn over.
+  const waitingTap = stage === 'meter' && !tapped;
+  const playing = phase === 'play' && !revealed && !waitingTap;
   const prefixSet = vocab?.prefixSet ?? null;
   // The reveal WAITS FOR THE PLAYER (user-decided 2026-09-16: "the dialog box should never
   // skip a dialog without the user interacting with the screen", and "it should always be
@@ -371,7 +378,6 @@ export default function LessonBoard({
 
   // --- the tries: a tap on a word (the wheel while open, the grid once found) ---
   const [historyHole, setHistoryHole] = useState<number | null>(null);
-  const [tapped, setTapped] = useState(false);
   const [picked, setPicked] = useState<Record<number, { word: string; rank: number; at: number }>>({});
   const exploreLabels = useMemo(() => holes.map((_, i) => ariaHoleHistory(lang, i + 1)), [holes, lang]);
   const openHistory = useCallback((index: number) => {
@@ -379,7 +385,7 @@ export default function LessonBoard({
     setTapped(true);
   }, []);
   const closeHistory = useCallback(() => setHistoryHole(null), []);
-  const wheelOpen = historyHole !== null && holes[historyHole]?.rank !== 0 && playing;
+  const wheelOpen = historyHole !== null && holes[historyHole]?.rank !== 0 && phase === 'play' && !revealed;
   const shownHoles = useMemo(
     () =>
       holes.map((h, i) => {
@@ -474,7 +480,9 @@ export default function LessonBoard({
             hits={hits}
             onHitDone={removeHit}
             exploreLabels={exploreLabels}
-            exploreDisabled={!playing}
+            // The tap works whenever the board is live — including while the meter stage
+            // waits for exactly that tap.
+            exploreDisabled={phase !== 'play' || revealed}
             onExplore={openHistory}
             quiet={quiet}
             veiledHole={wheelOpen ? historyHole : null}
@@ -485,10 +493,11 @@ export default function LessonBoard({
         </div>
         {/* Once there is nothing left to type the prompt retires in place — still laid out,
             so the board does not move, but invisible and inert. */}
-        {/* …and the reveal has nothing to type yet: the button below is the one action. */}
+        {/* …and the reveal has nothing to type yet (the button below is the one action), nor
+            has the meter stage before the tap. */}
         <div
-          className={`input-area${ending || revealed ? ' retired' : ''}`}
-          aria-hidden={ending || revealed || undefined}
+          className={`input-area${ending || revealed || waitingTap ? ' retired' : ''}`}
+          aria-hidden={ending || revealed || waitingTap || undefined}
         >
           <WordInput
             value={input}
@@ -526,7 +535,7 @@ export default function LessonBoard({
           <button type="button" className="mix-btn" onClick={hide}>
             {t(lang, 'tutHide')}
           </button>
-        ) : (
+        ) : waitingTap ? null : (
           <div
             className={`kb-exit${ending ? ' leaving' : ''}`}
             onAnimationEnd={(e) => {

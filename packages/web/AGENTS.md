@@ -2800,7 +2800,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     13th closest word: snow¹³. Find it."). The real keyboard and the real vocabulary from
     the first frame. NO CAPITAL on a lone word (`Phrase`'s `capital={false}`: a word is not
     a sentence), and the PROMPT sits just above the keyboard on the LEFT (`.tutorial--word
-    .input-area`, `margin-top: auto`), off the word. Finding it ends the stage wordless and
+    .input-area`, `margin-top: auto`), off the word — and at ONE X on every stage: its own
+    680px box centred in the column (`.tutorial .input-area`), where stretching it to a 680px
+    word column and a 1200px sentence column put it at two edges (user-reported 2026-09-16). Finding it ends the stage wordless and
     rolls into the sentence.
   - **THE SENTENCE** — two holes, start words in the game's own 50–150 band (en "a dog barks
     at the moon." from `coyote^55` / `stars^62`; fr « un chien aboie à la lune. » from
@@ -2829,6 +2831,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     to read on its chip (`happiness^48` / `randonneur^29` — `col` "was too short to understand
     the notion of progression", 2026-09-16;
     the test wants ≥ 15, 65–80, the obvious word at rank 1, untried, and filling it alone).
+    THE KEYBOARD IS HELD BACK UNTIL THE TAP (user-decided 2026-09-16): the stage opens with
+    the prompt retired and the tray empty, so the bot's tries are the first thing to look
+    at; the keys arrive with the line that hands the turn over.
     that a rank-200 guess still fills it). The beats, each on the player's act: "I already
     played a bit. Tap happiness⁴⁸ to see my tries." → tapped: "My close tries filled the word
     up. Full, it reveals the first letter. Try one!" → a guess that does not fill: `tutNear`
