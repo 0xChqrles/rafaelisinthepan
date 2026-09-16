@@ -21,7 +21,9 @@
 // aboie à la lune. » — CHIEN derrière LOUP (52), LUNE derrière PÉNOMBRE (63), dans la bande
 // de départ 50–150 de la génération. LA JAUGE : « le chat suit le sentier. » — CHAT déjà trouvé
 // par le bot ; le secret est SENTIER et l'essai ÉVIDENT, CHEMIN, est son mot le plus proche
-// (rang 1) : le taper vaut un 1, jamais la solution. Les essais du bot (randonneur, village,
+// (rang 1) : le taper vaut un 1, jamais la solution — et taper SENTIER en premier échange les
+// deux (sentier lit 1, chemin devient le secret), pour que la lettre soit toujours vue avant
+// la solution. Les essais du bot (randonneur, village,
 // rocher, circuit, refuge, versant, pont — masculins, pour que « le » tienne) laissent la
 // jauge à ~74 avec RANDONNEUR (29) pour meilleur mot — un mot LONG, pour que le remplissage
 // se lise sur la puce (« col » était trop court, retour utilisateur 2026-09-16) : CHEMIN la
@@ -82,7 +84,7 @@ const script: LessonScript = {
       },
       // La partie du bot jusqu'ici : le chat trouvé, puis le sentier tourné autour sans tomber.
       played: ['chat', 'randonneur', 'village', 'rocher', 'circuit', 'refuge', 'versant', 'pont'],
-      obvious: 'chemin',
+      pair: { alt: { word: 'chemin', slug: 'chemin' } },
       hints: ['tutHintChat', 'tutHintSentier'],
     },
   ],

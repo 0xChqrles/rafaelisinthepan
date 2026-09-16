@@ -21,7 +21,8 @@
 // — DOG behind COYOTE (55) and MOON behind STARS (62), the game's own 50–150 band.
 // THE METER: "the cat dreams of liberty." — CAT already found by the bot; the secret is
 // LIBERTY and the OBVIOUS guess, FREEDOM, is its closest word (rank 1): typing it earns a 1,
-// never the solve. The bot's tries (justice, truth, unity, happiness, honor, religion) leave
+// never the solve — and typing LIBERTY first swaps the two (liberty reads 1, freedom becomes
+// the secret), so the letter is always seen before the solve. The bot's tries (justice, truth, unity, happiness, honor, religion) leave
 // the meter at ~74 with HAPPINESS (48) as the best word, so FREEDOM fills it — visibly, a
 // quarter of the chip — and the L lands; the bot then lands liberty itself.
 //
@@ -86,7 +87,7 @@ const script: LessonScript = {
       },
       // The bot's game so far: it found the cat, then circled liberty without landing.
       played: ['cat', 'justice', 'truth', 'unity', 'happiness', 'honor', 'religion'],
-      obvious: 'freedom',
+      pair: { alt: { word: 'freedom', slug: 'freedom' } },
       hints: ['tutHintCat', 'tutHintLiberty'],
     },
   ],

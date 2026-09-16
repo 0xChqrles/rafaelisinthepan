@@ -89,6 +89,14 @@ describe('the word stage', () => {
     expect(coachLine(b.state())).toBeNull();
   });
 
+  it('says nothing when the player types the very word the hole shows', () => {
+    const b = board('word', [10]);
+    b.guess('islands', [10]); // the clue itself: ranks where it stands
+    expect(coachLine(b.state())).toBeNull();
+    b.guess('boat', [45]);
+    expect(coachLine(b.state())).toEqual({ kind: 'away', guess: expect.objectContaining({ rank: 45 }), hole: expect.objectContaining({ rank: 10 }) });
+  });
+
   it('names the first MISS, once', () => {
     const b = board('word', [10]);
     b.guess('violin', [null]);
@@ -200,7 +208,7 @@ describe('coachCopy', () => {
     const hole: RuntimeHole = { pos: 0, secret: 'ocean', word: 'islands', rank: 10, startRank: 10 };
     expect(coachCopy('en', { kind: 'reveal', holeIndex: 0 }, stage, true)).toBe('Here is a secret word: [[b:ocean]].');
     expect(coachCopy('en', { kind: 'hidden', hole: { ...hole, word: 'sea', rank: 1 } }, stage, true)).toBe(
-      'It is hidden now. In its place, its closest word: [[w:sea^1]]. Type the secret word.',
+      'I mixed the word up: [[w:sea^1]] took its place, its closest word. Find the secret word.',
     );
     expect(coachCopy('en', { kind: 'intro', hole }, stage, true)).toBe(
       'Another secret word. In its place, the 10th closest word: [[w:islands^10]]. Find it.',
@@ -223,7 +231,7 @@ describe('coachCopy', () => {
       'You found both in 7 tries. This one was easy: the daily sentences are harder.',
     );
     expect(coachCopy('en', { kind: 'letter', holeIndex: 0 }, stage, true)).toBe(
-      'Full! The secret word starts with [[b:O]]. Your turn: try a word.',
+      'Full! Here is the first letter: the secret word starts with [[b:O]]. One more try.',
     );
     expect(coachCopy('en', { kind: 'introMeter', hole }, stage, true)).toBe(
       'I already played a bit. Tap [[w:islands^10]] to see my tries.',

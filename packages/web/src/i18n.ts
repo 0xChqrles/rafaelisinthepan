@@ -421,11 +421,9 @@ const STRINGS = {
   // it behind its closest word in front of them; every later line names what is on screen.
   // coach.ts fills the {braces} (`ordinal` for the ranks).
   tutReveal: { en: 'Here is a secret word: {answer}.', fr: 'Voici un mot secret : {answer}.' },
-  // The reveal's one action, a button in the tray: what pressing it does.
-  tutHide: { en: 'HIDE THE WORD', fr: 'MASQUER LE MOT' },
   tutHidden: {
-    en: 'It is hidden now. In its place, its closest word: {start}. Type the secret word.',
-    fr: 'Le voilà caché. À sa place, son mot le plus proche : {start}. Retape le mot secret.',
+    en: 'I mixed the word up: {start} took its place, its closest word. Find the secret word.',
+    fr: "J'ai mélangé le mot : à sa place, son plus proche, {start}. Trouve le mot secret.",
   },
   tutIntro: {
     en: 'Another secret word. In its place, the {m} closest word: {start}. Find it.',
@@ -453,12 +451,12 @@ const STRINGS = {
     fr: "J'ai déjà un peu joué. Touche {word} pour voir mes essais.",
   },
   tutMeterTapped: {
-    en: 'My close tries filled the word up. Full, it reveals the first letter. Try one!',
-    fr: 'Mes essais proches ont rempli le mot. Plein, il révèle la première lettre. Essaie !',
+    en: 'Close tries fill the word up. Once full, its first letter shows. Try one!',
+    fr: 'Un essai proche remplit le mot. Plein, il montre sa première lettre. Essaie !',
   },
   tutLetter: {
-    en: 'Full! The secret word starts with {letter}. Your turn: try a word.',
-    fr: 'Plein ! Le mot secret commence par {letter}. À toi : essaie un mot.',
+    en: 'Full! Here is the first letter: the secret word starts with {letter}. One more try.',
+    fr: 'Plein ! Le mot secret commence par {letter}. Encore un essai.',
   },
   tutMeterFound: {
     en: 'You found it! You are ready for the real game.',

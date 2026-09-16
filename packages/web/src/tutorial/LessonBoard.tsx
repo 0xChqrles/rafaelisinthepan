@@ -21,7 +21,7 @@ import { sentenceStarts } from '../game/sentenceCase';
 import { SCRAMBLE_MS } from '../hooks/useScramble';
 import type { Vocab } from '../hooks/useVocab';
 import { fold } from '@whippin/shared';
-import type { HitState, RankEntry, RuntimeHole } from '@whippin/shared';
+import type { HitState, RankEntry, RankMap, RuntimeHole } from '@whippin/shared';
 import { t, ariaHoleHistory, srHoleCharge, srHoleInitial, srHoleResult } from '../i18n';
 import type { LangCode } from '../langs';
 import botIdle from '../assets/error-bot-idle.png';
@@ -101,8 +101,39 @@ export default function LessonBoard({
   onPlay: () => void;
 }) {
   const { puzzle, kind: stage } = script;
-  const { ranks } = puzzle;
   const puzzleHoles = puzzle.holes;
+  // THE PAIR SWAP (the meter stage; user-decided 2026-09-16): before the letter is out, typing
+  // the secret makes it the closest word and `pair.alt` the secret — so the letter is always
+  // seen before the solve. ONE map serves both readings: swapped, every rank-0 entry reads 1
+  // and every rank-1 entry reads 0, and the board, the meters, the wheel and every later
+  // guess replay against that view. The bot then lands `alt`.
+  const [swapped, setSwapped] = useState(false);
+  const ranks = useMemo<RankMap>(() => {
+    if (!swapped || !script.pair) return puzzle.ranks;
+    const open = puzzleHoles.find((h) => h.secret.slug !== puzzleHoles[0].secret.slug) ?? puzzleHoles[puzzleHoles.length - 1];
+    const map = puzzle.ranks[open.secret.slug];
+    const dq1 = Object.values(map).find((e) => e.rank === 1)?.dq;
+    const view: typeof map = {};
+    for (const [key, entry] of Object.entries(map)) {
+      if (entry.rank === 0) view[key] = { word: entry.word, rank: 1, dq: dq1 } as RankEntry;
+      else if (entry.rank === 1) view[key] = { word: entry.word, rank: 0 } as RankEntry;
+      else view[key] = entry;
+    }
+    return { ...puzzle.ranks, [open.secret.slug]: view };
+  }, [swapped, script.pair, puzzle.ranks, puzzleHoles]);
+  // The stage as the coach should read it: the swapped hole's secret is `alt`.
+  const stageView = useMemo<LessonStage>(() => {
+    if (!swapped || !script.pair) return script;
+    const alt = script.pair.alt;
+    return {
+      ...script,
+      puzzle: {
+        ...puzzle,
+        holes: puzzleHoles.map((h, i) => (i === puzzleHoles.length - 1 ? { ...h, secret: alt } : h)),
+      },
+    };
+  }, [swapped, script, puzzle, puzzleHoles]);
+  const viewHoles = stageView.puzzle.holes;
   // A sentence-shaped stage: the game's own layout, the try count behind the sentence, a
   // button (CONTINUE / PLAY) once solved — where a single word rolls on by itself.
   const sentenceLike = stage === 'sentence' || stage === 'meter';
@@ -114,7 +145,10 @@ export default function LessonBoard({
   const withMeters = stage === 'meter';
   const seed = useMemo(() => script.played ?? [], [script]);
   const fresh = useMemo(() => freshHoles(script), [script]);
-  const meters = useCallback((log: readonly string[]) => replayCharge(fresh, ranks, log), [fresh, ranks]);
+  const meters = useCallback(
+    (log: readonly string[], map: RankMap = ranksRef.current) => replayCharge(fresh, map, log),
+    [fresh],
+  );
 
   // THE REVEAL (user-decided 2026-09-16): the secret word is SHOWN first, then hidden in
   // front of the player — its closest word takes its place, wearing a 1 — so the two things
@@ -137,6 +171,8 @@ export default function LessonBoard({
   // as it stands then, not as the closure saw it.
   const triedRef = useRef(tried);
   triedRef.current = tried;
+  const ranksRef = useRef(ranks);
+  ranksRef.current = ranks;
   const holesRef = useRef(holes);
   holesRef.current = holes;
   const eventsRef = useRef(events);
@@ -218,6 +254,25 @@ export default function LessonBoard({
     (typed: string, byBot: boolean) => {
       const tried = triedRef.current;
       const holes = holesRef.current;
+      let ranks = ranksRef.current;
+      // The letter was already out before this guess: this is the player's "one more try",
+      // and the bot closes after it (unless the try itself lands).
+      const letterOut = eventsRef.current.some((e) => e.filled != null);
+      // THE SWAP: the secret typed before the letter is out becomes the closest word, and the
+      // obvious word the secret. Read the map through that view from this guess on.
+      const open = holes.find((h) => h.rank !== 0);
+      if (withMeters && !byBot && !letterOut && !swapped && script.pair && open && ranks[open.secret][typed]?.rank === 0) {
+        setSwapped(true);
+        const map = ranks[open.secret];
+        const dq1 = Object.values(map).find((e) => e.rank === 1)?.dq;
+        const view: typeof map = {};
+        for (const [key, entry] of Object.entries(map)) {
+          if (entry.rank === 0) view[key] = { word: entry.word, rank: 1, dq: dq1 } as RankEntry;
+          else if (entry.rank === 1) view[key] = { word: entry.word, rank: 0 } as RankEntry;
+          else view[key] = entry;
+        }
+        ranks = { ...ranks, [open.secret]: view };
+      }
       // A counted guess is a NEW word identity (guessKey): a repeat still floats its numbers
       // but teaches nothing new and counts for nothing, as in the game.
       const id = guessKey(ranks, typed);
@@ -232,8 +287,8 @@ export default function LessonBoard({
       const fadeDelayMs = Math.max(0, impacted.length - 1) * STAGGER_MS + FLOATING_HIT_INTRO_MS;
       // The meters before and after this guess (the meter stage only): what each chip gains
       // flies into it as loot, exactly as on the day (#301).
-      const before = withMeters ? meters(tried) : null;
-      const after = withMeters && isNew ? meters([...tried, typed]) : before;
+      const before = withMeters ? meters(tried, ranks) : null;
+      const after = withMeters && isNew ? meters([...tried, typed], ranks) : before;
       impacted.forEach(({ index, entry }, step) => {
         const hit = (hitId.current += 1);
         const gained = before && after ? after[index].charge - before[index].charge : 0;
@@ -277,9 +332,6 @@ export default function LessonBoard({
           fadeDelayMs,
         );
       }
-      // The letter was already out before this guess: this is the player's "one more try",
-      // and the bot closes after it (unless the try itself lands).
-      const letterOut = eventsRef.current.some((e) => e.filled != null);
       if (isNew) {
         setTried((prev) => [...prev, typed]);
         if (!byBot) {
@@ -325,15 +377,15 @@ export default function LessonBoard({
       } else if (withMeters && !byBot && isNew && letterOut) {
         // The bot's turn: it names the answer as if it had found it, once the player's try
         // has had its moment on the board.
-        const open = holes.find((h) => h.rank !== 0);
         if (open) {
-          const answer = puzzleHoles.find((h) => h.secret.slug === open.secret)?.secret.slug ?? open.secret;
+          // The answer under the current view: `alt` once swapped, the secret otherwise.
+          const answer = Object.entries(ranks[open.secret]).find(([, e]) => e.rank === 0)?.[0] ?? open.secret;
           setPhase('settling');
           later(() => land(answer, true), fadeDelayMs + HIT_FADE_MS + BOT_TURN_MS);
         }
       }
     },
-    [ranks, withMeters, meters, puzzleHoles, lang, say, later],
+    [withMeters, swapped, script.pair, meters, lang, say, later],
   );
 
   const submit = useCallback(
@@ -412,9 +464,9 @@ export default function LessonBoard({
       tried,
       hole,
       startRank: puzzleHole.start_rank,
-      secretWord: puzzleHole.secret.word,
+      secretWord: viewHoles[historyHole].secret.word,
     });
-  }, [historyHole, holes, puzzleHoles, ranks, tried]);
+  }, [historyHole, holes, puzzleHoles, viewHoles, ranks, tried]);
 
   // --- the coach: the one line the board's state calls for, or nothing ---
   const line = useMemo(
@@ -422,7 +474,12 @@ export default function LessonBoard({
       coachLine({ stage, holes, events, tapped, revealed, finished: phase !== 'play', botFound }),
     [phase, stage, holes, events, tapped, revealed, botFound],
   );
-  const coach = line ? coachCopy(lang, line, script, coarse) : null;
+  const coach = line ? coachCopy(lang, line, stageView, coarse) : null;
+  // THE BOX NEVER DISAPPEARS (user-decided 2026-09-16): a beat with nothing new to say keeps
+  // the last line up rather than blanking the dialog.
+  const lastCoach = useRef<string | null>(null);
+  if (coach) lastCoach.current = coach;
+  const shownCoach = coach ?? lastCoach.current;
   // Announce each new line once, in plain text (the visible typewriter is aria-hidden).
   useEffect(() => {
     if (coach) say(richToPlain(coach));
@@ -435,12 +492,12 @@ export default function LessonBoard({
   const charges = useMemo(() => {
     if (!withMeters) return undefined;
     return meters(tried).map((c, i) => {
-      const initial = c.revealed ? initialOf(puzzleHoles[i].secret.word) : null;
+      const initial = c.revealed ? initialOf(viewHoles[i].secret.word) : null;
       const hint =
         holes[i].rank === 0 ? '' : initial !== null ? srHoleInitial(lang, initial) : srHoleCharge(lang, c.charge);
       return { value: c.charge, initial, hint };
     });
-  }, [withMeters, meters, tried, puzzleHoles, holes, lang]);
+  }, [withMeters, meters, tried, viewHoles, holes, lang]);
 
   return (
     // tutorial--word: the word stage is deliberately CLEAN — one big centered word in the
@@ -453,10 +510,10 @@ export default function LessonBoard({
       {/* THE COACH IS THE ERROR BOT (user-decided 2026-09-16: "people would want to read it
           more if it's something telling it"): the game's one character stands on the box and
           speaks it — the same sprite, the same idle bob, as on the error screen. */}
-      {coach && (
+      {shownCoach && (
         <div className="coach coach--bot">
           <div className="coach-bot" aria-hidden style={{ backgroundImage: `url(${botIdle})` }} />
-          <CoachText key={coach} copy={coach} />
+          <CoachText key={shownCoach} copy={shownCoach} />
         </div>
       )}
 
@@ -533,7 +590,7 @@ export default function LessonBoard({
           // moment the word is hidden (the tutorial's oldest gesture — "the button moves down,
           // the keyboard moves up").
           <button type="button" className="mix-btn" onClick={hide}>
-            {t(lang, 'tutHide')}
+            {t(lang, 'tutContinue')}
           </button>
         ) : waitingTap ? null : (
           <div

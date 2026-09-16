@@ -31,7 +31,7 @@
 // field by web/scripts/prune-word-map.mjs — the exact invocation is recorded in each
 // script's header, and scripts.test.ts fails if a board and its map ever drift.
 
-import type { Puzzle } from '@whippin/shared';
+import type { Puzzle, Word } from '@whippin/shared';
 import type { UiKey } from '../i18n';
 
 export type StageKind = 'reveal' | 'word' | 'sentence' | 'meter';
@@ -43,11 +43,13 @@ export interface LessonStage {
   // log the board, the meters and the tries wheel replay, before the player's own guesses.
   // Chosen so one secret is found and the other's meter stands just under full.
   played?: string[];
-  // The meter stage only: THE OBVIOUS GUESS — the word the sentence begs for, which is the
-  // secret's closest word (rank 1), not the secret. The player types it, gets a 1, the chip
-  // fills, and the answer stays the bot's to land (user-decided 2026-09-16: "if you type the
-  // word 0 it should become the word -1, to make sure it's impossible to guess in one try").
-  obvious?: string;
+  // The meter stage only: THE PAIR. The sentence begs for `alt` — the secret's closest word
+  // (rank 1), which reads in the sentence too — and before the letter is out the two SWAP
+  // ROLES on whichever the player types first: type the secret and it becomes the closest
+  // word (a 1, the chip fills) while `alt` becomes the secret the bot will land; type `alt`
+  // and nothing changes. Once the letter is out there is no swap. The goal is only that the
+  // first letter is seen before the sentence is solved (user-decided 2026-09-16).
+  pair?: { alt: Word };
   // One hint per hole, in `puzzle.holes` order — what the coach says once a hole has resisted
   // long enough (coach.ts `STUCK`), before it gives the answer.
   hints: UiKey[];

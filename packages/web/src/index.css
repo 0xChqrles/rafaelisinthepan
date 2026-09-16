@@ -3920,6 +3920,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   align-self: center;
   width: min(680px, 100%);
   align-items: start;
+  /* …and at ONE Y: parked on the play area's bottom edge, just above the keys, on every
+     stage (user-decided 2026-09-16, "stick the prompt to the same y too"). */
+  margin-top: auto;
 }
 
 /* The word stages are CLEAN: explanation on top, ONE big centered word in the middle, the
@@ -3932,9 +3935,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 .tutorial--word .phrase {
   font-size: clamp(28px, 7vw, 48px);
-}
-.tutorial--word .input-area {
-  margin-top: auto;
 }
 
 /* The explanation box: app background + surface border (a dialog, not a modal),

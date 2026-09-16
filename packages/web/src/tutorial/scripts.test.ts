@@ -12,9 +12,10 @@
 //     `pos` with its affixes, and every hole carrying its own hint copy;
 //   - THE METER is a second sentence, harder (clues 80–150), two new words, that the BOT has
 //     half played (`played`): the first word found, the second's meter around three quarters
-//     (the fill must be SEEN) and its best try no giveaway; the OBVIOUS guess is the secret's
-//     rank-1 word, not the secret, and fills the meter by itself (the letter cannot be
-//     skipped by a one-try solve, user-decided 2026-09-16);
+//     (the fill must be SEEN) and its best try no giveaway; the OBVIOUS guess (`pair.alt`) is
+//     the secret's rank-1 word, not the secret, and fills the meter by itself — and the two
+//     swap roles if the secret is typed first, so the letter is never skipped (user-decided
+//     2026-09-16);
 //   - every board stays byte-compatible with the real per-puzzle schema (parsePuzzle-valid —
 //     they feed the REAL game components), rank 0 is the secret, every key folds to itself
 //     (the free typing lands on them), and the start words are READ OFF the maps.
@@ -149,10 +150,12 @@ for (const lang of ['en', 'fr'] as const) {
         expect(meterB.charge).toBeLessThanOrEqual(80);
         // The obvious guess: the secret's closest word, untried by the bot, and enough on its
         // own to fill the meter — so it earns the letter, never the solve.
-        const obvious = meter.obvious!;
-        const entry = puzzle.ranks[puzzle.holes[1].secret.slug][obvious];
+        const alt = meter.pair!.alt;
+        expect(fold(alt.slug)).toBe(alt.slug);
+        const entry = puzzle.ranks[puzzle.holes[1].secret.slug][alt.slug];
         expect(entry.rank).toBe(1);
-        expect(played).not.toContain(obvious);
+        expect(entry.word).toBe(alt.word);
+        expect(played).not.toContain(alt.slug);
         expect(meterB.charge + chargeForRank(entry.rank)).toBeGreaterThanOrEqual(CHARGE_TARGET);
       });
     });

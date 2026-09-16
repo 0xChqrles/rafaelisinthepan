@@ -136,9 +136,12 @@ export function coachLine(state: CoachState): CoachLine | null {
   if (stage === 'reveal' || stage === 'word') {
     const last = events[events.length - 1];
     const entry = last.entries[0];
-    if (entry && !last.improved[0]) {
-      // The first ranked guess that changed nothing: say what the number means, once.
-      const first = events.findIndex((e) => e.entries[0] && !e.improved[0]);
+    // Typing the very word the hole shows ranks where it stands — nothing to compare.
+    const farther = (e: GuessEvent) => e.entries[0] !== undefined && (e.entries[0] as RankEntry).rank > holes[0].rank;
+    if (entry && !last.improved[0] && farther(last)) {
+      // The first ranked guess that landed farther than the hole: say what the number means,
+      // once.
+      const first = events.findIndex(farther);
       if (first === events.length - 1) return { kind: 'away', guess: entry, hole: holes[0] };
     } else if (!entry) {
       const first = events.findIndex((e) => !e.entries[0]);

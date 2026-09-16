@@ -2779,17 +2779,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
     it tells you to guess the secret word: where is the secret word?")** — NOTHING IS SAID
     THAT THE PLAYER HAS NOT JUST SEEN. The secret word is SHOWN on the board (rank 0, the
     solved look: "Here is a secret word: océan."), STANDS UNTIL THE PLAYER ACTS on ONE
-    BUTTON in the tray, where the keyboard will land, named for what it does — **HIDE THE
-    WORD** / **MASQUER LE MOT** (`tutHide`, `.mix-btn`; « cacher » read as weird, 2026-09-16; the prompt is retired meanwhile, so it is the one action).
+    BUTTON in the tray, where the keyboard will land — **CONTINUE** / **CONTINUER**
+    (`tutContinue`, `.mix-btn`; user-decided 2026-09-16 over HIDE THE WORD / MASQUER LE MOT; the prompt is retired meanwhile, so it is the one action).
     **The coach never skips a line without an interaction, and the interaction is always an
     obvious control with a clear action — never "tap anywhere"** (user-decided 2026-09-16,
     the tap-anywhere cue rejected the same day). Pressing it is the hiding: the word is
     HIDDEN in front of them: its closest word takes its place wearing a 1, on the Hole's OWN word-change
     choreography — the letters scramble from one word into the other while the exponent
     arrives, the same beat every improving guess gets, never a remount (user-decided
-    2026-09-16: "the word transition animation should be played") — under "It is hidden
-    now. In its place, its closest word: mer¹. Type the secret word." (fr « Le voilà
-    caché. » — a bare « Caché. » "sounds stupid", same day). The player types it back — the loop, lived once. en OCEAN behind `sea^1`, fr
+    2026-09-16: "the word transition animation should be played") — under "I mixed the word up: sea¹ took its place, its closest word. Find the secret word."
+    (fr « J'ai mélangé le mot : à sa place, son plus proche, mer¹. Trouve le mot secret. »,
+    user-decided 2026-09-16 — the bot says what IT did). The player types it back — the loop, lived once. en OCEAN behind `sea^1`, fr
     OCÉAN behind `mer^1`; `scripts.test.ts` pins the clue at rank 1; the ladder is early
     (`STUCK.reveal` = 2/4/6 — the answer was just on screen). It replaced four single-word
     openings that each read as too hard or too abstract (TROPIQUES, `île^12`, `plage^28`,
@@ -2802,7 +2802,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     a sentence), and the PROMPT sits just above the keyboard on the LEFT (`.tutorial--word
     .input-area`, `margin-top: auto`), off the word — and at ONE X on every stage: its own
     680px box centred in the column (`.tutorial .input-area`), where stretching it to a 680px
-    word column and a 1200px sentence column put it at two edges (user-reported 2026-09-16). Finding it ends the stage wordless and
+    word column and a 1200px sentence column put it at two edges — and at ONE Y, parked on
+    the play area's bottom edge on every stage, the sentence's included (user-reported
+    2026-09-16). Finding it ends the stage wordless and
     rolls into the sentence.
   - **THE SENTENCE** — two holes, start words in the game's own 50–150 band (en "a dog barks
     at the moon." from `coyote^55` / `stars^62`; fr « un chien aboie à la lune. » from
@@ -2821,8 +2823,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
     SHOWN for the first time. **THE SECRET IS THE CLOSE SYNONYM OF THE OBVIOUS WORD** (user-
     decided 2026-09-16 after solving it in one try: "if you type the word 0 it should become
     the word -1"): the sentence begs for FREEDOM / CHEMIN, and that word is the secret's
-    rank-1 neighbour (`obvious`) — typing it earns a 1 and fills the chip, never the solve;
-    both words read in the sentence ("both words relevant, e.g. mer/océan"). `played` is the
+    rank-1 neighbour (`pair.alt`) — typing it earns a 1 and fills the chip, never the solve;
+    both words read in the sentence ("both words relevant, e.g. mer/océan"). **AND THE TWO
+    SWAP ROLES if the secret is typed first, before the letter is out** (user-decided
+    2026-09-16 after typing « sentier » in one try): the secret reads 1 and `alt` becomes the
+    secret the bot lands. ONE map serves both readings — swapped, every rank-0 entry reads 1
+    and every rank-1 entry reads 0 (`ranks` view in `LessonBoard`), and the board, the
+    meters, the wheel and every later guess replay against it. Once the letter is out there
+    is no swap: the goal is only that the letter is seen before the solve. `played` is the
     bot's log (en: cat, justice, truth, unity, happiness, honor, religion; fr masculine tries
     so « le » holds), replayed onto the board, the meters and the tries wheel exactly as a
     round's log would be, chosen so the open word's meter stands at ABOUT THREE QUARTERS
@@ -2830,15 +2838,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
     see it getting filled") with a best try that is no giveaway AND LONG ENOUGH for the fill
     to read on its chip (`happiness^48` / `randonneur^29` — `col` "was too short to understand
     the notion of progression", 2026-09-16;
-    the test wants ≥ 15, 65–80, the obvious word at rank 1, untried, and filling it alone).
+    the test wants ≥ 15, 65–80, `alt` at rank 1, untried, and filling it alone).
     THE KEYBOARD IS HELD BACK UNTIL THE TAP (user-decided 2026-09-16): the stage opens with
     the prompt retired and the tray empty, so the bot's tries are the first thing to look
     at; the keys arrive with the line that hands the turn over.
     that a rank-200 guess still fills it). The beats, each on the player's act: "I already
-    played a bit. Tap happiness⁴⁸ to see my tries." → tapped: "My close tries filled the word
-    up. Full, it reveals the first letter. Try one!" → a guess that does not fill: `tutNear`
-    → the obvious guess FILLS IT — no progress needed — and the L lands: "Full! The secret
-    word starts with L. Your turn: try a word." → ONE MORE TRY, then THE BOT LANDS THE
+    played a bit. Tap happiness⁴⁸ to see my tries." → tapped: "Close tries fill the word up.
+    Once full, its first letter shows. Try one!" → a guess that does not fill:
+    `tutNear` → the obvious guess FILLS IT — no progress needed — and the L lands: "Full!
+    Here is the first letter: the secret word starts with L. One more try." → ONE MORE TRY, then THE BOT LANDS THE
     ANSWER ITSELF (`land(answer, true)`, `BOT_TURN_MS` after the try's moment; not a player
     event): "Got it, it was liberty! You are ready for the real game." (a try that finds
     it: "You found it! You are ready for the real game.") → PLAY. `STUCK.meter` is unused
@@ -2849,7 +2857,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   drawn ABOVE the box so the three-line text budget stands; the box and the board's
   `padding-top` drop by the bot's 56px). One character, one voice, on both screens that talk.
   **THE REACTIVE COACH (`tutorial/coach.ts`, pure; `coach.test.ts` replays sequences):**
-  the one line the board's state calls for, else nothing (the box disappears). **Every line
+  the one line the board's state calls for — and when a beat has nothing new to say THE BOX
+  KEEPS THE LAST LINE UP, it never disappears (user-decided 2026-09-16). **Every line
   is written for someone who knows NOTHING yet (user-decided 2026-09-16, three passes): the
   opening says what the game IS — guess a SECRET word — and explains the number on the clue
   itself; closeness is counted in ORDINALS (`ordinal`, en/fr), never an abstract distance.**
